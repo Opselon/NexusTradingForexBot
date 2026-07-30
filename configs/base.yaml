@@ -1,0 +1,23 @@
+execution:
+  symbol: "EURUSD"
+  mode: "PAPER"
+  timeframe: "M1"
+  magic_number: 999101
+  max_slippage_points: 10
+
+risk:
+  max_account_drawdown_pct: 2.5
+  risk_per_trade_pct: 0.5
+  max_concurrent_positions: 1
+  max_spread_points: 20
+  enforce_stop_loss: true
+
+mt5:
+  timeout_ms: 5000
+  retries: 3
+  portable_mode: false
+
+model:
+  confidence_threshold: 0.75
+  feature_schema_version: "v1.0"
+  model_artifact_path: "artifacts/models/scalp/EURUSD/v1.0.0/model.pt"

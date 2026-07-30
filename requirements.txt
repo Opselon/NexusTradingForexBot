@@ -1,0 +1,47 @@
+# ==============================================================================
+# Nexus Scalp Engine (NSE) — Production & Development Requirements
+# ==============================================================================
+# Fast Installation Command:
+#   pip install -r requirements.txt
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Core Framework & Validation Layer
+# ------------------------------------------------------------------------------
+pydantic>=2.6.0,<3.0.0             # High-performance data contract validation (Rust core)
+pydantic-settings>=2.1.0,<3.0.0    # Environment-aware YAML & ENV settings parsing
+pyyaml>=6.0.1,<7.0.0               # Robust YAML configuration parser
+
+# ------------------------------------------------------------------------------
+# High-Throughput Quantitative Data Processing & Storage
+# ------------------------------------------------------------------------------
+polars>=0.20.0,<1.0.0              # Multi-threaded zero-copy columnar DataFrame engine
+pyarrow>=15.0.0,<16.0.0            # High-speed Parquet storage serialization
+numpy>=1.26.0,<2.0.0               # Vectorized mathematical array operations
+
+# ------------------------------------------------------------------------------
+# Deep Learning & Neural Inference Engine
+# ------------------------------------------------------------------------------
+torch>=2.2.0,<3.0.0                # PyTorch deep learning library for model inference/training
+
+# ------------------------------------------------------------------------------
+# Observability, Logging & Terminal Interface
+# ------------------------------------------------------------------------------
+structlog>=24.1.0,<25.0.0          # Non-blocking structured JSON logging pipeline
+typer>=0.9.0,<1.0.0                # Ergonomic CLI framework
+rich>=13.7.0,<14.0.0               # Colored terminal presentation and status tables
+
+# ------------------------------------------------------------------------------
+# MetaTrader 5 Broker Adapter (Windows Platform Conditional)
+# ------------------------------------------------------------------------------
+MetaTrader5>=5.0.45; platform_system == 'Windows'  # Official MT5 C++ Python IPC API bindings
+
+# ------------------------------------------------------------------------------
+# Testing, Code Quality & Development Environment
+# ------------------------------------------------------------------------------
+pytest>=8.0.0                      # Automated unit and integration testing runner
+pytest-asyncio>=0.23.0             # Asyncio event loop testing extension for pytest
+pytest-cov>=4.1.0                  # Code test coverage metrics calculator
+ruff>=0.2.0                        # Ultra-fast Rust-based linter and formatter
+mypy>=1.8.0                        # Static type-checking analyzer
+types-pyyaml>=6.0.12               # Type hints for PyYAML library

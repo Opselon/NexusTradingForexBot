@@ -1,0 +1,201 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>40871851-2619-4c46-8088-e7bf0793c0f3</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>NexusTradingForexBot.py</StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>NexusTradingForexBot</Name>
+    <RootNamespace>NexusTradingForexBot</RootNamespace>
+    <InterpreterId>Global|VisualStudio|.venv</InterpreterId>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="NexusTradingForexBot.py" />
+    <Compile Include="src\cli\train_model.py" />
+    <Compile Include="src\nexus_scalp\adapters\database\audit_repository.py" />
+    <Compile Include="src\nexus_scalp\adapters\database\__init__.py" />
+    <Compile Include="src\nexus_scalp\adapters\mt5\mt5_adapter.py" />
+    <Compile Include="src\nexus_scalp\adapters\mt5\remote_gateway.py" />
+    <Compile Include="src\nexus_scalp\adapters\mt5\__init__.py" />
+    <Compile Include="src\nexus_scalp\adapters\paper\paper_adapter.py" />
+    <Compile Include="src\nexus_scalp\adapters\__init__.py" />
+    <Compile Include="src\nexus_scalp\application\live_engine.py" />
+    <Compile Include="src\nexus_scalp\application\__init__.py" />
+    <Compile Include="src\nexus_scalp\cli\main.py" />
+    <Compile Include="src\nexus_scalp\cli\__init__.py" />
+    <Compile Include="src\nexus_scalp\configuration\config.py" />
+    <Compile Include="src\nexus_scalp\configuration\__init__.py" />
+    <Compile Include="src\nexus_scalp\domain\enums.py" />
+    <Compile Include="src\nexus_scalp\domain\models.py" />
+    <Compile Include="src\nexus_scalp\domain\__init__.py" />
+    <Compile Include="src\nexus_scalp\execution\order_manager.py" />
+    <Compile Include="src\nexus_scalp\features\order_manager.py" />
+    <Compile Include="src\nexus_scalp\features\regime_classifier.py" />
+    <Compile Include="src\nexus_scalp\features\scalp_features.py" />
+    <Compile Include="src\nexus_scalp\labeling\triple_barrier.py" />
+    <Compile Include="src\nexus_scalp\market_data\bar_aggregator.py" />
+    <Compile Include="src\nexus_scalp\market_data\tick_storage.py" />
+    <Compile Include="src\nexus_scalp\market_data\__init__.py" />
+    <Compile Include="src\nexus_scalp\models\scalp_net.py" />
+    <Compile Include="src\nexus_scalp\observability\logging.py" />
+    <Compile Include="src\nexus_scalp\observability\telegram_notifier.py" />
+    <Compile Include="src\nexus_scalp\observability\__init__.py" />
+    <Compile Include="src\nexus_scalp\ports\gateway_port.py" />
+    <Compile Include="src\nexus_scalp\ports\mt5_port.py" />
+    <Compile Include="src\nexus_scalp\ports\__init__.py" />
+    <Compile Include="src\nexus_scalp\risk\risk_engine.py" />
+    <Compile Include="src\nexus_scalp\signals\policy.py" />
+    <Compile Include="src\nexus_scalp\__init__.py" />
+    <Compile Include="src\nexus_scalp\training\walk_forward_trainer.py" />
+    <Compile Include="src\nexus_scalp\training\__init__.py" />
+    <Compile Include="tests\unit\test_bar_aggregator.py" />
+    <Compile Include="tests\unit\test_domain_models.py" />
+    <Compile Include="tests\unit\test_logging.py" />
+    <Compile Include="tests\unit\test_mt5_adapter.py" />
+    <Compile Include="tests\unit\test_scalp_features.py" />
+    <Compile Include="tests\unit\__init__.py" />
+    <Compile Include="tests\__init__.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include=".pytest_cache\" />
+    <Folder Include=".pytest_cache\v\" />
+    <Folder Include=".pytest_cache\v\cache\" />
+    <Folder Include="configs\" />
+    <Folder Include="docker\" />
+    <Folder Include="src\" />
+    <Folder Include="src\cli\" />
+    <Folder Include="src\nexus_scalp\training\" />
+    <Folder Include="src\nexus_scalp\" />
+    <Folder Include="src\nexus_scalp\adapters\" />
+    <Folder Include="src\nexus_scalp\adapters\database\" />
+    <Folder Include="src\nexus_scalp\adapters\database\__pycache__\" />
+    <Folder Include="src\nexus_scalp\adapters\mt5\" />
+    <Folder Include="src\nexus_scalp\adapters\mt5\__pycache__\" />
+    <Folder Include="src\nexus_scalp\adapters\paper\" />
+    <Folder Include="src\nexus_scalp\adapters\paper\__pycache__\" />
+    <Folder Include="src\nexus_scalp\adapters\__pycache__\" />
+    <Folder Include="src\nexus_scalp\application\" />
+    <Folder Include="src\nexus_scalp\application\__pycache__\" />
+    <Folder Include="src\nexus_scalp\cli\" />
+    <Folder Include="src\nexus_scalp\cli\__pycache__\" />
+    <Folder Include="src\nexus_scalp\configuration\" />
+    <Folder Include="src\nexus_scalp\configuration\__pycache__\" />
+    <Folder Include="src\nexus_scalp\domain\" />
+    <Folder Include="src\nexus_scalp\domain\__pycache__\" />
+    <Folder Include="src\nexus_scalp\execution\" />
+    <Folder Include="src\nexus_scalp\execution\__pycache__\" />
+    <Folder Include="src\nexus_scalp\features\" />
+    <Folder Include="src\nexus_scalp\features\__pycache__\" />
+    <Folder Include="src\nexus_scalp\labeling\" />
+    <Folder Include="src\nexus_scalp\market_data\" />
+    <Folder Include="src\nexus_scalp\market_data\__pycache__\" />
+    <Folder Include="src\nexus_scalp\models\" />
+    <Folder Include="src\nexus_scalp\models\__pycache__\" />
+    <Folder Include="src\nexus_scalp\observability\" />
+    <Folder Include="src\nexus_scalp\observability\__pycache__\" />
+    <Folder Include="src\nexus_scalp\ports\" />
+    <Folder Include="src\nexus_scalp\ports\__pycache__\" />
+    <Folder Include="src\nexus_scalp\risk\" />
+    <Folder Include="src\nexus_scalp\risk\__pycache__\" />
+    <Folder Include="src\nexus_scalp\signals\" />
+    <Folder Include="src\nexus_scalp\signals\__pycache__\" />
+    <Folder Include="src\nexus_scalp\__pycache__\" />
+    <Folder Include="src\nexus_scalp_engine.egg-info\" />
+    <Folder Include="tests\" />
+    <Folder Include="tests\unit\" />
+    <Folder Include="tests\unit\__pycache__\" />
+    <Folder Include="tests\__pycache__\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include=".pytest_cache\.gitignore" />
+    <Content Include=".pytest_cache\CACHEDIR.TAG" />
+    <Content Include=".pytest_cache\README.md" />
+    <Content Include=".pytest_cache\v\cache\nodeids" />
+    <Content Include="configs\base.yaml" />
+    <Content Include="configs\live.yaml" />
+    <Content Include="docker\entrypoint.sh" />
+    <Content Include="docker\healthcheck.sh" />
+    <Content Include="src\nexus_scalp\adapters\database\__pycache__\audit_repository.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\adapters\database\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\adapters\mt5\__pycache__\mt5_adapter.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\adapters\mt5\__pycache__\mt5_adapter.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\adapters\mt5\__pycache__\remote_gateway.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\adapters\mt5\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\adapters\mt5\__pycache__\__init__.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\adapters\paper\__pycache__\paper_adapter.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\adapters\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\adapters\__pycache__\__init__.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\application\__pycache__\live_engine.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\application\__pycache__\live_engine.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\application\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\application\__pycache__\__init__.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\cli\__pycache__\main.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\cli\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\configuration\__pycache__\config.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\configuration\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\domain\__pycache__\enums.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\domain\__pycache__\enums.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\domain\__pycache__\models.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\domain\__pycache__\models.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\domain\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\domain\__pycache__\__init__.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\execution\__pycache__\order_manager.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\features\__pycache__\scalp_features.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\market_data\__pycache__\bar_aggregator.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\market_data\__pycache__\bar_aggregator.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\market_data\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\market_data\__pycache__\__init__.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\models\__pycache__\scalp_net.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\observability\__pycache__\logging.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\observability\__pycache__\logging.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\observability\__pycache__\telegram_notifier.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\observability\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\observability\__pycache__\__init__.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\ports\__pycache__\gateway_port.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\ports\__pycache__\gateway_port.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\ports\__pycache__\mt5_port.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\ports\__pycache__\mt5_port.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\ports\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\ports\__pycache__\__init__.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp\risk\__pycache__\risk_engine.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\signals\__pycache__\policy.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\__pycache__\__init__.cpython-313.pyc" />
+    <Content Include="src\nexus_scalp_engine.egg-info\dependency_links.txt" />
+    <Content Include="src\nexus_scalp_engine.egg-info\entry_points.txt" />
+    <Content Include="src\nexus_scalp_engine.egg-info\PKG-INFO" />
+    <Content Include="src\nexus_scalp_engine.egg-info\requires.txt" />
+    <Content Include="src\nexus_scalp_engine.egg-info\SOURCES.txt" />
+    <Content Include="src\nexus_scalp_engine.egg-info\top_level.txt" />
+    <Content Include="tests\unit\__pycache__\test_bar_aggregator.cpython-311-pytest-9.1.1.pyc" />
+    <Content Include="tests\unit\__pycache__\test_domain_models.cpython-311-pytest-9.1.1.pyc" />
+    <Content Include="tests\unit\__pycache__\test_logging.cpython-311-pytest-9.1.1.pyc" />
+    <Content Include="tests\unit\__pycache__\test_mt5_adapter.cpython-311-pytest-9.1.1.pyc" />
+    <Content Include="tests\unit\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="tests\__pycache__\__init__.cpython-311.pyc" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="Global|VisualStudio|.venv" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <!-- Uncomment the CoreCompile target to enable the Build command in
+       Visual Studio and specify your pre- and post-build commands in
+       the BeforeBuild and AfterBuild targets below. -->
+  <!--<Target Name="CoreCompile" />-->
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+</Project>

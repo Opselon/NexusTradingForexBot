@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  scalp-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexus-scalp-core
+    restart: unless-stopped
+    user: "10001:10001"
+    environment:
+      - NSE_EXECUTION__MODE=PAPER
+      - NSE_EXECUTION__SYMBOL=EURUSD
+      - NSE_RISK__MAX_ACCOUNT_DRAWDOWN_PCT=2.0
+      - NSE_RISK__RISK_PER_TRADE_PCT=0.5
+      - NSE_AUDIT_DB_URL=postgresql://nse_user:nse_password@postgres:5432/nse_audit
+    volumes:
+      - scalp-data:/app/data
+      - scalp-artifacts:/app/artifacts
+    ports:
+      - "9090:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexus-postgres-audit
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nse_audit
+      POSTGRES_USER: nse_user
+      POSTGRES_PASSWORD: nse_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nse_user -d nse_audit"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  scalp-data:
+  scalp-artifacts:
+  postgres-data:
