@@ -131,8 +131,28 @@ class PaperMT5Adapter(IMT5Port):
         )
         return True
 
-    def close_position(self, ticket: int) -> bool:
+    def close_position(self, ticket: int, volume: float | None = None) -> bool:
         """Closes simulated open position."""
+        if volume is not None:
+            # Simulate a partial close
+            for p in self._positions:
+                if p.ticket == ticket:
+                    if volume < p.volume:
+                        new_pos = Position(
+                            ticket=p.ticket,
+                            symbol=p.symbol,
+                            type=p.type,
+                            volume=round(p.volume - volume, 2),
+                            price_open=p.price_open,
+                            sl=p.sl,
+                            tp=p.tp,
+                            profit=p.profit,
+                            magic=p.magic,
+                        )
+                        self._positions.remove(p)
+                        self._positions.append(new_pos)
+                        logger.info("PAPER POSITION PARTIALLY CLOSED", ticket=ticket, closed_vol=volume, remaining_vol=new_pos.volume)
+                        return True
         self._positions = [p for p in self._positions if p.ticket != ticket]
         logger.info("PAPER POSITION CLOSED", ticket=ticket)
         return True

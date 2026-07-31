@@ -74,6 +74,10 @@ class IMT5Port(ABC):
         pass
 
     @abstractmethod
-    def close_position(self, ticket: int) -> bool:
+    def close_position(self, ticket: int, volume: float | None = None) -> bool:
         """Closes an open position specified by broker ticket ID."""
         pass
+
+    def get_closed_deals_history(self, symbol: str, hours_back: int = 24) -> list[dict]:
+        """Retrieves closed deals history for a symbol."""
+        return []

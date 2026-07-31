@@ -13,16 +13,17 @@ Key Improvements
 """
 
 from __future__ import annotations
-import contextlib
+
 import asyncio
-from collections import deque
-from dataclasses import dataclass
-from datetime import datetime, timezone
+import contextlib
 import os
-from pathlib import Path
 import signal
 import threading
-from typing import Deque, Dict, List, Optional, Sequence, Tuple
+from collections import deque
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -54,8 +55,8 @@ logger = get_logger("nexus_scalp.application.live_engine")
 
 @dataclass(frozen=True)
 class ScalerBundle:
-    mean: Optional[np.ndarray]
-    std: Optional[np.ndarray]
+    mean: np.ndarray | None
+    std: np.ndarray | None
 
     def is_ready(self) -> bool:
         return self.mean is not None and self.std is not None
@@ -84,13 +85,13 @@ class LiveEngine:
     """
 
     FEATURE_DIM: int = 40
-    FEATURE_COLS: Tuple[str, ...] = tuple(f"feat_{i}" for i in range(40))
+    FEATURE_COLS: tuple[str, ...] = tuple(f"feat_{i}" for i in range(40))
 
     def __init__(
         self,
         config: AppConfig,
         adapter: IMT5Port,
-        audit_repo: Optional[AuditRepository] = None,
+        audit_repo: AuditRepository | None = None,
         force_fresh_model: bool = False,
     ) -> None:
         self.config = config
@@ -102,10 +103,10 @@ class LiveEngine:
 
         # Thread-safe model bundle swaps (model+scaler together)
         self._bundle_lock = threading.RLock()
-        self._bundle: Optional[ModelBundle] = None
+        self._bundle: ModelBundle | None = None
 
         # Trading runtime state
-        self._symbol_info: Optional[SymbolInfo] = None
+        self._symbol_info: SymbolInfo | None = None
         self._peak_equity: float = 0.0
         self._last_balance: float = 0.0
         self._last_active_position_count: int = 0
@@ -141,7 +142,11 @@ class LiveEngine:
             max_margin_usage_pct=config.risk.max_margin_usage_pct,
             max_allowed_lots=config.risk.max_allowed_lots,
         )
-        self.order_manager = OrderLifecycleManager(adapter=adapter, audit_repo=self.audit)
+        self.order_manager = OrderLifecycleManager(
+            adapter=adapter,
+            audit_repo=self.audit,
+            notifier=self.notifier,
+        )
 
         # Online training toolchain
         self.trainer = WalkForwardTrainer(
@@ -158,10 +163,10 @@ class LiveEngine:
             embargo_bars=3,
         )
 
-        self._rolling_feature_records: Deque[dict] = deque(maxlen=1000)
+        self._rolling_feature_records: deque[dict] = deque(maxlen=1000)
         self._retrain_interval_bars: int = 50
         self._bars_since_last_retrain: int = 0
-        self._retrain_task: Optional[asyncio.Task] = None
+        self._retrain_task: asyncio.Task | None = None
         self._retrain_inflight: bool = False
 
         # Preload model/scaler bundle (pre-flight)
@@ -179,10 +184,19 @@ class LiveEngine:
         configure_logging(log_level="INFO", json_format=False, log_to_file=True)
         logger.info("Initializing Live Engine", symbol=self.config.execution.symbol, mode=self.config.execution.mode.value)
 
-        # Pre-flight validation BEFORE connecting to broker
-        self._preflight_or_raise()
+        try:
+            # Pre-flight validation BEFORE connecting to broker
+            self._preflight_or_raise()
+        except Exception as e:
+            logger.critical("Pre-flight validation failed", error=str(e), exc_info=True)
+            try:
+                self.notifier.notify_error("Engine Startup Pre-Flight", f"Startup pre-flight failed: {e}")
+                self.notifier.shutdown(timeout=2.0)
+            except Exception:
+                pass
+            raise
 
-        loop: Optional[asyncio.AbstractEventLoop] = None
+        loop: asyncio.AbstractEventLoop | None = None
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -199,6 +213,13 @@ class LiveEngine:
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt received. Stopping...")
             self._running = False
+        except Exception as e:
+            logger.critical("Fatal exception in engine run loop", error=str(e), exc_info=True)
+            try:
+                self.notifier.notify_error("Engine Run-Loop Fatal", f"Unhandled critical exception: {e}")
+            except Exception:
+                pass
+            raise
 
         finally:
             try:
@@ -217,6 +238,13 @@ class LiveEngine:
         """
         if not self.adapter.connect():
             logger.critical("MT5 connect() failed. Engine shutting down.")
+            try:
+                self.notifier.notify_error(
+                    "MT5 Connectivity",
+                    "MT5 connect() failed. Engine shutting down.",
+                )
+            except Exception:
+                pass
             return
 
         self._running = True
@@ -451,7 +479,7 @@ class LiveEngine:
             if len(completed) < 55:
                 continue
 
-            bar_time = getattr(b, "timestamp", getattr(b, "time", datetime.now(timezone.utc)))
+            bar_time = getattr(b, "timestamp", getattr(b, "time", datetime.now(UTC)))
             synthetic_tick = TickData(
                 symbol=symbol,
                 timestamp=bar_time,
@@ -553,7 +581,7 @@ class LiveEngine:
         self.audit.log_signal(proposal)
 
         # Risk + order build
-        order: Optional[TradeOrder] = None
+        order: TradeOrder | None = None
         if proposal.action in (
             ActionType.BUY_MARKET, ActionType.SELL_MARKET,
             ActionType.BUY_LIMIT, ActionType.SELL_LIMIT,
@@ -574,7 +602,14 @@ class LiveEngine:
             if success:
                 risk_usd = account.equity * (self.config.risk.risk_per_trade_pct / 100.0)
                 try:
-                    self.notifier.notify_order_opened(order=order, risk_usd=risk_usd)
+                    self.notifier.notify_order_opened(
+                        order=order,
+                        risk_usd=risk_usd,
+                        callback=lambda msg_id: (
+                            self.order_manager.register_order_message(order.order_id, msg_id)
+                            if msg_id else None
+                        ),
+                    )
                 except Exception:
                     pass
 
@@ -672,7 +707,7 @@ class LiveEngine:
     # Diagnostics
     # -------------------------
 
-    def _run_model_diagnostics_and_summary(self, df_labeled: pl.DataFrame, feature_cols: List[str]) -> None:
+    def _run_model_diagnostics_and_summary(self, df_labeled: pl.DataFrame, feature_cols: list[str]) -> None:
         logger.info("=== MODEL DIAGNOSTICS ===")
 
         with self._bundle_lock:
@@ -729,7 +764,7 @@ class LiveEngine:
     # Risk/survival tracking
     # -------------------------
 
-    def _restore_peak_equity(self, account: Optional[AccountInfo]) -> None:
+    def _restore_peak_equity(self, account: AccountInfo | None) -> None:
         last_snapshot = self.audit.get_last_account_snapshot()
         if last_snapshot and "peak_equity" in last_snapshot:
             self._peak_equity = float(last_snapshot["peak_equity"])
@@ -740,7 +775,7 @@ class LiveEngine:
         if account:
             self._last_balance = float(account.balance)
 
-    def _notify_startup(self, account: Optional[AccountInfo]) -> None:
+    def _notify_startup(self, account: AccountInfo | None) -> None:
         if not account:
             return
         try:
@@ -798,11 +833,11 @@ class LiveEngine:
     # -------------------------
 
     @classmethod
-    def _validate_40d_tensor(cls, features: Sequence[float], context: str) -> List[float]:
+    def _validate_40d_tensor(cls, features: Sequence[float], context: str) -> list[float]:
         if len(features) != cls.FEATURE_DIM:
             raise RuntimeError(f"40D feature contract violation in {context}: expected {cls.FEATURE_DIM}, got {len(features)}")
 
-        out: List[float] = []
+        out: list[float] = []
         for idx, val in enumerate(features):
             try:
                 f = float(val)
