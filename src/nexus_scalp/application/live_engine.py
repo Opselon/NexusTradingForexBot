@@ -169,6 +169,13 @@ class LiveEngine:
         self._retrain_task: asyncio.Task | None = None
         self._retrain_inflight: bool = False
 
+        # Web / UI Synchronization states to act as single source of truth
+        self._last_tick: TickData | None = None
+        self._last_fv: ScalpFeatureEngine | None = None
+        self._last_regime_state: MarketRegimeState | None = None
+        self._last_probs: torch.Tensor | None = None
+        self._last_proposal: TradeProposal | None = None
+
         # Preload model/scaler bundle (pre-flight)
         model_path = Path(self.config.model.model_artifact_path)
         self._bundle = self._load_or_create_bundle(model_path=model_path, force_fresh=self.force_fresh_model)
@@ -579,6 +586,13 @@ class LiveEngine:
             survival_mode=self._survival_mode_active,
         )
         self.audit.log_signal(proposal)
+
+        # Update synchronization properties for the Web backend
+        self._last_tick = tick
+        self._last_fv = fv
+        self._last_regime_state = regime_state
+        self._last_probs = probs
+        self._last_proposal = proposal
 
         # Risk + order build
         order: TradeOrder | None = None

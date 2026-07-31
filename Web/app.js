@@ -4,10 +4,22 @@
 let eventSource = null;
 let currentTab = 'tab-monitoring';
 let currentFeatureCategory = 'volatility';
-let candleData = []; // [{time, open, high, low, close}]
+let candleData = []; // [{time, open, high, low, close, volume, is_complete}]
 let predictions = []; // [{time, action, confidence, actual_delta, outcome}]
-let chartScaleX = 1;
 let selectedConfig = {};
+
+// Chart state variables for interactive Zoom, Pan, Drag, and Tooltip
+let liveMode = true; // Auto scroll to newest candle
+let uiPaused = false; // Ignore incoming state updates
+let candleWidth = 10;
+let candleGap = 3;
+let chartPanX = 0; // Negative values translate to historical panning
+let isDragging = false;
+let dragStartX = 0;
+let lastPanX = 0;
+let lastTouchDist = 0; // Pinch to zoom support
+let crosshairX = -1;
+let crosshairY = -1;
 
 // On Startup
 window.addEventListener('load', () => {
@@ -21,7 +33,159 @@ function initApp() {
     console.log("Nexus Scalp Engine Front-End Booted.");
     // Hook up some simulation button controls
     document.getElementById('btn-toggle-engine').addEventListener('click', toggleEngineRunning);
+
+    // Register interactive zoom and pan events on canvas container
+    const container = document.getElementById('chart-container');
+    const canvas = document.getElementById('candleChart');
+    if (container && canvas) {
+        // Drag scrolling (mouse)
+        container.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            dragStartX = e.clientX;
+            lastPanX = chartPanX;
+            liveMode = false;
+            updateLiveToggleUI();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            // Mouse move coordinate track for crosshair tooltip
+            const rect = canvas.getBoundingClientRect();
+            crosshairX = e.clientX - rect.left;
+            crosshairY = e.clientY - rect.top;
+
+            if (isDragging) {
+                const deltaX = e.clientX - dragStartX;
+                chartPanX = lastPanX + deltaX;
+                drawChart();
+            } else {
+                updateCrosshairTooltip();
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        // Mousewheel zoom centered on pointer
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const priceX = mouseX - chartPanX;
+
+            const oldWidth = candleWidth;
+            if (e.deltaY < 0) {
+                candleWidth = Math.min(50, candleWidth + 1);
+            } else {
+                candleWidth = Math.max(3, candleWidth - 1);
+            }
+
+            // Adjust pan position to keep zoom centered under pointer
+            const ratio = candleWidth / oldWidth;
+            chartPanX = mouseX - priceX * ratio;
+            liveMode = false;
+            updateLiveToggleUI();
+            drawChart();
+        }, { passive: false });
+
+        // Touch swipe scrolling & pinch-to-zoom (mobile)
+        container.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            liveMode = false;
+            updateLiveToggleUI();
+            if (e.touches.length === 1) {
+                dragStartX = e.touches[0].clientX;
+                lastPanX = chartPanX;
+            } else if (e.touches.length === 2) {
+                lastTouchDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+            }
+        });
+
+        container.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            if (e.touches.length === 1) {
+                const deltaX = e.touches[0].clientX - dragStartX;
+                chartPanX = lastPanX + deltaX;
+                drawChart();
+            } else if (e.touches.length === 2) {
+                const dist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                const delta = dist - lastTouchDist;
+                lastTouchDist = dist;
+                candleWidth = Math.max(3, Math.min(50, candleWidth + (delta * 0.05)));
+                drawChart();
+            }
+        });
+
+        container.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+
+        container.addEventListener('mouseleave', () => {
+            crosshairX = -1;
+            crosshairY = -1;
+            updateCrosshairTooltip();
+        });
+    }
+
+    // Window auto-resize handling
+    window.addEventListener('resize', () => {
+        if (currentTab === 'tab-monitoring') {
+            drawChart();
+        }
+    });
+
     // Render initial empty candle chart
+    drawChart();
+}
+
+function toggleLiveMode() {
+    liveMode = !liveMode;
+    updateLiveToggleUI();
+    if (liveMode) {
+        autoFitChart();
+    }
+}
+
+function updateLiveToggleUI() {
+    const btn = document.getElementById('btn-live-toggle');
+    if (btn) {
+        if (liveMode) {
+            btn.className = "px-2 py-0.5 rounded bg-accentCyan/10 text-accentCyan hover:bg-accentCyan/20 border border-accentCyan/30 transition";
+        } else {
+            btn.className = "px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-gray-400 transition";
+        }
+    }
+}
+
+function togglePlayPause() {
+    uiPaused = !uiPaused;
+    const btn = document.getElementById('btn-play-pause');
+    if (btn) {
+        if (uiPaused) {
+            btn.innerHTML = `<i class="fa-solid fa-play mr-1"></i> Resume UI`;
+            btn.className = "px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 transition";
+        } else {
+            btn.innerHTML = `<i class="fa-solid fa-pause mr-1"></i> Pause UI`;
+            btn.className = "px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-gray-300 transition";
+        }
+    }
+}
+
+function autoFitChart() {
+    const canvas = document.getElementById('candleChart');
+    if (!canvas || candleData.length === 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width;
+
+    // Auto calculate ideal candle width and pan to fit all elements
+    candleWidth = Math.max(3, Math.min(30, (w - 100) / candleData.length - candleGap));
+    chartPanX = w - 60 - candleData.length * (candleWidth + candleGap);
     drawChart();
 }
 
@@ -81,6 +245,8 @@ function startSSE() {
 
 // Handle Incoming Live Market Tick & State Updates
 function handleIncomingLiveTick(payload) {
+    if (uiPaused) return; // Prevent updates if user paused the visualizer
+
     // Update Connection State badge
     const badge = document.getElementById('system-status-badge');
     if (payload.engine_running) {
@@ -105,7 +271,10 @@ function handleIncomingLiveTick(payload) {
     document.getElementById('monitor-bid').textContent = payload.bid.toFixed(2);
     document.getElementById('monitor-ask').textContent = payload.ask.toFixed(2);
     document.getElementById('monitor-spread').textContent = `${payload.spread} pts`;
-    document.getElementById('monitor-atr').textContent = payload.atr.toFixed(2);
+
+    // Display raw realized volatility or ATR depending on source
+    const volVal = payload.atr;
+    document.getElementById('monitor-atr').textContent = (volVal < 0.1) ? volVal.toFixed(6) : volVal.toFixed(2);
     document.getElementById('monitor-regime').textContent = payload.regime;
 
     // AI Prediction Card
@@ -135,11 +304,20 @@ function handleIncomingLiveTick(payload) {
     document.getElementById('acc-drawdown').textContent = `${payload.account.drawdown.toFixed(2)}%`;
     document.getElementById('acc-winrate').textContent = `${payload.account.win_rate.toFixed(1)}%`;
 
-    // Dynamic Candle updates
+    // Dynamic Candle updates (Single Source of truth includes forming bar)
     if (payload.bars && payload.bars.length > 0) {
         candleData = payload.bars;
         if (currentTab === 'tab-monitoring') {
+            if (liveMode && !isDragging) {
+                // Pin view to the right side (newest bar) in live tracking mode
+                const canvas = document.getElementById('candleChart');
+                if (canvas) {
+                    const rect = canvas.getBoundingClientRect();
+                    chartPanX = rect.width - 60 - candleData.length * (candleWidth + candleGap);
+                }
+            }
             drawChart();
+            updateCrosshairTooltip();
         }
     }
 
@@ -156,7 +334,14 @@ function handleIncomingLiveTick(payload) {
     }
 }
 
-// Draw candlestick data onto HTML5 Canvas
+// Helper to retrieve visible candles indices
+function getVisibleIndices(w) {
+    const startIdx = Math.max(0, Math.floor(-chartPanX / (candleWidth + candleGap)));
+    const endIdx = Math.min(candleData.length - 1, Math.ceil((w - 60 - chartPanX) / (candleWidth + candleGap)));
+    return { startIdx, endIdx };
+}
+
+// Draw candlestick data onto HTML5 Canvas with smooth responsive rendering and auto scaling
 function drawChart() {
     const canvas = document.getElementById('candleChart');
     if (!canvas) return;
@@ -176,22 +361,6 @@ function drawChart() {
     ctx.fillStyle = '#090d16';
     ctx.fillRect(0, 0, w, h);
 
-    // Grid lines
-    ctx.strokeStyle = '#121826';
-    ctx.lineWidth = 1;
-    for (let i = 40; i < h; i += 40) {
-        ctx.beginPath();
-        ctx.moveTo(0, i);
-        ctx.lineTo(w, i);
-        ctx.stroke();
-    }
-    for (let i = 50; i < w; i += 50) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i, h);
-        ctx.stroke();
-    }
-
     if (candleData.length === 0) {
         ctx.fillStyle = '#94a3b8';
         ctx.font = '12px sans-serif';
@@ -200,28 +369,52 @@ function drawChart() {
         return;
     }
 
-    // Determine min/max boundaries
+    // Determine boundaries for visible range only (prevents compressed squash look)
+    const { startIdx, endIdx } = getVisibleIndices(w);
     let highPrice = -Infinity;
     let lowPrice = Infinity;
-    candleData.forEach(c => {
+    for (let i = startIdx; i <= endIdx; i++) {
+        const c = candleData[i];
         if (c.high > highPrice) highPrice = c.high;
         if (c.low < lowPrice) lowPrice = c.low;
-    });
+    }
+
+    // Fallback if no candles are visible
+    if (highPrice === -Infinity || lowPrice === Infinity) {
+        candleData.forEach(c => {
+            if (c.high > highPrice) highPrice = c.high;
+            if (c.low < lowPrice) lowPrice = c.low;
+        });
+    }
 
     const priceRange = (highPrice - lowPrice) || 1.0;
-    const padding = priceRange * 0.1;
+    const padding = priceRange * 0.08;
     const minPrice = lowPrice - padding;
     const maxPrice = highPrice + padding;
     const priceRangePadded = maxPrice - minPrice;
 
-    // Bar width calculations
-    const numBars = candleData.length;
-    const barWidth = Math.max(2, (w - 60) / numBars) * chartScaleX;
-    const gap = 2;
+    // Grid lines matched to visible price scaling
+    ctx.strokeStyle = '#121826';
+    ctx.lineWidth = 1;
+    for (let i = 40; i < h - 20; i += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(w - 60, i);
+        ctx.stroke();
+    }
+    // Vertical grid lines
+    const step = (candleWidth + candleGap) * 5;
+    for (let i = chartPanX % step; i < w - 60; i += step) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, h - 20);
+        ctx.stroke();
+    }
 
-    // Draw candles
+    // Draw candles within visible bounds
     candleData.forEach((candle, idx) => {
-        const x = 20 + idx * (barWidth + gap);
+        if (idx < startIdx || idx > endIdx) return;
+        const x = chartPanX + idx * (candleWidth + candleGap);
 
         // Translate price to Y pixels
         const yOpen = h - 20 - ((candle.open - minPrice) / priceRangePadded) * (h - 40);
@@ -230,38 +423,120 @@ function drawChart() {
         const yLow = h - 20 - ((candle.low - minPrice) / priceRangePadded) * (h - 40);
 
         const isGreen = candle.close >= candle.open;
+        // Styling matching professional TradingView layout
         const color = isGreen ? '#10b981' : '#f43f5e';
 
         ctx.strokeStyle = color;
         ctx.fillStyle = color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = Math.max(1, candleWidth * 0.15);
 
         // Draw shadow wick line
         ctx.beginPath();
-        ctx.moveTo(x + barWidth / 2, yHigh);
-        ctx.lineTo(x + barWidth / 2, yLow);
+        ctx.moveTo(x + candleWidth / 2, yHigh);
+        ctx.lineTo(x + candleWidth / 2, yLow);
         ctx.stroke();
 
         // Draw solid candle body
         const rectHeight = Math.max(1, Math.abs(yClose - yOpen));
-        ctx.fillRect(x, Math.min(yOpen, yClose), barWidth, rectHeight);
+        ctx.fillRect(x, Math.min(yOpen, yClose), candleWidth, rectHeight);
+
+        // Draw light dashed border on uncompleted live forming candles
+        if (candle.is_complete === false) {
+            ctx.strokeStyle = '#38bdf8';
+            ctx.setLineDash([2, 2]);
+            ctx.strokeRect(x, Math.min(yOpen, yClose), candleWidth, rectHeight);
+            ctx.setLineDash([]);
+        }
     });
 
     // Draw side price scale axis labels
     ctx.fillStyle = '#475569';
     ctx.font = '9px monospace';
-    ctx.textAlign = 'right';
-    const numPriceLabels = 5;
+    ctx.textAlign = 'left';
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(w - 60, 0);
+    ctx.lineTo(w - 60, h - 20);
+    ctx.stroke();
+
+    const numPriceLabels = 6;
     for (let i = 0; i <= numPriceLabels; i++) {
         const p = minPrice + (priceRangePadded * i) / numPriceLabels;
         const y = h - 20 - (i / numPriceLabels) * (h - 40);
-        ctx.fillText(p.toFixed(2), w - 5, y + 3);
+        ctx.fillText(p.toFixed(2), w - 55, y + 3);
+    }
+
+    // Draw crosshair hover guides if active inside bounds
+    if (crosshairX >= 0 && crosshairX < w - 60 && crosshairY >= 0 && crosshairY < h - 20) {
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 1;
+
+        // Horiz cross
+        ctx.beginPath();
+        ctx.moveTo(0, crosshairY);
+        ctx.lineTo(w - 60, crosshairY);
+        ctx.stroke();
+
+        // Vert cross
+        ctx.beginPath();
+        ctx.moveTo(crosshairX, 0);
+        ctx.lineTo(crosshairX, h - 20);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+}
+
+// Update crosshair info bubble overlay details
+function updateCrosshairTooltip() {
+    const canvas = document.getElementById('candleChart');
+    const tooltip = document.getElementById('chart-tooltip');
+    if (!canvas || !tooltip || candleData.length === 0) return;
+
+    const w = canvas.getBoundingClientRect().width;
+    const h = canvas.getBoundingClientRect().height;
+
+    if (crosshairX < 0 || crosshairX >= w - 60 || crosshairY < 0 || crosshairY >= h - 20) {
+        tooltip.classList.add('hidden');
+        return;
+    }
+
+    // Find the candle under mouse crosshair
+    const targetIdx = Math.floor((crosshairX - chartPanX) / (candleWidth + candleGap));
+    if (targetIdx >= 0 && targetIdx < candleData.length) {
+        const c = candleData[targetIdx];
+        const isGreen = c.close >= c.open;
+        const ohlcText = `
+            <div class="flex justify-between space-x-4">
+                <span>Time: ${new Date(c.time).toLocaleTimeString()}</span>
+                <span class="${isGreen ? 'text-emerald-400' : 'text-rose-400'}">${c.is_complete ? 'Completed' : 'Forming'}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-x-3 mt-1 text-[9px] text-gray-400">
+                <div>O: <span class="text-white font-bold">${c.open.toFixed(2)}</span></div>
+                <div>H: <span class="text-white font-bold">${c.high.toFixed(2)}</span></div>
+                <div>L: <span class="text-white font-bold">${c.low.toFixed(2)}</span></div>
+                <div>C: <span class="text-white font-bold">${c.close.toFixed(2)}</span></div>
+                <div>V: <span class="text-white font-bold">${c.volume}</span></div>
+            </div>
+        `;
+        tooltip.innerHTML = ohlcText;
+        tooltip.classList.remove('hidden');
+
+        // Position tooltip bubble nicely next to mouse cursor
+        tooltip.style.left = `${Math.min(w - 180, crosshairX + 15)}px`;
+        tooltip.style.top = `${Math.min(h - 90, crosshairY + 15)}px`;
+    } else {
+        tooltip.classList.add('hidden');
     }
 }
 
 function resetChart() {
-    chartScaleX = 1;
-    drawChart();
+    candleWidth = 10;
+    candleGap = 3;
+    liveMode = true;
+    updateLiveToggleUI();
+    autoFitChart();
 }
 
 // Populate Broker Position Management Table
