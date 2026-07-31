@@ -209,3 +209,50 @@ def test_api_endpoints(temp_audit_repo: AuditRepository) -> None:
     target_rule = next(r for r in rules if r["rule_name"] == "RULE_FVG_SNIPER_FILL")
     assert target_rule["is_enabled"] is True
     assert json.loads(target_rule["parameters"])["fvg_min_size_pip"] == 1.2
+
+
+def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> None:
+    """Verifies that hold_score drops dynamically based on real-time drawdown and spread metrics."""
+    adapter = MagicMock()
+    om = OrderLifecycleManager(adapter=adapter, audit_repo=temp_audit_repo)
+
+    pos = Position(
+        ticket=1002,
+        symbol="XAUUSD",
+        type=OrderType.BUY,
+        volume=1.0,
+        price_open=2330.0,
+        sl=2320.0,
+        tp=2350.0,
+        profit=-50.0,
+        magic=888101
+    )
+
+    # Mock features and smart metrics
+    fv = MagicMock()
+    fv.atr_m1 = 1.0
+    fv.is_above_kumo = False
+    fv.is_below_kumo = False
+
+    om._entry_timestamps[1002] = datetime.now(UTC)
+    om._entry_prices[1002] = 2330.0
+    om._entry_sls[1002] = 2320.0
+    om._time_in_drawdown_sec[1002] = 0.0
+
+    # 1. Price is at 2330.0 (No loss yet, no time in drawdown)
+    score1, reasons = om._calculate_hold_value_score(pos, 2330.0, fv, 0.25, 1.0)
+    assert score1 == 100
+
+    # 2. Price drops to 2321.0 (90% of the way to SL)
+    # The loss is 9.0 points out of 10.0 initial risk.
+    # Penalty 1 should be ratio (0.90) * 40 = 36 points.
+    score2, reasons = om._calculate_hold_value_score(pos, 2321.0, fv, 0.25, 1.0)
+    assert score2 == 64
+    assert any("DRAWDOWN_PENALTY" in r for r in reasons)
+
+    # 3. Simulate high time in drawdown (decay)
+    om._time_in_drawdown_sec[1002] = 10.0
+    # ratio = 10.0 / ~0.01 > 0.70 -> Penalty 2 (-30) applied
+    score3, reasons = om._calculate_hold_value_score(pos, 2330.0, fv, 0.25, 1.0)
+    assert score3 == 70
+    assert any("TIME_IN_LOSS_DECAY_PENALTY" in r for r in reasons)
