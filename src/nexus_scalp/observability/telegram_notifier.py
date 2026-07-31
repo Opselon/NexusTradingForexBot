@@ -8,14 +8,14 @@ trade open/close notifications, risk events, account health, and ICT structural 
 break-even locks, trailing stops, and trade exits are cleanly replied to the original order message.
 """
 
-from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
-from typing import Any, Dict, Optional
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
-from nexus_scalp.domain.models import AccountInfo, Position, TradeOrder
+from nexus_scalp.domain.models import AccountInfo, TradeOrder
 from nexus_scalp.features.scalp_features import FeatureVector
 
 logger = logging.getLogger(__name__)
@@ -35,14 +35,14 @@ class TelegramNotifier:
         # Dedicated background thread pool preventing blocking of the 50ms hot tick loop
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="telegram_alert")
 
-    def _send_msg_sync(self, html_text: str, reply_to_message_id: Optional[int] = None) -> Optional[int]:
+    def _send_msg_sync(self, html_text: str, reply_to_message_id: int | None = None) -> int | None:
         """
         Sends synchronous HTTP POST request to Telegram API and returns the generated message_id.
         """
         if not self.enabled:
             return None
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "chat_id": self.admin_id,
             "text": html_text,
             "parse_mode": "HTML",
@@ -72,7 +72,7 @@ class TelegramNotifier:
             logger.error("Failed to dispatch Telegram message: %s", e)
             return None
 
-    def send(self, html_text: str, reply_to_message_id: Optional[int] = None) -> Optional[int]:
+    def send(self, html_text: str, reply_to_message_id: int | None = None) -> int | None:
         """
         Dispatches message payload to background thread pool.
         Returns message_id when needed for message threading.
@@ -89,7 +89,7 @@ class TelegramNotifier:
     # 20+ ENTERPRISE NOTIFICATION METHOD TEMPLATES (WITH REPLY-THREADING)
     # ==========================================================================
 
-    def notify_startup(self, symbol: str, mode: str, balance: float, equity: float) -> Optional[int]:
+    def notify_startup(self, symbol: str, mode: str, balance: float, equity: float) -> int | None:
         """1. System Launch Banner Alert"""
         msg = (
             f"🚀 <b>NEXUS SCALP ENGINE STARTED</b>\n"
@@ -102,7 +102,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_order_opened(self, order: TradeOrder, risk_usd: float) -> Optional[int]:
+    def notify_order_opened(self, order: TradeOrder, risk_usd: float) -> int | None:
         """
         2. Market/Pending Order Placement Alert.
         [EXPANDED] Returns message_id to allow thread replying for all subsequent order events.
@@ -130,8 +130,8 @@ class TelegramNotifier:
         exit_price: float,
         profit_usd: float,
         profit_pct: float,
-        reply_to_message_id: Optional[int] = None,
-    ) -> Optional[int]:
+        reply_to_message_id: int | None = None,
+    ) -> int | None:
         """3. Order Closed in Profit (Win Alert) - Replies to original open message"""
         msg = (
             f"🎉 <b>PROFITABLE TRADE CLOSED</b>\n"
@@ -153,8 +153,8 @@ class TelegramNotifier:
         exit_price: float,
         loss_usd: float,
         loss_pct: float,
-        reply_to_message_id: Optional[int] = None,
-    ) -> Optional[int]:
+        reply_to_message_id: int | None = None,
+    ) -> int | None:
         """4. Order Closed in Loss Alert - Replies to original open message"""
         msg = (
             f"🔻 <b>TRADE CLOSED IN LOSS</b>\n"
@@ -173,8 +173,8 @@ class TelegramNotifier:
         score: int,
         reasons: str,
         saved_usd: float,
-        reply_to_message_id: Optional[int] = None,
-    ) -> Optional[int]:
+        reply_to_message_id: int | None = None,
+    ) -> int | None:
         """5. Early Cut / Emergency Bailout Alert - Replies to original open message"""
         msg = (
             f"⚡ <b>EARLY EMERGENCY CUT (CAPITAL SAVED)</b>\n"
@@ -187,8 +187,8 @@ class TelegramNotifier:
         return self.send(msg, reply_to_message_id=reply_to_message_id)
 
     def notify_break_even_applied(
-        self, ticket: int, new_sl: float, reply_to_message_id: Optional[int] = None
-    ) -> Optional[int]:
+        self, ticket: int, new_sl: float, reply_to_message_id: int | None = None
+    ) -> int | None:
         """6. Break-Even Risk-Free Lock Alert - Replies to original open message"""
         msg = (
             f"🛡️ <b>BREAK-EVEN APPLIED (RISK-FREE)</b>\n"
@@ -200,8 +200,8 @@ class TelegramNotifier:
         return self.send(msg, reply_to_message_id=reply_to_message_id)
 
     def notify_trailing_stop_advanced(
-        self, ticket: int, new_sl: float, current_price: float, reply_to_message_id: Optional[int] = None
-    ) -> Optional[int]:
+        self, ticket: int, new_sl: float, current_price: float, reply_to_message_id: int | None = None
+    ) -> int | None:
         """7. Trailing Stop Step Advanced Alert - Replies to original open message"""
         msg = (
             f"📈 <b>TRAILING STOP ADVANCED</b>\n"
@@ -212,7 +212,7 @@ class TelegramNotifier:
         )
         return self.send(msg, reply_to_message_id=reply_to_message_id)
 
-    def notify_market_extremes(self, symbol: str, high_50: float, low_50: float, range_pos_pct: float) -> Optional[int]:
+    def notify_market_extremes(self, symbol: str, high_50: float, low_50: float, range_pos_pct: float) -> int | None:
         """8. Market Extreme Levels (Peak/Floor) Alert"""
         pos_type = "🔥 EXTREME HIGH (PEAK)" if range_pos_pct >= 0.90 else "❄️ EXTREME LOW (FLOOR)"
         msg = (
@@ -225,7 +225,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_choch_detected(self, symbol: str, direction: str) -> Optional[int]:
+    def notify_choch_detected(self, symbol: str, direction: str) -> int | None:
         """9. ICT Change of Character (ChoCh) Alert"""
         emoji = "🟢" if direction == "BULLISH" else "🔴"
         msg = (
@@ -237,7 +237,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_liquidity_sweep(self, symbol: str, sweep_type: str) -> Optional[int]:
+    def notify_liquidity_sweep(self, symbol: str, sweep_type: str) -> int | None:
         """10. Liquidity Sweep & Stop Hunt Alert"""
         msg = (
             f"🧹 <b>LIQUIDITY SWEEP / STOP HUNT DETECTED</b>\n"
@@ -248,7 +248,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_fvg_detected(self, symbol: str, fvg_type: str) -> Optional[int]:
+    def notify_fvg_detected(self, symbol: str, fvg_type: str) -> int | None:
         """11. Fair Value Gap Imbalance Alert"""
         msg = (
             f"📐 <b>ICT FAIR VALUE GAP (FVG) ACTIVE</b>\n"
@@ -259,7 +259,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_order_block(self, symbol: str, ob_type: str) -> Optional[int]:
+    def notify_order_block(self, symbol: str, ob_type: str) -> int | None:
         """12. Institutional Order Block Alert"""
         msg = (
             f"🧱 <b>INSTITUTIONAL ORDER BLOCK DETECTED</b>\n"
@@ -269,7 +269,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_survival_mode_changed(self, active: bool, drawdown_pct: float) -> Optional[int]:
+    def notify_survival_mode_changed(self, active: bool, drawdown_pct: float) -> int | None:
         """13. Account Survival Mode Status Alert"""
         status = "🔴 ACTIVATED (HIGH CONVICTION ONLY)" if active else "🟢 DEACTIVATED (NORMAL TRADING)"
         msg = (
@@ -279,7 +279,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_account_health(self, account: AccountInfo, drawdown_pct: float) -> Optional[int]:
+    def notify_account_health(self, account: AccountInfo, drawdown_pct: float) -> int | None:
         """14. Executive Account Balance Summary"""
         msg = (
             f"📊 <b>ACCOUNT FINANCIAL HEALTH REPORT</b>\n"
@@ -293,7 +293,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_spread_spike(self, symbol: str, current_spread: float, max_allowed: float) -> Optional[int]:
+    def notify_spread_spike(self, symbol: str, current_spread: float, max_allowed: float) -> int | None:
         """15. Abnormal Spread Spike Protection Alert"""
         msg = (
             f"⚠️ <b>SPREAD SPIKE DETECTED (TRADE BLOCKED)</b>\n"
@@ -304,7 +304,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_volume_anomaly(self, symbol: str, volume: float) -> Optional[int]:
+    def notify_volume_anomaly(self, symbol: str, volume: float) -> int | None:
         """16. Smart Money High Volume Anomaly Alert"""
         msg = (
             f"🌊 <b>SMART MONEY VOLUME ANOMALY</b>\n"
@@ -314,7 +314,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_kill_switch_activated(self, reason: str) -> Optional[int]:
+    def notify_kill_switch_activated(self, reason: str) -> int | None:
         """17. Emergency Kill Switch Alert"""
         msg = (
             f"🚨 <b>EMERGENCY KILL SWITCH ACTIVATED</b>\n"
@@ -324,7 +324,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_error(self, context: str, error_msg: str) -> Optional[int]:
+    def notify_error(self, context: str, error_msg: str) -> int | None:
         """18. System Operational Error Alert"""
         msg = (
             f"⚠️ <b>SYSTEM OPERATIONAL ERROR</b>\n"
@@ -334,7 +334,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_market_summary(self, symbol: str, features: FeatureVector) -> Optional[int]:
+    def notify_market_summary(self, symbol: str, features: FeatureVector) -> int | None:
         """19. Periodic Market Structure Summary"""
         msg = (
             f"🌐 <b>MARKET TELEMETRY RADAR SUMMARY</b>\n"
@@ -347,7 +347,7 @@ class TelegramNotifier:
         )
         return self.send(msg)
 
-    def notify_shutdown(self, reason: str = "User Initiated") -> Optional[int]:
+    def notify_shutdown(self, reason: str = "User Initiated") -> int | None:
         """20. System Shutdown Alert"""
         msg = (
             f"🛑 <b>NEXUS SCALP ENGINE SHUTTING DOWN</b>\n"

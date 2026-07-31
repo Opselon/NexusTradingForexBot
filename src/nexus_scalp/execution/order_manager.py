@@ -24,10 +24,10 @@ Invariants:
     - Full Traceability: Every modification, partial close, or cancellation is audited.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import math
-from typing import Any, Dict, List, Optional, Set, Tuple
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.enums import OrderType
@@ -134,7 +134,7 @@ class OrderLifecycleManager:
     def __init__(
         self,
         adapter: IMT5Port,
-        audit_repo: Optional[AuditRepository] = None,
+        audit_repo: AuditRepository | None = None,
         be_trigger_usd: float = 1.00,         # Dynamic base trigger ($1.00 movement before BE lock)
         be_lock_usd: float = 0.25,            # Locks +$0.25 to cover commissions and spread
         trailing_distance_usd: float = 1.50,  # ATR-scaled dynamic trailing distance for Gold noise
@@ -146,7 +146,7 @@ class OrderLifecycleManager:
     ) -> None:
         self.adapter = adapter
         self.audit = audit_repo or AuditRepository()
-        self._processed_orders: Dict[str, bool] = {}
+        self._processed_orders: dict[str, bool] = {}
 
         self.be_trigger = be_trigger_usd
         self.be_lock = be_lock_usd
@@ -160,28 +160,28 @@ class OrderLifecycleManager:
         self.eta_coefficient = eta_coefficient
 
         # State Tracking for Metrics (Ticket -> Primitive)
-        self._partial_closed_tickets: Dict[int, bool] = {}
-        self._mfe_tracker: Dict[int, float] = {}  # Maximum Favorable Excursion
-        self._mae_tracker: Dict[int, float] = {}  # Maximum Adverse Excursion
-        self._entry_timestamps: Dict[int, datetime] = {}
-        self._last_tick_timestamps: Dict[int, datetime] = {}
+        self._partial_closed_tickets: dict[int, bool] = {}
+        self._mfe_tracker: dict[int, float] = {}  # Maximum Favorable Excursion
+        self._mae_tracker: dict[int, float] = {}  # Maximum Adverse Excursion
+        self._entry_timestamps: dict[int, datetime] = {}
+        self._last_tick_timestamps: dict[int, datetime] = {}
 
         # Advanced Telemetry Trackers
-        self._time_in_profit_sec: Dict[int, float] = {}
-        self._time_in_drawdown_sec: Dict[int, float] = {}
-        self._peak_profit_usd: Dict[int, float] = {}
-        self._peak_drawdown_usd: Dict[int, float] = {}
+        self._time_in_profit_sec: dict[int, float] = {}
+        self._time_in_drawdown_sec: dict[int, float] = {}
+        self._peak_profit_usd: dict[int, float] = {}
+        self._peak_drawdown_usd: dict[int, float] = {}
 
         # Local State Features (LSF) Engine & Desync State Trackers
-        self._lsf_state: Dict[int, Dict[str, float]] = {}
-        self._last_seen_ts: Dict[int, datetime] = {}
-        self._stagnation_ticks: Dict[int, int] = {}
-        self._adverse_ticks: Dict[int, int] = {}
-        self._favorable_ticks: Dict[int, int] = {}
-        self._hold_score_tracker: Dict[int, int] = {}
-        self._rescue_registered_tickets: Dict[int, bool] = {}
-        self._last_modify_sl: Dict[int, float] = {}
-        self._last_price_tracker: Dict[int, float] = {}
+        self._lsf_state: dict[int, dict[str, float]] = {}
+        self._last_seen_ts: dict[int, datetime] = {}
+        self._stagnation_ticks: dict[int, int] = {}
+        self._adverse_ticks: dict[int, int] = {}
+        self._favorable_ticks: dict[int, int] = {}
+        self._hold_score_tracker: dict[int, int] = {}
+        self._rescue_registered_tickets: dict[int, bool] = {}
+        self._last_modify_sl: dict[int, float] = {}
+        self._last_price_tracker: dict[int, float] = {}
 
     def execute_order(self, order: TradeOrder) -> bool:
         """Submits trade deal to broker adapter with duplicate submission prevention."""
@@ -211,7 +211,7 @@ class OrderLifecycleManager:
             return True
         return False
 
-    def _safe_feature_float(self, features: Optional[FeatureVector], attr_name: str, default: float) -> float:
+    def _safe_feature_float(self, features: FeatureVector | None, attr_name: str, default: float) -> float:
         """Safely extracts a floating point attribute from FeatureVector with fallback."""
         if features is None:
             return default
@@ -227,9 +227,9 @@ class OrderLifecycleManager:
     def _estimate_liquidation_impact(
         self,
         volume: float,
-        symbol_info: Optional[SymbolInfo],
+        symbol_info: SymbolInfo | None,
         atr: float,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """
         Almgren-Chriss Temporary Market Impact Model (Strict O(1) Math).
         Calculates the expected slippage incurred if the position were to be liquidated via Market Order.
@@ -396,9 +396,9 @@ class OrderLifecycleManager:
         impact_price_delta: float,
         total_impact_usd: float,
         holding_duration: float,
-        features: Optional[FeatureVector],
-        symbol_info: Optional[SymbolInfo],
-    ) -> Dict[str, Any]:
+        features: FeatureVector | None,
+        symbol_info: SymbolInfo | None,
+    ) -> dict[str, Any]:
         """Calculates 57 derived O(1) position metrics."""
         ticket = pos.ticket
         eps = 1e-9
@@ -593,17 +593,17 @@ class OrderLifecycleManager:
         self,
         pos: Position,
         price_current: float,
-        features: Optional[FeatureVector],
+        features: FeatureVector | None,
         impact_price_delta: float,
         atr: float,
-        smart_metrics: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[int, List[str]]:
+        smart_metrics: dict[str, Any] | None = None,
+    ) -> tuple[int, list[str]]:
         """
         Calculates position Hold Value Score (0 to 100) with Phase 1 Structural Integrity Bonuses
         and Profit Shield Protection.
         """
         score = 100
-        reasons: List[str] = []
+        reasons: list[str] = []
 
         if features is None:
             return max(0, score), reasons
@@ -654,8 +654,8 @@ class OrderLifecycleManager:
         self,
         ticket: int,
         base_score: int,
-        metrics: Dict[str, Any],
-        reasons: List[str],
+        metrics: dict[str, Any],
+        reasons: list[str],
     ) -> int:
         score = base_score
         desync_score = float(metrics.get("desync_score", 0.0))
@@ -677,14 +677,14 @@ class OrderLifecycleManager:
         self,
         pos: Position,
         hold_score: int,
-        metrics: Dict[str, Any],
+        metrics: dict[str, Any],
         net_delta: float,
         gross_delta: float,
         atr: float,
         spread: float,
         holding_duration: float,
         min_stop_gap: float,
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         """
         60-Scenario Router with strict Profit Shield (Never closes winning trades prematurely).
         """
@@ -766,7 +766,7 @@ class OrderLifecycleManager:
         self,
         symbol: str,
         current_tick: TickData,
-        symbol_info: Optional[SymbolInfo] = None,
+        symbol_info: SymbolInfo | None = None,
         atr: float = 1.50,
         max_pending_dist_atr_mult: float = 1.20,
     ) -> None:
@@ -801,9 +801,9 @@ class OrderLifecycleManager:
         self,
         symbol: str,
         current_tick: TickData,
-        feature_vector: Optional[FeatureVector] = None,
-        symbol_info: Optional[SymbolInfo] = None,
-    ) -> List[Position]:
+        feature_vector: FeatureVector | None = None,
+        symbol_info: SymbolInfo | None = None,
+    ) -> list[Position]:
         atr = max(self._safe_feature_float(feature_vector, "atr_m1", 0.80), 0.50)
         self.manage_pending_orders(symbol=symbol, current_tick=current_tick, symbol_info=symbol_info, atr=atr)
 

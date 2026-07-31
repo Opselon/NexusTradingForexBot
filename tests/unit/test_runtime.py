@@ -4,24 +4,24 @@ Runtime and CLI Integration Tests
 Verifies CLI command executions and core LiveEngine event processing at runtime.
 """
 
-from datetime import datetime, timezone, timedelta
+import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
-import pytest
+
 from typer.testing import CliRunner
 
+from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.cli.main import app
-from nexus_scalp.ports.mt5_port import IMT5Port
+from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.models import (
     AccountInfo,
+    Position,
     SymbolInfo,
     TickData,
     TradeOrder,
-    Position,
 )
 from nexus_scalp.market_data.bar_aggregator import BarData
-from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.application.live_engine import LiveEngine
+from nexus_scalp.ports.mt5_port import IMT5Port
 
 
 class MockMT5Port(IMT5Port):
@@ -52,8 +52,8 @@ class MockMT5Port(IMT5Port):
             margin_free=10000.0,
             currency="USD",
         )
-        self.ticks: List[TickData] = []
-        self.positions: List[Position] = []
+        self.ticks: list[TickData] = []
+        self.positions: list[Position] = []
 
     def connect(self) -> bool:
         self._connected = True
@@ -76,14 +76,16 @@ class MockMT5Port(IMT5Port):
             return self.ticks[-1]
         return TickData(
             symbol=symbol,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bid=1.0850,
             ask=1.0852,
             volume=10.0,
         )
 
-    def get_historical_bars(self, symbol: str, timeframe: str = "M1", count: int = 100) -> list[BarData]:
-        now = datetime.now(timezone.utc) - timedelta(minutes=count + 1)
+    def get_historical_bars(
+        self, symbol: str, timeframe: str = "M1", count: int = 100
+    ) -> list[BarData]:
+        now = datetime.now(UTC) - timedelta(minutes=count + 1)
         bars = []
         for i in range(count):
             bar_time = now + timedelta(minutes=i)
@@ -162,7 +164,6 @@ def test_live_engine_runtime(tmp_path: Path) -> None:
     engine._preflight_or_raise()
 
     # 3. Cold-start warmup (requires historical bars from adapter)
-    import asyncio
     asyncio.run(engine._cold_start_warmup(config.execution.symbol))
     assert len(engine._rolling_feature_records) > 0
 
@@ -172,7 +173,7 @@ def test_live_engine_runtime(tmp_path: Path) -> None:
     # 5. Live tick ingestion
     tick = TickData(
         symbol=config.execution.symbol,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         bid=1.0850,
         ask=1.0852,
         volume=5.0,

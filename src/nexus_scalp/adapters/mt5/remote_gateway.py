@@ -11,14 +11,14 @@ Key Invariants:
     - Security First: Every request payload signs the body using HMAC SHA-256.
 """
 
-from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
 import time
-from typing import Any, Dict, List, Optional
 import urllib.parse
 import urllib.request
+from datetime import UTC, datetime
+from typing import Any
 
 from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import (
@@ -78,7 +78,11 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
             )
             return True
         except Exception as e:
-            logger.error("Connection failed to Remote MT5 Gateway", error=str(e), gateway_url=self._gateway_url)
+            logger.error(
+                "Connection failed to Remote MT5 Gateway",
+                error=str(e),
+                gateway_url=self._gateway_url,
+            )
             self._is_connected = False
             return False
 
@@ -95,7 +99,7 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         """Async interface for measuring RTT latency."""
         return self._sync_ping()
 
-    async def execute_remote_command(self, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_remote_command(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Async wrapper executing remote RPC commands."""
         return self._send_request(action, payload)
 
@@ -139,7 +143,7 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
 
         dt = datetime.fromisoformat(data["timestamp"])
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
 
         return TickData(
             symbol=symbol,
@@ -151,16 +155,21 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
             flags=int(data.get("flags", 0)),
         )
 
-    def get_historical_bars(self, symbol: str, timeframe: str = "M1", count: int = 100) -> List[BarData]:
+    def get_historical_bars(
+        self, symbol: str, timeframe: str = "M1", count: int = 100
+    ) -> list[BarData]:
         """Fetches historical completed OHLC bars from remote gateway."""
-        res = self._send_request("GET_HISTORICAL_BARS", {"symbol": symbol, "timeframe": timeframe, "count": count})
+        res = self._send_request(
+            "GET_HISTORICAL_BARS",
+            {"symbol": symbol, "timeframe": timeframe, "count": count},
+        )
         data_list = res.get("data", [])
 
-        bars: List[BarData] = []
+        bars: list[BarData] = []
         for b in data_list:
             dt = datetime.fromisoformat(b["timestamp"])
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
 
             bars.append(
                 BarData(
@@ -177,12 +186,12 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
             )
         return bars
 
-    def get_positions(self, symbol: Optional[str] = None) -> List[Position]:
+    def get_positions(self, symbol: str | None = None) -> list[Position]:
         """Retrieves open positions from remote MT5 terminal."""
         res = self._send_request("GET_POSITIONS", {"symbol": symbol})
         raw_list = res.get("data", [])
 
-        positions: List[Position] = []
+        positions: list[Position] = []
         for pos in raw_list:
             order_type = OrderType.BUY if pos["type"] == "BUY" else OrderType.SELL
             positions.append(
@@ -220,9 +229,17 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         success = res.get("status") == "SUCCESS"
 
         if success:
-            logger.info("Remote gateway executed order successfully", order_id=order.order_id, ticket=res.get("ticket"))
+            logger.info(
+                "Remote gateway executed order successfully",
+                order_id=order.order_id,
+                ticket=res.get("ticket"),
+            )
         else:
-            logger.error("Remote gateway order execution failed", order_id=order.order_id, reason=res.get("message"))
+            logger.error(
+                "Remote gateway order execution failed",
+                order_id=order.order_id,
+                reason=res.get("message"),
+            )
 
         return success
 
@@ -247,7 +264,7 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         )
         return res.get("status") == "SUCCESS"
 
-    def _send_request(self, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _send_request(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         """
         Sends an authenticated HMAC HTTP POST request to the remote gateway.
         """
@@ -255,7 +272,7 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         body_data = json.dumps({"action": action, "payload": payload}).encode("utf-8")
 
         timestamp = str(int(time.time()))
-        message_to_sign = f"{timestamp}.{body_data.decode('utf-8')}".encode("utf-8")
+        message_to_sign = f"{timestamp}.{body_data.decode('utf-8')}".encode()
         signature = hmac.new(
             self._secret_token.encode("utf-8"),
             msg=message_to_sign,

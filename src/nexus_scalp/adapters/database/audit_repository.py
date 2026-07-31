@@ -17,7 +17,7 @@ import queue
 import sqlite3
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from nexus_scalp.domain.models import AccountInfo, TradeOrder, TradeProposal
 from nexus_scalp.observability.logging import get_logger
@@ -40,9 +40,9 @@ class AuditRepository:
         self._db_path = self._db_url.replace("sqlite:///", "") if self._is_sqlite else ""
         
         self._flush_interval = flush_interval_sec
-        self._queue: queue.Queue[Tuple[str, tuple]] = queue.Queue(maxsize=10000)
+        self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
         self._running = False
-        self._worker_thread: Optional[threading.Thread] = None
+        self._worker_thread: threading.Thread | None = None
 
         self._setup_storage()
         self._start_background_worker()
@@ -123,7 +123,7 @@ class AuditRepository:
         conn = sqlite3.connect(self._db_path, timeout=10.0)
         
         while self._running or not self._queue.empty():
-            batch: List[Tuple[str, tuple]] = []
+            batch: list[tuple[str, tuple]] = []
             try:
                 # Wait for records, batch them up to 500 per transaction
                 while len(batch) < 500:
@@ -224,7 +224,7 @@ class AuditRepository:
         except queue.Full:
             pass # Non-critical if occasional snapshot drops
 
-    def get_last_account_snapshot(self) -> Optional[Dict[str, Any]]:
+    def get_last_account_snapshot(self) -> dict[str, Any] | None:
         """
         Synchronous read to retrieve the last known account state for Crash Recovery.
         Typically called once during system boot in live_engine.py.

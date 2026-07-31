@@ -18,9 +18,10 @@ Invariants:
 """
 
 import math
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class CausalConv1d(nn.Module):

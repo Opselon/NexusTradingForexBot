@@ -19,8 +19,8 @@ Invariants:
 """
 
 import math
-from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from datetime import UTC
+
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,7 +33,7 @@ logger = get_logger("nexus_scalp.features.scalp_features")
 # ==============================================================================
 # EXPLICIT 40D FEATURE MAPPING CONTRACT
 # ==============================================================================
-FEATURE_NAMES: Tuple[str, ...] = (
+FEATURE_NAMES: tuple[str, ...] = (
     "upper_wick_ratio",             # feat_0
     "lower_wick_ratio",             # feat_1
     "body_to_range_ratio",          # feat_2
@@ -157,7 +157,7 @@ class FeatureVector(BaseModel):
     dist_to_ema_50: float
     cross_asset_z_score: float
 
-    def to_tensor_input(self) -> List[float]:
+    def to_tensor_input(self) -> list[float]:
         """
         Converts the feature snapshot into the exact 40-dimensional tensor input expected by ScalpNet v3.
         Applies rigorous ATR-based normalization, sanitization, and clamps values to [-3.0, +3.0].
@@ -280,10 +280,10 @@ class ScalpFeatureEngine:
 
     def compute_from_bars(
         self, 
-        completed_bars: List[BarData], 
+        completed_bars: list[BarData],
         current_tick: TickData,
-        benchmark_bars: Optional[List[float]] = None,
-        current_benchmark: Optional[float] = None
+        benchmark_bars: list[float] | None = None,
+        current_benchmark: float | None = None
     ) -> FeatureVector:
         """
         Hot-path execution computing 40D master feature tensor directly from recent M1 history.
@@ -393,7 +393,7 @@ class ScalpFeatureEngine:
             stop_hunt_depth = float((highs[-1] - recent_high_10) / safe_atr)
 
         # 4. Group 3: Market Sessions & Time-of-Day
-        dt_utc = current_tick.timestamp.astimezone(timezone.utc) if current_tick.timestamp.tzinfo else current_tick.timestamp.replace(tzinfo=timezone.utc)
+        dt_utc = current_tick.timestamp.astimezone(UTC) if current_tick.timestamp.tzinfo else current_tick.timestamp.replace(tzinfo=UTC)
         hour = dt_utc.hour
 
         session_tokyo = bool(0 <= hour < 8)

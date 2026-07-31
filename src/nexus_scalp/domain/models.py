@@ -5,7 +5,7 @@ Contains pure business logic models enforcing structural and domain invariants.
 These models are completely isolated from external frameworks or broker implementations.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -36,8 +36,8 @@ class TickData(BaseModel):
     def validate_utc_timestamp(cls, value: datetime) -> datetime:
         """Enforces that all market tick timestamps must contain UTC timezone information."""
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     @model_validator(mode="after")
     def validate_spread_invariant(self) -> "TickData":
