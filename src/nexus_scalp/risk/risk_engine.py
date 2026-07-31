@@ -35,7 +35,7 @@ class RiskEngine:
         config: RiskConfig,
         max_margin_usage_pct: float = 10.0,
         max_allowed_lots: float = 50.0,
-        eta_coefficient: float = 1500.0,       # Tuned Almgren-Chriss coefficient for XAUUSD micro-scalps
+        eta_coefficient: float = 200.0,        # HFT Calibrated Almgren-Chriss coefficient for Gold micro-lots
         max_impact_reward_ratio: float = 0.45, # Allow up to 45% slippage/reward ratio on tight M1 targets
     ) -> None:
         self.config = config
@@ -60,14 +60,20 @@ class RiskEngine:
         volume: float, 
         symbol_info: SymbolInfo, 
         current_tick: TickData, 
-        atr: float
+        atr: float,
+        order_type: Optional[OrderType] = None,  # Passive Limit Order Awareness
     ) -> float:
         """
         Almgren-Chriss Temporary Market Impact Model (O(1) Hot-Path).
         Calculates expected USD slippage cost based on liquidity depletion and volume size.
+        Passive Limit Orders (BUY_LIMIT / SELL_LIMIT) are Liquidity Makers and incur ZERO taker slippage!
         """
         if symbol_info is None or current_tick is None:
             return float('inf')
+
+        # HFT MARKET MICROSTRUCTURE RULE: Limit orders are Makers and have ZERO taker slippage impact
+        if order_type in (OrderType.BUY_LIMIT, OrderType.SELL_LIMIT):
+            return 0.0
 
         contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
         size_ratio = volume / contract_size
@@ -201,11 +207,14 @@ class RiskEngine:
         final_volume = min(final_volume, symbol_info.volume_max)
 
         # ----------------------------------------------------------------------
-        # 6. ALMGREN-CHRISS MARKET IMPACT & SLIPPAGE GUARD
+        # 6. ALMGREN-CHRISS MARKET IMPACT & SLIPPAGE GUARD (Order-Type Aware)
         # ----------------------------------------------------------------------
         while final_volume >= symbol_info.volume_min:
             expected_reward_usd = (tp_dist_price / symbol_info.point) * tick_val * final_volume
-            slippage_usd = self._estimate_market_impact(final_volume, symbol_info, current_tick, atr)
+            # BUGFIX: Pass proposed_order_type to grant zero slippage impact for Limit orders
+            slippage_usd = self._estimate_market_impact(
+                final_volume, symbol_info, current_tick, atr, order_type=proposed_order_type
+            )
             
             if expected_reward_usd > 0 and (slippage_usd / expected_reward_usd) <= self.max_impact_reward_ratio:
                 break  # Impact bounds respected
