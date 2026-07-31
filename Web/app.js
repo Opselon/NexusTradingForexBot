@@ -279,6 +279,9 @@ function switchTab(tabId, element) {
     if (tabId === 'tab-monitoring') {
         drawChart();
     }
+    if (tabId === 'tab-rules') {
+        loadRules();
+    }
 }
 
 // Server-Sent Events (SSE) Stream Subscriber
@@ -1021,4 +1024,176 @@ async function updateHeartbeats() {
         document.getElementById('tg-channel').textContent = data.tg_enabled ? 'Active' : 'Disabled';
         document.getElementById('tg-status-badge').className = `w-2 h-2 rounded-full ${data.tg_enabled ? 'bg-emerald-400' : 'bg-gray-400'}`;
     } catch (err) {}
+}
+
+// Fetch all rules from database and render the UI panel dynamically
+async function loadRules() {
+    try {
+        const res = await fetch('/api/rules');
+        const rules = await res.json();
+
+        // Categorize rules
+        const categorized = {};
+        rules.forEach(rule => {
+            if (!categorized[rule.category]) {
+                categorized[rule.category] = [];
+            }
+            categorized[rule.category].push(rule);
+        });
+
+        const container = document.getElementById('rules-categories-container');
+        if (!container) return;
+
+        // Render Categorized Grid Panels
+        container.innerHTML = Object.keys(categorized).map(catName => {
+            const catRules = categorized[catName];
+            return `
+                <div class="border border-borderClr bg-darkBg/20 rounded-lg p-5 space-y-4">
+                    <h4 class="text-sm font-black text-accentCyan tracking-wider uppercase border-b border-borderClr pb-2 flex items-center">
+                        <i class="fa-solid fa-folder-open mr-2 text-accentGold"></i> ${catName}
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        ${catRules.map(rule => renderRuleCard(rule)).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error("Failed to load rules", err);
+    }
+}
+
+// Generate premium, responsive HTML card for individual rule control
+function renderRuleCard(rule) {
+    const isChecked = rule.is_enabled ? 'checked' : '';
+    const params = typeof rule.parameters === 'string' ? JSON.parse(rule.parameters) : rule.parameters;
+    const ruleId = rule.rule_name;
+
+    // Build parameter input fields
+    const paramInputs = Object.keys(params).map(key => {
+        const val = params[key];
+        const type = typeof val === 'number' ? 'number' : (typeof val === 'boolean' ? 'checkbox' : 'text');
+        const step = typeof val === 'number' && !Number.isInteger(val) ? '0.01' : '1';
+
+        if (type === 'checkbox') {
+            const cbChecked = val ? 'checked' : '';
+            return `
+                <div class="flex items-center justify-between text-xs py-1">
+                    <span class="text-gray-400 font-semibold font-mono">${key}</span>
+                    <input type="checkbox" id="param-${ruleId}-${key}" ${cbChecked} class="w-3.5 h-3.5 text-accentCyan bg-darkBg border-borderClr rounded cursor-pointer">
+                </div>
+            `;
+        } else {
+            return `
+                <div class="flex flex-col space-y-1 text-xs py-1">
+                    <span class="text-gray-400 font-semibold font-mono">${key}</span>
+                    <input type="${type}" step="${step}" id="param-${ruleId}-${key}" value="${val}" class="bg-darkBg border border-borderClr/60 text-white rounded px-2 py-1 text-[11px] font-mono focus:outline-none focus:border-accentCyan">
+                </div>
+            `;
+        }
+    }).join('');
+
+    return `
+        <div class="bg-panelBg/85 border border-borderClr/80 hover:border-borderClr p-4 rounded-xl flex flex-col justify-between space-y-3 shadow-md hover:shadow-lg hover:shadow-accentCyan/5 transition-all duration-300">
+            <div class="flex items-start justify-between">
+                <div class="space-y-1">
+                    <span class="text-[11px] font-mono font-black text-gray-300 tracking-wider flex items-center">
+                        <i class="fa-solid fa-crosshair text-accentRose mr-1.5 text-[10px]"></i> ${rule.rule_name}
+                    </span>
+                    <p class="text-[10px] text-textMuted font-sans">Dynamic Matrix Scalper</p>
+                </div>
+
+                <!-- Slide Toggle Switch -->
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="toggle-${ruleId}" ${isChecked} onchange="toggleRuleState('${ruleId}')" class="sr-only peer">
+                    <div class="w-9 h-5 bg-darkBg border border-borderClr peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accentCyan peer-checked:after:bg-black peer-checked:after:border-black"></div>
+                </label>
+            </div>
+
+            <!-- Parameters Collapsible Header -->
+            <div class="bg-darkBg/40 border border-borderClr/60 p-2.5 rounded-lg space-y-2">
+                <div class="text-[10px] font-bold text-accentCyan flex items-center justify-between uppercase">
+                    <span>Config Parameters</span>
+                    <i class="fa-solid fa-gears text-textMuted"></i>
+                </div>
+                <div class="space-y-1.5">
+                    ${paramInputs || '<span class="text-[10px] text-textMuted italic">No configurable parameters.</span>'}
+                </div>
+            </div>
+
+            <!-- Action Save Bar -->
+            <div class="flex items-center justify-end pt-1">
+                <button onclick="saveRuleParameters('${ruleId}', '${encodeURIComponent(JSON.stringify(params))}')" class="text-[10px] bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan hover:text-cyan-300 px-2.5 py-1 rounded font-bold border border-accentCyan/20 transition flex items-center space-x-1">
+                    <i class="fa-solid fa-floppy-disk"></i> <span>Save Parameters</span>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+// Toggle enabled status of a specific rule dynamically
+async function toggleRuleState(ruleId) {
+    const isEnabled = document.getElementById(`toggle-${ruleId}`).checked;
+
+    try {
+        const res = await fetch('/api/rules/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rule_name: ruleId,
+                is_enabled: isEnabled,
+                parameters: null
+            })
+        });
+        const result = await res.json();
+        if (result.success) {
+            console.log(`Rule ${ruleId} has been successfully toggled to ${isEnabled}.`);
+        } else {
+            alert("Failed to toggle rule state.");
+        }
+    } catch (err) {
+        console.error("Failed to toggle rule", err);
+    }
+}
+
+// Update specific rule parameters on disk/db
+async function saveRuleParameters(ruleId, originalParamsEncoded) {
+    const originalParams = JSON.parse(decodeURIComponent(originalParamsEncoded));
+    const isEnabled = document.getElementById(`toggle-${ruleId}`).checked;
+
+    const updatedParams = {};
+    Object.keys(originalParams).forEach(key => {
+        const originalVal = originalParams[key];
+        const inputElement = document.getElementById(`param-${ruleId}-${key}`);
+        if (!inputElement) return;
+
+        if (typeof originalVal === 'boolean') {
+            updatedParams[key] = inputElement.checked;
+        } else if (typeof originalVal === 'number') {
+            updatedParams[key] = Number(inputElement.value);
+        } else {
+            updatedParams[key] = inputElement.value;
+        }
+    });
+
+    try {
+        const res = await fetch('/api/rules/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rule_name: ruleId,
+                is_enabled: isEnabled,
+                parameters: updatedParams
+            })
+        });
+        const result = await res.json();
+        if (result.success) {
+            alert(`Parameters for ${ruleId} successfully updated & saved dynamically!`);
+            loadRules(); // reload to refresh Original params state encoded
+        } else {
+            alert("Failed to save parameters.");
+        }
+    } catch (err) {
+        console.error("Failed to save rule parameters", err);
+    }
 }

@@ -52,6 +52,12 @@ class SimulationTickRequest(BaseModel):
     type: str  # 'BUY_PRESSURE', 'SELL_PRESSURE', 'VOLATILE_SWEEP'
 
 
+class ToggleRuleRequest(BaseModel):
+    rule_name: str
+    is_enabled: bool
+    parameters: dict[str, Any] | None = None
+
+
 def create_app(engine_ref: Any = None) -> FastAPI:
     """Creates and configures the FastAPI web server instance."""
     app = FastAPI(title="Nexus Scalp Engine Control Center", version="0.1.0")
@@ -261,6 +267,41 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     @app.get("/api/status")
     def get_status() -> dict[str, Any]:
         return get_system_state()
+
+    # REST APIs: Trading Rules
+    @app.get("/api/rules")
+    def get_trading_rules() -> list[dict[str, Any]]:
+        engine = app.state.engine
+        if engine:
+            return engine.audit.get_trading_rules()
+        else:
+            from nexus_scalp.adapters.database.audit_repository import AuditRepository
+            repo = AuditRepository()
+            return repo.get_trading_rules()
+
+    @app.post("/api/rules/toggle")
+    def toggle_trading_rule(req: ToggleRuleRequest) -> dict[str, Any]:
+        engine = app.state.engine
+        params_json = json.dumps(req.parameters) if req.parameters is not None else None
+
+        if engine:
+            success = engine.audit.toggle_trading_rule(
+                rule_name=req.rule_name,
+                is_enabled=req.is_enabled,
+                parameters_json=params_json
+            )
+            if success and hasattr(engine, "rule_matrix"):
+                engine.rule_matrix.refresh_cache()
+            return {"success": success}
+        else:
+            from nexus_scalp.adapters.database.audit_repository import AuditRepository
+            repo = AuditRepository()
+            success = repo.toggle_trading_rule(
+                rule_name=req.rule_name,
+                is_enabled=req.is_enabled,
+                parameters_json=params_json
+            )
+            return {"success": success}
 
     # REST APIs: Account summary
     @app.get("/api/account/summary")

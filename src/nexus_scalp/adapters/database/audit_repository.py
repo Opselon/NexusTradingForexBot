@@ -70,6 +70,17 @@ class AuditRepository:
         """Creates table schemas including Crash Recovery Snapshots & Regime tracking."""
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS trading_rules_config (
+                rule_name TEXT PRIMARY KEY,
+                is_enabled INTEGER DEFAULT 0,
+                category TEXT NOT NULL,
+                parameters TEXT
+            );
+            """
+        )
+        self._seed_trading_rules(conn)
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS audit_signals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 request_id TEXT NOT NULL,
@@ -478,6 +489,107 @@ class AuditRepository:
         except Exception as e:
             logger.error("Failed to retrieve last account snapshot for Crash Recovery", error=str(e))
         return None
+
+    def _seed_trading_rules(self, conn: sqlite3.Connection) -> None:
+        """Seeds the trading_rules_config table with all 30+ rules, disabled by default."""
+        rules = [
+            # Category 1: SMC
+            ("RULE_FVG_SNIPER_FILL", "Price Hunting & Smart Money Concepts (SMC)", '{"fvg_timeframe": "M1", "fvg_min_size_pip": 0.5}'),
+            ("RULE_JUDAS_SWING_FADE", "Price Hunting & Smart Money Concepts (SMC)", '{"asian_range_pip": 15.0, "fade_reversal_ticks": 5}'),
+            ("RULE_LIQUIDITY_SWEEP_CONFIRM", "Price Hunting & Smart Money Concepts (SMC)", '{"sweep_depth_pip": 1.0, "time_window_sec": 300}'),
+            ("RULE_ORDERBLOCK_TAP_RESERVE", "Price Hunting & Smart Money Concepts (SMC)", '{"ob_timeframe": "M1", "tap_percentage": 50.0}'),
+            ("RULE_WICK_ABSORPTION_PLAY", "Price Hunting & Smart Money Concepts (SMC)", '{"min_wick_ratio": 0.6, "tick_direction_change": true}'),
+            # Category 2: HFT
+            ("RULE_FLASH_MOMENTUM_SCRAPE", "Scalping Micro-Structure & Order Flow (HFT)", '{"volume_spike_multiplier": 3.0, "velocity_percentile": 99.0}'),
+            ("RULE_TICK_IMBALANCE_REVERSAL", "Scalping Micro-Structure & Order Flow (HFT)", '{"ofi_std_dev": -3.0, "min_ticks": 10}'),
+            ("RULE_SPREAD_SQUEEZE_ONLY", "Scalping Micro-Structure & Order Flow (HFT)", '{"spread_percentile": 10.0, "rolling_hour_sec": 3600}'),
+            ("RULE_REJECTION_WALL_BLOCKER", "Scalping Micro-Structure & Order Flow (HFT)", '{"limit_hit_count": 3, "time_window_sec": 60}'),
+            ("RULE_BID_ASK_SPOOF_DETECTOR", "Scalping Micro-Structure & Order Flow (HFT)", '{"vanishing_volume_threshold": 2.5, "spoof_secs": 5}'),
+            # Category 3: Position Management
+            ("RULE_HIT_AND_RUN_EXIT", "In-Trade Hit & Run (Position Management)", '{"m1_bars_exit": 4}'),
+            ("RULE_ZERO_DRAWDOWN_TRAIL", "In-Trade Hit & Run (Position Management)", '{"trigger_profit_pip": 2.0, "lock_profit_pip": 1.0}'),
+            ("RULE_TIME_DECAY_CHOP_EXIT", "In-Trade Hit & Run (Position Management)", '{"decay_minutes": 4.0}'),
+            ("RULE_ATR_EXPANSION_RATCHET", "In-Trade Hit & Run (Position Management)", '{"atr_multiplier": 1.5}'),
+            ("RULE_HEDGE_ON_AI_FLIP", "In-Trade Hit & Run (Position Management)", '{"flip_threshold": 0.8}'),
+            # Category 4: Timing, Zones & Volatility
+            ("RULE_LONDON_NY_KILLZONE_ONLY", "Timing, Zones & Volatility", '{"london_start": "08:00", "ny_end": "16:00"}'),
+            ("RULE_ASIAN_RANGE_FAKEOUT", "Timing, Zones & Volatility", '{"asian_start": "22:00", "asian_end": "06:00"}'),
+            ("RULE_NEWS_SPIKE_FADE", "Timing, Zones & Volatility", '{"news_cooldown_min": 2.0}'),
+            ("RULE_DEAD_ZONE_BLOCKER", "Timing, Zones & Volatility", '{"rollover_start": "23:55", "rollover_end": "00:05"}'),
+            ("RULE_END_OF_HOUR_SQUEEZE", "Timing, Zones & Volatility", '{"squeeze_minute": 59}'),
+            # Category 5: Risk & Account Safeguards
+            ("RULE_CONSECUTIVE_LOSS_FREEZE", "Risk & Account Safeguards", '{"consecutive_losses": 3, "freeze_hours": 1.0}'),
+            ("RULE_DAILY_TARGET_LOCK", "Risk & Account Safeguards", '{"growth_target_pct": 2.0}'),
+            ("RULE_AI_MACRO_ALIGNMENT", "Risk & Account Safeguards", '{"htf_trend": "bearish"}'),
+            ("RULE_TURBO_CONFIDENCE_MULTIPLIER", "Risk & Account Safeguards", '{"confidence_threshold": 95.0}'),
+            ("RULE_CORRELATED_DRAWDOWN_CAP", "Risk & Account Safeguards", '{"max_drawdown_pct": 3.0}'),
+            # Category 6: Advanced Reversion & Mathematics
+            ("RULE_VWAP_ELASTIC_BAND", "Advanced Reversion & Mathematics", '{"std_dev_threshold": 3.5}'),
+            ("RULE_BOLLINGER_BURST_FADE", "Advanced Reversion & Mathematics", '{"bb_period": 20, "bb_std_dev": 2.0}'),
+            ("RULE_SCHMITT_TRIGGER_REGIME_LOCK", "Advanced Reversion & Mathematics", '{"regime_changes": 3, "window_minutes": 10}'),
+            ("RULE_GAP_AND_GO_MOMENTUM", "Advanced Reversion & Mathematics", '{"gap_pip": 2.0, "confirm_seconds": 30}'),
+            ("RULE_CONTRARIAN_RETAIL_TRAP", "Advanced Reversion & Mathematics", '{"rsi_threshold": 85.0}'),
+        ]
+        for name, cat, params in rules:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO trading_rules_config (rule_name, is_enabled, category, parameters)
+                VALUES (?, 0, ?, ?);
+                """,
+                (name, cat, params),
+            )
+
+    def get_trading_rules(self) -> list[dict[str, Any]]:
+        """Retrieves all 30+ trading rules with their enablement status and parameters."""
+        if not self._is_sqlite:
+            return []
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("SELECT rule_name, is_enabled, category, parameters FROM trading_rules_config")
+                return [
+                    {
+                        "rule_name": r["rule_name"],
+                        "is_enabled": bool(r["is_enabled"]),
+                        "category": r["category"],
+                        "parameters": r["parameters"],
+                    }
+                    for r in cursor.fetchall()
+                ]
+        except Exception as e:
+            logger.error("Failed to retrieve trading rules", error=str(e))
+            return []
+
+    def toggle_trading_rule(self, rule_name: str, is_enabled: bool, parameters_json: str | None = None) -> bool:
+        """Toggles the enablement of a trading rule and optionally updates its parameters."""
+        if not self._is_sqlite:
+            return False
+        try:
+            # Execute synchronously to avoid thread-safety mismatch with web thread toggles
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                if parameters_json is not None:
+                    conn.execute(
+                        """
+                        UPDATE trading_rules_config
+                        SET is_enabled = ?, parameters = ?
+                        WHERE rule_name = ?
+                        """,
+                        (1 if is_enabled else 0, parameters_json, rule_name),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE trading_rules_config
+                        SET is_enabled = ?
+                        WHERE rule_name = ?
+                        """,
+                        (1 if is_enabled else 0, rule_name),
+                    )
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error("Failed to toggle/update trading rule", rule_name=rule_name, error=str(e))
+            return False
 
     def close(self) -> None:
         """Gracefully shuts down background worker and flushes pending records."""
