@@ -31,11 +31,10 @@ MarketRegimeState is frozen (immutable) and includes:
 
 from __future__ import annotations
 
-from collections import deque
-from datetime import timezone
-from enum import Enum
 import math
-from typing import Deque, Dict, List, Optional, Tuple
+from collections import deque
+from datetime import UTC
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -176,9 +175,9 @@ class MarketRegimeClassifier:
         self.depth_top_k = int(depth_top_k)
 
         # Fixed ring buffers (constant memory)
-        self._ts: Deque[float] = deque(maxlen=max_ticks_buffer)
-        self._log_ret: Deque[float] = deque(maxlen=max_ticks_buffer)
-        self._ofi: Deque[float] = deque(maxlen=max_ticks_buffer)
+        self._ts: deque[float] = deque(maxlen=max_ticks_buffer)
+        self._log_ret: deque[float] = deque(maxlen=max_ticks_buffer)
+        self._ofi: deque[float] = deque(maxlen=max_ticks_buffer)
 
         # Running sums (O(1))
         self._sum_sq_ret: float = 0.0
@@ -190,10 +189,10 @@ class MarketRegimeClassifier:
         self._prev_mid: float = 0.0
 
         # Hysteresis stable regime cache
-        self._stable_regime: Optional[RegimeType] = None
+        self._stable_regime: RegimeType | None = None
         self._stable_prob: float = 0.0
         self._stable_since_sec: float = 0.0
-        self._last_logged_regime: Optional[RegimeType] = None
+        self._last_logged_regime: RegimeType | None = None
 
     # -------------------------
     # Public API
@@ -203,7 +202,7 @@ class MarketRegimeClassifier:
         self,
         current_tick: TickData,
         is_macro_news_window: bool = False,
-        level2_depth: Optional[Dict[str, List[Tuple[float, float]]]] = None,
+        level2_depth: dict[str, list[tuple[float, float]]] | None = None,
     ) -> MarketRegimeState:
         now_utc = current_tick.timestamp
         now_sec = float(now_utc.timestamp())
@@ -443,7 +442,7 @@ class MarketRegimeClassifier:
         bid: float,
         ask: float,
         volume: float,
-        level2_depth: Optional[Dict[str, List[Tuple[float, float]]]],
+        level2_depth: dict[str, list[tuple[float, float]]] | None,
     ) -> float:
         # Level2 OBI (fixed top-K, effectively constant time)
         if level2_depth:
@@ -497,7 +496,7 @@ class MarketRegimeClassifier:
         log_transition: bool,
     ) -> MarketRegimeState:
         # Ensure UTC isoformat stable
-        ts = now_utc.astimezone(timezone.utc).isoformat()
+        ts = now_utc.astimezone(UTC).isoformat()
 
         return MarketRegimeState(
             symbol=self.symbol,

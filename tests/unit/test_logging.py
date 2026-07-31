@@ -4,7 +4,11 @@ Unit Tests - Structured Logging
 Verifies logging configuration and sensitive field redaction.
 """
 
-from nexus_scalp.observability.logging import _redact_sensitive_fields, configure_logging, get_logger
+from nexus_scalp.observability.logging import (
+    _redact_sensitive_fields,
+    configure_logging,
+    get_logger,
+)
 
 
 def test_redact_sensitive_fields() -> None:

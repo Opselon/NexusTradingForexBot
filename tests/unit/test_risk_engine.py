@@ -4,7 +4,8 @@ Unit Tests - Risk Engine Invariants
 Verifies position sizing math and fail-closed security guards.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from nexus_scalp.configuration.config import RiskConfig
 from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.domain.models import AccountInfo, SymbolInfo, TickData, TradeProposal
@@ -17,7 +18,7 @@ def test_risk_engine_kill_switch_blocks_proposal() -> None:
     engine = RiskEngine(config)
     engine.enable_kill_switch()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proposal = TradeProposal(
         request_id="req-1",
         symbol="EURUSD",

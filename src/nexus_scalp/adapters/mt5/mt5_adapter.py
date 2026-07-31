@@ -17,10 +17,10 @@ Key Enterprise Features & Hidden MT5 Mechanisms:
       into structured, actionable log events.
 """
 
-from datetime import datetime, timedelta, timezone
 import logging
 import sys
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any, Optional
 
 from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import (
@@ -58,10 +58,10 @@ class DirectMT5Adapter(IMT5Port):
 
     def __init__(
         self,
-        account: Optional[int] = None,
-        password: Optional[str] = None,
-        server: Optional[str] = None,
-        path: Optional[str] = None,
+        account: int | None = None,
+        password: str | None = None,
+        server: str | None = None,
+        path: str | None = None,
         timeout: int = 5000,
     ) -> None:
         self._account = account
@@ -168,7 +168,7 @@ class DirectMT5Adapter(IMT5Port):
 
         return TickData(
             symbol=symbol,
-            timestamp=datetime.fromtimestamp(raw_tick.time, tz=timezone.utc),
+            timestamp=datetime.fromtimestamp(raw_tick.time, tz=UTC),
             bid=raw_tick.bid,
             ask=raw_tick.ask,
             last=raw_tick.last,
@@ -176,7 +176,7 @@ class DirectMT5Adapter(IMT5Port):
             flags=raw_tick.flags,
         )
 
-    def get_historical_bars(self, symbol: str, timeframe: str = "M1", count: int = 100) -> List[BarData]:
+    def get_historical_bars(self, symbol: str, timeframe: str = "M1", count: int = 100) -> list[BarData]:
         self._assert_connected()
         assert mt5 is not None
 
@@ -193,9 +193,9 @@ class DirectMT5Adapter(IMT5Port):
             logger.warning("No historical bars returned from MT5 for %s", symbol)
             return []
 
-        bars: List[BarData] = []
+        bars: list[BarData] = []
         for r in rates:
-            dt = datetime.fromtimestamp(r["time"], tz=timezone.utc)
+            dt = datetime.fromtimestamp(r["time"], tz=UTC)
             bars.append(
                 BarData(
                     symbol=symbol,
@@ -211,7 +211,7 @@ class DirectMT5Adapter(IMT5Port):
             )
         return bars
 
-    def get_positions(self, symbol: Optional[str] = None) -> List[Position]:
+    def get_positions(self, symbol: str | None = None) -> list[Position]:
         self._assert_connected()
         assert mt5 is not None
 
@@ -219,7 +219,7 @@ class DirectMT5Adapter(IMT5Port):
         if raw_positions is None:
             return []
 
-        positions: List[Position] = []
+        positions: list[Position] = []
         for pos in raw_positions:
             order_type = OrderType.BUY if pos.type == mt5.ORDER_TYPE_BUY else OrderType.SELL
             positions.append(
@@ -240,7 +240,7 @@ class DirectMT5Adapter(IMT5Port):
     # ==========================================================================
     # PENDING ORDERS INVENTORY & CANCELLATION
     # ==========================================================================
-    def get_pending_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_pending_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
         """Queries active pending orders (LIMIT / STOP)."""
         self._assert_connected()
         assert mt5 is not None
@@ -249,7 +249,7 @@ class DirectMT5Adapter(IMT5Port):
         if raw_orders is None:
             return []
 
-        pending_list: List[Dict[str, Any]] = []
+        pending_list: list[dict[str, Any]] = []
         for ord_item in raw_orders:
             pending_list.append(
                 {
@@ -300,18 +300,18 @@ class DirectMT5Adapter(IMT5Port):
     # ==========================================================================
     # DEALS HISTORY EXTRACTION
     # ==========================================================================
-    def get_closed_deals_history(self, symbol: str, hours_back: int = 24) -> List[Dict[str, Any]]:
+    def get_closed_deals_history(self, symbol: str, hours_back: int = 24) -> list[dict[str, Any]]:
         self._assert_connected()
         assert mt5 is not None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         from_date = now - timedelta(hours=hours_back)
 
         deals = mt5.history_deals_get(from_date, now, group=symbol)
         if deals is None:
             return []
 
-        closed_deals: List[Dict[str, Any]] = []
+        closed_deals: list[dict[str, Any]] = []
         for d in deals:
             if d.entry == mt5.DEAL_ENTRY_OUT:
                 closed_deals.append(
@@ -326,7 +326,7 @@ class DirectMT5Adapter(IMT5Port):
                         "commission": d.commission,
                         "swap": d.swap,
                         "comment": d.comment,
-                        "closed_at": datetime.fromtimestamp(d.time, tz=timezone.utc),
+                        "closed_at": datetime.fromtimestamp(d.time, tz=UTC),
                         "reason": d.reason,
                     }
                 )

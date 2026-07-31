@@ -7,22 +7,20 @@ and risk engines.
 """
 
 import asyncio
-from datetime import datetime, UTC
 import json
-import os
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-import yaml
+from typing import Any
 
+import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.enums import ExecutionMode, OrderType
-from nexus_scalp.domain.models import AccountInfo, Position, TickData
-from nexus_scalp.features.scalp_features import FEATURE_NAMES, FeatureVector
-from nexus_scalp.market_data.bar_aggregator import BarData
+from nexus_scalp.domain.enums import ExecutionMode
+from nexus_scalp.domain.models import TickData
+from nexus_scalp.features.scalp_features import FEATURE_NAMES
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.web.server")
@@ -70,7 +68,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     app.state.simulated_outcomes = []
 
     # Helper function to get live data from engine or return mock details if offline/simulating
-    def get_system_state() -> Dict[str, Any]:
+    def get_system_state() -> dict[str, Any]:
         engine = app.state.engine
 
         # Default fallback values
@@ -91,8 +89,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "win_rate": 78.5
         }
 
-        positions_list: List[Dict[str, Any]] = []
-        bars_list: List[Dict[str, Any]] = []
+        positions_list: list[dict[str, Any]] = []
+        bars_list: list[dict[str, Any]] = []
         probs_data = {"no_trade": 0.995, "buy": 0.002, "sell": 0.003}
         ai_decision = "NO_ACTION"
         ai_confidence = 0.0
@@ -261,12 +259,80 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # REST APIs: System status
     @app.get("/api/status")
-    def get_status() -> Dict[str, Any]:
+    def get_status() -> dict[str, Any]:
         return get_system_state()
+
+    # REST APIs: Account summary
+    @app.get("/api/account/summary")
+    def get_account_summary() -> dict[str, Any]:
+        engine = app.state.engine
+
+        balance = 10000.00
+        equity = 10000.00
+        margin = 0.0
+        open_positions_count = 0
+
+        # Default metrics
+        win_rate = 0.0
+        profit_factor = 0.0
+        max_drawdown = 0.0
+        total_trades = 0
+
+        if engine:
+            try:
+                acc = engine.adapter.get_account_info()
+                if acc:
+                    balance = acc.balance
+                    equity = acc.equity
+                    margin = acc.margin
+            except Exception:
+                pass
+
+            try:
+                positions = engine.adapter.get_positions(symbol=engine.config.execution.symbol)
+                open_positions_count = len(positions)
+            except Exception:
+                pass
+
+            try:
+                metrics = engine.audit.get_account_performance_metrics()
+                win_rate = metrics["win_rate"]
+                profit_factor = metrics["profit_factor"]
+                max_drawdown = metrics["max_drawdown"]
+                total_trades = metrics["total_trades"]
+            except Exception:
+                pass
+
+        return {
+            "balance": balance,
+            "equity": equity,
+            "margin": margin,
+            "open_positions": open_positions_count,
+            "win_rate": win_rate,
+            "profit_factor": profit_factor,
+            "max_drawdown": max_drawdown,
+            "total_trades": total_trades,
+        }
+
+    # REST APIs: Historical trade logs with pagination/filters
+    @app.get("/api/account/trades")
+    def get_account_trades(limit: int = 100, offset: int = 0, status: str | None = None) -> list[dict[str, Any]]:
+        engine = app.state.engine
+        if not engine:
+            return []
+        return engine.audit.get_ledger_trades(limit=limit, offset=offset, status_filter=status)
+
+    # REST APIs: Account growth data for visualizer chart
+    @app.get("/api/account/growth")
+    def get_account_growth() -> list[dict[str, Any]]:
+        engine = app.state.engine
+        if not engine:
+            return []
+        return engine.audit.get_equity_growth_chart_data()
 
     # Toggle Engine Run Loop
     @app.post("/api/engine/toggle")
-    def toggle_engine(req: ToggleRequest) -> Dict[str, Any]:
+    def toggle_engine(req: ToggleRequest) -> dict[str, Any]:
         engine = app.state.engine
         if not engine:
             raise HTTPException(status_code=400, detail="Trading Engine reference not loaded.")
@@ -284,18 +350,18 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # GET /api/config
     @app.get("/api/config")
-    def get_config() -> Dict[str, Any]:
+    def get_config() -> dict[str, Any]:
         live_config_path = Path("configs/live.yaml")
         if not live_config_path.exists():
             live_config_path = Path("configs/base.yaml")
 
-        with open(live_config_path, "r", encoding="utf-8") as f:
+        with open(live_config_path, encoding="utf-8") as f:
             raw_data = yaml.safe_load(f) or {}
         return raw_data
 
     # POST /api/config
     @app.post("/api/config")
-    def save_config(raw_config: Dict[str, Any]) -> Dict[str, Any]:
+    def save_config(raw_config: dict[str, Any]) -> dict[str, Any]:
         live_config_path = Path("configs/live.yaml")
 
         try:
@@ -322,7 +388,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # Modify position SL/TP
     @app.post("/api/positions/modify")
-    def modify_position(req: ModifyPositionRequest) -> Dict[str, Any]:
+    def modify_position(req: ModifyPositionRequest) -> dict[str, Any]:
         engine = app.state.engine
         if not engine:
             raise HTTPException(status_code=400, detail="Trading Engine offline.")
@@ -336,7 +402,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # Close live positions
     @app.post("/api/positions/close")
-    def close_position(req: ClosePositionRequest) -> Dict[str, Any]:
+    def close_position(req: ClosePositionRequest) -> dict[str, Any]:
         engine = app.state.engine
         if not engine:
             raise HTTPException(status_code=400, detail="Trading Engine offline.")
@@ -346,7 +412,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # Simulation: Inject simulated tick
     @app.post("/api/simulation/tick")
-    def inject_tick(req: SimulationTickRequest) -> Dict[str, Any]:
+    def inject_tick(req: SimulationTickRequest) -> dict[str, Any]:
         engine = app.state.engine
         if not engine:
             return {"success": False, "message": "Engine not initialized"}
@@ -416,7 +482,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # Historical Replay Mode Controller
     @app.post("/api/replay/toggle")
-    def toggle_replay(req: ToggleReplayRequest) -> Dict[str, Any]:
+    def toggle_replay(req: ToggleReplayRequest) -> dict[str, Any]:
         app.state.is_replaying = req.active
         app.state.replay_speed = req.speed
 
@@ -434,7 +500,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # Observability stats
     @app.get("/api/observability/stats")
-    def get_observability_stats() -> Dict[str, Any]:
+    def get_observability_stats() -> dict[str, Any]:
         engine = app.state.engine
         tg_queue_size = 0
         tg_enabled = False

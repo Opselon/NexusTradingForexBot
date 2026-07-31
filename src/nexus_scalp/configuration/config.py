@@ -6,7 +6,7 @@ Loads YAML configurations with fallback to environment overrides.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -41,12 +41,12 @@ class TelegramConfig(BaseModel):
 
 
 class MT5Config(BaseModel):
-    account: Optional[int] = None
-    password: Optional[str] = None
-    server: Optional[str] = None
+    account: int | None = None
+    password: str | None = None
+    server: str | None = None
     timeout_ms: int = 5000
     retries: int = 3
-    path: Optional[str] = None
+    path: str | None = None
     portable_mode: bool = False
 
 
@@ -81,7 +81,7 @@ class AppConfig(BaseSettings):
         if not yaml_path.exists():
             raise FileNotFoundError(f"Config file not found at: {yaml_path}")
 
-        with open(yaml_path, "r", encoding="utf-8") as f:
-            raw_data: Dict[str, Any] = yaml.safe_load(f) or {}
+        with open(yaml_path, encoding="utf-8") as f:
+            raw_data: dict[str, Any] = yaml.safe_load(f) or {}
 
         return cls(**raw_data)

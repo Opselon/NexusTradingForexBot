@@ -5,11 +5,9 @@ Simulates real-time market tick generation, account balance updates,
 and instant simulated order executions without requiring an active MT5 terminal process.
 """
 
-from datetime import datetime, timezone
 import random
-from typing import List, Optional
+from datetime import UTC, datetime
 
-from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
     Position,
@@ -34,7 +32,7 @@ class PaperMT5Adapter(IMT5Port):
         self.equity = initial_balance
         self._connected = False
         self._current_price = 1.08500
-        self._positions: List[Position] = []
+        self._positions: list[Position] = []
         self._ticket_counter = 100001
 
     def connect(self) -> bool:
@@ -92,7 +90,7 @@ class PaperMT5Adapter(IMT5Port):
 
         return TickData(
             symbol=symbol,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             bid=bid,
             ask=ask,
             last=bid,
@@ -100,7 +98,7 @@ class PaperMT5Adapter(IMT5Port):
             flags=6,
         )
 
-    def get_positions(self, symbol: Optional[str] = None) -> List[Position]:
+    def get_positions(self, symbol: str | None = None) -> list[Position]:
         """Returns active open simulated positions."""
         if symbol:
             return [p for p in self._positions if p.symbol == symbol]

@@ -169,6 +169,9 @@ class LiveEngine:
         self._retrain_task: asyncio.Task | None = None
         self._retrain_inflight: bool = False
 
+        # Hedging tracker to avoid spamming multiple limit orders per ticket
+        self._hedged_tickets: set[int] = set()
+
         # Web / UI Synchronization states to act as single source of truth
         self._last_tick: TickData | None = None
         self._last_fv: ScalpFeatureEngine | None = None
@@ -627,9 +630,145 @@ class LiveEngine:
                 except Exception:
                     pass
 
+        # Evaluate intelligent hedging / counter-position policy
+        self._evaluate_hedging_policy(
+            active_positions=active_positions,
+            tick=tick,
+            probs=probs,
+            regime_state=regime_state,
+            fv=fv,
+            account=account,
+        )
+
         # Equity / drawdown tracking + audit
         self._update_survival_state(account=account, current_pos_count=current_pos_count)
         self.audit.log_account_snapshot(account=account, peak_equity=self._peak_equity)
+
+    def _evaluate_hedging_policy(
+        self,
+        active_positions: list[Position],
+        tick: TickData,
+        probs: torch.Tensor,
+        regime_state: Optional[MarketRegimeState],
+        fv: ScalpFeatureEngine,
+        account: AccountInfo,
+    ) -> None:
+        """
+        Intelligent Hedging / Counter-Position Policy (PyTorch & Regime-Driven).
+        """
+        import time
+
+        from nexus_scalp.domain.enums import ActionType, OrderType
+        from nexus_scalp.domain.models import TradeProposal
+        from nexus_scalp.features.regime_classifier import RegimeType
+
+        # Garbage collect closed tickets
+        active_tickets = {pos.ticket for pos in active_positions}
+        self._hedged_tickets &= active_tickets
+
+        atr = max(self.order_manager._safe_feature_float(fv, "atr_m1", 1.50), 0.50)
+        probs_list = probs.squeeze().tolist()
+        if not isinstance(probs_list, list):
+            probs_list = [probs_list]
+        prob_buy = probs_list[1] if len(probs_list) > 1 else 0.0
+        prob_sell = probs_list[2] if len(probs_list) > 2 else 0.0
+
+        for pos in active_positions:
+            # Only evaluate positions currently in drawdown
+            if pos.profit >= 0.0:
+                continue
+
+            if pos.ticket in self._hedged_tickets:
+                continue
+
+            # Evaluate whether hold score has dropped below threshold or volatility has shifted
+            hold_score = self.order_manager._hold_score_tracker.get(pos.ticket, 100)
+
+            hold_score_dropped = hold_score < 50
+            volatility_shifted = False
+            if regime_state:
+                if regime_state.regime_type == RegimeType.VOLATILITY_EXPANSION:
+                    volatility_shifted = True
+
+            if not (hold_score_dropped or volatility_shifted):
+                continue
+
+            logger.info(
+                "Hedging trigger met for position in drawdown",
+                ticket=pos.ticket,
+                hold_score=hold_score,
+                volatility_shifted=volatility_shifted,
+                pnl=pos.profit,
+            )
+
+            # Determine whether to hedge or average using PyTorch model predictions and regime indicators
+            if pos.type == OrderType.BUY:
+                if prob_buy >= prob_sell or (regime_state and regime_state.regime_type == RegimeType.RANGING_MEAN_REVERSION):
+                    is_buy_limit = True
+                    target_entry = round(tick.bid - atr * 1.0, 2)
+                    stop_loss = round(target_entry - atr * 1.5, 2)
+                    take_profit = round(pos.price_open, 2)
+                else:
+                    is_buy_limit = False
+                    target_entry = round(tick.ask + atr * 1.0, 2)
+                    stop_loss = round(target_entry + atr * 1.5, 2)
+                    take_profit = round(tick.bid - atr * 1.5, 2)
+            elif prob_sell >= prob_buy or (regime_state and regime_state.regime_type == RegimeType.RANGING_MEAN_REVERSION):
+                is_buy_limit = False
+                target_entry = round(tick.ask + atr * 1.0, 2)
+                stop_loss = round(target_entry + atr * 1.5, 2)
+                take_profit = round(pos.price_open, 2)
+            else:
+                is_buy_limit = True
+                target_entry = round(tick.bid - atr * 1.0, 2)
+                stop_loss = round(target_entry - atr * 1.5, 2)
+                take_profit = round(tick.ask + atr * 1.5, 2)
+
+            action = ActionType.BUY_LIMIT if is_buy_limit else ActionType.SELL_LIMIT
+
+            proposal = TradeProposal(
+                request_id=f"hedge_{pos.ticket}_{int(time.time())}",
+                symbol=pos.symbol,
+                generated_at=tick.timestamp,
+                action=action,
+                confidence=float(max(prob_buy, prob_sell)),
+                proposed_entry=float(target_entry),
+                stop_loss=float(stop_loss),
+                take_profit=float(take_profit),
+                risk_reward_ratio=1.35,
+                reason_code=f"HEDGE_TRIGGER_{action.name}_SCORE_{hold_score}",
+            )
+
+            if self._symbol_info:
+                hedge_order = self.risk_engine.evaluate_proposal(
+                    proposal=proposal,
+                    account=account,
+                    symbol_info=self._symbol_info,
+                    active_positions=active_positions,
+                    current_tick=tick,
+                    regime_state=regime_state,
+                    atr=atr,
+                )
+
+                if hedge_order:
+                    logger.info(
+                        "Dispatching intelligent hedging limit order",
+                        original_ticket=pos.ticket,
+                        action=hedge_order.order_type.value,
+                        volume=hedge_order.volume,
+                        price=hedge_order.price,
+                    )
+                    success = self.order_manager.execute_order(hedge_order)
+                    if success:
+                        self._hedged_tickets.add(pos.ticket)
+                        try:
+                            self.notifier.notify_info(
+                                "Intelligent Hedging Activated",
+                                f"Position {pos.ticket} is in drawdown (Hold Score: {hold_score}). "
+                                f"Placed hedging order {hedge_order.order_type.value} of {hedge_order.volume} lots at {hedge_order.price}."
+                            )
+                        except Exception:
+                            pass
 
     def _on_new_bar(self, tick: TickData, fv, last_bar) -> None:
         x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")

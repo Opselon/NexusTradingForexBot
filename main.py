@@ -7,8 +7,8 @@ Ensures both 'python main.py' and 'python NexusTradingForexBot.py' execute
 the exact same unified backend engine and web control dashboard.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Register `src` directory in sys.path BEFORE importing core
 CURRENT_DIR = Path(__file__).resolve().parent
