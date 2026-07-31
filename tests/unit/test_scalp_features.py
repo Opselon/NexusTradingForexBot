@@ -20,4 +20,4 @@ def test_scalp_feature_engine_cold_start() -> None:
 
     assert vec.symbol == "EURUSD"
     assert vec.log_return_m1 == 0.0
-    assert len(vec.to_tensor_input()) == 9
+    assert len(vec.to_tensor_input()) == 40
