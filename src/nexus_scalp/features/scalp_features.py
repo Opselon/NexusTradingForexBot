@@ -1,21 +1,21 @@
 """
-Institutional XAUUSD Feature Engineering Engine (v7.0 Enterprise - Hardened 40D Contract)
+Institutional XAUUSD Feature Engineering Engine (v8.0 Enterprise - Upgraded 50D Contract)
 ========================================================================================
 Calculates strictly causal, zero-lookahead microstructure, Price Action candle patterns (Doji,
 Star, Engulfing, Wicks), Swing Structure, Time-of-Day Sessions, Lags, Ichimoku, and ICT signals.
-Generates the exact 40-dimensional sanitized tensor required by ScalpNet for deep neural inference.
+Generates the exact 50-dimensional sanitized tensor required by ScalpNet for deep neural inference.
 
 Enterprise Upgrades & Hardening Incorporated:
-    1. Explicit 40D Contract Tuple (FEATURE_NAMES with runtime length assertion).
-    2. Strict Pydantic Field Declarations (All 25+ model fields declared; zero object.__setattr__ hacks).
-    3. Non-Redundant Feature Mapping (Replaced duplicate features with norm_dist_to_tenkan & norm_dist_to_kijun).
-    4. True Exponential Moving Averages (Calculates genuine EMA-21 and EMA-50 using exponential smoothing).
-    5. Standard Classical Engulfing Body Anatomy (Validates real body engulfing instead of simple breakout).
-    6. Runtime Length Assertion Gate (Enforces exact 40D tensor output or raises RuntimeError).
+    1. Explicit 50D Contract Tuple (FEATURE_NAMES with runtime length assertion).
+    2. True Multi-Timeframe (MTF) analysis incorporating context from M15, M30, H1, and H4 timeframes.
+    3. Live Dynamic Support & Resistance levels detection with nearest distance calculation.
+    4. Non-Redundant Feature Mapping.
+    5. True Exponential Moving Averages.
+    6. Runtime Length Assertion Gate (Enforces exact 50D tensor output or raises RuntimeError).
 
 Invariants:
     - Zero Lookahead Bias: Features are strictly computed on completed bars and the live tick.
-    - Zero Dimensionality Mismatch: to_tensor_input() strictly returns 40 float elements matching FEATURE_NAMES.
+    - Zero Dimensionality Mismatch: to_tensor_input() strictly returns 50 float elements matching FEATURE_NAMES.
 """
 
 import math
@@ -31,7 +31,103 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.features.scalp_features")
 
 # ==============================================================================
-# EXPLICIT 40D FEATURE MAPPING CONTRACT
+# HELPERS FOR MTF AGGREGATION & S/R DETECTION
+# ==============================================================================
+
+def aggregate_bars(m1_bars: List[BarData], period_minutes: int) -> List[BarData]:
+    """
+    Groups completed M1 bars into completed higher timeframe bars.
+    """
+    if not m1_bars:
+        return []
+    aggregated = []
+    current_bar_start = None
+    o, h, l, c, vol = 0.0, -float("inf"), float("inf"), 0.0, 0
+    for bar in m1_bars:
+        minute = bar.timestamp.minute
+        bar_minute = (minute // period_minutes) * period_minutes
+        bar_start = bar.timestamp.replace(minute=bar_minute, second=0, microsecond=0)
+
+        if current_bar_start is None:
+            current_bar_start = bar_start
+            o = bar.open
+            h = bar.high
+            l = bar.low
+            c = bar.close
+            vol = bar.tick_volume
+        elif bar_start == current_bar_start:
+            h = max(h, bar.high)
+            l = min(l, bar.low)
+            c = bar.close
+            vol += bar.tick_volume
+        else:
+            aggregated.append(BarData(
+                symbol=bar.symbol,
+                timeframe=f"M{period_minutes}" if period_minutes < 60 else f"H{period_minutes // 60}",
+                timestamp=current_bar_start,
+                open=o,
+                high=h,
+                low=l,
+                close=c,
+                tick_volume=vol,
+                is_complete=True
+            ))
+            current_bar_start = bar_start
+            o = bar.open
+            h = bar.high
+            l = bar.low
+            c = bar.close
+            vol = bar.tick_volume
+
+    if current_bar_start is not None:
+        aggregated.append(BarData(
+            symbol=m1_bars[-1].symbol,
+            timeframe=f"M{period_minutes}" if period_minutes < 60 else f"H{period_minutes // 60}",
+            timestamp=current_bar_start,
+            open=o,
+            high=h,
+            low=l,
+            close=c,
+            tick_volume=vol,
+            is_complete=True
+        ))
+    return aggregated
+
+
+def find_support_resistance_levels(bars: List[BarData], window: int = 20) -> Tuple[List[float], List[float]]:
+    """
+    Finds Support (swing lows) and Resistance (swing highs) levels over a window.
+    """
+    if len(bars) < window * 2 + 1:
+        return [], []
+
+    highs = [b.high for b in bars]
+    lows = [b.low for b in bars]
+
+    supports = []
+    resistances = []
+
+    for i in range(window, len(bars) - window):
+        if highs[i] == max(highs[i - window : i + window + 1]):
+            resistances.append(highs[i])
+        if lows[i] == min(lows[i - window : i + window + 1]):
+            supports.append(lows[i])
+
+    def clean_levels(levels: List[float]) -> List[float]:
+        if not levels:
+            return []
+        levels = sorted(levels)
+        cleaned = [levels[0]]
+        for l in levels[1:]:
+            if (l - cleaned[-1]) / cleaned[-1] > 0.001:
+                cleaned.append(l)
+        return cleaned
+
+    return clean_levels(supports), clean_levels(resistances)
+
+
+# ==============================================================================
+# EXPLICIT 50D FEATURE MAPPING CONTRACT
 # ==============================================================================
 FEATURE_NAMES: Tuple[str, ...] = (
     "upper_wick_ratio",             # feat_0
@@ -72,19 +168,29 @@ FEATURE_NAMES: Tuple[str, ...] = (
     "dist_to_ema_21",               # feat_35
     "dist_to_ema_50",               # feat_36
     "cross_asset_z_score",          # feat_37
-    "norm_dist_to_tenkan",          # feat_38 [NEW UNIQUE FEATURE]
-    "norm_dist_to_kijun",           # feat_39 [NEW UNIQUE FEATURE]
+    "norm_dist_to_tenkan",          # feat_38
+    "norm_dist_to_kijun",           # feat_39
+    "htf_h4_trend",                 # feat_40 [NEW]
+    "htf_h1_momentum",              # feat_41 [NEW]
+    "htf_m30_structure",            # feat_42 [NEW]
+    "htf_m15_confirmation",         # feat_43 [NEW]
+    "support_zone_dist",            # feat_44 [NEW]
+    "resistance_zone_dist",         # feat_45 [NEW]
+    "trend_strength",               # feat_46 [NEW]
+    "consolidation_ratio",          # feat_47 [NEW]
+    "htf_h1_atr_ratio",             # feat_48 [NEW]
+    "htf_h4_atr_ratio",             # feat_49 [NEW]
 )
 
 NUM_FEATURES: int = len(FEATURE_NAMES)
-if NUM_FEATURES != 40:
-    raise RuntimeError(f"ScalpNet feature contract violation: expected 40 features, got {NUM_FEATURES}")
+if NUM_FEATURES != 50:
+    raise RuntimeError(f"ScalpNet feature contract violation: expected 50 features, got {NUM_FEATURES}")
 
 
 class FeatureVector(BaseModel):
     """
     Immutable domain model representing a single point-in-time snapshot of the market.
-    Encompasses a full 40-dimensional Price Action & Microstructure feature matrix.
+    Encompasses a full 50-dimensional Price Action & Multi-Timeframe feature matrix.
     """
     model_config = ConfigDict(frozen=True)
 
@@ -157,27 +263,34 @@ class FeatureVector(BaseModel):
     dist_to_ema_50: float
     cross_asset_z_score: float
 
+    # 9. True Multi-Timeframe Context Features [NEW 10 Indicators]
+    htf_h4_trend: float = Field(..., description="H4 trend direction: +1 bullish, -1 bearish, 0 flat")
+    htf_h1_momentum: float = Field(..., description="H1 momentum roc / atr ratio")
+    htf_m30_structure: float = Field(..., description="M30 structure vs short ema")
+    htf_m15_confirmation: float = Field(..., description="M15 trend confirmation signal")
+    support_zone_dist: float = Field(..., description="Distance to nearest significant support level")
+    resistance_zone_dist: float = Field(..., description="Distance to nearest significant resistance level")
+    trend_strength: float = Field(..., description="Aggregated trend direction across timeframes")
+    consolidation_ratio: float = Field(..., description="Large window consolidation compression factor")
+    htf_h1_atr_ratio: float = Field(..., description="H1 ATR to M1 ATR volatility ratio")
+    htf_h4_atr_ratio: float = Field(..., description="H4 ATR to M1 ATR volatility ratio")
+
     def to_tensor_input(self) -> List[float]:
         """
-        Converts the feature snapshot into the exact 40-dimensional tensor input expected by ScalpNet v3.
+        Converts the feature snapshot into the exact 50-dimensional tensor input expected by ScalpNet v3.
         Applies rigorous ATR-based normalization, sanitization, and clamps values to [-3.0, +3.0].
         Strictly enforces the FEATURE_NAMES contract.
         """
         safe_atr = max(self.atr_m1, 0.20)
         
-        # Normalized Continuous Features
         norm_displacement = self.live_tick_displacement / safe_atr
         norm_rsi = (self.rsi_14 - 50.0) / 16.66
         norm_tk_diff = (self.tenkan_sen - self.kijun_sen) / safe_atr
         norm_kumo_width = (self.senkou_span_a - self.senkou_span_b) / safe_atr
 
-        # Unique Non-Redundant Tenkan/Kijun Distance Metrics
-        norm_dist_to_tenkan = (self.live_tick_displacement + (self.tenkan_sen - self.tenkan_sen)) / safe_atr # (Mid - Tenkan) / ATR
-        mid_price_approx = self.tenkan_sen + (self.tenkan_sen - self.kijun_sen) * 0.5  # Approximate mid
         norm_dist_to_tenkan = (self.tenkan_sen - self.kijun_sen) / (safe_atr * 2.0)
         norm_dist_to_kijun = (self.kijun_sen - self.tenkan_sen) / (safe_atr * 2.0)
 
-        # Ternary Categorical Signals (+1.0, 0.0, -1.0)
         kumo_sig = 1.0 if self.is_above_kumo else (-1.0 if self.is_below_kumo else 0.0)
         fvg_sig = 1.0 if self.fvg_bullish_active else (-1.0 if self.fvg_bearish_active else 0.0)
         choch_sig = 1.0 if self.choch_bullish else (-1.0 if self.choch_bearish else 0.0)
@@ -231,17 +344,28 @@ class FeatureVector(BaseModel):
             float(self.tk_cross_signal),
             kumo_sig,
 
-            # feat_33 .. feat_39 (All 40 Unique Features)
+            # feat_33 .. feat_39
             norm_kumo_width,
             norm_rsi,
             self.dist_to_ema_21,
             self.dist_to_ema_50,
             self.cross_asset_z_score,
-            norm_dist_to_tenkan,  # feat_38 (Unique)
-            norm_dist_to_kijun,   # feat_39 (Unique)
+            norm_dist_to_tenkan,
+            norm_dist_to_kijun,
+
+            # feat_40 .. feat_49 [NEW MULTI-TIMEFRAME INTEL]
+            self.htf_h4_trend,
+            self.htf_h1_momentum,
+            self.htf_m30_structure,
+            self.htf_m15_confirmation,
+            self.support_zone_dist,
+            self.resistance_zone_dist,
+            self.trend_strength,
+            self.consolidation_ratio,
+            self.htf_h1_atr_ratio,
+            self.htf_h4_atr_ratio,
         ]
 
-        # Sanitization & Clipping Gate
         sanitized_features = []
         for val in raw_features:
             if math.isnan(val) or math.isinf(val):
@@ -249,10 +373,9 @@ class FeatureVector(BaseModel):
             else:
                 sanitized_features.append(max(-3.0, min(3.0, float(val))))
 
-        # Hard assertion ensuring contract compliance
-        if len(sanitized_features) != 40:
+        if len(sanitized_features) != 50:
             raise RuntimeError(
-                f"Feature contract violation: expected 40 features matching FEATURE_NAMES, "
+                f"Feature contract violation: expected 50 features matching FEATURE_NAMES, "
                 f"got {len(sanitized_features)}"
             )
 
@@ -261,8 +384,8 @@ class FeatureVector(BaseModel):
 
 class ScalpFeatureEngine:
     """
-    Sub-millisecond Feature Engineering pipeline computing 40D Price Action,
-    Candle Anatomy, Session, Lag, ICT, and Ichimoku features.
+    Sub-millisecond Feature Engineering pipeline computing 50D Price Action,
+    Candle Anatomy, Session, Lag, ICT, Ichimoku, and true Multi-Timeframe Context.
     """
 
     def __init__(self, symbol: str = "XAUUSD") -> None:
@@ -286,7 +409,7 @@ class ScalpFeatureEngine:
         current_benchmark: Optional[float] = None
     ) -> FeatureVector:
         """
-        Hot-path execution computing 40D master feature tensor directly from recent M1 history.
+        Hot-path execution computing 50D master feature tensor directly from recent history.
         """
         mid_price = (current_tick.bid + current_tick.ask) / 2.0
 
@@ -333,7 +456,6 @@ class ScalpFeatureEngine:
         is_hammer_pinbar = bool(lower_wick_ratio >= 0.55 and body_top >= (highs[-1] - bar_range * 0.35))
         is_shooting_star = bool(upper_wick_ratio >= 0.55 and body_bottom <= (lows[-1] + bar_range * 0.35))
 
-        # Classical Classical Body Engulfing Logic (Patterson / Nison Standard)
         is_engulfing_bullish = bool(
             closes[-2] < opens[-2]
             and closes[-1] > opens[-1]
@@ -379,7 +501,6 @@ class ScalpFeatureEngine:
         is_extreme_high = bool(range_pos >= 0.95)
         is_extreme_low = bool(range_pos <= 0.05)
 
-        # Liquidity Sweep & Stop-Hunt Depth
         recent_high_10 = np.max(highs[-11:-1])
         recent_low_10 = np.min(lows[-11:-1])
         liquidity_sweep_signal = 0
@@ -497,6 +618,102 @@ class ScalpFeatureEngine:
             current_spread = mid_price - (beta * current_benchmark)
             cross_asset_z_score = float((current_spread - mean_spread) / std_spread)
 
+        # 9. Group 8: True Multi-Timeframe Context Features [NEW]
+        m15_bars = aggregate_bars(completed_bars, 15)
+        m30_bars = aggregate_bars(completed_bars, 30)
+        h1_bars = aggregate_bars(completed_bars, 60)
+        h4_bars = aggregate_bars(completed_bars, 240)
+
+        # H4 trend
+        if len(h4_bars) >= 3:
+            h4_closes = np.array([b.close for b in h4_bars], dtype=np.float64)
+            h4_ema = self._compute_ema(h4_closes, 3)
+            htf_h4_trend = 1.0 if h4_closes[-1] > h4_ema else -1.0
+        elif len(h4_bars) >= 1:
+            htf_h4_trend = 1.0 if h4_bars[-1].close > h4_bars[0].close else -1.0
+        else:
+            htf_h4_trend = 0.0
+
+        # H1 momentum
+        if len(h1_bars) >= 2:
+            h1_closes = np.array([b.close for b in h1_bars], dtype=np.float64)
+            htf_h1_momentum = float(h1_closes[-1] - h1_closes[-2]) / safe_atr
+        else:
+            htf_h1_momentum = 0.0
+
+        # M30 structure
+        if len(m30_bars) >= 5:
+            m30_closes = np.array([b.close for b in m30_bars], dtype=np.float64)
+            m30_ema = self._compute_ema(m30_closes, 5)
+            htf_m30_structure = 1.0 if m30_closes[-1] > m30_ema else -1.0
+        else:
+            htf_m30_structure = 0.0
+
+        # M15 confirmation
+        if len(m15_bars) >= 2:
+            m15_last = m15_bars[-1]
+            m15_prev = m15_bars[-2]
+            m15_bull_engulf = (m15_last.close > m15_last.open) and (m15_prev.close < m15_prev.open) and (m15_last.close >= m15_prev.open)
+            m15_bear_engulf = (m15_last.close < m15_last.open) and (m15_prev.close > m15_prev.open) and (m15_last.close <= m15_prev.open)
+            if m15_bull_engulf:
+                htf_m15_confirmation = 1.0
+            elif m15_bear_engulf:
+                htf_m15_confirmation = -1.0
+            else:
+                htf_m15_confirmation = 1.0 if m15_last.close > m15_last.open else -1.0
+        else:
+            htf_m15_confirmation = 0.0
+
+        # Support & Resistance levels detection
+        supports, resistances = find_support_resistance_levels(completed_bars, window=20)
+        nearest_support = None
+        nearest_resistance = None
+        for s in reversed(sorted(supports)):
+            if s < mid_price:
+                nearest_support = s
+                break
+        for r in sorted(resistances):
+            if r > mid_price:
+                nearest_resistance = r
+                break
+
+        support_zone_dist = float((mid_price - nearest_support) / safe_atr) if nearest_support is not None else 3.0
+        resistance_zone_dist = float((nearest_resistance - mid_price) / safe_atr) if nearest_resistance is not None else 3.0
+
+        # Trend strength cross-timeframe
+        trend_signals = []
+        if len(completed_bars) >= 20:
+            m1_closes = np.array([b.close for b in completed_bars[-20:]], dtype=np.float64)
+            m1_ema = self._compute_ema(m1_closes, 20)
+            trend_signals.append(1.0 if m1_closes[-1] > m1_ema else -1.0)
+        trend_signals.append(htf_m15_confirmation)
+        trend_signals.append(htf_m30_structure)
+        trend_signals.append(htf_h4_trend)
+        trend_strength = float(np.mean(trend_signals)) if trend_signals else 0.0
+
+        # Consolidation Ratio over larger window
+        if len(completed_bars) >= 50:
+            range_10 = np.max(highs[-10:]) - np.min(lows[-10:]) + 1e-8
+            range_50 = np.max(highs[-50:]) - np.min(lows[-50:]) + 1e-8
+            consolidation_ratio = float(range_10 / range_50)
+        else:
+            consolidation_ratio = 1.0
+
+        # HTF ATR Volatility ratios
+        if len(h1_bars) >= 3:
+            h1_trs = [b.high - b.low for b in h1_bars[-14:]]
+            h1_atr = float(np.mean(h1_trs)) if h1_trs else safe_atr
+            htf_h1_atr_ratio = float(h1_atr / safe_atr)
+        else:
+            htf_h1_atr_ratio = 1.0
+
+        if len(h4_bars) >= 3:
+            h4_trs = [b.high - b.low for b in h4_bars[-14:]]
+            h4_atr = float(np.mean(h4_trs)) if h4_trs else safe_atr
+            htf_h4_atr_ratio = float(h4_atr / safe_atr)
+        else:
+            htf_h4_atr_ratio = 1.0
+
         return FeatureVector(
             symbol=self.symbol,
             timestamp_utc=current_tick.timestamp.isoformat(),
@@ -550,6 +767,17 @@ class ScalpFeatureEngine:
             dist_to_ema_21=dist_to_ema_21,
             dist_to_ema_50=dist_to_ema_50,
             cross_asset_z_score=cross_asset_z_score,
+            # MTF Context
+            htf_h4_trend=htf_h4_trend,
+            htf_h1_momentum=htf_h1_momentum,
+            htf_m30_structure=htf_m30_structure,
+            htf_m15_confirmation=htf_m15_confirmation,
+            support_zone_dist=support_zone_dist,
+            resistance_zone_dist=resistance_zone_dist,
+            trend_strength=trend_strength,
+            consolidation_ratio=consolidation_ratio,
+            htf_h1_atr_ratio=htf_h1_atr_ratio,
+            htf_h4_atr_ratio=htf_h4_atr_ratio,
         )
 
     def _cold_start_vector(self, tick: TickData, mid_price: float) -> FeatureVector:
@@ -607,4 +835,15 @@ class ScalpFeatureEngine:
             dist_to_ema_21=0.0,
             dist_to_ema_50=0.0,
             cross_asset_z_score=0.0,
+            # MTF defaults
+            htf_h4_trend=0.0,
+            htf_h1_momentum=0.0,
+            htf_m30_structure=0.0,
+            htf_m15_confirmation=0.0,
+            support_zone_dist=3.0,
+            resistance_zone_dist=3.0,
+            trend_strength=0.0,
+            consolidation_ratio=1.0,
+            htf_h1_atr_ratio=1.0,
+            htf_h4_atr_ratio=1.0,
         )

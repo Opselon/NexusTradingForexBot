@@ -81,7 +81,7 @@ class ScalpNet(nn.Module):
 
     def __init__(
         self,
-        num_features: int = 40,   # 40-dimension Master FeatureVector tensor alignment
+        num_features: int = 50,   # 50-dimension Master FeatureVector tensor alignment
         num_classes: int = 4,     # Output logits: 0=NO_TRADE, 1=BUY_MARKET, 2=SELL_MARKET, 3=WAIT
         hidden_dim: int = 128,    # Capacity for institutional microstructure patterns
         num_heads: int = 4,

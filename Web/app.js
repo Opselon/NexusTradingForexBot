@@ -8,6 +8,63 @@ let candleData = []; // [{time, open, high, low, close, volume, is_complete}]
 let predictions = []; // [{time, action, confidence, actual_delta, outcome}]
 let selectedConfig = {};
 
+let supportLevels = [];
+let resistanceLevels = [];
+let lastFeatures = [];
+
+const FEATURE_NAMES_JS = [
+    "upper_wick_ratio",             // feat_0
+    "lower_wick_ratio",             // feat_1
+    "body_to_range_ratio",          // feat_2
+    "is_doji",                      // feat_3
+    "pinbar_sig",                   // feat_4
+    "engulfing_sig",                // feat_5
+    "close_location_value",         // feat_6
+    "consecutive_momentum_count",   // feat_7
+    "norm_displacement",            // feat_8
+    "rapid_reversal_spike_val",     // feat_9
+    "dist_to_swing_high_20",        // feat_10
+    "dist_to_swing_low_20",         // feat_11
+    "price_compression_flag_ratio", // feat_12
+    "extreme_sig",                  // feat_13
+    "stop_hunt_depth",              // feat_14
+    "liquidity_sweep_signal",       // feat_15
+    "session_tokyo",                // feat_16
+    "session_london",               // feat_17
+    "session_ny",                   // feat_18
+    "session_overlap_london_ny",    // feat_19
+    "lag_1_log_return",             // feat_20
+    "lag_2_log_return",             // feat_21
+    "lag_3_log_return",             // feat_22
+    "lag_1_atr_ratio",              // feat_23
+    "lag_1_volume_z",               // feat_24
+    "lag_1_clv",                    // feat_25
+    "fvg_sig",                      // feat_26
+    "order_block_type",             // feat_27
+    "choch_sig",                    // feat_28
+    "breakout_sig",                 // feat_29
+    "norm_tk_diff",                 // feat_30
+    "tk_cross_signal",              // feat_31
+    "kumo_sig",                     // feat_32
+    "norm_kumo_width",              // feat_33
+    "norm_rsi",                     // feat_34
+    "dist_to_ema_21",               // feat_35
+    "dist_to_ema_50",               // feat_36
+    "cross_asset_z_score",          // feat_37
+    "norm_dist_to_tenkan",          // feat_38
+    "norm_dist_to_kijun",           // feat_39
+    "htf_h4_trend",                 // feat_40
+    "htf_h1_momentum",              // feat_41
+    "htf_m30_structure",            // feat_42
+    "htf_m15_confirmation",         // feat_43
+    "support_zone_dist",            // feat_44
+    "resistance_zone_dist",         // feat_45
+    "trend_strength",               // feat_46
+    "consolidation_ratio",          // feat_47
+    "htf_h1_atr_ratio",             // feat_48
+    "htf_h4_atr_ratio",             // feat_49
+];
+
 // Chart state variables for interactive Zoom, Pan, Drag, and Tooltip
 let liveMode = true; // Auto scroll to newest candle
 let uiPaused = false; // Ignore incoming state updates
@@ -31,6 +88,15 @@ window.addEventListener('load', () => {
 
 function initApp() {
     console.log("Nexus Scalp Engine Front-End Booted.");
+
+    let dummyFeatures = FEATURE_NAMES_JS.map((name, idx) => ({
+        index: idx,
+        name: name,
+        value: 0.0
+    }));
+    lastFeatures = dummyFeatures;
+    updateFeaturesGrid(dummyFeatures);
+
     // Hook up some simulation button controls
     document.getElementById('btn-toggle-engine').addEventListener('click', toggleEngineRunning);
 
@@ -304,6 +370,13 @@ function handleIncomingLiveTick(payload) {
     document.getElementById('acc-drawdown').textContent = `${payload.account.drawdown.toFixed(2)}%`;
     document.getElementById('acc-winrate').textContent = `${payload.account.win_rate.toFixed(1)}%`;
 
+    if (payload.support_levels) {
+        supportLevels = payload.support_levels;
+    }
+    if (payload.resistance_levels) {
+        resistanceLevels = payload.resistance_levels;
+    }
+
     // Dynamic Candle updates (Single Source of truth includes forming bar)
     if (payload.bars && payload.bars.length > 0) {
         candleData = payload.bars;
@@ -448,6 +521,50 @@ function drawChart() {
             ctx.setLineDash([]);
         }
     });
+
+    // Draw Support levels
+    if (typeof supportLevels !== 'undefined' && supportLevels.length > 0) {
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)'; // semi-transparent green
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        supportLevels.forEach(level => {
+            const y = h - 20 - ((level - minPrice) / priceRangePadded) * (h - 40);
+            if (y >= 0 && y < h - 20) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w - 60, y);
+                ctx.stroke();
+
+                // Draw label "Support [price]" on the right edge
+                ctx.fillStyle = '#10b981';
+                ctx.font = '8px monospace';
+                ctx.fillText(`S: ${level.toFixed(2)}`, w - 110, y - 3);
+            }
+        });
+        ctx.setLineDash([]);
+    }
+
+    // Draw Resistance levels
+    if (typeof resistanceLevels !== 'undefined' && resistanceLevels.length > 0) {
+        ctx.strokeStyle = 'rgba(244, 63, 94, 0.45)'; // semi-transparent red
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        resistanceLevels.forEach(level => {
+            const y = h - 20 - ((level - minPrice) / priceRangePadded) * (h - 40);
+            if (y >= 0 && y < h - 20) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w - 60, y);
+                ctx.stroke();
+
+                // Draw label "Resistance [price]" on the right edge
+                ctx.fillStyle = '#f43f5e';
+                ctx.font = '8px monospace';
+                ctx.fillText(`R: ${level.toFixed(2)}`, w - 110, y - 3);
+            }
+        });
+        ctx.setLineDash([]);
+    }
 
     // Draw side price scale axis labels
     ctx.fillStyle = '#475569';
@@ -643,9 +760,13 @@ async function executeClosePosition(ticket) {
 }
 
 // AI Feature Selection Category Switcher
-function selectFeatureCategory(category) {
+function selectFeatureCategory(category, element) {
     document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
-    event.currentTarget.classList.add('active');
+    if (element) {
+        element.classList.add('active');
+    } else if (event && event.currentTarget) {
+        event.currentTarget.classList.add('active');
+    }
     currentFeatureCategory = category;
 
     const titles = {
@@ -654,16 +775,23 @@ function selectFeatureCategory(category) {
         'patterns': 'Structure & Swing Patterns (Distance metrics)',
         'sessions': 'Market Sessions Time Lags',
         'ict': 'ICT Smart Money Concepts (FVG / Order Block)',
-        'ichimoku': 'Ichimoku Kinko Hyo (Cloud conformance)'
+        'ichimoku': 'Ichimoku Kinko Hyo (Cloud conformance)',
+        'multitimeframe': 'Multi-Timeframe Context & Support/Resistance Levels'
     };
-    document.getElementById('feature-category-title').textContent = titles[category];
-    // This will force re-render from cached/incoming values
+    document.getElementById('feature-category-title').textContent = titles[category] || titles['volatility'];
+    updateFeaturesGrid();
 }
 
-// Dynamic Grid populate for 40D AI features
+// Dynamic Grid populate for 50D AI features
 function updateFeaturesGrid(features) {
+    if (features) {
+        lastFeatures = features;
+    } else {
+        features = lastFeatures;
+    }
+
     const grid = document.getElementById('features-grid');
-    if (!grid) return;
+    if (!grid || !features || features.length === 0) return;
 
     // Filter features based on active selection category
     let activeList = [];
@@ -677,8 +805,12 @@ function updateFeaturesGrid(features) {
         activeList = features.slice(20, 28);
     } else if (currentFeatureCategory === 'ict') {
         activeList = features.slice(28, 34);
-    } else {
+    } else if (currentFeatureCategory === 'ichimoku') {
         activeList = features.slice(34, 40);
+    } else if (currentFeatureCategory === 'multitimeframe') {
+        activeList = features.slice(40, 50);
+    } else {
+        activeList = features.slice(0, 6);
     }
 
     grid.innerHTML = activeList.map(feat => {

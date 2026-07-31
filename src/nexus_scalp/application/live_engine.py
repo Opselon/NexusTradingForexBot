@@ -61,11 +61,11 @@ class ScalerBundle:
     def is_ready(self) -> bool:
         return self.mean is not None and self.std is not None
 
-    def transform_40d(self, x_1x40: np.ndarray) -> np.ndarray:
+    def transform_50d(self, x_1x50: np.ndarray) -> np.ndarray:
         if not self.is_ready():
-            return x_1x40
+            return x_1x50
         # clip to avoid tail explosion
-        return np.clip((x_1x40 - self.mean) / self.std, -5.0, 5.0)
+        return np.clip((x_1x50 - self.mean) / self.std, -5.0, 5.0)
 
 
 @dataclass(frozen=True)
@@ -84,8 +84,8 @@ class LiveEngine:
     Production Live Orchestrator for XAUUSD scalping.
     """
 
-    FEATURE_DIM: int = 40
-    FEATURE_COLS: tuple[str, ...] = tuple(f"feat_{i}" for i in range(40))
+    FEATURE_DIM: int = 50
+    FEATURE_COLS: tuple[str, ...] = tuple(f"feat_{i}" for i in range(50))
 
     def __init__(
         self,
@@ -163,7 +163,7 @@ class LiveEngine:
             embargo_bars=3,
         )
 
-        self._rolling_feature_records: deque[dict] = deque(maxlen=1000)
+        self._rolling_feature_records: deque[dict] = deque(maxlen=4000)
         self._retrain_interval_bars: int = 50
         self._bars_since_last_retrain: int = 0
         self._retrain_task: asyncio.Task | None = None
@@ -394,7 +394,7 @@ class LiveEngine:
 
     def _load_or_initialize_model_weights(self, model_path: Path, force_fresh: bool) -> ScalpNet:
         """
-        Loads model.pt if present, validates 40D contract, otherwise creates and saves.
+        Loads model.pt if present, validates 50D contract, otherwise creates and saves.
         """
         model = ScalpNet(num_features=self.FEATURE_DIM, num_classes=4)
         model.eval()
@@ -476,8 +476,8 @@ class LiveEngine:
     # -------------------------
 
     async def _cold_start_warmup(self, symbol: str) -> None:
-        logger.info("Cold-start warmup: fetching 2000 M1 bars...")
-        hist_bars = self.adapter.get_historical_bars(symbol=symbol, timeframe="M1", count=2000) or []
+        logger.info("Cold-start warmup: fetching 4000 M1 bars...")
+        hist_bars = self.adapter.get_historical_bars(symbol=symbol, timeframe="M1", count=4000) or []
 
         for b in hist_bars:
             self.aggregator._completed_bars.append(b)
@@ -496,8 +496,8 @@ class LiveEngine:
             )
 
             fv = self.feature_engine.compute_from_bars(completed, synthetic_tick)
-            x40 = self._validate_40d_tensor(fv.to_tensor_input(), context="cold_start_warmup")
-            record = {f"feat_{i}": float(x40[i]) for i in range(self.FEATURE_DIM)}
+            x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="cold_start_warmup")
+            record = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
             record.update(
                 close=b.close, high=b.high, low=b.low, open=b.open,
                 spread=0.20, atr_m1=fv.atr_m1
@@ -550,8 +550,8 @@ class LiveEngine:
         is_new_bar = self.aggregator.process_tick(tick)
 
         # cap bars (O(1) amortized)
-        if len(self.aggregator._completed_bars) > 200:
-            self.aggregator._completed_bars = self.aggregator._completed_bars[-200:]
+        if len(self.aggregator._completed_bars) > 4000:
+            self.aggregator._completed_bars = self.aggregator._completed_bars[-4000:]
 
         completed_bars = self.aggregator.get_completed_bars()
         fv = self.feature_engine.compute_from_bars(completed_bars=completed_bars, current_tick=tick)
@@ -632,8 +632,8 @@ class LiveEngine:
         self.audit.log_account_snapshot(account=account, peak_equity=self._peak_equity)
 
     def _on_new_bar(self, tick: TickData, fv, last_bar) -> None:
-        x40 = self._validate_40d_tensor(fv.to_tensor_input(), context="new_bar_record")
-        rec = {f"feat_{i}": float(x40[i]) for i in range(self.FEATURE_DIM)}
+        x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
+        rec = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
         rec.update(
             close=last_bar.close, high=last_bar.high, low=last_bar.low, open=last_bar.open,
             spread=(tick.ask - tick.bid), atr_m1=fv.atr_m1
@@ -653,15 +653,15 @@ class LiveEngine:
                 pass
 
     def _infer_probabilities(self, fv) -> torch.Tensor:
-        x40 = self._validate_40d_tensor(fv.to_tensor_input(), context="live_inference")
-        x_np = np.array(x40, dtype=np.float32).reshape(1, -1)
+        x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="live_inference")
+        x_np = np.array(x50, dtype=np.float32).reshape(1, -1)
 
         with self._bundle_lock:
             bundle = self._bundle
         if bundle is None:
             raise RuntimeError("Model bundle not initialized")
 
-        x_np = bundle.scaler.transform_40d(x_np)
+        x_np = bundle.scaler.transform_50d(x_np)
         x = torch.tensor(x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -732,7 +732,7 @@ class LiveEngine:
 
         # Test 1: forward pass sanity
         sample_x_np = df_labeled.select(feature_cols).tail(20).to_numpy().astype(np.float32, copy=False)
-        sample_x_np = bundle.scaler.transform_40d(sample_x_np)
+        sample_x_np = bundle.scaler.transform_50d(sample_x_np)
         x = torch.tensor(sample_x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -743,7 +743,7 @@ class LiveEngine:
         # Test 2/3: calibrated class distribution
         test_df = df_labeled.tail(100)
         test_x_np = test_df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
-        test_x_np = bundle.scaler.transform_40d(test_x_np)
+        test_x_np = bundle.scaler.transform_50d(test_x_np)
         tx = torch.tensor(test_x_np, dtype=torch.float32)
         tx = torch.nan_to_num(tx, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -843,13 +843,13 @@ class LiveEngine:
                 self._running = False
 
     # -------------------------
-    # 40D contract validation
+    # 50D contract validation
     # -------------------------
 
     @classmethod
-    def _validate_40d_tensor(cls, features: Sequence[float], context: str) -> list[float]:
+    def _validate_50d_tensor(cls, features: Sequence[float], context: str) -> list[float]:
         if len(features) != cls.FEATURE_DIM:
-            raise RuntimeError(f"40D feature contract violation in {context}: expected {cls.FEATURE_DIM}, got {len(features)}")
+            raise RuntimeError(f"50D feature contract violation in {context}: expected {cls.FEATURE_DIM}, got {len(features)}")
 
         out: list[float] = []
         for idx, val in enumerate(features):
