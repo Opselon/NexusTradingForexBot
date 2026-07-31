@@ -133,16 +133,27 @@
                                 <i class="fa-solid fa-chart-candlestick mr-2 text-accentCyan"></i>
                                 Real-Time Candlestick & Volatility Visualizer
                             </h2>
-                            <div class="flex items-center space-x-2 text-xs">
+                            <div class="flex flex-wrap items-center gap-1.5 text-xs">
                                 <span class="px-2 py-0.5 rounded bg-darkBg border border-borderClr text-textMuted" id="chart-timeframe">M1</span>
+                                <button onclick="toggleLiveMode()" id="btn-live-toggle" class="px-2 py-0.5 rounded bg-accentCyan/10 text-accentCyan hover:bg-accentCyan/20 border border-accentCyan/30 transition">
+                                    <i class="fa-solid fa-tower-broadcast mr-1"></i> Live
+                                </button>
+                                <button onclick="togglePlayPause()" id="btn-play-pause" class="px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-gray-300 transition">
+                                    <i class="fa-solid fa-pause mr-1"></i> Pause UI
+                                </button>
+                                <button onclick="autoFitChart()" class="px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan transition">
+                                    <i class="fa-solid fa-expand mr-1"></i> Auto Fit
+                                </button>
                                 <button onclick="resetChart()" class="px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan transition">
-                                    <i class="fa-solid fa-arrows-rotate mr-1"></i> Reset Zoom
+                                    <i class="fa-solid fa-arrows-rotate mr-1"></i> Reset View
                                 </button>
                             </div>
                         </div>
                         <!-- Canvas for Candlestick Chart -->
-                        <div class="relative w-full h-[380px] bg-darkBg rounded-lg border border-borderClr overflow-hidden flex items-center justify-center">
+                        <div class="relative w-full h-[380px] bg-darkBg rounded-lg border border-borderClr overflow-hidden flex items-center justify-center cursor-crosshair select-none" id="chart-container">
                             <canvas id="candleChart" class="w-full h-full absolute inset-0"></canvas>
+                            <!-- Crosshair and hover info overlays -->
+                            <div id="chart-tooltip" class="absolute hidden bg-panelBg/95 border border-borderClr p-2 rounded shadow-2xl text-[10px] text-gray-300 font-mono pointer-events-none z-10 space-y-1"></div>
                         </div>
                     </div>
 

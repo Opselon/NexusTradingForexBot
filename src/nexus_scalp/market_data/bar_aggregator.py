@@ -111,3 +111,22 @@ class BarAggregator:
     def get_completed_bars(self) -> list[BarData]:
         """Returns copy of all historical completed bars in memory."""
         return list(self._completed_bars)
+
+    def get_current_forming_bar(self) -> BarData | None:
+        """
+        Returns the currently active forming (uncompleted) bar as a BarData object.
+        Returns None if no tick has been processed yet.
+        """
+        if self._current_bar_time is None:
+            return None
+        return BarData(
+            symbol=self.symbol,
+            timeframe=self.timeframe_str,
+            timestamp=self._current_bar_time,
+            open=self._open,
+            high=self._high,
+            low=self._low,
+            close=self._close,
+            tick_volume=self._volume,
+            is_complete=False,
+        )

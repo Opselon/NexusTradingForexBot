@@ -108,7 +108,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
             # Fetch MT5 live ticks and prices
             try:
-                tick = engine.adapter.get_last_tick(symbol)
+                # Use engine's last synchronized tick first to ensure complete consistency
+                tick = engine._last_tick or engine.adapter.get_last_tick(symbol)
                 if tick:
                     bid = tick.bid
                     ask = tick.ask
@@ -116,11 +117,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             except Exception:
                 pass
 
-            # Fetch regime state
+            # Fetch regime state & ATR from the exact synchronized last state
             try:
-                if hasattr(engine, 'regime_classifier') and engine.regime_classifier._last_state:
-                    regime = engine.regime_classifier._last_state.regime.name
-                    atr = engine.regime_classifier._last_state.atr
+                reg_state = engine._last_regime_state
+                if reg_state:
+                    regime = reg_state.regime_type.name
+                    atr = reg_state.realized_volatility_5m # Single source of truth for volatility
+                elif hasattr(engine, 'regime_classifier') and engine.regime_classifier._stable_regime:
+                    regime = engine.regime_classifier._stable_regime.name
             except Exception:
                 pass
 
@@ -159,7 +163,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             except Exception:
                 pass
 
-            # Fetch bars
+            # Fetch bars (synchronized completed history)
             try:
                 completed_bars = engine.aggregator.get_completed_bars()
                 for b in completed_bars[-100:]:
@@ -169,21 +173,33 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "high": b.high,
                         "low": b.low,
                         "close": b.close,
-                        "volume": b.tick_volume
+                        "volume": b.tick_volume,
+                        "is_complete": True
                     })
-            except Exception:
-                pass
+                # Single Source of Truth forming candle injection
+                forming_bar = engine.aggregator.get_current_forming_bar()
+                if forming_bar:
+                    bars_list.append({
+                        "time": forming_bar.timestamp.isoformat(),
+                        "open": forming_bar.open,
+                        "high": forming_bar.high,
+                        "low": forming_bar.low,
+                        "close": forming_bar.close,
+                        "volume": forming_bar.tick_volume,
+                        "is_complete": False
+                    })
+            except Exception as e:
+                logger.error("Failed to fetch synchronized bar stream", error=str(e))
 
-            # Fetch features and model predictions
+            # Fetch synchronized features and model predictions
             try:
-                completed_bars = engine.aggregator.get_completed_bars()
-                tick = engine.adapter.get_last_tick(symbol)
-                if completed_bars and tick:
-                    fv = engine.feature_engine.compute_from_bars(completed_bars, tick)
+                fv = engine._last_fv
+                if fv:
                     features_values = fv.to_tensor_input()
 
-                    # Compute forward pass for probabilities
-                    probs = engine._infer_probabilities(fv)
+                # Sync actual live inference probabilities
+                probs = engine._last_probs
+                if probs is not None:
                     probs_list = probs.cpu().numpy().flatten().tolist()
                     probs_data = {
                         "no_trade": float(probs_list[0]),
@@ -191,21 +207,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "sell": float(probs_list[2])
                     }
 
-                    # Map to active policy decisions
-                    if engine.signal_policy:
-                        reg_state = engine.regime_classifier.classify_tick(tick, False)
-                        proposal = engine.signal_policy.evaluate_probabilities(
-                            probabilities=probs,
-                            current_tick=tick,
-                            feature_vector=fv,
-                            regime_state=reg_state,
-                            survival_mode=engine._survival_mode_active
-                        )
-                        ai_decision = proposal.action.value
-                        ai_confidence = proposal.confidence
-                        ai_reason = proposal.reason_code
-            except Exception:
-                pass
+                # Sync actual policy proposals
+                proposal = engine._last_proposal
+                if proposal:
+                    ai_decision = proposal.action.value
+                    ai_confidence = proposal.confidence
+                    ai_reason = proposal.reason_code
+            except Exception as e:
+                logger.error("Failed to fetch engine sync predictions/features", error=str(e))
 
         # Create structured features objects
         features_payload = []
@@ -456,8 +465,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 except Exception as e:
                     logger.error("SSE stream serialization warning", error=str(e))
 
-                # Stream at ~2Hz to conserve browser network overhead
-                await asyncio.sleep(0.5)
+                # Stream at ~5Hz (0.2s) for snappy real-time visualizer updates
+                await asyncio.sleep(0.2)
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
