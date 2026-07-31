@@ -77,7 +77,7 @@ class WalkForwardTrainer:
     Production-grade purged time-series trainer for ScalpNet.
     """
 
-    NUM_FEATURES: int = 40
+    NUM_FEATURES: int = 50
     NUM_CLASSES: int = 3
 
     def __init__(
@@ -399,7 +399,7 @@ class WalkForwardTrainer:
     def _validate_training_frame(self, df: pl.DataFrame, feature_cols: List[str]) -> None:
         if len(feature_cols) != self.NUM_FEATURES:
             raise ValueError(
-                f"40D feature contract violation: expected {self.NUM_FEATURES} "
+                f"50D feature contract violation: expected {self.NUM_FEATURES} "
                 f"feature columns, got {len(feature_cols)}"
             )
 

@@ -176,6 +176,23 @@ class SignalPolicy:
         if is_range_market:
             active_threshold += self.range_confidence_penalty
 
+        # Multi-timeframe trend & S/R variables
+        h4_trend = self._sanitize_float(getattr(feature_vector, "htf_h4_trend", 0.0), 0.0)
+        h1_mom = self._sanitize_float(getattr(feature_vector, "htf_h1_momentum", 0.0), 0.0)
+        m30_str = self._sanitize_float(getattr(feature_vector, "htf_m30_structure", 0.0), 0.0)
+        m15_conf = self._sanitize_float(getattr(feature_vector, "htf_m15_confirmation", 0.0), 0.0)
+        trend_strength = self._sanitize_float(getattr(feature_vector, "trend_strength", 0.0), 0.0)
+
+        support_zone_dist = self._sanitize_float(getattr(feature_vector, "support_zone_dist", 3.0), 3.0)
+        resistance_zone_dist = self._sanitize_float(getattr(feature_vector, "resistance_zone_dist", 3.0), 3.0)
+
+        # Strict Multi-Timeframe and S/R Selective Alignments
+        htf_buy_aligned = (h4_trend >= 0 or m30_str >= 0 or m15_conf >= 0 or h1_mom >= -0.1) and (trend_strength >= -0.2)
+        htf_sell_aligned = (h4_trend <= 0 or m30_str <= 0 or m15_conf <= 0 or h1_mom <= 0.1) and (trend_strength <= 0.2)
+
+        sr_buy_allowed = resistance_zone_dist >= 0.25
+        sr_sell_allowed = support_zone_dist >= 0.25
+
         # ----------------------------------------------------------------------
         # 3. Decision Engine (Fast Liquidity Reversal & Smart Order Routing)
         # ----------------------------------------------------------------------
@@ -203,7 +220,11 @@ class SignalPolicy:
 
         # --- STANDARD BUY SIGNALS ---
         elif (ichimoku_bullish or stat_arb_bullish) and (moving_up or ict_bullish or relative_buy_bias > 0.50 or stat_arb_bullish):
-            if stat_arb_bullish and is_range_market:
+            if not htf_buy_aligned:
+                reason_code = "BUY_REJECTED_HTF_TREND_CONFL_FAIL"
+            elif not sr_buy_allowed:
+                reason_code = "BUY_REJECTED_SR_RESISTANCE_MARGIN_FAIL"
+            elif stat_arb_bullish and is_range_market:
                 proposed_action = ActionType.BUY_LIMIT
                 target_entry_price = min(tenkan, round(current_tick.ask - 0.10, 2))
                 reason_code = f"STAT_ARB_MEAN_REVERSION_BUY_LIMIT (Z: {z_score:+.2f})"
@@ -224,7 +245,11 @@ class SignalPolicy:
 
         # --- STANDARD SELL SIGNALS ---
         elif (ichimoku_bearish or stat_arb_bearish) and (moving_down or ict_bearish or relative_sell_bias > 0.50 or stat_arb_bearish):
-            if stat_arb_bearish and is_range_market:
+            if not htf_sell_aligned:
+                reason_code = "SELL_REJECTED_HTF_TREND_CONFL_FAIL"
+            elif not sr_sell_allowed:
+                reason_code = "SELL_REJECTED_SR_SUPPORT_MARGIN_FAIL"
+            elif stat_arb_bearish and is_range_market:
                 proposed_action = ActionType.SELL_LIMIT
                 target_entry_price = max(tenkan, round(current_tick.bid + 0.10, 2))
                 reason_code = f"STAT_ARB_MEAN_REVERSION_SELL_LIMIT (Z: {z_score:+.2f})"
@@ -289,6 +314,11 @@ class SignalPolicy:
                     reason_code = f"FLIP_PROTECTION_BLOCKED ({confidence:.2f} < req {required_flip_confidence:.2f})"
 
         if proposed_action != ActionType.NO_TRADE:
+            reason_code = (
+                f"{reason_code} | HTF:[H4={h4_trend:+.1f}, H1_Mom={h1_mom:+.1f}, "
+                f"M30_Str={m30_str:+.1f}, M15_Conf={m15_conf:+.1f}] | "
+                f"S_Dist={support_zone_dist:.2f}, R_Dist={resistance_zone_dist:.2f}"
+            )
             self._last_active_direction = proposed_action
             self._last_active_direction_time = now
             self._last_executed_price = target_entry_price

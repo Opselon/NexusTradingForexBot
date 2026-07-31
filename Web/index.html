@@ -381,29 +381,33 @@
                             Feature Category
                         </h3>
                         <div class="space-y-1.5 text-xs text-textMuted font-medium">
-                            <div onclick="selectFeatureCategory('volatility')" class="category-btn active flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
+                            <div onclick="selectFeatureCategory('volatility', this)" class="category-btn active flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
                                 <span>Volatility & Microstructure</span>
                                 <span class="bg-accentCyan/10 text-accentCyan px-2 py-0.5 rounded font-bold">6 dim</span>
                             </div>
-                            <div onclick="selectFeatureCategory('candlestick')" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
+                            <div onclick="selectFeatureCategory('candlestick', this)" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
                                 <span>Candlestick Anatomy</span>
                                 <span class="bg-accentCyan/10 text-accentCyan px-2 py-0.5 rounded font-bold">8 dim</span>
                             </div>
-                            <div onclick="selectFeatureCategory('patterns')" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
+                            <div onclick="selectFeatureCategory('patterns', this)" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
                                 <span>Structure & Swing Patterns</span>
                                 <span class="bg-accentCyan/10 text-accentCyan px-2 py-0.5 rounded font-bold">6 dim</span>
                             </div>
-                            <div onclick="selectFeatureCategory('sessions')" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
+                            <div onclick="selectFeatureCategory('sessions', this)" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
                                 <span>Market Sessions Lags</span>
                                 <span class="bg-accentCyan/10 text-accentCyan px-2 py-0.5 rounded font-bold">8 dim</span>
                             </div>
-                            <div onclick="selectFeatureCategory('ict')" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
+                            <div onclick="selectFeatureCategory('ict', this)" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
                                 <span>ICT Smart Money Concepts</span>
                                 <span class="bg-accentCyan/10 text-accentCyan px-2 py-0.5 rounded font-bold">6 dim</span>
                             </div>
-                            <div onclick="selectFeatureCategory('ichimoku')" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
+                            <div onclick="selectFeatureCategory('ichimoku', this)" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
                                 <span>Ichimoku Kinko Hyo</span>
                                 <span class="bg-accentCyan/10 text-accentCyan px-2 py-0.5 rounded font-bold">6 dim</span>
+                            </div>
+                            <div onclick="selectFeatureCategory('multitimeframe', this)" class="category-btn flex items-center justify-between p-2.5 rounded-lg hover:bg-darkBg/40 cursor-pointer transition">
+                                <span>Multi-Timeframe & S/R</span>
+                                <span class="bg-accentCyan/10 text-accentCyan px-2 py-0.5 rounded font-bold">10 dim</span>
                             </div>
                         </div>
                     </div>
@@ -412,7 +416,7 @@
                     <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl lg:col-span-3">
                         <div class="flex justify-between items-center mb-4 border-b border-borderClr pb-2">
                             <h3 id="feature-category-title" class="text-md font-bold text-white flex items-center">
-                                Volatility & Microstructure Features (40-Dimensional Matrix)
+                                Volatility & Microstructure Features (50-Dimensional Matrix)
                             </h3>
                             <span class="text-xs text-accentCyan font-mono">Normalized Log Scale [-3.0, +3.0]</span>
                         </div>
