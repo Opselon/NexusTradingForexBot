@@ -14,10 +14,10 @@ Enterprise Upgrades & Calibrations Incorporated:
     7. Dynamic Z-Score & AI Confidence Blending (Eliminates artificial confidence inflation).
 """
 
-from datetime import datetime, timezone
 import math
 import uuid
-from typing import Optional
+from datetime import datetime
+
 import torch
 
 from nexus_scalp.domain.enums import ActionType
@@ -61,13 +61,13 @@ class SignalPolicy:
         self.flip_memory_seconds = flip_memory_seconds
         self.min_allowed_rr = min_allowed_rr
 
-        self._last_signal_time: Optional[datetime] = None
-        self._last_telemetry_time: Optional[datetime] = None
+        self._last_signal_time: datetime | None = None
+        self._last_telemetry_time: datetime | None = None
         self._last_logged_action: ActionType = ActionType.NO_TRADE
 
         # Persistent Memory for Direction & Same-Level Re-entry Protection
-        self._last_active_direction: Optional[ActionType] = None
-        self._last_active_direction_time: Optional[datetime] = None
+        self._last_active_direction: ActionType | None = None
+        self._last_active_direction_time: datetime | None = None
         self._last_executed_price: float = 0.0
 
     def evaluate_probabilities(
@@ -75,7 +75,7 @@ class SignalPolicy:
         probabilities: torch.Tensor,
         current_tick: TickData,
         feature_vector: FeatureVector,
-        regime_state: Optional[MarketRegimeState] = None,
+        regime_state: MarketRegimeState | None = None,
         survival_mode: bool = False,
     ) -> TradeProposal:
         """
@@ -424,7 +424,7 @@ class SignalPolicy:
             reason_code=reason,
         )
 
-    def _sanitize_float(self, val: Optional[float], default: float) -> float:
+    def _sanitize_float(self, val: float | None, default: float) -> float:
         """Sanitizes input float against None, NaN, and Inf values."""
         if val is None:
             return default

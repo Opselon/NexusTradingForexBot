@@ -14,7 +14,6 @@ Usage via CLI:
 
 import sys
 from pathlib import Path
-from typing import List
 
 import polars as pl
 import typer
@@ -64,7 +63,7 @@ def reconstruct_features_and_bars(df_ticks: pl.DataFrame, symbol: str) -> pl.Dat
     aggregator = BarAggregator(symbol=symbol, timeframe_minutes=1)
     feature_engine = ScalpFeatureEngine(symbol=symbol)
 
-    feature_records: List[dict] = []
+    feature_records: list[dict] = []
     
     for row in df_ticks.iter_rows(named=True):
         tick = TickData(

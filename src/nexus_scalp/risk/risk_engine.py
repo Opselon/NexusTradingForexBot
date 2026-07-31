@@ -13,11 +13,17 @@ Enterprise Upgrades & Calibrations Incorporated:
 """
 
 import math
-from typing import List, Optional
 
 from nexus_scalp.configuration.config import RiskConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
-from nexus_scalp.domain.models import AccountInfo, Position, SymbolInfo, TickData, TradeOrder, TradeProposal
+from nexus_scalp.domain.models import (
+    AccountInfo,
+    Position,
+    SymbolInfo,
+    TickData,
+    TradeOrder,
+    TradeProposal,
+)
 from nexus_scalp.features.regime_classifier import MarketRegimeState, RegimeType
 from nexus_scalp.observability.logging import get_logger
 
@@ -61,7 +67,7 @@ class RiskEngine:
         symbol_info: SymbolInfo, 
         current_tick: TickData, 
         atr: float,
-        order_type: Optional[OrderType] = None,  # Passive Limit Order Awareness
+        order_type: OrderType | None = None,  # Passive Limit Order Awareness
     ) -> float:
         """
         Almgren-Chriss Temporary Market Impact Model (O(1) Hot-Path).
@@ -87,11 +93,11 @@ class RiskEngine:
         proposal: TradeProposal,
         account: AccountInfo,
         symbol_info: SymbolInfo,
-        active_positions: List[Position],
+        active_positions: list[Position],
         current_tick: TickData,
-        regime_state: Optional[MarketRegimeState] = None,
+        regime_state: MarketRegimeState | None = None,
         atr: float = 1.50,
-    ) -> Optional[TradeOrder]:
+    ) -> TradeOrder | None:
         """
         Evaluates a TradeProposal against hard capital constraints, broker rules, and LOB friction.
         """

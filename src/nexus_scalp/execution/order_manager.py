@@ -25,10 +25,10 @@ Invariants:
     - Full Traceability: Every modification, partial close, or cancellation is audited.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import math
-from typing import Any, Dict, List, Optional, Set, Tuple
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.enums import OrderType
@@ -136,8 +136,8 @@ class OrderLifecycleManager:
     def __init__(
         self,
         adapter: IMT5Port,
-        audit_repo: Optional[AuditRepository] = None,
-        notifier: Optional[TelegramNotifier] = None, # [EXPANDED] Telegram Integration
+        audit_repo: AuditRepository | None = None,
+        notifier: TelegramNotifier | None = None, # [EXPANDED] Telegram Integration
         be_trigger_usd: float = 1.00,         # Dynamic base trigger ($1.00 movement before BE lock)
         be_lock_usd: float = 0.25,            # Locks +$0.25 to cover commissions and spread
         trailing_distance_usd: float = 1.50,  # ATR-scaled dynamic trailing distance for Gold noise
@@ -150,7 +150,7 @@ class OrderLifecycleManager:
         self.adapter = adapter
         self.audit = audit_repo or AuditRepository()
         self.notifier = notifier
-        self._processed_orders: Dict[str, bool] = {}
+        self._processed_orders: dict[str, bool] = {}
 
         self.be_trigger = be_trigger_usd
         self.be_lock = be_lock_usd
@@ -164,43 +164,44 @@ class OrderLifecycleManager:
         self.eta_coefficient = eta_coefficient
 
         # State Tracking for Metrics (Ticket -> Primitive)
-        self._partial_closed_tickets: Dict[int, bool] = {}
+        self._partial_closed_tickets: dict[int, bool] = {}
 
         # [EXPANDED] Maps position ticket -> Telegram message_id for Thread Replying
-        self._order_message_ids: Dict[int, int] = {}
+        self._order_message_ids: dict[int, int] = {}
         # [EXPANDED] Maps order_id (from proposal/TradeOrder) -> Telegram message_id
-        self._order_id_to_message_id: Dict[str, int] = {}
+        self._order_id_to_message_id: dict[str, int] = {}
 
         # [EXPANDED] State tracking for extended notifications
-        self._entry_prices: Dict[int, float] = {}
-        self._entry_sls: Dict[int, float] = {}
-        self._entry_tps: Dict[int, float] = {}
-        self._last_known_volume: Dict[int, float] = {}
-        self._initial_risks: Dict[int, float] = {}
+        self._entry_prices: dict[int, float] = {}
+        self._entry_sls: dict[int, float] = {}
+        self._entry_tps: dict[int, float] = {}
+        self._last_known_volume: dict[int, float] = {}
+        self._initial_risks: dict[int, float] = {}
 
-        self._mfe_tracker: Dict[int, float] = {}  # Maximum Favorable Excursion
-        self._mae_tracker: Dict[int, float] = {}  # Maximum Adverse Excursion
-        self._entry_timestamps: Dict[int, datetime] = {}
-        self._last_tick_timestamps: Dict[int, datetime] = {}
+        self._mfe_tracker: dict[int, float] = {}  # Maximum Favorable Excursion
+        self._mae_tracker: dict[int, float] = {}  # Maximum Adverse Excursion
+        self._entry_timestamps: dict[int, datetime] = {}
+        self._last_tick_timestamps: dict[int, datetime] = {}
 
         # Advanced Telemetry Trackers
-        self._time_in_profit_sec: Dict[int, float] = {}
-        self._time_in_drawdown_sec: Dict[int, float] = {}
-        self._peak_profit_usd: Dict[int, float] = {}
-        self._peak_drawdown_usd: Dict[int, float] = {}
+        self._time_in_profit_sec: dict[int, float] = {}
+        self._time_in_drawdown_sec: dict[int, float] = {}
+        self._peak_profit_usd: dict[int, float] = {}
+        self._peak_drawdown_usd: dict[int, float] = {}
 
         # Local State Features (LSF) Engine & Desync State Trackers
-        self._lsf_state: Dict[int, Dict[str, float]] = {}
-        self._last_seen_ts: Dict[int, datetime] = {}
-        self._stagnation_ticks: Dict[int, int] = {}
-        self._adverse_ticks: Dict[int, int] = {}
-        self._favorable_ticks: Dict[int, int] = {}
-        self._hold_score_tracker: Dict[int, int] = {}
-        self._rescue_registered_tickets: Dict[int, bool] = {}
-        self._last_modify_sl: Dict[int, float] = {}
-        self._last_price_tracker: Dict[int, float] = {}
+        self._lsf_state: dict[int, dict[str, float]] = {}
+        self._last_seen_ts: dict[int, datetime] = {}
+        self._stagnation_ticks: dict[int, int] = {}
+        self._adverse_ticks: dict[int, int] = {}
+        self._favorable_ticks: dict[int, int] = {}
+        self._hold_score_tracker: dict[int, int] = {}
+        self._rescue_registered_tickets: dict[int, bool] = {}
+        self._last_modify_sl: dict[int, float] = {}
+        self._last_price_tracker: dict[int, float] = {}
+        self._entry_directions: dict[int, str] = {}
 
-    def register_telegram_message(self, ticket: int, message_id: Optional[int]) -> None:
+    def register_telegram_message(self, ticket: int, message_id: int | None) -> None:
         """Associates a broker position ticket with its primary Telegram message_id."""
         if message_id is not None:
             self._order_message_ids[ticket] = message_id
@@ -237,7 +238,7 @@ class OrderLifecycleManager:
             return True
         return False
 
-    def _safe_feature_float(self, features: Optional[FeatureVector], attr_name: str, default: float) -> float:
+    def _safe_feature_float(self, features: FeatureVector | None, attr_name: str, default: float) -> float:
         """Safely extracts a floating point attribute from FeatureVector with fallback."""
         if features is None:
             return default
@@ -253,9 +254,9 @@ class OrderLifecycleManager:
     def _estimate_liquidation_impact(
         self,
         volume: float,
-        symbol_info: Optional[SymbolInfo],
+        symbol_info: SymbolInfo | None,
         atr: float,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """
         Almgren-Chriss Temporary Market Impact Model (Strict O(1) Math).
         Calculates the expected slippage incurred if the position were to be liquidated via Market Order.
@@ -422,9 +423,9 @@ class OrderLifecycleManager:
         impact_price_delta: float,
         total_impact_usd: float,
         holding_duration: float,
-        features: Optional[FeatureVector],
-        symbol_info: Optional[SymbolInfo],
-    ) -> Dict[str, Any]:
+        features: FeatureVector | None,
+        symbol_info: SymbolInfo | None,
+    ) -> dict[str, Any]:
         """Calculates 57 derived O(1) position metrics."""
         ticket = pos.ticket
         eps = 1e-9
@@ -619,17 +620,17 @@ class OrderLifecycleManager:
         self,
         pos: Position,
         price_current: float,
-        features: Optional[FeatureVector],
+        features: FeatureVector | None,
         impact_price_delta: float,
         atr: float,
-        smart_metrics: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[int, List[str]]:
+        smart_metrics: dict[str, Any] | None = None,
+    ) -> tuple[int, list[str]]:
         """
         Calculates position Hold Value Score (0 to 100) with Phase 1 Structural Integrity Bonuses
         and Profit Shield Protection.
         """
         score = 100
-        reasons: List[str] = []
+        reasons: list[str] = []
 
         if features is None:
             return max(0, score), reasons
@@ -680,8 +681,8 @@ class OrderLifecycleManager:
         self,
         ticket: int,
         base_score: int,
-        metrics: Dict[str, Any],
-        reasons: List[str],
+        metrics: dict[str, Any],
+        reasons: list[str],
     ) -> int:
         score = base_score
         desync_score = float(metrics.get("desync_score", 0.0))
@@ -703,14 +704,14 @@ class OrderLifecycleManager:
         self,
         pos: Position,
         hold_score: int,
-        metrics: Dict[str, Any],
+        metrics: dict[str, Any],
         net_delta: float,
         gross_delta: float,
         atr: float,
         spread: float,
         holding_duration: float,
         min_stop_gap: float,
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         """
         60-Scenario Router with strict Profit Shield (Never closes winning trades prematurely).
         """
@@ -792,7 +793,7 @@ class OrderLifecycleManager:
         self,
         symbol: str,
         current_tick: TickData,
-        symbol_info: Optional[SymbolInfo] = None,
+        symbol_info: SymbolInfo | None = None,
         atr: float = 1.50,
         max_pending_dist_atr_mult: float = 1.20,
     ) -> None:
@@ -827,9 +828,9 @@ class OrderLifecycleManager:
         self,
         symbol: str,
         current_tick: TickData,
-        feature_vector: Optional[FeatureVector] = None,
-        symbol_info: Optional[SymbolInfo] = None,
-    ) -> List[Position]:
+        feature_vector: FeatureVector | None = None,
+        symbol_info: SymbolInfo | None = None,
+    ) -> list[Position]:
         atr = max(self._safe_feature_float(feature_vector, "atr_m1", 0.80), 0.50)
         self.manage_pending_orders(symbol=symbol, current_tick=current_tick, symbol_info=symbol_info, atr=atr)
 
@@ -840,90 +841,129 @@ class OrderLifecycleManager:
         tracked_tickets = set(self._entry_timestamps.keys())
         dead_tickets = tracked_tickets - active_tickets
 
-        if dead_tickets and self.notifier:
+        if dead_tickets:
             try:
                 history_deals = self.adapter.get_closed_deals_history(symbol=symbol, hours_back=1)
-                for dead_ticket in dead_tickets:
-                    msg_id = self._order_message_ids.get(dead_ticket)
-                    matched_deal = next((d for d in history_deals if d.get("position_ticket") == dead_ticket), None)
+            except Exception as e:
+                logger.error("Failed to retrieve closed deals history for ledger", error=e)
+                history_deals = []
 
-                    entry = self._entry_prices.get(dead_ticket, 0.0)
-                    tp_price = self._entry_tps.get(dead_ticket, 0.0)
-                    sl_price = self._entry_sls.get(dead_ticket, 0.0)
-                    orig_risk = self._initial_risks.get(dead_ticket, 0.0)
-                    entry_time = self._entry_timestamps.get(dead_ticket)
-                    duration_sec = (now - entry_time).total_seconds() if entry_time else 0.0
+            for dead_ticket in dead_tickets:
+                entry = self._entry_prices.get(dead_ticket, 0.0)
+                tp_price = self._entry_tps.get(dead_ticket, 0.0)
+                sl_price = self._entry_sls.get(dead_ticket, 0.0)
+                entry_time = self._entry_timestamps.get(dead_ticket)
+                duration_sec = (now - entry_time).total_seconds() if entry_time else 0.0
+                vol = self._last_known_volume.get(dead_ticket, 0.0)
+                direction = self._entry_directions.get(dead_ticket, "BUY")
 
-                    if matched_deal:
-                        profit_usd = (
-                            matched_deal.get("profit", 0.0)
-                            + matched_deal.get("swap", 0.0)
-                            + matched_deal.get("commission", 0.0)
-                        )
-                        exit_price = matched_deal.get("price", 0.0)
+                matched_deal = next((d for d in history_deals if d.get("position_ticket") == dead_ticket), None)
 
-                        deal_reason_code = matched_deal.get("reason", 0)
-                        comment = matched_deal.get("comment", "")
+                profit_usd = 0.0
+                swap_usd = 0.0
+                comm_usd = 0.0
+                exit_price = entry
+                status_str = "CLOSED"
 
+                if matched_deal:
+                    profit_usd = matched_deal.get("profit", 0.0)
+                    swap_usd = matched_deal.get("swap", 0.0)
+                    comm_usd = matched_deal.get("commission", 0.0)
+                    exit_price = matched_deal.get("price", 0.0)
+                    deal_reason_code = matched_deal.get("reason", 0)
+                    comment = matched_deal.get("comment", "")
+
+                    if "NSE_CLOSE" in comment or "emergency" in comment.lower() or "cut" in comment.lower():
+                        status_str = "MANUALLY_CLOSED"
+                    elif deal_reason_code == 4 or "tp" in comment.lower() or (profit_usd > 0 and abs(exit_price - tp_price) < 0.10):
+                        status_str = "CLOSED_TP"
+                    elif deal_reason_code == 3 or "sl" in comment.lower() or (profit_usd < 0 and abs(exit_price - sl_price) < 0.10):
+                        status_str = "CLOSED_SL"
+                    else:
+                        status_str = "MANUALLY_CLOSED" if deal_reason_code == 1 else "CLOSED"
+                else:
+                    exit_price = current_tick.bid if direction == "BUY" else current_tick.ask
+
+                self.audit.log_ledger_closed(
+                    ticket=dead_ticket,
+                    symbol=symbol,
+                    direction=direction,
+                    volume=vol,
+                    entry_price=entry,
+                    exit_price=exit_price,
+                    status=status_str,
+                    pnl=profit_usd,
+                    commission=comm_usd,
+                    swap=swap_usd,
+                    duration_sec=duration_sec,
+                    timestamp_str=now.isoformat() if hasattr(now, "isoformat") else str(now),
+                )
+
+                if self.notifier:
+                    try:
+                        msg_id = self._order_message_ids.get(dead_ticket)
+                        orig_risk = self._initial_risks.get(dead_ticket, 0.0)
                         profit_pct = 0.0
                         if entry > 0.0:
                             profit_pct = abs(exit_price - entry) / entry * 100.0
-                            if profit_usd < 0:
+                            if (profit_usd + swap_usd + comm_usd) < 0:
                                 profit_pct = -profit_pct
 
-                        if "NSE_CLOSE" in comment or "emergency" in comment.lower() or "cut" in comment.lower():
+                        total_net_profit = profit_usd + swap_usd + comm_usd
+
+                        if status_str == "MANUALLY_CLOSED" and matched_deal and ("NSE_CLOSE" in matched_deal.get("comment", "") or "emergency" in matched_deal.get("comment", "").lower() or "cut" in matched_deal.get("comment", "").lower()):
                             mae_val = self._mae_tracker.get(dead_ticket, 0.0)
                             dd_pct = (abs(mae_val) / max(atr, 0.50)) * 100.0
                             self.notifier.notify_emergency_cut(
                                 ticket=dead_ticket,
                                 score=self._hold_score_tracker.get(dead_ticket, 100),
-                                reasons=comment or "NSE Emergency Cut",
-                                saved_usd=abs(profit_usd) if profit_usd < 0 else profit_usd,
+                                reasons=matched_deal.get("comment", "") if matched_deal else "NSE Emergency Cut",
+                                saved_usd=abs(total_net_profit) if total_net_profit < 0 else total_net_profit,
                                 trigger_source="Algorithm Position Router",
                                 drawdown_pct=dd_pct,
                                 reply_to_message_id=msg_id,
                             )
-                        elif deal_reason_code == 4 or "tp" in comment.lower() or (profit_usd > 0 and abs(exit_price - tp_price) < 0.10):
+                        elif status_str == "CLOSED_TP":
                             self.notifier.notify_tp_touched(
                                 ticket=dead_ticket,
                                 symbol=symbol,
                                 entry=entry,
                                 tp_price=tp_price,
                                 exit_price=exit_price,
-                                profit_usd=profit_usd,
+                                profit_usd=total_net_profit,
                                 profit_pct=profit_pct,
                                 duration_sec=duration_sec,
                                 reply_to_message_id=msg_id,
                             )
-                        elif deal_reason_code == 3 or "sl" in comment.lower() or (profit_usd < 0 and abs(exit_price - sl_price) < 0.10):
+                        elif status_str == "CLOSED_SL":
                             self.notifier.notify_sl_touched(
                                 ticket=dead_ticket,
                                 symbol=symbol,
                                 entry=entry,
                                 sl_price=sl_price,
                                 exit_price=exit_price,
-                                loss_usd=profit_usd,
+                                loss_usd=total_net_profit,
                                 loss_pct=profit_pct,
                                 duration_sec=duration_sec,
                                 risk_usd=orig_risk,
                                 reply_to_message_id=msg_id,
                             )
                         else:
-                            reason_str = "Manual Close via Terminal" if deal_reason_code == 1 else f"MT5 Reason Code {deal_reason_code}"
-                            if comment:
-                                reason_str += f" ({comment})"
+                            reason_str = "Manual Close via Terminal" if (matched_deal and matched_deal.get("reason", 0) == 1) else f"MT5 Reason Code {matched_deal.get('reason', 0) if matched_deal else 'Unknown'}"
+                            if matched_deal and matched_deal.get("comment", ""):
+                                reason_str += f" ({matched_deal.get('comment', '')})"
                             self.notifier.notify_manual_close(
                                 ticket=dead_ticket,
                                 symbol=symbol,
                                 entry=entry,
                                 exit_price=exit_price,
-                                profit_usd=profit_usd,
+                                profit_usd=total_net_profit,
                                 duration_sec=duration_sec,
                                 reason=reason_str,
                                 reply_to_message_id=msg_id,
                             )
-            except Exception as e:
-                logger.error("Failed to extract or notify closed trade history", error=e)
+                    except Exception as e:
+                        logger.error("Failed to notify closed trade", error=e)
 
         for dead_ticket in dead_tickets:
             self._cleanup_ticket_state(dead_ticket)
@@ -952,10 +992,21 @@ class OrderLifecycleManager:
                 self._entry_sls[ticket] = pos.sl
                 self._entry_tps[ticket] = pos.tp
                 self._last_known_volume[ticket] = pos.volume
+                self._entry_directions[ticket] = pos.type.value
 
                 risk_price = abs(pos.price_open - pos.sl) if pos.sl > 0 else (atr * 1.5)
                 contract_size = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
                 self._initial_risks[ticket] = pos.volume * contract_size * risk_price
+
+                # Robust Financial Ledger opened record
+                self.audit.log_ledger_opened(
+                    ticket=ticket,
+                    symbol=pos.symbol,
+                    direction=pos.type.value,
+                    volume=pos.volume,
+                    entry_price=pos.price_open,
+                    timestamp_str=pos_time.isoformat() if hasattr(pos_time, "isoformat") else str(pos_time),
+                )
 
                 # [EXPANDED] Try to associate message ID with this ticket!
                 if self._order_id_to_message_id:
@@ -1038,16 +1089,15 @@ class OrderLifecycleManager:
                                 realized_profit_usd=realized_pnl,
                                 reply_to_message_id=self._order_message_ids.get(ticket),
                             )
-                    else:
-                        if self.notifier:
-                            self.notifier.notify_order_modification(
-                                ticket=ticket,
-                                symbol=pos.symbol,
-                                field_modified="Volume",
-                                old_value=old_vol,
-                                new_value=pos.volume,
-                                reply_to_message_id=self._order_message_ids.get(ticket),
-                            )
+                    elif self.notifier:
+                        self.notifier.notify_order_modification(
+                            ticket=ticket,
+                            symbol=pos.symbol,
+                            field_modified="Volume",
+                            old_value=old_vol,
+                            new_value=pos.volume,
+                            reply_to_message_id=self._order_message_ids.get(ticket),
+                        )
                     self._last_known_volume[ticket] = pos.volume
 
             entry_time = self._entry_timestamps[ticket]
@@ -1160,6 +1210,7 @@ class OrderLifecycleManager:
             self._peak_profit_usd, self._peak_drawdown_usd, self._lsf_state, self._last_seen_ts,
             self._stagnation_ticks, self._adverse_ticks, self._favorable_ticks, self._hold_score_tracker,
             self._rescue_registered_tickets, self._last_modify_sl, self._last_price_tracker,
-            self._entry_prices, self._entry_sls, self._entry_tps, self._last_known_volume, self._initial_risks
+            self._entry_prices, self._entry_sls, self._entry_tps, self._last_known_volume, self._initial_risks,
+            self._entry_directions
         ):
             tracker.pop(ticket, None)

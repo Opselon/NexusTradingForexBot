@@ -5,12 +5,12 @@ Console application providing operational controls, system status diagnostics,
 and live engine controls.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
+import typer
 from rich.console import Console
 from rich.table import Table
-import typer
 
 from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter
 from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter

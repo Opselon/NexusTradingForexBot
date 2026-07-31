@@ -17,7 +17,6 @@ Invariants:
     - Zero Overlapping Outcomes: Embargo guarantees serial independence of training samples.
 """
 
-from typing import List, Optional, Tuple
 import numpy as np
 import polars as pl
 

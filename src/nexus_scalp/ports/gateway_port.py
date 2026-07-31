@@ -5,7 +5,7 @@ Abstract Port defining RPC interface for remote MT5 communication across contain
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any
 
 
 class IGatewayPort(ABC):
@@ -19,6 +19,6 @@ class IGatewayPort(ABC):
         pass
 
     @abstractmethod
-    async def execute_remote_command(self, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_remote_command(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Dispatches HMAC-authenticated payload command to remote gateway host."""
         pass

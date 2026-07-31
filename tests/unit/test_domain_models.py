@@ -4,7 +4,7 @@ Unit Tests - Domain Models & Invariants
 Verifies business logic rules on value objects.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -15,7 +15,7 @@ from nexus_scalp.domain.models import TickData, TradeProposal
 
 def test_tick_data_valid_instantiation() -> None:
     """Verifies that a valid tick snapshot is initialized correctly."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     tick = TickData(
         symbol="EURUSD",
         timestamp=now,
@@ -30,7 +30,7 @@ def test_tick_data_valid_instantiation() -> None:
 
 def test_tick_data_invalid_spread_raises_validation_error() -> None:
     """Ensures that Bid > Ask triggers a validation failure (negative spread guard)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with pytest.raises(ValidationError):
         TickData(
             symbol="EURUSD",
@@ -44,7 +44,7 @@ def test_tick_data_invalid_spread_raises_validation_error() -> None:
 
 def test_trade_proposal_buy_invariants() -> None:
     """Ensures invalid stop loss placement on Buy actions triggers validation error."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with pytest.raises(ValidationError):
         TradeProposal(
             request_id="test-uuid-1",

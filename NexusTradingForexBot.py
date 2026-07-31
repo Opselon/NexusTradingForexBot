@@ -23,11 +23,10 @@ Key Architectural Responsibilities:
 
 import argparse
 import asyncio
-from pathlib import Path
 import shutil
 import socket
 import sys
-from typing import Optional
+from pathlib import Path
 
 # ==============================================================================
 # Path Bootstrapping: Register `src` directory in sys.path BEFORE importing core
@@ -37,17 +36,17 @@ SRC_DIR = CURRENT_DIR / "src"
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+import uvicorn
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-import uvicorn
 
 from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter
-from nexus_scalp.web.server import create_app
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.observability.logging import configure_logging, get_logger
+from nexus_scalp.web.server import create_app
 
 # Initialize Rich terminal output console
 console = Console()

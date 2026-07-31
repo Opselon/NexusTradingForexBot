@@ -25,12 +25,11 @@ import math
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 import polars as pl
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from nexus_scalp.domain.enums import ActionType
@@ -52,9 +51,9 @@ class ScalpDataset(Dataset):
         self.labels = torch.tensor(labels, dtype=torch.long).to(device)
 
     def __len__(self) -> int:
-        return int(len(self.labels))
+        return len(self.labels)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         return self.features[idx], self.labels[idx]
 
 
@@ -121,13 +120,13 @@ class WalkForwardTrainer:
         else:
             self.device = torch.device("cpu")
 
-        self.label_map: Dict[str, int] = {
+        self.label_map: dict[str, int] = {
             ActionType.NO_TRADE.value: 0,
             ActionType.BUY_MARKET.value: 1,
             ActionType.SELL_MARKET.value: 2,
         }
 
-        self.inverse_label_map: Dict[int, str] = {
+        self.inverse_label_map: dict[int, str] = {
             0: ActionType.NO_TRADE.value,
             1: ActionType.BUY_MARKET.value,
             2: ActionType.SELL_MARKET.value,
@@ -139,7 +138,7 @@ class WalkForwardTrainer:
     # PUBLIC API
     # =========================================================================
 
-    def train_and_validate(self, df: pl.DataFrame, feature_cols: List[str]) -> ScalpNet:
+    def train_and_validate(self, df: pl.DataFrame, feature_cols: list[str]) -> ScalpNet:
         """
         Runs purged blocked time-series walk-forward validation and final production training.
         """
@@ -171,8 +170,8 @@ class WalkForwardTrainer:
                 f"Insufficient dataset size ({total_samples}) for {self.num_folds} folds."
             )
 
-        oos_predictions: List[int] = []
-        oos_targets: List[int] = []
+        oos_predictions: list[int] = []
+        oos_targets: list[int] = []
 
         for fold in range(self.num_folds):
             start_idx = fold * fold_size
@@ -221,7 +220,7 @@ class WalkForwardTrainer:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
 
             best_val_loss = float("inf")
-            best_state: Optional[Dict[str, torch.Tensor]] = None
+            best_state: dict[str, torch.Tensor] | None = None
             patience_counter = 0
 
             for epoch in range(self.epochs):
@@ -305,13 +304,13 @@ class WalkForwardTrainer:
 
     def fine_tune_online(
         self,
-        live_model: Optional[ScalpNet] = None,
-        recent_df: Optional[pl.DataFrame] = None,
-        feature_cols: Optional[List[str]] = None,
+        live_model: ScalpNet | None = None,
+        recent_df: pl.DataFrame | None = None,
+        feature_cols: list[str] | None = None,
         epochs: int = 3,
         learning_rate: float = 1e-4,
         max_holding_bars: int = 15,
-        model: Optional[ScalpNet] = None,  # Keyword Alias for backwards compatibility
+        model: ScalpNet | None = None,  # Keyword Alias for backwards compatibility
     ) -> ScalpNet:
         """
         Performs clone-safe online fine-tuning on recent labeled bars.
@@ -396,7 +395,7 @@ class WalkForwardTrainer:
     # INTERNAL: VALIDATION & FILTERS
     # =========================================================================
 
-    def _validate_training_frame(self, df: pl.DataFrame, feature_cols: List[str]) -> None:
+    def _validate_training_frame(self, df: pl.DataFrame, feature_cols: list[str]) -> None:
         if len(feature_cols) != self.NUM_FEATURES:
             raise ValueError(
                 f"50D feature contract violation: expected {self.NUM_FEATURES} "
@@ -430,7 +429,7 @@ class WalkForwardTrainer:
     # INTERNAL: EXTRACTION / TRANSFORM
     # =========================================================================
 
-    def _extract_X_y(self, df: pl.DataFrame, feature_cols: List[str]) -> Tuple[np.ndarray, np.ndarray]:
+    def _extract_X_y(self, df: pl.DataFrame, feature_cols: list[str]) -> tuple[np.ndarray, np.ndarray]:
         X_raw = df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
         X_raw = np.nan_to_num(X_raw, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -553,9 +552,9 @@ class WalkForwardTrainer:
 
         return total_loss / max(1, total_rows)
 
-    def _predict_classes(self, model: ScalpNet, loader: DataLoader) -> List[int]:
+    def _predict_classes(self, model: ScalpNet, loader: DataLoader) -> list[int]:
         model.eval()
-        preds: List[int] = []
+        preds: list[int] = []
 
         with torch.inference_mode():
             for batch_x, _ in loader:
@@ -569,7 +568,7 @@ class WalkForwardTrainer:
     # INTERNAL: METRICS
     # =========================================================================
 
-    def _calculate_fold_sharpe_proxy(self, preds: List[int], targets: np.ndarray) -> float:
+    def _calculate_fold_sharpe_proxy(self, preds: list[int], targets: np.ndarray) -> float:
         preds_arr = np.array(preds, dtype=np.int64)
         targets_arr = np.array(targets, dtype=np.int64)
 
@@ -584,7 +583,7 @@ class WalkForwardTrainer:
         std_ret = float(np.std(returns)) + 1e-8
         return float((mean_ret / std_ret) * math.sqrt(252))
 
-    def _evaluate_global_performance(self, preds: List[int], targets: List[int]) -> Dict[str, str]:
+    def _evaluate_global_performance(self, preds: list[int], targets: list[int]) -> dict[str, str]:
         if len(preds) == 0 or len(targets) == 0:
             return {
                 "total_oos_samples": "0",
@@ -599,7 +598,7 @@ class WalkForwardTrainer:
 
         active_mask = (preds_arr == 1) | (preds_arr == 2)
         total_trades = int(np.sum(active_mask))
-        total_samples = int(len(preds_arr))
+        total_samples = len(preds_arr)
         trade_rate = (total_trades / max(1, total_samples)) * 100.0
 
         if total_trades == 0:
@@ -754,7 +753,7 @@ def _load_scaler(self) -> ScalerBundle:
     return ScalerBundle(mean=mean, std=std)
 
 
-    def _save_metadata(self, feature_cols: List[str]) -> None:
+    def _save_metadata(self, feature_cols: list[str]) -> None:
         meta_path = self._get_meta_path()
         tmp_path = meta_path.with_name(meta_path.name + ".tmp")
 
