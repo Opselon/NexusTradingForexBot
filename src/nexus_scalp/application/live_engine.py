@@ -24,6 +24,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, Optional
 
 import numpy as np
 import polars as pl
@@ -32,7 +33,7 @@ import torch
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ActionType
-from nexus_scalp.domain.models import AccountInfo, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.domain.models import AccountInfo, SymbolInfo, TickData, TradeOrder, TradeProposal, Position
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
 from nexus_scalp.features.scalp_features import ScalpFeatureEngine
@@ -45,6 +46,7 @@ from nexus_scalp.ports.mt5_port import IMT5Port
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.signals.policy import SignalPolicy
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
+from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
 logger = get_logger("nexus_scalp.application.live_engine")
 
@@ -132,10 +134,14 @@ class LiveEngine:
             enabled=config.telegram.enabled,
         )
 
+        # Module 1: Rule Matrix Engine
+        self.rule_matrix = RuleMatrixEngine(audit_repo=self.audit)
+
         # Order/risk/policy
         self.signal_policy = SignalPolicy(
             confidence_threshold=config.model.confidence_threshold,
             cooldown_seconds=4.0,
+            rule_matrix=self.rule_matrix,
         )
         self.risk_engine = RiskEngine(
             config=config.risk,
@@ -146,6 +152,7 @@ class LiveEngine:
             adapter=adapter,
             audit_repo=self.audit,
             notifier=self.notifier,
+            rule_matrix=self.rule_matrix,
         )
 
         # Online training toolchain

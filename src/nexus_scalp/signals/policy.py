@@ -33,6 +33,8 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.signals.policy")
 
 
+from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
+
 class SignalPolicy:
     """
     Evaluates multi-confluence setups and generates active trade proposals for Risk Engine validation.
@@ -50,6 +52,7 @@ class SignalPolicy:
         flip_confidence_penalty: float = 0.10,    # Hysteresis penalty when flipping BUY/SELL
         flip_memory_seconds: float = 8.0,         # Reduced hysteresis memory window
         min_allowed_rr: float = 1.10,             # Absolute minimum Risk-to-Reward ratio required
+        rule_matrix: RuleMatrixEngine | None = None,
     ) -> None:
         self.confidence_threshold = confidence_threshold
         self.cooldown_seconds = cooldown_seconds
@@ -60,6 +63,7 @@ class SignalPolicy:
         self.flip_confidence_penalty = flip_confidence_penalty
         self.flip_memory_seconds = flip_memory_seconds
         self.min_allowed_rr = min_allowed_rr
+        self.rule_matrix = rule_matrix
 
         self._last_signal_time: datetime | None = None
         self._last_telemetry_time: datetime | None = None
@@ -87,6 +91,33 @@ class SignalPolicy:
 
         raw_prob_buy = probs[1] if len(probs) > 1 else 0.0
         raw_prob_sell = probs[2] if len(probs) > 2 else 0.0
+
+        # --- RULE MATRIX INTEGRATION ---
+        if self.rule_matrix:
+            self.rule_matrix.refresh_cache()
+            # 1. Check Filters first
+            blocked_reason = self.rule_matrix.evaluate_pre_trade_filters(
+                tick=current_tick,
+                fv=feature_vector,
+                regime_state=regime_state
+            )
+            if blocked_reason:
+                return self._build_no_trade(current_tick, 0.0, blocked_reason)
+
+            # 2. Check Custom Rules Triggered Entries (which take precedence over base PyTorch AI)
+            rule_proposal = self.rule_matrix.evaluate_pre_trade_entry(
+                tick=current_tick,
+                fv=feature_vector,
+                regime_state=regime_state,
+                probs=[probs[0], raw_prob_buy, raw_prob_sell] if len(probs) > 2 else [1.0, 0.0, 0.0]
+            )
+            if rule_proposal:
+                logger.info(
+                    "Signal triggered by Rule Matrix Entry Engine",
+                    rule=rule_proposal.reason_code,
+                    action=rule_proposal.action.value,
+                )
+                return rule_proposal
 
         prob_buy = self._sanitize_float(raw_prob_buy, 0.0)
         prob_sell = self._sanitize_float(raw_prob_sell, 0.0)

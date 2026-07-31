@@ -32,6 +32,7 @@ from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.enums import OrderType
+from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.observability.logging import get_logger
@@ -146,10 +147,12 @@ class OrderLifecycleManager:
         partial_tp_ratio: float = 0.50,       # Closes 50% volume on TP1 milestone
         max_holding_seconds: float = 1800.0,  # 30 minutes time-decay threshold for stagnant trades
         eta_coefficient: float = 2500.0,      # Base Temporary Impact scale for XAUUSD (Almgren-Chriss)
+        rule_matrix: RuleMatrixEngine | None = None,
     ) -> None:
         self.adapter = adapter
         self.audit = audit_repo or AuditRepository()
         self.notifier = notifier
+        self.rule_matrix = rule_matrix
         self._processed_orders: dict[str, bool] = {}
 
         self.be_trigger = be_trigger_usd
@@ -1132,10 +1135,37 @@ class OrderLifecycleManager:
                 hold_score=f"{hold_score}/100",
             )
 
-            action, scenario = self._resolve_position_management_scenario(
-                pos=pos, hold_score=hold_score, metrics=smart_metrics, net_delta=net_price_delta,
-                gross_delta=profit_price_delta, atr=atr, spread=spread, holding_duration=holding_duration, min_stop_gap=min_stop_gap
-            )
+            # --- RULE MATRIX IN-TRADE EXIT EVALUATION ---
+            rule_exit = None
+            rule_target_sl = 0.0
+            if self.rule_matrix:
+                self.rule_matrix.refresh_cache()
+                rule_exit = self.rule_matrix.evaluate_in_trade_exits(
+                    pos=pos,
+                    holding_duration_sec=holding_duration,
+                    price_current=price_current,
+                    atr=atr,
+                    mfe_profit=self._mfe_tracker.get(ticket, 0.0),
+                )
+
+            if rule_exit:
+                if rule_exit["action"] == "CLOSE":
+                    action = "CLOSE"
+                    scenario = rule_exit["reason"]
+                elif rule_exit["action"] == "MODIFY_SL":
+                    action = "MODIFY_SL"
+                    scenario = rule_exit["reason"]
+                    rule_target_sl = rule_exit["stop_loss"]
+                else:
+                    action, scenario = self._resolve_position_management_scenario(
+                        pos=pos, hold_score=hold_score, metrics=smart_metrics, net_delta=net_price_delta,
+                        gross_delta=profit_price_delta, atr=atr, spread=spread, holding_duration=holding_duration, min_stop_gap=min_stop_gap
+                    )
+            else:
+                action, scenario = self._resolve_position_management_scenario(
+                    pos=pos, hold_score=hold_score, metrics=smart_metrics, net_delta=net_price_delta,
+                    gross_delta=profit_price_delta, atr=atr, spread=spread, holding_duration=holding_duration, min_stop_gap=min_stop_gap
+                )
 
             if action == "CLOSE":
                 msg_id = self._order_message_ids.get(ticket)
@@ -1149,6 +1179,22 @@ class OrderLifecycleManager:
                             reply_to_message_id=msg_id,
                         )
                     self._cleanup_ticket_state(ticket)
+                continue
+
+            elif action == "MODIFY_SL":
+                if self._should_modify_sl(ticket, rule_target_sl):
+                    if self.adapter.modify_position(ticket=ticket, stop_loss=rule_target_sl, take_profit=pos.tp):
+                        self._last_modify_sl[ticket] = rule_target_sl
+                        if self.notifier:
+                            msg_id = self._order_message_ids.get(ticket)
+                            self.notifier.notify_order_modification(
+                                ticket=ticket,
+                                symbol=pos.symbol,
+                                field_modified=f"Stop Loss ({scenario})",
+                                old_value=pos.sl,
+                                new_value=rule_target_sl,
+                                reply_to_message_id=msg_id,
+                            )
                 continue
 
             elif action == "PARTIAL_CLOSE":

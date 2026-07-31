@@ -91,6 +91,10 @@
                 <i class="fa-solid fa-brain text-lg w-5 text-accentCyan"></i>
                 <span>AI Intel Hub</span>
             </button>
+            <button onclick="switchTab('tab-rules', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                <i class="fa-solid fa-shield-halved text-lg w-5 text-accentCyan"></i>
+                <span>Scalping Rules</span>
+            </button>
             <button onclick="switchTab('tab-config', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
                 <i class="fa-solid fa-sliders text-lg w-5 text-accentCyan"></i>
                 <span>Bot Settings</span>
@@ -495,6 +499,31 @@
                                 </table>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 5: SCALPING RULES PANEL -->
+            <section id="tab-rules" class="tab-content hidden space-y-6">
+                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                    <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
+                        <div>
+                            <h3 class="text-md font-bold text-white flex items-center">
+                                <i class="fa-solid fa-shield-halved mr-2 text-accentCyan"></i>
+                                Advanced Price-Hunting & Scalping Rule Matrix
+                            </h3>
+                            <p class="text-xs text-textMuted mt-1">
+                                PERSISTENCE CONTROL: All 30+ institutional rules are disabled by default. Enabling a rule overrides standard PyTorch AI.
+                            </p>
+                        </div>
+                        <button onclick="loadRules()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-3 py-1.5 rounded text-xs font-bold transition flex items-center space-x-1">
+                            <i class="fa-solid fa-arrows-rotate"></i> <span>Refresh Rules</span>
+                        </button>
+                    </div>
+
+                    <!-- Categories list and Grid of Rules -->
+                    <div class="space-y-6" id="rules-categories-container">
+                        <!-- We will dynamically populate category headers and cards for all 30+ rules -->
                     </div>
                 </div>
             </section>
