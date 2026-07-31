@@ -239,7 +239,7 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
             raise RuntimeError(f"Remote gateway ping returned invalid status: {res}")
         return (time.perf_counter() - t0) * 1000.0
 
-def modify_position(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
+    def modify_position(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
         """Modifies position SL/TP via remote gateway RPC."""
         res = self._send_request(
             "MODIFY_POSITION",
