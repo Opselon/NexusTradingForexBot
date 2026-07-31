@@ -432,7 +432,7 @@ class DirectMT5Adapter(IMT5Port):
         logger.info("Successfully modified position ticket #%s -> New SL: %s | New TP: %s", ticket, stop_loss, take_profit)
         return True
 
-    def close_position(self, ticket: int) -> bool:
+    def close_position(self, ticket: int, volume: float | None = None) -> bool:
         self._assert_connected()
         assert mt5 is not None
 
@@ -448,11 +448,12 @@ class DirectMT5Adapter(IMT5Port):
 
         price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
         filling_mode = self._resolve_filling_mode(pos.symbol)
+        close_volume = volume if volume is not None else pos.volume
 
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": pos.symbol,
-            "volume": pos.volume,
+            "volume": close_volume,
             "type": close_type,
             "position": ticket,
             "price": price,

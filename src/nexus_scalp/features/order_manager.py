@@ -7,8 +7,7 @@ if a trade encounters a Bull/Bear Trap, and dispatches Thread-Replied Telegram A
 upon trade exit (TP/SL).
 """
 
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set, Tuple
+from datetime import datetime
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.enums import OrderType
@@ -30,8 +29,8 @@ class OrderLifecycleManager:
     def __init__(
         self,
         adapter: IMT5Port,
-        audit_repo: Optional[AuditRepository] = None,
-        notifier: Optional[TelegramNotifier] = None, # [EXPANDED] Telegram Integration
+        audit_repo: AuditRepository | None = None,
+        notifier: TelegramNotifier | None = None, # [EXPANDED] Telegram Integration
         be_trigger_usd: float = 0.50,         # Trigger Break-Even at +$0.50 profit on Gold
         be_lock_usd: float = 0.10,            # Lock in +$0.10 profit when BE triggers
         trailing_distance_usd: float = 0.80,   # Maintain $0.80 trailing gap behind price
@@ -41,7 +40,7 @@ class OrderLifecycleManager:
         self.adapter = adapter
         self.audit = audit_repo or AuditRepository()
         self.notifier = notifier
-        self._processed_orders: Dict[str, bool] = {}
+        self._processed_orders: dict[str, bool] = {}
 
         self.be_trigger = be_trigger_usd
         self.be_lock = be_lock_usd
@@ -50,18 +49,25 @@ class OrderLifecycleManager:
         self.stale_trade_seconds = stale_trade_seconds
         
         # Tracks exact UTC timestamp when each position ticket was first detected open
-        self._position_open_times: Dict[int, datetime] = {}
+        self._position_open_times: dict[int, datetime] = {}
         
         # [EXPANDED] Maps position ticket -> Telegram message_id for Thread Replying
-        self._order_message_ids: Dict[int, int] = {}
+        self._order_message_ids: dict[int, int] = {}
         
         # [EXPANDED] Set tracking active tickets to detect closed trades
-        self._known_active_tickets: Set[int] = set()
+        self._known_active_tickets: set[int] = set()
 
-    def register_telegram_message(self, ticket: int, message_id: Optional[int]) -> None:
+        # [EXPANDED] Maps order_id (from proposal/TradeOrder) -> Telegram message_id
+        self._order_id_to_message_id: dict[str, int] = {}
+
+    def register_telegram_message(self, ticket: int, message_id: int | None) -> None:
         """[NEW] Associates a broker position ticket with its primary Telegram message_id."""
         if message_id is not None:
             self._order_message_ids[ticket] = message_id
+
+    def register_order_message(self, order_id: str, message_id: int) -> None:
+        """[NEW] Temporarily registers message_id for a submitted order_id."""
+        self._order_id_to_message_id[order_id] = message_id
 
     def execute_order(self, order: TradeOrder) -> bool:
         """
@@ -90,9 +96,9 @@ class OrderLifecycleManager:
         self,
         symbol: str,
         current_tick: TickData,
-        feature_vector: Optional[FeatureVector] = None,
-        symbol_info: Optional[SymbolInfo] = None,
-    ) -> List[Position]:
+        feature_vector: FeatureVector | None = None,
+        symbol_info: SymbolInfo | None = None,
+    ) -> list[Position]:
         """
         Monitors active positions, evaluates Hold Value Score, applies Wick-Tolerant Trailing Stops,
         detects closed trades to send Telegram Replies, and triggers Emergency Cut if needed.
@@ -161,6 +167,16 @@ class OrderLifecycleManager:
         for pos in positions:
             if pos.ticket not in self._position_open_times:
                 self._position_open_times[pos.ticket] = current_tick.timestamp
+                # [EXPANDED] Try to associate message ID with this ticket!
+                if self._order_id_to_message_id:
+                    last_order_id = list(self._order_id_to_message_id.keys())[-1]
+                    msg_id = self._order_id_to_message_id.pop(last_order_id)
+                    self._order_message_ids[pos.ticket] = msg_id
+                    logger.info(
+                        "Associated new position ticket with Telegram message",
+                        ticket=pos.ticket,
+                        message_id=msg_id,
+                    )
                 
             open_time = self._position_open_times[pos.ticket]
             duration_sec = (current_tick.timestamp - open_time).total_seconds()
@@ -263,10 +279,10 @@ class OrderLifecycleManager:
         self,
         pos: Position,
         price_current: float,
-        features: Optional[FeatureVector],
-    ) -> Tuple[int, List[str]]:
+        features: FeatureVector | None,
+    ) -> tuple[int, list[str]]:
         score = 100
-        reasons: List[str] = []
+        reasons: list[str] = []
 
         if features is None:
             return score, reasons

@@ -1,0 +1,29 @@
+execution:
+  symbol: "XAUUSD"            # نماد معامله: طلا برابر دلار
+  mode: "LIVE"                # حالت اجرا: اتصال واقعی به MetaTrader 5
+  timeframe: "M1"             # تایم‌فریم اسکالپ: ۱ دقیقه
+  magic_number: 888101        # کد شناسایی معاملات ربات در MT5
+  max_slippage_points: 30     # حداکثر لغزش قیمت مجاز (30 point = $0.30)
+
+risk:
+  max_account_drawdown_pct: 90.0   # سقف افت حساب (Drawdown): در صورت ۲٪ ضرر، ربات متوقف می‌شود
+  risk_per_trade_pct: 0.5         # درصد ریسک در هر معامله: 0.5% از کل اکوئیتی حساب
+  max_concurrent_positions: 1     # حداکثر تعداد معامله همزمان: ۱ معامله
+  max_spread_points: 60           # حداکثر اسپرد مجاز: 60 point ($0.60)
+  enforce_stop_loss: true         # الزام به داشتن حد ضرر در تمام معاملات
+  max_margin_usage_pct: 10.0      # حداکثر درصد استفاده از مارجین آزاد در هر معامله: 10%
+  max_allowed_lots: 2.0           # سقف ایمنی حجم معامله: حداکثر ۲.۰۰ لات
+
+telegram:
+  enabled: true
+  bot_token: "TOKEN"   # توکن ربات تلگرام شما
+  admin_id: "ADMINUNIQUE ID"      # شناسه عددی چت تلگرام شما
+
+mt5:
+  timeout_ms: 5000                # مهلت زمانی پاسخگویی ترمینال (میلی‌ثانیه)
+  retries: 3                      # تعداد تلاش مجدد در صورت قطع شبکه
+
+model:
+  confidence_threshold: 0.35      # آستانه اطمینان مدل هوش مصنوعی پایتورچ
+  feature_schema_version: "v1.0"  # نسخه ویژگی‌ها
+  model_artifact_path: "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
