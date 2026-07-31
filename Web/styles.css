@@ -1,0 +1,77 @@
+/* styles.css */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+pre, code, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* Scrollbars styling */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+}
+
+/* Navigation Buttons Styles */
+.tab-btn {
+    color: #94a3b8;
+}
+.tab-btn:hover {
+    background-color: rgba(6, 182, 212, 0.05);
+    color: #06b6d4;
+}
+.tab-btn.active {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-left: 3px solid #06b6d4;
+    color: #ffffff;
+}
+
+/* Feature category button styling */
+.category-btn.active {
+    background-color: #1e293b;
+    color: #06b6d4;
+}
+
+/* Glow effects and standard card designs */
+.shadow-accentCyan\/20 {
+    box-shadow: 0 4px 14px 0 rgba(6, 182, 212, 0.2);
+}
+
+.shadow-accentCyan\/15 {
+    box-shadow: 0 4px 14px 0 rgba(6, 182, 212, 0.15);
+}
+
+.shadow-rose-500\/10 {
+    box-shadow: 0 4px 14px 0 rgba(244, 63, 94, 0.1);
+}
+
+/* Custom glowing borders */
+.glow-border {
+    position: relative;
+}
+.glow-border::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    background: linear-gradient(to right, #06b6d4, #3b82f6);
+    border-radius: inherit;
+    z-index: -1;
+    opacity: 0.15;
+    transition: opacity 0.3s ease;
+}
+.glow-border:hover::after {
+    opacity: 0.3;
+}

@@ -22,7 +22,10 @@ Key Architectural Responsibilities:
 """
 
 import argparse
+import asyncio
 from pathlib import Path
+import shutil
+import socket
 import sys
 from typing import Optional
 
@@ -37,8 +40,10 @@ if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+import uvicorn
 
 from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter
+from nexus_scalp.web.server import create_app
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ExecutionMode
@@ -59,6 +64,90 @@ def display_startup_banner() -> None:
         "[bold red]EXECUTION TARGET: LIVE METATRADER 5 TERMINAL EXECUTION[/bold red]"
     )
     console.print(Panel(banner_content, title="System Initialization", border_style="cyan"))
+
+
+def find_available_port(start_port: int = 8080) -> int:
+    """Finds an available TCP port starting from the given port number."""
+    port = start_port
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                port += 1
+
+
+def ensure_config_files() -> Path:
+    """Ensures that configs/live.yaml exists.
+
+    If not, copy it from live.yaml.example or fallback.
+    """
+    configs_dir = Path("configs")
+    configs_dir.mkdir(parents=True, exist_ok=True)
+
+    live_config = configs_dir / "live.yaml"
+    example_config = configs_dir / "live.yaml.example"
+    base_config = configs_dir / "base.yaml"
+
+    if not live_config.exists():
+        if example_config.exists():
+            shutil.copy(example_config, live_config)
+            console.print("[yellow]configs/live.yaml not found. Copied template from configs/live.yaml.example[/yellow]")
+        elif base_config.exists():
+            shutil.copy(base_config, live_config)
+            console.print("[yellow]configs/live.yaml not found. Copied template from configs/base.yaml[/yellow]")
+        else:
+            # Create a basic default file
+            default_content = """execution:
+  symbol: "XAUUSD"
+  mode: "PAPER"
+  timeframe: "M1"
+  magic_number: 888101
+  max_slippage_points: 30
+risk:
+  max_account_drawdown_pct: 2.0
+  risk_per_trade_pct: 0.5
+  max_concurrent_positions: 1
+  max_spread_points: 60
+  enforce_stop_loss: true
+  max_margin_usage_pct: 10.0
+  max_allowed_lots: 2.0
+telegram:
+  enabled: false
+  bot_token: ""
+  admin_id: ""
+mt5:
+  timeout_ms: 5000
+  retries: 3
+model:
+  confidence_threshold: 0.35
+  feature_schema_version: "v1.0"
+  model_artifact_path: "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
+"""
+            with open(live_config, "w", encoding="utf-8") as f:
+                f.write(default_content)
+            console.print("[yellow]configs/live.yaml not found. Generated a default live configuration.[/yellow]")
+
+    return live_config
+
+
+def print_startup_banner(port: int, mode: str, symbol: str) -> None:
+    """Prints a beautiful Bloomberg/Terminal styled system status overview."""
+    banner_text = (
+        f"[bold cyan]=================================[/bold cyan]\n"
+        f"[bold white]AI Trading System Started[/bold white]\n\n"
+        f"[bold white]Web Dashboard:[/bold white]\n"
+        f"[bold green]http://localhost:{port}[/bold green]\n\n"
+        f"[bold white]Status:[/bold white]\n"
+        f"[bold green]Running[/bold green]\n\n"
+        f"[bold white]AI Engine:[/bold white]\n"
+        f"[bold cyan]Active[/bold cyan]\n\n"
+        f"[bold white]Bot Mode / Symbol:[/bold white]\n"
+        f"[{'red animate-pulse' if mode == 'LIVE' else 'yellow'}]{mode}[/{'red animate-pulse' if mode == 'LIVE' else 'yellow'}] / [bold white]{symbol}[/bold white]\n"
+        f"[bold cyan]=================================[/bold cyan]"
+    )
+    console.print(Panel(banner_text, border_style="cyan", title="Nexus Control panel", subtitle="System Initialized"))
 
 
 def run_infrastructure_doctor(config_path: Path) -> bool:
@@ -211,11 +300,36 @@ def main() -> None:
             timeout=config.mt5.timeout_ms,
         )
 
-    # 6. Instantiate & Launch Live Trading Engine Event Loop
+    # 6. Instantiate & Launch Live Trading Engine Event Loop Concurrently with Web Server
+    web_port = find_available_port(start_port=8080)
     try:
         engine = LiveEngine(config=config, adapter=adapter)
-        console.print("\n[bold green]>>> LAUNCHING REAL-TIME LIVE SCALP TRADING ENGINE... <<<[/bold green]\n")
-        engine.start()
+        engine._preflight_or_raise()
+
+        app = create_app(engine_ref=engine)
+        print_startup_banner(
+            port=web_port,
+            mode=config.execution.mode.value,
+            symbol=config.execution.symbol
+        )
+
+        uvicorn_config = uvicorn.Config(
+            app=app,
+            host="127.0.0.1",
+            port=web_port,
+            log_level="warning",
+            ws_max_size=16*1024*1024
+        )
+        server = uvicorn.Server(uvicorn_config)
+
+        async def run_concurrently():
+            await asyncio.gather(
+                server.serve(),
+                engine.run_loop(),
+                return_exceptions=False
+            )
+
+        asyncio.run(run_concurrently())
     except KeyboardInterrupt:
         console.print("\n[bold yellow]Keyboard interrupt received (Ctrl+C). Initiating clean shutdown...[/bold yellow]")
     except Exception as e:
