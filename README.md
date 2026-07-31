@@ -4,7 +4,6 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-red.svg)](https://pytorch.org/)
 [![MetaTrader 5](https://img.shields.io/badge/MetaTrader-5-gold.svg)](https://www.mql5.com/)
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal-purple.svg)]()
-[![Build & Test](https://github.com/your-username/NexusTradingForexBot/actions/workflows/check_and_build.yml/badge.svg)](https://github.com/your-username/NexusTradingForexBot/actions/workflows/check_and_build.yml)
 [![License](https://img.shields.io/badge/License-Proprietary-green.svg)]()
 
 **Nexus Scalp Engine (NSE)** is an enterprise-grade, high-frequency quantitative scalp trading engine engineered specifically for **XAUUSD (Gold)** and major currency pairs. Built natively with **Python 3.11+**, **PyTorch deep learning**, and direct **C++ IPC bindings** to MetaTrader 5, the system provides zero-data-leakage feature pipelines, ICT/Ichimoku multi-confluence signal evaluation, dynamic margin-based position sizing, and automated thread-replied Telegram telemetry.
