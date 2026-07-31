@@ -116,6 +116,9 @@ class LiveEngine:
         self._consecutive_losses: int = 0
         self._survival_mode_active: bool = False
 
+        # Diagnostics & Heartbeat
+        self._last_radar_log_time: float = 0.0
+
         # Buffers / engines
         symbol = config.execution.symbol
         self.aggregator = BarAggregator(symbol=symbol, timeframe_minutes=1)
@@ -287,13 +290,31 @@ class LiveEngine:
             model_path=str(self.config.model.model_artifact_path),
         )
 
+        import time
+        self._last_tick_processed_time = time.time()
+
         while self._running:
             try:
+                # Tick Stagnation Watchdog: If no ticks/bars are processed for > 15 seconds, trigger healthcheck & reconnect.
+                current_time = time.time()
+                if (current_time - self._last_tick_processed_time) > 15.0:
+                    # Avoid spamming reconnects if connected but market is closed (e.g. weekend or holidays)
+                    if not self.adapter.is_connected():
+                        logger.warning("[WARNING] Tick stream stalled and MT5 disconnected. Triggering MT5 adapter healthcheck & auto-reconnect")
+                        try:
+                            self.adapter.disconnect()
+                            await asyncio.sleep(1.0)
+                            self.adapter.connect()
+                        except Exception as conn_err:
+                            logger.error("Error during auto-reconnect in watchdog", error=str(conn_err), exc_info=True)
+                    else:
+                        logger.info("[WATCHDOG] Tick stream quiet. MT5 connection remains active.")
+                    self._last_tick_processed_time = time.time()
+
                 live_account = self.adapter.get_account_info()
                 tick = self.adapter.get_last_tick(symbol)
 
                 if live_account is None or tick is None:
-                    logger.warning("Transient MT5 drop (None account/tick). Retrying...")
                     await asyncio.sleep(0.2)
                     continue
 
@@ -301,6 +322,7 @@ class LiveEngine:
                     self._symbol_info = self.adapter.get_symbol_info(symbol)
 
                 self._process_tick_pipeline(tick=tick, account=live_account)
+                self._last_tick_processed_time = time.time()
                 await asyncio.sleep(0.05)
 
             except Exception as e:
@@ -557,99 +579,112 @@ class LiveEngine:
     # -------------------------
 
     def _process_tick_pipeline(self, tick: TickData, account: AccountInfo) -> None:
-        is_new_bar = self.aggregator.process_tick(tick)
+        try:
+            is_new_bar = self.aggregator.process_tick(tick)
 
-        # cap bars (O(1) amortized)
-        if len(self.aggregator._completed_bars) > 4000:
-            self.aggregator._completed_bars = self.aggregator._completed_bars[-4000:]
+            # cap bars (O(1) amortized)
+            if len(self.aggregator._completed_bars) > 4000:
+                self.aggregator._completed_bars = self.aggregator._completed_bars[-4000:]
 
-        completed_bars = self.aggregator.get_completed_bars()
-        fv = self.feature_engine.compute_from_bars(completed_bars=completed_bars, current_tick=tick)
+            completed_bars = self.aggregator.get_completed_bars()
+            fv = self.feature_engine.compute_from_bars(completed_bars=completed_bars, current_tick=tick)
 
-        if is_new_bar and completed_bars:
-            self._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
+            if is_new_bar and completed_bars:
+                self._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
 
-        # Regime state (Module 1)
-        regime_state: MarketRegimeState = self.regime_classifier.classify_tick(
-            current_tick=tick,
-            is_macro_news_window=False,
-        )
-
-        # Manage open positions
-        active_positions = self.order_manager.manage_active_positions(
-            symbol=tick.symbol,
-            current_tick=tick,
-            feature_vector=fv,
-            symbol_info=self._symbol_info,
-        )
-        current_pos_count = len(active_positions)
-
-        # Inference
-        probs = self._infer_probabilities(fv=fv)
-
-        # Policy
-        proposal = self.signal_policy.evaluate_probabilities(
-            probabilities=probs,
-            current_tick=tick,
-            feature_vector=fv,
-            regime_state=regime_state,
-            survival_mode=self._survival_mode_active,
-        )
-        self.audit.log_signal(proposal)
-
-        # Update synchronization properties for the Web backend
-        self._last_tick = tick
-        self._last_fv = fv
-        self._last_regime_state = regime_state
-        self._last_probs = probs
-        self._last_proposal = proposal
-
-        # Risk + order build
-        order: TradeOrder | None = None
-        if proposal.action in (
-            ActionType.BUY_MARKET, ActionType.SELL_MARKET,
-            ActionType.BUY_LIMIT, ActionType.SELL_LIMIT,
-            ActionType.BUY_STOP, ActionType.SELL_STOP
-        ) and self._symbol_info:
-            order = self.risk_engine.evaluate_proposal(
-                proposal=proposal,
-                account=account,
-                symbol_info=self._symbol_info,
-                active_positions=active_positions,
+            # Regime state (Module 1)
+            regime_state: MarketRegimeState = self.regime_classifier.classify_tick(
                 current_tick=tick,
-                regime_state=regime_state,
+                is_macro_news_window=False,
             )
 
-        if order is not None:
-            logger.info("DISPATCH ORDER", action=order.order_type.value, volume=order.volume, price=order.price)
-            success = self.order_manager.execute_order(order)
-            if success:
-                risk_usd = account.equity * (self.config.risk.risk_per_trade_pct / 100.0)
-                try:
-                    self.notifier.notify_order_opened(
-                        order=order,
-                        risk_usd=risk_usd,
-                        callback=lambda msg_id: (
-                            self.order_manager.register_order_message(order.order_id, msg_id)
-                            if msg_id else None
-                        ),
-                    )
-                except Exception:
-                    pass
+            # Manage open positions
+            active_positions = self.order_manager.manage_active_positions(
+                symbol=tick.symbol,
+                current_tick=tick,
+                feature_vector=fv,
+                symbol_info=self._symbol_info,
+            )
+            current_pos_count = len(active_positions)
 
-        # Evaluate intelligent hedging / counter-position policy
-        self._evaluate_hedging_policy(
-            active_positions=active_positions,
-            tick=tick,
-            probs=probs,
-            regime_state=regime_state,
-            fv=fv,
-            account=account,
-        )
+            # Inference
+            probs = self._infer_probabilities(fv=fv)
 
-        # Equity / drawdown tracking + audit
-        self._update_survival_state(account=account, current_pos_count=current_pos_count)
-        self.audit.log_account_snapshot(account=account, peak_equity=self._peak_equity)
+            # Heartbeat radar logging: On EVERY M1 Bar completion or every 10 seconds of active ticks, force log.
+            import time
+            current_time = time.time()
+            force_log = False
+            if is_new_bar or (current_time - self._last_radar_log_time) >= 10.0:
+                force_log = True
+                self._last_radar_log_time = current_time
+
+            # Policy
+            proposal = self.signal_policy.evaluate_probabilities(
+                probabilities=probs,
+                current_tick=tick,
+                feature_vector=fv,
+                regime_state=regime_state,
+                survival_mode=self._survival_mode_active,
+                force_log=force_log,
+            )
+            self.audit.log_signal(proposal)
+
+            # Update synchronization properties for the Web backend
+            self._last_tick = tick
+            self._last_fv = fv
+            self._last_regime_state = regime_state
+            self._last_probs = probs
+            self._last_proposal = proposal
+
+            # Risk + order build
+            order: TradeOrder | None = None
+            if proposal.action in (
+                ActionType.BUY_MARKET, ActionType.SELL_MARKET,
+                ActionType.BUY_LIMIT, ActionType.SELL_LIMIT,
+                ActionType.BUY_STOP, ActionType.SELL_STOP
+            ) and self._symbol_info:
+                order = self.risk_engine.evaluate_proposal(
+                    proposal=proposal,
+                    account=account,
+                    symbol_info=self._symbol_info,
+                    active_positions=active_positions,
+                    current_tick=tick,
+                    regime_state=regime_state,
+                )
+
+            if order is not None:
+                logger.info("DISPATCH ORDER", action=order.order_type.value, volume=order.volume, price=order.price)
+                success = self.order_manager.execute_order(order)
+                if success:
+                    risk_usd = account.equity * (self.config.risk.risk_per_trade_pct / 100.0)
+                    try:
+                        self.notifier.notify_order_opened(
+                            order=order,
+                            risk_usd=risk_usd,
+                            callback=lambda msg_id: (
+                                self.order_manager.register_order_message(order.order_id, msg_id)
+                                if msg_id else None
+                            ),
+                        )
+                    except Exception:
+                        pass
+
+            # Evaluate intelligent hedging / counter-position policy
+            self._evaluate_hedging_policy(
+                active_positions=active_positions,
+                tick=tick,
+                probs=probs,
+                regime_state=regime_state,
+                fv=fv,
+                account=account,
+            )
+
+            # Equity / drawdown tracking + audit
+            self._update_survival_state(account=account, current_pos_count=current_pos_count)
+            self.audit.log_account_snapshot(account=account, peak_equity=self._peak_equity)
+
+        except Exception as pipeline_err:
+            logger.error("Silent recovery: exception caught in hot-path tick processing pipeline", error=str(pipeline_err), exc_info=True)
 
     def _evaluate_hedging_policy(
         self,

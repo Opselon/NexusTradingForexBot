@@ -27,7 +27,7 @@ Invariants:
 
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
@@ -203,6 +203,10 @@ class OrderLifecycleManager:
         self._last_modify_sl: dict[int, float] = {}
         self._last_price_tracker: dict[int, float] = {}
         self._entry_directions: dict[int, str] = {}
+
+        # Throttling & spread tracking for dynamic hold score
+        self._last_hold_eval_time: dict[int, float] = {}
+        self._rolling_spreads: list[float] = []
 
     def register_telegram_message(self, ticket: int, message_id: int | None) -> None:
         """Associates a broker position ticket with its primary Telegram message_id."""
@@ -629,52 +633,75 @@ class OrderLifecycleManager:
         smart_metrics: dict[str, Any] | None = None,
     ) -> tuple[int, list[str]]:
         """
-        Calculates position Hold Value Score (0 to 100) with Phase 1 Structural Integrity Bonuses
-        and Profit Shield Protection.
+        Calculates position Hold Value Score (0 to 100) dynamically based on real-time metrics:
+        Base Score = 100
+        Penalty 1 (Drawdown vs Initial Risk/ATR): Subtract up to 40 points as current loss approaches SL.
+        Penalty 2 (Time-in-Loss Decay): Subtract up to 30 points if time_loss > 70% of holding duration.
+        Penalty 3 (Real-time Spread Expansion): Subtract points if current broker spread exceeds 1.5x rolling average spread.
+        Bonus: Add up to 10 points if the PyTorch AI probability still strongly favors the position direction.
         """
         score = 100
         reasons: list[str] = []
-
-        if features is None:
-            return max(0, score), reasons
-
         ticket = pos.ticket
-        mae = self._mae_tracker.get(ticket, 0.0)
-        mfe = self._mfe_tracker.get(ticket, 0.0)
 
-        if pos.type == OrderType.BUY and features.is_above_kumo:
-            score += 10
-            reasons.append("STRONG_TREND_ALIGNMENT_ABOVE_KUMO (+10)")
-        elif pos.type == OrderType.SELL and features.is_below_kumo:
-            score += 10
-            reasons.append("STRONG_TREND_ALIGNMENT_BELOW_KUMO (+10)")
+        # --- Penalty 1: Drawdown vs Initial Risk/ATR (up to -40) ---
+        initial_sl = self._entry_sls.get(ticket, pos.sl)
+        is_buy = (pos.type == OrderType.BUY)
+        current_loss = 0.0
+        initial_risk = 0.0
 
-        # PROFIT SHIELD GUARD: Winning trades get guaranteed high floor score
-        is_in_profit = (price_current > pos.price_open) if pos.type == OrderType.BUY else (price_current < pos.price_open)
-
-        if not is_in_profit:
-            if pos.type == OrderType.BUY and features.is_below_kumo:
-                score -= 25
-                reasons.append("COUNTER_TREND_BELOW_KUMO")
-            elif pos.type == OrderType.SELL and features.is_above_kumo:
-                score -= 25
-                reasons.append("COUNTER_TREND_ABOVE_KUMO")
-
-            if pos.type == OrderType.BUY and features.is_at_extreme_high:
-                score -= 30
-                reasons.append("BOUGHT_AT_EXTREME_PEAK_TRAP")
-            elif pos.type == OrderType.SELL and features.is_at_extreme_low:
-                score -= 30
-                reasons.append("SOLD_AT_EXTREME_FLOOR_TRAP")
-
-            if (pos.type == OrderType.BUY and features.liquidity_sweep_signal == -1) or (pos.type == OrderType.SELL and features.liquidity_sweep_signal == 1):
-                score -= 30
-                reasons.append("ADVERSE_LIQUIDITY_SWEEP_TRAP_DETECTED")
-
-            if (pos.type == OrderType.BUY and features.choch_bearish) or (pos.type == OrderType.SELL and features.choch_bullish):
-                score -= 30
-                reasons.append("ADVERSE_CHOCH_BREAKDOWN")
+        if is_buy:
+            current_loss = max(0.0, pos.price_open - price_current)
+            initial_risk = pos.price_open - initial_sl if initial_sl > 0.0 else (atr * 1.5)
         else:
+            current_loss = max(0.0, price_current - pos.price_open)
+            initial_risk = initial_sl - pos.price_open if initial_sl > 0.0 else (atr * 1.5)
+
+        if current_loss > 0.0:
+            ratio = current_loss / max(0.01, initial_risk)
+            penalty1 = int(min(40.0, ratio * 40.0))
+            if penalty1 > 0:
+                score -= penalty1
+                reasons.append(f"DRAWDOWN_PENALTY (-{penalty1})")
+
+        # --- Penalty 2: Time-in-Loss Decay (up to -30) ---
+        entry_time = self._entry_timestamps.get(ticket)
+        if entry_time:
+            if entry_time.tzinfo is None:
+                holding_duration = (datetime.now() - entry_time).total_seconds()
+            else:
+                holding_duration = (datetime.now(UTC) - entry_time).total_seconds()
+        else:
+            holding_duration = 1.0
+        time_loss = self._time_in_drawdown_sec.get(ticket, 0.0)
+
+        if holding_duration > 0.0 and (time_loss / holding_duration) > 0.70:
+            score -= 30
+            reasons.append("TIME_IN_LOSS_DECAY_PENALTY (-30)")
+
+        # --- Penalty 3: Real-time Spread Expansion (up to -20) ---
+        if self._rolling_spreads:
+            current_spread = self._rolling_spreads[-1]
+            avg_spread = sum(self._rolling_spreads) / len(self._rolling_spreads)
+            if avg_spread > 0.0 and current_spread > 1.5 * avg_spread:
+                score -= 20
+                reasons.append("SPREAD_EXPANSION_PENALTY (-20)")
+
+        # --- Bonus: AI/Trend alignment (+10) ---
+        if features is not None:
+            aligned = False
+            if is_buy and features.is_above_kumo:
+                aligned = True
+            elif not is_buy and features.is_below_kumo:
+                aligned = True
+
+            if aligned:
+                score += 10
+                reasons.append("TREND_ALIGNMENT_BONUS (+10)")
+
+        # PROFIT SHIELD GUARD: Winning trades get guaranteed high floor score of 85
+        is_in_profit = (price_current > pos.price_open) if is_buy else (price_current < pos.price_open)
+        if is_in_profit:
             score = max(85, score)
             reasons.append("PROFIT_SHIELD_SCORE_FLOOR_ACTIVE")
 
@@ -748,6 +775,8 @@ class OrderLifecycleManager:
             return "CLOSE", "S01_CRITICAL_COMPOUND_KILL_SWITCH"
         elif kill_switch and toxicity_score >= 4.5 and not is_winning_trade:
             return "CLOSE", "S02_TOXIC_FLOW_KILL_SWITCH"
+        elif hold_score < 30 and not is_winning_trade:
+            return "CLOSE", "S09_CRITICAL_HOLD_SCORE_BREACH_BAILOUT"
         elif hold_score <= 20 and net_atr <= -0.35 and not is_winning_trade:
             return "CLOSE", "S04_STRUCTURE_FAILURE_WITH_ACTIVE_LOSS"
         elif toxicity_score >= 4.8 and net_atr < -0.20 and not is_winning_trade:
@@ -978,6 +1007,11 @@ class OrderLifecycleManager:
         spread = max(current_tick.ask - current_tick.bid, 0.0)
         mid_price = (current_tick.ask + current_tick.bid) * 0.5
 
+        # Append to rolling average spreads
+        self._rolling_spreads.append(spread)
+        if len(self._rolling_spreads) > 50:
+            self._rolling_spreads.pop(0)
+
         for pos in positions:
             ticket = pos.ticket
 
@@ -1112,12 +1146,19 @@ class OrderLifecycleManager:
                 total_impact_usd=total_impact_usd, holding_duration=holding_duration, features=feature_vector, symbol_info=symbol_info
             )
 
-            hold_score, invalidate_reasons = self._calculate_hold_value_score(
-                pos, price_current, feature_vector, impact_price_delta, atr, smart_metrics
-            )
-
-            hold_score = self._recalculate_hold_score_with_position_state(ticket, hold_score, smart_metrics, invalidate_reasons)
-            self._hold_score_tracker[ticket] = hold_score
+            # Evaluate with a slight throttle (e.g., once every 500ms per open ticket) to prevent CPU thrashing
+            import time
+            current_time = time.time()
+            last_eval = self._last_hold_eval_time.get(ticket, 0.0)
+            if (current_time - last_eval) >= 0.50:
+                hold_score, invalidate_reasons = self._calculate_hold_value_score(
+                    pos, price_current, feature_vector, impact_price_delta, atr, smart_metrics
+                )
+                hold_score = self._recalculate_hold_score_with_position_state(ticket, hold_score, smart_metrics, invalidate_reasons)
+                self._hold_score_tracker[ticket] = hold_score
+                self._last_hold_eval_time[ticket] = current_time
+            else:
+                hold_score = self._hold_score_tracker.get(ticket, 100)
 
             total_sec = max(holding_duration, 1.0)
             pct_win = (self._time_in_profit_sec[ticket] / total_sec) * 100

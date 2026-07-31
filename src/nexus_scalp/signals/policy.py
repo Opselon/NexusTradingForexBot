@@ -81,6 +81,7 @@ class SignalPolicy:
         feature_vector: FeatureVector,
         regime_state: MarketRegimeState | None = None,
         survival_mode: bool = False,
+        force_log: bool = False,
     ) -> TradeProposal:
         """
         Evaluates conditions at maximum live speed (50ms hot path) and outputs a sized TradeProposal.
@@ -356,7 +357,9 @@ class SignalPolicy:
 
         # Throttled Console Telemetry
         should_log = False
-        if self._last_telemetry_time is None:
+        if force_log:
+            should_log = True
+        elif self._last_telemetry_time is None:
             should_log = True
         else:
             elapsed_telemetry = max(0.0, (now - self._last_telemetry_time).total_seconds())
