@@ -241,6 +241,8 @@ class FeatureVector(BaseModel):
     fvg_bearish_active: bool
     order_block_type: int
     liquidity_sweep_signal: int
+    fvg_depth: float = 0.0
+    ob_strength: float = 0.0
     choch_bullish: bool
     choch_bearish: bool
     broke_previous_high: bool
@@ -292,7 +294,8 @@ class FeatureVector(BaseModel):
         norm_dist_to_kijun = (self.kijun_sen - self.tenkan_sen) / (safe_atr * 2.0)
 
         kumo_sig = 1.0 if self.is_above_kumo else (-1.0 if self.is_below_kumo else 0.0)
-        fvg_sig = 1.0 if self.fvg_bullish_active else (-1.0 if self.fvg_bearish_active else 0.0)
+        # Deep PyTorch Neural Integration: Use normalized continuous zone quality as feat_zone_quality (feat_26)
+        fvg_sig = self.fvg_depth
         choch_sig = 1.0 if self.choch_bullish else (-1.0 if self.choch_bearish else 0.0)
         breakout_sig = 1.0 if self.broke_previous_high else (-1.0 if self.broke_previous_low else 0.0)
         extreme_sig = 1.0 if self.is_at_extreme_high else (-1.0 if self.is_at_extreme_low else 0.0)
@@ -336,8 +339,8 @@ class FeatureVector(BaseModel):
             self.lag_1_clv,
 
             # feat_26 .. feat_32
-            fvg_sig,
-            float(self.order_block_type),
+            fvg_sig,  # mapped to feat_zone_quality
+            self.ob_strength,  # mapped to feat_ob_strength
             choch_sig,
             breakout_sig,
             norm_tk_diff,
@@ -540,12 +543,14 @@ class ScalpFeatureEngine:
         # 6. Group 5: ICT Signals & Microstructure
         fvg_bullish = bool((lows[-1] - highs[-3]) > (safe_atr * 0.20))
         fvg_bearish = bool((lows[-3] - highs[-1]) > (safe_atr * 0.20))
+        fvg_depth = float((lows[-1] - highs[-3]) / safe_atr) if fvg_bullish else (-float((lows[-3] - highs[-1]) / safe_atr) if fvg_bearish else 0.0)
 
         order_block_type = 0
         if closes[-1] > highs[-2] and closes[-2] < opens[-2]:
             order_block_type = 1
         elif closes[-1] < lows[-2] and closes[-2] > opens[-2]:
             order_block_type = -1
+        ob_strength = float(order_block_type * (volumes[-1] / vol_mean_20))
 
         # True Exponential Moving Averages
         ema_20_val = self._compute_ema(closes[-20:], 20)
@@ -750,6 +755,8 @@ class ScalpFeatureEngine:
             fvg_bearish_active=fvg_bearish,
             order_block_type=order_block_type,
             liquidity_sweep_signal=liquidity_sweep_signal,
+            fvg_depth=fvg_depth,
+            ob_strength=ob_strength,
             choch_bullish=choch_bullish,
             choch_bearish=choch_bearish,
             broke_previous_high=broke_prev_high,

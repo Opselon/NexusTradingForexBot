@@ -111,10 +111,30 @@ class AuditRepository:
                 commission REAL DEFAULT 0.0,
                 swap REAL DEFAULT 0.0,
                 duration_sec REAL DEFAULT 0.0,
-                timestamp TEXT NOT NULL
+                timestamp TEXT NOT NULL,
+                mae REAL DEFAULT 0.0,
+                mfe REAL DEFAULT 0.0,
+                initial_sl_price REAL DEFAULT 0.0,
+                final_sl_price REAL DEFAULT 0.0,
+                is_risk_free_hit INTEGER DEFAULT 0,
+                exit_mechanism TEXT DEFAULT ''
             );
             """
         )
+        # Safe alter statements for migration of existing tables
+        for col_def in [
+            ("mae", "REAL DEFAULT 0.0"),
+            ("mfe", "REAL DEFAULT 0.0"),
+            ("initial_sl_price", "REAL DEFAULT 0.0"),
+            ("final_sl_price", "REAL DEFAULT 0.0"),
+            ("is_risk_free_hit", "INTEGER DEFAULT 0"),
+            ("exit_mechanism", "TEXT DEFAULT ''")
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE audit_ledger ADD COLUMN {col_def[0]} {col_def[1]};")
+            except Exception:
+                pass
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS audit_executions (
@@ -311,6 +331,12 @@ class AuditRepository:
         swap: float,
         duration_sec: float,
         timestamp_str: str,
+        mae: float = 0.0,
+        mfe: float = 0.0,
+        initial_sl_price: float = 0.0,
+        final_sl_price: float = 0.0,
+        is_risk_free_hit: int = 0,
+        exit_mechanism: str = "",
     ) -> None:
         """Logs/updates the closing of a position in the financial ledger."""
         if not self._is_sqlite:
@@ -318,8 +344,8 @@ class AuditRepository:
 
         query = """
             INSERT INTO audit_ledger
-            (ticket, symbol, direction, volume, entry_price, exit_price, status, pnl, commission, swap, duration_sec, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (ticket, symbol, direction, volume, entry_price, exit_price, status, pnl, commission, swap, duration_sec, timestamp, mae, mfe, initial_sl_price, final_sl_price, is_risk_free_hit, exit_mechanism)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticket) DO UPDATE SET
                 exit_price=excluded.exit_price,
                 status=excluded.status,
@@ -327,11 +353,18 @@ class AuditRepository:
                 commission=excluded.commission,
                 swap=excluded.swap,
                 duration_sec=excluded.duration_sec,
-                timestamp=excluded.timestamp
+                timestamp=excluded.timestamp,
+                mae=excluded.mae,
+                mfe=excluded.mfe,
+                initial_sl_price=excluded.initial_sl_price,
+                final_sl_price=excluded.final_sl_price,
+                is_risk_free_hit=excluded.is_risk_free_hit,
+                exit_mechanism=excluded.exit_mechanism
         """
         args = (
             ticket, symbol, direction, volume, entry_price, exit_price,
-            status, pnl, commission, swap, duration_sec, timestamp_str
+            status, pnl, commission, swap, duration_sec, timestamp_str,
+            mae, mfe, initial_sl_price, final_sl_price, is_risk_free_hit, exit_mechanism
         )
         try:
             self._queue.put_nowait((query, args))

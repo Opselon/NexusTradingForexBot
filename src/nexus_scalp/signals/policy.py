@@ -22,6 +22,7 @@ import torch
 
 from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.domain.models import TickData, TradeProposal
+from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.features.regime_classifier import (
     MarketRegimeState,
     RecommendedExecutionType,
@@ -53,6 +54,7 @@ class SignalPolicy:
         flip_memory_seconds: float = 8.0,         # Reduced hysteresis memory window
         min_allowed_rr: float = 1.10,             # Absolute minimum Risk-to-Reward ratio required
         rule_matrix: RuleMatrixEngine | None = None,
+        algo_config: AlgoConfig | None = None,
     ) -> None:
         self.confidence_threshold = confidence_threshold
         self.cooldown_seconds = cooldown_seconds
@@ -64,6 +66,7 @@ class SignalPolicy:
         self.flip_memory_seconds = flip_memory_seconds
         self.min_allowed_rr = min_allowed_rr
         self.rule_matrix = rule_matrix
+        self.algo_config = algo_config or AlgoConfig()
 
         self._last_signal_time: datetime | None = None
         self._last_telemetry_time: datetime | None = None
@@ -328,6 +331,19 @@ class SignalPolicy:
             proposed_action = ActionType.NO_TRADE
             reason_code = f"INSUFFICIENT_CONFIDENCE ({confidence:.2f} < {active_threshold:.2f})"
 
+        # Neural Zone Validation
+        is_zone_active = (
+            feature_vector.fvg_bullish_active
+            or feature_vector.fvg_bearish_active
+            or feature_vector.order_block_type != 0
+            or sweep_sig != 0
+        )
+        if is_zone_active and proposed_action != ActionType.NO_TRADE:
+            zone_quality_score = confidence
+            if zone_quality_score < self.algo_config.ai_zone_confidence_threshold:
+                proposed_action = ActionType.NO_TRADE
+                reason_code = f"ZONE_QUALITY_BELOW_THRESHOLD ({zone_quality_score:.2f} < {self.algo_config.ai_zone_confidence_threshold:.2f})"
+
         # ----------------------------------------------------------------------
         # PROPOSAL GATE 4: Anti-Flip Protection (Bypassed for Fast Sweeps)
         # ----------------------------------------------------------------------
@@ -394,40 +410,32 @@ class SignalPolicy:
         # ----------------------------------------------------------------------
         # PROPOSAL GATE 3: ICT & Ichimoku Structural SL/TP Calculation
         # ----------------------------------------------------------------------
-        raw_swing_low = getattr(feature_vector, "recent_swing_low", 0.0)
-        raw_swing_high = getattr(feature_vector, "recent_swing_high", 0.0)
-
-        swing_low = self._sanitize_float(raw_swing_low, 0.0)
-        swing_high = self._sanitize_float(raw_swing_high, 0.0)
+        swing_low_reconstructed = target_entry_price - (feature_vector.dist_to_swing_low_20 * atr)
+        swing_high_reconstructed = target_entry_price + (feature_vector.dist_to_swing_high_20 * atr)
         span_b = self._sanitize_float(getattr(feature_vector, "senkou_span_b", 0.0), target_entry_price)
 
         if "BUY" in proposed_action.value:
-            cand_sl = [v for v in (swing_low, kijun, span_b) if 0.0 < v < target_entry_price]
-            structural_sl = min(cand_sl) - (atr * 0.15) if cand_sl else (target_entry_price - atr * 0.80)
+            cand_sl = [v for v in (swing_low_reconstructed, kijun, span_b) if 0.0 < v < target_entry_price]
+            structural_level_sl = min(cand_sl) if cand_sl else (target_entry_price - atr)
+            stop_loss = round(structural_level_sl - (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
 
-            cand_tp = [v for v in (swing_high, span_b) if v > target_entry_price]
-            structural_tp = max(cand_tp) if cand_tp else (target_entry_price + atr * 1.60)
-
-            sl_distance = min(max(target_entry_price - structural_sl, atr * 0.50), atr * 2.0)
-            stop_loss = round(target_entry_price - sl_distance, 2)
-            take_profit = round(max(structural_tp, target_entry_price + (sl_distance * 1.35)), 2)
+            cand_tp = [v for v in (swing_high_reconstructed, span_b) if v > target_entry_price]
+            take_profit = round(min(cand_tp) if cand_tp else (target_entry_price + atr * 2.0), 2)
         else:
-            cand_sl = [v for v in (swing_high, kijun, span_b) if v > target_entry_price]
-            structural_sl = max(cand_sl) + (atr * 0.15) if cand_sl else (target_entry_price + atr * 0.80)
+            cand_sl = [v for v in (swing_high_reconstructed, kijun, span_b) if v > target_entry_price]
+            structural_level_sl = max(cand_sl) if cand_sl else (target_entry_price + atr)
+            stop_loss = round(structural_level_sl + (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
 
-            cand_tp = [v for v in (swing_low, span_b) if 0.0 < v < target_entry_price]
-            structural_tp = min(cand_tp) if cand_tp else (target_entry_price - atr * 1.60)
-
-            sl_distance = min(max(structural_sl - target_entry_price, atr * 0.50), atr * 2.0)
-            stop_loss = round(target_entry_price + sl_distance, 2)
-            take_profit = round(min(structural_tp, target_entry_price - (sl_distance * 1.35)), 2)
+            cand_tp = [v for v in (swing_low_reconstructed, span_b) if 0.0 < v < target_entry_price]
+            take_profit = round(max(cand_tp) if cand_tp else (target_entry_price - atr * 2.0), 2)
 
         risk_amount = max(abs(target_entry_price - stop_loss), 1e-5)
         reward_amount = abs(take_profit - target_entry_price)
         actual_rr = round(reward_amount / risk_amount, 2)
 
-        if actual_rr < self.min_allowed_rr:
-            return self._build_no_trade(current_tick, confidence, f"POOR_RISK_REWARD ({actual_rr:.2f} < {self.min_allowed_rr})")
+        # Asymmetric Risk Gatekeeper
+        if actual_rr < self.algo_config.min_risk_reward_ratio:
+            return self._build_no_trade(current_tick, confidence, "ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD")
 
         self._last_signal_time = now
 
