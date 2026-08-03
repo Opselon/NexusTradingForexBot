@@ -9,6 +9,7 @@ and risk engines.
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -18,8 +19,19 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.enums import ExecutionMode
+from nexus_scalp.domain.enums import ExecutionMode, ActionType
 from nexus_scalp.domain.models import TickData
+
+
+def serialize_enums(obj: Any) -> Any:
+    """Recursively converts Enum instances to their underlying values."""
+    if isinstance(obj, dict):
+        return {k: serialize_enums(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_enums(x) for x in obj]
+    elif isinstance(obj, Enum):
+        return obj.value
+    return obj
 from nexus_scalp.features.scalp_features import FEATURE_NAMES
 from nexus_scalp.observability.logging import get_logger
 
@@ -261,55 +273,175 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             except Exception:
                 pass
 
+            # Scan completed bars for active/unmitigated zones (FVGs, OBs, sweeps)
+            try:
+                completed_bars = engine.aggregator.get_completed_bars()
+                if completed_bars and len(completed_bars) >= 10:
+                    lookback = int(algo_config_data.get("order_block_lookback_bars", 30))
+                    bars_to_scan = completed_bars[-lookback:]
+                    atr_val = atr if atr > 0 else 1.50
+
+                    for i in range(2, len(bars_to_scan)):
+                        bar_idx = len(completed_bars) - len(bars_to_scan) + i
+                        b_current = completed_bars[bar_idx]
+                        b_prev1 = completed_bars[bar_idx - 1]
+                        b_prev2 = completed_bars[bar_idx - 2]
+
+                        # Bullish FVG
+                        if b_prev2 and b_current.low > b_prev2.high + (atr_val * 0.20):
+                            price_low = b_prev2.high
+                            price_high = b_current.low
+                            mitigated = False
+                            for k in range(bar_idx + 1, len(completed_bars)):
+                                if completed_bars[k].low <= price_low:
+                                    mitigated = True
+                                    break
+                            if not mitigated:
+                                rectangles.append({
+                                    "id": f"fvg_bull_{bar_idx}",
+                                    "type": "BULLISH_FVG",
+                                    "price_low": float(price_low),
+                                    "price_high": float(price_high),
+                                    "ai_confidence": float(ai_confidence or 0.82),
+                                    "time": b_prev2.timestamp.isoformat()
+                                })
+
+                        # Bearish FVG
+                        if b_prev2 and b_current.high < b_prev2.low - (atr_val * 0.20):
+                            price_low = b_current.high
+                            price_high = b_prev2.low
+                            mitigated = False
+                            for k in range(bar_idx + 1, len(completed_bars)):
+                                if completed_bars[k].high >= price_high:
+                                    mitigated = True
+                                    break
+                            if not mitigated:
+                                rectangles.append({
+                                    "id": f"fvg_bear_{bar_idx}",
+                                    "type": "BEARISH_FVG",
+                                    "price_low": float(price_low),
+                                    "price_high": float(price_high),
+                                    "ai_confidence": float(ai_confidence or 0.82),
+                                    "time": b_prev2.timestamp.isoformat()
+                                })
+
+                        # Bullish Order Block
+                        if b_current.close > b_prev1.high and b_prev1.close < b_prev1.open:
+                            price_low = b_prev1.low
+                            price_high = b_prev1.high
+                            mitigated = False
+                            for k in range(bar_idx + 1, len(completed_bars)):
+                                if completed_bars[k].low < price_low:
+                                    mitigated = True
+                                    break
+                            if not mitigated:
+                                rectangles.append({
+                                    "id": f"ob_bull_{bar_idx}",
+                                    "type": "BULLISH_ORDER_BLOCK",
+                                    "price_low": float(price_low),
+                                    "price_high": float(price_high),
+                                    "ai_confidence": float(ai_confidence or 0.85),
+                                    "time": b_prev1.timestamp.isoformat()
+                                })
+
+                        # Bearish Order Block
+                        if b_current.close < b_prev1.low and b_prev1.close > b_prev1.open:
+                            price_low = b_prev1.low
+                            price_high = b_prev1.high
+                            mitigated = False
+                            for k in range(bar_idx + 1, len(completed_bars)):
+                                if completed_bars[k].high > price_high:
+                                    mitigated = True
+                                    break
+                            if not mitigated:
+                                rectangles.append({
+                                    "id": f"ob_bear_{bar_idx}",
+                                    "type": "BEARISH_ORDER_BLOCK",
+                                    "price_low": float(price_low),
+                                    "price_high": float(price_high),
+                                    "ai_confidence": float(ai_confidence or 0.85),
+                                    "time": b_prev1.timestamp.isoformat()
+                                })
+
+                        # Sweep / Stop Hunt Zone
+                        if bar_idx >= 11:
+                            recent_lows = [b.low for b in completed_bars[bar_idx-11 : bar_idx]]
+                            recent_highs = [b.high for b in completed_bars[bar_idx-11 : bar_idx]]
+                            min_low = min(recent_lows)
+                            max_high = max(recent_highs)
+
+                            if b_current.low < min_low and b_current.close > min_low:
+                                rectangles.append({
+                                    "id": f"sweep_bull_{bar_idx}",
+                                    "type": "STOP_HUNT_ZONE",
+                                    "price_low": float(b_current.low),
+                                    "price_high": float(min_low),
+                                    "ai_confidence": float(ai_confidence or 0.90),
+                                    "time": b_current.timestamp.isoformat()
+                                })
+                            elif b_current.high > max_high and b_current.close < max_high:
+                                rectangles.append({
+                                    "id": f"sweep_bear_{bar_idx}",
+                                    "type": "STOP_HUNT_ZONE",
+                                    "price_low": float(max_high),
+                                    "price_high": float(b_current.high),
+                                    "ai_confidence": float(ai_confidence or 0.90),
+                                    "time": b_current.timestamp.isoformat()
+                                })
+            except Exception as e:
+                logger.error("Failed to detect real structural zones from completed bars", error=str(e))
+
             fv = engine._last_fv
             proposal = engine._last_proposal
 
-            if fv:
-                # Dynamic Rectangle Overlays for candidate Liquidity Zones (FVG, OB, Sweeps)
-                # Bullish OB
+            if not rectangles and fv:
+                # Fallback to fv currently forming bar attributes if we have no unmitigated historical ones
+                forming_bar = engine.aggregator.get_current_forming_bar()
+                f_time = forming_bar.timestamp.isoformat() if forming_bar else None
                 if getattr(fv, "order_block_type", 0) == 1:
                     rectangles.append({
                         "id": "ob_bull",
                         "type": "BULLISH_ORDER_BLOCK",
                         "price_low": float(bid - atr * 0.8),
                         "price_high": float(bid),
-                        "ai_confidence": float(ai_confidence or 0.85)
+                        "ai_confidence": float(ai_confidence or 0.85),
+                        "time": f_time
                     })
-                # Bearish OB
                 elif getattr(fv, "order_block_type", 0) == -1:
                     rectangles.append({
                         "id": "ob_bear",
                         "type": "BEARISH_ORDER_BLOCK",
                         "price_low": float(bid),
                         "price_high": float(bid + atr * 0.8),
-                        "ai_confidence": float(ai_confidence or 0.85)
+                        "ai_confidence": float(ai_confidence or 0.85),
+                        "time": f_time
                     })
-                # Bullish FVG
                 if getattr(fv, "fvg_bullish_active", False):
                     rectangles.append({
                         "id": "fvg_bull",
                         "type": "BULLISH_FVG",
                         "price_low": float(bid - atr * 0.5),
                         "price_high": float(bid),
-                        "ai_confidence": float(ai_confidence or 0.82)
+                        "ai_confidence": float(ai_confidence or 0.82),
+                        "time": f_time
                     })
-                # Bearish FVG
                 if getattr(fv, "fvg_bearish_active", False):
                     rectangles.append({
                         "id": "fvg_bear",
                         "type": "BEARISH_FVG",
                         "price_low": float(bid),
                         "price_high": float(bid + atr * 0.5),
-                        "ai_confidence": float(ai_confidence or 0.82)
+                        "ai_confidence": float(ai_confidence or 0.82),
+                        "time": f_time
                     })
-                # Swept Liquidity Pool / Stop-Hunt Zone
                 if getattr(fv, "liquidity_sweep_signal", 0) != 0:
                     rectangles.append({
                         "id": "sweep_zone",
                         "type": "STOP_HUNT_ZONE",
                         "price_low": float(bid - atr * 1.2),
                         "price_high": float(bid + atr * 1.2),
-                        "ai_confidence": float(ai_confidence or 0.90)
+                        "ai_confidence": float(ai_confidence or 0.90),
+                        "time": f_time
                     })
 
             # Check for active trade proposals or live active positions to overlay horizontal execution lines
@@ -351,7 +483,29 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 except Exception:
                     pass
 
-        return {
+        if not rectangles:
+            t1 = bars_list[30]["time"] if len(bars_list) > 30 else None
+            t2 = bars_list[70]["time"] if len(bars_list) > 70 else None
+            rectangles = [
+                {
+                    "id": "mock_ob_bull_1",
+                    "type": "BULLISH_ORDER_BLOCK",
+                    "price_low": float(bid - atr * 1.5),
+                    "price_high": float(bid - atr * 0.5),
+                    "ai_confidence": 0.89,
+                    "time": t1
+                },
+                {
+                    "id": "mock_fvg_bear_1",
+                    "type": "BEARISH_FVG",
+                    "price_low": float(bid + atr * 0.5),
+                    "price_high": float(bid + atr * 1.5),
+                    "ai_confidence": 0.82,
+                    "time": t2
+                }
+            ]
+
+        state = {
             "engine_running": engine_running,
             "symbol": symbol,
             "execution_mode": execution_mode,
@@ -375,6 +529,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "order_lines": order_lines
             }
         }
+        return serialize_enums(state)
 
     # Static Web Pages routes
     @app.get("/")
@@ -587,14 +742,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "type": "BULLISH_ORDER_BLOCK",
                     "price_low": 2332.10,
                     "price_high": 2333.30,
-                    "ai_confidence": 0.89
+                    "ai_confidence": 0.89,
+                    "time": bars[30]["time"] if len(bars) > 30 else None
                 },
                 {
                     "id": "mock_fvg_bear_1",
                     "type": "BEARISH_FVG",
                     "price_low": 2335.50,
                     "price_high": 2336.80,
-                    "ai_confidence": 0.82
+                    "ai_confidence": 0.82,
+                    "time": bars[70]["time"] if len(bars) > 70 else None
                 }
             ]
         if not overlays.get("order_lines"):
