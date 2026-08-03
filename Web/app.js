@@ -515,24 +515,34 @@ function drawChart() {
             const yLow = h - 20 - ((rect.price_low - minPrice) / priceRangePadded) * (h - 40);
             const rectHeight = Math.max(1, yLow - yHigh);
 
-            let color = 'rgba(16, 185, 129, 0.25)'; // Default green for Bullish OB / FVG
+            let color = 'rgba(0, 230, 118, 0.25)'; // Green Box for Bullish OB/FVG
             let label = rect.type;
 
             if (rect.type === 'BEARISH_ORDER_BLOCK' || rect.type === 'BEARISH_FVG') {
-                color = 'rgba(244, 63, 94, 0.25)';
+                color = 'rgba(255, 23, 68, 0.25)'; // Red Box for Bearish OB/FVG
             } else if (rect.type === 'STOP_HUNT_ZONE') {
-                color = 'rgba(234, 179, 8, 0.35)';
+                color = 'rgba(255, 215, 0, 0.35)'; // Gold Box for Swept Liquidity Pools
             }
 
+            let xStart = 0;
+            let xEnd = w - 60;
+            if (rect.time) {
+                const candleIdx = candleData.findIndex(c => c.time === rect.time);
+                if (candleIdx !== -1) {
+                    xStart = Math.max(0, chartPanX + candleIdx * (candleWidth + candleGap));
+                }
+            }
+            const rectWidth = Math.max(1, xEnd - xStart);
+
             ctx.fillStyle = color;
-            ctx.fillRect(0, yHigh, w - 60, rectHeight);
+            ctx.fillRect(xStart, yHigh, rectWidth, rectHeight);
 
             // Display zone type & AI Confidence % inside the box
-            ctx.fillStyle = 'rgba(226, 232, 240, 0.8)';
-            ctx.font = '9px sans-serif';
+            ctx.fillStyle = 'rgba(226, 232, 240, 0.9)';
+            ctx.font = 'bold 9px sans-serif';
             ctx.textAlign = 'left';
             const textY = Math.min(Math.max(yHigh + 12, 12), h - 22);
-            ctx.fillText(`${label} (${(rect.ai_confidence * 100).toFixed(0)}%)`, 10, textY);
+            ctx.fillText(`${label} (AI Zone Confidence: ${(rect.ai_confidence * 100).toFixed(0)}%)`, xStart + 8, textY);
         });
     }
 
@@ -626,23 +636,23 @@ function drawChart() {
         const yTP = h - 20 - ((line.tp_price - minPrice) / priceRangePadded) * (h - 40);
 
         if (yEntry >= 0 && yEntry < h - 20) {
-            // Blue Line for entry
-            ctx.strokeStyle = '#06b6d4';
-            ctx.lineWidth = 1.5;
+            // Blue Line for entry (Blue solid)
+            ctx.strokeStyle = 'rgba(0, 230, 240, 0.95)';
+            ctx.lineWidth = 1.8;
             ctx.beginPath();
             ctx.moveTo(0, yEntry);
             ctx.lineTo(w - 60, yEntry);
             ctx.stroke();
 
-            ctx.fillStyle = '#06b6d4';
+            ctx.fillStyle = 'rgba(0, 230, 240, 0.95)';
             ctx.font = 'bold 9px monospace';
             ctx.fillText(`ENTRY: ${line.entry_price.toFixed(2)}`, 15, yEntry - 4);
         }
 
         if (ySL >= 0 && ySL < h - 20) {
-            // Red Dashed Line for Stop Loss
-            ctx.strokeStyle = '#f43f5e';
-            ctx.lineWidth = 1.5;
+            // Red Dashed Line for Stop Loss (Red dashed)
+            ctx.strokeStyle = 'rgba(255, 23, 68, 0.95)';
+            ctx.lineWidth = 1.8;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
             ctx.moveTo(0, ySL);
@@ -650,15 +660,15 @@ function drawChart() {
             ctx.stroke();
             ctx.setLineDash([]);
 
-            ctx.fillStyle = '#f43f5e';
+            ctx.fillStyle = 'rgba(255, 23, 68, 0.95)';
             ctx.font = 'bold 9px monospace';
             ctx.fillText(`SL: ${line.sl_price.toFixed(2)}`, 15, ySL - 4);
         }
 
         if (yTP >= 0 && yTP < h - 20) {
-            // Green Dashed Line for Take Profit
-            ctx.strokeStyle = '#10b981';
-            ctx.lineWidth = 1.5;
+            // Green Dashed Line for Take Profit (Green dashed)
+            ctx.strokeStyle = 'rgba(0, 230, 118, 0.95)';
+            ctx.lineWidth = 1.8;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
             ctx.moveTo(0, yTP);
@@ -666,7 +676,7 @@ function drawChart() {
             ctx.stroke();
             ctx.setLineDash([]);
 
-            ctx.fillStyle = '#10b981';
+            ctx.fillStyle = 'rgba(0, 230, 118, 0.95)';
             ctx.font = 'bold 9px monospace';
             ctx.fillText(`TP: ${line.tp_price.toFixed(2)}`, 15, yTP - 4);
         }
