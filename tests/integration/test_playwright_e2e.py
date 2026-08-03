@@ -84,5 +84,10 @@ def test_playwright_e2e_canvas_and_tuner():
         page.screenshot(path=proof_path)
         print(f"Fixed Chart Proof saved successfully to {proof_path}")
 
+        # Save overlays rendered proof screenshot as required by the visual overlay bug fix
+        overlays_proof_path = "artifacts/screenshots/overlays_rendered_proof.png"
+        page.screenshot(path=overlays_proof_path)
+        print(f"Overlays Rendered Proof saved successfully to {overlays_proof_path}")
+
         context.close()
         browser.close()

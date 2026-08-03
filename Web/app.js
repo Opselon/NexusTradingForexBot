@@ -515,24 +515,41 @@ function drawChart() {
             const yLow = h - 20 - ((rect.price_low - minPrice) / priceRangePadded) * (h - 40);
             const rectHeight = Math.max(1, yLow - yHigh);
 
-            let color = 'rgba(16, 185, 129, 0.25)'; // Default green for Bullish OB / FVG
+            let color = 'rgba(0, 230, 118, 0.25)'; // Default green for Bullish OB / FVG (Green Box)
             let label = rect.type;
 
             if (rect.type === 'BEARISH_ORDER_BLOCK' || rect.type === 'BEARISH_FVG') {
-                color = 'rgba(244, 63, 94, 0.25)';
-            } else if (rect.type === 'STOP_HUNT_ZONE') {
-                color = 'rgba(234, 179, 8, 0.35)';
+                color = 'rgba(255, 23, 68, 0.25)'; // Red Box
+            } else if (rect.type === 'STOP_HUNT_ZONE' || rect.type === 'GOLD_ZONE' || rect.type === 'SWEPT_LIQUIDITY_POOL') {
+                color = 'rgba(255, 215, 0, 0.35)'; // Gold Box
+            }
+
+            // Convert optional timestamps into pixel coordinates for bounds
+            let startX = 0;
+            let endX = w - 60;
+
+            if (rect.start_time) {
+                const idx = candleData.findIndex(c => c.time === rect.start_time);
+                if (idx !== -1) {
+                    startX = chartPanX + idx * (candleWidth + candleGap);
+                }
+            }
+            if (rect.end_time) {
+                const idx = candleData.findIndex(c => c.time === rect.end_time);
+                if (idx !== -1) {
+                    endX = chartPanX + idx * (candleWidth + candleGap) + candleWidth;
+                }
             }
 
             ctx.fillStyle = color;
-            ctx.fillRect(0, yHigh, w - 60, rectHeight);
+            ctx.fillRect(startX, yHigh, Math.max(1, endX - startX), rectHeight);
 
             // Display zone type & AI Confidence % inside the box
             ctx.fillStyle = 'rgba(226, 232, 240, 0.8)';
             ctx.font = '9px sans-serif';
             ctx.textAlign = 'left';
             const textY = Math.min(Math.max(yHigh + 12, 12), h - 22);
-            ctx.fillText(`${label} (${(rect.ai_confidence * 100).toFixed(0)}%)`, 10, textY);
+            ctx.fillText(`${label} (${(rect.ai_confidence * 100).toFixed(0)}%)`, startX + 10, textY);
         });
     }
 
