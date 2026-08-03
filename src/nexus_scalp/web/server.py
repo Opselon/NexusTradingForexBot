@@ -8,7 +8,7 @@ and risk engines.
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +41,14 @@ class ClosePositionRequest(BaseModel):
 
 class ToggleRequest(BaseModel):
     active: bool
+
+
+class AlgoConfigRequest(BaseModel):
+    atr_sl_buffer_multiplier: float
+    min_risk_reward_ratio: float
+    ai_zone_confidence_threshold: float
+    fvg_mitigation_sensitivity: float
+    order_block_lookback_bars: int
 
 
 class ToggleReplayRequest(BaseModel):
@@ -167,10 +175,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             except Exception:
                 pass
 
-            # Fetch bars (synchronized completed history)
+            # Fetch bars (synchronized completed history) - Expand to 250 completed bars for 150+ visible bars support
             try:
                 completed_bars = engine.aggregator.get_completed_bars()
-                for b in completed_bars[-100:]:
+                for b in completed_bars[-250:]:
                     bars_list.append({
                         "time": b.timestamp.isoformat(),
                         "open": b.open,
@@ -230,6 +238,119 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "value": val
             })
 
+        # Build Visual Overlays and Algo Config response
+        rectangles = []
+        order_lines = None
+        algo_config_data = {
+            "atr_sl_buffer_multiplier": 1.5,
+            "min_risk_reward_ratio": 1.8,
+            "ai_zone_confidence_threshold": 0.82,
+            "fvg_mitigation_sensitivity": 0.5,
+            "order_block_lookback_bars": 30
+        }
+
+        if engine:
+            try:
+                algo_config_data = {
+                    "atr_sl_buffer_multiplier": float(getattr(engine.config.algo, "atr_sl_buffer_multiplier", 1.5)),
+                    "min_risk_reward_ratio": float(getattr(engine.config.algo, "min_risk_reward_ratio", 1.8)),
+                    "ai_zone_confidence_threshold": float(getattr(engine.config.algo, "ai_zone_confidence_threshold", 0.82)),
+                    "fvg_mitigation_sensitivity": float(getattr(engine.config.algo, "fvg_mitigation_sensitivity", 0.5)),
+                    "order_block_lookback_bars": int(getattr(engine.config.algo, "order_block_lookback_bars", 30))
+                }
+            except Exception:
+                pass
+
+            fv = engine._last_fv
+            proposal = engine._last_proposal
+
+            if fv:
+                # Dynamic Rectangle Overlays for candidate Liquidity Zones (FVG, OB, Sweeps)
+                # Bullish OB
+                if getattr(fv, "order_block_type", 0) == 1:
+                    rectangles.append({
+                        "id": "ob_bull",
+                        "type": "BULLISH_ORDER_BLOCK",
+                        "price_low": float(bid - atr * 0.8),
+                        "price_high": float(bid),
+                        "ai_confidence": float(ai_confidence or 0.85)
+                    })
+                # Bearish OB
+                elif getattr(fv, "order_block_type", 0) == -1:
+                    rectangles.append({
+                        "id": "ob_bear",
+                        "type": "BEARISH_ORDER_BLOCK",
+                        "price_low": float(bid),
+                        "price_high": float(bid + atr * 0.8),
+                        "ai_confidence": float(ai_confidence or 0.85)
+                    })
+                # Bullish FVG
+                if getattr(fv, "fvg_bullish_active", False):
+                    rectangles.append({
+                        "id": "fvg_bull",
+                        "type": "BULLISH_FVG",
+                        "price_low": float(bid - atr * 0.5),
+                        "price_high": float(bid),
+                        "ai_confidence": float(ai_confidence or 0.82)
+                    })
+                # Bearish FVG
+                if getattr(fv, "fvg_bearish_active", False):
+                    rectangles.append({
+                        "id": "fvg_bear",
+                        "type": "BEARISH_FVG",
+                        "price_low": float(bid),
+                        "price_high": float(bid + atr * 0.5),
+                        "ai_confidence": float(ai_confidence or 0.82)
+                    })
+                # Swept Liquidity Pool / Stop-Hunt Zone
+                if getattr(fv, "liquidity_sweep_signal", 0) != 0:
+                    rectangles.append({
+                        "id": "sweep_zone",
+                        "type": "STOP_HUNT_ZONE",
+                        "price_low": float(bid - atr * 1.2),
+                        "price_high": float(bid + atr * 1.2),
+                        "ai_confidence": float(ai_confidence or 0.90)
+                    })
+
+            # Check for active trade proposals or live active positions to overlay horizontal execution lines
+            if proposal and proposal.action != ActionType.NO_TRADE:
+                risk_usd = account_data["equity"] * (engine.config.risk.risk_per_trade_pct / 100.0)
+                profit_usd = risk_usd * proposal.risk_reward_ratio
+                order_lines = {
+                    "active": True,
+                    "direction": "BUY" if "BUY" in proposal.action.value else "SELL",
+                    "entry_price": float(proposal.proposed_entry),
+                    "sl_price": float(proposal.stop_loss),
+                    "tp_price": float(proposal.take_profit),
+                    "risk_reward_ratio": float(proposal.risk_reward_ratio),
+                    "risk_usd": float(round(risk_usd, 2)),
+                    "profit_usd": float(round(profit_usd, 2)),
+                    "zone_score": float(round(proposal.confidence * 100.0, 1))
+                }
+            else:
+                try:
+                    live_positions = engine.adapter.get_positions(symbol=symbol)
+                    if live_positions:
+                        p = live_positions[0]
+                        risk_usd = account_data["equity"] * (engine.config.risk.risk_per_trade_pct / 100.0)
+                        sl_dist = abs(p.price_open - p.sl) if p.sl > 0 else (atr * 1.5)
+                        tp_dist = abs(p.tp - p.price_open) if p.tp > 0 else (atr * 1.8)
+                        risk_reward_ratio = tp_dist / max(sl_dist, 1e-5)
+                        profit_usd = risk_usd * risk_reward_ratio
+                        order_lines = {
+                            "active": True,
+                            "direction": p.type.value,
+                            "entry_price": float(p.price_open),
+                            "sl_price": float(p.sl) if p.sl > 0 else float(p.price_open - sl_dist if p.type.value == "BUY" else p.price_open + sl_dist),
+                            "tp_price": float(p.tp) if p.tp > 0 else float(p.price_open + tp_dist if p.type.value == "BUY" else p.price_open - tp_dist),
+                            "risk_reward_ratio": float(round(risk_reward_ratio, 2)),
+                            "risk_usd": float(round(risk_usd, 2)),
+                            "profit_usd": float(round(profit_usd, 2)),
+                            "zone_score": 85.0
+                        }
+                except Exception:
+                    pass
+
         return {
             "engine_running": engine_running,
             "symbol": symbol,
@@ -247,7 +368,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "ai_decision": ai_decision,
             "ai_confidence": ai_confidence,
             "ai_reason": ai_reason,
-            "predictions": app.state.simulated_outcomes
+            "predictions": app.state.simulated_outcomes,
+            "algo_config": algo_config_data,
+            "visual_overlays": {
+                "rectangles": rectangles,
+                "order_lines": order_lines
+            }
         }
 
     # Static Web Pages routes
@@ -425,6 +551,114 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return {"success": True}
         except Exception as e:
             logger.error("Failed to save and hot-reload configurations", error=str(e))
+            return {"success": False, "message": str(e)}
+
+    # GET /api/chart/history
+    @app.get("/api/chart/history")
+    def get_chart_history() -> dict[str, Any]:
+        state = get_system_state()
+        bars = state.get("bars", [])
+        if not bars:
+            import random
+            start_price = 2334.21
+            now_dt = datetime.now()
+            for i in range(160):
+                close_p = start_price + random.uniform(-0.8, 0.8)
+                high_p = max(start_price, close_p) + random.uniform(0.1, 0.4)
+                low_p = min(start_price, close_p) - random.uniform(0.1, 0.4)
+
+                bars.append({
+                    "time": (now_dt - timedelta(minutes=160-i)).isoformat(),
+                    "open": start_price,
+                    "high": high_p,
+                    "low": low_p,
+                    "close": close_p,
+                    "volume": float(random.randint(10, 50)),
+                    "is_complete": True
+                })
+                start_price = close_p
+            state["bars"] = bars
+
+        overlays = state.get("visual_overlays", {})
+        if not overlays.get("rectangles"):
+            overlays["rectangles"] = [
+                {
+                    "id": "mock_ob_bull_1",
+                    "type": "BULLISH_ORDER_BLOCK",
+                    "price_low": 2332.10,
+                    "price_high": 2333.30,
+                    "ai_confidence": 0.89
+                },
+                {
+                    "id": "mock_fvg_bear_1",
+                    "type": "BEARISH_FVG",
+                    "price_low": 2335.50,
+                    "price_high": 2336.80,
+                    "ai_confidence": 0.82
+                }
+            ]
+        if not overlays.get("order_lines"):
+            overlays["order_lines"] = {
+                "active": True,
+                "direction": "BUY",
+                "entry_price": 2334.21,
+                "sl_price": 2331.50,
+                "tp_price": 2339.50,
+                "risk_reward_ratio": 1.95,
+                "risk_usd": 100.00,
+                "profit_usd": 195.00,
+                "zone_score": 88.0
+            }
+        state["visual_overlays"] = overlays
+        return state
+
+    # GET /api/algo/config
+    @app.get("/api/algo/config")
+    def get_algo_config() -> dict[str, Any]:
+        live_config_path = Path("configs/live.yaml")
+        if not live_config_path.exists():
+            live_config_path = Path("configs/base.yaml")
+
+        with open(live_config_path, encoding="utf-8") as f:
+            raw_data = yaml.safe_load(f) or {}
+
+        algo_data = raw_data.get("algo", {})
+        return {
+            "atr_sl_buffer_multiplier": algo_data.get("atr_sl_buffer_multiplier", 1.5),
+            "min_risk_reward_ratio": algo_data.get("min_risk_reward_ratio", 1.8),
+            "ai_zone_confidence_threshold": algo_data.get("ai_zone_confidence_threshold", 0.82),
+            "fvg_mitigation_sensitivity": algo_data.get("fvg_mitigation_sensitivity", 0.5),
+            "order_block_lookback_bars": algo_data.get("order_block_lookback_bars", 30),
+        }
+
+    # PUT /api/algo/config
+    @app.put("/api/algo/config")
+    def save_algo_config(req: AlgoConfigRequest) -> dict[str, Any]:
+        live_config_path = Path("configs/live.yaml")
+        if not live_config_path.exists():
+            live_config_path = Path("configs/base.yaml")
+
+        try:
+            with open(live_config_path, encoding="utf-8") as f:
+                raw_data = yaml.safe_load(f) or {}
+
+            raw_data["algo"] = req.model_dump()
+
+            tmp = Path("configs/live.yaml").with_suffix(".yaml.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                yaml.safe_dump(raw_data, f, default_flow_style=False)
+            tmp.replace(Path("configs/live.yaml"))
+
+            engine = app.state.engine
+            if engine:
+                logger.info("Hot-reloading algorithm live tuner parameters dynamically.")
+                new_cfg = AppConfig.load_from_yaml(Path("configs/live.yaml"))
+                engine.config = new_cfg
+                engine.signal_policy.algo_config = new_cfg.algo
+
+            return {"success": True}
+        except Exception as e:
+            logger.error("Failed to save and hot-reload algo tuner configurations", error=str(e))
             return {"success": False, "message": str(e)}
 
     # Modify position SL/TP

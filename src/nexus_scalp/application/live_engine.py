@@ -145,6 +145,7 @@ class LiveEngine:
             confidence_threshold=config.model.confidence_threshold,
             cooldown_seconds=4.0,
             rule_matrix=self.rule_matrix,
+            algo_config=config.algo,
         )
         self.risk_engine = RiskEngine(
             config=config.risk,
@@ -580,6 +581,10 @@ class LiveEngine:
 
     def _process_tick_pipeline(self, tick: TickData, account: AccountInfo) -> None:
         try:
+            # Synchronize the live hot-swapped AlgoConfig on every single tick pulse
+            self.signal_policy.algo_config = self.config.algo
+            self.order_manager.algo_config = self.config.algo
+
             is_new_bar = self.aggregator.process_tick(tick)
 
             # cap bars (O(1) amortized)

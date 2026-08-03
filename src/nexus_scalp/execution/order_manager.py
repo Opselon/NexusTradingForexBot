@@ -34,6 +34,7 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
@@ -148,11 +149,13 @@ class OrderLifecycleManager:
         max_holding_seconds: float = 1800.0,  # 30 minutes time-decay threshold for stagnant trades
         eta_coefficient: float = 2500.0,      # Base Temporary Impact scale for XAUUSD (Almgren-Chriss)
         rule_matrix: RuleMatrixEngine | None = None,
+        algo_config: AlgoConfig | None = None,
     ) -> None:
         self.adapter = adapter
         self.audit = audit_repo or AuditRepository()
         self.notifier = notifier
         self.rule_matrix = rule_matrix
+        self.algo_config = algo_config or AlgoConfig()
         self._processed_orders: dict[str, bool] = {}
 
         self.be_trigger = be_trigger_usd
@@ -557,8 +560,10 @@ class OrderLifecycleManager:
         defer_stop_management = bool(impact_to_net_profit_ratio > 0.60 or desync_risk_flag)
         defer_scale_out = bool(spread_to_atr_ratio > 0.25 or desync_risk_flag)
 
-        smart_be_trigger = max(self.be_trigger, round(atr * 0.45 + impact_price_delta, 2))
-        smart_trailing_distance = max(self.trailing_distance, round(atr * 1.25 + impact_price_delta, 2))
+        # Dynamically scale triggers based on the dynamic AlgoConfig ATR stop multiplier
+        atr_multiplier = self.algo_config.atr_sl_buffer_multiplier
+        smart_be_trigger = max(self.be_trigger, round(atr * 0.30 * atr_multiplier + impact_price_delta, 2))
+        smart_trailing_distance = max(self.trailing_distance, round(atr * 0.80 * atr_multiplier + impact_price_delta, 2))
         tp1_atr_multiplier = 1.50 + impact_to_atr_ratio
 
         rescue_quality_score = max(0.0, 100.0 - (desync_score * 2.0) - (directional_conflict_score * 40.0))
@@ -916,6 +921,20 @@ class OrderLifecycleManager:
                 else:
                     exit_price = current_tick.bid if direction == "BUY" else current_tick.ask
 
+                # Deep Position Manager & Ledger Autopsy
+                mae_val = float(self._mae_tracker.get(dead_ticket, 0.0))
+                mfe_val = float(self._mfe_tracker.get(dead_ticket, 0.0))
+                initial_sl_val = float(sl_price)
+                final_sl_val = float(self._last_modify_sl.get(dead_ticket, initial_sl_val))
+
+                is_risk_free_hit = 0
+                if direction == "BUY":
+                    if final_sl_val >= entry and abs(exit_price - final_sl_val) < 0.15:
+                        is_risk_free_hit = 1
+                else:
+                    if final_sl_val <= entry and final_sl_val > 0.0 and abs(exit_price - final_sl_val) < 0.15:
+                        is_risk_free_hit = 1
+
                 self.audit.log_ledger_closed(
                     ticket=dead_ticket,
                     symbol=symbol,
@@ -929,6 +948,12 @@ class OrderLifecycleManager:
                     swap=swap_usd,
                     duration_sec=duration_sec,
                     timestamp_str=now.isoformat() if hasattr(now, "isoformat") else str(now),
+                    mae=mae_val,
+                    mfe=mfe_val,
+                    initial_sl_price=initial_sl_val,
+                    final_sl_price=final_sl_val,
+                    is_risk_free_hit=is_risk_free_hit,
+                    exit_mechanism=status_str,
                 )
 
                 if self.notifier:

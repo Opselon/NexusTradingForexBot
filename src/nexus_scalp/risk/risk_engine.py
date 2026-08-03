@@ -43,13 +43,33 @@ class RiskEngine:
         max_allowed_lots: float = 50.0,
         eta_coefficient: float = 200.0,        # HFT Calibrated Almgren-Chriss coefficient for Gold micro-lots
         max_impact_reward_ratio: float = 0.45, # Allow up to 45% slippage/reward ratio on tight M1 targets
+        min_risk_reward_ratio: float = 1.8,
     ) -> None:
         self.config = config
         self.max_margin_usage_pct = max_margin_usage_pct
         self.max_allowed_lots = max_allowed_lots
         self.eta_coefficient = eta_coefficient
         self.max_impact_reward_ratio = max_impact_reward_ratio
+        self.min_risk_reward_ratio = min_risk_reward_ratio
         self._kill_switch_active = False
+
+    def calculate_position_size(
+        self,
+        account: AccountInfo,
+        symbol_info: SymbolInfo,
+        sl_distance_price: float,
+        risk_pct: float,
+    ) -> float:
+        """
+        Dynamically adjusts position lot size based on variable structural SL distance (fixed dollar risk).
+        If SL is wide, lot size scales down; if SL is tight, lot size scales up.
+        """
+        risk_amount_usd = account.equity * (risk_pct / 100.0)
+        sl_distance_points = max(sl_distance_price, 1e-5) / symbol_info.point
+        tick_val = symbol_info.tick_value if symbol_info.tick_value > 0 else 1.0
+
+        sl_risk_volume = risk_amount_usd / (sl_distance_points * tick_val + 1e-8)
+        return sl_risk_volume
 
     def enable_kill_switch(self) -> None:
         """Activates emergency hard-stop across all trading execution."""
@@ -152,6 +172,18 @@ class RiskEngine:
             return None
 
         # ----------------------------------------------------------------------
+        # 2.5 RISK REWARD GATEKEEPER INTEGRATION (Bypassed for emergency hedging counter-positions)
+        # ----------------------------------------------------------------------
+        is_hedge = "HEDGE" in getattr(proposal, "reason_code", "")
+        if not is_hedge and proposal.risk_reward_ratio < self.min_risk_reward_ratio:
+            logger.warning(
+                "Proposal rejected: Risk reward ratio too low for risk engine",
+                actual_rr=proposal.risk_reward_ratio,
+                min_required=self.min_risk_reward_ratio,
+            )
+            return None
+
+        # ----------------------------------------------------------------------
         # 3. TRIPLE STOPS-LEVEL BROKER VALIDATION
         # ----------------------------------------------------------------------
         min_dist_price = symbol_info.stops_level * symbol_info.point
@@ -191,10 +223,13 @@ class RiskEngine:
         # ----------------------------------------------------------------------
         # 5. DYNAMIC LOT SIZING CALCULATION
         # ----------------------------------------------------------------------
-        sl_distance_points = sl_dist_price / symbol_info.point
         tick_val = symbol_info.tick_value if symbol_info.tick_value > 0 else 1.0
-        
-        sl_risk_volume = risk_amount_usd / (sl_distance_points * tick_val + 1e-8)
+        sl_risk_volume = self.calculate_position_size(
+            account=account,
+            symbol_info=symbol_info,
+            sl_distance_price=sl_dist_price,
+            risk_pct=risk_pct,
+        )
 
         contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
         leverage = account.leverage if account.leverage > 0 else 100

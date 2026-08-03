@@ -530,6 +530,74 @@
 
             <!-- TAB 4: BOT CONFIGURATION PANEL -->
             <section id="tab-config" class="tab-content hidden space-y-6">
+                <!-- Algorithm Live Tuner Panel -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                    <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
+                        <div>
+                            <h3 class="text-md font-bold text-white flex items-center">
+                                <i class="fa-solid fa-sliders mr-2 text-accentCyan"></i>
+                                Algorithm Live Tuner
+                            </h3>
+                            <p class="text-xs text-textMuted mt-1">Tweak quant algorithm thresholds on the fly without restarting the engine.</p>
+                        </div>
+                        <button onclick="saveAlgoTuner()" class="bg-gradient-to-tr from-accentCyan to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-extrabold py-2 px-6 rounded-lg text-xs transition shadow-lg shadow-accentCyan/15 flex items-center space-x-1">
+                            <i class="fa-solid fa-bolt"></i> <span>Apply Tuner Settings</span>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 text-sm">
+                        <!-- ATR SL Buffer Multiplier -->
+                        <div class="bg-darkBg/30 p-4 rounded-lg border border-borderClr/80 space-y-2">
+                            <div class="flex justify-between text-xs font-bold text-textMuted uppercase">
+                                <span>ATR SL Buffer Multiplier</span>
+                                <span id="val-atr-sl-buffer" class="text-accentCyan font-mono">1.5</span>
+                            </div>
+                            <input type="range" id="tuner-atr-sl-buffer" min="0.5" max="4.0" step="0.1" oninput="document.getElementById('val-atr-sl-buffer').innerText = this.value" class="w-full accent-accentCyan cursor-pointer">
+                            <p class="text-[10px] text-textMuted">Multiplier for ATR stop-loss buffer (0.5 to 4.0).</p>
+                        </div>
+
+                        <!-- Min Risk Reward Ratio -->
+                        <div class="bg-darkBg/30 p-4 rounded-lg border border-borderClr/80 space-y-2">
+                            <div class="flex justify-between text-xs font-bold text-textMuted uppercase">
+                                <span>Min Risk Reward Ratio</span>
+                                <span id="val-min-rr" class="text-accentCyan font-mono">1.8</span>
+                            </div>
+                            <input type="range" id="tuner-min-rr" min="1.0" max="5.0" step="0.1" oninput="document.getElementById('val-min-rr').innerText = this.value" class="w-full accent-accentCyan cursor-pointer">
+                            <p class="text-[10px] text-textMuted">Minimum required Risk-to-Reward ratio (1.0 to 5.0).</p>
+                        </div>
+
+                        <!-- AI Zone Confidence Threshold -->
+                        <div class="bg-darkBg/30 p-4 rounded-lg border border-borderClr/80 space-y-2">
+                            <div class="flex justify-between text-xs font-bold text-textMuted uppercase">
+                                <span>AI Zone Confidence</span>
+                                <span id="val-zone-conf" class="text-accentCyan font-mono">0.82</span>
+                            </div>
+                            <input type="range" id="tuner-zone-conf" min="0.50" max="0.99" step="0.01" oninput="document.getElementById('val-zone-conf').innerText = this.value" class="w-full accent-accentCyan cursor-pointer">
+                            <p class="text-[10px] text-textMuted">Min Neural Net score to validate liquidity boxes (0.50 to 0.99).</p>
+                        </div>
+
+                        <!-- FVG Mitigation Sensitivity -->
+                        <div class="bg-darkBg/30 p-4 rounded-lg border border-borderClr/80 space-y-2">
+                            <div class="flex justify-between text-xs font-bold text-textMuted uppercase">
+                                <span>FVG Mitigation Depth</span>
+                                <span id="val-fvg-mitigation" class="text-accentCyan font-mono">0.5</span>
+                            </div>
+                            <input type="range" id="tuner-fvg-mitigation" min="0.1" max="1.0" step="0.1" oninput="document.getElementById('val-fvg-mitigation').innerText = this.value" class="w-full accent-accentCyan cursor-pointer">
+                            <p class="text-[10px] text-textMuted">Penetration depth before invalidating an FVG (0.1 to 1.0).</p>
+                        </div>
+
+                        <!-- Order Block Lookback Bars -->
+                        <div class="bg-darkBg/30 p-4 rounded-lg border border-borderClr/80 space-y-2">
+                            <div class="flex justify-between text-xs font-bold text-textMuted uppercase">
+                                <span>OB Lookback Bars</span>
+                                <span id="val-ob-lookback" class="text-accentCyan font-mono">30</span>
+                            </div>
+                            <input type="range" id="tuner-ob-lookback" min="10" max="100" step="1" oninput="document.getElementById('val-ob-lookback').innerText = this.value" class="w-full accent-accentCyan cursor-pointer">
+                            <p class="text-[10px] text-textMuted">Historical bar depth for Order Block scanning (10 to 100).</p>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
                     <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
                         <div>

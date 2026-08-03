@@ -11,6 +11,7 @@ let selectedConfig = {};
 let supportLevels = [];
 let resistanceLevels = [];
 let lastFeatures = [];
+let visualOverlays = { rectangles: [], order_lines: null };
 
 const FEATURE_NAMES_JS = [
     "upper_wick_ratio",             // feat_0
@@ -206,8 +207,25 @@ function initApp() {
         }
     });
 
-    // Render initial empty candle chart
-    drawChart();
+    // Fetch initial historical OHLC bars & overlays immediately to bootstrap the canvas visualizer
+    fetch('/api/chart/history')
+        .then(res => res.json())
+        .then(payload => {
+            console.log("OHLC Chart History successfully bootstrapped from API:", payload);
+            if (payload.bars && payload.bars.length > 0) {
+                candleData = payload.bars;
+            }
+            if (payload.visual_overlays) {
+                visualOverlays = payload.visual_overlays;
+            }
+            // Auto fit and paint the candles immediately
+            autoFitChart();
+            drawChart();
+        })
+        .catch(err => {
+            console.warn("Could not bootstrap initial chart history", err);
+            drawChart();
+        });
 }
 
 function toggleLiveMode() {
@@ -379,6 +397,9 @@ function handleIncomingLiveTick(payload) {
     if (payload.resistance_levels) {
         resistanceLevels = payload.resistance_levels;
     }
+    if (payload.visual_overlays) {
+        visualOverlays = payload.visual_overlays;
+    }
 
     // Dynamic Candle updates (Single Source of truth includes forming bar)
     if (payload.bars && payload.bars.length > 0) {
@@ -487,6 +508,34 @@ function drawChart() {
         ctx.stroke();
     }
 
+    // Render validated zones (transparent rectangles)
+    if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.rectangles && visualOverlays.rectangles.length > 0) {
+        visualOverlays.rectangles.forEach(rect => {
+            const yHigh = h - 20 - ((rect.price_high - minPrice) / priceRangePadded) * (h - 40);
+            const yLow = h - 20 - ((rect.price_low - minPrice) / priceRangePadded) * (h - 40);
+            const rectHeight = Math.max(1, yLow - yHigh);
+
+            let color = 'rgba(16, 185, 129, 0.25)'; // Default green for Bullish OB / FVG
+            let label = rect.type;
+
+            if (rect.type === 'BEARISH_ORDER_BLOCK' || rect.type === 'BEARISH_FVG') {
+                color = 'rgba(244, 63, 94, 0.25)';
+            } else if (rect.type === 'STOP_HUNT_ZONE') {
+                color = 'rgba(234, 179, 8, 0.35)';
+            }
+
+            ctx.fillStyle = color;
+            ctx.fillRect(0, yHigh, w - 60, rectHeight);
+
+            // Display zone type & AI Confidence % inside the box
+            ctx.fillStyle = 'rgba(226, 232, 240, 0.8)';
+            ctx.font = '9px sans-serif';
+            ctx.textAlign = 'left';
+            const textY = Math.min(Math.max(yHigh + 12, 12), h - 22);
+            ctx.fillText(`${label} (${(rect.ai_confidence * 100).toFixed(0)}%)`, 10, textY);
+        });
+    }
+
     // Draw candles within visible bounds
     candleData.forEach((candle, idx) => {
         if (idx < startIdx || idx > endIdx) return;
@@ -567,6 +616,89 @@ function drawChart() {
             }
         });
         ctx.setLineDash([]);
+    }
+
+    // Render active order execution lines & premium interactive tooltip
+    if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.order_lines && visualOverlays.order_lines.active) {
+        const line = visualOverlays.order_lines;
+        const yEntry = h - 20 - ((line.entry_price - minPrice) / priceRangePadded) * (h - 40);
+        const ySL = h - 20 - ((line.sl_price - minPrice) / priceRangePadded) * (h - 40);
+        const yTP = h - 20 - ((line.tp_price - minPrice) / priceRangePadded) * (h - 40);
+
+        if (yEntry >= 0 && yEntry < h - 20) {
+            // Blue Line for entry
+            ctx.strokeStyle = '#06b6d4';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(0, yEntry);
+            ctx.lineTo(w - 60, yEntry);
+            ctx.stroke();
+
+            ctx.fillStyle = '#06b6d4';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(`ENTRY: ${line.entry_price.toFixed(2)}`, 15, yEntry - 4);
+        }
+
+        if (ySL >= 0 && ySL < h - 20) {
+            // Red Dashed Line for Stop Loss
+            ctx.strokeStyle = '#f43f5e';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(0, ySL);
+            ctx.lineTo(w - 60, ySL);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = '#f43f5e';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(`SL: ${line.sl_price.toFixed(2)}`, 15, ySL - 4);
+        }
+
+        if (yTP >= 0 && yTP < h - 20) {
+            // Green Dashed Line for Take Profit
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(0, yTP);
+            ctx.lineTo(w - 60, yTP);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = '#10b981';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(`TP: ${line.tp_price.toFixed(2)}`, 15, yTP - 4);
+        }
+
+        // Draw Interactive Tooltip beside lines
+        const tooltipX = Math.max(10, w - 380);
+        const tooltipY = Math.min(Math.max(yEntry + 15, 30), h - 85);
+
+        ctx.fillStyle = 'rgba(18, 24, 38, 0.95)';
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1.5;
+
+        // Tooltip container box
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(tooltipX, tooltipY, 310, 52, 6);
+        } else {
+            ctx.rect(tooltipX, tooltipY, 310, 52);
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        // Tooltip Text
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Order Evaluated: ${line.direction}`, tooltipX + 10, tooltipY + 16);
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '9px monospace';
+        ctx.fillText(`Target RR: 1:${line.risk_reward_ratio.toFixed(2)} | Dollar Risk: $${line.risk_usd.toFixed(2)}`, tooltipX + 10, tooltipY + 30);
+        ctx.fillText(`Potential Profit: $${line.profit_usd.toFixed(2)} | Zone Score: ${line.zone_score.toFixed(0)}%`, tooltipX + 10, tooltipY + 42);
     }
 
     // Draw side price scale axis labels
@@ -946,6 +1078,55 @@ async function loadConfiguration() {
 
     } catch (err) {
         console.error("Failed to load configurations", err);
+    }
+
+    try {
+        const res = await fetch('/api/algo/config');
+        const algoConfig = await res.json();
+
+        document.getElementById('tuner-atr-sl-buffer').value = algoConfig.atr_sl_buffer_multiplier;
+        document.getElementById('val-atr-sl-buffer').innerText = algoConfig.atr_sl_buffer_multiplier;
+
+        document.getElementById('tuner-min-rr').value = algoConfig.min_risk_reward_ratio;
+        document.getElementById('val-min-rr').innerText = algoConfig.min_risk_reward_ratio;
+
+        document.getElementById('tuner-zone-conf').value = algoConfig.ai_zone_confidence_threshold;
+        document.getElementById('val-zone-conf').innerText = algoConfig.ai_zone_confidence_threshold;
+
+        document.getElementById('tuner-fvg-mitigation').value = algoConfig.fvg_mitigation_sensitivity;
+        document.getElementById('val-fvg-mitigation').innerText = algoConfig.fvg_mitigation_sensitivity;
+
+        document.getElementById('tuner-ob-lookback').value = algoConfig.order_block_lookback_bars;
+        document.getElementById('val-ob-lookback').innerText = algoConfig.order_block_lookback_bars;
+    } catch (err) {
+        console.error("Failed to load algo configuration", err);
+    }
+}
+
+// Save dynamic algorithm parameters back to disk and hot-swap them
+async function saveAlgoTuner() {
+    const updated = {
+        atr_sl_buffer_multiplier: parseFloat(document.getElementById('tuner-atr-sl-buffer').value),
+        min_risk_reward_ratio: parseFloat(document.getElementById('tuner-min-rr').value),
+        ai_zone_confidence_threshold: parseFloat(document.getElementById('tuner-zone-conf').value),
+        fvg_mitigation_sensitivity: parseFloat(document.getElementById('tuner-fvg-mitigation').value),
+        order_block_lookback_bars: parseInt(document.getElementById('tuner-ob-lookback').value)
+    };
+
+    try {
+        const res = await fetch('/api/algo/config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updated)
+        });
+        const result = await res.json();
+        if (result.success) {
+            alert("Dynamic Algorithm thresholds successfully updated & hot-swapped!");
+        } else {
+            alert(`Failed to save algorithm thresholds: ${result.message}`);
+        }
+    } catch (err) {
+        console.error("Failed to save algo configurations", err);
     }
 }
 
