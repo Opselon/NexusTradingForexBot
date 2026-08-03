@@ -207,8 +207,25 @@ function initApp() {
         }
     });
 
-    // Render initial empty candle chart
-    drawChart();
+    // Fetch initial historical OHLC bars & overlays immediately to bootstrap the canvas visualizer
+    fetch('/api/chart/history')
+        .then(res => res.json())
+        .then(payload => {
+            console.log("OHLC Chart History successfully bootstrapped from API:", payload);
+            if (payload.bars && payload.bars.length > 0) {
+                candleData = payload.bars;
+            }
+            if (payload.visual_overlays) {
+                visualOverlays = payload.visual_overlays;
+            }
+            // Auto fit and paint the candles immediately
+            autoFitChart();
+            drawChart();
+        })
+        .catch(err => {
+            console.warn("Could not bootstrap initial chart history", err);
+            drawChart();
+        });
 }
 
 function toggleLiveMode() {

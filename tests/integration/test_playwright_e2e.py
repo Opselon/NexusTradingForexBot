@@ -79,5 +79,10 @@ def test_playwright_e2e_canvas_and_tuner():
         page.screenshot(path=screenshot_path)
         print(f"E2E Screenshot saved successfully to {screenshot_path}")
 
+        # Save chart fixed proof screenshot
+        proof_path = "artifacts/screenshots/chart_fixed_proof.png"
+        page.screenshot(path=proof_path)
+        print(f"Fixed Chart Proof saved successfully to {proof_path}")
+
         context.close()
         browser.close()

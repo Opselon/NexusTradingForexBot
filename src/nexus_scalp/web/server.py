@@ -8,7 +8,7 @@ and risk engines.
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -552,6 +552,65 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except Exception as e:
             logger.error("Failed to save and hot-reload configurations", error=str(e))
             return {"success": False, "message": str(e)}
+
+    # GET /api/chart/history
+    @app.get("/api/chart/history")
+    def get_chart_history() -> dict[str, Any]:
+        state = get_system_state()
+        bars = state.get("bars", [])
+        if not bars:
+            import random
+            start_price = 2334.21
+            now_dt = datetime.now()
+            for i in range(160):
+                close_p = start_price + random.uniform(-0.8, 0.8)
+                high_p = max(start_price, close_p) + random.uniform(0.1, 0.4)
+                low_p = min(start_price, close_p) - random.uniform(0.1, 0.4)
+
+                bars.append({
+                    "time": (now_dt - timedelta(minutes=160-i)).isoformat(),
+                    "open": start_price,
+                    "high": high_p,
+                    "low": low_p,
+                    "close": close_p,
+                    "volume": float(random.randint(10, 50)),
+                    "is_complete": True
+                })
+                start_price = close_p
+            state["bars"] = bars
+
+        overlays = state.get("visual_overlays", {})
+        if not overlays.get("rectangles"):
+            overlays["rectangles"] = [
+                {
+                    "id": "mock_ob_bull_1",
+                    "type": "BULLISH_ORDER_BLOCK",
+                    "price_low": 2332.10,
+                    "price_high": 2333.30,
+                    "ai_confidence": 0.89
+                },
+                {
+                    "id": "mock_fvg_bear_1",
+                    "type": "BEARISH_FVG",
+                    "price_low": 2335.50,
+                    "price_high": 2336.80,
+                    "ai_confidence": 0.82
+                }
+            ]
+        if not overlays.get("order_lines"):
+            overlays["order_lines"] = {
+                "active": True,
+                "direction": "BUY",
+                "entry_price": 2334.21,
+                "sl_price": 2331.50,
+                "tp_price": 2339.50,
+                "risk_reward_ratio": 1.95,
+                "risk_usd": 100.00,
+                "profit_usd": 195.00,
+                "zone_score": 88.0
+            }
+        state["visual_overlays"] = overlays
+        return state
 
     # GET /api/algo/config
     @app.get("/api/algo/config")
