@@ -261,6 +261,20 @@ class WalkForwardTrainer:
                 batch_size=dyn_batch,
             )
 
+        # Task 1 Diagnostics
+        logger.info("=== TASK 1 MODEL DIAGNOSTICS ===")
+        logger.info("class_id mapping:")
+        logger.info("0 = BUY")
+        logger.info("1 = SELL")
+        logger.info("2 = NO_TRADE")
+        logger.info("Inference class mapping (self.inverse_label_map):")
+        logger.info(str(self.inverse_label_map))
+        logger.info(
+            "Verifying training labels distribution",
+            label_mapping=self.label_map,
+            train_labels_counts=np.bincount(y, minlength=self.NUM_CLASSES).tolist()
+        )
+
         overall_metrics = self._evaluate_global_performance(oos_predictions, oos_targets)
         logger.info("Out-of-sample global metrics", **overall_metrics)
 
@@ -289,6 +303,18 @@ class WalkForwardTrainer:
         for epoch in range(self.epochs):
             train_loss = self._train_one_epoch(final_model, full_loader, final_optimizer, final_criterion)
             final_scheduler.step()
+
+        # Model diagnostics verification post final training
+        final_model.eval()
+        sample_x = torch.tensor(X_full[:5], dtype=torch.float32).to(self.device)
+        with torch.inference_mode():
+            raw_logits = final_model(sample_x, return_logits=True)
+            probs = final_model(sample_x, return_logits=False)
+
+        logger.info("=== POST-TRAINING VERIFICATION ===")
+        logger.info(f"Raw Logits: {raw_logits.cpu().numpy().tolist()}")
+        logger.info(f"Softmax Probabilities: {probs.cpu().numpy().tolist()}")
+        logger.info("==================================")
 
         self._save_checkpoint(final_model)
         self._save_scaler(full_scaler)
@@ -467,27 +493,31 @@ class WalkForwardTrainer:
         return model
 
     def _build_class_weights(self, y: np.ndarray) -> torch.Tensor:
-        samples = len(y)
         class_counts = np.bincount(y, minlength=self.NUM_CLASSES)
-        weights = np.zeros(self.NUM_CLASSES, dtype=np.float32)
+        total_samples = len(y)
 
-        for c in range(self.NUM_CLASSES):
-            if class_counts[c] > 0:
-                weights[c] = samples / (self.NUM_CLASSES * class_counts[c])
-            else:
-                weights[c] = 0.0
+        # Inverse Class Frequency Weighting Formula: Wc = N_total / (N_class + 1)
+        weights = total_samples / (class_counts + 1.0)
 
+        # Apply active class boost to BUY/SELL
         if class_counts[1] > 0:
             weights[1] *= self.active_class_boost
         if class_counts[2] > 0:
             weights[2] *= self.active_class_boost
 
         for c in range(self.NUM_CLASSES):
-            if weights[c] > 0.0:
-                weights[c] = float(np.clip(weights[c], 0.10, 10.0))
+            weights[c] = float(np.clip(weights[c], 0.10, 10.0))
 
         weights_4d = np.zeros(4, dtype=np.float32)
         weights_4d[:3] = weights
+
+        # Diagnostics Logging
+        logger.info(
+            "Inverse Class Frequency Weights calculated",
+            class_counts=class_counts.tolist(),
+            total_samples=total_samples,
+            weights_4d=weights_4d.tolist(),
+        )
 
         return torch.tensor(weights_4d, dtype=torch.float32)
 

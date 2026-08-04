@@ -114,6 +114,18 @@ class TradeProposal(BaseModel):
     ticket: int = Field(default=0, description="Optional broker position ticket")
     volume: float | None = Field(default=None, description="Optional custom volume (e.g. for partial close)")
 
+    # Diagnostic fields
+    model_action: str | None = Field(default=None, description="Original action proposed by model before filter checks")
+    buy_probability: float | None = Field(default=None, description="Model raw buy probability")
+    sell_probability: float | None = Field(default=None, description="Model raw sell probability")
+    no_trade_probability: float | None = Field(default=None, description="Model raw no trade probability")
+    regime: str | None = Field(default=None, description="Market microstructure regime")
+    regime_confidence: float | None = Field(default=None, description="Regime classification confidence")
+    risk_allowed: bool | None = Field(default=None, description="True if risk filter allowed the signal")
+    guardian_status: str | None = Field(default=None, description="Operational status of the regime guardian")
+    rejection_reason: str | None = Field(default=None, description="Detailed reason for signal rejection")
+    final_action: str | None = Field(default=None, description="Final action committed to execution")
+
     @model_validator(mode="after")
     def validate_action_price_invariants(self) -> "TradeProposal":
         """Ensures logical price invariants hold based on proposed trade direction."""

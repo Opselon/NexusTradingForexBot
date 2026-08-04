@@ -100,44 +100,16 @@ class SignalPolicy:
         raw_prob_buy = probs[1] if len(probs) > 1 else 0.0
         raw_prob_sell = probs[2] if len(probs) > 2 else 0.0
 
-        # --- RULE MATRIX INTEGRATION ---
-        if self.rule_matrix:
-            self.rule_matrix.refresh_cache()
-            # 1. Check Filters first
-            blocked_reason = self.rule_matrix.evaluate_pre_trade_filters(
-                tick=current_tick,
-                fv=feature_vector,
-                regime_state=regime_state
-            )
-            if blocked_reason:
-                return self._build_no_trade(current_tick, 0.0, blocked_reason)
-
-            # 2. Check Custom Rules Triggered Entries (which take precedence over base PyTorch AI)
-            rule_proposal = self.rule_matrix.evaluate_pre_trade_entry(
-                tick=current_tick,
-                fv=feature_vector,
-                regime_state=regime_state,
-                probs=[probs[0], raw_prob_buy, raw_prob_sell] if len(probs) > 2 else [1.0, 0.0, 0.0]
-            )
-            if rule_proposal:
-                logger.info(
-                    "Signal triggered by Rule Matrix Entry Engine",
-                    rule=rule_proposal.reason_code,
-                    action=rule_proposal.action.value,
-                )
-                return rule_proposal
-
+        # --- PRE-COMPUTE CHANNELS AND PARAMETERS UPFRONT FOR DIAGNOSTICS ---
         prob_buy = self._sanitize_float(raw_prob_buy, 0.0)
         prob_sell = self._sanitize_float(raw_prob_sell, 0.0)
+        prob_no_trade = probs[0] if len(probs) > 0 else 0.0
         now = current_tick.timestamp
 
         raw_atr = getattr(feature_vector, "atr_m1", 1.50)
         atr = max(self._sanitize_float(raw_atr, 1.50), 0.50)
         current_spread = round(max(0.0, current_tick.ask - current_tick.bid), 2)
 
-        # ----------------------------------------------------------------------
-        # 1. Extract Microstructure & ICT Parameters
-        # ----------------------------------------------------------------------
         tenkan = self._sanitize_float(feature_vector.tenkan_sen, current_tick.ask)
         kijun = self._sanitize_float(feature_vector.kijun_sen, current_tick.bid)
         disp = self._sanitize_float(feature_vector.live_tick_displacement, 0.0)
@@ -158,32 +130,10 @@ class SignalPolicy:
         ofi = self._sanitize_float(raw_ofi, 0.0)
         tick_velocity = regime_state.tick_velocity_per_sec if regime_state else 0.0
 
-        # ICT Liquidity Sweep Signals
         sweep_sig = getattr(feature_vector, "liquidity_sweep_signal", 0)
         choch_bull = getattr(feature_vector, "choch_bullish", False)
         choch_bear = getattr(feature_vector, "choch_bearish", False)
 
-        # ----------------------------------------------------------------------
-        # PROPOSAL GATE 0: Microstructure Regime Guardian
-        # ----------------------------------------------------------------------
-        if regime_state and (
-            regime_type in (RegimeType.MACRO_NEWS_FREEZE, RegimeType.HIGH_SPREAD_CHOP)
-            or exec_type == RecommendedExecutionType.FREEZE_ALL
-        ):
-            reason = f"REGIME_GUARDIAN_FREEZE ({regime_type.value if regime_type else 'HIGH_SPREAD'})"
-            return self._build_no_trade(current_tick, 0.0, reason)
-
-        # ----------------------------------------------------------------------
-        # PROPOSAL GATE 1: Dynamic Spread Protection
-        # ----------------------------------------------------------------------
-        max_allowed_spread = max(0.25, round(atr * self.max_spread_atr_ratio, 2))
-        if current_spread > max_allowed_spread:
-            reason = f"HIGH_SPREAD_REJECTED ({current_spread:.2f} > max {max_allowed_spread:.2f})"
-            return self._build_no_trade(current_tick, 0.0, reason)
-
-        # ----------------------------------------------------------------------
-        # PROPOSAL GATE 2: Range & OFI Momentum Override Gate
-        # ----------------------------------------------------------------------
         dynamic_min_displacement = max(self.range_min_displacement, atr * 0.12)
         tk_distance = abs(tenkan - kijun)
         is_inside_kumo = not feature_vector.is_above_kumo and not feature_vector.is_below_kumo
@@ -195,7 +145,6 @@ class SignalPolicy:
             or (tk_distance < (atr * 0.20) and small_displacement)
         )
 
-        # HFT OVERRIDE 1: Allow active scalps in range if OFI order flow is strong
         if is_range_market and abs(ofi) >= 0.15:
             is_range_market = False
 
@@ -208,6 +157,89 @@ class SignalPolicy:
         total_ai_prob = prob_buy + prob_sell + 1e-8
         relative_buy_bias = prob_buy / total_ai_prob
         relative_sell_bias = prob_sell / total_ai_prob
+        high_velocity_momentum = tick_velocity >= 10.0
+
+        regime_str = regime_type.value if regime_type else "UNKNOWN"
+        regime_conf = regime_state.regime_probability if regime_state else 0.0
+
+        is_guardian_active = (regime_state and (
+            regime_type in (RegimeType.MACRO_NEWS_FREEZE, RegimeType.HIGH_SPREAD_CHOP)
+            or exec_type == RecommendedExecutionType.FREEZE_ALL
+        ))
+        guardian_status = "ACTIVE" if is_guardian_active else "IDLE"
+
+        # Pre-compute original unfiltered candidate model action
+        cand_action = "NO_TRADE"
+        if (sweep_sig == 1 or choch_bull) and (relative_buy_bias > 0.45 or prob_buy >= 0.30):
+            cand_action = "BUY_MARKET"
+        elif (sweep_sig == -1 or choch_bear) and (relative_sell_bias > 0.45 or prob_sell >= 0.30):
+            cand_action = "SELL_MARKET"
+        elif (ichimoku_bullish or stat_arb_bullish) and (moving_up or ict_bullish or relative_buy_bias > 0.50 or stat_arb_bullish):
+            if stat_arb_bullish and is_range_market:
+                cand_action = "BUY_LIMIT"
+            elif feature_vector.fvg_bullish_active or (exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum):
+                cand_action = "BUY_LIMIT"
+            elif feature_vector.broke_previous_high or high_velocity_momentum:
+                cand_action = "BUY_MARKET" if high_velocity_momentum else "BUY_STOP"
+            elif not is_range_market or abs(ofi) >= 0.15:
+                cand_action = "BUY_MARKET"
+        elif (ichimoku_bearish or stat_arb_bearish) and (moving_down or ict_bearish or relative_sell_bias > 0.50 or stat_arb_bearish):
+            if stat_arb_bearish and is_range_market:
+                cand_action = "SELL_LIMIT"
+            elif feature_vector.fvg_bearish_active or (exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum):
+                cand_action = "SELL_LIMIT"
+            elif feature_vector.broke_previous_low or high_velocity_momentum:
+                cand_action = "SELL_MARKET" if high_velocity_momentum else "SELL_STOP"
+            elif not is_range_market or abs(ofi) >= 0.15:
+                cand_action = "SELL_MARKET"
+
+        # --- RULE MATRIX INTEGRATION ---
+        if self.rule_matrix:
+            self.rule_matrix.refresh_cache()
+            # 1. Check Filters first
+            blocked_reason = self.rule_matrix.evaluate_pre_trade_filters(
+                tick=current_tick,
+                fv=feature_vector,
+                regime_state=regime_state
+            )
+            if blocked_reason:
+                return self._build_no_trade(
+                    current_tick, 0.0, blocked_reason,
+                    model_action=cand_action,
+                    buy_prob=prob_buy,
+                    sell_prob=prob_sell,
+                    no_trade_prob=prob_no_trade,
+                    regime_str=regime_str,
+                    regime_conf=regime_conf,
+                    risk_allowed=False,
+                    guardian_status=guardian_status,
+                )
+
+            # 2. Check Custom Rules Triggered Entries (which take precedence over base PyTorch AI)
+            rule_proposal = self.rule_matrix.evaluate_pre_trade_entry(
+                tick=current_tick,
+                fv=feature_vector,
+                regime_state=regime_state,
+                probs=[probs[0], raw_prob_buy, raw_prob_sell] if len(probs) > 2 else [1.0, 0.0, 0.0]
+            )
+            if rule_proposal:
+                logger.info(
+                    "Signal triggered by Rule Matrix Entry Engine",
+                    rule=rule_proposal.reason_code,
+                    action=rule_proposal.action.value,
+                )
+                return rule_proposal.model_copy(update={
+                    "model_action": rule_proposal.action.value,
+                    "buy_probability": prob_buy,
+                    "sell_probability": prob_sell,
+                    "no_trade_probability": prob_no_trade,
+                    "regime": regime_str,
+                    "regime_confidence": regime_conf,
+                    "risk_allowed": True,
+                    "guardian_status": guardian_status,
+                    "rejection_reason": None,
+                    "final_action": rule_proposal.action.value,
+                })
 
         active_threshold = self.confidence_threshold
         if survival_mode:
@@ -463,12 +495,32 @@ class SignalPolicy:
             self._last_logged_action = proposed_action
 
         if proposed_action == ActionType.NO_TRADE:
-            return self._build_no_trade(current_tick, confidence, reason_code)
+            return self._build_no_trade(
+                current_tick, confidence, reason_code,
+                model_action=cand_action,
+                buy_prob=prob_buy,
+                sell_prob=prob_sell,
+                no_trade_prob=prob_no_trade,
+                regime_str=regime_str,
+                regime_conf=regime_conf,
+                risk_allowed=False,
+                guardian_status=guardian_status,
+            )
 
         if self._last_signal_time is not None:
             elapsed_cooldown = max(0.0, (now - self._last_signal_time).total_seconds())
             if elapsed_cooldown < self.cooldown_seconds:
-                return self._build_no_trade(current_tick, confidence, f"COOLDOWN_ACTIVE ({elapsed_cooldown:.1f}s)")
+                return self._build_no_trade(
+                    current_tick, confidence, f"COOLDOWN_ACTIVE ({elapsed_cooldown:.1f}s)",
+                    model_action=cand_action,
+                    buy_prob=prob_buy,
+                    sell_prob=prob_sell,
+                    no_trade_prob=prob_no_trade,
+                    regime_str=regime_str,
+                    regime_conf=regime_conf,
+                    risk_allowed=False,
+                    guardian_status=guardian_status,
+                )
 
         # ----------------------------------------------------------------------
         # PROPOSAL GATE 3: ICT & Ichimoku Structural SL/TP Calculation
@@ -498,7 +550,17 @@ class SignalPolicy:
 
         # Asymmetric Risk Gatekeeper
         if actual_rr < self.algo_config.min_risk_reward_ratio:
-            return self._build_no_trade(current_tick, confidence, "ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD")
+            return self._build_no_trade(
+                current_tick, confidence, "ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD",
+                model_action=cand_action,
+                buy_prob=prob_buy,
+                sell_prob=prob_sell,
+                no_trade_prob=prob_no_trade,
+                regime_str=regime_str,
+                regime_conf=regime_conf,
+                risk_allowed=False,
+                guardian_status=guardian_status,
+            )
 
         self._last_signal_time = now
 
@@ -513,9 +575,34 @@ class SignalPolicy:
             take_profit=float(take_profit),
             risk_reward_ratio=float(actual_rr),
             reason_code=reason_code,
+
+            # Diagnostics
+            model_action=cand_action,
+            buy_probability=prob_buy,
+            sell_probability=prob_sell,
+            no_trade_probability=prob_no_trade,
+            regime=regime_str,
+            regime_confidence=regime_conf,
+            risk_allowed=True,
+            guardian_status=guardian_status,
+            rejection_reason=None,
+            final_action=proposed_action.value,
         )
 
-    def _build_no_trade(self, tick: TickData, confidence: float, reason: str) -> TradeProposal:
+    def _build_no_trade(
+        self,
+        tick: TickData,
+        confidence: float,
+        reason: str,
+        model_action: str = "NO_TRADE",
+        buy_prob: float = 0.0,
+        sell_prob: float = 0.0,
+        no_trade_prob: float = 0.0,
+        regime_str: str = "UNKNOWN",
+        regime_conf: float = 0.0,
+        risk_allowed: bool = False,
+        guardian_status: str = "IDLE",
+    ) -> TradeProposal:
         return TradeProposal(
             request_id=str(uuid.uuid4()),
             symbol=tick.symbol,
@@ -527,6 +614,18 @@ class SignalPolicy:
             take_profit=float(tick.bid * 1.01),
             risk_reward_ratio=1.0,
             reason_code=reason,
+
+            # Diagnostics
+            model_action=model_action,
+            buy_probability=buy_prob,
+            sell_probability=sell_prob,
+            no_trade_probability=no_trade_prob,
+            regime=regime_str,
+            regime_confidence=regime_conf,
+            risk_allowed=risk_allowed,
+            guardian_status=guardian_status,
+            rejection_reason=reason,
+            final_action="NO_TRADE",
         )
 
     def extract_live_chart_overlays(self, completed_bars: list[Any], atr_val: float) -> dict[str, Any]:
