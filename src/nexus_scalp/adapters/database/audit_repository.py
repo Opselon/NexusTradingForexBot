@@ -92,10 +92,55 @@ class AuditRepository:
                 take_profit REAL NOT NULL,
                 regime TEXT NOT NULL,
                 generated_at TEXT NOT NULL,
-                payload TEXT NOT NULL
+                payload TEXT NOT NULL,
+                execution_mode TEXT,
+                reason_code TEXT,
+                decision_stage TEXT,
+                blocked_by TEXT,
+                htf_score REAL,
+                smc_score REAL,
+                confidence_before_filters REAL,
+                confidence_after_filters REAL
             );
             """
         )
+        # Migrate existing audit_signals table if needed
+        for col_def in [
+            ("execution_mode", "TEXT"),
+            ("reason_code", "TEXT"),
+            ("decision_stage", "TEXT"),
+            ("blocked_by", "TEXT"),
+            ("htf_score", "REAL"),
+            ("smc_score", "REAL"),
+            ("confidence_before_filters", "REAL"),
+            ("confidence_after_filters", "REAL"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE audit_signals ADD COLUMN {col_def[0]} {col_def[1]};")
+            except Exception:
+                pass
+
+        # Track detailed pending orders & executions
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket INTEGER,
+                order_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                action TEXT NOT NULL,
+                price REAL NOT NULL,
+                stop_loss REAL,
+                take_profit REAL,
+                volume REAL NOT NULL,
+                reason TEXT,
+                latency REAL,
+                execution_mode TEXT,
+                timestamp TEXT NOT NULL
+            );
+            """
+        )
+
         # Robust Financial Accounting Ledger
         conn.execute(
             """
@@ -223,8 +268,9 @@ class AuditRepository:
 
         query = """
             INSERT INTO audit_signals
-            (request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload,
+             execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         
         # Determine Regime
@@ -313,12 +359,52 @@ class AuditRepository:
             regime_str,
             proposal.generated_at.isoformat(),
             payload_json,
+            getattr(proposal, "execution_mode", "STANDARD"),
+            proposal.reason_code,
+            getattr(proposal, "decision_stage", "STANDARD_EVAL"),
+            getattr(proposal, "blocked_by", None),
+            getattr(proposal, "htf_score", 0.0),
+            getattr(proposal, "smc_score", 0.0),
+            getattr(proposal, "confidence_before_filters", 0.0),
+            getattr(proposal, "confidence_after_filters", 0.0),
         )
 
         try:
             self._queue.put_nowait((query, args))
         except queue.Full:
             logger.error("Audit Signal Queue is full! Dropping telemetry.")
+
+    def log_order(
+        self,
+        ticket: int,
+        order_id: str,
+        symbol: str,
+        action: str,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+        volume: float,
+        reason: str,
+        latency: float = 0.0,
+        execution_mode: str = "STANDARD"
+    ) -> None:
+        """Zero-latency async logging of order lifecycle events."""
+        if not self._is_sqlite:
+            return
+
+        query = """
+            INSERT INTO audit_orders
+            (ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATETIME('now'))
+        """
+        args = (
+            ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode
+        )
+
+        try:
+            self._queue.put_nowait((query, args))
+        except queue.Full:
+            logger.error("Audit Orders Queue is full! Dropping order log.")
 
     def log_execution(self, order: TradeOrder, status: str) -> None:
         """Zero-latency async logging of order execution attempts."""
@@ -641,7 +727,7 @@ class AuditRepository:
             ("RULE_DAILY_TARGET_LOCK", "Risk & Account Safeguards", '{"growth_target_pct": 2.0}'),
             ("RULE_AI_MACRO_ALIGNMENT", "Risk & Account Safeguards", '{"htf_trend": "bearish"}'),
             ("RULE_TURBO_CONFIDENCE_MULTIPLIER", "Risk & Account Safeguards", '{"confidence_threshold": 95.0}'),
-            ("RULE_CORRELATED_DRAWDOWN_CAP", "Risk & Account Safeguards", '{"max_drawdown_pct": 3.0}'),
+            ("RULE_DAILY_DRAWDOWN_CAP", "Risk & Account Safeguards", '{"max_drawdown_pct": 3.0}'),
             # Category 6: Advanced Reversion & Mathematics
             ("RULE_VWAP_ELASTIC_BAND", "Advanced Reversion & Mathematics", '{"std_dev_threshold": 3.5}'),
             ("RULE_BOLLINGER_BURST_FADE", "Advanced Reversion & Mathematics", '{"bb_period": 20, "bb_std_dev": 2.0}'),

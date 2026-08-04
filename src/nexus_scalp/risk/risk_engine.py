@@ -13,6 +13,7 @@ Enterprise Upgrades & Calibrations Incorporated:
 """
 
 import math
+from typing import Any
 
 from nexus_scalp.configuration.config import RiskConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
@@ -121,6 +122,7 @@ class RiskEngine:
         current_tick: TickData,
         regime_state: MarketRegimeState | None = None,
         atr: float = 1.50,
+        pending_orders: list[Any] | None = None,
     ) -> TradeOrder | None:
         """
         Evaluates a TradeProposal against hard capital constraints, broker rules, and LOB friction.
@@ -136,10 +138,11 @@ class RiskEngine:
         proposed_order_type = self._map_action_to_order_type(proposal.action)
 
         # ----------------------------------------------------------------------
-        # 1. CONCURRENT POSITIONS & DIRECTIONAL EXPOSURE SQUEEZE GUARD
+        # PART 6: PORTFOLIO CONTEXT ENGINE
         # ----------------------------------------------------------------------
         symbol_positions = [p for p in active_positions if p.symbol == proposal.symbol]
         
+        # Max concurrent positions check
         if len(symbol_positions) >= self.config.max_concurrent_positions:
             logger.warning(
                 "Proposal rejected: Active position count limit reached",
@@ -148,6 +151,31 @@ class RiskEngine:
                 max_limit=self.config.max_concurrent_positions,
             )
             return None
+
+        # Max pending orders limit
+        p_orders = pending_orders if pending_orders is not None else []
+        max_pending_limit = getattr(self.config, "max_pending_orders", 5)
+        if len(p_orders) >= max_pending_limit:
+            logger.warning(
+                "Proposal rejected: Max pending orders limit reached",
+                pending_count=len(p_orders),
+                max_limit=max_pending_limit,
+            )
+            return None
+
+        # Conflicting limit orders check: Avoid large opposite BUY_LIMIT / SELL_LIMIT unless explicit hedge
+        is_hedge = "HEDGE" in getattr(proposal, "reason_code", "") or "hedge" in getattr(proposal, "reason_code", "").lower()
+        if not is_hedge:
+            has_opposite_exposure = False
+            for p in symbol_positions:
+                if is_buy_proposal and p.type == OrderType.SELL:
+                    has_opposite_exposure = True
+                elif not is_buy_proposal and p.type == OrderType.BUY:
+                    has_opposite_exposure = True
+
+            if has_opposite_exposure and proposed_order_type in (OrderType.BUY_LIMIT, OrderType.SELL_LIMIT):
+                logger.warning("Portfolio Context Blocked: Opposing exposure present, limit order rejected.")
+                return None
 
         current_directional_exposure = sum(
             p.volume for p in symbol_positions 
@@ -178,8 +206,6 @@ class RiskEngine:
         # ----------------------------------------------------------------------
         # 2.5 RISK REWARD GATEKEEPER INTEGRATION (Bypassed for emergency hedging counter-positions)
         # ----------------------------------------------------------------------
-        is_hedge = "HEDGE" in getattr(proposal, "reason_code", "")
-
         # Determine active min required RR based on confidence (normal vs high confidence)
         active_min_rr = self.min_risk_reward_ratio
         high_conf_thresh = getattr(self, "high_confidence_threshold", 0.95)
@@ -223,13 +249,28 @@ class RiskEngine:
             return None
 
         # ----------------------------------------------------------------------
-        # 4. REGIME-ADJUSTED VOLATILITY SCALING (Kelly / Risk Attenuation)
+        # PART 7: DYNAMIC POSITION SIZING (Regime/Drawdown/Confidence scaled)
         # ----------------------------------------------------------------------
         risk_pct = self.config.risk_per_trade_pct
 
         if regime_state and regime_state.regime_type == RegimeType.VOLATILITY_EXPANSION:
             risk_pct *= 0.50
             logger.info("Volatility Scaling Active: Halved trade risk % due to market expansion.")
+
+        # Additional Drawdown-aware penalty scaling
+        peak_equity = getattr(account, "peak_equity", account.equity)
+        if peak_equity > account.equity:
+            drawdown_pct = ((peak_equity - account.equity) / peak_equity) * 100.0
+            if drawdown_pct > 1.0:
+                drawdown_penalty = max(0.2, 1.0 - (drawdown_pct * 0.2)) # Scale down up to 80%
+                risk_pct *= drawdown_penalty
+                logger.info(f"Drawdown Penalty Active: Scaling trade risk % by {drawdown_penalty:.2f}x due to {drawdown_pct:.2f}% drawdown.")
+
+        # Confidence scaled risk sizing
+        if hasattr(proposal, "confidence"):
+            confidence_scalar = max(0.5, min(1.2, proposal.confidence / 0.85))
+            risk_pct *= confidence_scalar
+            logger.info(f"Confidence Scaling Active: Scaling risk % by {confidence_scalar:.2f}x.")
 
         risk_amount_usd = account.equity * (risk_pct / 100.0)
 
