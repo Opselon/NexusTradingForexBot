@@ -555,6 +555,62 @@ class SignalPolicy:
                 confidence_after_filters=float(active_conf),
             )
 
+        # --- REGIME GUARDIAN GATE ---
+        if is_guardian_active:
+            decision_stage = "GUARDIAN_GATE"
+            return build_nt(f"BLOCKED_BY_GUARDIAN_REGIME_{regime_type.value if regime_type else 'UNKNOWN'}", blocked_by_filter="REGIME_GUARDIAN")
+
+        # --- TASK 2: ORDER FREQUENCY & EXPOSURE CAPS ---
+        MIN_ORDER_INTERVAL_SECONDS = 60
+        if self._last_signal_time is not None:
+            elapsed = (now - self._last_signal_time).total_seconds()
+            if elapsed < MIN_ORDER_INTERVAL_SECONDS:
+                decision_stage = "FREQUENCY_THROTTLE"
+                return build_nt("ORDER_FREQUENCY_THROTTLED", blocked_by_filter="FREQUENCY_THROTTLE")
+
+        # Enforce exposure limits: Max 1 concurrent position or pending order
+        has_any_live_order = False
+        live_tickets = []
+        if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
+            live_tickets = order_manager.get_active_live_tickets()
+            for ticket_info in live_tickets:
+                t_symbol = ticket_info.get("symbol")
+                t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
+                if t_symbol == "XAUUSD" and t_magic == 888101:
+                    has_any_live_order = True
+                    break
+
+        # Instantly release price locks if no live positions/orders
+        if not has_any_live_order:
+            self.last_order_price = None
+            self.last_order_time = None
+            self._last_active_direction = None
+            self._last_active_direction_time = None
+            self._last_executed_price = 0.0
+
+        if has_any_live_order:
+            # Check if any live order is close to our proposed entry price (within $0.50 same level threshold)
+            is_same_level_blocked = False
+            same_level_dist = 0.50
+            reentry_blocked_reason = ""
+            for ticket_info in live_tickets:
+                t_symbol = ticket_info.get("symbol")
+                t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
+                t_price = ticket_info.get("price")
+                if t_symbol == "XAUUSD" and t_magic == 888101 and t_price is not None:
+                    price_dist = abs(target_entry_price - t_price)
+                    if price_dist < same_level_dist:
+                        is_same_level_blocked = True
+                        reentry_blocked_reason = f"SAME_LEVEL_REENTRY_BLOCKED (${price_dist:.2f} < ${same_level_dist:.2f})"
+                        break
+
+            if is_same_level_blocked:
+                decision_stage = "REENTRY_GATE"
+                return build_nt(reentry_blocked_reason, blocked_by_filter="SAME_LEVEL_REENTRY")
+            else:
+                decision_stage = "EXPOSURE_GATE"
+                return build_nt("MAX_EXPOSURE_REACHED", blocked_by_filter="MAX_EXPOSURE_REACHED")
+
         # --- RULE MATRIX INTEGRATION ---
         if self.rule_matrix:
             self.rule_matrix.refresh_cache()
@@ -685,25 +741,7 @@ class SignalPolicy:
                 decision_stage = "OB_EQUILIBRIUM_FILTER"
                 return build_nt("OB_BELOW_50_PERCENT_EQUILIBRIUM", blocked_by_filter="OB_BELOW_50_PERCENT_EQUILIBRIUM")
 
-        # Query live active positions and pending orders
-        has_any_live_order = False
-        live_tickets = []
-        if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
-            live_tickets = order_manager.get_active_live_tickets()
-            for ticket_info in live_tickets:
-                t_symbol = ticket_info.get("symbol")
-                t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
-                if t_symbol == "XAUUSD" and t_magic == 888101:
-                    has_any_live_order = True
-                    break
-
-        # If no live order exists on MT5 terminal chart, instantly release the price lock
-        if not has_any_live_order:
-            self.last_order_price = None
-            self.last_order_time = None
-            self._last_active_direction = None
-            self._last_active_direction_time = None
-            self._last_executed_price = 0.0
+        # Use already queried live active positions and pending orders from the early checks
 
         # ----------------------------------------------------------------------
         # PROPOSAL GATE 5: Same-Level Duplicate Re-Entry Lockout
