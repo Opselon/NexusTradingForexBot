@@ -115,7 +115,19 @@ def test_policy_hooks_blocked_by_filter(temp_audit_repo: AuditRepository) -> Non
     policy = SignalPolicy(confidence_threshold=0.10, rule_matrix=rule_engine)
 
     tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.80)
+
+    # Configure mock features with realistic market data to pass type assertions
     fv = MagicMock()
+    fv.atr_m1 = 1.0
+    fv.dist_to_swing_low_20 = 1.0
+    fv.dist_to_swing_high_20 = 1.0
+    fv.senkou_span_b = 2334.0
+    fv.tenkan_sen = 2334.30
+    fv.kijun_sen = 2334.30
+    fv.is_above_kumo = False
+    fv.is_below_kumo = False
+    fv.trend_strength = 0.0
+
     probs = torch.tensor([[0.1, 0.8, 0.1]])
 
     # Enable Filter

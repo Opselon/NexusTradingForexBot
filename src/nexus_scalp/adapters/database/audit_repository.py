@@ -206,6 +206,21 @@ class AuditRepository:
         if not self._is_sqlite:
             return
 
+        # Deduplication check to prevent DB bloat (same symbol, timeframe, candle, action, zone)
+        candle_time = proposal.generated_at.replace(second=0, microsecond=0)
+        timeframe = "M1"
+        model_action = getattr(proposal, "model_action", proposal.action.value)
+        entry_zone = getattr(proposal, "reason_code", "UNKNOWN")
+        dedup_key = (proposal.symbol, timeframe, candle_time, model_action, entry_zone)
+
+        if not hasattr(self, "_last_logged_signal_key"):
+            self._last_logged_signal_key = None
+
+        if self._last_logged_signal_key == dedup_key:
+            return  # Ignore duplicate audit
+
+        self._last_logged_signal_key = dedup_key
+
         query = """
             INSERT INTO audit_signals
             (request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload)
@@ -229,11 +244,15 @@ class AuditRepository:
         guardian_status = getattr(proposal, "guardian_status", "IDLE")
         rejection_reason = getattr(proposal, "rejection_reason", proposal.reason_code)
 
-        # Construct customized payload dictionary to match exact Task 3 specifications
+        # Construct customized payload dictionary to match exact specifications
         payload_dict = {
             "model_action": model_action,
             "model_buy_probability": buy_prob,
             "model_sell_probability": sell_prob,
+
+            "ai_buy_probability": buy_prob,
+            "ai_sell_probability": sell_prob,
+            "ai_no_trade_probability": no_trade_prob,
 
             "buy_probability": buy_prob,
             "sell_probability": sell_prob,
@@ -254,6 +273,18 @@ class AuditRepository:
         except Exception:
             proposal_dict = {}
         proposal_dict.update(payload_dict)
+
+        # Extract and update risk checks
+        risk_checks = getattr(proposal, "risk_checks", None)
+        if risk_checks is None:
+            risk_checks = {
+                "zone_quality": proposal.confidence,
+                "min_zone_quality": 0.60,
+                "rr": proposal.risk_reward_ratio,
+                "min_rr": 1.5,
+            }
+        proposal_dict["risk_checks"] = risk_checks
+
         payload_json = json.dumps(proposal_dict)
 
         # Task 4 Check for UNKNOWN regime

@@ -44,6 +44,8 @@ class RiskEngine:
         eta_coefficient: float = 200.0,        # HFT Calibrated Almgren-Chriss coefficient for Gold micro-lots
         max_impact_reward_ratio: float = 0.45, # Allow up to 45% slippage/reward ratio on tight M1 targets
         min_risk_reward_ratio: float = 1.8,
+        min_rr_high_confidence: float = 1.2,
+        high_confidence_threshold: float = 0.70,
     ) -> None:
         self.config = config
         self.max_margin_usage_pct = max_margin_usage_pct
@@ -51,6 +53,8 @@ class RiskEngine:
         self.eta_coefficient = eta_coefficient
         self.max_impact_reward_ratio = max_impact_reward_ratio
         self.min_risk_reward_ratio = min_risk_reward_ratio
+        self.min_rr_high_confidence = min_rr_high_confidence
+        self.high_confidence_threshold = high_confidence_threshold
         self._kill_switch_active = False
 
     def calculate_position_size(
@@ -175,11 +179,20 @@ class RiskEngine:
         # 2.5 RISK REWARD GATEKEEPER INTEGRATION (Bypassed for emergency hedging counter-positions)
         # ----------------------------------------------------------------------
         is_hedge = "HEDGE" in getattr(proposal, "reason_code", "")
-        if not is_hedge and proposal.risk_reward_ratio < self.min_risk_reward_ratio:
+
+        # Determine active min required RR based on confidence (normal vs high confidence)
+        active_min_rr = self.min_risk_reward_ratio
+        high_conf_thresh = getattr(self, "high_confidence_threshold", 0.95)
+        min_rr_high_conf = getattr(self, "min_rr_high_confidence", 1.2)
+        if hasattr(proposal, "confidence") and proposal.confidence >= high_conf_thresh:
+            if min_rr_high_conf < active_min_rr:
+                active_min_rr = min_rr_high_conf
+
+        if not is_hedge and proposal.risk_reward_ratio < active_min_rr:
             logger.warning(
                 "Proposal rejected: Risk reward ratio too low for risk engine",
                 actual_rr=proposal.risk_reward_ratio,
-                min_required=self.min_risk_reward_ratio,
+                min_required=active_min_rr,
             )
             return None
 

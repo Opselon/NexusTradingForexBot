@@ -59,7 +59,9 @@ class ModelConfig(BaseModel):
 class AlgoConfig(BaseModel):
     atr_sl_buffer_multiplier: float = Field(default=1.5, ge=0.5, le=4.0)
     min_risk_reward_ratio: float = Field(default=1.8, ge=1.0, le=5.0)
-    ai_zone_confidence_threshold: float = Field(default=0.82, ge=0.50, le=0.99)
+    min_rr_high_confidence: float = Field(default=1.2, ge=0.5, le=5.0)
+    high_confidence_threshold: float = Field(default=0.95, ge=0.5, le=1.0)
+    ai_zone_confidence_threshold: float = Field(default=0.60, ge=0.50, le=0.99)
     fvg_mitigation_sensitivity: float = Field(default=0.5, ge=0.1, le=1.0)
     order_block_lookback_bars: int = Field(default=30, ge=10, le=100)
 
