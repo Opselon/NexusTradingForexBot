@@ -105,6 +105,8 @@ class SignalPolicy:
         prob_sell = self._sanitize_float(raw_prob_sell, 0.0)
         prob_no_trade = probs[0] if len(probs) > 0 else 0.0
         now = current_tick.timestamp
+        target_entry_price = current_tick.ask
+        proposed_action = ActionType.NO_TRADE
 
         raw_atr = getattr(feature_vector, "atr_m1", 1.50)
         atr = max(self._sanitize_float(raw_atr, 1.50), 0.50)
@@ -193,6 +195,118 @@ class SignalPolicy:
             elif not is_range_market or abs(ofi) >= 0.15:
                 cand_action = "SELL_MARKET"
 
+        # Initialize confidence upfront
+        confidence = 0.0
+
+        # Calculate candidate confidence
+        cand_confidence = 0.0
+        if cand_action != "NO_TRADE":
+            cand_ai_prob = prob_buy if "BUY" in cand_action else prob_sell
+            is_stat_arb = "STAT_ARB" in cand_action or (stat_arb_bullish if "BUY" in cand_action else stat_arb_bearish)
+            if is_stat_arb:
+                cand_confidence = max(cand_ai_prob, z_score_confidence)
+            else:
+                cand_confidence = max(cand_ai_prob, min(0.85, round(0.55 + cand_ai_prob * 0.35, 2)))
+
+        is_buy_cand = "BUY" in cand_action
+        is_sell_cand = "SELL" in cand_action
+        cand_stop_loss = None
+        cand_take_profit = None
+        cand_actual_rr = None
+
+        if is_buy_cand or is_sell_cand:
+            # Validate input types to prevent silent errors and expose invalid mock issues
+            def is_numeric(val: Any) -> bool:
+                if val is None:
+                    return False
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    return math.isfinite(float(val))
+                return False
+
+            if not is_numeric(target_entry_price):
+                raise ValueError(f"Invalid entry price: {target_entry_price}")
+            if not is_numeric(atr):
+                raise ValueError(f"Invalid ATR value: {atr}")
+
+            dist_sl_20 = getattr(feature_vector, "dist_to_swing_low_20", 1.0)
+            dist_sh_20 = getattr(feature_vector, "dist_to_swing_high_20", 1.0)
+            if not is_numeric(dist_sl_20):
+                raise ValueError(f"Invalid dist_to_swing_low_20: {dist_sl_20}")
+            if not is_numeric(dist_sh_20):
+                raise ValueError(f"Invalid dist_to_swing_high_20: {dist_sh_20}")
+
+            swing_low_reconstructed = target_entry_price - (dist_sl_20 * atr)
+            swing_high_reconstructed = target_entry_price + (dist_sh_20 * atr)
+            span_b = self._sanitize_float(getattr(feature_vector, "senkou_span_b", 0.0), target_entry_price)
+
+            if is_buy_cand:
+                cand_sl_levels = [v for v in (swing_low_reconstructed, kijun, span_b) if is_numeric(v) and 0.0 < v < target_entry_price]
+                structural_level_sl = max(cand_sl_levels) if cand_sl_levels else (target_entry_price - atr)
+                cand_stop_loss = round(structural_level_sl - (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
+
+                cand_tp_levels = [v for v in (swing_high_reconstructed, span_b) if is_numeric(v) and v > target_entry_price]
+                cand_take_profit = round(max(cand_tp_levels) if cand_tp_levels else (target_entry_price + atr * 2.0), 2)
+            else:
+                cand_sl_levels = [v for v in (swing_high_reconstructed, kijun, span_b) if is_numeric(v) and v > target_entry_price]
+                structural_level_sl = min(cand_sl_levels) if cand_sl_levels else (target_entry_price + atr)
+                cand_stop_loss = round(structural_level_sl + (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
+
+                cand_tp_levels = [v for v in (swing_low_reconstructed, span_b) if is_numeric(v) and 0.0 < v < target_entry_price]
+                cand_take_profit = round(min(cand_tp_levels) if cand_tp_levels else (target_entry_price - atr * 2.0), 2)
+
+            # Ensure take_profit satisfies at least the minimum allowed RR to guarantee reward > risk
+            risk_amount = max(abs(target_entry_price - cand_stop_loss), 1e-5)
+            active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
+            if cand_confidence >= getattr(self.algo_config, "high_confidence_threshold", 0.95):
+                min_rr_hc = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
+                if min_rr_hc < active_min_rr:
+                    active_min_rr = min_rr_hc
+
+            # Use smaller of min_allowed_rr and active_min_rr to avoid over-adjusting targets
+            active_tp_rr = min(self.min_allowed_rr, active_min_rr)
+            min_required_tp_dist = risk_amount * active_tp_rr
+            if is_buy_cand:
+                if cand_take_profit < target_entry_price + min_required_tp_dist:
+                    cand_take_profit = round(target_entry_price + min_required_tp_dist, 2)
+            else:
+                if cand_take_profit > target_entry_price - min_required_tp_dist:
+                    cand_take_profit = round(target_entry_price - min_required_tp_dist, 2)
+
+            reward_amount = abs(cand_take_profit - target_entry_price)
+            cand_actual_rr = round(reward_amount / risk_amount, 2)
+
+        def build_nt(reason_msg):
+            nonlocal confidence
+            active_conf = confidence if (confidence > 0 or proposed_action != ActionType.NO_TRADE) else cand_confidence
+
+            # Active min required RR based on confidence
+            act_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
+            if active_conf >= getattr(self.algo_config, "high_confidence_threshold", 0.70):
+                act_rr = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
+
+            risk_checks_dict = {
+                "zone_quality": float(active_conf),
+                "min_zone_quality": float(self.algo_config.ai_zone_confidence_threshold),
+                "rr": float(cand_actual_rr if cand_actual_rr is not None else 1.0),
+                "min_rr": float(act_rr),
+            }
+            return self._build_no_trade(
+                current_tick, active_conf, reason_msg,
+                model_action=cand_action,
+                buy_prob=prob_buy,
+                sell_prob=prob_sell,
+                no_trade_prob=prob_no_trade,
+                regime_str=regime_str,
+                regime_conf=regime_conf,
+                risk_allowed=False,
+                guardian_status=guardian_status,
+                proposed_entry=target_entry_price if (is_buy_cand or is_sell_cand) else None,
+                stop_loss=cand_stop_loss if (is_buy_cand or is_sell_cand) else None,
+                take_profit=cand_take_profit if (is_buy_cand or is_sell_cand) else None,
+                risk_reward_ratio=cand_actual_rr if (is_buy_cand or is_sell_cand) else None,
+                risk_checks=risk_checks_dict,
+            )
+
         # --- RULE MATRIX INTEGRATION ---
         if self.rule_matrix:
             self.rule_matrix.refresh_cache()
@@ -203,17 +317,7 @@ class SignalPolicy:
                 regime_state=regime_state
             )
             if blocked_reason:
-                return self._build_no_trade(
-                    current_tick, 0.0, blocked_reason,
-                    model_action=cand_action,
-                    buy_prob=prob_buy,
-                    sell_prob=prob_sell,
-                    no_trade_prob=prob_no_trade,
-                    regime_str=regime_str,
-                    regime_conf=regime_conf,
-                    risk_allowed=False,
-                    guardian_status=guardian_status,
-                )
+                return build_nt(blocked_reason)
 
             # 2. Check Custom Rules Triggered Entries (which take precedence over base PyTorch AI)
             rule_proposal = self.rule_matrix.evaluate_pre_trade_entry(
@@ -433,6 +537,17 @@ class SignalPolicy:
         )
         if is_zone_active and proposed_action != ActionType.NO_TRADE:
             zone_quality_score = confidence
+            components = {
+                "fvg": float(0.8 if (feature_vector.fvg_bullish_active or feature_vector.fvg_bearish_active) else 0.0),
+                "order_block": float(0.7 if feature_vector.order_block_type != 0 else 0.0),
+                "liquidity": float(0.9 if sweep_sig != 0 else 0.0),
+                "structure": float(max(0.0, min(1.0, abs(feature_vector.trend_strength)))),
+            }
+            logger.info(
+                "Zone quality evaluation components",
+                zone_quality=zone_quality_score,
+                components=components,
+            )
             if zone_quality_score < self.algo_config.ai_zone_confidence_threshold:
                 proposed_action = ActionType.NO_TRADE
                 reason_code = f"ZONE_QUALITY_BELOW_THRESHOLD ({zone_quality_score:.2f} < {self.algo_config.ai_zone_confidence_threshold:.2f})"
@@ -495,74 +610,51 @@ class SignalPolicy:
             self._last_logged_action = proposed_action
 
         if proposed_action == ActionType.NO_TRADE:
-            return self._build_no_trade(
-                current_tick, confidence, reason_code,
-                model_action=cand_action,
-                buy_prob=prob_buy,
-                sell_prob=prob_sell,
-                no_trade_prob=prob_no_trade,
-                regime_str=regime_str,
-                regime_conf=regime_conf,
-                risk_allowed=False,
-                guardian_status=guardian_status,
-            )
+            return build_nt(reason_code)
 
         if self._last_signal_time is not None:
             elapsed_cooldown = max(0.0, (now - self._last_signal_time).total_seconds())
             if elapsed_cooldown < self.cooldown_seconds:
-                return self._build_no_trade(
-                    current_tick, confidence, f"COOLDOWN_ACTIVE ({elapsed_cooldown:.1f}s)",
-                    model_action=cand_action,
-                    buy_prob=prob_buy,
-                    sell_prob=prob_sell,
-                    no_trade_prob=prob_no_trade,
-                    regime_str=regime_str,
-                    regime_conf=regime_conf,
-                    risk_allowed=False,
-                    guardian_status=guardian_status,
-                )
+                return build_nt(f"COOLDOWN_ACTIVE ({elapsed_cooldown:.1f}s)")
 
-        # ----------------------------------------------------------------------
-        # PROPOSAL GATE 3: ICT & Ichimoku Structural SL/TP Calculation
-        # ----------------------------------------------------------------------
-        swing_low_reconstructed = target_entry_price - (feature_vector.dist_to_swing_low_20 * atr)
-        swing_high_reconstructed = target_entry_price + (feature_vector.dist_to_swing_high_20 * atr)
-        span_b = self._sanitize_float(getattr(feature_vector, "senkou_span_b", 0.0), target_entry_price)
+        # For passing signals, use the pre-computed candidate levels
+        stop_loss = cand_stop_loss
+        take_profit = cand_take_profit
+        actual_rr = cand_actual_rr
 
-        if "BUY" in proposed_action.value:
-            cand_sl = [v for v in (swing_low_reconstructed, kijun, span_b) if 0.0 < v < target_entry_price]
-            structural_level_sl = min(cand_sl) if cand_sl else (target_entry_price - atr)
-            stop_loss = round(structural_level_sl - (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
+        # Determine active min required RR based on confidence (normal vs high confidence)
+        active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
+        if confidence >= getattr(self.algo_config, "high_confidence_threshold", 0.95):
+            min_rr_hc = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
+            if min_rr_hc < active_min_rr:
+                active_min_rr = min_rr_hc
 
-            cand_tp = [v for v in (swing_high_reconstructed, span_b) if v > target_entry_price]
-            take_profit = round(min(cand_tp) if cand_tp else (target_entry_price + atr * 2.0), 2)
-        else:
-            cand_sl = [v for v in (swing_high_reconstructed, kijun, span_b) if v > target_entry_price]
-            structural_level_sl = max(cand_sl) if cand_sl else (target_entry_price + atr)
-            stop_loss = round(structural_level_sl + (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
-
-            cand_tp = [v for v in (swing_low_reconstructed, span_b) if 0.0 < v < target_entry_price]
-            take_profit = round(max(cand_tp) if cand_tp else (target_entry_price - atr * 2.0), 2)
-
+        # Ensure take_profit satisfies at least the minimum allowed RR to guarantee reward > risk
         risk_amount = max(abs(target_entry_price - stop_loss), 1e-5)
+        active_tp_rr = min(self.min_allowed_rr, active_min_rr)
+        min_required_tp_dist = risk_amount * active_tp_rr
+        if "BUY" in proposed_action.value:
+            if take_profit < target_entry_price + min_required_tp_dist:
+                take_profit = round(target_entry_price + min_required_tp_dist, 2)
+        else:
+            if take_profit > target_entry_price - min_required_tp_dist:
+                take_profit = round(target_entry_price - min_required_tp_dist, 2)
+
         reward_amount = abs(take_profit - target_entry_price)
         actual_rr = round(reward_amount / risk_amount, 2)
 
         # Asymmetric Risk Gatekeeper
-        if actual_rr < self.algo_config.min_risk_reward_ratio:
-            return self._build_no_trade(
-                current_tick, confidence, "ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD",
-                model_action=cand_action,
-                buy_prob=prob_buy,
-                sell_prob=prob_sell,
-                no_trade_prob=prob_no_trade,
-                regime_str=regime_str,
-                regime_conf=regime_conf,
-                risk_allowed=False,
-                guardian_status=guardian_status,
-            )
+        if actual_rr < active_min_rr:
+            return build_nt("ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD")
 
         self._last_signal_time = now
+
+        risk_checks_dict = {
+            "zone_quality": float(confidence),
+            "min_zone_quality": float(self.algo_config.ai_zone_confidence_threshold),
+            "rr": float(actual_rr),
+            "min_rr": float(active_min_rr),
+        }
 
         return TradeProposal(
             request_id=str(uuid.uuid4()),
@@ -587,6 +679,7 @@ class SignalPolicy:
             guardian_status=guardian_status,
             rejection_reason=None,
             final_action=proposed_action.value,
+            risk_checks=risk_checks_dict,
         )
 
     def _build_no_trade(
@@ -602,6 +695,11 @@ class SignalPolicy:
         regime_conf: float = 0.0,
         risk_allowed: bool = False,
         guardian_status: str = "IDLE",
+        proposed_entry: float | None = None,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
+        risk_reward_ratio: float | None = None,
+        risk_checks: dict[str, Any] | None = None,
     ) -> TradeProposal:
         return TradeProposal(
             request_id=str(uuid.uuid4()),
@@ -609,10 +707,10 @@ class SignalPolicy:
             generated_at=tick.timestamp,
             action=ActionType.NO_TRADE,
             confidence=float(confidence),
-            proposed_entry=float(tick.bid),
-            stop_loss=float(tick.bid * 0.99),
-            take_profit=float(tick.bid * 1.01),
-            risk_reward_ratio=1.0,
+            proposed_entry=float(proposed_entry if proposed_entry is not None else tick.bid),
+            stop_loss=float(stop_loss if stop_loss is not None else tick.bid * 0.99),
+            take_profit=float(take_profit if take_profit is not None else tick.bid * 1.01),
+            risk_reward_ratio=float(risk_reward_ratio if risk_reward_ratio is not None else 1.0),
             reason_code=reason,
 
             # Diagnostics
@@ -626,6 +724,7 @@ class SignalPolicy:
             guardian_status=guardian_status,
             rejection_reason=reason,
             final_action="NO_TRADE",
+            risk_checks=risk_checks,
         )
 
     def extract_live_chart_overlays(self, completed_bars: list[Any], atr_val: float) -> dict[str, Any]:

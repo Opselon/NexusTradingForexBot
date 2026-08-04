@@ -25,6 +25,6 @@ model:
 algo:
   atr_sl_buffer_multiplier: 1.5
   min_risk_reward_ratio: 1.8
-  ai_zone_confidence_threshold: 0.82
+  ai_zone_confidence_threshold: 0.60
   fvg_mitigation_sensitivity: 0.5
   order_block_lookback_bars: 30

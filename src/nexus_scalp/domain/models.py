@@ -6,6 +6,7 @@ These models are completely isolated from external frameworks or broker implemen
 """
 
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -117,6 +118,7 @@ class TradeProposal(BaseModel):
     # Diagnostic fields
     model_action: str | None = Field(default=None, description="Original action proposed by model before filter checks")
     buy_probability: float | None = Field(default=None, description="Model raw buy probability")
+    risk_checks: dict[str, Any] | None = Field(default=None, description="Detailed risk checks dict")
     sell_probability: float | None = Field(default=None, description="Model raw sell probability")
     no_trade_probability: float | None = Field(default=None, description="Model raw no trade probability")
     regime: str | None = Field(default=None, description="Market microstructure regime")

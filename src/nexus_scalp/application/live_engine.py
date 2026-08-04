@@ -607,6 +607,9 @@ class LiveEngine:
             # Synchronize the live hot-swapped AlgoConfig on every single tick pulse
             self.signal_policy.algo_config = self.config.algo
             self.order_manager.algo_config = self.config.algo
+            self.risk_engine.min_risk_reward_ratio = self.config.algo.min_risk_reward_ratio
+            self.risk_engine.min_rr_high_confidence = getattr(self.config.algo, "min_rr_high_confidence", 1.2)
+            self.risk_engine.high_confidence_threshold = getattr(self.config.algo, "high_confidence_threshold", 0.70)
 
             is_new_bar = self.aggregator.process_tick(tick)
 
