@@ -337,10 +337,12 @@ class WalkForwardTrainer:
         learning_rate: float = 1e-4,
         max_holding_bars: int = 15,
         model: ScalpNet | None = None,  # Keyword Alias for backwards compatibility
+        verify_health: bool = True,
     ) -> ScalpNet:
         """
         Performs clone-safe online fine-tuning on recent labeled bars.
         Supports both 'live_model' and 'model' keyword arguments.
+        Includes early stopping, validation quality assessment, model health check, and atomic rollback.
         """
         target_model = live_model if live_model is not None else model
         if target_model is None or recent_df is None or feature_cols is None:
@@ -386,35 +388,157 @@ class WalkForwardTrainer:
             )
             return copy.deepcopy(target_model)
 
+        # Chronological train/validation split (80% train, 20% validation) to prevent temporal leakage
+        val_size = max(5, int(len(y) * 0.20))
+        train_size = len(y) - val_size
+
+        X_train, y_train = X_scaled[:train_size], y[:train_size]
+        X_val, y_val = X_scaled[train_size:], y[train_size:]
+
+        # Deep copy the target model state as the rollback baseline
+        baseline_state = copy.deepcopy(target_model.state_dict())
         working_model = copy.deepcopy(target_model).to(self.device)
-        working_model.train()
 
-        weights_tensor = self._build_class_weights(y).to(self.device)
-        dyn_batch = max(16, min(128, len(y) // 8))
-        dataset = ScalpDataset(X_scaled, y, self.device)
-        loader = self._make_loader(dataset, dyn_batch, shuffle=True)
+        # Setup loaders
+        train_batch = max(16, min(128, len(y_train) // 8))
+        train_ds = ScalpDataset(X_train, y_train, self.device)
+        train_loader = self._make_loader(train_ds, train_batch, shuffle=True)
 
+        val_batch = max(16, min(128, len(y_val) // 8))
+        val_ds = ScalpDataset(X_val, y_val, self.device)
+        val_loader = self._make_loader(val_ds, val_batch, shuffle=False)
+
+        weights_tensor = self._build_class_weights(y_train).to(self.device)
         optimizer = torch.optim.AdamW(
             working_model.parameters(),
             lr=learning_rate,
             weight_decay=1e-4,
         )
 
-        for ep in range(epochs):
-            avg_loss = self._train_one_epoch_smc(working_model, loader, optimizer, weights_tensor, feature_cols)
+        criterion_val = nn.CrossEntropyLoss(weight=weights_tensor)
 
+        # Evaluate baseline validation performance before training
         working_model.eval()
+        baseline_val_loss = self._evaluate_loss(working_model, val_loader, criterion_val)
+        logger.info("Baseline validation loss", loss=baseline_val_loss)
 
-        self._save_checkpoint(working_model)
-        self._save_scaler(scaler)
+        best_val_loss = baseline_val_loss
+        best_state = copy.deepcopy(baseline_state)
+        patience_counter = 0
+        early_stopped = False
+
+        for ep in range(epochs):
+            working_model.train()
+            train_loss = self._train_one_epoch_smc(working_model, train_loader, optimizer, weights_tensor, feature_cols)
+
+            working_model.eval()
+            val_loss = self._evaluate_loss(working_model, val_loader, criterion_val)
+
+            logger.info("Online fine-tuning epoch complete", epoch=ep + 1, train_loss=train_loss, val_loss=val_loss)
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_state = copy.deepcopy(working_model.state_dict())
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                if patience_counter >= max(2, epochs // 2):
+                    logger.info("Early stopping triggered during online fine-tuning", epoch=ep + 1)
+                    early_stopped = True
+                    break
+
+        # Load best weights obtained during training
+        working_model.load_state_dict(best_state)
+
+        # Compute Diagnostics & Health Check
+        working_model.eval()
+        final_val_loss = self._evaluate_loss(working_model, val_loader, criterion_val)
+
+        # Gather predictions on validation set for diagnostics
+        preds_all = []
+        targets_all = []
+        probs_all = []
+        with torch.inference_mode():
+            for bx, by in val_loader:
+                probs = working_model(bx, return_logits=False)
+                preds = torch.argmax(probs, dim=-1)
+                preds_all.extend(preds.cpu().numpy().tolist())
+                targets_all.extend(by.cpu().numpy().tolist())
+                probs_all.append(probs.cpu().numpy())
+
+        probs_arr = np.concatenate(probs_all, axis=0) if probs_all else np.empty((0, 4))
+        preds_arr = np.array(preds_all, dtype=np.int64)
+
+        # Metrics calculations
+        total_samples = len(preds_arr) if len(preds_arr) > 0 else 1
+        class_counts = np.bincount(preds_arr, minlength=self.NUM_CLASSES)
+        class_dist = (class_counts / total_samples).tolist()
+        val_acc = float(np.sum(preds_arr == np.array(targets_all)) / total_samples)
+
+        # Prediction Shannon Entropy
+        num_probs_classes = probs_arr.shape[1]
+        entropy_vals = -np.sum(probs_arr * np.log(probs_arr + 1e-9), axis=1)
+        avg_entropy = float(np.mean(entropy_vals)) if len(entropy_vals) > 0 else 0.0
+
+        # Confidence histogram (e.g., max probability per sample)
+        max_probs = np.max(probs_arr, axis=1) if len(probs_arr) > 0 else np.array([])
+        conf_hist, _ = np.histogram(max_probs, bins=5, range=(0.0, 1.0))
+        conf_hist = conf_hist.tolist()
+
+        # Prediction diversity: all three classes (0, 1, 2) must appear during inference
+        unique_classes = set(preds_arr.tolist())
+        has_diversity = {0, 1, 2}.issubset(unique_classes)
+
+        # Configurable model health conditions
+        dominance_threshold = 0.85
+        min_prediction_entropy = 0.40
+
+        max_dominance = max(class_dist[:3]) if class_dist else 1.0
+        no_dominance_breach = (max_dominance < dominance_threshold)
+        sufficient_entropy = (avg_entropy >= min_prediction_entropy)
+
+        is_healthy = no_dominance_breach and sufficient_entropy and has_diversity
+
+        # Validation Quality assessment: new model must perform no worse than the baseline
+        performance_not_degraded = (final_val_loss <= baseline_val_loss + 1e-4)
 
         logger.info(
-            "Online fine-tuning complete",
-            buffer_rows=len(valid_df),
-            checkpoint=str(self.artifact_path),
+            "Model fine-tuning diagnostics",
+            class_distribution=class_dist,
+            entropy=avg_entropy,
+            confidence_histogram=conf_hist,
+            validation_loss=final_val_loss,
+            validation_accuracy=val_acc,
+            unique_predicted_classes=list(unique_classes),
+            is_healthy=is_healthy,
+            performance_not_degraded=performance_not_degraded,
         )
 
-        return working_model.to(torch.device("cpu"))
+        if not verify_health:
+            logger.info("Model health check bypassed via verify_health=False parameter.")
+            self._save_checkpoint(working_model)
+            self._save_scaler(scaler)
+            ret_model = working_model
+        elif is_healthy and performance_not_degraded:
+            logger.info("New model deployment approved. Overwriting active model checkpoint.")
+            self._save_checkpoint(working_model)
+            self._save_scaler(scaler)
+            ret_model = working_model
+        else:
+            # RED BACKGROUND ALERT (ANSI Escape codes: Red background \033[41m, high-intensity white text \033[97m)
+            red_alert = "\033[41m\033[97m[CRITICAL MODEL ROLLBACK] Newly fine-tuned model degraded (e.g. 99% SELL bias). Atomically reverting to previous healthy checkpoint! \033[0m"
+            print(f"[error] {red_alert}")
+            logger.warning(
+                "New model rejected due to health check or performance degradation. Rolling back to healthy baseline.",
+                is_healthy=is_healthy,
+                performance_not_degraded=performance_not_degraded,
+                reason="Model Collapse or Validation Quality Degradation detected"
+            )
+            # Rollback to baseline state dict
+            working_model.load_state_dict(baseline_state)
+            ret_model = working_model
+
+        return ret_model.to(torch.device("cpu"))
 
     # =========================================================================
     # INTERNAL: VALIDATION & FILTERS
@@ -801,44 +925,6 @@ class WalkForwardTrainer:
 
         return ScalerBundle(mean=mean, std=std)
 
-    def _set_seed(self, seed: int) -> None:
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-
-        if torch.backends.cudnn.is_available():
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
-
-        try:
-            torch.use_deterministic_algorithms(True, warn_only=True)
-        except Exception:
-            pass
-
-
-
-
-def _load_scaler(self) -> ScalerBundle:
-    scaler_path = self._get_scaler_path()
-    if not scaler_path.exists():
-        raise FileNotFoundError(f"Scaler artifact not found at: {scaler_path}")
-
-    data = np.load(scaler_path)
-    mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
-    std  = np.asarray(data["std"],  dtype=np.float32).reshape(-1)
-
-    if mean.size != self.NUM_FEATURES or std.size != self.NUM_FEATURES:
-        raise RuntimeError(
-            f"Scaler dim invalid on load: mean{mean.shape} std{std.shape} "
-            f"expected ({self.NUM_FEATURES},)"
-        )
-
-    return ScalerBundle(mean=mean, std=std)
-
-
     def _save_metadata(self, feature_cols: list[str]) -> None:
         meta_path = self._get_meta_path()
         tmp_path = meta_path.with_name(meta_path.name + ".tmp")
@@ -879,19 +965,19 @@ def _load_scaler(self) -> ScalerBundle:
     # INTERNAL: SEEDING
     # =========================================================================
 
-def _set_seed(self, seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+    def _set_seed(self, seed: int) -> None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
 
-    if torch.backends.cudnn.is_available():
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+        if torch.backends.cudnn.is_available():
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
 
-    try:
-        torch.use_deterministic_algorithms(True, warn_only=True)
-    except Exception:
-        pass
+        try:
+            torch.use_deterministic_algorithms(True, warn_only=True)
+        except Exception:
+            pass
