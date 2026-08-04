@@ -1,5 +1,3 @@
-
-```markdown
 # ⚡ Nexus Scalp Engine (NSE) v7.0 — Institutional Quantitative Infrastructure
 
 [![Python Version](https://img.shields.io/badge/Python-3.11%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -12,6 +10,41 @@
 **Nexus Scalp Engine (NSE)** is a production-grade, event-driven quantitative high-frequency scalp trading infrastructure engineered specifically for **XAUUSD (Gold)** and major FX pairs. Built natively in **Python 3.11+**, **PyTorch (Deep Learning TCN + Self-Attention)**, and direct **Win32 C++ IPC driver bindings** to MetaTrader 5, the engine provides predictive Smart Money Concepts (SMC) execution, zero-lookahead feature extraction, an invariant-driven risk engine, and a real-time HTML5 Canvas Web Control Center.
 
 ---
+
+## 🏛️ System Architecture
+
+NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture**, isolating execution platforms, machine learning models, and network adapters into modular, self-healing subsystems.
+
+```text
+┌───────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 NEXUS RUNTIME CORE (PYTHON 3.11+)                         │
+│                                                                                           │
+│  ┌────────────────────────┐   ┌────────────────────────┐   ┌───────────────────────────┐  │
+│  │ 50D Causal Feature     │   │ PyTorch ScalpNet v3    │   │  Cascading Risk Engine    │  │
+│  │ Pipeline (SMC / OFI)   │───│ (TCN + Self-Attention) │───│  (Fixed Dollar / Margin)  │  │
+│  └───────────┬────────────┘   └───────────┬────────────┘   └─────────────┬─────────────┘  │
+│              │                            │                              │                │
+│              └────────────────────────────┼──────────────────────────────┘                │
+│                                           │                                               │
+│                                 ┌─────────▼─────────┐                                     │
+│                                 │   Policy Engine   │                                     │
+│                                 │(30-Rule SMC Matrix)                                     │
+│                                 └─────────┬─────────┘                                     │
+│                                           │                                               │
+│                                 ┌─────────▼─────────┐                                     │
+│                                 │ Order Manager &   │                                     │
+│                                 │ Financial Ledger  │                                     │
+│                                 └─────────┬─────────┘                                     │
+└───────────────────────────────────────────┼───────────────────────────────────────────────┘
+                                            │ Win32 C++ Direct IPC
+                                            v
+┌───────────────────────────────────────────────────────────────────────────────────────────┐
+│                               METATRADER 5 TERMINAL PROCESS                               │
+│                                                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │    Direct Institutional Execution Path (LMAX / Pepperstone / IC Markets / FXCM)    │  │
+│  └─────────────────────────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 
 ## 🏛️ System Architecture
 
