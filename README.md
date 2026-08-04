@@ -1,238 +1,279 @@
-# Nexus Scalp Engine (NSE) — Production Quantitative Scalping Infrastructure
+این یک فایل **`README.md` کامل،فوق‌العاده مدرن، جامع و در سطح استاندارد ابزارهای کوانت جهانی (مانند پروژه های هج‌فاندها در GitHub)** است.
 
-[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-red.svg)](https://pytorch.org/)
-[![MetaTrader 5](https://img.shields.io/badge/MetaTrader-5-gold.svg)](https://www.mql5.com/)
-[![Architecture](https://img.shields.io/badge/Architecture-Hexagonal-purple.svg)]()
-[![License](https://img.shields.io/badge/License-Proprietary-green.svg)]()
+تمام قابلیت‌های سنگینی که پیاده کردیم (شامل ویژگی‌های ۵۰ بعدی SMC، موتور ۳۰ قانون، لایه ایمنی ۴ مرحله‌ای، چارت وب کانوست با ۱۵۰ کندل، و هسته حسابداری تحلیلی) با جزییات فنی دقیق و یک راهنمای قدم‌به‌قدم **`How To Use`** در آن گنجانده شده است.
 
-**Nexus Scalp Engine (NSE)** is an enterprise-grade, high-frequency quantitative scalp trading engine engineered specifically for **XAUUSD (Gold)** and major currency pairs. Built natively with **Python 3.11+**, **PyTorch deep learning**, and direct **C++ IPC bindings** to MetaTrader 5, the system provides zero-data-leakage feature pipelines, ICT/Ichimoku multi-confluence signal evaluation, dynamic margin-based position sizing, and automated thread-replied Telegram telemetry.
+همچنین در انتهای فایل، یک بخش بسیار جذاب و الهام‌بخش برای **دعوت به همکاری از برترین مهندسان کوانت، پژوهشگران پایتورچ و توسعه‌دهندگان C++** قرار داده شده است.
+
+***
+
+# نسخه کامل `README.md` (کپی کنید و جایگزین کنید)
+
+```markdown
+# ⚡ Nexus Scalp Engine (NSE) v7.0 — Institutional Quantitative Infrastructure
+
+[![Python Version](https://img.shields.io/badge/Python-3.11%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-EE4C2C.svg?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![MetaTrader 5](https://img.shields.io/badge/MetaTrader-5-gold.svg?style=for-the-badge&logo=metatrader5&logoColor=white)](https://www.mql5.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.tech/)
+[![Architecture](https://img.shields.io/badge/Architecture-Hexagonal_Event--Driven-purple.svg?style=for-the-badge)]()
+[![Status](https://img.shields.io/badge/Production-Hardened-success.svg?style=for-the-badge)]()
+
+**Nexus Scalp Engine (NSE)** is a production-grade, event-driven quantitative high-frequency scalp trading infrastructure engineered specifically for **XAUUSD (Gold)** and major FX pairs. Built natively in **Python 3.11+**, **PyTorch (Deep Learning TCN + Self-Attention)**, and direct **Win32 C++ IPC driver bindings** to MetaTrader 5, the engine provides predictive Smart Money Concepts (SMC) execution, zero-lookahead feature extraction, an invariant-driven risk engine, and a real-time HTML5 Canvas Web Control Center.
 
 ---
 
 ## 🏛️ System Architecture
 
-The engine implements a **Hexagonal / Ports-and-Adapters Monolith Architecture** prioritizing thread safety, ultra-low execution latency, and complete execution-platform isolation.
+NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture**, isolating execution platforms, machine learning models, and network adapters into modular, self-healing subsystems.
 
 ```text
-┌───────────────────────────────────────────────────────────────────────────────────┐
-│                          LINUX / WINDOWS CORE RUNTIME                             │
-│                                                                                   │
-│  ┌───────────────────────┐   ┌───────────────────────┐   ┌─────────────────────┐  │
-│  │  Incremental Feature  │   │  Hierarchical PyTorch │   │ Dynamic Risk Engine │  │
-│  │ Engine (40 Dimensions)│───│ ScalpNet v3 (TCN+Attn)│───│(Margin/Leverage Cap)│  │
-│  └───────────┬───────────┘   └───────────┬───────────┘   └──────────┬──────────┘  │
-│              │                           │                          │             │
-│              └───────────────────────────┼──────────────────────────┘             │
-│                                          │                                        │
-│                                ┌─────────▼─────────┐                              │
-│                                │ IMT5Port Adapter  │                              │
-│                                └─────────┬─────────┘                              │
-└──────────────────────────────────────────┼────────────────────────────────────────┘
-                                           │ Win32 C++ IPC / Encrypted RPC
-                                           v
-┌───────────────────────────────────────────────────────────────────────────────────┐
-│                              METATRADER 5 TERMINAL                                │
-│                                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
-│  │   Broker Direct Execution Path (LMAX / IC Markets / Pepperstone / FXCM)     │  │
-│  └─────────────────────────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 NEXUS RUNTIME CORE (PYTHON 3.11+)                         │
+│                                                                                           │
+│  ┌────────────────────────┐   ┌────────────────────────┐   ┌───────────────────────────┐  │
+│  │ 50D Causal Feature     │   │ PyTorch ScalpNet v3    │   │  Cascading Risk Engine    │  │
+│  │ Pipeline (SMC / OFI)   │───│ (TCN + Self-Attention) │───│  (Fixed Dollar / Margin)  │  │
+│  └───────────┬────────────┘   └───────────┬────────────┘   └─────────────┬─────────────┘  │
+│              │                            │                              │                │
+│              └────────────────────────────┼──────────────────────────────┘                │
+│                                           │                                               │
+│                                 ┌─────────▼─────────┐                                     │
+│                                 │   Policy Engine   │                                     │
+│                                 │(30-Rule SMC Matrix)                                     │
+│                                 └─────────┬─────────┘                                     │
+│                                           │                                               │
+│                                 ┌─────────▼─────────┐                                     │
+│                                 │ Order Manager &   │                                     │
+│                                 │ Financial Ledger  │                                     │
+│                                 └─────────┬─────────┘                                     │
+└───────────────────────────────────────────┼───────────────────────────────────────────────┘
+                                            │ Win32 C++ Direct IPC
+                                            v
+┌───────────────────────────────────────────────────────────────────────────────────────────┐
+│                               METATRADER 5 TERMINAL PROCESS                               │
+│                                                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │    Direct Institutional Execution Path (LMAX / Pepperstone / IC Markets / FXCM)    │  │
+│  └─────────────────────────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📂 Repository Structure
+## 🔥 Key Technological Innovations
+
+### 1. Predictive SMC "God-Mode" Execution Engine
+- **50% Impulse Equilibrium Filtering:** Automatically calculates the 50% midpoint of impulse legs. Short trades below 50% (Discount) or Long trades above 50% (Premium) are hard-gated (`OB_BELOW_50_PERCENT_EQUILIBRIUM`).
+- **BOS & CHoCH Validation:** Verifies structural displacement before tagging Order Blocks (OB).
+- **Liquidity Sweeps & 50-60% OTE Fibs:** Identifies stop-hunts (`liq`) and secondary sub-leg optimal trade entries.
+- **SMC Veto Power:** Pristine SMC setups (OB + Sweep + BOS) override slow Higher-Timeframe trend conflicts.
+
+### 2. PyTorch ScalpNet v3 with Atomic Checkpoint Rollbacks
+- **3-Layer TCN + Self-Attention Network:** Processes 50-dimensional normalized feature tensors natively.
+- **Inverse Class Frequency Weighting:** Dynamically weights `nn.CrossEntropyLoss` during online fine-tuning to prevent prediction collapse or short-side bias.
+- **Atomic Model Rollback System:** Evaluates model validation loss/entropy after online fine-tuning. If a newly trained checkpoint degrades quality, the engine **atomically rolls back** to the previous healthy checkpoint and logs a **CRITICAL RED TERMINAL ALERT** (`\033[41m`).
+
+### 3. Dynamic Position Management & "Falling Knife" Protection
+- **Order Churning Throttle:** Implements a 15-second modification throttle to prevent MT5 pending order spam (resolving retcodes `10013`/`10015`).
+- **Contextual Order Cancellation:** If an active position (e.g., `SELL`) is in deep profit and accelerating downwards, the Order Manager automatically **cancels or pushes away opposite `BUY_LIMIT` orders** to avoid catching falling knives.
+- **Dynamic Lot Sizing Clamps:** Slices lot sizes based on structural ATR stop-loss distances, enforcing broker `volume_max`, `margin_free` pre-checks, and hard lot caps to prevent MT5 retcode `10019` (NO_MONEY).
+
+### 4. Real-Time HTML5 Canvas Visualizer & Live Tuner (`/web`)
+- **150+ Bar History Buffer:** High-resolution interactive M1 candlestick chart renderer with auto-scale and zoom.
+- **Multi-Layer Transparent Overlays:** Renders transparent colored rectangles for AI-validated liquidity zones:
+  - 🟩 **Green Box (Opacity 0.25):** Bullish Order Blocks / Bullish FVGs (`ob 85%`).
+  - 🟥 **Red Box (Opacity 0.25):** Bearish Order Blocks / Bearish FVGs.
+  - 🟨 **Gold Box (Opacity 0.35):** Swept Liquidity Pools (`liq`).
+- **Interactive Execution Target Lines:** Displays solid Blue (Entry), dashed Red (SL), and dashed Green (TP) order lines with real-time dollar risk/reward tooltips.
+- **Algorithm Live Tuner Panel:** Exposes internal hyperparameters (`atr_sl_buffer_multiplier`, `min_risk_reward_ratio`, `ai_zone_confidence_threshold`) to REST endpoints (`PUT /api/algo/config`), allowing **2-second in-memory hot-swapping** without restarting the runtime.
+
+### 5. Institutional Financial Accounting Ledger
+- **Complete Post-Trade Autopsy:** Logs every closed trade into SQLite (`artifacts/audit.db`) with `MAE` (Maximum Adverse Excursion), `MFE` (Maximum Favorable Excursion), `entry_rule_id`, `exit_mechanism` (`TP_HIT`, `HARD_SL_HIT`, `RISK_FREE_SL_HIT`, `TIME_DECAY_EXIT`), initial/final SL prices, and running equity snapshots.
+
+---
+
+## 📂 Repository Layout
 
 ```text
 NexusTradingForexBot/
-├── .github/
-│   └── workflows/
-│       └── check_and_build.yml                # CI/CD Workflow for Ruff, Mypy & Pytest
+├── .github/workflows/check_and_build.yml    # CI/CD Workflow (Ruff, Mypy, Pytest)
 ├── configs/
-│   └── base.yaml                              # Default system settings, risk caps, & models config
-├── docker/
-│   ├── entrypoint.sh                          # Docker container startup script
-│   └── healthcheck.sh                         # Docker container containerized health monitor
-├── src/
-│   └── nexus_scalp/
-│       ├── __init__.py                        # Core package initialization
-│       ├── adapters/
-│       │   ├── __init__.py
-│       │   ├── database/
-│       │   │   └── audit_repository.py        # SQLite/PostgreSQL trading & audits logging DB
-│       │   ├── mt5/
-│       │   │   ├── mt5_adapter.py             # Win32 C++ IPC Direct Local MT5 Driver
-│       │   │   └── remote_gateway.py          # Secure HTTP+HMAC Cross-Platform Gateway client
-│       │   └── paper/
-│       │       └── paper_adapter.py           # In-Memory Paper trading/replay mock broker
-│       ├── application/
-│       │   └── live_engine.py                 # Core live trading event-loop & orchestrator
-│       ├── cli/
-│       │   └── main.py                        # Rich console Typer CLI operations console
-│       ├── configuration/
-│       │   └── config.py                      # Strongly-typed YAML parsing using Pydantic Settings
-│       ├── domain/
-│       │   ├── enums.py                       # Pure Domain Action, Order, and Execution enums
-│       │   └── models.py                      # Safe Immutable Domain models & invariants
-│       ├── execution/
-│       │   └── order_manager.py               # Active SL/TP manager, trailing-stops, & telemetry
-│       ├── features/
-│       │   ├── scalp_features.py              # 40D Zero-lookahead feature engineering engine
-│       │   └── regime_classifier.py           # O(1) Schmitt-Trigger Market Regime engine (Module 1)
-│       ├── labeling/
-│       │   └── triple_barrier.py              # Friction-aware Triple-Barrier Labeling algorithm
-│       ├── market_data/
-│       │   ├── bar_aggregator.py              # Incremental tick to OHLC M1 candle aggregator
-│       │   └── tick_storage.py                # High-speed tick storage using Apache Parquet format
-│       ├── models/
-│       │   └── scalp_net.py                   # PyTorch deep learning network (3-Layer TCN + Self-Attention)
-│       ├── observability/
-│       │   ├── logging.py                     # Non-blocking structured logging pipeline using structlog
-│       │   └── telegram_notifier.py           # Multi-threaded Telegram notification engine
-│       ├── ports/
-│       │   ├── gateway_port.py                # Abstract network gateway definition
-│       │   └── mt5_port.py                    # Core abstract execution & MT5 contract
-│       ├── risk/
-│       │   └── risk_engine.py                 # Margin-aware position sizing & dynamic Risk Engine
-│       ├── signals/
-│       │   └── policy.py                      # Limit/Stop order placement & signal evaluation policy
-│       └── training/
-│           └── walk_forward_trainer.py        # Safe online Walk-Forward model training & calibration
+│   ├── base.yaml                            # System parameters, risk limits, & model configs
+│   └── live.yaml                            # Production live environment configurations
+├── src/nexus_scalp/
+│   ├── adapters/
+│   │   ├── database/audit_repository.py      # SQLite WAL ledger & signal telemetry DB
+│   │   └── mt5/mt5_adapter.py               # Win32 C++ IPC Direct Local MT5 Driver
+│   ├── application/live_engine.py           # Master event loop, Safety State Machine, & Bridge
+│   ├── configuration/config.py              # Pydantic Settings & AlgoConfig schema
+│   ├── domain/                              # Pure immutable domain models & enums
+│   ├── execution/order_manager.py           # In-trade tracker, SL shifts, MAE/MFE, & throttling
+│   ├── features/
+│   │   ├── scalp_features.py                # 50D Zero-lookahead Causal Feature Engine + SMC
+│   │   └── regime_classifier.py             # O(1) Schmitt-Trigger Market Regime Classifier
+│   ├── models/scalp_net.py                  # PyTorch TCN + Self-Attention Neural Network
+│   ├── risk/risk_engine.py                  # Fractional Kelly, Lot Sizing, & Margin Clamps
+│   ├── signals/
+│   │   ├── policy.py                        # SMC God-Mode, Pre-trade Gatekeeper, & Signals
+│   │   └── rule_matrix.py                   # 30-Rule Matrix Engine with 5s Async Hot-Reload
+│   ├── training/walk_forward_trainer.py    # Walk-Forward Fine-Tuning & Atomic Rollbacks
+│   └── web/server.py                        # FastAPI Async Server, WebSockets, & REST APIs
+├── Web/
+│   ├── index.html                           # Control Center UI Dashboard HTML
+│   └── app.js                               # HTML5 Canvas Chart Renderer & Live Tuner JS
 ├── tests/
-│   └── unit/
-│       ├── test_bar_aggregator.py             # Candle aggregator boundary tests
-│       ├── test_domain_models.py              # Domain invariant validation checks
-│       ├── test_logging.py                    # Logging and secret redaction checks
-│       ├── test_mt5_adapter.py                # Adapter error & disconnection checks
-│       ├── test_risk_engine.py                # Risk caps and position sizing checks
-│       ├── test_scalp_features.py             # Feature dimension & normalization verification
-│       └── test_runtime.py                    # CLI commands & LiveEngine execution runtime integration tests
-├── Dockerfile                                 # Linux multi-stage Python 3.11 runtime image
-├── docker-compose.yml                         # Core Engine & PostgreSQL database orchestration
-├── pyproject.toml                             # Package dependencies & Dev setup (PEP 621)
-├── requirements.txt                           # Frozen pip production dependencies
-├── NexusTradingForexBot.py                    # Primary system launcher and pre-flight diagnostics
-├── NexusTradingForexBot.pyproj                # Visual Studio Python project definition
-└── NexusTradingForexBot.slnx                  # Visual Studio 2022 Solution file
+│   ├── unit/                                # Unit tests for all individual modules
+│   └── integration/test_hardened_protocol.py # End-to-end integration & safety tests
+├── NexusTradingForexBot.py                  # Primary system launcher & pre-flight doctor
+├── Dockerfile & docker-compose.yml          # Containerized orchestration
+└── pyproject.toml & requirements.txt        # Production dependencies (PEP 621)
 ```
 
 ---
 
-## 📊 Feature Engineering Engine (40 Dimensions)
+## 📊 50-Dimensional Feature Matrix
 
-The system computes a strictly causal, **zero-lookahead**, 40-dimensional sanitized feature tensor on every tick. The feature matrices are split into eight quantitative categories:
-
-1. **Gold Microstructure & Volatility** — Live tick displacement from last closed bar, 14-period Average True Range (ATR).
-2. **Price Action & Candlestick Anatomy** — Body-to-range ratios, upper/lower wick ratios, Doji signals, standard Bullish/Bearish Engulfing validation, Hammer/Shooting-star pinbars, and Close Location Value (CLV).
-3. **Swing Structure & Chart Patterns** — Normalized distance to 20-bar swing high/lows, 5-to-20-bar price compression flag ratios, extreme range boundaries (top/bottom 5% of 50-bar range), and stop-hunt penetration depth.
-4. **Market Sessions** — Real-time active binary session triggers for Tokyo, London, and New York sessions, including London-NY liquidity overlap window detection.
-5. **Time-Series Lags** — Log returns of lags 1, 2, and 3; lag-1 ATR ratios; lag-1 volume Z-score; and lag-1 CLV.
-6. **ICT Signals & Microstructure** — Bullish/Bearish Fair Value Gaps (FVG), Order Blocks, liquidity sweep patterns, Market Structure Shift/Change of Character (CHoCH), and rapid tick reversal spikes.
-7. **Ichimoku Kinko Hyo** — Tenkan-Sen, Kijun-Sen, Senkou Span A/B cloud boundaries, normalized TK diff, TK cross signals, and above/below Kumo cloud identifiers.
-8. **Indicators & Stat-Arb** — Normalized RSI-14, normalized distances to Exponential Moving Averages (EMA-21, EMA-50), and Cross-Asset Z-Score spreads against custom benchmarks.
+| Feature Index | Name | Category | Description |
+| :--- | :--- | :--- | :--- |
+| `feat_0` - `feat_7` | Microstructure & Volatility | Microstructure | Live displacement, 14-period ATR, spread ratios, tick velocity. |
+| `feat_8` - `feat_15` | Candlestick Anatomy | Price Action | Body-to-range ratio, wick absorption, Pinbars, Engulfing flags, CLV. |
+| `feat_16` - `feat_23` | Swing & Structure | Chart Patterns | Distance to 20-bar High/Low, compression ratios, stop-hunt depth. |
+| `feat_24` - `feat_27` | Market Sessions | Session Timing | Binary triggers for Asian, London, NY, and London-NY overlap window. |
+| `feat_28` - `feat_33` | Time-Series Lags | Stat-Arb | Log returns (lag 1-3), ATR ratio lag-1, Volume Z-score lag-1. |
+| `feat_34` - `feat_39` | Ichimoku Kinko Hyo | Trend | Tenkan/Kijun diff, Senkou Span cloud boundaries, TK Cross flags. |
+| `feat_40` - `feat_45` | Indicators & Stat-Arb | Oscillators | RSI-14 normalized, EMA-21/50 distances, Cross-Asset Z-score spreads. |
+| **`feat_46`** | **`feat_ob_valid_bos`** | **SMC Engine** | Binary flag (1/0) indicating Order Block created a confirmed BOS. |
+| **`feat_47`** | **`feat_ob_equilibrium_ratio`**| **SMC Engine** | Position of OB relative to 50% impulse equilibrium (0.0 to 1.0). |
+| **`feat_48`** | **`feat_ob_liquidity_swept`** | **SMC Engine** | Binary flag (1/0) indicating liquidity sweep presence (`liq`). |
+| **`feat_49`** | **`feat_ob_fib_50_60_align`** | **SMC Engine** | Proximity of OB to 50%-60% Fibonacci OTE retracement zone. |
 
 ---
 
-## ⚙️ Quick Start Guide
+## 🚀 How To Run & Deploy (Zero to Live in 5 Minutes)
 
-### Prerequisites
-- **Operating System:** Windows 10/11 (for local native MT5 IPC) or Linux (for Remote HTTP/HMAC Gateway runs).
-- **Python Version:** Python 3.11+
-- **Broker Interface:** MetaTrader 5 Terminal logged in to a demo/live account with **Algo Trading** enabled.
+### 1. System Requirements & Prerequisites
+- **OS:** Windows 10/11 (for Direct Win32 MT5 IPC) or Linux (for Containerized Gateway runs).
+- **Python:** Python 3.11.x installed.
+- **Broker:** MetaTrader 5 Terminal logged into a Live/Demo account with **"Allow Algo Trading"** enabled in Terminal settings.
 
-### Installation
+### 2. Installation
+Clone the repository and set up a clean Python 3.11 virtual environment:
 
-1. Clone the repository and navigate to the project directory:
-   ```bash
-   cd NexusTradingForexBot
-   ```
+```bash
+# Clone the repository
+git clone https://github.com/your-org/NexusTradingForexBot.git
+cd NexusTradingForexBot
 
-2. Create and activate a clean virtual environment:
-   ```bash
-   python -m venv .venv
+# Create virtual environment
+python -m venv .venv
 
-   # On Windows (PowerShell)
-   .\.venv\Scripts\Activate.ps1
+# Activate Virtual Environment
+# Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+# Linux/macOS:
+source .venv/bin/activate
 
-   # On Linux/macOS
-   source .venv/bin/activate
-   ```
+# Upgrade pip & install dependencies in editable mode
+pip install --upgrade pip
+pip install -e .[dev]
+```
 
-3. Install the dependencies in editable mode:
-   ```bash
-   pip install --upgrade pip
-   pip install -e .[dev]
-   ```
+### 3. Pre-Flight Infrastructure Diagnostics
+Run the built-in system doctor check to verify host platform, MT5 C++ IPC driver availability, and YAML syntax:
 
-### Running Diagnostics
-
-Execute the system pre-flight doctor check to verify host configurations, platform capabilities, and YAML correctness:
 ```bash
 python NexusTradingForexBot.py --doctor
 ```
 
-Or run via the CLI operational utility:
-```bash
-nse doctor
+Expected Output:
+```text
+System Runtime Diagnostic Summary
+┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Subsystem             ┃ Status    ┃ Operational Details                                   ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Python Runtime        │ PASS      │ Python 3.11.15                                        │
+│ Host Platform         │ OK        │ win32                                                 │
+│ Native MT5 IPC Driver │ AVAILABLE │ Direct Win32 IPC Available for Local Terminal Process │
+│ Configuration File    │ VALID     │ configs\live.yaml (Symbol: XAUUSD)                    │
+└───────────────────────┴───────────┴───────────────────────────────────────────────────────┘
+All Infrastructure Pre-Flight Checks Passed Successfully!
 ```
 
-### Configuration Validation
+### 4. Running the Live Trading Engine
+Ensure MetaTrader 5 Terminal is open and logged in, then launch the engine:
 
-Verify structural invariants and correctness of any custom configuration YAMLs before engine startup:
 ```bash
-nse config-validate -c configs/base.yaml
+# Launch via primary entry point
+python NexusTradingForexBot.py --config configs/live.yaml
+
+# Or via CLI operational command
+nse run --config configs/live.yaml
 ```
 
-### Running the Live Scalper Engine
+### 5. Accessing the Real-Time Control Center
+Open your browser and navigate to the Web Dashboard:
+👉 **`http://localhost:8080`** (or configured port)
 
-Launch the real-time trading engine using the base configurations:
-```bash
-# Via primary launcher
-python NexusTradingForexBot.py --config configs/base.yaml
-
-# Or via the CLI operational console
-nse run --config configs/base.yaml
-```
+- View live 150+ bar history with green/red Order Blocks and yellow sweep tags.
+- Monitor active trades, live PnL, MAE/MFE metrics, and Ichimoku cloud state.
+- Adjust sliders in the **"Algorithm Live Tuner"** under Bot Settings to hot-swap parameters in real-time.
 
 ---
 
-## 🧪 Testing Suite & Runtime Validation
+## 🧪 Verification & Test Suite
 
-NSE maintains an extensive testing suite covering pure domain models, data aggregators, quantitative indicators, risk parameters, CLI controls, and integration workflows:
+The engine includes an extensive, hardened test suite covering unit logic, PyTorch tensor contracts, risk clamps, and integration workflows.
 
-### Running the Tests
-Execute the entire test suite using `pytest`:
+### Run All Unit & Integration Tests:
 ```bash
-pytest
+pytest tests/unit/ tests/integration/ -v
 ```
 
-To run with coverage indicators:
+### Run Coverage Report:
 ```bash
 pytest --cov=src --cov-report=term-missing
 ```
 
-### Runtime Testing Safeguards
-Our specialized integration test (`tests/unit/test_runtime.py`) validates critical execution runtime behaviors:
-- Emulates broker communication using a fully-conforming `MockMT5Port` to ensure zero-network leakages.
-- Verifies system `_preflight_or_raise` validation rules, such as path checks and feature contract assertions.
-- Simulates the primary cold-start phase using synthetic OHLC streams.
-- Runs on-the-fly bootstrap training checkpoints to confirm model parameter updates and tensor shapes.
-- Tests real-time tick ingestion pipeline logic for order triggers and signal policy decisions.
+### Direct Database Audit Verification:
+Query the SQLite audit log directly to inspect signal history and trade autopsies:
+
+```bash
+# Check action distributions
+sqlite3 artifacts/audit.db "SELECT action, COUNT(*) FROM audit_signals GROUP BY action;"
+
+# Inspect full trade autopsy ledger
+sqlite3 artifacts/audit.db "SELECT ticket, symbol, net_pnl_usd, exit_mechanism, MAE_usd, MFE_usd FROM audit_ledger ORDER BY close_time DESC LIMIT 5;"
+```
 
 ---
 
-## 🚀 CI/CD Automation
+## 🤝 Call for Open-Source Collaboration & Talent Invitation
 
-This project features automated GitHub Actions workflow checks defined in `.github/workflows/check_and_build.yml` which run on every push and pull request:
-1. **Linter & Code Style Checks** — Rapid code style linting via `ruff check .`.
-2. **Static Type Safety** — Strict type signature verification via `mypy src/`.
-3. **Automated Testing** — Runs all unit and runtime integration tests over isolated clean environments with `pytest`.
+We are actively expanding **Nexus Scalp Engine** into a global open-core quantitative framework. We invite world-class engineers, quantitative researchers, and market practitioners to collaborate with us.
+
+### We are seeking contributions in the following specialized domains:
+
+1. **Quantitative ML / PyTorch Researchers:**
+   - Enhancing `scalp_net.py` with Spatio-Temporal Graph Neural Networks (GNNs) or Mamba time-series state-space architectures.
+   - Developing Transformer-based Order Flow Imbalance (OFI) alpha generators.
+
+2. **Low-Latency C++ & Rust Systems Engineers:**
+   - Replacing the Win32 IPC wrapper with a zero-copy, shared-memory C++20 / Rust native extension for sub-millisecond execution.
+   - Building direct FIX Protocol 4.4 / 5.0 adapters for LMAX, Saxo, and Interactive Brokers.
+
+3. **Institutional Forex & Crypto Traders:**
+   - Refining Smart Money Concepts (SMC) rules, ICT liquidity sweep parameters, and Order Block mitigation logic.
+   - Designing multi-asset cross-arbitrage and statistical mean-reversion policies.
+
+### How to Contribute
+- **Fork & PR:** Check out open issues or submit feature PRs following PEP 8, strict MyPy typing, and 100% pytest coverage.
+- **Join Discussion:** Open an issue with the `[Research]` or `[Proposal]` tag to discuss architectural ideas.
 
 ---
 
 ## 🛡️ License & Operational Safety Disclaimer
 
-This software is designed exclusively for quantitative research and automated simulation. Algorithmic trading carries massive capital risks. Always backtest strategies thoroughly and run them on a demo paper account before deploying live funds.
+**DISCLAIMER:** Algorithmic trading and quantitative speculation in financial markets (especially leveraged XAUUSD/Gold scalping) carry immense financial risk. This engine is provided strictly for educational, academic research, and simulation purposes. Always perform rigorous backtesting and forward paper-trading before committing capital.
 
-*Proprietary License — All Rights Reserved.*
+*Proprietary License — All Rights Reserved. Designed for Quantitative Excellence.*
+```
