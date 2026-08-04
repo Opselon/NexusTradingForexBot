@@ -6,6 +6,7 @@ Defines abstract contracts that all execution adapters must strictly implement.
 
 from abc import ABC, abstractmethod
 
+from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
     Position,
@@ -81,3 +82,19 @@ class IMT5Port(ABC):
     def get_closed_deals_history(self, symbol: str, hours_back: int = 24) -> list[dict]:
         """Retrieves closed deals history for a symbol."""
         return []
+
+    def execute_market_order(self, symbol: str, order_type: OrderType, volume: float, price: float, stop_loss: float, take_profit: float) -> int:
+        """Executes a market order and returns the ticket."""
+        return 0
+
+    def place_pending_order(self, symbol: str, order_type: OrderType, volume: float, price: float, stop_loss: float, take_profit: float) -> int:
+        """Places a pending order and returns the ticket."""
+        return 0
+
+    def modify_order(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
+        """Modifies an order's SL and TP."""
+        return False
+
+    def cancel_pending_order(self, ticket: int) -> bool:
+        """Cancels a pending order."""
+        return False

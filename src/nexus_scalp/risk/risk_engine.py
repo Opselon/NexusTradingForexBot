@@ -294,11 +294,42 @@ class RiskEngine:
             comment="NSE_HFT_SIZED",
         )
 
+    def calculate_volume(
+        self,
+        entry: float,
+        sl: float,
+        tp: float,
+        account: AccountInfo,
+        symbol_info: SymbolInfo,
+    ) -> float:
+        """
+        Pass entry, SL, and TP prices to risk_engine.calculate_volume(...) for dynamic lot sizing based on account risk %.
+        """
+        sl_dist_price = abs(entry - sl)
+        risk_pct = self.config.risk_per_trade_pct
+
+        volume = self.calculate_position_size(
+            account=account,
+            symbol_info=symbol_info,
+            sl_distance_price=sl_dist_price,
+            risk_pct=risk_pct,
+        )
+
+        step = symbol_info.volume_step if symbol_info.volume_step > 0 else 0.01
+        steps = math.floor(volume / step)
+        final_volume = round(steps * step, 2)
+
+        # Constrain to broker rules
+        final_volume = min(final_volume, symbol_info.volume_max)
+        final_volume = max(final_volume, symbol_info.volume_min)
+
+        return final_volume
+
     def _map_action_to_order_type(self, action: ActionType) -> OrderType:
         """Safely maps the domain ActionType to MT5 Execution OrderType."""
-        if action == ActionType.BUY_MARKET:
+        if action in (ActionType.BUY, ActionType.BUY_MARKET):
             return OrderType.BUY
-        elif action == ActionType.SELL_MARKET:
+        elif action in (ActionType.SELL, ActionType.SELL_MARKET):
             return OrderType.SELL
         elif action == ActionType.BUY_LIMIT:
             return OrderType.BUY_LIMIT

@@ -32,6 +32,8 @@ class ActionType(str, Enum):
     """
     WAIT = "WAIT"
     NO_TRADE = "NO_TRADE"
+    BUY = "BUY"
+    SELL = "SELL"
     BUY_MARKET = "BUY_MARKET"
     SELL_MARKET = "SELL_MARKET"
     # [EXPANDED] Added Limit Order actions for Smart Order Routing and Patience strategies
@@ -39,6 +41,10 @@ class ActionType(str, Enum):
     SELL_LIMIT = "SELL_LIMIT"
     BUY_STOP = "BUY_STOP"
     SELL_STOP = "SELL_STOP"
+    CLOSE_POSITION = "CLOSE_POSITION"
+    PARTIAL_CLOSE = "PARTIAL_CLOSE"
+    MODIFY_SL_TP = "MODIFY_SL_TP"
+    CANCEL_ORDER = "CANCEL_ORDER"
 
 
 class OrderType(str, Enum):

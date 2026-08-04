@@ -405,6 +405,81 @@ class DirectMT5Adapter(IMT5Port):
         )
         return True
 
+    def execute_market_order(self, symbol: str, order_type: OrderType, volume: float, price: float, stop_loss: float, take_profit: float) -> int:
+        self._assert_connected()
+        if mt5 is None:
+            return 0
+
+        mt5_order_type = mt5.ORDER_TYPE_BUY if order_type == OrderType.BUY else mt5.ORDER_TYPE_SELL
+        filling_mode = self._resolve_filling_mode(symbol)
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": volume,
+            "type": mt5_order_type,
+            "price": price,
+            "sl": stop_loss,
+            "tp": take_profit,
+            "magic": 888101,
+            "comment": "NSE_MARKET",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": filling_mode,
+        }
+
+        result = mt5.order_send(request)
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            retcode = result.retcode if result else mt5.last_error()
+            logger.error("execute_market_order failed. Retcode: %s", retcode)
+            return 0
+
+        return result.order
+
+    def place_pending_order(self, symbol: str, order_type: OrderType, volume: float, price: float, stop_loss: float, take_profit: float) -> int:
+        self._assert_connected()
+        if mt5 is None:
+            return 0
+
+        self.cancel_all_pending_orders(symbol)
+
+        if order_type == OrderType.BUY_LIMIT:
+            mt5_order_type = mt5.ORDER_TYPE_BUY_LIMIT
+        elif order_type == OrderType.SELL_LIMIT:
+            mt5_order_type = mt5.ORDER_TYPE_SELL_LIMIT
+        elif order_type == OrderType.BUY_STOP:
+            mt5_order_type = mt5.ORDER_TYPE_BUY_STOP
+        elif order_type == OrderType.SELL_STOP:
+            mt5_order_type = mt5.ORDER_TYPE_SELL_STOP
+        else:
+            raise ValueError(f"Invalid pending order type: {order_type}")
+
+        filling_mode = self._resolve_filling_mode(symbol)
+
+        request = {
+            "action": mt5.TRADE_ACTION_PENDING,
+            "symbol": symbol,
+            "volume": volume,
+            "type": mt5_order_type,
+            "price": price,
+            "sl": stop_loss,
+            "tp": take_profit,
+            "magic": 888101,
+            "comment": "NSE_PENDING",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": filling_mode,
+        }
+
+        result = mt5.order_send(request)
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            retcode = result.retcode if result else mt5.last_error()
+            logger.error("place_pending_order failed. Retcode: %s", retcode)
+            return 0
+
+        return result.order
+
+    def modify_order(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
+        return self.modify_position(ticket=ticket, stop_loss=stop_loss, take_profit=take_profit)
+
     def modify_position(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
         self._assert_connected()
         assert mt5 is not None

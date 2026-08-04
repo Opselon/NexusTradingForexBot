@@ -36,7 +36,7 @@ from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.domain.models import AccountInfo, SymbolInfo, TickData, TradeOrder, TradeProposal, Position
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
-from nexus_scalp.features.scalp_features import ScalpFeatureEngine
+from nexus_scalp.features.scalp_features import ScalpFeatureEngine, FeatureVector
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.models.scalp_net import ScalpNet
@@ -186,7 +186,7 @@ class LiveEngine:
 
         # Web / UI Synchronization states to act as single source of truth
         self._last_tick: TickData | None = None
-        self._last_fv: ScalpFeatureEngine | None = None
+        self._last_fv: FeatureVector | None = None
         self._last_regime_state: MarketRegimeState | None = None
         self._last_probs: torch.Tensor | None = None
         self._last_proposal: TradeProposal | None = None
@@ -695,45 +695,67 @@ class LiveEngine:
                     })
                 self.server_state.update_live_visuals(bars_list, real_overlays)
 
-            # Risk + order build
-            order: TradeOrder | None = None
-            if proposal.action in (
-                ActionType.BUY_MARKET, ActionType.SELL_MARKET,
-                ActionType.BUY_LIMIT, ActionType.SELL_LIMIT,
-                ActionType.BUY_STOP, ActionType.SELL_STOP
-            ) and self._symbol_info:
-                order = self.risk_engine.evaluate_proposal(
-                    proposal=proposal,
-                    account=account,
-                    symbol_info=self._symbol_info,
-                    active_positions=active_positions,
-                    current_tick=tick,
-                    regime_state=regime_state,
-                )
-
-            if order is not None:
-                logger.info("DISPATCH ORDER", action=order.order_type.value, volume=order.volume, price=order.price)
-                success = self.order_manager.execute_order(order)
-                if success:
-                    risk_usd = account.equity * (self.config.risk.risk_per_trade_pct / 100.0)
-                    try:
-                        self.notifier.notify_order_opened(
-                            order=order,
-                            risk_usd=risk_usd,
-                            callback=lambda msg_id: (
-                                self.order_manager.register_order_message(order.order_id, msg_id)
-                                if msg_id else None
-                            ),
+            policy_decision = proposal
+            if policy_decision.action != ActionType.NO_TRADE:
+                # FOR NEW ENTRY SIGNALS
+                if policy_decision.action in (
+                    ActionType.BUY, ActionType.SELL,
+                    ActionType.BUY_MARKET, ActionType.SELL_MARKET,
+                    ActionType.BUY_LIMIT, ActionType.SELL_LIMIT,
+                    ActionType.BUY_STOP, ActionType.SELL_STOP
+                ):
+                    if self._symbol_info:
+                        dynamic_volume = self.risk_engine.calculate_volume(
+                            entry=policy_decision.proposed_entry,
+                            sl=policy_decision.stop_loss,
+                            tp=policy_decision.take_profit,
+                            account=account,
+                            symbol_info=self._symbol_info,
                         )
-                    except Exception:
-                        pass
-                else:
-                    # Dispatch failed! Clear the price lock immediately so bot is not locked out of trading!
-                    self.signal_policy.last_order_price = None
-                    self.signal_policy.last_order_time = None
-                    self.signal_policy._last_active_direction = None
-                    self.signal_policy._last_active_direction_time = None
-                    self.signal_policy._last_executed_price = 0.0
+                        success = self.order_manager.dispatch_order(policy_decision, dynamic_volume)
+                        logger.info(f"[info] DISPATCH ORDER action={policy_decision.action.value} price={policy_decision.proposed_entry} volume={dynamic_volume}")
+
+                        if success:
+                            risk_usd = account.equity * (self.config.risk.risk_per_trade_pct / 100.0)
+                            try:
+                                mapped_order_type = self.risk_engine._map_action_to_order_type(policy_decision.action)
+                                order_obj = TradeOrder(
+                                    order_id=policy_decision.request_id,
+                                    symbol=policy_decision.symbol,
+                                    order_type=mapped_order_type,
+                                    volume=dynamic_volume,
+                                    price=policy_decision.proposed_entry,
+                                    stop_loss=policy_decision.stop_loss,
+                                    take_profit=policy_decision.take_profit,
+                                    magic_number=888101,
+                                    comment="NSE_HFT_SIZED",
+                                )
+                                self.notifier.notify_order_opened(
+                                    order=order_obj,
+                                    risk_usd=risk_usd,
+                                    callback=lambda msg_id: (
+                                        self.order_manager.register_order_message(order_obj.order_id, msg_id)
+                                        if msg_id else None
+                                    ),
+                                )
+                            except Exception:
+                                pass
+                        else:
+                            # Dispatch failed! Clear the price lock immediately so bot is not locked out of trading!
+                            self.signal_policy.last_order_price = None
+                            self.signal_policy.last_order_time = None
+                            self.signal_policy._last_active_direction = None
+                            self.signal_policy._last_active_direction_time = None
+                            self.signal_policy._last_executed_price = 0.0
+
+                # FOR POSITION LIFECYCLE ACTIONS
+                elif policy_decision.action in (
+                    ActionType.CLOSE_POSITION, ActionType.PARTIAL_CLOSE,
+                    ActionType.MODIFY_SL_TP, ActionType.CANCEL_ORDER
+                ):
+                    self.order_manager.execute_lifecycle_action(policy_decision)
+                    ticket = getattr(policy_decision, "ticket", 0) or 0
+                    logger.info(f"[info] DISPATCH LIFECYCLE ACTION action={policy_decision.action.value} ticket={ticket}")
 
             # Evaluate intelligent hedging / counter-position policy
             self._evaluate_hedging_policy(
@@ -758,7 +780,7 @@ class LiveEngine:
         tick: TickData,
         probs: torch.Tensor,
         regime_state: Optional[MarketRegimeState],
-        fv: ScalpFeatureEngine,
+        fv: FeatureVector,
         account: AccountInfo,
     ) -> None:
         """
