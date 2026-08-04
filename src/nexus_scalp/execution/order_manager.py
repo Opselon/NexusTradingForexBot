@@ -158,6 +158,10 @@ class OrderLifecycleManager:
         self.algo_config = algo_config or AlgoConfig()
         self._processed_orders: dict[str, bool] = {}
 
+        import threading
+        self._live_tickets_lock = threading.Lock()
+        self._live_tickets_cache: dict[int, dict[str, Any]] = {}
+
         self.be_trigger = be_trigger_usd
         self.be_lock = be_lock_usd
         self.trailing_distance = trailing_distance_usd
@@ -219,6 +223,11 @@ class OrderLifecycleManager:
     def register_order_message(self, order_id: str, message_id: int) -> None:
         """Temporarily registers message_id for a submitted order_id."""
         self._order_id_to_message_id[order_id] = message_id
+
+    def get_active_live_tickets(self) -> list[dict[str, Any]]:
+        """Returns a list of currently live active positions and pending orders matching symbol and magic number."""
+        with self._live_tickets_lock:
+            return list(self._live_tickets_cache.values())
 
     def execute_order(self, order: TradeOrder) -> bool:
         """Submits trade deal to broker adapter with duplicate submission prevention."""
@@ -872,6 +881,40 @@ class OrderLifecycleManager:
         self.manage_pending_orders(symbol=symbol, current_tick=current_tick, symbol_info=symbol_info, atr=atr)
 
         positions = self.adapter.get_positions(symbol=symbol)
+
+        # Re-build live tickets cache thread-safely
+        with self._live_tickets_lock:
+            new_cache = {}
+            if positions:
+                for pos in positions:
+                    new_cache[pos.ticket] = {
+                        "ticket": pos.ticket,
+                        "symbol": pos.symbol,
+                        "price": pos.price_open,
+                        "magic": getattr(pos, "magic", 888101),
+                        "type": "POSITION",
+                    }
+
+            try:
+                get_pending_fn = getattr(self.adapter, "get_pending_orders", None)
+                if get_pending_fn:
+                    pending_orders = get_pending_fn(symbol=symbol)
+                    if pending_orders:
+                        for pending in pending_orders:
+                            ticket = pending.get("ticket")
+                            if ticket:
+                                new_cache[ticket] = {
+                                    "ticket": ticket,
+                                    "symbol": pending.get("symbol"),
+                                    "price": pending.get("price_open"),
+                                    "magic": pending.get("magic"),
+                                    "type": "PENDING",
+                                }
+            except Exception as e:
+                logger.error("Failed to query pending orders for cache", error=e)
+
+            self._live_tickets_cache = new_cache
+
         now = current_tick.timestamp
 
         active_tickets = {pos.ticket for pos in positions} if positions else set()
@@ -1326,3 +1369,5 @@ class OrderLifecycleManager:
             self._entry_directions
         ):
             tracker.pop(ticket, None)
+        with self._live_tickets_lock:
+            self._live_tickets_cache.pop(ticket, None)

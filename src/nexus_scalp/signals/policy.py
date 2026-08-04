@@ -77,6 +77,8 @@ class SignalPolicy:
         self._last_active_direction: ActionType | None = None
         self._last_active_direction_time: datetime | None = None
         self._last_executed_price: float = 0.0
+        self.last_order_price = None
+        self.last_order_time = None
 
     def evaluate_probabilities(
         self,
@@ -86,6 +88,7 @@ class SignalPolicy:
         regime_state: MarketRegimeState | None = None,
         survival_mode: bool = False,
         force_log: bool = False,
+        order_manager: Any = None,
     ) -> TradeProposal:
         """
         Evaluates conditions at maximum live speed (50ms hot path) and outputs a sized TradeProposal.
@@ -226,8 +229,16 @@ class SignalPolicy:
         htf_buy_aligned = (h4_trend >= 0 or m30_str >= 0 or m15_conf >= 0 or h1_mom >= -0.1) and (trend_strength >= -0.2)
         htf_sell_aligned = (h4_trend <= 0 or m30_str <= 0 or m15_conf <= 0 or h1_mom <= 0.1) and (trend_strength <= 0.2)
 
+        # Determine if Higher Timeframe Bearish Momentum is strong
+        is_strong_bearish_momentum = (h1_mom <= -2.0 and h4_trend == -1.0)
+
+        required_support_margin = 0.25
+        if is_strong_bearish_momentum:
+            required_support_margin = 0.10  # Reduced by 60% (0.25 * 0.40)
+
         sr_buy_allowed = resistance_zone_dist >= 0.25
-        sr_sell_allowed = support_zone_dist >= 0.25
+        # If HTF bearish momentum is strong, reduce required margin or allow breakout / pullback sells
+        sr_sell_allowed = (support_zone_dist >= required_support_margin) or is_strong_bearish_momentum
 
         # ----------------------------------------------------------------------
         # 3. Decision Engine (Fast Liquidity Reversal & Smart Order Routing)
@@ -312,19 +323,60 @@ class SignalPolicy:
                 proposed_action = ActionType.NO_TRADE
                 reason_code = "OB_BELOW_50_PERCENT_EQUILIBRIUM"
 
+        # Query live active positions and pending orders
+        has_any_live_order = False
+        live_tickets = []
+        if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
+            live_tickets = order_manager.get_active_live_tickets()
+            for ticket_info in live_tickets:
+                t_symbol = ticket_info.get("symbol")
+                t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
+                if t_symbol == "XAUUSD" and t_magic == 888101:
+                    has_any_live_order = True
+                    break
+
+        # If no live order exists on MT5 terminal chart, instantly release the price lock
+        if not has_any_live_order:
+            self.last_order_price = None
+            self.last_order_time = None
+            self._last_active_direction = None
+            self._last_active_direction_time = None
+            self._last_executed_price = 0.0
+
         # ----------------------------------------------------------------------
         # PROPOSAL GATE 5: Same-Level Duplicate Re-Entry Lockout
         # ----------------------------------------------------------------------
-        if (
-            proposed_action != ActionType.NO_TRADE 
-            and self._last_active_direction == proposed_action 
-            and self._last_executed_price > 0.0
-            and not is_fast_reversal
-        ):
-            price_dist_from_last = abs(target_entry_price - self._last_executed_price)
-            if price_dist_from_last < (atr * 0.50):
+        if proposed_action != ActionType.NO_TRADE and not is_fast_reversal:
+            reentry_blocked = False
+            reentry_blocked_reason = ""
+
+            if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
+                for ticket_info in live_tickets:
+                    t_symbol = ticket_info.get("symbol")
+                    t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
+                    t_price = ticket_info.get("price")
+
+                    if t_symbol == "XAUUSD" and t_magic == 888101 and t_price is not None:
+                        price_dist = abs(target_entry_price - t_price)
+                        threshold = 0.50  # minimum distance threshold is $0.50
+                        if price_dist < threshold:
+                            reentry_blocked = True
+                            reentry_blocked_reason = f"SAME_LEVEL_REENTRY_BLOCKED (${price_dist:.2f} < ${threshold:.2f})"
+                            break
+            else:
+                # Standalone unit test fallback when order_manager is not provided
+                if (
+                    self._last_active_direction == proposed_action
+                    and self._last_executed_price > 0.0
+                ):
+                    price_dist_from_last = abs(target_entry_price - self._last_executed_price)
+                    if price_dist_from_last < (atr * 0.50):
+                        reentry_blocked = True
+                        reentry_blocked_reason = f"SAME_LEVEL_REENTRY_BLOCKED (${price_dist_from_last:.2f} < ${atr * 0.50:.2f})"
+
+            if reentry_blocked:
                 proposed_action = ActionType.NO_TRADE
-                reason_code = f"SAME_LEVEL_REENTRY_BLOCKED (${price_dist_from_last:.2f} < ${atr * 0.50:.2f})"
+                reason_code = reentry_blocked_reason
 
         # Dynamic Confidence Calculation
         if proposed_action != ActionType.NO_TRADE:
@@ -379,6 +431,8 @@ class SignalPolicy:
             self._last_active_direction = proposed_action
             self._last_active_direction_time = now
             self._last_executed_price = target_entry_price
+            self.last_order_price = target_entry_price
+            self.last_order_time = now
 
         # Throttled Console Telemetry
         should_log = False

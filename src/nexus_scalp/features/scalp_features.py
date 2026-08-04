@@ -609,25 +609,13 @@ class ScalpFeatureEngine:
         dist_to_ema_21 = float((mid_price - ema_21_val) / safe_atr)
         dist_to_ema_50 = float((mid_price - ema_50_val) / safe_atr)
 
-        cross_asset_z_score = 0.0
-        if benchmark_bars is not None and current_benchmark is not None and len(benchmark_bars) >= 50:
-            bench_tail = np.array(benchmark_bars[-50:], dtype=np.float64)
-            gold_tail = closes[-50:]
-
-            cov_matrix = np.cov(bench_tail, gold_tail)
-            var_bench = cov_matrix[0, 0]
-            cov_gb = cov_matrix[0, 1]
-
-            beta = cov_gb / var_bench if var_bench > 1e-8 else 1.0
-            if math.isnan(beta) or math.isinf(beta):
-                beta = 1.0
-
-            spreads = gold_tail - (beta * bench_tail)
-            mean_spread = float(np.mean(spreads))
-            std_spread = float(np.std(spreads)) + 1e-8
-
-            current_spread = mid_price - (beta * current_benchmark)
-            cross_asset_z_score = float((current_spread - mean_spread) / std_spread)
+        # Rolling 20-bar price Z-score calculation updating on EVERY incoming tick and completed bar
+        closes_20 = closes[-19:] if len(closes) >= 19 else closes
+        window_20 = np.append(closes_20, mid_price)
+        mu_20 = float(np.mean(window_20))
+        sigma_20 = float(np.std(window_20))
+        epsilon = 1e-8
+        cross_asset_z_score = float((mid_price - mu_20) / (sigma_20 + epsilon))
 
         # 9. Group 8: True Multi-Timeframe Context Features [NEW]
         m15_bars = aggregate_bars(completed_bars, 15)
