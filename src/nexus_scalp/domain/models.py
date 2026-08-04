@@ -111,16 +111,18 @@ class TradeProposal(BaseModel):
     take_profit: float = Field(..., gt=0.0, description="Calculated take profit price target")
     risk_reward_ratio: float = Field(..., gt=0.0, description="Estimated risk to reward ratio")
     reason_code: str = Field(default="MODEL_SIGNAL", description="Explanatory flag for audit logs")
+    ticket: int = Field(default=0, description="Optional broker position ticket")
+    volume: float | None = Field(default=None, description="Optional custom volume (e.g. for partial close)")
 
     @model_validator(mode="after")
     def validate_action_price_invariants(self) -> "TradeProposal":
         """Ensures logical price invariants hold based on proposed trade direction."""
-        if self.action == ActionType.BUY_MARKET:
+        if self.action in (ActionType.BUY, ActionType.BUY_MARKET, ActionType.BUY_LIMIT, ActionType.BUY_STOP):
             if self.stop_loss >= self.proposed_entry:
                 raise ValueError("Buy proposed stop loss must be strictly below entry price")
             if self.take_profit <= self.proposed_entry:
                 raise ValueError("Buy proposed take profit must be strictly above entry price")
-        elif self.action == ActionType.SELL_MARKET:
+        elif self.action in (ActionType.SELL, ActionType.SELL_MARKET, ActionType.SELL_LIMIT, ActionType.SELL_STOP):
             if self.stop_loss <= self.proposed_entry:
                 raise ValueError("Sell proposed stop loss must be strictly above entry price")
             if self.take_profit >= self.proposed_entry:

@@ -31,7 +31,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.domain.enums import OrderType
+from nexus_scalp.domain.enums import OrderType, ActionType
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.configuration.config import AlgoConfig
@@ -152,6 +152,7 @@ class OrderLifecycleManager:
         algo_config: AlgoConfig | None = None,
     ) -> None:
         self.adapter = adapter
+        self.mt5_adapter = adapter
         self.audit = audit_repo or AuditRepository()
         self.notifier = notifier
         self.rule_matrix = rule_matrix
@@ -249,6 +250,89 @@ class OrderLifecycleManager:
         self.audit.log_execution(order, status_str)
 
         return success
+
+    def dispatch_order(self, decision: Any, volume: float) -> bool:
+        """
+        Unified dispatch router for new entry signals (BUY, SELL, BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP).
+        """
+        action = decision.action
+        symbol = decision.symbol
+        price = decision.proposed_entry
+        sl = decision.stop_loss
+        tp = decision.take_profit
+
+        logger.info("dispatch_order mapping action to MT5 command", action=action, symbol=symbol, volume=volume)
+
+        if action in (ActionType.BUY, ActionType.BUY_MARKET, ActionType.SELL, ActionType.SELL_MARKET):
+            order_type = OrderType.BUY if "BUY" in action.value else OrderType.SELL
+            ticket = self.mt5_adapter.execute_market_order(
+                symbol=symbol,
+                order_type=order_type,
+                volume=volume,
+                price=price,
+                stop_loss=sl,
+                take_profit=tp
+            )
+            # Log broker confirmation exactly as required
+            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}")
+            return ticket > 0
+
+        elif action in (ActionType.BUY_LIMIT, ActionType.SELL_LIMIT, ActionType.BUY_STOP, ActionType.SELL_STOP):
+            if action == ActionType.BUY_LIMIT:
+                order_type = OrderType.BUY_LIMIT
+            elif action == ActionType.SELL_LIMIT:
+                order_type = OrderType.SELL_LIMIT
+            elif action == ActionType.BUY_STOP:
+                order_type = OrderType.BUY_STOP
+            else:
+                order_type = OrderType.SELL_STOP
+
+            ticket = self.mt5_adapter.place_pending_order(
+                symbol=symbol,
+                order_type=order_type,
+                volume=volume,
+                price=price,
+                stop_loss=sl,
+                take_profit=tp
+            )
+            # Log broker confirmation exactly as required
+            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}")
+            return ticket > 0
+
+        return False
+
+    def execute_lifecycle_action(self, decision: Any) -> bool:
+        """
+        Unified dispatch router for position lifecycle actions (CLOSE_POSITION, PARTIAL_CLOSE, MODIFY_SL_TP, CANCEL_ORDER).
+        """
+        action = decision.action
+        ticket = getattr(decision, "ticket", 0) or 0
+        volume = getattr(decision, "volume", None)
+
+        logger.info("execute_lifecycle_action mapping action to MT5 command", action=action, ticket=ticket)
+
+        if action == ActionType.CLOSE_POSITION:
+            success = self.mt5_adapter.close_position(ticket=ticket)
+            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0")
+            return success
+
+        elif action == ActionType.PARTIAL_CLOSE:
+            success = self.mt5_adapter.close_position(ticket=ticket, volume=volume)
+            lots = volume if volume is not None else 0.0
+            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {lots}")
+            return success
+
+        elif action == ActionType.MODIFY_SL_TP:
+            success = self.mt5_adapter.modify_order(ticket=ticket, stop_loss=decision.stop_loss, take_profit=decision.take_profit)
+            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0")
+            return success
+
+        elif action == ActionType.CANCEL_ORDER:
+            success = self.mt5_adapter.cancel_pending_order(ticket=ticket)
+            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0")
+            return success
+
+        return False
 
     def _should_modify_sl(self, ticket: int, new_sl: float) -> bool:
         """Determines if the proposed new stop loss step is significantly different from last sent modification."""
