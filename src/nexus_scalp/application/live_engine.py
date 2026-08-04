@@ -102,6 +102,7 @@ class LiveEngine:
         self.force_fresh_model = bool(force_fresh_model)
 
         self._running: bool = False
+        self.server_state: Any = None
 
         # Thread-safe model bundle swaps (model+scaler together)
         self._bundle_lock = threading.RLock()
@@ -539,6 +540,28 @@ class LiveEngine:
 
         logger.info("Warmup complete", buffer_size=len(self._rolling_feature_records))
 
+        # Immediately extract and update real SMC overlays to prevent cold-start blank canvas in MT5 mode
+        completed_bars = self.aggregator.get_completed_bars()
+        if completed_bars and hasattr(self, "server_state") and self.server_state is not None:
+            raw_atr = self._rolling_feature_records[-1]["atr_m1"] if self._rolling_feature_records else 1.5
+            real_overlays = self.signal_policy.extract_live_chart_overlays(
+                completed_bars=completed_bars,
+                atr_val=raw_atr
+            )
+            bars_list = []
+            for b in completed_bars[-250:]:
+                bars_list.append({
+                    "time": b.timestamp.isoformat() if hasattr(b.timestamp, "isoformat") else str(b.timestamp),
+                    "open": b.open,
+                    "high": b.high,
+                    "low": b.low,
+                    "close": b.close,
+                    "volume": b.tick_volume,
+                    "is_complete": True
+                })
+            self.server_state.update_live_visuals(bars_list, real_overlays)
+            logger.info("Cold-start SMC visual overlays successfully bridged to server state!")
+
     async def _bootstrap_train_if_ready(self) -> None:
         if len(self._rolling_feature_records) < 300:
             return
@@ -640,6 +663,36 @@ class LiveEngine:
             self._last_regime_state = regime_state
             self._last_probs = probs
             self._last_proposal = proposal
+
+            # Extract and update real SMC overlays for the live chart canvas
+            real_overlays = self.signal_policy.extract_live_chart_overlays(
+                completed_bars=completed_bars,
+                atr_val=fv.atr_m1
+            )
+            if hasattr(self, "server_state") and self.server_state is not None:
+                bars_list = []
+                for b in completed_bars[-250:]:
+                    bars_list.append({
+                        "time": b.timestamp.isoformat(),
+                        "open": b.open,
+                        "high": b.high,
+                        "low": b.low,
+                        "close": b.close,
+                        "volume": b.tick_volume,
+                        "is_complete": True
+                    })
+                forming_bar = self.aggregator.get_current_forming_bar()
+                if forming_bar:
+                    bars_list.append({
+                        "time": forming_bar.timestamp.isoformat(),
+                        "open": forming_bar.open,
+                        "high": forming_bar.high,
+                        "low": forming_bar.low,
+                        "close": forming_bar.close,
+                        "volume": forming_bar.tick_volume,
+                        "is_complete": False
+                    })
+                self.server_state.update_live_visuals(bars_list, real_overlays)
 
             # Risk + order build
             order: TradeOrder | None = None

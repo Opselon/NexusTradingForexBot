@@ -373,10 +373,9 @@ class WalkForwardTrainer:
             lr=learning_rate,
             weight_decay=1e-4,
         )
-        criterion = nn.CrossEntropyLoss(weight=weights_tensor)
 
         for ep in range(epochs):
-            avg_loss = self._train_one_epoch(working_model, loader, optimizer, criterion)
+            avg_loss = self._train_one_epoch_smc(working_model, loader, optimizer, weights_tensor, feature_cols)
 
         working_model.eval()
 
@@ -522,6 +521,63 @@ class WalkForwardTrainer:
             logits = model(batch_x, return_logits=True)
             loss = criterion(logits, batch_y)
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            batch_rows = len(batch_y)
+            total_loss += float(loss.item()) * batch_rows
+            total_rows += batch_rows
+
+        return total_loss / max(1, total_rows)
+
+    def _train_one_epoch_smc(
+        self,
+        model: ScalpNet,
+        loader: DataLoader,
+        optimizer: torch.optim.Optimizer,
+        weights_tensor: torch.Tensor,
+        feature_cols: list[str],
+    ) -> float:
+        model.train()
+        total_loss = 0.0
+        total_rows = 0
+
+        # Dynamically locate the 4 new SMC features to prevent index mismatch issues
+        idx_bos = feature_cols.index("feat_ob_valid_bos") if "feat_ob_valid_bos" in feature_cols else 46
+        idx_equil = feature_cols.index("feat_ob_equilibrium_ratio") if "feat_ob_equilibrium_ratio" in feature_cols else 47
+
+        # Use reduction='none' so we can apply per-sample scaling
+        criterion_none = nn.CrossEntropyLoss(weight=weights_tensor, reduction='none')
+
+        for batch_x, batch_y in loader:
+            optimizer.zero_grad(set_to_none=True)
+            logits = model(batch_x, return_logits=True)
+
+            # Base loss per sample
+            raw_loss = criterion_none(logits, batch_y)
+
+            # Extract SMC properties for multiplier calculation
+            if batch_x.dim() == 3:
+                x_last = batch_x[:, -1, :]
+            else:
+                x_last = batch_x
+
+            bos = x_last[:, idx_bos]
+            equil = x_last[:, idx_equil]
+
+            is_bos = bos > 0.5
+            is_buy_eq = (batch_y == 1) & (equil <= 0.5)
+            is_sell_eq = (batch_y == 2) & (equil >= 0.5)
+
+            # Scale loss higher when valid BOS and inside proper premium/discount zone
+            scale_mask = is_bos & (is_buy_eq | is_sell_eq)
+
+            multipliers = torch.ones_like(batch_y, dtype=torch.float32)
+            multipliers[scale_mask] = 3.0
+
+            loss = (raw_loss * multipliers).mean()
+            loss.backward()
+
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 

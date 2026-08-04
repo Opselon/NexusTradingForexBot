@@ -60,10 +60,10 @@ const FEATURE_NAMES_JS = [
     "htf_m15_confirmation",         // feat_43
     "support_zone_dist",            // feat_44
     "resistance_zone_dist",         // feat_45
-    "trend_strength",               // feat_46
-    "consolidation_ratio",          // feat_47
-    "htf_h1_atr_ratio",             // feat_48
-    "htf_h4_atr_ratio",             // feat_49
+    "feat_ob_valid_bos",            // feat_46
+    "feat_ob_equilibrium_ratio",    // feat_47
+    "feat_ob_liquidity_swept",      // feat_48
+    "feat_ob_fib_50_60_alignment",  // feat_49
 ];
 
 // Chart state variables for interactive Zoom, Pan, Drag, and Tooltip
@@ -515,11 +515,14 @@ function drawChart() {
             const yLow = h - 20 - ((rect.price_low - minPrice) / priceRangePadded) * (h - 40);
             const rectHeight = Math.max(1, yLow - yHigh);
 
-            let color = 'rgba(0, 230, 118, 0.25)'; // Green Box for Bullish OB/FVG
+            let color = 'rgba(0, 230, 118, 0.25)'; // Green Box for Bullish FVG
             let label = rect.type;
 
-            if (rect.type === 'BEARISH_ORDER_BLOCK' || rect.type === 'BEARISH_FVG') {
-                color = 'rgba(255, 23, 68, 0.25)'; // Red Box for Bearish OB/FVG
+            if (rect.type === 'BULLISH_ORDER_BLOCK' || rect.type === 'BEARISH_ORDER_BLOCK') {
+                color = 'rgba(255, 255, 255, 0.08)'; // white/transparent box for valid OBs
+                label = `ob (${(rect.ai_confidence * 100).toFixed(0)}%)`;
+            } else if (rect.type === 'BEARISH_FVG') {
+                color = 'rgba(255, 23, 68, 0.25)'; // Red Box for Bearish FVG
             } else if (rect.type === 'STOP_HUNT_ZONE') {
                 color = 'rgba(255, 215, 0, 0.35)'; // Gold Box for Swept Liquidity Pools
             }
@@ -537,13 +540,82 @@ function drawChart() {
             ctx.fillStyle = color;
             ctx.fillRect(xStart, yHigh, rectWidth, rectHeight);
 
+            if (rect.type === 'BULLISH_ORDER_BLOCK' || rect.type === 'BEARISH_ORDER_BLOCK') {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(xStart, yHigh, rectWidth, rectHeight);
+            }
+
             // Display zone type & AI Confidence % inside the box
             ctx.fillStyle = 'rgba(226, 232, 240, 0.9)';
             ctx.font = 'bold 9px sans-serif';
             ctx.textAlign = 'left';
             const textY = Math.min(Math.max(yHigh + 12, 12), h - 22);
-            ctx.fillText(`${label} (AI Zone Confidence: ${(rect.ai_confidence * 100).toFixed(0)}%)`, xStart + 8, textY);
+            ctx.fillText(label, xStart + 8, textY);
         });
+    }
+
+    // Render BOS Lines (Break of Structure)
+    if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.bos_lines && visualOverlays.bos_lines.length > 0) {
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(230, 81, 0, 0.85)'; // Orange/Gold
+        ctx.setLineDash([4, 2]);
+        visualOverlays.bos_lines.forEach(line => {
+            const y = h - 20 - ((line.price - minPrice) / priceRangePadded) * (h - 40);
+            if (y >= 0 && y < h - 20) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w - 60, y);
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(230, 81, 0, 0.9)';
+                ctx.font = 'bold 9px sans-serif';
+                ctx.fillText("BOS", 25, y - 4);
+            }
+        });
+        ctx.setLineDash([]);
+    }
+
+    // Render 50% Midline through middle of the impulse leg
+    if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.midlines && visualOverlays.midlines.length > 0) {
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.8)'; // Silver
+        ctx.setLineDash([6, 4]);
+        visualOverlays.midlines.forEach(line => {
+            const y = h - 20 - ((line.price - minPrice) / priceRangePadded) * (h - 40);
+            if (y >= 0 && y < h - 20) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w - 60, y);
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(148, 163, 184, 0.9)';
+                ctx.font = 'bold 9px sans-serif';
+                ctx.fillText("50%", w - 90, y - 4);
+            }
+        });
+        ctx.setLineDash([]);
+    }
+
+    // Render LIQ Markers at liquidity sweep points
+    if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.liq_markers && visualOverlays.liq_markers.length > 0) {
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        visualOverlays.liq_markers.forEach(liq => {
+            const y = h - 20 - ((liq.price - minPrice) / priceRangePadded) * (h - 40);
+            let x = w / 2;
+            if (liq.time) {
+                const candleIdx = candleData.findIndex(c => c.time === liq.time);
+                if (candleIdx !== -1) {
+                    x = chartPanX + candleIdx * (candleWidth + candleGap) + candleWidth / 2;
+                }
+            }
+            if (y >= 0 && y < h - 20) {
+                ctx.fillStyle = '#ffeb3b'; // Vivid Yellow
+                ctx.fillText("liq", x, liq.type === 'LIQ_HIGH' ? y - 10 : y + 14);
+            }
+        });
+        ctx.textAlign = 'left';
     }
 
     // Draw candles within visible bounds
@@ -1082,9 +1154,15 @@ async function loadConfiguration() {
         document.getElementById('cfg-model-threshold').value = selectedConfig.model.confidence_threshold;
         document.getElementById('cfg-model-path').value = selectedConfig.model.model_artifact_path;
 
-        document.getElementById('cfg-telegram-enabled').checked = selectedConfig.telegram.enabled;
-        document.getElementById('cfg-telegram-token').value = selectedConfig.telegram.bot_token;
-        document.getElementById('cfg-telegram-admin').value = selectedConfig.telegram.admin_id;
+        if (selectedConfig.telegram) {
+            document.getElementById('cfg-telegram-enabled').checked = selectedConfig.telegram.enabled || false;
+            document.getElementById('cfg-telegram-token').value = selectedConfig.telegram.bot_token || '';
+            document.getElementById('cfg-telegram-admin').value = selectedConfig.telegram.admin_id || '';
+        } else {
+            document.getElementById('cfg-telegram-enabled').checked = false;
+            document.getElementById('cfg-telegram-token').value = '';
+            document.getElementById('cfg-telegram-admin').value = '';
+        }
 
     } catch (err) {
         console.error("Failed to load configurations", err);

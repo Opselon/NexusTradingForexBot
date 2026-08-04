@@ -306,6 +306,7 @@ def main() -> None:
         engine._preflight_or_raise()
 
         app = create_app(engine_ref=engine)
+        engine.server_state = app.state.server_state
         print_startup_banner(
             port=web_port,
             mode=config.execution.mode.value,

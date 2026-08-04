@@ -17,6 +17,7 @@ Enterprise Upgrades & Calibrations Incorporated:
 import math
 import uuid
 from datetime import datetime
+from typing import Any
 
 import torch
 
@@ -304,6 +305,14 @@ class SignalPolicy:
                 reason_code = "RANGE_FILTERED_IMPULSIVE_SELL_PREVENTED"
 
         # ----------------------------------------------------------------------
+        # PROPOSAL GATE 6: 50% Impulse Equilibrium hard gating for Short trades
+        # ----------------------------------------------------------------------
+        if proposed_action in (ActionType.SELL_MARKET, ActionType.SELL_LIMIT, ActionType.SELL_STOP):
+            if feature_vector.order_block_type == -1 and feature_vector.feat_ob_equilibrium_ratio < 0.50:
+                proposed_action = ActionType.NO_TRADE
+                reason_code = "OB_BELOW_50_PERCENT_EQUILIBRIUM"
+
+        # ----------------------------------------------------------------------
         # PROPOSAL GATE 5: Same-Level Duplicate Re-Entry Lockout
         # ----------------------------------------------------------------------
         if (
@@ -465,6 +474,135 @@ class SignalPolicy:
             risk_reward_ratio=1.0,
             reason_code=reason,
         )
+
+    def extract_live_chart_overlays(self, completed_bars: list[Any], atr_val: float) -> dict[str, Any]:
+        """
+        Causally extracts real SMC zones and levels (BOS, OB, 50% Midline, LIQ Markers)
+        from completed MT5 bars.
+        """
+        if not completed_bars or len(completed_bars) < 20:
+            return {"rectangles": [], "bos_lines": [], "midlines": [], "liq_markers": []}
+
+        import numpy as np
+        rectangles = []
+        bos_lines = []
+        midlines = []
+        liq_markers = []
+
+        closes = [b.close for b in completed_bars]
+        highs = [b.high for b in completed_bars]
+        lows = [b.low for b in completed_bars]
+        opens = [b.open for b in completed_bars]
+
+        # 1. Swing Highs & Swing Lows
+        swing_highs = []
+        swing_lows = []
+        for i in range(5, len(completed_bars) - 5):
+            window_highs = [b.high for b in completed_bars[i-5 : i+6]]
+            window_lows = [b.low for b in completed_bars[i-5 : i+6]]
+            if completed_bars[i].high == max(window_highs):
+                swing_highs.append((i, completed_bars[i].high))
+            if completed_bars[i].low == min(window_lows):
+                swing_lows.append((i, completed_bars[i].low))
+
+        if not swing_highs:
+            swing_highs = [(len(completed_bars) - 10, float(np.max(highs)))]
+        if not swing_lows:
+            swing_lows = [(len(completed_bars) - 10, float(np.min(lows)))]
+
+        # 2. Extract BOS (Break of Structure) Lines
+        for i in range(1, len(completed_bars)):
+            prev_shs = [val for idx, val in swing_highs if idx < i]
+            prev_sls = [val for idx, val in swing_lows if idx < i]
+
+            if prev_shs and completed_bars[i].close > prev_shs[-1]:
+                bos_lines.append({
+                    "id": f"bos_sh_{i}",
+                    "price": float(prev_shs[-1]),
+                    "type": "BOS_HIGH",
+                    "time": completed_bars[i].timestamp.isoformat()
+                })
+            if prev_sls and completed_bars[i].close < prev_sls[-1]:
+                bos_lines.append({
+                    "id": f"bos_sl_{i}",
+                    "price": float(prev_sls[-1]),
+                    "type": "BOS_LOW",
+                    "time": completed_bars[i].timestamp.isoformat()
+                })
+
+        bos_lines = bos_lines[-10:]
+
+        # 3. Midline calculation
+        last_sh_idx, last_sh_val = swing_highs[-1]
+        last_sl_idx, last_sl_val = swing_lows[-1]
+        equilibrium_50 = last_sl_val + 0.50 * (last_sh_val - last_sl_val)
+        midlines.append({
+            "id": "equilibrium_50",
+            "price": float(equilibrium_50),
+            "label": "50%",
+            "time_start": completed_bars[min(last_sh_idx, last_sl_idx)].timestamp.isoformat()
+        })
+
+        # 4. OB Boxes & Liquidity Sweep (LIQ) Markers
+        for i in range(2, len(completed_bars)):
+            b_current = completed_bars[i]
+            b_prev1 = completed_bars[i - 1]
+            b_prev2 = completed_bars[i - 2]
+
+            # Bullish Order Block
+            if b_current.close > b_prev1.high and b_prev1.close < b_prev1.open:
+                price_low = b_prev1.low
+                price_high = b_prev1.high
+                rectangles.append({
+                    "id": f"ob_bull_{i}",
+                    "type": "BULLISH_ORDER_BLOCK",
+                    "price_low": float(price_low),
+                    "price_high": float(price_high),
+                    "ai_confidence": 0.85,
+                    "time": b_prev1.timestamp.isoformat()
+                })
+
+            # Bearish Order Block
+            if b_current.close < b_prev1.low and b_prev1.close > b_prev1.open:
+                price_low = b_prev1.low
+                price_high = b_prev1.high
+                rectangles.append({
+                    "id": f"ob_bear_{i}",
+                    "type": "BEARISH_ORDER_BLOCK",
+                    "price_low": float(price_low),
+                    "price_high": float(price_high),
+                    "ai_confidence": 0.85,
+                    "time": b_prev1.timestamp.isoformat()
+                })
+
+            # Liquidity sweeps
+            recent_high_10 = max([b.high for b in completed_bars[max(0, i-11) : i]]) if i > 0 else b_current.high
+            recent_low_10 = min([b.low for b in completed_bars[max(0, i-11) : i]]) if i > 0 else b_current.low
+
+            if b_current.low < recent_low_10 and b_current.close > recent_low_10:
+                liq_markers.append({
+                    "id": f"liq_low_{i}",
+                    "type": "LIQ_LOW",
+                    "price": float(b_current.low),
+                    "time": b_current.timestamp.isoformat()
+                })
+            elif b_current.high > recent_high_10 and b_current.close < recent_high_10:
+                liq_markers.append({
+                    "id": f"liq_high_{i}",
+                    "type": "LIQ_HIGH",
+                    "price": float(b_current.high),
+                    "time": b_current.timestamp.isoformat()
+                })
+
+        rectangles = rectangles[-15:]
+        liq_markers = liq_markers[-15:]
+
+        return {
+            "rectangles": rectangles,
+            "bos_lines": bos_lines,
+            "midlines": midlines,
+            "liq_markers": liq_markers
+        }
 
     def _sanitize_float(self, val: float | None, default: float) -> float:
         """Sanitizes input float against None, NaN, and Inf values."""
