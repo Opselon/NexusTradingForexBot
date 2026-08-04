@@ -654,6 +654,7 @@ class LiveEngine:
                 regime_state=regime_state,
                 survival_mode=self._survival_mode_active,
                 force_log=force_log,
+                order_manager=self.order_manager,
             )
             self.audit.log_signal(proposal)
 
@@ -726,6 +727,13 @@ class LiveEngine:
                         )
                     except Exception:
                         pass
+                else:
+                    # Dispatch failed! Clear the price lock immediately so bot is not locked out of trading!
+                    self.signal_policy.last_order_price = None
+                    self.signal_policy.last_order_time = None
+                    self.signal_policy._last_active_direction = None
+                    self.signal_policy._last_active_direction_time = None
+                    self.signal_policy._last_executed_price = 0.0
 
             # Evaluate intelligent hedging / counter-position policy
             self._evaluate_hedging_policy(

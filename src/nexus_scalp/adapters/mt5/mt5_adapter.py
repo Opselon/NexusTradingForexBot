@@ -222,19 +222,20 @@ class DirectMT5Adapter(IMT5Port):
         positions: list[Position] = []
         for pos in raw_positions:
             order_type = OrderType.BUY if pos.type == mt5.ORDER_TYPE_BUY else OrderType.SELL
-            positions.append(
-                Position(
-                    ticket=pos.ticket,
-                    symbol=pos.symbol,
-                    type=order_type,
-                    volume=pos.volume,
-                    price_open=pos.price_open,
-                    sl=pos.sl,
-                    tp=pos.tp,
-                    profit=pos.profit,
-                    magic=pos.magic,
+            if pos.symbol == "XAUUSD" and pos.magic == 888101:
+                positions.append(
+                    Position(
+                        ticket=pos.ticket,
+                        symbol=pos.symbol,
+                        type=order_type,
+                        volume=pos.volume,
+                        price_open=pos.price_open,
+                        sl=pos.sl,
+                        tp=pos.tp,
+                        profit=pos.profit,
+                        magic=pos.magic,
+                    )
                 )
-            )
         return positions
 
     # ==========================================================================
@@ -251,18 +252,19 @@ class DirectMT5Adapter(IMT5Port):
 
         pending_list: list[dict[str, Any]] = []
         for ord_item in raw_orders:
-            pending_list.append(
-                {
-                    "ticket": ord_item.ticket,
-                    "symbol": ord_item.symbol,
-                    "type": ord_item.type,
-                    "volume": ord_item.volume_current,
-                    "price_open": ord_item.price_open,
-                    "sl": ord_item.sl,
-                    "tp": ord_item.tp,
-                    "magic": ord_item.magic,
-                }
-            )
+            if ord_item.symbol == "XAUUSD" and ord_item.magic == 888101:
+                pending_list.append(
+                    {
+                        "ticket": ord_item.ticket,
+                        "symbol": ord_item.symbol,
+                        "type": ord_item.type,
+                        "volume": ord_item.volume_current,
+                        "price_open": ord_item.price_open,
+                        "sl": ord_item.sl,
+                        "tp": ord_item.tp,
+                        "magic": ord_item.magic,
+                    }
+                )
         return pending_list
 
     def cancel_pending_order(self, ticket: int) -> bool:
