@@ -46,8 +46,6 @@ NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture*
 │  └─────────────────────────────────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 
----
-
 ## 🔥 Key Technological Innovations
 
 ### 1. Predictive SMC "God-Mode" Execution Engine
