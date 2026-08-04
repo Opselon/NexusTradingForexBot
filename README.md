@@ -46,42 +46,6 @@ NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture*
 │  └─────────────────────────────────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 
-## 🏛️ System Architecture
-
-NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture**, isolating execution platforms, machine learning models, and network adapters into modular, self-healing subsystems.
-
-```text
-┌───────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 NEXUS RUNTIME CORE (PYTHON 3.11+)                         │
-│                                                                                           │
-│  ┌────────────────────────┐   ┌────────────────────────┐   ┌───────────────────────────┐  │
-│  │ 50D Causal Feature     │   │ PyTorch ScalpNet v3    │   │  Cascading Risk Engine    │  │
-│  │ Pipeline (SMC / OFI)   │───│ (TCN + Self-Attention) │───│  (Fixed Dollar / Margin)  │  │
-│  └───────────┬────────────┘   └───────────┬────────────┘   └─────────────┬─────────────┘  │
-│              │                            │                              │                │
-│              └────────────────────────────┼──────────────────────────────┘                │
-│                                           │                                               │
-│                                 ┌─────────▼─────────┐                                     │
-│                                 │   Policy Engine   │                                     │
-│                                 │(30-Rule SMC Matrix)                                     │
-│                                 └─────────┬─────────┘                                     │
-│                                           │                                               │
-│                                 ┌─────────▼─────────┐                                     │
-│                                 │ Order Manager &   │                                     │
-│                                 │ Financial Ledger  │                                     │
-│                                 └─────────┬─────────┘                                     │
-└───────────────────────────────────────────┼───────────────────────────────────────────────┘
-                                            │ Win32 C++ Direct IPC
-                                            v
-┌───────────────────────────────────────────────────────────────────────────────────────────┐
-│                               METATRADER 5 TERMINAL PROCESS                               │
-│                                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │    Direct Institutional Execution Path (LMAX / Pepperstone / IC Markets / FXCM)    │  │
-│  └─────────────────────────────────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
 ---
 
 ## 🔥 Key Technological Innovations
