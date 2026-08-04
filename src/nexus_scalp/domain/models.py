@@ -127,6 +127,14 @@ class TradeProposal(BaseModel):
     guardian_status: str | None = Field(default=None, description="Operational status of the regime guardian")
     rejection_reason: str | None = Field(default=None, description="Detailed reason for signal rejection")
     final_action: str | None = Field(default=None, description="Final action committed to execution")
+    execution_mode: str | None = Field(default=None, description="Execution path: STANDARD, SMC_GOD_MODE, PREDICTIVE_LIMIT, TICK_SWEEP")
+    override_reason: str | None = Field(default=None, description="Bypass or override reason")
+    decision_stage: str | None = Field(default=None, description="Stage where decision was made or blocked")
+    blocked_by: str | None = Field(default=None, description="Filter or rule that blocked the trade")
+    htf_score: float | None = Field(default=None, description="Higher timeframe alignment score")
+    smc_score: float | None = Field(default=None, description="Smart Money Concepts score")
+    confidence_before_filters: float | None = Field(default=None, description="Confidence before filters applied")
+    confidence_after_filters: float | None = Field(default=None, description="Confidence after filters applied")
 
     @model_validator(mode="after")
     def validate_action_price_invariants(self) -> "TradeProposal":
