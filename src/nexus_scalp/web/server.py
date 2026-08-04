@@ -8,13 +8,14 @@ and risk engines.
 
 import asyncio
 import json
+import threading
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -39,6 +40,27 @@ logger = get_logger("nexus_scalp.web.server")
 
 # Global/Static UI folder relative path
 WEB_DIR = Path("Web")
+
+
+class ServerState:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.bars = []
+        self.real_overlays = {
+            "rectangles": [],
+            "bos_lines": [],
+            "midlines": [],
+            "liq_markers": []
+        }
+
+    def update_live_visuals(self, bars: list, real_overlays: dict) -> None:
+        with self._lock:
+            self.bars = list(bars)
+            self.real_overlays = dict(real_overlays)
+
+    def get_live_visuals(self) -> tuple[list, dict]:
+        with self._lock:
+            return self.bars, self.real_overlays
 
 # Define API request bodies
 class ModifyPositionRequest(BaseModel):
@@ -84,6 +106,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # Store engine reference in app state
     app.state.engine = engine_ref
+    app.state.server_state = ServerState()
 
     # Active simulation and replay parameters
     app.state.is_replaying = False
@@ -96,6 +119,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # Helper function to get live data from engine or return mock details if offline/simulating
     def get_system_state() -> dict[str, Any]:
         engine = app.state.engine
+
+        # Retrieve thread-safe live visuals state if available
+        real_bars = []
+        real_smc_overlays = {}
+        if hasattr(app.state, "server_state") and app.state.server_state is not None:
+            real_bars, real_smc_overlays = app.state.server_state.get_live_visuals()
 
         # Default fallback values
         symbol = "XAUUSD"
@@ -188,32 +217,35 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 pass
 
             # Fetch bars (synchronized completed history) - Expand to 250 completed bars for 150+ visible bars support
-            try:
-                completed_bars = engine.aggregator.get_completed_bars()
-                for b in completed_bars[-250:]:
-                    bars_list.append({
-                        "time": b.timestamp.isoformat(),
-                        "open": b.open,
-                        "high": b.high,
-                        "low": b.low,
-                        "close": b.close,
-                        "volume": b.tick_volume,
-                        "is_complete": True
-                    })
-                # Single Source of Truth forming candle injection
-                forming_bar = engine.aggregator.get_current_forming_bar()
-                if forming_bar:
-                    bars_list.append({
-                        "time": forming_bar.timestamp.isoformat(),
-                        "open": forming_bar.open,
-                        "high": forming_bar.high,
-                        "low": forming_bar.low,
-                        "close": forming_bar.close,
-                        "volume": forming_bar.tick_volume,
-                        "is_complete": False
-                    })
-            except Exception as e:
-                logger.error("Failed to fetch synchronized bar stream", error=str(e))
+            if real_bars:
+                bars_list = real_bars
+            else:
+                try:
+                    completed_bars = engine.aggregator.get_completed_bars()
+                    for b in completed_bars[-250:]:
+                        bars_list.append({
+                            "time": b.timestamp.isoformat(),
+                            "open": b.open,
+                            "high": b.high,
+                            "low": b.low,
+                            "close": b.close,
+                            "volume": b.tick_volume,
+                            "is_complete": True
+                        })
+                    # Single Source of Truth forming candle injection
+                    forming_bar = engine.aggregator.get_current_forming_bar()
+                    if forming_bar:
+                        bars_list.append({
+                            "time": forming_bar.timestamp.isoformat(),
+                            "open": forming_bar.open,
+                            "high": forming_bar.high,
+                            "low": forming_bar.low,
+                            "close": forming_bar.close,
+                            "volume": forming_bar.tick_volume,
+                            "is_complete": False
+                        })
+                except Exception as e:
+                    logger.error("Failed to fetch synchronized bar stream", error=str(e))
 
             # Fetch synchronized features and model predictions
             try:
@@ -274,12 +306,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 pass
 
             # Scan completed bars for active/unmitigated zones (FVGs, OBs, sweeps)
-            try:
-                completed_bars = engine.aggregator.get_completed_bars()
-                if completed_bars and len(completed_bars) >= 10:
-                    lookback = int(algo_config_data.get("order_block_lookback_bars", 30))
-                    bars_to_scan = completed_bars[-lookback:]
-                    atr_val = atr if atr > 0 else 1.50
+            if real_smc_overlays and real_smc_overlays.get("rectangles"):
+                rectangles = real_smc_overlays.get("rectangles", [])
+            else:
+                try:
+                    completed_bars = engine.aggregator.get_completed_bars()
+                    if completed_bars and len(completed_bars) >= 10:
+                        lookback = int(algo_config_data.get("order_block_lookback_bars", 30))
+                        bars_to_scan = completed_bars[-lookback:]
+                        atr_val = atr if atr > 0 else 1.50
 
                     for i in range(2, len(bars_to_scan)):
                         bar_idx = len(completed_bars) - len(bars_to_scan) + i
@@ -388,8 +423,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                     "ai_confidence": float(ai_confidence or 0.90),
                                     "time": b_current.timestamp.isoformat()
                                 })
-            except Exception as e:
-                logger.error("Failed to detect real structural zones from completed bars", error=str(e))
+                except Exception as e:
+                    logger.error("Failed to detect real structural zones from completed bars", error=str(e))
 
             fv = engine._last_fv
             proposal = engine._last_proposal
@@ -483,7 +518,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 except Exception:
                     pass
 
-        if not rectangles:
+        if not rectangles and not real_smc_overlays:
             t1 = bars_list[30]["time"] if len(bars_list) > 30 else None
             t2 = bars_list[70]["time"] if len(bars_list) > 70 else None
             rectangles = [
@@ -526,10 +561,33 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "algo_config": algo_config_data,
             "visual_overlays": {
                 "rectangles": rectangles,
+                "bos_lines": real_smc_overlays.get("bos_lines", []),
+                "midlines": real_smc_overlays.get("midlines", []),
+                "liq_markers": real_smc_overlays.get("liq_markers", []),
                 "order_lines": order_lines
             }
         }
         return serialize_enums(state)
+
+    # WebSocket and /web /ws active connection list
+    active_connections: set[WebSocket] = set()
+
+    @app.websocket("/web")
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        await websocket.accept()
+        active_connections.add(websocket)
+        try:
+            # Send initial state
+            await websocket.send_json(get_system_state())
+            while True:
+                # Keep connection alive
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            active_connections.remove(websocket)
+        except Exception:
+            if websocket in active_connections:
+                active_connections.remove(websocket)
 
     # Static Web Pages routes
     @app.get("/")
@@ -960,6 +1018,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 try:
                     payload = get_system_state()
                     yield f"data: {json.dumps(payload)}\n\n"
+
+                    # Also broadcast to active WebSocket clients
+                    for ws in list(active_connections):
+                        try:
+                            await ws.send_json(payload)
+                        except Exception:
+                            active_connections.discard(ws)
                 except Exception as e:
                     logger.error("SSE stream serialization warning", error=str(e))
 

@@ -641,6 +641,36 @@ class LiveEngine:
             self._last_probs = probs
             self._last_proposal = proposal
 
+            # Extract and update real SMC overlays for the live chart canvas
+            real_overlays = self.signal_policy.extract_live_chart_overlays(
+                completed_bars=completed_bars,
+                atr_val=fv.atr_m1
+            )
+            if hasattr(self, "server_state") and self.server_state is not None:
+                bars_list = []
+                for b in completed_bars[-250:]:
+                    bars_list.append({
+                        "time": b.timestamp.isoformat(),
+                        "open": b.open,
+                        "high": b.high,
+                        "low": b.low,
+                        "close": b.close,
+                        "volume": b.tick_volume,
+                        "is_complete": True
+                    })
+                forming_bar = self.aggregator.get_current_forming_bar()
+                if forming_bar:
+                    bars_list.append({
+                        "time": forming_bar.timestamp.isoformat(),
+                        "open": forming_bar.open,
+                        "high": forming_bar.high,
+                        "low": forming_bar.low,
+                        "close": forming_bar.close,
+                        "volume": forming_bar.tick_volume,
+                        "is_complete": False
+                    })
+                self.server_state.update_live_visuals(bars_list, real_overlays)
+
             # Risk + order build
             order: TradeOrder | None = None
             if proposal.action in (

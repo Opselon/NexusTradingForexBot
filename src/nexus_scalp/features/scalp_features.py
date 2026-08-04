@@ -176,10 +176,10 @@ FEATURE_NAMES: tuple[str, ...] = (
     "htf_m15_confirmation",         # feat_43 [NEW]
     "support_zone_dist",            # feat_44 [NEW]
     "resistance_zone_dist",         # feat_45 [NEW]
-    "trend_strength",               # feat_46 [NEW]
-    "consolidation_ratio",          # feat_47 [NEW]
-    "htf_h1_atr_ratio",             # feat_48 [NEW]
-    "htf_h4_atr_ratio",             # feat_49 [NEW]
+    "feat_ob_valid_bos",            # feat_46 [NEW SMC]
+    "feat_ob_equilibrium_ratio",    # feat_47 [NEW SMC]
+    "feat_ob_liquidity_swept",      # feat_48 [NEW SMC]
+    "feat_ob_fib_50_60_alignment",  # feat_49 [NEW SMC]
 )
 
 NUM_FEATURES: int = len(FEATURE_NAMES)
@@ -277,6 +277,12 @@ class FeatureVector(BaseModel):
     htf_h1_atr_ratio: float = Field(..., description="H1 ATR to M1 ATR volatility ratio")
     htf_h4_atr_ratio: float = Field(..., description="H4 ATR to M1 ATR volatility ratio")
 
+    # 10. Institutional OB Validation SMC Features
+    feat_ob_valid_bos: float = Field(0.0, description="Binary flag (1/0) indicating OB created a confirmed BOS")
+    feat_ob_equilibrium_ratio: float = Field(0.0, description="Position of OB relative to 50% impulse level")
+    feat_ob_liquidity_swept: float = Field(0.0, description="Binary flag (1/0) indicating liquidity sweep presence")
+    feat_ob_fib_50_60_alignment: float = Field(0.0, description="Proximity of OB to 50%-60% Fibonacci retracement of current leg")
+
     def to_tensor_input(self) -> list[float]:
         """
         Converts the feature snapshot into the exact 50-dimensional tensor input expected by ScalpNet v3.
@@ -363,10 +369,10 @@ class FeatureVector(BaseModel):
             self.htf_m15_confirmation,
             self.support_zone_dist,
             self.resistance_zone_dist,
-            self.trend_strength,
-            self.consolidation_ratio,
-            self.htf_h1_atr_ratio,
-            self.htf_h4_atr_ratio,
+            self.feat_ob_valid_bos,
+            self.feat_ob_equilibrium_ratio,
+            self.feat_ob_liquidity_swept,
+            self.feat_ob_fib_50_60_alignment,
         ]
 
         sanitized_features = []
@@ -719,6 +725,88 @@ class ScalpFeatureEngine:
         else:
             htf_h4_atr_ratio = 1.0
 
+        # --- SMC ALGORITHMIC FEATURES EXTRACTOR ---
+        # 1. Swing Highs & Swing Lows
+        swing_highs = []
+        swing_lows = []
+        for i in range(5, len(completed_bars) - 5):
+            window_highs = [b.high for b in completed_bars[i-5 : i+6]]
+            window_lows = [b.low for b in completed_bars[i-5 : i+6]]
+            if completed_bars[i].high == max(window_highs):
+                swing_highs.append((i, completed_bars[i].high))
+            if completed_bars[i].low == min(window_lows):
+                swing_lows.append((i, completed_bars[i].low))
+
+        if not swing_highs:
+            swing_highs = [(len(completed_bars) - 25, float(np.max(highs)))]
+        if not swing_lows:
+            swing_lows = [(len(completed_bars) - 25, float(np.min(lows)))]
+
+        last_sh_idx, last_sh_val = swing_highs[-1]
+        last_sl_idx, last_sl_val = swing_lows[-1]
+
+        # 2. 50% Impulse Equilibrium
+        equilibrium_50 = last_sl_val + 0.50 * (last_sh_val - last_sl_val)
+
+        # 3. OB calculations
+        ob_price = (highs[-2] + lows[-2]) / 2.0
+        ob_equilibrium_ratio = float(np.clip((ob_price - last_sl_val) / (last_sh_val - last_sl_val + 1e-8), 0.0, 1.0))
+
+        # 4. BOS Validation (Break of Structure)
+        feat_ob_valid_bos = 0.0
+        if order_block_type == 1:
+            prev_shs = [val for idx, val in swing_highs if idx < len(completed_bars) - 2]
+            if prev_shs and closes[-1] > prev_shs[-1]:
+                feat_ob_valid_bos = 1.0
+        elif order_block_type == -1:
+            prev_sls = [val for idx, val in swing_lows if idx < len(completed_bars) - 2]
+            if prev_sls and closes[-1] < prev_sls[-1]:
+                feat_ob_valid_bos = 1.0
+
+        # 5. Liquidity Sweep Validation
+        feat_ob_liquidity_swept = 0.0
+        if order_block_type == 1:
+            prev_sls = [val for idx, val in swing_lows if idx < len(completed_bars) - 2]
+            if prev_sls:
+                target_sl = prev_sls[-1]
+                for j in [-2, -1]:
+                    if lows[j] < target_sl and closes[j] > target_sl:
+                        feat_ob_liquidity_swept = 1.0
+        elif order_block_type == -1:
+            prev_shs = [val for idx, val in swing_highs if idx < len(completed_bars) - 2]
+            if prev_shs:
+                target_sh = prev_shs[-1]
+                for j in [-2, -1]:
+                    if highs[j] > target_sh and closes[j] < target_sh:
+                        feat_ob_liquidity_swept = 1.0
+
+        # 6. Secondary Sub-Leg OBs (50%-60% OTE Retracement)
+        sub_swing_highs = []
+        sub_swing_lows = []
+        for i in range(2, len(completed_bars) - 2):
+            window_highs = [b.high for b in completed_bars[i-2 : i+3]]
+            window_lows = [b.low for b in completed_bars[i-2 : i+3]]
+            if completed_bars[i].high == max(window_highs):
+                sub_swing_highs.append(completed_bars[i].high)
+            if completed_bars[i].low == min(window_lows):
+                sub_swing_lows.append(completed_bars[i].low)
+
+        if not sub_swing_highs:
+            sub_swing_highs = [last_sh_val]
+        if not sub_swing_lows:
+            sub_swing_lows = [last_sl_val]
+
+        sub_sh = sub_swing_highs[-1]
+        sub_sl = sub_swing_lows[-1]
+        sub_range = sub_sh - sub_sl + 1e-8
+
+        ote_low = sub_sl + 0.50 * sub_range
+        ote_high = sub_sl + 0.60 * sub_range
+
+        feat_ob_fib_50_60_alignment = 0.0
+        if ote_low <= ob_price <= ote_high:
+            feat_ob_fib_50_60_alignment = 1.0
+
         return FeatureVector(
             symbol=self.symbol,
             timestamp_utc=current_tick.timestamp.isoformat(),
@@ -785,6 +873,10 @@ class ScalpFeatureEngine:
             consolidation_ratio=consolidation_ratio,
             htf_h1_atr_ratio=htf_h1_atr_ratio,
             htf_h4_atr_ratio=htf_h4_atr_ratio,
+            feat_ob_valid_bos=feat_ob_valid_bos,
+            feat_ob_equilibrium_ratio=ob_equilibrium_ratio,
+            feat_ob_liquidity_swept=feat_ob_liquidity_swept,
+            feat_ob_fib_50_60_alignment=feat_ob_fib_50_60_alignment,
         )
 
     def _cold_start_vector(self, tick: TickData, mid_price: float) -> FeatureVector:
@@ -853,4 +945,8 @@ class ScalpFeatureEngine:
             consolidation_ratio=1.0,
             htf_h1_atr_ratio=1.0,
             htf_h4_atr_ratio=1.0,
+            feat_ob_valid_bos=0.0,
+            feat_ob_equilibrium_ratio=0.0,
+            feat_ob_liquidity_swept=0.0,
+            feat_ob_fib_50_60_alignment=0.0,
         )
