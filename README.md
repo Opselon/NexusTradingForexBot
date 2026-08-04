@@ -1,50 +1,58 @@
-# ⚡ Nexus Scalp Engine (NSE) v7.0 — Institutional Quantitative Infrastructure
 
-[![Python Version](https://img.shields.io/badge/Python-3.11%2B-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+# 👑 Nexus Scalp Engine (NSE) v7.5
+### *Production-Grade High-Frequency Quantitative Scalping Infrastructure*
+
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-EE4C2C.svg?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![MetaTrader 5](https://img.shields.io/badge/MetaTrader-5-gold.svg?style=for-the-badge&logo=metatrader5&logoColor=white)](https://www.mql5.com/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.tech/)
-[![Architecture](https://img.shields.io/badge/Architecture-Hexagonal_Event--Driven-purple.svg?style=for-the-badge)]()
+[![C++ IPC](https://img.shields.io/badge/C%2B%2B-20_IPC-00599C.svg?style=for-the-badge&logo=cplusplus&logoColor=white)](https://isocpp.org/)
+[![MetaTrader 5](https://img.shields.io/badge/MetaTrader-5_Terminal-2962FF.svg?style=for-the-badge&logo=metatrader5&logoColor=white)](https://www.mql5.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-WebSockets-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.tech/)
+[![SQLite WAL](https://img.shields.io/badge/SQLite-WAL_Ledger-003B57.svg?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org/)
+[![Architecture](https://img.shields.io/badge/Architecture-Hexagonal_Event--Driven-6f42c1.svg?style=for-the-badge)]()
 [![Status](https://img.shields.io/badge/Production-Hardened-success.svg?style=for-the-badge)]()
 
-**Nexus Scalp Engine (NSE)** is a production-grade, event-driven quantitative high-frequency scalp trading infrastructure engineered specifically for **XAUUSD (Gold)** and major FX pairs. Built natively in **Python 3.11+**, **PyTorch (Deep Learning TCN + Self-Attention)**, and direct **Win32 C++ IPC driver bindings** to MetaTrader 5, the engine provides predictive Smart Money Concepts (SMC) execution, zero-lookahead feature extraction, an invariant-driven risk engine, and a real-time HTML5 Canvas Web Control Center.
+> **Nexus Scalp Engine (NSE)** is an enterprise-class, event-driven quantitative trading runtime engineered for sub-second scalping on **XAUUSD (Gold)** and major currency pairs. NSE unifies deep learning inference, real-time market microstructure analysis, and high-frequency execution into a single, self-healing framework.
+> 
+> Driven by a **3-Layer TCN + Self-Attention Neural Network (ScalpNet v3)**, a **50-Dimensional Causal Feature Engine**, and an **Autonomous 30-Rule SMC Policy Matrix**, NSE eliminates lookahead bias, prevents catastrophic drawdown, and executes institutional Order Block, Fair Value Gap (FVG), and Liquidity Sweep setups directly on MetaTrader 5 via native C++ IPC bindings.
 
 ---
 
-## 🏛️ System Architecture
+## 🏛️ System Architecture Blueprint
 
-NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture**, isolating execution platforms, machine learning models, and network adapters into modular, self-healing subsystems.
+NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture**, completely isolating execution platforms, machine learning models, and network adapters into modular, self-healing subsystems.
 
 ```text
-┌───────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 NEXUS RUNTIME CORE (PYTHON 3.11+)                         │
-│                                                                                           │
-│  ┌────────────────────────┐   ┌────────────────────────┐   ┌───────────────────────────┐  │
-│  │ 50D Causal Feature     │   │ PyTorch ScalpNet v3    │   │  Cascading Risk Engine    │  │
-│  │ Pipeline (SMC / OFI)   │───│ (TCN + Self-Attention) │───│  (Fixed Dollar / Margin)  │  │
-│  └───────────┬────────────┘   └───────────┬────────────┘   └─────────────┬─────────────┘  │
-│              │                            │                              │                │
-│              └────────────────────────────┼──────────────────────────────┘                │
-│                                           │                                               │
-│                                 ┌─────────▼─────────┐                                     │
-│                                 │   Policy Engine   │                                     │
-│                                 │(30-Rule SMC Matrix)                                     │
-│                                 └─────────┬─────────┘                                     │
-│                                           │                                               │
-│                                 ┌─────────▼─────────┐                                     │
-│                                 │ Order Manager &   │                                     │
-│                                 │ Financial Ledger  │                                     │
-│                                 └─────────┬─────────┘                                     │
-└───────────────────────────────────────────┼───────────────────────────────────────────────┘
-                                            │ Win32 C++ Direct IPC
-                                            v
-┌───────────────────────────────────────────────────────────────────────────────────────────┐
-│                               METATRADER 5 TERMINAL PROCESS                               │
-│                                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │    Direct Institutional Execution Path (LMAX / Pepperstone / IC Markets / FXCM)    │  │
-│  └─────────────────────────────────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
+╔═══════════════════════════════════════════════════════════════════════════════════════════════╗
+║                                 NEXUS HIGH-FREQUENCY CORE                                     ║
+║                                                                                               ║
+║  ┌───────────────────────┐     ┌───────────────────────┐     ┌─────────────────────────────┐  ║
+║  │ 50D Causal Feature    │ ──► │ PyTorch ScalpNet v3   │ ──► │  30-Rule SMC Policy Matrix  │  ║
+║  │ Engine (SMC/OFI/ATR)  │     │ (TCN + Self-Attention)│     │  (God-Mode & Veto Gate)     │  ║
+║  └───────────────────────┘     └───────────────────────┘     └──────────────┬──────────────┘  ║
+║              ▲                                                              │                 ║
+║              │ Ticks & Bars                                                 ▼                 ║
+║  ┌───────────┴───────────┐     ┌───────────────────────┐     ┌─────────────────────────────┐  ║
+║  │ Live Engine Event     │ ◄── │ Web Control Center    │ ◄── │ Invariant Risk Engine       │  ║
+║  │ Loop & Safety State   │     │ (FastAPI + WebSockets)│     │ (Lot Sizing & Margin Clamp) │  ║
+║  └───────────┬───────────┘     └───────────────────────┘     └──────────────┬──────────────┘  ║
+║              │                                                              │                 ║
+║              └───────────────────────────────┬──────────────────────────────┘                 ║
+║                                              ▼                                                ║
+║                                 ┌─────────────────────────┐                                   ║
+║                                 │ IMT5Port IPC Adapter    │                                   ║
+║                                 └────────────┬────────────┘                                   ║
+╚══════════════════════════════════════════════╪════════════════════════════════════════════════╝
+                                               │ Win32 C++ Direct IPC (Zero-Copy)
+                                               ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                              LOCAL METATRADER 5 TERMINAL                                      │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Institutional Liquidity Execution (LMAX / Pepperstone / IC Markets / FXCM Direct Feed)   │  │
+│  └─────────────────────────────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## 🔥 Key Technological Innovations
 
