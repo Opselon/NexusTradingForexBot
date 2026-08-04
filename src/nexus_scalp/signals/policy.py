@@ -100,6 +100,56 @@ class SignalPolicy:
         """
         Evaluates conditions at maximum live speed (50ms hot path) and outputs a sized TradeProposal.
         """
+        # Authoritative Regime Guardian Gate early in evaluation pipeline
+        is_guardian_active = False
+        if regime_state is not None:
+            regime_type = regime_state.regime_type
+            exec_type = regime_state.recommended_execution_type
+
+            # Unsafe regimes to block
+            UNSAFE_REGIMES = {
+                "HIGH_SPREAD_CHOP",
+                "UNKNOWN",
+                "MARKET_HALTED",
+                "LOW_LIQUIDITY",
+                "NEWS_LOCK",
+                "MACRO_NEWS_FREEZE",
+            }
+            reg_val = getattr(regime_type, "value", str(regime_type))
+            if reg_val in UNSAFE_REGIMES or exec_type == RecommendedExecutionType.FREEZE_ALL:
+                is_guardian_active = True
+
+        if is_guardian_active:
+            # Return detailed NO_TRADE proposal containing 'BLOCKED_BY_GUARDIAN'
+            return TradeProposal(
+                request_id=str(uuid.uuid4()),
+                symbol=current_tick.symbol,
+                generated_at=current_tick.timestamp,
+                action=ActionType.NO_TRADE,
+                confidence=0.0,
+                proposed_entry=current_tick.bid,
+                stop_loss=current_tick.bid * 0.99,
+                take_profit=current_tick.bid * 1.01,
+                risk_reward_ratio=1.0,
+                reason_code="BLOCKED_BY_GUARDIAN_UNSAFE_REGIME",
+                model_action="NO_TRADE",
+                buy_probability=0.0,
+                sell_probability=0.0,
+                no_trade_probability=1.0,
+                regime=str(regime_state.regime_type.value if regime_state else "UNKNOWN"),
+                regime_confidence=float(regime_state.regime_probability if regime_state else 0.0),
+                risk_allowed=False,
+                guardian_status="ACTIVE",
+                rejection_reason="BLOCKED_BY_GUARDIAN_UNSAFE_REGIME",
+                final_action="NO_TRADE",
+                decision_stage="GUARDIAN_GATE",
+                blocked_by="REGIME_GUARDIAN",
+                htf_score=0.0,
+                smc_score=0.0,
+                confidence_before_filters=0.0,
+                confidence_after_filters=0.0,
+            )
+
         probs = probabilities.squeeze().tolist()
         if not isinstance(probs, list):
             probs = [probs]
@@ -118,6 +168,110 @@ class SignalPolicy:
         raw_atr = getattr(feature_vector, "atr_m1", 1.50)
         atr = max(self._sanitize_float(raw_atr, 1.50), 0.50)
         current_spread = round(max(0.0, current_tick.ask - current_tick.bid), 2)
+
+        # Count active open positions and active pending orders matching symbol and magic
+        active_positions_count = 0
+        active_pending_count = 0
+        pending_price = None
+        pending_ticket = None
+
+        if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
+            live_tickets = order_manager.get_active_live_tickets()
+            for ticket_info in live_tickets:
+                t_symbol = ticket_info.get("symbol")
+                t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
+                t_type = ticket_info.get("type")
+                if t_symbol == "XAUUSD" and t_magic == 888101:
+                    if t_type == "POSITION":
+                        active_positions_count += 1
+                    elif t_type == "PENDING":
+                        active_pending_count += 1
+                        pending_price = ticket_info.get("price")
+                        pending_ticket = ticket_info.get("ticket")
+
+        # Initialize lock attributes if not present
+        if not hasattr(self, "_locked_pending_ticket"):
+            self._locked_pending_ticket = None
+        if not hasattr(self, "_locked_pending_price"):
+            self._locked_pending_price = None
+        if not hasattr(self, "_locked_pending_time"):
+            self._locked_pending_time = None
+        if not hasattr(self, "_last_signal_time"):
+            self._last_signal_time = None
+
+        # Lock tracking
+        if pending_ticket is not None:
+            if self._locked_pending_ticket != pending_ticket:
+                self._locked_pending_ticket = pending_ticket
+                self._locked_pending_price = pending_price
+                self._locked_pending_time = now
+        else:
+            self._locked_pending_ticket = None
+            self._locked_pending_price = None
+            self._locked_pending_time = None
+
+        # 1. Enforce ORDER_FREQUENCY_THROTTLED check (MIN_ORDER_INTERVAL_SECONDS = 60)
+        if self._last_signal_time is not None:
+            elapsed = (now - self._last_signal_time).total_seconds()
+            if elapsed < 60.0:
+                return self._build_no_trade(
+                    tick=current_tick,
+                    confidence=0.0,
+                    reason="ORDER_FREQUENCY_THROTTLED"
+                )
+
+        # 2. Strict Single-Position Exposure Gate
+        # Total sum of Active Open Positions + Active Pending Orders MUST NOT exceed 1
+        total_exposure = active_positions_count + active_pending_count
+
+        if total_exposure >= 1:
+            # Check price proximity to find if we should return SAME_LEVEL_REENTRY_BLOCKED (threshold is $0.50)
+            is_same_level = False
+            if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
+                for ticket_info in live_tickets:
+                    t_symbol = ticket_info.get("symbol")
+                    t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
+                    t_price = ticket_info.get("price")
+                    if t_symbol == "XAUUSD" and t_magic == 888101 and t_price is not None:
+                        if abs(target_entry_price - t_price) < 0.50:
+                            is_same_level = True
+                            break
+
+            if is_same_level:
+                return self._build_no_trade(
+                    tick=current_tick,
+                    confidence=0.0,
+                    reason="SAME_LEVEL_REENTRY_BLOCKED"
+                )
+
+            # If we hold 1 active open position, block entries
+            if active_positions_count >= 1:
+                return self._build_no_trade(
+                    tick=current_tick,
+                    confidence=0.0,
+                    reason="MAX_EXPOSURE_REACHED"
+                )
+
+            # If we hold 1 active pending order, check lock & price drift hysteresis
+            if active_pending_count >= 1:
+                # Calculate 50% Equilibrium price
+                swing_low_20 = current_tick.bid - atr
+                swing_high_20 = current_tick.ask + atr
+                if completed_bars is not None and len(completed_bars) >= 20:
+                    swing_low_20 = np.min([b.low for b in completed_bars[-20:]])
+                    swing_high_20 = np.max([b.high for b in completed_bars[-20:]])
+                new_eq_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
+
+                time_delta = (now - self._locked_pending_time).total_seconds() if self._locked_pending_time is not None else 0.0
+                price_drift = abs(new_eq_price - self._locked_pending_price) if self._locked_pending_price is not None else 0.0
+
+                if time_delta < 30.0 or price_drift < (1.0 * atr):
+                    # Maintain the existing live limit order and return ActionType.NO_TRADE
+                    return self._build_no_trade(
+                        tick=current_tick,
+                        confidence=0.0,
+                        reason="PENDING_ORDER_LOCKED"
+                    )
 
         tenkan = self._sanitize_float(feature_vector.tenkan_sen, current_tick.ask)
         kijun = self._sanitize_float(feature_vector.kijun_sen, current_tick.bid)
@@ -443,6 +597,7 @@ class SignalPolicy:
         self._last_tick_time = now
 
         if tick_sweep_proposal is not None:
+            self._last_signal_time = now
             return tick_sweep_proposal
 
         # ======================================================================
@@ -486,6 +641,7 @@ class SignalPolicy:
             reason_code = f"PREDICTIVE_OB_{proposed_action.name}_EQUILIBRIUM"
             logger.info(f"PREDICTIVE LIMIT EXECUTED: Placing {proposed_action.value} at 50% Equilibrium {target_entry_price}!")
 
+            self._last_signal_time = now
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
                 symbol=current_tick.symbol,

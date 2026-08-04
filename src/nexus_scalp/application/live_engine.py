@@ -715,6 +715,8 @@ class LiveEngine:
                             account=account,
                             symbol_info=self._symbol_info,
                         )
+                        # Guarantee that the lot size NEVER exceeds 2.0 lots under any mathematical condition
+                        dynamic_volume = self.risk_engine.get_clamped_position_size(dynamic_volume)
                         success = self.order_manager.dispatch_order(policy_decision, dynamic_volume)
                         logger.info(f"[info] DISPATCH ORDER action={policy_decision.action.value} price={policy_decision.proposed_entry} volume={dynamic_volume}")
 

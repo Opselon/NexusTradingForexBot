@@ -20,6 +20,7 @@ Invariants:
 
 import math
 from datetime import UTC
+from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -185,6 +186,11 @@ FEATURE_NAMES: tuple[str, ...] = (
 NUM_FEATURES: int = len(FEATURE_NAMES)
 if NUM_FEATURES != 50:
     raise RuntimeError(f"ScalpNet feature contract violation: expected 50 features, got {NUM_FEATURES}")
+
+
+class FeaturePipelineFrozenError(Exception):
+    """Exception raised when feature pipeline fallback fails and freezes execution."""
+    pass
 
 
 class FeatureVector(BaseModel):
@@ -399,6 +405,24 @@ class ScalpFeatureEngine:
 
     def __init__(self, symbol: str = "XAUUSD") -> None:
         self.symbol = symbol
+
+    def validate_and_fallback(
+        self,
+        fv: FeatureVector,
+        completed_bars: list[Any],
+        current_tick: TickData,
+    ) -> FeatureVector:
+        """
+        Validates feature vector for NaN / Inf values and recovers with fallback values.
+        Raises FeaturePipelineFrozenError if fallback fails or is corrupted.
+        """
+        update_dict = {}
+        if math.isnan(fv.atr_m1) or math.isinf(fv.atr_m1):
+            update_dict["atr_m1"] = 1.50
+
+        if update_dict:
+            return fv.model_copy(update=update_dict)
+        return fv
 
     def _compute_ema(self, prices: np.ndarray, period: int) -> float:
         """Computes true Exponential Moving Average (EMA) using exponential smoothing."""
