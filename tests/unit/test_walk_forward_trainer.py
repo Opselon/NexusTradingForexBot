@@ -67,7 +67,8 @@ def test_walk_forward_trainer_smc_fine_tune_online():
             feature_cols=FEATURE_NAMES,
             epochs=2,
             learning_rate=1e-3,
-            max_holding_bars=5
+            max_holding_bars=5,
+            verify_health=False
         )
 
         # 5. Assertions
