@@ -583,8 +583,8 @@ class LiveEngine:
             model=bundle.model,
             recent_df=df_labeled,
             feature_cols=feature_cols,
-            epochs=5,
-            learning_rate=1e-4,
+            epochs=3,
+            learning_rate=5e-5,
             max_holding_bars=15,
         )
         updated_model.eval()
@@ -968,7 +968,7 @@ class LiveEngine:
                 df_labeled,
                 feature_cols,
                 3,     # epochs
-                1e-4,  # lr
+                5e-5,  # lr
                 15,    # max_holding_bars
             )
             updated_model.eval()

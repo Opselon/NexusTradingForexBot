@@ -299,7 +299,16 @@ class RiskEngine:
         step = symbol_info.volume_step if symbol_info.volume_step > 0 else 0.01
         steps = math.floor(raw_volume / step)
         final_volume = round(steps * step, 2)
-        final_volume = min(final_volume, symbol_info.volume_max)
+
+        # Enforce strict lot ceiling: HARD_MAX_LOTS = 2.0
+        HARD_MAX_LOTS = 2.0
+        final_volume = min(final_volume, HARD_MAX_LOTS, symbol_info.volume_max)
+
+        # Verify free margin before dispatching. If margin is insufficient, return None.
+        required_margin = (contract_size * proposal.proposed_entry * final_volume) / leverage
+        if required_margin > account.margin_free:
+            logger.warning("evaluate_proposal: Insufficient free margin.", required=required_margin, free=account.margin_free)
+            return None
 
         # ----------------------------------------------------------------------
         # 6. ALMGREN-CHRISS MARKET IMPACT & SLIPPAGE GUARD (Order-Type Aware)
@@ -373,11 +382,58 @@ class RiskEngine:
         steps = math.floor(volume / step)
         final_volume = round(steps * step, 2)
 
+        # Enforce strict lot ceiling: HARD_MAX_LOTS = 2.0
+        HARD_MAX_LOTS = 2.0
+        final_volume = min(final_volume, HARD_MAX_LOTS)
+
         # Constrain to broker rules
         final_volume = min(final_volume, symbol_info.volume_max)
-        final_volume = max(final_volume, symbol_info.volume_min)
+
+        # Verify free margin before dispatching. If margin is insufficient, return 0.0 volume.
+        contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
+        leverage = account.leverage if account.leverage > 0 else 100
+        required_margin = (contract_size * entry * final_volume) / leverage
+        if required_margin > account.margin_free:
+            logger.warning("calculate_volume: Insufficient free margin.", required=required_margin, free=account.margin_free)
+            return 0.0
+
+        if final_volume < symbol_info.volume_min:
+            final_volume = 0.0
 
         return final_volume
+
+    def get_clamped_position_size(
+        self,
+        raw_volume: float,
+        account: AccountInfo,
+        symbol_info: SymbolInfo,
+        current_directional_exposure: float = 0.0,
+    ) -> float:
+        """
+        Clamps the raw volume against broker limitations and strict risk caps.
+        """
+        HARD_MAX_LOTS = 2.0
+        clamped_volume = min(raw_volume, HARD_MAX_LOTS)
+
+        if symbol_info:
+            if symbol_info.volume_max > 0:
+                clamped_volume = min(clamped_volume, symbol_info.volume_max)
+            if symbol_info.volume_min > 0 and clamped_volume < symbol_info.volume_min:
+                clamped_volume = 0.0
+
+        # Margin pre-check
+        if symbol_info and account:
+            contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
+            leverage = account.leverage if account.leverage > 0 else 100
+            current_price = 2000.0  # fallback
+            required_margin_per_lot = (contract_size * current_price) / leverage
+            required_margin = clamped_volume * required_margin_per_lot
+
+            if required_margin > account.margin_free:
+                logger.warning("Margin pre-check failed: Insufficient free margin.", required=required_margin, free=account.margin_free)
+                return 0.0
+
+        return clamped_volume
 
     def _map_action_to_order_type(self, action: ActionType) -> OrderType:
         """Safely maps the domain ActionType to MT5 Execution OrderType."""

@@ -163,6 +163,9 @@ class OrderLifecycleManager:
         self._live_tickets_lock = threading.Lock()
         self._live_tickets_cache: dict[int, dict[str, Any]] = {}
 
+        self.global_state = "NORMAL"
+        self._consecutive_failures = 0
+
         self.be_trigger = be_trigger_usd
         self.be_lock = be_lock_usd
         self.trailing_distance = trailing_distance_usd
@@ -235,6 +238,10 @@ class OrderLifecycleManager:
 
     def execute_order(self, order: TradeOrder) -> bool:
         """Submits trade deal to broker adapter with duplicate submission prevention."""
+        if self.global_state == "SAFE_MODE":
+            logger.warning("Execution blocked: OrderLifecycleManager is in SAFE_MODE")
+            return False
+
         if order.order_id in self._processed_orders:
             logger.warning("Duplicate order submission blocked by idempotency check", order_id=order.order_id)
             return False
@@ -248,6 +255,14 @@ class OrderLifecycleManager:
 
         success = self.adapter.send_order(order)
         status_str = "FILLED" if success else "REJECTED"
+
+        if success:
+            self._consecutive_failures = 0
+        else:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= 3:
+                self.global_state = "SAFE_MODE"
+                logger.critical("TRANSITIONED TO SAFE_MODE: 3 consecutive broker rejections detected.")
 
         self._processed_orders[order.order_id] = success
         self.audit.log_execution(order, status_str)
@@ -267,6 +282,44 @@ class OrderLifecycleManager:
         )
 
         return success
+
+    def should_modify_pending_order(
+        self,
+        ticket: int,
+        price: float,
+        atr: float,
+        timestamp: datetime,
+    ) -> bool:
+        """
+        Determines if a pending order modification should be allowed based on
+        significant price drift (>= 0.5 * ATR) and time cooldown (>= 5 seconds).
+        """
+        if not hasattr(self, "_last_pending_mod_price"):
+            self._last_pending_mod_price = {}
+            self._last_pending_mod_time = {}
+
+        last_price = self._last_pending_mod_price.get(ticket)
+        last_time = self._last_pending_mod_time.get(ticket)
+
+        if last_price is None or last_time is None:
+            self._last_pending_mod_price[ticket] = price
+            self._last_pending_mod_time[ticket] = timestamp
+            return True
+
+        # Price drift must be >= 0.5 * ATR
+        price_drift = abs(price - last_price)
+        drift_ok = price_drift >= (0.5 * atr)
+
+        # Time since last modification must be >= 5 seconds
+        time_elapsed = (timestamp - last_time).total_seconds()
+        time_ok = time_elapsed >= 5.0
+
+        if drift_ok and time_ok:
+            self._last_pending_mod_price[ticket] = price
+            self._last_pending_mod_time[ticket] = timestamp
+            return True
+
+        return False
 
     def dispatch_order(self, decision: Any, volume: float) -> bool:
         """

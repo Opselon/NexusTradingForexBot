@@ -30,6 +30,11 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.features.scalp_features")
 
+
+class FeaturePipelineFrozenError(ValueError):
+    """Exception raised when the feature pipeline fallback mechanism is corrupted or fails."""
+    pass
+
 # ==============================================================================
 # HELPERS FOR MTF AGGREGATION & S/R DETECTION
 # ==============================================================================
@@ -399,6 +404,38 @@ class ScalpFeatureEngine:
 
     def __init__(self, symbol: str = "XAUUSD") -> None:
         self.symbol = symbol
+
+    def validate_and_fallback(
+        self,
+        fv: FeatureVector,
+        completed_bars: list[BarData],
+        current_tick: TickData,
+    ) -> FeatureVector:
+        """
+        Validates feature values and applies deterministic fallbacks if NaNs are detected.
+        If the fallback mechanism fails or returns invalid values, raises FeaturePipelineFrozenError.
+        """
+        fv_dict = fv.model_dump()
+
+        # Validate atr_m1
+        atr_val = fv_dict.get("atr_m1")
+        if atr_val is None or (isinstance(atr_val, float) and (math.isnan(atr_val) or math.isinf(atr_val))):
+            atr_val = 1.50
+            fv_dict["atr_m1"] = atr_val
+
+        # Re-verify and potentially trigger a freeze if the fallback is somehow invalid
+        if atr_val is None or (isinstance(atr_val, float) and (math.isnan(atr_val) or math.isinf(atr_val))):
+            raise FeaturePipelineFrozenError("Feature pipeline frozen: fallback failed for field 'atr_m1'")
+
+        # Clean all other float fields of NaN/Inf
+        for key, val in fv_dict.items():
+            if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                fv_dict[key] = 0.0
+
+        try:
+            return FeatureVector(**fv_dict)
+        except Exception as e:
+            raise FeaturePipelineFrozenError(f"Feature pipeline frozen: failed to recreate FeatureVector: {e}")
 
     def _compute_ema(self, prices: np.ndarray, period: int) -> float:
         """Computes true Exponential Moving Average (EMA) using exponential smoothing."""
