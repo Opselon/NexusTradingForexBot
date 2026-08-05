@@ -58,6 +58,20 @@ class RiskEngine:
         self.high_confidence_threshold = high_confidence_threshold
         self._kill_switch_active = False
 
+    def get_clamped_position_size(
+        self,
+        volume: float | None = None,
+        raw_volume: float | None = None,
+        account: Any = None,
+        symbol_info: Any = None,
+        current_directional_exposure: float = 0.0,
+    ) -> float:
+        """Clamps the proposed position volume to HARD_MAX_LOTS (2.0)."""
+        vol = volume if volume is not None else raw_volume
+        if vol is None:
+            vol = 0.0
+        return min(vol, 2.0)
+
     def calculate_position_size(
         self,
         account: AccountInfo,
@@ -296,10 +310,20 @@ class RiskEngine:
         remaining_exposure_cap = self.max_allowed_lots - current_directional_exposure
         raw_volume = min(raw_volume, remaining_exposure_cap)
 
+        HARD_MAX_LOTS = 2.0
+        raw_volume = min(raw_volume, HARD_MAX_LOTS)
+
         step = symbol_info.volume_step if symbol_info.volume_step > 0 else 0.01
         steps = math.floor(raw_volume / step)
         final_volume = round(steps * step, 2)
-        final_volume = min(final_volume, symbol_info.volume_max)
+        final_volume = min(final_volume, HARD_MAX_LOTS, symbol_info.volume_max)
+
+        # Verify free margin before dispatching. If margin is insufficient, set final_volume to 0.0
+        contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
+        leverage = account.leverage if account.leverage > 0 else 100
+        required_margin = (contract_size * proposal.proposed_entry * final_volume) / leverage
+        if required_margin > account.margin_free:
+            final_volume = 0.0
 
         # ----------------------------------------------------------------------
         # 6. ALMGREN-CHRISS MARKET IMPACT & SLIPPAGE GUARD (Order-Type Aware)
@@ -373,9 +397,17 @@ class RiskEngine:
         steps = math.floor(volume / step)
         final_volume = round(steps * step, 2)
 
-        # Constrain to broker rules
-        final_volume = min(final_volume, symbol_info.volume_max)
+        # Constrain to broker rules and hard limit
+        HARD_MAX_LOTS = 2.0
+        final_volume = min(final_volume, HARD_MAX_LOTS, symbol_info.volume_max)
         final_volume = max(final_volume, symbol_info.volume_min)
+
+        # Verify free margin before dispatching. If margin is insufficient, return 0.0 volume.
+        contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
+        leverage = account.leverage if account.leverage > 0 else 100
+        required_margin = (contract_size * entry * final_volume) / leverage
+        if required_margin > account.margin_free:
+            return 0.0
 
         return final_volume
 

@@ -174,6 +174,10 @@ class OrderLifecycleManager:
         self.max_holding_seconds = max_holding_seconds
         self.eta_coefficient = eta_coefficient
 
+        # Safety State Machine
+        self.global_state = "NORMAL"
+        self._consecutive_failures = 0
+
         # State Tracking for Metrics (Ticket -> Primitive)
         self._partial_closed_tickets: dict[int, bool] = {}
 
@@ -228,6 +232,35 @@ class OrderLifecycleManager:
         """Temporarily registers message_id for a submitted order_id."""
         self._order_id_to_message_id[order_id] = message_id
 
+    def should_modify_pending_order(
+        self,
+        ticket: int,
+        price: float,
+        atr: float,
+        now: datetime,
+    ) -> bool:
+        """
+        Enforces order modification limits, requiring a price drift of at least 0.5 * ATR and a 5-second minimum cooldown.
+        """
+        if not hasattr(self, "_last_mod_price"):
+            self._last_mod_price = {}
+        if not hasattr(self, "_last_mod_time"):
+            self._last_mod_time = {}
+
+        last_price = self._last_mod_price.get(ticket)
+        last_time = self._last_mod_time.get(ticket)
+
+        if last_price is not None and last_time is not None:
+            price_drift = abs(price - last_price)
+            time_delta = (now - last_time).total_seconds()
+
+            if price_drift < (0.5 * atr) or time_delta < 5.0:
+                return False
+
+        self._last_mod_price[ticket] = price
+        self._last_mod_time[ticket] = now
+        return True
+
     def get_active_live_tickets(self) -> list[dict[str, Any]]:
         """Returns a list of currently live active positions and pending orders matching symbol and magic number."""
         with self._live_tickets_lock:
@@ -235,6 +268,10 @@ class OrderLifecycleManager:
 
     def execute_order(self, order: TradeOrder) -> bool:
         """Submits trade deal to broker adapter with duplicate submission prevention."""
+        if self.global_state == "SAFE_MODE":
+            logger.warning("Order blocked: Safety State is SAFE_MODE.")
+            return False
+
         if order.order_id in self._processed_orders:
             logger.warning("Duplicate order submission blocked by idempotency check", order_id=order.order_id)
             return False
@@ -247,6 +284,15 @@ class OrderLifecycleManager:
         )
 
         success = self.adapter.send_order(order)
+
+        if not success:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= 3:
+                self.global_state = "SAFE_MODE"
+                logger.critical("TRANSITIONED TO SAFE_MODE: 3 consecutive rejections detected!")
+        else:
+            self._consecutive_failures = 0
+
         status_str = "FILLED" if success else "REJECTED"
 
         self._processed_orders[order.order_id] = success

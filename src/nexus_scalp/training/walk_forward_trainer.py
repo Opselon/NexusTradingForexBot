@@ -334,7 +334,7 @@ class WalkForwardTrainer:
         recent_df: pl.DataFrame | None = None,
         feature_cols: list[str] | None = None,
         epochs: int = 3,
-        learning_rate: float = 1e-4,
+        learning_rate: float = 5e-5,
         max_holding_bars: int = 15,
         model: ScalpNet | None = None,  # Keyword Alias for backwards compatibility
         verify_health: bool = True,
@@ -620,27 +620,24 @@ class WalkForwardTrainer:
         class_counts = np.bincount(y, minlength=self.NUM_CLASSES)
         total_samples = len(y)
 
-        # Inverse Class Frequency Weighting Formula: Wc = N_total / (N_class + 1)
-        weights = total_samples / (class_counts + 1.0)
+        # Inverse Class Frequency Weighting Formula: Wc = N_total / (3.0 * (N_c + 1.0)), clamped to [0.5, 2.0]
+        weights = np.clip(total_samples / (3.0 * (class_counts + 1.0)), 0.5, 2.0)
 
-        # Apply active class boost to BUY/SELL
-        if class_counts[1] > 0:
-            weights[1] *= self.active_class_boost
-        if class_counts[2] > 0:
-            weights[2] *= self.active_class_boost
-
-        for c in range(self.NUM_CLASSES):
-            weights[c] = float(np.clip(weights[c], 0.10, 10.0))
+        # Normalize weights so W.mean() == 1.0
+        mean_w = np.mean(weights)
+        if mean_w > 0:
+            weights = weights / mean_w
 
         weights_4d = np.zeros(4, dtype=np.float32)
         weights_4d[:3] = weights
 
         # Diagnostics Logging
         logger.info(
-            "Inverse Class Frequency Weights calculated",
+            "Inverse Class Frequency Weights calculated and normalized",
             class_counts=class_counts.tolist(),
             total_samples=total_samples,
             weights_4d=weights_4d.tolist(),
+            mean_weight=float(np.mean(weights)),
         )
 
         return torch.tensor(weights_4d, dtype=torch.float32)
