@@ -75,6 +75,7 @@
     <Folder Include=".pytest_cache\v\cache\" />
     <Folder Include="configs\" />
     <Folder Include="docker\" />
+    <Folder Include="docs\" />
     <Folder Include="src\" />
     <Folder Include="src\cli\" />
     <Folder Include="src\nexus_scalp\training\" />
