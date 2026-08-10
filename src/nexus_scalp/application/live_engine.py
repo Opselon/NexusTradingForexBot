@@ -405,16 +405,16 @@ class LiveEngine:
         try:
             return MarketRegimeClassifier(
                 symbol=symbol,
-                spread_chop_enter_usd=0.35,
-                spread_chop_exit_usd=0.30,
-                min_regime_hold_sec=7.0,
-                switch_prob_margin=0.12,
+                spread_chop_enter_usd=0.50,
+                spread_chop_exit_usd=0.40,
+                min_regime_hold_sec=4.0,
+                switch_prob_margin=0.10,
             )
         except TypeError:
             # Fallback to legacy signature
             return MarketRegimeClassifier(
                 symbol=symbol,
-                max_allowed_spread_usd=0.35,
+                max_allowed_spread_usd=0.50,
             )
 
     # -------------------------
@@ -510,8 +510,8 @@ class LiveEngine:
     # -------------------------
 
     async def _cold_start_warmup(self, symbol: str) -> None:
-        logger.info("Cold-start warmup: fetching 4000 M1 bars...")
-        hist_bars = self.adapter.get_historical_bars(symbol=symbol, timeframe="M1", count=4000) or []
+        logger.info("Cold-start warmup: fetching 1200 M1 bars...")
+        hist_bars = self.adapter.get_historical_bars(symbol=symbol, timeframe="M1", count=1200) or []
 
         for b in hist_bars:
             self.aggregator._completed_bars.append(b)
@@ -529,7 +529,9 @@ class LiveEngine:
                 volume=b.tick_volume,
             )
 
-            fv = self.feature_engine.compute_from_bars(completed, synthetic_tick)
+            # Slice window to last 300 bars for O(1) feature calculation speed
+            bars_window = completed[-300:] if len(completed) > 300 else completed
+            fv = self.feature_engine.compute_from_bars(bars_window, synthetic_tick)
             x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="cold_start_warmup")
             record = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
             record.update(
@@ -821,11 +823,17 @@ class LiveEngine:
 
             hold_score_dropped = hold_score < 50
             volatility_shifted = False
-            if regime_state:
-                if regime_state.regime_type == RegimeType.VOLATILITY_EXPANSION:
+            if regime_state and regime_state.regime_type == RegimeType.VOLATILITY_EXPANSION:
+                if hold_score < 75 or pos.profit < -0.50:
                     volatility_shifted = True
 
             if not (hold_score_dropped or volatility_shifted):
+                continue
+
+            # Prevent per-tick log spam if active position capacity is already full
+            symbol_positions = [p for p in active_positions if p.symbol == pos.symbol]
+            if len(symbol_positions) >= self.config.risk.max_concurrent_positions:
+                self._hedged_tickets.add(pos.ticket)
                 continue
 
             logger.info(
@@ -1028,9 +1036,16 @@ class LiveEngine:
         sell_probs = probs[:, 2]
         threshold = float(self.config.model.confidence_threshold)
 
+        raw_preds = np.argmax(probs[:, :3], axis=1)
         preds = np.zeros(len(probs), dtype=int)
-        preds[(buy_probs >= threshold) & (buy_probs > sell_probs)] = 1
-        preds[(sell_probs >= threshold) & (sell_probs > buy_probs)] = 2
+        for i in range(len(probs)):
+            c = raw_preds[i]
+            if c == 1 and buy_probs[i] >= threshold:
+                preds[i] = 1
+            elif c == 2 and sell_probs[i] >= threshold:
+                preds[i] = 2
+            else:
+                preds[i] = 0
 
         total = len(preds)
         buy_pct = float(np.sum(preds == 1) / max(total, 1) * 100.0)

@@ -218,6 +218,7 @@ class OrderLifecycleManager:
 
         # Throttling & spread tracking for dynamic hold score
         self._last_hold_eval_time: dict[int, float] = {}
+        self._last_telemetry_time: dict[int, float] = {}
         self._rolling_spreads: list[float] = []
 
         # Part 4: Pending Order Lifecycle Management tracking
@@ -1022,6 +1023,8 @@ class OrderLifecycleManager:
             return "CLOSE", "S02_TOXIC_FLOW_KILL_SWITCH"
         elif hold_score < 30 and not is_winning_trade:
             return "CLOSE", "S09_CRITICAL_HOLD_SCORE_BREACH_BAILOUT"
+        elif mae_atr >= 1.20 and net_atr <= -0.40 and not is_winning_trade:
+            return "CLOSE", "S08_EXCESSIVE_MAE_DRAWDOWN_CUT"
         elif hold_score <= 20 and net_atr <= -0.35 and not is_winning_trade:
             return "CLOSE", "S04_STRUCTURE_FAILURE_WITH_ACTIVE_LOSS"
         elif toxicity_score >= 4.8 and net_atr < -0.20 and not is_winning_trade:
@@ -1037,7 +1040,7 @@ class OrderLifecycleManager:
             return "CLOSE", "S11_DEEP_LOW_SCORE_BAILOUT"
         elif hold_score < 35 and net_atr <= -0.65 and not is_winning_trade:
             return "CLOSE", "S12_CONFIRMED_LOW_SCORE_BAILOUT"
-        elif hold_score < 45 and net_delta < 0.0 and net_atr <= -0.40 and not is_winning_trade:
+        elif hold_score < 50 and net_delta < 0.0 and net_atr <= -0.40 and not is_winning_trade:
             return "CLOSE", "S13_STANDARD_EARLY_EMERGENCY_BAILOUT"
 
         elif timeout_exit and net_delta < 0.10 and not is_winning_trade:
@@ -1203,6 +1206,7 @@ class OrderLifecycleManager:
         current_tick: TickData,
         feature_vector: FeatureVector | None = None,
         symbol_info: SymbolInfo | None = None,
+        probs: Any | None = None,
     ) -> list[Position]:
         atr = max(self._safe_feature_float(feature_vector, "atr_m1", 0.80), 0.50)
         self.manage_pending_orders(symbol=symbol, current_tick=current_tick, symbol_info=symbol_info, atr=atr)
@@ -1559,21 +1563,119 @@ class OrderLifecycleManager:
             else:
                 hold_score = self._hold_score_tracker.get(ticket, 100)
 
+                # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
+            ai_flip_detected = False
+            ai_flip_action = None
+            if probs is not None:
+                try:
+                    probs_list = probs.squeeze().tolist()
+                    if not isinstance(probs_list, list):
+                        probs_list = [probs_list]
+                    prob_buy = probs_list[1] if len(probs_list) > 1 else 0.0
+                    prob_sell = probs_list[2] if len(probs_list) > 2 else 0.0
+
+                    total_active_prob = prob_buy + prob_sell + 1e-8
+                    rel_buy_bias = prob_buy / total_active_prob
+                    rel_sell_bias = prob_sell / total_active_prob
+
+                    # Read thresholds from AlgoConfig with whipsaw protection
+                    rel_threshold = getattr(self.algo_config, "ai_flip_relative_bias_threshold", 0.60)
+                    min_delta = getattr(self.algo_config, "ai_flip_min_delta", 0.10)
+
+                    # Whipsaw guard: require min 15s position duration OR strong relative bias >= (threshold + 0.05)
+                    whipsaw_guard_passed = holding_duration >= 15.0 or max(rel_buy_bias, rel_sell_bias) >= (rel_threshold + 0.05)
+
+                    if whipsaw_guard_passed:
+                        if pos.type == OrderType.BUY and (rel_sell_bias >= rel_threshold or prob_sell > prob_buy + min_delta):
+                            ai_flip_detected = True
+                            ai_flip_action = ActionType.SELL_STOP
+                        elif pos.type == OrderType.SELL and (rel_buy_bias >= rel_threshold or prob_buy > prob_sell + min_delta):
+                            ai_flip_detected = True
+                            ai_flip_action = ActionType.BUY_STOP
+                except Exception:
+                    pass
+
+            if ai_flip_detected and ai_flip_action is not None:
+                msg_id = self._order_message_ids.get(ticket)
+                logger.info(f">>> AI DIRECTION SHIFT DETECTED: Closing position #{ticket} and executing fast reversal {ai_flip_action.value} <<<")
+                if self.adapter.close_position(ticket=ticket):
+                    if self.notifier:
+                        self.notifier.notify_manual_close(
+                            ticket=ticket,
+                            symbol=pos.symbol,
+                            entry=pos.price_open,
+                            exit_price=price_current,
+                            profit_usd=pos.profit,
+                            duration_sec=holding_duration,
+                            reason=f"AI_DIRECTION_FLIP_REVERSAL ({ai_flip_action.value})",
+                            reply_to_message_id=msg_id,
+                        )
+                    self._cleanup_ticket_state(ticket)
+
+                    # Dispatch immediate reversal stop order
+                    rev_entry = current_tick.ask if ai_flip_action == ActionType.BUY_STOP else current_tick.bid
+                    rev_sl = round(rev_entry - (atr * 1.5), 2) if ai_flip_action == ActionType.BUY_STOP else round(rev_entry + (atr * 1.5), 2)
+                    rev_tp = round(rev_entry + (atr * 3.0), 2) if ai_flip_action == ActionType.BUY_STOP else round(rev_entry - (atr * 1.5), 2)
+                    self.adapter.place_pending_order(
+                        symbol=pos.symbol,
+                        order_type=OrderType.BUY_STOP if ai_flip_action == ActionType.BUY_STOP else OrderType.SELL_STOP,
+                        volume=pos.volume,
+                        price=rev_entry,
+                        stop_loss=rev_sl,
+                        take_profit=rev_tp,
+                    )
+                    continue
+
+            # --- MFE GIVEBACK TRAILING LOCK ---
+            peak_win = self._peak_profit_usd.get(ticket, 0.0)
+            contract_sz = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
+            if peak_win >= 150.0 and pos.profit < (peak_win * 0.70):
+                target_mfe_sl = (
+                    pos.price_open + (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
+                    if pos.type == OrderType.BUY
+                    else pos.price_open - (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
+                )
+                target_mfe_sl = round(target_mfe_sl, 2)
+
+                valid_stop = False
+                if pos.type == OrderType.BUY:
+                    if target_mfe_sl > pos.sl and (current_tick.bid - target_mfe_sl) >= min_stop_gap:
+                        valid_stop = True
+                else:
+                    if (pos.sl == 0.0 or target_mfe_sl < pos.sl) and (target_mfe_sl - current_tick.ask) >= min_stop_gap:
+                        valid_stop = True
+
+                if valid_stop and self._should_modify_sl(ticket, target_mfe_sl):
+                    success = self.adapter.modify_position(ticket=ticket, stop_loss=target_mfe_sl, take_profit=pos.tp)
+                    self._last_modify_sl[ticket] = target_mfe_sl
+                    if success:
+                        logger.info(">>> MFE GIVEBACK PROTECTOR: Advanced SL to lock 70% peak profit <<<", ticket=ticket, peak_win=peak_win, locked_sl=target_mfe_sl)
+
             total_sec = max(holding_duration, 1.0)
             pct_win = (self._time_in_profit_sec[ticket] / total_sec) * 100
             pct_loss = (self._time_in_drawdown_sec[ticket] / total_sec) * 100
 
-            logger.info(
-                "[INSTITUTIONAL TELEMETRY v6.8]",
-                ticket=ticket,
-                type=pos.type.value,
-                pnl=f"${pos.profit:+.2f}",
-                peak_win=f"${self._peak_profit_usd[ticket]:+.2f}",
-                peak_loss=f"${self._peak_drawdown_usd[ticket]:+.2f}",
-                time_win=f"{pct_win:.0f}%",
-                time_loss=f"{pct_loss:.0f}%",
-                hold_score=f"{hold_score}/100",
-            )
+            # Throttled Telemetry logging (max once every 3.0s per ticket)
+            import time
+            current_time = time.time()
+            import time
+            current_time = time.time()
+            if not hasattr(self, "_last_telemetry_time"):
+                self._last_telemetry_time = {}
+            last_telemetry = self._last_telemetry_time.get(ticket, 0.0)
+            if (current_time - last_telemetry) >= 3.0:
+                logger.info(
+                    "[INSTITUTIONAL TELEMETRY v6.8]",
+                    ticket=ticket,
+                    type=pos.type.value,
+                    pnl=f"${pos.profit:+.2f}",
+                    peak_win=f"${self._peak_profit_usd[ticket]:+.2f}",
+                    peak_loss=f"${self._peak_drawdown_usd[ticket]:+.2f}",
+                    time_win=f"{pct_win:.0f}%",
+                    time_loss=f"{pct_loss:.0f}%",
+                    hold_score=f"{hold_score}/100",
+                )
+                self._last_telemetry_time[ticket] = current_time
 
             # --- RULE MATRIX IN-TRADE EXIT EVALUATION ---
             rule_exit = None
@@ -1647,41 +1749,56 @@ class OrderLifecycleManager:
 
             elif action == "BREAK_EVEN":
                 target_sl = pos.price_open + max(self.be_lock, spread) if pos.type == OrderType.BUY else pos.price_open - max(self.be_lock, spread)
-                if (pos.type == OrderType.BUY and target_sl > pos.sl and (price_current - target_sl) >= min_stop_gap) or \
-                   (pos.type == OrderType.SELL and (pos.sl == 0.0 or target_sl < pos.sl) and (target_sl - price_current) >= min_stop_gap):
-                    if self._should_modify_sl(ticket, target_sl):
-                        if self.adapter.modify_position(ticket=ticket, stop_loss=target_sl, take_profit=pos.tp):
-                            self._last_modify_sl[ticket] = target_sl
-                            if self.notifier:
-                                msg_id = self._order_message_ids.get(ticket)
-                                orig_risk = self._initial_risks.get(ticket, 0.0)
-                                contract_size = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
-                                protected_amt = abs(target_sl - pos.price_open) * pos.volume * contract_size
-                                self.notifier.notify_break_even_applied_extended(
-                                    ticket=ticket,
-                                    new_sl=target_sl,
-                                    original_risk_usd=orig_risk,
-                                    protected_amount_usd=protected_amt,
-                                    reply_to_message_id=msg_id,
-                                )
+                target_sl = round(target_sl, 2)
+                valid_stop = False
+                if pos.type == OrderType.BUY:
+                    if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
+                        valid_stop = True
+                else:
+                    if (pos.sl == 0.0 or target_sl < pos.sl) and (target_sl - current_tick.ask) >= min_stop_gap:
+                        valid_stop = True
+
+                if valid_stop and self._should_modify_sl(ticket, target_sl):
+                    success = self.adapter.modify_position(ticket=ticket, stop_loss=target_sl, take_profit=pos.tp)
+                    self._last_modify_sl[ticket] = target_sl
+                    if success and self.notifier:
+                        msg_id = self._order_message_ids.get(ticket)
+                        orig_risk = self._initial_risks.get(ticket, 0.0)
+                        contract_size = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
+                        protected_amt = abs(target_sl - pos.price_open) * pos.volume * contract_size
+                        self.notifier.notify_break_even_applied_extended(
+                            ticket=ticket,
+                            new_sl=target_sl,
+                            original_risk_usd=orig_risk,
+                            protected_amount_usd=protected_amt,
+                            reply_to_message_id=msg_id,
+                        )
 
             elif action == "NORMAL_TRAIL":
                 trail_distance = max(min_stop_gap, round(atr * 1.15, 2))
                 target_sl = price_current - trail_distance if pos.type == OrderType.BUY else price_current + trail_distance
-                if (pos.type == OrderType.BUY and target_sl > pos.sl) or (pos.type == OrderType.SELL and (pos.sl == 0.0 or target_sl < pos.sl)):
-                    if self._should_modify_sl(ticket, target_sl):
-                        old_sl_val = pos.sl
-                        if self.adapter.modify_position(ticket=ticket, stop_loss=target_sl, take_profit=pos.tp):
-                            self._last_modify_sl[ticket] = target_sl
-                            if self.notifier:
-                                msg_id = self._order_message_ids.get(ticket)
-                                self.notifier.notify_trailing_stop_advanced_extended(
-                                    ticket=ticket,
-                                    old_sl=old_sl_val,
-                                    new_sl=target_sl,
-                                    current_price=price_current,
-                                    reply_to_message_id=msg_id,
-                                )
+                target_sl = round(target_sl, 2)
+                valid_stop = False
+                if pos.type == OrderType.BUY:
+                    if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
+                        valid_stop = True
+                else:
+                    if (pos.sl == 0.0 or target_sl < pos.sl) and (target_sl - current_tick.ask) >= min_stop_gap:
+                        valid_stop = True
+
+                if valid_stop and self._should_modify_sl(ticket, target_sl):
+                    old_sl_val = pos.sl
+                    success = self.adapter.modify_position(ticket=ticket, stop_loss=target_sl, take_profit=pos.tp)
+                    self._last_modify_sl[ticket] = target_sl
+                    if success and self.notifier:
+                        msg_id = self._order_message_ids.get(ticket)
+                        self.notifier.notify_trailing_stop_advanced_extended(
+                            ticket=ticket,
+                            old_sl=old_sl_val,
+                            new_sl=target_sl,
+                            current_price=price_current,
+                            reply_to_message_id=msg_id,
+                        )
 
         return positions
 
@@ -1690,6 +1807,8 @@ class OrderLifecycleManager:
         self._mae_tracker[ticket] = min(self._mae_tracker.get(ticket, profit_price_delta), profit_price_delta)
 
     def _cleanup_ticket_state(self, ticket: int) -> None:
+        if hasattr(self, "_last_telemetry_time"):
+            self._last_telemetry_time.pop(ticket, None)
         for tracker in (
             self._partial_closed_tickets, self._mfe_tracker, self._mae_tracker, self._entry_timestamps,
             self._last_tick_timestamps, self._time_in_profit_sec, self._time_in_drawdown_sec,

@@ -169,6 +169,10 @@ class SignalPolicy:
         atr = max(self._sanitize_float(raw_atr, 1.50), 0.50)
         current_spread = round(max(0.0, current_tick.ask - current_tick.bid), 2)
 
+        regime_type = regime_state.regime_type if regime_state else None
+        regime_str = regime_type.value if regime_type else "UNKNOWN"
+        regime_conf = float(regime_state.regime_probability) if regime_state else 0.0
+
         # Count active open positions and active pending orders matching symbol and magic
         active_positions_count = 0
         active_pending_count = 0
@@ -217,7 +221,9 @@ class SignalPolicy:
                 return self._build_no_trade(
                     tick=current_tick,
                     confidence=0.0,
-                    reason="ORDER_FREQUENCY_THROTTLED"
+                    reason="ORDER_FREQUENCY_THROTTLED",
+                    regime_str=regime_str,
+                    regime_conf=regime_conf,
                 )
 
         # 2. Strict Single-Position Exposure Gate
@@ -241,7 +247,9 @@ class SignalPolicy:
                 return self._build_no_trade(
                     tick=current_tick,
                     confidence=0.0,
-                    reason="SAME_LEVEL_REENTRY_BLOCKED"
+                    reason="SAME_LEVEL_REENTRY_BLOCKED",
+                    regime_str=regime_str,
+                    regime_conf=regime_conf,
                 )
 
             # If we hold 1 active open position, block entries
@@ -249,7 +257,9 @@ class SignalPolicy:
                 return self._build_no_trade(
                     tick=current_tick,
                     confidence=0.0,
-                    reason="MAX_EXPOSURE_REACHED"
+                    reason="MAX_EXPOSURE_REACHED",
+                    regime_str=regime_str,
+                    regime_conf=regime_conf,
                 )
 
             # If we hold 1 active pending order, check lock & price drift hysteresis
@@ -270,7 +280,9 @@ class SignalPolicy:
                     return self._build_no_trade(
                         tick=current_tick,
                         confidence=0.0,
-                        reason="PENDING_ORDER_LOCKED"
+                        reason="PENDING_ORDER_LOCKED",
+                        regime_str=regime_str,
+                        regime_conf=regime_conf,
                     )
 
         tenkan = self._sanitize_float(feature_vector.tenkan_sen, current_tick.ask)
@@ -284,8 +296,10 @@ class SignalPolicy:
         abs_z = abs(z_score)
         z_score_confidence = min(0.95, round(0.40 + (abs_z / 4.0) * 0.55, 2))
 
-        stat_arb_bullish = (z_score <= -2.0) and not ichimoku_bearish
-        stat_arb_bearish = (z_score >= 2.0) and not ichimoku_bullish
+        trend_strength = self._sanitize_float(getattr(feature_vector, "trend_strength", 0.0), 0.0)
+
+        stat_arb_bullish = (z_score <= -2.0) and not ichimoku_bearish and (trend_strength >= -0.20)
+        stat_arb_bearish = (z_score >= 2.0) and not ichimoku_bullish and (trend_strength <= 0.20)
 
         regime_type = regime_state.regime_type if regime_state else None
         exec_type = regime_state.recommended_execution_type if regime_state else None
@@ -582,6 +596,8 @@ class SignalPolicy:
                     take_profit=float(take_profit),
                     risk_reward_ratio=float(actual_rr),
                     reason_code=reason_code,
+                    regime=regime_str,
+                    regime_confidence=regime_conf,
                     execution_mode=execution_mode,
                     override_reason="TICK_VELOCITY_TRIGGERED",
                     decision_stage="TICK_SWEEP_EXECUTION",
@@ -610,13 +626,19 @@ class SignalPolicy:
             execution_mode = "PREDICTIVE_LIMIT"
             proposed_action = ActionType.BUY_LIMIT if order_block_type == 1 else ActionType.SELL_LIMIT
 
-            # OB Equilibrium (50%)
+# OB Equilibrium (50%)
             swing_low_20 = current_tick.bid - atr
             swing_high_20 = current_tick.ask + atr
             if completed_bars is not None and len(completed_bars) >= 20:
                 swing_low_20 = np.min([b.low for b in completed_bars[-20:]])
                 swing_high_20 = np.max([b.high for b in completed_bars[-20:]])
             target_entry_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
+
+            # Ensure limit price is valid relative to current Ask/Bid to prevent MT5 10015 error
+            if proposed_action == ActionType.BUY_LIMIT and target_entry_price >= current_tick.ask:
+                target_entry_price = round(current_tick.ask - 0.12, 2)
+            elif proposed_action == ActionType.SELL_LIMIT and target_entry_price <= current_tick.bid:
+                target_entry_price = round(current_tick.bid + 0.12, 2)
 
             # Stop Loss beyond deepest OB wick + ATR buffer
             deepest_wick = swing_low_20 if proposed_action == ActionType.BUY_LIMIT else swing_high_20
@@ -653,6 +675,8 @@ class SignalPolicy:
                 take_profit=float(take_profit),
                 risk_reward_ratio=float(actual_rr),
                 reason_code=reason_code,
+                regime=regime_str,
+                regime_confidence=regime_conf,
                 execution_mode=execution_mode,
                 override_reason="PREDICTIVE_OB_PLACEMENT",
                 decision_stage="PREDICTIVE_LIMIT_GENERATION",
@@ -930,19 +954,94 @@ class SignalPolicy:
                     decision_stage = "FLIP_PROTECTION"
                     return build_nt(f"FLIP_PROTECTION_BLOCKED ({confidence:.2f} < req {required_flip_confidence:.2f})", blocked_by_filter="FLIP_PROTECTION")
 
-        if proposed_action != ActionType.NO_TRADE:
-            reason_code = (
-                f"{reason_code} | HTF:[H4={h4_trend:+.1f}, H1_Mom={h1_mom:+.1f}, "
-                f"M30_Str={m30_str:+.1f}, M15_Conf={m15_conf:+.1f}] | "
-                f"S_Dist={support_zone_dist:.2f}, R_Dist={resistance_zone_dist:.2f}"
-            )
-            self._last_active_direction = proposed_action
-            self._last_active_direction_time = now
-            self._last_executed_price = target_entry_price
-            self.last_order_price = target_entry_price
-            self.last_order_time = now
+        if proposed_action == ActionType.NO_TRADE:
+            final_proposal = build_nt(reason_code)
+        elif self._last_signal_time is not None and max(0.0, (now - self._last_signal_time).total_seconds()) < self.cooldown_seconds:
+            elapsed_cooldown = max(0.0, (now - self._last_signal_time).total_seconds())
+            final_proposal = build_nt(f"COOLDOWN_ACTIVE ({elapsed_cooldown:.1f}s)", blocked_by_filter="COOLDOWN")
+        else:
+            # For passing signals, use the pre-computed candidate levels
+            stop_loss = cand_stop_loss
+            take_profit = cand_take_profit
+            actual_rr = cand_actual_rr
 
-        # Throttled Console Telemetry
+            # Determine active min required RR based on confidence (normal vs high confidence)
+            active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
+            if confidence >= getattr(self.algo_config, "high_confidence_threshold", 0.95):
+                min_rr_hc = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
+                if min_rr_hc < active_min_rr:
+                    active_min_rr = min_rr_hc
+
+            # Ensure take_profit satisfies at least the minimum allowed RR to guarantee reward > risk
+            risk_amount = max(abs(target_entry_price - stop_loss), 1e-5)
+            active_tp_rr = min(self.min_allowed_rr, active_min_rr)
+            min_required_tp_dist = risk_amount * active_tp_rr
+            if "BUY" in proposed_action.value:
+                if take_profit < target_entry_price + min_required_tp_dist:
+                    take_profit = round(target_entry_price + min_required_tp_dist, 2)
+            else:
+                if take_profit > target_entry_price - min_required_tp_dist:
+                    take_profit = round(target_entry_price - min_required_tp_dist, 2)
+
+            reward_amount = abs(take_profit - target_entry_price)
+            actual_rr = round(reward_amount / risk_amount, 2)
+
+            # Asymmetric Risk Gatekeeper
+            if actual_rr < active_min_rr:
+                final_proposal = build_nt("ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD", blocked_by_filter="ASYMMETRIC_RR_LIMIT")
+            else:
+                reason_code = (
+                    f"{reason_code} | HTF:[H4={h4_trend:+.1f}, H1_Mom={h1_mom:+.1f}, "
+                    f"M30_Str={m30_str:+.1f}, M15_Conf={m15_conf:+.1f}] | "
+                    f"S_Dist={support_zone_dist:.2f}, R_Dist={resistance_zone_dist:.2f}"
+                )
+                self._last_active_direction = proposed_action
+                self._last_active_direction_time = now
+                self._last_executed_price = target_entry_price
+                self.last_order_price = target_entry_price
+                self.last_order_time = now
+                self._last_signal_time = now
+
+                risk_checks_dict = {
+                    "zone_quality": float(confidence),
+                    "min_zone_quality": float(self.algo_config.ai_zone_confidence_threshold),
+                    "rr": float(actual_rr),
+                    "min_rr": float(active_min_rr),
+                }
+
+                final_proposal = TradeProposal(
+                    request_id=str(uuid.uuid4()),
+                    symbol=current_tick.symbol,
+                    generated_at=now,
+                    action=proposed_action,
+                    confidence=float(confidence),
+                    proposed_entry=float(target_entry_price),
+                    stop_loss=float(stop_loss),
+                    take_profit=float(take_profit),
+                    risk_reward_ratio=float(actual_rr),
+                    reason_code=reason_code,
+                    model_action=cand_action,
+                    buy_probability=prob_buy,
+                    sell_probability=prob_sell,
+                    no_trade_probability=prob_no_trade,
+                    regime=regime_str,
+                    regime_confidence=regime_conf,
+                    risk_allowed=True,
+                    guardian_status=guardian_status,
+                    rejection_reason=None,
+                    final_action=proposed_action.value,
+                    risk_checks=risk_checks_dict,
+                    execution_mode=execution_mode,
+                    override_reason=override_reason,
+                    decision_stage="FINAL_DECISION",
+                    blocked_by=blocked_by,
+                    htf_score=float(trend_strength),
+                    smc_score=float(confidence),
+                    confidence_before_filters=float(confidence_before_filters),
+                    confidence_after_filters=float(confidence),
+                )
+
+        # Throttled Console Telemetry logging actual finalized decision action
         should_log = False
         if force_log:
             should_log = True
@@ -950,13 +1049,13 @@ class SignalPolicy:
             should_log = True
         else:
             elapsed_telemetry = max(0.0, (now - self._last_telemetry_time).total_seconds())
-            if elapsed_telemetry >= self.telemetry_interval or proposed_action != self._last_logged_action:
+            if elapsed_telemetry >= self.telemetry_interval or final_proposal.action != self._last_logged_action:
                 should_log = True
 
         if should_log:
             logger.info(
                 "[MARKET RADAR]",
-                action=proposed_action.value,
+                action=final_proposal.action.value,
                 regime=regime_type.value if regime_type else ("RANGE/CHOP" if is_range_market else "TRENDING"),
                 z_score=f"{z_score:+.2f}",
                 ofi=f"{ofi:+.2f}",
@@ -965,93 +1064,12 @@ class SignalPolicy:
                 ai_buy=f"{prob_buy*100:.1f}%",
                 ai_sell=f"{prob_sell*100:.1f}%",
                 ichi=f"Kumo:{'ABOVE' if feature_vector.is_above_kumo else ('BELOW' if feature_vector.is_below_kumo else 'INSIDE')}",
-                reason=reason_code,
+                reason=final_proposal.reason_code,
             )
             self._last_telemetry_time = now
-            self._last_logged_action = proposed_action
+            self._last_logged_action = final_proposal.action
 
-        if proposed_action == ActionType.NO_TRADE:
-            return build_nt(reason_code)
-
-        if self._last_signal_time is not None:
-            elapsed_cooldown = max(0.0, (now - self._last_signal_time).total_seconds())
-            if elapsed_cooldown < self.cooldown_seconds:
-                return build_nt(f"COOLDOWN_ACTIVE ({elapsed_cooldown:.1f}s)", blocked_by_filter="COOLDOWN")
-
-        # For passing signals, use the pre-computed candidate levels
-        stop_loss = cand_stop_loss
-        take_profit = cand_take_profit
-        actual_rr = cand_actual_rr
-
-        # Determine active min required RR based on confidence (normal vs high confidence)
-        active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
-        if confidence >= getattr(self.algo_config, "high_confidence_threshold", 0.95):
-            min_rr_hc = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
-            if min_rr_hc < active_min_rr:
-                active_min_rr = min_rr_hc
-
-        # Ensure take_profit satisfies at least the minimum allowed RR to guarantee reward > risk
-        risk_amount = max(abs(target_entry_price - stop_loss), 1e-5)
-        active_tp_rr = min(self.min_allowed_rr, active_min_rr)
-        min_required_tp_dist = risk_amount * active_tp_rr
-        if "BUY" in proposed_action.value:
-            if take_profit < target_entry_price + min_required_tp_dist:
-                take_profit = round(target_entry_price + min_required_tp_dist, 2)
-        else:
-            if take_profit > target_entry_price - min_required_tp_dist:
-                take_profit = round(target_entry_price - min_required_tp_dist, 2)
-
-        reward_amount = abs(take_profit - target_entry_price)
-        actual_rr = round(reward_amount / risk_amount, 2)
-
-        # Asymmetric Risk Gatekeeper
-        if actual_rr < active_min_rr:
-            return build_nt("ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD", blocked_by_filter="ASYMMETRIC_RR_LIMIT")
-
-        self._last_signal_time = now
-
-        risk_checks_dict = {
-            "zone_quality": float(confidence),
-            "min_zone_quality": float(self.algo_config.ai_zone_confidence_threshold),
-            "rr": float(actual_rr),
-            "min_rr": float(active_min_rr),
-        }
-
-        return TradeProposal(
-            request_id=str(uuid.uuid4()),
-            symbol=current_tick.symbol,
-            generated_at=now,
-            action=proposed_action,
-            confidence=float(confidence),
-            proposed_entry=float(target_entry_price),
-            stop_loss=float(stop_loss),
-            take_profit=float(take_profit),
-            risk_reward_ratio=float(actual_rr),
-            reason_code=reason_code,
-
-            # Diagnostics
-            model_action=cand_action,
-            buy_probability=prob_buy,
-            sell_probability=prob_sell,
-            no_trade_probability=prob_no_trade,
-            regime=regime_str,
-            regime_confidence=regime_conf,
-            risk_allowed=True,
-            guardian_status=guardian_status,
-            rejection_reason=None,
-            final_action=proposed_action.value,
-            risk_checks=risk_checks_dict,
-
-            # Part 1 Extra metadata
-            execution_mode=execution_mode,
-            override_reason=override_reason,
-            decision_stage="FINAL_DECISION",
-            blocked_by=blocked_by,
-            htf_score=float(trend_strength),
-            smc_score=float(confidence),
-            confidence_before_filters=float(confidence_before_filters),
-            confidence_after_filters=float(confidence),
-        )
+        return final_proposal
 
     def _build_no_trade(
         self,

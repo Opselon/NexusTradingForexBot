@@ -19,7 +19,7 @@ Invariants:
 """
 
 import math
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -37,73 +37,68 @@ logger = get_logger("nexus_scalp.features.scalp_features")
 
 def aggregate_bars(m1_bars: list[BarData], period_minutes: int) -> list[BarData]:
     """
-    Groups completed M1 bars into completed higher timeframe bars.
+    Groups completed M1 bars into completed higher timeframe bars using absolute UTC minute bucket alignment.
     """
     if not m1_bars:
         return []
-    aggregated = []
-    current_bar_start = None
-    o, h, l, c, vol = 0.0, -float("inf"), float("inf"), 0.0, 0
-    for bar in m1_bars:
-        minute = bar.timestamp.minute
-        bar_minute = (minute // period_minutes) * period_minutes
-        bar_start = bar.timestamp.replace(minute=bar_minute, second=0, microsecond=0)
 
-        if current_bar_start is None:
-            current_bar_start = bar_start
-            o = bar.open
-            h = bar.high
-            l = bar.low
-            c = bar.close
-            vol = bar.tick_volume
-        elif bar_start == current_bar_start:
+    aggregated: list[BarData] = []
+    current_bucket_start = None
+    o, h, l, c, vol = 0.0, -float("inf"), float("inf"), 0.0, 0
+
+    for bar in m1_bars:
+        # Convert timestamp to absolute minutes for exact multi-hour timeframe bucket alignment
+        total_minutes = int(bar.timestamp.timestamp()) // 60
+        bucket_minute = (total_minutes // period_minutes) * period_minutes
+        bucket_timestamp = datetime.fromtimestamp(bucket_minute * 60, tz=UTC)
+
+        if current_bucket_start is None:
+            current_bucket_start = bucket_timestamp
+            o, h, l, c, vol = bar.open, bar.high, bar.low, bar.close, bar.tick_volume
+        elif bucket_timestamp == current_bucket_start:
             h = max(h, bar.high)
             l = min(l, bar.low)
             c = bar.close
             vol += bar.tick_volume
         else:
+            tf_label = f"M{period_minutes}" if period_minutes < 60 else f"H{period_minutes // 60}"
             aggregated.append(BarData(
                 symbol=bar.symbol,
-                timeframe=f"M{period_minutes}" if period_minutes < 60 else f"H{period_minutes // 60}",
-                timestamp=current_bar_start,
-                open=o,
-                high=h,
-                low=l,
-                close=c,
+                timeframe=tf_label,
+                timestamp=current_bucket_start,
+                open=o, high=h, low=l, close=c,
                 tick_volume=vol,
                 is_complete=True
             ))
-            current_bar_start = bar_start
-            o = bar.open
-            h = bar.high
-            l = bar.low
-            c = bar.close
-            vol = bar.tick_volume
+            current_bucket_start = bucket_timestamp
+            o, h, l, c, vol = bar.open, bar.high, bar.low, bar.close, bar.tick_volume
 
-    if current_bar_start is not None:
+    if current_bucket_start is not None:
+        tf_label = f"M{period_minutes}" if period_minutes < 60 else f"H{period_minutes // 60}"
         aggregated.append(BarData(
             symbol=m1_bars[-1].symbol,
-            timeframe=f"M{period_minutes}" if period_minutes < 60 else f"H{period_minutes // 60}",
-            timestamp=current_bar_start,
-            open=o,
-            high=h,
-            low=l,
-            close=c,
+            timeframe=tf_label,
+            timestamp=current_bucket_start,
+            open=o, high=h, low=l, close=c,
             tick_volume=vol,
             is_complete=True
         ))
+
     return aggregated
 
 
-def find_support_resistance_levels(bars: list[BarData], window: int = 20) -> tuple[list[float], list[float]]:
+def find_support_resistance_levels(bars: list[BarData], window: int = 5) -> tuple[list[float], list[float]]:
     """
-    Finds Support (swing lows) and Resistance (swing highs) levels over a window.
+    Finds Support (swing lows) and Resistance (swing highs) levels using fractal pivot windows.
     """
-    if len(bars) < window * 2 + 1:
+    if not bars:
         return [], []
 
     highs = [b.high for b in bars]
     lows = [b.low for b in bars]
+
+    if len(bars) < window * 2 + 1:
+        return [min(lows)], [max(highs)]
 
     supports = []
     resistances = []
@@ -114,13 +109,18 @@ def find_support_resistance_levels(bars: list[BarData], window: int = 20) -> tup
         if lows[i] == min(lows[i - window : i + window + 1]):
             supports.append(lows[i])
 
+    if not supports:
+        supports = [min(lows)]
+    if not resistances:
+        resistances = [max(highs)]
+
     def clean_levels(levels: list[float]) -> list[float]:
         if not levels:
             return []
         levels = sorted(levels)
         cleaned = [levels[0]]
         for l in levels[1:]:
-            if (l - cleaned[-1]) / cleaned[-1] > 0.001:
+            if (l - cleaned[-1]) / cleaned[-1] > 0.0005:
                 cleaned.append(l)
         return cleaned
 
@@ -312,8 +312,19 @@ class FeatureVector(BaseModel):
         breakout_sig = 1.0 if self.broke_previous_high else (-1.0 if self.broke_previous_low else 0.0)
         extreme_sig = 1.0 if self.is_at_extreme_high else (-1.0 if self.is_at_extreme_low else 0.0)
         
-        engulfing_sig = 1.0 if self.is_engulfing_bullish else (-1.0 if self.is_engulfing_bearish else 0.0)
-        pinbar_sig = 1.0 if self.is_hammer_pinbar else (-1.0 if self.is_shooting_star else 0.0)
+        if self.is_hammer_pinbar:
+            pinbar_sig = float(min(2.0, self.lower_wick_ratio * 2.0))
+        elif self.is_shooting_star:
+            pinbar_sig = float(max(-2.0, -self.upper_wick_ratio * 2.0))
+        else:
+            pinbar_sig = 0.0
+
+        if self.is_engulfing_bullish:
+            engulfing_sig = float(min(2.0, 1.0 + self.body_to_range_ratio))
+        elif self.is_engulfing_bearish:
+            engulfing_sig = float(max(-2.0, -(1.0 + self.body_to_range_ratio)))
+        else:
+            engulfing_sig = 0.0
 
         raw_features = [
             # feat_0 .. feat_9
@@ -687,21 +698,33 @@ class ScalpFeatureEngine:
         else:
             htf_m15_confirmation = 0.0
 
-        # Support & Resistance levels detection
-        supports, resistances = find_support_resistance_levels(completed_bars, window=20)
+        # Local 50-bar Support & Resistance levels detection
+        sr_bars = completed_bars[-50:] if len(completed_bars) >= 50 else completed_bars
+        supports, resistances = find_support_resistance_levels(sr_bars, window=3)
+
+        sr_lows = [b.low for b in sr_bars]
+        sr_highs = [b.high for b in sr_bars]
+
         nearest_support = None
         nearest_resistance = None
+
         for s in reversed(sorted(supports)):
             if s < mid_price:
                 nearest_support = s
                 break
+
         for r in sorted(resistances):
             if r > mid_price:
                 nearest_resistance = r
                 break
 
-        support_zone_dist = float((mid_price - nearest_support) / safe_atr) if nearest_support is not None else 3.0
-        resistance_zone_dist = float((nearest_resistance - mid_price) / safe_atr) if nearest_resistance is not None else 3.0
+        if nearest_support is None:
+            nearest_support = min(sr_lows)
+        if nearest_resistance is None:
+            nearest_resistance = max(sr_highs)
+
+        support_zone_dist = float(max(0.0, (mid_price - nearest_support) / safe_atr))
+        resistance_zone_dist = float(max(0.0, (nearest_resistance - mid_price) / safe_atr))
 
         # Trend strength cross-timeframe
         trend_signals = []
@@ -766,58 +789,32 @@ class ScalpFeatureEngine:
 
         # 4. BOS Validation (Break of Structure)
         feat_ob_valid_bos = 0.0
-        if order_block_type == 1:
-            prev_shs = [val for idx, val in swing_highs if idx < len(completed_bars) - 2]
-            if prev_shs and closes[-1] > prev_shs[-1]:
-                feat_ob_valid_bos = 1.0
-        elif order_block_type == -1:
-            prev_sls = [val for idx, val in swing_lows if idx < len(completed_bars) - 2]
-            if prev_sls and closes[-1] < prev_sls[-1]:
-                feat_ob_valid_bos = 1.0
+        prev_shs = [val for idx, val in swing_highs if idx < len(completed_bars) - 2]
+        prev_sls = [val for idx, val in swing_lows if idx < len(completed_bars) - 2]
+
+        if order_block_type == 1 and prev_shs and closes[-1] > prev_shs[-1]:
+            feat_ob_valid_bos = 1.0
+        elif order_block_type == -1 and prev_sls and closes[-1] < prev_sls[-1]:
+            feat_ob_valid_bos = 1.0
+        elif broke_prev_high or broke_prev_low or choch_bullish or choch_bearish:
+            feat_ob_valid_bos = 0.50
 
         # 5. Liquidity Sweep Validation
         feat_ob_liquidity_swept = 0.0
-        if order_block_type == 1:
-            prev_sls = [val for idx, val in swing_lows if idx < len(completed_bars) - 2]
-            if prev_sls:
-                target_sl = prev_sls[-1]
-                for j in [-2, -1]:
-                    if lows[j] < target_sl and closes[j] > target_sl:
-                        feat_ob_liquidity_swept = 1.0
-        elif order_block_type == -1:
-            prev_shs = [val for idx, val in swing_highs if idx < len(completed_bars) - 2]
-            if prev_shs:
-                target_sh = prev_shs[-1]
-                for j in [-2, -1]:
-                    if highs[j] > target_sh and closes[j] < target_sh:
-                        feat_ob_liquidity_swept = 1.0
+        if liquidity_sweep_signal != 0:
+            feat_ob_liquidity_swept = 1.0
+        elif order_block_type == 1 and prev_sls:
+            target_sl = prev_sls[-1]
+            if lows[-1] < target_sl and closes[-1] > target_sl:
+                feat_ob_liquidity_swept = 1.0
+        elif order_block_type == -1 and prev_shs:
+            target_sh = prev_shs[-1]
+            if highs[-1] > target_sh and closes[-1] < target_sh:
+                feat_ob_liquidity_swept = 1.0
 
-        # 6. Secondary Sub-Leg OBs (50%-60% OTE Retracement)
-        sub_swing_highs = []
-        sub_swing_lows = []
-        for i in range(2, len(completed_bars) - 2):
-            window_highs = [b.high for b in completed_bars[i-2 : i+3]]
-            window_lows = [b.low for b in completed_bars[i-2 : i+3]]
-            if completed_bars[i].high == max(window_highs):
-                sub_swing_highs.append(completed_bars[i].high)
-            if completed_bars[i].low == min(window_lows):
-                sub_swing_lows.append(completed_bars[i].low)
-
-        if not sub_swing_highs:
-            sub_swing_highs = [last_sh_val]
-        if not sub_swing_lows:
-            sub_swing_lows = [last_sl_val]
-
-        sub_sh = sub_swing_highs[-1]
-        sub_sl = sub_swing_lows[-1]
-        sub_range = sub_sh - sub_sl + 1e-8
-
-        ote_low = sub_sl + 0.50 * sub_range
-        ote_high = sub_sl + 0.60 * sub_range
-
-        feat_ob_fib_50_60_alignment = 0.0
-        if ote_low <= ob_price <= ote_high:
-            feat_ob_fib_50_60_alignment = 1.0
+        # 6. Continuous Fibonacci 50%-60% OTE Alignment Score (0.0 to 1.0)
+        fib_dist = abs(ob_equilibrium_ratio - 0.55)
+        feat_ob_fib_50_60_alignment = float(np.clip(1.0 - (fib_dist / 0.35), 0.0, 1.0))
 
         return FeatureVector(
             symbol=self.symbol,

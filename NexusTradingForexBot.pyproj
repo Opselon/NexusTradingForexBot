@@ -57,6 +57,7 @@
     <Compile Include="src\nexus_scalp\ports\__init__.py" />
     <Compile Include="src\nexus_scalp\risk\risk_engine.py" />
     <Compile Include="src\nexus_scalp\signals\policy.py" />
+    <Compile Include="src\nexus_scalp\web\server.py" />
     <Compile Include="src\nexus_scalp\__init__.py" />
     <Compile Include="src\nexus_scalp\training\walk_forward_trainer.py" />
     <Compile Include="src\nexus_scalp\training\__init__.py" />
@@ -111,12 +112,15 @@
     <Folder Include="src\nexus_scalp\risk\__pycache__\" />
     <Folder Include="src\nexus_scalp\signals\" />
     <Folder Include="src\nexus_scalp\signals\__pycache__\" />
+    <Folder Include="src\nexus_scalp\web\" />
+    <Folder Include="src\nexus_scalp\web\__pycache__\" />
     <Folder Include="src\nexus_scalp\__pycache__\" />
     <Folder Include="src\nexus_scalp_engine.egg-info\" />
     <Folder Include="tests\" />
     <Folder Include="tests\unit\" />
     <Folder Include="tests\unit\__pycache__\" />
     <Folder Include="tests\__pycache__\" />
+    <Folder Include="Web\" />
   </ItemGroup>
   <ItemGroup>
     <Content Include=".pytest_cache\.gitignore" />
@@ -171,6 +175,7 @@
     <Content Include="src\nexus_scalp\ports\__pycache__\__init__.cpython-313.pyc" />
     <Content Include="src\nexus_scalp\risk\__pycache__\risk_engine.cpython-311.pyc" />
     <Content Include="src\nexus_scalp\signals\__pycache__\policy.cpython-311.pyc" />
+    <Content Include="src\nexus_scalp\web\__pycache__\server.cpython-311.pyc" />
     <Content Include="src\nexus_scalp\__pycache__\__init__.cpython-311.pyc" />
     <Content Include="src\nexus_scalp\__pycache__\__init__.cpython-313.pyc" />
     <Content Include="src\nexus_scalp_engine.egg-info\dependency_links.txt" />
@@ -185,6 +190,9 @@
     <Content Include="tests\unit\__pycache__\test_mt5_adapter.cpython-311-pytest-9.1.1.pyc" />
     <Content Include="tests\unit\__pycache__\__init__.cpython-311.pyc" />
     <Content Include="tests\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="Web\app.js" />
+    <Content Include="Web\index.html" />
+    <Content Include="Web\styles.css" />
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="Global|VisualStudio|.venv" />

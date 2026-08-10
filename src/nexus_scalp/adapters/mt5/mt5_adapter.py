@@ -454,28 +454,57 @@ class DirectMT5Adapter(IMT5Port):
             raise ValueError(f"Invalid pending order type: {order_type}")
 
         filling_mode = self._resolve_filling_mode(symbol)
+        import time
 
-        request = {
-            "action": mt5.TRADE_ACTION_PENDING,
-            "symbol": symbol,
-            "volume": volume,
-            "type": mt5_order_type,
-            "price": price,
-            "sl": stop_loss,
-            "tp": take_profit,
-            "magic": 888101,
-            "comment": "NSE_PENDING",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": filling_mode,
-        }
+        max_retries = 3
+        last_retcode = 0
+        last_err = ""
 
-        result = mt5.order_send(request)
-        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-            retcode = result.retcode if result else mt5.last_error()
-            logger.error("place_pending_order failed. Retcode: %s", retcode)
-            return 0
+        for attempt in range(1, max_retries + 1):
+            req_price = price
+            tick = mt5.symbol_info_tick(symbol)
+            if tick:
+                sym_info = mt5.symbol_info(symbol)
+                min_gap = (sym_info.trade_stops_level * sym_info.point) if sym_info and sym_info.trade_stops_level > 0 else 0.10
+                min_gap = max(min_gap, 0.10)
 
-        return result.order
+                if order_type == OrderType.BUY_LIMIT and req_price >= tick.ask:
+                    req_price = round(tick.ask - min_gap, 2)
+                elif order_type == OrderType.SELL_LIMIT and req_price <= tick.bid:
+                    req_price = round(tick.bid + min_gap, 2)
+                elif order_type == OrderType.BUY_STOP and req_price <= tick.ask:
+                    req_price = round(tick.ask + min_gap, 2)
+                elif order_type == OrderType.SELL_STOP and req_price >= tick.bid:
+                    req_price = round(tick.bid - min_gap, 2)
+
+            request = {
+                "action": mt5.TRADE_ACTION_PENDING,
+                "symbol": symbol,
+                "volume": volume,
+                "type": mt5_order_type,
+                "price": req_price,
+                "sl": stop_loss,
+                "tp": take_profit,
+                "magic": 888101,
+                "comment": "NSE_PENDING",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": filling_mode,
+            }
+
+            result = mt5.order_send(request)
+            if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info("Fast-Act Pending Order Placed Successfully on attempt %s! Ticket: %s", attempt, result.order)
+                return result.order
+
+            last_retcode = result.retcode if result else mt5.last_error()
+            last_err = self._translate_retcode(last_retcode)
+
+            if attempt < max_retries:
+                logger.warning("Fast-Act Pending Order Retry %s/%s for %s. Retcode: %s (%s). Retrying in 25ms...", attempt, max_retries, symbol, last_retcode, last_err)
+                time.sleep(0.025)
+
+        logger.error("place_pending_order failed after %s fast-act retries. Retcode: %s (%s)", max_retries, last_retcode, last_err)
+        return 0
 
     def modify_order(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
         return self.modify_position(ticket=ticket, stop_loss=stop_loss, take_profit=take_profit)
@@ -484,68 +513,95 @@ class DirectMT5Adapter(IMT5Port):
         self._assert_connected()
         assert mt5 is not None
 
-        positions = mt5.positions_get(ticket=ticket)
-        if not positions or len(positions) == 0:
-            logger.error("Failed to modify position: Ticket #%s not found.", ticket)
-            return False
+        import time
 
-        pos = positions[0]
+        max_retries = 3
+        last_retcode = 0
+        last_err = ""
 
-        request = {
-            "action": mt5.TRADE_ACTION_SLTP,
-            "position": ticket,
-            "symbol": pos.symbol,
-            "sl": stop_loss,
-            "tp": take_profit,
-        }
+        for attempt in range(1, max_retries + 1):
+            positions = mt5.positions_get(ticket=ticket)
+            if not positions or len(positions) == 0:
+                logger.error("Failed to modify position: Ticket #%s not found.", ticket)
+                return False
 
-        result = mt5.order_send(request)
-        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-            err = result.comment if result else str(mt5.last_error())
-            retcode = result.retcode if result else mt5.last_error()
-            logger.error("Failed to modify position SL/TP for ticket #%s. Retcode: %s (%s)", ticket, retcode, err)
-            return False
+            pos = positions[0]
 
-        logger.info("Successfully modified position ticket #%s -> New SL: %s | New TP: %s", ticket, stop_loss, take_profit)
-        return True
+            request = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "position": ticket,
+                "symbol": pos.symbol,
+                "sl": stop_loss,
+                "tp": take_profit,
+            }
+
+            result = mt5.order_send(request)
+            if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info("Successfully modified position ticket #%s -> New SL: %s | New TP: %s", ticket, stop_loss, take_profit)
+                return True
+
+            last_retcode = result.retcode if result else mt5.last_error()
+            last_err = self._translate_retcode(last_retcode)
+
+            if attempt < max_retries:
+                time.sleep(0.025)
+
+        logger.error("Failed to modify position SL/TP for ticket #%s after %s retries. Retcode: %s (%s)", ticket, max_retries, last_retcode, last_err)
+        return False
 
     def close_position(self, ticket: int, volume: float | None = None) -> bool:
         self._assert_connected()
         assert mt5 is not None
 
-        positions = mt5.positions_get(ticket=ticket)
-        if not positions:
-            return False
+        import time
 
-        pos = positions[0]
-        close_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
-        tick = mt5.symbol_info_tick(pos.symbol)
-        if not tick:
-            return False
+        max_retries = 3
+        last_retcode = 0
+        last_err = ""
 
-        price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
-        filling_mode = self._resolve_filling_mode(pos.symbol)
-        close_volume = volume if volume is not None else pos.volume
+        for attempt in range(1, max_retries + 1):
+            positions = mt5.positions_get(ticket=ticket)
+            if not positions:
+                logger.error("Failed to close position: Ticket #%s not found.", ticket)
+                return False
 
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": pos.symbol,
-            "volume": close_volume,
-            "type": close_type,
-            "position": ticket,
-            "price": price,
-            "magic": pos.magic,
-            "comment": "NSE_CLOSE",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": filling_mode,
-        }
+            pos = positions[0]
+            close_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+            tick = mt5.symbol_info_tick(pos.symbol)
+            if not tick:
+                time.sleep(0.025)
+                continue
 
-        result = mt5.order_send(request)
-        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-            return False
+            price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
+            filling_mode = self._resolve_filling_mode(pos.symbol)
+            close_volume = volume if volume is not None else pos.volume
 
-        logger.info("Successfully closed live position ticket #%s at price %s", ticket, price)
-        return True
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": pos.symbol,
+                "volume": close_volume,
+                "type": close_type,
+                "position": ticket,
+                "price": price,
+                "magic": pos.magic,
+                "comment": "NSE_CLOSE",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": filling_mode,
+            }
+
+            result = mt5.order_send(request)
+            if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info("Successfully closed live position ticket #%s at price %s", ticket, price)
+                return True
+
+            last_retcode = result.retcode if result else mt5.last_error()
+            last_err = self._translate_retcode(last_retcode)
+
+            if attempt < max_retries:
+                time.sleep(0.025)
+
+        logger.error("Failed to close position ticket #%s after %s retries. Retcode: %s (%s)", ticket, max_retries, last_retcode, last_err)
+        return False
 
     def _resolve_filling_mode(self, symbol: str) -> int:
         assert mt5 is not None
