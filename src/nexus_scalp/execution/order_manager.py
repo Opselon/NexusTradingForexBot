@@ -48,7 +48,7 @@ logger = get_logger("nexus_scalp.execution.order_manager")
 # =============================================================================
 
 #: Absolute ceiling on lot size for any single dispatch, independent of sizing math.
-HARD_MAX_LOTS: float = 2.0
+HARD_MAX_LOTS: float = 10.0
 
 #: Maximum simultaneous exposure: 1 active position OR 1 pending order, engine-wide.
 MAX_TOTAL_EXPOSURE: int = 1
