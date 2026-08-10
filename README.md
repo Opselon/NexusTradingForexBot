@@ -10,6 +10,9 @@
 [![SQLite WAL](https://img.shields.io/badge/SQLite-WAL_Ledger-003B57.svg?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org/)
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal_Event--Driven-6f42c1.svg?style=for-the-badge)]()
 [![Status](https://img.shields.io/badge/Production-Hardened-success.svg?style=for-the-badge)]()
+<p align="center">
+  <img src="docs/web.png" alt="Nexus Trading Dashboard" width="100%">
+</p>
 
 > **Nexus Scalp Engine (NSE)** is an enterprise-class, event-driven quantitative trading runtime engineered for sub-second scalping on **XAUUSD (Gold)** and major currency pairs. NSE unifies deep learning inference, real-time market microstructure analysis, and high-frequency execution into a single, self-healing framework.
 > 
