@@ -8,7 +8,9 @@ and risk engines.
 
 import asyncio
 import json
+import math
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -98,6 +100,37 @@ class ToggleRuleRequest(BaseModel):
     rule_name: str
     is_enabled: bool
     parameters: dict[str, Any] | None = None
+
+
+class ModelTestRequest(BaseModel):
+    """
+    Debug Hub model-test payload.
+
+    `features` accepts the 50-dimensional vector directly. When omitted, the live
+    feature vector is used, which makes the endpoint a one-click "what does the net
+    think right now" probe.
+    """
+    features: list[float] | None = None
+    use_live_features: bool = False
+
+
+def _classify_feature(value: Any) -> tuple[float, str]:
+    """
+    Normalizes a raw feature value and classifies its health for the Debug Hub.
+
+    Returns:
+        (sanitized_value, status) where status is VALID, NAN, INF or NON_NUMERIC.
+    """
+    try:
+        fval = float(value)
+    except (TypeError, ValueError):
+        return 0.0, "NON_NUMERIC"
+
+    if math.isnan(fval):
+        return 0.0, "NAN"
+    if math.isinf(fval):
+        return 0.0, "INF"
+    return fval, "VALID"
 
 
 def create_app(engine_ref: Any = None) -> FastAPI:
@@ -987,6 +1020,410 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 engine.config.execution.mode = ExecutionMode.LIVE
 
         return {"success": True, "replaying": req.active}
+
+    # =========================================================================
+    # MODULE C: DEBUG & DIAGNOSTICS HUB — BACKEND REST ENDPOINTS
+    # =========================================================================
+
+    @app.get("/api/debug/features")
+    def get_debug_features() -> dict[str, Any]:
+        """
+        Real-time values of all 50 features (feat_0 .. feat_49).
+
+        Each entry reports the raw model-input value alongside a health status so the UI
+        can flag NaN/Inf anomalies, plus a staleness assessment of the feature snapshot
+        as a whole (age of the last computed FeatureVector).
+        """
+        engine = app.state.engine
+
+        raw_values: list[Any] = [0.0] * len(FEATURE_NAMES)
+        feature_timestamp: str | None = None
+        age_seconds: float | None = None
+        engine_online = engine is not None
+
+        if engine is not None:
+            try:
+                fv = engine._last_fv
+                if fv is not None:
+                    raw_values = list(fv.to_tensor_input())
+                    feature_timestamp = getattr(fv, "timestamp_utc", None)
+                    if feature_timestamp:
+                        try:
+                            ts = datetime.fromisoformat(str(feature_timestamp))
+                            if ts.tzinfo is None:
+                                ts = ts.replace(tzinfo=UTC)
+                            age_seconds = max(0.0, (datetime.now(UTC) - ts).total_seconds())
+                        except (TypeError, ValueError):
+                            age_seconds = None
+            except Exception as e:
+                logger.error("Debug features: failed to read live feature vector", error=str(e))
+
+        features_payload: list[dict[str, Any]] = []
+        nan_count = 0
+        inf_count = 0
+
+        for idx, name in enumerate(FEATURE_NAMES):
+            raw = raw_values[idx] if idx < len(raw_values) else 0.0
+            value, status = _classify_feature(raw)
+            if status == "NAN":
+                nan_count += 1
+            elif status == "INF":
+                inf_count += 1
+            features_payload.append({
+                "index": idx,
+                "key": f"feat_{idx}",
+                "name": name,
+                "value": value,
+                "status": status,
+                "is_valid": status == "VALID",
+            })
+
+        # A snapshot older than 15s means the tick pipeline is not feeding the model.
+        STALE_THRESHOLD_SEC = 15.0
+        is_stale = (age_seconds is None) or (age_seconds > STALE_THRESHOLD_SEC)
+
+        return {
+            "engine_online": engine_online,
+            "feature_count": len(features_payload),
+            "features": features_payload,
+            "nan_count": nan_count,
+            "inf_count": inf_count,
+            "anomaly_count": nan_count + inf_count,
+            "all_valid": (nan_count + inf_count) == 0,
+            "timestamp_utc": feature_timestamp,
+            "age_seconds": age_seconds,
+            "is_stale": is_stale,
+            "stale_threshold_seconds": STALE_THRESHOLD_SEC,
+        }
+
+    @app.post("/api/debug/model-test")
+    def post_debug_model_test(req: ModelTestRequest) -> dict[str, Any]:
+        """
+        Runs an instant PyTorch ScalpNet inference against a supplied (or live) 50D vector.
+
+        Returns class probabilities (ai_no_trade / ai_buy / ai_sell), the argmax label and
+        the inference latency, so the Debug Hub can verify the model end-to-end without
+        waiting for a live signal.
+        """
+        engine = app.state.engine
+        expected_dim = len(FEATURE_NAMES)
+
+        features = req.features
+        source = "REQUEST"
+
+        if features is None or req.use_live_features:
+            if engine is None or getattr(engine, "_last_fv", None) is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No feature vector supplied and no live features available (engine offline).",
+                )
+            features = list(engine._last_fv.to_tensor_input())
+            source = "LIVE"
+
+        if len(features) != expected_dim:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Feature vector must contain exactly {expected_dim} values, got {len(features)}.",
+            )
+
+        sanitized: list[float] = []
+        sanitized_count = 0
+        for raw in features:
+            value, status = _classify_feature(raw)
+            if status != "VALID":
+                sanitized_count += 1
+            sanitized.append(value)
+
+        try:
+            import numpy as np
+            import torch
+        except Exception as import_err:
+            raise HTTPException(status_code=503, detail=f"PyTorch runtime unavailable: {import_err}") from import_err
+
+        started = time.perf_counter()
+
+        try:
+            if engine is not None and getattr(engine, "_bundle", None) is not None:
+                # Use the live bundle so the test exercises the exact deployed weights and scaler.
+                with engine._bundle_lock:
+                    bundle = engine._bundle
+                x_np = np.array(sanitized, dtype=np.float32).reshape(1, -1)
+                x_np = bundle.scaler.transform_50d(x_np)
+                x = torch.tensor(x_np, dtype=torch.float32)
+                x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+                bundle.model.eval()
+                with torch.inference_mode():
+                    probs_tensor = bundle.model(x)
+                model_source = "LIVE_BUNDLE"
+            else:
+                # Engine offline: instantiate a fresh net so the endpoint still validates
+                # the model graph and tensor contract.
+                from nexus_scalp.models.scalp_net import ScalpNet
+
+                model = ScalpNet(num_features=expected_dim, num_classes=4)
+                model.eval()
+                x = torch.tensor([sanitized], dtype=torch.float32)
+                x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+                with torch.inference_mode():
+                    probs_tensor = model(x)
+                model_source = "FRESH_INSTANCE"
+        except HTTPException:
+            raise
+        except Exception as infer_err:
+            logger.error("Debug model test inference failed", error=str(infer_err))
+            raise HTTPException(status_code=500, detail=f"Inference failed: {infer_err}") from infer_err
+
+        latency_ms = (time.perf_counter() - started) * 1000.0
+
+        probs_list = [float(p) for p in probs_tensor.detach().cpu().numpy().flatten().tolist()]
+        while len(probs_list) < 4:
+            probs_list.append(0.0)
+
+        ai_no_trade, ai_buy, ai_sell = probs_list[0], probs_list[1], probs_list[2]
+        ai_wait = probs_list[3]
+
+        labels = {0: "NO_TRADE", 1: "BUY_MARKET", 2: "SELL_MARKET", 3: "WAIT"}
+        argmax_idx = max(range(len(probs_list)), key=lambda i: probs_list[i])
+
+        return {
+            "success": True,
+            "feature_source": source,
+            "model_source": model_source,
+            "sanitized_inputs": sanitized_count,
+            "ai_no_trade": ai_no_trade,
+            "ai_buy": ai_buy,
+            "ai_sell": ai_sell,
+            "ai_wait": ai_wait,
+            "probabilities": probs_list,
+            "predicted_class_index": argmax_idx,
+            "predicted_label": labels.get(argmax_idx, "UNKNOWN"),
+            "confidence": probs_list[argmax_idx],
+            "latency_ms": round(latency_ms, 3),
+            "evaluated_at": datetime.now(UTC).isoformat(),
+        }
+
+    @app.get("/api/debug/health")
+    def get_debug_health() -> dict[str, Any]:
+        """
+        Subsystem health widgets: Feature Engine, PyTorch Model, Risk Engine,
+        MT5 Win32 IPC Adapter and Audit Database.
+
+        Each subsystem reports HEALTHY / DEGRADED / UNHEALTHY / DISCONNECTED plus a short
+        human-readable detail string and subsystem-specific metrics.
+        """
+        engine = app.state.engine
+        subsystems: list[dict[str, Any]] = []
+
+        def add(name: str, status: str, detail: str, metrics: dict[str, Any] | None = None) -> None:
+            subsystems.append({
+                "name": name,
+                "status": status,
+                "detail": detail,
+                "metrics": metrics or {},
+            })
+
+        # --- 1. Feature Engine ---
+        if engine is None:
+            add("Feature Engine", "DISCONNECTED", "Engine reference is not attached to the web server.")
+        else:
+            try:
+                fv = engine._last_fv
+                if fv is None:
+                    add("Feature Engine", "DEGRADED", "No feature vector computed yet (waiting for first tick).")
+                else:
+                    values = list(fv.to_tensor_input())
+                    bad = sum(1 for v in values if _classify_feature(v)[1] != "VALID")
+                    dim_ok = len(values) == len(FEATURE_NAMES)
+                    if not dim_ok:
+                        add(
+                            "Feature Engine", "UNHEALTHY",
+                            f"Dimensionality contract violated: {len(values)} != {len(FEATURE_NAMES)}.",
+                            {"dimensions": len(values), "expected": len(FEATURE_NAMES)},
+                        )
+                    elif bad:
+                        add(
+                            "Feature Engine", "DEGRADED",
+                            f"{bad} of {len(values)} features are NaN/Inf.",
+                            {"anomalies": bad, "dimensions": len(values)},
+                        )
+                    else:
+                        add(
+                            "Feature Engine", "HEALTHY",
+                            f"All {len(values)} features numeric and within contract.",
+                            {"anomalies": 0, "dimensions": len(values)},
+                        )
+            except Exception as e:
+                add("Feature Engine", "UNHEALTHY", f"Feature extraction raised: {e}")
+
+        # --- 2. PyTorch Model ---
+        if engine is None:
+            add("PyTorch Model", "DISCONNECTED", "Engine offline; model bundle not loaded.")
+        else:
+            try:
+                with engine._bundle_lock:
+                    bundle = engine._bundle
+                if bundle is None:
+                    add("PyTorch Model", "UNHEALTHY", "Model bundle is not initialized.")
+                else:
+                    scaler_ready = bool(getattr(bundle.scaler, "is_ready", lambda: False)())
+                    probs = engine._last_probs
+                    last_infer_ok = probs is not None
+                    metrics = {
+                        "artifact_path": str(getattr(bundle, "artifact_path", "")),
+                        "scaler_ready": scaler_ready,
+                        "last_inference_available": last_infer_ok,
+                    }
+                    if not scaler_ready:
+                        add("PyTorch Model", "DEGRADED", "Weights loaded but scaler artifact is not fitted.", metrics)
+                    elif not last_infer_ok:
+                        add("PyTorch Model", "DEGRADED", "Model ready; awaiting first live inference.", metrics)
+                    else:
+                        add("PyTorch Model", "HEALTHY", "ScalpNet loaded with fitted scaler and live inference flowing.", metrics)
+            except Exception as e:
+                add("PyTorch Model", "UNHEALTHY", f"Model introspection raised: {e}")
+
+        # --- 3. Risk Engine ---
+        if engine is None:
+            add("Risk Engine", "DISCONNECTED", "Engine offline.")
+        else:
+            try:
+                risk = engine.risk_engine
+                kill_switch = bool(getattr(risk, "_kill_switch_active", False))
+                metrics = {
+                    "kill_switch_active": kill_switch,
+                    "max_allowed_lots": float(getattr(risk, "max_allowed_lots", 0.0)),
+                    "hard_max_lots": 2.0,
+                    "min_risk_reward_ratio": float(getattr(risk, "min_risk_reward_ratio", 0.0)),
+                    "survival_mode": bool(getattr(engine, "_survival_mode_active", False)),
+                }
+                if kill_switch:
+                    add("Risk Engine", "UNHEALTHY", "EMERGENCY KILL SWITCH ACTIVE — all execution rejected.", metrics)
+                elif metrics["survival_mode"]:
+                    add("Risk Engine", "DEGRADED", "Survival mode active: thresholds tightened after drawdown.", metrics)
+                else:
+                    add("Risk Engine", "HEALTHY", "Clamps armed (HARD_MAX_LOTS = 2.0), kill switch disengaged.", metrics)
+            except Exception as e:
+                add("Risk Engine", "UNHEALTHY", f"Risk engine introspection raised: {e}")
+
+        # --- 4. MT5 Win32 IPC Adapter ---
+        if engine is None:
+            add("MT5 Win32 IPC Adapter", "DISCONNECTED", "Engine offline; no broker adapter bound.")
+        else:
+            try:
+                adapter = engine.adapter
+                is_conn_fn = getattr(adapter, "is_connected", None)
+                connected = bool(is_conn_fn()) if callable(is_conn_fn) else True
+
+                tick = engine._last_tick
+                tick_age = None
+                if tick is not None:
+                    try:
+                        tick_age = max(0.0, (datetime.now(UTC) - tick.timestamp).total_seconds())
+                    except Exception:
+                        tick_age = None
+
+                metrics = {
+                    "adapter": type(adapter).__name__,
+                    "connected": connected,
+                    "last_tick_age_seconds": tick_age,
+                    "execution_mode": engine.config.execution.mode.value,
+                    "symbol": engine.config.execution.symbol,
+                }
+                if not connected:
+                    add("MT5 Win32 IPC Adapter", "DISCONNECTED", "Broker IPC channel reports disconnected.", metrics)
+                elif tick_age is None:
+                    add("MT5 Win32 IPC Adapter", "DEGRADED", "Connected but no tick has been received yet.", metrics)
+                elif tick_age > 15.0:
+                    add("MT5 Win32 IPC Adapter", "DEGRADED", f"Tick stream stale ({tick_age:.1f}s since last tick).", metrics)
+                else:
+                    add("MT5 Win32 IPC Adapter", "HEALTHY", f"Live tick stream active ({tick_age:.1f}s ago).", metrics)
+            except Exception as e:
+                add("MT5 Win32 IPC Adapter", "UNHEALTHY", f"Adapter introspection raised: {e}")
+
+        # --- 5. Audit Database ---
+        try:
+            if engine is not None:
+                repo = engine.audit
+            else:
+                from nexus_scalp.adapters.database.audit_repository import AuditRepository
+                repo = AuditRepository()
+
+            metrics_db = repo.get_account_performance_metrics()
+            queue_size = 0
+            queue_obj = getattr(repo, "_queue", None)
+            if queue_obj is not None:
+                try:
+                    queue_size = int(queue_obj.qsize())
+                except Exception:
+                    queue_size = 0
+
+            worker = getattr(repo, "_worker_thread", None)
+            worker_alive = bool(worker.is_alive()) if worker is not None else False
+
+            metrics = {
+                "db_path": getattr(repo, "_db_path", ""),
+                "write_queue_depth": queue_size,
+                "worker_alive": worker_alive,
+                "total_trades": metrics_db.get("total_trades", 0),
+            }
+            if not worker_alive:
+                add("Audit Database", "DEGRADED", "Background write worker is not running.", metrics)
+            elif queue_size > 5000:
+                add("Audit Database", "DEGRADED", f"Write queue backing up ({queue_size} pending).", metrics)
+            else:
+                add("Audit Database", "HEALTHY", "WAL storage reachable; async writer draining normally.", metrics)
+        except Exception as e:
+            add("Audit Database", "UNHEALTHY", f"Audit DB unreachable: {e}")
+
+        rank = {"HEALTHY": 0, "DEGRADED": 1, "UNHEALTHY": 2, "DISCONNECTED": 2}
+        overall = "HEALTHY"
+        for sub in subsystems:
+            if rank.get(sub["status"], 0) > rank.get(overall, 0):
+                overall = sub["status"]
+
+        return {
+            "overall_status": overall,
+            "subsystems": subsystems,
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+
+    @app.get("/api/debug/ipc-telemetry")
+    def get_debug_ipc_telemetry(limit: int = 50) -> dict[str, Any]:
+        """
+        Recent broker execution events for the MT5 IPC Telemetry Console:
+        order state transitions, reason/retcode strings and measured IPC latency.
+        """
+        engine = app.state.engine
+        try:
+            if engine is not None:
+                repo = engine.audit
+            else:
+                from nexus_scalp.adapters.database.audit_repository import AuditRepository
+                repo = AuditRepository()
+            events = repo.get_recent_order_events(limit=max(1, min(limit, 500)))
+        except Exception as e:
+            logger.error("Debug IPC telemetry retrieval failed", error=str(e))
+            events = []
+
+        latencies = [float(e.get("latency") or 0.0) for e in events if e.get("latency") is not None]
+        avg_latency_ms = round((sum(latencies) / len(latencies)) * 1000.0, 2) if latencies else 0.0
+
+        exposure = {"positions": 0, "pendings": 0}
+        if engine is not None and hasattr(engine.order_manager, "count_total_exposure"):
+            try:
+                pos, pend = engine.order_manager.count_total_exposure()
+                exposure = {"positions": pos, "pendings": pend}
+            except Exception:
+                pass
+
+        return {
+            "events": events,
+            "event_count": len(events),
+            "avg_latency_ms": avg_latency_ms,
+            "exposure": exposure,
+            "max_total_exposure": 1,
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
 
     # Observability stats
     @app.get("/api/observability/stats")

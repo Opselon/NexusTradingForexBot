@@ -158,6 +158,10 @@ class LiveEngine:
             audit_repo=self.audit,
             notifier=self.notifier,
             rule_matrix=self.rule_matrix,
+            algo_config=config.algo,
+            # Routing every dispatch through the risk engine enforces HARD_MAX_LOTS = 2.0
+            # and the free-margin pre-check at the execution boundary.
+            risk_engine=self.risk_engine,
         )
 
         # Online training toolchain
@@ -637,6 +641,7 @@ class LiveEngine:
                 current_tick=tick,
                 feature_vector=fv,
                 symbol_info=self._symbol_info,
+                account=account,
             )
             current_pos_count = len(active_positions)
 
@@ -702,8 +707,38 @@ class LiveEngine:
 
             policy_decision = proposal
             if policy_decision.action != ActionType.NO_TRADE:
+                # ---------------------------------------------------------------
+                # AI POSITION REVERSAL: close-then-flip, never stack
+                # ---------------------------------------------------------------
+                if getattr(policy_decision, "is_ai_reversal", False) or (
+                    policy_decision.action == ActionType.CLOSE_POSITION
+                    and "AI_REVERSAL_SIGNAL" in (policy_decision.reason_code or "")
+                ):
+                    reversal_volume = 0.0
+                    if self._symbol_info:
+                        reversal_volume = self.risk_engine.calculate_volume(
+                            entry=policy_decision.proposed_entry,
+                            sl=policy_decision.stop_loss,
+                            tp=policy_decision.take_profit,
+                            account=account,
+                            symbol_info=self._symbol_info,
+                        )
+                        reversal_volume = self.risk_engine.get_clamped_position_size(reversal_volume)
+
+                    success = self.order_manager.execute_ai_reversal(
+                        decision=policy_decision,
+                        volume=reversal_volume,
+                        current_tick=tick,
+                        symbol_info=self._symbol_info,
+                    )
+                    logger.info(
+                        f"[info] AI REVERSAL EXECUTED ticket={policy_decision.ticket} "
+                        f"new_action={getattr(policy_decision.reversal_action, 'value', None)} "
+                        f"volume={reversal_volume} success={success}"
+                    )
+
                 # FOR NEW ENTRY SIGNALS
-                if policy_decision.action in (
+                elif policy_decision.action in (
                     ActionType.BUY, ActionType.SELL,
                     ActionType.BUY_MARKET, ActionType.SELL_MARKET,
                     ActionType.BUY_LIMIT, ActionType.SELL_LIMIT,
@@ -777,6 +812,9 @@ class LiveEngine:
             # Equity / drawdown tracking + audit
             self._update_survival_state(account=account, current_pos_count=current_pos_count)
             self.audit.log_account_snapshot(account=account, peak_equity=self._peak_equity)
+            # Keep the order manager's account snapshot fresh so closed-trade autopsy rows
+            # carry accurate balance/equity/drawdown values.
+            self.order_manager.update_account_snapshot(account=account, peak_equity=self._peak_equity)
 
         except Exception as pipeline_err:
             logger.error("Silent recovery: exception caught in hot-path tick processing pipeline", error=str(pipeline_err), exc_info=True)

@@ -56,14 +56,21 @@ class AuditRepository:
         """Initializes tables, indexes, and HFT performance pragmas."""
         if self._is_sqlite:
             os.makedirs(os.path.dirname(os.path.abspath(self._db_path)), exist_ok=True)
-            
-            with sqlite3.connect(self._db_path, timeout=10.0) as conn:
+
+            # NOTE: `with sqlite3.connect(...)` only wraps a transaction, it does NOT
+            # close the connection. Leaking it keeps the .db/-wal/-shm files locked on
+            # Windows, which breaks temp-directory cleanup in tests and log rotation.
+            conn = sqlite3.connect(self._db_path, timeout=10.0)
+            try:
                 # Enable Write-Ahead Logging for high concurrency without locks
                 conn.execute("PRAGMA journal_mode = WAL;")
                 conn.execute("PRAGMA synchronous = NORMAL;")
                 conn.execute("PRAGMA temp_store = MEMORY;")
-                
+
                 self._create_sqlite_tables(conn)
+                conn.commit()
+            finally:
+                conn.close()
             logger.info("Initialized High-Performance SQLite WAL storage", db_path=self._db_path)
 
     def _create_sqlite_tables(self, conn: sqlite3.Connection) -> None:
@@ -141,7 +148,14 @@ class AuditRepository:
             """
         )
 
-        # Robust Financial Accounting Ledger
+        # =====================================================================
+        # INSTITUTIONAL FINANCIAL ACCOUNTING LEDGER (One autopsy row per trade)
+        # =====================================================================
+        # Legacy columns (ticket .. exit_mechanism) are retained verbatim for
+        # backward compatibility with existing dashboards and metric queries.
+        # The institutional autopsy columns extend them with full identification,
+        # timing, financial, entry-context, SL-dynamics, quant-excursion, and
+        # account-snapshot detail.
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS audit_ledger (
@@ -162,18 +176,66 @@ class AuditRepository:
                 initial_sl_price REAL DEFAULT 0.0,
                 final_sl_price REAL DEFAULT 0.0,
                 is_risk_free_hit INTEGER DEFAULT 0,
-                exit_mechanism TEXT DEFAULT ''
+                exit_mechanism TEXT DEFAULT '',
+
+                -- Identification
+                order_id TEXT DEFAULT '',
+
+                -- Timestamps & Price
+                open_time TEXT DEFAULT '',
+                close_time TEXT DEFAULT '',
+                duration_seconds REAL DEFAULT 0.0,
+                open_price REAL DEFAULT 0.0,
+                close_price REAL DEFAULT 0.0,
+
+                -- Financials
+                gross_pnl_usd REAL DEFAULT 0.0,
+                net_pnl_usd REAL DEFAULT 0.0,
+
+                -- Entry Context
+                entry_reason TEXT DEFAULT '',
+                ai_confidence_at_open REAL DEFAULT 0.0,
+                market_regime_at_open TEXT DEFAULT '',
+
+                -- SL/TP Dynamics
+                was_sl_modified INTEGER DEFAULT 0,
+
+                -- Quant Risk Excursions
+                MAE_usd REAL DEFAULT 0.0,
+                MFE_usd REAL DEFAULT 0.0,
+
+                -- Account Snapshot
+                account_balance_after REAL DEFAULT 0.0,
+                account_equity_after REAL DEFAULT 0.0,
+                drawdown_percent_after REAL DEFAULT 0.0
             );
             """
         )
-        # Safe alter statements for migration of existing tables
+        # Safe alter statements for migration of pre-existing ledger tables
         for col_def in [
             ("mae", "REAL DEFAULT 0.0"),
             ("mfe", "REAL DEFAULT 0.0"),
             ("initial_sl_price", "REAL DEFAULT 0.0"),
             ("final_sl_price", "REAL DEFAULT 0.0"),
             ("is_risk_free_hit", "INTEGER DEFAULT 0"),
-            ("exit_mechanism", "TEXT DEFAULT ''")
+            ("exit_mechanism", "TEXT DEFAULT ''"),
+            ("order_id", "TEXT DEFAULT ''"),
+            ("open_time", "TEXT DEFAULT ''"),
+            ("close_time", "TEXT DEFAULT ''"),
+            ("duration_seconds", "REAL DEFAULT 0.0"),
+            ("open_price", "REAL DEFAULT 0.0"),
+            ("close_price", "REAL DEFAULT 0.0"),
+            ("gross_pnl_usd", "REAL DEFAULT 0.0"),
+            ("net_pnl_usd", "REAL DEFAULT 0.0"),
+            ("entry_reason", "TEXT DEFAULT ''"),
+            ("ai_confidence_at_open", "REAL DEFAULT 0.0"),
+            ("market_regime_at_open", "TEXT DEFAULT ''"),
+            ("was_sl_modified", "INTEGER DEFAULT 0"),
+            ("MAE_usd", "REAL DEFAULT 0.0"),
+            ("MFE_usd", "REAL DEFAULT 0.0"),
+            ("account_balance_after", "REAL DEFAULT 0.0"),
+            ("account_equity_after", "REAL DEFAULT 0.0"),
+            ("drawdown_percent_after", "REAL DEFAULT 0.0"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE audit_ledger ADD COLUMN {col_def[0]} {col_def[1]};")
@@ -472,18 +534,34 @@ class AuditRepository:
         volume: float,
         entry_price: float,
         timestamp_str: str,
+        order_id: str = "",
+        entry_reason: str = "",
+        ai_confidence_at_open: float = 0.0,
+        market_regime_at_open: str = "",
+        initial_sl_price: float = 0.0,
     ) -> None:
-        """Logs the opening of a position to the financial ledger."""
+        """
+        Logs the opening of a position to the financial ledger.
+
+        Captures the immutable entry context (reason, AI confidence, regime, initial SL)
+        so the closing autopsy row can be assembled without re-deriving history.
+        """
         if not self._is_sqlite:
             return
 
         query = """
             INSERT INTO audit_ledger
-            (ticket, symbol, direction, volume, entry_price, status, timestamp)
-            VALUES (?, ?, ?, ?, ?, 'OPENED', ?)
+            (ticket, symbol, direction, volume, entry_price, status, timestamp,
+             order_id, open_time, open_price, entry_reason, ai_confidence_at_open,
+             market_regime_at_open, initial_sl_price)
+            VALUES (?, ?, ?, ?, ?, 'OPENED', ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticket) DO NOTHING
         """
-        args = (ticket, symbol, direction, volume, entry_price, timestamp_str)
+        args = (
+            ticket, symbol, direction, volume, entry_price, timestamp_str,
+            order_id, timestamp_str, entry_price, entry_reason,
+            float(ai_confidence_at_open), market_regime_at_open, float(initial_sl_price),
+        )
         try:
             self._queue.put_nowait((query, args))
         except queue.Full:
@@ -509,15 +587,49 @@ class AuditRepository:
         final_sl_price: float = 0.0,
         is_risk_free_hit: int = 0,
         exit_mechanism: str = "",
+        order_id: str = "",
+        open_time: str = "",
+        close_time: str = "",
+        entry_reason: str = "",
+        ai_confidence_at_open: float = 0.0,
+        market_regime_at_open: str = "",
+        was_sl_modified: int = 0,
+        mae_usd: float = 0.0,
+        mfe_usd: float = 0.0,
+        account_balance_after: float = 0.0,
+        account_equity_after: float = 0.0,
+        drawdown_percent_after: float = 0.0,
     ) -> None:
-        """Logs/updates the closing of a position in the financial ledger."""
+        """
+        Writes EXACTLY ONE data-rich autopsy row per closed trade.
+
+        The row is upserted onto the OPENED placeholder (same ticket primary key), so a
+        full trade lifecycle collapses into a single institutional accounting record:
+        identification, timing, financials (gross vs net), entry context, SL dynamics,
+        exit mechanism, quant excursions (MAE/MFE in USD), and the post-trade account
+        snapshot.
+
+        Entry-context fields (entry_reason / ai_confidence_at_open / market_regime_at_open)
+        are preserved from the OPENED row whenever the caller passes blanks, so a close
+        that lacks context never erases what was captured at entry.
+        """
         if not self._is_sqlite:
             return
 
+        gross_pnl_usd = float(pnl)
+        net_pnl_usd = float(pnl) + float(commission) + float(swap)
+
         query = """
             INSERT INTO audit_ledger
-            (ticket, symbol, direction, volume, entry_price, exit_price, status, pnl, commission, swap, duration_sec, timestamp, mae, mfe, initial_sl_price, final_sl_price, is_risk_free_hit, exit_mechanism)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (ticket, symbol, direction, volume, entry_price, exit_price, status, pnl,
+             commission, swap, duration_sec, timestamp, mae, mfe, initial_sl_price,
+             final_sl_price, is_risk_free_hit, exit_mechanism,
+             order_id, open_time, close_time, duration_seconds, open_price, close_price,
+             gross_pnl_usd, net_pnl_usd, entry_reason, ai_confidence_at_open,
+             market_regime_at_open, was_sl_modified, MAE_usd, MFE_usd,
+             account_balance_after, account_equity_after, drawdown_percent_after)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticket) DO UPDATE SET
                 exit_price=excluded.exit_price,
                 status=excluded.status,
@@ -531,12 +643,46 @@ class AuditRepository:
                 initial_sl_price=excluded.initial_sl_price,
                 final_sl_price=excluded.final_sl_price,
                 is_risk_free_hit=excluded.is_risk_free_hit,
-                exit_mechanism=excluded.exit_mechanism
+                exit_mechanism=excluded.exit_mechanism,
+                order_id=CASE WHEN excluded.order_id != '' THEN excluded.order_id ELSE audit_ledger.order_id END,
+                open_time=CASE WHEN excluded.open_time != '' THEN excluded.open_time ELSE audit_ledger.open_time END,
+                close_time=excluded.close_time,
+                duration_seconds=excluded.duration_seconds,
+                open_price=excluded.open_price,
+                close_price=excluded.close_price,
+                gross_pnl_usd=excluded.gross_pnl_usd,
+                net_pnl_usd=excluded.net_pnl_usd,
+                entry_reason=CASE WHEN excluded.entry_reason != '' THEN excluded.entry_reason ELSE audit_ledger.entry_reason END,
+                ai_confidence_at_open=CASE WHEN excluded.ai_confidence_at_open != 0.0 THEN excluded.ai_confidence_at_open ELSE audit_ledger.ai_confidence_at_open END,
+                market_regime_at_open=CASE WHEN excluded.market_regime_at_open != '' THEN excluded.market_regime_at_open ELSE audit_ledger.market_regime_at_open END,
+                was_sl_modified=excluded.was_sl_modified,
+                MAE_usd=excluded.MAE_usd,
+                MFE_usd=excluded.MFE_usd,
+                account_balance_after=excluded.account_balance_after,
+                account_equity_after=excluded.account_equity_after,
+                drawdown_percent_after=excluded.drawdown_percent_after
         """
         args = (
             ticket, symbol, direction, volume, entry_price, exit_price,
             status, pnl, commission, swap, duration_sec, timestamp_str,
-            mae, mfe, initial_sl_price, final_sl_price, is_risk_free_hit, exit_mechanism
+            mae, mfe, initial_sl_price, final_sl_price, is_risk_free_hit, exit_mechanism,
+            order_id,
+            open_time or "",
+            close_time or timestamp_str,
+            float(duration_sec),
+            float(entry_price),
+            float(exit_price),
+            gross_pnl_usd,
+            net_pnl_usd,
+            entry_reason,
+            float(ai_confidence_at_open),
+            market_regime_at_open,
+            int(bool(was_sl_modified)),
+            float(mae_usd),
+            float(mfe_usd),
+            float(account_balance_after),
+            float(account_equity_after),
+            float(drawdown_percent_after),
         )
         try:
             self._queue.put_nowait((query, args))
@@ -673,6 +819,46 @@ class AuditRepository:
         except Exception as e:
             logger.error("Failed to retrieve equity growth chart data", error=str(e))
             return []
+
+    def get_recent_order_events(self, limit: int = 50) -> list[dict[str, Any]]:
+        """
+        Returns the most recent order lifecycle events for the Debug Hub's
+        MT5 IPC Telemetry Console (retcodes/reasons, latency, state transitions).
+        """
+        if not self._is_sqlite:
+            return []
+
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    """
+                    SELECT id, ticket, order_id, symbol, action, price, stop_loss, take_profit,
+                           volume, reason, latency, execution_mode, timestamp
+                    FROM audit_orders
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+                return [dict(r) for r in cursor.fetchall()]
+        except Exception as e:
+            logger.error("Failed to retrieve recent order events", error=str(e))
+            return []
+
+    def get_ledger_row(self, ticket: int) -> dict[str, Any] | None:
+        """Returns the full autopsy row for a single ticket, or None when absent."""
+        if not self._is_sqlite:
+            return None
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("SELECT * FROM audit_ledger WHERE ticket = ?", (ticket,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error("Failed to retrieve ledger row", ticket=ticket, error=str(e))
+            return None
 
     def get_last_account_snapshot(self) -> dict[str, Any] | None:
         """

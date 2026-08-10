@@ -136,6 +136,9 @@ class TradeProposal(BaseModel):
     confidence_before_filters: float | None = Field(default=None, description="Confidence before filters applied")
     confidence_after_filters: float | None = Field(default=None, description="Confidence after filters applied")
 
+    reversal_action: ActionType | None = Field(default=None, description="Directional action to dispatch after an AI reversal close")
+    is_ai_reversal: bool = Field(default=False, description="True when this proposal requests an AI position reversal")
+
     @model_validator(mode="after")
     def validate_action_price_invariants(self) -> "TradeProposal":
         """Ensures logical price invariants hold based on proposed trade direction."""

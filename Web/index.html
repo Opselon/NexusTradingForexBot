@@ -99,6 +99,11 @@
                 <i class="fa-solid fa-sliders text-lg w-5 text-accentCyan"></i>
                 <span>Bot Settings</span>
             </button>
+            <button onclick="switchTab('tab-debug', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                <i class="fa-solid fa-bug text-lg w-5 text-accentCyan"></i>
+                <span>Debug &amp; Diagnostics</span>
+                <span id="debug-nav-badge" class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">--</span>
+            </button>
 
             <div class="pt-6 border-t border-borderClr mt-auto space-y-4">
                 <div class="bg-darkBg/60 p-3 rounded-lg border border-borderClr">
@@ -712,6 +717,201 @@
                             </div>
                         </div>
                     </form>
+                </div>
+            </section>
+
+            <!-- TAB 6: DEBUG & DIAGNOSTICS HUB -->
+            <section id="tab-debug" class="tab-content hidden space-y-6">
+
+                <!-- Hub Header -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-r from-accentCyan/5 via-transparent to-accentRose/5 pointer-events-none"></div>
+                    <div class="relative flex flex-wrap justify-between items-center gap-4">
+                        <div>
+                            <h3 class="text-lg font-black text-white flex items-center tracking-tight">
+                                <i class="fa-solid fa-bug mr-2.5 text-accentCyan"></i>
+                                DEBUG &amp; DIAGNOSTICS HUB
+                            </h3>
+                            <p class="text-xs text-textMuted mt-1 max-w-2xl leading-relaxed">
+                                High-fidelity introspection of the live pipeline: 50D feature stream integrity,
+                                PyTorch ScalpNet inference probing, subsystem health, and raw MT5 IPC execution telemetry.
+                            </p>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="text-right">
+                                <span class="text-[10px] text-textMuted font-bold uppercase block">Overall Status</span>
+                                <span id="debug-overall-status" class="text-sm font-black font-mono text-slate-300">UNKNOWN</span>
+                            </div>
+                            <label class="flex items-center space-x-2 cursor-pointer bg-darkBg/60 border border-borderClr px-3 py-2 rounded-lg">
+                                <input type="checkbox" id="debug-autorefresh" checked class="w-3.5 h-3.5 text-accentCyan bg-darkBg border-borderClr rounded cursor-pointer">
+                                <span class="text-[11px] font-bold text-textMuted uppercase">Auto 3s</span>
+                            </label>
+                            <button onclick="refreshDebugHub()" class="bg-gradient-to-tr from-accentCyan to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-extrabold py-2 px-5 rounded-lg text-xs transition shadow-lg shadow-accentCyan/15 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-arrows-rotate"></i> <span>Refresh All</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subsystem Health Widgets -->
+                <div>
+                    <h4 class="text-xs font-bold text-textMuted tracking-wider uppercase mb-3 flex items-center">
+                        <i class="fa-solid fa-heart-pulse mr-2 text-accentRose"></i> Subsystem Health
+                    </h4>
+                    <div id="debug-health-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                        <div class="bg-panelBg border border-borderClr rounded-xl p-4 text-xs text-textMuted italic">
+                            Awaiting first health poll...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+                    <!-- Interactive Model Inspector -->
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl xl:col-span-1 flex flex-col">
+                        <div class="border-b border-borderClr pb-3 mb-4">
+                            <h3 class="text-md font-bold text-white flex items-center">
+                                <i class="fa-solid fa-microchip mr-2 text-accentCyan"></i>
+                                Interactive Model Inspector
+                            </h3>
+                            <p class="text-[11px] text-textMuted mt-1 leading-relaxed">
+                                Fires a real forward pass through <span class="font-mono text-accentCyan">scalp_net.py</span> and
+                                renders the softmax distribution.
+                            </p>
+                        </div>
+
+                        <div class="space-y-3 mb-4">
+                            <div class="flex items-center justify-between bg-darkBg/40 border border-borderClr/60 rounded-lg px-3 py-2">
+                                <span class="text-[11px] font-bold text-textMuted uppercase">Input Vector</span>
+                                <select id="debug-model-input-mode" class="bg-darkBg border border-borderClr text-accentCyan text-[11px] rounded px-2 py-1 font-bold focus:outline-none focus:border-accentCyan cursor-pointer">
+                                    <option value="live">Live 50D Features</option>
+                                    <option value="zeros">Zero Vector (baseline)</option>
+                                    <option value="custom">Custom JSON</option>
+                                </select>
+                            </div>
+                            <textarea id="debug-model-custom-vector" rows="3" placeholder="[0.0, 0.1, ... 50 values ...]"
+                                class="hidden w-full bg-darkBg border border-borderClr text-white rounded px-3 py-2 text-[11px] font-mono focus:outline-none focus:border-accentCyan"></textarea>
+                            <button onclick="runModelDiagnosticsTest()" id="debug-run-model-btn"
+                                class="w-full bg-gradient-to-tr from-accentCyan to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-extrabold py-2.5 rounded-lg text-xs transition shadow-lg shadow-accentCyan/15 flex items-center justify-center space-x-2">
+                                <i class="fa-solid fa-flask-vial"></i> <span>Run Model Diagnostics Test</span>
+                            </button>
+                        </div>
+
+                        <!-- Probability bars -->
+                        <div class="space-y-3.5 flex-1">
+                            <div>
+                                <div class="flex justify-between text-[11px] font-semibold mb-1">
+                                    <span class="text-emerald-400">ai_buy</span>
+                                    <span id="debug-prob-buy" class="font-mono text-emerald-400">--</span>
+                                </div>
+                                <div class="w-full bg-darkBg rounded-full h-2.5 overflow-hidden border border-borderClr">
+                                    <div id="debug-prob-buy-bar" class="bg-emerald-400 h-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] font-semibold mb-1">
+                                    <span class="text-rose-400">ai_sell</span>
+                                    <span id="debug-prob-sell" class="font-mono text-rose-400">--</span>
+                                </div>
+                                <div class="w-full bg-darkBg rounded-full h-2.5 overflow-hidden border border-borderClr">
+                                    <div id="debug-prob-sell-bar" class="bg-rose-400 h-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[11px] font-semibold mb-1">
+                                    <span class="text-accentCyan">ai_no_trade</span>
+                                    <span id="debug-prob-no-trade" class="font-mono text-accentCyan">--</span>
+                                </div>
+                                <div class="w-full bg-darkBg rounded-full h-2.5 overflow-hidden border border-borderClr">
+                                    <div id="debug-prob-no-trade-bar" class="bg-accentCyan h-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 pt-3 border-t border-borderClr grid grid-cols-3 gap-2 text-center">
+                            <div>
+                                <span class="text-[9px] text-textMuted font-bold uppercase block">Prediction</span>
+                                <span id="debug-model-prediction" class="text-[11px] font-mono font-black text-white">--</span>
+                            </div>
+                            <div>
+                                <span class="text-[9px] text-textMuted font-bold uppercase block">Latency</span>
+                                <span id="debug-model-latency" class="text-[11px] font-mono font-black text-accentGold">--</span>
+                            </div>
+                            <div>
+                                <span class="text-[9px] text-textMuted font-bold uppercase block">Weights</span>
+                                <span id="debug-model-source" class="text-[11px] font-mono font-black text-accentCyan">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 50D Feature Stream Table -->
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl xl:col-span-2 flex flex-col">
+                        <div class="flex flex-wrap justify-between items-center border-b border-borderClr pb-3 mb-4 gap-3">
+                            <div>
+                                <h3 class="text-md font-bold text-white flex items-center">
+                                    <i class="fa-solid fa-table-list mr-2 text-accentCyan"></i>
+                                    50D Feature Stream
+                                </h3>
+                                <p class="text-[11px] text-textMuted mt-1">
+                                    Live model inputs with NaN / anomaly detection.
+                                </p>
+                            </div>
+                            <div class="flex items-center space-x-3 text-[10px] font-bold">
+                                <span id="debug-feature-stale" class="px-2 py-1 rounded bg-slate-500/15 text-slate-300 border border-slate-500/30 font-mono">AGE --</span>
+                                <span id="debug-feature-valid-count" class="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono">VALID --</span>
+                                <span id="debug-feature-anomaly-count" class="px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 font-mono">ANOMALY --</span>
+                                <label class="flex items-center space-x-1.5 cursor-pointer text-textMuted">
+                                    <input type="checkbox" id="debug-feature-anomalies-only" class="w-3 h-3 text-accentRose bg-darkBg border-borderClr rounded cursor-pointer">
+                                    <span class="uppercase">Anomalies only</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="overflow-y-auto max-h-[420px] rounded-lg border border-borderClr/60">
+                            <table class="w-full text-left border-collapse text-[11px]">
+                                <thead class="sticky top-0 bg-panelBg z-10">
+                                    <tr class="text-textMuted border-b border-borderClr font-bold uppercase">
+                                        <th class="py-2 px-3">Dim</th>
+                                        <th class="py-2 px-3">Feature Name</th>
+                                        <th class="py-2 px-3 text-right">Value</th>
+                                        <th class="py-2 px-3 text-right pr-4">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="debug-features-table" class="font-mono divide-y divide-borderClr/30 text-gray-300">
+                                    <tr>
+                                        <td colspan="4" class="py-6 text-center text-textMuted italic font-sans">
+                                            Awaiting feature stream...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MT5 IPC Telemetry Console -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl">
+                    <div class="flex flex-wrap justify-between items-center border-b border-borderClr pb-3 mb-4 gap-3">
+                        <div>
+                            <h3 class="text-md font-bold text-white flex items-center">
+                                <i class="fa-solid fa-terminal mr-2 text-emerald-400"></i>
+                                MT5 IPC Telemetry Console
+                            </h3>
+                            <p class="text-[11px] text-textMuted mt-1">
+                                Broker execution retcodes, IPC latency and order state transitions, newest first.
+                            </p>
+                        </div>
+                        <div class="flex items-center space-x-3 text-[10px] font-bold">
+                            <span id="debug-ipc-latency" class="px-2 py-1 rounded bg-accentGold/10 text-accentGold border border-accentGold/30 font-mono">AVG -- ms</span>
+                            <span id="debug-ipc-exposure" class="px-2 py-1 rounded bg-accentCyan/10 text-accentCyan border border-accentCyan/30 font-mono">EXPOSURE --</span>
+                            <button onclick="clearIpcConsole()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-textMuted hover:text-white px-2.5 py-1 rounded transition uppercase">
+                                <i class="fa-solid fa-eraser mr-1"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                    <div id="debug-ipc-console" class="bg-black/60 border border-borderClr/60 rounded-lg p-3 font-mono text-[11px] leading-relaxed h-[280px] overflow-y-auto space-y-0.5">
+                        <div class="text-textMuted italic font-sans">No IPC events recorded yet.</div>
+                    </div>
                 </div>
             </section>
 

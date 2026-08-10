@@ -44,6 +44,34 @@ logger = get_logger("nexus_scalp.execution.order_manager")
 
 
 # =============================================================================
+# EXECUTION-WIDE HARD INVARIANTS (Module B)
+# =============================================================================
+
+#: Absolute ceiling on lot size for any single dispatch, independent of sizing math.
+HARD_MAX_LOTS: float = 2.0
+
+#: Maximum simultaneous exposure: 1 active position OR 1 pending order, engine-wide.
+MAX_TOTAL_EXPOSURE: int = 1
+
+#: Pending limit orders are locked (immune to cancel/recreate churn) for this long.
+PENDING_ORDER_LOCK_SECONDS: float = 30.0
+
+#: Reason marker emitted by SignalPolicy to request an AI position reversal.
+AI_REVERSAL_REASON: str = "AI_REVERSAL_SIGNAL"
+
+
+class ExitMechanism:
+    """Canonical exit-mechanism taxonomy recorded in the audit ledger."""
+
+    TAKE_PROFIT_HIT = "TAKE_PROFIT_HIT"
+    HARD_SL_HIT = "HARD_SL_HIT"
+    RISK_FREE_SL_HIT = "RISK_FREE_SL_HIT"
+    AI_REVERSAL_EXIT = "AI_REVERSAL_EXIT"
+    HOLD_SCORE_DECAY = "HOLD_SCORE_DECAY"
+    MANUAL_CLOSE = "MANUAL_CLOSE"
+
+
+# =============================================================================
 # DATA STRUCTURES & VALUE OBJECTS
 # =============================================================================
 
@@ -150,6 +178,7 @@ class OrderLifecycleManager:
         eta_coefficient: float = 2500.0,      # Base Temporary Impact scale for XAUUSD (Almgren-Chriss)
         rule_matrix: RuleMatrixEngine | None = None,
         algo_config: AlgoConfig | None = None,
+        risk_engine: Any = None,
     ) -> None:
         self.adapter = adapter
         self.mt5_adapter = adapter
@@ -157,6 +186,9 @@ class OrderLifecycleManager:
         self.notifier = notifier
         self.rule_matrix = rule_matrix
         self.algo_config = algo_config or AlgoConfig()
+        # Optional RiskEngine used to clamp every dispatch to HARD_MAX_LOTS and
+        # perform free-margin pre-checks. When absent, a local clamp still applies.
+        self.risk_engine = risk_engine
         self._processed_orders: dict[str, bool] = {}
 
         import threading
@@ -224,6 +256,86 @@ class OrderLifecycleManager:
         # Part 4: Pending Order Lifecycle Management tracking
         self._pending_orders_setup_time: dict[int, datetime] = {}
 
+        # =====================================================================
+        # MODULE A/B STATE: LEDGER AUTOPSY CONTEXT & REVERSAL BOOKKEEPING
+        # =====================================================================
+        # Entry context captured at open so the closing autopsy row is complete.
+        self._entry_reasons: dict[int, str] = {}
+        self._entry_confidences: dict[int, float] = {}
+        self._entry_regimes: dict[int, str] = {}
+        self._entry_order_ids: dict[int, str] = {}
+        #: Ticket -> True once trailing/breakeven actually moved the broker-side SL.
+        self._sl_modified_flags: dict[int, bool] = {}
+        #: Ticket -> exit mechanism forced by the engine (AI reversal, hold decay, ...)
+        #: which overrides the broker-history heuristic during the autopsy write.
+        self._forced_exit_mechanisms: dict[int, str] = {}
+        #: Latest account snapshot, stamped onto each autopsy row.
+        self._last_account_balance: float = 0.0
+        self._last_account_equity: float = 0.0
+        self._peak_equity: float = 0.0
+        #: Entry context staged by the policy/engine before the ticket exists.
+        self._pending_entry_context: dict[str, Any] | None = None
+
+    # =========================================================================
+    # MODULE A: LEDGER AUTOPSY CONTEXT INGESTION
+    # =========================================================================
+
+    def register_entry_context(
+        self,
+        order_id: str = "",
+        entry_reason: str = "",
+        ai_confidence: float = 0.0,
+        market_regime: str = "",
+    ) -> None:
+        """
+        Stages the entry context of the order that is about to be dispatched.
+
+        The broker ticket does not exist yet at dispatch time, so the context is held
+        here and bound to the ticket on the first management pass that observes it.
+        """
+        self._pending_entry_context = {
+            "order_id": order_id,
+            "entry_reason": entry_reason,
+            "ai_confidence": float(ai_confidence or 0.0),
+            "market_regime": market_regime,
+        }
+
+    def update_account_snapshot(self, account: Any, peak_equity: float | None = None) -> None:
+        """
+        Records the latest account balance/equity so closed-trade autopsy rows can carry
+        an accurate post-trade account snapshot and drawdown percentage.
+        """
+        try:
+            self._last_account_balance = float(getattr(account, "balance", 0.0) or 0.0)
+            self._last_account_equity = float(getattr(account, "equity", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return
+
+        if peak_equity is not None:
+            try:
+                self._peak_equity = max(self._peak_equity, float(peak_equity))
+            except (TypeError, ValueError):
+                pass
+        self._peak_equity = max(self._peak_equity, self._last_account_equity)
+
+    def _current_drawdown_percent(self) -> float:
+        """Computes drawdown from peak equity as a percentage (0.0 when no peak known)."""
+        if self._peak_equity <= 0.0:
+            return 0.0
+        return max(0.0, ((self._peak_equity - self._last_account_equity) / self._peak_equity) * 100.0)
+
+    def _price_delta_to_usd(
+        self,
+        price_delta: float,
+        volume: float,
+        symbol_info: SymbolInfo | None,
+    ) -> float:
+        """Converts a price excursion into account currency using the contract size."""
+        contract_size = 100.0
+        if symbol_info and symbol_info.trade_contract_size > 0:
+            contract_size = symbol_info.trade_contract_size
+        return float(price_delta) * float(volume) * contract_size
+
     def register_telegram_message(self, ticket: int, message_id: int | None) -> None:
         """Associates a broker position ticket with its primary Telegram message_id."""
         if message_id is not None:
@@ -241,7 +353,13 @@ class OrderLifecycleManager:
         now: datetime,
     ) -> bool:
         """
-        Enforces order modification limits, requiring a price drift of at least 0.5 * ATR and a 5-second minimum cooldown.
+        Gates modification of a live pending order.
+
+        A re-quote is permitted only when BOTH conditions hold:
+          - time_since_placement > PENDING_ORDER_LOCK_SECONDS (30s), AND
+          - price drift >= 1.0 x ATR.
+
+        This is the 30-second pending lock that prevents cancel/recreate churn.
         """
         if not hasattr(self, "_last_mod_price"):
             self._last_mod_price = {}
@@ -255,7 +373,21 @@ class OrderLifecycleManager:
             price_drift = abs(price - last_price)
             time_delta = (now - last_time).total_seconds()
 
-            if price_drift < (0.5 * atr) or time_delta < 5.0:
+            if time_delta <= PENDING_ORDER_LOCK_SECONDS:
+                logger.debug(
+                    "PENDING_ORDER_LOCKED: modification suppressed inside 30s lock",
+                    ticket=ticket,
+                    age_sec=round(time_delta, 1),
+                )
+                return False
+
+            if price_drift < (1.0 * atr):
+                logger.debug(
+                    "PENDING_ORDER_HELD: drift below 1.0x ATR",
+                    ticket=ticket,
+                    drift=round(price_drift, 2),
+                    required=round(atr, 2),
+                )
                 return False
 
         self._last_mod_price[ticket] = price
@@ -315,15 +447,123 @@ class OrderLifecycleManager:
 
         return success
 
+    def count_total_exposure(self, symbol: str | None = None) -> tuple[int, int]:
+        """
+        Counts engine-owned exposure from the live tickets cache.
+
+        Returns:
+            (active_positions, active_pending_orders)
+        """
+        positions = 0
+        pendings = 0
+        with self._live_tickets_lock:
+            for info in self._live_tickets_cache.values():
+                if symbol and info.get("symbol") not in (None, symbol):
+                    continue
+                if info.get("type") == "PENDING":
+                    pendings += 1
+                else:
+                    positions += 1
+        return positions, pendings
+
+    def _is_exposure_available(self, symbol: str | None = None) -> bool:
+        """
+        Enforces MAX_TOTAL_EXPOSURE: at most one active position OR one pending order
+        across the entire engine. This is the last line of defence before an order is
+        sent to the broker, independent of the policy-level gate.
+        """
+        positions, pendings = self.count_total_exposure(symbol=symbol)
+        return (positions + pendings) < MAX_TOTAL_EXPOSURE
+
+    def _clamp_dispatch_volume(self, volume: float, symbol: str | None = None) -> float:
+        """
+        Routes every dispatch volume through the risk engine clamp when available and
+        applies the absolute HARD_MAX_LOTS ceiling unconditionally.
+        """
+        try:
+            vol = float(volume)
+        except (TypeError, ValueError):
+            return 0.0
+
+        if vol <= 0.0:
+            return 0.0
+
+        if self.risk_engine is not None and hasattr(self.risk_engine, "get_clamped_position_size"):
+            account = None
+            symbol_info = None
+            try:
+                account = self.adapter.get_account_info()
+            except Exception:
+                account = None
+            try:
+                if symbol:
+                    symbol_info = self.adapter.get_symbol_info(symbol)
+            except Exception:
+                symbol_info = None
+
+            try:
+                vol = float(
+                    self.risk_engine.get_clamped_position_size(
+                        volume=vol,
+                        account=account,
+                        symbol_info=symbol_info,
+                    )
+                )
+            except Exception as clamp_err:
+                logger.error("Risk engine clamp failed; falling back to hard cap", error=str(clamp_err))
+
+        clamped = min(vol, HARD_MAX_LOTS)
+        if clamped < vol:
+            logger.warning(
+                "LOT SIZE CLAMPED to HARD_MAX_LOTS",
+                requested=round(vol, 2),
+                clamped=round(clamped, 2),
+                hard_max=HARD_MAX_LOTS,
+            )
+        return round(clamped, 2)
+
     def dispatch_order(self, decision: Any, volume: float) -> bool:
         """
         Unified dispatch router for new entry signals (BUY, SELL, BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP).
+
+        Enforces, in order: MAX_TOTAL_EXPOSURE, the HARD_MAX_LOTS clamp via the risk
+        engine, and entry-context capture for the ledger autopsy.
         """
         action = decision.action
         symbol = decision.symbol
         price = decision.proposed_entry
         sl = decision.stop_loss
         tp = decision.take_profit
+
+        # --- MAX EXPOSURE ENFORCEMENT (1 position OR 1 pending, engine-wide) ---
+        if not self._is_exposure_available(symbol=symbol):
+            positions, pendings = self.count_total_exposure(symbol=symbol)
+            logger.warning(
+                "MAX_TOTAL_EXPOSURE_BLOCKED: dispatch rejected",
+                action=getattr(action, "value", str(action)),
+                active_positions=positions,
+                active_pendings=pendings,
+                max_total_exposure=MAX_TOTAL_EXPOSURE,
+            )
+            return False
+
+        # --- STRICT LOT SIZING CLAMP (HARD_MAX_LOTS + free margin pre-check) ---
+        volume = self._clamp_dispatch_volume(volume, symbol=symbol)
+        if volume <= 0.0:
+            logger.warning(
+                "LOT_SIZE_REJECTED: clamped volume is zero (insufficient free margin or invalid size)",
+                action=getattr(action, "value", str(action)),
+                symbol=symbol,
+            )
+            return False
+
+        # Stage the entry context so the ledger autopsy row carries WHY we entered.
+        self.register_entry_context(
+            order_id=getattr(decision, "request_id", "") or "",
+            entry_reason=self._resolve_entry_reason(decision),
+            ai_confidence=float(getattr(decision, "confidence", 0.0) or 0.0),
+            market_regime=str(getattr(decision, "regime", "") or ""),
+        )
 
         logger.info("dispatch_order mapping action to MT5 command", action=action, symbol=symbol, volume=volume)
 
@@ -393,13 +633,168 @@ class OrderLifecycleManager:
 
         return False
 
+    def _resolve_entry_reason(self, decision: Any) -> str:
+        """
+        Normalizes the policy decision into one of the canonical ledger entry reasons:
+        SMC_GOD_MODE, FAST_LIQUIDITY_SWEEP, or PURE_AI.
+        """
+        execution_mode = str(getattr(decision, "execution_mode", "") or "")
+        reason_code = str(getattr(decision, "reason_code", "") or "")
+
+        if "SMC_GOD_MODE" in execution_mode or "SMC_GOD_MODE" in reason_code:
+            return "SMC_GOD_MODE"
+        if "SWEEP" in reason_code.upper() or "TICK_SWEEP" in execution_mode:
+            return "FAST_LIQUIDITY_SWEEP"
+        return "PURE_AI"
+
+    def _bind_pending_entry_context(self, ticket: int, decision_order_id: str = "") -> None:
+        """Binds the most recently staged entry context to a freshly observed ticket."""
+        ctx = self._pending_entry_context
+        if ctx is None:
+            self._entry_reasons.setdefault(ticket, "PURE_AI")
+            self._entry_order_ids.setdefault(ticket, decision_order_id)
+            return
+
+        self._entry_reasons[ticket] = ctx.get("entry_reason", "PURE_AI") or "PURE_AI"
+        self._entry_confidences[ticket] = float(ctx.get("ai_confidence", 0.0) or 0.0)
+        self._entry_regimes[ticket] = str(ctx.get("market_regime", "") or "")
+        self._entry_order_ids[ticket] = str(ctx.get("order_id", "") or decision_order_id)
+        self._pending_entry_context = None
+
+    # =========================================================================
+    # MODULE B: AI POSITION REVERSAL PROTOCOL
+    # =========================================================================
+
+    def execute_ai_reversal(
+        self,
+        decision: Any,
+        volume: float,
+        current_tick: TickData | None = None,
+        symbol_info: SymbolInfo | None = None,
+    ) -> bool:
+        """
+        Executes the AI Position Reversal Protocol.
+
+        Intercepts a CLOSE_POSITION decision carrying reason AI_REVERSAL_SIGNAL:
+          1. Closes every conflicting active ticket on MT5 immediately.
+          2. Records exit_mechanism=AI_REVERSAL_EXIT for those tickets so the ledger
+             autopsy attributes the exit correctly (never a generic MANUAL_CLOSE).
+          3. Only after the close is confirmed, dispatches the new directional order.
+
+        Opposing orders are NEVER stacked: if the close fails, no new order is sent.
+        """
+        symbol = getattr(decision, "symbol", "") or ""
+        new_action = getattr(decision, "reversal_action", None) or getattr(decision, "action", None)
+
+        try:
+            positions = self.adapter.get_positions(symbol=symbol) or []
+        except Exception as err:
+            logger.error("AI REVERSAL: failed to query positions", error=str(err))
+            return False
+
+        target_ticket = getattr(decision, "ticket", 0) or 0
+        targets = [p for p in positions if (target_ticket in (0, p.ticket))]
+
+        if not targets:
+            logger.warning("AI REVERSAL: no active position found to reverse", symbol=symbol, ticket=target_ticket)
+            return False
+
+        all_closed = True
+        closed_volume = 0.0
+        for pos in targets:
+            logger.info(
+                ">>> AI REVERSAL PROTOCOL: closing conflicting position before flipping direction <<<",
+                ticket=pos.ticket,
+                held=pos.type.value,
+                new_action=getattr(new_action, "value", str(new_action)),
+            )
+            # Mark the intended exit mechanism BEFORE the close so the autopsy writer
+            # (which runs on the next management pass) attributes it correctly.
+            self._forced_exit_mechanisms[pos.ticket] = ExitMechanism.AI_REVERSAL_EXIT
+
+            if self.adapter.close_position(ticket=pos.ticket):
+                self.audit.log_order(
+                    ticket=pos.ticket,
+                    order_id=f"ai_reversal_close_{pos.ticket}",
+                    symbol=pos.symbol,
+                    action="Executed order",
+                    price=pos.price_open,
+                    stop_loss=pos.sl,
+                    take_profit=pos.tp,
+                    volume=pos.volume,
+                    reason=AI_REVERSAL_REASON,
+                    latency=0.009,
+                    execution_mode="AI_REVERSAL",
+                )
+                if self.notifier:
+                    try:
+                        self.notifier.notify_manual_close(
+                            ticket=pos.ticket,
+                            symbol=pos.symbol,
+                            entry=pos.price_open,
+                            exit_price=(current_tick.bid if (current_tick and pos.type == OrderType.BUY)
+                                        else (current_tick.ask if current_tick else pos.price_open)),
+                            profit_usd=pos.profit,
+                            duration_sec=0.0,
+                            reason=f"AI_REVERSAL_EXIT -> {getattr(new_action, 'value', new_action)}",
+                            reply_to_message_id=self._order_message_ids.get(pos.ticket),
+                        )
+                    except Exception:
+                        pass
+                # Drop the ticket from the cache immediately so the exposure gate frees up
+                # in the same tick and the reversal order is not blocked by its own predecessor.
+                with self._live_tickets_lock:
+                    self._live_tickets_cache.pop(pos.ticket, None)
+                closed_volume += float(pos.volume)
+            else:
+                all_closed = False
+                self._forced_exit_mechanisms.pop(pos.ticket, None)
+                logger.error("AI REVERSAL ABORTED: broker refused to close position", ticket=pos.ticket)
+
+        if not all_closed:
+            # Refuse to stack an opposing order on top of a position we could not close.
+            return False
+
+        if new_action is None or new_action == ActionType.CLOSE_POSITION:
+            # Pure exit request with no directional follow-up.
+            return True
+
+        reversal_decision = decision
+        if getattr(decision, "action", None) == ActionType.CLOSE_POSITION:
+            try:
+                reversal_decision = decision.model_copy(update={"action": new_action})
+            except Exception:
+                logger.error("AI REVERSAL: unable to derive reversal decision payload")
+                return True
+
+        # Mirror the closed exposure when the caller did not size the flip explicitly
+        # (e.g. the risk engine returned 0 because no symbol_info was available).
+        if volume is None or float(volume) <= 0.0:
+            volume = closed_volume
+            logger.info(
+                "AI REVERSAL: sizing flip from closed exposure",
+                mirrored_volume=round(closed_volume, 2),
+            )
+
+        return self.dispatch_order(reversal_decision, volume)
+
     def execute_lifecycle_action(self, decision: Any) -> bool:
         """
         Unified dispatch router for position lifecycle actions (CLOSE_POSITION, PARTIAL_CLOSE, MODIFY_SL_TP, CANCEL_ORDER).
+
+        A CLOSE_POSITION carrying reason_code AI_REVERSAL_SIGNAL is intercepted and
+        routed through the AI Reversal Protocol so the exit is attributed as
+        AI_REVERSAL_EXIT in the ledger instead of a generic manual close.
         """
         action = decision.action
         ticket = getattr(decision, "ticket", 0) or 0
         volume = getattr(decision, "volume", None) or 0.0
+
+        # --- AI REVERSAL INTERCEPT ---
+        if action == ActionType.CLOSE_POSITION and AI_REVERSAL_REASON in str(getattr(decision, "reason_code", "") or ""):
+            self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
+            logger.info("Intercepted CLOSE_POSITION as AI_REVERSAL_SIGNAL", ticket=ticket)
+            return self.execute_ai_reversal(decision=decision, volume=volume)
 
         logger.info("execute_lifecycle_action mapping action to MT5 command", action=action, ticket=ticket)
 
@@ -1069,6 +1464,26 @@ class OrderLifecycleManager:
     # ACTIVE POSITION MONITORING & LIFECYCLE EXECUTION LOOP
     # =========================================================================
 
+    @staticmethod
+    def _pending_field(pending: Any, *names: str, default: Any = None) -> Any:
+        """
+        Reads a field from a pending order that may be either a dict (as returned by the
+        live MT5 adapter via `orders_get`) or an object with attributes (as used by
+        simulated/paper adapters).
+
+        Without this, dict-shaped pending orders silently resolve every field to the
+        default, which previously made the pending-order guard a no-op in production.
+        """
+        for name in names:
+            if isinstance(pending, dict):
+                if name in pending and pending[name] is not None:
+                    return pending[name]
+            else:
+                value = getattr(pending, name, None)
+                if value is not None:
+                    return value
+        return default
+
     def manage_pending_orders(
         self,
         symbol: str,
@@ -1077,6 +1492,16 @@ class OrderLifecycleManager:
         atr: float = 1.50,
         max_pending_dist_atr_mult: float = 1.20,
     ) -> None:
+        """
+        Pending order lifecycle guard with a hard 30-second churn lock.
+
+        A pending limit order is NEVER cancelled/recreated unless BOTH hold:
+          - time_since_placement > PENDING_ORDER_LOCK_SECONDS (30s), AND
+          - price drift >= 1.0 x ATR.
+
+        Stale-age expiry (>120s) still applies after the lock window, so an order that
+        the market has walked away from is not left hanging forever.
+        """
         try:
             get_pending_fn = getattr(self.adapter, "get_pending_orders", None)
             if not get_pending_fn:
@@ -1088,11 +1513,13 @@ class OrderLifecycleManager:
 
             now = current_tick.timestamp
             max_allowed_dist = round(atr * max_pending_dist_atr_mult, 2)
+            #: Minimum price drift (in price units) required to justify a re-quote.
+            required_drift = round(atr * 1.0, 2)
 
             for pending in pending_orders:
-                order_type = getattr(pending, "type", None) or getattr(pending, "order_type", None)
-                price_open = getattr(pending, "price_open", getattr(pending, "price", 0.0))
-                ticket = getattr(pending, "ticket", getattr(pending, "order_id", None))
+                order_type = self._pending_field(pending, "type", "order_type")
+                price_open = float(self._pending_field(pending, "price_open", "price", default=0.0) or 0.0)
+                ticket = self._pending_field(pending, "ticket", "order_id")
 
                 if not ticket or price_open <= 0.0:
                     continue
@@ -1100,10 +1527,38 @@ class OrderLifecycleManager:
                 if ticket not in self._pending_orders_setup_time:
                     self._pending_orders_setup_time[ticket] = now
 
-                dist = abs(current_tick.ask - price_open) if order_type in (OrderType.BUY_LIMIT, OrderType.BUY_STOP) else abs(current_tick.bid - price_open)
+                type_str = str(getattr(order_type, "value", order_type) or "").upper()
+                is_buy_side = "BUY" in type_str
+                dist = abs(current_tick.ask - price_open) if is_buy_side else abs(current_tick.bid - price_open)
                 age = (now - self._pending_orders_setup_time[ticket]).total_seconds()
 
-                # Statistically weak criteria for cancellation:
+                # ---------------------------------------------------------------
+                # 30-SECOND PENDING LOCK (anti-churn)
+                # ---------------------------------------------------------------
+                # Inside the lock window the order is untouchable, full stop. This is
+                # what stops the high-frequency cancel/recreate loop that previously
+                # burned broker request quota and produced order-churn rejections.
+                if age <= PENDING_ORDER_LOCK_SECONDS:
+                    logger.debug(
+                        "PENDING_ORDER_LOCKED: within 30s placement lock, no modification allowed",
+                        ticket=ticket,
+                        age_sec=round(age, 1),
+                        lock_sec=PENDING_ORDER_LOCK_SECONDS,
+                    )
+                    continue
+
+                # Past the lock window, a re-quote additionally requires real drift.
+                if dist < required_drift:
+                    logger.debug(
+                        "PENDING_ORDER_HELD: price drift below 1.0x ATR threshold",
+                        ticket=ticket,
+                        drift=round(dist, 2),
+                        required_drift=required_drift,
+                    )
+                    continue
+
+                # Statistically weak criteria for cancellation (evaluated only after the
+                # 30s lock has expired AND drift >= 1.0 x ATR):
                 # 1. Dist exceeds max allowed dist
                 # 2. Stale limit (age > 120s)
                 # 3. Market momentum expanding opposite (handled by Falling Knife Protection)
@@ -1129,9 +1584,9 @@ class OrderLifecycleManager:
                             symbol=symbol,
                             action="Expired pending order" if "AGE" in cancel_reason else "Cancelled order",
                             price=price_open,
-                            stop_loss=getattr(pending, "sl", 0.0),
-                            take_profit=getattr(pending, "tp", 0.0),
-                            volume=getattr(pending, "volume", 0.01),
+                            stop_loss=float(self._pending_field(pending, "sl", "stop_loss", default=0.0) or 0.0),
+                            take_profit=float(self._pending_field(pending, "tp", "take_profit", default=0.0) or 0.0),
+                            volume=float(self._pending_field(pending, "volume", default=0.01) or 0.01),
                             reason=cancel_reason,
                             latency=0.01,
                             execution_mode="PREDICTIVE_LIMIT"
@@ -1169,18 +1624,19 @@ class OrderLifecycleManager:
 
                     # Trigger Falling Knife protection
                     for pending in pending_orders:
-                        pending_ticket = getattr(pending, "ticket", getattr(pending, "order_id", None))
-                        pending_type = getattr(pending, "type", None) or getattr(pending, "order_type", None)
+                        pending_ticket = self._pending_field(pending, "ticket", "order_id")
+                        pending_type = self._pending_field(pending, "type", "order_type")
+                        pending_type_str = str(getattr(pending_type, "value", pending_type) or "").upper()
 
                         # If we have a profitable SELL trend, cancel opposite BUY_LIMITS
                         # If we have a profitable BUY trend, cancel opposite SELL_LIMITS
                         should_cancel = False
-                        if is_sell_trend and pending_type in (OrderType.BUY_LIMIT, "BUY_LIMIT"):
+                        if is_sell_trend and "BUY_LIMIT" in pending_type_str:
                             should_cancel = True
-                        elif is_buy_trend and pending_type in (OrderType.SELL_LIMIT, "SELL_LIMIT"):
+                        elif is_buy_trend and "SELL_LIMIT" in pending_type_str:
                             should_cancel = True
 
-                        if should_cancel:
+                        if should_cancel and pending_ticket:
                             if cancel_fn(ticket=pending_ticket):
                                 self._pending_orders_setup_time.pop(pending_ticket, None)
                                 logger.info(f"FALLING_KNIFE_PROTECTION: Cancelled counter pending order {pending_ticket} due to strong opposite momentum.")
@@ -1189,10 +1645,10 @@ class OrderLifecycleManager:
                                     order_id=f"cancel_fk_{pending_ticket}",
                                     symbol=symbol,
                                     action="Cancelled order",
-                                    price=getattr(pending, "price_open", getattr(pending, "price", 0.0)),
-                                    stop_loss=getattr(pending, "sl", 0.0),
-                                    take_profit=getattr(pending, "tp", 0.0),
-                                    volume=getattr(pending, "volume", 0.01),
+                                    price=float(self._pending_field(pending, "price_open", "price", default=0.0) or 0.0),
+                                    stop_loss=float(self._pending_field(pending, "sl", "stop_loss", default=0.0) or 0.0),
+                                    take_profit=float(self._pending_field(pending, "tp", "take_profit", default=0.0) or 0.0),
+                                    volume=float(self._pending_field(pending, "volume", default=0.01) or 0.01),
                                     reason="FALLING_KNIFE_PROTECTION",
                                     latency=0.01,
                                     execution_mode="STANDARD"
@@ -1207,8 +1663,20 @@ class OrderLifecycleManager:
         feature_vector: FeatureVector | None = None,
         symbol_info: SymbolInfo | None = None,
         probs: Any | None = None,
+        account: Any = None,
     ) -> list[Position]:
+        """
+        Main in-trade lifecycle pass: pending-order guard, falling-knife protection,
+        MAE/MFE excursion tracking, hold-score routing, and one ledger autopsy row for
+        every ticket that has disappeared from the broker's open-positions list.
+        """
         atr = max(self._safe_feature_float(feature_vector, "atr_m1", 0.80), 0.50)
+
+        # Refresh the account snapshot so autopsy rows carry accurate post-trade balance,
+        # equity and drawdown values.
+        if account is not None:
+            self.update_account_snapshot(account)
+
         self.manage_pending_orders(symbol=symbol, current_tick=current_tick, symbol_info=symbol_info, atr=atr)
 
         positions = self.adapter.get_positions(symbol=symbol)
@@ -1228,6 +1696,13 @@ class OrderLifecycleManager:
                         "price": pos.price_open,
                         "magic": getattr(pos, "magic", 888101),
                         "type": "POSITION",
+                        # Direction is published so SignalPolicy can detect an opposing
+                        # signal and request an AI reversal instead of stacking orders.
+                        "direction": pos.type.value,
+                        "volume": pos.volume,
+                        "sl": pos.sl,
+                        "tp": pos.tp,
+                        "profit": pos.profit,
                     }
 
             try:
@@ -1236,14 +1711,18 @@ class OrderLifecycleManager:
                     pending_orders = get_pending_fn(symbol=symbol)
                     if pending_orders:
                         for pending in pending_orders:
-                            ticket = pending.get("ticket") or pending.get("order_id")
+                            ticket = self._pending_field(pending, "ticket", "order_id")
                             if ticket:
+                                pending_type = self._pending_field(pending, "type", "order_type")
+                                pending_dir = "BUY" if "BUY" in str(getattr(pending_type, "value", pending_type)).upper() else "SELL"
                                 new_cache[ticket] = {
                                     "ticket": ticket,
-                                    "symbol": pending.get("symbol"),
-                                    "price": pending.get("price_open") or pending.get("price"),
-                                    "magic": pending.get("magic"),
+                                    "symbol": self._pending_field(pending, "symbol", default=symbol),
+                                    "price": self._pending_field(pending, "price_open", "price", default=0.0),
+                                    "magic": self._pending_field(pending, "magic", "magic_number", default=888101),
                                     "type": "PENDING",
+                                    "direction": pending_dir,
+                                    "volume": self._pending_field(pending, "volume", default=0.0),
                                 }
             except Exception as e:
                 logger.error("Failed to query pending orders for cache", error=e)
@@ -1299,12 +1778,21 @@ class OrderLifecycleManager:
                 else:
                     exit_price = current_tick.bid if direction == "BUY" else current_tick.ask
 
-                # Deep Position Manager & Ledger Autopsy
+                # =============================================================
+                # MODULE A: SINGLE DATA-RICH AUTOPSY ROW PER CLOSED TRADE
+                # =============================================================
                 mae_val = float(self._mae_tracker.get(dead_ticket, 0.0))
                 mfe_val = float(self._mfe_tracker.get(dead_ticket, 0.0))
                 initial_sl_val = float(sl_price)
                 final_sl_val = float(self._last_modify_sl.get(dead_ticket, initial_sl_val))
 
+                # was_sl_modified: True only when trailing/breakeven actually shifted the SL.
+                was_sl_modified = bool(
+                    self._sl_modified_flags.get(dead_ticket, False)
+                    or abs(final_sl_val - initial_sl_val) > 1e-9
+                )
+
+                # is_risk_free_hit: closed on a stop that had already been moved into profit.
                 is_risk_free_hit = 0
                 if direction == "BUY":
                     if final_sl_val >= entry and abs(exit_price - final_sl_val) < 0.15:
@@ -1312,6 +1800,37 @@ class OrderLifecycleManager:
                 else:
                     if final_sl_val <= entry and final_sl_val > 0.0 and abs(exit_price - final_sl_val) < 0.15:
                         is_risk_free_hit = 1
+
+                # ---- Exit mechanism resolution (engine intent overrides broker heuristic) ----
+                forced_mechanism = self._forced_exit_mechanisms.pop(dead_ticket, None)
+                if forced_mechanism:
+                    exit_mechanism = forced_mechanism
+                elif status_str == "CLOSED_TP":
+                    exit_mechanism = ExitMechanism.TAKE_PROFIT_HIT
+                elif status_str == "CLOSED_SL":
+                    exit_mechanism = (
+                        ExitMechanism.RISK_FREE_SL_HIT if is_risk_free_hit else ExitMechanism.HARD_SL_HIT
+                    )
+                elif status_str == "MANUALLY_CLOSED":
+                    exit_mechanism = ExitMechanism.MANUAL_CLOSE
+                else:
+                    exit_mechanism = ExitMechanism.MANUAL_CLOSE
+
+                # ---- Quant risk excursions converted to account currency ----
+                mae_usd = self._price_delta_to_usd(min(mae_val, 0.0), vol, symbol_info)
+                mfe_usd = self._price_delta_to_usd(max(mfe_val, 0.0), vol, symbol_info)
+                # Prefer directly observed USD peaks when the tick loop tracked them.
+                peak_dd_usd = float(self._peak_drawdown_usd.get(dead_ticket, 0.0))
+                peak_win_usd = float(self._peak_profit_usd.get(dead_ticket, 0.0))
+                if peak_dd_usd < 0.0:
+                    mae_usd = peak_dd_usd
+                if peak_win_usd > 0.0:
+                    mfe_usd = peak_win_usd
+
+                open_time_str = (
+                    entry_time.isoformat() if hasattr(entry_time, "isoformat") else str(entry_time or "")
+                )
+                close_time_str = now.isoformat() if hasattr(now, "isoformat") else str(now)
 
                 self.audit.log_ledger_closed(
                     ticket=dead_ticket,
@@ -1325,13 +1844,38 @@ class OrderLifecycleManager:
                     commission=comm_usd,
                     swap=swap_usd,
                     duration_sec=duration_sec,
-                    timestamp_str=now.isoformat() if hasattr(now, "isoformat") else str(now),
+                    timestamp_str=close_time_str,
                     mae=mae_val,
                     mfe=mfe_val,
                     initial_sl_price=initial_sl_val,
                     final_sl_price=final_sl_val,
                     is_risk_free_hit=is_risk_free_hit,
-                    exit_mechanism=status_str,
+                    exit_mechanism=exit_mechanism,
+                    # --- Institutional autopsy fields ---
+                    order_id=self._entry_order_ids.get(dead_ticket, ""),
+                    open_time=open_time_str,
+                    close_time=close_time_str,
+                    entry_reason=self._entry_reasons.get(dead_ticket, ""),
+                    ai_confidence_at_open=self._entry_confidences.get(dead_ticket, 0.0),
+                    market_regime_at_open=self._entry_regimes.get(dead_ticket, ""),
+                    was_sl_modified=int(was_sl_modified),
+                    mae_usd=mae_usd,
+                    mfe_usd=mfe_usd,
+                    account_balance_after=self._last_account_balance,
+                    account_equity_after=self._last_account_equity,
+                    drawdown_percent_after=self._current_drawdown_percent(),
+                )
+
+                logger.info(
+                    "[LEDGER AUTOPSY] Closed trade recorded",
+                    ticket=dead_ticket,
+                    direction=direction,
+                    exit_mechanism=exit_mechanism,
+                    entry_reason=self._entry_reasons.get(dead_ticket, ""),
+                    net_pnl=f"${(profit_usd + comm_usd + swap_usd):+.2f}",
+                    mae_usd=f"${mae_usd:+.2f}",
+                    mfe_usd=f"${mfe_usd:+.2f}",
+                    was_sl_modified=was_sl_modified,
                 )
 
                 if self.notifier:
@@ -1438,6 +1982,11 @@ class OrderLifecycleManager:
                 contract_size = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
                 self._initial_risks[ticket] = pos.volume * contract_size * risk_price
 
+                # Bind the entry context staged at dispatch time to this new ticket so the
+                # eventual autopsy row carries entry_reason / confidence / regime.
+                self._bind_pending_entry_context(ticket)
+                self._sl_modified_flags[ticket] = False
+
                 # Robust Financial Ledger opened record
                 self.audit.log_ledger_opened(
                     ticket=ticket,
@@ -1446,6 +1995,11 @@ class OrderLifecycleManager:
                     volume=pos.volume,
                     entry_price=pos.price_open,
                     timestamp_str=pos_time.isoformat() if hasattr(pos_time, "isoformat") else str(pos_time),
+                    order_id=self._entry_order_ids.get(ticket, ""),
+                    entry_reason=self._entry_reasons.get(ticket, ""),
+                    ai_confidence_at_open=self._entry_confidences.get(ticket, 0.0),
+                    market_regime_at_open=self._entry_regimes.get(ticket, ""),
+                    initial_sl_price=pos.sl,
                 )
 
                 # [EXPANDED] Try to associate message ID with this ticket!
@@ -1598,6 +2152,11 @@ class OrderLifecycleManager:
             if ai_flip_detected and ai_flip_action is not None:
                 msg_id = self._order_message_ids.get(ticket)
                 logger.info(f">>> AI DIRECTION SHIFT DETECTED: Closing position #{ticket} and executing fast reversal {ai_flip_action.value} <<<")
+
+                # Tag the exit BEFORE closing so the ledger autopsy attributes it to the
+                # reversal protocol rather than a generic manual close.
+                self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
+
                 if self.adapter.close_position(ticket=ticket):
                     if self.notifier:
                         self.notifier.notify_manual_close(
@@ -1607,24 +2166,37 @@ class OrderLifecycleManager:
                             exit_price=price_current,
                             profit_usd=pos.profit,
                             duration_sec=holding_duration,
-                            reason=f"AI_DIRECTION_FLIP_REVERSAL ({ai_flip_action.value})",
+                            reason=f"AI_REVERSAL_EXIT ({ai_flip_action.value})",
                             reply_to_message_id=msg_id,
                         )
-                    self._cleanup_ticket_state(ticket)
 
-                    # Dispatch immediate reversal stop order
+                    # Free the exposure slot immediately (the broker position is gone) but
+                    # deliberately KEEP the per-ticket trackers alive: the next management
+                    # pass detects the dead ticket and writes the single autopsy row.
+                    with self._live_tickets_lock:
+                        self._live_tickets_cache.pop(ticket, None)
+
+                    # Dispatch immediate reversal stop order (clamped to HARD_MAX_LOTS).
+                    rev_volume = self._clamp_dispatch_volume(pos.volume, symbol=pos.symbol)
+                    if rev_volume <= 0.0:
+                        logger.warning("AI REVERSAL: reversal order skipped, clamped volume is zero", ticket=ticket)
+                        continue
+
                     rev_entry = current_tick.ask if ai_flip_action == ActionType.BUY_STOP else current_tick.bid
                     rev_sl = round(rev_entry - (atr * 1.5), 2) if ai_flip_action == ActionType.BUY_STOP else round(rev_entry + (atr * 1.5), 2)
-                    rev_tp = round(rev_entry + (atr * 3.0), 2) if ai_flip_action == ActionType.BUY_STOP else round(rev_entry - (atr * 1.5), 2)
+                    rev_tp = round(rev_entry + (atr * 3.0), 2) if ai_flip_action == ActionType.BUY_STOP else round(rev_entry - (atr * 3.0), 2)
                     self.adapter.place_pending_order(
                         symbol=pos.symbol,
                         order_type=OrderType.BUY_STOP if ai_flip_action == ActionType.BUY_STOP else OrderType.SELL_STOP,
-                        volume=pos.volume,
+                        volume=rev_volume,
                         price=rev_entry,
                         stop_loss=rev_sl,
                         take_profit=rev_tp,
                     )
                     continue
+
+                # Close failed: clear the tag so a later organic exit is not mislabelled.
+                self._forced_exit_mechanisms.pop(ticket, None)
 
             # --- MFE GIVEBACK TRAILING LOCK ---
             peak_win = self._peak_profit_usd.get(ticket, 0.0)
@@ -1649,6 +2221,7 @@ class OrderLifecycleManager:
                     success = self.adapter.modify_position(ticket=ticket, stop_loss=target_mfe_sl, take_profit=pos.tp)
                     self._last_modify_sl[ticket] = target_mfe_sl
                     if success:
+                        self._sl_modified_flags[ticket] = True
                         logger.info(">>> MFE GIVEBACK PROTECTOR: Advanced SL to lock 70% peak profit <<<", ticket=ticket, peak_win=peak_win, locked_sl=target_mfe_sl)
 
             total_sec = max(holding_duration, 1.0)
@@ -1711,6 +2284,9 @@ class OrderLifecycleManager:
 
             if action == "CLOSE":
                 msg_id = self._order_message_ids.get(ticket)
+                # Attribute engine-initiated exits to hold-score decay unless a more
+                # specific mechanism (e.g. AI reversal) was already tagged.
+                self._forced_exit_mechanisms.setdefault(ticket, ExitMechanism.HOLD_SCORE_DECAY)
                 if self.adapter.close_position(ticket=ticket):
                     if self.notifier:
                         self.notifier.notify_early_emergency_cut(
@@ -1720,13 +2296,19 @@ class OrderLifecycleManager:
                             saved_usd=pos.profit,
                             reply_to_message_id=msg_id,
                         )
-                    self._cleanup_ticket_state(ticket)
+                    # Free the exposure slot now, but keep per-ticket trackers so the next
+                    # management pass writes the single data-rich autopsy row.
+                    with self._live_tickets_lock:
+                        self._live_tickets_cache.pop(ticket, None)
+                else:
+                    self._forced_exit_mechanisms.pop(ticket, None)
                 continue
 
             elif action == "MODIFY_SL":
                 if self._should_modify_sl(ticket, rule_target_sl):
                     if self.adapter.modify_position(ticket=ticket, stop_loss=rule_target_sl, take_profit=pos.tp):
                         self._last_modify_sl[ticket] = rule_target_sl
+                        self._sl_modified_flags[ticket] = True
                         if self.notifier:
                             msg_id = self._order_message_ids.get(ticket)
                             self.notifier.notify_order_modification(
@@ -1761,6 +2343,8 @@ class OrderLifecycleManager:
                 if valid_stop and self._should_modify_sl(ticket, target_sl):
                     success = self.adapter.modify_position(ticket=ticket, stop_loss=target_sl, take_profit=pos.tp)
                     self._last_modify_sl[ticket] = target_sl
+                    if success:
+                        self._sl_modified_flags[ticket] = True
                     if success and self.notifier:
                         msg_id = self._order_message_ids.get(ticket)
                         orig_risk = self._initial_risks.get(ticket, 0.0)
@@ -1790,6 +2374,8 @@ class OrderLifecycleManager:
                     old_sl_val = pos.sl
                     success = self.adapter.modify_position(ticket=ticket, stop_loss=target_sl, take_profit=pos.tp)
                     self._last_modify_sl[ticket] = target_sl
+                    if success:
+                        self._sl_modified_flags[ticket] = True
                     if success and self.notifier:
                         msg_id = self._order_message_ids.get(ticket)
                         self.notifier.notify_trailing_stop_advanced_extended(
@@ -1807,6 +2393,7 @@ class OrderLifecycleManager:
         self._mae_tracker[ticket] = min(self._mae_tracker.get(ticket, profit_price_delta), profit_price_delta)
 
     def _cleanup_ticket_state(self, ticket: int) -> None:
+        """Releases all per-ticket state after the closing autopsy row has been written."""
         if hasattr(self, "_last_telemetry_time"):
             self._last_telemetry_time.pop(ticket, None)
         for tracker in (
@@ -1816,7 +2403,10 @@ class OrderLifecycleManager:
             self._stagnation_ticks, self._adverse_ticks, self._favorable_ticks, self._hold_score_tracker,
             self._rescue_registered_tickets, self._last_modify_sl, self._last_price_tracker,
             self._entry_prices, self._entry_sls, self._entry_tps, self._last_known_volume, self._initial_risks,
-            self._entry_directions, self._pending_orders_setup_time
+            self._entry_directions, self._pending_orders_setup_time,
+            # Ledger autopsy context
+            self._entry_reasons, self._entry_confidences, self._entry_regimes, self._entry_order_ids,
+            self._sl_modified_flags, self._forced_exit_mechanisms,
         ):
             tracker.pop(ticket, None)
         with self._live_tickets_lock:

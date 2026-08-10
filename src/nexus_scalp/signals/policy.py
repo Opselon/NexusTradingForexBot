@@ -36,6 +36,20 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.signals.policy")
 
 
+# =============================================================================
+# MODULE B INVARIANTS (mirrored in execution/order_manager.py)
+# =============================================================================
+
+#: Max simultaneous exposure: 1 active position OR 1 pending order, engine-wide.
+MAX_TOTAL_EXPOSURE: int = 1
+
+#: Pending limit orders are immune to cancel/recreate churn for this long.
+PENDING_ORDER_LOCK_SECONDS: float = 30.0
+
+#: Reason code emitted with CLOSE_POSITION when the AI flips direction on us.
+AI_REVERSAL_REASON: str = "AI_REVERSAL_SIGNAL"
+
+
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
 class SignalPolicy:
@@ -178,6 +192,9 @@ class SignalPolicy:
         active_pending_count = 0
         pending_price = None
         pending_ticket = None
+        live_tickets: list[Any] = []
+        #: Held direction(s) of currently open positions, used by the AI Reversal veto.
+        held_position_dirs: dict[int, str] = {}
 
         if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
             live_tickets = order_manager.get_active_live_tickets()
@@ -188,6 +205,10 @@ class SignalPolicy:
                 if t_symbol == "XAUUSD" and t_magic == 888101:
                     if t_type == "POSITION":
                         active_positions_count += 1
+                        t_ticket = ticket_info.get("ticket")
+                        t_dir = str(ticket_info.get("direction") or "").upper()
+                        if t_ticket is not None and t_dir:
+                            held_position_dirs[int(t_ticket)] = t_dir
                     elif t_type == "PENDING":
                         active_pending_count += 1
                         pending_price = ticket_info.get("price")
@@ -214,6 +235,35 @@ class SignalPolicy:
             self._locked_pending_price = None
             self._locked_pending_time = None
 
+        # ======================================================================
+        # MODULE B: AI POSITION REVERSAL PROTOCOL (evaluated FIRST)
+        # ======================================================================
+        # If we hold an active position and the model now argues strongly for the
+        # opposite direction, we must NOT stack an opposing order. We emit
+        # CLOSE_POSITION with reason AI_REVERSAL_SIGNAL; order_manager closes the
+        # ticket, stamps exit_mechanism=AI_REVERSAL_EXIT in the ledger, and only then
+        # dispatches the new directional order.
+        #
+        # This gate runs before the frequency throttle, the same-level re-entry lockout
+        # and the exposure gate: closing a position that the model has turned against
+        # is risk-reducing and must never be suppressed by an entry-side filter.
+        if active_positions_count >= 1 and held_position_dirs:
+            reversal_proposal = self._evaluate_ai_reversal(
+                current_tick=current_tick,
+                feature_vector=feature_vector,
+                held_position_dirs=held_position_dirs,
+                prob_buy=prob_buy,
+                prob_sell=prob_sell,
+                atr=atr,
+                regime_str=regime_str,
+                regime_conf=regime_conf,
+            )
+            if reversal_proposal is not None:
+                self._last_signal_time = now
+                self._last_active_direction = reversal_proposal.reversal_action
+                self._last_active_direction_time = now
+                return reversal_proposal
+
         # 1. Enforce ORDER_FREQUENCY_THROTTLED check (MIN_ORDER_INTERVAL_SECONDS = 60)
         if self._last_signal_time is not None:
             elapsed = (now - self._last_signal_time).total_seconds()
@@ -226,11 +276,11 @@ class SignalPolicy:
                     regime_conf=regime_conf,
                 )
 
-        # 2. Strict Single-Position Exposure Gate
-        # Total sum of Active Open Positions + Active Pending Orders MUST NOT exceed 1
+        # 2. Strict Single-Position Exposure Gate (MAX_TOTAL_EXPOSURE = 1)
+        # Total of Active Open Positions + Active Pending Orders MUST NOT exceed 1.
         total_exposure = active_positions_count + active_pending_count
 
-        if total_exposure >= 1:
+        if total_exposure >= MAX_TOTAL_EXPOSURE:
             # Check price proximity to find if we should return SAME_LEVEL_REENTRY_BLOCKED (threshold is $0.50)
             is_same_level = False
             if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
@@ -275,7 +325,9 @@ class SignalPolicy:
                 time_delta = (now - self._locked_pending_time).total_seconds() if self._locked_pending_time is not None else 0.0
                 price_drift = abs(new_eq_price - self._locked_pending_price) if self._locked_pending_price is not None else 0.0
 
-                if time_delta < 30.0 or price_drift < (1.0 * atr):
+                # 30-SECOND PENDING LOCK: never cancel/recreate a live limit order unless
+                # it has been resting for more than 30s AND price has drifted >= 1.0 x ATR.
+                if time_delta <= PENDING_ORDER_LOCK_SECONDS or price_drift < (1.0 * atr):
                     # Maintain the existing live limit order and return ActionType.NO_TRADE
                     return self._build_no_trade(
                         tick=current_tick,
@@ -1070,6 +1122,114 @@ class SignalPolicy:
             self._last_logged_action = final_proposal.action
 
         return final_proposal
+
+    def _evaluate_ai_reversal(
+        self,
+        current_tick: TickData,
+        feature_vector: FeatureVector,
+        held_position_dirs: dict[int, str],
+        prob_buy: float,
+        prob_sell: float,
+        atr: float,
+        regime_str: str,
+        regime_conf: float,
+    ) -> TradeProposal | None:
+        """
+        AI Position Reversal veto.
+
+        Detects the case where the engine holds an active BUY while a strong SELL signal
+        emerges (or vice versa) and returns a CLOSE_POSITION proposal carrying
+        reason_code AI_REVERSAL_SIGNAL plus the intended `reversal_action`.
+
+        Reversal requires BOTH:
+          - relative directional bias of the opposing side >= ai_flip_relative_bias_threshold
+            (or an absolute probability lead of at least ai_flip_min_delta), AND
+          - structural agreement from SMC/Ichimoku (ChoCh, liquidity sweep, or Kumo side),
+            so a single noisy inference cannot flip a healthy position.
+
+        Returns None when no reversal is warranted, leaving the standard flow untouched.
+        """
+        total_active = prob_buy + prob_sell + 1e-8
+        rel_buy_bias = prob_buy / total_active
+        rel_sell_bias = prob_sell / total_active
+
+        rel_threshold = getattr(self.algo_config, "ai_flip_relative_bias_threshold", 0.60)
+        min_delta = getattr(self.algo_config, "ai_flip_min_delta", 0.10)
+
+        strong_sell = (rel_sell_bias >= rel_threshold) or (prob_sell > prob_buy + min_delta)
+        strong_buy = (rel_buy_bias >= rel_threshold) or (prob_buy > prob_sell + min_delta)
+
+        # Structural confirmation guards against whipsaw on model noise alone.
+        choch_bull = bool(getattr(feature_vector, "choch_bullish", False))
+        choch_bear = bool(getattr(feature_vector, "choch_bearish", False))
+        sweep_sig = int(self._sanitize_float(getattr(feature_vector, "liquidity_sweep_signal", 0), 0.0))
+        below_kumo = bool(getattr(feature_vector, "is_below_kumo", False))
+        above_kumo = bool(getattr(feature_vector, "is_above_kumo", False))
+
+        sell_structure = choch_bear or sweep_sig == -1 or below_kumo
+        buy_structure = choch_bull or sweep_sig == 1 or above_kumo
+
+        for ticket, direction in held_position_dirs.items():
+            reversal_action: ActionType | None = None
+
+            if direction == "BUY" and strong_sell and sell_structure:
+                reversal_action = ActionType.SELL_MARKET
+            elif direction == "SELL" and strong_buy and buy_structure:
+                reversal_action = ActionType.BUY_MARKET
+
+            if reversal_action is None:
+                continue
+
+            is_buy_reversal = reversal_action == ActionType.BUY_MARKET
+            entry = current_tick.ask if is_buy_reversal else current_tick.bid
+            stop_loss = round(entry - atr * 1.5, 2) if is_buy_reversal else round(entry + atr * 1.5, 2)
+            take_profit = round(entry + atr * 3.0, 2) if is_buy_reversal else round(entry - atr * 3.0, 2)
+            confidence = float(prob_buy if is_buy_reversal else prob_sell)
+
+            logger.info(
+                ">>> AI REVERSAL SIGNAL: opposing conviction detected, requesting CLOSE_POSITION before flip <<<",
+                ticket=ticket,
+                held=direction,
+                new_action=reversal_action.value,
+                prob_buy=round(prob_buy, 4),
+                prob_sell=round(prob_sell, 4),
+            )
+
+            # NOTE: the proposal's action is CLOSE_POSITION so the invariant validator on
+            # TradeProposal does not apply directional SL/TP checks. The intended new
+            # direction travels in `reversal_action`, which order_manager dispatches only
+            # after the conflicting ticket is confirmed closed.
+            return TradeProposal(
+                request_id=str(uuid.uuid4()),
+                symbol=current_tick.symbol,
+                generated_at=current_tick.timestamp,
+                action=ActionType.CLOSE_POSITION,
+                confidence=confidence,
+                proposed_entry=float(entry),
+                stop_loss=float(stop_loss),
+                take_profit=float(take_profit),
+                risk_reward_ratio=2.0,
+                reason_code=AI_REVERSAL_REASON,
+                ticket=int(ticket),
+                reversal_action=reversal_action,
+                is_ai_reversal=True,
+                model_action=reversal_action.value,
+                buy_probability=prob_buy,
+                sell_probability=prob_sell,
+                regime=regime_str,
+                regime_confidence=regime_conf,
+                risk_allowed=True,
+                guardian_status="IDLE",
+                rejection_reason=None,
+                final_action=ActionType.CLOSE_POSITION.value,
+                execution_mode="AI_REVERSAL",
+                override_reason="OPPOSING_SIGNAL_NO_STACKING",
+                decision_stage="AI_REVERSAL_GATE",
+                confidence_before_filters=confidence,
+                confidence_after_filters=confidence,
+            )
+
+        return None
 
     def _build_no_trade(
         self,

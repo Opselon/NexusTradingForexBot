@@ -82,6 +82,7 @@ let crosshairY = -1;
 // On Startup
 window.addEventListener('load', () => {
     initApp();
+    initDebugHub();
     startSSE();
     loadConfiguration();
     setInterval(updateHeartbeats, 5000);
@@ -299,6 +300,410 @@ function switchTab(tabId, element) {
     }
     if (tabId === 'tab-rules') {
         loadRules();
+    }
+    if (tabId === 'tab-debug') {
+        startDebugHub();
+    } else {
+        stopDebugHub();
+    }
+}
+
+// =============================================================================
+// DEBUG & DIAGNOSTICS HUB
+// =============================================================================
+
+let debugRefreshTimer = null;
+let debugFeatureCache = [];
+let debugIpcSeenIds = new Set();
+let debugIpcCleared = false;
+
+const DEBUG_STATUS_STYLES = {
+    HEALTHY:      { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', icon: 'fa-circle-check',        dot: 'bg-emerald-400' },
+    DEGRADED:     { text: 'text-accentGold',  bg: 'bg-amber-500/10',   border: 'border-amber-500/30',   icon: 'fa-triangle-exclamation', dot: 'bg-amber-400' },
+    UNHEALTHY:    { text: 'text-rose-400',    bg: 'bg-rose-500/10',    border: 'border-rose-500/30',    icon: 'fa-circle-xmark',         dot: 'bg-rose-400' },
+    DISCONNECTED: { text: 'text-slate-400',   bg: 'bg-slate-500/10',   border: 'border-slate-500/30',   icon: 'fa-plug-circle-xmark',    dot: 'bg-slate-400' },
+    UNKNOWN:      { text: 'text-slate-400',   bg: 'bg-slate-500/10',   border: 'border-slate-500/30',   icon: 'fa-circle-question',      dot: 'bg-slate-400' }
+};
+
+function debugStatusStyle(status) {
+    return DEBUG_STATUS_STYLES[status] || DEBUG_STATUS_STYLES.UNKNOWN;
+}
+
+// Wire up the input-mode selector and anomaly filter once the DOM is ready.
+function initDebugHub() {
+    const modeSelect = document.getElementById('debug-model-input-mode');
+    const customBox = document.getElementById('debug-model-custom-vector');
+    if (modeSelect && customBox) {
+        modeSelect.addEventListener('change', () => {
+            if (modeSelect.value === 'custom') {
+                customBox.classList.remove('hidden');
+                if (!customBox.value.trim()) {
+                    customBox.value = JSON.stringify(new Array(50).fill(0));
+                }
+            } else {
+                customBox.classList.add('hidden');
+            }
+        });
+    }
+
+    const anomalyToggle = document.getElementById('debug-feature-anomalies-only');
+    if (anomalyToggle) {
+        anomalyToggle.addEventListener('change', () => renderDebugFeatures(debugFeatureCache));
+    }
+
+    const autoToggle = document.getElementById('debug-autorefresh');
+    if (autoToggle) {
+        autoToggle.addEventListener('change', () => {
+            if (currentTab === 'tab-debug') {
+                startDebugHub();
+            }
+        });
+    }
+}
+
+function startDebugHub() {
+    refreshDebugHub();
+    stopDebugHub();
+    const autoToggle = document.getElementById('debug-autorefresh');
+    if (autoToggle && autoToggle.checked) {
+        debugRefreshTimer = setInterval(refreshDebugHub, 3000);
+    }
+}
+
+function stopDebugHub() {
+    if (debugRefreshTimer) {
+        clearInterval(debugRefreshTimer);
+        debugRefreshTimer = null;
+    }
+}
+
+// Pull every diagnostics endpoint in parallel so one slow subsystem cannot stall the UI.
+async function refreshDebugHub() {
+    await Promise.all([
+        loadDebugHealth(),
+        loadDebugFeatures(),
+        loadDebugIpcTelemetry()
+    ]);
+}
+
+async function loadDebugHealth() {
+    try {
+        const res = await fetch('/api/debug/health');
+        const data = await res.json();
+
+        const overallEl = document.getElementById('debug-overall-status');
+        const navBadge = document.getElementById('debug-nav-badge');
+        const style = debugStatusStyle(data.overall_status);
+
+        if (overallEl) {
+            overallEl.textContent = data.overall_status;
+            overallEl.className = `text-sm font-black font-mono ${style.text}`;
+        }
+        if (navBadge) {
+            navBadge.textContent = (data.overall_status || 'NA').substring(0, 3);
+            navBadge.className = `ml-auto text-[9px] font-black px-1.5 py-0.5 rounded ${style.bg} ${style.text} border ${style.border}`;
+        }
+
+        const grid = document.getElementById('debug-health-grid');
+        if (!grid) return;
+
+        const subsystems = data.subsystems || [];
+        if (subsystems.length === 0) {
+            grid.innerHTML = `<div class="bg-panelBg border border-borderClr rounded-xl p-4 text-xs text-textMuted italic">No subsystem data returned.</div>`;
+            return;
+        }
+
+        grid.innerHTML = subsystems.map(sub => {
+            const st = debugStatusStyle(sub.status);
+            const metricRows = Object.keys(sub.metrics || {}).map(key => `
+                <div class="flex justify-between text-[10px] font-mono">
+                    <span class="text-textMuted truncate mr-2">${key}</span>
+                    <span class="text-gray-300 truncate">${formatDebugMetric(sub.metrics[key])}</span>
+                </div>
+            `).join('');
+
+            return `
+                <div class="bg-panelBg border ${st.border} rounded-xl p-4 flex flex-col space-y-3 shadow-md hover:shadow-lg transition-all duration-300">
+                    <div class="flex items-start justify-between">
+                        <span class="text-[11px] font-black text-white leading-tight pr-2">${sub.name}</span>
+                        <span class="w-2 h-2 rounded-full ${st.dot} mt-1 shrink-0 ${sub.status === 'HEALTHY' ? 'animate-pulse' : ''}"></span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                        <i class="fa-solid ${st.icon} ${st.text} text-xs"></i>
+                        <span class="text-[10px] font-black font-mono ${st.text}">${sub.status}</span>
+                    </div>
+                    <p class="text-[10px] text-textMuted leading-snug">${sub.detail || ''}</p>
+                    ${metricRows ? `<div class="pt-2 border-t border-borderClr/60 space-y-1">${metricRows}</div>` : ''}
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error("Failed to load debug health", err);
+    }
+}
+
+function formatDebugMetric(value) {
+    if (value === null || value === undefined) return '--';
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (typeof value === 'number') {
+        return Number.isInteger(value) ? String(value) : value.toFixed(2);
+    }
+    const str = String(value);
+    return str.length > 26 ? '...' + str.slice(-23) : str;
+}
+
+async function loadDebugFeatures() {
+    try {
+        const res = await fetch('/api/debug/features');
+        const data = await res.json();
+
+        debugFeatureCache = data.features || [];
+
+        const validCount = debugFeatureCache.length - (data.anomaly_count || 0);
+        const validEl = document.getElementById('debug-feature-valid-count');
+        const anomalyEl = document.getElementById('debug-feature-anomaly-count');
+        const staleEl = document.getElementById('debug-feature-stale');
+
+        if (validEl) validEl.textContent = `VALID ${validCount}/${debugFeatureCache.length}`;
+        if (anomalyEl) {
+            anomalyEl.textContent = `ANOMALY ${data.anomaly_count || 0}`;
+            anomalyEl.className = (data.anomaly_count || 0) === 0
+                ? 'px-2 py-1 rounded bg-slate-500/10 text-slate-400 border border-slate-500/30 font-mono'
+                : 'px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 font-mono';
+        }
+        if (staleEl) {
+            const age = data.age_seconds;
+            staleEl.textContent = age === null || age === undefined ? 'AGE --' : `AGE ${age.toFixed(1)}s`;
+            staleEl.className = data.is_stale
+                ? 'px-2 py-1 rounded bg-amber-500/10 text-accentGold border border-amber-500/30 font-mono'
+                : 'px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono';
+        }
+
+        renderDebugFeatures(debugFeatureCache);
+    } catch (err) {
+        console.error("Failed to load debug features", err);
+    }
+}
+
+function renderDebugFeatures(features) {
+    const tbody = document.getElementById('debug-features-table');
+    if (!tbody) return;
+
+    const anomaliesOnly = document.getElementById('debug-feature-anomalies-only');
+    let list = features || [];
+    if (anomaliesOnly && anomaliesOnly.checked) {
+        list = list.filter(f => !f.is_valid);
+    }
+
+    if (list.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="py-6 text-center text-textMuted italic font-sans">
+                    ${(anomaliesOnly && anomaliesOnly.checked) ? 'No anomalies detected — all 50 features are valid.' : 'Awaiting feature stream...'}
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = list.map(feat => {
+        const isValid = feat.is_valid;
+        const tagClass = isValid
+            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+            : 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+        const valClass = isValid
+            ? (feat.value >= 1.0 ? 'text-emerald-400' : (feat.value <= -1.0 ? 'text-rose-400' : 'text-gray-200'))
+            : 'text-rose-400';
+        return `
+            <tr class="hover:bg-darkBg/40 transition ${isValid ? '' : 'bg-rose-500/5'}">
+                <td class="py-1.5 px-3 text-textMuted">${feat.key}</td>
+                <td class="py-1.5 px-3 text-gray-300">${feat.name}</td>
+                <td class="py-1.5 px-3 text-right font-black ${valClass}">${Number(feat.value).toFixed(6)}</td>
+                <td class="py-1.5 px-3 text-right pr-4">
+                    <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${tagClass}">${feat.status}</span>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Fire a real PyTorch forward pass and render the resulting probability bars.
+async function runModelDiagnosticsTest() {
+    const btn = document.getElementById('debug-run-model-btn');
+    const mode = document.getElementById('debug-model-input-mode');
+    const customBox = document.getElementById('debug-model-custom-vector');
+
+    let payload = { use_live_features: true };
+
+    if (mode) {
+        if (mode.value === 'zeros') {
+            payload = { features: new Array(50).fill(0), use_live_features: false };
+        } else if (mode.value === 'custom') {
+            try {
+                const parsed = JSON.parse(customBox.value);
+                if (!Array.isArray(parsed) || parsed.length !== 50) {
+                    alert("Custom vector must be a JSON array of exactly 50 numbers.");
+                    return;
+                }
+                payload = { features: parsed.map(Number), use_live_features: false };
+            } catch (e) {
+                alert("Custom vector is not valid JSON: " + e.message);
+                return;
+            }
+        }
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Running Inference...</span>`;
+    }
+
+    try {
+        const res = await fetch('/api/debug/model-test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const errBody = await res.json().catch(() => ({ detail: res.statusText }));
+            alert("Model test failed: " + (errBody.detail || res.statusText));
+            return;
+        }
+
+        const data = await res.json();
+        applyModelTestResult(data);
+    } catch (err) {
+        console.error("Model diagnostics test failed", err);
+        alert("Model diagnostics test failed: " + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fa-solid fa-flask-vial"></i> <span>Run Model Diagnostics Test</span>`;
+        }
+    }
+}
+
+function applyModelTestResult(data) {
+    const setBar = (valueId, barId, prob) => {
+        const pct = (Number(prob) * 100);
+        const valEl = document.getElementById(valueId);
+        const barEl = document.getElementById(barId);
+        if (valEl) valEl.textContent = `${pct.toFixed(2)}%`;
+        if (barEl) barEl.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    };
+
+    setBar('debug-prob-buy', 'debug-prob-buy-bar', data.ai_buy);
+    setBar('debug-prob-sell', 'debug-prob-sell-bar', data.ai_sell);
+    setBar('debug-prob-no-trade', 'debug-prob-no-trade-bar', data.ai_no_trade);
+
+    const predEl = document.getElementById('debug-model-prediction');
+    if (predEl) {
+        predEl.textContent = data.predicted_label || '--';
+        predEl.className = 'text-[11px] font-mono font-black ' + (
+            data.predicted_label === 'BUY_MARKET' ? 'text-emerald-400'
+            : data.predicted_label === 'SELL_MARKET' ? 'text-rose-400'
+            : 'text-white'
+        );
+    }
+
+    const latEl = document.getElementById('debug-model-latency');
+    if (latEl) latEl.textContent = `${Number(data.latency_ms || 0).toFixed(2)}ms`;
+
+    const srcEl = document.getElementById('debug-model-source');
+    if (srcEl) srcEl.textContent = data.model_source === 'LIVE_BUNDLE' ? 'LIVE' : 'FRESH';
+
+    appendIpcLine(
+        `MODEL_TEST ${data.predicted_label} conf=${(Number(data.confidence) * 100).toFixed(1)}% ` +
+        `buy=${(Number(data.ai_buy) * 100).toFixed(1)}% sell=${(Number(data.ai_sell) * 100).toFixed(1)}% ` +
+        `nt=${(Number(data.ai_no_trade) * 100).toFixed(1)}% [${data.latency_ms}ms / ${data.model_source}]`,
+        'text-accentCyan'
+    );
+}
+
+async function loadDebugIpcTelemetry() {
+    try {
+        const res = await fetch('/api/debug/ipc-telemetry?limit=60');
+        const data = await res.json();
+
+        const latEl = document.getElementById('debug-ipc-latency');
+        if (latEl) latEl.textContent = `AVG ${Number(data.avg_latency_ms || 0).toFixed(2)} ms`;
+
+        const expEl = document.getElementById('debug-ipc-exposure');
+        if (expEl && data.exposure) {
+            const total = (data.exposure.positions || 0) + (data.exposure.pendings || 0);
+            expEl.textContent = `EXPOSURE ${total}/${data.max_total_exposure} (P${data.exposure.positions || 0}/L${data.exposure.pendings || 0})`;
+            expEl.className = total > (data.max_total_exposure || 1)
+                ? 'px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 font-mono'
+                : 'px-2 py-1 rounded bg-accentCyan/10 text-accentCyan border border-accentCyan/30 font-mono';
+        }
+
+        // The endpoint returns newest-first; replay oldest-first so the console reads
+        // chronologically as lines are appended.
+        const events = (data.events || []).slice().reverse();
+        events.forEach(ev => {
+            if (debugIpcSeenIds.has(ev.id)) return;
+            debugIpcSeenIds.add(ev.id);
+
+            const reason = String(ev.reason || '');
+            let color = 'text-gray-300';
+            if (/REJECT|FAIL|BLOCK|ABORT/i.test(reason) || /REJECTED/i.test(ev.action || '')) {
+                color = 'text-rose-400';
+            } else if (/AI_REVERSAL/i.test(reason)) {
+                color = 'text-accentGold';
+            } else if (/cancel|expire/i.test(reason)) {
+                color = 'text-amber-400';
+            } else if (/Executed/i.test(ev.action || '')) {
+                color = 'text-emerald-400';
+            }
+
+            const latencyMs = ev.latency !== null && ev.latency !== undefined
+                ? (Number(ev.latency) * 1000).toFixed(1) + 'ms'
+                : '--';
+
+            appendIpcLine(
+                `#${ev.ticket || 0} ${String(ev.action || 'EVENT').toUpperCase()} ` +
+                `${ev.symbol || ''} vol=${ev.volume ?? 0} px=${ev.price ?? 0} ` +
+                `sl=${ev.stop_loss ?? 0} tp=${ev.take_profit ?? 0} ` +
+                `mode=${ev.execution_mode || 'STANDARD'} ipc=${latencyMs} :: ${reason}`,
+                color,
+                ev.timestamp
+            );
+        });
+    } catch (err) {
+        console.error("Failed to load IPC telemetry", err);
+    }
+}
+
+function appendIpcLine(text, colorClass, timestamp) {
+    const consoleEl = document.getElementById('debug-ipc-console');
+    if (!consoleEl) return;
+
+    if (!debugIpcCleared) {
+        // Drop the placeholder on the first real line.
+        const placeholder = consoleEl.querySelector('.font-sans');
+        if (placeholder) placeholder.remove();
+        debugIpcCleared = true;
+    }
+
+    const ts = timestamp ? String(timestamp).substring(11, 19) : new Date().toISOString().substring(11, 19);
+    const line = document.createElement('div');
+    line.className = `${colorClass || 'text-gray-300'} whitespace-pre-wrap break-all`;
+    line.textContent = `[${ts}] ${text}`;
+    consoleEl.appendChild(line);
+
+    // Cap the console buffer so long sessions cannot grow the DOM without bound.
+    while (consoleEl.childElementCount > 400) {
+        consoleEl.removeChild(consoleEl.firstElementChild);
+    }
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function clearIpcConsole() {
+    const consoleEl = document.getElementById('debug-ipc-console');
+    if (consoleEl) {
+        consoleEl.innerHTML = '<div class="text-textMuted italic font-sans">Console cleared.</div>';
+        debugIpcCleared = false;
     }
 }
 
