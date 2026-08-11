@@ -1,8 +1,8 @@
 """
-Institutional Dynamic Fail-Closed Risk Management Engine (v4.1 HFT Scalper Calibrated)
+Institutional Dynamic Fail-Closed Risk Management Engine (v5.0 HFT Scalper Calibrated)
 ======================================================================================
 Calculates optimal position lot sizing dynamically using real-time account equity,
-free margin, leverage, tick value, and strict broker stops-level validation.
+free margin, leverage, contract size, and strict broker validation.
 
 Enterprise Upgrades & Calibrations Incorporated:
     1. Calibrated Almgren-Chriss Slippage Tolerance (Allows up to 45% impact ratio for micro-scalps).
@@ -66,11 +66,28 @@ class RiskEngine:
         symbol_info: Any = None,
         current_directional_exposure: float = 0.0,
     ) -> float:
-        """Clamps the proposed position volume to HARD_MAX_LOTS (2.0)."""
+        """Clamps the proposed position volume to dynamic safety ceilings based on account size."""
         vol = volume if volume is not None else raw_volume
         if vol is None:
             vol = 0.0
-        return min(vol, 2.0)
+
+        if account is not None:
+            equity = getattr(account, "equity", 0.0)
+            if equity < 100.0:
+                tier_max = 0.02
+            elif equity < 1000.0:
+                tier_max = 0.10
+            elif equity < 10000.0:
+                tier_max = 1.00
+            else:
+                tier_max = 10.0
+        else:
+            tier_max = 10.0  # Fallback ceiling
+
+        if symbol_info is not None:
+            tier_max = min(tier_max, symbol_info.volume_max)
+
+        return min(vol, tier_max)
 
     def calculate_position_size(
         self,
@@ -83,12 +100,115 @@ class RiskEngine:
         Dynamically adjusts position lot size based on variable structural SL distance (fixed dollar risk).
         If SL is wide, lot size scales down; if SL is tight, lot size scales up.
         """
+        if sl_distance_price <= 0.0 or math.isnan(sl_distance_price) or math.isinf(sl_distance_price):
+            return 0.0
+        if account.equity <= 0.0 or math.isnan(account.equity) or math.isinf(account.equity):
+            return 0.0
+        if symbol_info.trade_contract_size <= 0.0 or math.isnan(symbol_info.trade_contract_size) or math.isinf(symbol_info.trade_contract_size):
+            return 0.0
         risk_amount_usd = account.equity * (risk_pct / 100.0)
-        sl_distance_points = max(sl_distance_price, 1e-5) / symbol_info.point
-        tick_val = symbol_info.tick_value if symbol_info.tick_value > 0 else 1.0
+        return risk_amount_usd / (sl_distance_price * symbol_info.trade_contract_size)
 
-        sl_risk_volume = risk_amount_usd / (sl_distance_points * tick_val + 1e-8)
-        return sl_risk_volume
+    def _floor_to_step(self, val: float, step: float) -> float:
+        """Floors a value to the nearest step, avoiding floating-point precision issues."""
+        if step <= 0.0 or math.isnan(step) or math.isinf(step):
+            return 0.0
+        if val <= 0.0 or math.isnan(val) or math.isinf(val):
+            return 0.0
+        eps = 1e-9
+        steps = math.floor((val + eps) / step)
+        return round(steps * step, 4)
+
+    def calculate_dynamic_volume(
+        self,
+        entry: float,
+        sl: float,
+        account: AccountInfo,
+        symbol_info: SymbolInfo,
+        risk_pct: float,
+    ) -> tuple[float, str]:
+        """
+        Centralized Dynamic position-sizing engine (v5.0 Enterprise Calibrated).
+        Implements a mathematically correct, broker-aware, multi-stage risk-sizing pipeline.
+        """
+        # Step 1: Validate Inputs
+        inputs = [entry, sl, account.equity, account.margin_free, account.leverage, symbol_info.trade_contract_size, symbol_info.volume_step]
+        for val in inputs:
+            if val is None or math.isnan(val) or math.isinf(val):
+                return 0.0, "INVALID_INPUT_NAN_INF_NONE"
+
+        if entry <= 0.0 or sl <= 0.0:
+            return 0.0, "INVALID_PRICING"
+        if account.equity <= 0.0:
+            return 0.0, "INVALID_EQUITY"
+        if account.margin_free <= 0.0:
+            return 0.0, "INVALID_FREE_MARGIN"
+        if account.leverage <= 0:
+            return 0.0, "INVALID_LEVERAGE"
+        if symbol_info.trade_contract_size <= 0.0:
+            return 0.0, "INVALID_CONTRACT_SIZE"
+        if symbol_info.volume_step <= 0.0:
+            return 0.0, "INVALID_VOLUME_STEP"
+
+        sl_distance = abs(entry - sl)
+        if sl_distance <= 0.0:
+            return 0.0, "INVALID_SL_DISTANCE"
+
+        # Step 2: Calculate Equity Risk $
+        risk_amount_usd = account.equity * (risk_pct / 100.0)
+        if risk_amount_usd < 0.0 or math.isnan(risk_amount_usd) or math.isinf(risk_amount_usd):
+            return 0.0, "INVALID_RISK_AMOUNT"
+
+        # Step 3: Calculate Raw Risk-Based Lots
+        contract_size = symbol_info.trade_contract_size
+        raw_lots = risk_amount_usd / (sl_distance * contract_size)
+        if math.isnan(raw_lots) or math.isinf(raw_lots) or raw_lots < 0.0:
+            return 0.0, "INVALID_RAW_LOTS"
+
+        # Step 4: Floor to Broker Volume Step
+        step = symbol_info.volume_step
+        volume = self._floor_to_step(raw_lots, step)
+
+        # Step 5: Apply Broker Maximum
+        volume = min(volume, symbol_info.volume_max)
+
+        # Step 6: Apply Account Safety Ceiling
+        if account.equity < 100.0:
+            tier_max = 0.02
+        elif account.equity < 1000.0:
+            tier_max = 0.10
+        elif account.equity < 10000.0:
+            tier_max = 1.00
+        else:
+            tier_max = min(10.0, symbol_info.volume_max)
+
+        volume = min(volume, tier_max)
+
+        # Step 7: Calculate Required Margin & Apply 20% Free-Margin Clamp
+        maximum_allowed_margin = account.margin_free * 0.20
+        if contract_size > 0 and entry > 0 and account.leverage > 0:
+            max_margin_volume = (maximum_allowed_margin * account.leverage) / (contract_size * entry)
+        else:
+            max_margin_volume = 0.0
+
+        volume = min(volume, max_margin_volume)
+
+        # Floor to Step AGAIN
+        volume = self._floor_to_step(volume, step)
+
+        # Step 8: Check Broker Minimum & Apply Micro-Account Exception
+        if volume < symbol_info.volume_min:
+            if account.equity < 50.0:
+                volume = symbol_info.volume_min
+                volume = min(volume, symbol_info.volume_max)
+                reason = "MICRO_ACCOUNT_MIN_LOT_EXCEPTION"
+            else:
+                volume = 0.0
+                reason = "INSUFFICIENT_EQUITY_FOR_MIN_LOT"
+        else:
+            reason = "SUCCESS"
+
+        return volume, reason
 
     def enable_kill_switch(self) -> None:
         """Activates emergency hard-stop across all trading execution."""
@@ -291,32 +411,27 @@ class RiskEngine:
         # ----------------------------------------------------------------------
         # 5. DYNAMIC LOT SIZING CALCULATION
         # ----------------------------------------------------------------------
-        tick_val = symbol_info.tick_value if symbol_info.tick_value > 0 else 1.0
-        sl_risk_volume = self.calculate_position_size(
+        final_volume, size_reason = self.calculate_dynamic_volume(
+            entry=proposal.proposed_entry,
+            sl=proposal.stop_loss,
             account=account,
             symbol_info=symbol_info,
-            sl_distance_price=sl_dist_price,
             risk_pct=risk_pct,
         )
 
-        contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
-        leverage = account.leverage if account.leverage > 0 else 100
-        required_margin_per_lot = (contract_size * proposal.proposed_entry) / leverage
-        
-        max_allocatable_margin = account.margin_free * (self.max_margin_usage_pct / 100.0)
-        margin_cap_volume = max_allocatable_margin / (required_margin_per_lot + 1e-8)
-
-        raw_volume = min(sl_risk_volume, margin_cap_volume)
         remaining_exposure_cap = self.max_allowed_lots - current_directional_exposure
-        raw_volume = min(raw_volume, remaining_exposure_cap)
+        if final_volume > remaining_exposure_cap:
+            final_volume = remaining_exposure_cap
+            final_volume = self._floor_to_step(final_volume, symbol_info.volume_step)
 
-        HARD_MAX_LOTS = 2.0
-        raw_volume = min(raw_volume, HARD_MAX_LOTS)
-
-        step = symbol_info.volume_step if symbol_info.volume_step > 0 else 0.01
-        steps = math.floor(raw_volume / step)
-        final_volume = round(steps * step, 2)
-        final_volume = min(final_volume, HARD_MAX_LOTS, symbol_info.volume_max)
+        # Re-check minimum after clamping to exposure cap
+        if final_volume < symbol_info.volume_min:
+            if account.equity < 50.0:
+                final_volume = symbol_info.volume_min
+                size_reason = "MICRO_ACCOUNT_MIN_LOT_EXCEPTION"
+            else:
+                final_volume = 0.0
+                size_reason = "INSUFFICIENT_EQUITY_FOR_MIN_LOT"
 
         # Verify free margin before dispatching. If margin is insufficient, set final_volume to 0.0
         contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
@@ -328,9 +443,10 @@ class RiskEngine:
         # ----------------------------------------------------------------------
         # 6. ALMGREN-CHRISS MARKET IMPACT & SLIPPAGE GUARD (Order-Type Aware)
         # ----------------------------------------------------------------------
+        step = symbol_info.volume_step if symbol_info.volume_step > 0 else 0.01
+        tick_val = symbol_info.tick_value if symbol_info.tick_value > 0 else 1.0
         while final_volume >= symbol_info.volume_min:
             expected_reward_usd = (tp_dist_price / symbol_info.point) * tick_val * final_volume
-            # BUGFIX: Pass proposed_order_type to grant zero slippage impact for Limit orders
             slippage_usd = self._estimate_market_impact(
                 final_volume, symbol_info, current_tick, atr, order_type=proposed_order_type
             )
@@ -338,17 +454,21 @@ class RiskEngine:
             if expected_reward_usd > 0 and (slippage_usd / expected_reward_usd) <= self.max_impact_reward_ratio:
                 break  # Impact bounds respected
                 
-            final_volume = round(final_volume - step, 2)
+            final_volume = self._floor_to_step(final_volume - step, step)
             
         if final_volume < symbol_info.volume_min:
-            logger.warning(
-                "EXCESSIVE_MARKET_IMPACT_REJECTED: Proposal aborted",
-                symbol=proposal.symbol,
-                calculated_vol=final_volume,
-                broker_min=symbol_info.volume_min,
-                reason=f"Estimated execution slippage consumes > {self.max_impact_reward_ratio*100}% of gross reward",
-            )
-            return None
+            if account.equity < 50.0:
+                final_volume = symbol_info.volume_min
+                logger.info("Micro-account exception: bypassing market impact reduction to allow broker minimum lot.")
+            else:
+                logger.warning(
+                    "EXCESSIVE_MARKET_IMPACT_REJECTED: Proposal aborted",
+                    symbol=proposal.symbol,
+                    calculated_vol=final_volume,
+                    broker_min=symbol_info.volume_min,
+                    reason=f"Estimated execution slippage consumes > {self.max_impact_reward_ratio*100}% of gross reward",
+                )
+                return None
 
         logger.info(
             "HFT Scalper Dynamic Lot Sizing Computed",
@@ -383,33 +503,15 @@ class RiskEngine:
         """
         Pass entry, SL, and TP prices to risk_engine.calculate_volume(...) for dynamic lot sizing based on account risk %.
         """
-        sl_dist_price = abs(entry - sl)
         risk_pct = self.config.risk_per_trade_pct
-
-        volume = self.calculate_position_size(
+        volume, reason = self.calculate_dynamic_volume(
+            entry=entry,
+            sl=sl,
             account=account,
             symbol_info=symbol_info,
-            sl_distance_price=sl_dist_price,
             risk_pct=risk_pct,
         )
-
-        step = symbol_info.volume_step if symbol_info.volume_step > 0 else 0.01
-        steps = math.floor(volume / step)
-        final_volume = round(steps * step, 2)
-
-        # Constrain to broker rules and hard limit
-        HARD_MAX_LOTS = 2.0
-        final_volume = min(final_volume, HARD_MAX_LOTS, symbol_info.volume_max)
-        final_volume = max(final_volume, symbol_info.volume_min)
-
-        # Verify free margin before dispatching. If margin is insufficient, return 0.0 volume.
-        contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
-        leverage = account.leverage if account.leverage > 0 else 100
-        required_margin = (contract_size * entry * final_volume) / leverage
-        if required_margin > account.margin_free:
-            return 0.0
-
-        return final_volume
+        return volume
 
     def _map_action_to_order_type(self, action: ActionType) -> OrderType:
         """Safely maps the domain ActionType to MT5 Execution OrderType."""

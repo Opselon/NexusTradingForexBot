@@ -196,8 +196,8 @@ def test_risk_engine_cascading_safety_clamps():
         current_directional_exposure=0.0,
     )
 
-    # The Absolute Safety Clamp should strictly cap this at 5.0 lots!
-    assert clamped_vol <= 5.0, f"Cascading clamps should cap volume under absolute maximum (5.0 lots), got {clamped_vol}"
+    # The Absolute Safety Clamp should strictly cap this at 10.0 lots!
+    assert clamped_vol <= 10.0, f"Cascading clamps should cap volume under absolute maximum (10.0 lots), got {clamped_vol}"
 
 
 # =============================================================================

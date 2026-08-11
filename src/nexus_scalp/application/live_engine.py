@@ -159,7 +159,7 @@ class LiveEngine:
             notifier=self.notifier,
             rule_matrix=self.rule_matrix,
             algo_config=config.algo,
-            # Routing every dispatch through the risk engine enforces HARD_MAX_LOTS = 2.0
+            # Routing every dispatch through the risk engine enforces dynamic clamps
             # and the free-margin pre-check at the execution boundary.
             risk_engine=self.risk_engine,
         )
@@ -723,7 +723,11 @@ class LiveEngine:
                             account=account,
                             symbol_info=self._symbol_info,
                         )
-                        reversal_volume = self.risk_engine.get_clamped_position_size(reversal_volume)
+                        reversal_volume = self.risk_engine.get_clamped_position_size(
+                            volume=reversal_volume,
+                            account=account,
+                            symbol_info=self._symbol_info,
+                        )
 
                     success = self.order_manager.execute_ai_reversal(
                         decision=policy_decision,
@@ -752,8 +756,12 @@ class LiveEngine:
                             account=account,
                             symbol_info=self._symbol_info,
                         )
-                        # Guarantee that the lot size NEVER exceeds 2.0 lots under any mathematical condition
-                        dynamic_volume = self.risk_engine.get_clamped_position_size(dynamic_volume)
+                        # Guarantee that the lot size respects the safety clamp under any mathematical condition
+                        dynamic_volume = self.risk_engine.get_clamped_position_size(
+                            volume=dynamic_volume,
+                            account=account,
+                            symbol_info=self._symbol_info,
+                        )
                         success = self.order_manager.dispatch_order(policy_decision, dynamic_volume)
                         logger.info(f"[info] DISPATCH ORDER action={policy_decision.action.value} price={policy_decision.proposed_entry} volume={dynamic_volume}")
 
