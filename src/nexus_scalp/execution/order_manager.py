@@ -26,6 +26,7 @@ Invariants:
 """
 
 import math
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -60,6 +61,51 @@ PENDING_ORDER_LOCK_SECONDS: float = 30.0
 AI_REVERSAL_REASON: str = "AI_REVERSAL_SIGNAL"
 
 
+# =============================================================================
+# PROFIT-GIVEBACK / BREAKEVEN PROTECTION INVARIANTS (Ticket 152465527595 fix)
+# =============================================================================
+# These constants are the single source of truth for the deterministic profit
+# protection layer. They are deliberately named (never inlined as magic numbers)
+# so the risk desk can audit and tune them in one place.
+
+#: Absolute USD floating profit at which a breakeven stop MUST be attempted.
+BREAKEVEN_PROFIT_USD: float = 15.00
+
+#: ATR multiple that forms the alternative (volatility-scaled) breakeven trigger.
+#: The multiple is converted to USD PnL via the symbol contract size before use;
+#: raw ATR price units are NEVER compared against USD PnL.
+BREAKEVEN_ATR_MULTIPLIER: float = 1.5
+
+#: Locked profit offset for the breakeven stop, expressed in PIPS (not price units).
+#: Converted through the canonical pip size resolver (`_resolve_pip_size`).
+BREAKEVEN_LOCK_PIPS: float = 0.20
+
+#: Canonical gold pip representation used across the project (see rule_matrix.py).
+DEFAULT_PIP_SIZE: float = 0.10
+
+#: Peak floating profit (USD) above which profit-erosion protection arms itself.
+PROFIT_GIVEBACK_PEAK_USD: float = 20.00
+
+#: Minimum fraction of peak profit that must be retained. Below this the engine
+#: treats the trade as a failed winner and cuts it.
+PROFIT_GIVEBACK_MIN_RETENTION: float = 0.30
+
+#: Hold-score penalty applied when profit retention breaches the floor.
+PROFIT_GIVEBACK_HOLD_SCORE_PENALTY: int = 50
+
+#: Hard hold-score ceiling for a position that gave back a meaningful profit and
+#: is now negative. Normal scoring can never lift the score above this.
+NEGATIVE_AFTER_PROFIT_HOLD_SCORE: int = 10
+
+#: ATR multiple used by the protective trailing stop. Mirrors the historical
+#: NORMAL_TRAIL distance so trailing behaviour is unchanged for healthy winners.
+ATR_TRAILING_MULTIPLIER: float = 1.15
+
+#: Console/stdout telemetry cadence, per ticket. SQLite/audit writes are NEVER
+#: throttled by this value.
+TELEMETRY_CONSOLE_INTERVAL_SEC: float = 10.0
+
+
 class ExitMechanism:
     """Canonical exit-mechanism taxonomy recorded in the audit ledger."""
 
@@ -69,6 +115,9 @@ class ExitMechanism:
     AI_REVERSAL_EXIT = "AI_REVERSAL_EXIT"
     HOLD_SCORE_DECAY = "HOLD_SCORE_DECAY"
     MANUAL_CLOSE = "MANUAL_CLOSE"
+    #: Winner that eroded below the retention floor (or went negative) after
+    #: having banked >= PROFIT_GIVEBACK_PEAK_USD of unrealized profit.
+    PROFIT_GIVEBACK_PROTECTION = "PROFIT_GIVEBACK_PROTECTION"
 
 
 # =============================================================================
@@ -89,6 +138,57 @@ class LSFTicketState:
     last_modify_intent: float = 0.0
     be_applied: float = 0.0
     trail_applied: float = 0.0
+
+
+@dataclass
+class PositionProtectionState:
+    """
+    Deterministic, per-ticket profit-protection state machine.
+
+    Bound to the MT5 ticket (never a global/shared variable) so protection decisions
+    are idempotent across repeated management passes. Every field is a fact about
+    THIS ticket only.
+    """
+    #: Monotonic high-water mark of floating PnL in account currency. Never decreases
+    #: while the position remains open.
+    peak_win_usd: float = 0.0
+    #: True only after the broker CONFIRMED the breakeven SL modification, or after the
+    #: observed broker-side SL was found to already sit at/beyond the breakeven level.
+    was_sl_modified: bool = False
+    #: True once profit-giveback protection has armed for this ticket.
+    profit_giveback_triggered: bool = False
+    #: True once a close request for this ticket was accepted by the adapter.
+    close_requested: bool = False
+    #: Monotonic-clock stamp of the last CONSOLE telemetry emission (never gates audit).
+    last_telemetry_log_time: float = 0.0
+    #: Monotonic-clock stamp of the last breakeven FAILURE log, used only to avoid log
+    #: spam on every loop iteration. It never gates the retry itself.
+    last_be_failure_log_time: float = 0.0
+    #: Breakeven price level actually locked in (0.0 until computed).
+    breakeven_sl_price: float = 0.0
+
+    def update_peak(self, current_pnl_usd: float) -> float:
+        """Applies the monotonic peak invariant and returns the resulting peak."""
+        try:
+            pnl = float(current_pnl_usd)
+        except (TypeError, ValueError):
+            return self.peak_win_usd
+        if math.isnan(pnl) or math.isinf(pnl):
+            return self.peak_win_usd
+        self.peak_win_usd = max(self.peak_win_usd, pnl)
+        return self.peak_win_usd
+
+    def retention_ratio(self, current_pnl_usd: float) -> float:
+        """
+        Fraction of peak profit still retained. Returns 1.0 when no positive peak
+        exists yet, so an unarmed position can never mis-fire the giveback logic.
+        """
+        if self.peak_win_usd <= 0.0:
+            return 1.0
+        try:
+            return float(current_pnl_usd) / self.peak_win_usd
+        except (TypeError, ValueError):
+            return 1.0
 
 
 @dataclass
@@ -243,6 +343,9 @@ class OrderLifecycleManager:
         self._adverse_ticks: dict[int, int] = {}
         self._favorable_ticks: dict[int, int] = {}
         self._hold_score_tracker: dict[int, int] = {}
+        #: Ticket -> last BASE (pre-safety-override) hold score. Kept separate so the
+        #: profit-giveback penalty is never compounded across throttled evaluations.
+        self._base_hold_score_tracker: dict[int, int] = {}
         self._rescue_registered_tickets: dict[int, bool] = {}
         self._last_modify_sl: dict[int, float] = {}
         self._last_price_tracker: dict[int, float] = {}
@@ -266,6 +369,10 @@ class OrderLifecycleManager:
         self._entry_order_ids: dict[int, str] = {}
         #: Ticket -> True once trailing/breakeven actually moved the broker-side SL.
         self._sl_modified_flags: dict[int, bool] = {}
+        #: Ticket -> deterministic profit-protection state machine (monotonic peak
+        #: profit, breakeven lock confirmation, giveback arming, close idempotency,
+        #: console-telemetry clock). Keyed strictly by MT5 ticket.
+        self._protection_state: dict[int, PositionProtectionState] = {}
         #: Ticket -> exit mechanism forced by the engine (AI reversal, hold decay, ...)
         #: which overrides the broker-history heuristic during the autopsy write.
         self._forced_exit_mechanisms: dict[int, str] = {}
@@ -882,6 +989,631 @@ class OrderLifecycleManager:
         last_sl = self._last_modify_sl.get(ticket, 0.0)
         if abs(new_sl - last_sl) >= self.min_step:
             return True
+        return False
+
+    # =========================================================================
+    # DETERMINISTIC POSITION PROTECTION LAYER
+    # -------------------------------------------------------------------------
+    # Root-cause fix for the profit-giveback incident on ticket #152465527595:
+    # a scalp reached +$30.74 unrealized, was never protected, gave the profit
+    # back and closed at roughly -$96.86 while hold_score stayed at 90-100.
+    #
+    # The layer below is deterministic, stateful (per MT5 ticket), idempotent and
+    # restart-safe: the in-memory flag is never the sole source of truth, the
+    # broker-reported SL is re-inspected on every refresh.
+    # =========================================================================
+
+    def get_protection_state(self, ticket: int) -> PositionProtectionState:
+        """
+        Returns (creating on first use) the protection state bound to this MT5 ticket.
+
+        State is per-ticket by construction, never a shared/global variable, so two
+        concurrently tracked positions can never contaminate each other's peak profit
+        or protection flags.
+        """
+        state = self._protection_state.get(ticket)
+        if state is None:
+            state = PositionProtectionState()
+            self._protection_state[ticket] = state
+        return state
+
+    def _resolve_pip_size(self, symbol_info: SymbolInfo | None) -> float:
+        """
+        Canonical pip size resolver.
+
+        A pip is 10 broker points, derived from `SymbolInfo.point` whenever the broker
+        specification is available. Falls back to the project-wide gold pip constant
+        (`DEFAULT_PIP_SIZE`, also used by `rule_matrix.py`) when it is not, so no
+        XAUUSD point conversion is hard-coded at the call sites.
+        """
+        if symbol_info is not None:
+            try:
+                point = float(symbol_info.point)
+                if point > 0.0 and not math.isnan(point) and not math.isinf(point):
+                    return point * 10.0
+            except (TypeError, ValueError):
+                pass
+        return DEFAULT_PIP_SIZE
+
+    def _resolve_price_digits(self, symbol_info: SymbolInfo | None) -> int:
+        """Broker price precision, defaulting to 2 decimals (XAUUSD convention)."""
+        if symbol_info is not None:
+            try:
+                digits = int(symbol_info.digits)
+                if 0 <= digits <= 10:
+                    return digits
+            except (TypeError, ValueError):
+                pass
+        return 2
+
+    def _atr_profit_threshold_usd(
+        self,
+        volume: float,
+        symbol_info: SymbolInfo | None,
+        atr: float,
+    ) -> float:
+        """
+        Converts `BREAKEVEN_ATR_MULTIPLIER` x ATR (price units) into this position's
+        USD PnL using the same contract-size arithmetic the risk engine uses.
+
+        Raw ATR price units are never compared against USD PnL directly.
+        """
+        try:
+            atr_price_delta = max(float(atr), 0.0) * BREAKEVEN_ATR_MULTIPLIER
+        except (TypeError, ValueError):
+            return math.inf
+        usd = self._price_delta_to_usd(atr_price_delta, volume, symbol_info)
+        if usd <= 0.0 or math.isnan(usd) or math.isinf(usd):
+            # A non-positive/invalid conversion must never create a free trigger.
+            return math.inf
+        return usd
+
+    def calculate_breakeven_sl(
+        self,
+        pos: Position,
+        symbol_info: SymbolInfo | None = None,
+    ) -> float:
+        """
+        Breakeven stop price locking `BREAKEVEN_LOCK_PIPS` of profit beyond entry.
+
+        BUY : entry + 0.20 pips
+        SELL: entry - 0.20 pips
+        """
+        pip = self._resolve_pip_size(symbol_info)
+        offset = BREAKEVEN_LOCK_PIPS * pip
+        raw = (
+            pos.price_open + offset
+            if pos.type == OrderType.BUY
+            else pos.price_open - offset
+        )
+        return round(raw, self._resolve_price_digits(symbol_info))
+
+    @staticmethod
+    def _is_sl_at_or_beyond(pos: Position, sl_value: float, reference_sl: float) -> bool:
+        """
+        True when `sl_value` is at or beyond `reference_sl` in the position's favourable
+        direction. Used both for the restart-safe breakeven check and to guarantee an
+        existing protective stop is never moved backwards.
+        """
+        if sl_value <= 0.0:
+            return False
+        if pos.type == OrderType.BUY:
+            return sl_value >= (reference_sl - 1e-9)
+        return sl_value <= (reference_sl + 1e-9)
+
+    def refresh_protection_state(
+        self,
+        pos: Position,
+        symbol_info: SymbolInfo | None = None,
+    ) -> PositionProtectionState:
+        """
+        Reconciles per-ticket protection state with the position as the broker reports it.
+
+        Performed on EVERY refresh so that:
+          - `peak_win_usd` advances monotonically with floating PnL,
+          - the breakeven level is always current, and
+          - a position whose real SL already sits at/beyond breakeven is treated as
+            protected even if this process just restarted and has no memory of it
+            (prevents duplicate SL modifications after state reconstruction).
+        """
+        state = self.get_protection_state(pos.ticket)
+        state.update_peak(pos.profit)
+
+        breakeven_sl = self.calculate_breakeven_sl(pos, symbol_info)
+        state.breakeven_sl_price = breakeven_sl
+
+        # Real MT5 state wins over the in-memory flag: the flag is never the only
+        # source of truth. Note this can only ever mark the position as MORE
+        # protected, never less.
+        if self._is_sl_at_or_beyond(pos, pos.sl, breakeven_sl):
+            if not state.was_sl_modified:
+                logger.debug(
+                    "BREAKEVEN ALREADY PRESENT ON BROKER: reconstructing protected state",
+                    ticket=pos.ticket,
+                    actual_sl=pos.sl,
+                    breakeven_sl=breakeven_sl,
+                )
+            state.was_sl_modified = True
+            self._sl_modified_flags[pos.ticket] = True
+
+        return state
+
+    def _protective_sl_floor(self, ticket: int) -> float:
+        """
+        Lowest (BUY) / highest (SELL) stop price any later mechanism is allowed to set,
+        i.e. the confirmed breakeven lock. Returns 0.0 when no lock is active.
+        """
+        state = self._protection_state.get(ticket)
+        if state is None or not state.was_sl_modified:
+            return 0.0
+        return state.breakeven_sl_price
+
+    def is_sl_improvement(self, pos: Position, new_sl: float) -> bool:
+        """
+        Guard shared by breakeven, ATR trailing and rule-driven SL moves.
+
+        Returns True only when `new_sl` tightens protection: it must advance past the
+        current broker SL in the profitable direction AND must never regress behind an
+        already-confirmed breakeven lock.
+        """
+        if new_sl <= 0.0:
+            return False
+
+        is_buy = pos.type == OrderType.BUY
+
+        # 1. Never loosen the stop the broker already holds.
+        if pos.sl > 0.0:
+            if is_buy and new_sl <= pos.sl:
+                return False
+            if not is_buy and new_sl >= pos.sl:
+                return False
+
+        # 2. Never move behind a confirmed breakeven lock.
+        floor_sl = self._protective_sl_floor(pos.ticket)
+        if floor_sl > 0.0:
+            if is_buy and new_sl < (floor_sl - 1e-9):
+                return False
+            if not is_buy and new_sl > (floor_sl + 1e-9):
+                return False
+
+        return True
+
+    def _log_protection_audit(
+        self,
+        pos: Position,
+        action: str,
+        reason: str,
+        stop_loss: float = 0.0,
+    ) -> None:
+        """
+        Writes a protection event to the SQLite audit ledger.
+
+        Deliberately isolated and fully exception-guarded: an audit/telemetry failure
+        must never prevent (or disable) a breakeven or close action.
+        """
+        try:
+            self.audit.log_order(
+                ticket=pos.ticket,
+                order_id=f"protect_{pos.ticket}_{action.lower()}",
+                symbol=pos.symbol,
+                action=action,
+                price=pos.price_open,
+                stop_loss=stop_loss,
+                take_profit=pos.tp,
+                volume=pos.volume,
+                reason=reason,
+                latency=0.0,
+                execution_mode="PROTECTION",
+            )
+        except Exception as err:  # noqa: BLE001 - audit must never break protection
+            logger.error("Protection audit write failed (protection continues)", ticket=pos.ticket, error=str(err))
+
+    def apply_breakeven_lock(
+        self,
+        pos: Position,
+        symbol_info: SymbolInfo | None = None,
+        atr: float = 0.0,
+        min_stop_gap: float = 0.0,
+        current_tick: TickData | None = None,
+    ) -> bool:
+        """
+        Priority-4 protection: locks a breakeven(+0.20 pip) stop once the position has
+        earned meaningful profit.
+
+        Activation (either trigger is sufficient):
+            current_pnl_usd >= BREAKEVEN_PROFIT_USD            ($15.00)
+            current_pnl_usd >= 1.5 ATR expressed in USD PnL
+
+        Guarded by `was_sl_modified` so the modification is issued at most once per
+        ticket, and by the broker-state reconciliation in `refresh_protection_state`
+        so a restart cannot duplicate it.
+
+        Returns True only when the adapter CONFIRMED the modification.
+        """
+        state = self.get_protection_state(pos.ticket)
+
+        if state.was_sl_modified or state.close_requested:
+            return False
+
+        current_pnl_usd = float(pos.profit)
+        atr_threshold_usd = self._atr_profit_threshold_usd(pos.volume, symbol_info, atr)
+        if current_pnl_usd < BREAKEVEN_PROFIT_USD and current_pnl_usd < atr_threshold_usd:
+            return False
+
+        breakeven_sl = state.breakeven_sl_price or self.calculate_breakeven_sl(pos, symbol_info)
+        state.breakeven_sl_price = breakeven_sl
+
+        # Already at/beyond breakeven on the broker side: nothing to send.
+        if self._is_sl_at_or_beyond(pos, pos.sl, breakeven_sl):
+            state.was_sl_modified = True
+            self._sl_modified_flags[pos.ticket] = True
+            return False
+
+        # Respect the broker's minimum stop distance; retry on a later pass instead of
+        # burning a guaranteed-reject modification request.
+        if current_tick is not None and min_stop_gap > 0.0:
+            reference = current_tick.bid if pos.type == OrderType.BUY else current_tick.ask
+            gap = (reference - breakeven_sl) if pos.type == OrderType.BUY else (breakeven_sl - reference)
+            if gap < min_stop_gap:
+                self._log_throttled_be_failure(
+                    state,
+                    pos,
+                    f"BREAKEVEN DEFERRED: stop gap {gap:.5f} below broker minimum {min_stop_gap:.5f}",
+                    breakeven_sl,
+                )
+                return False
+
+        take_profit = pos.tp  # Existing take-profit is preserved verbatim.
+
+        try:
+            success = bool(
+                self.mt5_adapter.modify_position(
+                    ticket=pos.ticket,
+                    stop_loss=breakeven_sl,
+                    take_profit=take_profit,
+                )
+            )
+        except Exception as err:  # noqa: BLE001 - a broker error must not kill the loop
+            success = False
+            logger.error(
+                "BREAKEVEN LOCK ERROR: modify_position raised",
+                ticket=pos.ticket,
+                error=str(err),
+            )
+
+        self._last_modify_sl[pos.ticket] = breakeven_sl
+
+        if not success:
+            # Explicitly do NOT set was_sl_modified: the retry stays possible on the
+            # next tracking cycle. Failure logging is throttled, the retry is not.
+            self._log_throttled_be_failure(
+                state,
+                pos,
+                "BREAKEVEN LOCK FAILED: broker rejected modification, retry pending",
+                breakeven_sl,
+            )
+            return False
+
+        state.was_sl_modified = True
+        self._sl_modified_flags[pos.ticket] = True
+
+        logger.info(
+            "BREAKEVEN LOCK ACTIVATED",
+            ticket=f"#{pos.ticket}",
+            pnl=f"${current_pnl_usd:.2f}",
+            peak=f"${state.peak_win_usd:.2f}",
+            entry=pos.price_open,
+            sl=breakeven_sl,
+        )
+        self._log_protection_audit(
+            pos,
+            action="BREAKEVEN_LOCK",
+            reason=f"BREAKEVEN_LOCK_ACTIVATED pnl=${current_pnl_usd:.2f} peak=${state.peak_win_usd:.2f}",
+            stop_loss=breakeven_sl,
+        )
+
+        if self.notifier:
+            try:
+                contract_size = self._resolve_contract_size(symbol_info)
+                self.notifier.notify_break_even_applied_extended(
+                    ticket=pos.ticket,
+                    new_sl=breakeven_sl,
+                    original_risk_usd=self._initial_risks.get(pos.ticket, 0.0),
+                    protected_amount_usd=abs(breakeven_sl - pos.price_open) * pos.volume * contract_size,
+                    reply_to_message_id=self._order_message_ids.get(pos.ticket),
+                )
+            except Exception as err:  # noqa: BLE001 - notification is best-effort
+                logger.error("Breakeven notification failed", ticket=pos.ticket, error=str(err))
+
+        return True
+
+    def _resolve_contract_size(self, symbol_info: SymbolInfo | None) -> float:
+        """Contract size with the project-wide 100.0 (gold) fallback."""
+        if symbol_info is not None and symbol_info.trade_contract_size > 0:
+            return float(symbol_info.trade_contract_size)
+        return 100.0
+
+    def _log_throttled_be_failure(
+        self,
+        state: PositionProtectionState,
+        pos: Position,
+        message: str,
+        breakeven_sl: float,
+    ) -> None:
+        """
+        Emits a breakeven-failure warning at most once every
+        `TELEMETRY_CONSOLE_INTERVAL_SEC` per ticket so a persistent broker rejection
+        cannot flood the console. The audit record is written every time.
+        """
+        now = time.monotonic()
+        if (now - state.last_be_failure_log_time) >= TELEMETRY_CONSOLE_INTERVAL_SEC:
+            logger.warning(
+                message,
+                ticket=pos.ticket,
+                breakeven_sl=breakeven_sl,
+                actual_sl=pos.sl,
+                pnl=f"${pos.profit:+.2f}",
+            )
+            state.last_be_failure_log_time = now
+
+        self._log_protection_audit(
+            pos,
+            action="BREAKEVEN_FAILED",
+            reason=message,
+            stop_loss=breakeven_sl,
+        )
+
+    def evaluate_profit_giveback(
+        self,
+        ticket: int,
+        current_pnl_usd: float,
+        base_hold_score: int,
+    ) -> tuple[int, bool, str]:
+        """
+        Deterministic profit-erosion evaluation and hold-score safety override.
+
+        Runs AFTER the base score has been computed but BEFORE the score is used for
+        any execution decision, so normal scoring can never overwrite a safety verdict.
+
+        Returns (final_hold_score, protection_required, reason).
+        """
+        state = self.get_protection_state(ticket)
+        score = int(base_hold_score)
+        peak = state.peak_win_usd
+
+        if peak < PROFIT_GIVEBACK_PEAK_USD:
+            return max(0, min(100, score)), False, ""
+
+        retention = state.retention_ratio(current_pnl_usd)
+
+        # --- Priority 3: negative PnL after a meaningful profit -----------------
+        # Evaluated before anything can raise the score again: a trade that banked
+        # >= $20 and is now red must never look attractive to hold.
+        if current_pnl_usd < 0.0:
+            return (
+                NEGATIVE_AFTER_PROFIT_HOLD_SCORE,
+                True,
+                f"NEGATIVE_PNL_AFTER_PEAK peak=${peak:.2f} current=${current_pnl_usd:.2f}",
+            )
+
+        # --- Priority 2: profit retention floor breached ------------------------
+        if retention < PROFIT_GIVEBACK_MIN_RETENTION:
+            score -= PROFIT_GIVEBACK_HOLD_SCORE_PENALTY
+            score = max(0, min(100, score))
+            return (
+                score,
+                True,
+                f"PROFIT_RETENTION_BREACH peak=${peak:.2f} current=${current_pnl_usd:.2f} retention={retention:.2%}",
+            )
+
+        return max(0, min(100, score)), False, ""
+
+    def enforce_profit_giveback_protection(
+        self,
+        pos: Position,
+        hold_score: int,
+        symbol_info: SymbolInfo | None = None,
+    ) -> tuple[int, bool]:
+        """
+        Priority-2/3 protection: arms PROFIT_GIVEBACK_PROTECTION and submits exactly one
+        market close for a winner that has eroded past the retention floor or turned
+        negative after banking >= PROFIT_GIVEBACK_PEAK_USD.
+
+        Returns (effective_hold_score, protection_active). When protection_active is
+        True the caller MUST NOT let any lower-priority mechanism act on the ticket.
+        """
+        state = self.get_protection_state(pos.ticket)
+        current_pnl_usd = float(pos.profit)
+
+        final_score, protection_required, reason = self.evaluate_profit_giveback(
+            ticket=pos.ticket,
+            current_pnl_usd=current_pnl_usd,
+            base_hold_score=hold_score,
+        )
+
+        if not protection_required:
+            return final_score, False
+
+        retention = state.retention_ratio(current_pnl_usd)
+        state.profit_giveback_triggered = True
+
+        # Idempotency gate: one close request per ticket. A retry is only permitted
+        # when the previous request was reported as failed (close_requested stays
+        # False in that case).
+        if state.close_requested:
+            logger.debug(
+                "PROFIT GIVEBACK PROTECTION: close already requested, suppressing duplicate",
+                ticket=pos.ticket,
+            )
+            return final_score, True
+
+        logger.warning(
+            "PROFIT GIVEBACK PROTECTION",
+            ticket=f"#{pos.ticket}",
+            peak=f"${state.peak_win_usd:.2f}",
+            current=f"${current_pnl_usd:.2f}",
+            retention=f"{retention:.2%}",
+            hold_score=final_score,
+            exit_mechanism=ExitMechanism.PROFIT_GIVEBACK_PROTECTION,
+        )
+        self._log_protection_audit(
+            pos,
+            action="PROFIT_GIVEBACK_PROTECTION",
+            reason=f"{reason} hold_score={final_score} exit_mechanism={ExitMechanism.PROFIT_GIVEBACK_PROTECTION}",
+            stop_loss=pos.sl,
+        )
+
+        # Propagate the exit metadata through the EXISTING forced-exit mechanism so the
+        # ledger autopsy attributes the close correctly. No parallel interface is added.
+        self._forced_exit_mechanisms[pos.ticket] = ExitMechanism.PROFIT_GIVEBACK_PROTECTION
+
+        try:
+            closed = bool(self.adapter.close_position(ticket=pos.ticket))
+        except Exception as err:  # noqa: BLE001 - never kill the tracking loop
+            closed = False
+            logger.error(
+                "PROFIT GIVEBACK PROTECTION: close_position raised",
+                ticket=pos.ticket,
+                error=str(err),
+            )
+
+        if closed:
+            state.close_requested = True
+            self._hold_score_tracker[pos.ticket] = final_score
+            with self._live_tickets_lock:
+                self._live_tickets_cache.pop(pos.ticket, None)
+            if self.notifier:
+                try:
+                    self.notifier.notify_early_emergency_cut(
+                        ticket=pos.ticket,
+                        score=final_score,
+                        reasons=f"{ExitMechanism.PROFIT_GIVEBACK_PROTECTION}: {reason}",
+                        saved_usd=current_pnl_usd,
+                        reply_to_message_id=self._order_message_ids.get(pos.ticket),
+                    )
+                except Exception as err:  # noqa: BLE001 - notification is best-effort
+                    logger.error("Profit giveback notification failed", ticket=pos.ticket, error=str(err))
+        else:
+            # Close failed: clear the forced tag (so an organic exit is not mislabelled)
+            # and leave close_requested False so the next cycle retries.
+            self._forced_exit_mechanisms.pop(pos.ticket, None)
+            self._log_protection_audit(
+                pos,
+                action="PROFIT_GIVEBACK_CLOSE_FAILED",
+                reason=f"{reason} close_position returned falsy, retry pending",
+                stop_loss=pos.sl,
+            )
+
+        return final_score, True
+
+    def apply_atr_trailing_stop(
+        self,
+        pos: Position,
+        price_current: float,
+        atr: float,
+        symbol_info: SymbolInfo | None = None,
+        min_stop_gap: float = 0.0,
+        current_tick: TickData | None = None,
+    ) -> bool:
+        """
+        Priority-5 protection: ATR trailing stop built on the ATR already produced by
+        the feature pipeline (`FeatureVector.atr_m1`); no second ATR implementation is
+        introduced.
+
+        BUY : trailing_sl = price - ATR * ATR_TRAILING_MULTIPLIER
+        SELL: trailing_sl = price + ATR * ATR_TRAILING_MULTIPLIER
+
+        The stop is only ever tightened: `is_sl_improvement` rejects any candidate that
+        would loosen the broker SL or regress behind a confirmed breakeven lock.
+        """
+        state = self.get_protection_state(pos.ticket)
+        if state.close_requested or state.profit_giveback_triggered:
+            # A higher-priority protection decision is in force; trailing must not
+            # replace or cancel it.
+            return False
+
+        try:
+            distance = max(float(min_stop_gap), round(float(atr) * ATR_TRAILING_MULTIPLIER, 2))
+        except (TypeError, ValueError):
+            logger.error("ATR trailing skipped: invalid ATR input", ticket=pos.ticket, atr=atr)
+            return False
+
+        if distance <= 0.0:
+            return False
+
+        target_sl = (
+            price_current - distance if pos.type == OrderType.BUY else price_current + distance
+        )
+        target_sl = round(target_sl, self._resolve_price_digits(symbol_info))
+
+        if not self.is_sl_improvement(pos, target_sl):
+            return False
+
+        if current_tick is not None and min_stop_gap > 0.0:
+            reference = current_tick.bid if pos.type == OrderType.BUY else current_tick.ask
+            gap = (reference - target_sl) if pos.type == OrderType.BUY else (target_sl - reference)
+            if gap < min_stop_gap:
+                return False
+
+        if not self._should_modify_sl(pos.ticket, target_sl):
+            return False
+
+        old_sl = pos.sl
+        try:
+            success = bool(
+                self.adapter.modify_position(ticket=pos.ticket, stop_loss=target_sl, take_profit=pos.tp)
+            )
+        except Exception as err:  # noqa: BLE001 - never kill the tracking loop
+            success = False
+            logger.error("ATR TRAILING: modify_position raised", ticket=pos.ticket, error=str(err))
+
+        self._last_modify_sl[pos.ticket] = target_sl
+
+        if not success:
+            return False
+
+        self._sl_modified_flags[pos.ticket] = True
+        self._log_protection_audit(
+            pos,
+            action="ATR_TRAILING_STOP",
+            reason=f"ATR_TRAILING atr={atr:.5f} multiplier={ATR_TRAILING_MULTIPLIER}",
+            stop_loss=target_sl,
+        )
+
+        if self.notifier:
+            try:
+                self.notifier.notify_trailing_stop_advanced_extended(
+                    ticket=pos.ticket,
+                    old_sl=old_sl,
+                    new_sl=target_sl,
+                    current_price=price_current,
+                    reply_to_message_id=self._order_message_ids.get(pos.ticket),
+                )
+            except Exception as err:  # noqa: BLE001 - notification is best-effort
+                logger.error("Trailing notification failed", ticket=pos.ticket, error=str(err))
+
+        return True
+
+    def should_emit_console_telemetry(self, ticket: int, now: float | None = None) -> bool:
+        """
+        Console/stdout telemetry gate: at most one emission every
+        `TELEMETRY_CONSOLE_INTERVAL_SEC` seconds PER TICKET (first event always passes).
+
+        This throttle governs ONLY human-facing console output. SQLite audit records,
+        trade-state persistence, risk events, SL modifications, close requests, errors
+        and protection events are written through separate, unthrottled paths.
+        """
+        state = self.get_protection_state(ticket)
+        current = time.monotonic() if now is None else float(now)
+
+        if state.last_telemetry_log_time <= 0.0:
+            state.last_telemetry_log_time = current
+            return True
+
+        if (current - state.last_telemetry_log_time) >= TELEMETRY_CONSOLE_INTERVAL_SEC:
+            state.last_telemetry_log_time = current
+            return True
+
         return False
 
     def _safe_feature_float(self, features: FeatureVector | None, attr_name: str, default: float) -> float:
@@ -2013,6 +2745,15 @@ class OrderLifecycleManager:
                         message_id=msg_id,
                     )
 
+            # =================================================================
+            # PROTECTION STATE REFRESH (must run before any decision logic)
+            # -----------------------------------------------------------------
+            # Advances the monotonic peak_win_usd, recomputes the breakeven level
+            # and reconciles against the broker-reported SL so a restart cannot
+            # duplicate an already-applied breakeven modification.
+            # =================================================================
+            protection = self.refresh_protection_state(pos, symbol_info)
+
             # Telemetry tracking for time in profit vs drawdown
             last_t = self._last_tick_timestamps.get(ticket, now)
             delta_sec = (now - last_t).total_seconds()
@@ -2021,10 +2762,14 @@ class OrderLifecycleManager:
 
             if pos.profit > 0.0:
                 self._time_in_profit_sec[ticket] += delta_sec
-                self._peak_profit_usd[ticket] = max(self._peak_profit_usd.get(ticket, 0.0), pos.profit)
             elif pos.profit < 0.0:
                 self._time_in_drawdown_sec[ticket] += delta_sec
                 self._peak_drawdown_usd[ticket] = min(self._peak_drawdown_usd.get(ticket, 0.0), pos.profit)
+
+            # Single source of truth for peak profit: the protection state machine.
+            # Mirrored here so the ledger autopsy (which reads _peak_profit_usd)
+            # reports the same monotonic high-water mark.
+            self._peak_profit_usd[ticket] = protection.peak_win_usd
 
             price_current = current_tick.bid if pos.type == OrderType.BUY else current_tick.ask
             profit_price_delta = (price_current - pos.price_open) if pos.type == OrderType.BUY else (pos.price_open - price_current)
@@ -2104,18 +2849,28 @@ class OrderLifecycleManager:
             )
 
             # Evaluate with a slight throttle (e.g., once every 500ms per open ticket) to prevent CPU thrashing
-            import time
             current_time = time.time()
             last_eval = self._last_hold_eval_time.get(ticket, 0.0)
             if (current_time - last_eval) >= 0.50:
-                hold_score, invalidate_reasons = self._calculate_hold_value_score(
+                base_hold_score, invalidate_reasons = self._calculate_hold_value_score(
                     pos, price_current, feature_vector, impact_price_delta, atr, smart_metrics
                 )
-                hold_score = self._recalculate_hold_score_with_position_state(ticket, hold_score, smart_metrics, invalidate_reasons)
-                self._hold_score_tracker[ticket] = hold_score
+                base_hold_score = self._recalculate_hold_score_with_position_state(ticket, base_hold_score, smart_metrics, invalidate_reasons)
+                self._base_hold_score_tracker[ticket] = base_hold_score
                 self._last_hold_eval_time[ticket] = current_time
             else:
-                hold_score = self._hold_score_tracker.get(ticket, 100)
+                base_hold_score = self._base_hold_score_tracker.get(ticket, 100)
+
+            # SAFETY OVERRIDE: applied on EVERY pass (never throttled) after the base
+            # score is computed but before the score is used for any execution
+            # decision, so the base scoring logic can never lift the score back up
+            # over a profit-giveback verdict.
+            hold_score, _giveback_required, _giveback_reason = self.evaluate_profit_giveback(
+                ticket=ticket,
+                current_pnl_usd=pos.profit,
+                base_hold_score=base_hold_score,
+            )
+            self._hold_score_tracker[ticket] = hold_score
 
                 # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
             ai_flip_detected = False
@@ -2198,6 +2953,43 @@ class OrderLifecycleManager:
                 # Close failed: clear the tag so a later organic exit is not mislabelled.
                 self._forced_exit_mechanisms.pop(ticket, None)
 
+            # =================================================================
+            # DETERMINISTIC PROTECTION PRIORITY CHAIN
+            # -----------------------------------------------------------------
+            #   1. Emergency / existing hard-risk protection (AI reversal above,
+            #      falling-knife guard, kill-switch scenarios in the router)
+            #   2. Profit Giveback Protection            <-- here
+            #   3. Negative-PnL-after-meaningful-profit   <-- here (same call)
+            #   4. Breakeven protection                   <-- here
+            #   5. ATR trailing protection                <-- here
+            #   6. Normal hold-score decision logic       <-- router below
+            #
+            # A lower-priority mechanism can never override a higher-priority
+            # decision: when giveback protection fires we `continue`, so neither
+            # trailing nor the router touches this ticket on this pass.
+            # =================================================================
+            if protection.close_requested:
+                # Close already accepted for this ticket. Do not re-submit, and do
+                # not let any lower-priority mechanism act on a dying position.
+                continue
+
+            hold_score, giveback_active = self.enforce_profit_giveback_protection(
+                pos=pos,
+                hold_score=hold_score,
+                symbol_info=symbol_info,
+            )
+            if giveback_active:
+                continue
+
+            # --- Priority 4: BREAKEVEN LOCK ($15.00 or 1.5 ATR in USD) ---
+            self.apply_breakeven_lock(
+                pos=pos,
+                symbol_info=symbol_info,
+                atr=atr,
+                min_stop_gap=min_stop_gap,
+                current_tick=current_tick,
+            )
+
             # --- MFE GIVEBACK TRAILING LOCK ---
             peak_win = self._peak_profit_usd.get(ticket, 0.0)
             contract_sz = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
@@ -2217,6 +3009,10 @@ class OrderLifecycleManager:
                     if (pos.sl == 0.0 or target_mfe_sl < pos.sl) and (target_mfe_sl - current_tick.ask) >= min_stop_gap:
                         valid_stop = True
 
+                # Never loosen an existing protective stop or regress behind the
+                # confirmed breakeven lock.
+                valid_stop = valid_stop and self.is_sl_improvement(pos, target_mfe_sl)
+
                 if valid_stop and self._should_modify_sl(ticket, target_mfe_sl):
                     success = self.adapter.modify_position(ticket=ticket, stop_loss=target_mfe_sl, take_profit=pos.tp)
                     self._last_modify_sl[ticket] = target_mfe_sl
@@ -2229,9 +3025,6 @@ class OrderLifecycleManager:
             pct_loss = (self._time_in_drawdown_sec[ticket] / total_sec) * 100
 
             # Throttled Telemetry logging (max once every 3.0s per ticket)
-            import time
-            current_time = time.time()
-            import time
             current_time = time.time()
             if not hasattr(self, "_last_telemetry_time"):
                 self._last_telemetry_time = {}
