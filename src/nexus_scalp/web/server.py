@@ -1292,7 +1292,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 metrics = {
                     "kill_switch_active": kill_switch,
                     "max_allowed_lots": float(getattr(risk, "max_allowed_lots", 0.0)),
-                    "hard_max_lots": 2.0,
+                    "hard_max_lots": 10.0,
                     "min_risk_reward_ratio": float(getattr(risk, "min_risk_reward_ratio", 0.0)),
                     "survival_mode": bool(getattr(engine, "_survival_mode_active", False)),
                 }
@@ -1301,7 +1301,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 elif metrics["survival_mode"]:
                     add("Risk Engine", "DEGRADED", "Survival mode active: thresholds tightened after drawdown.", metrics)
                 else:
-                    add("Risk Engine", "HEALTHY", "Clamps armed (HARD_MAX_LOTS = 2.0), kill switch disengaged.", metrics)
+                    add("Risk Engine", "HEALTHY", "Clamps armed (HARD_MAX_LOTS = 10.0), kill switch disengaged.", metrics)
             except Exception as e:
                 add("Risk Engine", "UNHEALTHY", f"Risk engine introspection raised: {e}")
 
