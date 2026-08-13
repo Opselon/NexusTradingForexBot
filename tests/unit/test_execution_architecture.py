@@ -339,6 +339,7 @@ def test_tick_sweep_execution():
 
 
 def test_pending_order_manager_and_falling_knife():
+    from datetime import timedelta
     adapter = DummyMT5Port()
     audit_repo = AuditRepository(db_url="sqlite:///:memory:")
     manager = OrderLifecycleManager(adapter=adapter, audit_repo=audit_repo)
@@ -358,6 +359,8 @@ def test_pending_order_manager_and_falling_knife():
     )
 
     current_tick = TickData(symbol="XAUUSD", timestamp=setup_time, bid=2010.0, ask=2010.1, volume=1.0)
+    # Set the order setup time to be older than the 30-second lock (Requirement 5)
+    manager._pending_orders_setup_time[5001] = setup_time - timedelta(seconds=40)
 
     # Evaluate every tick: distance is too far ($10.0 > ATR * 1.2) -> should be cancelled
     manager.manage_pending_orders(symbol="XAUUSD", current_tick=current_tick, atr=1.5, max_pending_dist_atr_mult=1.2)

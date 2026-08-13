@@ -229,9 +229,11 @@ def test_order_modification_and_sl_shift():
     )
     mock_port.positions = [pos]
 
-    # Initialize order manager tracking
+    # Initialize order manager tracking with high buy probs so that the adaptive manager
+    # holds the position (LOSS_RECOVERY_CONFIRMED) instead of closing it early (LOSS_EXIT_PRESSURE).
     tick_init = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.2, volume=1.0)
-    om.manage_active_positions("XAUUSD", tick_init)
+    probs = torch.tensor([[0.01, 0.98, 0.01]])
+    om.manage_active_positions("XAUUSD", tick_init, probs=probs)
 
     # 1. Real-time Stop Loss modification: shift to break-even + 1 pip (e.g. 2000.10)
     # Assert trailing / breakeven shift intent
@@ -275,7 +277,7 @@ def test_order_modification_and_sl_shift():
     is_rf, final_sl_db, exit_mechanism = row
     assert is_rf == 1 # Risk-free hit is True!
     assert final_sl_db == 2000.10
-    assert exit_mechanism == "CLOSED_SL"
+    assert exit_mechanism == "RISK_FREE_SL_HIT"
 
 
 def test_trade_autopsy_db_persistence():
@@ -343,4 +345,4 @@ def test_trade_autopsy_db_persistence():
     assert initial_sl == 1990.00
     assert final_sl == 1990.00 # Not modified
     assert is_rf == 0
-    assert exit_reason == "CLOSED_TP"
+    assert exit_reason == "TAKE_PROFIT_HIT"
