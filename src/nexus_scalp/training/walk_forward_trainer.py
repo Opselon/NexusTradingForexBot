@@ -509,9 +509,9 @@ class WalkForwardTrainer:
 
         # Allow up to 95% dominance for NO_TRADE (class 0) as it is the natural baseline state in scalping
         if dominant_class == 0:
-            dominance_threshold = max(0.95, val_max_dominance + 0.10)
+            dominance_threshold = min(0.95, val_max_dominance + 0.10)
         else:
-            dominance_threshold = max(0.85, val_max_dominance + 0.15)
+            dominance_threshold = min(0.85, val_max_dominance + 0.15)
 
         min_prediction_entropy = 0.30
 

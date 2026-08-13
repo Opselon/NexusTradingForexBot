@@ -66,6 +66,24 @@ class AlgoConfig(BaseModel):
     ai_flip_relative_bias_threshold: float = Field(default=0.60, ge=0.51, le=0.85)
     ai_flip_min_delta: float = Field(default=0.10, ge=0.02, le=0.30)
 
+    # State Machine & Hysteresis
+    min_confirmation_duration: float = Field(default=2.5, ge=0.0, le=60.0)
+    min_observation_count: int = Field(default=10, ge=1, le=200)
+
+    # Recovery Manager Parameters
+    recovery_budget_pct_of_r: float = Field(default=0.50, ge=0.05, le=1.0)
+    min_recovery_horizon_sec: float = Field(default=30.0, ge=5.0, le=300.0)
+    max_recovery_horizon_sec: float = Field(default=600.0, ge=60.0, le=3600.0)
+    default_recovery_horizon_sec: float = Field(default=180.0, ge=10.0, le=1200.0)
+
+    # Adaptive Weight Settings for Decision Engine
+    w_profit_retention: float = Field(default=0.30, ge=0.0, le=1.0)
+    w_pnl_trajectory: float = Field(default=0.15, ge=0.0, le=1.0)
+    w_drawdown_velocity: float = Field(default=0.15, ge=0.0, le=1.0)
+    w_market_reversal: float = Field(default=0.20, ge=0.0, le=1.0)
+    w_recovery_probability: float = Field(default=0.10, ge=0.0, le=1.0)
+    w_hold_score: float = Field(default=0.10, ge=0.0, le=1.0)
+
 
 class AppConfig(BaseSettings):
     """

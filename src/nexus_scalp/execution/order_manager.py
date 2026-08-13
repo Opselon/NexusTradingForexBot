@@ -27,6 +27,8 @@ Invariants:
 
 import math
 import time
+from collections import deque
+from enum import Enum
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -118,6 +120,35 @@ class ExitMechanism:
     #: Winner that eroded below the retention floor (or went negative) after
     #: having banked >= PROFIT_GIVEBACK_PEAK_USD of unrealized profit.
     PROFIT_GIVEBACK_PROTECTION = "PROFIT_GIVEBACK_PROTECTION"
+
+
+class PositionState(Enum):
+    """The 11 explicit in-trade lifecycles."""
+    PROFIT_UNPROTECTED = "PROFIT_UNPROTECTED"
+    PROFIT_PROTECTED = "PROFIT_PROTECTED"
+    PROFIT_TRAILING = "PROFIT_TRAILING"
+    PROFIT_GIVEBACK_WARNING = "PROFIT_GIVEBACK_WARNING"
+    PROFIT_GIVEBACK_CRITICAL = "PROFIT_GIVEBACK_CRITICAL"
+
+    LOSS_EARLY = "LOSS_EARLY"
+    LOSS_RECOVERY_CANDIDATE = "LOSS_RECOVERY_CANDIDATE"
+    LOSS_RECOVERY_CONFIRMED = "LOSS_RECOVERY_CONFIRMED"
+    LOSS_RECOVERY_FAILING = "LOSS_RECOVERY_FAILING"
+    LOSS_EXIT_PRESSURE = "LOSS_EXIT_PRESSURE"
+    LOSS_HARD_EXIT = "LOSS_HARD_EXIT"
+
+
+@dataclass
+class PositionEvaluationStep:
+    """A single observation slice inside the rolling trajectory deque."""
+    timestamp: datetime
+    pnl: float
+    price: float
+    hold_score: int
+    drawdown: float
+    retention: float
+    atr: float
+    volatility: float
 
 
 # =============================================================================
@@ -358,6 +389,21 @@ class OrderLifecycleManager:
 
         # Part 4: Pending Order Lifecycle Management tracking
         self._pending_orders_setup_time: dict[int, datetime] = {}
+
+        # Bounded trajectory history (ticket -> deque[PositionEvaluationStep])
+        self._trajectory_history: dict[int, deque[PositionEvaluationStep]] = {}
+        # Active position states (ticket -> PositionState)
+        self._position_states: dict[int, PositionState] = {}
+        # Hysteresis state transition candidates (ticket -> (candidate_state, first_attempt_time, attempt_count))
+        self._state_transition_candidates: dict[int, tuple[PositionState, datetime, int]] = {}
+
+        # Recovery tracking dictionaries
+        self._recovery_budget_initial: dict[int, float] = {}
+        self._recovery_budget_remaining: dict[int, float] = {}
+        self._recovery_budget_consumed: dict[int, float] = {}
+        self._recovery_horizons: dict[int, float] = {}
+        self._recovery_entry_times: dict[int, datetime] = {}
+        self._recovery_initial_loss: dict[int, float] = {}
 
         # =====================================================================
         # MODULE A/B STATE: LEDGER AUTOPSY CONTEXT & REVERSAL BOOKKEEPING
@@ -2216,6 +2262,637 @@ class OrderLifecycleManager:
                     return value
         return default
 
+    def _add_trajectory_step(
+        self,
+        ticket: int,
+        timestamp: datetime,
+        pnl: float,
+        price: float,
+        hold_score: int,
+        drawdown: float,
+        retention: float,
+        atr: float,
+        volatility: float,
+    ) -> None:
+        """Appends a new observation step to the ticket's bounded trajectory history."""
+        if ticket not in self._trajectory_history:
+            self._trajectory_history[ticket] = deque(maxlen=100)
+
+        step = PositionEvaluationStep(
+            timestamp=timestamp,
+            pnl=float(pnl),
+            price=float(price),
+            hold_score=int(hold_score),
+            drawdown=float(drawdown),
+            retention=float(retention),
+            atr=float(atr),
+            volatility=float(volatility),
+        )
+        self._trajectory_history[ticket].append(step)
+
+    def _calculate_continuous_giveback_severity(self, ticket: int, current_pnl_usd: float) -> float:
+        """
+        Calculates a continuous giveback severity metric (0.0 to 1.0).
+        0.0 means no giveback (at peak).
+        1.0 means catastrophic giveback (at or below the minimum retention floor).
+        """
+        state = self.get_protection_state(ticket)
+        peak = state.peak_win_usd
+        if peak < PROFIT_GIVEBACK_PEAK_USD:
+            return 0.0
+
+        catastrophic_floor = peak * PROFIT_GIVEBACK_MIN_RETENTION
+        giveback_range = peak - catastrophic_floor
+        if giveback_range <= 0.0:
+            return 0.0
+
+        severity = (peak - current_pnl_usd) / giveback_range
+        return max(0.0, min(1.0, severity))
+
+    def _initialize_recovery_mode(
+        self,
+        ticket: int,
+        current_pnl_usd: float,
+        confidence_factor: float,
+        atr: float,
+        trend_strength: float,
+        now: datetime,
+    ) -> None:
+        """
+        Initializes an immutable USD recovery budget and dynamic time horizon
+        when the position first enters negative PnL.
+        """
+        if ticket in self._recovery_budget_initial:
+            return
+
+        initial_risk_usd = self._initial_risks.get(ticket, 0.0)
+        if initial_risk_usd <= 0.0:
+            initial_risk_usd = atr * 1.50 * 100.0 * 0.10 # fallback rough estimate
+
+        # Recovery Budget = % of Initial Risk, clamped by actual remaining risk to entry
+        pct_r = getattr(self.algo_config, "recovery_budget_pct_of_r", 0.50)
+        budget = initial_risk_usd * pct_r
+        current_loss_abs = abs(current_pnl_usd)
+        remaining_risk = max(0.0, initial_risk_usd - current_loss_abs)
+        budget = min(budget, remaining_risk)
+
+        self._recovery_budget_initial[ticket] = budget
+        self._recovery_budget_remaining[ticket] = budget
+        self._recovery_budget_consumed[ticket] = 0.0
+        self._recovery_initial_loss[ticket] = current_loss_abs
+        self._recovery_entry_times[ticket] = now
+
+        # Dynamic, bounded recovery horizon (Requirement 15)
+        default_horizon = getattr(self.algo_config, "default_recovery_horizon_sec", 180.0)
+        min_horizon = getattr(self.algo_config, "min_recovery_horizon_sec", 30.0)
+        max_horizon = getattr(self.algo_config, "max_recovery_horizon_sec", 600.0)
+
+        # Scale based on ATR, confidence, and trend strength
+        base_hor = default_horizon
+        atr_n = max(atr, 0.50)
+        base_hor /= (atr_n / 1.50) # high volatility -> shorter horizon
+        base_hor *= (confidence_factor + 0.5) # high confidence -> longer horizon
+        if trend_strength < -0.20:
+            base_hor *= 0.70 # strong adverse trend -> shorter horizon
+
+        horizon = max(min_horizon, min(max_horizon, base_hor))
+        self._recovery_horizons[ticket] = horizon
+
+        logger.info(
+            "[RECOVERY ENVELOPE LOCKED]",
+            ticket=ticket,
+            initial_risk=f"${initial_risk_usd:.2f}",
+            locked_budget=f"${budget:.2f}",
+            horizon_sec=round(horizon, 1),
+            initial_loss=f"${current_pnl_usd:.2f}",
+        )
+
+    def _evaluate_recovery_budget_and_horizon(
+        self,
+        ticket: int,
+        current_pnl_usd: float,
+        now: datetime,
+    ) -> tuple[bool, str]:
+        """
+        Evaluates the immutable recovery budget and dynamic time horizon.
+        Returns (is_exhausted, reason).
+        """
+        if ticket not in self._recovery_budget_initial:
+            return False, ""
+
+        # 1. Budget check
+        initial_loss = self._recovery_initial_loss.get(ticket, 0.0)
+        current_loss = abs(current_pnl_usd) if current_pnl_usd < 0.0 else 0.0
+
+        # Budget is consumed if drawdown widens from recovery entry point
+        consumed = max(0.0, current_loss - initial_loss)
+        self._recovery_budget_consumed[ticket] = consumed
+
+        initial_budget = self._recovery_budget_initial.get(ticket, 0.0)
+        remaining = max(0.0, initial_budget - consumed)
+        self._recovery_budget_remaining[ticket] = remaining
+
+        if remaining <= 0.0:
+            return True, f"RECOVERY_BUDGET_EXHAUSTED (initial=${initial_budget:.2f}, consumed=${consumed:.2f})"
+
+        # 2. Time Horizon check (dynamic but strictly bounded, no moving goalposts)
+        entry_time = self._recovery_entry_times.get(ticket)
+        horizon = self._recovery_horizons.get(ticket, 180.0)
+        if entry_time is not None:
+            elapsed = (now - entry_time).total_seconds()
+            if elapsed > horizon:
+                return True, f"RECOVERY_TIME_EXHAUSTED ({elapsed:.1f}s > {horizon:.1f}s)"
+
+        return False, ""
+
+    def _evaluate_minimum_loss_optimization(
+        self,
+        ticket: int,
+        current_pnl_usd: float,
+        initial_risk_usd: float,
+        evidence: dict[str, float],
+    ) -> tuple[bool, str]:
+        """
+        Continuously calculates the expected value of holding vs exiting.
+        Returns (should_exit, reason) for exiting at the smallest statistically justified loss.
+        """
+        if current_pnl_usd >= 0.0:
+            return False, ""
+
+        recovery_score = evidence.get("recovery_score", 0.50)
+        adverse_score = evidence.get("adverse_score", 0.50)
+
+        # Expected Outcomes (payoff magnitudes)
+        expected_recovery_value = abs(current_pnl_usd) # target is returning to breakeven (recovering current loss)
+        expected_additional_loss = max(1.0, initial_risk_usd - abs(current_pnl_usd)) # hitting hard SL
+
+        # Expected Value (EV) calculation
+        ev_hold = recovery_score * expected_recovery_value - adverse_score * expected_additional_loss
+
+        # Minimum-loss exit condition: if the EV of holding is severely negative, or if recovery evidence is weak
+        if ev_hold < -0.15 * initial_risk_usd:
+            return True, f"MIN_LOSS_OPTIMIZATION_EV_BREACH (EV=${ev_hold:.2f}, rec_prob={recovery_score:.2%}, adv_prob={adverse_score:.2%})"
+
+        if recovery_score < 0.25 and adverse_score > 0.60:
+            return True, f"MIN_LOSS_OPTIMIZATION_WEAK_RECOVERY (rec_prob={recovery_score:.2%}, adv_prob={adverse_score:.2%})"
+
+        return False, ""
+
+    def transition_state_with_hysteresis(
+        self,
+        ticket: int,
+        target_state: PositionState,
+        now: datetime,
+    ) -> PositionState:
+        """
+        Manages state transitions with count-based and time-based hysteresis debouncing.
+        Emergency/safety/catastrophic giveback states bypass debouncing with zero latency.
+        """
+        current_state = self._position_states.get(ticket)
+        if current_state is None:
+            # First initialization
+            self._position_states[ticket] = target_state
+            return target_state
+
+        if current_state == target_state:
+            self._state_transition_candidates.pop(ticket, None)
+            return current_state
+
+        # SAFETY IMMEDIATE BYPASS STATES
+        # Catastrophic drawdowns, critical givebacks, hard exits transition immediately with zero latency.
+        bypass_states = {
+            PositionState.PROFIT_GIVEBACK_CRITICAL,
+            PositionState.LOSS_HARD_EXIT,
+            PositionState.LOSS_EXIT_PRESSURE,
+        }
+        if target_state in bypass_states:
+            logger.info(
+                "[HYSTERESIS BYPASS - EMERGENCY TRANSITION]",
+                ticket=ticket,
+                from_state=current_state.value,
+                to_state=target_state.value,
+            )
+            self._position_states[ticket] = target_state
+            self._state_transition_candidates.pop(ticket, None)
+            return target_state
+
+        # DEBOUNCING FOR NORMAL TRANSITIONS (Requirement 5)
+        cand_info = self._state_transition_candidates.get(ticket)
+        min_dur = getattr(self.algo_config, "min_confirmation_duration", 2.5)
+        min_cnt = getattr(self.algo_config, "min_observation_count", 10)
+
+        if cand_info is None or cand_info[0] != target_state:
+            # Initialize or reset candidate state
+            self._state_transition_candidates[ticket] = (target_state, now, 1)
+            return current_state
+
+        # Increment count
+        cand_state, first_attempt_time, count = cand_info
+        new_count = count + 1
+        self._state_transition_candidates[ticket] = (cand_state, first_attempt_time, new_count)
+
+        elapsed = (now - first_attempt_time).total_seconds()
+
+        # Both count AND time requirements must be satisfied (Requirement 5)
+        if elapsed >= min_dur and new_count >= min_cnt:
+            logger.info(
+                "[STATE MACHINE TRANSITIONED]",
+                ticket=ticket,
+                from_state=current_state.value,
+                to_state=target_state.value,
+                elapsed_sec=round(elapsed, 1),
+                observations=new_count,
+            )
+            self._position_states[ticket] = target_state
+            self._state_transition_candidates.pop(ticket, None)
+            return target_state
+
+        return current_state
+
+    def _evaluate_candidate_state(
+        self,
+        ticket: int,
+        pos: Position,
+        evidence: dict[str, float],
+        pnl_features: dict[str, float],
+    ) -> PositionState:
+        """
+        Maps continuous evidence scores and trajectory features into one of the 11 explicit PositionStates.
+        """
+        pnl = pos.profit
+        is_profitable = pnl >= 0.0
+
+        # Check for catastrophic profit giveback FIRST (before positive/negative split)
+        state_p = self.get_protection_state(ticket)
+        retention = state_p.retention_ratio(pnl)
+        if state_p.peak_win_usd >= PROFIT_GIVEBACK_PEAK_USD:
+            if pnl < 0.0 or retention <= PROFIT_GIVEBACK_MIN_RETENTION:
+                return PositionState.PROFIT_GIVEBACK_CRITICAL
+            elif retention < 0.70:
+                return PositionState.PROFIT_GIVEBACK_WARNING
+
+        if is_profitable:
+            # PROFIT STATES
+            if self._sl_modified_flags.get(ticket, False):
+                # If trailing is already active
+                return PositionState.PROFIT_TRAILING
+            elif pnl >= BREAKEVEN_PROFIT_USD:
+                return PositionState.PROFIT_PROTECTED
+            else:
+                return PositionState.PROFIT_UNPROTECTED
+
+        else:
+            # LOSS/RECOVERY STATES
+            recovery_score = evidence.get("recovery_score", 0.50)
+            adverse_score = evidence.get("adverse_score", 0.50)
+
+            # Check if budget/horizon is already exhausted
+            budget_remaining = self._recovery_budget_remaining.get(ticket, 1.0)
+
+            if budget_remaining <= 0.0 or adverse_score > 0.80:
+                return PositionState.LOSS_HARD_EXIT
+
+            if recovery_score >= 0.70 and adverse_score < 0.20:
+                return PositionState.LOSS_RECOVERY_CONFIRMED
+            elif recovery_score >= 0.45:
+                return PositionState.LOSS_RECOVERY_CANDIDATE
+            elif recovery_score < 0.30:
+                return PositionState.LOSS_EXIT_PRESSURE
+            else:
+                return PositionState.LOSS_RECOVERY_FAILING
+
+    def _arbitrate_decision(
+        self,
+        ticket: int,
+        pos: Position,
+        legacy_action: str,
+        legacy_scenario: str,
+        adaptive_state: PositionState,
+        current_pnl_usd: float,
+        evidence: dict[str, float],
+    ) -> tuple[str, str]:
+        """
+        Arbitrates the final execution action across the hierarchy levels:
+        1. Emergency safety cuts / Broker stops rules (VETO power)
+        2. Deterministic protection (BE / Giveback)
+        3. Adaptive position exit pressure
+        4. Strategy / Router suggestions
+        5. Default HOLD
+
+        Ensures that HOLD can never override a protective EXIT/CLOSE action.
+        """
+        # Level 1: Hard Emergency/Safety Cuts from Legacy Router (e.g. S01, S02, S09, S10)
+        is_legacy_emergency_cut = legacy_action == "CLOSE" and any(
+            code in legacy_scenario for code in ("S01", "S02", "S04", "S05", "S06", "S07", "S08", "S09", "S10", "S11", "S12", "S13", "S21", "S22")
+        )
+        if is_legacy_emergency_cut:
+            return "CLOSE", legacy_scenario
+
+        # Level 2: Adaptive/Deterministic safety constraints (Recovery budget or Horizon exhausted)
+        if adaptive_state == PositionState.LOSS_HARD_EXIT:
+            return "CLOSE", f"LOSS_HARD_EXIT: recovery budget exhausted or adverse pressure too high"
+
+        if adaptive_state == PositionState.PROFIT_GIVEBACK_CRITICAL:
+            return "CLOSE", f"PROFIT_GIVEBACK_CRITICAL: profit eroded below floor retention"
+
+        # Minimum loss optimization check (Requirement 13)
+        initial_risk = self._initial_risks.get(ticket, 0.0)
+        if current_pnl_usd < 0.0 and initial_risk > 0.0:
+            should_exit, opt_reason = self._evaluate_minimum_loss_optimization(ticket, current_pnl_usd, initial_risk, evidence)
+            if should_exit:
+                return "CLOSE", opt_reason
+
+        # Level 3: Adaptive Exit Pressure
+        if adaptive_state == PositionState.LOSS_EXIT_PRESSURE:
+            # Low recovery probability -> Exit rather than hoping
+            return "CLOSE", f"LOSS_EXIT_PRESSURE: low recovery score ({evidence.get('recovery_score', 0.0):.2%})"
+
+        # Level 4: Trailing Stop / Breakeven Actions
+        # If legacy wants BREAK_EVEN or NORMAL_TRAIL, and we are in a protected state:
+        if legacy_action in ("BREAK_EVEN", "NORMAL_TRAIL", "PARTIAL_CLOSE", "MODIFY_SL"):
+            return legacy_action, legacy_scenario
+
+        # If adaptive state suggests giveback warning, tighten stop
+        if adaptive_state == PositionState.PROFIT_GIVEBACK_WARNING:
+            return "MODIFY_SL", "PROFIT_GIVEBACK_WARNING: tightening profit protection"
+
+        # Otherwise, default to HOLD
+        return "HOLD", "S60_DEFAULT_CONTROLLED_HOLD"
+
+    def _calculate_protection_score(
+        self,
+        ticket: int,
+        pos: Position,
+        base_hold_score: int,
+        pnl_features: dict[str, float],
+        evidence: dict[str, float],
+        confidence_factor: float,
+        atr: float,
+    ) -> float:
+        """
+        Calculates a continuous protection score (0.0 to 100.0) combining baseline state weights
+        with continuous risk severity, including protection escalation as risk deteriorates.
+        """
+        # Retrieve centralized weights from AlgoConfig
+        w_prof = getattr(self.algo_config, "w_profit_retention", 0.30)
+        w_pnl = getattr(self.algo_config, "w_pnl_trajectory", 0.15)
+        w_dd_vel = getattr(self.algo_config, "w_drawdown_velocity", 0.15)
+        w_rev = getattr(self.algo_config, "w_market_reversal", 0.20)
+        w_rec = getattr(self.algo_config, "w_recovery_probability", 0.10)
+        w_hscore = getattr(self.algo_config, "w_hold_score", 0.10)
+
+        # Scale weights continuously based on position state (context-dependent weights)
+        is_profitable = pos.profit >= 0.0
+        if is_profitable:
+            # Shift weight toward profit retention and continuation
+            w_prof *= 1.5
+            w_rec *= 0.2
+        else:
+            # Shift weight toward drawdown velocity, recovery, and market reversal
+            w_dd_vel *= 1.5
+            w_rev *= 1.3
+            w_rec *= 1.2
+            w_prof *= 0.1
+
+        # Normalize weights
+        total_w = w_prof + w_pnl + w_dd_vel + w_rev + w_rec + w_hscore
+        if total_w > 0.0:
+            w_prof /= total_w
+            w_pnl /= total_w
+            w_dd_vel /= total_w
+            w_rev /= total_w
+            w_rec /= total_w
+            w_hscore /= total_w
+
+        # Scaled continuous input variables [0.0, 1.0]
+        profit_giveback_severity = self._calculate_continuous_giveback_severity(ticket, pos.profit)
+
+        # PnL deterioration: 1.0 when PnL slope is highly negative
+        pnl_slope = pnl_features.get("pnl_slope", 0.0)
+        pnl_deterioration = max(0.0, min(1.0, -pnl_slope * 2.0))
+
+        # Drawdown velocity (scaled)
+        dd_vel = pnl_features.get("drawdown_velocity", 0.0)
+        drawdown_velocity = max(0.0, min(1.0, dd_vel * 3.0))
+
+        # Reversal probability (scaled by AI confidence factor continuously)
+        effective_ai_weight = confidence_factor
+        adverse_prob = evidence.get("adverse_score", 0.0)
+        reversal_probability = adverse_prob * effective_ai_weight
+
+        # Recovery probability
+        rec_prob = evidence.get("recovery_score", 0.0)
+        # We weigh (1 - recovery_probability) as protection pressure
+        recovery_probability_pressure = (1.0 - rec_prob) * effective_ai_weight
+
+        # Hold score deterioration
+        hold_score_deterioration = max(0.0, min(1.0, (100.0 - base_hold_score) / 100.0))
+
+        # Time risk: increases as time underwater grows
+        time_below_be = pnl_features.get("time_below_breakeven", 0.0)
+        time_risk = max(0.0, min(1.0, time_below_be / self.max_holding_seconds))
+
+        # Combine variables
+        protection_score = (
+            w_prof * profit_giveback_severity
+            + w_pnl * pnl_deterioration
+            + w_dd_vel * drawdown_velocity
+            + w_rev * reversal_probability
+            + w_rec * recovery_probability_pressure
+            + w_hscore * hold_score_deterioration
+        )
+
+        # Apply escalation multiplier as risk deteriorates (near hard SL or high time risk)
+        escalation_factor = 1.0
+        if not is_profitable:
+            # Escalation based on time underwater and negative trend slope
+            escalation_factor += 0.5 * time_risk
+            if pnl_slope < 0.0:
+                escalation_factor += 0.3 * min(1.0, abs(pnl_slope))
+
+        protection_score *= escalation_factor
+        return max(0.0, min(100.0, protection_score * 100.0))
+
+    def _calculate_adaptive_evidence_scores(
+        self,
+        ticket: int,
+        pos: Position,
+        probs: Any | None,
+        features: FeatureVector | None,
+    ) -> dict[str, float]:
+        """
+        Computes normalized evidence scores (recovery_score, adverse_score, continuation_score)
+        derived from either live neural network predictions (probs) or a bounded evidence/score model fallback.
+        """
+        is_buy = pos.type == OrderType.BUY
+        pnl_features = self._calculate_trajectory_features(ticket)
+        pnl_slope = pnl_features.get("pnl_slope", 0.0)
+
+        # 1. Base model predictions if available
+        if probs is not None:
+            try:
+                probs_list = probs.squeeze().tolist()
+                if not isinstance(probs_list, list):
+                    probs_list = [probs_list]
+
+                # Model predicts: 0=NO_TRADE, 1=BUY, 2=SELL
+                p_no_trade = float(probs_list[0]) if len(probs_list) > 0 else 0.4
+                p_buy = float(probs_list[1]) if len(probs_list) > 1 else 0.3
+                p_sell = float(probs_list[2]) if len(probs_list) > 2 else 0.3
+
+                # Ensure internally consistent normalization
+                total_prob = p_no_trade + p_buy + p_sell + 1e-9
+                p_no_trade /= total_prob
+                p_buy /= total_prob
+                p_sell /= total_prob
+
+                if is_buy:
+                    continuation_score = p_buy
+                    adverse_score = p_sell
+                else:
+                    continuation_score = p_sell
+                    adverse_score = p_buy
+
+            except Exception as err:
+                logger.error("Error parsing neural network probabilities; falling back to heuristic", error=str(err))
+                probs = None
+
+        if probs is None:
+            # Bounded evidence fallback model (Requirement 1 & 2)
+            # Baseline is 0.40
+            continuation_score = 0.40
+            adverse_score = 0.40
+
+            # Dynamic indicators from feature vector
+            if features is not None:
+                # Ichimoku trend alignment
+                if is_buy and features.is_above_kumo:
+                    continuation_score += 0.15
+                elif is_buy and features.is_below_kumo:
+                    adverse_score += 0.15
+                elif not is_buy and features.is_below_kumo:
+                    continuation_score += 0.15
+                elif not is_buy and features.is_above_kumo:
+                    adverse_score += 0.15
+
+                # Choch alignment
+                choch_bull = getattr(features, "choch_bullish", False)
+                choch_bear = getattr(features, "choch_bearish", False)
+                if is_buy and choch_bull:
+                    continuation_score += 0.10
+                elif is_buy and choch_bear:
+                    adverse_score += 0.10
+                elif not is_buy and choch_bear:
+                    continuation_score += 0.10
+                elif not is_buy and choch_bull:
+                    adverse_score += 0.10
+
+            # Slope adjustments
+            if pnl_slope > 0.0:
+                continuation_score += 0.10
+                adverse_score -= 0.05
+            elif pnl_slope < 0.0:
+                adverse_score += 0.10
+                continuation_score -= 0.05
+
+            # Strictly normalize
+            total = continuation_score + adverse_score + 0.20 # 0.20 represents 'no_trade'
+            continuation_score /= total
+            adverse_score /= total
+
+        # Compute recovery score
+        # Mixture of continuation score and actual recovery trajectory velocity
+        rec_vel = pnl_features.get("recovery_velocity", 0.0)
+        # Scaled recovery velocity (USD/sec)
+        rec_vel_scaled = min(1.0, max(0.0, rec_vel * 5.0))
+        recovery_score = 0.70 * continuation_score + 0.30 * rec_vel_scaled
+
+        return {
+            "continuation_score": max(0.0, min(1.0, continuation_score)),
+            "adverse_score": max(0.0, min(1.0, adverse_score)),
+            "recovery_score": max(0.0, min(1.0, recovery_score)),
+        }
+
+    def _calculate_trajectory_features(self, ticket: int) -> dict[str, float]:
+        """
+        Calculates time-aware trajectory features (slopes, velocities, acceleration)
+        using an efficient window of the last 10 steps to avoid expensive linear regression.
+        """
+        history = self._trajectory_history.get(ticket)
+        if not history or len(history) < 2:
+            return {
+                "pnl_slope": 0.0,
+                "price_slope": 0.0,
+                "drawdown_velocity": 0.0,
+                "drawdown_acceleration": 0.0,
+                "recovery_velocity": 0.0,
+                "time_since_peak": 0.0,
+                "time_below_entry": 0.0,
+                "time_below_breakeven": 0.0,
+                "distance_to_be_velocity": 0.0,
+            }
+
+        window = list(history)[-10:]
+        first = window[0]
+        last = window[-1]
+        dt = (last.timestamp - first.timestamp).total_seconds()
+        if dt <= 0.0:
+            dt = 0.1
+
+        pnl_slope = (last.pnl - first.pnl) / dt
+        price_slope = (last.price - first.price) / dt
+
+        prev = window[-2]
+        dt_last = (last.timestamp - prev.timestamp).total_seconds()
+        if dt_last <= 0.0:
+            dt_last = 0.1
+
+        last_dd_vel = (last.drawdown - prev.drawdown) / dt_last
+
+        if len(window) >= 3:
+            prev_prev = window[-3]
+            dt_prev = (prev.timestamp - prev_prev.timestamp).total_seconds()
+            if dt_prev <= 0.0:
+                dt_prev = 0.1
+            prev_dd_vel = (prev.drawdown - prev_prev.drawdown) / dt_prev
+            drawdown_acceleration = (last_dd_vel - prev_dd_vel) / dt_last
+        else:
+            drawdown_acceleration = 0.0
+
+        drawdown_velocity = last_dd_vel
+        recovery_velocity = pnl_slope if pnl_slope > 0.0 else 0.0
+
+        peak_step = max(history, key=lambda s: s.pnl)
+        time_since_peak = (last.timestamp - peak_step.timestamp).total_seconds()
+
+        time_below_entry = 0.0
+        time_below_breakeven = 0.0
+        for i in range(1, len(history)):
+            s_prev = history[i - 1]
+            s_curr = history[i]
+            s_dt = (s_curr.timestamp - s_prev.timestamp).total_seconds()
+            if s_curr.pnl < 0.0:
+                time_below_entry += s_dt
+            if s_curr.pnl < 0.20:
+                time_below_breakeven += s_dt
+
+        if last.pnl < 0.0 and prev.pnl < 0.0:
+            distance_to_be_velocity = (abs(last.pnl) - abs(prev.pnl)) / dt_last
+        else:
+            distance_to_be_velocity = 0.0
+
+        return {
+            "pnl_slope": pnl_slope,
+            "price_slope": price_slope,
+            "drawdown_velocity": drawdown_velocity,
+            "drawdown_acceleration": drawdown_acceleration,
+            "recovery_velocity": recovery_velocity,
+            "time_since_peak": max(0.0, time_since_peak),
+            "time_below_entry": max(0.0, time_below_entry),
+            "time_below_breakeven": max(0.0, time_below_breakeven),
+            "distance_to_be_velocity": distance_to_be_velocity,
+        }
+
     def manage_pending_orders(
         self,
         symbol: str,
@@ -2872,6 +3549,43 @@ class OrderLifecycleManager:
             )
             self._hold_score_tracker[ticket] = hold_score
 
+            # --- Trajectory, Evidence, and State machine Processing (Requirements 13-16, 20) ---
+            drawdown = abs(min(0.0, pos.profit))
+            retention = protection.retention_ratio(pos.profit)
+            self._add_trajectory_step(
+                ticket=ticket,
+                timestamp=now,
+                pnl=pos.profit,
+                price=price_current,
+                hold_score=hold_score,
+                drawdown=drawdown,
+                retention=retention,
+                atr=atr,
+                volatility=spread,
+            )
+
+            pnl_features = self._calculate_trajectory_features(ticket)
+            confidence_factor = self._entry_confidences.get(ticket, 0.0)
+            evidence = self._calculate_adaptive_evidence_scores(ticket, pos, probs, feature_vector)
+
+            if pos.profit < 0.0:
+                h4_trend = self._safe_feature_float(feature_vector, "htf_h4_trend", 0.0)
+                self._initialize_recovery_mode(ticket, pos.profit, confidence_factor, atr, h4_trend, now)
+                budget_exhausted, budget_reason = self._evaluate_recovery_budget_and_horizon(ticket, pos.profit, now)
+            else:
+                budget_exhausted = False
+                budget_reason = ""
+
+            cand_state = self._evaluate_candidate_state(ticket, pos, evidence, pnl_features)
+            if budget_exhausted:
+                cand_state = PositionState.LOSS_HARD_EXIT
+            debounced_state = self.transition_state_with_hysteresis(ticket, cand_state, now)
+
+            # Continuous dynamic protection score for telemetry
+            prot_score = self._calculate_protection_score(
+                ticket, pos, base_hold_score, pnl_features, evidence, confidence_factor, atr
+            )
+
                 # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
             ai_flip_detected = False
             ai_flip_action = None
@@ -3058,22 +3772,53 @@ class OrderLifecycleManager:
 
             if rule_exit:
                 if rule_exit["action"] == "CLOSE":
-                    action = "CLOSE"
-                    scenario = rule_exit["reason"]
+                    legacy_action = "CLOSE"
+                    legacy_scenario = rule_exit["reason"]
                 elif rule_exit["action"] == "MODIFY_SL":
-                    action = "MODIFY_SL"
-                    scenario = rule_exit["reason"]
+                    legacy_action = "MODIFY_SL"
+                    legacy_scenario = rule_exit["reason"]
                     rule_target_sl = rule_exit["stop_loss"]
                 else:
-                    action, scenario = self._resolve_position_management_scenario(
+                    legacy_action, legacy_scenario = self._resolve_position_management_scenario(
                         pos=pos, hold_score=hold_score, metrics=smart_metrics, net_delta=net_price_delta,
                         gross_delta=profit_price_delta, atr=atr, spread=spread, holding_duration=holding_duration, min_stop_gap=min_stop_gap
                     )
             else:
-                action, scenario = self._resolve_position_management_scenario(
+                legacy_action, legacy_scenario = self._resolve_position_management_scenario(
                     pos=pos, hold_score=hold_score, metrics=smart_metrics, net_delta=net_price_delta,
                     gross_delta=profit_price_delta, atr=atr, spread=spread, holding_duration=holding_duration, min_stop_gap=min_stop_gap
                 )
+
+            # --- Multi-Stage Decision Arbitration ---
+            action, scenario = self._arbitrate_decision(
+                ticket=ticket,
+                pos=pos,
+                legacy_action=legacy_action,
+                legacy_scenario=legacy_scenario,
+                adaptive_state=debounced_state,
+                current_pnl_usd=pos.profit,
+                evidence=evidence,
+            )
+
+            # If the arbitrated decision is a CLOSE initiated by the Adaptive Protection Engine,
+            # save the exit mechanism to be written to the financial ledger autopsy
+            if action == "CLOSE":
+                if "RECOVERY" in scenario or "LOSS" in scenario:
+                    self._forced_exit_mechanisms[ticket] = ExitMechanism.HOLD_SCORE_DECAY
+                elif "GIVEBACK" in scenario:
+                    self._forced_exit_mechanisms[ticket] = ExitMechanism.PROFIT_GIVEBACK_PROTECTION
+
+            # If arbitrated decision is a custom MODIFY_SL, set the target stop loss
+            if action == "MODIFY_SL" and "GIVEBACK" in scenario:
+                # Lock 70% of peak profit
+                peak_win = self._peak_profit_usd.get(ticket, 0.0)
+                contract_sz = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
+                target_mfe_sl = (
+                    pos.price_open + (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
+                    if pos.type == OrderType.BUY
+                    else pos.price_open - (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
+                )
+                rule_target_sl = round(target_mfe_sl, self._resolve_price_digits(symbol_info))
 
             if action == "CLOSE":
                 msg_id = self._order_message_ids.get(ticket)
@@ -3200,6 +3945,11 @@ class OrderLifecycleManager:
             # Ledger autopsy context
             self._entry_reasons, self._entry_confidences, self._entry_regimes, self._entry_order_ids,
             self._sl_modified_flags, self._forced_exit_mechanisms,
+            # New state structures
+            self._trajectory_history, self._position_states, self._state_transition_candidates,
+            # Recovery structures
+            self._recovery_budget_initial, self._recovery_budget_remaining, self._recovery_budget_consumed,
+            self._recovery_horizons, self._recovery_entry_times, self._recovery_initial_loss,
         ):
             tracker.pop(ticket, None)
         with self._live_tickets_lock:
