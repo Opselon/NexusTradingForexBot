@@ -275,7 +275,7 @@ def test_order_modification_and_sl_shift():
     is_rf, final_sl_db, exit_mechanism = row
     assert is_rf == 1 # Risk-free hit is True!
     assert final_sl_db == 2000.10
-    assert exit_mechanism == "CLOSED_SL"
+    assert exit_mechanism == "RISK_FREE_SL_HIT"
 
 
 def test_trade_autopsy_db_persistence():
@@ -343,4 +343,4 @@ def test_trade_autopsy_db_persistence():
     assert initial_sl == 1990.00
     assert final_sl == 1990.00 # Not modified
     assert is_rf == 0
-    assert exit_reason == "CLOSED_TP"
+    assert exit_reason == "TAKE_PROFIT_HIT"

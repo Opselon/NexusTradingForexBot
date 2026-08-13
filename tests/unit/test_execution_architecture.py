@@ -357,7 +357,11 @@ def test_pending_order_manager_and_falling_knife():
         )
     )
 
-    current_tick = TickData(symbol="XAUUSD", timestamp=setup_time, bid=2010.0, ask=2010.1, volume=1.0)
+    from datetime import timedelta
+    current_tick = TickData(symbol="XAUUSD", timestamp=setup_time + timedelta(seconds=40), bid=2010.0, ask=2010.1, volume=1.0)
+
+    # Pre-seed the setup time to represent a resting limit order older than 30s
+    manager._pending_orders_setup_time[5001] = setup_time
 
     # Evaluate every tick: distance is too far ($10.0 > ATR * 1.2) -> should be cancelled
     manager.manage_pending_orders(symbol="XAUUSD", current_tick=current_tick, atr=1.5, max_pending_dist_atr_mult=1.2)

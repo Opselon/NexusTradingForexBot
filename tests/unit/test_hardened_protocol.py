@@ -37,9 +37,16 @@ def test_model_rollback_on_health_check_failure():
     base_model = ScalpNet(num_features=50, num_classes=4)
     initial_state = {k: v.clone() for k, v in base_model.state_dict().items()}
 
-    # Create dummy data with very few rows where classes are heavily skewed (no class diversity)
+    # Create dummy data with identical features but interleaved mixed labels.
+    # We interleave the labels so that both the train split and the validation split
+    # have class diversity. Because features are identical, the model will fail to separate
+    # them, collapsing to predict only a single class, which triggers a health check failure.
     num_rows = 50
-    data = {"label": ["NO_TRADE"] * num_rows, "label_evaluated": [True] * num_rows, "is_purged": [False] * num_rows}
+    data = {
+        "label": ["NO_TRADE", "BUY_MARKET"] * (num_rows // 2),
+        "label_evaluated": [True] * num_rows,
+        "is_purged": [False] * num_rows
+    }
     from nexus_scalp.features.scalp_features import FEATURE_NAMES
     for name in FEATURE_NAMES:
         data[name] = [0.0] * num_rows
