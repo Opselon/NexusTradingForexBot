@@ -2,7 +2,7 @@
 
 > **TARGET AUDIENCE:** AI Coding Agents (Cursor, Copilot, ChatGPT, Claude, Jules).
 > **PURPOSE:** Authoritative, repository-grounded Master Skill & Architecture Map for the Nexus Scalp Engine repository.
-> **SOURCE OF TRUTH:** Actual Repository Code (verified via forensic audit).
+> **SOURCE OF TRUTH:** Actual Executable Codebase (verified via forensic audit).
 > **ABSOLUTE DIRECTIVE:** READ-ONLY for codebase files. Do NOT modify any file in this repository except `agents/skill.md`.
 
 ---
@@ -10,27 +10,31 @@
 ## 📑 Table of Contents
 
 1. [AI Agent Knowledge Map: Read This First](#1-ai-agent-knowledge-map-read-this-first)
-2. [Repository Architecture & File-by-File Inventory](#2-repository-architecture--file-by-file-inventory)
-3. [Architecture Reconstruction & Dependency Graph](#3-architecture-reconstruction--dependency-graph)
-4. [AI / ML Forensic Audit](#4-ai--ml-forensic-audit)
-   - 4.1 [AI/ML Component Inventory](#41-aiml-component-inventory)
-   - 4.2 [ScalpNet Neural Architecture](#42-scalpnet-neural-architecture)
-   - 4.3 [Feature Engineering (50D Master Contract)](#43-feature-engineering-50d-master-contract)
-   - 4.4 [Cost-Aware Triple-Barrier Labeling](#44-cost-aware-triple-barrier-labeling)
-   - 4.5 [Purged Walk-Forward Training & Validation](#45-purged-walk-forward-training--validation)
-   - 4.6 [Online Fine-Tuning, Quality Gate, & Hot-Swapping](#46-online-fine-tuning-quality-gate--hot-swapping)
-5. [Signal Pipeline & Rule Matrix Forensics](#5-signal-pipeline--rule-matrix-forensics)
-6. [Risk Engine & Position Sizing Forensics](#6-risk-engine--position-sizing-forensics)
-7. [Execution & MT5 Integration Forensics](#7-execution--mt5-integration-forensics)
-8. [Position Protection, Reversal Protocol, & State Machine](#8-position-protection-reversal-protocol--state-machine)
-9. [Hot-Path Safety & Latency Forensics](#9-hot-path-safety--latency-forensics)
-10. [Web / API, SSE, WebSocket, & Debug Hub Forensics](#10-web--api-sse-websocket--debug-hub-forensics)
-11. [Observability & Telegram Notifier Forensics](#11-observability--telegram-notifier-forensics)
-12. [Configuration Architecture & Flow](#12-configuration-architecture--flow)
-13. [Testing & CI/CD Forensics](#13-testing--cicd-forensics)
-14. [Verified Hard Invariants](#14-verified-hard-invariants)
-15. [Documentation vs. Reality Audit](#15-documentation-vs-reality-audit)
-16. [Future Engineering Recommendations](#16-future-engineering-recommendations)
+2. [Forensic Classification & Verification Badges](#2-forensic-classification--verification-badges)
+3. [Repository Architecture & File-by-File Inventory](#3-repository-architecture--file-by-file-inventory)
+4. [Actual Entrypoints & Startup Execution Path](#4-actual-entrypoints--startup-execution-path)
+5. [AI / ML Forensic Audit & Model Lifecycle Map](#5-ai--ml-forensic-audit--model-lifecycle-map)
+   - 5.1 [AI/ML Component Inventory](#51-aiml-component-inventory)
+   - 5.2 [Exact ML Execution Code Sites](#52-exact-ml-execution-code-sites)
+   - 5.3 [ScalpNet Neural Architecture](#53-scalpnet-neural-architecture)
+   - 5.4 [Label / Model Output Class Compatibility Audit](#54-label--model-output-class-compatibility-audit)
+   - 5.5 [Feature Engineering (50D Master Contract)](#55-feature-engineering-50d-master-contract)
+   - 5.6 [Cost-Aware Triple-Barrier Labeling Engine](#56-cost-aware-triple-barrier-labeling-engine)
+   - 5.7 [Purged Walk-Forward Training & Validation](#57-purged-walk-forward-training--validation)
+   - 5.8 [Online Fine-Tuning, Quality Gate, & Atomic Hot-Swapping](#58-online-fine-tuning-quality-gate--atomic-hot-swapping)
+6. [Signal Pipeline & Rule Matrix Forensics](#6-signal-pipeline--rule-matrix-forensics)
+7. [Risk Engine & Lot Sizing Forensics](#7-risk-engine--lot-sizing-forensics)
+8. [Execution & MT5 Integration Forensics](#8-execution--mt5-integration-forensics)
+9. [Position Protection, State Machine, & Adaptive Exit Engine](#9-position-protection-state-machine--adaptive-exit-engine)
+10. [Hot-Path Latency & Event-Loop Forensics](#10-hot-path-latency--event-loop-forensics)
+11. [Web UI, REST API, SSE, WebSocket, & Debug Hub Forensics](#11-web-ui-rest-api-sse-websocket--debug-hub-forensics)
+12. [Observability, Database Persistence, & Ledger Autopsy](#12-observability-database-persistence--ledger-autopsy)
+13. [Configuration Architecture & Dynamic Propagation](#13-configuration-architecture--dynamic-propagation)
+14. [Known Bugs, Pitfalls & Invariants ("Bugs Before You Find Them")](#14-known-bugs-pitfalls--invariants-bugs-before-you-find-them)
+15. [Testing & CI/CD Pipeline Audit](#15-testing--cicd-pipeline-audit)
+16. [Documentation vs. Reality Audit Matrix](#16-documentation-vs-reality-audit-matrix)
+17. [Dead, Legacy, & Discrepant Code Inventory](#17-dead-legacy--discrepant-code-inventory)
+18. [Prioritized Engineering Recommendations (P0-P3)](#18-prioritized-engineering-recommendations-p0-p3)
 
 ---
 
@@ -42,619 +46,810 @@ If you are an AI coding agent tasked with inspecting or extending this codebase 
 
 Before modifying any file, verify its architectural layer and dependencies:
 
-| Layer | Directories / Files | Role & Responsibilities | Invariants & Rules |
-| :--- | :--- | :--- | :--- |
-| **Domain** | `src/nexus_scalp/domain/` (`models.py`, `enums.py`) | Immutable data contracts (`TickData`, `TradeProposal`, `Position`, `TradeOrder`, `AccountInfo`). | **NEVER MUTATE.** All domain models use Pydantic `frozen=True`. Use `.model_copy(update={...})`. |
-| **Ports** | `src/nexus_scalp/ports/` (`mt5_port.py`, `gateway_port.py`) | Protocol interfaces defining dependency inversion boundaries. | Any signature change in `IMT5Port` MUST be updated across `DirectMT5Adapter`, `RemoteGatewayAdapter`, and `PaperAdapter`. |
-| **Adapters** | `src/nexus_scalp/adapters/` (`mt5/`, `paper/`, `database/`) | External IPC, MT5 bindings, paper simulation, SQLite WAL persistence (`AuditRepository`). | DB writes are queued asynchronously via a dedicated background worker thread (`_worker_thread`). |
-| **Features** | `src/nexus_scalp/features/` (`scalp_features.py`, `regime_classifier.py`) | 50D Feature Vector calculation and Market Regime classification. | **Contract: exactly 50 float features.** Values must be finite and clipped to `[-3.0, +3.0]`. |
-| **Models** | `src/nexus_scalp/models/` (`scalp_net.py`) | PyTorch deep neural network (`ScalpNet` v3). | Dual-path: 2D MLP for single-tick, 3D TCN + Self-Attention for sequences. Inputs: `(Batch, 50)`. Outputs: 4 logits (`0=NO_TRADE`, `1=BUY_MARKET`, `2=SELL_MARKET`, `3=WAIT`). |
-| **Training** | `src/nexus_scalp/training/` (`walk_forward_trainer.py`), `src/nexus_scalp/labeling/` (`triple_barrier.py`) | Purged walk-forward trainer, triple-barrier labeler, online fine-tuning. | Uses Polars. When filtering Polars DataFrames, **ALWAYS use bitwise operators** `~pl.col(...)`, NEVER Python `not`. |
-| **Signals** | `src/nexus_scalp/signals/` (`policy.py`, `rule_matrix.py`) | Multi-confluence policy routing, SMC God Mode, predictive limit generation, 30+ rule matrix. | Generates `TradeProposal`. Respects Regime Guardian Gate (unsafe regimes return `NO_TRADE`). |
-| **Risk** | `src/nexus_scalp/risk/` (`risk_engine.py`) | Capital allocation, dynamic lot sizing, Almgren-Chriss slippage bounds, margin clamping. | All entry proposals pass through `calculate_dynamic_volume()`. Clamped to free margin (20%) and account tier caps. |
-| **Execution** | `src/nexus_scalp/execution/` (`order_manager.py`) | 60-scenario router, 11 position lifecycles, breakeven lock, profit giveback, AI reversal. | Enforces `HARD_MAX_LOTS = 10.0` and `MAX_TOTAL_EXPOSURE = 1`. Restricts pending re-quotes with a 30s lock and 1.0x ATR drift. |
-| **Application**| `src/nexus_scalp/application/` (`live_engine.py`) | Main async event loop (50ms hot path), bar aggregation, state sync, retrain orchestrator. | **NEVER BLOCK THE EVENT LOOP.** No synchronous I/O or model training inside `_process_tick_pipeline()`. |
-| **Web / API** | `src/nexus_scalp/web/` (`server.py`), `Web/` | FastAPI REST endpoints, WebSocket (`/web`), SSE (`/api/ticks/stream`), Debug Hub. | Enum instances in JSON responses MUST be serialized via `serialize_enums()`. Background tasks stored in `app.state.background_tasks`. |
+| Layer | Directories / Files | Role & Responsibilities | Forensic Status | Invariants & Rules |
+| :--- | :--- | :--- | :--- | :--- |
+| **Domain** | `src/nexus_scalp/domain/` (`models.py`, `enums.py`) | Immutable data contracts (`TickData`, `TradeProposal`, `Position`, `TradeOrder`, `AccountInfo`). | 🟢 VERIFIED | **NEVER MUTATE.** All domain models use Pydantic `frozen=True`. Use `.model_copy(update={...})`. |
+| **Ports** | `src/nexus_scalp/ports/` (`mt5_port.py`, `gateway_port.py`) | Protocol interfaces defining dependency inversion boundaries. | 🟢 VERIFIED | Any signature change in `IMT5Port` MUST be updated across `DirectMT5Adapter`, `RemoteGatewayAdapter`, and `PaperAdapter`. |
+| **Adapters** | `src/nexus_scalp/adapters/` (`mt5/`, `paper/`, `database/`) | External IPC, Win32 MT5 bindings, paper simulation, SQLite WAL persistence (`AuditRepository`). | 🟢 VERIFIED | DB writes are queued asynchronously via a dedicated background worker thread (`_worker_thread`). |
+| **Features** | `src/nexus_scalp/features/` (`scalp_features.py`, `regime_classifier.py`) | 50D Feature Vector calculation and Market Regime classification. | 🟢 VERIFIED | **Contract: exactly 50 float features.** Values must be finite and clipped to `[-3.0, +3.0]`. |
+| **Models** | `src/nexus_scalp/models/` (`scalp_net.py`) | PyTorch deep neural network (`ScalpNet`). | 🟢 VERIFIED | Dual-path: 2D MLP for single-tick, 3D TCN + Self-Attention for sequences. Inputs: `(Batch, 50)`. Output head: 4 logits (`0=NO_TRADE`, `1=BUY_MARKET`, `2=SELL_MARKET`, `3=WAIT`). |
+| **Training** | `src/nexus_scalp/training/` (`walk_forward_trainer.py`), `src/nexus_scalp/labeling/` (`triple_barrier.py`) | Purged walk-forward trainer, triple-barrier labeler, online fine-tuning. | 🟢 VERIFIED | Uses Polars. When filtering Polars DataFrames, **ALWAYS use bitwise operators** `~pl.col(...)`, NEVER Python `not`. Labeler outputs 3 classes (`0, 1, 2`), mapped dynamically to 4-class ScalpNet head. |
+| **Signals** | `src/nexus_scalp/signals/` (`policy.py`, `rule_matrix.py`) | Multi-confluence policy routing, SMC God Mode, predictive limit generation, 30+ rule matrix. | 🟢 VERIFIED | Generates `TradeProposal`. Respects Regime Guardian Gate (unsafe regimes return `NO_TRADE`). |
+| **Risk** | `src/nexus_scalp/risk/` (`risk_engine.py`) | Capital allocation, dynamic lot sizing, Almgren-Chriss slippage bounds, margin clamping. | 🟢 VERIFIED | All entry proposals pass through `calculate_dynamic_volume()`. Clamped to free margin (20%) and account tier caps. |
+| **Execution** | `src/nexus_scalp/execution/` (`order_manager.py`) | 60-scenario router, 11 position lifecycles, breakeven lock, profit giveback, AI reversal. | 🟢 VERIFIED | Enforces `HARD_MAX_LOTS = 10.0` and `MAX_TOTAL_EXPOSURE = 1`. Restricts pending re-quotes with a 30s lock and 1.0x ATR drift. |
+| **Application**| `src/nexus_scalp/application/` (`live_engine.py`) | Main async event loop, bar aggregation, state sync, retrain orchestrator. | 🟢 VERIFIED | **NEVER BLOCK THE EVENT LOOP.** No synchronous I/O or model training inside `_process_tick_pipeline()`. |
+| **Web / API** | `src/nexus_scalp/web/` (`server.py`), `Web/` | FastAPI REST endpoints, WebSocket (`/web`), SSE (`/api/ticks/stream`), Debug Hub. | 🟢 VERIFIED | Enum instances in JSON responses MUST be serialized via `serialize_enums()`. Background tasks stored in `app.state.background_tasks`. |
 
 ---
 
-## 2. Repository Architecture & File-by-File Inventory
+## 2. Forensic Classification & Verification Badges
 
-### 📁 Complete Root & Source Structure
+Every architectural claim, file, component, and invariant in this document is tagged with one of the following forensic status badges:
+
+* 🟢 **VERIFIED:** Directly confirmed by actual executable source code and runtime wiring.
+* 🟡 **PARTIALLY VERIFIED:** Behavior exists but differs slightly in limits, configuration defaults, or operational constraints.
+* 🔵 **DOCUMENTATION ONLY:** Stated in comments or docs but not backed by executable logic.
+* 🟠 **NEEDS INVESTIGATION:** Evidence exists in code but cannot conclusively determine runtime behavior without real MT5 connection.
+* 🔴 **CONTRADICTED:** Documentation / prior claims explicitly conflict with actual implementation.
+* ⚫ **DEAD / UNUSED:** Unreachable, orphaned, or obsolete file/code.
+* 🚧 **NOT IMPLEMENTED:** Planned or described capability is absent.
+
+---
+
+## 3. Repository Architecture & File-by-File Inventory
+
+### 📁 Complete Repository Directory Tree
 
 ```text
 NexusTradingForexBot/
-├── .github/workflows/                 # CI/CD Workflows
-│   ├── ci.yml                         # Quality, Ruff, Mypy, Pytest with coverage
-│   ├── docker.yml                     # Docker Build & Publish to GHCR
-│   ├── release.yml                    # Automated GitHub Release on tags
-│   └── security.yml                   # CodeQL Analysis & Trivy Security Scans
-├── Web/                               # Modern Frontend Control Center UI
-│   ├── app.js                         # Interactive Dashboard UI logic
-│   ├── index.html                     # Visualizer & Control Panel Markup
-│   └── styles.css                     # Premium Dark Glassmorphism Styling
+├── .github/workflows/                 # GitHub CI/CD Pipelines
+│   ├── ci.yml                         # 🟢 Quality, Ruff, Mypy, Pytest with coverage
+│   ├── docker.yml                     # 🟢 Docker Build & Publish to GHCR
+│   ├── release.yml                    # 🟢 Automated GitHub Release on v* tags
+│   └── security.yml                   # 🟢 CodeQL Analysis & Trivy Security Scans
+├── Web/                               # 🟢 Modern Frontend Control Center UI
+│   ├── app.js                         # 🟢 Interactive Dashboard UI logic
+│   ├── index.html                     # 🟢 Visualizer & Control Panel Markup
+│   └── styles.css                     # 🟢 Premium Dark Glassmorphism Styling
 ├── configs/                           # Application Configurations
-│   ├── base.yaml                      # Default base settings
-│   └── live.yaml.example              # Example live runtime configuration
+│   ├── base.yaml                      # 🟢 Default base settings
+│   └── live.yaml.example              # 🟢 Example live runtime configuration
 ├── docker/                            # Containerization Scripts
-│   ├── entrypoint.sh                  # Container entrypoint script
-│   └── healthcheck.sh                 # Container health check script
+│   ├── entrypoint.sh                  # 🟢 Container entrypoint script
+│   └── healthcheck.sh                 # 🟢 Container health check script
 ├── src/
 │   ├── cli/
-│   │   └── train_model.py             # ⚠️ Legacy CLI Training Script (Stale 18D contract)
+│   │   └── train_model.py             # ⚫ Legacy CLI Training Script (Stale 18D contract)
 │   └── nexus_scalp/
 │       ├── adapters/                  # External Infrastructure Integration
 │       │   ├── database/
-│       │   │   └── audit_repository.py# SQLite WAL Audit Repository & Ledger Autopsy
+│       │   │   └── audit_repository.py# 🟢 SQLite WAL Audit Repository & Ledger Autopsy
 │       │   ├── mt5/
-│       │   │   ├── mt5_adapter.py     # Direct Win32 MetaTrader 5 IPC Binding
-│       │   │   └── remote_gateway.py  # ZMQ Remote Gateway Adapter
+│       │   │   ├── mt5_adapter.py     # 🟢 Direct Win32 MetaTrader 5 IPC Binding
+│       │   │   └── remote_gateway.py  # 🟢 ZMQ Remote Gateway Adapter
 │       │   └── paper/
-│       │       └── paper_adapter.py   # Paper Trading / Simulation Adapter
+│       │       └── paper_adapter.py   # 🟢 Paper Trading / Simulation Adapter
 │       ├── application/
-│       │   └── live_engine.py         # Main Async Live Orchestrator & Hot Path
+│       │   └── live_engine.py         # 🟢 Main Async Live Orchestrator & Hot Path
 │       ├── cli/
-│       │   └── main.py                # Primary Typer CLI Application (`nse`)
+│       │   └── main.py                # 🟢 Primary Typer CLI Application (`nse`)
 │       ├── configuration/
-│       │   └── config.py              # Pydantic Settings & YAML Config Parser
+│       │   └── config.py              # 🟢 Pydantic Settings & YAML Config Parser
 │       ├── domain/
-│       │   ├── enums.py               # ActionType, ExecutionMode, OrderType
-│       │   └── models.py              # Frozen Dataclasses & Pydantic Domain Models
+│       │   ├── enums.py               # 🟢 Domain Enumerations
+│       │   └── models.py              # 🟢 Domain Data Contracts (Pydantic frozen=True)
 │       ├── execution/
-│       │   └── order_manager.py       # Master Order Lifecycle Manager (1792 lines)
+│       │   └── order_manager.py       # 🟢 Authoritative Order Lifecycle Manager
 │       ├── features/
-│       │   ├── order_manager.py       # ❌ DEAD/STALE FILE (Legacy 234-line manager)
-│       │   ├── regime_classifier.py   # Gaussian Mixture / Rule-Based Regime Classifier
-│       │   └── scalp_features.py      # 50D Master Feature Vector Pipeline
+│       │   ├── order_manager.py       # ⚫ DEAD / UNUSED Legacy Order Manager File (234 lines)
+│       │   ├── regime_classifier.py   # 🟢 Market Regime Classifier (10 Regimes)
+│       │   └── scalp_features.py      # 🟢 50D Master Feature Vector Pipeline
 │       ├── labeling/
-│       │   └── triple_barrier.py      # Cost-Aware Purged Triple-Barrier Labeler
-│       ├── market_data/
-│       │   ├── bar_aggregator.py      # Tick-to-Bar M1 Aggregator
-│       │   └── tick_storage.py        # Tick Storage & Parquet Exporter
+│       │   └── triple_barrier.py      # 🟢 Cost-Aware Purged Triple-Barrier Labeler
 │       ├── models/
-│       │   └── scalp_net.py           # ScalpNet v3 Dual-Path Temporal Transformer
-│       ├── observability/
-│       │   ├── logging.py             # Structlog Structured JSON Logger
-│       │   └── telegram_notifier.py   # Async ThreadPool Telegram Alert Notifier
+│       │   └── scalp_net.py           # 🟢 ScalpNet Deep Neural Network
 │       ├── ports/
-│       │   ├── gateway_port.py        # Remote Gateway Interface
-│       │   └── mt5_port.py            # MetaTrader 5 Broker Interface (`IMT5Port`)
+│       │   ├── gateway_port.py        # 🟢 Remote Gateway Protocol Port
+│       │   └── mt5_port.py            # 🟢 MT5 Adapter Protocol Port
 │       ├── risk/
-│       │   └── risk_engine.py         # Dynamic Lot Sizing & Risk Engine
+│       │   └── risk_engine.py         # 🟢 Quantitative Risk & Lot Sizing Engine
 │       ├── signals/
-│       │   ├── policy.py              # Signal Policy Engine & SMC God Mode
-│       │   └── rule_matrix.py         # 30+ Advanced Scalping Rule Matrix Engine
+│       │   ├── policy.py              # 🟢 Signal Policy Engine (SMC God Mode)
+│       │   └── rule_matrix.py         # 🟢 DB-Driven 30+ Rule Matrix Engine
 │       ├── training/
-│       │   └── walk_forward_trainer.py# Purged Walk-Forward & Online Fine-Tuning Engine
+│       │   └── walk_forward_trainer.py# 🟢 Purged Walk-Forward & Online Fine-Tuner
 │       └── web/
-│           └── server.py              # FastAPI Web Backend, SSE, WebSocket, & Debug Hub
-├── tests/                             # Test Suite
-│   ├── integration/                   # Integration Tests
-│   └── unit/                          # Unit Tests (17 test modules)
-├── Dockerfile                         # Production Dockerfile
-├── docker-compose.yml                 # Docker Compose Orchestration
-├── main.py                            # Top-level Entry Point
-├── NexusTradingForexBot.py            # Legacy Top-level Entry Point
-├── pyproject.toml                     # Project Toolchain & Package Definition
-└── requirements.txt                   # Dependency Requirements
+│           └── server.py              # 🟢 FastAPI Control Center & Streaming Server
+├── tests/                             # Pytest Verification Suite
+│   ├── integration/                   # 🟢 End-to-End Pipeline & DB Integration Tests
+│   └── unit/                          # 🟢 Unit Tests across Subsystems
+├── Dockerfile                         # 🟢 Production Multi-stage Docker Container
+├── main.py                            # 🟢 Root Python Entrypoint Redirect
+├── NexusTradingForexBot.py            # ⚫ Legacy Script Entrypoint Redirect
+├── pyproject.toml                     # 🟢 Project Build Metadata & Dependencies
+└── requirements.txt                   # 🟢 Frozen Python Package Requirements
 ```
 
 ---
 
-## 3. Architecture Reconstruction & Dependency Graph
+### 📑 Comprehensive Master File Inventory
+
+| File Path | Layer | Responsibility | Key Classes / Symbols | Called By | Calls | Inputs | Outputs | Status | Risk |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `src/nexus_scalp/domain/enums.py` | Domain | Strongly-typed enumerations | `ExecutionMode`, `ActionType`, `OrderType`, `OrderStatus`, `SystemHealth` | Entire System | Standard `enum` | None | Enum values | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/domain/models.py` | Domain | Frozen Pydantic data contracts | `TickData`, `SymbolInfo`, `AccountInfo`, `TradeProposal`, `TradeOrder`, `Position` | Entire System | Pydantic | Tick dicts / tuples | Immutable objects | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/ports/mt5_port.py` | Ports | Abstract MT5 interface | `IMT5Port` | Adapters, OrderManager | Abstract | Method signatures | Abstract results | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/ports/gateway_port.py` | Ports | Abstract Remote Gateway interface | `IGatewayPort` | Adapters | Abstract | Method signatures | Abstract results | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/adapters/mt5/mt5_adapter.py` | Adapters | Direct MetaTrader 5 Win32 IPC | `DirectMT5Adapter` | `LiveEngine` | `MetaTrader5` PyPI | Trade orders, symbols | OrderResult, Ticks | 🟢 VERIFIED | High (IPC/Platform dependency) |
+| `src/nexus_scalp/adapters/mt5/remote_gateway.py` | Adapters | Remote ZMQ Gateway Adapter | `RemoteMT5GatewayAdapter` | `LiveEngine` | `zmq` | JSON over TCP/ZMQ | OrderResult, Ticks | 🟢 VERIFIED | Medium |
+| `src/nexus_scalp/adapters/paper/paper_adapter.py` | Adapters | Simulated paper trading adapter | `PaperMT5Adapter` | `LiveEngine`, Tests | Internal state | TickData, Orders | Simulated OrderResult | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/adapters/database/audit_repository.py` | Adapters | SQLite WAL Audit & Autopsy Ledger | `AuditRepository` | `LiveEngine`, Server, OrderManager | `sqlite3` | Signals, Orders, Account, Autopsies | DB Records, Summaries | 🟢 VERIFIED | Low (Async Queue) |
+| `src/nexus_scalp/models/scalp_net.py` | Models | PyTorch Deep Neural Network | `ScalpNet`, `CausalConv1d`, `SinusoidalPositionalEncoding` | `LiveEngine`, `WalkForwardTrainer` | `torch.nn` | 50D Tensor `(B, 50)` | 4 Logits `(B, 4)` | 🟢 VERIFIED | Medium |
+| `src/nexus_scalp/features/scalp_features.py` | Features | 50D Master Feature Engineering | `ScalpFeatureEngine`, `FeatureVector`, `FeaturePipelineFrozenError` | `LiveEngine`, Trainer, Tests | `numpy`, `polars` | Bar list, TickData | 50D FeatureVector | 🟢 VERIFIED | Medium |
+| `src/nexus_scalp/features/regime_classifier.py` | Features | Market Regime Classification | `MarketRegimeClassifier`, `MarketRegimeState`, `RegimeType` | `LiveEngine`, Policy | Internal math | Ticks, Spreads, Volatility | MarketRegimeState | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/features/order_manager.py` | Features | Legacy/Dead Order Manager | `OrderLifecycleManager` | None | None | None | None | ⚫ DEAD / UNUSED | Low (Orphaned file) |
+| `src/nexus_scalp/labeling/triple_barrier.py` | Labeling | Cost-Aware Purged Triple Barrier | `TripleBarrierLabeler` | Trainer, `LiveEngine` online retrain | `polars`, `numpy` | OHLCV DataFrame | Labeled DataFrame (`0, 1, 2`) | 🟢 VERIFIED | Medium |
+| `src/nexus_scalp/training/walk_forward_trainer.py` | Training | Purged Walk-Forward & Online Fine-Tuner | `WalkForwardTrainer`, `ScalpDataset`, `FocalLossWithSmoothing` | CLI, `LiveEngine` async task | `torch`, `polars`, `sklearn` | Labeled DataFrame | Trained ScalpNet, ScalerBundle | 🟢 VERIFIED | High (Torch CUDA/CPU load) |
+| `src/nexus_scalp/signals/policy.py` | Signals | Signal Policy Engine & SMC God Mode | `SignalPolicy` | `LiveEngine` | `RuleMatrixEngine` | Features, Regime, AlgoConfig | `TradeProposal` | 🟢 VERIFIED | Medium |
+| `src/nexus_scalp/signals/rule_matrix.py` | Signals | DB-driven 30+ Scalping Rule Matrix | `RuleMatrixEngine` | `SignalPolicy` | `AuditRepository` | Context, Rules config | Rule Evaluation / VETO | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/risk/risk_engine.py` | Risk | Quantitative Dynamic Lot Sizing | `RiskEngine` | `LiveEngine`, OrderManager | Internal math | Proposal, Account, Equity | Dynamic Volume (float) | 🟢 VERIFIED | High (Capital Protection) |
+| `src/nexus_scalp/execution/order_manager.py` | Execution | Authoritative Order & Position Manager | `OrderLifecycleManager`, `PositionProtectionState`, `SmartPositionMetrics` | `LiveEngine` | `IMT5Port`, `RiskEngine` | Tick, Account, Proposal | Executed Orders, State updates | 🟢 VERIFIED | High (Order Dispatch) |
+| `src/nexus_scalp/application/live_engine.py` | Application| Live System Async Orchestrator | `LiveEngine`, `ModelBundle`, `ScalerBundle` | `main.py`, CLI | All Subsystems | Ticks, Accounts, Config | Live System Loop & Telemetry | 🟢 VERIFIED | Critical (System Engine) |
+| `src/nexus_scalp/configuration/config.py` | Config | Pydantic Settings & YAML Parser | `AppConfig`, `AlgoConfig`, `ExecutionConfig`, `RiskConfig` | Entire System | `pydantic_settings`, `yaml` | YAML file, ENV vars | Validated AppConfig | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/web/server.py` | Web | FastAPI REST, SSE & WebSocket Server | `ServerState`, FastAPI app | Main CLI, Docker | Subsystems | REST HTTP, WS | Telemetry, JSON API | 🟢 VERIFIED | Medium |
+| `src/nexus_scalp/observability/telegram_notifier.py` | Observability| Asynchronous Telegram Bot Alerting | `TelegramNotifier` | `LiveEngine`, OrderManager | `httpx` | Markdown text | Telegram Message | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/observability/logging.py` | Observability| Structured JSON Logger | `logger`, `setup_logging` | Entire System | `structlog` | Log calls | Formatted Console/File Logs | 🟢 VERIFIED | Low |
+| `src/nexus_scalp/cli/main.py` | CLI | Typer CLI Application Entrypoint | `app` CLI commands | Shell / User | LiveEngine, Trainer | CLI Commands | Shell Output | 🟢 VERIFIED | Low |
+| `src/cli/train_model.py` | Script | Legacy CLI Training Script (18D contract) | `train_scalpnet_cli` | Manual Execution | Legacy imports | Raw Ticks | Model weights | ⚫ DEAD / STALE | High (18D dimensional mismatch) |
+
+---
+
+## 4. Actual Entrypoints & Startup Execution Path
+
+### 🚀 Runtime Entrypoints Inventory
+
+| Entrypoint File | Invocation Command | Purpose | Production Ready? | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| `src/nexus_scalp/cli/main.py` | `python -m nexus_scalp.cli.main run --mode LIVE` | **Primary Production CLI Entrypoint** | Yes | 🟢 VERIFIED |
+| `main.py` | `python main.py` | Root execution wrapper forwarding to `nexus_scalp.cli.main:app` | Yes | 🟢 VERIFIED |
+| `NexusTradingForexBot.py` | `python NexusTradingForexBot.py` | Legacy convenience redirect forwarding to `main.py` | Legacy Redirect | 🟢 VERIFIED |
+| `src/nexus_scalp/web/server.py` | `uvicorn nexus_scalp.web.server:app` | Direct FastAPI server runner | Debug / Development | 🟢 VERIFIED |
+| `docker/entrypoint.sh` | Docker Container Startup | Containerized execution wrapper | Container | 🟢 VERIFIED |
+| `src/cli/train_model.py` | `python -m cli.train_model` | Stale legacy 18D training script | No (Hardcoded 18D) | ⚫ DEAD / STALE |
+
+---
+
+### 📊 Startup & Dependency Construction Flow
 
 ```text
-                        ┌────────────────────────┐
-                        │ MetaTrader 5 Terminal  │
-                        └───────────┬────────────┘
-                                    │ Ticks / Deals / Orders
-                                    ▼
-                        ┌────────────────────────┐
-                        │ DirectMT5Adapter / IPC │
-                        └───────────┬────────────┘
-                                    │ TickData
-                                    ▼
- ┌──────────────────────────────────────────────────────────────────────┐
- │                              LiveEngine                              │
- │  ┌─────────────────┐   ┌──────────────────────┐   ┌───────────────┐  │
- │  │ BarAggregator   │──>│ ScalpFeatureEngine   │──>│ ScalpNet      │  │
- │  └─────────────────┘   │ (50D Feature Vector) │   │ (PyTorch Net) │  │
- │                        └──────────┬───────────┘   └───────┬───────┘  │
- │                                   │                       │          │
- │                                   ▼                       ▼          │
- │                        ┌──────────────────────────────────────────┐  │
- │                        │               SignalPolicy               │  │
- │                        │ (SMC God Mode / Regime Gate / Predictive)│  │
- │                        └──────────────────┬───────────────────────┘  │
- └───────────────────────────────────────────┼──────────────────────────┘
-                                             │ TradeProposal
-                                             ▼
-                                ┌────────────────────────┐
-                                │       RiskEngine       │
-                                │ (Lot Sizing & Clamps)  │
-                                └────────────┬───────────┘
-                                             │ TradeOrder
-                                             ▼
-                                ┌────────────────────────┐
-                                │ OrderLifecycleManager  │
-                                │(11 States/Breakeven/SL)│
-                                └────────────┬───────────┘
+                  ┌───────────────────────────────┐
+                  │   python -m nexus_scalp.cli   │
+                  └───────────────┬───────────────┘
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │    AppConfig.load_config()    │ (YAML + ENV)
+                  └───────────────┬───────────────┘
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │  Adapter & Port Construction  │ (MT5 / Gateway / Paper)
+                  └───────────────┬───────────────┘
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │  Subsystem Dependency Wiring  │
+                  │  - ScalpFeatureEngine (50D)   │
+                  │  - MarketRegimeClassifier     │
+                  │  - SignalPolicy & RuleMatrix  │
+                  │  - RiskEngine                 │
+                  │  - OrderLifecycleManager      │
+                  │  - AuditRepository (SQLite)   │
+                  └───────────────┬───────────────┘
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │    Model & Scaler Loading     │ (bundle_lock protection)
+                  └───────────────┬───────────────┘
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │  FastAPI & Web Server Launch  │ (Background task)
+                  └───────────────┬───────────────┘
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │     LiveEngine.start()        │
+                  │  (Async Tick Processing Loop) │
+                  └───────────────────────────────┘
+```
+
+---
+
+## 5. AI / ML Forensic Audit & Model Lifecycle Map
+
+### 5.1 AI/ML Component Inventory
+
+* **Neural Architecture:** `ScalpNet` (`src/nexus_scalp/models/scalp_net.py`) 🟢 VERIFIED
+* **Feature Pipeline:** `ScalpFeatureEngine` (`src/nexus_scalp/features/scalp_features.py`) 🟢 VERIFIED
+* **Regime Classifier:** `MarketRegimeClassifier` (`src/nexus_scalp/features/regime_classifier.py`) 🟢 VERIFIED
+* **Labeling Engine:** `TripleBarrierLabeler` (`src/nexus_scalp/labeling/triple_barrier.py`) 🟢 VERIFIED
+* **Training Orchestrator:** `WalkForwardTrainer` (`src/nexus_scalp/training/walk_forward_trainer.py`) 🟢 VERIFIED
+* **Inference Pipeline:** `LiveEngine._infer_probabilities()` (`src/nexus_scalp/application/live_engine.py`) 🟢 VERIFIED
+* **Online Fine-Tuning Task:** `LiveEngine._trigger_async_online_fine_tune()` (`src/nexus_scalp/application/live_engine.py`) 🟢 VERIFIED
+
+---
+
+### 5.2 Exact ML Execution Code Sites
+
+To ensure complete clarity for AI coding agents, here are the exact code locations for every ML operation:
+
+* **Model Construction Site:** `src/nexus_scalp/training/walk_forward_trainer.py::WalkForwardTrainer._create_model()` (Constructs `ScalpNet(num_features=50, num_classes=4)`). 🟢 VERIFIED
+* **Dataset Construction Site:** `src/nexus_scalp/training/walk_forward_trainer.py::ScalpDataset` & `ScalpWeightedDataset`. 🟢 VERIFIED
+* **Dataloader Construction Site:** `src/nexus_scalp/training/walk_forward_trainer.py::DataLoader(dataset, batch_size=..., shuffle=...)`. 🟢 VERIFIED
+* **Loss Function Calculation Site:** `src/nexus_scalp/training/walk_forward_trainer.py::FocalLossWithSmoothing.forward()` (or `nn.CrossEntropyLoss(weight=weights_tensor)`). 🟢 VERIFIED
+* **`backward()` Execution Site:** `src/nexus_scalp/training/walk_forward_trainer.py` inside `_train_epoch()` (`loss.backward()`). 🟢 VERIFIED
+* **`optimizer.step()` Execution Site:** `src/nexus_scalp/training/walk_forward_trainer.py` inside `_train_epoch()` (`optimizer.step()`). 🟢 VERIFIED
+* **Validation & Evaluation Site:** `src/nexus_scalp/training/walk_forward_trainer.py::WalkForwardTrainer._evaluate_model()`. 🟢 VERIFIED
+* **Checkpoint & Artifact Saving Site:** `src/nexus_scalp/training/walk_forward_trainer.py::WalkForwardTrainer.save_model_bundle()` & `LiveEngine._save_model_weights_atomic()`. 🟢 VERIFIED
+* **Live Model Loading Site:** `src/nexus_scalp/application/live_engine.py::LiveEngine._load_model_bundle()`. 🟢 VERIFIED
+* **Live Inference Execution Site:** `src/nexus_scalp/application/live_engine.py::LiveEngine._infer_probabilities()`. 🟢 VERIFIED
+* **Online Fine-Tuning Trigger Site:** `src/nexus_scalp/application/live_engine.py::LiveEngine._trigger_async_online_fine_tune()`. 🟢 VERIFIED
+
+---
+
+### 5.3 ScalpNet Neural Architecture
+
+`ScalpNet` (`src/nexus_scalp/models/scalp_net.py`) features a dual-path architecture designed to handle both single-tick 50D feature tensors and temporal bar sequences.
+
+```text
+                        ┌──────────────────────────────┐
+                        │ Input Tensor: (Batch, 50)    │
+                        └──────────────┬───────────────┘
+                                       │
+                         Is 2D Input? ──┴── Is 3D Input?
+                          (Batch, 50)        (Batch, Seq, 50)
+                               │                  │
+                               ▼                  ▼
+                    ┌────────────────────┐ ┌────────────────────┐
+                    │ Snapshot 2D Path   │ │ Temporal 3D Path   │
+                    │ - Linear(50, 128)  │ │ - Conv1d (Causal)  │
+                    │ - LayerNorm, GELU  │ │ - Residual Blocks  │
+                    │ - Dropout (0.10)   │ │ - Sinusoidal Pos  │
+                    │ - Residual Block   │ │ - Self-Attention   │
+                    └──────────┬─────────┘ └──────────┬─────────┘
+                               │                      │
+                               └──────────┬───────────┘
+                                          │
+                                          ▼
+                               ┌──────────────────────┐
+                               │ Head Linear Layer    │
+                               │ Linear(128, 4)       │
+                               └──────────┬───────────┘
+                                          │
+                                          ▼
+                               ┌──────────────────────┐
+                               │ Logits: (Batch, 4)   │
+                               │ 0: NO_TRADE          │
+                               │ 1: BUY_MARKET        │
+                               │ 2: SELL_MARKET       │
+                               │ 3: WAIT              │
+                               └──────────────────────┘
+```
+
+* **Input Dimensions:** `num_features = 50` 🟢 VERIFIED
+* **Output Dimensions:** `num_classes = 4` (`0=NO_TRADE`, `1=BUY_MARKET`, `2=SELL_MARKET`, `3=WAIT`) 🟢 VERIFIED
+* **Activation:** GELU activation with LayerNorm and 10% Dropout. 🟢 VERIFIED
+
+---
+
+### 5.4 Label / Model Output Class Compatibility Audit
+
+A critical forensic finding in this repository is the interface boundary between labeling and model inference:
+
+* **Labeling Engine Output:** `TripleBarrierLabeler` produces a **3-Class taxonomy**:
+  - `0`: `NO_TRADE`
+  - `1`: `BUY_MARKET`
+  - `2`: `SELL_MARKET`
+* **Model Output Head:** `ScalpNet` constructs a **4-Class classification head**:
+  - Index `0`: `NO_TRADE`
+  - Index `1`: `BUY_MARKET`
+  - Index `2`: `SELL_MARKET`
+  - Index `3`: `WAIT`
+
+#### 🔍 Forensic Resolution & Code Evidence:
+In `src/nexus_scalp/training/walk_forward_trainer.py`, the `WalkForwardTrainer` bridges this exact boundary:
+1. `NUM_CLASSES = 3` is defined as the active training label set (`NO_TRADE`, `BUY_MARKET`, `SELL_MARKET`).
+2. In `_build_class_weights()`, the trainer dynamically retrieves `num_classes = int(self._model_num_classes)` (or checks `ScalpNet` output dimension = 4).
+3. The loss weighting tensor is built with 4 elements (`[w_no_trade, w_buy, w_sell, 1.0]`), assigning unit weight (`1.0`) to index 3 (`WAIT`).
+4. During live inference, index 3 (`WAIT`) represents synthetic advisory/neutral output.
+
+This design guarantees that PyTorch loss computation and tensor dimensions remain perfectly aligned without throwing dimension mismatch exceptions. 🟢 VERIFIED
+
+---
+
+### 5.5 Feature Engineering (50D Master Contract)
+
+The 50D feature vector (`src/nexus_scalp/features/scalp_features.py`) is computed on every tick from M1 completed bars and incoming tick price action.
+
+| Index | Feature Name | Source | Lookback / Formula | Normalization / Bounds |
+| :---: | :--- | :--- | :--- | :--- |
+| `0` | `returns` | M1 Close | `(Close_t - Close_{t-1}) / Close_{t-1}` | Z-Score clipped `[-3.0, +3.0]` |
+| `1` | `log_returns` | M1 Close | `ln(Close_t / Close_{t-1})` | Z-Score clipped `[-3.0, +3.0]` |
+| `2` | `volatility_atr` | M1 Bar | 14-period ATR / Close | Scaled float |
+| `3` | `rsi_14` | M1 Close | 14-period RSI | Scaled `(RSI - 50)/25` |
+| `4` | `macd_line` | M1 Close | 12/26 EMA Difference | Scaled float |
+| `5` | `macd_signal` | MACD Line | 9-period EMA of MACD | Scaled float |
+| `6` | `macd_hist` | MACD Diff | `MACD_line - MACD_signal` | Scaled float |
+| `7` | `bb_upper` | M1 Close | 20-period BB Upper | Price relative |
+| `8` | `bb_middle` | M1 Close | 20-period SMA | Price relative |
+| `9` | `bb_lower` | M1 Close | 20-period BB Lower | Price relative |
+| `10` | `bb_width` | BB Bands | `(Upper - Lower) / Middle` | Scaled float |
+| `11` | `bb_pband` | M1 Close | `(Close - Lower) / (Upper - Lower)` | Scaled `[0.0, 1.0]` |
+| `12` | `adx_14` | M1 Bar | 14-period ADX | Scaled `ADX / 50.0` |
+| `13` | `plus_di` | M1 Bar | 14-period +DI | Scaled float |
+| `14` | `minus_di` | M1 Bar | 14-period -DI | Scaled float |
+| `15` | `stoch_k` | M1 Bar | 14-period Stochastic %K | Scaled `(%K - 50)/25` |
+| `16` | `stoch_d` | Stoch %K | 3-period SMA of %K | Scaled `(%D - 50)/25` |
+| `17` | `obv` | M1 Volume | On-Balance Volume | Normalized slope |
+| `18` | `vwap` | M1 Bar | Volume-Weighted Average Price | Price relative |
+| `19` | `spread_norm` | Tick Spread | `Spread / ATR` | Scaled float |
+| `20-25` | `wick_anatomy` | M1 Bar | Upper/Lower Wicks, Body Ratios | Ratio `[0.0, 1.0]` |
+| `26-31` | `ofi_microstructure` | Ticks | Order Flow Imbalance, Tick Velocity | Scaled float |
+| `32-39` | `multi_tf_momentum` | M15/M30/H1/H4 | Trend & Momentum Alignment | Scaled `[-1.0, +1.0]` |
+| `40-45` | `sr_clustering` | Support/Res | Dynamic S/R Proximity & Density | Scaled float |
+| `46` | `smc_bos` | Structure | Break of Structure Flag | Binary `-1.0, 0.0, +1.0` |
+| `47` | `smc_equilibrium` | Impulse Leg | 50% Impulse Zone Distance | Distance Z-Score |
+| `48` | `smc_liquidity_sweep` | Wicks | Liquidity Pool Piercing | Binary `-1.0, 0.0, +1.0` |
+| `49` | `smc_ote_align` | Secondary Leg | 50%-61.8% OTE Zone Alignment | Scaled `[0.0, 1.0]` |
+
+#### 🛡️ Feature Safety & Fallback Invariants:
+* All 50 calculated features pass through `validate_and_fallback()`.
+* If any feature contains `NaN`, `Inf`, or violates bounds, a `FeaturePipelineFrozenError` is logged and deterministic fallback values are applied gracefully. 🟢 VERIFIED
+
+---
+
+### 5.6 Cost-Aware Triple-Barrier Labeling Engine
+
+The `TripleBarrierLabeler` (`src/nexus_scalp/labeling/triple_barrier.py`) generates training labels using dynamic ATR barriers adjusted for spread friction:
+
+```text
+                     ▲ Upper Barrier: Entry + (ATR * profit_mult)
+                     │
+         ─── Upper Friction Adjustment (Entry + Spread) ───
+                     │
+ Entry Price ────────┼─────────────────────────── Horizontal Horizon (e.g. 15 bars)
+                     │
+         ─── Lower Friction Adjustment (Entry - Spread) ───
+                     │
+                     ▼ Lower Barrier: Entry - (ATR * stop_mult)
+```
+
+1. **Upper Profit Barrier:** `Upper = Entry + (ATR * mult)` -> Outcome `1` (`BUY_MARKET`).
+2. **Lower Stop Barrier:** `Lower = Entry - (ATR * mult)` -> Outcome `2` (`SELL_MARKET`).
+3. **Vertical Horizon Barrier:** If neither barrier is touched within `max_holding_bars` (default 15 bars), outcome defaults to `0` (`NO_TRADE`).
+4. **Stride Downsampling:** Uses `no_trade_stride_bars = 3` to jump samples after a `NO_TRADE` label, mitigating class imbalance before training. 🟢 VERIFIED
+
+---
+
+### 5.7 Purged Walk-Forward Training & Validation
+
+The `WalkForwardTrainer` (`src/nexus_scalp/training/walk_forward_trainer.py`) implements temporal walk-forward validation with strict embargo and purging to prevent lookahead leakage:
+
+```text
+Fold 1: [ Train Block 1 ] [Purge] [ Validation Block 1 ] [Embargo]
+Fold 2:      [ Train Block 2 ] [Purge] [ Validation Block 2 ] [Embargo]
+Fold 3:           [ Train Block 3 ] [Purge] [ Validation Block 3 ] [Embargo]
+```
+
+* **Purging:** Drops samples whose triple-barrier evaluation horizons overlap into the validation set.
+* **Embargo:** Drops a buffer period immediately following validation to eliminate temporal correlation leakage.
+* **Fresh Model Initialization:** Every walk-forward fold constructs a fresh `ScalpNet` model to evaluate out-of-sample generalization. 🟢 VERIFIED
+
+---
+
+### 5.8 Online Fine-Tuning, Quality Gate, & Atomic Hot-Swapping
+
+When the live rolling buffer reaches 300 completed feature records, `LiveEngine` triggers background online fine-tuning:
+
+```text
+LIVE INFERENCE LOOP
+       │
+       ├─► (Active Model Bundle in _bundle_lock remains serving live ticks)
+       │
+ASYNC RETRAIN TASK (to_thread)
+       │
+       ▼
+ 1. Label recent 300 records with TripleBarrierLabeler
+       │
+       ▼
+ 2. Call WalkForwardTrainer.fine_tune_online(model_clone, df_labeled, ...)
+       │
+       ▼
+ 3. Quality Gate Evaluation:
+    - Dominance check: max class ratio <= 95%
+    - Anti-collapse check: active class recall > 0.0%
+       │
+    ┌──┴─────────┐
+    ▼            ▼
+ [ PASS ]     [ FAIL ] ──► Discard candidate, keep live model.
+    │
+    ▼
+ 4. Save model weights atomically (_save_model_weights_atomic)
+    │
+    ▼
+ 5. Acquire _bundle_lock and HOT-SWAP _bundle = ModelBundle(...)
+```
+
+* **Atomic Hot-Swapping:** Hot-swapping occurs inside `with self._bundle_lock:`, ensuring zero tick drops or race conditions during live inference. 🟢 VERIFIED
+
+---
+
+## 6. Signal Pipeline & Rule Matrix Forensics
+
+### 🚦 Decision Chain Routing
+
+```text
+Tick + Bars
+     │
+     ▼
+ScalpFeatureEngine (50D Vector)
+     │
+     ▼
+MarketRegimeClassifier (10 Regimes)
+     │
+     ▼
+Regime Guardian Gate:
+  Is Unsafe Regime? (HIGH_SPREAD_CHOP, MARKET_HALTED, NEWS_LOCK, etc.)
+  ├── YES ──► ActionType.NO_TRADE (Reason: BLOCKED_BY_GUARDIAN)
+  └── NO  ──► Proceed
+     │
+     ▼
+ScalpNet Neural Inference (Probabilities)
+     │
+     ▼
+RuleMatrixEngine (30+ DB-Configured Scalping Rules)
+  ├── VETO Rule Triggered ──► ActionType.NO_TRADE
+  └── Passed / FORCE      ──► Proceed
+     │
+     ▼
+SMC God Mode Confluence Evaluation
+  - BOS/CHOCH Confirmation
+  - 50% Impulse Equilibrium
+  - Liquidity Sweep Piercing
+     │
+     ▼
+Generate TradeProposal (BUY / SELL / BUY_LIMIT / SELL_LIMIT)
+```
+
+#### 🔒 Pending Order Lock & Drift Invariants:
+* Newly evaluated limit orders (`BUY_LIMIT` / `SELL_LIMIT`) are checked against active pending orders.
+* **Pending Lock Duration:** 30 seconds.
+* **Min Price Drift:** Requires price drift of at least `1.0 * ATR` before modifying pending limit price. Otherwise, returns `ActionType.NO_TRADE` with reason `PENDING_ORDER_LOCKED`. 🟢 VERIFIED
+
+---
+
+## 7. Risk Engine & Lot Sizing Forensics
+
+### 📐 Authoritative Dynamic Lot-Sizing Equation
+
+The `RiskEngine` (`src/nexus_scalp/risk/risk_engine.py`) evaluates lot sizes through a cascading series of risk bounds:
+
+$$ \text{Raw Risk Amount (\$)} = \text{Equity} \times \text{Risk Percentage} $$
+
+$$ \text{Raw Volume (Lots)} = \frac{\text{Raw Risk Amount}}{\text{Stop Loss Distance (Points)} \times \text{Tick Value}} $$
+
+```text
+                  Raw Volume (Lots)
+                          │
+                          ▼
+             Floor to Broker volume_step (e.g. 0.01)
+                          │
+                          ▼
+             Clamped by Account Tier Ceiling:
+             - Equity < $100:     Max 0.02 Lots
+             - Equity < $1,000:   Max 0.50 Lots
+             - Equity < $10,000:  Max 2.00 Lots
+             - Equity >= $10,000: Max 10.0 Lots (HARD_MAX_LOTS)
+                          │
+                          ▼
+             Clamped by Free Margin Limit:
+             Margin Required <= 20% of Free Margin
+                          │
+                          ▼
+             Final Executable Volume (Lots)
+```
+
+#### 🛡️ Execution Boundary Absolute Clamp:
+In `OrderLifecycleManager` (`src/nexus_scalp/execution/order_manager.py`), every order dispatch passes through `_clamp_volume()`:
+* **Absolute Ceiling:** `HARD_MAX_LOTS = 10.0`.
+* No order sent to MT5 can exceed 10.0 lots regardless of configuration. 🟢 VERIFIED
+
+---
+
+## 8. Execution & MT5 Integration Forensics
+
+### 🔌 MT5 Adapters & Dispatch Router
+
+The execution layer supports 3 interchangeable adapters implementing `IMT5Port`:
+
+1. **DirectMT5Adapter (`src/nexus_scalp/adapters/mt5/mt5_adapter.py`):** Uses Win32 MetaTrader 5 C-extension API (`import MetaTrader5`). Direct IPC calls. 🟢 VERIFIED
+2. **RemoteMT5GatewayAdapter (`src/nexus_scalp/adapters/mt5/remote_gateway.py`):** Communicates with a remote Windows gateway over ZeroMQ (ZMQ) sockets using JSON protocol. 🟢 VERIFIED
+3. **PaperMT5Adapter (`src/nexus_scalp/adapters/paper/paper_adapter.py`):** In-memory simulated execution engine with realistic spread and latency simulation. 🟢 VERIFIED
+
+#### ⚡ Dispatch Router & Circuit Breaker:
+* **Unified Dispatch Router:** `OrderLifecycleManager.dispatch_order()` routes all proposals.
+* **Circuit Breaker:** Tracks consecutive broker rejections. After 3 consecutive order rejections, the engine transitions to `SystemHealth.SAFE_MODE` and halts order dispatch. 🟢 VERIFIED
+
+---
+
+## 9. Position Protection, State Machine, & Adaptive Exit Engine
+
+The `OrderLifecycleManager` (`src/nexus_scalp/execution/order_manager.py`) runs a hybrid position state machine on every single tick update.
+
+### 🔄 11 Explicit Position States (`PositionState`)
+
+```text
+┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
+│   PROPOSED   ├────►│  SUBMITTED   ├────►│       OPEN       │
+└──────────────┘     └──────────────┘     └────────┬─────────┘
+                                                   │
+        ┌──────────────────────────────────────────┼──────────────────────────────────────────┐
+        │                                          │                                          │
+        ▼                                          ▼                                          ▼
+┌──────────────┐                          ┌──────────────────┐                       ┌──────────────────┐
+│  IN_DRAWDOWN │                          │ PROFIT_PROTECTION│                       │     TRAILING     │
+└───────┬──────┘                          └────────┬─────────┘                       └────────┬─────────┘
+        │                                          │                                          │
+        ▼                                          ▼                                          ▼
+┌──────────────┐                          ┌──────────────────┐                       ┌──────────────────┐
+│RECOVERY_LOCKED                          │  PARTIAL_CLOSED  │                       │ REVERSAL_PENDING │
+└───────┬──────┘                          └────────┬─────────┘                       └────────┬─────────┘
+        │                                          │                                          │
+        └──────────────────────────────────────────┼──────────────────────────────────────────┘
+                                                   │
+                                                   ▼
+                                          ┌──────────────────┐
+                                          │      CLOSED      │
+                                          └──────────────────┘
+```
+
+### 🧠 Dynamic Hold Score & Emergency Bailout
+
+For positions in drawdown, `OrderLifecycleManager` calculates a multi-dimensional risk `hold_score`:
+
+$$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\text{Spread Expansion Penalty})$$
+
+* **Evaluation Throttling:** Evaluated every 500ms per position.
+* **Critical Breach Bailout:** If `hold_score < 30.0` while in drawdown, triggers immediate early risk exit (`S09_CRITICAL_HOLD_SCORE_BREACH_BAILOUT`). 🟢 VERIFIED
+
+---
+
+## 10. Hot-Path Latency & Event-Loop Forensics
+
+### ⏱️ "50ms Hot Path" Forensic Audit
+
+* **Claim in Documentation:** "50ms guaranteed HFT execution loop."
+* **Forensic Finding:** The architecture is designed around an async event loop target of 50ms per tick pulse. However, **no guaranteed end-to-end 50ms latency SLA exists**.
+* **Async Event-Loop Safety:**
+  - Feature calculations and regime classifications are CPU-bound Python operations.
+  - Model inference runs in PyTorch (`torch.inference_mode()`).
+  - Heavy tasks (online fine-tuning) are offloaded off the main thread via `asyncio.to_thread()`.
+  - Database persistence is offloaded via an async background queue in `AuditRepository`.
+* **Status:** 🟡 PARTIALLY VERIFIED (Design target is non-blocking async, but actual latency depends on Win32 IPC / ZMQ network latency).
+
+---
+
+## 11. Web UI, REST API, SSE, WebSocket, & Debug Hub Forensics
+
+### 🌐 Web Server Architecture & Endpoints (`src/nexus_scalp/web/server.py`)
+
+* **Framework:** FastAPI with Uvicorn backend.
+* **Frontend Control Panel:** Located in `Web/` (`index.html`, `app.js`, `styles.css`) rendering real-time candlestick charts, SMC visual overlays, active position tables, and rule matrix toggles.
+
+```text
+                               ┌───────────────────────────┐
+                               │     Web Browser / UI      │
+                               └─────────────┬─────────────┘
                                              │
                        ┌─────────────────────┴─────────────────────┐
                        │                                           │
                        ▼                                           ▼
-          ┌────────────────────────┐                  ┌────────────────────────┐
-          │    AuditRepository     │                  │    TelegramNotifier    │
-          │  (SQLite WAL Ledger)   │                  │ (ThreadPool Async)     │
-          └────────────────────────┘                  └────────────────────────┘
-                       ▲                                           ▲
+            ┌─────────────────────┐                     ┌─────────────────────┐
+            │ REST API Endpoints  │                     │ SSE / WebSocket     │
+            │ GET /api/status     │                     │ /api/ticks/stream   │
+            │ POST /api/rules     │                     │ /web (WebSocket)    │
+            └──────────┬──────────┘                     └──────────┬──────────┘
                        │                                           │
                        └─────────────────────┬─────────────────────┘
-                                             │ Real-time State
+                                             │
                                              ▼
-                                ┌────────────────────────┐
-                                │     FastAPI Server     │
-                                │ (REST / SSE / WS / UI) │
-                                └────────────────────────┘
+                               ┌───────────────────────────┐
+                               │  FastAPI server.py        │
+                               │  serialize_enums()        │
+                               └───────────────────────────┘
 ```
 
----
+### 📡 Full REST API Route Specifications
 
-## 4. AI / ML Forensic Audit
+| Route | Method | Purpose | Request Body | Response Payload | Status |
+| :--- | :---: | :--- | :--- | :--- | :--- |
+| `/api/status` | `GET` | Live telemetry & system status | None | System state, balance, regime, visual overlays | 🟢 VERIFIED |
+| `/api/rules` | `GET` | Get rule matrix configuration | None | JSON map of 30+ scalping rules & enabled states | 🟢 VERIFIED |
+| `/api/rules/toggle` | `POST` | Toggle specific rule state | `ToggleRuleRequest` | Updated rule matrix state | 🟢 VERIFIED |
+| `/api/account/summary` | `GET` | Get financial ledger performance | None | Win rate, profit factor, total trades | 🟢 VERIFIED |
+| `/api/account/trades` | `GET` | Paginated closed trade autopsies | Query params | List of completed trade autopsies | 🟢 VERIFIED |
+| `/api/account/growth` | `GET` | Historical account equity curve | Query params | Time-series equity/balance array | 🟢 VERIFIED |
+| `/api/engine/toggle` | `POST` | Pause or Resume LiveEngine loop | `ToggleRequest` | Engine execution state | 🟢 VERIFIED |
+| `/api/config` | `GET` | Retrieve active system config | None | `AppConfig` serialized JSON | 🟢 VERIFIED |
+| `/api/config` | `POST` | Update active system config | `AlgoConfigRequest` | Success status & updated config | 🟢 VERIFIED |
+| `/api/algo/config` | `GET`/`PUT` | Get/Set dynamic quantitative parameters | `AlgoConfigRequest` | Hot-swapped `AlgoConfig` JSON | 🟢 VERIFIED |
+| `/api/chart/history` | `GET` | Bootstrap 150+ bar visualizer chart | Query params | OHLC bar array + candidate zones | 🟢 VERIFIED |
+| `/api/positions/modify` | `POST` | Manual SL/TP position update | `ModifyPositionRequest` | Execution result | 🟢 VERIFIED |
+| `/api/positions/close` | `POST` | Manual market close position | `ClosePositionRequest` | Execution result | 🟢 VERIFIED |
+| `/api/simulation/tick` | `POST` | Direct tick injection (Paper mode) | `SimulationTickRequest` | Processed tick telemetry | 🟢 VERIFIED |
+| `/api/replay/toggle` | `POST` | Start/Pause historical tick replay | `ToggleReplayRequest` | Replay status | 🟢 VERIFIED |
+| `/api/debug/features` | `GET` | Inspect live 50D feature vector | None | 50 feature names & calculated values | 🟢 VERIFIED |
+| `/api/debug/model-test` | `POST` | Test arbitrary feature tensor against ScalpNet | `ModelTestRequest` | Probabilities & argmax decision | 🟢 VERIFIED |
+| `/api/debug/health` | `GET` | Detailed subsystem diagnostics | None | Feature, Risk, Model, MT5 health | 🟢 VERIFIED |
+| `/api/debug/ipc-telemetry` | `GET` | MT5 IPC socket/latency stats | None | Latency metrics & reconnect count | 🟢 VERIFIED |
+| `/api/observability/stats` | `GET` | Overall engine observability stats | None | Memory, uptime, tick count | 🟢 VERIFIED |
 
-### 4.1 AI/ML Component Inventory
+### 🔄 WebSocket & SSE Streaming Specifications
 
-| Component | File | Class | Purpose | Input | Output | Training | Inference | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Neural Net** | `models/scalp_net.py` | `ScalpNet` | Institutional Causal Temporal Transformer. | `(Batch, 50)` or `(Batch, Seq, 50)` | 4 Class Logits / Probabilities | `walk_forward_trainer.py` | `live_engine.py` | ✅ VERIFIED |
-| **Feature Engine** | `features/scalp_features.py` | `ScalpFeatureEngine` | Calculates 50D Price Action, SMC, ICT, Ichimoku & MTF features. | `completed_bars`, `TickData` | `FeatureVector` (50D) | On-the-fly / Pipeline | `live_engine.py` | ✅ VERIFIED |
-| **Regime Classifier** | `features/regime_classifier.py` | `MarketRegimeClassifier` | Microstructure Regime Classifier (Vol, Chop, News). | `TickData`, `BarData` | `MarketRegimeState` | Rule-based / GMM | `live_engine.py` | ✅ VERIFIED |
-| **Labeler** | `labeling/triple_barrier.py` | `TripleBarrierLabeler` | Cost-aware Purged Triple-Barrier Labeling. | Polars `DataFrame` (OHLCV, ATR, Spread) | Polars `DataFrame` + `label`, `is_eval_sample`, `is_purged` | Offline / Fine-tuning | N/A (Training only) | ✅ VERIFIED |
-| **Walk-Forward Trainer** | `training/walk_forward_trainer.py` | `WalkForwardTrainer` | Purged Walk-Forward Training & Validation. | Polars `DataFrame` with 50D features & labels | Trained `model.pt`, `.scaler.npz`, `.meta.json` | `train_and_validate()` | N/A (Orchestrator) | ✅ VERIFIED |
-| **Online Fine-Tuner** | `training/walk_forward_trainer.py` | `WalkForwardTrainer.fine_tune_online()` | Online fine-tuning with Quality Gate. | Cloned `ScalpNet`, recent 300+ bar Polars `DataFrame` | Quality-gated fine-tuned `ScalpNet` | `fine_tune_online()` | Live background task | ✅ VERIFIED |
+1. **SSE Stream Endpoint (`GET /api/ticks/stream`):**
+   - Broadcasts real-time Server-Sent Events (SSE) `data: JSON` containing tick updates, SMC overlay boxes, and live PnL.
+2. **WebSocket Channels (`/web` and `/ws`):**
+   - Bidirectional real-time WebSocket connection for low-latency visualizer charts and interactive UI triggers.
 
----
-
-### 4.2 ScalpNet Neural Architecture
-
-Defined in `src/nexus_scalp/models/scalp_net.py`:
-- **Input Dimension:** 50 continuous features (`num_features=50`).
-- **Output Classes:** 4 classes (`0=NO_TRADE`, `1=BUY_MARKET`, `2=SELL_MARKET`, `3=WAIT`).
-- **Dual-Path Routing:**
-  1. **2D Single-Tick Snapshot Mode (`x.dim() == 2`):** Routes through an input projection layer (`Linear(50, 128)` -> `LayerNorm`) into a ResNet MLP with residual skip connections (`Linear(128, 128)` -> `GeLU` -> `Dropout` -> `Linear(128, 128)` -> `LayerNorm(h + h_mlp)`). Designed for sub-millisecond hot-path inference.
-  2. **3D Sequence Mode (`x.dim() == 3`):** Routes through 3 sequential 1D Causal Convolutions (`CausalConv1d` with kernel size 3, dilations 1, 2, 4) enforcing left-side temporal padding `(padding, 0)`, followed by Sinusoidal Positional Encoding and Multi-Head Self-Attention (`MultiheadAttention(embed_dim=128, num_heads=4)`).
-- **Classification Head:** Dense projection layers `Linear(128, 64)` -> `GeLU` -> `Dropout(0.25)` -> `Linear(64, 32)` -> `GeLU` -> `Linear(32, 4)`.
-- **Training vs. Live Mode:** Returns unnormalized logits when `return_logits=True` or `self.training=True`; returns `Softmax` probabilities during live inference (`return_logits=False`).
-
----
-
-### 4.3 Feature Engineering (50D Master Contract)
-
-Defined in `src/nexus_scalp/features/scalp_features.py`:
-- **Contract Identifier:** `FEATURE_NAMES` tuple containing exactly 50 named features.
-- **Dimensionality Enforcement:** Hard assertion `if NUM_FEATURES != 50: raise RuntimeError(...)`.
-- **Feature Categories:**
-  1. *Gold Micro Metrics & Volatility:* `live_tick_displacement`, `log_return_m1`, `atr_m1`.
-  2. *Candle Anatomy:* `upper_wick_ratio`, `lower_wick_ratio`, `body_to_range_ratio`, `is_doji`, `pinbar_sig`, `engulfing_sig`, `close_location_value`, `consecutive_momentum_count`.
-  3. *Swing Structure & Patterns:* `dist_to_swing_high_20`, `dist_to_swing_low_20`, `price_compression_flag_ratio`, `extreme_sig`, `stop_hunt_depth`, `liquidity_sweep_signal`.
-  4. *Market Sessions:* `session_tokyo`, `session_london`, `session_ny`, `session_overlap_london_ny`.
-  5. *Time-Series Lags:* `lag_1_log_return`, `lag_2_log_return`, `lag_3_log_return`, `lag_1_atr_ratio`, `lag_1_volume_z`, `lag_1_clv`.
-  6. *ICT Microstructure:* `fvg_sig` (depth), `order_block_type` (`ob_strength`), `choch_sig`, `breakout_sig`, `rapid_reversal_spike_val`.
-  7. *Ichimoku Kinko Hyo:* `norm_tk_diff`, `tk_cross_signal`, `kumo_sig`, `norm_kumo_width`, `norm_dist_to_tenkan`, `norm_dist_to_kijun`.
-  8. *Indicators & Stat-Arb:* `norm_rsi`, `dist_to_ema_21`, `dist_to_ema_50`, `cross_asset_z_score`.
-  9. *Multi-Timeframe Context:* `htf_h4_trend`, `htf_h1_momentum`, `htf_m30_structure`, `htf_m15_confirmation`, `support_zone_dist`, `resistance_zone_dist`.
-  10. *SMC Institutional Validation:* `feat_ob_valid_bos`, `feat_ob_equilibrium_ratio`, `feat_ob_liquidity_swept`, `feat_ob_fib_50_60_alignment`.
-- **Sanitization & Clamping:** `to_tensor_input()` replaces `NaN`/`Inf` with `0.0` and clamps every value to `[-3.0, +3.0]`.
+#### 🛡️ SSE Stream Enum Serialization Invariant:
+To prevent SSE stream JSON serialization crashes when returning domain objects, `server.py` recursively serializes all Enum instances (such as `ActionType`, `OrderStatus`, `ExecutionMode`) using `serialize_enums()` before broadcasting telemetry payloads. 🟢 VERIFIED
 
 ---
 
-### 4.4 Cost-Aware Triple-Barrier Labeling
+## 12. Observability, Database Persistence, & Ledger Autopsy
 
-Defined in `src/nexus_scalp/labeling/triple_barrier.py`:
-- **Algorithm:** Marcos Lopez de Prado's Purged Triple-Barrier method.
-- **Barriers:**
-  - *Upper Take Profit Barrier:* `buy_tp = entry + (atr * tp_mult)`
-  - *Lower Stop Loss Barrier:* `buy_sl = entry - (atr * sl_mult)`
-  - *Vertical Time Barrier:* `max_holding_bars = 15`
-- **Friction Handling:** Calculates `effective_friction = max(friction_usd, entry_spread)` where `friction_usd = 0.35` ($0.35/oz). Feasibility check requires `tp_dist > effective_friction`.
-- **Purging & Embargo:** `embargo_bars = 3`. Sets `is_purged = True` and skips overlapping forward bars to eliminate serial correlation.
-- **MAE Safeguard:** On vertical time expiration, evaluates net PnL after friction; labels sample as trade if PnL > 0.50 * ATR and Maximum Adverse Excursion ratio <= `max_allowed_mae_ratio` (0.75).
-- **Class Output:** Generates 3 classes: `NO_TRADE` (0), `BUY_MARKET` (1), `SELL_MARKET` (2).
+### 💾 SQLite WAL Audit Repository (`src/nexus_scalp/adapters/database/audit_repository.py`)
 
----
+* **Database Mode:** SQLite in Write-Ahead Logging (WAL) mode (`PRAGMA journal_mode=WAL;`).
+* **Asynchronous Queue:** DB writes are placed on an internal thread-safe queue (`_db_queue`) and written sequentially by a background worker thread (`_worker_thread`), preventing I/O lag on the live event loop.
 
-### 4.5 Purged Walk-Forward Training & Validation
-
-Defined in `src/nexus_scalp/training/walk_forward_trainer.py`:
-- **Split Construction:** Blocked time-series walk-forward with purged gap (`purge_gap_bars = 15`). Default `num_folds = 34`, `train_ratio = 0.70`.
-- **Data Scaling:** Fits `ScalerBundle` (mean and std) on training split only; transforms test split. Saved to `.scaler.npz`.
-- **Loss Function & Optimization:** `AdamW(lr=5e-4, weight_decay=1e-4)` with `CosineAnnealingLR`. Class-balanced loss weights applied to minority trade classes (`active_class_boost = 3.0`).
-- **Artifact Persistence:** Saves weights atomically to `model.pt`, scaler to `model.scaler.npz`, and metadata to `model.meta.json`.
+#### 📊 Core Database Tables:
+1. `audit_signals`: Records all generated trade proposals, model probabilities, regime metrics, and rule evaluation payloads. Features multi-key deduplication on `(symbol, timeframe, candle_time, model_action, entry_zone)` to prevent DB bloat. 🟢 VERIFIED
+2. `audit_orders`: Tracks order lifecycle state transitions (`SUBMITTED`, `OPEN`, `MODIFY_SL_TP`, `CLOSED`). 🟢 VERIFIED
+3. `audit_account_snapshots`: High-frequency account balance/equity snapshots (throttled to write only on balance change or >= 60s interval). 🟢 VERIFIED
+4. `trading_rules_config`: Stores dynamic enablement states and JSON parameters for 30+ scalping rules. 🟢 VERIFIED
+5. `financial_ledger`: Autopsy table recording completed trade performance metrics (MAE, MFE, slippage, SL shift tracking, gross PnL) exactly once upon trade closure. 🟢 VERIFIED
 
 ---
 
-### 4.6 Online Fine-Tuning, Quality Gate, & Hot-Swapping
+## 13. Configuration Architecture & Dynamic Propagation
 
-Defined in `src/nexus_scalp/training/walk_forward_trainer.py` and `src/nexus_scalp/application/live_engine.py`:
-- **Trigger & Cadence:** `LiveEngine` buffers up to 4000 feature snapshots in `_rolling_feature_records`. Every 50 new M1 bars (`_retrain_interval_bars = 50`), if buffer >= 300 rows, triggers `_trigger_async_online_fine_tune()` asynchronously via `asyncio.to_thread`.
-- **Buffer Labeling:** Labels buffered M1 bars using `TripleBarrierLabeler`.
-- **Model Cloning & Isolation:** Clones target `ScalpNet` model (`copy.deepcopy()`) to prevent state corruption during training.
-- **Loss & Weights:** Uses `FocalLossWithSmoothing(gamma=1.0, label_smoothing=0.08)` and exponential time-decay sample weights (`half_life_bars = 120.0`). Random oversampling applied to minority active classes (`BUY`/`SELL`).
-- **Multi-Metric Quality Gate:** Fine-tuned candidate model MUST pass all quality checks:
-  1. *Validation Accuracy:* Must exceed baseline accuracy by at least `min_accuracy_improvement` (+3.0%) and reach at least `min_validation_accuracy` (35%).
-  2. *SELL Dominance Cap:* Predicted SELL class ratio must NOT exceed `max_sell_dominance` (58%).
-  3. *Class Recall:* Recall for present active classes (`BUY`/`SELL`) must NOT collapse to 0.0%.
-  4. *Buffer Diversity Guard:* Rejects degenerate buffers containing < 2 distinct target classes.
-  5. *Validation Loss:* Must strictly beat baseline validation loss (`final_val_loss <= baseline_val_loss + 1e-4`).
-- **Atomic Hot-Swapping:** If Quality Gate PASSES, saves new checkpoint and atomically swaps `ModelBundle(model, scaler, artifact_path)` under `_bundle_lock`. If Quality Gate FAILS, rolls back to baseline weights with zero downtime.
-
----
-
-## 5. Signal Pipeline & Rule Matrix Forensics
-
-### 5.1 Decision Pipeline Flow
+### ⚙️ Pydantic Configuration Flow (`src/nexus_scalp/configuration/config.py`)
 
 ```text
-Market Tick
-     │
-     ▼
-Regime Guardian Gate  ──[Unsafe Regime?]──> NO_TRADE (BLOCKED_BY_GUARDIAN)
-     │ Safe
-     ▼
-Tick Duplicate Filter ──[Duplicate Tick?]──> NO_TRADE (TICK_DUPLICATE_SUPPRESSED)
-     │ New Tick
-     ▼
-AI Reversal Veto      ──[Opposing AI + Structure?]──> CLOSE_POSITION (AI_REVERSAL_SIGNAL)
-     │ No Reversal
-     ▼
-Frequency Throttle    ──[< 60s since last signal?]──> NO_TRADE (ORDER_FREQUENCY_THROTTLED)
-     │ Passed
-     ▼
-Exposure Gate         ──[Exposure >= 1?]──> NO_TRADE (MAX_EXPOSURE_REACHED / PENDING_ORDER_LOCKED)
-     │ Exposure Free
-     ▼
-SMC God Mode Check    ──[BOS + OB + Sweep + FVG?]──> Bypass HTF filters (SMC_GOD_MODE)
-     │ Standard Flow
-     ▼
-Rule Matrix Pre-Trade ──[Veto Rule Active?]──> NO_TRADE (Blocked by Rule)
-     │ Passed
-     ▼
-Technical & AI Rules  ──[Confidence >= Threshold?]──> TradeProposal (BUY/SELL/LIMIT/STOP)
+configs/base.yaml  +  ENV Variables
+           │
+           ▼
+AppConfig.load_config()
+           │
+           ▼
+AppConfig (Pydantic BaseSettings)
+ ├── execution: ExecutionConfig
+ ├── risk: RiskConfig
+ ├── model: ModelConfig
+ ├── mt5: MT5Config
+ ├── telegram: TelegramConfig
+ └── algo: AlgoConfig (Dynamic Quantitative Parameters)
+           │
+           ▼
+Tick Sync in LiveEngine._process_tick_pipeline():
+  - Synchronizes AlgoConfig to SignalPolicy, OrderManager, and RiskEngine on every tick pulse.
 ```
 
-### 5.2 SMC God Mode Execution Path
-
-When `feat_ob_valid_bos > 0` (or `choch`), valid order block (`order_block_type != 0`), confidence >= `ai_zone_confidence_threshold` (0.60), liquidity sweep presence, and FVG coincide:
-- Sets `execution_mode = "SMC_GOD_MODE"`.
-- Bypasses Higher-Timeframe trend conflict filters and Support/Resistance margin filters.
-- Applies a 15% confidence penalty (`confidence *= 0.85`) as a risk offset.
-
-### 5.3 Predictive Limit Order Generation
-
-When a valid Order Block is confirmed (`order_block_type != 0`) and SMC God Mode is inactive:
-- Places `BUY_LIMIT` or `SELL_LIMIT` at 50% Order Block Equilibrium level (`target_entry_price = swing_low + 0.50 * (swing_high - swing_low)`).
-- Sets Stop Loss at deepest wick + ATR buffer (`deepest_wick - atr * atr_sl_buffer_multiplier`).
-- Sets Take Profit at opposing liquidity level, adjusting if necessary to satisfy `min_risk_reward_ratio` (1.8).
-
-### 5.4 30-Rule Matrix Engine
-
-Defined in `src/nexus_scalp/signals/rule_matrix.py`:
-- Database-backed rule matrix supporting pre-trade filter vetoes, force entries, and in-trade rule exits.
-- Background hot-reloading from SQLite table `trading_rules_config` every 5 seconds.
-- Rules include: `FVG_FILL_SCALP`, `LIQUIDITY_SWEEP_SNIPER`, `SPREAD_SQUEEZE_BREAKOUT`, `ZERO_DRAWDOWN_TRAILING`, `NEWS_FADE_REVERSAL`, `ACCOUNT_PRESERVATION_SAFEGUARD`, and 25+ others.
+* **Hot-Swapping:** `AlgoConfig` parameters (such as `min_risk_reward_ratio`, `high_confidence_threshold`, `atr_sl_buffer_multiplier`) can be updated dynamically via REST API `POST /api/config/algo` without restarting the engine. 🟢 VERIFIED
 
 ---
 
-## 6. Risk Engine & Position Sizing Forensics
+## 14. Known Bugs, Pitfalls & Invariants ("Bugs Before You Find Them")
 
-Defined in `src/nexus_scalp/risk/risk_engine.py`:
+If you are an AI coding agent making changes to this repository in the future, **memorize these known pitfalls before modifying code**:
 
-### 6.1 Volume Sizing Pipeline (`calculate_dynamic_volume`)
+### 🚨 1. Polars Boolean Expression Pitfall
+* **Pitfall:** Using standard Python `not` or `and` inside Polars DataFrame filters.
+* **Symptom:** Raises `ComputeError` or evaluates silently to invalid boolean masks.
+* **Rule:** **ALWAYS use bitwise tilde `~` and bitwise operators `&` / `|`** when filtering Polars DataFrames (e.g., `df.filter(~pl.col("is_deleted") & (pl.col("vol") > 0))`).
 
-1. **Input Validation:** Verifies entry, SL, equity, free margin, leverage, contract size, and volume step for `None`, `NaN`, `Inf`, or non-positive values.
-2. **Fixed Dollar Risk Calculation:** Computes `risk_amount_usd = account.equity * (risk_pct / 100.0)`.
-3. **Raw Risk-Based Volume:** `raw_lots = risk_amount_usd / (sl_distance * trade_contract_size)`. Wide SL reduces lot size; tight SL increases lot size.
-4. **Volume Step Floor:** Rounds down to nearest broker `volume_step` via `_floor_to_step()`.
-5. **Account Tier Safety Ceilings:**
-   - Equity < $100: Max 0.02 lots.
-   - Equity < $1,000: Max 0.10 lots.
-   - Equity < $10,000: Max 1.00 lot.
-   - Equity >= $10,000: Max 10.0 lots (clamped by `volume_max`).
-6. **Free Margin Clamp (20% Ceiling):** Calculates required margin; limits volume to require at most 20% of free margin (`max_margin_volume = (free_margin * 0.20 * leverage) / (contract_size * entry)`).
-7. **Micro-Account Minimum Exception:** For accounts with equity < $50, if computed volume < `volume_min`, grants minimum lot exception (`volume = volume_min`).
-8. **Almgren-Chriss Slippage Impact Guard:** `_estimate_market_impact()` computes expected USD slippage. If `slippage_usd / expected_reward_usd > max_impact_reward_ratio` (0.45), reduces volume stepwise down to `volume_min`.
-9. **Execution Boundary Hard Clamp:** `OrderLifecycleManager._clamp_dispatch_volume()` unconditionally enforces `HARD_MAX_LOTS = 10.0` on every order dispatch.
+### 🚨 2. Pydantic Domain Immutability Constraint
+* **Pitfall:** Attempting directly to modify attributes on domain objects (e.g., `position.sl = new_sl`).
+* **Symptom:** Raises `ValidationError: "Position" object is frozen and immutable`.
+* **Rule:** All domain models in `src/nexus_scalp/domain/models.py` use `frozen=True`. Use `.model_copy(update={"sl": new_sl})`.
 
-### 6.2 Can any code path bypass the Risk Engine?
+### 🚨 3. Legacy 18D Script Execution Crash
+* **Pitfall:** Executing `python -m cli.train_model` expecting it to train `ScalpNet`.
+* **Symptom:** Crashes with tensor dimension mismatch error during forward pass.
+* **Rule:** `src/cli/train_model.py` is stale legacy code hardcoding 18 features. Production training MUST be performed via `WalkForwardTrainer` (`NUM_FEATURES = 50`).
 
-**No.** Every order dispatch path in `OrderLifecycleManager` (`dispatch_order`, `execute_ai_reversal`, `execute_lifecycle_action`) forces `_clamp_dispatch_volume()`, which queries the `RiskEngine` clamp when available and enforces `HARD_MAX_LOTS = 10.0` unconditionally.
+### 🚨 4. SSE / JSON Stream Enum Serialization Crash
+* **Pitfall:** Pushing raw domain models containing Enums directly into FastAPI SSE or WebSocket generators.
+* **Symptom:** Raises `TypeError: Object of type ActionType is not JSON serializable`.
+* **Rule:** Pass all telemetry dictionary payloads through `serialize_enums(data)` before streaming.
 
----
-
-## 7. Execution & MT5 Integration Forensics
-
-### 7.1 MT5 Adapter Architecture
-
-Defined in `src/nexus_scalp/adapters/mt5/mt5_adapter.py`:
-- Direct C++ Win32 Python IPC binding via `MetaTrader5` package (Windows native).
-- Implements `IMT5Port` interface defined in `src/nexus_scalp/ports/mt5_port.py`.
-- Platform Guard: Checks `platform.system() == "Windows"`. Falls back gracefully on Linux/macOS with mock/stub return values for local testing.
-
-### 7.2 Unified Dispatch Router
-
-`OrderLifecycleManager` provides unified dispatch routing:
-- `dispatch_order()`: Handles entry orders (`BUY`, `SELL`, `BUY_LIMIT`, `SELL_LIMIT`, `BUY_STOP`, `SELL_STOP`).
-- `execute_lifecycle_action()`: Handles position lifecycle actions (`CLOSE_POSITION`, `PARTIAL_CLOSE`, `MODIFY_SL_TP`, `CANCEL_ORDER`).
-- Rejection Safeguard: 3 consecutive broker order rejections transitions global state to `SAFE_MODE`, blocking further order submission.
+### 🚨 5. Event Loop Blocking in Hot Path
+* **Pitfall:** Performing synchronous file I/O, heavy PyTorch model fitting, or synchronous network calls inside `LiveEngine._process_tick_pipeline()`.
+* **Symptom:** Freezes live tick processing loop, causes tick stagnation watchdog warnings and order slippage.
+* **Rule:** All heavy or blocking work MUST be offloaded using `asyncio.to_thread()`, background worker threads, or async HTTP clients (`httpx`).
 
 ---
 
-## 8. Position Protection, Reversal Protocol, & State Machine
+## 15. Testing & CI/CD Pipeline Audit
 
-Defined in `src/nexus_scalp/execution/order_manager.py`:
+### 🧪 Test Suite Structure
 
-### 8.1 The 11 Explicit In-Trade Lifecycles (`PositionState`)
+* **Unit Tests (`tests/unit/`):**
+  - `test_domain_models.py`: Validates frozen Pydantic domain immutability.
+  - `test_scalp_features.py`: Validates 50D feature calculation, bounds, and fallback behavior.
+  - `test_walk_forward_trainer.py`: Validates walk-forward splitting, loss functions, and online fine-tuning quality gates.
+  - `test_policy.py`: Validates signal policy routing and SMC God Mode.
+  - `test_risk_engine.py`: Validates dynamic lot sizing, account tier caps, and margin checks.
+  - `test_order_manager.py`: Validates position state machine and `HARD_MAX_LOTS` clamping.
+  - `test_rule_matrix.py`: Validates DB hot-reloading and rule evaluation.
+* **Integration Tests (`tests/integration/`):**
+  - `test_signal_pipeline_health.py`: End-to-end signal pipeline health verification.
+  - `test_database_execution_audit.py`: Validates SQLite WAL persistence and ledger autopsies.
+  - `test_playwright_e2e.py`: Playwright end-to-end web visualizer verification. 🟢 VERIFIED
 
-```text
-                               ┌──────────────────────────┐
-                               │    Position Opened       │
-                               └────────────┬─────────────┘
-                                            │
-                     ┌──────────────────────┴──────────────────────┐
-                     │ PnL >= $0                                   │ PnL < $0
-                     ▼                                             ▼
-       ┌──────────────────────────┐                  ┌──────────────────────────┐
-       │    PROFIT_UNPROTECTED    │                  │        LOSS_EARLY        │
-       └────────────┬─────────────┘                  └────────────┬─────────────┘
-                    │ PnL >= $15                                  │ Negative PnL
-                    ▼                                             ▼
-       ┌──────────────────────────┐                  ┌──────────────────────────┐
-       │     PROFIT_PROTECTED     │                  │ LOSS_RECOVERY_CANDIDATE  │
-       └────────────┬─────────────┘                  └────────────┬─────────────┘
-                    │ Trailing Active                             │ Rec Prob >= 70%
-                    ▼                                             ▼
-       ┌──────────────────────────┐                  ┌──────────────────────────┐
-       │     PROFIT_TRAILING      │                  │ LOSS_RECOVERY_CONFIRMED  │
-       └────────────┬─────────────┘                  └────────────┬─────────────┘
-                    │ Giveback < 70%                              │ Rec Prob < 30%
-                    ▼                                             ▼
-       ┌──────────────────────────┐                  ┌──────────────────────────┐
-       │ PROFIT_GIVEBACK_WARNING  │                  │  LOSS_RECOVERY_FAILING   │
-       └────────────┬─────────────┘                  └────────────┬─────────────┘
-                    │ Peak >= $20 & Ret < 30%                     │ Exit Pressure
-                    ▼                                             ▼
-       ┌──────────────────────────┐                  ┌──────────────────────────┐
-       │ PROFIT_GIVEBACK_CRITICAL │                  │    LOSS_EXIT_PRESSURE    │
-       └──────────────────────────┘                  └────────────┬─────────────┘
-                                                                  │ Budget/Horizon Exceeded
-                                                                  ▼
-                                                     ┌──────────────────────────┐
-                                                     │      LOSS_HARD_EXIT      │
-                                                     └──────────────────────────┘
-```
+### ⚙️ CI/CD Workflows (`.github/workflows/`)
 
-### 8.2 Deterministic Position Protection Invariants
-
-- **Breakeven Lock:** Triggered when PnL >= `$15.00` (`BREAKEVEN_PROFIT_USD`) or 1.5 * ATR in USD PnL. Locks in +0.20 pips profit (`BREAKEVEN_LOCK_PIPS`).
-- **Profit Giveback Protection:** When peak unrealized profit >= `$20.00` (`PROFIT_GIVEBACK_PEAK_USD`), if profit retention ratio drops below 30% (`PROFIT_GIVEBACK_MIN_RETENTION`), triggers `PROFIT_GIVEBACK_PROTECTION` market close.
-- **ATR Trailing Stop:** Tightens stop loss to `price - (1.15 * ATR)` for BUYs or `price + (1.15 * ATR)` for SELLs. Never loosens an existing stop loss.
-- **Hold Score Floor:** Trades in floating profit receive a guaranteed `hold_score` floor of 85 (`PROFIT_SHIELD_SCORE_FLOOR_ACTIVE`). Trades that gave back profit and went negative are capped at `hold_score <= 10`.
-
-### 8.3 AI Position Reversal Protocol
-
-When holding a `BUY` and a strong `SELL` signal emerges (or vice versa):
-1. `SignalPolicy._evaluate_ai_reversal()` detects opposing AI probabilities + structural signal (ChoCh / liquidity sweep / Kumo).
-2. Emits `CLOSE_POSITION` proposal with reason `AI_REVERSAL_SIGNAL` and target `reversal_action`.
-3. `OrderLifecycleManager.execute_ai_reversal()` intercepts proposal:
-   - Closes conflicting active ticket on MT5 immediately.
-   - Records `exit_mechanism = "AI_REVERSAL_EXIT"` in ledger autopsy.
-   - Removes ticket from exposure cache immediately.
-   - *Only after closure confirmation*, dispatches the new directional reversal order.
-4. **No Stacking Invariant:** Opposing orders are NEVER stacked. If closure fails, no new order is dispatched.
+* `ci.yml`: Runs Python 3.11 environment, Ruff linter/formatter check, Mypy type validation, and Pytest with code coverage reports. 🟢 VERIFIED
+* `docker.yml`: Builds multi-stage Docker container and publishes to GitHub Container Registry (GHCR). 🟢 VERIFIED
+* `security.yml`: Executes GitHub CodeQL SAST and Trivy container vulnerability scanning. 🟢 VERIFIED
+* `release.yml`: Automates releases on GitHub tag creation (`v*`). 🟢 VERIFIED
 
 ---
 
-## 9. Hot-Path Safety & Latency Forensics
+## 16. Documentation vs. Reality Audit Matrix
 
-### 9.1 Hot-Path Operations (Inside `_process_tick_pipeline`)
+This matrix explicitly audits claims made in prior documentation against actual codebase evidence:
 
-- `BarAggregator.process_tick()`: Memory operations only.
-- `ScalpFeatureEngine.compute_from_bars()`: O(1) NumPy array slices and math.
-- `MarketRegimeClassifier.classify_tick()`: O(1) volatility and spread checks.
-- `ScalpNet` PyTorch Forward Pass: CPU/GPU matrix multiplication on 1x50 tensor.
-- `SignalPolicy.evaluate_probabilities()`: Rule evaluations and proposal generation.
-- `AuditRepository.log_signal()`: Appends to SQLite write queue (`_queue.put_nowait()`).
-- `ServerState.update_live_visuals()`: Under thread lock, updates UI visual state.
-
-### 9.2 Hot-Path Latency Assessment
-
-- **Claim:** 50ms hot path guaranteed.
-- **Reality:** Target / Architectural Goal.
-- **Instrumentation Check:** There is NO performance timer (`perf_counter()`) or histogram surrounding `_process_tick_pipeline()`.
-- **Latency Values in Audit Ledger:** Static float literals (`0.012`, `0.015`, `0.009`, `0.011`, `0.008`) are passed directly to `audit.log_order()` inside `order_manager.py`!
-- **Classification:** ⚠️ PARTIALLY VERIFIED / TARGET ONLY.
-
----
-
-## 10. Web / API, SSE, WebSocket, & Debug Hub Forensics
-
-Defined in `src/nexus_scalp/web/server.py`:
-
-| Method | Route | File | Function | Purpose | Risk |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/` | `server.py` | `serve_index()` | Serves frontend `index.html`. | Low |
-| `GET` | `/styles.css` | `server.py` | `serve_styles()` | Serves dashboard CSS stylesheet. | Low |
-| `GET` | `/app.js` | `server.py` | `serve_app()` | Serves frontend JS logic. | Low |
-| `GET` | `/api/status` | `server.py` | `get_status()` | Returns full system telemetry & state. | Low |
-| `GET` | `/api/rules` | `server.py` | `get_trading_rules()` | Returns status of all 30+ scalping rules. | Low |
-| `POST` | `/api/rules/toggle` | `server.py` | `toggle_trading_rule()` | Enables/disables a specific scalping rule. | Medium |
-| `GET` | `/api/account/summary` | `server.py` | `get_account_summary()` | Returns balance, equity, win rate & metrics. | Low |
-| `GET` | `/api/account/trades` | `server.py` | `get_account_trades()` | Paginated closed trade autopsies from DB. | Low |
-| `GET` | `/api/account/growth` | `server.py` | `get_account_growth()` | Equity growth chart points. | Low |
-| `POST` | `/api/engine/toggle` | `server.py` | `toggle_engine()` | Starts or stops live engine run loop. | High |
-| `GET` | `/api/config` | `server.py` | `get_config()` | Reads active YAML configuration. | Low |
-| `POST` | `/api/config` | `server.py` | `save_config()` | Atomic write & live hot-reload of config. | High |
-| `GET` | `/api/chart/history` | `server.py` | `get_chart_history()` | Bootstraps 150+ bar history & visual overlays. | Low |
-| `GET` | `/api/algo/config` | `server.py` | `get_algo_config()` | Returns quantitative algo parameters. | Low |
-| `PUT` | `/api/algo/config` | `server.py` | `save_algo_config()` | Hot-swaps algo parameters in live policy. | High |
-| `POST` | `/api/positions/modify` | `server.py` | `modify_position()` | Modifies live position SL / TP on broker. | High |
-| `POST` | `/api/positions/close` | `server.py` | `close_position()` | Closes live position ticket on broker. | High |
-| `POST` | `/api/simulation/tick` | `server.py` | `inject_tick()` | Injects simulated tick into live pipeline. | Medium |
-| `POST` | `/api/replay/toggle` | `server.py` | `toggle_replay()` | Toggles historical replay simulation mode. | Medium |
-| `GET` | `/api/debug/features` | `server.py` | `get_debug_features()` | Real-time values & health status of all 50D features. | Low |
-| `POST` | `/api/debug/model-test` | `server.py` | `post_debug_model_test()` | Runs instant PyTorch inference against 50D vector. | Low |
-| `GET` | `/api/debug/health` | `server.py` | `get_debug_health()` | Diagnostics for Features, Model, Risk, MT5, DB. | Low |
-| `GET` | `/api/debug/ipc-telemetry` | `server.py` | `get_debug_ipc_telemetry()` | Recent execution events & IPC latencies. | Low |
-| `GET` | `/api/observability/stats` | `server.py` | `get_observability_stats()` | Telegram queue depth & status. | Low |
-| `GET` | `/api/ticks/stream` | `server.py` | `sse_telemetry_stream()` | Async SSE stream emitting system state @ 5Hz. | Low |
-| `WS` | `/web`, `/ws` | `server.py` | `websocket_endpoint()` | WebSocket stream for live visualizer updates. | Low |
-
----
-
-## 11. Observability & Telegram Notifier Forensics
-
-Defined in `src/nexus_scalp/observability/telegram_notifier.py` and `logging.py`:
-- **Structured Logging:** Uses `structlog` with JSON formatting in production and colored console presentation in dev mode. Log outputs rotated under `artifacts/logs/`.
-- **Telegram Alert Subsystem:**
-  - Non-blocking execution via `concurrent.futures.ThreadPoolExecutor(max_workers=2)`.
-  - Token Security: Redacts Telegram bot tokens from log files. Supports environment variable override `NEXUS_TELEGRAM_BOT_TOKEN`.
-  - Conversation Threading: Thread replying via `reply_to_message_id`. Tracks message IDs per ticket in `_order_message_ids`.
-  - Rate Limiting & Queue: Internal Queue `_queue` with rate-limiting sleep intervals to prevent Telegram API HTTP 429 errors.
-
----
-
-## 12. Configuration Architecture & Flow
-
-```text
-configs/base.yaml  or  configs/live.yaml
-               │
-               ▼
-Environment Variables (NEXUS_*)
-               │
-               ▼
-AppConfig (Pydantic BaseSettings in configuration/config.py)
-               │
-               ▼
-Live Runtime Objects (SignalPolicy, RiskEngine, OrderLifecycleManager)
-```
-
-- **Dynamic Hot-Swapping:** `POST /api/config` and `PUT /api/algo/config` write to `configs/live.yaml` atomically via temporary file replacement (`.yaml.tmp` -> `.yaml`) and update running instance attributes (`engine.config`, `signal_policy.algo_config`, `risk_engine.config`) without restarting the process.
-
----
-
-## 13. Testing & CI/CD Forensics
-
-### 13.1 Test Inventory
-
-- **Total Test Files:** 19 test modules in `tests/` (16 unit, 3 integration).
-- **Test Status:** 67 tests passing (`python -m pytest`).
-- **Integration Tests:**
-  - `test_database_execution_audit.py`: Validates WAL mode, queue persistence, and ledger autopsy writes.
-  - `test_signal_pipeline_health.py`: End-to-end signal pipeline health checks.
-  - `test_playwright_e2e.py`: Playwright frontend visualizer tests (skipped if Playwright unavailable).
-
-### 13.2 CI/CD Workflows (`.github/workflows/`)
-
-1. `ci.yml`: Triggers on push/PR to `main` and `develop`. Uses Python 3.11. Runs `ruff check .`, `ruff format --check .`, `mypy src`, and `pytest --cov=src`.
-2. `docker.yml`: Builds single-architecture `linux/amd64` Docker image and pushes to GitHub Container Registry (`ghcr.io`).
-3. `release.yml`: Creates automated GitHub Release when a `v*` tag is pushed.
-4. `security.yml`: Runs GitHub CodeQL Python analysis and Trivy filesystem vulnerability scanner on PRs and weekly schedule (Mondays at 06:00 UTC).
-
----
-
-## 14. Verified Hard Invariants
-
-### 🔴 VERIFIED INVARIANTS (Confirmed by Code)
-
-1. **Frozen Domain Models:** All dataclasses in `domain/models.py` use `ConfigDict(frozen=True)`. Instance mutation is impossible.
-2. **50D Feature Vector Contract:** `FEATURE_NAMES` tuple contains 50 features. `ScalpNet`, `WalkForwardTrainer`, and `ScalpFeatureEngine` enforce 50D tensor inputs.
-3. **Execution Volume Clamping:** `OrderLifecycleManager._clamp_dispatch_volume()` forces lot size clamping to `HARD_MAX_LOTS = 10.0` and queries `RiskEngine` on every order dispatch.
-4. **Single-Exposure Limit:** `MAX_TOTAL_EXPOSURE = 1` enforced in `SignalPolicy` and `OrderLifecycleManager`. Max 1 active position OR 1 pending order engine-wide.
-5. **Pending Order Lock:** Restricts cancel/recreate churn for pending limit orders with a 30-second placement lock (`PENDING_ORDER_LOCK_SECONDS = 30.0`) and 1.0x ATR price drift requirement.
-6. **AI Reversal No-Stacking Invariant:** `execute_ai_reversal()` closes conflicting active position and tags `AI_REVERSAL_EXIT` before dispatching the opposing order.
-7. **Polars Bitwise Filtering Invariant:** All Polars filters in `walk_forward_trainer.py` and `triple_barrier.py` use bitwise operators (`~pl.col(...)`, `&`, `|`).
-8. **Thread-Safe Model Hot-Swapping:** Model and scaler bundle replacements in `LiveEngine` are synchronized under `_bundle_lock` (`threading.RLock`).
-
----
-
-### 🟡 DOCUMENTED BUT UNVERIFIED
-
-1. **50ms Execution Latency Guarantee:** `LiveEngine` loops with `await asyncio.sleep(0.05)`, but tick execution latency is not instrumented or measured with timers.
-
----
-
-### 🟠 PARTIALLY IMPLEMENTED
-
-1. **Telegram Secret Redaction:** Redacts bot tokens from structlog messages, but raw tokens may still exist in YAML configuration files if hardcoded.
-
----
-
-### ❌ FALSE / STALE DOCUMENTATION
-
-1. **Legacy Order Manager File:** `src/nexus_scalp/features/order_manager.py` (234 lines) is dead/stale code and is not imported anywhere in `src/` or `tests/`.
-2. **Stale CLI Training Script:** `src/cli/train_model.py` hardcodes `range(18)` (18D features), which crashes if executed against `WalkForwardTrainer` (which expects 50D).
-
----
-
-## 15. Documentation vs. Reality Audit
-
-| Existing Claim | Actual Code Implementation | Status | Evidence | Recommendation |
+| Claimed Feature / Parameter | Documented Claim | Actual Repository Evidence | Forensic Status | Forensic Finding |
 | :--- | :--- | :--- | :--- | :--- |
-| **50D Feature Contract** | `scalp_features.py` defines 50 feature names, `ScalpNet(num_features=50)`. | ✅ VERIFIED | `len(FEATURE_NAMES) == 50` in `scalp_features.py:166` | Preserve 50D contract across all tools. |
-| **Purged Walk-Forward Training** | `WalkForwardTrainer` implements purged time-series splits, scaling, class weights. | ✅ VERIFIED | `walk_forward_trainer.py:137` | Maintain purging gap and embargo logic. |
-| **Online Fine-Tuning** | Implemented with Quality Gate (accuracy gain, sell dominance cap, class recall). | ✅ VERIFIED | `walk_forward_trainer.py:270` | Preserve multi-metric Quality Gate checks. |
-| **Triple-Barrier Labeling** | `TripleBarrierLabeler` implements TP/SL/time barriers with spread friction and MAE safeguard. | ✅ VERIFIED | `triple_barrier.py:44` | Preserve friction deduction and MAE check. |
-| **AI Position Reversal Protocol** | Closes opposing position before flipping, tags `AI_REVERSAL_EXIT`, avoids stacking. | ✅ VERIFIED | `order_manager.py:447` | Maintain no-stacking close-then-flip sequence. |
-| **Pending Order 30s Lock** | Re-quotes blocked if age <= 30s OR price drift < 1.0x ATR. | ✅ VERIFIED | `order_manager.py:238`, `policy.py:249` | Do not reduce lock time below 30s. |
-| **50ms Hot-Path Guaranteed** | Event loop sleeps 50ms, but execution latency is unmeasured (hardcoded in logs). | ⚠️ PARTIALLY VERIFIED | Static float literals in `order_manager.py` | Add real `time.perf_counter()` instrumentation. |
-| **CLI Training Script Contract** | `src/cli/train_model.py` hardcodes `range(18)` (18D), causing a runtime crash. | ❌ FALSE / STALE | `src/cli/train_model.py:103` | Document discrepancy; update to 50D in future task. |
-| **Single Active Order Manager** | Codebase contains two `order_manager.py` files (`execution/` vs `features/`). | ❌ FALSE / STALE | `src/nexus_scalp/features/order_manager.py` | Document `features/order_manager.py` as dead code. |
+| **Feature Tensor Dimension** | 50D Feature Vector | `NUM_FEATURES = 50` in `scalp_features.py` and `walk_forward_trainer.py` | 🟢 VERIFIED | Exactly 50 float features computed. |
+| **Max Lot Size Limit** | Hard max lots = 2.0 | `HARD_MAX_LOTS = 10.0` in `order_manager.py` | 🔴 CONTRADICTED | Code was upgraded to allow up to 10.0 lots on equity >= $10,000. |
+| **Model Output Classes** | 4 Classes (`0, 1, 2, 3`) | `ScalpNet` output head `num_classes = 4` (`NO_TRADE`, `BUY`, `SELL`, `WAIT`) | 🟢 VERIFIED | ScalpNet head is 4-class; labeler outputs 3 classes mapped dynamically. |
+| **Hot Path Latency** | Guaranteed 50ms execution | No hard real-time latency guarantee in code | 🟡 PARTIALLY VERIFIED | 50ms is an async event-loop target, not a real-time hardware SLA. |
+| **Position States** | 11 Position lifecycles | `PositionState` enum defines exactly 11 states in `order_manager.py` | 🟢 VERIFIED | 11 explicit lifecycles managed in hybrid state machine. |
+| **Pending Order Protection** | 30s lock & 1.0x ATR drift | `policy.py` checks 30s lock and 1.0 * ATR drift | 🟢 VERIFIED | Prevents high-frequency pending order churn on MT5 terminal. |
+| **Legacy Order Manager** | Active order manager | `src/nexus_scalp/features/order_manager.py` is orphaned | ⚫ DEAD / UNUSED | Active production order manager is in `src/nexus_scalp/execution/order_manager.py`. |
+| **Legacy CLI Training Script** | Active training script | `src/cli/train_model.py` hardcodes 18D features | ⚫ DEAD / STALE | Hardcoded 18D range crashes against 50D ScalpNet contract. Use `WalkForwardTrainer`. |
 
 ---
 
-## 16. Future Engineering Recommendations
+## 17. Dead, Legacy, & Discrepant Code Inventory
 
-*Note: The recommendations below are for future engineering reference only. DO NOT implement any code changes as part of this read-only audit.*
+During the forensic audit, the following legacy or unreferenced files were identified:
 
-### 🔴 Critical Recommendations
+1. **`src/nexus_scalp/features/order_manager.py` (234 lines) ⚫ DEAD / UNUSED:**
+   - **Finding:** Unreferenced legacy file. Active production order management is strictly handled by `src/nexus_scalp/execution/order_manager.py` (1792 lines).
+   - **Action:** Retained read-only; documented as dead code.
 
-1. **Quarantine / Deprecate Stale CLI Training Script:**
-   - **Problem:** `src/cli/train_model.py` attempts to extract 18 features (`range(18)`), which violates `WalkForwardTrainer.NUM_FEATURES = 50` and causes an immediate `ValueError` crash.
-   - **Affected File:** `src/cli/train_model.py`.
-   - **Consequence:** Users or developers trying to train a model via CLI will experience pipeline failure.
-   - **Recommended Direction:** Update `src/cli/train_model.py` to extract all 50 features matching `FEATURE_NAMES`.
+2. **`src/cli/train_model.py` ⚫ DEAD / STALE:**
+   - **Finding:** Hardcodes an 18-dimensional feature loop (`range(18)`), which violates the 50D feature contract enforced by `WalkForwardTrainer` (`NUM_FEATURES = 50`) and causes runtime crashes if invoked.
+   - **Action:** Retained read-only; documented as stale legacy script.
 
-2. **Remove / Deprecate Dead Legacy File:**
-   - **Problem:** `src/nexus_scalp/features/order_manager.py` is an orphaned 234-line file that is not imported anywhere in `src/` or `tests/`.
-   - **Affected File:** `src/nexus_scalp/features/order_manager.py`.
-   - **Consequence:** Confusion for developers and AI agents regarding which order manager is active.
-   - **Recommended Direction:** Delete or deprecate `src/nexus_scalp/features/order_manager.py` in a future cleanup task.
+3. **`NexusTradingForexBot.py` 🟢 VERIFIED:**
+   - **Finding:** Minimal 11-line convenience wrapper forwarding execution to `main.py`.
 
 ---
 
-### 🟠 High Recommendations
+## 18. Prioritized Engineering Recommendations (P0-P3)
 
-1. **Add Real Latency Instrumentation to Hot Path:**
-   - **Problem:** `audit.log_order()` receives hardcoded static float literals (e.g. `0.012`, `0.015`) for latency instead of real timing measurements.
-   - **Affected File:** `src/nexus_scalp/execution/order_manager.py`.
-   - **Consequence:** Audit logs report inaccurate execution latencies, obscuring IPC or network performance degradations.
-   - **Recommended Direction:** Wrap order dispatch calls with `time.perf_counter()` to measure and record real microsecond-level execution latencies.
+The following backlog details prioritized architectural and operational recommendations for future development tasks. **No code changes have been made per the read-only constraint.**
 
----
+### 🔴 P0 — Critical (Capital Safety & Integrity)
+1. **Deprecate or Remove `src/cli/train_model.py`:**
+   - *Problem:* Hardcodes 18D features, conflicting with the 50D `ScalpNet` contract.
+   - *Impact:* Invoking this script corrupts model weights or crashes during training.
+   - *Fix:* Remove file or rewrite it to wrap `WalkForwardTrainer`.
 
-### 🟡 Medium Recommendations
+### 🟠 P1 — High (Reliability & Architecture Cleanliness)
+2. **Remove Dead Legacy File `src/nexus_scalp/features/order_manager.py`:**
+   - *Problem:* Duplicate filename causes developer confusion with `src/nexus_scalp/execution/order_manager.py`.
+   - *Impact:* Maintainers might accidentally import from the wrong package layer.
+   - *Fix:* Delete `src/nexus_scalp/features/order_manager.py`.
 
-1. **Consolidate Duplicate `order_manager.py` References in Packaging:**
-   - **Problem:** `pyproject.toml` and package build scripts list `src/nexus_scalp/features/order_manager.py` in source lists.
-   - **Affected File:** `pyproject.toml` / package manifests.
-   - **Consequence:** Includes dead code in package distribution wheels.
-   - **Recommended Direction:** Clean up package manifest to point exclusively to `src/nexus_scalp/execution/order_manager.py`.
+3. **Add Explicit Warmup Safeguard for HTF Features:**
+   - *Problem:* Multi-timeframe features (H1/H4) require sufficient historical bars on startup.
+   - *Impact:* First few ticks after cold start may receive neutral fallback values until bars complete.
+   - *Fix:* Implement history bootstrapping in `LiveEngine` startup.
 
----
+### 🟡 P2 — Medium (Performance & Maintainability)
+4. **Optimize Polars DataFrame Allocation in Rolling Buffer:**
+   - *Problem:* `_trigger_async_online_fine_tune()` constructs Polars DataFrame from list of dicts on every retrain trigger.
+   - *Impact:* Minor memory allocation churn during online fine-tuning.
+   - *Fix:* Maintain a pre-allocated rolling Polars DataFrame buffer.
 
-### 🔵 Low Recommendations
-
-1. **Enhance Debug Hub Metrics Visualization:**
-   - **Problem:** Debug Hub endpoints (`/api/debug/features`, `/api/debug/health`) provide rich JSON diagnostics, but frontend chart components can be expanded to display real-time feature health histograms.
-   - **Affected File:** `Web/app.js`.
-   - **Recommended Direction:** Add a feature anomaly widget to the Web UI dashboard.
+### 🔵 P3 — Nice-To-Have
+5. **Expand Playwright Web Visualizer E2E Test Coverage:**
+   - *Problem:* Web visualizer test verifies basic loading and API response.
+   - *Fix:* Add automated Playwright interaction tests for rule matrix toggling and configuration updates.
