@@ -596,12 +596,14 @@ class LiveEngine:
             if sample_fv.htf_h4_trend == 0.0:
                 htf_fallbacks += 1
                 logger.warning(
-                    "[FEATURE_FALLBACK]\ntimeframe=H4\nfeature=htf_h4_trend\nreason=INSUFFICIENT_H4_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state=" + self.warmup_state
+                    "[FEATURE_FALLBACK]\ntimeframe=H4\nfeature=htf_h4_trend\nreason=INSUFFICIENT_H4_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state="
+                    + self.warmup_state
                 )
             if sample_fv.htf_h1_momentum == 0.0:
                 htf_fallbacks += 1
                 logger.warning(
-                    "[FEATURE_FALLBACK]\ntimeframe=H1\nfeature=htf_h1_momentum\nreason=INSUFFICIENT_H1_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state=" + self.warmup_state
+                    "[FEATURE_FALLBACK]\ntimeframe=H1\nfeature=htf_h1_momentum\nreason=INSUFFICIENT_H1_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state="
+                    + self.warmup_state
                 )
 
             x50 = sample_fv.to_tensor_input()
@@ -631,12 +633,8 @@ class LiveEngine:
             )
             self.warmup_state = "SAFE_NOT_READY"
             self._inference_enabled = False
-            logger.error(
-                "[WARMUP] FAILED\nreason=INSUFFICIENT_HTF_HISTORY\nstate=SAFE_NOT_READY"
-            )
-            logger.warning(
-                "[INFERENCE] BLOCKED\nreason=HTF_WARMUP_INCOMPLETE"
-            )
+            logger.error("[WARMUP] FAILED\nreason=INSUFFICIENT_HTF_HISTORY\nstate=SAFE_NOT_READY")
+            logger.warning("[INFERENCE] BLOCKED\nreason=HTF_WARMUP_INCOMPLETE")
         else:
             self.warmup_state = "READY"
             self._inference_enabled = True
@@ -646,30 +644,32 @@ class LiveEngine:
             logger.info(
                 f"[WARMUP] COMPLETE\nsymbol={symbol}\nH1={len(h1_bars)}/{self.H1_REQUIRED_BARS}\nH4={len(h4_bars)}/{self.H4_REQUIRED_BARS}\nfallback_features={htf_fallbacks}\nstatus=READY"
             )
-            logger.info(
-                "[INFERENCE] ENABLED\nreason=HTF_WARMUP_COMPLETE"
-            )
+            logger.info("[INFERENCE] ENABLED\nreason=HTF_WARMUP_COMPLETE")
 
         return is_ready
 
     async def _cold_start_warmup(self, symbol: str) -> None:
         self._warmup_attempt += 1
-        logger.info(
-            f"[WARMUP] START\nsymbol={symbol}\nrequired_timeframes=[H1,H4]"
-        )
+        logger.info(f"[WARMUP] START\nsymbol={symbol}\nrequired_timeframes=[H1,H4]")
 
         # Non-blocking async fetch of HTF historical bars
-        h1_bars = await asyncio.to_thread(
-            self.adapter.get_historical_bars, symbol, "H1", self.H1_REQUIRED_BARS
-        ) or []
-        h4_bars = await asyncio.to_thread(
-            self.adapter.get_historical_bars, symbol, "H4", self.H4_REQUIRED_BARS
-        ) or []
+        h1_bars = (
+            await asyncio.to_thread(
+                self.adapter.get_historical_bars, symbol, "H1", self.H1_REQUIRED_BARS
+            )
+            or []
+        )
+        h4_bars = (
+            await asyncio.to_thread(
+                self.adapter.get_historical_bars, symbol, "H4", self.H4_REQUIRED_BARS
+            )
+            or []
+        )
 
         # Fetch 3500 M1 bars (3500 M1 bars = 14.5 H4 bars) to populate full M1/H1/H4 aggregations
-        hist_m1_bars = await asyncio.to_thread(
-            self.adapter.get_historical_bars, symbol, "M1", 3500
-        ) or []
+        hist_m1_bars = (
+            await asyncio.to_thread(self.adapter.get_historical_bars, symbol, "M1", 3500) or []
+        )
 
         for b in hist_m1_bars:
             self.aggregator._completed_bars.append(b)
@@ -692,7 +692,12 @@ class LiveEngine:
                 x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="cold_start_warmup")
                 record = {f"feat_{idx}": float(x50[idx]) for idx in range(self.FEATURE_DIM)}
                 record.update(
-                    close=b.close, high=b.high, low=b.low, open=b.open, spread=0.20, atr_m1=fv.atr_m1
+                    close=b.close,
+                    high=b.high,
+                    low=b.low,
+                    open=b.open,
+                    spread=0.20,
+                    atr_m1=fv.atr_m1,
                 )
                 self._rolling_feature_records.append(record)
 
@@ -824,8 +829,14 @@ class LiveEngine:
                 # On new bar or every 15 seconds, attempt to re-evaluate warmup readiness
                 if is_new_bar or (curr_t - getattr(self, "_last_warmup_check_time", 0.0)) >= 15.0:
                     self._last_warmup_check_time = curr_t
-                    h1_bars = self.adapter.get_historical_bars(tick.symbol, "H1", self.H1_REQUIRED_BARS) or []
-                    h4_bars = self.adapter.get_historical_bars(tick.symbol, "H4", self.H4_REQUIRED_BARS) or []
+                    h1_bars = (
+                        self.adapter.get_historical_bars(tick.symbol, "H1", self.H1_REQUIRED_BARS)
+                        or []
+                    )
+                    h4_bars = (
+                        self.adapter.get_historical_bars(tick.symbol, "H4", self.H4_REQUIRED_BARS)
+                        or []
+                    )
                     if self.evaluate_warmup_readiness(tick.symbol, h1_bars, h4_bars):
                         logger.info("[WARMUP] RE-EVALUATION PASSED -> Engine transition to READY")
 

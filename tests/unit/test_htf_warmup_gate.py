@@ -72,7 +72,9 @@ class FakeMT5Adapter:
             volume=1.0,
         )
 
-    def get_historical_bars(self, symbol: str, timeframe: str = "M1", count: int = 100) -> list[BarData]:
+    def get_historical_bars(
+        self, symbol: str, timeframe: str = "M1", count: int = 100
+    ) -> list[BarData]:
         self.get_historical_bars_calls.append((symbol, timeframe, count))
         base_time = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
         if timeframe == "H1":
@@ -124,7 +126,9 @@ def base_config(tmp_path):
 async def test_1_insufficient_h1_history_results_in_not_ready(base_config):
     adapter = FakeMT5Adapter(h1_count=5, h4_count=14, m1_count=3500)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     await engine._cold_start_warmup("XAUUSD")
 
@@ -137,7 +141,9 @@ async def test_1_insufficient_h1_history_results_in_not_ready(base_config):
 async def test_2_insufficient_h4_history_results_in_not_ready(base_config):
     adapter = FakeMT5Adapter(h1_count=14, h4_count=2, m1_count=3500)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     await engine._cold_start_warmup("XAUUSD")
 
@@ -150,7 +156,9 @@ async def test_2_insufficient_h4_history_results_in_not_ready(base_config):
 async def test_3_both_timeframes_sufficient_results_in_ready(base_config):
     adapter = FakeMT5Adapter(h1_count=14, h4_count=14, m1_count=3500)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     await engine._cold_start_warmup("XAUUSD")
 
@@ -162,7 +170,9 @@ async def test_3_both_timeframes_sufficient_results_in_ready(base_config):
 def test_4_normal_inference_blocked_while_warmup_incomplete(base_config):
     adapter = FakeMT5Adapter(h1_count=5, h4_count=14)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     engine.warmup_state = "SAFE_NOT_READY"
     engine._inference_enabled = False
@@ -183,9 +193,13 @@ def test_4_normal_inference_blocked_while_warmup_incomplete(base_config):
 # Test 5: HTF fallback caused by insufficient startup history is observable/detectable
 @pytest.mark.asyncio
 async def test_5_htf_fallback_caused_by_insufficient_history_is_detectable(base_config):
-    adapter = FakeMT5Adapter(h1_count=14, h4_count=14, m1_count=50)  # m1_count=50 means aggregated H1/H4 bars will be empty
+    adapter = FakeMT5Adapter(
+        h1_count=14, h4_count=14, m1_count=50
+    )  # m1_count=50 means aggregated H1/H4 bars will be empty
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     await engine._cold_start_warmup("XAUUSD")
 
@@ -198,7 +212,9 @@ async def test_5_htf_fallback_caused_by_insufficient_history_is_detectable(base_
 async def test_6_valid_htf_features_do_not_incorrectly_report_fallback(base_config):
     adapter = FakeMT5Adapter(h1_count=14, h4_count=14, m1_count=3500)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     await engine._cold_start_warmup("XAUUSD")
 
@@ -214,7 +230,9 @@ async def test_6_valid_htf_features_do_not_incorrectly_report_fallback(base_conf
 def test_7_nan_inf_invalid_feature_fallback_remains_detectable(base_config):
     adapter = FakeMT5Adapter(h1_count=14, h4_count=14)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     invalid_tensor = [0.0] * 50
     invalid_tensor[0] = float("nan")
@@ -232,7 +250,9 @@ def test_7_nan_inf_invalid_feature_fallback_remains_detectable(base_config):
 async def test_8_warmup_transitions_correctly_warming_up_to_ready(base_config):
     adapter = FakeMT5Adapter(h1_count=14, h4_count=14, m1_count=3500)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     assert engine.warmup_state == "WARMING_UP"
     assert engine._inference_enabled is False
@@ -248,7 +268,9 @@ async def test_8_warmup_transitions_correctly_warming_up_to_ready(base_config):
 async def test_9_warmup_failure_remains_fail_safe(base_config):
     adapter = FakeMT5Adapter(h1_count=0, h4_count=0, m1_count=0)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     await engine._cold_start_warmup("XAUUSD")
 
@@ -267,7 +289,9 @@ async def test_9_warmup_failure_remains_fail_safe(base_config):
 def test_10_process_tick_pipeline_does_not_perform_blocking_historical_bootstrap(base_config):
     adapter = FakeMT5Adapter(h1_count=14, h4_count=14)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     engine.warmup_state = "READY"
     engine._inference_enabled = True
@@ -279,7 +303,9 @@ def test_10_process_tick_pipeline_does_not_perform_blocking_historical_bootstrap
     engine._process_tick_pipeline(tick, account)
 
     # get_historical_bars should NOT be called inside normal tick processing when READY
-    hist_calls_during_tick = [call for call in adapter.get_historical_bars_calls if call[2] == 3500 or call[2] == 1200]
+    hist_calls_during_tick = [
+        call for call in adapter.get_historical_bars_calls if call[2] == 3500 or call[2] == 1200
+    ]
     assert len(hist_calls_during_tick) == 0
 
 
@@ -288,7 +314,9 @@ def test_10_process_tick_pipeline_does_not_perform_blocking_historical_bootstrap
 async def test_11_warmup_state_transitions_emit_expected_log_events(base_config):
     adapter = FakeMT5Adapter(h1_count=14, h4_count=14, m1_count=3500)
     audit = MagicMock()
-    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True)
+    engine = LiveEngine(
+        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
+    )
 
     with patch("nexus_scalp.application.live_engine.logger.info") as mock_log_info:
         await engine._cold_start_warmup("XAUUSD")
