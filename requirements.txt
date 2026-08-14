@@ -17,7 +17,7 @@ pyyaml>=6.0.1,<7.0.0               # Robust YAML configuration parser
 # ------------------------------------------------------------------------------
 polars>=0.20.0,<1.0.0              # Multi-threaded zero-copy columnar DataFrame engine
 pyarrow>=15.0.0,<16.0.0            # High-speed Parquet storage serialization
-numpy>=1.26.0,<2.0.0               # Vectorized mathematical array operations
+numpy>=1.26.0,<3.0.0               # Vectorized mathematical array operations
 
 # ------------------------------------------------------------------------------
 # Deep Learning & Neural Inference Engine
