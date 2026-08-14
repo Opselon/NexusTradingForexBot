@@ -83,8 +83,8 @@ class SignalPolicy:
         self._last_active_direction: ActionType | None = None
         self._last_active_direction_time: datetime | None = None
         self._last_executed_price: float = 0.0
-        self.last_order_price = None
-        self.last_order_time = None
+        self.last_order_price: float | None = None
+        self.last_order_time: datetime | None = None
 
         # Part 3: Tick level sweep trackers
         self._last_tick_bid = 0.0
@@ -457,9 +457,12 @@ class SignalPolicy:
         regime_str = regime_type.value if regime_type else "UNKNOWN"
         regime_conf = regime_state.regime_probability if regime_state else 0.0
 
-        is_guardian_active = regime_state and (
-            regime_type in (RegimeType.MACRO_NEWS_FREEZE, RegimeType.HIGH_SPREAD_CHOP)
-            or exec_type == RecommendedExecutionType.FREEZE_ALL
+        is_guardian_active = bool(
+            regime_state
+            and (
+                regime_type in (RegimeType.MACRO_NEWS_FREEZE, RegimeType.HIGH_SPREAD_CHOP)
+                or exec_type == RecommendedExecutionType.FREEZE_ALL
+            )
         )
         guardian_status = "ACTIVE" if is_guardian_active else "IDLE"
 

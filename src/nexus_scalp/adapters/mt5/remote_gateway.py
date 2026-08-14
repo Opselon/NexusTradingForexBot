@@ -231,10 +231,13 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
 
         return success
 
-    def close_position(self, ticket: int) -> bool:
+    def close_position(self, ticket: int, volume: float | None = None) -> bool:
         """Sends remote command to close position by ticket ID."""
-        res = self._send_request("CLOSE_POSITION", {"ticket": ticket})
-        return res.get("status") == "SUCCESS"
+        payload: dict[str, Any] = {"ticket": ticket}
+        if volume is not None:
+            payload["volume"] = volume
+        res = self._send_request("CLOSE_POSITION", payload)
+        return bool(res.get("status") == "SUCCESS")
 
     def _sync_ping(self) -> float:
         """Calculates synchronous HTTP ping latency."""

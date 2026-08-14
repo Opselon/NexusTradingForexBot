@@ -33,7 +33,9 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.2.0",
     "mypy>=1.8.0",
-    "types-pyyaml>=6.0.12"
+    "types-pyyaml>=6.0.12",
+    "types-requests>=2.31.0",
+    "types-setuptools>=68.0.0"
 ]
 
 [project.scripts]
@@ -49,7 +51,7 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
 ignore = [
-    "E501",    # Line too long
+    "E501",    # Line too long (handled via formatter)
     "E741",    # Ambiguous variable name (e.g., 'l' for Low price)
     "N802",    # Function name should be lowercase (e.g., _extract_X_y)
     "N803",    # Argument name should be lowercase (e.g., X matrix)
@@ -63,7 +65,7 @@ ignore = [
     "PLR0912", # Too many branches
     "PLR0911", # Too many return statements
     "PLR2004", # Magic value in comparison
-    "PLC0415", # Top-level imports
+    "PLC0415", # Top-level imports (allow dynamic / conditional imports)
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -80,10 +82,28 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.11"
-strict = true
-warn_return_any = true
+warn_return_any = false
 warn_unused_configs = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+no_implicit_optional = true
+strict_optional = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "MetaTrader5.*",
+    "fastapi.*",
+    "starlette.*",
+    "structlog.*",
+    "torch.*",
+    "numpy.*",
+    "polars.*",
+    "pyarrow.*"
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"

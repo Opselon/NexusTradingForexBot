@@ -23,7 +23,7 @@ class TickData(BaseModel):
         - Timestamps must be UTC timezone-aware.
     """
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     symbol: str = Field(..., description="Financial instrument identifier, e.g., 'EURUSD'")
     timestamp: datetime = Field(..., description="UTC timestamp of tick generation")

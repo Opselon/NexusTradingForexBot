@@ -22,6 +22,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="main.py" />
     <Compile Include="NexusTradingForexBot.py" />
     <Compile Include="src\cli\train_model.py" />
     <Compile Include="src\nexus_scalp\adapters\database\audit_repository.py" />
@@ -78,6 +79,7 @@
     <Folder Include="configs\" />
     <Folder Include="docker\" />
     <Folder Include="docs\" />
+    <Folder Include="agents\" />
     <Folder Include="src\" />
     <Folder Include="src\cli\" />
     <Folder Include="src\nexus_scalp\training\" />
@@ -135,6 +137,7 @@
     <Content Include=".pytest_cache\CACHEDIR.TAG" />
     <Content Include=".pytest_cache\README.md" />
     <Content Include=".pytest_cache\v\cache\nodeids" />
+    <Content Include="agents\skill.md" />
     <Content Include="configs\base.yaml" />
     <Content Include="configs\live.yaml" />
     <Content Include="docker\entrypoint.sh" />

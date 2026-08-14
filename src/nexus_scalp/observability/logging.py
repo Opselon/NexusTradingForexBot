@@ -12,10 +12,11 @@ Key Features:
     - Audit Security: Redacts passwords, API tokens, and sensitive account data.
 """
 
+from collections.abc import MutableMapping
 import logging
 import logging.handlers
-import sys
 from pathlib import Path
+import sys
 from typing import Any
 
 import structlog
@@ -23,7 +24,11 @@ import structlog
 LOG_DIR = Path("artifacts/logs")
 
 
-def _redact_sensitive_fields(_, __, event_dict: dict[str, Any]) -> dict[str, Any]:
+def _redact_sensitive_fields(
+    logger: Any,
+    method_name: str,
+    event_dict: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
     """
     Processor filtering sensitive authentication keys before writing logs.
     """
@@ -41,7 +46,7 @@ def configure_logging(
     log_file_path: Path | None = None,
 ) -> None:
     """
-    Configures root loggers and structlog pipeline.
+    Configures root loggers and structlog pipeline with enhanced terminal UI/UX.
 
     Args:
         log_level: Severity threshold ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
@@ -56,20 +61,25 @@ def configure_logging(
         target_path = log_file_path or (LOG_DIR / "nse_live.log")
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    shared_processors: list[structlog.types.Processor] = [
+    shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
         structlog.processors.StackInfoRenderer(),
         _redact_sensitive_fields,
     ]
 
+    renderer: Any
     if json_format:
         renderer = structlog.processors.JSONRenderer()
     else:
-        renderer = structlog.dev.ConsoleRenderer(colors=True)
+        # Upgraded Terminal UI/UX: Rich color scheme with aligned pads and clear key-value styling
+        renderer = structlog.dev.ConsoleRenderer(
+            colors=True,
+            pad_event=28,
+        )
 
     structlog.configure(
         processors=[*shared_processors, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
@@ -110,7 +120,7 @@ def configure_logging(
     for handler in handlers:
         root_logger.addHandler(handler)
 
-    for quiet_logger in ["urllib3", "asyncio", "polars", "torch"]:
+    for quiet_logger in ["urllib3", "asyncio", "polars", "torch", "uvicorn"]:
         logging.getLogger(quiet_logger).setLevel(logging.WARNING)
 
 

@@ -16,6 +16,7 @@ from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapte
 from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
+from nexus_scalp.ports.mt5_port import IMT5Port
 
 app = typer.Typer(
     name="nse",
@@ -103,6 +104,7 @@ def run_live_engine(
     )
     config = AppConfig.load_from_yaml(config_path)
 
+    adapter: IMT5Port
     if use_gateway or sys.platform != "win32":
         console.print(
             "[bold yellow]Using Remote MT5 Gateway Adapter (Cross-Platform / Container)[/bold yellow]"

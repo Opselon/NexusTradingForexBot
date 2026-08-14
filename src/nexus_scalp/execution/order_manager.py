@@ -317,6 +317,8 @@ class OrderLifecycleManager:
         algo_config: AlgoConfig | None = None,
         risk_engine: Any = None,
     ) -> None:
+        self._last_mod_price: dict[int, float] = {}
+        self._last_mod_time: dict[int, datetime] = {}
         self.adapter = adapter
         self.mt5_adapter = adapter
         self.audit = audit_repo or AuditRepository()
@@ -526,11 +528,6 @@ class OrderLifecycleManager:
 
         This is the 30-second pending lock that prevents cancel/recreate churn.
         """
-        if not hasattr(self, "_last_mod_price"):
-            self._last_mod_price = {}
-        if not hasattr(self, "_last_mod_time"):
-            self._last_mod_time = {}
-
         last_price = self._last_mod_price.get(ticket)
         last_time = self._last_mod_time.get(ticket)
 

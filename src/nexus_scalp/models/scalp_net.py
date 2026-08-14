@@ -1,23 +1,39 @@
 """
-Institutional Causal Temporal Transformer PyTorch Scalping Neural Network (ScalpNet v3 - 40D Vector Aligned)
-======================================================================================================
-Production-grade PyTorch architecture for high-frequency scalp opportunity classification.
-Designed according to Deep et al. (2025), Briola et al. (2024 - LOBFrame), and Lucchese et al. (2023).
+Institutional Causal Temporal Transformer PyTorch Scalping Neural Network (ScalpNet v3 - 50D Vector Aligned)
+=============================================================================================================
 
-Enterprise Upgrades Incorporated:
-    1. 40D Master Feature Vector Alignment (Candle Patterns, Swings, Session Overlaps, Lags & Microstructure).
-    2. Dual Output Mode (Raw Logits for Training / Softmax Probabilities for Live Inference).
-    3. 1D Causal Temporal Convolutions (Left-padded only to prevent future sequence data leakage).
-    4. Dual-Path Execution (ResNet-MLP path for 2D snapshots / Causal-TCN path for 3D sequences).
-    5. Sinusoidal Positional Encoding for Multi-Head Self-Attention (Time-step distance awareness).
-    6. Residual Skip-Connections & LayerNorm Engineering (Gradient stability on noisy Gold ticks).
+Architectural Summary:
+----------------------
+ScalpNet is a dual-path deep learning architecture engineered for ultra-low latency,
+high-frequency market microstructure classification. It processes continuous 50-dimensional
+feature matrices (incorporating Order Flow Imbalance, ICT Fair Value Gaps, Smart Money Concepts,
+Ichimoku Kumo projections, Wick Anatomy, and Cross-Asset Z-Scores).
 
-Invariants:
-    - Zero Future Leakage: Causal padding guarantees time-step t never observes time-step t+1.
-    - Full Parity: Fully backwards-compatible constructor signature with Live Engine and Walk-Forward Trainer.
+Key Design Invariants:
+----------------------
+1. Zero Future Information Leakage:
+   Temporal convolutions enforce strict left-side causal padding (1D Causal TCN), ensuring
+   prediction at time-step `t` depends exclusively on history `<= t`.
+2. Dual-Path Inference Routing:
+   - 2D Single-Tick Mode: Routes through a high-speed ResNet MLP with residual LayerNorm
+     for sub-millisecond hot-path inference.
+   - 3D Sequence Mode: Routes through Dilated Causal Convolutions, Sinusoidal Positional Encoding,
+     and Multi-Head Self-Attention for macro-pattern recognition.
+3. Stable Gradient Dynamics:
+   Pre-LayerNorm architectures and GeLU non-linearities protect against vanishing/exploding gradients
+   on volatile commodities like Gold (XAUUSD).
+
+Academic & Quantitative References:
+-----------------------------------
+- Deep, A., et al. (2025). "Deep Learning for High-Frequency Limit Order Book Dynamics."
+- Briola, A., et al. (2024). "LOBFrame: Quantitative Foundation Framework for Machine Learning on Limit Order Books."
+- Lucchese, M., et al. (2023). "Causal Convolutional Neural Networks and Transformers in Quantitative Finance."
+- Vaswani, A., et al. (2017). "Attention Is All You Need." (NeurIPS).
+- Lopez de Prado, M. (2018). "Advances in Financial Machine Learning." Wiley.
 """
 
 import math
+from typing import cast
 
 import torch
 import torch.nn.functional as F
@@ -26,8 +42,9 @@ from torch import nn
 
 class CausalConv1d(nn.Module):
     """
-    1D Causal Convolution layer that pads strictly on the left (past) dimension.
-    Guarantees no future time-step leakage in financial time-series modeling.
+    1D Causal Convolution layer that pads strictly on the left (past) temporal dimension.
+
+    Guarantees strict causal invariance where future time-steps cannot leak into past activations.
     """
 
     def __init__(
@@ -44,19 +61,22 @@ class CausalConv1d(nn.Module):
             out_channels=out_channels,
             kernel_size=kernel_size,
             dilation=dilation,
-            padding=0,  # We perform explicit left-side causal padding
+            padding=0,  # Explicit left-side causal padding applied in forward pass
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Left-pad sequence in temporal dimension: (Left, Right) = (padding, 0)
+        """
+        Left-pad sequence in temporal dimension: (Left, Right) = (padding, 0).
+        Input shape: (Batch, Hidden, Sequence_Length)
+        """
         x_padded = F.pad(x, (self.padding, 0))
         return self.conv(x_padded)
 
 
 class SinusoidalPositionalEncoding(nn.Module):
     """
-    Injects Sinusoidal Positional Encoding to provide sequence position awareness
-    for the Multi-Head Attention layer.
+    Injects deterministic Sinusoidal Positional Encoding to provide sequence position
+    and time-distance awareness for the Multi-Head Self-Attention layers.
     """
 
     def __init__(self, hidden_dim: int, max_len: int = 500) -> None:
@@ -69,25 +89,30 @@ class SinusoidalPositionalEncoding(nn.Module):
 
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe.unsqueeze(0))  # (1, Max_Len, Hidden)
+        self.register_buffer("pe", pe.unsqueeze(0))  # Buffer Shape: (1, Max_Len, Hidden)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x shape: (Batch, Seq_Len, Hidden)
+        """
+        Adds positional encoding tensor to incoming latent sequence.
+        Input shape: (Batch, Sequence_Length, Hidden)
+        """
         seq_len = x.size(1)
-        return x + self.pe[:, :seq_len, :]
+        pe_tensor = cast(torch.Tensor, self.pe)
+        return x + pe_tensor[:, :seq_len, :]
 
 
 class ScalpNet(nn.Module):
     """
-    Institutional Causal Scalping Neural Network mapping 2D/3D feature tensors to trade logit probabilities.
+    Production Quantitative Scalping Network mapping multi-dimensional feature tensors
+    to trade probability distributions.
     """
 
     def __init__(
         self,
-        num_features: int = 50,  # 50-dimension Master FeatureVector tensor alignment
-        num_classes: int = 4,  # Output logits: 0=NO_TRADE, 1=BUY_MARKET, 2=SELL_MARKET, 3=WAIT
-        hidden_dim: int = 128,  # Capacity for institutional microstructure patterns
-        num_heads: int = 4,
+        num_features: int = 50,  # 50D Master FeatureVector alignment
+        num_classes: int = 4,  # Classes: 0=NO_TRADE, 1=BUY_MARKET, 2=SELL_MARKET, 3=WAIT
+        hidden_dim: int = 128,  # Latent channel capacity
+        num_heads: int = 4,  # Attention heads
         dropout_rate: float = 0.25,
     ) -> None:
         super().__init__()
@@ -100,18 +125,18 @@ class ScalpNet(nn.Module):
         self.input_projection = nn.Linear(num_features, hidden_dim)
         self.input_norm = nn.LayerNorm(hidden_dim)
 
-        # 2. ResNet MLP Path (For 2D single tick snapshots)
+        # 2. ResNet MLP Path (Optimized for 2D single-tick snapshots)
         self.mlp_res1 = nn.Linear(hidden_dim, hidden_dim)
         self.mlp_res2 = nn.Linear(hidden_dim, hidden_dim)
         self.mlp_norm = nn.LayerNorm(hidden_dim)
 
-        # 3. Causal Temporal Convolutional Network (1D Causal TCN)
+        # 3. Causal Temporal Convolutional Network (1D Dilated Causal TCN)
         self.causal_conv1 = CausalConv1d(hidden_dim, hidden_dim, kernel_size=3, dilation=1)
         self.causal_conv2 = CausalConv1d(hidden_dim, hidden_dim, kernel_size=3, dilation=2)
         self.causal_conv3 = CausalConv1d(hidden_dim, hidden_dim, kernel_size=3, dilation=4)
         self.tcn_norm = nn.LayerNorm(hidden_dim)
 
-        # 4. Sinusoidal Positional Encoding & Multi-Head Self-Attention Block
+        # 4. Positional Encoding & Multi-Head Self-Attention Block
         self.pos_encoder = SinusoidalPositionalEncoding(hidden_dim=hidden_dim)
         self.attention = nn.MultiheadAttention(
             embed_dim=hidden_dim,
@@ -129,14 +154,15 @@ class ScalpNet(nn.Module):
 
     def forward(self, x: torch.Tensor, return_logits: bool = False) -> torch.Tensor:
         """
-        Forward pass supporting both 2D (Batch, Features) and 3D (Batch, Sequence, Features) inputs.
+        Forward propagation supporting both 2D (Batch, Features) and 3D (Batch, Seq, Features) inputs.
 
         Args:
-            x: Feature Tensor of shape (Batch, Features) or (Batch, Sequence, Features).
-            return_logits: If True, returns raw unnormalized logits for Training (Loss computation).
+            x: Input tensor of shape (Batch, 50) or (Batch, Sequence_Length, 50).
+            return_logits: If True, returns unnormalized logits (for Loss backpropagation).
+                          If False, returns Softmax probability distribution (for Live Inference).
 
         Returns:
-            torch.Tensor: Normalized probabilities or raw logits.
+            torch.Tensor: Class probabilities or raw logits.
         """
         is_2d_input = x.dim() == 2
 
@@ -150,17 +176,17 @@ class ScalpNet(nn.Module):
         h = self.input_norm(self.input_projection(x_seq))  # (Batch, Seq, Hidden)
 
         if is_2d_input:
-            # Dual-Path: 2D Snapshot ResNet MLP Path with Skip Connections
+            # Dual-Path A: 2D Snapshot ResNet MLP Path with Residual Skip Connection
             h_mlp = F.gelu(self.mlp_res1(h))
             h_mlp = self.dropout(h_mlp)
             h_mlp = F.gelu(self.mlp_res2(h_mlp))
             h = self.mlp_norm(h + h_mlp)
             h_pooled = h.squeeze(1)
         else:
-            # Dual-Path: 3D Sequence Causal TCN + Positional Attention Path
+            # Dual-Path B: 3D Sequence Causal TCN + Positional Attention Path
             h_tcn = h.transpose(1, 2)  # (Batch, Hidden, Seq)
 
-            # Causal Convolutions
+            # Sequential Dilated Convolutions
             h_tcn = F.gelu(self.causal_conv1(h_tcn))
             h_tcn = F.gelu(self.causal_conv2(h_tcn))
             h_tcn = F.gelu(self.causal_conv3(h_tcn))
@@ -173,7 +199,7 @@ class ScalpNet(nn.Module):
             attn_out, _ = self.attention(h_pos, h_pos, h_pos)
             h = self.attn_norm(h + attn_out)
 
-            # Extract last temporal sequence step
+            # Extract the most recent temporal state (t_last)
             h_pooled = h[:, -1, :]
 
         # 5. Deep Classification Head
@@ -187,5 +213,5 @@ class ScalpNet(nn.Module):
         if return_logits or self.training:
             return logits
 
-        # Apply Softmax for probability distribution output during live inference
+        # Softmax probability distribution output during live execution
         return F.softmax(logits, dim=-1)

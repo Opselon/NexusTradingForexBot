@@ -20,7 +20,7 @@ class BarData(BaseModel):
     Immutable representation of an OHLC Bar.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     symbol: str
     timeframe: str

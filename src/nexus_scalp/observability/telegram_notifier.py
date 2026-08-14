@@ -118,6 +118,48 @@ class TelegramNotifier:
         self._recent_messages[sig] = now
         return False
 
+
+
+
+    def notify_info(
+        self,
+        title: str,
+        message: str,
+        callback: Optional[Any] = None,
+    ) -> Optional[int]:
+        """Generic Info Alert Method."""
+        msg = (
+            f"ℹ️ <b>{self._escape(title)}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{self._escape(message)}"
+        )
+        return self.send(msg, callback=callback, severity="INFO")
+
+    def send_message(
+        self,
+        text: str,
+        callback: Optional[Any] = None,
+        severity: str = "INFO",
+    ) -> Optional[int]:
+        """Direct text dispatch wrapper."""
+        return self.send(text, callback=callback, severity=severity)
+
+    def notify_generic_message(
+        self,
+        title: str,
+        message: str,
+        severity: str = "INFO",
+        callback: Optional[Any] = None,
+    ) -> Optional[int]:
+        """Custom generic alert with dynamic title and severity."""
+        msg = (
+            f"🔔 <b>{self._escape(title)}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{self._escape(message)}"
+        )
+        return self.send(msg, callback=callback, severity=severity)
+
+
     def _send_msg_sync(
         self,
         html_text: str,

@@ -431,12 +431,8 @@ class LiveEngine:
 
     def _init_regime_classifier(self, symbol: str) -> MarketRegimeClassifier:
         """
-        Backward-compatible init wrapper.
-        Supports both:
-            - new classifier args: spread_chop_enter_usd, spread_chop_exit_usd
-            - old arg: max_allowed_spread_usd
+        Initializes the MarketRegimeClassifier matching its active constructor signature.
         """
-        # Prefer new API, but keep compatibility with your current callsite semantics.
         try:
             return MarketRegimeClassifier(
                 symbol=symbol,
@@ -446,11 +442,7 @@ class LiveEngine:
                 switch_prob_margin=0.10,
             )
         except TypeError:
-            # Fallback to legacy signature
-            return MarketRegimeClassifier(
-                symbol=symbol,
-                max_allowed_spread_usd=0.50,
-            )
+            return MarketRegimeClassifier(symbol=symbol)
 
     # -------------------------
     # Model / scaler bundle
@@ -1047,10 +1039,13 @@ class LiveEngine:
                     if success:
                         self._hedged_tickets.add(pos.ticket)
                         try:
-                            self.notifier.notify_info(
-                                "Intelligent Hedging Activated",
-                                f"Position {pos.ticket} is in drawdown (Hold Score: {hold_score}). "
-                                f"Placed hedging order {hedge_order.order_type.value} of {hedge_order.volume} lots at {hedge_order.price}.",
+                            self.notifier.notify_generic_message(
+                                title="Intelligent Hedging Activated",
+                                message=(
+                                    f"Position {pos.ticket} is in drawdown (Hold Score: {hold_score}). "
+                                    f"Placed hedging order {hedge_order.order_type.value} of "
+                                    f"{hedge_order.volume} lots at {hedge_order.price}."
+                                ),
                             )
                         except Exception:
                             pass

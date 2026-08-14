@@ -46,6 +46,7 @@ from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.observability.logging import configure_logging, get_logger
+from nexus_scalp.ports.mt5_port import IMT5Port
 from nexus_scalp.web.server import create_app
 
 # Initialize Rich terminal output console
@@ -101,7 +102,6 @@ def ensure_config_files() -> Path:
                 "[yellow]configs/live.yaml not found. Copied template from configs/base.yaml[/yellow]"
             )
         else:
-            # Create a basic default file
             default_content = """execution:
   symbol: "XAUUSD"
   mode: "PAPER"
@@ -297,7 +297,7 @@ def main() -> None:
         log_level="INFO",
         json_format=(
             config.execution.mode == ExecutionMode.LIVE and False
-        ),  # Human readable console
+        ),
         log_to_file=True,
     )
 
@@ -310,6 +310,9 @@ def main() -> None:
     )
 
     # 5. Dynamically Bind Execution Adapter
+    from nexus_scalp.ports.mt5_port import IMT5Port
+
+    adapter: IMT5Port
     if args.gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
         console.print(
             "[bold yellow]Binding Execution Adapter: Remote MT5 Gateway Client[/bold yellow]"
@@ -349,7 +352,7 @@ def main() -> None:
         )
         server = uvicorn.Server(uvicorn_config)
 
-        async def run_concurrently():
+        async def run_concurrently() -> None:
             await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
 
         asyncio.run(run_concurrently())

@@ -48,15 +48,20 @@ WEB_DIR = Path("Web")
 class ServerState:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self.bars = []
-        self.real_overlays = {"rectangles": [], "bos_lines": [], "midlines": [], "liq_markers": []}
+        self.bars: list[dict[str, Any]] = []
+        self.real_overlays: dict[str, Any] = {
+            "rectangles": [],
+            "bos_lines": [],
+            "midlines": [],
+            "liq_markers": [],
+        }
 
-    def update_live_visuals(self, bars: list, real_overlays: dict) -> None:
+    def update_live_visuals(self, bars: list[dict[str, Any]], real_overlays: dict[str, Any]) -> None:
         with self._lock:
             self.bars = list(bars)
             self.real_overlays = dict(real_overlays)
 
-    def get_live_visuals(self) -> tuple[list, dict]:
+    def get_live_visuals(self) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         with self._lock:
             return self.bars, self.real_overlays
 
