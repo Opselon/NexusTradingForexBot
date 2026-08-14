@@ -948,14 +948,12 @@ class WalkForwardTrainer:
         generator = torch.Generator()
         generator.manual_seed(self.seed)
 
-        use_pin = self.device.type == "cuda"
-
         return DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=shuffle,
             generator=generator,
-            pin_memory=use_pin,  # Hardware DMA transfer speedup for GPU acceleration
+            pin_memory=False,  # Dataset tensors are already moved to target device
         )
 
     def _train_one_epoch(

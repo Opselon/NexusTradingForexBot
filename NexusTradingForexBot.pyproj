@@ -58,10 +58,12 @@
     <Compile Include="src\nexus_scalp\ports\__init__.py" />
     <Compile Include="src\nexus_scalp\risk\risk_engine.py" />
     <Compile Include="src\nexus_scalp\signals\policy.py" />
+    <Compile Include="src\nexus_scalp\signals\rule_matrix.py" />
     <Compile Include="src\nexus_scalp\web\server.py" />
     <Compile Include="src\nexus_scalp\__init__.py" />
     <Compile Include="src\nexus_scalp\training\walk_forward_trainer.py" />
     <Compile Include="src\nexus_scalp\training\__init__.py" />
+    <Compile Include="tests\unit\test_accounting_hedging.py" />
     <Compile Include="tests\unit\test_bar_aggregator.py" />
     <Compile Include="tests\unit\test_domain_models.py" />
     <Compile Include="tests\unit\test_logging.py" />
@@ -138,6 +140,7 @@
     <Content Include=".pytest_cache\README.md" />
     <Content Include=".pytest_cache\v\cache\nodeids" />
     <Content Include="agents\skill.md" />
+    <Content Include="beforePush.ps1" />
     <Content Include="configs\base.yaml" />
     <Content Include="configs\live.yaml" />
     <Content Include="docker\entrypoint.sh" />

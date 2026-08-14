@@ -1,7 +1,10 @@
+import gc
 import os
 import shutil
 import tempfile
+import time
 from datetime import UTC, datetime
+from typing import Any
 
 import torch
 
@@ -21,7 +24,7 @@ class MockMT5Port:
     def __init__(self) -> None:
         self.positions: list[Position] = []
         self.sent_orders: list[TradeOrder] = []
-        self.closed_deals: list[dict] = []
+        self.closed_deals: list[dict[str, Any]] = []
 
     def connect(self) -> bool:
         return True
@@ -71,7 +74,7 @@ class MockMT5Port:
         self.sent_orders.append(order)
         return True
 
-    def get_closed_deals_history(self, symbol: str, hours_back: int) -> list[dict]:
+    def get_closed_deals_history(self, symbol: str, hours_back: int) -> list[dict[str, Any]]:
         return self.closed_deals
 
     def close_position(self, ticket: int, volume: float | None = None) -> bool:
@@ -101,6 +104,9 @@ def test_audit_ledger_recording_and_metrics() -> None:
     temp_dir = tempfile.mkdtemp()
     db_path = os.path.join(temp_dir, "test_audit.db")
     db_url = f"sqlite:///{db_path}"
+
+    audit_reader = None
+    audit = None
 
     try:
         # Flush interval very low to write immediately in worker
@@ -137,7 +143,6 @@ def test_audit_ledger_recording_and_metrics() -> None:
 
         # Directly log snapshots
         audit.log_account_snapshot(acc1, 10000.0)
-        # Force wait / sleep or manual write to bypass throttling for snapshot timing
         audit._last_snapshot_time = 0.0  # Force override throttling
         audit.log_account_snapshot(acc2, 11000.0)
         audit._last_snapshot_time = 0.0
@@ -219,9 +224,7 @@ def test_audit_ledger_recording_and_metrics() -> None:
         )
 
         # Wait for worker thread to flush queues to DB
-        import time
-
-        time.sleep(1.0)
+        time.sleep(0.5)
         audit.close()
 
         # Reopen to read data synchronously
@@ -258,10 +261,14 @@ def test_audit_ledger_recording_and_metrics() -> None:
         assert growth_data[0]["balance"] == 10000.0
         assert growth_data[1]["equity"] == 11000.0
 
-        audit_reader.close()
-
     finally:
-        shutil.rmtree(temp_dir)
+        if audit_reader:
+            audit_reader.close()
+        if audit:
+            audit.close()
+        gc.collect()
+        time.sleep(0.1)
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def test_intelligent_hedging_trigger_and_policy() -> None:
@@ -272,6 +279,9 @@ def test_intelligent_hedging_trigger_and_policy() -> None:
     temp_dir = tempfile.mkdtemp()
     db_path = os.path.join(temp_dir, "test_live_audit.db")
     db_url = f"sqlite:///{db_path}"
+
+    engine = None
+    audit = None
 
     try:
         # Load a default configuration
@@ -306,7 +316,7 @@ def test_intelligent_hedging_trigger_and_policy() -> None:
         mock_port = MockMT5Port()
         audit = AuditRepository(db_url=db_url)
 
-        # Instantiate live engine with force_fresh_model=True to create modelweights file
+        # Instantiate live engine with force_fresh_model=True to create model weights file
         engine = LiveEngine(
             config=config, adapter=mock_port, audit_repo=audit, force_fresh_model=True
         )
@@ -388,9 +398,11 @@ def test_intelligent_hedging_trigger_and_policy() -> None:
         # Verify ticket was added to self._hedged_tickets to prevent duplicate hedging
         assert 201 in engine._hedged_tickets
 
-        # Clean up
-        engine.audit.close()
-        audit.close()
-
     finally:
-        shutil.rmtree(temp_dir)
+        if engine and hasattr(engine, "audit"):
+            engine.audit.close()
+        if audit:
+            audit.close()
+        gc.collect()
+        time.sleep(0.1)
+        shutil.rmtree(temp_dir, ignore_errors=True)

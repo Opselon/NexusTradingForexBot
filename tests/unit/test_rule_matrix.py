@@ -40,6 +40,11 @@ def rule_engine(temp_audit_repo: AuditRepository) -> RuleMatrixEngine:
     return RuleMatrixEngine(audit_repo=temp_audit_repo)
 
 
+# ============================================================================
+# DATABASE SEEDING & TOGGLING TESTS
+# ============================================================================
+
+
 def test_database_seeding_and_toggling(
     temp_audit_repo: AuditRepository,
     rule_engine: RuleMatrixEngine,
@@ -67,6 +72,11 @@ def test_database_seeding_and_toggling(
     assert rule_engine.get_params(rule_name) == custom_params
 
 
+# ============================================================================
+# PRE-TRADE ENTRY RULES TESTS
+# ============================================================================
+
+
 def test_pre_trade_entry_fvg_sniper(
     rule_engine: RuleMatrixEngine,
     temp_audit_repo: AuditRepository,
@@ -80,7 +90,7 @@ def test_pre_trade_entry_fvg_sniper(
     proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.99, 0.005, 0.005])
     assert proposal is None
 
-    # Enable and verify custom entry proposal
+    # Enable and verify custom entry proposal (Bullish FVG -> BUY)
     temp_audit_repo.toggle_trading_rule("RULE_FVG_SNIPER_FILL", True)
     rule_engine.refresh_cache()
 
@@ -88,13 +98,64 @@ def test_pre_trade_entry_fvg_sniper(
     assert proposal is not None
     assert proposal.action == ActionType.BUY_MARKET
     assert proposal.reason_code == "RULE_FVG_SNIPER_FILL"
+    assert proposal.proposed_entry == tick.ask
+
+    # Bearish FVG -> SELL
+    fv.fvg_bullish_active = False
+    fv.fvg_bearish_active = True
+    proposal_sell = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.99, 0.005, 0.005])
+    assert proposal_sell is not None
+    assert proposal_sell.action == ActionType.SELL_MARKET
+    assert proposal_sell.reason_code == "RULE_FVG_SNIPER_FILL"
+    assert proposal_sell.proposed_entry == tick.bid
+
+
+def test_pre_trade_entry_judas_and_orderblock(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+
+    # 1. Judas Swing Fade
+    temp_audit_repo.toggle_trading_rule("RULE_JUDAS_SWING_FADE", True)
+    rule_engine.refresh_cache()
+
+    fv_judas = MagicMock()
+    fv_judas.broke_previous_high = True
+    fv_judas.broke_previous_low = False
+    fv_judas.live_tick_displacement = -0.40  # Bearish rejection
+
+    proposal = rule_engine.evaluate_pre_trade_entry(tick, fv_judas, None, [0.1, 0.8, 0.1])
+    assert proposal is not None
+    assert proposal.action == ActionType.SELL_MARKET
+    assert proposal.reason_code == "RULE_JUDAS_SWING_FADE"
+
+    temp_audit_repo.toggle_trading_rule("RULE_JUDAS_SWING_FADE", False)
+
+    # 2. OrderBlock Tap Reserve
+    temp_audit_repo.toggle_trading_rule("RULE_ORDERBLOCK_TAP_RESERVE", True)
+    rule_engine.refresh_cache()
+
+    fv_ob = MagicMock()
+    fv_ob.order_block_type = 1  # Bullish OB
+    proposal_ob = rule_engine.evaluate_pre_trade_entry(tick, fv_ob, None, [0.1, 0.8, 0.1])
+    assert proposal_ob is not None
+    assert proposal_ob.action == ActionType.BUY_MARKET
+    assert proposal_ob.reason_code == "RULE_ORDERBLOCK_TAP_RESERVE"
+
+
+# ============================================================================
+# PRE-TRADE FILTER RULES TESTS
+# ============================================================================
 
 
 def test_pre_trade_filters_spread_squeeze(
     rule_engine: RuleMatrixEngine,
     temp_audit_repo: AuditRepository,
 ) -> None:
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.80)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.80
+    )  # Spread = 0.60 > 0.25
     fv = MagicMock()
 
     # Disabled by default -> no filter block
@@ -109,13 +170,128 @@ def test_pre_trade_filters_spread_squeeze(
     assert block_reason == "BLOCKED_BY_RULE_SPREAD_SQUEEZE_ONLY"
 
 
+def test_pre_trade_filters_liquidity_and_macro(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
+
+    # 1. Liquidity Sweep Confirm
+    temp_audit_repo.toggle_trading_rule("RULE_LIQUIDITY_SWEEP_CONFIRM", True)
+    rule_engine.refresh_cache()
+    fv = MagicMock()
+    fv.liquidity_sweep_signal = 0  # No sweep
+    assert (
+        rule_engine.evaluate_pre_trade_filters(tick, fv, None)
+        == "BLOCKED_BY_RULE_LIQUIDITY_SWEEP_CONFIRM"
+    )
+
+    temp_audit_repo.toggle_trading_rule("RULE_LIQUIDITY_SWEEP_CONFIRM", False)
+
+    # 2. AI Macro Alignment
+    temp_audit_repo.toggle_trading_rule("RULE_AI_MACRO_ALIGNMENT", True)
+    rule_engine.refresh_cache()
+    fv.htf_h4_trend = -0.80  # Heavily bearish
+    assert (
+        rule_engine.evaluate_pre_trade_filters(tick, fv, None)
+        == "BLOCKED_BY_RULE_AI_MACRO_ALIGNMENT"
+    )
+
+
+# ============================================================================
+# IN-TRADE EXIT & RISK SAFEGUARD TESTS
+# ============================================================================
+
+
+def test_in_trade_exits_evaluation(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    pos = Position(
+        ticket=2001,
+        symbol="XAUUSD",
+        type=OrderType.BUY,
+        volume=1.0,
+        price_open=2330.0,
+        sl=2320.0,
+        tp=2350.0,
+        profit=50.0,
+        magic=888101,
+    )
+
+    # 1. Hit & Run Exit
+    temp_audit_repo.toggle_trading_rule("RULE_HIT_AND_RUN_EXIT", True)
+    rule_engine.refresh_cache()
+    exit_action = rule_engine.evaluate_in_trade_exits(
+        pos=pos, holding_duration_sec=250.0, price_current=2335.0, atr=1.0, mfe_profit=50.0
+    )
+    assert exit_action == {"action": "CLOSE", "reason": "RULE_HIT_AND_RUN_EXIT"}
+
+    temp_audit_repo.toggle_trading_rule("RULE_HIT_AND_RUN_EXIT", False)
+
+    # 2. Zero Drawdown Trail
+    temp_audit_repo.toggle_trading_rule("RULE_ZERO_DRAWDOWN_TRAIL", True)
+    rule_engine.refresh_cache()
+    # Profit >= 2.0 pips (pip_size = 0.10 -> price at 2330.30 is +3 pips)
+    trail_action = rule_engine.evaluate_in_trade_exits(
+        pos=pos, holding_duration_sec=30.0, price_current=2330.30, atr=1.0, mfe_profit=30.0
+    )
+    assert trail_action is not None
+    assert trail_action["action"] == "MODIFY_SL"
+    assert trail_action["stop_loss"] == 2330.10
+    assert trail_action["reason"] == "RULE_ZERO_DRAWDOWN_TRAIL"
+
+
+def test_risk_and_safeguards(
+    rule_engine: RuleMatrixEngine,
+    temp_audit_repo: AuditRepository,
+) -> None:
+    temp_audit_repo.toggle_trading_rule("RULE_CONSECUTIVE_LOSS_FREEZE", True)
+    temp_audit_repo.toggle_trading_rule("RULE_DAILY_TARGET_LOCK", True)
+    temp_audit_repo.toggle_trading_rule("RULE_CORRELATED_DRAWDOWN_CAP", True)
+    rule_engine.refresh_cache()
+
+    # Guarantee in-memory cache activation
+    rule_engine._rules_cache["RULE_CONSECUTIVE_LOSS_FREEZE"] = {
+        "is_enabled": True,
+        "parameters": {},
+    }
+    rule_engine._rules_cache["RULE_DAILY_TARGET_LOCK"] = {"is_enabled": True, "parameters": {}}
+    rule_engine._rules_cache["RULE_CORRELATED_DRAWDOWN_CAP"] = {
+        "is_enabled": True,
+        "parameters": {},
+    }
+
+    # 1. Consecutive loss freeze
+    assert (
+        rule_engine.evaluate_risk_and_safeguards(10000.0, 10000.0, consecutive_losses=3)
+        == "FREEZE_CONSECUTIVE_LOSSES"
+    )
+
+    # 2. Daily target lock (equity growth >= 2%)
+    assert (
+        rule_engine.evaluate_risk_and_safeguards(10250.0, 10000.0, consecutive_losses=0)
+        == "DAILY_TARGET_LOCKED"
+    )
+
+    # 3. Drawdown cap (drawdown >= 3%)
+    assert (
+        rule_engine.evaluate_risk_and_safeguards(9600.0, 10000.0, consecutive_losses=0)
+        == "BLOCKED_CORRELATED_DRAWDOWN"
+    )
+
+
+# ============================================================================
+# INTEGRATION TESTS (POLICY, ORDER MANAGER & API)
+# ============================================================================
+
+
 def test_policy_hooks_blocked_by_filter(temp_audit_repo: AuditRepository) -> None:
     rule_engine = RuleMatrixEngine(audit_repo=temp_audit_repo)
     policy = SignalPolicy(confidence_threshold=0.10, rule_matrix=rule_engine)
 
     tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.80)
 
-    # Configure mock features with realistic market data to pass type assertions
     fv = MagicMock()
     fv.atr_m1 = 1.0
     fv.dist_to_swing_low_20 = 1.0
@@ -141,7 +317,6 @@ def test_policy_hooks_blocked_by_filter(temp_audit_repo: AuditRepository) -> Non
 def test_order_manager_hooks_exit(temp_audit_repo: AuditRepository) -> None:
     rule_engine = RuleMatrixEngine(audit_repo=temp_audit_repo)
     adapter = MagicMock()
-    # Mock close_position to return True
     adapter.close_position = MagicMock(return_value=True)
     adapter.get_positions = MagicMock(return_value=[])
 
@@ -163,10 +338,8 @@ def test_order_manager_hooks_exit(temp_audit_repo: AuditRepository) -> None:
     temp_audit_repo.toggle_trading_rule("RULE_TIME_DECAY_CHOP_EXIT", True)
     rule_engine.refresh_cache()
 
-    # Active monitoring evaluates exit
     tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
 
-    # Pre-populate all properties on fv mock to prevent comparison errors
     fv = MagicMock()
     fv.atr_m1 = 1.0
     fv.is_below_kumo = False
@@ -177,10 +350,9 @@ def test_order_manager_hooks_exit(temp_audit_repo: AuditRepository) -> None:
     fv.tenkan_sen = 2334.30
     fv.kijun_sen = 2334.30
 
-    # Set the mock get_positions to return the active position
     adapter.get_positions = MagicMock(return_value=[pos])
 
-    # First tick to bootstrap the position tracking telemetry
+    # First tick to bootstrap telemetry
     om.manage_active_positions(symbol="XAUUSD", current_tick=tick, feature_vector=fv)
 
     # Shift entry time back to simulate 5 minutes delay
@@ -189,7 +361,6 @@ def test_order_manager_hooks_exit(temp_audit_repo: AuditRepository) -> None:
     # Second tick to evaluate and trigger decay exit
     om.manage_active_positions(symbol="XAUUSD", current_tick=tick, feature_vector=fv)
 
-    # Verify adapter.close_position was called because of time decay
     adapter.close_position.assert_called_with(ticket=1001)
 
 
@@ -239,7 +410,6 @@ def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> Non
         magic=888101,
     )
 
-    # Mock features and smart metrics
     fv = MagicMock()
     fv.atr_m1 = 1.0
     fv.is_above_kumo = False
@@ -256,14 +426,15 @@ def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> Non
 
     # 2. Price drops to 2321.0 (90% of the way to SL)
     # The loss is 9.0 points out of 10.0 initial risk.
-    # Penalty 1 should be ratio (0.90) * 40 = 36 points.
+    # Penalty 1 should be ratio (0.90) * 40 = 36 points -> Score 64.
     score2, reasons = om._calculate_hold_value_score(pos, 2321.0, fv, 0.25, 1.0)
     assert score2 == 64
     assert any("DRAWDOWN_PENALTY" in r for r in reasons)
 
     # 3. Simulate high time in drawdown (decay)
-    om._time_in_drawdown_sec[1002] = 10.0
-    # ratio = 10.0 / ~0.01 > 0.70 -> Penalty 2 (-30) applied
+    # Backdate entry timestamp so elapsed trade duration is 20s and time in drawdown is 16s (80% > 70%)
+    om._entry_timestamps[1002] = datetime.now(UTC) - dt_module.timedelta(seconds=20)
+    om._time_in_drawdown_sec[1002] = 16.0
     score3, reasons = om._calculate_hold_value_score(pos, 2330.0, fv, 0.25, 1.0)
     assert score3 == 70
     assert any("TIME_IN_LOSS_DECAY_PENALTY" in r for r in reasons)
