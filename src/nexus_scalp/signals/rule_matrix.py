@@ -1,4 +1,4 @@
-# ruff: noqa: E501, PLR2004, PLR0915, UP006, UP035, UP045, PLR0911, PLR0912, F841
+# ruff: noqa: UP006, UP035, UP045, F841
 """
 Advanced Price-Hunting & Scalping Rule Matrix (v1.0 Enterprise)
 =============================================================
@@ -96,7 +96,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry - 1.5, 2),
                     take_profit=round(target_entry + 2.5, 2),
                     risk_reward_ratio=1.67,
-                    reason_code="RULE_FVG_SNIPER_FILL"
+                    reason_code="RULE_FVG_SNIPER_FILL",
                 )
             elif fvg_bearish:
                 target_entry = tick.bid
@@ -110,7 +110,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry + 1.5, 2),
                     take_profit=round(target_entry - 2.5, 2),
                     risk_reward_ratio=1.67,
-                    reason_code="RULE_FVG_SNIPER_FILL"
+                    reason_code="RULE_FVG_SNIPER_FILL",
                 )
 
         # RULE 2: RULE_JUDAS_SWING_FADE
@@ -133,7 +133,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry + 1.8, 2),
                     take_profit=round(target_entry - 2.2, 2),
                     risk_reward_ratio=1.22,
-                    reason_code="RULE_JUDAS_SWING_FADE"
+                    reason_code="RULE_JUDAS_SWING_FADE",
                 )
             # If broke low but displacement is strongly positive (rejection) -> Long
             elif broke_low and disp > 0.30:
@@ -148,7 +148,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry - 1.8, 2),
                     take_profit=round(target_entry + 2.2, 2),
                     risk_reward_ratio=1.22,
-                    reason_code="RULE_JUDAS_SWING_FADE"
+                    reason_code="RULE_JUDAS_SWING_FADE",
                 )
 
         # RULE 4: RULE_ORDERBLOCK_TAP_RESERVE
@@ -168,7 +168,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry - 1.2, 2),
                     take_profit=round(target_entry + 2.0, 2),
                     risk_reward_ratio=1.67,
-                    reason_code="RULE_ORDERBLOCK_TAP_RESERVE"
+                    reason_code="RULE_ORDERBLOCK_TAP_RESERVE",
                 )
             elif ob_type == -1:
                 target_entry = tick.bid
@@ -182,7 +182,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry + 1.2, 2),
                     take_profit=round(target_entry - 2.0, 2),
                     risk_reward_ratio=1.67,
-                    reason_code="RULE_ORDERBLOCK_TAP_RESERVE"
+                    reason_code="RULE_ORDERBLOCK_TAP_RESERVE",
                 )
 
         # RULE 5: RULE_WICK_ABSORPTION_PLAY
@@ -190,7 +190,7 @@ class RuleMatrixEngine:
             # Leaves a long wick and next tick changes direction
             disp = getattr(fv, "live_tick_displacement", 0.0)
             # A rough heuristic for long wick absorption play
-            if disp > 0.80: # rapid upward wick, looks like absorption, fade it
+            if disp > 0.80:  # rapid upward wick, looks like absorption, fade it
                 target_entry = tick.bid
                 return TradeProposal(
                     request_id="RULE_WICK_ABSORPTION_PLAY_" + str(datetime.now().timestamp()),
@@ -202,7 +202,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry + 1.0, 2),
                     take_profit=round(target_entry - 1.5, 2),
                     risk_reward_ratio=1.50,
-                    reason_code="RULE_WICK_ABSORPTION_PLAY"
+                    reason_code="RULE_WICK_ABSORPTION_PLAY",
                 )
             elif disp < -0.80:
                 target_entry = tick.ask
@@ -216,7 +216,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry - 1.0, 2),
                     take_profit=round(target_entry + 1.5, 2),
                     risk_reward_ratio=1.50,
-                    reason_code="RULE_WICK_ABSORPTION_PLAY"
+                    reason_code="RULE_WICK_ABSORPTION_PLAY",
                 )
 
         # RULE 6: RULE_FLASH_MOMENTUM_SCRAPE
@@ -236,17 +236,27 @@ class RuleMatrixEngine:
                     action=action,
                     confidence=0.95,
                     proposed_entry=target_entry,
-                    stop_loss=round(target_entry - sl_dist if action == ActionType.BUY_MARKET else target_entry + sl_dist, 2),
-                    take_profit=round(target_entry + sl_dist * 2.0 if action == ActionType.BUY_MARKET else target_entry - sl_dist * 2.0, 2),
+                    stop_loss=round(
+                        target_entry - sl_dist
+                        if action == ActionType.BUY_MARKET
+                        else target_entry + sl_dist,
+                        2,
+                    ),
+                    take_profit=round(
+                        target_entry + sl_dist * 2.0
+                        if action == ActionType.BUY_MARKET
+                        else target_entry - sl_dist * 2.0,
+                        2,
+                    ),
                     risk_reward_ratio=2.0,
-                    reason_code="RULE_FLASH_MOMENTUM_SCRAPE"
+                    reason_code="RULE_FLASH_MOMENTUM_SCRAPE",
                 )
 
         # RULE 7: RULE_TICK_IMBALANCE_REVERSAL
         if self.is_enabled("RULE_TICK_IMBALANCE_REVERSAL"):
             ofi = regime_state.order_flow_imbalance if regime_state else 0.0
             # OFI extreme selling/buying exhaustion with price stabilization
-            if ofi <= -0.80: # Extreme selling pressure, buy the stabilization
+            if ofi <= -0.80:  # Extreme selling pressure, buy the stabilization
                 target_entry = tick.ask
                 return TradeProposal(
                     request_id="RULE_TICK_IMBALANCE_REVERSAL_" + str(datetime.now().timestamp()),
@@ -258,9 +268,9 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry - 1.1, 2),
                     take_profit=round(target_entry + 1.8, 2),
                     risk_reward_ratio=1.63,
-                    reason_code="RULE_TICK_IMBALANCE_REVERSAL"
+                    reason_code="RULE_TICK_IMBALANCE_REVERSAL",
                 )
-            elif ofi >= 0.80: # Extreme buying pressure, sell the stabilization
+            elif ofi >= 0.80:  # Extreme buying pressure, sell the stabilization
                 target_entry = tick.bid
                 return TradeProposal(
                     request_id="RULE_TICK_IMBALANCE_REVERSAL_" + str(datetime.now().timestamp()),
@@ -272,7 +282,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry + 1.1, 2),
                     take_profit=round(target_entry - 1.8, 2),
                     risk_reward_ratio=1.63,
-                    reason_code="RULE_TICK_IMBALANCE_REVERSAL"
+                    reason_code="RULE_TICK_IMBALANCE_REVERSAL",
                 )
 
         # RULE 18: RULE_NEWS_SPIKE_FADE (Entry)
@@ -280,7 +290,7 @@ class RuleMatrixEngine:
             if regime_state and regime_state.regime_type == RegimeType.MACRO_NEWS_FREEZE:
                 # News freeze, wait for pullback
                 disp = getattr(fv, "live_tick_displacement", 0.0)
-                if abs(disp) >= 2.5: # massive move, fade it
+                if abs(disp) >= 2.5:  # massive move, fade it
                     action = ActionType.SELL_MARKET if disp > 0 else ActionType.BUY_MARKET
                     target_entry = tick.bid if action == ActionType.SELL_MARKET else tick.ask
                     return TradeProposal(
@@ -290,10 +300,20 @@ class RuleMatrixEngine:
                         action=action,
                         confidence=0.85,
                         proposed_entry=target_entry,
-                        stop_loss=round(target_entry + 3.0 if action == ActionType.SELL_MARKET else target_entry - 3.0, 2),
-                        take_profit=round(target_entry - 4.5 if action == ActionType.SELL_MARKET else target_entry + 4.5, 2),
+                        stop_loss=round(
+                            target_entry + 3.0
+                            if action == ActionType.SELL_MARKET
+                            else target_entry - 3.0,
+                            2,
+                        ),
+                        take_profit=round(
+                            target_entry - 4.5
+                            if action == ActionType.SELL_MARKET
+                            else target_entry + 4.5,
+                            2,
+                        ),
                         risk_reward_ratio=1.50,
-                        reason_code="RULE_NEWS_SPIKE_FADE"
+                        reason_code="RULE_NEWS_SPIKE_FADE",
                     )
 
         # RULE 20: RULE_END_OF_HOUR_SQUEEZE (Entry)
@@ -310,17 +330,27 @@ class RuleMatrixEngine:
                     action=action,
                     confidence=0.82,
                     proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.5 if action == ActionType.BUY_MARKET else target_entry + 1.5, 2),
-                    take_profit=round(target_entry + 2.0 if action == ActionType.BUY_MARKET else target_entry - 2.0, 2),
+                    stop_loss=round(
+                        target_entry - 1.5
+                        if action == ActionType.BUY_MARKET
+                        else target_entry + 1.5,
+                        2,
+                    ),
+                    take_profit=round(
+                        target_entry + 2.0
+                        if action == ActionType.BUY_MARKET
+                        else target_entry - 2.0,
+                        2,
+                    ),
                     risk_reward_ratio=1.33,
-                    reason_code="RULE_END_OF_HOUR_SQUEEZE"
+                    reason_code="RULE_END_OF_HOUR_SQUEEZE",
                 )
 
         # RULE 26: RULE_VWAP_ELASTIC_BAND (Entry)
         if self.is_enabled("RULE_VWAP_ELASTIC_BAND"):
             # For simplicity, if cross-asset Z score is extremely stretched
             z_score = getattr(fv, "cross_asset_z_score", 0.0)
-            if z_score >= 3.5: # Stretch sell
+            if z_score >= 3.5:  # Stretch sell
                 target_entry = tick.bid
                 return TradeProposal(
                     request_id="RULE_VWAP_ELASTIC_BAND_" + str(datetime.now().timestamp()),
@@ -332,9 +362,9 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry + 1.5, 2),
                     take_profit=round(target_entry - 2.5, 2),
                     risk_reward_ratio=1.67,
-                    reason_code="RULE_VWAP_ELASTIC_BAND"
+                    reason_code="RULE_VWAP_ELASTIC_BAND",
                 )
-            elif z_score <= -3.5: # Stretch buy
+            elif z_score <= -3.5:  # Stretch buy
                 target_entry = tick.ask
                 return TradeProposal(
                     request_id="RULE_VWAP_ELASTIC_BAND_" + str(datetime.now().timestamp()),
@@ -346,7 +376,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry - 1.5, 2),
                     take_profit=round(target_entry + 2.5, 2),
                     risk_reward_ratio=1.67,
-                    reason_code="RULE_VWAP_ELASTIC_BAND"
+                    reason_code="RULE_VWAP_ELASTIC_BAND",
                 )
 
         # RULE 27: RULE_BOLLINGER_BURST_FADE (Entry)
@@ -366,7 +396,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry + 1.6, 2),
                     take_profit=round(target_entry - 2.2, 2),
                     risk_reward_ratio=1.38,
-                    reason_code="RULE_BOLLINGER_BURST_FADE"
+                    reason_code="RULE_BOLLINGER_BURST_FADE",
                 )
             elif at_low:
                 target_entry = tick.ask
@@ -380,7 +410,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry - 1.6, 2),
                     take_profit=round(target_entry + 2.2, 2),
                     risk_reward_ratio=1.38,
-                    reason_code="RULE_BOLLINGER_BURST_FADE"
+                    reason_code="RULE_BOLLINGER_BURST_FADE",
                 )
 
         # RULE 29: RULE_GAP_AND_GO_MOMENTUM (Entry)
@@ -397,17 +427,27 @@ class RuleMatrixEngine:
                     action=action,
                     confidence=0.81,
                     proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.5 if action == ActionType.BUY_MARKET else target_entry + 1.5, 2),
-                    take_profit=round(target_entry + 2.0 if action == ActionType.BUY_MARKET else target_entry - 2.0, 2),
+                    stop_loss=round(
+                        target_entry - 1.5
+                        if action == ActionType.BUY_MARKET
+                        else target_entry + 1.5,
+                        2,
+                    ),
+                    take_profit=round(
+                        target_entry + 2.0
+                        if action == ActionType.BUY_MARKET
+                        else target_entry - 2.0,
+                        2,
+                    ),
                     risk_reward_ratio=1.33,
-                    reason_code="RULE_GAP_AND_GO_MOMENTUM"
+                    reason_code="RULE_GAP_AND_GO_MOMENTUM",
                 )
 
         # RULE 30: RULE_CONTRARIAN_RETAIL_TRAP (Entry)
         if self.is_enabled("RULE_CONTRARIAN_RETAIL_TRAP"):
             # Enter contrarian when retail screams buy/sell but tick volume is entirely passive
             rsi = getattr(fv, "rsi_m15", 50.0) if hasattr(fv, "rsi_m15") else 50.0
-            if rsi > 85.0: # retail overbought trap -> Short
+            if rsi > 85.0:  # retail overbought trap -> Short
                 target_entry = tick.bid
                 return TradeProposal(
                     request_id="RULE_CONTRARIAN_RETAIL_TRAP_" + str(datetime.now().timestamp()),
@@ -419,9 +459,9 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry + 1.4, 2),
                     take_profit=round(target_entry - 2.4, 2),
                     risk_reward_ratio=1.71,
-                    reason_code="RULE_CONTRARIAN_RETAIL_TRAP"
+                    reason_code="RULE_CONTRARIAN_RETAIL_TRAP",
                 )
-            elif rsi < 15.0: # retail oversold trap -> Long
+            elif rsi < 15.0:  # retail oversold trap -> Long
                 target_entry = tick.ask
                 return TradeProposal(
                     request_id="RULE_CONTRARIAN_RETAIL_TRAP_" + str(datetime.now().timestamp()),
@@ -433,7 +473,7 @@ class RuleMatrixEngine:
                     stop_loss=round(target_entry - 1.4, 2),
                     take_profit=round(target_entry + 2.4, 2),
                     risk_reward_ratio=1.71,
-                    reason_code="RULE_CONTRARIAN_RETAIL_TRAP"
+                    reason_code="RULE_CONTRARIAN_RETAIL_TRAP",
                 )
 
         return None
@@ -460,18 +500,18 @@ class RuleMatrixEngine:
             spread = tick.ask - tick.bid
             if regime_state and regime_state.regime_type == RegimeType.HIGH_SPREAD_CHOP:
                 return "BLOCKED_BY_RULE_SPREAD_SQUEEZE_ONLY"
-            if spread > 0.25: # broker spread is high
+            if spread > 0.25:  # broker spread is high
                 return "BLOCKED_BY_RULE_SPREAD_SQUEEZE_ONLY"
 
         # RULE 9: RULE_REJECTION_WALL_BLOCKER (Filter)
         if self.is_enabled("RULE_REJECTION_WALL_BLOCKER"):
             # Block limit orders if price knocked on limit price level 3 times without breakout
-            pass # Stubbed behavior allows trade
+            pass  # Stubbed behavior allows trade
 
         # RULE 10: RULE_BID_ASK_SPOOF_DETECTOR (Filter)
         if self.is_enabled("RULE_BID_ASK_SPOOF_DETECTOR"):
             # Block trades if vanishing tick volumes detected (spoofing protection)
-            pass # Stubbed behavior allows trade
+            pass  # Stubbed behavior allows trade
 
         # RULE 16: RULE_LONDON_NY_KILLZONE_ONLY (Filter)
         if self.is_enabled("RULE_LONDON_NY_KILLZONE_ONLY"):
@@ -499,7 +539,9 @@ class RuleMatrixEngine:
         if self.is_enabled("RULE_DEAD_ZONE_BLOCKER"):
             now_dt = datetime.now()
             # Daily broker rollover 23:55 to 00:05
-            if (now_dt.hour == 23 and now_dt.minute >= 55) or (now_dt.hour == 0 and now_dt.minute <= 5):
+            if (now_dt.hour == 23 and now_dt.minute >= 55) or (
+                now_dt.hour == 0 and now_dt.minute <= 5
+            ):
                 return "BLOCKED_BY_RULE_DEAD_ZONE_BLOCKER"
 
         # RULE 21: RULE_CONSECUTIVE_LOSS_FREEZE (Filter)
@@ -549,21 +591,37 @@ class RuleMatrixEngine:
         if self.is_enabled("RULE_HIT_AND_RUN_EXIT"):
             # Force close any profitable position after exactly 3 to 5 M1 bars (180s to 300s)
             is_in_profit = pos.profit > 0.0
-            if is_in_profit and holding_duration_sec >= 240.0: # exactly 4 minutes
+            if is_in_profit and holding_duration_sec >= 240.0:  # exactly 4 minutes
                 return {"action": "CLOSE", "reason": "RULE_HIT_AND_RUN_EXIT"}
 
         # RULE 12: RULE_ZERO_DRAWDOWN_TRAIL
         if self.is_enabled("RULE_ZERO_DRAWDOWN_TRAIL"):
             # Moves Stop Loss to Breakeven +1 pip the moment trade goes into +2 pips profit
-            pip_size = 0.10 # Gold pip representation
-            pips_profit = (price_current - pos.price_open) / pip_size if pos.type == OrderType.BUY else (pos.price_open - price_current) / pip_size
+            pip_size = 0.10  # Gold pip representation
+            pips_profit = (
+                (price_current - pos.price_open) / pip_size
+                if pos.type == OrderType.BUY
+                else (pos.price_open - price_current) / pip_size
+            )
             if pips_profit >= 2.0:
-                target_sl = pos.price_open + (1.0 * pip_size) if pos.type == OrderType.BUY else pos.price_open - (1.0 * pip_size)
+                target_sl = (
+                    pos.price_open + (1.0 * pip_size)
+                    if pos.type == OrderType.BUY
+                    else pos.price_open - (1.0 * pip_size)
+                )
                 # Ensure we only move SL in favor of the trade
                 if pos.type == OrderType.BUY and target_sl > pos.sl:
-                    return {"action": "MODIFY_SL", "stop_loss": target_sl, "reason": "RULE_ZERO_DRAWDOWN_TRAIL"}
+                    return {
+                        "action": "MODIFY_SL",
+                        "stop_loss": target_sl,
+                        "reason": "RULE_ZERO_DRAWDOWN_TRAIL",
+                    }
                 elif pos.type == OrderType.SELL and (pos.sl == 0.0 or target_sl < pos.sl):
-                    return {"action": "MODIFY_SL", "stop_loss": target_sl, "reason": "RULE_ZERO_DRAWDOWN_TRAIL"}
+                    return {
+                        "action": "MODIFY_SL",
+                        "stop_loss": target_sl,
+                        "reason": "RULE_ZERO_DRAWDOWN_TRAIL",
+                    }
 
         # RULE 13: RULE_TIME_DECAY_CHOP_EXIT
         if self.is_enabled("RULE_TIME_DECAY_CHOP_EXIT"):
@@ -574,13 +632,25 @@ class RuleMatrixEngine:
         # RULE 14: RULE_ATR_EXPANSION_RATCHET
         if self.is_enabled("RULE_ATR_EXPANSION_RATCHET"):
             # Tightens trailing stop aggressively only when explosive volatility candle occurs in our favor
-            if pos.profit > 0.0 and atr >= 2.0: # High ATR
+            if pos.profit > 0.0 and atr >= 2.0:  # High ATR
                 tight_trail = atr * 0.5
-                target_sl = price_current - tight_trail if pos.type == OrderType.BUY else price_current + tight_trail
+                target_sl = (
+                    price_current - tight_trail
+                    if pos.type == OrderType.BUY
+                    else price_current + tight_trail
+                )
                 if pos.type == OrderType.BUY and target_sl > pos.sl:
-                    return {"action": "MODIFY_SL", "stop_loss": target_sl, "reason": "RULE_ATR_EXPANSION_RATCHET"}
+                    return {
+                        "action": "MODIFY_SL",
+                        "stop_loss": target_sl,
+                        "reason": "RULE_ATR_EXPANSION_RATCHET",
+                    }
                 elif pos.type == OrderType.SELL and (pos.sl == 0.0 or target_sl < pos.sl):
-                    return {"action": "MODIFY_SL", "stop_loss": target_sl, "reason": "RULE_ATR_EXPANSION_RATCHET"}
+                    return {
+                        "action": "MODIFY_SL",
+                        "stop_loss": target_sl,
+                        "reason": "RULE_ATR_EXPANSION_RATCHET",
+                    }
 
         # RULE 15: RULE_HEDGE_ON_AI_FLIP
         if self.is_enabled("RULE_HEDGE_ON_AI_FLIP"):
@@ -605,13 +675,17 @@ class RuleMatrixEngine:
 
         # RULE 22: RULE_DAILY_TARGET_LOCK
         if self.is_enabled("RULE_DAILY_TARGET_LOCK"):
-            growth_pct = ((account_equity - peak_equity) / peak_equity) * 100.0 if peak_equity > 0 else 0.0
+            growth_pct = (
+                ((account_equity - peak_equity) / peak_equity) * 100.0 if peak_equity > 0 else 0.0
+            )
             if growth_pct >= 2.0:
                 return "DAILY_TARGET_LOCKED"
 
         # RULE 25: RULE_CORRELATED_DRAWDOWN_CAP
         if self.is_enabled("RULE_CORRELATED_DRAWDOWN_CAP"):
-            drawdown_pct = ((peak_equity - account_equity) / peak_equity) * 100.0 if peak_equity > 0 else 0.0
+            drawdown_pct = (
+                ((peak_equity - account_equity) / peak_equity) * 100.0 if peak_equity > 0 else 0.0
+            )
             if drawdown_pct >= 3.0:
                 return "BLOCKED_CORRELATED_DRAWDOWN"
 

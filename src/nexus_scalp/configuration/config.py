@@ -55,6 +55,7 @@ class ModelConfig(BaseModel):
     feature_schema_version: str = "v1.0"
     model_artifact_path: str = "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
 
+
 class AlgoConfig(BaseModel):
     atr_sl_buffer_multiplier: float = Field(default=1.5, ge=0.5, le=4.0)
     min_risk_reward_ratio: float = Field(default=1.8, ge=1.0, le=5.0)
@@ -89,6 +90,7 @@ class AppConfig(BaseSettings):
     """
     Root application settings holding configuration sections.
     """
+
     model_config = SettingsConfigDict(
         env_prefix="NSE_",
         env_nested_delimiter="__",

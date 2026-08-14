@@ -1,9 +1,9 @@
 """
 Order Lifecycle & Hold Value Position Management Engine
 ======================================================
-Monitors active open positions, calculates Hold Value Score (0 to 100), applies 
-Break-Even & Trailing Stops with Wick Tolerance, triggers Early Emergency Cut 
-if a trade encounters a Bull/Bear Trap, and dispatches Thread-Replied Telegram Alerts 
+Monitors active open positions, calculates Hold Value Score (0 to 100), applies
+Break-Even & Trailing Stops with Wick Tolerance, triggers Early Emergency Cut
+if a trade encounters a Bull/Bear Trap, and dispatches Thread-Replied Telegram Alerts
 upon trade exit (TP/SL).
 """
 
@@ -22,7 +22,7 @@ logger = get_logger("nexus_scalp.execution.order_manager")
 
 class OrderLifecycleManager:
     """
-    Institutional position management engine handling smart executions, trailing stops, 
+    Institutional position management engine handling smart executions, trailing stops,
     time-decay bailouts, structural invalidation emergency cuts, and Telegram thread replying.
     """
 
@@ -30,12 +30,12 @@ class OrderLifecycleManager:
         self,
         adapter: IMT5Port,
         audit_repo: AuditRepository | None = None,
-        notifier: TelegramNotifier | None = None, # [EXPANDED] Telegram Integration
-        be_trigger_usd: float = 0.50,         # Trigger Break-Even at +$0.50 profit on Gold
-        be_lock_usd: float = 0.10,            # Lock in +$0.10 profit when BE triggers
-        trailing_distance_usd: float = 0.80,   # Maintain $0.80 trailing gap behind price
-        min_modify_step_usd: float = 0.15,     # Minimum SL change to prevent MT5 spamming
-        stale_trade_seconds: float = 300.0,    # 5 Minutes max hold without momentum
+        notifier: TelegramNotifier | None = None,  # [EXPANDED] Telegram Integration
+        be_trigger_usd: float = 0.50,  # Trigger Break-Even at +$0.50 profit on Gold
+        be_lock_usd: float = 0.10,  # Lock in +$0.10 profit when BE triggers
+        trailing_distance_usd: float = 0.80,  # Maintain $0.80 trailing gap behind price
+        min_modify_step_usd: float = 0.15,  # Minimum SL change to prevent MT5 spamming
+        stale_trade_seconds: float = 300.0,  # 5 Minutes max hold without momentum
     ) -> None:
         self.adapter = adapter
         self.audit = audit_repo or AuditRepository()
@@ -47,13 +47,13 @@ class OrderLifecycleManager:
         self.trailing_distance = trailing_distance_usd
         self.min_step = min_modify_step_usd
         self.stale_trade_seconds = stale_trade_seconds
-        
+
         # Tracks exact UTC timestamp when each position ticket was first detected open
         self._position_open_times: dict[int, datetime] = {}
-        
+
         # [EXPANDED] Maps position ticket -> Telegram message_id for Thread Replying
         self._order_message_ids: dict[int, int] = {}
-        
+
         # [EXPANDED] Set tracking active tickets to detect closed trades
         self._known_active_tickets: set[int] = set()
 
@@ -74,7 +74,9 @@ class OrderLifecycleManager:
         Submits trade deal to broker adapter with duplicate submission prevention.
         """
         if order.order_id in self._processed_orders:
-            logger.warning("Duplicate order submission blocked by idempotency check", order_id=order.order_id)
+            logger.warning(
+                "Duplicate order submission blocked by idempotency check", order_id=order.order_id
+            )
             return False
 
         logger.info(
@@ -115,15 +117,25 @@ class OrderLifecycleManager:
             history_deals = self.adapter.get_closed_deals_history(symbol=symbol, hours_back=1)
             for c_ticket in closed_tickets:
                 msg_id = self._order_message_ids.get(c_ticket)
-                matched_deal = next((d for d in history_deals if d.get("position_ticket") == c_ticket), None)
+                matched_deal = next(
+                    (d for d in history_deals if d.get("position_ticket") == c_ticket), None
+                )
 
                 if matched_deal and self.notifier:
-                    profit_usd = matched_deal.get("profit", 0.0) + matched_deal.get("swap", 0.0) + matched_deal.get("commission", 0.0)
+                    profit_usd = (
+                        matched_deal.get("profit", 0.0)
+                        + matched_deal.get("swap", 0.0)
+                        + matched_deal.get("commission", 0.0)
+                    )
                     lots = matched_deal.get("volume", 0.0)
                     exit_price = matched_deal.get("price", 0.0)
 
                     if profit_usd >= 0:
-                        logger.info("TRADE CLOSED IN PROFIT (TP/TRAILING)", ticket=c_ticket, net_pnl=profit_usd)
+                        logger.info(
+                            "TRADE CLOSED IN PROFIT (TP/TRAILING)",
+                            ticket=c_ticket,
+                            net_pnl=profit_usd,
+                        )
                         self.notifier.notify_order_closed_profit(
                             ticket=c_ticket,
                             symbol=symbol,
@@ -135,7 +147,9 @@ class OrderLifecycleManager:
                             reply_to_message_id=msg_id,
                         )
                     else:
-                        logger.warning("TRADE CLOSED IN LOSS (SL/CUT)", ticket=c_ticket, loss_usd=profit_usd)
+                        logger.warning(
+                            "TRADE CLOSED IN LOSS (SL/CUT)", ticket=c_ticket, loss_usd=profit_usd
+                        )
                         self.notifier.notify_order_closed_loss(
                             ticket=c_ticket,
                             symbol=symbol,
@@ -161,7 +175,7 @@ class OrderLifecycleManager:
             if symbol_info and symbol_info.stops_level > 0
             else 0.20
         )
-        
+
         atr = feature_vector.atr_m1 if feature_vector else 1.50
 
         for pos in positions:
@@ -177,7 +191,7 @@ class OrderLifecycleManager:
                         ticket=pos.ticket,
                         message_id=msg_id,
                     )
-                
+
             open_time = self._position_open_times[pos.ticket]
             duration_sec = (current_tick.timestamp - open_time).total_seconds()
 
@@ -215,7 +229,9 @@ class OrderLifecycleManager:
             if hold_score < 40:
                 msg_id = self._order_message_ids.get(pos.ticket)
                 if profit_usd > 0.05:
-                    logger.warning(">>> BAILING OUT AT BREAK-EVEN! Momentum lost. <<<", ticket=pos.ticket)
+                    logger.warning(
+                        ">>> BAILING OUT AT BREAK-EVEN! Momentum lost. <<<", ticket=pos.ticket
+                    )
                     if self.adapter.close_position(ticket=pos.ticket) and self.notifier:
                         self.notifier.notify_early_emergency_cut(
                             ticket=pos.ticket,
@@ -226,7 +242,10 @@ class OrderLifecycleManager:
                         )
                     continue
                 elif profit_usd < -0.40:
-                    logger.critical(">>> EARLY EMERGENCY CUT TRIGGERED! Rescuing Capital. <<<", ticket=pos.ticket)
+                    logger.critical(
+                        ">>> EARLY EMERGENCY CUT TRIGGERED! Rescuing Capital. <<<",
+                        ticket=pos.ticket,
+                    )
                     if self.adapter.close_position(ticket=pos.ticket) and self.notifier:
                         self.notifier.notify_early_emergency_cut(
                             ticket=pos.ticket,
@@ -244,34 +263,92 @@ class OrderLifecycleManager:
             msg_id = self._order_message_ids.get(pos.ticket)
 
             if pos.type == OrderType.BUY:
-                if profit_usd >= self.be_trigger and pos.sl < (pos.price_open + self.be_lock - 0.01):
+                if profit_usd >= self.be_trigger and pos.sl < (
+                    pos.price_open + self.be_lock - 0.01
+                ):
                     target_sl = round(pos.price_open + self.be_lock, 2)
                     if (price_current - target_sl) >= min_stop_gap:
-                        logger.info(">>> STAGE 1: APPLYING BREAK-EVEN RISK-FREE (BUY) <<<", ticket=pos.ticket, new_sl=target_sl)
-                        if self.adapter.modify_position(ticket=pos.ticket, stop_loss=target_sl, take_profit=pos.tp) and self.notifier:
-                            self.notifier.notify_break_even_applied(ticket=pos.ticket, new_sl=target_sl, reply_to_message_id=msg_id)
+                        logger.info(
+                            ">>> STAGE 1: APPLYING BREAK-EVEN RISK-FREE (BUY) <<<",
+                            ticket=pos.ticket,
+                            new_sl=target_sl,
+                        )
+                        if (
+                            self.adapter.modify_position(
+                                ticket=pos.ticket, stop_loss=target_sl, take_profit=pos.tp
+                            )
+                            and self.notifier
+                        ):
+                            self.notifier.notify_break_even_applied(
+                                ticket=pos.ticket, new_sl=target_sl, reply_to_message_id=msg_id
+                            )
 
                 elif profit_usd >= (self.be_trigger + 0.30):
                     dynamic_sl = round(price_current - smart_trailing_dist, 2)
-                    if (dynamic_sl - pos.sl) >= self.min_step and (price_current - dynamic_sl) >= min_stop_gap:
-                        logger.info(">>> STAGE 2: TRAILING STOP ADVANCED (BUY) <<<", ticket=pos.ticket, new_sl=dynamic_sl)
-                        if self.adapter.modify_position(ticket=pos.ticket, stop_loss=dynamic_sl, take_profit=pos.tp) and self.notifier:
-                            self.notifier.notify_trailing_stop_advanced(ticket=pos.ticket, new_sl=dynamic_sl, current_price=price_current, reply_to_message_id=msg_id)
+                    if (dynamic_sl - pos.sl) >= self.min_step and (
+                        price_current - dynamic_sl
+                    ) >= min_stop_gap:
+                        logger.info(
+                            ">>> STAGE 2: TRAILING STOP ADVANCED (BUY) <<<",
+                            ticket=pos.ticket,
+                            new_sl=dynamic_sl,
+                        )
+                        if (
+                            self.adapter.modify_position(
+                                ticket=pos.ticket, stop_loss=dynamic_sl, take_profit=pos.tp
+                            )
+                            and self.notifier
+                        ):
+                            self.notifier.notify_trailing_stop_advanced(
+                                ticket=pos.ticket,
+                                new_sl=dynamic_sl,
+                                current_price=price_current,
+                                reply_to_message_id=msg_id,
+                            )
 
             elif pos.type == OrderType.SELL:
-                if profit_usd >= self.be_trigger and (pos.sl > (pos.price_open - self.be_lock + 0.01) or pos.sl == 0.0):
+                if profit_usd >= self.be_trigger and (
+                    pos.sl > (pos.price_open - self.be_lock + 0.01) or pos.sl == 0.0
+                ):
                     target_sl = round(pos.price_open - self.be_lock, 2)
                     if (target_sl - price_current) >= min_stop_gap:
-                        logger.info(">>> STAGE 1: APPLYING BREAK-EVEN RISK-FREE (SELL) <<<", ticket=pos.ticket, new_sl=target_sl)
-                        if self.adapter.modify_position(ticket=pos.ticket, stop_loss=target_sl, take_profit=pos.tp) and self.notifier:
-                            self.notifier.notify_break_even_applied(ticket=pos.ticket, new_sl=target_sl, reply_to_message_id=msg_id)
+                        logger.info(
+                            ">>> STAGE 1: APPLYING BREAK-EVEN RISK-FREE (SELL) <<<",
+                            ticket=pos.ticket,
+                            new_sl=target_sl,
+                        )
+                        if (
+                            self.adapter.modify_position(
+                                ticket=pos.ticket, stop_loss=target_sl, take_profit=pos.tp
+                            )
+                            and self.notifier
+                        ):
+                            self.notifier.notify_break_even_applied(
+                                ticket=pos.ticket, new_sl=target_sl, reply_to_message_id=msg_id
+                            )
 
                 elif profit_usd >= (self.be_trigger + 0.30):
                     dynamic_sl = round(price_current + smart_trailing_dist, 2)
-                    if (pos.sl - dynamic_sl) >= self.min_step and (dynamic_sl - price_current) >= min_stop_gap:
-                        logger.info(">>> STAGE 2: TRAILING STOP ADVANCED (SELL) <<<", ticket=pos.ticket, new_sl=dynamic_sl)
-                        if self.adapter.modify_position(ticket=pos.ticket, stop_loss=dynamic_sl, take_profit=pos.tp) and self.notifier:
-                            self.notifier.notify_trailing_stop_advanced(ticket=pos.ticket, new_sl=dynamic_sl, current_price=price_current, reply_to_message_id=msg_id)
+                    if (pos.sl - dynamic_sl) >= self.min_step and (
+                        dynamic_sl - price_current
+                    ) >= min_stop_gap:
+                        logger.info(
+                            ">>> STAGE 2: TRAILING STOP ADVANCED (SELL) <<<",
+                            ticket=pos.ticket,
+                            new_sl=dynamic_sl,
+                        )
+                        if (
+                            self.adapter.modify_position(
+                                ticket=pos.ticket, stop_loss=dynamic_sl, take_profit=pos.tp
+                            )
+                            and self.notifier
+                        ):
+                            self.notifier.notify_trailing_stop_advanced(
+                                ticket=pos.ticket,
+                                new_sl=dynamic_sl,
+                                current_price=price_current,
+                                reply_to_message_id=msg_id,
+                            )
 
         return positions
 

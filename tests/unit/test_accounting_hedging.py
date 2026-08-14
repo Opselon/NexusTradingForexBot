@@ -17,6 +17,7 @@ from nexus_scalp.features.regime_classifier import (
 
 class MockMT5Port:
     """Mock Direct MT5 / Broker Port for test isolation."""
+
     def __init__(self) -> None:
         self.positions: list[Position] = []
         self.sent_orders: list[TradeOrder] = []
@@ -106,14 +107,38 @@ def test_audit_ledger_recording_and_metrics() -> None:
         audit = AuditRepository(db_url=db_url, flush_interval_sec=0.1)
 
         # Log some snapshots to test drawdown calculations
-        acc1 = AccountInfo(login=123, trade_mode=0, leverage=100, balance=10000.0, equity=10000.0, margin=0.0, margin_free=10000.0)
-        acc2 = AccountInfo(login=123, trade_mode=0, leverage=100, balance=10000.0, equity=11000.0, margin=0.0, margin_free=11000.0) # peak
-        acc3 = AccountInfo(login=123, trade_mode=0, leverage=100, balance=10000.0, equity=9500.0, margin=0.0, margin_free=9500.0)  # drawdown of 13.64%
+        acc1 = AccountInfo(
+            login=123,
+            trade_mode=0,
+            leverage=100,
+            balance=10000.0,
+            equity=10000.0,
+            margin=0.0,
+            margin_free=10000.0,
+        )
+        acc2 = AccountInfo(
+            login=123,
+            trade_mode=0,
+            leverage=100,
+            balance=10000.0,
+            equity=11000.0,
+            margin=0.0,
+            margin_free=11000.0,
+        )  # peak
+        acc3 = AccountInfo(
+            login=123,
+            trade_mode=0,
+            leverage=100,
+            balance=10000.0,
+            equity=9500.0,
+            margin=0.0,
+            margin_free=9500.0,
+        )  # drawdown of 13.64%
 
         # Directly log snapshots
         audit.log_account_snapshot(acc1, 10000.0)
         # Force wait / sleep or manual write to bypass throttling for snapshot timing
-        audit._last_snapshot_time = 0.0 # Force override throttling
+        audit._last_snapshot_time = 0.0  # Force override throttling
         audit.log_account_snapshot(acc2, 11000.0)
         audit._last_snapshot_time = 0.0
         audit.log_account_snapshot(acc3, 11000.0)
@@ -122,19 +147,80 @@ def test_audit_ledger_recording_and_metrics() -> None:
         now_str = datetime.now(UTC).isoformat()
 
         # Trade 1: Buy Win ($200 profit)
-        audit.log_ledger_opened(ticket=101, symbol="XAUUSD", direction="BUY", volume=1.0, entry_price=2300.00, timestamp_str=now_str)
-        audit.log_ledger_closed(ticket=101, symbol="XAUUSD", direction="BUY", volume=1.0, entry_price=2300.00, exit_price=2302.00, status="CLOSED_TP", pnl=200.0, commission=-2.0, swap=0.0, duration_sec=45.0, timestamp_str=now_str)
+        audit.log_ledger_opened(
+            ticket=101,
+            symbol="XAUUSD",
+            direction="BUY",
+            volume=1.0,
+            entry_price=2300.00,
+            timestamp_str=now_str,
+        )
+        audit.log_ledger_closed(
+            ticket=101,
+            symbol="XAUUSD",
+            direction="BUY",
+            volume=1.0,
+            entry_price=2300.00,
+            exit_price=2302.00,
+            status="CLOSED_TP",
+            pnl=200.0,
+            commission=-2.0,
+            swap=0.0,
+            duration_sec=45.0,
+            timestamp_str=now_str,
+        )
 
         # Trade 2: Sell Win ($150 profit)
-        audit.log_ledger_opened(ticket=102, symbol="XAUUSD", direction="SELL", volume=0.5, entry_price=2305.00, timestamp_str=now_str)
-        audit.log_ledger_closed(ticket=102, symbol="XAUUSD", direction="SELL", volume=0.5, entry_price=2305.00, exit_price=2302.00, status="CLOSED_TP", pnl=150.0, commission=-1.0, swap=-0.5, duration_sec=60.0, timestamp_str=now_str)
+        audit.log_ledger_opened(
+            ticket=102,
+            symbol="XAUUSD",
+            direction="SELL",
+            volume=0.5,
+            entry_price=2305.00,
+            timestamp_str=now_str,
+        )
+        audit.log_ledger_closed(
+            ticket=102,
+            symbol="XAUUSD",
+            direction="SELL",
+            volume=0.5,
+            entry_price=2305.00,
+            exit_price=2302.00,
+            status="CLOSED_TP",
+            pnl=150.0,
+            commission=-1.0,
+            swap=-0.5,
+            duration_sec=60.0,
+            timestamp_str=now_str,
+        )
 
         # Trade 3: Buy Loss (-$100 profit)
-        audit.log_ledger_opened(ticket=103, symbol="XAUUSD", direction="BUY", volume=1.0, entry_price=2310.00, timestamp_str=now_str)
-        audit.log_ledger_closed(ticket=103, symbol="XAUUSD", direction="BUY", volume=1.0, entry_price=2310.00, exit_price=2309.00, status="CLOSED_SL", pnl=-100.0, commission=-2.0, swap=0.0, duration_sec=30.0, timestamp_str=now_str)
+        audit.log_ledger_opened(
+            ticket=103,
+            symbol="XAUUSD",
+            direction="BUY",
+            volume=1.0,
+            entry_price=2310.00,
+            timestamp_str=now_str,
+        )
+        audit.log_ledger_closed(
+            ticket=103,
+            symbol="XAUUSD",
+            direction="BUY",
+            volume=1.0,
+            entry_price=2310.00,
+            exit_price=2309.00,
+            status="CLOSED_SL",
+            pnl=-100.0,
+            commission=-2.0,
+            swap=0.0,
+            duration_sec=30.0,
+            timestamp_str=now_str,
+        )
 
         # Wait for worker thread to flush queues to DB
         import time
+
         time.sleep(1.0)
         audit.close()
 
@@ -155,7 +241,7 @@ def test_audit_ledger_recording_and_metrics() -> None:
         # Test pagination
         trades_page1 = audit_reader.get_ledger_trades(limit=2, offset=0)
         assert len(trades_page1) == 2
-        assert trades_page1[0]["ticket"] == 103 # Descending ticket order
+        assert trades_page1[0]["ticket"] == 103  # Descending ticket order
 
         trades_page2 = audit_reader.get_ledger_trades(limit=2, offset=2)
         assert len(trades_page2) == 1
@@ -212,7 +298,7 @@ def test_intelligent_hedging_trigger_and_policy() -> None:
                 "enabled": False,
                 "bot_token": "mock_token",
                 "admin_id": "mock_id",
-            }
+            },
         }
         config = AppConfig.model_validate(config_dict)
 
@@ -221,7 +307,9 @@ def test_intelligent_hedging_trigger_and_policy() -> None:
         audit = AuditRepository(db_url=db_url)
 
         # Instantiate live engine with force_fresh_model=True to create modelweights file
-        engine = LiveEngine(config=config, adapter=mock_port, audit_repo=audit, force_fresh_model=True)
+        engine = LiveEngine(
+            config=config, adapter=mock_port, audit_repo=audit, force_fresh_model=True
+        )
         engine._symbol_info = mock_port.get_symbol_info("XAUUSD")
 
         # Setup an active position in drawdown with a very low hold_score
@@ -233,7 +321,7 @@ def test_intelligent_hedging_trigger_and_policy() -> None:
             price_open=2340.00,
             sl=2330.00,
             tp=2360.00,
-            profit=-150.00, # drawdown!
+            profit=-150.00,  # drawdown!
             magic=888101,
         )
         mock_port.positions = [pos]
@@ -293,7 +381,9 @@ def test_intelligent_hedging_trigger_and_policy() -> None:
         sent_order = mock_port.sent_orders[0]
         assert sent_order.order_type == OrderType.BUY_LIMIT
         assert sent_order.price < tick.bid  # Should be lower than bid (averaging)
-        assert sent_order.take_profit == pos.price_open  # take profit target is the original entry price for break-even
+        assert (
+            sent_order.take_profit == pos.price_open
+        )  # take profit target is the original entry price for break-even
 
         # Verify ticket was added to self._hedged_tickets to prevent duplicate hedging
         assert 201 in engine._hedged_tickets

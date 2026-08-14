@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -33,10 +33,17 @@ import torch
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ActionType
-from nexus_scalp.domain.models import AccountInfo, SymbolInfo, TickData, TradeOrder, TradeProposal, Position
+from nexus_scalp.domain.models import (
+    AccountInfo,
+    Position,
+    SymbolInfo,
+    TickData,
+    TradeOrder,
+    TradeProposal,
+)
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
-from nexus_scalp.features.scalp_features import ScalpFeatureEngine, FeatureVector
+from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.models.scalp_net import ScalpNet
@@ -45,8 +52,8 @@ from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 from nexus_scalp.ports.mt5_port import IMT5Port
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.signals.policy import SignalPolicy
-from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
+from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
 logger = get_logger("nexus_scalp.application.live_engine")
 
@@ -54,6 +61,7 @@ logger = get_logger("nexus_scalp.application.live_engine")
 # -----------------------------
 # Small supporting structs
 # -----------------------------
+
 
 @dataclass(frozen=True)
 class ScalerBundle:
@@ -80,6 +88,7 @@ class ModelBundle:
 # -----------------------------
 # Live Engine
 # -----------------------------
+
 
 class LiveEngine:
     """
@@ -197,7 +206,9 @@ class LiveEngine:
 
         # Preload model/scaler bundle (pre-flight)
         model_path = Path(self.config.model.model_artifact_path)
-        self._bundle = self._load_or_create_bundle(model_path=model_path, force_fresh=self.force_fresh_model)
+        self._bundle = self._load_or_create_bundle(
+            model_path=model_path, force_fresh=self.force_fresh_model
+        )
 
     # -------------------------
     # Public lifecycle
@@ -208,7 +219,11 @@ class LiveEngine:
         Synchronous entrypoint.
         """
         configure_logging(log_level="INFO", json_format=False, log_to_file=True)
-        logger.info("Initializing Live Engine", symbol=self.config.execution.symbol, mode=self.config.execution.mode.value)
+        logger.info(
+            "Initializing Live Engine",
+            symbol=self.config.execution.symbol,
+            mode=self.config.execution.mode.value,
+        )
 
         try:
             # Pre-flight validation BEFORE connecting to broker
@@ -216,7 +231,9 @@ class LiveEngine:
         except Exception as e:
             logger.critical("Pre-flight validation failed", error=str(e), exc_info=True)
             try:
-                self.notifier.notify_error("Engine Startup Pre-Flight", f"Startup pre-flight failed: {e}")
+                self.notifier.notify_error(
+                    "Engine Startup Pre-Flight", f"Startup pre-flight failed: {e}"
+                )
                 self.notifier.shutdown(timeout=2.0)
             except Exception:
                 pass
@@ -242,7 +259,9 @@ class LiveEngine:
         except Exception as e:
             logger.critical("Fatal exception in engine run loop", error=str(e), exc_info=True)
             try:
-                self.notifier.notify_error("Engine Run-Loop Fatal", f"Unhandled critical exception: {e}")
+                self.notifier.notify_error(
+                    "Engine Run-Loop Fatal", f"Unhandled critical exception: {e}"
+                )
             except Exception:
                 pass
             raise
@@ -297,6 +316,7 @@ class LiveEngine:
         )
 
         import time
+
         self._last_tick_processed_time = time.time()
 
         while self._running:
@@ -306,13 +326,19 @@ class LiveEngine:
                 if (current_time - self._last_tick_processed_time) > 15.0:
                     # Avoid spamming reconnects if connected but market is closed (e.g. weekend or holidays)
                     if not self.adapter.is_connected():
-                        logger.warning("[WARNING] Tick stream stalled and MT5 disconnected. Triggering MT5 adapter healthcheck & auto-reconnect")
+                        logger.warning(
+                            "[WARNING] Tick stream stalled and MT5 disconnected. Triggering MT5 adapter healthcheck & auto-reconnect"
+                        )
                         try:
                             self.adapter.disconnect()
                             await asyncio.sleep(1.0)
                             self.adapter.connect()
                         except Exception as conn_err:
-                            logger.error("Error during auto-reconnect in watchdog", error=str(conn_err), exc_info=True)
+                            logger.error(
+                                "Error during auto-reconnect in watchdog",
+                                error=str(conn_err),
+                                exc_info=True,
+                            )
                     else:
                         logger.info("[WATCHDOG] Tick stream quiet. MT5 connection remains active.")
                     self._last_tick_processed_time = time.time()
@@ -388,10 +414,15 @@ class LiveEngine:
 
         # Validate schema contract
         if self.config.model.feature_schema_version != "v1.0":
-            logger.warning("Feature schema version unexpected", version=self.config.model.feature_schema_version)
+            logger.warning(
+                "Feature schema version unexpected",
+                version=self.config.model.feature_schema_version,
+            )
 
         # Telegram hardening: never log token
-        if self.config.telegram.enabled and (not os.getenv("NEXUS_TELEGRAM_BOT_TOKEN") and not self.config.telegram.bot_token):
+        if self.config.telegram.enabled and (
+            not os.getenv("NEXUS_TELEGRAM_BOT_TOKEN") and not self.config.telegram.bot_token
+        ):
             logger.warning("Telegram enabled but token missing (env override recommended)")
 
     # -------------------------
@@ -426,7 +457,9 @@ class LiveEngine:
     # -------------------------
 
     def _load_or_create_bundle(self, model_path: Path, force_fresh: bool) -> ModelBundle:
-        model = self._load_or_initialize_model_weights(model_path=model_path, force_fresh=force_fresh)
+        model = self._load_or_initialize_model_weights(
+            model_path=model_path, force_fresh=force_fresh
+        )
         scaler = self._load_scaler_artifacts(model_path=model_path)
         return ModelBundle(model=model, scaler=scaler, artifact_path=model_path)
 
@@ -454,7 +487,9 @@ class LiveEngine:
                     model_path.rename(backup_path)
                 except Exception:
                     pass
-                raise RuntimeError(f"Checkpoint dimension mismatch: expected {expected}, got {loaded}")
+                raise RuntimeError(
+                    f"Checkpoint dimension mismatch: expected {expected}, got {loaded}"
+                )
 
             model.load_state_dict(state_dict)
             logger.info("Loaded model weights", path=str(model_path))
@@ -463,8 +498,6 @@ class LiveEngine:
         logger.info("Initializing fresh model weights", path=str(model_path))
         self._save_model_weights_atomic(model, model_path)
         return model
-
-
 
     def _load_scaler_artifacts(self, model_path: Path) -> ScalerBundle:
         scaler_path = model_path.with_suffix(".scaler.npz")
@@ -482,11 +515,20 @@ class LiveEngine:
                     f"Scaler dim invalid: mean{mean.shape} std{std.shape} expected ({self.FEATURE_DIM},)"
                 )
 
-            logger.info("Loaded scaler artifacts successfully", path=str(scaler_path), mean_shape=mean.shape, std_shape=std.shape)
+            logger.info(
+                "Loaded scaler artifacts successfully",
+                path=str(scaler_path),
+                mean_shape=mean.shape,
+                std_shape=std.shape,
+            )
             return ScalerBundle(mean=mean, std=std)
 
         except Exception as err:
-            logger.warning("Failed to load scaler; fallback to raw features", error=str(err), path=str(scaler_path))
+            logger.warning(
+                "Failed to load scaler; fallback to raw features",
+                error=str(err),
+                path=str(scaler_path),
+            )
             return ScalerBundle(mean=None, std=None)
 
     def _save_model_weights_atomic(self, model: ScalpNet, model_path: Path) -> None:
@@ -495,19 +537,23 @@ class LiveEngine:
             try:
                 model_path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = model_path.with_suffix(".pt.tmp")
-                
+
                 # Detach state dict to CPU before saving for HFT thread safety
                 cpu_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
                 torch.save(cpu_state, tmp)
                 tmp.replace(model_path)
-                
+
                 logger.info(
                     "Saved PyTorch model weights artifact atomically to disk",
                     path=str(model_path),
                     tensor_layers=len(cpu_state),
                 )
             except Exception as err:
-                logger.error("Failed to save atomic model weights to disk", error=str(err), path=str(model_path))
+                logger.error(
+                    "Failed to save atomic model weights to disk",
+                    error=str(err),
+                    path=str(model_path),
+                )
 
     # -------------------------
     # Warmup + bootstrap training
@@ -515,7 +561,9 @@ class LiveEngine:
 
     async def _cold_start_warmup(self, symbol: str) -> None:
         logger.info("Cold-start warmup: fetching 1200 M1 bars...")
-        hist_bars = self.adapter.get_historical_bars(symbol=symbol, timeframe="M1", count=1200) or []
+        hist_bars = (
+            self.adapter.get_historical_bars(symbol=symbol, timeframe="M1", count=1200) or []
+        )
 
         for b in hist_bars:
             self.aggregator._completed_bars.append(b)
@@ -539,8 +587,7 @@ class LiveEngine:
             x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="cold_start_warmup")
             record = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
             record.update(
-                close=b.close, high=b.high, low=b.low, open=b.open,
-                spread=0.20, atr_m1=fv.atr_m1
+                close=b.close, high=b.high, low=b.low, open=b.open, spread=0.20, atr_m1=fv.atr_m1
             )
             self._rolling_feature_records.append(record)
 
@@ -549,22 +596,29 @@ class LiveEngine:
         # Immediately extract and update real SMC overlays to prevent cold-start blank canvas in MT5 mode
         completed_bars = self.aggregator.get_completed_bars()
         if completed_bars and hasattr(self, "server_state") and self.server_state is not None:
-            raw_atr = self._rolling_feature_records[-1]["atr_m1"] if self._rolling_feature_records else 1.5
+            raw_atr = (
+                self._rolling_feature_records[-1]["atr_m1"]
+                if self._rolling_feature_records
+                else 1.5
+            )
             real_overlays = self.signal_policy.extract_live_chart_overlays(
-                completed_bars=completed_bars,
-                atr_val=raw_atr
+                completed_bars=completed_bars, atr_val=raw_atr
             )
             bars_list = []
             for b in completed_bars[-250:]:
-                bars_list.append({
-                    "time": b.timestamp.isoformat() if hasattr(b.timestamp, "isoformat") else str(b.timestamp),
-                    "open": b.open,
-                    "high": b.high,
-                    "low": b.low,
-                    "close": b.close,
-                    "volume": b.tick_volume,
-                    "is_complete": True
-                })
+                bars_list.append(
+                    {
+                        "time": b.timestamp.isoformat()
+                        if hasattr(b.timestamp, "isoformat")
+                        else str(b.timestamp),
+                        "open": b.open,
+                        "high": b.high,
+                        "low": b.low,
+                        "close": b.close,
+                        "volume": b.tick_volume,
+                        "is_complete": True,
+                    }
+                )
             self.server_state.update_live_visuals(bars_list, real_overlays)
             logger.info("Cold-start SMC visual overlays successfully bridged to server state!")
 
@@ -572,7 +626,10 @@ class LiveEngine:
         if len(self._rolling_feature_records) < 300:
             return
 
-        logger.info("BOOTSTRAP: initial online fine-tune starting...", rows=len(self._rolling_feature_records))
+        logger.info(
+            "BOOTSTRAP: initial online fine-tune starting...",
+            rows=len(self._rolling_feature_records),
+        )
         df_hist = pl.DataFrame(list(self._rolling_feature_records))
         df_labeled = self.online_labeler.label_dataframe(df_hist)
 
@@ -600,7 +657,9 @@ class LiveEngine:
 
         # Atomic swap bundle
         with self._bundle_lock:
-            self._bundle = ModelBundle(model=updated_model, scaler=scaler, artifact_path=bundle.artifact_path)
+            self._bundle = ModelBundle(
+                model=updated_model, scaler=scaler, artifact_path=bundle.artifact_path
+            )
 
         self._run_model_diagnostics_and_summary(df_labeled=df_labeled, feature_cols=feature_cols)
 
@@ -614,8 +673,12 @@ class LiveEngine:
             self.signal_policy.algo_config = self.config.algo
             self.order_manager.algo_config = self.config.algo
             self.risk_engine.min_risk_reward_ratio = self.config.algo.min_risk_reward_ratio
-            self.risk_engine.min_rr_high_confidence = getattr(self.config.algo, "min_rr_high_confidence", 1.2)
-            self.risk_engine.high_confidence_threshold = getattr(self.config.algo, "high_confidence_threshold", 0.70)
+            self.risk_engine.min_rr_high_confidence = getattr(
+                self.config.algo, "min_rr_high_confidence", 1.2
+            )
+            self.risk_engine.high_confidence_threshold = getattr(
+                self.config.algo, "high_confidence_threshold", 0.70
+            )
 
             is_new_bar = self.aggregator.process_tick(tick)
 
@@ -624,7 +687,9 @@ class LiveEngine:
                 self.aggregator._completed_bars = self.aggregator._completed_bars[-4000:]
 
             completed_bars = self.aggregator.get_completed_bars()
-            fv = self.feature_engine.compute_from_bars(completed_bars=completed_bars, current_tick=tick)
+            fv = self.feature_engine.compute_from_bars(
+                completed_bars=completed_bars, current_tick=tick
+            )
 
             if is_new_bar and completed_bars:
                 self._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
@@ -650,6 +715,7 @@ class LiveEngine:
 
             # Heartbeat radar logging: On EVERY M1 Bar completion or every 10 seconds of active ticks, force log.
             import time
+
             current_time = time.time()
             force_log = False
             if is_new_bar or (current_time - self._last_radar_log_time) >= 10.0:
@@ -677,32 +743,35 @@ class LiveEngine:
 
             # Extract and update real SMC overlays for the live chart canvas
             real_overlays = self.signal_policy.extract_live_chart_overlays(
-                completed_bars=completed_bars,
-                atr_val=fv.atr_m1
+                completed_bars=completed_bars, atr_val=fv.atr_m1
             )
             if hasattr(self, "server_state") and self.server_state is not None:
                 bars_list = []
                 for b in completed_bars[-250:]:
-                    bars_list.append({
-                        "time": b.timestamp.isoformat(),
-                        "open": b.open,
-                        "high": b.high,
-                        "low": b.low,
-                        "close": b.close,
-                        "volume": b.tick_volume,
-                        "is_complete": True
-                    })
+                    bars_list.append(
+                        {
+                            "time": b.timestamp.isoformat(),
+                            "open": b.open,
+                            "high": b.high,
+                            "low": b.low,
+                            "close": b.close,
+                            "volume": b.tick_volume,
+                            "is_complete": True,
+                        }
+                    )
                 forming_bar = self.aggregator.get_current_forming_bar()
                 if forming_bar:
-                    bars_list.append({
-                        "time": forming_bar.timestamp.isoformat(),
-                        "open": forming_bar.open,
-                        "high": forming_bar.high,
-                        "low": forming_bar.low,
-                        "close": forming_bar.close,
-                        "volume": forming_bar.tick_volume,
-                        "is_complete": False
-                    })
+                    bars_list.append(
+                        {
+                            "time": forming_bar.timestamp.isoformat(),
+                            "open": forming_bar.open,
+                            "high": forming_bar.high,
+                            "low": forming_bar.low,
+                            "close": forming_bar.close,
+                            "volume": forming_bar.tick_volume,
+                            "is_complete": False,
+                        }
+                    )
                 self.server_state.update_live_visuals(bars_list, real_overlays)
 
             policy_decision = proposal
@@ -743,10 +812,14 @@ class LiveEngine:
 
                 # FOR NEW ENTRY SIGNALS
                 elif policy_decision.action in (
-                    ActionType.BUY, ActionType.SELL,
-                    ActionType.BUY_MARKET, ActionType.SELL_MARKET,
-                    ActionType.BUY_LIMIT, ActionType.SELL_LIMIT,
-                    ActionType.BUY_STOP, ActionType.SELL_STOP
+                    ActionType.BUY,
+                    ActionType.SELL,
+                    ActionType.BUY_MARKET,
+                    ActionType.SELL_MARKET,
+                    ActionType.BUY_LIMIT,
+                    ActionType.SELL_LIMIT,
+                    ActionType.BUY_STOP,
+                    ActionType.SELL_STOP,
                 ):
                     if self._symbol_info:
                         dynamic_volume = self.risk_engine.calculate_volume(
@@ -763,12 +836,18 @@ class LiveEngine:
                             symbol_info=self._symbol_info,
                         )
                         success = self.order_manager.dispatch_order(policy_decision, dynamic_volume)
-                        logger.info(f"[info] DISPATCH ORDER action={policy_decision.action.value} price={policy_decision.proposed_entry} volume={dynamic_volume}")
+                        logger.info(
+                            f"[info] DISPATCH ORDER action={policy_decision.action.value} price={policy_decision.proposed_entry} volume={dynamic_volume}"
+                        )
 
                         if success:
-                            risk_usd = account.equity * (self.config.risk.risk_per_trade_pct / 100.0)
+                            risk_usd = account.equity * (
+                                self.config.risk.risk_per_trade_pct / 100.0
+                            )
                             try:
-                                mapped_order_type = self.risk_engine._map_action_to_order_type(policy_decision.action)
+                                mapped_order_type = self.risk_engine._map_action_to_order_type(
+                                    policy_decision.action
+                                )
                                 order_obj = TradeOrder(
                                     order_id=policy_decision.request_id,
                                     symbol=policy_decision.symbol,
@@ -784,8 +863,11 @@ class LiveEngine:
                                     order=order_obj,
                                     risk_usd=risk_usd,
                                     callback=lambda msg_id: (
-                                        self.order_manager.register_order_message(order_obj.order_id, msg_id)
-                                        if msg_id else None
+                                        self.order_manager.register_order_message(
+                                            order_obj.order_id, msg_id
+                                        )
+                                        if msg_id
+                                        else None
                                     ),
                                 )
                             except Exception:
@@ -800,12 +882,16 @@ class LiveEngine:
 
                 # FOR POSITION LIFECYCLE ACTIONS
                 elif policy_decision.action in (
-                    ActionType.CLOSE_POSITION, ActionType.PARTIAL_CLOSE,
-                    ActionType.MODIFY_SL_TP, ActionType.CANCEL_ORDER
+                    ActionType.CLOSE_POSITION,
+                    ActionType.PARTIAL_CLOSE,
+                    ActionType.MODIFY_SL_TP,
+                    ActionType.CANCEL_ORDER,
                 ):
                     self.order_manager.execute_lifecycle_action(policy_decision)
                     ticket = getattr(policy_decision, "ticket", 0) or 0
-                    logger.info(f"[info] DISPATCH LIFECYCLE ACTION action={policy_decision.action.value} ticket={ticket}")
+                    logger.info(
+                        f"[info] DISPATCH LIFECYCLE ACTION action={policy_decision.action.value} ticket={ticket}"
+                    )
 
             # Evaluate intelligent hedging / counter-position policy
             self._evaluate_hedging_policy(
@@ -822,17 +908,23 @@ class LiveEngine:
             self.audit.log_account_snapshot(account=account, peak_equity=self._peak_equity)
             # Keep the order manager's account snapshot fresh so closed-trade autopsy rows
             # carry accurate balance/equity/drawdown values.
-            self.order_manager.update_account_snapshot(account=account, peak_equity=self._peak_equity)
+            self.order_manager.update_account_snapshot(
+                account=account, peak_equity=self._peak_equity
+            )
 
         except Exception as pipeline_err:
-            logger.error("Silent recovery: exception caught in hot-path tick processing pipeline", error=str(pipeline_err), exc_info=True)
+            logger.error(
+                "Silent recovery: exception caught in hot-path tick processing pipeline",
+                error=str(pipeline_err),
+                exc_info=True,
+            )
 
     def _evaluate_hedging_policy(
         self,
         active_positions: list[Position],
         tick: TickData,
         probs: torch.Tensor,
-        regime_state: Optional[MarketRegimeState],
+        regime_state: MarketRegimeState | None,
         fv: FeatureVector,
         account: AccountInfo,
     ) -> None:
@@ -892,7 +984,9 @@ class LiveEngine:
 
             # Determine whether to hedge or average using PyTorch model predictions and regime indicators
             if pos.type == OrderType.BUY:
-                if prob_buy >= prob_sell or (regime_state and regime_state.regime_type == RegimeType.RANGING_MEAN_REVERSION):
+                if prob_buy >= prob_sell or (
+                    regime_state and regime_state.regime_type == RegimeType.RANGING_MEAN_REVERSION
+                ):
                     is_buy_limit = True
                     target_entry = round(tick.bid - atr * 1.0, 2)
                     stop_loss = round(target_entry - atr * 1.5, 2)
@@ -902,7 +996,9 @@ class LiveEngine:
                     target_entry = round(tick.ask + atr * 1.0, 2)
                     stop_loss = round(target_entry + atr * 1.5, 2)
                     take_profit = round(tick.bid - atr * 1.5, 2)
-            elif prob_sell >= prob_buy or (regime_state and regime_state.regime_type == RegimeType.RANGING_MEAN_REVERSION):
+            elif prob_sell >= prob_buy or (
+                regime_state and regime_state.regime_type == RegimeType.RANGING_MEAN_REVERSION
+            ):
                 is_buy_limit = False
                 target_entry = round(tick.ask + atr * 1.0, 2)
                 stop_loss = round(target_entry + atr * 1.5, 2)
@@ -954,7 +1050,7 @@ class LiveEngine:
                             self.notifier.notify_info(
                                 "Intelligent Hedging Activated",
                                 f"Position {pos.ticket} is in drawdown (Hold Score: {hold_score}). "
-                                f"Placed hedging order {hedge_order.order_type.value} of {hedge_order.volume} lots at {hedge_order.price}."
+                                f"Placed hedging order {hedge_order.order_type.value} of {hedge_order.volume} lots at {hedge_order.price}.",
                             )
                         except Exception:
                             pass
@@ -963,8 +1059,12 @@ class LiveEngine:
         x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
         rec = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
         rec.update(
-            close=last_bar.close, high=last_bar.high, low=last_bar.low, open=last_bar.open,
-            spread=(tick.ask - tick.bid), atr_m1=fv.atr_m1
+            close=last_bar.close,
+            high=last_bar.high,
+            low=last_bar.low,
+            open=last_bar.open,
+            spread=(tick.ask - tick.bid),
+            atr_m1=fv.atr_m1,
         )
         self._rolling_feature_records.append(rec)
         self._bars_since_last_retrain += 1
@@ -1023,9 +1123,9 @@ class LiveEngine:
                 bundle.model,
                 df_labeled,
                 feature_cols,
-                3,     # epochs
+                3,  # epochs
                 1e-4,  # lr
-                15,    # max_holding_bars
+                15,  # max_holding_bars
             )
             updated_model.eval()
 
@@ -1034,7 +1134,9 @@ class LiveEngine:
             self._save_model_weights_atomic(updated_model, bundle.artifact_path)
 
             with self._bundle_lock:
-                self._bundle = ModelBundle(model=updated_model, scaler=scaler, artifact_path=bundle.artifact_path)
+                self._bundle = ModelBundle(
+                    model=updated_model, scaler=scaler, artifact_path=bundle.artifact_path
+                )
 
             self._bars_since_last_retrain = 0
             logger.info("ASYNC RETRAIN SUCCESS")
@@ -1049,7 +1151,9 @@ class LiveEngine:
     # Diagnostics
     # -------------------------
 
-    def _run_model_diagnostics_and_summary(self, df_labeled: pl.DataFrame, feature_cols: list[str]) -> None:
+    def _run_model_diagnostics_and_summary(
+        self, df_labeled: pl.DataFrame, feature_cols: list[str]
+    ) -> None:
         logger.info("=== MODEL DIAGNOSTICS ===")
 
         with self._bundle_lock:
@@ -1059,7 +1163,9 @@ class LiveEngine:
             return
 
         # Test 1: forward pass sanity
-        sample_x_np = df_labeled.select(feature_cols).tail(20).to_numpy().astype(np.float32, copy=False)
+        sample_x_np = (
+            df_labeled.select(feature_cols).tail(20).to_numpy().astype(np.float32, copy=False)
+        )
         sample_x_np = bundle.scaler.transform_50d(sample_x_np)
         x = torch.tensor(sample_x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
@@ -1098,7 +1204,7 @@ class LiveEngine:
         sell_pct = float(np.sum(preds == 2) / max(total, 1) * 100.0)
         no_trade_pct = float(np.sum(preds == 0) / max(total, 1) * 100.0)
 
-        test3_pass = (buy_pct < 85.0 and sell_pct < 85.0)
+        test3_pass = buy_pct < 85.0 and sell_pct < 85.0
 
         logger.info(
             "MODEL SUMMARY",
@@ -1117,7 +1223,9 @@ class LiveEngine:
         last_snapshot = self.audit.get_last_account_snapshot()
         if last_snapshot and "peak_equity" in last_snapshot:
             self._peak_equity = float(last_snapshot["peak_equity"])
-            logger.info("Restored peak equity from audit DB", peak_equity=f"{self._peak_equity:.2f}")
+            logger.info(
+                "Restored peak equity from audit DB", peak_equity=f"{self._peak_equity:.2f}"
+            )
         elif account:
             self._peak_equity = float(account.equity)
 
@@ -1141,10 +1249,17 @@ class LiveEngine:
         # Withdrawal adjustment heuristic retained
         if self._last_balance > 0.0:
             balance_delta = account.balance - self._last_balance
-            no_trade_was_closed = (current_pos_count >= self._last_active_position_count)
-            if balance_delta < 0.0 and no_trade_was_closed and abs(balance_delta) > (account.equity * 0.02):
+            no_trade_was_closed = current_pos_count >= self._last_active_position_count
+            if (
+                balance_delta < 0.0
+                and no_trade_was_closed
+                and abs(balance_delta) > (account.equity * 0.02)
+            ):
                 self._peak_equity += balance_delta
-                logger.info("Withdrawal detected; adjusted peak equity", peak_equity=f"{self._peak_equity:.2f}")
+                logger.info(
+                    "Withdrawal detected; adjusted peak equity",
+                    peak_equity=f"{self._peak_equity:.2f}",
+                )
 
         self._last_balance = float(account.balance)
         self._last_active_position_count = int(current_pos_count)
@@ -1161,18 +1276,25 @@ class LiveEngine:
 
         elif account.equity < self._peak_equity and self._peak_equity > 0:
             drawdown_pct = ((self._peak_equity - account.equity) / self._peak_equity) * 100.0
-            if drawdown_pct > (self.config.risk.max_account_drawdown_pct * 0.5) and not self._survival_mode_active:
+            if (
+                drawdown_pct > (self.config.risk.max_account_drawdown_pct * 0.5)
+                and not self._survival_mode_active
+            ):
                 self._survival_mode_active = True
                 logger.warning("SURVIVAL MODE ON", drawdown_pct=round(drawdown_pct, 2))
                 try:
-                    self.notifier.notify_survival_mode_changed(active=True, drawdown_pct=drawdown_pct)
+                    self.notifier.notify_survival_mode_changed(
+                        active=True, drawdown_pct=drawdown_pct
+                    )
                 except Exception:
                     pass
 
             if drawdown_pct > self.config.risk.max_account_drawdown_pct:
                 logger.critical("MAX DRAWDOWN EXCEEDED; HALTING", dd_pct=round(drawdown_pct, 2))
                 try:
-                    self.notifier.notify_kill_switch_activated(f"Max Drawdown Exceeded ({drawdown_pct:.2f}%)")
+                    self.notifier.notify_kill_switch_activated(
+                        f"Max Drawdown Exceeded ({drawdown_pct:.2f}%)"
+                    )
                 except Exception:
                     pass
                 self._running = False
@@ -1184,18 +1306,24 @@ class LiveEngine:
     @classmethod
     def _validate_50d_tensor(cls, features: Sequence[float], context: str) -> list[float]:
         if len(features) != cls.FEATURE_DIM:
-            raise RuntimeError(f"50D feature contract violation in {context}: expected {cls.FEATURE_DIM}, got {len(features)}")
+            raise RuntimeError(
+                f"50D feature contract violation in {context}: expected {cls.FEATURE_DIM}, got {len(features)}"
+            )
 
         out: list[float] = []
         for idx, val in enumerate(features):
             try:
                 f = float(val)
             except Exception:
-                logger.warning("Non-numeric feature sanitized", context=context, feature=f"feat_{idx}")
+                logger.warning(
+                    "Non-numeric feature sanitized", context=context, feature=f"feat_{idx}"
+                )
                 f = 0.0
 
             if not np.isfinite(f):
-                logger.warning("Non-finite feature sanitized", context=context, feature=f"feat_{idx}")
+                logger.warning(
+                    "Non-finite feature sanitized", context=context, feature=f"feat_{idx}"
+                )
                 f = 0.0
 
             out.append(float(np.clip(f, -3.0, 3.0)))

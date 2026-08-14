@@ -1,4 +1,3 @@
-# ruff: noqa: E501, PLR2004
 """
 Institutional Order Lifecycle & Dynamic Position Management Engine (v6.8 Enterprise Master - 853 Lines Complete Edition)
 ===========================================================================================================================
@@ -28,20 +27,20 @@ Invariants:
 import math
 import time
 from collections import deque
-from enum import Enum
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.domain.enums import OrderType, ActionType
-from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
-from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.configuration.config import AlgoConfig
+from nexus_scalp.domain.enums import ActionType, OrderType
+from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 from nexus_scalp.ports.mt5_port import IMT5Port
+from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
 logger = get_logger("nexus_scalp.execution.order_manager")
 
@@ -124,6 +123,7 @@ class ExitMechanism:
 
 class PositionState(Enum):
     """The 11 explicit in-trade lifecycles."""
+
     PROFIT_UNPROTECTED = "PROFIT_UNPROTECTED"
     PROFIT_PROTECTED = "PROFIT_PROTECTED"
     PROFIT_TRAILING = "PROFIT_TRAILING"
@@ -141,6 +141,7 @@ class PositionState(Enum):
 @dataclass
 class PositionEvaluationStep:
     """A single observation slice inside the rolling trajectory deque."""
+
     timestamp: datetime
     pnl: float
     price: float
@@ -155,9 +156,11 @@ class PositionEvaluationStep:
 # DATA STRUCTURES & VALUE OBJECTS
 # =============================================================================
 
+
 @dataclass
 class LSFTicketState:
     """Local State Features (LSF) tracking metrics for an active ticket."""
+
     seen_ticks: float = 0.0
     desync_score: float = 0.0
     desync_shocks: float = 0.0
@@ -180,6 +183,7 @@ class PositionProtectionState:
     are idempotent across repeated management passes. Every field is a fact about
     THIS ticket only.
     """
+
     #: Monotonic high-water mark of floating PnL in account currency. Never decreases
     #: while the position remains open.
     peak_win_usd: float = 0.0
@@ -225,6 +229,7 @@ class PositionProtectionState:
 @dataclass
 class SmartPositionMetrics:
     """Dataclass encapsulating 57 derived position metrics for execution routing."""
+
     spread_to_atr_ratio: float = 0.0
     impact_to_atr_ratio: float = 0.0
     net_to_atr_ratio: float = 0.0
@@ -288,6 +293,7 @@ class SmartPositionMetrics:
 # MASTER ORDER LIFECYCLE MANAGER
 # =============================================================================
 
+
 class OrderLifecycleManager:
     """
     Master Institutional Order Lifecycle Manager orchestrating real-time position management,
@@ -298,15 +304,15 @@ class OrderLifecycleManager:
         self,
         adapter: IMT5Port,
         audit_repo: AuditRepository | None = None,
-        notifier: TelegramNotifier | None = None, # [EXPANDED] Telegram Integration
-        be_trigger_usd: float = 1.00,         # Dynamic base trigger ($1.00 movement before BE lock)
-        be_lock_usd: float = 0.25,            # Locks +$0.25 to cover commissions and spread
+        notifier: TelegramNotifier | None = None,  # [EXPANDED] Telegram Integration
+        be_trigger_usd: float = 1.00,  # Dynamic base trigger ($1.00 movement before BE lock)
+        be_lock_usd: float = 0.25,  # Locks +$0.25 to cover commissions and spread
         trailing_distance_usd: float = 1.50,  # ATR-scaled dynamic trailing distance for Gold noise
-        min_modify_step_usd: float = 0.20,     # Minimum price change required before sending order modify IPC
-        enable_partial_tp: bool = True,       # Enables partial profit scale-out at TP1
-        partial_tp_ratio: float = 0.50,       # Closes 50% volume on TP1 milestone
+        min_modify_step_usd: float = 0.20,  # Minimum price change required before sending order modify IPC
+        enable_partial_tp: bool = True,  # Enables partial profit scale-out at TP1
+        partial_tp_ratio: float = 0.50,  # Closes 50% volume on TP1 milestone
         max_holding_seconds: float = 1800.0,  # 30 minutes time-decay threshold for stagnant trades
-        eta_coefficient: float = 2500.0,      # Base Temporary Impact scale for XAUUSD (Almgren-Chriss)
+        eta_coefficient: float = 2500.0,  # Base Temporary Impact scale for XAUUSD (Almgren-Chriss)
         rule_matrix: RuleMatrixEngine | None = None,
         algo_config: AlgoConfig | None = None,
         risk_engine: Any = None,
@@ -323,6 +329,7 @@ class OrderLifecycleManager:
         self._processed_orders: dict[str, bool] = {}
 
         import threading
+
         self._live_tickets_lock = threading.Lock()
         self._live_tickets_cache: dict[int, dict[str, Any]] = {}
 
@@ -478,7 +485,9 @@ class OrderLifecycleManager:
         """Computes drawdown from peak equity as a percentage (0.0 when no peak known)."""
         if self._peak_equity <= 0.0:
             return 0.0
-        return max(0.0, ((self._peak_equity - self._last_account_equity) / self._peak_equity) * 100.0)
+        return max(
+            0.0, ((self._peak_equity - self._last_account_equity) / self._peak_equity) * 100.0
+        )
 
     def _price_delta_to_usd(
         self,
@@ -562,7 +571,9 @@ class OrderLifecycleManager:
             return False
 
         if order.order_id in self._processed_orders:
-            logger.warning("Duplicate order submission blocked by idempotency check", order_id=order.order_id)
+            logger.warning(
+                "Duplicate order submission blocked by idempotency check", order_id=order.order_id
+            )
             return False
 
         logger.info(
@@ -598,7 +609,7 @@ class OrderLifecycleManager:
             volume=order.volume,
             reason="execute_order executed",
             latency=0.015,
-            execution_mode="STANDARD"
+            execution_mode="STANDARD",
         )
 
         return success
@@ -666,7 +677,9 @@ class OrderLifecycleManager:
                     )
                 )
             except Exception as clamp_err:
-                logger.error("Risk engine clamp failed; falling back to hard cap", error=str(clamp_err))
+                logger.error(
+                    "Risk engine clamp failed; falling back to hard cap", error=str(clamp_err)
+                )
 
         clamped = min(vol, HARD_MAX_LOTS)
         if clamped < vol:
@@ -721,9 +734,19 @@ class OrderLifecycleManager:
             market_regime=str(getattr(decision, "regime", "") or ""),
         )
 
-        logger.info("dispatch_order mapping action to MT5 command", action=action, symbol=symbol, volume=volume)
+        logger.info(
+            "dispatch_order mapping action to MT5 command",
+            action=action,
+            symbol=symbol,
+            volume=volume,
+        )
 
-        if action in (ActionType.BUY, ActionType.BUY_MARKET, ActionType.SELL, ActionType.SELL_MARKET):
+        if action in (
+            ActionType.BUY,
+            ActionType.BUY_MARKET,
+            ActionType.SELL,
+            ActionType.SELL_MARKET,
+        ):
             order_type = OrderType.BUY if "BUY" in action.value else OrderType.SELL
             ticket = self.mt5_adapter.execute_market_order(
                 symbol=symbol,
@@ -731,10 +754,12 @@ class OrderLifecycleManager:
                 volume=volume,
                 price=price,
                 stop_loss=sl,
-                take_profit=tp
+                take_profit=tp,
             )
             # Log broker confirmation exactly as required
-            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}")
+            logger.info(
+                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}"
+            )
             if ticket > 0:
                 self.audit.log_order(
                     ticket=ticket,
@@ -747,11 +772,16 @@ class OrderLifecycleManager:
                     volume=volume,
                     reason=f"dispatch_order {action.value}",
                     latency=0.012,
-                    execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD"
+                    execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
                 )
             return ticket > 0
 
-        elif action in (ActionType.BUY_LIMIT, ActionType.SELL_LIMIT, ActionType.BUY_STOP, ActionType.SELL_STOP):
+        elif action in (
+            ActionType.BUY_LIMIT,
+            ActionType.SELL_LIMIT,
+            ActionType.BUY_STOP,
+            ActionType.SELL_STOP,
+        ):
             if action == ActionType.BUY_LIMIT:
                 order_type = OrderType.BUY_LIMIT
             elif action == ActionType.SELL_LIMIT:
@@ -767,10 +797,12 @@ class OrderLifecycleManager:
                 volume=volume,
                 price=price,
                 stop_loss=sl,
-                take_profit=tp
+                take_profit=tp,
             )
             if ticket > 0:
-                logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}")
+                logger.info(
+                    f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {volume}"
+                )
                 self.audit.log_order(
                     ticket=ticket,
                     order_id=decision.request_id,
@@ -782,10 +814,12 @@ class OrderLifecycleManager:
                     volume=volume,
                     reason=f"dispatch_order pending {action.value}",
                     latency=0.011,
-                    execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD"
+                    execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
                 )
             else:
-                logger.error(f"Pending order dispatch rejected by broker server | Action: {action.value} | Lots: {volume}")
+                logger.error(
+                    f"Pending order dispatch rejected by broker server | Action: {action.value} | Lots: {volume}"
+                )
             return ticket > 0
 
         return False
@@ -853,7 +887,11 @@ class OrderLifecycleManager:
         targets = [p for p in positions if (target_ticket in (0, p.ticket))]
 
         if not targets:
-            logger.warning("AI REVERSAL: no active position found to reverse", symbol=symbol, ticket=target_ticket)
+            logger.warning(
+                "AI REVERSAL: no active position found to reverse",
+                symbol=symbol,
+                ticket=target_ticket,
+            )
             return False
 
         all_closed = True
@@ -889,8 +927,11 @@ class OrderLifecycleManager:
                             ticket=pos.ticket,
                             symbol=pos.symbol,
                             entry=pos.price_open,
-                            exit_price=(current_tick.bid if (current_tick and pos.type == OrderType.BUY)
-                                        else (current_tick.ask if current_tick else pos.price_open)),
+                            exit_price=(
+                                current_tick.bid
+                                if (current_tick and pos.type == OrderType.BUY)
+                                else (current_tick.ask if current_tick else pos.price_open)
+                            ),
                             profit_usd=pos.profit,
                             duration_sec=0.0,
                             reason=f"AI_REVERSAL_EXIT -> {getattr(new_action, 'value', new_action)}",
@@ -906,7 +947,9 @@ class OrderLifecycleManager:
             else:
                 all_closed = False
                 self._forced_exit_mechanisms.pop(pos.ticket, None)
-                logger.error("AI REVERSAL ABORTED: broker refused to close position", ticket=pos.ticket)
+                logger.error(
+                    "AI REVERSAL ABORTED: broker refused to close position", ticket=pos.ticket
+                )
 
         if not all_closed:
             # Refuse to stack an opposing order on top of a position we could not close.
@@ -948,16 +991,22 @@ class OrderLifecycleManager:
         volume = getattr(decision, "volume", None) or 0.0
 
         # --- AI REVERSAL INTERCEPT ---
-        if action == ActionType.CLOSE_POSITION and AI_REVERSAL_REASON in str(getattr(decision, "reason_code", "") or ""):
+        if action == ActionType.CLOSE_POSITION and AI_REVERSAL_REASON in str(
+            getattr(decision, "reason_code", "") or ""
+        ):
             self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
             logger.info("Intercepted CLOSE_POSITION as AI_REVERSAL_SIGNAL", ticket=ticket)
             return self.execute_ai_reversal(decision=decision, volume=volume)
 
-        logger.info("execute_lifecycle_action mapping action to MT5 command", action=action, ticket=ticket)
+        logger.info(
+            "execute_lifecycle_action mapping action to MT5 command", action=action, ticket=ticket
+        )
 
         if action == ActionType.CLOSE_POSITION:
             success = self.mt5_adapter.close_position(ticket=ticket)
-            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0")
+            logger.info(
+                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
+            )
             if success:
                 self.audit.log_order(
                     ticket=ticket,
@@ -970,14 +1019,16 @@ class OrderLifecycleManager:
                     volume=volume,
                     reason="close_position",
                     latency=0.009,
-                    execution_mode="STANDARD"
+                    execution_mode="STANDARD",
                 )
             return success
 
         elif action == ActionType.PARTIAL_CLOSE:
             success = self.mt5_adapter.close_position(ticket=ticket, volume=volume)
             lots = volume if volume is not None else 0.0
-            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {lots}")
+            logger.info(
+                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: {lots}"
+            )
             if success:
                 self.audit.log_order(
                     ticket=ticket,
@@ -990,13 +1041,17 @@ class OrderLifecycleManager:
                     volume=lots,
                     reason="partial_close",
                     latency=0.010,
-                    execution_mode="STANDARD"
+                    execution_mode="STANDARD",
                 )
             return success
 
         elif action == ActionType.MODIFY_SL_TP:
-            success = self.mt5_adapter.modify_order(ticket=ticket, stop_loss=decision.stop_loss, take_profit=decision.take_profit)
-            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0")
+            success = self.mt5_adapter.modify_order(
+                ticket=ticket, stop_loss=decision.stop_loss, take_profit=decision.take_profit
+            )
+            logger.info(
+                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
+            )
             if success:
                 self.audit.log_order(
                     ticket=ticket,
@@ -1009,13 +1064,15 @@ class OrderLifecycleManager:
                     volume=0.0,
                     reason="modify_order SL/TP",
                     latency=0.011,
-                    execution_mode="STANDARD"
+                    execution_mode="STANDARD",
                 )
             return success
 
         elif action == ActionType.CANCEL_ORDER:
             success = self.mt5_adapter.cancel_pending_order(ticket=ticket)
-            logger.info(f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0")
+            logger.info(
+                f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
+            )
             if success:
                 self.audit.log_order(
                     ticket=ticket,
@@ -1028,7 +1085,7 @@ class OrderLifecycleManager:
                     volume=0.0,
                     reason="Manual cancel_pending_order",
                     latency=0.008,
-                    execution_mode="STANDARD"
+                    execution_mode="STANDARD",
                 )
             return success
 
@@ -1131,11 +1188,7 @@ class OrderLifecycleManager:
         """
         pip = self._resolve_pip_size(symbol_info)
         offset = BREAKEVEN_LOCK_PIPS * pip
-        raw = (
-            pos.price_open + offset
-            if pos.type == OrderType.BUY
-            else pos.price_open - offset
-        )
+        raw = pos.price_open + offset if pos.type == OrderType.BUY else pos.price_open - offset
         return round(raw, self._resolve_price_digits(symbol_info))
 
     @staticmethod
@@ -1255,8 +1308,12 @@ class OrderLifecycleManager:
                 latency=0.0,
                 execution_mode="PROTECTION",
             )
-        except Exception as err:  # noqa: BLE001 - audit must never break protection
-            logger.error("Protection audit write failed (protection continues)", ticket=pos.ticket, error=str(err))
+        except Exception as err:
+            logger.error(
+                "Protection audit write failed (protection continues)",
+                ticket=pos.ticket,
+                error=str(err),
+            )
 
     def apply_breakeven_lock(
         self,
@@ -1305,11 +1362,14 @@ class OrderLifecycleManager:
         if current_tick is not None:
             is_buy = pos.type == OrderType.BUY
             current_market_price = current_tick.bid if is_buy else current_tick.ask
-            
+
             # Verify SL sits on valid side of current market price to prevent MT5 10016 Retcode
             if is_buy and breakeven_sl >= (current_market_price - effective_freeze_gap):
                 # Market pulled back before modification dispatched; defer or cap SL safely below market bid
-                breakeven_sl = round(current_market_price - effective_freeze_gap, self._resolve_price_digits(symbol_info))
+                breakeven_sl = round(
+                    current_market_price - effective_freeze_gap,
+                    self._resolve_price_digits(symbol_info),
+                )
                 if breakeven_sl <= pos.price_open:
                     self._log_throttled_be_failure(
                         state,
@@ -1321,7 +1381,10 @@ class OrderLifecycleManager:
 
             elif not is_buy and breakeven_sl <= (current_market_price + effective_freeze_gap):
                 # Market pulled back before modification dispatched; defer or cap SL safely above market ask
-                breakeven_sl = round(current_market_price + effective_freeze_gap, self._resolve_price_digits(symbol_info))
+                breakeven_sl = round(
+                    current_market_price + effective_freeze_gap,
+                    self._resolve_price_digits(symbol_info),
+                )
                 if breakeven_sl >= pos.price_open:
                     self._log_throttled_be_failure(
                         state,
@@ -1341,7 +1404,7 @@ class OrderLifecycleManager:
                     take_profit=take_profit,
                 )
             )
-        except Exception as err:  # noqa: BLE001 - a broker error must not kill the loop
+        except Exception as err:
             success = False
             logger.error(
                 "BREAKEVEN LOCK ERROR: modify_position raised",
@@ -1387,10 +1450,12 @@ class OrderLifecycleManager:
                     ticket=pos.ticket,
                     new_sl=breakeven_sl,
                     original_risk_usd=self._initial_risks.get(pos.ticket, 0.0),
-                    protected_amount_usd=abs(breakeven_sl - pos.price_open) * pos.volume * contract_size,
+                    protected_amount_usd=abs(breakeven_sl - pos.price_open)
+                    * pos.volume
+                    * contract_size,
                     reply_to_message_id=self._order_message_ids.get(pos.ticket),
                 )
-            except Exception as err:  # noqa: BLE001 - notification is best-effort
+            except Exception as err:
                 logger.error("Breakeven notification failed", ticket=pos.ticket, error=str(err))
 
         return True
@@ -1418,9 +1483,13 @@ class OrderLifecycleManager:
         # Target = lock in a portion of current profit, but never below the breakeven level.
         target_profit_lock = pos.profit * 0.85
         if pos.type == OrderType.BUY:
-            candidate_sl = pos.price_open + (target_profit_lock / max(pos.volume * contract_sz, 1.0))
+            candidate_sl = pos.price_open + (
+                target_profit_lock / max(pos.volume * contract_sz, 1.0)
+            )
         else:
-            candidate_sl = pos.price_open - (target_profit_lock / max(pos.volume * contract_sz, 1.0))
+            candidate_sl = pos.price_open - (
+                target_profit_lock / max(pos.volume * contract_sz, 1.0)
+            )
         candidate_sl = round(candidate_sl, self._resolve_price_digits(symbol_info))
 
         if not self.is_sl_improvement(pos, candidate_sl):
@@ -1436,7 +1505,7 @@ class OrderLifecycleManager:
                     take_profit=pos.tp,
                 )
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
         if success:
             self._sl_modified_flags[pos.ticket] = True
@@ -1569,17 +1638,19 @@ class OrderLifecycleManager:
         state.profit_giveback_triggered = True
 
         # --- TASK 3: Breakeven-aware exit suppression during VOLATILITY_EXPANSION ---
-        is_vol_expansion = (regime == "VOLATILITY_EXPANSION")
-        breakeven_locked = state.was_sl_modified and self._is_sl_at_or_beyond(pos, pos.sl, state.breakeven_sl_price)
+        is_vol_expansion = regime == "VOLATILITY_EXPANSION"
+        breakeven_locked = state.was_sl_modified and self._is_sl_at_or_beyond(
+            pos, pos.sl, state.breakeven_sl_price
+        )
         if is_vol_expansion and breakeven_locked and not state.close_requested:
             # Reference for the "price crossed below breakeven" check.
-            ref = current_tick = getattr(self, "_last_tick_for_ticket", {}).get(pos.ticket)
+            ref = getattr(self, "_last_tick_for_ticket", {}).get(pos.ticket)
             # Determine whether price has already breached the locked protective stop.
             price_below_be = False
             if pos.type == OrderType.BUY:
-                price_below_be = (ref is not None and getattr(ref, "bid", 1e18) <= pos.sl)
+                price_below_be = ref is not None and getattr(ref, "bid", 1e18) <= pos.sl
             else:
-                price_below_be = (ref is not None and getattr(ref, "ask", 0.0) >= pos.sl)
+                price_below_be = ref is not None and getattr(ref, "ask", 0.0) >= pos.sl
 
             if not price_below_be:
                 # Do NOT cross the spread with a market close. Keep the locked SL and
@@ -1635,7 +1706,7 @@ class OrderLifecycleManager:
 
         try:
             closed = bool(self.adapter.close_position(ticket=pos.ticket))
-        except Exception as err:  # noqa: BLE001 - never kill the tracking loop
+        except Exception as err:
             closed = False
             logger.error(
                 "PROFIT GIVEBACK PROTECTION: close_position raised",
@@ -1657,8 +1728,10 @@ class OrderLifecycleManager:
                         saved_usd=current_pnl_usd,
                         reply_to_message_id=self._order_message_ids.get(pos.ticket),
                     )
-                except Exception as err:  # noqa: BLE001 - notification is best-effort
-                    logger.error("Profit giveback notification failed", ticket=pos.ticket, error=str(err))
+                except Exception as err:
+                    logger.error(
+                        "Profit giveback notification failed", ticket=pos.ticket, error=str(err)
+                    )
         else:
             # Close failed: clear the forced tag (so an organic exit is not mislabelled)
             # and leave close_requested False so the next cycle retries.
@@ -1727,9 +1800,11 @@ class OrderLifecycleManager:
         old_sl = pos.sl
         try:
             success = bool(
-                self.adapter.modify_position(ticket=pos.ticket, stop_loss=target_sl, take_profit=pos.tp)
+                self.adapter.modify_position(
+                    ticket=pos.ticket, stop_loss=target_sl, take_profit=pos.tp
+                )
             )
-        except Exception as err:  # noqa: BLE001 - never kill the tracking loop
+        except Exception as err:
             success = False
             logger.error("ATR TRAILING: modify_position raised", ticket=pos.ticket, error=str(err))
 
@@ -1755,7 +1830,7 @@ class OrderLifecycleManager:
                     current_price=price_current,
                     reply_to_message_id=self._order_message_ids.get(pos.ticket),
                 )
-            except Exception as err:  # noqa: BLE001 - notification is best-effort
+            except Exception as err:
                 logger.error("Trailing notification failed", ticket=pos.ticket, error=str(err))
 
         return True
@@ -1782,7 +1857,9 @@ class OrderLifecycleManager:
 
         return False
 
-    def _safe_feature_float(self, features: FeatureVector | None, attr_name: str, default: float) -> float:
+    def _safe_feature_float(
+        self, features: FeatureVector | None, attr_name: str, default: float
+    ) -> float:
         """Safely extracts a floating point attribute from FeatureVector with fallback."""
         if features is None:
             return default
@@ -1845,7 +1922,7 @@ class OrderLifecycleManager:
                 "trail_applied": 0.0,
                 "desync_shocks": 0.0,
             }
-        
+
         self._last_seen_ts[ticket] = now
 
         if ticket not in self._mfe_tracker:
@@ -1933,7 +2010,9 @@ class OrderLifecycleManager:
             st = self._lsf_state[ticket]
         st[key] = float(value)
 
-    def _update_tick_state(self, ticket: int, pos: Position, price_current: float, profit_price_delta: float) -> None:
+    def _update_tick_state(
+        self, ticket: int, pos: Position, price_current: float, profit_price_delta: float
+    ) -> None:
         last_p = self._last_price_tracker.get(ticket, price_current)
         self._last_price_tracker[ticket] = price_current
 
@@ -1942,7 +2021,7 @@ class OrderLifecycleManager:
         else:
             self._stagnation_ticks[ticket] = max(0, self._stagnation_ticks.get(ticket, 0) - 1)
 
-        is_buy = (pos.type == OrderType.BUY)
+        is_buy = pos.type == OrderType.BUY
         is_adverse = (price_current < last_p) if is_buy else (price_current > last_p)
         is_favorable = (price_current > last_p) if is_buy else (price_current < last_p)
 
@@ -2000,9 +2079,15 @@ class OrderLifecycleManager:
         time_decay_ratio = holding_duration / max(self.max_holding_seconds, 1.0)
         position_age_bucket = math.floor(holding_duration / 60.0)
 
-        contract_size = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
+        contract_size = (
+            symbol_info.trade_contract_size
+            if symbol_info and symbol_info.trade_contract_size > 0
+            else 100.0
+        )
         position_size_pressure = pos.volume / 1.0
-        volume_step = symbol_info.volume_step if symbol_info and symbol_info.volume_step > 0 else 0.01
+        volume_step = (
+            symbol_info.volume_step if symbol_info and symbol_info.volume_step > 0 else 0.01
+        )
         volume_step_pressure = (pos.volume % volume_step) / volume_step
         contract_pressure = pos.volume * contract_size / 100.0
         liquidity_depletion_score = impact_to_atr_ratio * position_size_pressure
@@ -2010,9 +2095,13 @@ class OrderLifecycleManager:
         # -------------------------------------------------------------
         # FIXED ASYMPTOTE BUG: Bounded toxicity calculation
         # -------------------------------------------------------------
-        impact_to_net_profit_ratio = min(5.0, impact_price_delta / max(abs(net_price_delta), atr * 0.5, 0.10))
-        impact_to_gross_ratio = min(5.0, impact_price_delta / max(abs(gross_price_delta), atr * 0.5, 0.10))
-        
+        impact_to_net_profit_ratio = min(
+            5.0, impact_price_delta / max(abs(net_price_delta), atr * 0.5, 0.10)
+        )
+        impact_to_gross_ratio = min(
+            5.0, impact_price_delta / max(abs(gross_price_delta), atr * 0.5, 0.10)
+        )
+
         spread_impact_combo = spread_to_atr_ratio + impact_to_atr_ratio
 
         breakeven_quality = max(0.0, net_price_delta - self.be_trigger)
@@ -2023,7 +2112,9 @@ class OrderLifecycleManager:
         adverse_excursion_velocity = abs(min(mae, 0.0)) / max(holding_duration, 1.0)
         favorable_excursion_velocity = max(mfe, 0.0) / max(holding_duration, 1.0)
 
-        missed_position_rescue_mode = bool(holding_duration > 120.0 and ticket not in self._rescue_registered_tickets)
+        missed_position_rescue_mode = bool(
+            holding_duration > 120.0 and ticket not in self._rescue_registered_tickets
+        )
         no_sl_risk = bool(pos.sl <= 0.0)
 
         entry_to_sl_dist = abs(pos.price_open - pos.sl) if pos.sl > 0 else (atr * 1.5)
@@ -2032,7 +2123,11 @@ class OrderLifecycleManager:
         tp_distance_to_atr = entry_to_tp_dist / max(atr, eps)
         sl_tp_asymmetry = tp_distance_to_atr / max(sl_distance_to_atr, eps)
 
-        min_stop_gap = (symbol_info.stops_level * symbol_info.point) if symbol_info and symbol_info.stops_level > 0 else 0.25
+        min_stop_gap = (
+            (symbol_info.stops_level * symbol_info.point)
+            if symbol_info and symbol_info.stops_level > 0
+            else 0.25
+        )
         stop_gap_pressure = min_stop_gap / max(atr, eps)
         wick_tolerance_pressure = (atr * 0.50) / max(atr, eps)
 
@@ -2046,15 +2141,25 @@ class OrderLifecycleManager:
         rapid_reversal_conflict_score = 0.0
 
         if features:
-            if (pos.type == OrderType.BUY and features.is_below_kumo) or (pos.type == OrderType.SELL and features.is_above_kumo):
+            if (pos.type == OrderType.BUY and features.is_below_kumo) or (
+                pos.type == OrderType.SELL and features.is_above_kumo
+            ):
                 kumo_conflict_score = 1.0
-            if (pos.type == OrderType.BUY and features.choch_bearish) or (pos.type == OrderType.SELL and features.choch_bullish):
+            if (pos.type == OrderType.BUY and features.choch_bearish) or (
+                pos.type == OrderType.SELL and features.choch_bullish
+            ):
                 choch_conflict_score = 1.0
-            if (pos.type == OrderType.BUY and features.liquidity_sweep_signal == -1) or (pos.type == OrderType.SELL and features.liquidity_sweep_signal == 1):
+            if (pos.type == OrderType.BUY and features.liquidity_sweep_signal == -1) or (
+                pos.type == OrderType.SELL and features.liquidity_sweep_signal == 1
+            ):
                 liquidity_sweep_conflict_score = 1.0
-            if (pos.type == OrderType.BUY and features.tenkan_sen < features.kijun_sen) or (pos.type == OrderType.SELL and features.tenkan_sen > features.kijun_sen):
+            if (pos.type == OrderType.BUY and features.tenkan_sen < features.kijun_sen) or (
+                pos.type == OrderType.SELL and features.tenkan_sen > features.kijun_sen
+            ):
                 tenkan_kijun_conflict_score = 1.0
-            if (pos.type == OrderType.BUY and features.is_at_extreme_high) or (pos.type == OrderType.SELL and features.is_at_extreme_low):
+            if (pos.type == OrderType.BUY and features.is_at_extreme_high) or (
+                pos.type == OrderType.SELL and features.is_at_extreme_low
+            ):
                 extreme_entry_conflict_score = 1.0
             if features.rapid_reversal_spike:
                 rapid_reversal_conflict_score = 1.0
@@ -2075,7 +2180,9 @@ class OrderLifecycleManager:
         time_decay_exit_required = False
         soft_rescue_exit_required = False
 
-        if (directional_conflict_score >= 0.70 and net_price_delta < -(atr * 0.40)) or desync_score > 30.0:
+        if (
+            directional_conflict_score >= 0.70 and net_price_delta < -(atr * 0.40)
+        ) or desync_score > 30.0:
             danger_tier = "CRITICAL_KILL"
             kill_switch_required = True
         elif directional_conflict_score >= 0.50 or mae_to_atr_ratio > 1.20 or desync_risk_flag:
@@ -2096,11 +2203,17 @@ class OrderLifecycleManager:
 
         # Dynamically scale triggers based on the dynamic AlgoConfig ATR stop multiplier
         atr_multiplier = self.algo_config.atr_sl_buffer_multiplier
-        smart_be_trigger = max(self.be_trigger, round(atr * 0.30 * atr_multiplier + impact_price_delta, 2))
-        smart_trailing_distance = max(self.trailing_distance, round(atr * 0.80 * atr_multiplier + impact_price_delta, 2))
+        smart_be_trigger = max(
+            self.be_trigger, round(atr * 0.30 * atr_multiplier + impact_price_delta, 2)
+        )
+        smart_trailing_distance = max(
+            self.trailing_distance, round(atr * 0.80 * atr_multiplier + impact_price_delta, 2)
+        )
         tp1_atr_multiplier = 1.50 + impact_to_atr_ratio
 
-        rescue_quality_score = max(0.0, 100.0 - (desync_score * 2.0) - (directional_conflict_score * 40.0))
+        rescue_quality_score = max(
+            0.0, 100.0 - (desync_score * 2.0) - (directional_conflict_score * 40.0)
+        )
 
         return {
             "spread_to_atr_ratio": spread_to_atr_ratio,
@@ -2185,7 +2298,7 @@ class OrderLifecycleManager:
 
         # --- Penalty 1: Drawdown vs Initial Risk/ATR (up to -40) ---
         initial_sl = self._entry_sls.get(ticket, pos.sl)
-        is_buy = (pos.type == OrderType.BUY)
+        is_buy = pos.type == OrderType.BUY
         current_loss = 0.0
         initial_risk = 0.0
 
@@ -2239,7 +2352,9 @@ class OrderLifecycleManager:
                 reasons.append("TREND_ALIGNMENT_BONUS (+10)")
 
         # PROFIT SHIELD GUARD: Winning trades get guaranteed high floor score of 85
-        is_in_profit = (price_current > pos.price_open) if is_buy else (price_current < pos.price_open)
+        is_in_profit = (
+            (price_current > pos.price_open) if is_buy else (price_current < pos.price_open)
+        )
         if is_in_profit:
             score = max(85, score)
             reasons.append("PROFIT_SHIELD_SCORE_FLOOR_ACTIVE")
@@ -2287,12 +2402,12 @@ class OrderLifecycleManager:
         atr_n = max(atr, 0.50)
         spread_ratio = spread / atr_n
         net_atr = net_delta / atr_n
-        gross_atr = gross_delta / atr_n
+        gross_delta / atr_n
 
         ticket = pos.ticket
         mfe = self._mfe_tracker.get(ticket, 0.0)
         mae = self._mae_tracker.get(ticket, 0.0)
-        mfe_atr = mfe / atr_n
+        mfe / atr_n
         mae_atr = mae / atr_n
 
         desync = float(metrics.get("desync_score", 0.0) or 0.0)
@@ -2301,7 +2416,7 @@ class OrderLifecycleManager:
 
         kill_switch = bool(metrics.get("kill_switch_required", False))
         timeout_exit = bool(metrics.get("time_decay_exit_required", False))
-        soft_rescue = bool(metrics.get("soft_rescue_exit_required", False))
+        bool(metrics.get("soft_rescue_exit_required", False))
         defer_stops = bool(metrics.get("defer_stop_management", False))
         defer_scale = bool(metrics.get("defer_scale_out", False))
         missed_rescue = bool(metrics.get("missed_position_rescue_mode", False))
@@ -2338,7 +2453,11 @@ class OrderLifecycleManager:
 
         elif timeout_exit and net_delta < 0.10 and not is_winning_trade:
             return "CLOSE", "S21_HARD_STAGNATION_TIMEOUT"
-        elif holding_duration > self.max_holding_seconds * 1.50 and net_atr < 0.0 and not is_winning_trade:
+        elif (
+            holding_duration > self.max_holding_seconds * 1.50
+            and net_atr < 0.0
+            and not is_winning_trade
+        ):
             return "CLOSE", "S22_EXTENDED_CAPITAL_LOCK_TIMEOUT"
 
         # Scale out & trailing for winning/healthy trades
@@ -2447,7 +2566,7 @@ class OrderLifecycleManager:
 
         initial_risk_usd = self._initial_risks.get(ticket, 0.0)
         if initial_risk_usd <= 0.0:
-            initial_risk_usd = atr * 1.50 * 100.0 * 0.10 # fallback rough estimate
+            initial_risk_usd = atr * 1.50 * 100.0 * 0.10  # fallback rough estimate
 
         # Recovery Budget = % of Initial Risk, clamped by actual remaining risk to entry
         pct_r = getattr(self.algo_config, "recovery_budget_pct_of_r", 0.50)
@@ -2470,10 +2589,10 @@ class OrderLifecycleManager:
         # Scale based on ATR, confidence, and trend strength
         base_hor = default_horizon
         atr_n = max(atr, 0.50)
-        base_hor /= (atr_n / 1.50) # high volatility -> shorter horizon
-        base_hor *= (confidence_factor + 0.5) # high confidence -> longer horizon
+        base_hor /= atr_n / 1.50  # high volatility -> shorter horizon
+        base_hor *= confidence_factor + 0.5  # high confidence -> longer horizon
         if trend_strength < -0.20:
-            base_hor *= 0.70 # strong adverse trend -> shorter horizon
+            base_hor *= 0.70  # strong adverse trend -> shorter horizon
 
         horizon = max(min_horizon, min(max_horizon, base_hor))
         self._recovery_horizons[ticket] = horizon
@@ -2513,7 +2632,10 @@ class OrderLifecycleManager:
         self._recovery_budget_remaining[ticket] = remaining
 
         if remaining <= 0.0:
-            return True, f"RECOVERY_BUDGET_EXHAUSTED (initial=${initial_budget:.2f}, consumed=${consumed:.2f})"
+            return (
+                True,
+                f"RECOVERY_BUDGET_EXHAUSTED (initial=${initial_budget:.2f}, consumed=${consumed:.2f})",
+            )
 
         # 2. Time Horizon check (dynamic but strictly bounded, no moving goalposts)
         entry_time = self._recovery_entry_times.get(ticket)
@@ -2556,20 +2678,34 @@ class OrderLifecycleManager:
 
         # Expected Outcomes (payoff magnitudes)
         # Fix: Recovery value factors in true potential target instead of just the spread cost
-        expected_recovery_value = max(15.0, abs(current_pnl_usd) * 2.0) 
-        expected_additional_loss = max(1.0, initial_risk_usd - abs(current_pnl_usd)) # hitting hard SL
+        expected_recovery_value = max(15.0, abs(current_pnl_usd) * 2.0)
+        expected_additional_loss = max(
+            1.0, initial_risk_usd - abs(current_pnl_usd)
+        )  # hitting hard SL
 
         # Expected Value (EV) calculation
-        ev_hold = recovery_score * expected_recovery_value - adverse_score * expected_additional_loss
+        ev_hold = (
+            recovery_score * expected_recovery_value - adverse_score * expected_additional_loss
+        )
 
         # Minimum-loss exit condition: if the EV of holding is severely negative, or if recovery evidence is weak
         if ev_hold < -0.15 * initial_risk_usd:
-            logger.info(f"[EXIT TRACE] MIN_LOSS_OPTIMIZATION_EV_BREACH triggered. Ticket: {ticket}, EV: ${ev_hold:.2f}, RecProb: {recovery_score:.2%}, AdvProb: {adverse_score:.2%}, Duration: {duration_sec:.1f}s")
-            return True, f"MIN_LOSS_OPTIMIZATION_EV_BREACH (EV=${ev_hold:.2f}, rec_prob={recovery_score:.2%}, adv_prob={adverse_score:.2%})"
+            logger.info(
+                f"[EXIT TRACE] MIN_LOSS_OPTIMIZATION_EV_BREACH triggered. Ticket: {ticket}, EV: ${ev_hold:.2f}, RecProb: {recovery_score:.2%}, AdvProb: {adverse_score:.2%}, Duration: {duration_sec:.1f}s"
+            )
+            return (
+                True,
+                f"MIN_LOSS_OPTIMIZATION_EV_BREACH (EV=${ev_hold:.2f}, rec_prob={recovery_score:.2%}, adv_prob={adverse_score:.2%})",
+            )
 
         if recovery_score < 0.25 and adverse_score > 0.60:
-            logger.info(f"[EXIT TRACE] MIN_LOSS_OPTIMIZATION_WEAK_RECOVERY triggered. Ticket: {ticket}, RecProb: {recovery_score:.2%}, AdvProb: {adverse_score:.2%}, Duration: {duration_sec:.1f}s")
-            return True, f"MIN_LOSS_OPTIMIZATION_WEAK_RECOVERY (rec_prob={recovery_score:.2%}, adv_prob={adverse_score:.2%})"
+            logger.info(
+                f"[EXIT TRACE] MIN_LOSS_OPTIMIZATION_WEAK_RECOVERY triggered. Ticket: {ticket}, RecProb: {recovery_score:.2%}, AdvProb: {adverse_score:.2%}, Duration: {duration_sec:.1f}s"
+            )
+            return (
+                True,
+                f"MIN_LOSS_OPTIMIZATION_WEAK_RECOVERY (rec_prob={recovery_score:.2%}, adv_prob={adverse_score:.2%})",
+            )
 
         return False, ""
 
@@ -2585,12 +2721,19 @@ class OrderLifecycleManager:
         """
         current_state = self._position_states.get(ticket)
         if current_state is None:
-            # BUGFIX: First initialization - Default to a safe neutral state. 
+            # BUGFIX: First initialization - Default to a safe neutral state.
             # NEVER allow a critical exit state on tick 1 to bypass hysteresis debounce.
-            safe_initial_state = PositionState.PROFIT_UNPROTECTED if target_state in (
-                PositionState.PROFIT_PROTECTED, PositionState.PROFIT_TRAILING, PositionState.PROFIT_UNPROTECTED
-            ) else PositionState.LOSS_RECOVERY_CANDIDATE
-            
+            safe_initial_state = (
+                PositionState.PROFIT_UNPROTECTED
+                if target_state
+                in (
+                    PositionState.PROFIT_PROTECTED,
+                    PositionState.PROFIT_TRAILING,
+                    PositionState.PROFIT_UNPROTECTED,
+                )
+                else PositionState.LOSS_RECOVERY_CANDIDATE
+            )
+
             self._position_states[ticket] = safe_initial_state
             self._state_transition_candidates[ticket] = (target_state, now, 1)
             return safe_initial_state
@@ -2732,46 +2875,80 @@ class OrderLifecycleManager:
         # 60-Second Minimum Survival Grace Period
         # Prevents ANY algorithm from closing a trade instantly upon entry before it has a chance to breathe through the spread
         is_legacy_emergency_cut = legacy_action == "CLOSE" and any(
-            code in legacy_scenario for code in ("S01", "S02", "S04", "S05", "S06", "S07", "S08", "S09", "S10", "S11", "S12", "S13", "S21", "S22")
+            code in legacy_scenario
+            for code in (
+                "S01",
+                "S02",
+                "S04",
+                "S05",
+                "S06",
+                "S07",
+                "S08",
+                "S09",
+                "S10",
+                "S11",
+                "S12",
+                "S13",
+                "S21",
+                "S22",
+            )
         )
 
         if duration_sec < 60.0:
             if adaptive_state in (PositionState.LOSS_HARD_EXIT, PositionState.LOSS_EXIT_PRESSURE):
                 # Suppress instant exits so the trade can breathe through initial entry spread
                 adaptive_state = PositionState.LOSS_RECOVERY_CANDIDATE
-            if is_legacy_emergency_cut and "S01_CRITICAL_COMPOUND_KILL_SWITCH" not in legacy_scenario:
+            if (
+                is_legacy_emergency_cut
+                and "S01_CRITICAL_COMPOUND_KILL_SWITCH" not in legacy_scenario
+            ):
                 # Force HOLD for legacy cuts during the grace period unless it's a global kill switch
-                logger.debug(f"Grace Period Override: Suppressed early legacy cut '{legacy_scenario}' for ticket {ticket}. Age: {duration_sec:.1f}s")
+                logger.debug(
+                    f"Grace Period Override: Suppressed early legacy cut '{legacy_scenario}' for ticket {ticket}. Age: {duration_sec:.1f}s"
+                )
                 is_legacy_emergency_cut = False
                 legacy_action = "HOLD"
 
         # Level 1: Hard Emergency/Safety Cuts from Legacy Router
         if is_legacy_emergency_cut:
-            logger.info(f"[EXIT TRACE] Legacy Emergency Cut triggered: {legacy_scenario} for ticket {ticket}. Age: {duration_sec:.1f}s")
+            logger.info(
+                f"[EXIT TRACE] Legacy Emergency Cut triggered: {legacy_scenario} for ticket {ticket}. Age: {duration_sec:.1f}s"
+            )
             return "CLOSE", legacy_scenario
 
         # Level 2: Adaptive/Deterministic safety constraints (Recovery budget or Horizon exhausted)
         if adaptive_state == PositionState.LOSS_HARD_EXIT:
-            logger.info(f"[EXIT TRACE] LOSS_HARD_EXIT triggered for ticket {ticket}. Age: {duration_sec:.1f}s")
-            return "CLOSE", f"LOSS_HARD_EXIT: recovery budget exhausted or adverse pressure too high"
+            logger.info(
+                f"[EXIT TRACE] LOSS_HARD_EXIT triggered for ticket {ticket}. Age: {duration_sec:.1f}s"
+            )
+            return "CLOSE", "LOSS_HARD_EXIT: recovery budget exhausted or adverse pressure too high"
 
         # Minimum loss optimization check (Requirement 13)
         initial_risk = self._initial_risks.get(ticket, 0.0)
         if current_pnl_usd < 0.0 and initial_risk > 0.0:
-            should_exit, opt_reason = self._evaluate_minimum_loss_optimization(ticket, current_pnl_usd, initial_risk, evidence)
+            should_exit, opt_reason = self._evaluate_minimum_loss_optimization(
+                ticket, current_pnl_usd, initial_risk, evidence
+            )
             if should_exit:
                 # Logging is already handled inside the sub-function for EV traces
                 return "CLOSE", opt_reason
 
         if adaptive_state == PositionState.PROFIT_GIVEBACK_CRITICAL:
-            logger.info(f"[EXIT TRACE] PROFIT_GIVEBACK_CRITICAL triggered for ticket {ticket}. Age: {duration_sec:.1f}s")
-            return "CLOSE", f"PROFIT_GIVEBACK_CRITICAL: profit eroded below floor retention"
+            logger.info(
+                f"[EXIT TRACE] PROFIT_GIVEBACK_CRITICAL triggered for ticket {ticket}. Age: {duration_sec:.1f}s"
+            )
+            return "CLOSE", "PROFIT_GIVEBACK_CRITICAL: profit eroded below floor retention"
 
         # Level 3: Adaptive Exit Pressure
         if adaptive_state == PositionState.LOSS_EXIT_PRESSURE:
             # Low recovery probability -> Exit rather than hoping
-            logger.info(f"[EXIT TRACE] LOSS_EXIT_PRESSURE triggered for ticket {ticket}. RecProb: {evidence.get('recovery_score', 0.0):.2%}, Age: {duration_sec:.1f}s")
-            return "CLOSE", f"LOSS_EXIT_PRESSURE: low recovery score ({evidence.get('recovery_score', 0.0):.2%})"
+            logger.info(
+                f"[EXIT TRACE] LOSS_EXIT_PRESSURE triggered for ticket {ticket}. RecProb: {evidence.get('recovery_score', 0.0):.2%}, Age: {duration_sec:.1f}s"
+            )
+            return (
+                "CLOSE",
+                f"LOSS_EXIT_PRESSURE: low recovery score ({evidence.get('recovery_score', 0.0):.2%})",
+            )
 
         # Level 4: Trailing Stop / Breakeven Actions
         # If legacy wants BREAK_EVEN or NORMAL_TRAIL, and we are in a protected state:
@@ -2920,7 +3097,10 @@ class OrderLifecycleManager:
                     adverse_score = p_buy
 
             except Exception as err:
-                logger.error("Error parsing neural network probabilities; falling back to heuristic", error=str(err))
+                logger.error(
+                    "Error parsing neural network probabilities; falling back to heuristic",
+                    error=str(err),
+                )
                 probs = None
 
         if probs is None:
@@ -2962,7 +3142,7 @@ class OrderLifecycleManager:
                 continuation_score -= 0.05
 
             # Strictly normalize
-            total = continuation_score + adverse_score + 0.20 # 0.20 represents 'no_trade'
+            total = continuation_score + adverse_score + 0.20  # 0.20 represents 'no_trade'
             continuation_score /= total
             adverse_score /= total
 
@@ -3093,7 +3273,9 @@ class OrderLifecycleManager:
 
             for pending in pending_orders:
                 order_type = self._pending_field(pending, "type", "order_type")
-                price_open = float(self._pending_field(pending, "price_open", "price", default=0.0) or 0.0)
+                price_open = float(
+                    self._pending_field(pending, "price_open", "price", default=0.0) or 0.0
+                )
                 ticket = self._pending_field(pending, "ticket", "order_id")
 
                 if not ticket or price_open <= 0.0:
@@ -3104,7 +3286,11 @@ class OrderLifecycleManager:
 
                 type_str = str(getattr(order_type, "value", order_type) or "").upper()
                 is_buy_side = "BUY" in type_str
-                dist = abs(current_tick.ask - price_open) if is_buy_side else abs(current_tick.bid - price_open)
+                dist = (
+                    abs(current_tick.ask - price_open)
+                    if is_buy_side
+                    else abs(current_tick.bid - price_open)
+                )
                 age = (now - self._pending_orders_setup_time[ticket]).total_seconds()
 
                 # ---------------------------------------------------------------
@@ -3151,20 +3337,31 @@ class OrderLifecycleManager:
                     cancel_fn = getattr(self.adapter, "cancel_pending_order", None)
                     if cancel_fn and cancel_fn(ticket=ticket):
                         self._pending_orders_setup_time.pop(ticket, None)
-                        logger.info(f"[CANCEL TRACE] PENDING ORDER CANCELLED: Ticket {ticket}. Reason: {cancel_reason}. Max Allowed Dist: ${max_allowed_dist:.2f}")
+                        logger.info(
+                            f"[CANCEL TRACE] PENDING ORDER CANCELLED: Ticket {ticket}. Reason: {cancel_reason}. Max Allowed Dist: ${max_allowed_dist:.2f}"
+                        )
                         # Audit cancellation
                         self.audit.log_order(
                             ticket=ticket,
                             order_id=f"cancel_{ticket}",
                             symbol=symbol,
-                            action="Expired pending order" if "AGE" in cancel_reason else "Cancelled order",
+                            action="Expired pending order"
+                            if "AGE" in cancel_reason
+                            else "Cancelled order",
                             price=price_open,
-                            stop_loss=float(self._pending_field(pending, "sl", "stop_loss", default=0.0) or 0.0),
-                            take_profit=float(self._pending_field(pending, "tp", "take_profit", default=0.0) or 0.0),
-                            volume=float(self._pending_field(pending, "volume", default=0.01) or 0.01),
+                            stop_loss=float(
+                                self._pending_field(pending, "sl", "stop_loss", default=0.0) or 0.0
+                            ),
+                            take_profit=float(
+                                self._pending_field(pending, "tp", "take_profit", default=0.0)
+                                or 0.0
+                            ),
+                            volume=float(
+                                self._pending_field(pending, "volume", default=0.01) or 0.01
+                            ),
                             reason=cancel_reason,
                             latency=0.01,
-                            execution_mode="PREDICTIVE_LIMIT"
+                            execution_mode="PREDICTIVE_LIMIT",
                         )
         except Exception as err:
             logger.error("Failed to manage dynamic pending orders", error=str(err))
@@ -3193,15 +3390,17 @@ class OrderLifecycleManager:
 
             for pos in positions:
                 # Strong unrealized profit threshold
-                if pos.profit > (atr * 20.0): # Profitable trend detected
-                    is_sell_trend = (pos.type == OrderType.SELL)
-                    is_buy_trend = (pos.type == OrderType.BUY)
+                if pos.profit > (atr * 20.0):  # Profitable trend detected
+                    is_sell_trend = pos.type == OrderType.SELL
+                    is_buy_trend = pos.type == OrderType.BUY
 
                     # Trigger Falling Knife protection
                     for pending in pending_orders:
                         pending_ticket = self._pending_field(pending, "ticket", "order_id")
                         pending_type = self._pending_field(pending, "type", "order_type")
-                        pending_type_str = str(getattr(pending_type, "value", pending_type) or "").upper()
+                        pending_type_str = str(
+                            getattr(pending_type, "value", pending_type) or ""
+                        ).upper()
 
                         # If we have a profitable SELL trend, cancel opposite BUY_LIMITS
                         # If we have a profitable BUY trend, cancel opposite SELL_LIMITS
@@ -3214,19 +3413,36 @@ class OrderLifecycleManager:
                         if should_cancel and pending_ticket:
                             if cancel_fn(ticket=pending_ticket):
                                 self._pending_orders_setup_time.pop(pending_ticket, None)
-                                logger.info(f"FALLING_KNIFE_PROTECTION: Cancelled counter pending order {pending_ticket} due to strong opposite momentum.")
+                                logger.info(
+                                    f"FALLING_KNIFE_PROTECTION: Cancelled counter pending order {pending_ticket} due to strong opposite momentum."
+                                )
                                 self.audit.log_order(
                                     ticket=pending_ticket,
                                     order_id=f"cancel_fk_{pending_ticket}",
                                     symbol=symbol,
                                     action="Cancelled order",
-                                    price=float(self._pending_field(pending, "price_open", "price", default=0.0) or 0.0),
-                                    stop_loss=float(self._pending_field(pending, "sl", "stop_loss", default=0.0) or 0.0),
-                                    take_profit=float(self._pending_field(pending, "tp", "take_profit", default=0.0) or 0.0),
-                                    volume=float(self._pending_field(pending, "volume", default=0.01) or 0.01),
+                                    price=float(
+                                        self._pending_field(
+                                            pending, "price_open", "price", default=0.0
+                                        )
+                                        or 0.0
+                                    ),
+                                    stop_loss=float(
+                                        self._pending_field(pending, "sl", "stop_loss", default=0.0)
+                                        or 0.0
+                                    ),
+                                    take_profit=float(
+                                        self._pending_field(
+                                            pending, "tp", "take_profit", default=0.0
+                                        )
+                                        or 0.0
+                                    ),
+                                    volume=float(
+                                        self._pending_field(pending, "volume", default=0.01) or 0.01
+                                    ),
                                     reason="FALLING_KNIFE_PROTECTION",
                                     latency=0.01,
-                                    execution_mode="STANDARD"
+                                    execution_mode="STANDARD",
                                 )
         except Exception as err:
             logger.error("Failed to run Falling Knife Protection", error=str(err))
@@ -3252,13 +3468,17 @@ class OrderLifecycleManager:
         if account is not None:
             self.update_account_snapshot(account)
 
-        self.manage_pending_orders(symbol=symbol, current_tick=current_tick, symbol_info=symbol_info, atr=atr)
+        self.manage_pending_orders(
+            symbol=symbol, current_tick=current_tick, symbol_info=symbol_info, atr=atr
+        )
 
         positions = self.adapter.get_positions(symbol=symbol)
 
         # Apply Falling Knife Protection
         if positions:
-            self.evaluate_falling_knife_protection(symbol=symbol, current_tick=current_tick, positions=positions, atr=atr)
+            self.evaluate_falling_knife_protection(
+                symbol=symbol, current_tick=current_tick, positions=positions, atr=atr
+            )
 
         # Re-build live tickets cache thread-safely
         with self._live_tickets_lock:
@@ -3289,12 +3509,23 @@ class OrderLifecycleManager:
                             ticket = self._pending_field(pending, "ticket", "order_id")
                             if ticket:
                                 pending_type = self._pending_field(pending, "type", "order_type")
-                                pending_dir = "BUY" if "BUY" in str(getattr(pending_type, "value", pending_type)).upper() else "SELL"
+                                pending_dir = (
+                                    "BUY"
+                                    if "BUY"
+                                    in str(getattr(pending_type, "value", pending_type)).upper()
+                                    else "SELL"
+                                )
                                 new_cache[ticket] = {
                                     "ticket": ticket,
-                                    "symbol": self._pending_field(pending, "symbol", default=symbol),
-                                    "price": self._pending_field(pending, "price_open", "price", default=0.0),
-                                    "magic": self._pending_field(pending, "magic", "magic_number", default=888101),
+                                    "symbol": self._pending_field(
+                                        pending, "symbol", default=symbol
+                                    ),
+                                    "price": self._pending_field(
+                                        pending, "price_open", "price", default=0.0
+                                    ),
+                                    "magic": self._pending_field(
+                                        pending, "magic", "magic_number", default=888101
+                                    ),
                                     "type": "PENDING",
                                     "direction": pending_dir,
                                     "volume": self._pending_field(pending, "volume", default=0.0),
@@ -3326,7 +3557,9 @@ class OrderLifecycleManager:
                 vol = self._last_known_volume.get(dead_ticket, 0.0)
                 direction = self._entry_directions.get(dead_ticket, "BUY")
 
-                matched_deal = next((d for d in history_deals if d.get("position_ticket") == dead_ticket), None)
+                matched_deal = next(
+                    (d for d in history_deals if d.get("position_ticket") == dead_ticket), None
+                )
 
                 profit_usd = 0.0
                 swap_usd = 0.0
@@ -3342,11 +3575,23 @@ class OrderLifecycleManager:
                     deal_reason_code = matched_deal.get("reason", 0)
                     comment = matched_deal.get("comment", "")
 
-                    if "NSE_CLOSE" in comment or "emergency" in comment.lower() or "cut" in comment.lower():
+                    if (
+                        "NSE_CLOSE" in comment
+                        or "emergency" in comment.lower()
+                        or "cut" in comment.lower()
+                    ):
                         status_str = "MANUALLY_CLOSED"
-                    elif deal_reason_code == 4 or "tp" in comment.lower() or (profit_usd > 0 and abs(exit_price - tp_price) < 0.10):
+                    elif (
+                        deal_reason_code == 4
+                        or "tp" in comment.lower()
+                        or (profit_usd > 0 and abs(exit_price - tp_price) < 0.10)
+                    ):
                         status_str = "CLOSED_TP"
-                    elif deal_reason_code == 3 or "sl" in comment.lower() or (profit_usd < 0 and abs(exit_price - sl_price) < 0.10):
+                    elif (
+                        deal_reason_code == 3
+                        or "sl" in comment.lower()
+                        or (profit_usd < 0 and abs(exit_price - sl_price) < 0.10)
+                    ):
                         status_str = "CLOSED_SL"
                     else:
                         status_str = "MANUALLY_CLOSED" if deal_reason_code == 1 else "CLOSED"
@@ -3372,9 +3617,12 @@ class OrderLifecycleManager:
                 if direction == "BUY":
                     if final_sl_val >= entry and abs(exit_price - final_sl_val) < 0.15:
                         is_risk_free_hit = 1
-                else:
-                    if final_sl_val <= entry and final_sl_val > 0.0 and abs(exit_price - final_sl_val) < 0.15:
-                        is_risk_free_hit = 1
+                elif (
+                    final_sl_val <= entry
+                    and final_sl_val > 0.0
+                    and abs(exit_price - final_sl_val) < 0.15
+                ):
+                    is_risk_free_hit = 1
 
                 # ---- Exit mechanism resolution (engine intent overrides broker heuristic) ----
                 forced_mechanism = self._forced_exit_mechanisms.pop(dead_ticket, None)
@@ -3384,7 +3632,9 @@ class OrderLifecycleManager:
                     exit_mechanism = ExitMechanism.TAKE_PROFIT_HIT
                 elif status_str == "CLOSED_SL":
                     exit_mechanism = (
-                        ExitMechanism.RISK_FREE_SL_HIT if is_risk_free_hit else ExitMechanism.HARD_SL_HIT
+                        ExitMechanism.RISK_FREE_SL_HIT
+                        if is_risk_free_hit
+                        else ExitMechanism.HARD_SL_HIT
                     )
                 elif status_str == "MANUALLY_CLOSED":
                     exit_mechanism = ExitMechanism.MANUAL_CLOSE
@@ -3403,7 +3653,9 @@ class OrderLifecycleManager:
                     mfe_usd = peak_win_usd
 
                 open_time_str = (
-                    entry_time.isoformat() if hasattr(entry_time, "isoformat") else str(entry_time or "")
+                    entry_time.isoformat()
+                    if hasattr(entry_time, "isoformat")
+                    else str(entry_time or "")
                 )
                 close_time_str = now.isoformat() if hasattr(now, "isoformat") else str(now)
 
@@ -3465,14 +3717,26 @@ class OrderLifecycleManager:
 
                         total_net_profit = profit_usd + swap_usd + comm_usd
 
-                        if status_str == "MANUALLY_CLOSED" and matched_deal and ("NSE_CLOSE" in matched_deal.get("comment", "") or "emergency" in matched_deal.get("comment", "").lower() or "cut" in matched_deal.get("comment", "").lower()):
+                        if (
+                            status_str == "MANUALLY_CLOSED"
+                            and matched_deal
+                            and (
+                                "NSE_CLOSE" in matched_deal.get("comment", "")
+                                or "emergency" in matched_deal.get("comment", "").lower()
+                                or "cut" in matched_deal.get("comment", "").lower()
+                            )
+                        ):
                             mae_val = self._mae_tracker.get(dead_ticket, 0.0)
                             dd_pct = (abs(mae_val) / max(atr, 0.50)) * 100.0
                             self.notifier.notify_emergency_cut(
                                 ticket=dead_ticket,
                                 score=self._hold_score_tracker.get(dead_ticket, 100),
-                                reasons=matched_deal.get("comment", "") if matched_deal else "NSE Emergency Cut",
-                                saved_usd=abs(total_net_profit) if total_net_profit < 0 else total_net_profit,
+                                reasons=matched_deal.get("comment", "")
+                                if matched_deal
+                                else "NSE Emergency Cut",
+                                saved_usd=abs(total_net_profit)
+                                if total_net_profit < 0
+                                else total_net_profit,
                                 trigger_source="Algorithm Position Router",
                                 drawdown_pct=dd_pct,
                                 reply_to_message_id=msg_id,
@@ -3503,7 +3767,11 @@ class OrderLifecycleManager:
                                 reply_to_message_id=msg_id,
                             )
                         else:
-                            reason_str = "Manual Close via Terminal" if (matched_deal and matched_deal.get("reason", 0) == 1) else f"MT5 Reason Code {matched_deal.get('reason', 0) if matched_deal else 'Unknown'}"
+                            reason_str = (
+                                "Manual Close via Terminal"
+                                if (matched_deal and matched_deal.get("reason", 0) == 1)
+                                else f"MT5 Reason Code {matched_deal.get('reason', 0) if matched_deal else 'Unknown'}"
+                            )
                             if matched_deal and matched_deal.get("comment", ""):
                                 reason_str += f" ({matched_deal.get('comment', '')})"
                             self.notifier.notify_manual_close(
@@ -3525,7 +3793,11 @@ class OrderLifecycleManager:
         if not positions:
             return []
 
-        min_stop_gap = (symbol_info.stops_level * symbol_info.point) if symbol_info and symbol_info.stops_level > 0 else 0.25
+        min_stop_gap = (
+            (symbol_info.stops_level * symbol_info.point)
+            if symbol_info and symbol_info.stops_level > 0
+            else 0.25
+        )
         spread = max(current_tick.ask - current_tick.bid, 0.0)
         mid_price = (current_tick.ask + current_tick.bid) * 0.5
 
@@ -3554,7 +3826,11 @@ class OrderLifecycleManager:
                 self._entry_directions[ticket] = pos.type.value
 
                 risk_price = abs(pos.price_open - pos.sl) if pos.sl > 0 else (atr * 1.5)
-                contract_size = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
+                contract_size = (
+                    symbol_info.trade_contract_size
+                    if symbol_info and symbol_info.trade_contract_size > 0
+                    else 100.0
+                )
                 self._initial_risks[ticket] = pos.volume * contract_size * risk_price
 
                 # Bind the entry context staged at dispatch time to this new ticket so the
@@ -3569,7 +3845,9 @@ class OrderLifecycleManager:
                     direction=pos.type.value,
                     volume=pos.volume,
                     entry_price=pos.price_open,
-                    timestamp_str=pos_time.isoformat() if hasattr(pos_time, "isoformat") else str(pos_time),
+                    timestamp_str=pos_time.isoformat()
+                    if hasattr(pos_time, "isoformat")
+                    else str(pos_time),
                     order_id=self._entry_order_ids.get(ticket, ""),
                     entry_reason=self._entry_reasons.get(ticket, ""),
                     ai_confidence_at_open=self._entry_confidences.get(ticket, 0.0),
@@ -3603,14 +3881,17 @@ class OrderLifecycleManager:
             # Telemetry tracking for time in profit vs drawdown
             last_t = self._last_tick_timestamps.get(ticket, now)
             delta_sec = (now - last_t).total_seconds()
-            if delta_sec < 0: delta_sec = 0.0
+            if delta_sec < 0:
+                delta_sec = 0.0
             self._last_tick_timestamps[ticket] = now
 
             if pos.profit > 0.0:
                 self._time_in_profit_sec[ticket] += delta_sec
             elif pos.profit < 0.0:
                 self._time_in_drawdown_sec[ticket] += delta_sec
-                self._peak_drawdown_usd[ticket] = min(self._peak_drawdown_usd.get(ticket, 0.0), pos.profit)
+                self._peak_drawdown_usd[ticket] = min(
+                    self._peak_drawdown_usd.get(ticket, 0.0), pos.profit
+                )
 
             # Single source of truth for peak profit: the protection state machine.
             # Mirrored here so the ledger autopsy (which reads _peak_profit_usd)
@@ -3618,13 +3899,23 @@ class OrderLifecycleManager:
             self._peak_profit_usd[ticket] = protection.peak_win_usd
 
             price_current = current_tick.bid if pos.type == OrderType.BUY else current_tick.ask
-            profit_price_delta = (price_current - pos.price_open) if pos.type == OrderType.BUY else (pos.price_open - price_current)
+            profit_price_delta = (
+                (price_current - pos.price_open)
+                if pos.type == OrderType.BUY
+                else (pos.price_open - price_current)
+            )
 
-            total_impact_usd, impact_price_delta = self._estimate_liquidation_impact(pos.volume, symbol_info, atr)
+            total_impact_usd, impact_price_delta = self._estimate_liquidation_impact(
+                pos.volume, symbol_info, atr
+            )
             net_price_delta = profit_price_delta - impact_price_delta
 
-            self._ensure_ticket_bootstrap(ticket, now, price_current, profit_price_delta, net_price_delta)
-            self._update_lsf_desync_metrics(ticket, now, price_current, profit_price_delta, net_price_delta, atr)
+            self._ensure_ticket_bootstrap(
+                ticket, now, price_current, profit_price_delta, net_price_delta
+            )
+            self._update_lsf_desync_metrics(
+                ticket, now, price_current, profit_price_delta, net_price_delta, atr
+            )
 
             self._update_mfe_mae(ticket, profit_price_delta)
             self._update_tick_state(ticket, pos, price_current, profit_price_delta)
@@ -3662,8 +3953,16 @@ class OrderLifecycleManager:
                 if pos.volume != old_vol:
                     if pos.volume < old_vol:
                         closed_lots = round(old_vol - pos.volume, 2)
-                        price_delta = (price_current - pos.price_open) if pos.type == OrderType.BUY else (pos.price_open - price_current)
-                        contract_size = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
+                        price_delta = (
+                            (price_current - pos.price_open)
+                            if pos.type == OrderType.BUY
+                            else (pos.price_open - price_current)
+                        )
+                        contract_size = (
+                            symbol_info.trade_contract_size
+                            if symbol_info and symbol_info.trade_contract_size > 0
+                            else 100.0
+                        )
                         realized_pnl = closed_lots * contract_size * price_delta
                         if self.notifier:
                             self.notifier.notify_partial_close(
@@ -3686,12 +3985,23 @@ class OrderLifecycleManager:
                     self._last_known_volume[ticket] = pos.volume
 
             entry_time = self._entry_timestamps[ticket]
-            holding_duration = (now - entry_time).total_seconds() if isinstance(entry_time, datetime) else 0.0
+            holding_duration = (
+                (now - entry_time).total_seconds() if isinstance(entry_time, datetime) else 0.0
+            )
 
             smart_metrics = self._calculate_smart_position_metrics(
-                pos=pos, price_current=price_current, mid_price=mid_price, spread=spread, atr=atr,
-                net_price_delta=net_price_delta, gross_price_delta=profit_price_delta, impact_price_delta=impact_price_delta,
-                total_impact_usd=total_impact_usd, holding_duration=holding_duration, features=feature_vector, symbol_info=symbol_info
+                pos=pos,
+                price_current=price_current,
+                mid_price=mid_price,
+                spread=spread,
+                atr=atr,
+                net_price_delta=net_price_delta,
+                gross_price_delta=profit_price_delta,
+                impact_price_delta=impact_price_delta,
+                total_impact_usd=total_impact_usd,
+                holding_duration=holding_duration,
+                features=feature_vector,
+                symbol_info=symbol_info,
             )
 
             # Evaluate with a slight throttle (e.g., once every 500ms per open ticket) to prevent CPU thrashing
@@ -3701,14 +4011,15 @@ class OrderLifecycleManager:
                 base_hold_score, invalidate_reasons = self._calculate_hold_value_score(
                     pos, price_current, feature_vector, impact_price_delta, atr, smart_metrics
                 )
-                base_hold_score = self._recalculate_hold_score_with_position_state(ticket, base_hold_score, smart_metrics, invalidate_reasons)
+                base_hold_score = self._recalculate_hold_score_with_position_state(
+                    ticket, base_hold_score, smart_metrics, invalidate_reasons
+                )
                 self._base_hold_score_tracker[ticket] = base_hold_score
                 self._last_reasons_tracker[ticket] = invalidate_reasons
                 self._last_hold_eval_time[ticket] = current_time
             else:
                 base_hold_score = self._base_hold_score_tracker.get(ticket, 100)
                 invalidate_reasons = self._last_reasons_tracker.get(ticket, ["HEALTHY"])
-
 
             # SAFETY OVERRIDE: applied on EVERY pass (never throttled) after the base
             # score is computed but before the score is used for any execution
@@ -3742,11 +4053,14 @@ class OrderLifecycleManager:
 
             if pos.profit < 0.0:
                 h4_trend = self._safe_feature_float(feature_vector, "htf_h4_trend", 0.0)
-                self._initialize_recovery_mode(ticket, pos.profit, confidence_factor, atr, h4_trend, now)
-                budget_exhausted, budget_reason = self._evaluate_recovery_budget_and_horizon(ticket, pos.profit, now)
+                self._initialize_recovery_mode(
+                    ticket, pos.profit, confidence_factor, atr, h4_trend, now
+                )
+                budget_exhausted, _budget_reason = self._evaluate_recovery_budget_and_horizon(
+                    ticket, pos.profit, now
+                )
             else:
                 budget_exhausted = False
-                budget_reason = ""
 
             cand_state = self._evaluate_candidate_state(ticket, pos, evidence, pnl_features)
             if budget_exhausted:
@@ -3758,7 +4072,7 @@ class OrderLifecycleManager:
                 ticket, pos, base_hold_score, pnl_features, evidence, confidence_factor, atr
             )
 
-                # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
+            # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
             ai_flip_detected = False
             ai_flip_action = None
             if probs is not None:
@@ -3774,17 +4088,25 @@ class OrderLifecycleManager:
                     rel_sell_bias = prob_sell / total_active_prob
 
                     # Read thresholds from AlgoConfig with whipsaw protection
-                    rel_threshold = getattr(self.algo_config, "ai_flip_relative_bias_threshold", 0.60)
+                    rel_threshold = getattr(
+                        self.algo_config, "ai_flip_relative_bias_threshold", 0.60
+                    )
                     min_delta = getattr(self.algo_config, "ai_flip_min_delta", 0.10)
 
                     # Whipsaw guard: require min 15s position duration OR strong relative bias >= (threshold + 0.05)
-                    whipsaw_guard_passed = holding_duration >= 15.0 or max(rel_buy_bias, rel_sell_bias) >= (rel_threshold + 0.05)
+                    whipsaw_guard_passed = holding_duration >= 15.0 or max(
+                        rel_buy_bias, rel_sell_bias
+                    ) >= (rel_threshold + 0.05)
 
                     if whipsaw_guard_passed:
-                        if pos.type == OrderType.BUY and (rel_sell_bias >= rel_threshold or prob_sell > prob_buy + min_delta):
+                        if pos.type == OrderType.BUY and (
+                            rel_sell_bias >= rel_threshold or prob_sell > prob_buy + min_delta
+                        ):
                             ai_flip_detected = True
                             ai_flip_action = ActionType.SELL_STOP
-                        elif pos.type == OrderType.SELL and (rel_buy_bias >= rel_threshold or prob_buy > prob_sell + min_delta):
+                        elif pos.type == OrderType.SELL and (
+                            rel_buy_bias >= rel_threshold or prob_buy > prob_sell + min_delta
+                        ):
                             ai_flip_detected = True
                             ai_flip_action = ActionType.BUY_STOP
                 except Exception:
@@ -3792,7 +4114,9 @@ class OrderLifecycleManager:
 
             if ai_flip_detected and ai_flip_action is not None:
                 msg_id = self._order_message_ids.get(ticket)
-                logger.info(f">>> AI DIRECTION SHIFT DETECTED: Closing position #{ticket} and executing fast reversal {ai_flip_action.value} <<<")
+                logger.info(
+                    f">>> AI DIRECTION SHIFT DETECTED: Closing position #{ticket} and executing fast reversal {ai_flip_action.value} <<<"
+                )
 
                 # Tag the exit BEFORE closing so the ledger autopsy attributes it to the
                 # reversal protocol rather than a generic manual close.
@@ -3820,15 +4144,32 @@ class OrderLifecycleManager:
                     # Dispatch immediate reversal stop order (clamped to HARD_MAX_LOTS).
                     rev_volume = self._clamp_dispatch_volume(pos.volume, symbol=pos.symbol)
                     if rev_volume <= 0.0:
-                        logger.warning("AI REVERSAL: reversal order skipped, clamped volume is zero", ticket=ticket)
+                        logger.warning(
+                            "AI REVERSAL: reversal order skipped, clamped volume is zero",
+                            ticket=ticket,
+                        )
                         continue
 
-                    rev_entry = current_tick.ask if ai_flip_action == ActionType.BUY_STOP else current_tick.bid
-                    rev_sl = round(rev_entry - (atr * 1.5), 2) if ai_flip_action == ActionType.BUY_STOP else round(rev_entry + (atr * 1.5), 2)
-                    rev_tp = round(rev_entry + (atr * 3.0), 2) if ai_flip_action == ActionType.BUY_STOP else round(rev_entry - (atr * 3.0), 2)
+                    rev_entry = (
+                        current_tick.ask
+                        if ai_flip_action == ActionType.BUY_STOP
+                        else current_tick.bid
+                    )
+                    rev_sl = (
+                        round(rev_entry - (atr * 1.5), 2)
+                        if ai_flip_action == ActionType.BUY_STOP
+                        else round(rev_entry + (atr * 1.5), 2)
+                    )
+                    rev_tp = (
+                        round(rev_entry + (atr * 3.0), 2)
+                        if ai_flip_action == ActionType.BUY_STOP
+                        else round(rev_entry - (atr * 3.0), 2)
+                    )
                     self.adapter.place_pending_order(
                         symbol=pos.symbol,
-                        order_type=OrderType.BUY_STOP if ai_flip_action == ActionType.BUY_STOP else OrderType.SELL_STOP,
+                        order_type=OrderType.BUY_STOP
+                        if ai_flip_action == ActionType.BUY_STOP
+                        else OrderType.SELL_STOP,
                         volume=rev_volume,
                         price=rev_entry,
                         stop_loss=rev_sl,
@@ -3879,7 +4220,11 @@ class OrderLifecycleManager:
 
             # --- MFE GIVEBACK TRAILING LOCK ---
             peak_win = self._peak_profit_usd.get(ticket, 0.0)
-            contract_sz = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
+            contract_sz = (
+                symbol_info.trade_contract_size
+                if symbol_info and symbol_info.trade_contract_size > 0
+                else 100.0
+            )
             if peak_win >= 150.0 and pos.profit < (peak_win * 0.70):
                 target_mfe_sl = (
                     pos.price_open + (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
@@ -3890,22 +4235,33 @@ class OrderLifecycleManager:
 
                 valid_stop = False
                 if pos.type == OrderType.BUY:
-                    if target_mfe_sl > pos.sl and (current_tick.bid - target_mfe_sl) >= min_stop_gap:
+                    if (
+                        target_mfe_sl > pos.sl
+                        and (current_tick.bid - target_mfe_sl) >= min_stop_gap
+                    ):
                         valid_stop = True
-                else:
-                    if (pos.sl == 0.0 or target_mfe_sl < pos.sl) and (target_mfe_sl - current_tick.ask) >= min_stop_gap:
-                        valid_stop = True
+                elif (pos.sl == 0.0 or target_mfe_sl < pos.sl) and (
+                    target_mfe_sl - current_tick.ask
+                ) >= min_stop_gap:
+                    valid_stop = True
 
                 # Never loosen an existing protective stop or regress behind the
                 # confirmed breakeven lock.
                 valid_stop = valid_stop and self.is_sl_improvement(pos, target_mfe_sl)
 
                 if valid_stop and self._should_modify_sl(ticket, target_mfe_sl):
-                    success = self.adapter.modify_position(ticket=ticket, stop_loss=target_mfe_sl, take_profit=pos.tp)
+                    success = self.adapter.modify_position(
+                        ticket=ticket, stop_loss=target_mfe_sl, take_profit=pos.tp
+                    )
                     self._last_modify_sl[ticket] = target_mfe_sl
                     if success:
                         self._sl_modified_flags[ticket] = True
-                        logger.info(">>> MFE GIVEBACK PROTECTOR: Advanced SL to lock 70% peak profit <<<", ticket=ticket, peak_win=peak_win, locked_sl=target_mfe_sl)
+                        logger.info(
+                            ">>> MFE GIVEBACK PROTECTOR: Advanced SL to lock 70% peak profit <<<",
+                            ticket=ticket,
+                            peak_win=peak_win,
+                            locked_sl=target_mfe_sl,
+                        )
 
             total_sec = max(holding_duration, 1.0)
             pct_win = (self._time_in_profit_sec[ticket] / total_sec) * 100
@@ -3929,9 +4285,9 @@ class OrderLifecycleManager:
                     time_loss=f"{pct_loss:.0f}%",
                     age_sec=f"{holding_duration:.1f}s",
                     atr=f"${atr:.2f}",
-                    ai_rec_prob=f"{evidence.get('recovery_score', 0.0)*100:.1f}%",
-                    ai_adv_prob=f"{evidence.get('adverse_score', 0.0)*100:.1f}%",
-                    ai_cont_prob=f"{evidence.get('continuation_score', 0.0)*100:.1f}%",
+                    ai_rec_prob=f"{evidence.get('recovery_score', 0.0) * 100:.1f}%",
+                    ai_adv_prob=f"{evidence.get('adverse_score', 0.0) * 100:.1f}%",
+                    ai_cont_prob=f"{evidence.get('continuation_score', 0.0) * 100:.1f}%",
                     hold_score=f"{hold_score}/100",
                     score_reasons=invalidate_reasons if invalidate_reasons else ["HEALTHY"],
                     prot_score=f"{prot_score:.1f}/100",
@@ -3961,13 +4317,27 @@ class OrderLifecycleManager:
                     rule_target_sl = rule_exit["stop_loss"]
                 else:
                     legacy_action, legacy_scenario = self._resolve_position_management_scenario(
-                        pos=pos, hold_score=hold_score, metrics=smart_metrics, net_delta=net_price_delta,
-                        gross_delta=profit_price_delta, atr=atr, spread=spread, holding_duration=holding_duration, min_stop_gap=min_stop_gap
+                        pos=pos,
+                        hold_score=hold_score,
+                        metrics=smart_metrics,
+                        net_delta=net_price_delta,
+                        gross_delta=profit_price_delta,
+                        atr=atr,
+                        spread=spread,
+                        holding_duration=holding_duration,
+                        min_stop_gap=min_stop_gap,
                     )
             else:
                 legacy_action, legacy_scenario = self._resolve_position_management_scenario(
-                    pos=pos, hold_score=hold_score, metrics=smart_metrics, net_delta=net_price_delta,
-                    gross_delta=profit_price_delta, atr=atr, spread=spread, holding_duration=holding_duration, min_stop_gap=min_stop_gap
+                    pos=pos,
+                    hold_score=hold_score,
+                    metrics=smart_metrics,
+                    net_delta=net_price_delta,
+                    gross_delta=profit_price_delta,
+                    atr=atr,
+                    spread=spread,
+                    holding_duration=holding_duration,
+                    min_stop_gap=min_stop_gap,
                 )
 
             # --- Multi-Stage Decision Arbitration ---
@@ -3993,7 +4363,11 @@ class OrderLifecycleManager:
             if action == "MODIFY_SL" and "GIVEBACK" in scenario:
                 # Lock 70% of peak profit
                 peak_win = self._peak_profit_usd.get(ticket, 0.0)
-                contract_sz = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
+                contract_sz = (
+                    symbol_info.trade_contract_size
+                    if symbol_info and symbol_info.trade_contract_size > 0
+                    else 100.0
+                )
                 target_mfe_sl = (
                     pos.price_open + (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
                     if pos.type == OrderType.BUY
@@ -4006,9 +4380,11 @@ class OrderLifecycleManager:
                 # Attribute engine-initiated exits to hold-score decay unless a more
                 # specific mechanism (e.g. AI reversal) was already tagged.
                 self._forced_exit_mechanisms.setdefault(ticket, ExitMechanism.HOLD_SCORE_DECAY)
-                
-                logger.info(f"[EXIT TRACE] EXECUTING BROKER CLOSE for ticket {ticket} | Mechanism: {self._forced_exit_mechanisms.get(ticket)} | Scenario: {scenario}")
-                
+
+                logger.info(
+                    f"[EXIT TRACE] EXECUTING BROKER CLOSE for ticket {ticket} | Mechanism: {self._forced_exit_mechanisms.get(ticket)} | Scenario: {scenario}"
+                )
+
                 if self.adapter.close_position(ticket=ticket):
                     if self.notifier:
                         self.notifier.notify_early_emergency_cut(
@@ -4028,7 +4404,9 @@ class OrderLifecycleManager:
 
             elif action == "MODIFY_SL":
                 if self._should_modify_sl(ticket, rule_target_sl):
-                    if self.adapter.modify_position(ticket=ticket, stop_loss=rule_target_sl, take_profit=pos.tp):
+                    if self.adapter.modify_position(
+                        ticket=ticket, stop_loss=rule_target_sl, take_profit=pos.tp
+                    ):
                         self._last_modify_sl[ticket] = rule_target_sl
                         self._sl_modified_flags[ticket] = True
                         if self.notifier:
@@ -4045,32 +4423,49 @@ class OrderLifecycleManager:
 
             elif action == "PARTIAL_CLOSE":
                 if self.enable_partial_tp and not self._partial_closed_tickets.get(ticket, False):
-                    vol_step = symbol_info.volume_step if symbol_info and symbol_info.volume_step > 0 else 0.01
-                    partial_volume = round(round((pos.volume * self.partial_tp_ratio) / vol_step) * vol_step, 2)
+                    vol_step = (
+                        symbol_info.volume_step
+                        if symbol_info and symbol_info.volume_step > 0
+                        else 0.01
+                    )
+                    partial_volume = round(
+                        round((pos.volume * self.partial_tp_ratio) / vol_step) * vol_step, 2
+                    )
                     if partial_volume < pos.volume:
                         if self.adapter.close_position(ticket=ticket, volume=partial_volume):
                             self._partial_closed_tickets[ticket] = True
 
             elif action == "BREAK_EVEN":
-                target_sl = pos.price_open + max(self.be_lock, spread) if pos.type == OrderType.BUY else pos.price_open - max(self.be_lock, spread)
+                target_sl = (
+                    pos.price_open + max(self.be_lock, spread)
+                    if pos.type == OrderType.BUY
+                    else pos.price_open - max(self.be_lock, spread)
+                )
                 target_sl = round(target_sl, 2)
                 valid_stop = False
                 if pos.type == OrderType.BUY:
                     if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
                         valid_stop = True
-                else:
-                    if (pos.sl == 0.0 or target_sl < pos.sl) and (target_sl - current_tick.ask) >= min_stop_gap:
-                        valid_stop = True
+                elif (pos.sl == 0.0 or target_sl < pos.sl) and (
+                    target_sl - current_tick.ask
+                ) >= min_stop_gap:
+                    valid_stop = True
 
                 if valid_stop and self._should_modify_sl(ticket, target_sl):
-                    success = self.adapter.modify_position(ticket=ticket, stop_loss=target_sl, take_profit=pos.tp)
+                    success = self.adapter.modify_position(
+                        ticket=ticket, stop_loss=target_sl, take_profit=pos.tp
+                    )
                     self._last_modify_sl[ticket] = target_sl
                     if success:
                         self._sl_modified_flags[ticket] = True
                     if success and self.notifier:
                         msg_id = self._order_message_ids.get(ticket)
                         orig_risk = self._initial_risks.get(ticket, 0.0)
-                        contract_size = symbol_info.trade_contract_size if symbol_info and symbol_info.trade_contract_size > 0 else 100.0
+                        contract_size = (
+                            symbol_info.trade_contract_size
+                            if symbol_info and symbol_info.trade_contract_size > 0
+                            else 100.0
+                        )
                         protected_amt = abs(target_sl - pos.price_open) * pos.volume * contract_size
                         self.notifier.notify_break_even_applied_extended(
                             ticket=ticket,
@@ -4082,19 +4477,26 @@ class OrderLifecycleManager:
 
             elif action == "NORMAL_TRAIL":
                 trail_distance = max(min_stop_gap, round(atr * 1.15, 2))
-                target_sl = price_current - trail_distance if pos.type == OrderType.BUY else price_current + trail_distance
+                target_sl = (
+                    price_current - trail_distance
+                    if pos.type == OrderType.BUY
+                    else price_current + trail_distance
+                )
                 target_sl = round(target_sl, 2)
                 valid_stop = False
                 if pos.type == OrderType.BUY:
                     if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
                         valid_stop = True
-                else:
-                    if (pos.sl == 0.0 or target_sl < pos.sl) and (target_sl - current_tick.ask) >= min_stop_gap:
-                        valid_stop = True
+                elif (pos.sl == 0.0 or target_sl < pos.sl) and (
+                    target_sl - current_tick.ask
+                ) >= min_stop_gap:
+                    valid_stop = True
 
                 if valid_stop and self._should_modify_sl(ticket, target_sl):
                     old_sl_val = pos.sl
-                    success = self.adapter.modify_position(ticket=ticket, stop_loss=target_sl, take_profit=pos.tp)
+                    success = self.adapter.modify_position(
+                        ticket=ticket, stop_loss=target_sl, take_profit=pos.tp
+                    )
                     self._last_modify_sl[ticket] = target_sl
                     if success:
                         self._sl_modified_flags[ticket] = True
@@ -4111,30 +4513,63 @@ class OrderLifecycleManager:
         return positions
 
     def _update_mfe_mae(self, ticket: int, profit_price_delta: float) -> None:
-        self._mfe_tracker[ticket] = max(self._mfe_tracker.get(ticket, profit_price_delta), profit_price_delta)
-        self._mae_tracker[ticket] = min(self._mae_tracker.get(ticket, profit_price_delta), profit_price_delta)
+        self._mfe_tracker[ticket] = max(
+            self._mfe_tracker.get(ticket, profit_price_delta), profit_price_delta
+        )
+        self._mae_tracker[ticket] = min(
+            self._mae_tracker.get(ticket, profit_price_delta), profit_price_delta
+        )
 
     def _cleanup_ticket_state(self, ticket: int) -> None:
         """Releases all per-ticket state after the closing autopsy row has been written."""
         if hasattr(self, "_last_telemetry_time"):
             self._last_telemetry_time.pop(ticket, None)
         for tracker in (
-            self._partial_closed_tickets, self._mfe_tracker, self._mae_tracker, self._entry_timestamps,
-            self._last_tick_timestamps, self._time_in_profit_sec, self._time_in_drawdown_sec,
-            self._peak_profit_usd, self._peak_drawdown_usd, self._lsf_state, self._last_seen_ts,
-            self._stagnation_ticks, self._adverse_ticks, self._favorable_ticks, self._hold_score_tracker,
-            self._base_hold_score_tracker, self._last_reasons_tracker,
-            self._rescue_registered_tickets, self._last_modify_sl, self._last_price_tracker,
-            self._entry_prices, self._entry_sls, self._entry_tps, self._last_known_volume, self._initial_risks,
-            self._entry_directions, self._pending_orders_setup_time,
+            self._partial_closed_tickets,
+            self._mfe_tracker,
+            self._mae_tracker,
+            self._entry_timestamps,
+            self._last_tick_timestamps,
+            self._time_in_profit_sec,
+            self._time_in_drawdown_sec,
+            self._peak_profit_usd,
+            self._peak_drawdown_usd,
+            self._lsf_state,
+            self._last_seen_ts,
+            self._stagnation_ticks,
+            self._adverse_ticks,
+            self._favorable_ticks,
+            self._hold_score_tracker,
+            self._base_hold_score_tracker,
+            self._last_reasons_tracker,
+            self._rescue_registered_tickets,
+            self._last_modify_sl,
+            self._last_price_tracker,
+            self._entry_prices,
+            self._entry_sls,
+            self._entry_tps,
+            self._last_known_volume,
+            self._initial_risks,
+            self._entry_directions,
+            self._pending_orders_setup_time,
             # Ledger autopsy context
-            self._entry_reasons, self._entry_confidences, self._entry_regimes, self._entry_order_ids,
-            self._sl_modified_flags, self._forced_exit_mechanisms,
+            self._entry_reasons,
+            self._entry_confidences,
+            self._entry_regimes,
+            self._entry_order_ids,
+            self._sl_modified_flags,
+            self._forced_exit_mechanisms,
             # New state structures
-            self._trajectory_history, self._position_states, self._state_transition_candidates,
+            self._trajectory_history,
+            self._position_states,
+            self._state_transition_candidates,
             # Recovery structures
-            self._recovery_budget_initial, self._recovery_budget_remaining, self._recovery_budget_consumed,
-            self._recovery_horizons, self._recovery_entry_times, self._recovery_initial_loss,
+            self._recovery_budget_initial,
+            self._recovery_budget_remaining,
+            self._recovery_budget_consumed,
+            self._recovery_horizons,
+            self._recovery_entry_times,
+            self._recovery_initial_loss,
         ):
             tracker.pop(ticket, None)
         with self._live_tickets_lock:

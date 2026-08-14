@@ -3,16 +3,9 @@ Multi-Strategy Signal Policy Engine (v5.0 Enterprise - Fast Reversal & Level Loc
 =====================================================================================
 Evaluates Ichimoku, ICT, Price Action, and Statistical Arbitrage with Aggressive Order Routing.
 Injects Microstructure Market Regime State (Module 1) for real-time execution adaptability.
-
-Enterprise Upgrades & Calibrations Incorporated:
-    1. Same-Level Duplicate Re-Entry Lockout (Prevents repeated entries at the same price level).
-    2. Fast Liquidity Sweep Reversal Routing (Instant direction flip on ICT sweeps & ChoCh).
-    3. Hysteresis Bypass on Confirmed Sweeps (Allows instant direction flip at liquidity pools).
-    4. ICT & Ichimoku Structural SL/TP Calculation (Anchored to Swing Lows/Highs and Kumo Span B).
-    5. OFI Micro-Momentum Range Override (Allows market scalps in range if abs(OFI) > 0.15).
-    6. Tick Velocity Momentum Bypass (Bypasses limit-downgrade when tick_velocity > 10.0 ticks/sec).
-    7. Dynamic Z-Score & AI Confidence Blending (Eliminates artificial confidence inflation).
 """
+
+from __future__ import annotations
 
 import math
 import uuid
@@ -22,9 +15,9 @@ from typing import Any
 import numpy as np
 import torch
 
+from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.domain.models import TickData, TradeProposal
-from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.features.regime_classifier import (
     MarketRegimeState,
     RecommendedExecutionType,
@@ -32,9 +25,9 @@ from nexus_scalp.features.regime_classifier import (
 )
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
 logger = get_logger("nexus_scalp.signals.policy")
-
 
 # =============================================================================
 # MODULE B INVARIANTS (mirrored in execution/order_manager.py)
@@ -50,8 +43,6 @@ PENDING_ORDER_LOCK_SECONDS: float = 30.0
 AI_REVERSAL_REASON: str = "AI_REVERSAL_SIGNAL"
 
 
-from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
-
 class SignalPolicy:
     """
     Evaluates multi-confluence setups and generates active trade proposals for Risk Engine validation.
@@ -60,15 +51,15 @@ class SignalPolicy:
 
     def __init__(
         self,
-        confidence_threshold: float = 0.20,      # Calibrated to 0.20 for fast HFT response
-        cooldown_seconds: float = 3.0,           # Fast 3s cooldown for micro-scalping
-        telemetry_interval_sec: float = 4.0,      # Throttles console logging output every 4 seconds max
-        range_min_displacement: float = 0.15,     # Reduced displacement threshold for Gold ($0.15)
-        range_confidence_penalty: float = 0.10,   # Reduced range penalty to encourage micro-scalps
-        max_spread_atr_ratio: float = 0.18,       # Maximum allowed spread as 18% of current M1 ATR
-        flip_confidence_penalty: float = 0.10,    # Hysteresis penalty when flipping BUY/SELL
-        flip_memory_seconds: float = 8.0,         # Reduced hysteresis memory window
-        min_allowed_rr: float = 1.10,             # Absolute minimum Risk-to-Reward ratio required
+        confidence_threshold: float = 0.20,  # Calibrated to 0.20 for fast HFT response
+        cooldown_seconds: float = 3.0,  # Fast 3s cooldown for micro-scalping
+        telemetry_interval_sec: float = 4.0,  # Throttles console logging output every 4 seconds max
+        range_min_displacement: float = 0.15,  # Reduced displacement threshold for Gold ($0.15)
+        range_confidence_penalty: float = 0.10,  # Reduced range penalty to encourage micro-scalps
+        max_spread_atr_ratio: float = 0.18,  # Maximum allowed spread as 18% of current M1 ATR
+        flip_confidence_penalty: float = 0.10,  # Hysteresis penalty when flipping BUY/SELL
+        flip_memory_seconds: float = 8.0,  # Reduced hysteresis memory window
+        min_allowed_rr: float = 1.10,  # Absolute minimum Risk-to-Reward ratio required
         rule_matrix: RuleMatrixEngine | None = None,
         algo_config: AlgoConfig | None = None,
     ) -> None:
@@ -189,7 +180,9 @@ class SignalPolicy:
             tick_ts is not None
             and self._dedup_last_time is not None
             and tick_ts == self._dedup_last_time
-        ) or (tick_bid == self._dedup_last_bid and tick_ask == self._dedup_last_ask and tick_bid > 0.0)
+        ) or (
+            tick_bid == self._dedup_last_bid and tick_ask == self._dedup_last_ask and tick_bid > 0.0
+        )
         if is_duplicate:
             _pb = probs[1] if len(probs) > 1 else 0.0
             _ps = probs[2] if len(probs) > 2 else 0.0
@@ -383,8 +376,16 @@ class SignalPolicy:
                     swing_high_20 = np.max([b.high for b in completed_bars[-20:]])
                 new_eq_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
 
-                time_delta = (now - self._locked_pending_time).total_seconds() if self._locked_pending_time is not None else 0.0
-                price_drift = abs(new_eq_price - self._locked_pending_price) if self._locked_pending_price is not None else 0.0
+                time_delta = (
+                    (now - self._locked_pending_time).total_seconds()
+                    if self._locked_pending_time is not None
+                    else 0.0
+                )
+                price_drift = (
+                    abs(new_eq_price - self._locked_pending_price)
+                    if self._locked_pending_price is not None
+                    else 0.0
+                )
 
                 # 30-SECOND PENDING LOCK: never cancel/recreate a live limit order unless
                 # it has been resting for more than 30s AND price has drifted >= 1.0 x ATR.
@@ -438,8 +439,12 @@ class SignalPolicy:
         if is_range_market and abs(ofi) >= 0.15:
             is_range_market = False
 
-        ict_bullish = feature_vector.fvg_bullish_active or feature_vector.order_block_type == 1 or choch_bull
-        ict_bearish = feature_vector.fvg_bearish_active or feature_vector.order_block_type == -1 or choch_bear
+        ict_bullish = (
+            feature_vector.fvg_bullish_active or feature_vector.order_block_type == 1 or choch_bull
+        )
+        ict_bearish = (
+            feature_vector.fvg_bearish_active or feature_vector.order_block_type == -1 or choch_bear
+        )
 
         moving_up = disp > dynamic_min_displacement or feature_vector.broke_previous_high
         moving_down = disp < -dynamic_min_displacement or feature_vector.broke_previous_low
@@ -452,10 +457,10 @@ class SignalPolicy:
         regime_str = regime_type.value if regime_type else "UNKNOWN"
         regime_conf = regime_state.regime_probability if regime_state else 0.0
 
-        is_guardian_active = (regime_state and (
+        is_guardian_active = regime_state and (
             regime_type in (RegimeType.MACRO_NEWS_FREEZE, RegimeType.HIGH_SPREAD_CHOP)
             or exec_type == RecommendedExecutionType.FREEZE_ALL
-        ))
+        )
         guardian_status = "ACTIVE" if is_guardian_active else "IDLE"
 
         # Initialize execution metadata
@@ -470,19 +475,27 @@ class SignalPolicy:
             cand_action = "BUY_MARKET"
         elif (sweep_sig == -1 or choch_bear) and (relative_sell_bias > 0.45 or prob_sell >= 0.30):
             cand_action = "SELL_MARKET"
-        elif (ichimoku_bullish or stat_arb_bullish) and (moving_up or ict_bullish or relative_buy_bias > 0.50 or stat_arb_bullish):
+        elif (ichimoku_bullish or stat_arb_bullish) and (
+            moving_up or ict_bullish or relative_buy_bias > 0.50 or stat_arb_bullish
+        ):
             if stat_arb_bullish and is_range_market:
                 cand_action = "BUY_LIMIT"
-            elif feature_vector.fvg_bullish_active or (exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum):
+            elif feature_vector.fvg_bullish_active or (
+                exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum
+            ):
                 cand_action = "BUY_LIMIT"
             elif feature_vector.broke_previous_high or high_velocity_momentum:
                 cand_action = "BUY_MARKET" if high_velocity_momentum else "BUY_STOP"
             elif not is_range_market or abs(ofi) >= 0.15:
                 cand_action = "BUY_MARKET"
-        elif (ichimoku_bearish or stat_arb_bearish) and (moving_down or ict_bearish or relative_sell_bias > 0.50 or stat_arb_bearish):
+        elif (ichimoku_bearish or stat_arb_bearish) and (
+            moving_down or ict_bearish or relative_sell_bias > 0.50 or stat_arb_bearish
+        ):
             if stat_arb_bearish and is_range_market:
                 cand_action = "SELL_LIMIT"
-            elif feature_vector.fvg_bearish_active or (exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum):
+            elif feature_vector.fvg_bearish_active or (
+                exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum
+            ):
                 cand_action = "SELL_LIMIT"
             elif feature_vector.broke_previous_low or high_velocity_momentum:
                 cand_action = "SELL_MARKET" if high_velocity_momentum else "SELL_STOP"
@@ -496,7 +509,9 @@ class SignalPolicy:
         cand_confidence = 0.0
         if cand_action != "NO_TRADE":
             cand_ai_prob = prob_buy if "BUY" in cand_action else prob_sell
-            is_stat_arb = "STAT_ARB" in cand_action or (stat_arb_bullish if "BUY" in cand_action else stat_arb_bearish)
+            is_stat_arb = "STAT_ARB" in cand_action or (
+                stat_arb_bullish if "BUY" in cand_action else stat_arb_bearish
+            )
             if is_stat_arb:
                 cand_confidence = max(cand_ai_prob, z_score_confidence)
             else:
@@ -534,30 +549,59 @@ class SignalPolicy:
 
             swing_low_reconstructed = target_entry_price - (dist_sl_20 * atr)
             swing_high_reconstructed = target_entry_price + (dist_sh_20 * atr)
-            span_b = self._sanitize_float(getattr(feature_vector, "senkou_span_b", 0.0), target_entry_price)
+            span_b = self._sanitize_float(
+                getattr(feature_vector, "senkou_span_b", 0.0), target_entry_price
+            )
 
             if is_buy_cand:
-                cand_sl_levels = [v for v in (swing_low_reconstructed, kijun, span_b) if is_numeric(v) and 0.0 < v < target_entry_price]
-                structural_level_sl = max(cand_sl_levels) if cand_sl_levels else (target_entry_price - atr)
-                cand_stop_loss = round(structural_level_sl - (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
+                cand_sl_levels = [
+                    v
+                    for v in (swing_low_reconstructed, kijun, span_b)
+                    if is_numeric(v) and 0.0 < v < target_entry_price
+                ]
+                structural_level_sl = (
+                    max(cand_sl_levels) if cand_sl_levels else (target_entry_price - atr)
+                )
+                cand_stop_loss = round(
+                    structural_level_sl - (atr * self.algo_config.atr_sl_buffer_multiplier), 2
+                )
 
-                cand_tp_levels = [v for v in (swing_high_reconstructed, span_b) if is_numeric(v) and v > target_entry_price]
-                cand_take_profit = round(max(cand_tp_levels) if cand_tp_levels else (target_entry_price + atr * 2.0), 2)
+                cand_tp_levels = [
+                    v
+                    for v in (swing_high_reconstructed, span_b)
+                    if is_numeric(v) and v > target_entry_price
+                ]
+                cand_take_profit = round(
+                    max(cand_tp_levels) if cand_tp_levels else (target_entry_price + atr * 2.0), 2
+                )
             else:
-                cand_sl_levels = [v for v in (swing_high_reconstructed, kijun, span_b) if is_numeric(v) and v > target_entry_price]
-                structural_level_sl = min(cand_sl_levels) if cand_sl_levels else (target_entry_price + atr)
-                cand_stop_loss = round(structural_level_sl + (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
+                cand_sl_levels = [
+                    v
+                    for v in (swing_high_reconstructed, kijun, span_b)
+                    if is_numeric(v) and v > target_entry_price
+                ]
+                structural_level_sl = (
+                    min(cand_sl_levels) if cand_sl_levels else (target_entry_price + atr)
+                )
+                cand_stop_loss = round(
+                    structural_level_sl + (atr * self.algo_config.atr_sl_buffer_multiplier), 2
+                )
 
-                cand_tp_levels = [v for v in (swing_low_reconstructed, span_b) if is_numeric(v) and 0.0 < v < target_entry_price]
-                cand_take_profit = round(min(cand_tp_levels) if cand_tp_levels else (target_entry_price - atr * 2.0), 2)
+                cand_tp_levels = [
+                    v
+                    for v in (swing_low_reconstructed, span_b)
+                    if is_numeric(v) and 0.0 < v < target_entry_price
+                ]
+                cand_take_profit = round(
+                    min(cand_tp_levels) if cand_tp_levels else (target_entry_price - atr * 2.0), 2
+                )
 
             # Ensure take_profit satisfies at least the minimum allowed RR to guarantee reward > risk
             risk_amount = max(abs(target_entry_price - cand_stop_loss), 1e-5)
             active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
             if cand_confidence >= getattr(self.algo_config, "high_confidence_threshold", 0.95):
                 min_rr_hc = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
-                if min_rr_hc < active_min_rr:
-                    active_min_rr = min_rr_hc
+                active_min_rr = min(active_min_rr, min_rr_hc)
 
             # Use smaller of min_allowed_rr and active_min_rr to avoid over-adjusting targets
             active_tp_rr = min(self.min_allowed_rr, active_min_rr)
@@ -565,16 +609,18 @@ class SignalPolicy:
             if is_buy_cand:
                 if cand_take_profit < target_entry_price + min_required_tp_dist:
                     cand_take_profit = round(target_entry_price + min_required_tp_dist, 2)
-            else:
-                if cand_take_profit > target_entry_price - min_required_tp_dist:
-                    cand_take_profit = round(target_entry_price - min_required_tp_dist, 2)
+            elif cand_take_profit > target_entry_price - min_required_tp_dist:
+                cand_take_profit = round(target_entry_price - min_required_tp_dist, 2)
 
             reward_amount = abs(cand_take_profit - target_entry_price)
             cand_actual_rr = round(reward_amount / risk_amount, 2)
 
         # Ensure we sanitize/convert mock objects to safe types to prevent TypeError in God Mode
         feat_ob_valid_bos = getattr(feature_vector, "feat_ob_valid_bos", 0.0)
-        if hasattr(feat_ob_valid_bos, "__class__") and "Mock" in feat_ob_valid_bos.__class__.__name__:
+        if (
+            hasattr(feat_ob_valid_bos, "__class__")
+            and "Mock" in feat_ob_valid_bos.__class__.__name__
+        ):
             feat_ob_valid_bos = 0.0
         else:
             feat_ob_valid_bos = self._sanitize_float(feat_ob_valid_bos, 0.0)
@@ -598,19 +644,28 @@ class SignalPolicy:
             choch_bearish = bool(choch_bearish)
 
         fvg_bullish_active = getattr(feature_vector, "fvg_bullish_active", False)
-        if hasattr(fvg_bullish_active, "__class__") and "Mock" in fvg_bullish_active.__class__.__name__:
+        if (
+            hasattr(fvg_bullish_active, "__class__")
+            and "Mock" in fvg_bullish_active.__class__.__name__
+        ):
             fvg_bullish_active = False
         else:
             fvg_bullish_active = bool(fvg_bullish_active)
 
         fvg_bearish_active = getattr(feature_vector, "fvg_bearish_active", False)
-        if hasattr(fvg_bearish_active, "__class__") and "Mock" in fvg_bearish_active.__class__.__name__:
+        if (
+            hasattr(fvg_bearish_active, "__class__")
+            and "Mock" in fvg_bearish_active.__class__.__name__
+        ):
             fvg_bearish_active = False
         else:
             fvg_bearish_active = bool(fvg_bearish_active)
 
         liquidity_sweep_signal = getattr(feature_vector, "liquidity_sweep_signal", 0)
-        if hasattr(liquidity_sweep_signal, "__class__") and "Mock" in liquidity_sweep_signal.__class__.__name__:
+        if (
+            hasattr(liquidity_sweep_signal, "__class__")
+            and "Mock" in liquidity_sweep_signal.__class__.__name__
+        ):
             liquidity_sweep_signal = 0
         else:
             liquidity_sweep_signal = int(self._sanitize_float(liquidity_sweep_signal, 0.0))
@@ -618,15 +673,21 @@ class SignalPolicy:
         # ======================================================================
         # PART 1: SMC GOD MODE EXECUTION
         # ======================================================================
-        has_bos = (feat_ob_valid_bos > 0.0)
+        has_bos = feat_ob_valid_bos > 0.0
         has_choch = choch_bull or choch_bear or choch_bullish or choch_bearish
-        valid_ob = (order_block_type != 0)
+        valid_ob = order_block_type != 0
         zone_quality_thresh = self.algo_config.ai_zone_confidence_threshold
         has_sweep = (sweep_sig != 0) or (liquidity_sweep_signal != 0)
-        has_fvg = (fvg_bullish_active or fvg_bearish_active)
+        has_fvg = fvg_bullish_active or fvg_bearish_active
 
         smc_god_mode_active = False
-        if (has_bos or has_choch) and valid_ob and (confidence >= zone_quality_thresh) and has_sweep and has_fvg:
+        if (
+            (has_bos or has_choch)
+            and valid_ob
+            and (confidence >= zone_quality_thresh)
+            and has_sweep
+            and has_fvg
+        ):
             smc_god_mode_active = True
             execution_mode = "SMC_GOD_MODE"
             override_reason = "HTF_BYPASSED"
@@ -645,15 +706,23 @@ class SignalPolicy:
         m15_conf = self._sanitize_float(getattr(feature_vector, "htf_m15_confirmation", 0.0), 0.0)
         trend_strength = self._sanitize_float(getattr(feature_vector, "trend_strength", 0.0), 0.0)
 
-        support_zone_dist = self._sanitize_float(getattr(feature_vector, "support_zone_dist", 3.0), 3.0)
-        resistance_zone_dist = self._sanitize_float(getattr(feature_vector, "resistance_zone_dist", 3.0), 3.0)
+        support_zone_dist = self._sanitize_float(
+            getattr(feature_vector, "support_zone_dist", 3.0), 3.0
+        )
+        resistance_zone_dist = self._sanitize_float(
+            getattr(feature_vector, "resistance_zone_dist", 3.0), 3.0
+        )
 
         # Strict Multi-Timeframe and S/R Selective Alignments
-        htf_buy_aligned = (h4_trend >= 0 or m30_str >= 0 or m15_conf >= 0 or h1_mom >= -0.1) and (trend_strength >= -0.2)
-        htf_sell_aligned = (h4_trend <= 0 or m30_str <= 0 or m15_conf <= 0 or h1_mom <= 0.1) and (trend_strength <= 0.2)
+        htf_buy_aligned = (h4_trend >= 0 or m30_str >= 0 or m15_conf >= 0 or h1_mom >= -0.1) and (
+            trend_strength >= -0.2
+        )
+        htf_sell_aligned = (h4_trend <= 0 or m30_str <= 0 or m15_conf <= 0 or h1_mom <= 0.1) and (
+            trend_strength <= 0.2
+        )
 
         # Determine if Higher Timeframe Bearish Momentum is strong
-        is_strong_bearish_momentum = (h1_mom <= -2.0 and h4_trend == -1.0)
+        is_strong_bearish_momentum = h1_mom <= -2.0 and h4_trend == -1.0
 
         required_support_margin = 0.25
         if is_strong_bearish_momentum:
@@ -661,7 +730,9 @@ class SignalPolicy:
 
         sr_buy_allowed = resistance_zone_dist >= 0.25
         # If HTF bearish momentum is strong, reduce required margin or allow breakout / pullback sells
-        sr_sell_allowed = (support_zone_dist >= required_support_margin) or is_strong_bearish_momentum
+        sr_sell_allowed = (
+            support_zone_dist >= required_support_margin
+        ) or is_strong_bearish_momentum
 
         # ----------------------------------------------------------------------
         # PART 3: TICK LEVEL LIQUIDITY SWEEP EXECUTION
@@ -683,20 +754,34 @@ class SignalPolicy:
                 direction = "SELL"
 
             # Check OFI flips and velocity reverses
-            ofi_flip = (ofi > 0 if direction == "BUY" else ofi < 0)
-            velocity_reverses = (tick_velocity > 5.0)
+            ofi_flip = ofi > 0 if direction == "BUY" else ofi < 0
+            velocity_reverses = tick_velocity > 5.0
 
             if price_pierced_liq and reversal_detected and ofi_flip and velocity_reverses:
                 execution_mode = "TICK_SWEEP"
-                proposed_action = ActionType.BUY_MARKET if direction == "BUY" else ActionType.SELL_MARKET
+                proposed_action = (
+                    ActionType.BUY_MARKET if direction == "BUY" else ActionType.SELL_MARKET
+                )
                 target_entry_price = current_tick.ask if direction == "BUY" else current_tick.bid
                 reason_code = f"TICK_LEVEL_LIQUIDITY_SWEEP_{direction}"
                 logger.info(f"TICK LEVEL SWEEP DETECTED: Emitting instant {proposed_action.value}!")
 
                 # Build TradeProposal immediately
-                stop_loss = target_entry_price - atr * 1.5 if direction == "BUY" else target_entry_price + atr * 1.5
-                take_profit = target_entry_price + atr * 3.0 if direction == "BUY" else target_entry_price - atr * 3.0
-                actual_rr = round(abs(take_profit - target_entry_price) / max(abs(target_entry_price - stop_loss), 1e-5), 2)
+                stop_loss = (
+                    target_entry_price - atr * 1.5
+                    if direction == "BUY"
+                    else target_entry_price + atr * 1.5
+                )
+                take_profit = (
+                    target_entry_price + atr * 3.0
+                    if direction == "BUY"
+                    else target_entry_price - atr * 3.0
+                )
+                actual_rr = round(
+                    abs(take_profit - target_entry_price)
+                    / max(abs(target_entry_price - stop_loss), 1e-5),
+                    2,
+                )
 
                 tick_sweep_proposal = TradeProposal(
                     request_id=str(uuid.uuid4()),
@@ -732,14 +817,14 @@ class SignalPolicy:
         # ======================================================================
         # PART 2: PREDICTIVE LIMIT EXECUTION
         # ======================================================================
-        predictive_limit_active = False
         if valid_ob and not smc_god_mode_active:
             # We don't wait for candle close; place limit order immediately on OB validation
-            predictive_limit_active = True
             execution_mode = "PREDICTIVE_LIMIT"
-            proposed_action = ActionType.BUY_LIMIT if order_block_type == 1 else ActionType.SELL_LIMIT
+            proposed_action = (
+                ActionType.BUY_LIMIT if order_block_type == 1 else ActionType.SELL_LIMIT
+            )
 
-# OB Equilibrium (50%)
+            # OB Equilibrium (50%)
             swing_low_20 = current_tick.bid - atr
             swing_high_20 = current_tick.ask + atr
             if completed_bars is not None and len(completed_bars) >= 20:
@@ -750,15 +835,27 @@ class SignalPolicy:
             # Ensure limit price is valid relative to current Ask/Bid to prevent MT5 10015 error
             if proposed_action == ActionType.BUY_LIMIT and target_entry_price >= current_tick.ask:
                 target_entry_price = round(current_tick.ask - 0.12, 2)
-            elif proposed_action == ActionType.SELL_LIMIT and target_entry_price <= current_tick.bid:
+            elif (
+                proposed_action == ActionType.SELL_LIMIT and target_entry_price <= current_tick.bid
+            ):
                 target_entry_price = round(current_tick.bid + 0.12, 2)
 
             # Stop Loss beyond deepest OB wick + ATR buffer
-            deepest_wick = swing_low_20 if proposed_action == ActionType.BUY_LIMIT else swing_high_20
-            stop_loss = round(deepest_wick - atr * self.algo_config.atr_sl_buffer_multiplier, 2) if proposed_action == ActionType.BUY_LIMIT else round(deepest_wick + atr * self.algo_config.atr_sl_buffer_multiplier, 2)
+            deepest_wick = (
+                swing_low_20 if proposed_action == ActionType.BUY_LIMIT else swing_high_20
+            )
+            stop_loss = (
+                round(deepest_wick - atr * self.algo_config.atr_sl_buffer_multiplier, 2)
+                if proposed_action == ActionType.BUY_LIMIT
+                else round(deepest_wick + atr * self.algo_config.atr_sl_buffer_multiplier, 2)
+            )
 
             # Take Profit at nearest opposing liquidity
-            take_profit = round(swing_high_20, 2) if proposed_action == ActionType.BUY_LIMIT else round(swing_low_20, 2)
+            take_profit = (
+                round(swing_high_20, 2)
+                if proposed_action == ActionType.BUY_LIMIT
+                else round(swing_low_20, 2)
+            )
 
             # Ensure valid targets and satisfy minimum RR
             risk_amount = max(abs(target_entry_price - stop_loss), 1e-5)
@@ -769,12 +866,18 @@ class SignalPolicy:
             if actual_rr < active_min_rr:
                 # Expand Take Profit to satisfy risk engine
                 min_tp_dist = risk_amount * active_min_rr
-                take_profit = round(target_entry_price + min_tp_dist, 2) if proposed_action == ActionType.BUY_LIMIT else round(target_entry_price - min_tp_dist, 2)
+                take_profit = (
+                    round(target_entry_price + min_tp_dist, 2)
+                    if proposed_action == ActionType.BUY_LIMIT
+                    else round(target_entry_price - min_tp_dist, 2)
+                )
                 reward_amount = abs(take_profit - target_entry_price)
                 actual_rr = round(reward_amount / risk_amount, 2)
 
             reason_code = f"PREDICTIVE_OB_{proposed_action.name}_EQUILIBRIUM"
-            logger.info(f"PREDICTIVE LIMIT EXECUTED: Placing {proposed_action.value} at 50% Equilibrium {target_entry_price}!")
+            logger.info(
+                f"PREDICTIVE LIMIT EXECUTED: Placing {proposed_action.value} at 50% Equilibrium {target_entry_price}!"
+            )
 
             self._last_signal_time = now
             return TradeProposal(
@@ -804,7 +907,11 @@ class SignalPolicy:
         # ----------------------------------------------------------------------
         def build_nt(reason_msg, blocked_by_filter=None):
             nonlocal confidence
-            active_conf = confidence if (confidence > 0 or proposed_action != ActionType.NO_TRADE) else cand_confidence
+            active_conf = (
+                confidence
+                if (confidence > 0 or proposed_action != ActionType.NO_TRADE)
+                else cand_confidence
+            )
 
             act_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
             if active_conf >= getattr(self.algo_config, "high_confidence_threshold", 0.70):
@@ -822,9 +929,15 @@ class SignalPolicy:
                 generated_at=current_tick.timestamp,
                 action=ActionType.NO_TRADE,
                 confidence=float(active_conf),
-                proposed_entry=float(target_entry_price if (is_buy_cand or is_sell_cand) else current_tick.bid),
-                stop_loss=float(cand_stop_loss if (is_buy_cand or is_sell_cand) else current_tick.bid * 0.99),
-                take_profit=float(cand_take_profit if (is_buy_cand or is_sell_cand) else current_tick.bid * 1.01),
+                proposed_entry=float(
+                    target_entry_price if (is_buy_cand or is_sell_cand) else current_tick.bid
+                ),
+                stop_loss=float(
+                    cand_stop_loss if (is_buy_cand or is_sell_cand) else current_tick.bid * 0.99
+                ),
+                take_profit=float(
+                    cand_take_profit if (is_buy_cand or is_sell_cand) else current_tick.bid * 1.01
+                ),
                 risk_reward_ratio=float(cand_actual_rr if (is_buy_cand or is_sell_cand) else 1.0),
                 reason_code=reason_msg,
                 model_action=cand_action,
@@ -853,9 +966,7 @@ class SignalPolicy:
             self.rule_matrix.refresh_cache()
             # 1. Check Filters first
             blocked_reason = self.rule_matrix.evaluate_pre_trade_filters(
-                tick=current_tick,
-                fv=feature_vector,
-                regime_state=regime_state
+                tick=current_tick, fv=feature_vector, regime_state=regime_state
             )
             if blocked_reason:
                 return build_nt(blocked_reason, blocked_by_filter=blocked_reason)
@@ -865,7 +976,9 @@ class SignalPolicy:
                 tick=current_tick,
                 fv=feature_vector,
                 regime_state=regime_state,
-                probs=[probs[0], raw_prob_buy, raw_prob_sell] if len(probs) > 2 else [1.0, 0.0, 0.0]
+                probs=[probs[0], raw_prob_buy, raw_prob_sell]
+                if len(probs) > 2
+                else [1.0, 0.0, 0.0],
             )
             if rule_proposal:
                 logger.info(
@@ -873,28 +986,32 @@ class SignalPolicy:
                     rule=rule_proposal.reason_code,
                     action=rule_proposal.action.value,
                 )
-                return rule_proposal.model_copy(update={
-                    "model_action": rule_proposal.action.value,
-                    "buy_probability": prob_buy,
-                    "sell_probability": prob_sell,
-                    "no_trade_probability": prob_no_trade,
-                    "regime": regime_str,
-                    "regime_confidence": regime_conf,
-                    "risk_allowed": True,
-                    "guardian_status": guardian_status,
-                    "rejection_reason": None,
-                    "final_action": rule_proposal.action.value,
-                })
+                return rule_proposal.model_copy(
+                    update={
+                        "model_action": rule_proposal.action.value,
+                        "buy_probability": prob_buy,
+                        "sell_probability": prob_sell,
+                        "no_trade_probability": prob_no_trade,
+                        "regime": regime_str,
+                        "regime_confidence": regime_conf,
+                        "risk_allowed": True,
+                        "guardian_status": guardian_status,
+                        "rejection_reason": None,
+                        "final_action": rule_proposal.action.value,
+                    }
+                )
 
         # ----------------------------------------------------------------------
         # Decision Engine (Fast Liquidity Reversal & Smart Order Routing)
         # ----------------------------------------------------------------------
         proposed_action = ActionType.NO_TRADE
-        reason_code = f"REGIME_{regime_type.value}" if regime_type else ("RANGE_BOUND_SIDEWAYS" if is_range_market else "NEUTRAL_MARKET")
+        reason_code = (
+            f"REGIME_{regime_type.value}"
+            if regime_type
+            else ("RANGE_BOUND_SIDEWAYS" if is_range_market else "NEUTRAL_MARKET")
+        )
         target_entry_price = current_tick.ask
 
-        htf_supports_buy = feature_vector.is_above_kumo or choch_bull or stat_arb_bullish
-        htf_supports_sell = feature_vector.is_below_kumo or choch_bear or stat_arb_bearish
         high_velocity_momentum = tick_velocity >= 10.0
 
         # --- FAST LIQUIDITY SWEEP REVERSALS ---
@@ -912,63 +1029,107 @@ class SignalPolicy:
             is_fast_reversal = True
 
         # --- STANDARD BUY SIGNALS ---
-        elif (ichimoku_bullish or stat_arb_bullish) and (moving_up or ict_bullish or relative_buy_bias > 0.50 or stat_arb_bullish):
+        elif (ichimoku_bullish or stat_arb_bullish) and (
+            moving_up or ict_bullish or relative_buy_bias > 0.50 or stat_arb_bullish
+        ):
             if not htf_buy_aligned and not smc_god_mode_active:
                 decision_stage = "HTF_TREND_FILTER"
-                return build_nt("BUY_REJECTED_HTF_TREND_CONFL_FAIL", blocked_by_filter="HTF_TREND_CONFL_FAIL")
+                return build_nt(
+                    "BUY_REJECTED_HTF_TREND_CONFL_FAIL", blocked_by_filter="HTF_TREND_CONFL_FAIL"
+                )
             elif not sr_buy_allowed and not smc_god_mode_active:
                 decision_stage = "SR_MARGIN_FILTER"
-                return build_nt("BUY_REJECTED_SR_RESISTANCE_MARGIN_FAIL", blocked_by_filter="SR_RESISTANCE_MARGIN_FAIL")
+                return build_nt(
+                    "BUY_REJECTED_SR_RESISTANCE_MARGIN_FAIL",
+                    blocked_by_filter="SR_RESISTANCE_MARGIN_FAIL",
+                )
             elif stat_arb_bullish and is_range_market:
                 proposed_action = ActionType.BUY_LIMIT
                 target_entry_price = min(tenkan, round(current_tick.ask - 0.10, 2))
                 reason_code = f"STAT_ARB_MEAN_REVERSION_BUY_LIMIT (Z: {z_score:+.2f})"
-            elif feature_vector.fvg_bullish_active or (exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum):
+            elif feature_vector.fvg_bullish_active or (
+                exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum
+            ):
                 proposed_action = ActionType.BUY_LIMIT
                 target_entry_price = min(tenkan, round(current_tick.ask - 0.10, 2))
                 reason_code = "ICT_FVG_PULLBACK_BUY_LIMIT"
             elif feature_vector.broke_previous_high or high_velocity_momentum:
-                proposed_action = ActionType.BUY_MARKET if high_velocity_momentum else ActionType.BUY_STOP
-                target_entry_price = current_tick.ask if high_velocity_momentum else round(current_tick.ask + 0.12, 2)
-                reason_code = "HFT_VELOCITY_BUY_MARKET" if high_velocity_momentum else "BREAKOUT_MOMENTUM_BUY_STOP"
+                proposed_action = (
+                    ActionType.BUY_MARKET if high_velocity_momentum else ActionType.BUY_STOP
+                )
+                target_entry_price = (
+                    current_tick.ask
+                    if high_velocity_momentum
+                    else round(current_tick.ask + 0.12, 2)
+                )
+                reason_code = (
+                    "HFT_VELOCITY_BUY_MARKET"
+                    if high_velocity_momentum
+                    else "BREAKOUT_MOMENTUM_BUY_STOP"
+                )
             elif not is_range_market or abs(ofi) >= 0.15:
                 proposed_action = ActionType.BUY_MARKET
                 target_entry_price = current_tick.ask
                 reason_code = f"AGGRESSIVE_SCALP_BUY (OFI: {ofi:+.2f})"
             else:
-                return build_nt("RANGE_FILTERED_IMPULSIVE_BUY_PREVENTED", blocked_by_filter="RANGE_FILTER")
+                return build_nt(
+                    "RANGE_FILTERED_IMPULSIVE_BUY_PREVENTED", blocked_by_filter="RANGE_FILTER"
+                )
 
         # --- STANDARD SELL SIGNALS ---
-        elif (ichimoku_bearish or stat_arb_bearish) and (moving_down or ict_bearish or relative_sell_bias > 0.50 or stat_arb_bearish):
+        elif (ichimoku_bearish or stat_arb_bearish) and (
+            moving_down or ict_bearish or relative_sell_bias > 0.50 or stat_arb_bearish
+        ):
             if not htf_sell_aligned and not smc_god_mode_active:
                 decision_stage = "HTF_TREND_FILTER"
-                return build_nt("SELL_REJECTED_HTF_TREND_CONFL_FAIL", blocked_by_filter="HTF_TREND_CONFL_FAIL")
+                return build_nt(
+                    "SELL_REJECTED_HTF_TREND_CONFL_FAIL", blocked_by_filter="HTF_TREND_CONFL_FAIL"
+                )
             elif not sr_sell_allowed and not smc_god_mode_active:
                 decision_stage = "SR_MARGIN_FILTER"
-                return build_nt("SELL_REJECTED_SR_SUPPORT_MARGIN_FAIL", blocked_by_filter="SR_SUPPORT_MARGIN_FAIL")
+                return build_nt(
+                    "SELL_REJECTED_SR_SUPPORT_MARGIN_FAIL",
+                    blocked_by_filter="SR_SUPPORT_MARGIN_FAIL",
+                )
             elif stat_arb_bearish and is_range_market:
                 proposed_action = ActionType.SELL_LIMIT
                 target_entry_price = max(tenkan, round(current_tick.bid + 0.10, 2))
                 reason_code = f"STAT_ARB_MEAN_REVERSION_SELL_LIMIT (Z: {z_score:+.2f})"
-            elif feature_vector.fvg_bearish_active or (exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum):
+            elif feature_vector.fvg_bearish_active or (
+                exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum
+            ):
                 proposed_action = ActionType.SELL_LIMIT
                 target_entry_price = max(tenkan, round(current_tick.bid + 0.10, 2))
                 reason_code = "ICT_FVG_PULLBACK_SELL_LIMIT"
             elif feature_vector.broke_previous_low or high_velocity_momentum:
-                proposed_action = ActionType.SELL_MARKET if high_velocity_momentum else ActionType.SELL_STOP
-                target_entry_price = current_tick.bid if high_velocity_momentum else round(current_tick.bid - 0.12, 2)
-                reason_code = "HFT_VELOCITY_SELL_MARKET" if high_velocity_momentum else "BREAKOUT_MOMENTUM_SELL_STOP"
+                proposed_action = (
+                    ActionType.SELL_MARKET if high_velocity_momentum else ActionType.SELL_STOP
+                )
+                target_entry_price = (
+                    current_tick.bid
+                    if high_velocity_momentum
+                    else round(current_tick.bid - 0.12, 2)
+                )
+                reason_code = (
+                    "HFT_VELOCITY_SELL_MARKET"
+                    if high_velocity_momentum
+                    else "BREAKOUT_MOMENTUM_SELL_STOP"
+                )
             elif not is_range_market or abs(ofi) >= 0.15:
                 proposed_action = ActionType.SELL_MARKET
                 target_entry_price = current_tick.bid
                 reason_code = f"AGGRESSIVE_SCALP_SELL (OFI: {ofi:+.2f})"
             else:
-                return build_nt("RANGE_FILTERED_IMPULSIVE_SELL_PREVENTED", blocked_by_filter="RANGE_FILTER")
+                return build_nt(
+                    "RANGE_FILTERED_IMPULSIVE_SELL_PREVENTED", blocked_by_filter="RANGE_FILTER"
+                )
 
         # Apply SMC God Mode Penalty
         if smc_god_mode_active:
             confidence *= 0.85
-            logger.info(f"SMC GOD MODE: Applying 15% confidence penalty. Adjusted confidence={confidence:.2f}")
+            logger.info(
+                f"SMC GOD MODE: Applying 15% confidence penalty. Adjusted confidence={confidence:.2f}"
+            )
 
         # ----------------------------------------------------------------------
         # PROPOSAL GATE 6: 50% Impulse Equilibrium hard gating for Short trades
@@ -976,7 +1137,10 @@ class SignalPolicy:
         if proposed_action in (ActionType.SELL_MARKET, ActionType.SELL_LIMIT, ActionType.SELL_STOP):
             if order_block_type == -1 and feature_vector.feat_ob_equilibrium_ratio < 0.50:
                 decision_stage = "OB_EQUILIBRIUM_FILTER"
-                return build_nt("OB_BELOW_50_PERCENT_EQUILIBRIUM", blocked_by_filter="OB_BELOW_50_PERCENT_EQUILIBRIUM")
+                return build_nt(
+                    "OB_BELOW_50_PERCENT_EQUILIBRIUM",
+                    blocked_by_filter="OB_BELOW_50_PERCENT_EQUILIBRIUM",
+                )
 
         # Query live active positions and pending orders
         has_any_live_order = False
@@ -1016,18 +1180,16 @@ class SignalPolicy:
                         threshold = 0.50  # minimum distance threshold is $0.50
                         if price_dist < threshold:
                             reentry_blocked = True
-                            reentry_blocked_reason = f"SAME_LEVEL_REENTRY_BLOCKED (${price_dist:.2f} < ${threshold:.2f})"
+                            reentry_blocked_reason = (
+                                f"SAME_LEVEL_REENTRY_BLOCKED (${price_dist:.2f} < ${threshold:.2f})"
+                            )
                             break
-            else:
-                # Standalone unit test fallback when order_manager is not provided
-                if (
-                    self._last_active_direction == proposed_action
-                    and self._last_executed_price > 0.0
-                ):
-                    price_dist_from_last = abs(target_entry_price - self._last_executed_price)
-                    if price_dist_from_last < (atr * 0.50):
-                        reentry_blocked = True
-                        reentry_blocked_reason = f"SAME_LEVEL_REENTRY_BLOCKED (${price_dist_from_last:.2f} < ${atr * 0.50:.2f})"
+            # Standalone unit test fallback when order_manager is not provided
+            elif self._last_active_direction == proposed_action and self._last_executed_price > 0.0:
+                price_dist_from_last = abs(target_entry_price - self._last_executed_price)
+                if price_dist_from_last < (atr * 0.50):
+                    reentry_blocked = True
+                    reentry_blocked_reason = f"SAME_LEVEL_REENTRY_BLOCKED (${price_dist_from_last:.2f} < ${atr * 0.50:.2f})"
 
             if reentry_blocked:
                 decision_stage = "REENTRY_GATE"
@@ -1035,53 +1197,81 @@ class SignalPolicy:
 
         if confidence < active_threshold and proposed_action != ActionType.NO_TRADE:
             decision_stage = "CONFIDENCE_GATE"
-            return build_nt(f"INSUFFICIENT_CONFIDENCE ({confidence:.2f} < {active_threshold:.2f})", blocked_by_filter="CONFIDENCE_FAIL")
+            return build_nt(
+                f"INSUFFICIENT_CONFIDENCE ({confidence:.2f} < {active_threshold:.2f})",
+                blocked_by_filter="CONFIDENCE_FAIL",
+            )
 
         # Neural Zone Validation
         is_zone_active = (
-            fvg_bullish_active
-            or fvg_bearish_active
-            or order_block_type != 0
-            or sweep_sig != 0
+            fvg_bullish_active or fvg_bearish_active or order_block_type != 0 or sweep_sig != 0
         )
         if is_zone_active and proposed_action != ActionType.NO_TRADE:
             zone_quality_score = confidence
             if zone_quality_score < self.algo_config.ai_zone_confidence_threshold:
                 decision_stage = "ZONE_QUALITY_GATE"
-                return build_nt(f"ZONE_QUALITY_BELOW_THRESHOLD ({zone_quality_score:.2f} < {self.algo_config.ai_zone_confidence_threshold:.2f})", blocked_by_filter="ZONE_QUALITY_FAIL")
+                return build_nt(
+                    f"ZONE_QUALITY_BELOW_THRESHOLD ({zone_quality_score:.2f} < {self.algo_config.ai_zone_confidence_threshold:.2f})",
+                    blocked_by_filter="ZONE_QUALITY_FAIL",
+                )
 
         # ----------------------------------------------------------------------
         # PROPOSAL GATE 4: Anti-Flip Protection (Bypassed for Fast Sweeps)
         # ----------------------------------------------------------------------
-        if proposed_action != ActionType.NO_TRADE and self._last_active_direction is not None and not is_fast_reversal:
-            elapsed_flip_sec = (now - self._last_active_direction_time).total_seconds() if self._last_active_direction_time else 999.0
+        if (
+            proposed_action != ActionType.NO_TRADE
+            and self._last_active_direction is not None
+            and not is_fast_reversal
+        ):
+            elapsed_flip_sec = (
+                (now - self._last_active_direction_time).total_seconds()
+                if self._last_active_direction_time
+                else 999.0
+            )
             elapsed_flip_sec = max(0.0, elapsed_flip_sec)
 
             if elapsed_flip_sec <= self.flip_memory_seconds:
                 is_reversing = (
-                    ("BUY" in self._last_active_direction.value and "SELL" in proposed_action.value)
-                    or ("SELL" in self._last_active_direction.value and "BUY" in proposed_action.value)
+                    "BUY" in self._last_active_direction.value and "SELL" in proposed_action.value
+                ) or (
+                    "SELL" in self._last_active_direction.value and "BUY" in proposed_action.value
                 )
                 required_flip_confidence = active_threshold + self.flip_confidence_penalty
                 if is_reversing and confidence < required_flip_confidence:
                     decision_stage = "FLIP_PROTECTION"
-                    return build_nt(f"FLIP_PROTECTION_BLOCKED ({confidence:.2f} < req {required_flip_confidence:.2f})", blocked_by_filter="FLIP_PROTECTION")
+                    return build_nt(
+                        f"FLIP_PROTECTION_BLOCKED ({confidence:.2f} < req {required_flip_confidence:.2f})",
+                        blocked_by_filter="FLIP_PROTECTION",
+                    )
 
         if proposed_action == ActionType.NO_TRADE:
             final_proposal = build_nt(reason_code)
-        elif self._last_signal_time is not None and max(0.0, (now - self._last_signal_time).total_seconds()) < self.cooldown_seconds:
+        elif (
+            self._last_signal_time is not None
+            and max(0.0, (now - self._last_signal_time).total_seconds()) < self.cooldown_seconds
+        ):
             elapsed_cooldown = max(0.0, (now - self._last_signal_time).total_seconds())
-            final_proposal = build_nt(f"COOLDOWN_ACTIVE ({elapsed_cooldown:.1f}s)", blocked_by_filter="COOLDOWN")
+            final_proposal = build_nt(
+                f"COOLDOWN_ACTIVE ({elapsed_cooldown:.1f}s)", blocked_by_filter="COOLDOWN"
+            )
         else:
             # For passing signals, use the pre-computed candidate levels
             stop_loss = cand_stop_loss
             take_profit = cand_take_profit
 
             # Ensure stop_loss satisfies directional price invariants relative to updated target_entry_price
-            if "BUY" in proposed_action.value and (stop_loss is None or stop_loss >= target_entry_price):
-                stop_loss = round(target_entry_price - (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
-            elif "SELL" in proposed_action.value and (stop_loss is None or stop_loss <= target_entry_price):
-                stop_loss = round(target_entry_price + (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
+            if "BUY" in proposed_action.value and (
+                stop_loss is None or stop_loss >= target_entry_price
+            ):
+                stop_loss = round(
+                    target_entry_price - (atr * self.algo_config.atr_sl_buffer_multiplier), 2
+                )
+            elif "SELL" in proposed_action.value and (
+                stop_loss is None or stop_loss <= target_entry_price
+            ):
+                stop_loss = round(
+                    target_entry_price + (atr * self.algo_config.atr_sl_buffer_multiplier), 2
+                )
 
             actual_rr = cand_actual_rr
 
@@ -1089,8 +1279,7 @@ class SignalPolicy:
             active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
             if confidence >= getattr(self.algo_config, "high_confidence_threshold", 0.95):
                 min_rr_hc = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
-                if min_rr_hc < active_min_rr:
-                    active_min_rr = min_rr_hc
+                active_min_rr = min(active_min_rr, min_rr_hc)
 
             # Ensure take_profit satisfies at least the minimum allowed RR to guarantee reward > risk
             risk_amount = max(abs(target_entry_price - stop_loss), 1e-5)
@@ -1099,16 +1288,18 @@ class SignalPolicy:
             if "BUY" in proposed_action.value:
                 if take_profit < target_entry_price + min_required_tp_dist:
                     take_profit = round(target_entry_price + min_required_tp_dist, 2)
-            else:
-                if take_profit > target_entry_price - min_required_tp_dist:
-                    take_profit = round(target_entry_price - min_required_tp_dist, 2)
+            elif take_profit > target_entry_price - min_required_tp_dist:
+                take_profit = round(target_entry_price - min_required_tp_dist, 2)
 
             reward_amount = abs(take_profit - target_entry_price)
             actual_rr = round(reward_amount / risk_amount, 2)
 
             # Asymmetric Risk Gatekeeper
             if actual_rr < active_min_rr:
-                final_proposal = build_nt("ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD", blocked_by_filter="ASYMMETRIC_RR_LIMIT")
+                final_proposal = build_nt(
+                    "ASYMMETRIC_RR_BELOW_CONFIGURED_THRESHOLD",
+                    blocked_by_filter="ASYMMETRIC_RR_LIMIT",
+                )
             else:
                 reason_code = (
                     f"{reason_code} | HTF:[H4={h4_trend:+.1f}, H1_Mom={h1_mom:+.1f}, "
@@ -1169,20 +1360,25 @@ class SignalPolicy:
             should_log = True
         else:
             elapsed_telemetry = max(0.0, (now - self._last_telemetry_time).total_seconds())
-            if elapsed_telemetry >= self.telemetry_interval or final_proposal.action != self._last_logged_action:
+            if (
+                elapsed_telemetry >= self.telemetry_interval
+                or final_proposal.action != self._last_logged_action
+            ):
                 should_log = True
 
         if should_log:
             logger.info(
                 "[MARKET RADAR]",
                 action=final_proposal.action.value,
-                regime=regime_type.value if regime_type else ("RANGE/CHOP" if is_range_market else "TRENDING"),
+                regime=regime_type.value
+                if regime_type
+                else ("RANGE/CHOP" if is_range_market else "TRENDING"),
                 z_score=f"{z_score:+.2f}",
                 ofi=f"{ofi:+.2f}",
                 spread=f"${current_spread:.2f}",
                 gold_move=f"${disp:+.2f}",
-                ai_buy=f"{prob_buy*100:.1f}%",
-                ai_sell=f"{prob_sell*100:.1f}%",
+                ai_buy=f"{prob_buy * 100:.1f}%",
+                ai_sell=f"{prob_sell * 100:.1f}%",
                 ichi=f"Kumo:{'ABOVE' if feature_vector.is_above_kumo else ('BELOW' if feature_vector.is_below_kumo else 'INSIDE')}",
                 reason=final_proposal.reason_code,
             )
@@ -1230,7 +1426,9 @@ class SignalPolicy:
         # Structural confirmation guards against whipsaw on model noise alone.
         choch_bull = bool(getattr(feature_vector, "choch_bullish", False))
         choch_bear = bool(getattr(feature_vector, "choch_bearish", False))
-        sweep_sig = int(self._sanitize_float(getattr(feature_vector, "liquidity_sweep_signal", 0), 0.0))
+        sweep_sig = int(
+            self._sanitize_float(getattr(feature_vector, "liquidity_sweep_signal", 0), 0.0)
+        )
         below_kumo = bool(getattr(feature_vector, "is_below_kumo", False))
         above_kumo = bool(getattr(feature_vector, "is_above_kumo", False))
 
@@ -1250,8 +1448,12 @@ class SignalPolicy:
 
             is_buy_reversal = reversal_action == ActionType.BUY_MARKET
             entry = current_tick.ask if is_buy_reversal else current_tick.bid
-            stop_loss = round(entry - atr * 1.5, 2) if is_buy_reversal else round(entry + atr * 1.5, 2)
-            take_profit = round(entry + atr * 3.0, 2) if is_buy_reversal else round(entry - atr * 3.0, 2)
+            stop_loss = (
+                round(entry - atr * 1.5, 2) if is_buy_reversal else round(entry + atr * 1.5, 2)
+            )
+            take_profit = (
+                round(entry + atr * 3.0, 2) if is_buy_reversal else round(entry - atr * 3.0, 2)
+            )
             confidence = float(prob_buy if is_buy_reversal else prob_sell)
 
             logger.info(
@@ -1329,7 +1531,6 @@ class SignalPolicy:
             take_profit=float(take_profit if take_profit is not None else tick.bid * 1.01),
             risk_reward_ratio=float(risk_reward_ratio if risk_reward_ratio is not None else 1.0),
             reason_code=reason,
-
             # Diagnostics
             model_action=model_action,
             buy_probability=buy_prob,
@@ -1352,7 +1553,9 @@ class SignalPolicy:
             confidence_after_filters=float(confidence),
         )
 
-    def extract_live_chart_overlays(self, completed_bars: list[Any], atr_val: float) -> dict[str, Any]:
+    def extract_live_chart_overlays(
+        self, completed_bars: list[Any], atr_val: float
+    ) -> dict[str, Any]:
         """
         Causally extracts real SMC zones and levels (BOS, OB, 50% Midline, LIQ Markers)
         from completed MT5 bars.
@@ -1361,22 +1564,23 @@ class SignalPolicy:
             return {"rectangles": [], "bos_lines": [], "midlines": [], "liq_markers": []}
 
         import numpy as np
+
         rectangles = []
         bos_lines = []
         midlines = []
         liq_markers = []
 
-        closes = [b.close for b in completed_bars]
+        [b.close for b in completed_bars]
         highs = [b.high for b in completed_bars]
         lows = [b.low for b in completed_bars]
-        opens = [b.open for b in completed_bars]
+        [b.open for b in completed_bars]
 
         # 1. Swing Highs & Swing Lows
         swing_highs = []
         swing_lows = []
         for i in range(5, len(completed_bars) - 5):
-            window_highs = [b.high for b in completed_bars[i-5 : i+6]]
-            window_lows = [b.low for b in completed_bars[i-5 : i+6]]
+            window_highs = [b.high for b in completed_bars[i - 5 : i + 6]]
+            window_lows = [b.low for b in completed_bars[i - 5 : i + 6]]
             if completed_bars[i].high == max(window_highs):
                 swing_highs.append((i, completed_bars[i].high))
             if completed_bars[i].low == min(window_lows):
@@ -1393,19 +1597,23 @@ class SignalPolicy:
             prev_sls = [val for idx, val in swing_lows if idx < i]
 
             if prev_shs and completed_bars[i].close > prev_shs[-1]:
-                bos_lines.append({
-                    "id": f"bos_sh_{i}",
-                    "price": float(prev_shs[-1]),
-                    "type": "BULLISH_BOS",
-                    "time": completed_bars[i].timestamp.isoformat()
-                })
+                bos_lines.append(
+                    {
+                        "id": f"bos_sh_{i}",
+                        "price": float(prev_shs[-1]),
+                        "type": "BULLISH_BOS",
+                        "time": completed_bars[i].timestamp.isoformat(),
+                    }
+                )
             if prev_sls and completed_bars[i].close < prev_sls[-1]:
-                bos_lines.append({
-                    "id": f"bos_sl_{i}",
-                    "price": float(prev_sls[-1]),
-                    "type": "BEARISH_BOS",
-                    "time": completed_bars[i].timestamp.isoformat()
-                })
+                bos_lines.append(
+                    {
+                        "id": f"bos_sl_{i}",
+                        "price": float(prev_sls[-1]),
+                        "type": "BEARISH_BOS",
+                        "time": completed_bars[i].timestamp.isoformat(),
+                    }
+                )
 
         bos_lines = bos_lines[-10:]
 
@@ -1413,63 +1621,79 @@ class SignalPolicy:
         last_sh_idx, last_sh_val = swing_highs[-1]
         last_sl_idx, last_sl_val = swing_lows[-1]
         equilibrium_50 = last_sl_val + 0.50 * (last_sh_val - last_sl_val)
-        midlines.append({
-            "id": "equilibrium_50",
-            "price": float(equilibrium_50),
-            "label": "50%",
-            "time_start": completed_bars[min(last_sh_idx, last_sl_idx)].timestamp.isoformat()
-        })
+        midlines.append(
+            {
+                "id": "equilibrium_50",
+                "price": float(equilibrium_50),
+                "label": "50%",
+                "time_start": completed_bars[min(last_sh_idx, last_sl_idx)].timestamp.isoformat(),
+            }
+        )
 
         # 4. OB Boxes & Liquidity Sweep (LIQ) Markers
         for i in range(2, len(completed_bars)):
             b_current = completed_bars[i]
             b_prev1 = completed_bars[i - 1]
-            b_prev2 = completed_bars[i - 2]
+            completed_bars[i - 2]
 
             # Bullish Order Block
             if b_current.close > b_prev1.high and b_prev1.close < b_prev1.open:
                 price_low = b_prev1.low
                 price_high = b_prev1.high
-                rectangles.append({
-                    "id": f"ob_bull_{i}",
-                    "type": "BULLISH_ORDER_BLOCK",
-                    "price_low": float(price_low),
-                    "price_high": float(price_high),
-                    "ai_confidence": 0.85,
-                    "time": b_prev1.timestamp.isoformat()
-                })
+                rectangles.append(
+                    {
+                        "id": f"ob_bull_{i}",
+                        "type": "BULLISH_ORDER_BLOCK",
+                        "price_low": float(price_low),
+                        "price_high": float(price_high),
+                        "ai_confidence": 0.85,
+                        "time": b_prev1.timestamp.isoformat(),
+                    }
+                )
 
             # Bearish Order Block
             if b_current.close < b_prev1.low and b_prev1.close > b_prev1.open:
                 price_low = b_prev1.low
                 price_high = b_prev1.high
-                rectangles.append({
-                    "id": f"ob_bear_{i}",
-                    "type": "BEARISH_ORDER_BLOCK",
-                    "price_low": float(price_low),
-                    "price_high": float(price_high),
-                    "ai_confidence": 0.85,
-                    "time": b_prev1.timestamp.isoformat()
-                })
+                rectangles.append(
+                    {
+                        "id": f"ob_bear_{i}",
+                        "type": "BEARISH_ORDER_BLOCK",
+                        "price_low": float(price_low),
+                        "price_high": float(price_high),
+                        "ai_confidence": 0.85,
+                        "time": b_prev1.timestamp.isoformat(),
+                    }
+                )
 
             # Liquidity sweeps
-            recent_high_10 = max([b.high for b in completed_bars[max(0, i-11) : i]]) if i > 0 else b_current.high
-            recent_low_10 = min([b.low for b in completed_bars[max(0, i-11) : i]]) if i > 0 else b_current.low
+            recent_high_10 = (
+                max([b.high for b in completed_bars[max(0, i - 11) : i]])
+                if i > 0
+                else b_current.high
+            )
+            recent_low_10 = (
+                min([b.low for b in completed_bars[max(0, i - 11) : i]]) if i > 0 else b_current.low
+            )
 
             if b_current.low < recent_low_10 and b_current.close > recent_low_10:
-                liq_markers.append({
-                    "id": f"liq_low_{i}",
-                    "type": "SELL_SIDE_LIQUIDITY_SWEEP",
-                    "price": float(b_current.low),
-                    "time": b_current.timestamp.isoformat()
-                })
+                liq_markers.append(
+                    {
+                        "id": f"liq_low_{i}",
+                        "type": "SELL_SIDE_LIQUIDITY_SWEEP",
+                        "price": float(b_current.low),
+                        "time": b_current.timestamp.isoformat(),
+                    }
+                )
             elif b_current.high > recent_high_10 and b_current.close < recent_high_10:
-                liq_markers.append({
-                    "id": f"liq_high_{i}",
-                    "type": "BUY_SIDE_LIQUIDITY_SWEEP",
-                    "price": float(b_current.high),
-                    "time": b_current.timestamp.isoformat()
-                })
+                liq_markers.append(
+                    {
+                        "id": f"liq_high_{i}",
+                        "type": "BUY_SIDE_LIQUIDITY_SWEEP",
+                        "price": float(b_current.high),
+                        "time": b_current.timestamp.isoformat(),
+                    }
+                )
 
         rectangles = rectangles[-15:]
         liq_markers = liq_markers[-15:]
@@ -1478,7 +1702,7 @@ class SignalPolicy:
             "rectangles": rectangles,
             "bos_lines": bos_lines,
             "midlines": midlines,
-            "liq_markers": liq_markers
+            "liq_markers": liq_markers,
         }
 
     def _sanitize_float(self, val: float | None, default: float) -> float:

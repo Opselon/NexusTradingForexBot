@@ -22,8 +22,10 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.enums import ExecutionMode, ActionType
+from nexus_scalp.domain.enums import ActionType, ExecutionMode
 from nexus_scalp.domain.models import TickData
+from nexus_scalp.features.scalp_features import FEATURE_NAMES
+from nexus_scalp.observability.logging import get_logger
 
 
 def serialize_enums(obj: Any) -> Any:
@@ -35,8 +37,7 @@ def serialize_enums(obj: Any) -> Any:
     elif isinstance(obj, Enum):
         return obj.value
     return obj
-from nexus_scalp.features.scalp_features import FEATURE_NAMES
-from nexus_scalp.observability.logging import get_logger
+
 
 logger = get_logger("nexus_scalp.web.server")
 
@@ -48,12 +49,7 @@ class ServerState:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self.bars = []
-        self.real_overlays = {
-            "rectangles": [],
-            "bos_lines": [],
-            "midlines": [],
-            "liq_markers": []
-        }
+        self.real_overlays = {"rectangles": [], "bos_lines": [], "midlines": [], "liq_markers": []}
 
     def update_live_visuals(self, bars: list, real_overlays: dict) -> None:
         with self._lock:
@@ -63,6 +59,7 @@ class ServerState:
     def get_live_visuals(self) -> tuple[list, dict]:
         with self._lock:
             return self.bars, self.real_overlays
+
 
 # Define API request bodies
 class ModifyPositionRequest(BaseModel):
@@ -110,6 +107,7 @@ class ModelTestRequest(BaseModel):
     feature vector is used, which makes the endpoint a one-click "what does the net
     think right now" probe.
     """
+
     features: list[float] | None = None
     use_live_features: bool = False
 
@@ -174,7 +172,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "equity": 10000.00,
             "floating": 0.00,
             "drawdown": 0.00,
-            "win_rate": 78.5
+            "win_rate": 78.5,
         }
 
         positions_list: list[dict[str, Any]] = []
@@ -199,7 +197,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 if tick:
                     bid = tick.bid
                     ask = tick.ask
-                    spread = int(round((tick.ask - tick.bid) * 100))
+                    spread = round((tick.ask - tick.bid) * 100)
             except Exception:
                 pass
 
@@ -208,8 +206,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 reg_state = engine._last_regime_state
                 if reg_state:
                     regime = reg_state.regime_type.name
-                    atr = reg_state.realized_volatility_5m # Single source of truth for volatility
-                elif hasattr(engine, 'regime_classifier') and engine.regime_classifier._stable_regime:
+                    atr = reg_state.realized_volatility_5m  # Single source of truth for volatility
+                elif (
+                    hasattr(engine, "regime_classifier") and engine.regime_classifier._stable_regime
+                ):
                     regime = engine.regime_classifier._stable_regime.name
             except Exception:
                 pass
@@ -221,13 +221,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     account_data["balance"] = acc.balance
                     account_data["equity"] = acc.equity
                     account_data["floating"] = acc.equity - acc.balance
-                    account_data["drawdown"] = ((engine._peak_equity - acc.equity) / max(engine._peak_equity, 1.0)) * 100.0 if engine._peak_equity > 0 else 0.0
+                    account_data["drawdown"] = (
+                        ((engine._peak_equity - acc.equity) / max(engine._peak_equity, 1.0)) * 100.0
+                        if engine._peak_equity > 0
+                        else 0.0
+                    )
             except Exception:
                 pass
 
             # Calculate actual win rate from audit DB
             try:
-                snaps = engine.audit.get_last_account_snapshot()
+                engine.audit.get_last_account_snapshot()
                 # Use standard metrics
             except Exception:
                 pass
@@ -236,16 +240,18 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             try:
                 live_positions = engine.adapter.get_positions(symbol=symbol)
                 for p in live_positions:
-                    positions_list.append({
-                        "ticket": p.ticket,
-                        "symbol": p.symbol,
-                        "type": p.type.value,
-                        "volume": p.volume,
-                        "price_open": p.price_open,
-                        "sl": p.sl,
-                        "tp": p.tp,
-                        "profit": p.profit
-                    })
+                    positions_list.append(
+                        {
+                            "ticket": p.ticket,
+                            "symbol": p.symbol,
+                            "type": p.type.value,
+                            "volume": p.volume,
+                            "price_open": p.price_open,
+                            "sl": p.sl,
+                            "tp": p.tp,
+                            "profit": p.profit,
+                        }
+                    )
             except Exception:
                 pass
 
@@ -256,27 +262,31 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 try:
                     completed_bars = engine.aggregator.get_completed_bars()
                     for b in completed_bars[-250:]:
-                        bars_list.append({
-                            "time": b.timestamp.isoformat(),
-                            "open": b.open,
-                            "high": b.high,
-                            "low": b.low,
-                            "close": b.close,
-                            "volume": b.tick_volume,
-                            "is_complete": True
-                        })
+                        bars_list.append(
+                            {
+                                "time": b.timestamp.isoformat(),
+                                "open": b.open,
+                                "high": b.high,
+                                "low": b.low,
+                                "close": b.close,
+                                "volume": b.tick_volume,
+                                "is_complete": True,
+                            }
+                        )
                     # Single Source of Truth forming candle injection
                     forming_bar = engine.aggregator.get_current_forming_bar()
                     if forming_bar:
-                        bars_list.append({
-                            "time": forming_bar.timestamp.isoformat(),
-                            "open": forming_bar.open,
-                            "high": forming_bar.high,
-                            "low": forming_bar.low,
-                            "close": forming_bar.close,
-                            "volume": forming_bar.tick_volume,
-                            "is_complete": False
-                        })
+                        bars_list.append(
+                            {
+                                "time": forming_bar.timestamp.isoformat(),
+                                "open": forming_bar.open,
+                                "high": forming_bar.high,
+                                "low": forming_bar.low,
+                                "close": forming_bar.close,
+                                "volume": forming_bar.tick_volume,
+                                "is_complete": False,
+                            }
+                        )
                 except Exception as e:
                     logger.error("Failed to fetch synchronized bar stream", error=str(e))
 
@@ -293,7 +303,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     probs_data = {
                         "no_trade": float(probs_list[0]),
                         "buy": float(probs_list[1]),
-                        "sell": float(probs_list[2])
+                        "sell": float(probs_list[2]),
                     }
 
                 # Sync actual policy proposals
@@ -309,11 +319,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         features_payload = []
         for i, name in enumerate(FEATURE_NAMES):
             val = features_values[i] if i < len(features_values) else 0.0
-            features_payload.append({
-                "index": i,
-                "name": name,
-                "value": val
-            })
+            features_payload.append({"index": i, "name": name, "value": val})
 
         # Build Visual Overlays and Algo Config response
         rectangles = []
@@ -323,17 +329,27 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "min_risk_reward_ratio": 1.8,
             "ai_zone_confidence_threshold": 0.82,
             "fvg_mitigation_sensitivity": 0.5,
-            "order_block_lookback_bars": 30
+            "order_block_lookback_bars": 30,
         }
 
         if engine:
             try:
                 algo_config_data = {
-                    "atr_sl_buffer_multiplier": float(getattr(engine.config.algo, "atr_sl_buffer_multiplier", 1.5)),
-                    "min_risk_reward_ratio": float(getattr(engine.config.algo, "min_risk_reward_ratio", 1.8)),
-                    "ai_zone_confidence_threshold": float(getattr(engine.config.algo, "ai_zone_confidence_threshold", 0.82)),
-                    "fvg_mitigation_sensitivity": float(getattr(engine.config.algo, "fvg_mitigation_sensitivity", 0.5)),
-                    "order_block_lookback_bars": int(getattr(engine.config.algo, "order_block_lookback_bars", 30))
+                    "atr_sl_buffer_multiplier": float(
+                        getattr(engine.config.algo, "atr_sl_buffer_multiplier", 1.5)
+                    ),
+                    "min_risk_reward_ratio": float(
+                        getattr(engine.config.algo, "min_risk_reward_ratio", 1.8)
+                    ),
+                    "ai_zone_confidence_threshold": float(
+                        getattr(engine.config.algo, "ai_zone_confidence_threshold", 0.82)
+                    ),
+                    "fvg_mitigation_sensitivity": float(
+                        getattr(engine.config.algo, "fvg_mitigation_sensitivity", 0.5)
+                    ),
+                    "order_block_lookback_bars": int(
+                        getattr(engine.config.algo, "order_block_lookback_bars", 30)
+                    ),
                 }
             except Exception:
                 pass
@@ -365,14 +381,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                     mitigated = True
                                     break
                             if not mitigated:
-                                rectangles.append({
-                                    "id": f"fvg_bull_{bar_idx}",
-                                    "type": "BULLISH_FVG",
-                                    "price_low": float(price_low),
-                                    "price_high": float(price_high),
-                                    "ai_confidence": float(ai_confidence or 0.82),
-                                    "time": b_prev2.timestamp.isoformat()
-                                })
+                                rectangles.append(
+                                    {
+                                        "id": f"fvg_bull_{bar_idx}",
+                                        "type": "BULLISH_FVG",
+                                        "price_low": float(price_low),
+                                        "price_high": float(price_high),
+                                        "ai_confidence": float(ai_confidence or 0.82),
+                                        "time": b_prev2.timestamp.isoformat(),
+                                    }
+                                )
 
                         # Bearish FVG
                         if b_prev2 and b_current.high < b_prev2.low - (atr_val * 0.20):
@@ -384,14 +402,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                     mitigated = True
                                     break
                             if not mitigated:
-                                rectangles.append({
-                                    "id": f"fvg_bear_{bar_idx}",
-                                    "type": "BEARISH_FVG",
-                                    "price_low": float(price_low),
-                                    "price_high": float(price_high),
-                                    "ai_confidence": float(ai_confidence or 0.82),
-                                    "time": b_prev2.timestamp.isoformat()
-                                })
+                                rectangles.append(
+                                    {
+                                        "id": f"fvg_bear_{bar_idx}",
+                                        "type": "BEARISH_FVG",
+                                        "price_low": float(price_low),
+                                        "price_high": float(price_high),
+                                        "ai_confidence": float(ai_confidence or 0.82),
+                                        "time": b_prev2.timestamp.isoformat(),
+                                    }
+                                )
 
                         # Bullish Order Block
                         if b_current.close > b_prev1.high and b_prev1.close < b_prev1.open:
@@ -403,14 +423,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                     mitigated = True
                                     break
                             if not mitigated:
-                                rectangles.append({
-                                    "id": f"ob_bull_{bar_idx}",
-                                    "type": "BULLISH_ORDER_BLOCK",
-                                    "price_low": float(price_low),
-                                    "price_high": float(price_high),
-                                    "ai_confidence": float(ai_confidence or 0.85),
-                                    "time": b_prev1.timestamp.isoformat()
-                                })
+                                rectangles.append(
+                                    {
+                                        "id": f"ob_bull_{bar_idx}",
+                                        "type": "BULLISH_ORDER_BLOCK",
+                                        "price_low": float(price_low),
+                                        "price_high": float(price_high),
+                                        "ai_confidence": float(ai_confidence or 0.85),
+                                        "time": b_prev1.timestamp.isoformat(),
+                                    }
+                                )
 
                         # Bearish Order Block
                         if b_current.close < b_prev1.low and b_prev1.close > b_prev1.open:
@@ -422,42 +444,50 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                     mitigated = True
                                     break
                             if not mitigated:
-                                rectangles.append({
-                                    "id": f"ob_bear_{bar_idx}",
-                                    "type": "BEARISH_ORDER_BLOCK",
-                                    "price_low": float(price_low),
-                                    "price_high": float(price_high),
-                                    "ai_confidence": float(ai_confidence or 0.85),
-                                    "time": b_prev1.timestamp.isoformat()
-                                })
+                                rectangles.append(
+                                    {
+                                        "id": f"ob_bear_{bar_idx}",
+                                        "type": "BEARISH_ORDER_BLOCK",
+                                        "price_low": float(price_low),
+                                        "price_high": float(price_high),
+                                        "ai_confidence": float(ai_confidence or 0.85),
+                                        "time": b_prev1.timestamp.isoformat(),
+                                    }
+                                )
 
                         # Sweep / Stop Hunt Zone
                         if bar_idx >= 11:
-                            recent_lows = [b.low for b in completed_bars[bar_idx-11 : bar_idx]]
-                            recent_highs = [b.high for b in completed_bars[bar_idx-11 : bar_idx]]
+                            recent_lows = [b.low for b in completed_bars[bar_idx - 11 : bar_idx]]
+                            recent_highs = [b.high for b in completed_bars[bar_idx - 11 : bar_idx]]
                             min_low = min(recent_lows)
                             max_high = max(recent_highs)
 
                             if b_current.low < min_low and b_current.close > min_low:
-                                rectangles.append({
-                                    "id": f"sweep_bull_{bar_idx}",
-                                    "type": "STOP_HUNT_ZONE",
-                                    "price_low": float(b_current.low),
-                                    "price_high": float(min_low),
-                                    "ai_confidence": float(ai_confidence or 0.90),
-                                    "time": b_current.timestamp.isoformat()
-                                })
+                                rectangles.append(
+                                    {
+                                        "id": f"sweep_bull_{bar_idx}",
+                                        "type": "STOP_HUNT_ZONE",
+                                        "price_low": float(b_current.low),
+                                        "price_high": float(min_low),
+                                        "ai_confidence": float(ai_confidence or 0.90),
+                                        "time": b_current.timestamp.isoformat(),
+                                    }
+                                )
                             elif b_current.high > max_high and b_current.close < max_high:
-                                rectangles.append({
-                                    "id": f"sweep_bear_{bar_idx}",
-                                    "type": "STOP_HUNT_ZONE",
-                                    "price_low": float(max_high),
-                                    "price_high": float(b_current.high),
-                                    "ai_confidence": float(ai_confidence or 0.90),
-                                    "time": b_current.timestamp.isoformat()
-                                })
+                                rectangles.append(
+                                    {
+                                        "id": f"sweep_bear_{bar_idx}",
+                                        "type": "STOP_HUNT_ZONE",
+                                        "price_low": float(max_high),
+                                        "price_high": float(b_current.high),
+                                        "ai_confidence": float(ai_confidence or 0.90),
+                                        "time": b_current.timestamp.isoformat(),
+                                    }
+                                )
                 except Exception as e:
-                    logger.error("Failed to detect real structural zones from completed bars", error=str(e))
+                    logger.error(
+                        "Failed to detect real structural zones from completed bars", error=str(e)
+                    )
 
             fv = engine._last_fv
             proposal = engine._last_proposal
@@ -467,50 +497,60 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 forming_bar = engine.aggregator.get_current_forming_bar()
                 f_time = forming_bar.timestamp.isoformat() if forming_bar else None
                 if getattr(fv, "order_block_type", 0) == 1:
-                    rectangles.append({
-                        "id": "ob_bull",
-                        "type": "BULLISH_ORDER_BLOCK",
-                        "price_low": float(bid - atr * 0.8),
-                        "price_high": float(bid),
-                        "ai_confidence": float(ai_confidence or 0.85),
-                        "time": f_time
-                    })
+                    rectangles.append(
+                        {
+                            "id": "ob_bull",
+                            "type": "BULLISH_ORDER_BLOCK",
+                            "price_low": float(bid - atr * 0.8),
+                            "price_high": float(bid),
+                            "ai_confidence": float(ai_confidence or 0.85),
+                            "time": f_time,
+                        }
+                    )
                 elif getattr(fv, "order_block_type", 0) == -1:
-                    rectangles.append({
-                        "id": "ob_bear",
-                        "type": "BEARISH_ORDER_BLOCK",
-                        "price_low": float(bid),
-                        "price_high": float(bid + atr * 0.8),
-                        "ai_confidence": float(ai_confidence or 0.85),
-                        "time": f_time
-                    })
+                    rectangles.append(
+                        {
+                            "id": "ob_bear",
+                            "type": "BEARISH_ORDER_BLOCK",
+                            "price_low": float(bid),
+                            "price_high": float(bid + atr * 0.8),
+                            "ai_confidence": float(ai_confidence or 0.85),
+                            "time": f_time,
+                        }
+                    )
                 if getattr(fv, "fvg_bullish_active", False):
-                    rectangles.append({
-                        "id": "fvg_bull",
-                        "type": "BULLISH_FVG",
-                        "price_low": float(bid - atr * 0.5),
-                        "price_high": float(bid),
-                        "ai_confidence": float(ai_confidence or 0.82),
-                        "time": f_time
-                    })
+                    rectangles.append(
+                        {
+                            "id": "fvg_bull",
+                            "type": "BULLISH_FVG",
+                            "price_low": float(bid - atr * 0.5),
+                            "price_high": float(bid),
+                            "ai_confidence": float(ai_confidence or 0.82),
+                            "time": f_time,
+                        }
+                    )
                 if getattr(fv, "fvg_bearish_active", False):
-                    rectangles.append({
-                        "id": "fvg_bear",
-                        "type": "BEARISH_FVG",
-                        "price_low": float(bid),
-                        "price_high": float(bid + atr * 0.5),
-                        "ai_confidence": float(ai_confidence or 0.82),
-                        "time": f_time
-                    })
+                    rectangles.append(
+                        {
+                            "id": "fvg_bear",
+                            "type": "BEARISH_FVG",
+                            "price_low": float(bid),
+                            "price_high": float(bid + atr * 0.5),
+                            "ai_confidence": float(ai_confidence or 0.82),
+                            "time": f_time,
+                        }
+                    )
                 if getattr(fv, "liquidity_sweep_signal", 0) != 0:
-                    rectangles.append({
-                        "id": "sweep_zone",
-                        "type": "STOP_HUNT_ZONE",
-                        "price_low": float(bid - atr * 1.2),
-                        "price_high": float(bid + atr * 1.2),
-                        "ai_confidence": float(ai_confidence or 0.90),
-                        "time": f_time
-                    })
+                    rectangles.append(
+                        {
+                            "id": "sweep_zone",
+                            "type": "STOP_HUNT_ZONE",
+                            "price_low": float(bid - atr * 1.2),
+                            "price_high": float(bid + atr * 1.2),
+                            "ai_confidence": float(ai_confidence or 0.90),
+                            "time": f_time,
+                        }
+                    )
 
             # Check for active trade proposals or live active positions to overlay horizontal execution lines
             if proposal and proposal.action != ActionType.NO_TRADE:
@@ -525,14 +565,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "risk_reward_ratio": float(proposal.risk_reward_ratio),
                     "risk_usd": float(round(risk_usd, 2)),
                     "profit_usd": float(round(profit_usd, 2)),
-                    "zone_score": float(round(proposal.confidence * 100.0, 1))
+                    "zone_score": float(round(proposal.confidence * 100.0, 1)),
                 }
             else:
                 try:
                     live_positions = engine.adapter.get_positions(symbol=symbol)
                     if live_positions:
                         p = live_positions[0]
-                        risk_usd = account_data["equity"] * (engine.config.risk.risk_per_trade_pct / 100.0)
+                        risk_usd = account_data["equity"] * (
+                            engine.config.risk.risk_per_trade_pct / 100.0
+                        )
                         sl_dist = abs(p.price_open - p.sl) if p.sl > 0 else (atr * 1.5)
                         tp_dist = abs(p.tp - p.price_open) if p.tp > 0 else (atr * 1.8)
                         risk_reward_ratio = tp_dist / max(sl_dist, 1e-5)
@@ -541,12 +583,24 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             "active": True,
                             "direction": p.type.value,
                             "entry_price": float(p.price_open),
-                            "sl_price": float(p.sl) if p.sl > 0 else float(p.price_open - sl_dist if p.type.value == "BUY" else p.price_open + sl_dist),
-                            "tp_price": float(p.tp) if p.tp > 0 else float(p.price_open + tp_dist if p.type.value == "BUY" else p.price_open - tp_dist),
+                            "sl_price": float(p.sl)
+                            if p.sl > 0
+                            else float(
+                                p.price_open - sl_dist
+                                if p.type.value == "BUY"
+                                else p.price_open + sl_dist
+                            ),
+                            "tp_price": float(p.tp)
+                            if p.tp > 0
+                            else float(
+                                p.price_open + tp_dist
+                                if p.type.value == "BUY"
+                                else p.price_open - tp_dist
+                            ),
                             "risk_reward_ratio": float(round(risk_reward_ratio, 2)),
                             "risk_usd": float(round(risk_usd, 2)),
                             "profit_usd": float(round(profit_usd, 2)),
-                            "zone_score": 85.0
+                            "zone_score": 85.0,
                         }
                 except Exception:
                     pass
@@ -561,7 +615,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "price_low": float(bid - atr * 1.5),
                     "price_high": float(bid - atr * 0.5),
                     "ai_confidence": 0.89,
-                    "time": t1
+                    "time": t1,
                 },
                 {
                     "id": "mock_fvg_bear_1",
@@ -569,8 +623,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "price_low": float(bid + atr * 0.5),
                     "price_high": float(bid + atr * 1.5),
                     "ai_confidence": 0.82,
-                    "time": t2
-                }
+                    "time": t2,
+                },
             ]
 
         state = {
@@ -597,8 +651,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "bos_lines": real_smc_overlays.get("bos_lines", []),
                 "midlines": real_smc_overlays.get("midlines", []),
                 "liq_markers": real_smc_overlays.get("liq_markers", []),
-                "order_lines": order_lines
-            }
+                "order_lines": order_lines,
+            },
         }
         return serialize_enums(state)
 
@@ -648,6 +702,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return engine.audit.get_trading_rules()
         else:
             from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
             repo = AuditRepository()
             return repo.get_trading_rules()
 
@@ -658,20 +713,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
         if engine:
             success = engine.audit.toggle_trading_rule(
-                rule_name=req.rule_name,
-                is_enabled=req.is_enabled,
-                parameters_json=params_json
+                rule_name=req.rule_name, is_enabled=req.is_enabled, parameters_json=params_json
             )
             if success and hasattr(engine, "rule_matrix"):
                 engine.rule_matrix.refresh_cache()
             return {"success": success}
         else:
             from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
             repo = AuditRepository()
             success = repo.toggle_trading_rule(
-                rule_name=req.rule_name,
-                is_enabled=req.is_enabled,
-                parameters_json=params_json
+                rule_name=req.rule_name, is_enabled=req.is_enabled, parameters_json=params_json
             )
             return {"success": success}
 
@@ -729,7 +781,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # REST APIs: Historical trade logs with pagination/filters
     @app.get("/api/account/trades")
-    def get_account_trades(limit: int = 100, offset: int = 0, status: str | None = None) -> list[dict[str, Any]]:
+    def get_account_trades(
+        limit: int = 100, offset: int = 0, status: str | None = None
+    ) -> list[dict[str, Any]]:
         engine = app.state.engine
         if not engine:
             return []
@@ -744,6 +798,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         return engine.audit.get_equity_growth_chart_data()
 
     # Toggle Engine Run Loop
+    # Toggle Engine Run Loop
     @app.post("/api/engine/toggle")
     def toggle_engine(req: ToggleRequest) -> dict[str, Any]:
         engine = app.state.engine
@@ -752,9 +807,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
         if req.active:
             if not engine._running:
-                # Launch in an async background task to prevent blocking server thread
                 logger.info("Web Dashboard triggered system start command.")
-                asyncio.create_task(engine.run_loop())
+                task = asyncio.create_task(engine.run_loop())
+                if not hasattr(app.state, "background_tasks"):
+                    app.state.background_tasks = set()
+                app.state.background_tasks.add(task)
+                task.add_done_callback(app.state.background_tasks.discard)
         else:
             logger.info("Web Dashboard triggered system stop command.")
             engine._running = False
@@ -806,6 +864,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         bars = state.get("bars", [])
         if not bars:
             import random
+
             start_price = 2334.21
             now_dt = datetime.now()
             for i in range(160):
@@ -813,15 +872,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 high_p = max(start_price, close_p) + random.uniform(0.1, 0.4)
                 low_p = min(start_price, close_p) - random.uniform(0.1, 0.4)
 
-                bars.append({
-                    "time": (now_dt - timedelta(minutes=160-i)).isoformat(),
-                    "open": start_price,
-                    "high": high_p,
-                    "low": low_p,
-                    "close": close_p,
-                    "volume": float(random.randint(10, 50)),
-                    "is_complete": True
-                })
+                bars.append(
+                    {
+                        "time": (now_dt - timedelta(minutes=160 - i)).isoformat(),
+                        "open": start_price,
+                        "high": high_p,
+                        "low": low_p,
+                        "close": close_p,
+                        "volume": float(random.randint(10, 50)),
+                        "is_complete": True,
+                    }
+                )
                 start_price = close_p
             state["bars"] = bars
 
@@ -834,7 +895,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "price_low": 2332.10,
                     "price_high": 2333.30,
                     "ai_confidence": 0.89,
-                    "time": bars[30]["time"] if len(bars) > 30 else None
+                    "time": bars[30]["time"] if len(bars) > 30 else None,
                 },
                 {
                     "id": "mock_fvg_bear_1",
@@ -842,8 +903,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "price_low": 2335.50,
                     "price_high": 2336.80,
                     "ai_confidence": 0.82,
-                    "time": bars[70]["time"] if len(bars) > 70 else None
-                }
+                    "time": bars[70]["time"] if len(bars) > 70 else None,
+                },
             ]
         if not overlays.get("order_lines"):
             overlays["order_lines"] = {
@@ -855,7 +916,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "risk_reward_ratio": 1.95,
                 "risk_usd": 100.00,
                 "profit_usd": 195.00,
-                "zone_score": 88.0
+                "zone_score": 88.0,
             }
         state["visual_overlays"] = overlays
         return state
@@ -917,9 +978,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             raise HTTPException(status_code=400, detail="Trading Engine offline.")
 
         success = engine.adapter.modify_position(
-            ticket=req.ticket,
-            stop_loss=req.stop_loss,
-            take_profit=req.take_profit
+            ticket=req.ticket, stop_loss=req.stop_loss, take_profit=req.take_profit
         )
         return {"success": success}
 
@@ -945,19 +1004,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             current_tick = engine.adapter.get_last_tick(symbol)
             if not current_tick:
                 current_tick = TickData(
-                    symbol=symbol,
-                    timestamp=datetime.now(UTC),
-                    bid=2334.21,
-                    ask=2334.41,
-                    volume=1.0
+                    symbol=symbol, timestamp=datetime.now(UTC), bid=2334.21, ask=2334.41, volume=1.0
                 )
         except Exception:
             current_tick = TickData(
-                symbol=symbol,
-                timestamp=datetime.now(UTC),
-                bid=2334.21,
-                ask=2334.41,
-                volume=1.0
+                symbol=symbol, timestamp=datetime.now(UTC), bid=2334.21, ask=2334.41, volume=1.0
             )
 
         # Apply simulation tick displacement pressure
@@ -979,27 +1030,40 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             timestamp=datetime.now(UTC),
             bid=current_tick.bid + bid_change,
             ask=current_tick.ask + ask_change,
-            volume=current_tick.volume + 5.0
+            volume=current_tick.volume + 5.0,
         )
 
         # Inject simulated tick directly to engine tick processor pipeline
-        logger.info("Injecting interactive simulation tick pressure.", type=req.type, bid=simulated_tick.bid, ask=simulated_tick.ask)
+        logger.info(
+            "Injecting interactive simulation tick pressure.",
+            type=req.type,
+            bid=simulated_tick.bid,
+            ask=simulated_tick.ask,
+        )
 
         # Track simulated outcome
-        prob_sim = 0.76 if req.type == "BUY_PRESSURE" else (0.81 if req.type == "SELL_PRESSURE" else 0.12)
+        prob_sim = (
+            0.76 if req.type == "BUY_PRESSURE" else (0.81 if req.type == "SELL_PRESSURE" else 0.12)
+        )
         outcome_status = "TRUE_POSITIVE" if req.type != "VOLATILE_SWEEP" else "FALSE_POSITIVE"
 
-        app.state.simulated_outcomes.append({
-            "time": datetime.now(UTC).strftime("%H:%M:%S"),
-            "action": "BUY_MARKET" if req.type == "BUY_PRESSURE" else ("SELL_MARKET" if req.type == "SELL_PRESSURE" else "NO_ACTION"),
-            "confidence": prob_sim,
-            "actual_delta": bid_change,
-            "outcome": outcome_status
-        })
+        app.state.simulated_outcomes.append(
+            {
+                "time": datetime.now(UTC).strftime("%H:%M:%S"),
+                "action": "BUY_MARKET"
+                if req.type == "BUY_PRESSURE"
+                else ("SELL_MARKET" if req.type == "SELL_PRESSURE" else "NO_ACTION"),
+                "confidence": prob_sim,
+                "actual_delta": bid_change,
+                "outcome": outcome_status,
+            }
+        )
 
         # Process the simulated tick
         if engine._running:
-            engine._process_tick_pipeline(tick=simulated_tick, account=engine.adapter.get_account_info())
+            engine._process_tick_pipeline(
+                tick=simulated_tick, account=engine.adapter.get_account_info()
+            )
 
         return {"success": True}
 
@@ -1069,14 +1133,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 nan_count += 1
             elif status == "INF":
                 inf_count += 1
-            features_payload.append({
-                "index": idx,
-                "key": f"feat_{idx}",
-                "name": name,
-                "value": value,
-                "status": status,
-                "is_valid": status == "VALID",
-            })
+            features_payload.append(
+                {
+                    "index": idx,
+                    "key": f"feat_{idx}",
+                    "name": name,
+                    "value": value,
+                    "status": status,
+                    "is_valid": status == "VALID",
+                }
+            )
 
         # A snapshot older than 15s means the tick pipeline is not feeding the model.
         STALE_THRESHOLD_SEC = 15.0
@@ -1138,7 +1204,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             import numpy as np
             import torch
         except Exception as import_err:
-            raise HTTPException(status_code=503, detail=f"PyTorch runtime unavailable: {import_err}") from import_err
+            raise HTTPException(
+                status_code=503, detail=f"PyTorch runtime unavailable: {import_err}"
+            ) from import_err
 
         started = time.perf_counter()
 
@@ -1171,7 +1239,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             raise
         except Exception as infer_err:
             logger.error("Debug model test inference failed", error=str(infer_err))
-            raise HTTPException(status_code=500, detail=f"Inference failed: {infer_err}") from infer_err
+            raise HTTPException(
+                status_code=500, detail=f"Inference failed: {infer_err}"
+            ) from infer_err
 
         latency_ms = (time.perf_counter() - started) * 1000.0
 
@@ -1215,40 +1285,53 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         subsystems: list[dict[str, Any]] = []
 
         def add(name: str, status: str, detail: str, metrics: dict[str, Any] | None = None) -> None:
-            subsystems.append({
-                "name": name,
-                "status": status,
-                "detail": detail,
-                "metrics": metrics or {},
-            })
+            subsystems.append(
+                {
+                    "name": name,
+                    "status": status,
+                    "detail": detail,
+                    "metrics": metrics or {},
+                }
+            )
 
         # --- 1. Feature Engine ---
         if engine is None:
-            add("Feature Engine", "DISCONNECTED", "Engine reference is not attached to the web server.")
+            add(
+                "Feature Engine",
+                "DISCONNECTED",
+                "Engine reference is not attached to the web server.",
+            )
         else:
             try:
                 fv = engine._last_fv
                 if fv is None:
-                    add("Feature Engine", "DEGRADED", "No feature vector computed yet (waiting for first tick).")
+                    add(
+                        "Feature Engine",
+                        "DEGRADED",
+                        "No feature vector computed yet (waiting for first tick).",
+                    )
                 else:
                     values = list(fv.to_tensor_input())
                     bad = sum(1 for v in values if _classify_feature(v)[1] != "VALID")
                     dim_ok = len(values) == len(FEATURE_NAMES)
                     if not dim_ok:
                         add(
-                            "Feature Engine", "UNHEALTHY",
+                            "Feature Engine",
+                            "UNHEALTHY",
                             f"Dimensionality contract violated: {len(values)} != {len(FEATURE_NAMES)}.",
                             {"dimensions": len(values), "expected": len(FEATURE_NAMES)},
                         )
                     elif bad:
                         add(
-                            "Feature Engine", "DEGRADED",
+                            "Feature Engine",
+                            "DEGRADED",
                             f"{bad} of {len(values)} features are NaN/Inf.",
                             {"anomalies": bad, "dimensions": len(values)},
                         )
                     else:
                         add(
-                            "Feature Engine", "HEALTHY",
+                            "Feature Engine",
+                            "HEALTHY",
                             f"All {len(values)} features numeric and within contract.",
                             {"anomalies": 0, "dimensions": len(values)},
                         )
@@ -1274,11 +1357,26 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "last_inference_available": last_infer_ok,
                     }
                     if not scaler_ready:
-                        add("PyTorch Model", "DEGRADED", "Weights loaded but scaler artifact is not fitted.", metrics)
+                        add(
+                            "PyTorch Model",
+                            "DEGRADED",
+                            "Weights loaded but scaler artifact is not fitted.",
+                            metrics,
+                        )
                     elif not last_infer_ok:
-                        add("PyTorch Model", "DEGRADED", "Model ready; awaiting first live inference.", metrics)
+                        add(
+                            "PyTorch Model",
+                            "DEGRADED",
+                            "Model ready; awaiting first live inference.",
+                            metrics,
+                        )
                     else:
-                        add("PyTorch Model", "HEALTHY", "ScalpNet loaded with fitted scaler and live inference flowing.", metrics)
+                        add(
+                            "PyTorch Model",
+                            "HEALTHY",
+                            "ScalpNet loaded with fitted scaler and live inference flowing.",
+                            metrics,
+                        )
             except Exception as e:
                 add("PyTorch Model", "UNHEALTHY", f"Model introspection raised: {e}")
 
@@ -1297,11 +1395,26 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "survival_mode": bool(getattr(engine, "_survival_mode_active", False)),
                 }
                 if kill_switch:
-                    add("Risk Engine", "UNHEALTHY", "EMERGENCY KILL SWITCH ACTIVE — all execution rejected.", metrics)
+                    add(
+                        "Risk Engine",
+                        "UNHEALTHY",
+                        "EMERGENCY KILL SWITCH ACTIVE — all execution rejected.",
+                        metrics,
+                    )
                 elif metrics["survival_mode"]:
-                    add("Risk Engine", "DEGRADED", "Survival mode active: thresholds tightened after drawdown.", metrics)
+                    add(
+                        "Risk Engine",
+                        "DEGRADED",
+                        "Survival mode active: thresholds tightened after drawdown.",
+                        metrics,
+                    )
                 else:
-                    add("Risk Engine", "HEALTHY", "Clamps armed (HARD_MAX_LOTS = 10.0), kill switch disengaged.", metrics)
+                    add(
+                        "Risk Engine",
+                        "HEALTHY",
+                        "Clamps armed (HARD_MAX_LOTS = 10.0), kill switch disengaged.",
+                        metrics,
+                    )
             except Exception as e:
                 add("Risk Engine", "UNHEALTHY", f"Risk engine introspection raised: {e}")
 
@@ -1330,13 +1443,33 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "symbol": engine.config.execution.symbol,
                 }
                 if not connected:
-                    add("MT5 Win32 IPC Adapter", "DISCONNECTED", "Broker IPC channel reports disconnected.", metrics)
+                    add(
+                        "MT5 Win32 IPC Adapter",
+                        "DISCONNECTED",
+                        "Broker IPC channel reports disconnected.",
+                        metrics,
+                    )
                 elif tick_age is None:
-                    add("MT5 Win32 IPC Adapter", "DEGRADED", "Connected but no tick has been received yet.", metrics)
+                    add(
+                        "MT5 Win32 IPC Adapter",
+                        "DEGRADED",
+                        "Connected but no tick has been received yet.",
+                        metrics,
+                    )
                 elif tick_age > 15.0:
-                    add("MT5 Win32 IPC Adapter", "DEGRADED", f"Tick stream stale ({tick_age:.1f}s since last tick).", metrics)
+                    add(
+                        "MT5 Win32 IPC Adapter",
+                        "DEGRADED",
+                        f"Tick stream stale ({tick_age:.1f}s since last tick).",
+                        metrics,
+                    )
                 else:
-                    add("MT5 Win32 IPC Adapter", "HEALTHY", f"Live tick stream active ({tick_age:.1f}s ago).", metrics)
+                    add(
+                        "MT5 Win32 IPC Adapter",
+                        "HEALTHY",
+                        f"Live tick stream active ({tick_age:.1f}s ago).",
+                        metrics,
+                    )
             except Exception as e:
                 add("MT5 Win32 IPC Adapter", "UNHEALTHY", f"Adapter introspection raised: {e}")
 
@@ -1346,6 +1479,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 repo = engine.audit
             else:
                 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
                 repo = AuditRepository()
 
             metrics_db = repo.get_account_performance_metrics()
@@ -1367,11 +1501,23 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "total_trades": metrics_db.get("total_trades", 0),
             }
             if not worker_alive:
-                add("Audit Database", "DEGRADED", "Background write worker is not running.", metrics)
+                add(
+                    "Audit Database", "DEGRADED", "Background write worker is not running.", metrics
+                )
             elif queue_size > 5000:
-                add("Audit Database", "DEGRADED", f"Write queue backing up ({queue_size} pending).", metrics)
+                add(
+                    "Audit Database",
+                    "DEGRADED",
+                    f"Write queue backing up ({queue_size} pending).",
+                    metrics,
+                )
             else:
-                add("Audit Database", "HEALTHY", "WAL storage reachable; async writer draining normally.", metrics)
+                add(
+                    "Audit Database",
+                    "HEALTHY",
+                    "WAL storage reachable; async writer draining normally.",
+                    metrics,
+                )
         except Exception as e:
             add("Audit Database", "UNHEALTHY", f"Audit DB unreachable: {e}")
 
@@ -1399,6 +1545,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 repo = engine.audit
             else:
                 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
                 repo = AuditRepository()
             events = repo.get_recent_order_events(limit=max(1, min(limit, 500)))
         except Exception as e:
@@ -1437,15 +1584,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             if hasattr(engine.notifier, "_queue"):
                 tg_queue_size = engine.notifier._queue.qsize()
 
-        return {
-            "tg_enabled": tg_enabled,
-            "tg_queue": tg_queue_size
-        }
+        return {"tg_enabled": tg_enabled, "tg_queue": tg_queue_size}
 
     # Server-Sent Events (SSE) telemetry stream
     @app.get("/api/ticks/stream")
     async def sse_telemetry_stream(request: Request) -> StreamingResponse:
         """Asynchronous SSE streamer providing zero-latency live telemetry."""
+
         async def event_generator():
             while True:
                 # Client disconnected check

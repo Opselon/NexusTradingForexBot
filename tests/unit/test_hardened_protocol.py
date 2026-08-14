@@ -1,25 +1,43 @@
-import os
 import math
-import pytest
+import os
+from datetime import UTC, datetime
+
 import numpy as np
 import polars as pl
+import pytest
 import torch
-from datetime import datetime, UTC
 
 from nexus_scalp.domain.enums import ActionType, OrderType
-from nexus_scalp.domain.models import AccountInfo, Position, SymbolInfo, TickData, TradeProposal, TradeOrder
-from nexus_scalp.models.scalp_net import ScalpNet
-from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer, ScalpDataset
-from nexus_scalp.features.scalp_features import ScalpFeatureEngine, FeatureVector, FeaturePipelineFrozenError, BarData
-from nexus_scalp.risk.risk_engine import RiskEngine
+from nexus_scalp.domain.models import (
+    AccountInfo,
+    Position,
+    SymbolInfo,
+    TickData,
+    TradeOrder,
+    TradeProposal,
+)
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
+from nexus_scalp.features.regime_classifier import (
+    MarketRegimeState,
+    RecommendedExecutionType,
+    RegimeReason,
+    RegimeType,
+)
+from nexus_scalp.features.scalp_features import (
+    BarData,
+    FeaturePipelineFrozenError,
+    FeatureVector,
+    ScalpFeatureEngine,
+)
+from nexus_scalp.models.scalp_net import ScalpNet
+from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.signals.policy import SignalPolicy
-from nexus_scalp.features.regime_classifier import MarketRegimeState, RegimeType, RecommendedExecutionType, RegimeReason
-
+from nexus_scalp.training.walk_forward_trainer import ScalpDataset, WalkForwardTrainer
 
 # =============================================================================
 # 1. MODEL ROLLBACK & STABILIZATION TESTS
 # =============================================================================
+
 
 def test_model_rollback_on_health_check_failure():
     """
@@ -27,10 +45,7 @@ def test_model_rollback_on_health_check_failure():
     fine_tune_online rejects a collapsed/degraded model and successfully rolls back.
     """
     trainer = WalkForwardTrainer(
-        num_folds=3,
-        epochs_per_fold=1,
-        min_rows_per_train_split=10,
-        min_rows_per_test_split=5
+        num_folds=3, epochs_per_fold=1, min_rows_per_train_split=10, min_rows_per_test_split=5
     )
 
     # Pre-trained base weights representation
@@ -39,8 +54,13 @@ def test_model_rollback_on_health_check_failure():
 
     # Create dummy data with very few rows where classes are heavily skewed (no class diversity)
     num_rows = 50
-    data = {"label": ["NO_TRADE"] * num_rows, "label_evaluated": [True] * num_rows, "is_purged": [False] * num_rows}
+    data = {
+        "label": ["NO_TRADE"] * num_rows,
+        "label_evaluated": [True] * num_rows,
+        "is_purged": [False] * num_rows,
+    }
     from nexus_scalp.features.scalp_features import FEATURE_NAMES
+
     for name in FEATURE_NAMES:
         data[name] = [0.0] * num_rows
 
@@ -54,17 +74,20 @@ def test_model_rollback_on_health_check_failure():
         epochs=1,
         learning_rate=1e-3,
         max_holding_bars=2,
-        verify_health=True
+        verify_health=True,
     )
 
     # Assert model was rolled back (returned weights match initial weights exactly)
     for k in returned_model.state_dict():
-        assert torch.equal(returned_model.state_dict()[k], initial_state[k]), f"Weights should match baseline exactly due to rollback for: {k}"
+        assert torch.equal(returned_model.state_dict()[k], initial_state[k]), (
+            f"Weights should match baseline exactly due to rollback for: {k}"
+        )
 
 
 # =============================================================================
 # 2. FEATURE PIPELINE HARDENING TESTS
 # =============================================================================
+
 
 def test_feature_pipeline_nan_validation_and_fallback():
     """
@@ -79,7 +102,7 @@ def test_feature_pipeline_nan_validation_and_fallback():
         timestamp_utc=datetime.now(UTC).isoformat(),
         live_tick_displacement=0.0,
         log_return_m1=0.0,
-        atr_m1=float("nan"), # NaN in mandatory field
+        atr_m1=float("nan"),  # NaN in mandatory field
         upper_wick_ratio=0.0,
         lower_wick_ratio=0.0,
         body_to_range_ratio=1.0,
@@ -139,29 +162,37 @@ def test_feature_pipeline_nan_validation_and_fallback():
         htf_h4_atr_ratio=1.0,
     )
 
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.2, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.2, volume=1.0
+    )
 
     # 1. Test fallback
     validated_fv = engine.validate_and_fallback(fv_nan, [], tick)
-    assert not math.isnan(validated_fv.atr_m1), "ATR should be recovered from NaN using default fallback."
+    assert not math.isnan(validated_fv.atr_m1), (
+        "ATR should be recovered from NaN using default fallback."
+    )
     assert validated_fv.atr_m1 == 1.50, "Default ATR fallback should be 1.50."
 
     # 2. Test fallback freeze if fallback value is also corrupted (None / NaN)
     with pytest.raises(FeaturePipelineFrozenError):
         # We trigger a freeze by simulating a completely corrupted fallback path (e.g. mock a scenario where fallback value is also NaN)
-        bad_engine = ScalpFeatureEngine(symbol="XAUUSD")
-        raise FeaturePipelineFrozenError("Feature pipeline frozen: fallback failed for field 'atr_m1'")
+        ScalpFeatureEngine(symbol="XAUUSD")
+        raise FeaturePipelineFrozenError(
+            "Feature pipeline frozen: fallback failed for field 'atr_m1'"
+        )
 
 
 # =============================================================================
 # 3. RISK ENGINE CLAMPS TESTS
 # =============================================================================
 
+
 def test_risk_engine_cascading_safety_clamps():
     """
     Verifies that the five cascading risk layers strictly clamp oversized or dangerous position lots.
     """
     from nexus_scalp.configuration.config import RiskConfig
+
     config = RiskConfig(
         risk_per_trade_pct=2.0,
         max_account_drawdown_pct=5.0,
@@ -171,7 +202,16 @@ def test_risk_engine_cascading_safety_clamps():
     )
     risk_eng = RiskEngine(config=config)
 
-    account = AccountInfo(login=123456, trade_mode=1, balance=100000.0, equity=100000.0, margin=0.0, margin_free=100000.0, leverage=100, currency="USD")
+    account = AccountInfo(
+        login=123456,
+        trade_mode=1,
+        balance=100000.0,
+        equity=100000.0,
+        margin=0.0,
+        margin_free=100000.0,
+        leverage=100,
+        currency="USD",
+    )
     symbol_info = SymbolInfo(
         symbol="XAUUSD",
         digits=2,
@@ -197,18 +237,22 @@ def test_risk_engine_cascading_safety_clamps():
     )
 
     # The Absolute Safety Clamp should strictly cap this at 10.0 lots!
-    assert clamped_vol <= 10.0, f"Cascading clamps should cap volume under absolute maximum (10.0 lots), got {clamped_vol}"
+    assert clamped_vol <= 10.0, (
+        f"Cascading clamps should cap volume under absolute maximum (10.0 lots), got {clamped_vol}"
+    )
 
 
 # =============================================================================
 # 4. EXECUTION THROTTLING TESTS
 # =============================================================================
 
+
 def test_execution_throttling_pending_modifications():
     """
     Verifies that OrderLifecycleManager restricts pending order modifications
     when price drift and time since last update bounds are violated.
     """
+
     class MockAdapter:
         def get_symbol_info(self, symbol):
             return None
@@ -229,12 +273,15 @@ def test_execution_throttling_pending_modifications():
 
     # 3. Third modification: price drift is significant (e.g. 2001.5, drift is 1.5 >= 0.5 * 1.50), but time is within 5s
     allowed3 = om.should_modify_pending_order(ticket, 2001.5, 1.50, now)
-    assert allowed3 is False, "Modification with price drift but under time cooldown (5s) should be blocked."
+    assert allowed3 is False, (
+        "Modification with price drift but under time cooldown (5s) should be blocked."
+    )
 
 
 # =============================================================================
 # 5. REGIME GUARDIAN & BLOCKED DECISIONS TESTS
 # =============================================================================
+
 
 def test_authoritative_regime_guardian_blocks_execution():
     """
@@ -259,7 +306,9 @@ def test_authoritative_regime_guardian_blocks_execution():
         reason=RegimeReason.SPREAD_SCHMITT,
     )
 
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.60, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.60, volume=1.0
+    )
     fv = FeatureVector(
         symbol="XAUUSD",
         timestamp_utc=tick.timestamp.isoformat(),
@@ -333,8 +382,12 @@ def test_authoritative_regime_guardian_blocks_execution():
         regime_state=regime_state,
     )
 
-    assert proposal.action == ActionType.NO_TRADE, "Unsafe HIGH_SPREAD_CHOP must authoritatively produce a NO_TRADE action."
-    assert "BLOCKED_BY_GUARDIAN" in proposal.reason_code, "Reason code must describe the Guardian block details."
+    assert proposal.action == ActionType.NO_TRADE, (
+        "Unsafe HIGH_SPREAD_CHOP must authoritatively produce a NO_TRADE action."
+    )
+    assert "BLOCKED_BY_GUARDIAN" in proposal.reason_code, (
+        "Reason code must describe the Guardian block details."
+    )
     assert proposal.decision_stage == "GUARDIAN_GATE"
     assert proposal.blocked_by == "REGIME_GUARDIAN"
 
@@ -343,17 +396,19 @@ def test_authoritative_regime_guardian_blocks_execution():
 # 6. SAFETY STATE MACHINE TRANSITIONS TESTS
 # =============================================================================
 
+
 def test_safety_state_machine_transitions():
     """
     Verifies that the state transitions inside OrderLifecycleManager and LiveEngine
     accurately reflect safety stages NORMAL, CAUTION, SAFE_MODE, and FROZEN.
     """
+
     class MockAdapter:
         def __init__(self):
             self.rejections = 0
 
         def send_order(self, order):
-            return False # Simulate broker rejections
+            return False  # Simulate broker rejections
 
         def get_symbol_info(self, symbol):
             return None

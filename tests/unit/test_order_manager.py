@@ -1,13 +1,14 @@
-from datetime import datetime, UTC
-import pytest
+import os
 import sqlite3
 import tempfile
-import os
+from datetime import UTC, datetime
 
-from nexus_scalp.domain.enums import OrderType, ActionType
+import pytest
+
+from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, TickData, TradeOrder, TradeProposal
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
-from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
 
 class MockMT5Adapter:
@@ -93,6 +94,7 @@ def test_order_manager_cache_cleanup_on_close():
 
 def test_order_manager_unified_router():
     """Verify that dispatch_order and execute_lifecycle_action successfully route all action types."""
+
     class MockAdapterWithRouter:
         def __init__(self):
             self.market_orders = []
@@ -137,7 +139,7 @@ def test_order_manager_unified_router():
         proposed_entry=2000.0,
         stop_loss=1990.0,
         take_profit=2020.0,
-        risk_reward_ratio=2.0
+        risk_reward_ratio=2.0,
     )
     assert om.dispatch_order(prop_buy, 1.5) is True
     assert len(adapter.market_orders) == 1
@@ -153,7 +155,7 @@ def test_order_manager_unified_router():
         proposed_entry=2000.0,
         stop_loss=1990.0,
         take_profit=2020.0,
-        risk_reward_ratio=2.0
+        risk_reward_ratio=2.0,
     )
     assert om.dispatch_order(prop_limit, 2.0) is True
     assert len(adapter.pending_orders) == 1
@@ -170,7 +172,7 @@ def test_order_manager_unified_router():
         stop_loss=1990.0,
         take_profit=2020.0,
         risk_reward_ratio=1.0,
-        ticket=12345
+        ticket=12345,
     )
     assert om.execute_lifecycle_action(prop_close) is True
     assert len(adapter.closures) == 1
@@ -187,7 +189,7 @@ def test_order_manager_unified_router():
         stop_loss=1995.0,
         take_profit=2015.0,
         risk_reward_ratio=1.0,
-        ticket=12345
+        ticket=12345,
     )
     assert om.execute_lifecycle_action(prop_modify) is True
     assert len(adapter.modifications) == 1

@@ -34,7 +34,7 @@ from __future__ import annotations
 import math
 from collections import deque
 from datetime import UTC
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -48,7 +48,8 @@ logger = get_logger("nexus_scalp.features.regime_classifier")
 # Enums
 # -----------------------------
 
-class RegimeType(str, Enum):
+
+class RegimeType(StrEnum):
     MACRO_NEWS_FREEZE = "MACRO_NEWS_FREEZE"
     HIGH_SPREAD_CHOP = "HIGH_SPREAD_CHOP"
     VOLATILITY_EXPANSION = "VOLATILITY_EXPANSION"
@@ -56,7 +57,7 @@ class RegimeType(str, Enum):
     RANGING_MEAN_REVERSION = "RANGING_MEAN_REVERSION"
 
 
-class RecommendedExecutionType(str, Enum):
+class RecommendedExecutionType(StrEnum):
     FREEZE_ALL = "FREEZE_ALL"
     LIMIT_ONLY = "LIMIT_ONLY"
     PASSIVE_LIMIT = "PASSIVE_LIMIT"
@@ -64,7 +65,7 @@ class RecommendedExecutionType(str, Enum):
     HYBRID_LIMIT_STOP = "HYBRID_LIMIT_STOP"
 
 
-class RegimeReason(str, Enum):
+class RegimeReason(StrEnum):
     WARMUP = "WARMUP"
     MACRO_NEWS = "MACRO_NEWS"
     SPREAD_SCHMITT = "SPREAD_SCHMITT"
@@ -79,6 +80,7 @@ class RegimeReason(str, Enum):
 # -----------------------------
 # State Model
 # -----------------------------
+
 
 class MarketRegimeState(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -104,6 +106,7 @@ class MarketRegimeState(BaseModel):
 # Classifier
 # -----------------------------
 
+
 class MarketRegimeClassifier:
     """
     Strict-O(1) microstructure regime classifier with hysteresis.
@@ -117,35 +120,28 @@ class MarketRegimeClassifier:
     def __init__(
         self,
         symbol: str = "XAUUSD",
-
         # Rolling window
         rolling_seconds: int = 300,
         max_ticks_buffer: int = 6000,
-
         # Spread schmitt-trigger thresholds (hysteresis band)
         # Example: enter chop if spread >= 0.35, exit chop only if spread <= 0.30
         # Spread schmitt-trigger thresholds (hysteresis band)
         # Calibrated for Gold: Enter chop if spread >= $0.50, exit chop when spread <= $0.40
         spread_chop_enter_usd: float = 0.50,
         spread_chop_exit_usd: float = 0.40,
-
         # Volatility thresholds
         rv_expand_enter: float = 0.0015,
         rv_expand_exit: float = 0.0011,
-
         # Tick density thresholds
         tick_vel_expand_enter: float = 15.0,
         tick_vel_expand_exit: float = 11.0,
-
         # Trend threshold
         ofi_trend_threshold: float = 0.40,
-        price_trend_threshold: float = 0.0005,    # ~0.05% 5m cumulative price displacement
+        price_trend_threshold: float = 0.0005,  # ~0.05% 5m cumulative price displacement
         rv_trend_floor: float = 0.0015 * 0.35,
-
         # Hysteresis timing and confidence margin
-        min_regime_hold_sec: float = 4.0,         # Fast 4s hold window
-        switch_prob_margin: float = 0.10,         # require new_prob >= old_prob + margin
-
+        min_regime_hold_sec: float = 4.0,  # Fast 4s hold window
+        switch_prob_margin: float = 0.10,  # require new_prob >= old_prob + margin
         # Warmup
         min_ticks_for_stats: int = 15,
         depth_top_k: int = 5,
@@ -282,9 +278,11 @@ class MarketRegimeClassifier:
             logger.info(
                 "[REGIME TRANSITION]",
                 symbol=self.symbol,
-                previous_regime=self._last_logged_regime.value if self._last_logged_regime else "INIT",
+                previous_regime=self._last_logged_regime.value
+                if self._last_logged_regime
+                else "INIT",
                 new_regime=stable_regime.value,
-                prob=f"{stable_prob*100:.1f}%",
+                prob=f"{stable_prob * 100:.1f}%",
                 ofi=f"{norm_ofi:+.2f}",
                 rv_5m=f"{rv_5m:.6f}",
                 spread=f"${spread_usd:.2f}",
@@ -317,7 +315,7 @@ class MarketRegimeClassifier:
         self._ofi.append(ofi)
 
         self._sum_ret += log_ret
-        self._sum_sq_ret += (log_ret * log_ret)
+        self._sum_sq_ret += log_ret * log_ret
         self._sum_ofi += ofi
 
     def _evict(self, now_sec: float) -> None:
@@ -329,7 +327,7 @@ class MarketRegimeClassifier:
             old_ofi = self._ofi.popleft()
 
             self._sum_ret -= old_ret
-            self._sum_sq_ret -= (old_ret * old_ret)
+            self._sum_sq_ret -= old_ret * old_ret
             self._sum_ofi -= old_ofi
 
     # -------------------------
@@ -348,32 +346,59 @@ class MarketRegimeClassifier:
 
         # A) Macro news -> always freeze
         if is_macro_news:
-            return (RegimeType.MACRO_NEWS_FREEZE, 0.99, RecommendedExecutionType.FREEZE_ALL, RegimeReason.MACRO_NEWS)
+            return (
+                RegimeType.MACRO_NEWS_FREEZE,
+                0.99,
+                RecommendedExecutionType.FREEZE_ALL,
+                RegimeReason.MACRO_NEWS,
+            )
 
         # B) Spread schmitt-trigger -> HIGH_SPREAD_CHOP with hysteresis band
         # If currently in HIGH_SPREAD_CHOP, require spread <= exit to leave.
-        in_chop = (self._stable_regime == RegimeType.HIGH_SPREAD_CHOP)
-        if (not in_chop and spread >= self.spread_chop_enter) or (in_chop and spread >= self.spread_chop_exit):
+        in_chop = self._stable_regime == RegimeType.HIGH_SPREAD_CHOP
+        if (not in_chop and spread >= self.spread_chop_enter) or (
+            in_chop and spread >= self.spread_chop_exit
+        ):
             # probability increases as spread exceeds enter threshold
             # clamp [0.80, 0.99]
             over = max(0.0, spread - self.spread_chop_enter)
             prob = min(0.99, 0.80 + over * 0.50)
-            return (RegimeType.HIGH_SPREAD_CHOP, prob, RecommendedExecutionType.FREEZE_ALL, RegimeReason.SPREAD_SCHMITT)
+            return (
+                RegimeType.HIGH_SPREAD_CHOP,
+                prob,
+                RecommendedExecutionType.FREEZE_ALL,
+                RegimeReason.SPREAD_SCHMITT,
+            )
 
         # C) Volatility expansion schmitt-trigger (rv and tick density)
-        in_expand = (self._stable_regime == RegimeType.VOLATILITY_EXPANSION)
+        in_expand = self._stable_regime == RegimeType.VOLATILITY_EXPANSION
 
-        rv_trigger = (rv_5m >= self.rv_expand_enter) if not in_expand else (rv_5m >= self.rv_expand_exit)
-        tv_trigger = (tick_velocity >= self.tick_vel_expand_enter) if not in_expand else (tick_velocity >= self.tick_vel_expand_exit)
+        rv_trigger = (
+            (rv_5m >= self.rv_expand_enter) if not in_expand else (rv_5m >= self.rv_expand_exit)
+        )
+        tv_trigger = (
+            (tick_velocity >= self.tick_vel_expand_enter)
+            if not in_expand
+            else (tick_velocity >= self.tick_vel_expand_exit)
+        )
 
         if rv_trigger or tv_trigger:
             # probability based on normalized exceedance
             rv_ratio = (rv_5m / self.rv_expand_enter) if self.rv_expand_enter > 0 else 1.0
-            tv_ratio = (tick_velocity / self.tick_vel_expand_enter) if self.tick_vel_expand_enter > 0 else 1.0
+            tv_ratio = (
+                (tick_velocity / self.tick_vel_expand_enter)
+                if self.tick_vel_expand_enter > 0
+                else 1.0
+            )
             score = max(rv_ratio, tv_ratio)
             prob = min(0.95, 0.55 + (min(score, 2.5) - 1.0) * 0.25)
             reason = RegimeReason.RV_SPIKE if rv_ratio >= tv_ratio else RegimeReason.TICK_DENSITY
-            return (RegimeType.VOLATILITY_EXPANSION, prob, RecommendedExecutionType.HYBRID_LIMIT_STOP, reason)
+            return (
+                RegimeType.VOLATILITY_EXPANSION,
+                prob,
+                RecommendedExecutionType.HYBRID_LIMIT_STOP,
+                reason,
+            )
 
         # D) Trending momentum: strong OFI and enough RV floor
         cum_ret_abs = abs(self._sum_ret)
@@ -382,7 +407,12 @@ class MarketRegimeClassifier:
 
         if (has_price_trend or has_ofi_trend) and rv_5m >= self.rv_trend_floor:
             prob = min(0.95, 0.60 + max(cum_ret_abs * 200.0, abs(norm_ofi) * 0.35))
-            return (RegimeType.TRENDING_MOMENTUM, float(prob), RecommendedExecutionType.IOC_MARKET, RegimeReason.OFI_TREND_ALIGN)
+            return (
+                RegimeType.TRENDING_MOMENTUM,
+                float(prob),
+                RecommendedExecutionType.IOC_MARKET,
+                RegimeReason.OFI_TREND_ALIGN,
+            )
 
         # E) Default range / mean reversion
         # Higher prob when OFI neutral and RV low
@@ -391,7 +421,12 @@ class MarketRegimeClassifier:
         else:
             rv_norm = 0.0
         prob = max(0.60, 1.0 - abs(norm_ofi) - rv_norm * 0.6)
-        return (RegimeType.RANGING_MEAN_REVERSION, float(prob), RecommendedExecutionType.PASSIVE_LIMIT, RegimeReason.DEFAULT_RANGE)
+        return (
+            RegimeType.RANGING_MEAN_REVERSION,
+            float(prob),
+            RecommendedExecutionType.PASSIVE_LIMIT,
+            RegimeReason.DEFAULT_RANGE,
+        )
 
     # -------------------------
     # Hysteresis gate
@@ -423,13 +458,26 @@ class MarketRegimeClassifier:
         held_for = now_sec - self._stable_since_sec
         if held_for < self.min_regime_hold_sec:
             # Keep current stable regime; reason indicates hold
-            return self._stable_regime, self._stable_prob, self._exec_for(self._stable_regime), RegimeReason.HYSTERESIS_HOLD
+            return (
+                self._stable_regime,
+                self._stable_prob,
+                self._exec_for(self._stable_regime),
+                RegimeReason.HYSTERESIS_HOLD,
+            )
 
         # Require confidence margin to switch
         # If current regime is UNSAFE (CHOP/NEWS), bypass probability margin once conditions normalize
-        is_current_unsafe = self._stable_regime in (RegimeType.HIGH_SPREAD_CHOP, RegimeType.MACRO_NEWS_FREEZE)
+        is_current_unsafe = self._stable_regime in (
+            RegimeType.HIGH_SPREAD_CHOP,
+            RegimeType.MACRO_NEWS_FREEZE,
+        )
         if not is_current_unsafe and candidate_prob < (self._stable_prob + self.switch_prob_margin):
-            return self._stable_regime, self._stable_prob, self._exec_for(self._stable_regime), RegimeReason.HYSTERESIS_MARGIN
+            return (
+                self._stable_regime,
+                self._stable_prob,
+                self._exec_for(self._stable_regime),
+                RegimeReason.HYSTERESIS_MARGIN,
+            )
 
         # Switch accepted
         self._stable_regime = candidate_regime

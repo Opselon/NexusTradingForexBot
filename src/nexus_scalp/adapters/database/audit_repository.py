@@ -38,7 +38,7 @@ class AuditRepository:
         self._db_url = db_url
         self._is_sqlite = db_url.startswith("sqlite")
         self._db_path = self._db_url.replace("sqlite:///", "") if self._is_sqlite else ""
-        
+
         self._flush_interval = flush_interval_sec
         self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
         self._running = False
@@ -274,7 +274,9 @@ class AuditRepository:
     def _start_background_worker(self) -> None:
         """Starts the dedicated background thread for zero-latency database inserts."""
         self._running = True
-        self._worker_thread = threading.Thread(target=self._process_queue_worker, daemon=True, name="AuditDB_Worker")
+        self._worker_thread = threading.Thread(
+            target=self._process_queue_worker, daemon=True, name="AuditDB_Worker"
+        )
         self._worker_thread.start()
 
     def _process_queue_worker(self) -> None:
@@ -283,7 +285,7 @@ class AuditRepository:
             return
 
         conn = sqlite3.connect(self._db_path, timeout=10.0)
-        
+
         while self._running or not self._queue.empty():
             batch: list[tuple[str, tuple]] = []
             try:
@@ -303,13 +305,14 @@ class AuditRepository:
                         self._queue.task_done()
                 except Exception as e:
                     logger.error("Audit Background Worker failed to insert batch", error=str(e))
-                    time.sleep(1.0) # Backoff on error
-            
+                    time.sleep(1.0)  # Backoff on error
+
         conn.close()
 
     def log_signal(self, proposal: TradeProposal) -> None:
         """Zero-latency async logging of generated trade signals."""
         import json
+
         if not self._is_sqlite:
             return
 
@@ -334,7 +337,7 @@ class AuditRepository:
              execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        
+
         # Determine Regime
         regime_str = "UNKNOWN"
         if hasattr(proposal, "regime") and proposal.regime:
@@ -357,18 +360,14 @@ class AuditRepository:
             "model_action": model_action,
             "model_buy_probability": buy_prob,
             "model_sell_probability": sell_prob,
-
             "ai_buy_probability": buy_prob,
             "ai_sell_probability": sell_prob,
             "ai_no_trade_probability": no_trade_prob,
-
             "buy_probability": buy_prob,
             "sell_probability": sell_prob,
             "no_trade_probability": no_trade_prob,
-
             "regime": regime_str,
             "regime_confidence": regime_conf,
-
             "risk_allowed": risk_allowed,
             "guardian_status": guardian_status,
             "rejection_reason": rejection_reason,
@@ -400,11 +399,8 @@ class AuditRepository:
             unknown_log = {
                 "regime": "UNKNOWN",
                 "reason": "MISSING_FEATURES",
-                "missing_features": [
-                    "ADX",
-                    "ATR"
-                ],
-                "available_bars": 4000
+                "missing_features": ["ADX", "ATR"],
+                "available_bars": 4000,
             }
             logger.warning("UNKNOWN regime detected - missing features logged", extra=unknown_log)
             # Standard console log of the json string representation for stdout audit parsing
@@ -448,7 +444,7 @@ class AuditRepository:
         volume: float,
         reason: str,
         latency: float = 0.0,
-        execution_mode: str = "STANDARD"
+        execution_mode: str = "STANDARD",
     ) -> None:
         """Zero-latency async logging of order lifecycle events."""
         if not self._is_sqlite:
@@ -460,7 +456,17 @@ class AuditRepository:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATETIME('now'))
         """
         args = (
-            ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode
+            ticket,
+            order_id,
+            symbol,
+            action,
+            price,
+            stop_loss,
+            take_profit,
+            volume,
+            reason,
+            latency,
+            execution_mode,
         )
 
         try:
@@ -558,9 +564,19 @@ class AuditRepository:
             ON CONFLICT(ticket) DO NOTHING
         """
         args = (
-            ticket, symbol, direction, volume, entry_price, timestamp_str,
-            order_id, timestamp_str, entry_price, entry_reason,
-            float(ai_confidence_at_open), market_regime_at_open, float(initial_sl_price),
+            ticket,
+            symbol,
+            direction,
+            volume,
+            entry_price,
+            timestamp_str,
+            order_id,
+            timestamp_str,
+            entry_price,
+            entry_reason,
+            float(ai_confidence_at_open),
+            market_regime_at_open,
+            float(initial_sl_price),
         )
         try:
             self._queue.put_nowait((query, args))
@@ -680,9 +696,24 @@ class AuditRepository:
                 drawdown_percent_after=excluded.drawdown_percent_after
         """
         args = (
-            ticket, symbol, direction, volume, entry_price, exit_price,
-            status, pnl, commission, swap, duration_sec, timestamp_str,
-            mae, mfe, initial_sl_price, final_sl_price, is_risk_free_hit, exit_mechanism,
+            ticket,
+            symbol,
+            direction,
+            volume,
+            entry_price,
+            exit_price,
+            status,
+            pnl,
+            commission,
+            swap,
+            duration_sec,
+            timestamp_str,
+            mae,
+            mfe,
+            initial_sl_price,
+            final_sl_price,
+            is_risk_free_hit,
+            exit_mechanism,
             order_id,
             open_time or "",
             close_time or timestamp_str,
@@ -754,7 +785,11 @@ class AuditRepository:
                     total_duration += float(r["duration_sec"])
 
                 win_rate = (wins / total_trades) * 100.0
-                profit_factor = gross_profit / gross_loss if gross_loss > 0 else (gross_profit if gross_profit > 0 else 1.0)
+                profit_factor = (
+                    gross_profit / gross_loss
+                    if gross_loss > 0
+                    else (gross_profit if gross_profit > 0 else 1.0)
+                )
                 avg_duration = total_duration / total_trades
 
                 # Drawdown calculation from snapshots
@@ -895,48 +930,150 @@ class AuditRepository:
                 if row:
                     return dict(row)
         except Exception as e:
-            logger.error("Failed to retrieve last account snapshot for Crash Recovery", error=str(e))
+            logger.error(
+                "Failed to retrieve last account snapshot for Crash Recovery", error=str(e)
+            )
         return None
 
     def _seed_trading_rules(self, conn: sqlite3.Connection) -> None:
         """Seeds the trading_rules_config table with all 30+ rules, disabled by default."""
         rules = [
             # Category 1: SMC
-            ("RULE_FVG_SNIPER_FILL", "Price Hunting & Smart Money Concepts (SMC)", '{"fvg_timeframe": "M1", "fvg_min_size_pip": 0.5}'),
-            ("RULE_JUDAS_SWING_FADE", "Price Hunting & Smart Money Concepts (SMC)", '{"asian_range_pip": 15.0, "fade_reversal_ticks": 5}'),
-            ("RULE_LIQUIDITY_SWEEP_CONFIRM", "Price Hunting & Smart Money Concepts (SMC)", '{"sweep_depth_pip": 1.0, "time_window_sec": 300}'),
-            ("RULE_ORDERBLOCK_TAP_RESERVE", "Price Hunting & Smart Money Concepts (SMC)", '{"ob_timeframe": "M1", "tap_percentage": 50.0}'),
-            ("RULE_WICK_ABSORPTION_PLAY", "Price Hunting & Smart Money Concepts (SMC)", '{"min_wick_ratio": 0.6, "tick_direction_change": true}'),
+            (
+                "RULE_FVG_SNIPER_FILL",
+                "Price Hunting & Smart Money Concepts (SMC)",
+                '{"fvg_timeframe": "M1", "fvg_min_size_pip": 0.5}',
+            ),
+            (
+                "RULE_JUDAS_SWING_FADE",
+                "Price Hunting & Smart Money Concepts (SMC)",
+                '{"asian_range_pip": 15.0, "fade_reversal_ticks": 5}',
+            ),
+            (
+                "RULE_LIQUIDITY_SWEEP_CONFIRM",
+                "Price Hunting & Smart Money Concepts (SMC)",
+                '{"sweep_depth_pip": 1.0, "time_window_sec": 300}',
+            ),
+            (
+                "RULE_ORDERBLOCK_TAP_RESERVE",
+                "Price Hunting & Smart Money Concepts (SMC)",
+                '{"ob_timeframe": "M1", "tap_percentage": 50.0}',
+            ),
+            (
+                "RULE_WICK_ABSORPTION_PLAY",
+                "Price Hunting & Smart Money Concepts (SMC)",
+                '{"min_wick_ratio": 0.6, "tick_direction_change": true}',
+            ),
             # Category 2: HFT
-            ("RULE_FLASH_MOMENTUM_SCRAPE", "Scalping Micro-Structure & Order Flow (HFT)", '{"volume_spike_multiplier": 3.0, "velocity_percentile": 99.0}'),
-            ("RULE_TICK_IMBALANCE_REVERSAL", "Scalping Micro-Structure & Order Flow (HFT)", '{"ofi_std_dev": -3.0, "min_ticks": 10}'),
-            ("RULE_SPREAD_SQUEEZE_ONLY", "Scalping Micro-Structure & Order Flow (HFT)", '{"spread_percentile": 10.0, "rolling_hour_sec": 3600}'),
-            ("RULE_REJECTION_WALL_BLOCKER", "Scalping Micro-Structure & Order Flow (HFT)", '{"limit_hit_count": 3, "time_window_sec": 60}'),
-            ("RULE_BID_ASK_SPOOF_DETECTOR", "Scalping Micro-Structure & Order Flow (HFT)", '{"vanishing_volume_threshold": 2.5, "spoof_secs": 5}'),
+            (
+                "RULE_FLASH_MOMENTUM_SCRAPE",
+                "Scalping Micro-Structure & Order Flow (HFT)",
+                '{"volume_spike_multiplier": 3.0, "velocity_percentile": 99.0}',
+            ),
+            (
+                "RULE_TICK_IMBALANCE_REVERSAL",
+                "Scalping Micro-Structure & Order Flow (HFT)",
+                '{"ofi_std_dev": -3.0, "min_ticks": 10}',
+            ),
+            (
+                "RULE_SPREAD_SQUEEZE_ONLY",
+                "Scalping Micro-Structure & Order Flow (HFT)",
+                '{"spread_percentile": 10.0, "rolling_hour_sec": 3600}',
+            ),
+            (
+                "RULE_REJECTION_WALL_BLOCKER",
+                "Scalping Micro-Structure & Order Flow (HFT)",
+                '{"limit_hit_count": 3, "time_window_sec": 60}',
+            ),
+            (
+                "RULE_BID_ASK_SPOOF_DETECTOR",
+                "Scalping Micro-Structure & Order Flow (HFT)",
+                '{"vanishing_volume_threshold": 2.5, "spoof_secs": 5}',
+            ),
             # Category 3: Position Management
-            ("RULE_HIT_AND_RUN_EXIT", "In-Trade Hit & Run (Position Management)", '{"m1_bars_exit": 4}'),
-            ("RULE_ZERO_DRAWDOWN_TRAIL", "In-Trade Hit & Run (Position Management)", '{"trigger_profit_pip": 2.0, "lock_profit_pip": 1.0}'),
-            ("RULE_TIME_DECAY_CHOP_EXIT", "In-Trade Hit & Run (Position Management)", '{"decay_minutes": 4.0}'),
-            ("RULE_ATR_EXPANSION_RATCHET", "In-Trade Hit & Run (Position Management)", '{"atr_multiplier": 1.5}'),
-            ("RULE_HEDGE_ON_AI_FLIP", "In-Trade Hit & Run (Position Management)", '{"flip_threshold": 0.8}'),
+            (
+                "RULE_HIT_AND_RUN_EXIT",
+                "In-Trade Hit & Run (Position Management)",
+                '{"m1_bars_exit": 4}',
+            ),
+            (
+                "RULE_ZERO_DRAWDOWN_TRAIL",
+                "In-Trade Hit & Run (Position Management)",
+                '{"trigger_profit_pip": 2.0, "lock_profit_pip": 1.0}',
+            ),
+            (
+                "RULE_TIME_DECAY_CHOP_EXIT",
+                "In-Trade Hit & Run (Position Management)",
+                '{"decay_minutes": 4.0}',
+            ),
+            (
+                "RULE_ATR_EXPANSION_RATCHET",
+                "In-Trade Hit & Run (Position Management)",
+                '{"atr_multiplier": 1.5}',
+            ),
+            (
+                "RULE_HEDGE_ON_AI_FLIP",
+                "In-Trade Hit & Run (Position Management)",
+                '{"flip_threshold": 0.8}',
+            ),
             # Category 4: Timing, Zones & Volatility
-            ("RULE_LONDON_NY_KILLZONE_ONLY", "Timing, Zones & Volatility", '{"london_start": "08:00", "ny_end": "16:00"}'),
-            ("RULE_ASIAN_RANGE_FAKEOUT", "Timing, Zones & Volatility", '{"asian_start": "22:00", "asian_end": "06:00"}'),
+            (
+                "RULE_LONDON_NY_KILLZONE_ONLY",
+                "Timing, Zones & Volatility",
+                '{"london_start": "08:00", "ny_end": "16:00"}',
+            ),
+            (
+                "RULE_ASIAN_RANGE_FAKEOUT",
+                "Timing, Zones & Volatility",
+                '{"asian_start": "22:00", "asian_end": "06:00"}',
+            ),
             ("RULE_NEWS_SPIKE_FADE", "Timing, Zones & Volatility", '{"news_cooldown_min": 2.0}'),
-            ("RULE_DEAD_ZONE_BLOCKER", "Timing, Zones & Volatility", '{"rollover_start": "23:55", "rollover_end": "00:05"}'),
+            (
+                "RULE_DEAD_ZONE_BLOCKER",
+                "Timing, Zones & Volatility",
+                '{"rollover_start": "23:55", "rollover_end": "00:05"}',
+            ),
             ("RULE_END_OF_HOUR_SQUEEZE", "Timing, Zones & Volatility", '{"squeeze_minute": 59}'),
             # Category 5: Risk & Account Safeguards
-            ("RULE_CONSECUTIVE_LOSS_FREEZE", "Risk & Account Safeguards", '{"consecutive_losses": 3, "freeze_hours": 1.0}'),
+            (
+                "RULE_CONSECUTIVE_LOSS_FREEZE",
+                "Risk & Account Safeguards",
+                '{"consecutive_losses": 3, "freeze_hours": 1.0}',
+            ),
             ("RULE_DAILY_TARGET_LOCK", "Risk & Account Safeguards", '{"growth_target_pct": 2.0}'),
             ("RULE_AI_MACRO_ALIGNMENT", "Risk & Account Safeguards", '{"htf_trend": "bearish"}'),
-            ("RULE_TURBO_CONFIDENCE_MULTIPLIER", "Risk & Account Safeguards", '{"confidence_threshold": 95.0}'),
+            (
+                "RULE_TURBO_CONFIDENCE_MULTIPLIER",
+                "Risk & Account Safeguards",
+                '{"confidence_threshold": 95.0}',
+            ),
             ("RULE_DAILY_DRAWDOWN_CAP", "Risk & Account Safeguards", '{"max_drawdown_pct": 3.0}'),
             # Category 6: Advanced Reversion & Mathematics
-            ("RULE_VWAP_ELASTIC_BAND", "Advanced Reversion & Mathematics", '{"std_dev_threshold": 3.5}'),
-            ("RULE_BOLLINGER_BURST_FADE", "Advanced Reversion & Mathematics", '{"bb_period": 20, "bb_std_dev": 2.0}'),
-            ("RULE_SCHMITT_TRIGGER_REGIME_LOCK", "Advanced Reversion & Mathematics", '{"regime_changes": 3, "window_minutes": 10}'),
-            ("RULE_GAP_AND_GO_MOMENTUM", "Advanced Reversion & Mathematics", '{"gap_pip": 2.0, "confirm_seconds": 30}'),
-            ("RULE_CONTRARIAN_RETAIL_TRAP", "Advanced Reversion & Mathematics", '{"rsi_threshold": 85.0}'),
+            (
+                "RULE_VWAP_ELASTIC_BAND",
+                "Advanced Reversion & Mathematics",
+                '{"std_dev_threshold": 3.5}',
+            ),
+            (
+                "RULE_BOLLINGER_BURST_FADE",
+                "Advanced Reversion & Mathematics",
+                '{"bb_period": 20, "bb_std_dev": 2.0}',
+            ),
+            (
+                "RULE_SCHMITT_TRIGGER_REGIME_LOCK",
+                "Advanced Reversion & Mathematics",
+                '{"regime_changes": 3, "window_minutes": 10}',
+            ),
+            (
+                "RULE_GAP_AND_GO_MOMENTUM",
+                "Advanced Reversion & Mathematics",
+                '{"gap_pip": 2.0, "confirm_seconds": 30}',
+            ),
+            (
+                "RULE_CONTRARIAN_RETAIL_TRAP",
+                "Advanced Reversion & Mathematics",
+                '{"rsi_threshold": 85.0}',
+            ),
         ]
         for name, cat, params in rules:
             conn.execute(
@@ -954,7 +1091,9 @@ class AuditRepository:
         try:
             with sqlite3.connect(self._db_path, timeout=5.0) as conn:
                 conn.row_factory = sqlite3.Row
-                cursor = conn.execute("SELECT rule_name, is_enabled, category, parameters FROM trading_rules_config")
+                cursor = conn.execute(
+                    "SELECT rule_name, is_enabled, category, parameters FROM trading_rules_config"
+                )
                 return [
                     {
                         "rule_name": r["rule_name"],
@@ -968,7 +1107,9 @@ class AuditRepository:
             logger.error("Failed to retrieve trading rules", error=str(e))
             return []
 
-    def toggle_trading_rule(self, rule_name: str, is_enabled: bool, parameters_json: str | None = None) -> bool:
+    def toggle_trading_rule(
+        self, rule_name: str, is_enabled: bool, parameters_json: str | None = None
+    ) -> bool:
         """Toggles the enablement of a trading rule and optionally updates its parameters."""
         if not self._is_sqlite:
             return False

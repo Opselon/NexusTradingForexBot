@@ -1,17 +1,25 @@
 import math
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
 import pytest
 import torch
 
-from nexus_scalp.domain.enums import ActionType, OrderType
-from nexus_scalp.domain.models import TickData, TradeProposal, TradeOrder, Position, SymbolInfo, AccountInfo
-from nexus_scalp.configuration.config import AlgoConfig, RiskConfig
-from nexus_scalp.features.scalp_features import FeatureVector
-from nexus_scalp.signals.policy import SignalPolicy
-from nexus_scalp.execution.order_manager import OrderLifecycleManager
-from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.configuration.config import AlgoConfig, RiskConfig
+from nexus_scalp.domain.enums import ActionType, OrderType
+from nexus_scalp.domain.models import (
+    AccountInfo,
+    Position,
+    SymbolInfo,
+    TickData,
+    TradeOrder,
+    TradeProposal,
+)
+from nexus_scalp.execution.order_manager import OrderLifecycleManager
+from nexus_scalp.features.scalp_features import FeatureVector
+from nexus_scalp.risk.risk_engine import RiskEngine
+from nexus_scalp.signals.policy import SignalPolicy
 
 
 class DummyPendingOrder:
@@ -53,7 +61,9 @@ def test_god_mode_override():
     policy.algo_config.min_risk_reward_ratio = 1.0
     policy.min_allowed_rr = 1.0
 
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.1, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.1, volume=1.0
+    )
 
     # Feature vector that satisfies ALL God Mode conditions:
     # 1. Confirmed BOS or CHOCH
@@ -93,11 +103,11 @@ def test_god_mode_override():
         lag_1_atr_ratio=1.0,
         lag_1_volume_z=0.0,
         lag_1_clv=0.0,
-        fvg_bullish_active=True,             # imbalance FVG supports entry
+        fvg_bullish_active=True,  # imbalance FVG supports entry
         fvg_bearish_active=False,
-        order_block_type=1,                  # valid OB
-        liquidity_sweep_signal=1,            # liquidity sweep detected
-        choch_bullish=True,                  # confirmed CHOCH
+        order_block_type=1,  # valid OB
+        liquidity_sweep_signal=1,  # liquidity sweep detected
+        choch_bullish=True,  # confirmed CHOCH
         choch_bearish=False,
         broke_previous_high=False,
         broke_previous_low=False,
@@ -114,7 +124,7 @@ def test_god_mode_override():
         dist_to_ema_21=1.0,
         dist_to_ema_50=1.0,
         cross_asset_z_score=0.0,
-        htf_h4_trend=-1.0,                   # Opposing HTF filter! Normally rejects standard trades
+        htf_h4_trend=-1.0,  # Opposing HTF filter! Normally rejects standard trades
         htf_h1_momentum=-1.0,
         htf_m30_structure=-1.0,
         htf_m15_confirmation=-1.0,
@@ -124,7 +134,7 @@ def test_god_mode_override():
         consolidation_ratio=1.0,
         htf_h1_atr_ratio=1.0,
         htf_h4_atr_ratio=1.0,
-        feat_ob_valid_bos=1.0,               # valid BOS
+        feat_ob_valid_bos=1.0,  # valid BOS
         feat_ob_equilibrium_ratio=0.6,
         feat_ob_liquidity_swept=1.0,
         feat_ob_fib_50_60_alignment=1.0,
@@ -148,7 +158,9 @@ def test_predictive_limit_orders():
     policy.confidence_threshold = 0.10
     policy.algo_config.ai_zone_confidence_threshold = 0.10
 
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.1, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.1, volume=1.0
+    )
 
     # Feature vector with valid OB, but not meeting complete God Mode (e.g. no liquidity sweep)
     fv = FeatureVector(
@@ -185,8 +197,8 @@ def test_predictive_limit_orders():
         lag_1_clv=0.0,
         fvg_bullish_active=False,
         fvg_bearish_active=False,
-        order_block_type=1,                  # Valid OB
-        liquidity_sweep_signal=0,            # No liquidity sweep
+        order_block_type=1,  # Valid OB
+        liquidity_sweep_signal=0,  # No liquidity sweep
         choch_bullish=False,
         choch_bearish=False,
         broke_previous_high=False,
@@ -241,7 +253,9 @@ def test_tick_sweep_execution():
     policy._last_tick_bid = 2005.00
     policy._last_tick_ask = 2005.20
 
-    current_tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.1, volume=1.0)
+    current_tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.1, volume=1.0
+    )
 
     # Feature vector showing liquidity sweep and quick reversal
     fv = FeatureVector(
@@ -279,7 +293,7 @@ def test_tick_sweep_execution():
         fvg_bullish_active=False,
         fvg_bearish_active=False,
         order_block_type=0,
-        liquidity_sweep_signal=1,            # sweep detected
+        liquidity_sweep_signal=1,  # sweep detected
         choch_bullish=False,
         choch_bearish=False,
         broke_previous_high=False,
@@ -310,7 +324,13 @@ def test_tick_sweep_execution():
     )
 
     # Mock regime state with velocity and positive OFI
-    from nexus_scalp.features.regime_classifier import MarketRegimeState, RecommendedExecutionType, RegimeType, RegimeReason
+    from nexus_scalp.features.regime_classifier import (
+        MarketRegimeState,
+        RecommendedExecutionType,
+        RegimeReason,
+        RegimeType,
+    )
+
     regime = MarketRegimeState(
         symbol="XAUUSD",
         timestamp_utc=current_tick.timestamp.isoformat(),
@@ -318,11 +338,11 @@ def test_tick_sweep_execution():
         regime_probability=0.85,
         order_flow_imbalance=0.60,
         realized_volatility_5m=0.002,
-        tick_velocity_per_sec=12.0,          # Tick velocity high
+        tick_velocity_per_sec=12.0,  # Tick velocity high
         current_spread_usd=0.10,
         is_macro_news_active=False,
         recommended_execution_type=RecommendedExecutionType.IOC_MARKET,
-        reason=RegimeReason.RV_SPIKE
+        reason=RegimeReason.RV_SPIKE,
     )
 
     proposal = policy.evaluate_probabilities(
@@ -340,6 +360,7 @@ def test_tick_sweep_execution():
 
 def test_pending_order_manager_and_falling_knife():
     from datetime import timedelta
+
     adapter = DummyMT5Port()
     audit_repo = AuditRepository(db_url="sqlite:///:memory:")
     manager = OrderLifecycleManager(adapter=adapter, audit_repo=audit_repo)
@@ -354,16 +375,20 @@ def test_pending_order_manager_and_falling_knife():
             order_type=OrderType.BUY_LIMIT,
             volume=0.1,
             sl=1995.0,
-            tp=2010.0
+            tp=2010.0,
         )
     )
 
-    current_tick = TickData(symbol="XAUUSD", timestamp=setup_time, bid=2010.0, ask=2010.1, volume=1.0)
+    current_tick = TickData(
+        symbol="XAUUSD", timestamp=setup_time, bid=2010.0, ask=2010.1, volume=1.0
+    )
     # Set the order setup time to be older than the 30-second lock (Requirement 5)
     manager._pending_orders_setup_time[5001] = setup_time - timedelta(seconds=40)
 
     # Evaluate every tick: distance is too far ($10.0 > ATR * 1.2) -> should be cancelled
-    manager.manage_pending_orders(symbol="XAUUSD", current_tick=current_tick, atr=1.5, max_pending_dist_atr_mult=1.2)
+    manager.manage_pending_orders(
+        symbol="XAUUSD", current_tick=current_tick, atr=1.5, max_pending_dist_atr_mult=1.2
+    )
 
     assert 5001 in adapter.cancelled_tickets
 
@@ -377,7 +402,7 @@ def test_pending_order_manager_and_falling_knife():
             order_type=OrderType.BUY_LIMIT,
             volume=0.1,
             sl=1995.0,
-            tp=2010.0
+            tp=2010.0,
         )
     ]
 
@@ -390,15 +415,15 @@ def test_pending_order_manager_and_falling_knife():
         price_open=2040.0,  # Opened at 2040.0
         sl=2050.0,
         tp=2000.0,
-        profit=500.0,       # Large floating profit ($40.0 move down)
-        magic=888101
+        profit=500.0,  # Large floating profit ($40.0 move down)
+        magic=888101,
     )
 
     manager.evaluate_falling_knife_protection(
         symbol="XAUUSD",
-        current_tick=current_tick, # Ask is 2010.1
+        current_tick=current_tick,  # Ask is 2010.1
         positions=[pos],
-        atr=1.5
+        atr=1.5,
     )
 
     # Opposite BUY_LIMIT must be cancelled by falling knife protection
@@ -411,7 +436,7 @@ def test_risk_sizing_exposure_and_portfolio_context():
         risk_per_trade_pct=0.5,
         max_concurrent_positions=2,
         max_spread_points=20,
-        enforce_stop_loss=True
+        enforce_stop_loss=True,
     )
     risk_engine = RiskEngine(config=config, max_allowed_lots=5.0)
 
@@ -425,7 +450,7 @@ def test_risk_sizing_exposure_and_portfolio_context():
         stop_loss=1995.0,
         take_profit=2010.0,
         risk_reward_ratio=2.0,
-        reason_code="TEST"
+        reason_code="TEST",
     )
 
     account = AccountInfo(
@@ -435,7 +460,7 @@ def test_risk_sizing_exposure_and_portfolio_context():
         balance=10000.0,
         equity=10000.0,
         margin=0.0,
-        margin_free=10000.0
+        margin_free=10000.0,
     )
 
     symbol_info = SymbolInfo(
@@ -449,7 +474,7 @@ def test_risk_sizing_exposure_and_portfolio_context():
         volume_step=0.01,
         stops_level=5,
         freeze_level=5,
-        trade_contract_size=100.0
+        trade_contract_size=100.0,
     )
 
     # Portfolio Context: opposite SELL exposure is present -> rejects new opposite BUY_LIMIT
@@ -463,11 +488,13 @@ def test_risk_sizing_exposure_and_portfolio_context():
             sl=2020.0,
             tp=1990.0,
             profit=0.0,
-            magic=888101
+            magic=888101,
         )
     ]
 
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.1, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.1, volume=1.0
+    )
 
     order = risk_engine.evaluate_proposal(
         proposal=proposal,
@@ -475,7 +502,7 @@ def test_risk_sizing_exposure_and_portfolio_context():
         symbol_info=symbol_info,
         active_positions=active_positions,
         current_tick=tick,
-        atr=1.5
+        atr=1.5,
     )
 
     assert order is None  # Blocked by opposing exposure!

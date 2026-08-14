@@ -1,14 +1,16 @@
 import os
 import tempfile
-import numpy as np
-import polars as pl
-import torch
-import pytest
 from pathlib import Path
 
+import numpy as np
+import polars as pl
+import pytest
+import torch
+
+from nexus_scalp.features.scalp_features import FEATURE_NAMES
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
-from nexus_scalp.features.scalp_features import FEATURE_NAMES
+
 
 def test_walk_forward_trainer_smc_fine_tune_online():
     """
@@ -26,7 +28,7 @@ def test_walk_forward_trainer_smc_fine_tune_online():
             epochs_per_fold=1,
             artifact_save_path=model_path,
             min_rows_per_train_split=10,
-            min_rows_per_test_split=5
+            min_rows_per_test_split=5,
         )
 
         # 2. Create mock model
@@ -43,7 +45,9 @@ def test_walk_forward_trainer_smc_fine_tune_online():
         # feat_ob_valid_bos: binary (0.0 or 1.0)
         data["feat_ob_valid_bos"] = [1.0 if idx % 2 == 0 else 0.0 for idx in range(num_rows)]
         # feat_ob_equilibrium_ratio: position relative to 50% impulse (0.0 to 1.0)
-        data["feat_ob_equilibrium_ratio"] = [0.35 if idx % 2 == 0 else 0.75 for idx in range(num_rows)]
+        data["feat_ob_equilibrium_ratio"] = [
+            0.35 if idx % 2 == 0 else 0.75 for idx in range(num_rows)
+        ]
         # feat_ob_liquidity_swept: binary (0.0 or 1.0)
         data["feat_ob_liquidity_swept"] = [1.0 if idx % 3 == 0 else 0.0 for idx in range(num_rows)]
         # feat_ob_fib_50_60_alignment: continuous proximity
@@ -68,7 +72,7 @@ def test_walk_forward_trainer_smc_fine_tune_online():
             epochs=2,
             learning_rate=1e-3,
             max_holding_bars=5,
-            verify_health=False
+            verify_health=False,
         )
 
         # 5. Assertions
@@ -85,7 +89,9 @@ def test_walk_forward_trainer_smc_fine_tune_online():
 
         # Verify checkpoint is saved atomically
         assert model_path.exists(), "Trained model checkpoint should exist on disk."
-        assert model_path.with_suffix(".scaler.npz").exists(), "Scaler artifact should exist on disk."
+        assert model_path.with_suffix(".scaler.npz").exists(), (
+            "Scaler artifact should exist on disk."
+        )
 
         # Verify we can load back the weights successfully
         loaded_state = torch.load(model_path)

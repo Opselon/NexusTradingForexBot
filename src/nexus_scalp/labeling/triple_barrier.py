@@ -34,14 +34,14 @@ class TripleBarrierLabeler:
 
     def __init__(
         self,
-        take_profit_atr_mult: float = 1.1,   # Scalp-calibrated TP multiplier
-        stop_loss_atr_mult: float = 1.0,     # Tight stop for scalping
-        max_holding_bars: int = 15,          # Maximum forward holding horizon
-        friction_usd: float = 0.35,          # Real Gold friction in USD ($0.35 per oz)
-        embargo_bars: int = 3,               # Purged Embargo gap to prevent serial correlation
-        no_trade_stride_bars: int = 3,       # Stride jump on NO_TRADE to prevent Class Imbalance
-        max_allowed_mae_ratio: float = 0.75, # Max allowed adverse drawdown ratio before invalidating time exit
-        min_valid_atr: float = 0.20,         # Configurable minimum valid ATR threshold
+        take_profit_atr_mult: float = 1.1,  # Scalp-calibrated TP multiplier
+        stop_loss_atr_mult: float = 1.0,  # Tight stop for scalping
+        max_holding_bars: int = 15,  # Maximum forward holding horizon
+        friction_usd: float = 0.35,  # Real Gold friction in USD ($0.35 per oz)
+        embargo_bars: int = 3,  # Purged Embargo gap to prevent serial correlation
+        no_trade_stride_bars: int = 3,  # Stride jump on NO_TRADE to prevent Class Imbalance
+        max_allowed_mae_ratio: float = 0.75,  # Max allowed adverse drawdown ratio before invalidating time exit
+        min_valid_atr: float = 0.20,  # Configurable minimum valid ATR threshold
     ) -> None:
         self.tp_mult = take_profit_atr_mult
         self.sl_mult = stop_loss_atr_mult
@@ -58,7 +58,7 @@ class TripleBarrierLabeler:
 
         Expected input columns: ['close', 'high', 'low', 'atr' or 'atr_m1']
         Optional input column: ['spread']
-        Adds output columns: 
+        Adds output columns:
             - 'label': ActionType string value ('NO_TRADE', 'BUY_MARKET', 'SELL_MARKET')
             - 'is_eval_sample': Boolean flag indicating if the row was explicitly evaluated
             - 'is_purged': Boolean flag indicating if row was skipped due to embargo/stride
@@ -75,10 +75,14 @@ class TripleBarrierLabeler:
         atrs = df[atr_col].to_numpy().astype(np.float64, copy=False)
 
         has_spread = "spread" in df.columns
-        spreads = df["spread"].to_numpy().astype(np.float64, copy=False) if has_spread else np.full(len(df), self.friction_usd, dtype=np.float64)
+        spreads = (
+            df["spread"].to_numpy().astype(np.float64, copy=False)
+            if has_spread
+            else np.full(len(df), self.friction_usd, dtype=np.float64)
+        )
 
         n = len(df)
-        
+
         # Int8 Encoded Numerical Array (0=NO_TRADE, 1=BUY_MARKET, 2=SELL_MARKET)
         encoded_labels = np.zeros(n, dtype=np.int8)
         evaluated_mask = np.zeros(n, dtype=bool)
@@ -144,9 +148,11 @@ class TripleBarrierLabeler:
             for step in range(horizon):
                 h = future_highs[step]
                 l = future_lows[step]
-                
+
                 # Step-Dynamic Real-Time Spread Evaluation
-                step_spread = future_spreads[step] if not np.isnan(future_spreads[step]) else entry_spread
+                step_spread = (
+                    future_spreads[step] if not np.isnan(future_spreads[step]) else entry_spread
+                )
 
                 # Check Long Touches (Exit at Bid)
                 buy_hit_tp = h >= buy_tp_price
@@ -157,7 +163,12 @@ class TripleBarrierLabeler:
                 sell_hit_sl = (h + step_spread) >= sell_sl_price
 
                 # Neutralize Simultaneous Dual TP Spike (Eliminates Bullish Bias)
-                if (buy_hit_tp and sell_hit_tp) or (buy_hit_sl and sell_hit_sl) or (buy_hit_tp and buy_hit_sl) or (sell_hit_tp and sell_hit_sl):
+                if (
+                    (buy_hit_tp and sell_hit_tp)
+                    or (buy_hit_sl and sell_hit_sl)
+                    or (buy_hit_tp and buy_hit_sl)
+                    or (sell_hit_tp and sell_hit_sl)
+                ):
                     label_code = 0
                     exit_step = step + 1
                     break
@@ -191,10 +202,14 @@ class TripleBarrierLabeler:
                 max_buy_drawdown = max(0.0, buy_entry - np.min(future_lows))
                 max_sell_drawdown = max(0.0, np.max(future_highs) - sell_entry)
 
-                if net_buy_pnl > (atr * 0.50) and max_buy_drawdown <= (sl_dist * self.max_allowed_mae_ratio):
+                if net_buy_pnl > (atr * 0.50) and max_buy_drawdown <= (
+                    sl_dist * self.max_allowed_mae_ratio
+                ):
                     label_code = 1
                     exit_step = horizon
-                elif net_sell_pnl > (atr * 0.50) and max_sell_drawdown <= (sl_dist * self.max_allowed_mae_ratio):
+                elif net_sell_pnl > (atr * 0.50) and max_sell_drawdown <= (
+                    sl_dist * self.max_allowed_mae_ratio
+                ):
                     label_code = 2
                     exit_step = horizon
 
@@ -211,11 +226,14 @@ class TripleBarrierLabeler:
             i += min(step_advance, max(1, n - 1 - i))
 
         # Vectorized 3-Class String Mapping
-        label_lookup = np.array([
-            ActionType.NO_TRADE.value,    # 0
-            ActionType.BUY_MARKET.value,  # 1
-            ActionType.SELL_MARKET.value, # 2
-        ], dtype=object)
+        label_lookup = np.array(
+            [
+                ActionType.NO_TRADE.value,  # 0
+                ActionType.BUY_MARKET.value,  # 1
+                ActionType.SELL_MARKET.value,  # 2
+            ],
+            dtype=object,
+        )
 
         string_labels = label_lookup[encoded_labels]
         labels_series = pl.Series("label", string_labels)
@@ -239,8 +257,10 @@ class TripleBarrierLabeler:
             embargo_bars=self.embargo_bars,
         )
 
-        return df.with_columns([
-            labels_series,
-            eval_mask_series,
-            purged_mask_series,
-        ])
+        return df.with_columns(
+            [
+                labels_series,
+                eval_mask_series,
+                purged_mask_series,
+            ]
+        )

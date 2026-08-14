@@ -49,15 +49,6 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         secret_token: str = "default_local_secret",
         timeout_seconds: float = 3.0,
     ) -> None:
-        """
-        Initializes Remote Gateway Client configuration.
-
-        Args:
-            gateway_url: Base HTTP endpoint for the Windows Gateway service.
-            api_key: Client identification key.
-            secret_token: HMAC secret key for request signature generation.
-            timeout_seconds: Maximum network wait timeout for RPC calls.
-        """
         self._gateway_url = gateway_url.rstrip("/")
         self._api_key = api_key
         self._secret_token = secret_token
@@ -65,9 +56,7 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         self._is_connected = False
 
     def connect(self) -> bool:
-        """
-        Tests connection and measures round-trip ping time to remote Windows Gateway.
-        """
+        """Tests connection and measures round-trip ping time to remote Windows Gateway."""
         try:
             rtt_ms = self._sync_ping()
             self._is_connected = True
@@ -78,7 +67,11 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
             )
             return True
         except Exception as e:
-            logger.error("Connection failed to Remote MT5 Gateway", error=str(e), gateway_url=self._gateway_url)
+            logger.error(
+                "Connection failed to Remote MT5 Gateway",
+                error=str(e),
+                gateway_url=self._gateway_url,
+            )
             self._is_connected = False
             return False
 
@@ -151,9 +144,13 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
             flags=int(data.get("flags", 0)),
         )
 
-    def get_historical_bars(self, symbol: str, timeframe: str = "M1", count: int = 100) -> list[BarData]:
+    def get_historical_bars(
+        self, symbol: str, timeframe: str = "M1", count: int = 100
+    ) -> list[BarData]:
         """Fetches historical completed OHLC bars from remote gateway."""
-        res = self._send_request("GET_HISTORICAL_BARS", {"symbol": symbol, "timeframe": timeframe, "count": count})
+        res = self._send_request(
+            "GET_HISTORICAL_BARS", {"symbol": symbol, "timeframe": timeframe, "count": count}
+        )
         data_list = res.get("data", [])
 
         bars: list[BarData] = []
@@ -220,9 +217,17 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         success = res.get("status") == "SUCCESS"
 
         if success:
-            logger.info("Remote gateway executed order successfully", order_id=order.order_id, ticket=res.get("ticket"))
+            logger.info(
+                "Remote gateway executed order successfully",
+                order_id=order.order_id,
+                ticket=res.get("ticket"),
+            )
         else:
-            logger.error("Remote gateway order execution failed", order_id=order.order_id, reason=res.get("message"))
+            logger.error(
+                "Remote gateway order execution failed",
+                order_id=order.order_id,
+                reason=res.get("message"),
+            )
 
         return success
 
@@ -248,38 +253,24 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         return res.get("status") == "SUCCESS"
 
     def _send_request(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """
-        Sends an authenticated HMAC HTTP POST request to the remote gateway.
-        """
+        """Sends an authenticated HMAC HTTP POST request to the remote gateway."""
         url = f"{self._gateway_url}/api/v1/execute"
-        body_data = json.dumps({"action": action, "payload": payload}).encode("utf-8")
+        body_data = json.dumps({"action": action, "payload": payload}).encode()
 
         timestamp = str(int(time.time()))
-        timestamp = str(int(time.time()))
-        message_to_sign = f"{timestamp}.{body_data.decode('utf-8')}".encode()
+        message_to_sign = f"{timestamp}.".encode() + body_data
         signature = hmac.new(
-            self._secret_token.encode("utf-8"),
+            self._secret_token.encode(),
             msg=message_to_sign,
             digestmod=hashlib.sha256,
         ).hexdigest()
 
-        # Constant-time signature verification helper for incoming gateway validation
         headers = {
             "Content-Type": "application/json",
             "X-NSE-API-KEY": self._api_key,
             "X-NSE-TIMESTAMP": timestamp,
             "X-NSE-SIGNATURE": signature,
         }
-
-    def verify_request_signature(self, body_bytes: bytes, timestamp: str, incoming_signature: str) -> bool:
-        """Constant-time HMAC verification against side-channel timing attacks."""
-        message = f"{timestamp}.{body_bytes.decode('utf-8')}".encode()
-        expected = hmac.new(
-            self._secret_token.encode("utf-8"),
-            msg=message,
-            digestmod=hashlib.sha256,
-        ).hexdigest()
-        return hmac.compare_digest(expected, incoming_signature)
 
         req = urllib.request.Request(url, data=body_data, headers=headers, method="POST")
         try:
@@ -289,3 +280,15 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         except Exception as e:
             logger.error("Gateway RPC communication error", action=action, error=str(e))
             raise RuntimeError(f"Gateway Communication Error [{action}]: {e}") from e
+
+    def verify_request_signature(
+        self, body_bytes: bytes, timestamp: str, incoming_signature: str
+    ) -> bool:
+        """Constant-time HMAC verification against side-channel timing attacks."""
+        message = f"{timestamp}.".encode() + body_bytes
+        expected = hmac.new(
+            self._secret_token.encode(),
+            msg=message,
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(expected, incoming_signature)

@@ -1,16 +1,17 @@
+import json
 import os
 import sqlite3
-import json
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
 import pytest
 import torch
 
+from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.domain.models import TickData, TradeProposal
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.signals.policy import SignalPolicy
-from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
 
 def test_signal_pipeline_health_integration():
@@ -35,7 +36,9 @@ def test_signal_pipeline_health_integration():
     policy.algo_config.ai_zone_confidence_threshold = 0.60
 
     # Mock market tick and features
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.10, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.10, volume=1.0
+    )
     fv = FeatureVector(
         symbol="XAUUSD",
         timestamp_utc=tick.timestamp.isoformat(),
@@ -158,10 +161,13 @@ def test_signal_pipeline_health_integration():
     rejected_payload_raw = cursor.fetchone()[0]
     rejected_payload = json.loads(rejected_payload_raw)
 
-    assert "rejection_reason" in rejected_payload and rejected_payload["rejection_reason"] is not None, \
-        "Rejected signal must contain rejection_reason."
+    assert (
+        "rejection_reason" in rejected_payload and rejected_payload["rejection_reason"] is not None
+    ), "Rejected signal must contain rejection_reason."
     assert "risk_checks" in rejected_payload, "Payload must contain risk_checks."
-    assert rejected_payload["risk_checks"]["zone_quality"] is not None, "risk_checks must contain zone_quality."
+    assert rejected_payload["risk_checks"]["zone_quality"] is not None, (
+        "risk_checks must contain zone_quality."
+    )
 
     conn.close()
     print("All signal pipeline health integration verifications completed successfully!")

@@ -70,6 +70,8 @@
     <Compile Include="tests\__init__.py" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include=".github\" />
+    <Folder Include=".github\workflows\" />
     <Folder Include=".pytest_cache\" />
     <Folder Include=".pytest_cache\v\" />
     <Folder Include=".pytest_cache\v\cache\" />
@@ -124,6 +126,11 @@
     <Folder Include="Web\" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include=".github\dependabot.yml" />
+    <Content Include=".github\workflows\ci.yml" />
+    <Content Include=".github\workflows\docker.yml" />
+    <Content Include=".github\workflows\release.yml" />
+    <Content Include=".github\workflows\security.yml" />
     <Content Include=".pytest_cache\.gitignore" />
     <Content Include=".pytest_cache\CACHEDIR.TAG" />
     <Content Include=".pytest_cache\README.md" />

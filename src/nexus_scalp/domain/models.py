@@ -22,6 +22,7 @@ class TickData(BaseModel):
         - Volume must be non-negative.
         - Timestamps must be UTC timezone-aware.
     """
+
     model_config = ConfigDict(frozen=True, slots=True)
 
     symbol: str = Field(..., description="Financial instrument identifier, e.g., 'EURUSD'")
@@ -57,6 +58,7 @@ class SymbolInfo(BaseModel):
     """
     Metadata describing broker trading constraints and specifications for an instrument.
     """
+
     model_config = ConfigDict(frozen=True)
 
     symbol: str = Field(..., description="Symbol identifier")
@@ -67,15 +69,20 @@ class SymbolInfo(BaseModel):
     volume_min: float = Field(..., gt=0.0, description="Minimum allowed trade volume in lots")
     volume_max: float = Field(..., gt=0.0, description="Maximum allowed trade volume in lots")
     volume_step: float = Field(..., gt=0.0, description="Lot size step increment")
-    stops_level: int = Field(..., ge=0, description="Minimum stop loss / take profit distance in points")
+    stops_level: int = Field(
+        ..., ge=0, description="Minimum stop loss / take profit distance in points"
+    )
     freeze_level: int = Field(..., ge=0, description="Order modification freeze distance in points")
-    trade_contract_size: float = Field(..., gt=0.0, description="Trade contract size (e.g. 100,000 for standard forex lot)")
+    trade_contract_size: float = Field(
+        ..., gt=0.0, description="Trade contract size (e.g. 100,000 for standard forex lot)"
+    )
 
 
 class AccountInfo(BaseModel):
     """
     Snapshot of trading account balance, margin state, and equity.
     """
+
     model_config = ConfigDict(frozen=True)
 
     login: int = Field(..., description="Broker account login identifier")
@@ -100,6 +107,7 @@ class TradeProposal(BaseModel):
     This represents an execution intent proposal, which must be passed
     to the Risk Engine before being sent to the execution adapter.
     """
+
     model_config = ConfigDict(frozen=True)
 
     request_id: str = Field(..., description="Unique UUID tracing signal lifecycle")
@@ -113,41 +121,84 @@ class TradeProposal(BaseModel):
     risk_reward_ratio: float = Field(..., gt=0.0, description="Estimated risk to reward ratio")
     reason_code: str = Field(default="MODEL_SIGNAL", description="Explanatory flag for audit logs")
     ticket: int = Field(default=0, description="Optional broker position ticket")
-    volume: float | None = Field(default=None, description="Optional custom volume (e.g. for partial close)")
+    volume: float | None = Field(
+        default=None, description="Optional custom volume (e.g. for partial close)"
+    )
 
     # Diagnostic fields
-    model_action: str | None = Field(default=None, description="Original action proposed by model before filter checks")
+    model_action: str | None = Field(
+        default=None, description="Original action proposed by model before filter checks"
+    )
     buy_probability: float | None = Field(default=None, description="Model raw buy probability")
-    risk_checks: dict[str, Any] | None = Field(default=None, description="Detailed risk checks dict")
+    risk_checks: dict[str, Any] | None = Field(
+        default=None, description="Detailed risk checks dict"
+    )
     sell_probability: float | None = Field(default=None, description="Model raw sell probability")
-    no_trade_probability: float | None = Field(default=None, description="Model raw no trade probability")
+    no_trade_probability: float | None = Field(
+        default=None, description="Model raw no trade probability"
+    )
     regime: str | None = Field(default=None, description="Market microstructure regime")
-    regime_confidence: float | None = Field(default=None, description="Regime classification confidence")
-    risk_allowed: bool | None = Field(default=None, description="True if risk filter allowed the signal")
-    guardian_status: str | None = Field(default=None, description="Operational status of the regime guardian")
-    rejection_reason: str | None = Field(default=None, description="Detailed reason for signal rejection")
-    final_action: str | None = Field(default=None, description="Final action committed to execution")
-    execution_mode: str | None = Field(default=None, description="Execution path: STANDARD, SMC_GOD_MODE, PREDICTIVE_LIMIT, TICK_SWEEP")
+    regime_confidence: float | None = Field(
+        default=None, description="Regime classification confidence"
+    )
+    risk_allowed: bool | None = Field(
+        default=None, description="True if risk filter allowed the signal"
+    )
+    guardian_status: str | None = Field(
+        default=None, description="Operational status of the regime guardian"
+    )
+    rejection_reason: str | None = Field(
+        default=None, description="Detailed reason for signal rejection"
+    )
+    final_action: str | None = Field(
+        default=None, description="Final action committed to execution"
+    )
+    execution_mode: str | None = Field(
+        default=None,
+        description="Execution path: STANDARD, SMC_GOD_MODE, PREDICTIVE_LIMIT, TICK_SWEEP",
+    )
     override_reason: str | None = Field(default=None, description="Bypass or override reason")
-    decision_stage: str | None = Field(default=None, description="Stage where decision was made or blocked")
-    blocked_by: str | None = Field(default=None, description="Filter or rule that blocked the trade")
+    decision_stage: str | None = Field(
+        default=None, description="Stage where decision was made or blocked"
+    )
+    blocked_by: str | None = Field(
+        default=None, description="Filter or rule that blocked the trade"
+    )
     htf_score: float | None = Field(default=None, description="Higher timeframe alignment score")
     smc_score: float | None = Field(default=None, description="Smart Money Concepts score")
-    confidence_before_filters: float | None = Field(default=None, description="Confidence before filters applied")
-    confidence_after_filters: float | None = Field(default=None, description="Confidence after filters applied")
+    confidence_before_filters: float | None = Field(
+        default=None, description="Confidence before filters applied"
+    )
+    confidence_after_filters: float | None = Field(
+        default=None, description="Confidence after filters applied"
+    )
 
-    reversal_action: ActionType | None = Field(default=None, description="Directional action to dispatch after an AI reversal close")
-    is_ai_reversal: bool = Field(default=False, description="True when this proposal requests an AI position reversal")
+    reversal_action: ActionType | None = Field(
+        default=None, description="Directional action to dispatch after an AI reversal close"
+    )
+    is_ai_reversal: bool = Field(
+        default=False, description="True when this proposal requests an AI position reversal"
+    )
 
     @model_validator(mode="after")
     def validate_action_price_invariants(self) -> "TradeProposal":
         """Ensures logical price invariants hold based on proposed trade direction."""
-        if self.action in (ActionType.BUY, ActionType.BUY_MARKET, ActionType.BUY_LIMIT, ActionType.BUY_STOP):
+        if self.action in (
+            ActionType.BUY,
+            ActionType.BUY_MARKET,
+            ActionType.BUY_LIMIT,
+            ActionType.BUY_STOP,
+        ):
             if self.stop_loss >= self.proposed_entry:
                 raise ValueError("Buy proposed stop loss must be strictly below entry price")
             if self.take_profit <= self.proposed_entry:
                 raise ValueError("Buy proposed take profit must be strictly above entry price")
-        elif self.action in (ActionType.SELL, ActionType.SELL_MARKET, ActionType.SELL_LIMIT, ActionType.SELL_STOP):
+        elif self.action in (
+            ActionType.SELL,
+            ActionType.SELL_MARKET,
+            ActionType.SELL_LIMIT,
+            ActionType.SELL_STOP,
+        ):
             if self.stop_loss <= self.proposed_entry:
                 raise ValueError("Sell proposed stop loss must be strictly above entry price")
             if self.take_profit >= self.proposed_entry:
@@ -159,6 +210,7 @@ class TradeOrder(BaseModel):
     """
     Order execution request payload formatted for MT5 execution.
     """
+
     model_config = ConfigDict(frozen=True)
 
     order_id: str = Field(..., description="Internal tracking ID")
@@ -176,6 +228,7 @@ class Position(BaseModel):
     """
     Representation of an open position retrieved from MetaTrader 5.
     """
+
     model_config = ConfigDict(frozen=True)
 
     ticket: int = Field(..., description="Unique broker ticket identifier")

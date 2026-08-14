@@ -35,6 +35,7 @@ logger = get_logger("nexus_scalp.features.scalp_features")
 # HELPERS FOR MTF AGGREGATION & S/R DETECTION
 # ==============================================================================
 
+
 def aggregate_bars(m1_bars: list[BarData], period_minutes: int) -> list[BarData]:
     """
     Groups completed M1 bars into completed higher timeframe bars using absolute UTC minute bucket alignment.
@@ -62,32 +63,44 @@ def aggregate_bars(m1_bars: list[BarData], period_minutes: int) -> list[BarData]
             vol += bar.tick_volume
         else:
             tf_label = f"M{period_minutes}" if period_minutes < 60 else f"H{period_minutes // 60}"
-            aggregated.append(BarData(
-                symbol=bar.symbol,
-                timeframe=tf_label,
-                timestamp=current_bucket_start,
-                open=o, high=h, low=l, close=c,
-                tick_volume=vol,
-                is_complete=True
-            ))
+            aggregated.append(
+                BarData(
+                    symbol=bar.symbol,
+                    timeframe=tf_label,
+                    timestamp=current_bucket_start,
+                    open=o,
+                    high=h,
+                    low=l,
+                    close=c,
+                    tick_volume=vol,
+                    is_complete=True,
+                )
+            )
             current_bucket_start = bucket_timestamp
             o, h, l, c, vol = bar.open, bar.high, bar.low, bar.close, bar.tick_volume
 
     if current_bucket_start is not None:
         tf_label = f"M{period_minutes}" if period_minutes < 60 else f"H{period_minutes // 60}"
-        aggregated.append(BarData(
-            symbol=m1_bars[-1].symbol,
-            timeframe=tf_label,
-            timestamp=current_bucket_start,
-            open=o, high=h, low=l, close=c,
-            tick_volume=vol,
-            is_complete=True
-        ))
+        aggregated.append(
+            BarData(
+                symbol=m1_bars[-1].symbol,
+                timeframe=tf_label,
+                timestamp=current_bucket_start,
+                open=o,
+                high=h,
+                low=l,
+                close=c,
+                tick_volume=vol,
+                is_complete=True,
+            )
+        )
 
     return aggregated
 
 
-def find_support_resistance_levels(bars: list[BarData], window: int = 5) -> tuple[list[float], list[float]]:
+def find_support_resistance_levels(
+    bars: list[BarData], window: int = 5
+) -> tuple[list[float], list[float]]:
     """
     Finds Support (swing lows) and Resistance (swing highs) levels using fractal pivot windows.
     """
@@ -131,65 +144,68 @@ def find_support_resistance_levels(bars: list[BarData], window: int = 5) -> tupl
 # EXPLICIT 50D FEATURE MAPPING CONTRACT
 # ==============================================================================
 FEATURE_NAMES: tuple[str, ...] = (
-    "upper_wick_ratio",             # feat_0
-    "lower_wick_ratio",             # feat_1
-    "body_to_range_ratio",          # feat_2
-    "is_doji",                      # feat_3
-    "pinbar_sig",                   # feat_4
-    "engulfing_sig",                # feat_5
-    "close_location_value",         # feat_6
-    "consecutive_momentum_count",   # feat_7
-    "norm_displacement",            # feat_8
-    "rapid_reversal_spike_val",     # feat_9
-    "dist_to_swing_high_20",        # feat_10
-    "dist_to_swing_low_20",         # feat_11
-    "price_compression_flag_ratio", # feat_12
-    "extreme_sig",                  # feat_13
-    "stop_hunt_depth",              # feat_14
-    "liquidity_sweep_signal",       # feat_15
-    "session_tokyo",                # feat_16
-    "session_london",               # feat_17
-    "session_ny",                   # feat_18
-    "session_overlap_london_ny",    # feat_19
-    "lag_1_log_return",             # feat_20
-    "lag_2_log_return",             # feat_21
-    "lag_3_log_return",             # feat_22
-    "lag_1_atr_ratio",              # feat_23
-    "lag_1_volume_z",               # feat_24
-    "lag_1_clv",                    # feat_25
-    "fvg_sig",                      # feat_26
-    "order_block_type",             # feat_27
-    "choch_sig",                    # feat_28
-    "breakout_sig",                 # feat_29
-    "norm_tk_diff",                 # feat_30
-    "tk_cross_signal",              # feat_31
-    "kumo_sig",                     # feat_32
-    "norm_kumo_width",              # feat_33
-    "norm_rsi",                     # feat_34
-    "dist_to_ema_21",               # feat_35
-    "dist_to_ema_50",               # feat_36
-    "cross_asset_z_score",          # feat_37
-    "norm_dist_to_tenkan",          # feat_38
-    "norm_dist_to_kijun",           # feat_39
-    "htf_h4_trend",                 # feat_40 [NEW]
-    "htf_h1_momentum",              # feat_41 [NEW]
-    "htf_m30_structure",            # feat_42 [NEW]
-    "htf_m15_confirmation",         # feat_43 [NEW]
-    "support_zone_dist",            # feat_44 [NEW]
-    "resistance_zone_dist",         # feat_45 [NEW]
-    "feat_ob_valid_bos",            # feat_46 [NEW SMC]
-    "feat_ob_equilibrium_ratio",    # feat_47 [NEW SMC]
-    "feat_ob_liquidity_swept",      # feat_48 [NEW SMC]
+    "upper_wick_ratio",  # feat_0
+    "lower_wick_ratio",  # feat_1
+    "body_to_range_ratio",  # feat_2
+    "is_doji",  # feat_3
+    "pinbar_sig",  # feat_4
+    "engulfing_sig",  # feat_5
+    "close_location_value",  # feat_6
+    "consecutive_momentum_count",  # feat_7
+    "norm_displacement",  # feat_8
+    "rapid_reversal_spike_val",  # feat_9
+    "dist_to_swing_high_20",  # feat_10
+    "dist_to_swing_low_20",  # feat_11
+    "price_compression_flag_ratio",  # feat_12
+    "extreme_sig",  # feat_13
+    "stop_hunt_depth",  # feat_14
+    "liquidity_sweep_signal",  # feat_15
+    "session_tokyo",  # feat_16
+    "session_london",  # feat_17
+    "session_ny",  # feat_18
+    "session_overlap_london_ny",  # feat_19
+    "lag_1_log_return",  # feat_20
+    "lag_2_log_return",  # feat_21
+    "lag_3_log_return",  # feat_22
+    "lag_1_atr_ratio",  # feat_23
+    "lag_1_volume_z",  # feat_24
+    "lag_1_clv",  # feat_25
+    "fvg_sig",  # feat_26
+    "order_block_type",  # feat_27
+    "choch_sig",  # feat_28
+    "breakout_sig",  # feat_29
+    "norm_tk_diff",  # feat_30
+    "tk_cross_signal",  # feat_31
+    "kumo_sig",  # feat_32
+    "norm_kumo_width",  # feat_33
+    "norm_rsi",  # feat_34
+    "dist_to_ema_21",  # feat_35
+    "dist_to_ema_50",  # feat_36
+    "cross_asset_z_score",  # feat_37
+    "norm_dist_to_tenkan",  # feat_38
+    "norm_dist_to_kijun",  # feat_39
+    "htf_h4_trend",  # feat_40 [NEW]
+    "htf_h1_momentum",  # feat_41 [NEW]
+    "htf_m30_structure",  # feat_42 [NEW]
+    "htf_m15_confirmation",  # feat_43 [NEW]
+    "support_zone_dist",  # feat_44 [NEW]
+    "resistance_zone_dist",  # feat_45 [NEW]
+    "feat_ob_valid_bos",  # feat_46 [NEW SMC]
+    "feat_ob_equilibrium_ratio",  # feat_47 [NEW SMC]
+    "feat_ob_liquidity_swept",  # feat_48 [NEW SMC]
     "feat_ob_fib_50_60_alignment",  # feat_49 [NEW SMC]
 )
 
 NUM_FEATURES: int = len(FEATURE_NAMES)
 if NUM_FEATURES != 50:
-    raise RuntimeError(f"ScalpNet feature contract violation: expected 50 features, got {NUM_FEATURES}")
+    raise RuntimeError(
+        f"ScalpNet feature contract violation: expected 50 features, got {NUM_FEATURES}"
+    )
 
 
 class FeaturePipelineFrozenError(Exception):
     """Exception raised when feature pipeline fallback fails and freezes execution."""
+
     pass
 
 
@@ -198,41 +214,60 @@ class FeatureVector(BaseModel):
     Immutable domain model representing a single point-in-time snapshot of the market.
     Encompasses a full 50-dimensional Price Action & Multi-Timeframe feature matrix.
     """
+
     model_config = ConfigDict(frozen=True)
 
     symbol: str
     timestamp_utc: str
 
     # 1. Gold Micro Metrics & Volatility
-    live_tick_displacement: float = Field(..., description="Tick price distance from last closed bar")
+    live_tick_displacement: float = Field(
+        ..., description="Tick price distance from last closed bar"
+    )
     log_return_m1: float = Field(..., description="Log return of the last completed bar")
     atr_m1: float = Field(..., description="14-period Average True Range")
 
     # 2. Price Action & Candlestick Anatomy
-    upper_wick_ratio: float = Field(..., description="Upper wick length relative to bar range [0 to 1]")
-    lower_wick_ratio: float = Field(..., description="Lower wick length relative to bar range [0 to 1]")
+    upper_wick_ratio: float = Field(
+        ..., description="Upper wick length relative to bar range [0 to 1]"
+    )
+    lower_wick_ratio: float = Field(
+        ..., description="Lower wick length relative to bar range [0 to 1]"
+    )
     body_to_range_ratio: float = Field(..., description="Body size relative to bar range [0 to 1]")
     is_doji: bool = Field(..., description="Doji candle pattern flag")
     is_hammer_pinbar: bool = Field(..., description="Bullish Hammer / Pinbar pattern flag")
     is_shooting_star: bool = Field(..., description="Bearish Shooting Star pattern flag")
     is_engulfing_bullish: bool = Field(..., description="Bullish Engulfing candle pattern flag")
     is_engulfing_bearish: bool = Field(..., description="Bearish Engulfing candle pattern flag")
-    close_location_value: float = Field(..., description="CLV representing close location [-1 to +1]")
-    consecutive_momentum_count: float = Field(..., description="Normalized count of consecutive same-color bars")
+    close_location_value: float = Field(
+        ..., description="CLV representing close location [-1 to +1]"
+    )
+    consecutive_momentum_count: float = Field(
+        ..., description="Normalized count of consecutive same-color bars"
+    )
 
     # 3. Swing Structure & Chart Patterns
-    dist_to_swing_high_20: float = Field(..., description="Normalized distance to 20-bar swing high")
+    dist_to_swing_high_20: float = Field(
+        ..., description="Normalized distance to 20-bar swing high"
+    )
     dist_to_swing_low_20: float = Field(..., description="Normalized distance to 20-bar swing low")
-    price_compression_flag_ratio: float = Field(..., description="Ratio of 5-bar range to 20-bar range (Flag pattern)")
+    price_compression_flag_ratio: float = Field(
+        ..., description="Ratio of 5-bar range to 20-bar range (Flag pattern)"
+    )
     is_at_extreme_high: bool = Field(..., description="Price is in top 5% of 50-bar range")
     is_at_extreme_low: bool = Field(..., description="Price is in bottom 5% of 50-bar range")
-    stop_hunt_depth: float = Field(..., description="Normalized penetration depth during liquidity sweep")
+    stop_hunt_depth: float = Field(
+        ..., description="Normalized penetration depth during liquidity sweep"
+    )
 
     # 4. Market Sessions & Time-of-Day
     session_tokyo: bool = Field(..., description="Active Tokyo Trading Session flag")
     session_london: bool = Field(..., description="Active London Trading Session flag")
     session_ny: bool = Field(..., description="Active New York Trading Session flag")
-    session_overlap_london_ny: bool = Field(..., description="London / New York Overlap Peak Liquidity flag")
+    session_overlap_london_ny: bool = Field(
+        ..., description="London / New York Overlap Peak Liquidity flag"
+    )
 
     # 5. Time-Series Lag Features
     lag_1_log_return: float
@@ -272,22 +307,38 @@ class FeatureVector(BaseModel):
     cross_asset_z_score: float
 
     # 9. True Multi-Timeframe Context Features [NEW 10 Indicators]
-    htf_h4_trend: float = Field(..., description="H4 trend direction: +1 bullish, -1 bearish, 0 flat")
+    htf_h4_trend: float = Field(
+        ..., description="H4 trend direction: +1 bullish, -1 bearish, 0 flat"
+    )
     htf_h1_momentum: float = Field(..., description="H1 momentum roc / atr ratio")
     htf_m30_structure: float = Field(..., description="M30 structure vs short ema")
     htf_m15_confirmation: float = Field(..., description="M15 trend confirmation signal")
-    support_zone_dist: float = Field(..., description="Distance to nearest significant support level")
-    resistance_zone_dist: float = Field(..., description="Distance to nearest significant resistance level")
+    support_zone_dist: float = Field(
+        ..., description="Distance to nearest significant support level"
+    )
+    resistance_zone_dist: float = Field(
+        ..., description="Distance to nearest significant resistance level"
+    )
     trend_strength: float = Field(..., description="Aggregated trend direction across timeframes")
-    consolidation_ratio: float = Field(..., description="Large window consolidation compression factor")
+    consolidation_ratio: float = Field(
+        ..., description="Large window consolidation compression factor"
+    )
     htf_h1_atr_ratio: float = Field(..., description="H1 ATR to M1 ATR volatility ratio")
     htf_h4_atr_ratio: float = Field(..., description="H4 ATR to M1 ATR volatility ratio")
 
     # 10. Institutional OB Validation SMC Features
-    feat_ob_valid_bos: float = Field(0.0, description="Binary flag (1/0) indicating OB created a confirmed BOS")
-    feat_ob_equilibrium_ratio: float = Field(0.0, description="Position of OB relative to 50% impulse level")
-    feat_ob_liquidity_swept: float = Field(0.0, description="Binary flag (1/0) indicating liquidity sweep presence")
-    feat_ob_fib_50_60_alignment: float = Field(0.0, description="Proximity of OB to 50%-60% Fibonacci retracement of current leg")
+    feat_ob_valid_bos: float = Field(
+        0.0, description="Binary flag (1/0) indicating OB created a confirmed BOS"
+    )
+    feat_ob_equilibrium_ratio: float = Field(
+        0.0, description="Position of OB relative to 50% impulse level"
+    )
+    feat_ob_liquidity_swept: float = Field(
+        0.0, description="Binary flag (1/0) indicating liquidity sweep presence"
+    )
+    feat_ob_fib_50_60_alignment: float = Field(
+        0.0, description="Proximity of OB to 50%-60% Fibonacci retracement of current leg"
+    )
 
     def to_tensor_input(self) -> list[float]:
         """
@@ -296,7 +347,7 @@ class FeatureVector(BaseModel):
         Strictly enforces the FEATURE_NAMES contract.
         """
         safe_atr = max(self.atr_m1, 0.20)
-        
+
         norm_displacement = self.live_tick_displacement / safe_atr
         norm_rsi = (self.rsi_14 - 50.0) / 16.66
         norm_tk_diff = (self.tenkan_sen - self.kijun_sen) / safe_atr
@@ -309,9 +360,11 @@ class FeatureVector(BaseModel):
         # Deep PyTorch Neural Integration: Use normalized continuous zone quality as feat_zone_quality (feat_26)
         fvg_sig = self.fvg_depth
         choch_sig = 1.0 if self.choch_bullish else (-1.0 if self.choch_bearish else 0.0)
-        breakout_sig = 1.0 if self.broke_previous_high else (-1.0 if self.broke_previous_low else 0.0)
+        breakout_sig = (
+            1.0 if self.broke_previous_high else (-1.0 if self.broke_previous_low else 0.0)
+        )
         extreme_sig = 1.0 if self.is_at_extreme_high else (-1.0 if self.is_at_extreme_low else 0.0)
-        
+
         if self.is_hammer_pinbar:
             pinbar_sig = float(min(2.0, self.lower_wick_ratio * 2.0))
         elif self.is_shooting_star:
@@ -338,7 +391,6 @@ class FeatureVector(BaseModel):
             self.consecutive_momentum_count,
             norm_displacement,
             self.rapid_reversal_spike_val,
-
             # feat_10 .. feat_15
             self.dist_to_swing_high_20,
             self.dist_to_swing_low_20,
@@ -346,13 +398,11 @@ class FeatureVector(BaseModel):
             extreme_sig,
             self.stop_hunt_depth,
             float(self.liquidity_sweep_signal),
-
             # feat_16 .. feat_19
             1.0 if self.session_tokyo else 0.0,
             1.0 if self.session_london else 0.0,
             1.0 if self.session_ny else 0.0,
             1.0 if self.session_overlap_london_ny else 0.0,
-
             # feat_20 .. feat_25
             self.lag_1_log_return * 100.0,
             self.lag_2_log_return * 100.0,
@@ -360,7 +410,6 @@ class FeatureVector(BaseModel):
             self.lag_1_atr_ratio,
             self.lag_1_volume_z,
             self.lag_1_clv,
-
             # feat_26 .. feat_32
             fvg_sig,  # mapped to feat_zone_quality
             self.ob_strength,  # mapped to feat_ob_strength
@@ -369,7 +418,6 @@ class FeatureVector(BaseModel):
             norm_tk_diff,
             float(self.tk_cross_signal),
             kumo_sig,
-
             # feat_33 .. feat_39
             norm_kumo_width,
             norm_rsi,
@@ -378,7 +426,6 @@ class FeatureVector(BaseModel):
             self.cross_asset_z_score,
             norm_dist_to_tenkan,
             norm_dist_to_kijun,
-
             # feat_40 .. feat_49 [NEW MULTI-TIMEFRAME INTEL]
             self.htf_h4_trend,
             self.htf_h1_momentum,
@@ -446,11 +493,11 @@ class ScalpFeatureEngine:
         return float(ema)
 
     def compute_from_bars(
-        self, 
+        self,
         completed_bars: list[BarData],
         current_tick: TickData,
         benchmark_bars: list[float] | None = None,
-        current_benchmark: float | None = None
+        current_benchmark: float | None = None,
     ) -> FeatureVector:
         """
         Hot-path execution computing 50D master feature tensor directly from recent history.
@@ -497,8 +544,12 @@ class ScalpFeatureEngine:
         body_to_range_ratio = float(body_size / bar_range)
 
         is_doji = bool(body_to_range_ratio <= 0.12)
-        is_hammer_pinbar = bool(lower_wick_ratio >= 0.55 and body_top >= (highs[-1] - bar_range * 0.35))
-        is_shooting_star = bool(upper_wick_ratio >= 0.55 and body_bottom <= (lows[-1] + bar_range * 0.35))
+        is_hammer_pinbar = bool(
+            lower_wick_ratio >= 0.55 and body_top >= (highs[-1] - bar_range * 0.35)
+        )
+        is_shooting_star = bool(
+            upper_wick_ratio >= 0.55 and body_bottom <= (lows[-1] + bar_range * 0.35)
+        )
 
         is_engulfing_bullish = bool(
             closes[-2] < opens[-2]
@@ -558,7 +609,11 @@ class ScalpFeatureEngine:
             stop_hunt_depth = float((highs[-1] - recent_high_10) / safe_atr)
 
         # 4. Group 3: Market Sessions & Time-of-Day
-        dt_utc = current_tick.timestamp.astimezone(UTC) if current_tick.timestamp.tzinfo else current_tick.timestamp.replace(tzinfo=UTC)
+        dt_utc = (
+            current_tick.timestamp.astimezone(UTC)
+            if current_tick.timestamp.tzinfo
+            else current_tick.timestamp.replace(tzinfo=UTC)
+        )
         hour = dt_utc.hour
 
         session_tokyo = bool(0 <= hour < 8)
@@ -584,7 +639,11 @@ class ScalpFeatureEngine:
         # 6. Group 5: ICT Signals & Microstructure
         fvg_bullish = bool((lows[-1] - highs[-3]) > (safe_atr * 0.20))
         fvg_bearish = bool((lows[-3] - highs[-1]) > (safe_atr * 0.20))
-        fvg_depth = float((lows[-1] - highs[-3]) / safe_atr) if fvg_bullish else (-float((lows[-3] - highs[-1]) / safe_atr) if fvg_bearish else 0.0)
+        fvg_depth = (
+            float((lows[-1] - highs[-3]) / safe_atr)
+            if fvg_bullish
+            else (-float((lows[-3] - highs[-1]) / safe_atr) if fvg_bearish else 0.0)
+        )
 
         order_block_type = 0
         if closes[-1] > highs[-2] and closes[-2] < opens[-2]:
@@ -596,7 +655,7 @@ class ScalpFeatureEngine:
         # True Exponential Moving Averages
         ema_20_val = self._compute_ema(closes[-20:], 20)
         ema_50_val = self._compute_ema(closes[-50:], 50)
-        
+
         is_downtrend = ema_20_val < ema_50_val
         is_uptrend = ema_20_val > ema_50_val
 
@@ -609,7 +668,14 @@ class ScalpFeatureEngine:
         broke_prev_high = bool(mid_price > highs[-1])
         broke_prev_low = bool(mid_price < lows[-1])
 
-        rapid_reversal_spike_val = 1.0 if (abs(live_tick_displacement) > (safe_atr * 0.6) and (live_tick_displacement * log_ret_m1) < 0) else 0.0
+        rapid_reversal_spike_val = (
+            1.0
+            if (
+                abs(live_tick_displacement) > (safe_atr * 0.6)
+                and (live_tick_displacement * log_ret_m1) < 0
+            )
+            else 0.0
+        )
 
         # 7. Group 6: Ichimoku Kinko Hyo
         tenkan_sen = float((np.max(highs[-9:]) + np.min(lows[-9:])) / 2.0)
@@ -687,8 +753,16 @@ class ScalpFeatureEngine:
         if len(m15_bars) >= 2:
             m15_last = m15_bars[-1]
             m15_prev = m15_bars[-2]
-            m15_bull_engulf = (m15_last.close > m15_last.open) and (m15_prev.close < m15_prev.open) and (m15_last.close >= m15_prev.open)
-            m15_bear_engulf = (m15_last.close < m15_last.open) and (m15_prev.close > m15_prev.open) and (m15_last.close <= m15_prev.open)
+            m15_bull_engulf = (
+                (m15_last.close > m15_last.open)
+                and (m15_prev.close < m15_prev.open)
+                and (m15_last.close >= m15_prev.open)
+            )
+            m15_bear_engulf = (
+                (m15_last.close < m15_last.open)
+                and (m15_prev.close > m15_prev.open)
+                and (m15_last.close <= m15_prev.open)
+            )
             if m15_bull_engulf:
                 htf_m15_confirmation = 1.0
             elif m15_bear_engulf:
@@ -765,8 +839,8 @@ class ScalpFeatureEngine:
         swing_highs = []
         swing_lows = []
         for i in range(5, len(completed_bars) - 5):
-            window_highs = [b.high for b in completed_bars[i-5 : i+6]]
-            window_lows = [b.low for b in completed_bars[i-5 : i+6]]
+            window_highs = [b.high for b in completed_bars[i - 5 : i + 6]]
+            window_lows = [b.low for b in completed_bars[i - 5 : i + 6]]
             if completed_bars[i].high == max(window_highs):
                 swing_highs.append((i, completed_bars[i].high))
             if completed_bars[i].low == min(window_lows):
@@ -777,15 +851,17 @@ class ScalpFeatureEngine:
         if not swing_lows:
             swing_lows = [(len(completed_bars) - 25, float(np.min(lows)))]
 
-        last_sh_idx, last_sh_val = swing_highs[-1]
-        last_sl_idx, last_sl_val = swing_lows[-1]
+        _last_sh_idx, last_sh_val = swing_highs[-1]
+        _last_sl_idx, last_sl_val = swing_lows[-1]
 
         # 2. 50% Impulse Equilibrium
-        equilibrium_50 = last_sl_val + 0.50 * (last_sh_val - last_sl_val)
+        last_sl_val + 0.50 * (last_sh_val - last_sl_val)
 
         # 3. OB calculations
         ob_price = (highs[-2] + lows[-2]) / 2.0
-        ob_equilibrium_ratio = float(np.clip((ob_price - last_sl_val) / (last_sh_val - last_sl_val + 1e-8), 0.0, 1.0))
+        ob_equilibrium_ratio = float(
+            np.clip((ob_price - last_sl_val) / (last_sh_val - last_sl_val + 1e-8), 0.0, 1.0)
+        )
 
         # 4. BOS Validation (Break of Structure)
         feat_ob_valid_bos = 0.0

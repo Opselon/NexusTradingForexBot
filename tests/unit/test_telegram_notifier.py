@@ -1,4 +1,3 @@
-# ruff: noqa: PLR2004, E501
 """
 Unit Tests - Production Hardening & Integration of TelegramNotifier
 ===================================================================
@@ -40,7 +39,9 @@ def notifier() -> TelegramNotifier:
 
 
 @patch("urllib.request.urlopen")
-def test_telegram_notifier_send_success(mock_urlopen: MagicMock, notifier: TelegramNotifier) -> None:
+def test_telegram_notifier_send_success(
+    mock_urlopen: MagicMock, notifier: TelegramNotifier
+) -> None:
     """Verifies that a successful response from Telegram returns the message ID."""
     mock_resp = MagicMock()
     mock_resp.status = 200
@@ -52,7 +53,9 @@ def test_telegram_notifier_send_success(mock_urlopen: MagicMock, notifier: Teleg
 
 
 @patch("urllib.request.urlopen")
-def test_telegram_notifier_deduplication(mock_urlopen: MagicMock, notifier: TelegramNotifier) -> None:
+def test_telegram_notifier_deduplication(
+    mock_urlopen: MagicMock, notifier: TelegramNotifier
+) -> None:
     """Verifies that duplicate messages are suppressed within the deduplication window."""
     mock_resp = MagicMock()
     mock_resp.status = 200
@@ -69,14 +72,22 @@ def test_telegram_notifier_deduplication(mock_urlopen: MagicMock, notifier: Tele
 
 
 @patch("urllib.request.urlopen")
-def test_telegram_notifier_rate_limiting(mock_urlopen: MagicMock, notifier: TelegramNotifier) -> None:
+def test_telegram_notifier_rate_limiting(
+    mock_urlopen: MagicMock, notifier: TelegramNotifier
+) -> None:
     """Verifies that messages exceeding the rate limit are suppressed."""
     mock_resp = MagicMock()
     mock_resp.status = 200
     mock_resp.read.return_value = b'{"ok": true, "result": {"message_id": 202}}'
     mock_urlopen.return_value.__enter__.return_value = mock_resp
 
-    messages = ["Alpha Message", "Beta Message", "Gamma Message", "Delta Message", "Epsilon Message"]
+    messages = [
+        "Alpha Message",
+        "Beta Message",
+        "Gamma Message",
+        "Delta Message",
+        "Epsilon Message",
+    ]
     # Send 5 messages (rate_limit is 15 in this setup)
     for msg in messages:
         msg_id = notifier.send(msg)
@@ -84,8 +95,11 @@ def test_telegram_notifier_rate_limiting(mock_urlopen: MagicMock, notifier: Tele
 
 
 @patch("urllib.request.urlopen")
-def test_telegram_notifier_queue_capacity_limit(mock_urlopen: MagicMock, notifier: TelegramNotifier) -> None:
+def test_telegram_notifier_queue_capacity_limit(
+    mock_urlopen: MagicMock, notifier: TelegramNotifier
+) -> None:
     """Verifies that lower-severity messages are dropped when queue capacity is reached."""
+
     # We will block urllib to simulate high latency and fill the queue
     def slow_urlopen(*args, **kwargs):  # type: ignore[no-untyped-def]
         time.sleep(0.5)
@@ -97,6 +111,7 @@ def test_telegram_notifier_queue_capacity_limit(mock_urlopen: MagicMock, notifie
     mock_urlopen.side_effect = slow_urlopen
 
     callbacks_received: list[int | None] = []
+
     def cb(msg_id: int | None) -> None:
         callbacks_received.append(msg_id)
 
@@ -125,7 +140,9 @@ def test_telegram_notifier_html_escaping_and_truncation(notifier: TelegramNotifi
 
 
 @patch("urllib.request.urlopen")
-def test_telegram_notifier_asynchronous_callback(mock_urlopen: MagicMock, notifier: TelegramNotifier) -> None:
+def test_telegram_notifier_asynchronous_callback(
+    mock_urlopen: MagicMock, notifier: TelegramNotifier
+) -> None:
     """Verifies that passing a callback delivers results asynchronously without blocking."""
     mock_resp = MagicMock()
     mock_resp.status = 200
@@ -154,7 +171,9 @@ def test_telegram_notifier_asynchronous_callback(mock_urlopen: MagicMock, notifi
 
 
 @patch("urllib.request.urlopen")
-def test_order_manager_telegram_thread_replies(mock_urlopen: MagicMock, notifier: TelegramNotifier) -> None:
+def test_order_manager_telegram_thread_replies(
+    mock_urlopen: MagicMock, notifier: TelegramNotifier
+) -> None:
     """Verifies OrderLifecycleManager maps order messages and sends thread replies."""
     mock_resp = MagicMock()
     mock_resp.status = 200
@@ -184,7 +203,9 @@ def test_order_manager_telegram_thread_replies(mock_urlopen: MagicMock, notifier
     manager.register_order_message(order_id="uuid-1", message_id=888)
 
     # 2. Call manage_active_positions to trigger ticket-message association
-    tick = TickData(symbol="XAUUSD", timestamp=time_from_str("2026-01-01T12:00:00Z"), bid=1951.0, ask=1951.2)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=time_from_str("2026-01-01T12:00:00Z"), bid=1951.0, ask=1951.2
+    )
     positions = manager.manage_active_positions(symbol="XAUUSD", current_tick=tick)
 
     # Verify position is monitored and the ticket was associated with the message ID
@@ -199,7 +220,12 @@ def test_order_manager_telegram_thread_replies(mock_urlopen: MagicMock, notifier
         # Trigger modify (advanced trailing stop threshold reached)
         manager.manage_active_positions(
             symbol="XAUUSD",
-            current_tick=TickData(symbol="XAUUSD", timestamp=time_from_str("2026-01-01T12:01:00Z"), bid=1953.0, ask=1953.2),
+            current_tick=TickData(
+                symbol="XAUUSD",
+                timestamp=time_from_str("2026-01-01T12:01:00Z"),
+                bid=1953.0,
+                ask=1953.2,
+            ),
         )
         assert spy_send.called
         kwargs = spy_send.call_args[1]
@@ -207,7 +233,9 @@ def test_order_manager_telegram_thread_replies(mock_urlopen: MagicMock, notifier
 
 
 @patch("urllib.request.urlopen")
-def test_order_manager_extended_notifications(mock_urlopen: MagicMock, notifier: TelegramNotifier) -> None:
+def test_order_manager_extended_notifications(
+    mock_urlopen: MagicMock, notifier: TelegramNotifier
+) -> None:
     """Verifies that extended lifecycle events (TP touched, SL touched, manual close) are dispatched correctly."""
     mock_resp = MagicMock()
     mock_resp.status = 200

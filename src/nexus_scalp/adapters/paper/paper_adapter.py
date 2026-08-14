@@ -1,7 +1,7 @@
 """
 Paper Trading Simulation Adapter
 ================================
-Simulates real-time market tick generation, account balance updates, 
+Simulates real-time market tick generation, account balance updates,
 and instant simulated order executions without requiring an active MT5 terminal process.
 """
 
@@ -149,7 +149,12 @@ class PaperMT5Adapter(IMT5Port):
                         )
                         self._positions.remove(p)
                         self._positions.append(new_pos)
-                        logger.info("PAPER POSITION PARTIALLY CLOSED", ticket=ticket, closed_vol=volume, remaining_vol=new_pos.volume)
+                        logger.info(
+                            "PAPER POSITION PARTIALLY CLOSED",
+                            ticket=ticket,
+                            closed_vol=volume,
+                            remaining_vol=new_pos.volume,
+                        )
                         return True
         self._positions = [p for p in self._positions if p.ticket != ticket]
         logger.info("PAPER POSITION CLOSED", ticket=ticket)

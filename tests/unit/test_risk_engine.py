@@ -7,6 +7,7 @@ free-margin clamps, and boundary/safety protection rules.
 
 import math
 from datetime import UTC, datetime
+
 import pytest
 
 from nexus_scalp.configuration.config import RiskConfig
@@ -34,8 +35,28 @@ def test_risk_engine_kill_switch_blocks_proposal() -> None:
         risk_reward_ratio=1.5,
     )
 
-    account = AccountInfo(login=123, trade_mode=0, leverage=100, balance=10000.0, equity=10000.0, margin=0.0, margin_free=10000.0)
-    symbol_info = SymbolInfo(symbol="EURUSD", digits=5, point=0.00001, tick_size=0.00001, tick_value=1.0, volume_min=0.01, volume_max=100.0, volume_step=0.01, stops_level=10, freeze_level=0, trade_contract_size=100000.0)
+    account = AccountInfo(
+        login=123,
+        trade_mode=0,
+        leverage=100,
+        balance=10000.0,
+        equity=10000.0,
+        margin=0.0,
+        margin_free=10000.0,
+    )
+    symbol_info = SymbolInfo(
+        symbol="EURUSD",
+        digits=5,
+        point=0.00001,
+        tick_size=0.00001,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        stops_level=10,
+        freeze_level=0,
+        trade_contract_size=100000.0,
+    )
     tick = TickData(symbol="EURUSD", timestamp=now, bid=1.0850, ask=1.0851)
 
     order = engine.evaluate_proposal(proposal, account, symbol_info, [], tick)
@@ -61,7 +82,7 @@ def test_xauusd_dynamic_risk_engine_matrix() -> None:
         volume_step=0.01,
         stops_level=10,
         freeze_level=0,
-        trade_contract_size=100.0
+        trade_contract_size=100.0,
     )
 
     # Test cases: (Equity, Expected Volume, Expected Reason)
@@ -69,14 +90,18 @@ def test_xauusd_dynamic_risk_engine_matrix() -> None:
         (10.0, 0.01, "MICRO_ACCOUNT_MIN_LOT_EXCEPTION"),
         (20.0, 0.01, "MICRO_ACCOUNT_MIN_LOT_EXCEPTION"),
         (50.0, 0.0, "INSUFFICIENT_EQUITY_FOR_MIN_LOT"),
-        (100.0, 0.0, "INSUFFICIENT_EQUITY_FOR_MIN_LOT"),  # Raw = 1.0 / (2 * 100) = 0.005 -> step 0.01 floor is 0.0
-        (500.0, 0.02, "SUCCESS"),                      # Raw = 5.0 / 200 = 0.025 -> floor 0.02
-        (1000.0, 0.05, "SUCCESS"),                     # Raw = 10.0 / 200 = 0.05
-        (10000.0, 0.50, "SUCCESS"),                   # Raw = 100.0 / 200 = 0.50
-        (47000.0, 2.35, "SUCCESS"),                   # Raw = 470.0 / 200 = 2.35
-        (100000.0, 5.00, "SUCCESS"),                  # Raw = 1000.0 / 200 = 5.00
-        (500000.0, 10.0, "SUCCESS"),                  # Raw = 5000.0 / 200 = 25.0 -> Capped to 10.0 tier limit
-        (1000000.0, 10.0, "SUCCESS"),                 # Raw = 10000.0 / 200 = 50.0 -> Capped to 10.0 tier limit
+        (
+            100.0,
+            0.0,
+            "INSUFFICIENT_EQUITY_FOR_MIN_LOT",
+        ),  # Raw = 1.0 / (2 * 100) = 0.005 -> step 0.01 floor is 0.0
+        (500.0, 0.02, "SUCCESS"),  # Raw = 5.0 / 200 = 0.025 -> floor 0.02
+        (1000.0, 0.05, "SUCCESS"),  # Raw = 10.0 / 200 = 0.05
+        (10000.0, 0.50, "SUCCESS"),  # Raw = 100.0 / 200 = 0.50
+        (47000.0, 2.35, "SUCCESS"),  # Raw = 470.0 / 200 = 2.35
+        (100000.0, 5.00, "SUCCESS"),  # Raw = 1000.0 / 200 = 5.00
+        (500000.0, 10.0, "SUCCESS"),  # Raw = 5000.0 / 200 = 25.0 -> Capped to 10.0 tier limit
+        (1000000.0, 10.0, "SUCCESS"),  # Raw = 10000.0 / 200 = 50.0 -> Capped to 10.0 tier limit
     ]
 
     for equity, expected_vol, expected_reason in matrix:
@@ -88,17 +113,17 @@ def test_xauusd_dynamic_risk_engine_matrix() -> None:
             equity=equity,
             margin=0.0,
             margin_free=equity * 2.0,  # Ensure free margin isn't the limiting factor
-            currency="USD"
+            currency="USD",
         )
         volume, reason = engine.calculate_dynamic_volume(
-            entry=2000.0,
-            sl=1998.0,
-            account=account,
-            symbol_info=symbol_info,
-            risk_pct=1.0
+            entry=2000.0, sl=1998.0, account=account, symbol_info=symbol_info, risk_pct=1.0
         )
-        assert volume == expected_vol, f"Failed for equity {equity}: expected {expected_vol}, got {volume}"
-        assert reason == expected_reason, f"Failed for equity {equity}: expected {expected_reason}, got {reason}"
+        assert volume == expected_vol, (
+            f"Failed for equity {equity}: expected {expected_vol}, got {volume}"
+        )
+        assert reason == expected_reason, (
+            f"Failed for equity {equity}: expected {expected_reason}, got {reason}"
+        )
 
 
 def test_stop_loss_scaling() -> None:
@@ -119,7 +144,7 @@ def test_stop_loss_scaling() -> None:
         equity=10000.0,
         margin=0.0,
         margin_free=20000.0,
-        currency="USD"
+        currency="USD",
     )
 
     symbol_info = SymbolInfo(
@@ -133,32 +158,34 @@ def test_stop_loss_scaling() -> None:
         volume_step=0.01,
         stops_level=10,
         freeze_level=0,
-        trade_contract_size=100.0
+        trade_contract_size=100.0,
     )
 
     # Distances to test
     sl_distances = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
-    previous_volume = float('inf')
+    previous_volume = float("inf")
 
     for dist in sl_distances:
         entry = 2000.0
         sl = entry - dist
         volume, reason = engine.calculate_dynamic_volume(
-            entry=entry,
-            sl=sl,
-            account=account,
-            symbol_info=symbol_info,
-            risk_pct=1.0
+            entry=entry, sl=sl, account=account, symbol_info=symbol_info, risk_pct=1.0
         )
 
-        assert volume < previous_volume, f"Failed scaling for SL distance {dist}: volume {volume} is not smaller than previous {previous_volume}"
+        assert volume < previous_volume, (
+            f"Failed scaling for SL distance {dist}: volume {volume} is not smaller than previous {previous_volume}"
+        )
         previous_volume = volume
 
         # Monetary risk should be approximately $100 (1% of 10000)
         actual_loss = volume * dist * symbol_info.trade_contract_size
-        assert actual_loss <= 100.0, f"Monetary risk exceeded configured percentage: got {actual_loss} USD"
+        assert actual_loss <= 100.0, (
+            f"Monetary risk exceeded configured percentage: got {actual_loss} USD"
+        )
         # Tolerance check for flooring
-        assert actual_loss >= 100.0 - (symbol_info.volume_step * dist * symbol_info.trade_contract_size), "Under-risked excessively"
+        assert actual_loss >= 100.0 - (
+            symbol_info.volume_step * dist * symbol_info.trade_contract_size
+        ), "Under-risked excessively"
 
 
 def test_equity_scaling() -> None:
@@ -180,7 +207,7 @@ def test_equity_scaling() -> None:
         volume_step=0.01,
         stops_level=10,
         freeze_level=0,
-        trade_contract_size=100.0
+        trade_contract_size=100.0,
     )
 
     equities = [100.0, 1000.0, 10000.0, 100000.0, 1000000.0]
@@ -196,14 +223,14 @@ def test_equity_scaling() -> None:
             equity=equity,
             margin=0.0,
             margin_free=equity * 2.0,
-            currency="USD"
+            currency="USD",
         )
         volume, reason = engine.calculate_dynamic_volume(
             entry=2000.0,
-            sl=1999.50, # Tight SL
+            sl=1999.50,  # Tight SL
             account=account,
             symbol_info=symbol_info,
-            risk_pct=1.0
+            risk_pct=1.0,
         )
         volumes.append(volume)
 
@@ -237,7 +264,7 @@ def test_risk_invariance() -> None:
         equity=47000.0,
         margin=0.0,
         margin_free=94000.0,
-        currency="USD"
+        currency="USD",
     )
 
     symbol_info = SymbolInfo(
@@ -251,17 +278,13 @@ def test_risk_invariance() -> None:
         volume_step=0.01,
         stops_level=10,
         freeze_level=0,
-        trade_contract_size=100.0
+        trade_contract_size=100.0,
     )
 
     entry = 2000.0
     sl = 1995.0
     volume, reason = engine.calculate_dynamic_volume(
-        entry=entry,
-        sl=sl,
-        account=account,
-        symbol_info=symbol_info,
-        risk_pct=1.5
+        entry=entry, sl=sl, account=account, symbol_info=symbol_info, risk_pct=1.5
     )
 
     # Expected risk: 47000 * 1.5% = 705.0 USD
@@ -287,8 +310,8 @@ def test_free_margin_protection() -> None:
         balance=10000.0,
         equity=10000.0,
         margin=0.0,
-        margin_free=100.0, # extremely low free margin
-        currency="USD"
+        margin_free=100.0,  # extremely low free margin
+        currency="USD",
     )
 
     symbol_info = SymbolInfo(
@@ -302,7 +325,7 @@ def test_free_margin_protection() -> None:
         volume_step=0.01,
         stops_level=10,
         freeze_level=0,
-        trade_contract_size=100.0
+        trade_contract_size=100.0,
     )
 
     # 1% risk of $10,000 is $100.
@@ -311,11 +334,7 @@ def test_free_margin_protection() -> None:
     # But max allowable margin = 20% of free margin ($100) = 20 USD.
     # Max margin volume = 20 * 100 / (100 * 2000.0) = 2000 / 200000 = 0.01 lots.
     volume, reason = engine.calculate_dynamic_volume(
-        entry=2000.0,
-        sl=1999.0,
-        account=account,
-        symbol_info=symbol_info,
-        risk_pct=1.0
+        entry=2000.0, sl=1999.0, account=account, symbol_info=symbol_info, risk_pct=1.0
     )
 
     assert volume == 0.01
@@ -330,8 +349,29 @@ def test_safety_and_boundary_conditions() -> None:
     config = RiskConfig(risk_per_trade_pct=1.0)
     engine = RiskEngine(config)
 
-    base_account = AccountInfo(login=123, trade_mode=0, leverage=100, balance=1000.0, equity=1000.0, margin=0.0, margin_free=1000.0, currency="USD")
-    base_symbol = SymbolInfo(symbol="XAUUSD", digits=2, point=0.01, tick_size=0.01, tick_value=1.0, volume_min=0.01, volume_max=100.0, volume_step=0.01, stops_level=10, freeze_level=0, trade_contract_size=100.0)
+    base_account = AccountInfo(
+        login=123,
+        trade_mode=0,
+        leverage=100,
+        balance=1000.0,
+        equity=1000.0,
+        margin=0.0,
+        margin_free=1000.0,
+        currency="USD",
+    )
+    base_symbol = SymbolInfo(
+        symbol="XAUUSD",
+        digits=2,
+        point=0.01,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        stops_level=10,
+        freeze_level=0,
+        trade_contract_size=100.0,
+    )
 
     # SL Distance = 0
     vol, reason = engine.calculate_dynamic_volume(2000.0, 2000.0, base_account, base_symbol, 1.0)
@@ -344,18 +384,31 @@ def test_safety_and_boundary_conditions() -> None:
     assert "INVALID" in reason
 
     # Equity = 0
-    zero_account = AccountInfo(login=123, trade_mode=0, leverage=100, balance=0.0, equity=0.0, margin=0.0, margin_free=1000.0, currency="USD")
+    zero_account = AccountInfo(
+        login=123,
+        trade_mode=0,
+        leverage=100,
+        balance=0.0,
+        equity=0.0,
+        margin=0.0,
+        margin_free=1000.0,
+        currency="USD",
+    )
     vol, reason = engine.calculate_dynamic_volume(2000.0, 1990.0, zero_account, base_symbol, 1.0)
     assert vol == 0.0
     assert "INVALID" in reason
 
     # Leverage = 0 (is not allowed by Pydantic model directly, but we can test bad leverage <= 0 handling in validation function if we pass a mock or bypass)
     # NaN / Inf entry or SL
-    vol, reason = engine.calculate_dynamic_volume(float('nan'), 1990.0, base_account, base_symbol, 1.0)
+    vol, reason = engine.calculate_dynamic_volume(
+        float("nan"), 1990.0, base_account, base_symbol, 1.0
+    )
     assert vol == 0.0
     assert "INVALID" in reason
 
-    vol, reason = engine.calculate_dynamic_volume(2000.0, float('inf'), base_account, base_symbol, 1.0)
+    vol, reason = engine.calculate_dynamic_volume(
+        2000.0, float("inf"), base_account, base_symbol, 1.0
+    )
     assert vol == 0.0
     assert "INVALID" in reason
 
@@ -369,13 +422,49 @@ def test_no_flat_2_lot_bug_regression() -> None:
     engine = RiskEngine(config)
 
     # Check three larger accounts
-    acct_10k = AccountInfo(login=123, trade_mode=0, leverage=100, balance=10000.0, equity=10000.0, margin=0.0, margin_free=20000.0, currency="USD")
-    acct_47k = AccountInfo(login=123, trade_mode=0, leverage=100, balance=47000.0, equity=47000.0, margin=0.0, margin_free=94000.0, currency="USD")
-    acct_100k = AccountInfo(login=123, trade_mode=0, leverage=100, balance=100000.0, equity=100000.0, margin=0.0, margin_free=200000.0, currency="USD")
+    acct_10k = AccountInfo(
+        login=123,
+        trade_mode=0,
+        leverage=100,
+        balance=10000.0,
+        equity=10000.0,
+        margin=0.0,
+        margin_free=20000.0,
+        currency="USD",
+    )
+    acct_47k = AccountInfo(
+        login=123,
+        trade_mode=0,
+        leverage=100,
+        balance=47000.0,
+        equity=47000.0,
+        margin=0.0,
+        margin_free=94000.0,
+        currency="USD",
+    )
+    acct_100k = AccountInfo(
+        login=123,
+        trade_mode=0,
+        leverage=100,
+        balance=100000.0,
+        equity=100000.0,
+        margin=0.0,
+        margin_free=200000.0,
+        currency="USD",
+    )
 
     symbol_info = SymbolInfo(
-        symbol="XAUUSD", digits=2, point=0.01, tick_size=0.01, tick_value=1.0,
-        volume_min=0.01, volume_max=100.0, volume_step=0.01, stops_level=10, freeze_level=0, trade_contract_size=100.0
+        symbol="XAUUSD",
+        digits=2,
+        point=0.01,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        stops_level=10,
+        freeze_level=0,
+        trade_contract_size=100.0,
     )
 
     vol_10k, _ = engine.calculate_dynamic_volume(2000.0, 1998.0, acct_10k, symbol_info, 1.0)

@@ -1,10 +1,9 @@
-# ruff: noqa: PLR2004
 import datetime as dt_module
 import json
 import os
 import uuid
+from collections.abc import Generator
 from datetime import UTC, datetime
-from typing import Generator
 from unittest.mock import MagicMock
 
 import pytest
@@ -157,7 +156,7 @@ def test_order_manager_hooks_exit(temp_audit_repo: AuditRepository) -> None:
         sl=2320.0,
         tp=2350.0,
         profit=-50.0,
-        magic=888101
+        magic=888101,
     )
 
     # RULE 13: Time Decay Exit
@@ -210,7 +209,7 @@ def test_api_endpoints(temp_audit_repo: AuditRepository) -> None:
     payload = {
         "rule_name": "RULE_FVG_SNIPER_FILL",
         "is_enabled": True,
-        "parameters": {"fvg_min_size_pip": 1.2}
+        "parameters": {"fvg_min_size_pip": 1.2},
     }
     response = client.post("/api/rules/toggle", json=payload)
     assert response.status_code == 200
@@ -237,7 +236,7 @@ def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> Non
         sl=2320.0,
         tp=2350.0,
         profit=-50.0,
-        magic=888101
+        magic=888101,
     )
 
     # Mock features and smart metrics

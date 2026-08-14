@@ -1,19 +1,19 @@
 """
 Native MetaTrader 5 Win32 Adapter Engine
 ========================================
-Production-grade implementation of IMT5Port interfacing directly with the Windows 
+Production-grade implementation of IMT5Port interfacing directly with the Windows
 MetaTrader 5 terminal process via native C++ IPC extensions.
 
 Key Enterprise Features & Hidden MT5 Mechanisms:
-    - Pending Order Inventory & Cleanup: Uses `mt5.orders_get` and `TRADE_ACTION_REMOVE` 
+    - Pending Order Inventory & Cleanup: Uses `mt5.orders_get` and `TRADE_ACTION_REMOVE`
       to eliminate pending order flooding (directly resolves duplicate limit order bugs).
-    - Real-Time Deals History Extraction: Queries `mt5.history_deals_get` to calculate 
+    - Real-Time Deals History Extraction: Queries `mt5.history_deals_get` to calculate
       exact realized PnL, broker commission, slippage, and stop-loss/take-profit exit events.
-    - Freeze & Stop Level Guard: Validates `trade_stops_level` and `trade_freeze_level` 
+    - Freeze & Stop Level Guard: Validates `trade_stops_level` and `trade_freeze_level`
       before order dispatch or modification to prevent MT5 retcode 10013/10016 rejections.
-    - Dynamic Filling Mode Resolution: Automatically selects ORDER_FILLING_IOC, ORDER_FILLING_FOK, 
+    - Dynamic Filling Mode Resolution: Automatically selects ORDER_FILLING_IOC, ORDER_FILLING_FOK,
       or ORDER_FILLING_RETURN based on broker bitmask capabilities.
-    - Retcode Diagnostic Translator: Translates raw MT5 retcodes (10004, 10013, 10019, 10021) 
+    - Retcode Diagnostic Translator: Translates raw MT5 retcodes (10004, 10013, 10019, 10021)
       into structured, actionable log events.
 """
 
@@ -42,6 +42,7 @@ mt5: Optional["mt5_module"] = None
 if sys.platform == "win32":
     try:
         import MetaTrader5 as mt5  # type: ignore[no-redef]
+
         HAS_NATIVE_MT5 = True
     except ImportError:
         mt5 = None
@@ -72,7 +73,9 @@ class DirectMT5Adapter(IMT5Port):
         self._connected = False
 
         if not HAS_NATIVE_MT5 and sys.platform == "win32":
-            logger.warning("Windows system detected but 'MetaTrader5' package is missing from Python environment.")
+            logger.warning(
+                "Windows system detected but 'MetaTrader5' package is missing from Python environment."
+            )
 
     def connect(self) -> bool:
         if not HAS_NATIVE_MT5 or mt5 is None:
@@ -86,7 +89,9 @@ class DirectMT5Adapter(IMT5Port):
 
         if not mt5.initialize(**init_kwargs):
             err_code = mt5.last_error()
-            logger.error("Failed to initialize connection to MT5 terminal process. Retcode: %s", err_code)
+            logger.error(
+                "Failed to initialize connection to MT5 terminal process. Retcode: %s", err_code
+            )
             self._connected = False
             return False
 
@@ -94,7 +99,11 @@ class DirectMT5Adapter(IMT5Port):
             login_ok = mt5.login(login=self._account, password=self._password, server=self._server)
             if not login_ok:
                 err_code = mt5.last_error()
-                logger.error("MT5 login authentication failed for account %s. Error: %s", self._account, err_code)
+                logger.error(
+                    "MT5 login authentication failed for account %s. Error: %s",
+                    self._account,
+                    err_code,
+                )
                 mt5.shutdown()
                 self._connected = False
                 return False
@@ -176,7 +185,9 @@ class DirectMT5Adapter(IMT5Port):
             flags=raw_tick.flags,
         )
 
-    def get_historical_bars(self, symbol: str, timeframe: str = "M1", count: int = 100) -> list[BarData]:
+    def get_historical_bars(
+        self, symbol: str, timeframe: str = "M1", count: int = 100
+    ) -> list[BarData]:
         self._assert_connected()
         assert mt5 is not None
 
@@ -385,14 +396,23 @@ class DirectMT5Adapter(IMT5Port):
         check_res = mt5.order_check(request)
         if check_res is None or check_res.retcode != 0:
             comment = check_res.comment if check_res else str(mt5.last_error())
-            logger.warning("Order pre-check warning for %s: %s. Attempting FOK fallback...", order.symbol, comment)
+            logger.warning(
+                "Order pre-check warning for %s: %s. Attempting FOK fallback...",
+                order.symbol,
+                comment,
+            )
             request["type_filling"] = mt5.ORDER_FILLING_FOK
 
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             retcode = result.retcode if result else mt5.last_error()
             translated_err = self._translate_retcode(retcode)
-            logger.error("Order execution failed for %s. Retcode: %s (%s)", order.symbol, retcode, translated_err)
+            logger.error(
+                "Order execution failed for %s. Retcode: %s (%s)",
+                order.symbol,
+                retcode,
+                translated_err,
+            )
             return False
 
         logger.info(
@@ -405,7 +425,15 @@ class DirectMT5Adapter(IMT5Port):
         )
         return True
 
-    def execute_market_order(self, symbol: str, order_type: OrderType, volume: float, price: float, stop_loss: float, take_profit: float) -> int:
+    def execute_market_order(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> int:
         self._assert_connected()
         if mt5 is None:
             return 0
@@ -435,7 +463,15 @@ class DirectMT5Adapter(IMT5Port):
 
         return result.order
 
-    def place_pending_order(self, symbol: str, order_type: OrderType, volume: float, price: float, stop_loss: float, take_profit: float) -> int:
+    def place_pending_order(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> int:
         self._assert_connected()
         if mt5 is None:
             return 0
@@ -465,7 +501,11 @@ class DirectMT5Adapter(IMT5Port):
             tick = mt5.symbol_info_tick(symbol)
             if tick:
                 sym_info = mt5.symbol_info(symbol)
-                min_gap = (sym_info.trade_stops_level * sym_info.point) if sym_info and sym_info.trade_stops_level > 0 else 0.10
+                min_gap = (
+                    (sym_info.trade_stops_level * sym_info.point)
+                    if sym_info and sym_info.trade_stops_level > 0
+                    else 0.10
+                )
                 min_gap = max(min_gap, 0.10)
 
                 if order_type == OrderType.BUY_LIMIT and req_price >= tick.ask:
@@ -494,7 +534,11 @@ class DirectMT5Adapter(IMT5Port):
             result = mt5.order_send(request)
             result = mt5.order_send(request)
             if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info("Fast-Act Pending Order Placed Successfully on attempt %s! Ticket: %s", attempt, result.order)
+                logger.info(
+                    "Fast-Act Pending Order Placed Successfully on attempt %s! Ticket: %s",
+                    attempt,
+                    result.order,
+                )
                 return result.order
 
             last_retcode = result.retcode if result else mt5.last_error()
@@ -502,16 +546,30 @@ class DirectMT5Adapter(IMT5Port):
 
             # Auto-Reconnect Circuit Breaker for Retcode 10031 (NO_CONNECTION)
             if last_retcode == 10031:
-                logger.warning("Trade server connection interrupted (Retcode 10031). Probing terminal IPC state...")
+                logger.warning(
+                    "Trade server connection interrupted (Retcode 10031). Probing terminal IPC state..."
+                )
                 t_info = mt5.terminal_info()
                 if t_info is None or not t_info.connected:
                     mt5.initialize()  # Fast re-handshake with local Win32 IPC process
 
             if attempt < max_retries:
-                logger.warning("Fast-Act Pending Order Retry %s/%s for %s. Retcode: %s (%s). Retrying in 25ms...", attempt, max_retries, symbol, last_retcode, last_err)
+                logger.warning(
+                    "Fast-Act Pending Order Retry %s/%s for %s. Retcode: %s (%s). Retrying in 25ms...",
+                    attempt,
+                    max_retries,
+                    symbol,
+                    last_retcode,
+                    last_err,
+                )
                 time.sleep(0.025)
 
-        logger.error("place_pending_order failed after %s fast-act retries. Retcode: %s (%s)", max_retries, last_retcode, last_err)
+        logger.error(
+            "place_pending_order failed after %s fast-act retries. Retcode: %s (%s)",
+            max_retries,
+            last_retcode,
+            last_err,
+        )
         return 0
 
     def modify_order(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
@@ -545,7 +603,12 @@ class DirectMT5Adapter(IMT5Port):
 
             result = mt5.order_send(request)
             if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info("Successfully modified position ticket #%s -> New SL: %s | New TP: %s", ticket, stop_loss, take_profit)
+                logger.info(
+                    "Successfully modified position ticket #%s -> New SL: %s | New TP: %s",
+                    ticket,
+                    stop_loss,
+                    take_profit,
+                )
                 return True
 
             last_retcode = result.retcode if result else mt5.last_error()
@@ -554,7 +617,13 @@ class DirectMT5Adapter(IMT5Port):
             if attempt < max_retries:
                 time.sleep(0.025)
 
-        logger.error("Failed to modify position SL/TP for ticket #%s after %s retries. Retcode: %s (%s)", ticket, max_retries, last_retcode, last_err)
+        logger.error(
+            "Failed to modify position SL/TP for ticket #%s after %s retries. Retcode: %s (%s)",
+            ticket,
+            max_retries,
+            last_retcode,
+            last_err,
+        )
         return False
 
     def close_position(self, ticket: int, volume: float | None = None) -> bool:
@@ -574,7 +643,9 @@ class DirectMT5Adapter(IMT5Port):
                 return False
 
             pos = positions[0]
-            close_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+            close_type = (
+                mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+            )
             tick = mt5.symbol_info_tick(pos.symbol)
             if not tick:
                 time.sleep(0.025)
@@ -599,7 +670,9 @@ class DirectMT5Adapter(IMT5Port):
 
             result = mt5.order_send(request)
             if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info("Successfully closed live position ticket #%s at price %s", ticket, price)
+                logger.info(
+                    "Successfully closed live position ticket #%s at price %s", ticket, price
+                )
                 return True
 
             last_retcode = result.retcode if result else mt5.last_error()
@@ -608,7 +681,13 @@ class DirectMT5Adapter(IMT5Port):
             if attempt < max_retries:
                 time.sleep(0.025)
 
-        logger.error("Failed to close position ticket #%s after %s retries. Retcode: %s (%s)", ticket, max_retries, last_retcode, last_err)
+        logger.error(
+            "Failed to close position ticket #%s after %s retries. Retcode: %s (%s)",
+            ticket,
+            max_retries,
+            last_retcode,
+            last_err,
+        )
         return False
 
     def _resolve_filling_mode(self, symbol: str) -> int:
@@ -643,4 +722,6 @@ class DirectMT5Adapter(IMT5Port):
 
     def _assert_connected(self) -> None:
         if not self._connected or not HAS_NATIVE_MT5 or mt5 is None:
-            raise RuntimeError("MT5 Adapter is not connected. Call connect() before invoking broker operations.")
+            raise RuntimeError(
+                "MT5 Adapter is not connected. Call connect() before invoking broker operations."
+            )

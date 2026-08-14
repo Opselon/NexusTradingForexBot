@@ -25,8 +25,9 @@ def test_scalp_feature_engine_cold_start() -> None:
 
 def test_dynamic_z_score_calculation() -> None:
     """Verifies that z-score is calculated dynamically on incoming tick and completed bars."""
-    from nexus_scalp.market_data.bar_aggregator import BarData
     import numpy as np
+
+    from nexus_scalp.market_data.bar_aggregator import BarData
 
     engine = ScalpFeatureEngine(symbol="XAUUSD")
     now = datetime.now(UTC)

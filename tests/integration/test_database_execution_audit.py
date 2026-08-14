@@ -1,17 +1,18 @@
+import json
 import os
 import sqlite3
-import json
-import uuid
 import time
-from datetime import datetime, UTC
+import uuid
+from datetime import UTC, datetime
+
 import pytest
 import torch
 
+from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.enums import ActionType, OrderType
-from nexus_scalp.domain.models import TickData, TradeProposal, TradeOrder
+from nexus_scalp.domain.models import TickData, TradeOrder, TradeProposal
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.signals.policy import SignalPolicy
-from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
 
 def test_database_execution_audit_pipeline():
@@ -31,7 +32,9 @@ def test_database_execution_audit_pipeline():
     audit_repo = AuditRepository(db_url=f"sqlite:///{db_path}")
 
     # 2. Build mock market tick and features to trigger a standard BUY signal candidate
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.10, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.10, volume=1.0
+    )
     fv = FeatureVector(
         symbol="XAUUSD",
         timestamp_utc=tick.timestamp.isoformat(),
@@ -129,7 +132,9 @@ def test_database_execution_audit_pipeline():
     audit_repo.log_execution(order, "FILLED")
 
     # 3. Simulate a Rejected Signal Scenario (due to high spread)
-    tick_rejected = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2005.0, volume=1.0) # High spread
+    tick_rejected = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2005.0, volume=1.0
+    )  # High spread
     proposal_rejected = policy.evaluate_probabilities(
         probabilities=probabilities,
         current_tick=tick_rejected,
@@ -165,7 +170,9 @@ def test_database_execution_audit_pipeline():
         );
     """)
     candidate_signals_count = cursor.fetchone()[0]
-    assert candidate_signals_count > 0, "At least one candidate signal must exist in audit_signals database."
+    assert candidate_signals_count > 0, (
+        "At least one candidate signal must exist in audit_signals database."
+    )
 
     # Query 3: Verify executions
     cursor.execute("SELECT COUNT(*) FROM audit_executions;")
@@ -187,19 +194,24 @@ def test_database_execution_audit_pipeline():
         "risk_allowed",
         "guardian_status",
         "rejection_reason",
-        "final_action"
+        "final_action",
     ]
     for field in required_fields:
-        assert field in approved_payload, f"Diagnostic field '{field}' is missing from transparent signal payload."
+        assert field in approved_payload, (
+            f"Diagnostic field '{field}' is missing from transparent signal payload."
+        )
 
     # Query 5: Check rejected payload contains rejection reason
     cursor.execute("SELECT payload FROM audit_signals WHERE action = 'NO_TRADE' LIMIT 1;")
     rejected_payload_raw = cursor.fetchone()[0]
     rejected_payload = json.loads(rejected_payload_raw)
 
-    assert rejected_payload["risk_allowed"] is False, "Rejected signal should have risk_allowed=False"
-    assert "rejection_reason" in rejected_payload and rejected_payload["rejection_reason"] is not None, \
-        "Rejected signal must have a populated rejection_reason."
+    assert rejected_payload["risk_allowed"] is False, (
+        "Rejected signal should have risk_allowed=False"
+    )
+    assert (
+        "rejection_reason" in rejected_payload and rejected_payload["rejection_reason"] is not None
+    ), "Rejected signal must have a populated rejection_reason."
 
     conn.close()
     print("Integration Verification Test Passed Successfully!")

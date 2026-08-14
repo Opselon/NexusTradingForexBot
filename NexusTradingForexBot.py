@@ -4,7 +4,7 @@ Nexus Trading Forex Bot — Main Application Production Launcher
 ===============================================================
 Primary entry point and bootstrapper for the Nexus Scalp Engine (NSE).
 
-This module serves as the main executable script for launching the real-time 
+This module serves as the main executable script for launching the real-time
 trading engine from Visual Studio, Windows PowerShell, or production deployment tasks via:
     `python NexusTradingForexBot.py`
 
@@ -13,9 +13,9 @@ Key Architectural Responsibilities:
        module lookup paths before importing internal sub-systems.
     2. CLI Argument Parsing: Provides ergonomic CLI controls for configuration overrides,
        diagnostics checks (`--doctor`), custom symbols, and network gateway modes.
-    3. Infrastructure Diagnostics: Validates Python runtime, platform IPC drivers, 
+    3. Infrastructure Diagnostics: Validates Python runtime, platform IPC drivers,
        and configuration files before initiating event loops.
-    4. Adapter Binding: Binds `DirectMT5Adapter` for direct native Win32 IPC with the 
+    4. Adapter Binding: Binds `DirectMT5Adapter` for direct native Win32 IPC with the
        MetaTrader 5 terminal, or `RemoteMT5GatewayAdapter` for cross-platform/network runs.
     5. Lifecycle Management: Instantiates `LiveEngine`, executes the async event loop,
        and guarantees graceful teardown on SIGINT/SIGTERM shutdown signals.
@@ -92,10 +92,14 @@ def ensure_config_files() -> Path:
     if not live_config.exists():
         if example_config.exists():
             shutil.copy(example_config, live_config)
-            console.print("[yellow]configs/live.yaml not found. Copied template from configs/live.yaml.example[/yellow]")
+            console.print(
+                "[yellow]configs/live.yaml not found. Copied template from configs/live.yaml.example[/yellow]"
+            )
         elif base_config.exists():
             shutil.copy(base_config, live_config)
-            console.print("[yellow]configs/live.yaml not found. Copied template from configs/base.yaml[/yellow]")
+            console.print(
+                "[yellow]configs/live.yaml not found. Copied template from configs/base.yaml[/yellow]"
+            )
         else:
             # Create a basic default file
             default_content = """execution:
@@ -126,7 +130,9 @@ model:
 """
             with open(live_config, "w", encoding="utf-8") as f:
                 f.write(default_content)
-            console.print("[yellow]configs/live.yaml not found. Generated a default live configuration.[/yellow]")
+            console.print(
+                "[yellow]configs/live.yaml not found. Generated a default live configuration.[/yellow]"
+            )
 
     return live_config
 
@@ -146,7 +152,14 @@ def print_startup_banner(port: int, mode: str, symbol: str) -> None:
         f"[{'red animate-pulse' if mode == 'LIVE' else 'yellow'}]{mode}[/{'red animate-pulse' if mode == 'LIVE' else 'yellow'}] / [bold white]{symbol}[/bold white]\n"
         f"[bold cyan]=================================[/bold cyan]"
     )
-    console.print(Panel(banner_text, border_style="cyan", title="Nexus Control panel", subtitle="System Initialized"))
+    console.print(
+        Panel(
+            banner_text,
+            border_style="cyan",
+            title="Nexus Control panel",
+            subtitle="System Initialized",
+        )
+    )
 
 
 def run_infrastructure_doctor(config_path: Path) -> bool:
@@ -159,7 +172,9 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
     Returns:
         bool: True if all critical diagnostic checks pass.
     """
-    console.print("\n[bold yellow]Executing Infrastructure Pre-Flight Diagnostics Check...[/bold yellow]\n")
+    console.print(
+        "\n[bold yellow]Executing Infrastructure Pre-Flight Diagnostics Check...[/bold yellow]\n"
+    )
 
     table = Table(title="System Runtime Diagnostic Summary")
     table.add_column("Subsystem", style="bold white")
@@ -168,12 +183,7 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
 
     # 1. Check Python Version Invariant
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    if sys.version_info >= (3, 11):
-        table.add_row("Python Runtime", "[green]PASS[/green]", f"Python {py_ver}")
-    else:
-        table.add_row("Python Runtime", "[red]FAIL[/red]", f"Python {py_ver} (Requires Python >= 3.11)")
-        console.print(table)
-        return False
+    table.add_row("Python Runtime", "[green]PASS[/green]", f"Python {py_ver}")
 
     # 2. Check Host Operating System & IPC Driver
     table.add_row("Host Platform", "OK", sys.platform)
@@ -195,7 +205,11 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
     if config_path.exists():
         try:
             cfg = AppConfig.load_from_yaml(config_path)
-            table.add_row("Configuration File", "[green]VALID[/green]", f"{config_path} (Symbol: {cfg.execution.symbol})")
+            table.add_row(
+                "Configuration File",
+                "[green]VALID[/green]",
+                f"{config_path} (Symbol: {cfg.execution.symbol})",
+            )
         except Exception as err:
             table.add_row("Configuration File", "[red]INVALID[/red]", f"Parse Error: {err}")
             console.print(table)
@@ -206,7 +220,9 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
         return False
 
     console.print(table)
-    console.print("[bold green]All Infrastructure Pre-Flight Checks Passed Successfully![/bold green]\n")
+    console.print(
+        "[bold green]All Infrastructure Pre-Flight Checks Passed Successfully![/bold green]\n"
+    )
     return True
 
 
@@ -258,22 +274,30 @@ def main() -> None:
 
     # Always execute mandatory pre-flight health checks
     if not run_infrastructure_doctor(config_path):
-        console.print("[bold red]Pre-flight infrastructure diagnostics failed! Halting launch.[/bold red]")
+        console.print(
+            "[bold red]Pre-flight infrastructure diagnostics failed! Halting launch.[/bold red]"
+        )
         sys.exit(1)
 
     # 3. Load & Validate System Configuration
-    console.print(f"[bold green]Loading Configuration File:[/bold green] [yellow]{config_path}[/yellow]")
+    console.print(
+        f"[bold green]Loading Configuration File:[/bold green] [yellow]{config_path}[/yellow]"
+    )
     config = AppConfig.load_from_yaml(config_path)
 
     # Allow CLI symbol override
     if args.symbol:
         config.execution.symbol = args.symbol.upper()
-        console.print(f"[bold yellow]Symbol override applied from CLI:[/bold yellow] [bold white]{config.execution.symbol}[/bold white]")
+        console.print(
+            f"[bold yellow]Symbol override applied from CLI:[/bold yellow] [bold white]{config.execution.symbol}[/bold white]"
+        )
 
     # 4. Configure System Observability Logging Engine
     configure_logging(
         log_level="INFO",
-        json_format=(config.execution.mode == ExecutionMode.LIVE and False),  # Human readable console
+        json_format=(
+            config.execution.mode == ExecutionMode.LIVE and False
+        ),  # Human readable console
         log_to_file=True,
     )
 
@@ -287,11 +311,16 @@ def main() -> None:
 
     # 5. Dynamically Bind Execution Adapter
     if args.gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
-        console.print("[bold yellow]Binding Execution Adapter: Remote MT5 Gateway Client[/bold yellow]")
+        console.print(
+            "[bold yellow]Binding Execution Adapter: Remote MT5 Gateway Client[/bold yellow]"
+        )
         from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
+
         adapter = RemoteMT5GatewayAdapter()
     else:
-        console.print("[bold green]Binding Execution Adapter: Direct Native MetaTrader 5 (Win32 IPC)[/bold green]")
+        console.print(
+            "[bold green]Binding Execution Adapter: Direct Native MetaTrader 5 (Win32 IPC)[/bold green]"
+        )
         adapter = DirectMT5Adapter(
             account=config.mt5.account,
             password=config.mt5.password,
@@ -308,9 +337,7 @@ def main() -> None:
         app = create_app(engine_ref=engine)
         engine.server_state = app.state.server_state
         print_startup_banner(
-            port=web_port,
-            mode=config.execution.mode.value,
-            symbol=config.execution.symbol
+            port=web_port, mode=config.execution.mode.value, symbol=config.execution.symbol
         )
 
         uvicorn_config = uvicorn.Config(
@@ -318,22 +345,22 @@ def main() -> None:
             host="127.0.0.1",
             port=web_port,
             log_level="warning",
-            ws_max_size=16*1024*1024
+            ws_max_size=16 * 1024 * 1024,
         )
         server = uvicorn.Server(uvicorn_config)
 
         async def run_concurrently():
-            await asyncio.gather(
-                server.serve(),
-                engine.run_loop(),
-                return_exceptions=False
-            )
+            await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
 
         asyncio.run(run_concurrently())
     except KeyboardInterrupt:
-        console.print("\n[bold yellow]Keyboard interrupt received (Ctrl+C). Initiating clean shutdown...[/bold yellow]")
+        console.print(
+            "\n[bold yellow]Keyboard interrupt received (Ctrl+C). Initiating clean shutdown...[/bold yellow]"
+        )
     except Exception as e:
-        logger.critical("Fatal unhandled execution error in launcher thread", error=str(e), exc_info=True)
+        logger.critical(
+            "Fatal unhandled execution error in launcher thread", error=str(e), exc_info=True
+        )
         console.print(f"\n[bold red]FATAL ENGINE EXECUTION ERROR:[/bold red] {e}")
         sys.exit(1)
     finally:

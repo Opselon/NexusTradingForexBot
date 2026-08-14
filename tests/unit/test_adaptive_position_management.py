@@ -1,16 +1,17 @@
-import pytest
+import os
 import sqlite3
 import tempfile
-import os
 import time
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
+
+import pytest
 import torch
 
-from nexus_scalp.domain.enums import ActionType, OrderType
-from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder, AccountInfo
-from nexus_scalp.configuration.config import AlgoConfig, RiskConfig
-from nexus_scalp.execution.order_manager import OrderLifecycleManager, PositionState, ExitMechanism
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.configuration.config import AlgoConfig, RiskConfig
+from nexus_scalp.domain.enums import ActionType, OrderType
+from nexus_scalp.domain.models import AccountInfo, Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.execution.order_manager import ExitMechanism, OrderLifecycleManager, PositionState
 
 
 class MockMT5Adapter:
@@ -82,7 +83,7 @@ def test_profit_giveback_failure_regression():
         price_open=2000.00,
         sl=1990.00,
         tp=2020.00,
-        profit=30.74, # reached +$30.74 peak profit
+        profit=30.74,  # reached +$30.74 peak profit
         magic=888101,
     )
     adapter.positions = [pos]
@@ -105,11 +106,13 @@ def test_profit_giveback_failure_regression():
         price_open=2000.00,
         sl=1990.00,
         tp=2020.00,
-        profit=-5.00, # negative PnL now
+        profit=-5.00,  # negative PnL now
         magic=888101,
     )
     adapter.positions = [pos_giveback]
-    tick_giveback = TickData(symbol="XAUUSD", timestamp=now + timedelta(seconds=1), bid=1999.95, ask=1999.97, volume=1.0)
+    tick_giveback = TickData(
+        symbol="XAUUSD", timestamp=now + timedelta(seconds=1), bid=1999.95, ask=1999.97, volume=1.0
+    )
 
     # Stale hold_score is mocked/set artificially high
     om._base_hold_score_tracker[777] = 95
@@ -137,9 +140,9 @@ def test_hysteresis_state_debouncing():
         type=OrderType.BUY,
         volume=1.0,
         price_open=2000.00,
-        sl=1999.50, # Tight SL ($0.50 risk price * 100 contract_size * 1.0 volume = $50.00 risk)
+        sl=1999.50,  # Tight SL ($0.50 risk price * 100 contract_size * 1.0 volume = $50.00 risk)
         tp=2020.00,
-        profit=-1.00, # Tight loss of $1.00
+        profit=-1.00,  # Tight loss of $1.00
         magic=888101,
     )
     adapter.positions = [pos]
@@ -153,7 +156,7 @@ def test_hysteresis_state_debouncing():
     assert om._position_states[888] == PositionState.LOSS_RECOVERY_CANDIDATE
 
     # Transition to LOSS_RECOVERY_CONFIRMED (normal state, needs debouncing)
-    probs_conf = torch.tensor([[0.01, 0.95, 0.04]]) # high buy prob
+    probs_conf = torch.tensor([[0.01, 0.95, 0.04]])  # high buy prob
 
     # 1. First attempt should not transition yet (state remains candidate)
     om.manage_active_positions("XAUUSD", tick, probs=probs_conf)
@@ -169,11 +172,11 @@ def test_hysteresis_state_debouncing():
         price_open=2000.00,
         sl=1999.50,
         tp=2020.00,
-        profit=35.00, # peak profit
+        profit=35.00,  # peak profit
         magic=888101,
     )
     adapter.positions = [pos_peak]
-    om.manage_active_positions("XAUUSD", tick) # peak recorded
+    om.manage_active_positions("XAUUSD", tick)  # peak recorded
 
     pos_fail = Position(
         ticket=888,
@@ -183,7 +186,7 @@ def test_hysteresis_state_debouncing():
         price_open=2000.00,
         sl=1999.50,
         tp=2020.00,
-        profit=-5.00, # complete erosion
+        profit=-5.00,  # complete erosion
         magic=888101,
     )
     adapter.positions = [pos_fail]
@@ -207,9 +210,9 @@ def test_immutable_recovery_budget():
         type=OrderType.BUY,
         volume=1.0,
         price_open=2000.00,
-        sl=1995.00, # Initial risk = $5.00 * 100.0 * 1.0 = $500.00
+        sl=1995.00,  # Initial risk = $5.00 * 100.0 * 1.0 = $500.00
         tp=2020.00,
-        profit=-10.00, # Initial loss at recovery entry = $10.00
+        profit=-10.00,  # Initial loss at recovery entry = $10.00
         magic=888101,
     )
     adapter.positions = [pos]
@@ -234,12 +237,14 @@ def test_immutable_recovery_budget():
         price_open=2000.00,
         sl=1995.00,
         tp=2020.00,
-        profit=-270.00, # Consumes $260.00 of budget (> $250.00)
+        profit=-270.00,  # Consumes $260.00 of budget (> $250.00)
         magic=888101,
     )
     adapter.positions = [pos_deep_loss]
 
-    tick_loss = TickData(symbol="XAUUSD", timestamp=now + timedelta(seconds=1), bid=1997.30, ask=1997.32, volume=1.0)
+    tick_loss = TickData(
+        symbol="XAUUSD", timestamp=now + timedelta(seconds=1), bid=1997.30, ask=1997.32, volume=1.0
+    )
     om.manage_active_positions("XAUUSD", tick_loss, probs=probs)
 
     # Budget exhausted -> Position closed immediately!

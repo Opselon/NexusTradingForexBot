@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+
 import pytest
 import uvicorn
 from playwright.sync_api import sync_playwright
@@ -8,6 +9,7 @@ from playwright.sync_api import sync_playwright
 from nexus_scalp.web.server import create_app
 
 PORT = 9091
+
 
 @pytest.fixture(scope="module", autouse=True)
 def run_dev_server():
@@ -17,7 +19,7 @@ def run_dev_server():
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-    time.sleep(2) # Allow server to boot
+    time.sleep(2)  # Allow server to boot
     yield
     server.should_exit = True
     thread.join(timeout=2)
@@ -45,7 +47,9 @@ def test_playwright_e2e_canvas_and_tuner():
 
         # Adjust the sliders
         page.fill("#tuner-atr-sl-buffer", "2.5")
-        page.evaluate("document.getElementById('tuner-atr-sl-buffer').dispatchEvent(new Event('input'))")
+        page.evaluate(
+            "document.getElementById('tuner-atr-sl-buffer').dispatchEvent(new Event('input'))"
+        )
         page.wait_for_timeout(500)
 
         page.fill("#tuner-min-rr", "2.2")

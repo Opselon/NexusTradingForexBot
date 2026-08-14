@@ -29,8 +29,8 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from nexus_scalp.domain.enums import ActionType
@@ -43,6 +43,7 @@ logger = get_logger("nexus_scalp.training.walk_forward_trainer")
 # =============================================================================
 # DATASET
 # =============================================================================
+
 
 class ScalpDataset(Dataset):
     """Simple tensor dataset for ScalpNet training."""
@@ -85,13 +86,14 @@ def _compute_time_decay_weights(num_samples: int, half_life_bars: float = 120.0)
     """
     steps_from_latest = np.arange(num_samples - 1, -1, -1, dtype=np.float32)
     weights = np.exp(-np.log(2.0) * steps_from_latest / max(1.0, half_life_bars))
-    weights /= (np.mean(weights) + 1e-8)
+    weights /= np.mean(weights) + 1e-8
     return weights.astype(np.float32)
 
 
 # =============================================================================
 # SUPPORT TYPES
 # =============================================================================
+
 
 @dataclass
 class ScalerBundle:
@@ -102,6 +104,7 @@ class ScalerBundle:
 # =============================================================================
 # TRAINER
 # =============================================================================
+
 
 class WalkForwardTrainer:
     """
@@ -128,10 +131,10 @@ class WalkForwardTrainer:
         clip_features_max: float = 5.0,
         min_rows_per_train_split: int = 50,
         min_rows_per_test_split: int = 20,
-        min_class_ratio: float = 0.08,        # Minimum 8% prediction ratio per active class required
-        focal_gamma: float = 2.0,             # Focal Loss exponent focusing on hard minority examples
-        label_smoothing: float = 0.08,         # Label smoothing factor for regularization
-        use_oversampling: bool = True,         # Enables Random Oversampling on BUY/SELL in buffer
+        min_class_ratio: float = 0.08,  # Minimum 8% prediction ratio per active class required
+        focal_gamma: float = 2.0,  # Focal Loss exponent focusing on hard minority examples
+        label_smoothing: float = 0.08,  # Label smoothing factor for regularization
+        use_oversampling: bool = True,  # Enables Random Oversampling on BUY/SELL in buffer
     ) -> None:
         self.num_folds = int(num_folds)
         self.train_ratio = float(train_ratio)
@@ -149,15 +152,15 @@ class WalkForwardTrainer:
         self.min_rows_per_train_split = int(min_rows_per_train_split)
         self.min_rows_per_test_split = int(min_rows_per_test_split)
         self.min_class_ratio = float(min_class_ratio)
-        self.focal_gamma = 1.0                 # Reduced gamma from 2.0 to 1.0 for small-buffer stability
+        self.focal_gamma = 1.0  # Reduced gamma from 2.0 to 1.0 for small-buffer stability
         self.label_smoothing = float(label_smoothing)
         self.use_oversampling = bool(use_oversampling)
 
         # Configurable Quality Gate & Buffer Settings
-        self.min_validation_accuracy = 0.35      # Required minimum 35% validation accuracy
-        self.min_accuracy_improvement = 0.03     # Required minimum +3% accuracy gain over baseline
-        self.max_sell_dominance = 0.58           # SELL predicted ratio must not exceed 58%
-        self.time_decay_half_life_bars = 120.0   # 2-hour half life for exponential sample weighting
+        self.min_validation_accuracy = 0.35  # Required minimum 35% validation accuracy
+        self.min_accuracy_improvement = 0.03  # Required minimum +3% accuracy gain over baseline
+        self.max_sell_dominance = 0.58  # SELL predicted ratio must not exceed 58%
+        self.time_decay_half_life_bars = 120.0  # 2-hour half life for exponential sample weighting
 
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
@@ -238,7 +241,10 @@ class WalkForwardTrainer:
             X_test_raw = fold_X[test_start_point:]
             y_test = fold_y[test_start_point:]
 
-            if len(X_train_raw) < self.min_rows_per_train_split or len(X_test_raw) < self.min_rows_per_test_split:
+            if (
+                len(X_train_raw) < self.min_rows_per_train_split
+                or len(X_test_raw) < self.min_rows_per_test_split
+            ):
                 logger.warning(
                     "Skipping fold due to insufficient train/test rows",
                     fold=fold + 1,
@@ -251,7 +257,9 @@ class WalkForwardTrainer:
             X_train = self._transform_features(X_train_raw, scaler)
             X_test = self._transform_features(X_test_raw, scaler)
 
-            weights_tensor = self._build_class_weights(y_train, is_online_fine_tune=True).to(self.device)
+            weights_tensor = self._build_class_weights(y_train, is_online_fine_tune=True).to(
+                self.device
+            )
             dyn_batch = self._resolve_batch_size(len(y_train))
 
             train_ds = ScalpDataset(X_train, y_train, self.device)
@@ -261,7 +269,9 @@ class WalkForwardTrainer:
             test_loader = self._make_loader(test_ds, dyn_batch, shuffle=False)
 
             model = self._create_model(num_features=len(feature_cols))
-            optimizer = torch.optim.AdamW(model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=self.learning_rate, weight_decay=1e-4
+            )
             criterion = nn.CrossEntropyLoss(weight=weights_tensor)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
 
@@ -269,8 +279,8 @@ class WalkForwardTrainer:
             best_state: dict[str, torch.Tensor] | None = None
             patience_counter = 0
 
-            for epoch in range(self.epochs):
-                train_loss = self._train_one_epoch(model, train_loader, optimizer, criterion)
+            for _epoch in range(self.epochs):
+                self._train_one_epoch(model, train_loader, optimizer, criterion)
                 scheduler.step()
 
                 val_loss = self._evaluate_loss(model, test_loader, criterion)
@@ -318,7 +328,7 @@ class WalkForwardTrainer:
         logger.info(
             "Verifying training labels distribution",
             label_mapping=self.label_map,
-            train_labels_counts=np.bincount(y, minlength=self.NUM_CLASSES).tolist()
+            train_labels_counts=np.bincount(y, minlength=self.NUM_CLASSES).tolist(),
         )
 
         overall_metrics = self._evaluate_global_performance(oos_predictions, oos_targets)
@@ -346,8 +356,8 @@ class WalkForwardTrainer:
             T_max=self.epochs,
         )
 
-        for epoch in range(self.epochs):
-            train_loss = self._train_one_epoch(final_model, full_loader, final_optimizer, final_criterion)
+        for _epoch in range(self.epochs):
+            self._train_one_epoch(final_model, full_loader, final_optimizer, final_criterion)
             final_scheduler.step()
 
         # Model diagnostics verification post final training
@@ -380,9 +390,9 @@ class WalkForwardTrainer:
         recent_df: pl.DataFrame | None = None,
         feature_cols: list[str] | None = None,
         epochs: int = 3,
-        learning_rate: float = 3e-5,          # Reduced learning rate for small small-sample stability
+        learning_rate: float = 3e-5,  # Reduced learning rate for small small-sample stability
         max_holding_bars: int = 15,
-        model: ScalpNet | None = None,        # Keyword Alias for backwards compatibility
+        model: ScalpNet | None = None,  # Keyword Alias for backwards compatibility
         verify_health: bool = True,
         min_class_ratio: float | None = None,
     ) -> ScalpNet:
@@ -392,9 +402,13 @@ class WalkForwardTrainer:
         """
         target_model = live_model if live_model is not None else model
         if target_model is None or recent_df is None or feature_cols is None:
-            raise ValueError("Must provide target model, recent_df, and feature_cols to fine_tune_online.")
+            raise ValueError(
+                "Must provide target model, recent_df, and feature_cols to fine_tune_online."
+            )
 
-        active_min_class_ratio = min_class_ratio if min_class_ratio is not None else self.min_class_ratio
+        active_min_class_ratio = (
+            min_class_ratio if min_class_ratio is not None else self.min_class_ratio
+        )
 
         self._validate_training_frame(recent_df, feature_cols)
         recent_df = self._filter_trainable_rows(recent_df)
@@ -428,17 +442,23 @@ class WalkForwardTrainer:
         try:
             scaler = self._load_scaler()
         except FileNotFoundError:
-            logger.info("No pre-existing scaler artifact found for fine-tuning. Fitting initial scaler on recent memory buffer.")
+            logger.info(
+                "No pre-existing scaler artifact found for fine-tuning. Fitting initial scaler on recent memory buffer."
+            )
             scaler = self._fit_scaler(X_raw)
 
         X_scaled = self._transform_features(X_raw, scaler)
 
         if len(y) < 32:
-            logger.warning("Insufficient post-purge labeled rows for online fine-tuning", samples=len(y))
+            logger.warning(
+                "Insufficient post-purge labeled rows for online fine-tuning", samples=len(y)
+            )
             return copy.deepcopy(target_model)
 
         # Compute Exponential Time-Decay Sample Weights across valid buffer
-        time_weights = _compute_time_decay_weights(len(y), half_life_bars=self.time_decay_half_life_bars)
+        time_weights = _compute_time_decay_weights(
+            len(y), half_life_bars=self.time_decay_half_life_bars
+        )
 
         # Chronological train/validation split (80% train, 20% validation)
         val_size = max(5, int(len(y) * 0.20))
@@ -449,9 +469,13 @@ class WalkForwardTrainer:
 
         # Apply Random Oversampling on minority active classes (BUY=1, SELL=2) to balance gradient updates
         if self.use_oversampling:
-            X_train_res, y_train_res = _balance_oversample_dataset(X_train, y_train, active_boost_ratio=0.85)
+            X_train_res, y_train_res = _balance_oversample_dataset(
+                X_train, y_train, active_boost_ratio=0.85
+            )
             # Recompute time weights for resampled array size
-            w_train_res = _compute_time_decay_weights(len(y_train_res), half_life_bars=self.time_decay_half_life_bars)
+            w_train_res = _compute_time_decay_weights(
+                len(y_train_res), half_life_bars=self.time_decay_half_life_bars
+            )
             logger.info(
                 "Minority Class Oversampling applied to training buffer",
                 original_size=len(y_train),
@@ -480,15 +504,17 @@ class WalkForwardTrainer:
         val_loader = self._make_loader(val_ds, val_batch, shuffle=False)
 
         # Compute Class Weights for fine-tuning (Unit weights if oversampled to prevent NO_TRADE suppression)
-        weights_tensor = self._build_class_weights(y_train, is_online_fine_tune=True).to(self.device)
-        
+        weights_tensor = self._build_class_weights(y_train, is_online_fine_tune=True).to(
+            self.device
+        )
+
         focal_criterion = FocalLossWithSmoothing(
             alpha=weights_tensor,
             gamma=self.focal_gamma,
             label_smoothing=self.label_smoothing,
             reduction="mean",
         )
-        
+
         focal_criterion_none = FocalLossWithSmoothing(
             alpha=weights_tensor,
             gamma=self.focal_gamma,
@@ -497,14 +523,21 @@ class WalkForwardTrainer:
         )
 
         # Differential Learning Rate: 10x higher LR on classifier head to rapidly break random bias
-        head_params = list(working_model.classifier.parameters()) + list(working_model.fc1.parameters()) + list(working_model.fc2.parameters())
+        head_params = (
+            list(working_model.classifier.parameters())
+            + list(working_model.fc1.parameters())
+            + list(working_model.fc2.parameters())
+        )
         head_param_ids = set(map(id, head_params))
         backbone_params = [p for p in working_model.parameters() if id(p) not in head_param_ids]
 
-        optimizer = torch.optim.AdamW([
-            {"params": backbone_params, "lr": learning_rate},
-            {"params": head_params, "lr": learning_rate * 10.0},
-        ], weight_decay=1e-3)
+        optimizer = torch.optim.AdamW(
+            [
+                {"params": backbone_params, "lr": learning_rate},
+                {"params": head_params, "lr": learning_rate * 10.0},
+            ],
+            weight_decay=1e-3,
+        )
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
 
@@ -521,8 +554,13 @@ class WalkForwardTrainer:
                 baseline_targets_all.extend(by.cpu().numpy().tolist())
 
         total_val_samples = len(baseline_preds_all) if len(baseline_preds_all) > 0 else 1
-        baseline_acc = float(np.sum(np.array(baseline_preds_all) == np.array(baseline_targets_all)) / total_val_samples)
-        baseline_max_dominance = float(np.max(np.bincount(baseline_preds_all, minlength=self.NUM_CLASSES)) / total_val_samples)
+        baseline_acc = float(
+            np.sum(np.array(baseline_preds_all) == np.array(baseline_targets_all))
+            / total_val_samples
+        )
+        baseline_max_dominance = float(
+            np.max(np.bincount(baseline_preds_all, minlength=self.NUM_CLASSES)) / total_val_samples
+        )
 
         logger.info(
             "Baseline validation state",
@@ -539,13 +577,20 @@ class WalkForwardTrainer:
         # Fine-Tuning Execution Loop with Early Stopping
         for ep in range(epochs):
             working_model.train()
-            train_loss = self._train_one_epoch_smc(working_model, train_loader, optimizer, focal_criterion_none, feature_cols)
+            train_loss = self._train_one_epoch_smc(
+                working_model, train_loader, optimizer, focal_criterion_none, feature_cols
+            )
             scheduler.step()
 
             working_model.eval()
             val_loss = self._evaluate_loss(working_model, val_loader, focal_criterion)
 
-            logger.info("Online fine-tuning epoch complete", epoch=ep + 1, train_loss=train_loss, val_loss=val_loss)
+            logger.info(
+                "Online fine-tuning epoch complete",
+                epoch=ep + 1,
+                train_loss=train_loss,
+                val_loss=val_loss,
+            )
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -588,19 +633,29 @@ class WalkForwardTrainer:
         per_class_recall = {}
         per_class_precision = {}
         for c, c_name in [(0, "NO_TRADE"), (1, "BUY"), (2, "SELL")]:
-            target_mask = (np.array(targets_all) == c)
-            pred_mask = (preds_arr == c)
+            target_mask = np.array(targets_all) == c
+            pred_mask = preds_arr == c
 
             total_targets_c = np.sum(target_mask)
-            rec_c = float(np.sum(pred_mask & target_mask) / total_targets_c) if total_targets_c > 0 else 1.0
+            rec_c = (
+                float(np.sum(pred_mask & target_mask) / total_targets_c)
+                if total_targets_c > 0
+                else 1.0
+            )
             per_class_recall[c_name] = round(rec_c, 3)
 
             total_preds_c = np.sum(pred_mask)
-            prec_c = float(np.sum(pred_mask & target_mask) / total_preds_c) if total_preds_c > 0 else 0.0
+            prec_c = (
+                float(np.sum(pred_mask & target_mask) / total_preds_c) if total_preds_c > 0 else 0.0
+            )
             per_class_precision[c_name] = round(prec_c, 3)
 
-        entropy_vals = -np.sum(probs_arr * np.log(probs_arr + 1e-9), axis=1) if probs_arr.size > 0 else np.array([0.0])
-        avg_entropy = float(np.mean(entropy_vals))
+        entropy_vals = (
+            -np.sum(probs_arr * np.log(probs_arr + 1e-9), axis=1)
+            if probs_arr.size > 0
+            else np.array([0.0])
+        )
+        float(np.mean(entropy_vals))
 
         max_probs = np.max(probs_arr, axis=1) if len(probs_arr) > 0 else np.array([])
         conf_hist, _ = np.histogram(max_probs, bins=5, range=(0.0, 1.0))
@@ -608,7 +663,9 @@ class WalkForwardTrainer:
 
         unique_classes = set(preds_arr.tolist())
         val_class_counts = np.bincount(targets_all, minlength=self.NUM_CLASSES)
-        val_max_dominance = float(np.max(val_class_counts) / len(targets_all)) if len(targets_all) > 0 else 1.0
+        val_max_dominance = (
+            float(np.max(val_class_counts) / len(targets_all)) if len(targets_all) > 0 else 1.0
+        )
 
         max_dominance = max(class_dist[:3]) if class_dist else 1.0
         dominant_class = int(np.argmax(class_dist[:3])) if class_dist else 0
@@ -622,7 +679,9 @@ class WalkForwardTrainer:
         if is_cold_start:
             effective_min_val_acc = baseline_acc + self.min_accuracy_improvement
         else:
-            effective_min_val_acc = max(self.min_validation_accuracy, baseline_acc + self.min_accuracy_improvement)
+            effective_min_val_acc = max(
+                self.min_validation_accuracy, baseline_acc + self.min_accuracy_improvement
+            )
 
         # Quality Check 1: Minimum Validation Accuracy
         if val_acc < effective_min_val_acc:
@@ -681,21 +740,21 @@ class WalkForwardTrainer:
         else:
             dominance_threshold = max(0.85, val_max_dominance + 0.15)
 
-        no_dominance_breach = (max_dominance <= dominance_threshold)
-        sufficient_entropy = (avg_entropy >= 0.30)
-        has_diversity = len(unique_classes) >= 2 or val_max_dominance == 1.0
+        no_dominance_breach = max_dominance <= dominance_threshold
+        len(unique_classes) >= 2 or val_max_dominance == 1.0
 
         if not no_dominance_breach:
-            rejection_reasons.append(f"Dominance breach: max class ratio ({max_dominance:.1%}) > threshold ({dominance_threshold:.1%})")
+            rejection_reasons.append(
+                f"Dominance breach: max class ratio ({max_dominance:.1%}) > threshold ({dominance_threshold:.1%})"
+            )
 
-        quality_gate_passed = (len(rejection_reasons) == 0)
+        quality_gate_passed = len(rejection_reasons) == 0
         # Condition 3: new model must strictly beat the baseline validation loss.
-        loss_improved = (final_val_loss <= baseline_val_loss + 1e-4)
+        loss_improved = final_val_loss <= baseline_val_loss + 1e-4
         # Condition 4: early stopping must NOT have triggered, unless the new model is
         # strictly superior to baseline on BOTH accuracy and loss (a hard override).
-        metrics_superior = (
-            (val_acc > baseline_acc + self.min_accuracy_improvement)
-            and (final_val_loss < baseline_val_loss)
+        metrics_superior = (val_acc > baseline_acc + self.min_accuracy_improvement) and (
+            final_val_loss < baseline_val_loss
         )
         early_stopping_ok = (not early_stopping_triggered) or metrics_superior
         accepted = bool(quality_gate_passed and loss_improved and early_stopping_ok)
@@ -719,7 +778,9 @@ class WalkForwardTrainer:
             self._save_scaler(scaler)
             ret_model = working_model
         elif accepted:
-            logger.info("New quality-gated model deployment approved. Overwriting active model checkpoint.")
+            logger.info(
+                "New quality-gated model deployment approved. Overwriting active model checkpoint."
+            )
             self._save_checkpoint(working_model)
             self._save_scaler(scaler)
             ret_model = working_model
@@ -729,7 +790,9 @@ class WalkForwardTrainer:
             logger.warning(
                 "New model REJECTED by quality gate. Rolling back to healthy baseline.",
                 accepted=False,
-                reasons=rejection_reasons if rejection_reasons else ["Validation Quality Degradation"],
+                reasons=rejection_reasons
+                if rejection_reasons
+                else ["Validation Quality Degradation"],
             )
             working_model.load_state_dict(baseline_state)
             ret_model = working_model
@@ -763,10 +826,10 @@ class WalkForwardTrainer:
         out = df
 
         if "label_evaluated" in out.columns:
-            out = out.filter(pl.col("label_evaluated") == True)
+            out = out.filter(pl.col("label_evaluated"))
 
         if "is_purged" in out.columns:
-            out = out.filter(pl.col("is_purged") == False)
+            out = out.filter(~pl.col("is_purged"))  # <-- FIXED: Bitwise NOT for Polars
 
         return out
 
@@ -774,7 +837,9 @@ class WalkForwardTrainer:
     # INTERNAL: EXTRACTION / TRANSFORM
     # =========================================================================
 
-    def _extract_X_y(self, df: pl.DataFrame, feature_cols: list[str]) -> tuple[np.ndarray, np.ndarray]:
+    def _extract_X_y(
+        self, df: pl.DataFrame, feature_cols: list[str]
+    ) -> tuple[np.ndarray, np.ndarray]:
         X_raw = df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
         X_raw = np.nan_to_num(X_raw, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -812,7 +877,9 @@ class WalkForwardTrainer:
         model.to(self.device)
         return model
 
-    def _build_class_weights(self, y: np.ndarray, is_online_fine_tune: bool = False) -> torch.Tensor:
+    def _build_class_weights(
+        self, y: np.ndarray, is_online_fine_tune: bool = False
+    ) -> torch.Tensor:
         # ---------------------------------------------------------------------
         # TASK 2 FIX: weights MUST match the model's true output dimension.
         # The deployed head is 4 units (NO_TRADE, BUY, SELL, WAIT) per the saved
@@ -826,7 +893,9 @@ class WalkForwardTrainer:
         try:
             num_classes = int(self._model_num_classes)  # type: ignore[attr-defined]
         except Exception:
-            num_classes = max(int(self.NUM_CLASSES), int(np.max(y) + 1) if len(y) else int(self.NUM_CLASSES))
+            num_classes = max(
+                int(self.NUM_CLASSES), int(np.max(y) + 1) if len(y) else int(self.NUM_CLASSES)
+            )
 
         class_counts = np.bincount(y, minlength=num_classes)
         # Guard: never index beyond the real number of classes.
@@ -924,7 +993,6 @@ class WalkForwardTrainer:
 
         return total_loss / max(1, total_rows)
 
-
     def _train_one_epoch_smc(
         self,
         model: ScalpNet,
@@ -937,8 +1005,14 @@ class WalkForwardTrainer:
         total_loss = 0.0
         total_rows = 0
 
-        idx_bos = feature_cols.index("feat_ob_valid_bos") if "feat_ob_valid_bos" in feature_cols else 46
-        idx_equil = feature_cols.index("feat_ob_equilibrium_ratio") if "feat_ob_equilibrium_ratio" in feature_cols else 47
+        idx_bos = (
+            feature_cols.index("feat_ob_valid_bos") if "feat_ob_valid_bos" in feature_cols else 46
+        )
+        idx_equil = (
+            feature_cols.index("feat_ob_equilibrium_ratio")
+            if "feat_ob_equilibrium_ratio" in feature_cols
+            else 47
+        )
 
         for batch_x, batch_y, *rest in loader:
             optimizer.zero_grad(set_to_none=True)
@@ -1126,7 +1200,7 @@ class WalkForwardTrainer:
                 raise RuntimeError("ScalerBundle is missing mean/std (cannot save).")
 
             mean = np.asarray(scaler.mean, dtype=np.float32).reshape(-1)
-            std  = np.asarray(scaler.std,  dtype=np.float32).reshape(-1)
+            std = np.asarray(scaler.std, dtype=np.float32).reshape(-1)
 
             if mean.size != self.NUM_FEATURES or std.size != self.NUM_FEATURES:
                 raise RuntimeError(
@@ -1163,7 +1237,7 @@ class WalkForwardTrainer:
 
         data = np.load(scaler_path)
         mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
-        std  = np.asarray(data["std"],  dtype=np.float32).reshape(-1)
+        std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
 
         if mean.size != self.NUM_FEATURES or std.size != self.NUM_FEATURES:
             raise RuntimeError(
@@ -1231,8 +1305,6 @@ class WalkForwardTrainer:
             pass
 
 
-
-
 # =============================================================================
 # LOSS & SAMPLING HELPERS FOR ANTI-COLLAPSE FINE-TUNING
 # =============================================================================
@@ -1256,7 +1328,10 @@ class FocalLossWithSmoothing(nn.Module):
         self.reduction = reduction
 
     def forward(
-        self, logits: torch.Tensor, targets: torch.Tensor, sample_weights: torch.Tensor | None = None
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        sample_weights: torch.Tensor | None = None,
     ) -> torch.Tensor:
         num_classes = logits.shape[1]
         log_probs = F.log_softmax(logits, dim=-1)
@@ -1266,7 +1341,9 @@ class FocalLossWithSmoothing(nn.Module):
         with torch.no_grad():
             target_probs = torch.full_like(log_probs, self.label_smoothing / num_classes)
             target_probs.scatter_(
-                1, targets.unsqueeze(1), 1.0 - self.label_smoothing + (self.label_smoothing / num_classes)
+                1,
+                targets.unsqueeze(1),
+                1.0 - self.label_smoothing + (self.label_smoothing / num_classes),
             )
 
         # Focal factor: (1 - p_t)^gamma
@@ -1315,7 +1392,12 @@ def _balance_oversample_dataset(
             repeat_count = max_count // len(c_idx)
             remainder = max_count % len(c_idx)
             selected = np.concatenate(
-                [np.tile(c_idx, repeat_count), np.random.choice(c_idx, remainder, replace=False if len(c_idx) >= remainder else True)]
+                [
+                    np.tile(c_idx, repeat_count),
+                    np.random.choice(
+                        c_idx, remainder, replace=False if len(c_idx) >= remainder else True
+                    ),
+                ]
             )
         else:
             selected = c_idx

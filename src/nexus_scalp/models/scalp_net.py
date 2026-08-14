@@ -63,7 +63,9 @@ class SinusoidalPositionalEncoding(nn.Module):
         super().__init__()
         pe = torch.zeros(max_len, hidden_dim)
         position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, hidden_dim, 2, dtype=torch.float32) * (-math.log(10000.0) / hidden_dim))
+        div_term = torch.exp(
+            torch.arange(0, hidden_dim, 2, dtype=torch.float32) * (-math.log(10000.0) / hidden_dim)
+        )
 
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -82,9 +84,9 @@ class ScalpNet(nn.Module):
 
     def __init__(
         self,
-        num_features: int = 50,   # 50-dimension Master FeatureVector tensor alignment
-        num_classes: int = 4,     # Output logits: 0=NO_TRADE, 1=BUY_MARKET, 2=SELL_MARKET, 3=WAIT
-        hidden_dim: int = 128,    # Capacity for institutional microstructure patterns
+        num_features: int = 50,  # 50-dimension Master FeatureVector tensor alignment
+        num_classes: int = 4,  # Output logits: 0=NO_TRADE, 1=BUY_MARKET, 2=SELL_MARKET, 3=WAIT
+        hidden_dim: int = 128,  # Capacity for institutional microstructure patterns
         num_heads: int = 4,
         dropout_rate: float = 0.25,
     ) -> None:
@@ -136,7 +138,7 @@ class ScalpNet(nn.Module):
         Returns:
             torch.Tensor: Normalized probabilities or raw logits.
         """
-        is_2d_input = (x.dim() == 2)
+        is_2d_input = x.dim() == 2
 
         if is_2d_input:
             # Expand single 2D vector snapshot to sequence length 1: (Batch, 1, Features)
@@ -157,14 +159,14 @@ class ScalpNet(nn.Module):
         else:
             # Dual-Path: 3D Sequence Causal TCN + Positional Attention Path
             h_tcn = h.transpose(1, 2)  # (Batch, Hidden, Seq)
-            
+
             # Causal Convolutions
             h_tcn = F.gelu(self.causal_conv1(h_tcn))
             h_tcn = F.gelu(self.causal_conv2(h_tcn))
             h_tcn = F.gelu(self.causal_conv3(h_tcn))
-            
+
             h_tcn = h_tcn.transpose(1, 2)  # (Batch, Seq, Hidden)
-            h = self.tcn_norm(h + h_tcn)   # Residual Skip Connection
+            h = self.tcn_norm(h + h_tcn)  # Residual Skip Connection
 
             # Inject Positional Encoding & Apply Multi-Head Self-Attention
             h_pos = self.pos_encoder(h)
@@ -178,7 +180,7 @@ class ScalpNet(nn.Module):
         h_dense = F.gelu(self.fc1(h_pooled))
         h_dense = self.dropout(h_dense)
         h_dense = F.gelu(self.fc2(h_dense))
-        
+
         logits = self.classifier(h_dense)
 
         # Return raw logits during training or when explicitly requested

@@ -1,13 +1,14 @@
-# ruff: noqa: PLR2004, PLR0917, E501, RUF012, PLR0911, UP045
+# ruff: noqa: RUF012, UP045
 """
 Telegram Production Notification Subsystem
 ==========================================
 Non-blocking, Thread-Pool-backed Telegram alert engine providing full market telemetry,
 trade open/close notifications, risk events, account health, and ICT structural alerts.
 
-[EXPANDED] Fully supports Telegram Message Threading (reply_to_message_id) so all updates, 
+[EXPANDED] Fully supports Telegram Message Threading (reply_to_message_id) so all updates,
 break-even locks, trailing stops, and trade exits are cleanly replied to the original order message.
 """
+
 from __future__ import annotations
 
 import html
@@ -94,9 +95,11 @@ class TelegramNotifier:
     def _redact_secrets(self, text: str) -> str:
         """Redacts sensitive credentials from the alert body."""
         # Redact Telegram bot tokens
-        text = re.sub(r'\d{8,10}:[A-Za-z0-9_-]{35}', '[REDACTED_BOT_TOKEN]', text)
+        text = re.sub(r"\d{8,10}:[A-Za-z0-9_-]{35}", "[REDACTED_BOT_TOKEN]", text)
         # Redact generic credentials patterns
-        text = re.sub(r'(?i)(password|secret|key|token|auth)\s*[:=]\s*[^\s]+', r'\1=[REDACTED]', text)
+        text = re.sub(
+            r"(?i)(password|secret|key|token|auth)\s*[:=]\s*[^\s]+", r"\1=[REDACTED]", text
+        )
         return text
 
     def _is_duplicate_or_cooling_down(self, html_text: str) -> bool:
@@ -104,12 +107,11 @@ class TelegramNotifier:
         now = time.time()
         # Clean expired records
         self._recent_messages = {
-            k: t for k, t in self._recent_messages.items()
-            if now - t < self.deduplication_window
+            k: t for k, t in self._recent_messages.items() if now - t < self.deduplication_window
         }
 
         # Normalize message by removing numbers/IDs
-        sig = re.sub(r'\d+', '', html_text)[:150]
+        sig = re.sub(r"\d+", "", html_text)[:150]
         if sig in self._recent_messages:
             return True
 
@@ -454,7 +456,7 @@ class TelegramNotifier:
             f"📊 <b>Symbol:</b> <code>{self._escape(symbol)}</code>\n"
             f"🔺 <b>50-Bar High:</b> <code>{high_50:.2f}</code>\n"
             f"🔻 <b>50-Bar Low:</b> <code>{low_50:.2f}</code>\n"
-            f"📍 <b>Range Position:</b> <code>{range_pos_pct*100:.1f}% ({pos_type})</code>"
+            f"📍 <b>Range Position:</b> <code>{range_pos_pct * 100:.1f}% ({pos_type})</code>"
         )
         return self.send(msg, callback=callback, severity="WARNING")
 
@@ -530,8 +532,7 @@ class TelegramNotifier:
     ) -> Optional[int]:
         """13. Account Survival Mode Status Alert"""
         status = (
-            "🔴 ACTIVATED (HIGH CONVICTION ONLY)" if active
-            else "🟢 DEACTIVATED (NORMAL TRADING)"
+            "🔴 ACTIVATED (HIGH CONVICTION ONLY)" if active else "🟢 DEACTIVATED (NORMAL TRADING)"
         )
         msg = (
             f"🛡️ <b>ACCOUNT SURVIVAL MODE: {status}</b>\n"
@@ -684,7 +685,9 @@ class TelegramNotifier:
             f"⏱️ <b>Duration:</b> <code>{int(duration_sec)}s</code>\n"
             f"✨ <b>Status:</b> <i>Successfully hit TP target!</i>"
         )
-        return self.send(msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO")
+        return self.send(
+            msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO"
+        )
 
     def notify_sl_touched(
         self,
@@ -715,7 +718,9 @@ class TelegramNotifier:
             f"⚠️ <b>Allocated Risk:</b> <code>${risk_usd:.2f}</code>\n"
             f"🛡️ <b>Capital Safeguard:</b> <i>Position closed to protect equity</i>"
         )
-        return self.send(msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="WARNING")
+        return self.send(
+            msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="WARNING"
+        )
 
     def notify_manual_close(
         self,
@@ -742,7 +747,9 @@ class TelegramNotifier:
             f"⏱️ <b>Duration:</b> <code>{int(duration_sec)}s</code>\n"
             f"📝 <b>MT5 Closing Reason:</b> <code>{self._escape(reason)}</code>"
         )
-        return self.send(msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO")
+        return self.send(
+            msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO"
+        )
 
     def notify_emergency_cut(
         self,
@@ -766,7 +773,9 @@ class TelegramNotifier:
             f"📉 <b>Pre-close Drawdown:</b> <code>{drawdown_pct:.2f}%</code>\n"
             f"🛡️ <b>Action:</b> <i>Emergency closed! (Saved ~${saved_usd:.2f})</i>"
         )
-        return self.send(msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="WARNING")
+        return self.send(
+            msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="WARNING"
+        )
 
     def notify_trailing_stop_advanced_extended(
         self,
@@ -785,7 +794,9 @@ class TelegramNotifier:
             f"🎯 <b>Current Price:</b> <code>{current_price:.2f}</code>\n"
             f"🔒 <b>Stop Loss Step:</b> <code>{old_sl:.2f}</code> ➔ <b><code>{new_sl:.2f}</code></b>"
         )
-        return self.send(msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO")
+        return self.send(
+            msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO"
+        )
 
     def notify_partial_close(
         self,
@@ -809,7 +820,9 @@ class TelegramNotifier:
             f"{emoji} <b>Realized PnL:</b> <code>{'+$' if realized_profit_usd >= 0 else '-$'}{abs(realized_profit_usd):,.2f}</code>\n"
             f"🛡️ <b>Action:</b> <i>Scaled out part of the position to secure profits</i>"
         )
-        return self.send(msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO")
+        return self.send(
+            msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO"
+        )
 
     def notify_break_even_applied_extended(
         self,
@@ -830,7 +843,9 @@ class TelegramNotifier:
             f"🔒 <b>Protected PnL:</b> <code>${protected_amount_usd:.2f}</code>\n"
             f"✨ <b>Status:</b> <i>Trade is now 100% Risk-Free!</i>"
         )
-        return self.send(msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO")
+        return self.send(
+            msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO"
+        )
 
     def notify_order_modification(
         self,
@@ -851,4 +866,6 @@ class TelegramNotifier:
             f"⚙️ <b>Field Modified:</b> <code>{self._escape(field_modified)}</code>\n"
             f"📝 <b>Change:</b> <code>{self._escape(old_value)}</code> ➔ <b><code>{self._escape(new_value)}</code></b>"
         )
-        return self.send(msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO")
+        return self.send(
+            msg, reply_to_message_id=reply_to_message_id, callback=callback, severity="INFO"
+        )

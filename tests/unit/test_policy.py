@@ -1,10 +1,11 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
 import pytest
 import torch
 
+from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.domain.models import TickData, TradeProposal
-from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.signals.policy import SignalPolicy
 
@@ -24,7 +25,9 @@ def test_same_level_reentry_blocked_cleared_when_no_live_orders():
     om = MockOrderManager(live_tickets=[])
 
     # Tick and features
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.2, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.2, volume=1.0
+    )
     fv = FeatureVector(
         symbol="XAUUSD",
         timestamp_utc=tick.timestamp.isoformat(),
@@ -117,17 +120,21 @@ def test_same_level_reentry_blocked_triggers_with_live_order():
     policy.algo_config.min_risk_reward_ratio = 0.10
 
     # Mock order manager with a live ticket on XAUUSD, magic 888101 at price 2000.00
-    om = MockOrderManager(live_tickets=[
-        {
-            "ticket": 999,
-            "symbol": "XAUUSD",
-            "price": 2000.00,
-            "magic": 888101,
-            "type": "POSITION"
-        }
-    ])
+    om = MockOrderManager(
+        live_tickets=[
+            {
+                "ticket": 999,
+                "symbol": "XAUUSD",
+                "price": 2000.00,
+                "magic": 888101,
+                "type": "POSITION",
+            }
+        ]
+    )
 
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.10, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.10, volume=1.0
+    )
     fv = FeatureVector(
         symbol="XAUUSD",
         timestamp_utc=tick.timestamp.isoformat(),
@@ -211,7 +218,9 @@ def test_sr_support_margin_relaxation_strong_bearish():
     policy.confidence_threshold = 0.10
     policy.algo_config.min_risk_reward_ratio = 0.10
 
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.10, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.10, volume=1.0
+    )
     fv = FeatureVector(
         symbol="XAUUSD",
         timestamp_utc=tick.timestamp.isoformat(),
@@ -265,11 +274,11 @@ def test_sr_support_margin_relaxation_strong_bearish():
         dist_to_ema_21=1.0,
         dist_to_ema_50=1.0,
         cross_asset_z_score=0.0,
-        htf_h4_trend=-1.0,       # Strong Bearish
-        htf_h1_momentum=-2.5,     # Strong Bearish
+        htf_h4_trend=-1.0,  # Strong Bearish
+        htf_h1_momentum=-2.5,  # Strong Bearish
         htf_m30_structure=-1.0,
         htf_m15_confirmation=-1.0,
-        support_zone_dist=0.15,   # Distance is 0.15 (< 0.25)
+        support_zone_dist=0.15,  # Distance is 0.15 (< 0.25)
         resistance_zone_dist=5.0,
         trend_strength=-1.0,
         consolidation_ratio=1.0,

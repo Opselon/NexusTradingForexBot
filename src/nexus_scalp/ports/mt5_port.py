@@ -53,7 +53,9 @@ class IMT5Port(ABC):
         pass
 
     @abstractmethod
-    def get_historical_bars(self, symbol: str, timeframe: str = "M1", count: int = 100) -> list[BarData]:
+    def get_historical_bars(
+        self, symbol: str, timeframe: str = "M1", count: int = 100
+    ) -> list[BarData]:
         """
         Retrieves historical completed OHLC bars directly from MT5 rates database.
         """
@@ -83,11 +85,27 @@ class IMT5Port(ABC):
         """Retrieves closed deals history for a symbol."""
         return []
 
-    def execute_market_order(self, symbol: str, order_type: OrderType, volume: float, price: float, stop_loss: float, take_profit: float) -> int:
+    def execute_market_order(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> int:
         """Executes a market order and returns the ticket."""
         return 0
 
-    def place_pending_order(self, symbol: str, order_type: OrderType, volume: float, price: float, stop_loss: float, take_profit: float) -> int:
+    def place_pending_order(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> int:
         """Places a pending order and returns the ticket."""
         return 0
 

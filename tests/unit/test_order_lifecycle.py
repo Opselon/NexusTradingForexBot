@@ -1,19 +1,27 @@
 import os
-import tempfile
 import sqlite3
+import tempfile
 import time
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
 import pytest
 import torch
 
-from nexus_scalp.domain.enums import ActionType, OrderType
-from nexus_scalp.domain.models import AccountInfo, Position, SymbolInfo, TickData, TradeProposal, TradeOrder
-from nexus_scalp.configuration.config import AppConfig, RiskConfig, AlgoConfig
-from nexus_scalp.features.scalp_features import FeatureVector
-from nexus_scalp.signals.policy import SignalPolicy
-from nexus_scalp.risk.risk_engine import RiskEngine
-from nexus_scalp.execution.order_manager import OrderLifecycleManager
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.configuration.config import AlgoConfig, AppConfig, RiskConfig
+from nexus_scalp.domain.enums import ActionType, OrderType
+from nexus_scalp.domain.models import (
+    AccountInfo,
+    Position,
+    SymbolInfo,
+    TickData,
+    TradeOrder,
+    TradeProposal,
+)
+from nexus_scalp.execution.order_manager import OrderLifecycleManager
+from nexus_scalp.features.scalp_features import FeatureVector
+from nexus_scalp.risk.risk_engine import RiskEngine
+from nexus_scalp.signals.policy import SignalPolicy
 
 
 class MockMT5Port:
@@ -67,6 +75,7 @@ class MockMT5Port:
         for i, p in enumerate(self.positions):
             if p.ticket == ticket:
                 from nexus_scalp.domain.models import Position
+
                 self.positions[i] = Position(
                     ticket=p.ticket,
                     symbol=p.symbol,
@@ -86,12 +95,14 @@ def test_structural_entry_and_sl_tp_generation():
     """Verify policy.py generates structural SL/TP levels and enforces min risk-reward validation."""
     algo_cfg = AlgoConfig(
         atr_sl_buffer_multiplier=1.5,
-        min_risk_reward_ratio=2.0, # Require at least 2.0 RR
+        min_risk_reward_ratio=2.0,  # Require at least 2.0 RR
     )
     policy = SignalPolicy(algo_config=algo_cfg)
 
     # Setup simulated completed bar elements
-    tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.2, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.2, volume=1.0
+    )
 
     # Setup high/low swings so that we can test structural generation
     fv = FeatureVector(
@@ -111,7 +122,7 @@ def test_structural_entry_and_sl_tp_generation():
         close_location_value=0.5,
         consecutive_momentum_count=1.0,
         dist_to_swing_high_20=2.0,  # 2.0 * ATR(2.00) = +4.0 (swing_high is 2004.2)
-        dist_to_swing_low_20=2.0,   # 2.0 * ATR(2.00) = -4.0 (swing_low is 1996.2)
+        dist_to_swing_low_20=2.0,  # 2.0 * ATR(2.00) = -4.0 (swing_low is 1996.2)
         price_compression_flag_ratio=1.0,
         is_at_extreme_high=False,
         is_at_extreme_low=False,
@@ -141,7 +152,7 @@ def test_structural_entry_and_sl_tp_generation():
         senkou_span_a=2000.0,
         senkou_span_b=2000.0,
         tk_cross_signal=0,
-        is_above_kumo=True, # Supports BUY
+        is_above_kumo=True,  # Supports BUY
         is_below_kumo=False,
         rsi_14=50.0,
         dist_to_ema_21=1.0,
@@ -173,14 +184,35 @@ def test_structural_entry_and_sl_tp_generation():
 def test_risk_engine_fixed_dollar_sizing():
     """Verify that RiskEngine enforces fixed dollar risk and scales lot sizes based on structural SL distance."""
     risk_cfg = RiskConfig(
-        risk_per_trade_pct=2.0, # 2% risk per trade
+        risk_per_trade_pct=2.0,  # 2% risk per trade
         max_allowed_lots=10.0,
         max_concurrent_positions=2,
     )
     risk_engine = RiskEngine(config=risk_cfg, min_risk_reward_ratio=1.5)
 
-    account = AccountInfo(login=123, trade_mode=0, leverage=100, balance=10000.0, equity=10000.0, margin=0.0, margin_free=10000.0, currency="USD")
-    symbol_info = SymbolInfo(symbol="XAUUSD", digits=2, point=0.01, tick_size=0.01, tick_value=1.0, volume_min=0.01, volume_max=50.0, volume_step=0.01, stops_level=10, freeze_level=0, trade_contract_size=100.0)
+    account = AccountInfo(
+        login=123,
+        trade_mode=0,
+        leverage=100,
+        balance=10000.0,
+        equity=10000.0,
+        margin=0.0,
+        margin_free=10000.0,
+        currency="USD",
+    )
+    symbol_info = SymbolInfo(
+        symbol="XAUUSD",
+        digits=2,
+        point=0.01,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=50.0,
+        volume_step=0.01,
+        stops_level=10,
+        freeze_level=0,
+        trade_contract_size=100.0,
+    )
 
     # Case A: Tight SL (2.00 price delta)
     # Risk Amount = 10000.0 * 2% = 200.0 USD
@@ -231,7 +263,9 @@ def test_order_modification_and_sl_shift():
 
     # Initialize order manager tracking with high buy probs so that the adaptive manager
     # holds the position (LOSS_RECOVERY_CONFIRMED) instead of closing it early (LOSS_EXIT_PRESSURE).
-    tick_init = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.2, volume=1.0)
+    tick_init = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2000.2, volume=1.0
+    )
     probs = torch.tensor([[0.01, 0.98, 0.01]])
     om.manage_active_positions("XAUUSD", tick_init, probs=probs)
 
@@ -247,19 +281,23 @@ def test_order_modification_and_sl_shift():
 
     # 2. Simulate closure at the modified SL: exit price of XAUUSD drops to 2000.10
     # Simulate broker history containing this closed deal
-    mock_port.closed_deals = [{
-        "position_ticket": 301,
-        "profit": 10.00,
-        "swap": 0.0,
-        "commission": 0.0,
-        "price": 2000.10,
-        "reason": 3,  # SL hit
-        "comment": "SL hit NSE_TRAIL",
-    }]
-    mock_port.positions = [] # closed!
+    mock_port.closed_deals = [
+        {
+            "position_ticket": 301,
+            "profit": 10.00,
+            "swap": 0.0,
+            "commission": 0.0,
+            "price": 2000.10,
+            "reason": 3,  # SL hit
+            "comment": "SL hit NSE_TRAIL",
+        }
+    ]
+    mock_port.positions = []  # closed!
 
     # Trigger position evaluation, which identifies the dead ticket and writes the autopsy log
-    tick_close = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.10, ask=2000.30, volume=1.0)
+    tick_close = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.10, ask=2000.30, volume=1.0
+    )
     om.manage_active_positions("XAUUSD", tick_close)
 
     # Flush any asynchronous writes to SQLite by closing the audit repo
@@ -269,13 +307,15 @@ def test_order_modification_and_sl_shift():
     # Retrieve logged ledger record to assert autopsy details
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT is_risk_free_hit, final_sl_price, exit_mechanism FROM audit_ledger WHERE ticket = 301;")
+    cursor.execute(
+        "SELECT is_risk_free_hit, final_sl_price, exit_mechanism FROM audit_ledger WHERE ticket = 301;"
+    )
     row = cursor.fetchone()
     conn.close()
 
     assert row is not None
     is_rf, final_sl_db, exit_mechanism = row
-    assert is_rf == 1 # Risk-free hit is True!
+    assert is_rf == 1  # Risk-free hit is True!
     assert final_sl_db == 2000.10
     assert exit_mechanism == "RISK_FREE_SL_HIT"
 
@@ -305,26 +345,32 @@ def test_trade_autopsy_db_persistence():
     mock_port.positions = [pos]
 
     # Initialize tracking
-    tick_init = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.10, ask=2000.30, volume=1.0)
+    tick_init = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.10, ask=2000.30, volume=1.0
+    )
     om.manage_active_positions("XAUUSD", tick_init)
 
     # Update MAE / MFE excursions
-    om._update_mfe_mae(401, 15.50) # MFE price delta of +15.50
-    om._update_mfe_mae(401, -3.20) # MAE price delta of -3.20
+    om._update_mfe_mae(401, 15.50)  # MFE price delta of +15.50
+    om._update_mfe_mae(401, -3.20)  # MAE price delta of -3.20
 
     # Simulate trade closure (avoiding manually_closed matching string in comment)
-    mock_port.closed_deals = [{
-        "position_ticket": 401,
-        "profit": 1550.00,
-        "swap": 0.0,
-        "commission": -5.00,
-        "price": 2015.50,
-        "reason": 4,  # TP hit
-        "comment": "TP hit target",
-    }]
-    mock_port.positions = [] # closed!
+    mock_port.closed_deals = [
+        {
+            "position_ticket": 401,
+            "profit": 1550.00,
+            "swap": 0.0,
+            "commission": -5.00,
+            "price": 2015.50,
+            "reason": 4,  # TP hit
+            "comment": "TP hit target",
+        }
+    ]
+    mock_port.positions = []  # closed!
 
-    tick_close = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2015.50, ask=2015.70, volume=1.0)
+    tick_close = TickData(
+        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2015.50, ask=2015.70, volume=1.0
+    )
     om.manage_active_positions("XAUUSD", tick_close)
 
     # Flush any asynchronous writes to SQLite by closing the audit repo
@@ -334,7 +380,9 @@ def test_trade_autopsy_db_persistence():
     # Query DB and assert full autopsy records
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT mae, mfe, initial_sl_price, final_sl_price, is_risk_free_hit, exit_mechanism FROM audit_ledger WHERE ticket = 401;")
+    cursor.execute(
+        "SELECT mae, mfe, initial_sl_price, final_sl_price, is_risk_free_hit, exit_mechanism FROM audit_ledger WHERE ticket = 401;"
+    )
     row = cursor.fetchone()
     conn.close()
 
@@ -343,6 +391,6 @@ def test_trade_autopsy_db_persistence():
     assert mae == -3.20
     assert mfe == 15.50
     assert initial_sl == 1990.00
-    assert final_sl == 1990.00 # Not modified
+    assert final_sl == 1990.00  # Not modified
     assert is_rf == 0
     assert exit_reason == "TAKE_PROFIT_HIT"

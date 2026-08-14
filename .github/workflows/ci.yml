@@ -45,11 +45,12 @@ jobs:
 
       - name: Pytest with coverage
         run: |
-          pytest --cov=src --cov-report=term-missing --cov-report=xml -q
+          pytest --cov=src --cov-report=term-missing --cov-report=xml:./coverage.xml -q
 
       - name: Upload coverage report
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@v5
         if: always()
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

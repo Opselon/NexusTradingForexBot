@@ -42,8 +42,8 @@ class RiskEngine:
         config: RiskConfig,
         max_margin_usage_pct: float = 10.0,
         max_allowed_lots: float = 50.0,
-        eta_coefficient: float = 200.0,        # HFT Calibrated Almgren-Chriss coefficient for Gold micro-lots
-        max_impact_reward_ratio: float = 0.45, # Allow up to 45% slippage/reward ratio on tight M1 targets
+        eta_coefficient: float = 200.0,  # HFT Calibrated Almgren-Chriss coefficient for Gold micro-lots
+        max_impact_reward_ratio: float = 0.45,  # Allow up to 45% slippage/reward ratio on tight M1 targets
         min_risk_reward_ratio: float = 1.8,
         min_rr_high_confidence: float = 1.2,
         high_confidence_threshold: float = 0.70,
@@ -100,11 +100,19 @@ class RiskEngine:
         Dynamically adjusts position lot size based on variable structural SL distance (fixed dollar risk).
         If SL is wide, lot size scales down; if SL is tight, lot size scales up.
         """
-        if sl_distance_price <= 0.0 or math.isnan(sl_distance_price) or math.isinf(sl_distance_price):
+        if (
+            sl_distance_price <= 0.0
+            or math.isnan(sl_distance_price)
+            or math.isinf(sl_distance_price)
+        ):
             return 0.0
         if account.equity <= 0.0 or math.isnan(account.equity) or math.isinf(account.equity):
             return 0.0
-        if symbol_info.trade_contract_size <= 0.0 or math.isnan(symbol_info.trade_contract_size) or math.isinf(symbol_info.trade_contract_size):
+        if (
+            symbol_info.trade_contract_size <= 0.0
+            or math.isnan(symbol_info.trade_contract_size)
+            or math.isinf(symbol_info.trade_contract_size)
+        ):
             return 0.0
         risk_amount_usd = account.equity * (risk_pct / 100.0)
         return risk_amount_usd / (sl_distance_price * symbol_info.trade_contract_size)
@@ -132,7 +140,15 @@ class RiskEngine:
         Implements a mathematically correct, broker-aware, multi-stage risk-sizing pipeline.
         """
         # Step 1: Validate Inputs
-        inputs = [entry, sl, account.equity, account.margin_free, account.leverage, symbol_info.trade_contract_size, symbol_info.volume_step]
+        inputs = [
+            entry,
+            sl,
+            account.equity,
+            account.margin_free,
+            account.leverage,
+            symbol_info.trade_contract_size,
+            symbol_info.volume_step,
+        ]
         for val in inputs:
             if val is None or math.isnan(val) or math.isinf(val):
                 return 0.0, "INVALID_INPUT_NAN_INF_NONE"
@@ -187,7 +203,9 @@ class RiskEngine:
         # Step 7: Calculate Required Margin & Apply 20% Free-Margin Clamp
         maximum_allowed_margin = account.margin_free * 0.20
         if contract_size > 0 and entry > 0 and account.leverage > 0:
-            max_margin_volume = (maximum_allowed_margin * account.leverage) / (contract_size * entry)
+            max_margin_volume = (maximum_allowed_margin * account.leverage) / (
+                contract_size * entry
+            )
         else:
             max_margin_volume = 0.0
 
@@ -221,10 +239,10 @@ class RiskEngine:
         logger.info("Kill switch deactivated.")
 
     def _estimate_market_impact(
-        self, 
-        volume: float, 
-        symbol_info: SymbolInfo, 
-        current_tick: TickData, 
+        self,
+        volume: float,
+        symbol_info: SymbolInfo,
+        current_tick: TickData,
         atr: float,
         order_type: OrderType | None = None,  # Passive Limit Order Awareness
     ) -> float:
@@ -234,16 +252,18 @@ class RiskEngine:
         Passive Limit Orders (BUY_LIMIT / SELL_LIMIT) are Liquidity Makers and incur ZERO taker slippage!
         """
         if symbol_info is None or current_tick is None:
-            return float('inf')
+            return float("inf")
 
         # HFT MARKET MICROSTRUCTURE RULE: Limit orders are Makers and have ZERO taker slippage impact
         if order_type in (OrderType.BUY_LIMIT, OrderType.SELL_LIMIT):
             return 0.0
 
-        contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
+        contract_size = (
+            symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
+        )
         size_ratio = volume / contract_size
         vol_factor = max(atr, 0.50)
-        
+
         slippage_cost_usd = self.eta_coefficient * size_ratio * vol_factor
         return slippage_cost_usd
 
@@ -275,7 +295,7 @@ class RiskEngine:
         # PART 6: PORTFOLIO CONTEXT ENGINE
         # ----------------------------------------------------------------------
         symbol_positions = [p for p in active_positions if p.symbol == proposal.symbol]
-        
+
         # Max concurrent positions check
         if len(symbol_positions) >= self.config.max_concurrent_positions:
             logger.warning(
@@ -298,7 +318,10 @@ class RiskEngine:
             return None
 
         # Conflicting limit orders check: Avoid large opposite BUY_LIMIT / SELL_LIMIT unless explicit hedge
-        is_hedge = "HEDGE" in getattr(proposal, "reason_code", "") or "hedge" in getattr(proposal, "reason_code", "").lower()
+        is_hedge = (
+            "HEDGE" in getattr(proposal, "reason_code", "")
+            or "hedge" in getattr(proposal, "reason_code", "").lower()
+        )
         if not is_hedge:
             has_opposite_exposure = False
             for p in symbol_positions:
@@ -307,13 +330,20 @@ class RiskEngine:
                 elif not is_buy_proposal and p.type == OrderType.BUY:
                     has_opposite_exposure = True
 
-            if has_opposite_exposure and proposed_order_type in (OrderType.BUY_LIMIT, OrderType.SELL_LIMIT):
-                logger.warning("Portfolio Context Blocked: Opposing exposure present, limit order rejected.")
+            if has_opposite_exposure and proposed_order_type in (
+                OrderType.BUY_LIMIT,
+                OrderType.SELL_LIMIT,
+            ):
+                logger.warning(
+                    "Portfolio Context Blocked: Opposing exposure present, limit order rejected."
+                )
                 return None
 
         current_directional_exposure = sum(
-            p.volume for p in symbol_positions 
-            if (is_buy_proposal and p.type == OrderType.BUY) or (not is_buy_proposal and p.type == OrderType.SELL)
+            p.volume
+            for p in symbol_positions
+            if (is_buy_proposal and p.type == OrderType.BUY)
+            or (not is_buy_proposal and p.type == OrderType.SELL)
         )
 
         if current_directional_exposure >= self.max_allowed_lots:
@@ -345,8 +375,7 @@ class RiskEngine:
         high_conf_thresh = getattr(self, "high_confidence_threshold", 0.95)
         min_rr_high_conf = getattr(self, "min_rr_high_confidence", 1.2)
         if hasattr(proposal, "confidence") and proposal.confidence >= high_conf_thresh:
-            if min_rr_high_conf < active_min_rr:
-                active_min_rr = min_rr_high_conf
+            active_min_rr = min(active_min_rr, min_rr_high_conf)
 
         if not is_hedge and proposal.risk_reward_ratio < active_min_rr:
             logger.warning(
@@ -360,19 +389,26 @@ class RiskEngine:
         # 3. TRIPLE STOPS-LEVEL BROKER VALIDATION
         # ----------------------------------------------------------------------
         min_dist_price = symbol_info.stops_level * symbol_info.point
-        
-        if proposed_order_type in (OrderType.BUY_LIMIT, OrderType.SELL_LIMIT, OrderType.BUY_STOP, OrderType.SELL_STOP):
+
+        if proposed_order_type in (
+            OrderType.BUY_LIMIT,
+            OrderType.SELL_LIMIT,
+            OrderType.BUY_STOP,
+            OrderType.SELL_STOP,
+        ):
             if proposed_order_type == OrderType.BUY_LIMIT:
                 entry_market_dist = current_tick.ask - proposal.proposed_entry
             elif proposed_order_type == OrderType.SELL_LIMIT:
                 entry_market_dist = proposal.proposed_entry - current_tick.bid
             elif proposed_order_type == OrderType.BUY_STOP:
                 entry_market_dist = proposal.proposed_entry - current_tick.ask
-            else: # SELL_STOP
+            else:  # SELL_STOP
                 entry_market_dist = current_tick.bid - proposal.proposed_entry
 
             if entry_market_dist < min_dist_price:
-                logger.warning("Proposal rejected: Pending entry price is too close to market (Stops Level violation)")
+                logger.warning(
+                    "Proposal rejected: Pending entry price is too close to market (Stops Level violation)"
+                )
                 return None
 
         sl_dist_price = abs(proposal.proposed_entry - proposal.stop_loss)
@@ -396,9 +432,11 @@ class RiskEngine:
         if peak_equity > account.equity:
             drawdown_pct = ((peak_equity - account.equity) / peak_equity) * 100.0
             if drawdown_pct > 1.0:
-                drawdown_penalty = max(0.2, 1.0 - (drawdown_pct * 0.2)) # Scale down up to 80%
+                drawdown_penalty = max(0.2, 1.0 - (drawdown_pct * 0.2))  # Scale down up to 80%
                 risk_pct *= drawdown_penalty
-                logger.info(f"Drawdown Penalty Active: Scaling trade risk % by {drawdown_penalty:.2f}x due to {drawdown_pct:.2f}% drawdown.")
+                logger.info(
+                    f"Drawdown Penalty Active: Scaling trade risk % by {drawdown_penalty:.2f}x due to {drawdown_pct:.2f}% drawdown."
+                )
 
         # Confidence scaled risk sizing
         if hasattr(proposal, "confidence"):
@@ -411,7 +449,7 @@ class RiskEngine:
         # ----------------------------------------------------------------------
         # 5. DYNAMIC LOT SIZING CALCULATION
         # ----------------------------------------------------------------------
-        final_volume, size_reason = self.calculate_dynamic_volume(
+        final_volume, _size_reason = self.calculate_dynamic_volume(
             entry=proposal.proposed_entry,
             sl=proposal.stop_loss,
             account=account,
@@ -428,13 +466,13 @@ class RiskEngine:
         if final_volume < symbol_info.volume_min:
             if account.equity < 50.0:
                 final_volume = symbol_info.volume_min
-                size_reason = "MICRO_ACCOUNT_MIN_LOT_EXCEPTION"
             else:
                 final_volume = 0.0
-                size_reason = "INSUFFICIENT_EQUITY_FOR_MIN_LOT"
 
         # Verify free margin before dispatching. If margin is insufficient, set final_volume to 0.0
-        contract_size = symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
+        contract_size = (
+            symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
+        )
         leverage = account.leverage if account.leverage > 0 else 100
         required_margin = (contract_size * proposal.proposed_entry * final_volume) / leverage
         if required_margin > account.margin_free:
@@ -450,23 +488,28 @@ class RiskEngine:
             slippage_usd = self._estimate_market_impact(
                 final_volume, symbol_info, current_tick, atr, order_type=proposed_order_type
             )
-            
-            if expected_reward_usd > 0 and (slippage_usd / expected_reward_usd) <= self.max_impact_reward_ratio:
+
+            if (
+                expected_reward_usd > 0
+                and (slippage_usd / expected_reward_usd) <= self.max_impact_reward_ratio
+            ):
                 break  # Impact bounds respected
-                
+
             final_volume = self._floor_to_step(final_volume - step, step)
-            
+
         if final_volume < symbol_info.volume_min:
             if account.equity < 50.0:
                 final_volume = symbol_info.volume_min
-                logger.info("Micro-account exception: bypassing market impact reduction to allow broker minimum lot.")
+                logger.info(
+                    "Micro-account exception: bypassing market impact reduction to allow broker minimum lot."
+                )
             else:
                 logger.warning(
                     "EXCESSIVE_MARKET_IMPACT_REJECTED: Proposal aborted",
                     symbol=proposal.symbol,
                     calculated_vol=final_volume,
                     broker_min=symbol_info.volume_min,
-                    reason=f"Estimated execution slippage consumes > {self.max_impact_reward_ratio*100}% of gross reward",
+                    reason=f"Estimated execution slippage consumes > {self.max_impact_reward_ratio * 100}% of gross reward",
                 )
                 return None
 
@@ -504,7 +547,7 @@ class RiskEngine:
         Pass entry, SL, and TP prices to risk_engine.calculate_volume(...) for dynamic lot sizing based on account risk %.
         """
         risk_pct = self.config.risk_per_trade_pct
-        volume, reason = self.calculate_dynamic_volume(
+        volume, _reason = self.calculate_dynamic_volume(
             entry=entry,
             sl=sl,
             account=account,

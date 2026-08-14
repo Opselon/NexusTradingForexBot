@@ -14,6 +14,7 @@ Usage via CLI:
 
 import sys
 from pathlib import Path
+from typing import Annotated, Any
 
 import polars as pl
 import typer
@@ -47,7 +48,7 @@ def load_raw_ticks(data_dir: Path, symbol: str) -> pl.DataFrame:
 
     lazy_frames = [pl.scan_parquet(str(f)) for f in parquet_files]
     df_raw = pl.concat(lazy_frames).collect()
-    
+
     df_sorted = df_raw.sort("timestamp")
     logger.info("Raw tick ingestion complete", total_ticks=len(df_sorted))
     return df_sorted
@@ -59,12 +60,12 @@ def reconstruct_features_and_bars(df_ticks: pl.DataFrame, symbol: str) -> pl.Dat
     the 18D Feature Matrix ensuring 100% parity with live trading mechanics.
     """
     logger.info("Initiating Deterministic Tick Replay & Feature Engineering...")
-    
+
     aggregator = BarAggregator(symbol=symbol, timeframe_minutes=1)
     feature_engine = ScalpFeatureEngine(symbol=symbol)
 
-    feature_records: list[dict] = []
-    
+    feature_records: list[dict[str, Any]] = []
+
     for row in df_ticks.iter_rows(named=True):
         tick = TickData(
             symbol=row["symbol"],
@@ -84,19 +85,21 @@ def reconstruct_features_and_bars(df_ticks: pl.DataFrame, symbol: str) -> pl.Dat
                 completed_bars=completed_bars,
                 current_tick=tick,
             )
-            
+
             # Map exact 18D sanitized tensor features (feat_0 .. feat_17)
             tensor_18d = fv.to_tensor_input()
-            record = {f"feat_{idx}": float(val) for idx, val in enumerate(tensor_18d)}
-            
+            record: dict[str, Any] = {
+                f"feat_{idx}": float(val) for idx, val in enumerate(tensor_18d)
+            }
+
             last_bar = completed_bars[-1]
             record["close"] = last_bar.close
             record["high"] = last_bar.high
             record["low"] = last_bar.low
             record["open"] = last_bar.open
-            record["spread"] = (tick.ask - tick.bid)
+            record["spread"] = tick.ask - tick.bid
             record["atr_m1"] = fv.atr_m1
-            
+
             feature_records.append(record)
 
     df_features = pl.DataFrame(feature_records)
@@ -106,17 +109,25 @@ def reconstruct_features_and_bars(df_ticks: pl.DataFrame, symbol: str) -> pl.Dat
 
 @app.command()
 def train(
-    symbol: str = typer.Option("XAUUSD", help="Financial instrument symbol to train on."),
-    data_dir: Path = typer.Option(Path("data/raw"), help="Base directory of raw tick parquet files."),
-    model_output: Path = typer.Option(Path("artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"), help="Path to save trained weights."),
-    folds: int = typer.Option(34, help="Number of Purged Walk-Forward rolling windows."),
-    epochs: int = typer.Option(10, help="Epochs per Walk-Forward fold."),
-    batch_size: int = typer.Option(256, help="Maximum batch size for dataloader."),
-    friction_usd: float = typer.Option(0.35, help="Estimated friction per trade (Spread + Comm)."),
-):
+    symbol: Annotated[
+        str, typer.Option(help="Financial instrument symbol to train on.")
+    ] = "XAUUSD",
+    data_dir: Annotated[
+        Path, typer.Option(help="Base directory of raw tick parquet files.")
+    ] = Path("data/raw"),
+    model_output: Annotated[Path, typer.Option(help="Path to save trained weights.")] = Path(
+        "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
+    ),
+    folds: Annotated[int, typer.Option(help="Number of Purged Walk-Forward rolling windows.")] = 34,
+    epochs: Annotated[int, typer.Option(help="Epochs per Walk-Forward fold.")] = 10,
+    batch_size: Annotated[int, typer.Option(help="Maximum batch size for dataloader.")] = 256,
+    friction_usd: Annotated[
+        float, typer.Option(help="Estimated friction per trade (Spread + Comm).")
+    ] = 0.35,
+) -> None:
     """Executes the complete End-to-End Training Pipeline."""
     configure_logging(log_level="INFO", json_format=False, log_to_file=True)
-    
+
     logger.info(
         "Starting End-to-End ScalpNet Pipeline",
         symbol=symbol,
@@ -129,7 +140,9 @@ def train(
         df_features = reconstruct_features_and_bars(df_ticks=df_ticks, symbol=symbol)
 
         if len(df_features) < 1000:
-            logger.critical("Insufficient feature snapshots generated. Requires at least 1,000 bars.")
+            logger.critical(
+                "Insufficient feature snapshots generated. Requires at least 1,000 bars."
+            )
             raise typer.Exit(code=1)
 
         logger.info("Executing Purged Triple-Barrier Labeling...")
@@ -157,13 +170,16 @@ def train(
             artifact_save_path=model_output,
         )
 
-        final_model = trainer.train_and_validate(df=df_labeled, feature_cols=feature_cols)
+        trainer.train_and_validate(df=df_labeled, feature_cols=feature_cols)
 
-        logger.info("End-to-End Training Pipeline completed successfully! Model is ready for Live Execution.", path=str(model_output))
+        logger.info(
+            "End-to-End Training Pipeline completed successfully! Model is ready for Live Execution.",
+            path=str(model_output),
+        )
 
     except Exception as e:
         logger.error("Training pipeline crashed", error=str(e), exc_info=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 if __name__ == "__main__":

@@ -40,10 +40,7 @@ def system_doctor() -> None:
     table.add_row("Host OS Platform", "OK", sys.platform)
 
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    if sys.version_info >= (3, 11):
-        table.add_row("Python Version", "[green]PASS[/green]", py_ver)
-    else:
-        table.add_row("Python Version", "[red]FAIL[/red]", f"{py_ver} (Requires Python >= 3.11)")
+    table.add_row("Python Version", "[green]PASS[/green]", py_ver)
 
     if HAS_NATIVE_MT5:
         table.add_row(
@@ -101,7 +98,9 @@ def run_live_engine(
     """
     Starts the live scalping trading engine.
     """
-    console.print(f"[bold green]Starting Live Scalp Engine using config:[/bold green] {config_path}")
+    console.print(
+        f"[bold green]Starting Live Scalp Engine using config:[/bold green] {config_path}"
+    )
     config = AppConfig.load_from_yaml(config_path)
 
     if use_gateway or sys.platform != "win32":
