@@ -118,9 +118,6 @@ class TelegramNotifier:
         self._recent_messages[sig] = now
         return False
 
-
-
-
     def notify_info(
         self,
         title: str,
@@ -152,13 +149,8 @@ class TelegramNotifier:
         callback: Optional[Any] = None,
     ) -> Optional[int]:
         """Custom generic alert with dynamic title and severity."""
-        msg = (
-            f"🔔 <b>{self._escape(title)}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{self._escape(message)}"
-        )
+        msg = f"🔔 <b>{self._escape(title)}</b>\n━━━━━━━━━━━━━━━━━━━━━\n{self._escape(message)}"
         return self.send(msg, callback=callback, severity=severity)
-
 
     def _send_msg_sync(
         self,

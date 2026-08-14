@@ -56,7 +56,9 @@ class ServerState:
             "liq_markers": [],
         }
 
-    def update_live_visuals(self, bars: list[dict[str, Any]], real_overlays: dict[str, Any]) -> None:
+    def update_live_visuals(
+        self, bars: list[dict[str, Any]], real_overlays: dict[str, Any]
+    ) -> None:
         with self._lock:
             self.bars = list(bars)
             self.real_overlays = dict(real_overlays)

@@ -295,9 +295,7 @@ def main() -> None:
     # 4. Configure System Observability Logging Engine
     configure_logging(
         log_level="INFO",
-        json_format=(
-            config.execution.mode == ExecutionMode.LIVE and False
-        ),
+        json_format=(config.execution.mode == ExecutionMode.LIVE and False),
         log_to_file=True,
     )
 
