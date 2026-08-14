@@ -723,7 +723,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 rule_name=req.rule_name, is_enabled=req.is_enabled, parameters_json=params_json
             )
             if success and hasattr(engine, "rule_matrix"):
-                engine.rule_matrix.refresh_cache()
+                engine.rule_matrix.refresh_cache(force=True)
             return {"success": success}
         else:
             from nexus_scalp.adapters.database.audit_repository import AuditRepository

@@ -7,6 +7,7 @@ Supports database-driven state checks, parameter retrieval, and executes fully t
 """
 
 import json
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, cast
 
@@ -32,8 +33,12 @@ class RuleMatrixEngine:
         self._last_cache_refresh: float = 0.0
         self.refresh_cache()
 
-    def refresh_cache(self) -> None:
+    def refresh_cache(self, force: bool = False, ttl_seconds: float = 5.0) -> None:
         """Pulls enabled states and parameters from the database to avoid latency on tick hot paths."""
+        now = time.time()
+        if not force and (now - self._last_cache_refresh < ttl_seconds):
+            return
+
         try:
             rules_list = self.audit.get_trading_rules()
             self._rules_cache = {
@@ -43,6 +48,7 @@ class RuleMatrixEngine:
                 }
                 for r in rules_list
             }
+            self._last_cache_refresh = now
         except Exception as e:
             logger.error("Failed to refresh RuleMatrixEngine cache", error=str(e))
 
