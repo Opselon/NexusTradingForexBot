@@ -759,6 +759,12 @@ If you are an AI coding agent making changes to this repository in the future, *
 * **Pitfall:** Performing synchronous file I/O, heavy PyTorch model fitting, or synchronous network calls inside `LiveEngine._process_tick_pipeline()`.
 * **Symptom:** Freezes live tick processing loop, causes tick stagnation watchdog warnings and order slippage.
 * **Rule:** All heavy or blocking work MUST be offloaded using `asyncio.to_thread()`, background worker threads, or async HTTP clients (`httpx`).
+* **Fix Progress (Event Loop Blocking in `LiveEngine._process_tick_pipeline()`):**
+  - **Bug status:** `FIXED`
+  - **Root cause:** Synchronous SQLite queries inside `RuleMatrixEngine.refresh_cache()` (`self.audit.get_trading_rules()`) were invoked on every live tick pulse in `SignalPolicy.evaluate_probabilities()` and `OrderLifecycleManager.manage_active_positions()`, causing disk I/O blocking in the live tick hot path.
+  - **Files changed:** `src/nexus_scalp/signals/rule_matrix.py`, `src/nexus_scalp/web/server.py`, `tests/unit/test_rule_matrix.py`, `agents/skill.md`
+  - **Verification performed:** Added `test_rule_matrix_ttl_throttling` to verify 5-second TTL throttling of database queries; ran pytest suite (all 68 unit/integration tests passed); ran `beforePush.ps1` quality pipeline (Ruff, Mypy, Pytest) successfully.
+  - **Remaining risk, if any:** None. Web UI rule toggles pass `force=True` to immediately refresh the cache when rule updates occur.
 
 ---
 

@@ -45,6 +45,40 @@ def rule_engine(temp_audit_repo: AuditRepository) -> RuleMatrixEngine:
 # ============================================================================
 
 
+def test_rule_matrix_ttl_throttling(
+    temp_audit_repo: AuditRepository,
+    rule_engine: RuleMatrixEngine,
+) -> None:
+    """Verifies that refresh_cache() throttles DB reads within TTL window unless force=True."""
+    # Mock audit.get_trading_rules to track DB calls
+    original_get_trading_rules = temp_audit_repo.get_trading_rules
+    call_count = 0
+
+    def mock_get_trading_rules():
+        nonlocal call_count
+        call_count += 1
+        return original_get_trading_rules()
+
+    temp_audit_repo.get_trading_rules = mock_get_trading_rules
+
+    # Initial state after engine creation (1 call in __init__)
+    call_count = 0
+
+    # Repeated rapid calls within 5s TTL should NOT trigger DB read
+    rule_engine.refresh_cache()
+    rule_engine.refresh_cache()
+    rule_engine.refresh_cache()
+    assert call_count == 0
+
+    # Calling with force=True MUST bypass TTL and query DB
+    rule_engine.refresh_cache(force=True)
+    assert call_count == 1
+
+    # Calling with small ttl_seconds (e.g. -1s to simulate time passing) MUST query DB
+    rule_engine.refresh_cache(ttl_seconds=-1.0)
+    assert call_count == 2
+
+
 def test_database_seeding_and_toggling(
     temp_audit_repo: AuditRepository,
     rule_engine: RuleMatrixEngine,
@@ -60,15 +94,15 @@ def test_database_seeding_and_toggling(
     success = temp_audit_repo.toggle_trading_rule(rule_name, True)
     assert success is True
 
-    # Refresh Rule Matrix Cache and verify state
-    rule_engine.refresh_cache()
+    # Refresh Rule Matrix Cache (force=True) and verify state
+    rule_engine.refresh_cache(force=True)
     assert rule_engine.is_enabled(rule_name) is True
 
     # Toggle a rule with parameters update
     custom_params = {"fvg_min_size_pip": 2.5}
     success = temp_audit_repo.toggle_trading_rule(rule_name, True, json.dumps(custom_params))
     assert success is True
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
     assert rule_engine.get_params(rule_name) == custom_params
 
 
@@ -92,7 +126,7 @@ def test_pre_trade_entry_fvg_sniper(
 
     # Enable and verify custom entry proposal (Bullish FVG -> BUY)
     temp_audit_repo.toggle_trading_rule("RULE_FVG_SNIPER_FILL", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
 
     proposal = rule_engine.evaluate_pre_trade_entry(tick, fv, None, [0.99, 0.005, 0.005])
     assert proposal is not None
@@ -118,7 +152,7 @@ def test_pre_trade_entry_judas_and_orderblock(
 
     # 1. Judas Swing Fade
     temp_audit_repo.toggle_trading_rule("RULE_JUDAS_SWING_FADE", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
 
     fv_judas = MagicMock()
     fv_judas.broke_previous_high = True
@@ -134,7 +168,7 @@ def test_pre_trade_entry_judas_and_orderblock(
 
     # 2. OrderBlock Tap Reserve
     temp_audit_repo.toggle_trading_rule("RULE_ORDERBLOCK_TAP_RESERVE", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
 
     fv_ob = MagicMock()
     fv_ob.order_block_type = 1  # Bullish OB
@@ -164,7 +198,7 @@ def test_pre_trade_filters_spread_squeeze(
 
     # Enable and verify spread block
     temp_audit_repo.toggle_trading_rule("RULE_SPREAD_SQUEEZE_ONLY", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
 
     block_reason = rule_engine.evaluate_pre_trade_filters(tick, fv, None)
     assert block_reason == "BLOCKED_BY_RULE_SPREAD_SQUEEZE_ONLY"
@@ -178,7 +212,7 @@ def test_pre_trade_filters_liquidity_and_macro(
 
     # 1. Liquidity Sweep Confirm
     temp_audit_repo.toggle_trading_rule("RULE_LIQUIDITY_SWEEP_CONFIRM", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
     fv = MagicMock()
     fv.liquidity_sweep_signal = 0  # No sweep
     assert (
@@ -190,7 +224,7 @@ def test_pre_trade_filters_liquidity_and_macro(
 
     # 2. AI Macro Alignment
     temp_audit_repo.toggle_trading_rule("RULE_AI_MACRO_ALIGNMENT", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
     fv.htf_h4_trend = -0.80  # Heavily bearish
     assert (
         rule_engine.evaluate_pre_trade_filters(tick, fv, None)
@@ -221,7 +255,7 @@ def test_in_trade_exits_evaluation(
 
     # 1. Hit & Run Exit
     temp_audit_repo.toggle_trading_rule("RULE_HIT_AND_RUN_EXIT", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
     exit_action = rule_engine.evaluate_in_trade_exits(
         pos=pos, holding_duration_sec=250.0, price_current=2335.0, atr=1.0, mfe_profit=50.0
     )
@@ -231,7 +265,7 @@ def test_in_trade_exits_evaluation(
 
     # 2. Zero Drawdown Trail
     temp_audit_repo.toggle_trading_rule("RULE_ZERO_DRAWDOWN_TRAIL", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
     # Profit >= 2.0 pips (pip_size = 0.10 -> price at 2330.30 is +3 pips)
     trail_action = rule_engine.evaluate_in_trade_exits(
         pos=pos, holding_duration_sec=30.0, price_current=2330.30, atr=1.0, mfe_profit=30.0
@@ -249,7 +283,7 @@ def test_risk_and_safeguards(
     temp_audit_repo.toggle_trading_rule("RULE_CONSECUTIVE_LOSS_FREEZE", True)
     temp_audit_repo.toggle_trading_rule("RULE_DAILY_TARGET_LOCK", True)
     temp_audit_repo.toggle_trading_rule("RULE_CORRELATED_DRAWDOWN_CAP", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
 
     # Guarantee in-memory cache activation
     rule_engine._rules_cache["RULE_CONSECUTIVE_LOSS_FREEZE"] = {
@@ -307,7 +341,7 @@ def test_policy_hooks_blocked_by_filter(temp_audit_repo: AuditRepository) -> Non
 
     # Enable Filter
     temp_audit_repo.toggle_trading_rule("RULE_SPREAD_SQUEEZE_ONLY", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
 
     proposal = policy.evaluate_probabilities(probs, tick, fv, None)
     assert proposal.action == ActionType.NO_TRADE
@@ -336,7 +370,7 @@ def test_order_manager_hooks_exit(temp_audit_repo: AuditRepository) -> None:
 
     # RULE 13: Time Decay Exit
     temp_audit_repo.toggle_trading_rule("RULE_TIME_DECAY_CHOP_EXIT", True)
-    rule_engine.refresh_cache()
+    rule_engine.refresh_cache(force=True)
 
     tick = TickData(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2334.20, ask=2334.40)
 
