@@ -99,7 +99,7 @@ NexusTradingForexBot/
 │   └── healthcheck.sh                 # 🟢 Container health check script
 ├── src/
 │   ├── cli/
-│   │   └── train_model.py             # ⚫ Legacy CLI Training Script (Stale 18D contract)
+│   │   └── train_model.py             # 🟢 CLI Training Script (50D contract aligned)
 │   └── nexus_scalp/
 │       ├── adapters/                  # External Infrastructure Integration
 │       │   ├── database/
@@ -180,7 +180,7 @@ NexusTradingForexBot/
 | `src/nexus_scalp/observability/telegram_notifier.py` | Observability| Asynchronous Telegram Bot Alerting | `TelegramNotifier` | `LiveEngine`, OrderManager | `httpx` | Markdown text | Telegram Message | 🟢 VERIFIED | Low |
 | `src/nexus_scalp/observability/logging.py` | Observability| Structured JSON Logger | `logger`, `setup_logging` | Entire System | `structlog` | Log calls | Formatted Console/File Logs | 🟢 VERIFIED | Low |
 | `src/nexus_scalp/cli/main.py` | CLI | Typer CLI Application Entrypoint | `app` CLI commands | Shell / User | LiveEngine, Trainer | CLI Commands | Shell Output | 🟢 VERIFIED | Low |
-| `src/cli/train_model.py` | Script | Legacy CLI Training Script (18D contract) | `train_scalpnet_cli` | Manual Execution | Legacy imports | Raw Ticks | Model weights | ⚫ DEAD / STALE | High (18D dimensional mismatch) |
+| `src/cli/train_model.py` | Script | CLI Training Script (50D contract) | `train` | Manual Execution | Imports | Raw Ticks | Model weights | 🟢 VERIFIED | Low |
 
 ---
 
@@ -195,7 +195,7 @@ NexusTradingForexBot/
 | `NexusTradingForexBot.py` | `python NexusTradingForexBot.py` | Legacy convenience redirect forwarding to `main.py` | Legacy Redirect | 🟢 VERIFIED |
 | `src/nexus_scalp/web/server.py` | `uvicorn nexus_scalp.web.server:app` | Direct FastAPI server runner | Debug / Development | 🟢 VERIFIED |
 | `docker/entrypoint.sh` | Docker Container Startup | Containerized execution wrapper | Container | 🟢 VERIFIED |
-| `src/cli/train_model.py` | `python -m cli.train_model` | Stale legacy 18D training script | No (Hardcoded 18D) | ⚫ DEAD / STALE |
+| `src/cli/train_model.py` | `python -m cli.train_model` | CLI Training script (50D contract aligned) | Yes (50D) | 🟢 VERIFIED |
 
 ---
 
@@ -746,9 +746,16 @@ If you are an AI coding agent making changes to this repository in the future, *
 * **Rule:** All domain models in `src/nexus_scalp/domain/models.py` use `frozen=True`. Use `.model_copy(update={"sl": new_sl})`.
 
 ### 🚨 3. Legacy 18D Script Execution Crash
-* **Pitfall:** Executing `python -m cli.train_model` expecting it to train `ScalpNet`.
-* **Symptom:** Crashes with tensor dimension mismatch error during forward pass.
-* **Rule:** `src/cli/train_model.py` is stale legacy code hardcoding 18 features. Production training MUST be performed via `WalkForwardTrainer` (`NUM_FEATURES = 50`).
+* **Status:** FIXED 🟢
+* **Pitfall:** Executing `python -m cli.train_model` with older versions that hardcoded 18 features (`range(18)`).
+* **Symptom:** Crashed with tensor dimension mismatch error (`ValueError: 50D feature contract violation`).
+* **Resolved Behavior:** `src/cli/train_model.py` has been updated to construct and select the full 50D feature matrix (`feat_0` .. `feat_49`) matching `WalkForwardTrainer.NUM_FEATURES = 50` and `ScalpNet`.
+* **Fix Progress:**
+  - **Bug status:** `FIXED`
+  - **Root cause:** `src/cli/train_model.py` hardcoded feature selection to `range(18)` (`feat_0` .. `feat_17`), truncating features and violating `WalkForwardTrainer.NUM_FEATURES = 50`.
+  - **Files changed:** `src/cli/train_model.py`, `tests/unit/test_train_model_cli.py`, `agents/skill.md`
+  - **Verification performed:** Added `test_train_model_cli.py` unit tests verifying 50D feature generation, absence of 18D truncation, and validation against `WalkForwardTrainer._validate_training_frame`; verified clean execution of full unit/integration test suites and `ruff`/`mypy` checks.
+  - **Remaining risk, if any:** None.
 
 ### 🚨 4. SSE / JSON Stream Enum Serialization Crash
 * **Pitfall:** Pushing raw domain models containing Enums directly into FastAPI SSE or WebSocket generators.
@@ -807,7 +814,7 @@ This matrix explicitly audits claims made in prior documentation against actual 
 | **Position States** | 11 Position lifecycles | `PositionState` enum defines exactly 11 states in `order_manager.py` | 🟢 VERIFIED | 11 explicit lifecycles managed in hybrid state machine. |
 | **Pending Order Protection** | 30s lock & 1.0x ATR drift | `policy.py` checks 30s lock and 1.0 * ATR drift | 🟢 VERIFIED | Prevents high-frequency pending order churn on MT5 terminal. |
 | **Legacy Order Manager** | Active order manager | `src/nexus_scalp/features/order_manager.py` is orphaned | ⚫ DEAD / UNUSED | Active production order manager is in `src/nexus_scalp/execution/order_manager.py`. |
-| **Legacy CLI Training Script** | Active training script | `src/cli/train_model.py` hardcodes 18D features | ⚫ DEAD / STALE | Hardcoded 18D range crashes against 50D ScalpNet contract. Use `WalkForwardTrainer`. |
+| **Legacy CLI Training Script** | Active training script | `src/cli/train_model.py` aligned to 50D feature contract | 🟢 VERIFIED | Updated to pass full 50D feature vector to `WalkForwardTrainer`. |
 
 ---
 
@@ -819,9 +826,9 @@ During the forensic audit, the following legacy or unreferenced files were ident
    - **Finding:** Unreferenced legacy file. Active production order management is strictly handled by `src/nexus_scalp/execution/order_manager.py` (1792 lines).
    - **Action:** Retained read-only; documented as dead code.
 
-2. **`src/cli/train_model.py` ⚫ DEAD / STALE:**
-   - **Finding:** Hardcodes an 18-dimensional feature loop (`range(18)`), which violates the 50D feature contract enforced by `WalkForwardTrainer` (`NUM_FEATURES = 50`) and causes runtime crashes if invoked.
-   - **Action:** Retained read-only; documented as stale legacy script.
+2. **`src/cli/train_model.py` 🟢 VERIFIED:**
+   - **Finding:** Previously hardcoded an 18D feature selection (`range(18)`). Updated to generate and select all 50 feature columns (`feat_0` .. `feat_49`) matching `WalkForwardTrainer.NUM_FEATURES = 50`.
+   - **Action:** Fixed and verified with unit tests (`tests/unit/test_train_model_cli.py`).
 
 3. **`NexusTradingForexBot.py` 🟢 VERIFIED:**
    - **Finding:** Minimal 11-line convenience wrapper forwarding execution to `main.py`.
@@ -833,10 +840,10 @@ During the forensic audit, the following legacy or unreferenced files were ident
 The following backlog details prioritized architectural and operational recommendations for future development tasks. **No code changes have been made per the read-only constraint.**
 
 ### 🔴 P0 — Critical (Capital Safety & Integrity)
-1. **Deprecate or Remove `src/cli/train_model.py`:**
-   - *Problem:* Hardcodes 18D features, conflicting with the 50D `ScalpNet` contract.
-   - *Impact:* Invoking this script corrupts model weights or crashes during training.
-   - *Fix:* Remove file or rewrite it to wrap `WalkForwardTrainer`.
+1. **Update `src/cli/train_model.py` to 50D Contract (FIXED 🟢):**
+   - *Problem:* Previously hardcoded 18D features, conflicting with the 50D `ScalpNet` contract.
+   - *Impact:* Fixed. Script now constructs and passes the full 50D feature matrix (`feat_0` .. `feat_49`).
+   - *Fix:* Updated `src/cli/train_model.py` and added `tests/unit/test_train_model_cli.py`.
 
 ### 🟠 P1 — High (Reliability & Architecture Cleanliness)
 2. **Remove Dead Legacy File `src/nexus_scalp/features/order_manager.py`:**
