@@ -99,6 +99,12 @@ class SignalPolicy:
         self._last_tick_bid = 0.0
         self._last_tick_ask = 0.0
         self._last_tick_time: datetime | None = None
+        # De-duplication guard: ignore re-evaluated ticks that carry the same timestamp
+        # or the same bid/ask quote (the hot path can be called faster than the feed
+        # ticks, producing duplicate evaluations within <100ms and log corruption).
+        self._dedup_last_time: datetime | None = None
+        self._dedup_last_bid: float = 0.0
+        self._dedup_last_ask: float = 0.0
 
     def evaluate_probabilities(
         self,
@@ -168,6 +174,60 @@ class SignalPolicy:
         if not isinstance(probs, list):
             probs = [probs]
 
+        # ---------------------------------------------------------------------
+        # TASK 5 FIX: micro-throttler / tick de-duplication.
+        # The hot path (50ms) is frequently invoked faster than the market feed
+        # produces quotes, so the same tick (identical timestamp, or identical
+        # bid AND ask) gets re-evaluated and re-logged, corrupting telemetry.
+        # We detect a duplicate and return a lightweight NO_TRADE proposal WITHOUT
+        # touching the persistent state (cooldown, last direction, price locks).
+        # ---------------------------------------------------------------------
+        tick_ts = current_tick.timestamp
+        tick_bid = float(getattr(current_tick, "bid", 0.0) or 0.0)
+        tick_ask = float(getattr(current_tick, "ask", 0.0) or 0.0)
+        is_duplicate = (
+            tick_ts is not None
+            and self._dedup_last_time is not None
+            and tick_ts == self._dedup_last_time
+        ) or (tick_bid == self._dedup_last_bid and tick_ask == self._dedup_last_ask and tick_bid > 0.0)
+        if is_duplicate:
+            _pb = probs[1] if len(probs) > 1 else 0.0
+            _ps = probs[2] if len(probs) > 2 else 0.0
+            _pnt = probs[0] if len(probs) > 0 else 0.0
+            return TradeProposal(
+                request_id=str(uuid.uuid4()),
+                symbol=current_tick.symbol,
+                generated_at=current_tick.timestamp,
+                action=ActionType.NO_TRADE,
+                confidence=0.0,
+                proposed_entry=current_tick.bid,
+                stop_loss=current_tick.bid * 0.99,
+                take_profit=current_tick.bid * 1.01,
+                risk_reward_ratio=1.0,
+                reason_code="TICK_DUPLICATE_SUPPRESSED",
+                model_action="NO_TRADE",
+                buy_probability=float(_pb),
+                sell_probability=float(_ps),
+                no_trade_probability=float(_pnt),
+                regime=str(regime_state.regime_type.value if regime_state else "UNKNOWN"),
+                regime_confidence=float(regime_state.regime_probability if regime_state else 0.0),
+                risk_allowed=False,
+                guardian_status="IDLE",
+                rejection_reason="TICK_DUPLICATE_SUPPRESSED",
+                final_action="NO_TRADE",
+                decision_stage="DEDUP_GATE",
+                blocked_by="TICK_DEDUP",
+                htf_score=0.0,
+                smc_score=0.0,
+                confidence_before_filters=0.0,
+                confidence_after_filters=0.0,
+            )
+
+        # Record the freshest tick signature for the next call.
+        self._dedup_last_time = tick_ts
+        self._dedup_last_bid = tick_bid
+        self._dedup_last_ask = tick_ask
+
         raw_prob_buy = probs[1] if len(probs) > 1 else 0.0
         raw_prob_sell = probs[2] if len(probs) > 2 else 0.0
 
@@ -175,6 +235,7 @@ class SignalPolicy:
         prob_buy = self._sanitize_float(raw_prob_buy, 0.0)
         prob_sell = self._sanitize_float(raw_prob_sell, 0.0)
         prob_no_trade = probs[0] if len(probs) > 0 else 0.0
+
         now = current_tick.timestamp
         target_entry_price = current_tick.ask
         proposed_action = ActionType.NO_TRADE
@@ -1015,6 +1076,13 @@ class SignalPolicy:
             # For passing signals, use the pre-computed candidate levels
             stop_loss = cand_stop_loss
             take_profit = cand_take_profit
+
+            # Ensure stop_loss satisfies directional price invariants relative to updated target_entry_price
+            if "BUY" in proposed_action.value and (stop_loss is None or stop_loss >= target_entry_price):
+                stop_loss = round(target_entry_price - (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
+            elif "SELL" in proposed_action.value and (stop_loss is None or stop_loss <= target_entry_price):
+                stop_loss = round(target_entry_price + (atr * self.algo_config.atr_sl_buffer_multiplier), 2)
+
             actual_rr = cand_actual_rr
 
             # Determine active min required RR based on confidence (normal vs high confidence)
@@ -1328,14 +1396,14 @@ class SignalPolicy:
                 bos_lines.append({
                     "id": f"bos_sh_{i}",
                     "price": float(prev_shs[-1]),
-                    "type": "BOS_HIGH",
+                    "type": "BULLISH_BOS",
                     "time": completed_bars[i].timestamp.isoformat()
                 })
             if prev_sls and completed_bars[i].close < prev_sls[-1]:
                 bos_lines.append({
                     "id": f"bos_sl_{i}",
                     "price": float(prev_sls[-1]),
-                    "type": "BOS_LOW",
+                    "type": "BEARISH_BOS",
                     "time": completed_bars[i].timestamp.isoformat()
                 })
 
@@ -1391,14 +1459,14 @@ class SignalPolicy:
             if b_current.low < recent_low_10 and b_current.close > recent_low_10:
                 liq_markers.append({
                     "id": f"liq_low_{i}",
-                    "type": "LIQ_LOW",
+                    "type": "SELL_SIDE_LIQUIDITY_SWEEP",
                     "price": float(b_current.low),
                     "time": b_current.timestamp.isoformat()
                 })
             elif b_current.high > recent_high_10 and b_current.close < recent_high_10:
                 liq_markers.append({
                     "id": f"liq_high_{i}",
-                    "type": "LIQ_HIGH",
+                    "type": "BUY_SIDE_LIQUIDITY_SWEEP",
                     "price": float(b_current.high),
                     "time": b_current.timestamp.isoformat()
                 })

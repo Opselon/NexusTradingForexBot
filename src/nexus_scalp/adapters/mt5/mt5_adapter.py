@@ -492,12 +492,20 @@ class DirectMT5Adapter(IMT5Port):
             }
 
             result = mt5.order_send(request)
+            result = mt5.order_send(request)
             if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
                 logger.info("Fast-Act Pending Order Placed Successfully on attempt %s! Ticket: %s", attempt, result.order)
                 return result.order
 
             last_retcode = result.retcode if result else mt5.last_error()
             last_err = self._translate_retcode(last_retcode)
+
+            # Auto-Reconnect Circuit Breaker for Retcode 10031 (NO_CONNECTION)
+            if last_retcode == 10031:
+                logger.warning("Trade server connection interrupted (Retcode 10031). Probing terminal IPC state...")
+                t_info = mt5.terminal_info()
+                if t_info is None or not t_info.connected:
+                    mt5.initialize()  # Fast re-handshake with local Win32 IPC process
 
             if attempt < max_retries:
                 logger.warning("Fast-Act Pending Order Retry %s/%s for %s. Retcode: %s (%s). Retrying in 25ms...", attempt, max_retries, symbol, last_retcode, last_err)
@@ -627,7 +635,10 @@ class DirectMT5Adapter(IMT5Port):
             10018: "MARKET_CLOSED - Financial market is currently closed",
             10019: "NO_MONEY - Insufficient account free margin for requested lot volume",
             10021: "NO_CHANGES - Order SL/TP modification is identical to existing state",
+            10030: "UNSUPPORTED_FILLING - Filling mode unsupported by broker",
+            10031: "NO_CONNECTION - No connection with trade server",
         }
+        return retcode_map.get(retcode, f"UNKNOWN_MT5_RETCODE ({retcode})")
         return retcode_map.get(retcode, f"UNKNOWN_MT5_RETCODE ({retcode})")
 
     def _assert_connected(self) -> None:

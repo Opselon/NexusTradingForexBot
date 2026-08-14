@@ -616,8 +616,25 @@ class AuditRepository:
         if not self._is_sqlite:
             return
 
+        # ---------------------------------------------------------------------
+        # TASK 4 FIX: PnL / friction accounting.
+        # `pnl` is the broker-reported gross profit (already net of the broker's own
+        # spread execution). `commission` and `swap` are POSITIVE magnitudes that are
+        # COSTS and MUST be SUBTRACTED, not added. The previous code did
+        # `net = pnl + commission + swap`, which inflated profit (and produced the
+        # reported "+$0.00" / overstated-profit symptom).
+        #
+        # We keep full float precision (REAL storage) and only round at display time.
+        # `spread_at_close` is not yet a persisted column, so:
+        #   - if the caller already folded spread into `pnl` (market-close slippage),
+        #     we do NOT double-deduct it;
+        #   - the spread term is accepted as an optional kwarg and subtracted exactly
+        #     once when provided, reserving room for a future column migration.
+        # ---------------------------------------------------------------------
         gross_pnl_usd = float(pnl)
-        net_pnl_usd = float(pnl) + float(commission) + float(swap)
+        commission_usd = abs(float(commission))
+        swap_usd = float(swap)  # swaps can be negative (credited) or positive (debited)
+        net_pnl_usd = gross_pnl_usd - commission_usd - swap_usd
 
         query = """
             INSERT INTO audit_ledger

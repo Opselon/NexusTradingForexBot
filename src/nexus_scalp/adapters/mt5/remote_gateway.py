@@ -255,6 +255,7 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         body_data = json.dumps({"action": action, "payload": payload}).encode("utf-8")
 
         timestamp = str(int(time.time()))
+        timestamp = str(int(time.time()))
         message_to_sign = f"{timestamp}.{body_data.decode('utf-8')}".encode()
         signature = hmac.new(
             self._secret_token.encode("utf-8"),
@@ -262,12 +263,23 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
             digestmod=hashlib.sha256,
         ).hexdigest()
 
+        # Constant-time signature verification helper for incoming gateway validation
         headers = {
             "Content-Type": "application/json",
             "X-NSE-API-KEY": self._api_key,
             "X-NSE-TIMESTAMP": timestamp,
             "X-NSE-SIGNATURE": signature,
         }
+
+    def verify_request_signature(self, body_bytes: bytes, timestamp: str, incoming_signature: str) -> bool:
+        """Constant-time HMAC verification against side-channel timing attacks."""
+        message = f"{timestamp}.{body_bytes.decode('utf-8')}".encode()
+        expected = hmac.new(
+            self._secret_token.encode("utf-8"),
+            msg=message,
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(expected, incoming_signature)
 
         req = urllib.request.Request(url, data=body_data, headers=headers, method="POST")
         try:
