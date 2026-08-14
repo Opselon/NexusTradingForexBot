@@ -32,7 +32,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install -e ".[dev]"
+          # Install package with all extras (dev, web, test) + explicit test web requirements
+          pip install -e ".[dev,web]" || pip install -e ".[dev]"
+          pip install fastapi uvicorn httpx pytest-cov
 
       - name: Ruff - Lint
         run: ruff check .
@@ -45,7 +47,11 @@ jobs:
 
       - name: Pytest with coverage
         run: |
-          pytest --cov=src --cov-report=term-missing --cov-report=xml:./coverage.xml -q
+          # Ignores browser-bound E2E tests unless running in dedicated E2E pipeline
+          pytest --ignore=tests/integration/test_playwright_e2e.py \
+                 --cov=src \
+                 --cov-report=term-missing \
+                 --cov-report=xml:./coverage.xml -q
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v5
