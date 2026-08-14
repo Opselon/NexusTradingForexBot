@@ -1,15 +1,15 @@
 """
-End-to-End Deep Learning Training Pipeline (ScalpNet Orchestrator - 18D Aligned)
-==================================================================================
+End-to-End Deep Learning Training Pipeline (ScalpNet Orchestrator - 50D Contract Aligned)
+==========================================================================================
 Orchestrates the entire Machine Learning lifecycle from raw tick data to production weights:
     1. Tick Data Ingestion (Polars Parquet Lake).
     2. Deterministic OHLC M1 Bar Reconstruction (Event Replay).
-    3. Feature Matrix Generation (18D Microstructure, Price Action & Wick Anatomy).
+    3. Feature Matrix Generation (50D Microstructure, Price Action, SMC & Multi-Timeframe Anatomy).
     4. Purged Triple-Barrier Labeling (Friction & MAE Aware).
     5. Walk-Forward Deep Learning Training (OOS Validated ScalpNet v3).
 
 Usage via CLI:
-    python -m nexus_scalp.cli.train_model --symbol XAUUSD --folds 34
+    python -m cli.train_model --symbol XAUUSD --folds 34
 """
 
 import sys
@@ -57,7 +57,7 @@ def load_raw_ticks(data_dir: Path, symbol: str) -> pl.DataFrame:
 def reconstruct_features_and_bars(df_ticks: pl.DataFrame, symbol: str) -> pl.DataFrame:
     """
     Replays raw ticks through the BarAggregator and ScalpFeatureEngine to build
-    the 18D Feature Matrix ensuring 100% parity with live trading mechanics.
+    the 50D Feature Matrix ensuring 100% parity with live trading mechanics.
     """
     logger.info("Initiating Deterministic Tick Replay & Feature Engineering...")
 
@@ -86,10 +86,10 @@ def reconstruct_features_and_bars(df_ticks: pl.DataFrame, symbol: str) -> pl.Dat
                 current_tick=tick,
             )
 
-            # Map exact 18D sanitized tensor features (feat_0 .. feat_17)
-            tensor_18d = fv.to_tensor_input()
+            # Map exact 50D sanitized tensor features (feat_0 .. feat_49)
+            tensor_50d = fv.to_tensor_input()
             record: dict[str, Any] = {
-                f"feat_{idx}": float(val) for idx, val in enumerate(tensor_18d)
+                f"feat_{idx}": float(val) for idx, val in enumerate(tensor_50d)
             }
 
             last_bar = completed_bars[-1]
@@ -155,8 +155,8 @@ def train(
         )
         df_labeled = labeler.label_dataframe(df_features)
 
-        # Select exact 18D feature columns (feat_0 .. feat_17)
-        feature_cols = [f"feat_{idx}" for idx in range(18)]
+        # Select exact 50D feature columns (feat_0 .. feat_49)
+        feature_cols = [f"feat_{idx}" for idx in range(WalkForwardTrainer.NUM_FEATURES)]
 
         logger.info("Initiating PyTorch Training Engine...")
         trainer = WalkForwardTrainer(
