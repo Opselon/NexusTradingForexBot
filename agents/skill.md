@@ -27,13 +27,14 @@
 8. [Execution & MT5 Integration Forensics](#8-execution--mt5-integration-forensics)
 9. [Position Protection, State Machine, & Adaptive Exit Engine](#9-position-protection-state-machine--adaptive-exit-engine)
 10. [Hot-Path Latency & Event-Loop Forensics](#10-hot-path-latency--event-loop-forensics)
-11. [Web UI, FastAPI, SSE, WebSocket, & Debug Hub Forensics](#11-web-ui-fastapi-sse-websocket--debug-hub-forensics)
+11. [Web UI, REST API, SSE, WebSocket, & Debug Hub Forensics](#11-web-ui-rest-api-sse-websocket--debug-hub-forensics)
 12. [Observability, Database Persistence, & Ledger Autopsy](#12-observability-database-persistence--ledger-autopsy)
 13. [Configuration Architecture & Dynamic Propagation](#13-configuration-architecture--dynamic-propagation)
-14. [Testing & CI/CD Pipeline Audit](#14-testing--cicd-pipeline-audit)
-15. [Documentation vs. Reality Audit Matrix](#15-documentation-vs-reality-audit-matrix)
-16. [Dead, Legacy, & Discrepant Code Inventory](#16-dead-legacy--discrepant-code-inventory)
-17. [Prioritized Engineering Recommendations (P0-P3)](#17-prioritized-engineering-recommendations-p0-p3)
+14. [Known Bugs, Pitfalls & Invariants ("Bugs Before You Find Them")](#14-known-bugs-pitfalls--invariants-bugs-before-you-find-them)
+15. [Testing & CI/CD Pipeline Audit](#15-testing--cicd-pipeline-audit)
+16. [Documentation vs. Reality Audit Matrix](#16-documentation-vs-reality-audit-matrix)
+17. [Dead, Legacy, & Discrepant Code Inventory](#17-dead-legacy--discrepant-code-inventory)
+18. [Prioritized Engineering Recommendations (P0-P3)](#18-prioritized-engineering-recommendations-p0-p3)
 
 ---
 
@@ -619,9 +620,9 @@ $$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\
 
 ---
 
-## 11. Web UI, FastAPI, SSE, WebSocket, & Debug Hub Forensics
+## 11. Web UI, REST API, SSE, WebSocket, & Debug Hub Forensics
 
-### 🌐 Web Server Architecture (`src/nexus_scalp/web/server.py`)
+### 🌐 Web Server Architecture & Endpoints (`src/nexus_scalp/web/server.py`)
 
 * **Framework:** FastAPI with Uvicorn backend.
 * **Frontend Control Panel:** Located in `Web/` (`index.html`, `app.js`, `styles.css`) rendering real-time candlestick charts, SMC visual overlays, active position tables, and rule matrix toggles.
@@ -648,6 +649,38 @@ $$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\
                                │  serialize_enums()        │
                                └───────────────────────────┘
 ```
+
+### 📡 Full REST API Route Specifications
+
+| Route | Method | Purpose | Request Body | Response Payload | Status |
+| :--- | :---: | :--- | :--- | :--- | :--- |
+| `/api/status` | `GET` | Live telemetry & system status | None | System state, balance, regime, visual overlays | 🟢 VERIFIED |
+| `/api/rules` | `GET` | Get rule matrix configuration | None | JSON map of 30+ scalping rules & enabled states | 🟢 VERIFIED |
+| `/api/rules/toggle` | `POST` | Toggle specific rule state | `ToggleRuleRequest` | Updated rule matrix state | 🟢 VERIFIED |
+| `/api/account/summary` | `GET` | Get financial ledger performance | None | Win rate, profit factor, total trades | 🟢 VERIFIED |
+| `/api/account/trades` | `GET` | Paginated closed trade autopsies | Query params | List of completed trade autopsies | 🟢 VERIFIED |
+| `/api/account/growth` | `GET` | Historical account equity curve | Query params | Time-series equity/balance array | 🟢 VERIFIED |
+| `/api/engine/toggle` | `POST` | Pause or Resume LiveEngine loop | `ToggleRequest` | Engine execution state | 🟢 VERIFIED |
+| `/api/config` | `GET` | Retrieve active system config | None | `AppConfig` serialized JSON | 🟢 VERIFIED |
+| `/api/config` | `POST` | Update active system config | `AlgoConfigRequest` | Success status & updated config | 🟢 VERIFIED |
+| `/api/algo/config` | `GET`/`PUT` | Get/Set dynamic quantitative parameters | `AlgoConfigRequest` | Hot-swapped `AlgoConfig` JSON | 🟢 VERIFIED |
+| `/api/chart/history` | `GET` | Bootstrap 150+ bar visualizer chart | Query params | OHLC bar array + candidate zones | 🟢 VERIFIED |
+| `/api/positions/modify` | `POST` | Manual SL/TP position update | `ModifyPositionRequest` | Execution result | 🟢 VERIFIED |
+| `/api/positions/close` | `POST` | Manual market close position | `ClosePositionRequest` | Execution result | 🟢 VERIFIED |
+| `/api/simulation/tick` | `POST` | Direct tick injection (Paper mode) | `SimulationTickRequest` | Processed tick telemetry | 🟢 VERIFIED |
+| `/api/replay/toggle` | `POST` | Start/Pause historical tick replay | `ToggleReplayRequest` | Replay status | 🟢 VERIFIED |
+| `/api/debug/features` | `GET` | Inspect live 50D feature vector | None | 50 feature names & calculated values | 🟢 VERIFIED |
+| `/api/debug/model-test` | `POST` | Test arbitrary feature tensor against ScalpNet | `ModelTestRequest` | Probabilities & argmax decision | 🟢 VERIFIED |
+| `/api/debug/health` | `GET` | Detailed subsystem diagnostics | None | Feature, Risk, Model, MT5 health | 🟢 VERIFIED |
+| `/api/debug/ipc-telemetry` | `GET` | MT5 IPC socket/latency stats | None | Latency metrics & reconnect count | 🟢 VERIFIED |
+| `/api/observability/stats` | `GET` | Overall engine observability stats | None | Memory, uptime, tick count | 🟢 VERIFIED |
+
+### 🔄 WebSocket & SSE Streaming Specifications
+
+1. **SSE Stream Endpoint (`GET /api/ticks/stream`):**
+   - Broadcasts real-time Server-Sent Events (SSE) `data: JSON` containing tick updates, SMC overlay boxes, and live PnL.
+2. **WebSocket Channels (`/web` and `/ws`):**
+   - Bidirectional real-time WebSocket connection for low-latency visualizer charts and interactive UI triggers.
 
 #### 🛡️ SSE Stream Enum Serialization Invariant:
 To prevent SSE stream JSON serialization crashes when returning domain objects, `server.py` recursively serializes all Enum instances (such as `ActionType`, `OrderStatus`, `ExecutionMode`) using `serialize_enums()` before broadcasting telemetry payloads. 🟢 VERIFIED
@@ -698,7 +731,38 @@ Tick Sync in LiveEngine._process_tick_pipeline():
 
 ---
 
-## 14. Testing & CI/CD Pipeline Audit
+## 14. Known Bugs, Pitfalls & Invariants ("Bugs Before You Find Them")
+
+If you are an AI coding agent making changes to this repository in the future, **memorize these known pitfalls before modifying code**:
+
+### 🚨 1. Polars Boolean Expression Pitfall
+* **Pitfall:** Using standard Python `not` or `and` inside Polars DataFrame filters.
+* **Symptom:** Raises `ComputeError` or evaluates silently to invalid boolean masks.
+* **Rule:** **ALWAYS use bitwise tilde `~` and bitwise operators `&` / `|`** when filtering Polars DataFrames (e.g., `df.filter(~pl.col("is_deleted") & (pl.col("vol") > 0))`).
+
+### 🚨 2. Pydantic Domain Immutability Constraint
+* **Pitfall:** Attempting directly to modify attributes on domain objects (e.g., `position.sl = new_sl`).
+* **Symptom:** Raises `ValidationError: "Position" object is frozen and immutable`.
+* **Rule:** All domain models in `src/nexus_scalp/domain/models.py` use `frozen=True`. Use `.model_copy(update={"sl": new_sl})`.
+
+### 🚨 3. Legacy 18D Script Execution Crash
+* **Pitfall:** Executing `python -m cli.train_model` expecting it to train `ScalpNet`.
+* **Symptom:** Crashes with tensor dimension mismatch error during forward pass.
+* **Rule:** `src/cli/train_model.py` is stale legacy code hardcoding 18 features. Production training MUST be performed via `WalkForwardTrainer` (`NUM_FEATURES = 50`).
+
+### 🚨 4. SSE / JSON Stream Enum Serialization Crash
+* **Pitfall:** Pushing raw domain models containing Enums directly into FastAPI SSE or WebSocket generators.
+* **Symptom:** Raises `TypeError: Object of type ActionType is not JSON serializable`.
+* **Rule:** Pass all telemetry dictionary payloads through `serialize_enums(data)` before streaming.
+
+### 🚨 5. Event Loop Blocking in Hot Path
+* **Pitfall:** Performing synchronous file I/O, heavy PyTorch model fitting, or synchronous network calls inside `LiveEngine._process_tick_pipeline()`.
+* **Symptom:** Freezes live tick processing loop, causes tick stagnation watchdog warnings and order slippage.
+* **Rule:** All heavy or blocking work MUST be offloaded using `asyncio.to_thread()`, background worker threads, or async HTTP clients (`httpx`).
+
+---
+
+## 15. Testing & CI/CD Pipeline Audit
 
 ### 🧪 Test Suite Structure
 
@@ -724,7 +788,7 @@ Tick Sync in LiveEngine._process_tick_pipeline():
 
 ---
 
-## 15. Documentation vs. Reality Audit Matrix
+## 16. Documentation vs. Reality Audit Matrix
 
 This matrix explicitly audits claims made in prior documentation against actual codebase evidence:
 
@@ -741,7 +805,7 @@ This matrix explicitly audits claims made in prior documentation against actual 
 
 ---
 
-## 16. Dead, Legacy, & Discrepant Code Inventory
+## 17. Dead, Legacy, & Discrepant Code Inventory
 
 During the forensic audit, the following legacy or unreferenced files were identified:
 
@@ -758,7 +822,7 @@ During the forensic audit, the following legacy or unreferenced files were ident
 
 ---
 
-## 17. Prioritized Engineering Recommendations (P0-P3)
+## 18. Prioritized Engineering Recommendations (P0-P3)
 
 The following backlog details prioritized architectural and operational recommendations for future development tasks. **No code changes have been made per the read-only constraint.**
 
