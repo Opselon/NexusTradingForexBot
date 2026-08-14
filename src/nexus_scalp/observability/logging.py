@@ -12,11 +12,11 @@ Key Features:
     - Audit Security: Redacts passwords, API tokens, and sensitive account data.
 """
 
-from collections.abc import MutableMapping
 import logging
 import logging.handlers
-from pathlib import Path
 import sys
+from collections.abc import MutableMapping
+from pathlib import Path
 from typing import Any
 
 import structlog

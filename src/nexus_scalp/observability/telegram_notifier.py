@@ -129,7 +129,7 @@ class TelegramNotifier:
     ) -> Optional[int]:
         """Generic Info Alert Method."""
         msg = (
-            f"ℹ️ <b>{self._escape(title)}</b>\n"
+            f"ℹ️ <b>{self._escape(title)}</b>\n"  # noqa: RUF001
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"{self._escape(message)}"
         )

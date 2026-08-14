@@ -310,7 +310,6 @@ def main() -> None:
     )
 
     # 5. Dynamically Bind Execution Adapter
-    from nexus_scalp.ports.mt5_port import IMT5Port
 
     adapter: IMT5Port
     if args.gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
