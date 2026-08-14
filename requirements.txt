@@ -15,7 +15,7 @@ pyyaml>=6.0.1,<7.0.0               # Robust YAML configuration parser
 # ------------------------------------------------------------------------------
 # High-Throughput Quantitative Data Processing & Storage
 # ------------------------------------------------------------------------------
-polars>=0.20.0,<1.0.0              # Multi-threaded zero-copy columnar DataFrame engine
+polars>=0.20.0,<2.0.0              # Multi-threaded zero-copy columnar DataFrame engine
 pyarrow>=15.0.0,<16.0.0            # High-speed Parquet storage serialization
 numpy>=1.26.0,<2.0.0               # Vectorized mathematical array operations
 
