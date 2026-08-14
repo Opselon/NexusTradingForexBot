@@ -16,12 +16,12 @@ dependencies = [
     "pydantic>=2.6.0,<3.0.0",
     "pydantic-settings>=2.1.0,<3.0.0",
     "pyyaml>=6.0.1,<7.0.0",
-    "structlog>=24.1.0,<25.0.0",
+    "structlog>=24.1.0,<27.0.0",
     "typer>=0.9.0,<1.0.0",
-    "rich>=13.7.0,<14.0.0",
-    "polars>=0.20.0,<2.0.0",
-    "pyarrow>=15.0.0,<26.0.0",
-    "numpy>=1.26.0,<3.0.0",
+    "rich>=13.7.0,<16.0.0",
+    "polars>=0.20.0,<1.0.0",
+    "pyarrow>=15.0.0,<16.0.0",
+    "numpy>=1.26.0,<2.0.0",
     "torch>=2.2.0,<3.0.0",
     "MetaTrader5>=5.0.45; platform_system == 'Windows'",
 ]
@@ -47,8 +47,23 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
+# Enable standard linters: pycodestyle, Pyflakes, flake8-bugbear, isort, pep8-naming, pyupgrade, Pylint, Ruff-specific
 select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
-ignore = ["PLR0913"]
+ignore = [
+    "PLR0913", # Too many arguments in function definition
+    "PLR2004", # Magic value used in comparison (globally allowed for assertions and quants)
+    "E501",    # Line length violations (handled via ruff format)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Relax strict linting rules specifically for unit/integration tests
+"tests/*" = [
+    "PLR2004", # Allow magic numbers in assertions
+    "PLC0415", # Allow local imports inside test functions
+    "RUF059",  # Allow unused unpacked variables in test asserts
+    "F401",    # Allow unused test imports / fixtures
+    "E501",    # Ignore line length limits in test data definitions
+]
 
 [tool.mypy]
 python_version = "3.11"
