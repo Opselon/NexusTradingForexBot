@@ -3,7 +3,8 @@
 > **TARGET AUDIENCE:** AI Coding Agents (Cursor, Copilot, ChatGPT, Claude, Jules).
 > **PURPOSE:** Authoritative, repository-grounded Master Skill & Architecture Map for the Nexus Scalp Engine repository.
 > **SOURCE OF TRUTH:** Actual Executable Codebase (verified via forensic audit).
-> **ABSOLUTE DIRECTIVE:** READ-ONLY for codebase files. Do NOT modify any file in this repository except `agents/skill.md`.
+> **BUG LEDGER:** For historical bug forensics, root causes, evidence, and regression guards, see `agents/bugs.md`.
+> **ABSOLUTE DIRECTIVE:** READ-ONLY for codebase files. Do NOT modify any file in this repository except `agents/skill.md` and `agents/bugs.md`.
 
 ---
 
@@ -30,10 +31,10 @@
 11. [Web UI, REST API, SSE, WebSocket, & Debug Hub Forensics](#11-web-ui-rest-api-sse-websocket--debug-hub-forensics)
 12. [Observability, Database Persistence, & Ledger Autopsy](#12-observability-database-persistence--ledger-autopsy)
 13. [Configuration Architecture & Dynamic Propagation](#13-configuration-architecture--dynamic-propagation)
-14. [Known Bugs, Pitfalls & Invariants ("Bugs Before You Find Them")](#14-known-bugs-pitfalls--invariants-bugs-before-you-find-them)
+14. [Known Engineering Pitfalls & Invariants](#14-known-engineering-pitfalls--invariants)
 15. [Testing & CI/CD Pipeline Audit](#15-testing--cicd-pipeline-audit)
 16. [Documentation vs. Reality Audit Matrix](#16-documentation-vs-reality-audit-matrix)
-17. [Dead, Legacy, & Discrepant Code Inventory](#17-dead-legacy--discrepant-code-inventory)
+17. [Code Inventory & Active Wrappers](#17-code-inventory--active-wrappers)
 18. [Prioritized Engineering Recommendations (P0-P3)](#18-prioritized-engineering-recommendations-p0-p3)
 
 ---
@@ -91,6 +92,9 @@ NexusTradingForexBot/
 │   ├── app.js                         # 🟢 Interactive Dashboard UI logic
 │   ├── index.html                     # 🟢 Visualizer & Control Panel Markup
 │   └── styles.css                     # 🟢 Premium Dark Glassmorphism Styling
+├── agents/                            # Agent Documentation & Bug Ledger
+│   ├── bugs.md                        # 🟢 Bug Ledger & Forensic History
+│   └── skill.md                       # 🟢 Authoritative Master Skill & Architecture Map
 ├── configs/                           # Application Configurations
 │   ├── base.yaml                      # 🟢 Default base settings
 │   └── live.yaml.example              # 🟢 Example live runtime configuration
@@ -121,7 +125,6 @@ NexusTradingForexBot/
 │       ├── execution/
 │       │   └── order_manager.py       # 🟢 Authoritative Order Lifecycle Manager
 │       ├── features/
-│       │   ├── order_manager.py       # ⚫ DEAD / UNUSED Legacy Order Manager File (234 lines)
 │       │   ├── regime_classifier.py   # 🟢 Market Regime Classifier (10 Regimes)
 │       │   └── scalp_features.py      # 🟢 50D Master Feature Vector Pipeline
 │       ├── labeling/
@@ -145,7 +148,7 @@ NexusTradingForexBot/
 │   └── unit/                          # 🟢 Unit Tests across Subsystems
 ├── Dockerfile                         # 🟢 Production Multi-stage Docker Container
 ├── main.py                            # 🟢 Root Python Entrypoint Redirect
-├── NexusTradingForexBot.py            # ⚫ Legacy Script Entrypoint Redirect
+├── NexusTradingForexBot.py            # 🟢 Legacy Script Entrypoint Redirect
 ├── pyproject.toml                     # 🟢 Project Build Metadata & Dependencies
 └── requirements.txt                   # 🟢 Frozen Python Package Requirements
 ```
@@ -324,7 +327,7 @@ To ensure complete clarity for AI coding agents, here are the exact code locatio
 
 ### 5.4 Label / Model Output Class Compatibility Audit
 
-A critical forensic finding in this repository is the interface boundary between labeling and model inference:
+A critical forensic boundary in this repository is the interface between labeling and model inference:
 
 * **Labeling Engine Output:** `TripleBarrierLabeler` produces a **3-Class taxonomy**:
   - `0`: `NO_TRADE`
@@ -730,9 +733,9 @@ Tick Sync in LiveEngine._process_tick_pipeline():
 
 ---
 
-## 14. Known Bugs, Pitfalls & Invariants ("Bugs Before You Find Them")
+## 14. Known Engineering Pitfalls & Invariants
 
-If you are an AI coding agent making changes to this repository in the future, **memorize these known pitfalls before modifying code**:
+If you are an AI coding agent making changes to this repository in the future, **memorize these active engineering rules and constraints**:
 
 ### 🚨 1. Polars Boolean Expression Pitfall
 * **Pitfall:** Using standard Python `not` or `and` inside Polars DataFrame filters.
@@ -744,33 +747,20 @@ If you are an AI coding agent making changes to this repository in the future, *
 * **Symptom:** Raises `ValidationError: "Position" object is frozen and immutable`.
 * **Rule:** All domain models in `src/nexus_scalp/domain/models.py` use `frozen=True`. Use `.model_copy(update={"sl": new_sl})`.
 
-### 🚨 3. Legacy 18D Script Execution Crash
-* **Status:** FIXED 🟢
-* **Pitfall:** Executing `python -m cli.train_model` with older versions that hardcoded 18 features (`range(18)`).
-* **Symptom:** Crashed with tensor dimension mismatch error (`ValueError: 50D feature contract violation`).
-* **Resolved Behavior:** `src/cli/train_model.py` has been updated to construct and select the full 50D feature matrix (`feat_0` .. `feat_49`) matching `WalkForwardTrainer.NUM_FEATURES = 50` and `ScalpNet`.
-* **Fix Progress:**
-  - **Bug status:** `FIXED`
-  - **Root cause:** `src/cli/train_model.py` hardcoded feature selection to `range(18)` (`feat_0` .. `feat_17`), truncating features and violating `WalkForwardTrainer.NUM_FEATURES = 50`.
-  - **Files changed:** `src/cli/train_model.py`, `tests/unit/test_train_model_cli.py`, `agents/skill.md`
-  - **Verification performed:** Added `test_train_model_cli.py` unit tests verifying 50D feature generation, absence of 18D truncation, and validation against `WalkForwardTrainer._validate_training_frame`; verified clean execution of full unit/integration test suites and `ruff`/`mypy` checks.
-  - **Remaining risk, if any:** None.
+### 🚨 3. Feature Vector 50D Contract Alignment
+* **Pitfall:** Truncating or hardcoding feature selection indices in training scripts or model inputs.
+* **Symptom:** Crashes with tensor dimension mismatch error (`ValueError: 50D feature contract violation`).
+* **Rule:** All training scripts and inference pipelines MUST generate and select all 50 feature columns (`feat_0` .. `feat_49`) matching `WalkForwardTrainer.NUM_FEATURES = 50` and `ScalpNet`.
 
-### 🚨 4. SSE / JSON Stream Enum Serialization Crash
+### 🚨 4. SSE / JSON Stream Enum Serialization Constraint
 * **Pitfall:** Pushing raw domain models containing Enums directly into FastAPI SSE or WebSocket generators.
 * **Symptom:** Raises `TypeError: Object of type ActionType is not JSON serializable`.
 * **Rule:** Pass all telemetry dictionary payloads through `serialize_enums(data)` before streaming.
 
-### 🚨 5. Event Loop Blocking in Hot Path
+### 🚨 5. Event Loop Blocking Avoidance in Hot Path
 * **Pitfall:** Performing synchronous file I/O, heavy PyTorch model fitting, or synchronous network calls inside `LiveEngine._process_tick_pipeline()`.
 * **Symptom:** Freezes live tick processing loop, causes tick stagnation watchdog warnings and order slippage.
 * **Rule:** All heavy or blocking work MUST be offloaded using `asyncio.to_thread()`, background worker threads, or async HTTP clients (`httpx`).
-* **Fix Progress (Event Loop Blocking in `LiveEngine._process_tick_pipeline()`):**
-  - **Bug status:** `FIXED`
-  - **Root cause:** Synchronous SQLite queries inside `RuleMatrixEngine.refresh_cache()` (`self.audit.get_trading_rules()`) were invoked on every live tick pulse in `SignalPolicy.evaluate_probabilities()` and `OrderLifecycleManager.manage_active_positions()`, causing disk I/O blocking in the live tick hot path.
-  - **Files changed:** `src/nexus_scalp/signals/rule_matrix.py`, `src/nexus_scalp/web/server.py`, `tests/unit/test_rule_matrix.py`, `agents/skill.md`
-  - **Verification performed:** Added `test_rule_matrix_ttl_throttling` to verify 5-second TTL throttling of database queries; ran pytest suite (all 68 unit/integration tests passed); ran `beforePush.ps1` quality pipeline (Ruff, Mypy, Pytest) successfully.
-  - **Remaining risk, if any:** None. Web UI rule toggles pass `force=True` to immediately refresh the cache when rule updates occur.
 
 ---
 
@@ -786,6 +776,9 @@ If you are an AI coding agent making changes to this repository in the future, *
   - `test_risk_engine.py`: Validates dynamic lot sizing, account tier caps, and margin checks.
   - `test_order_manager.py`: Validates position state machine and `HARD_MAX_LOTS` clamping.
   - `test_rule_matrix.py`: Validates DB hot-reloading and rule evaluation.
+  - `test_train_model_cli.py`: Validates CLI 50D feature extraction and dataset validation alignment.
+  - `test_order_manager_audit.py`: Validates legacy file deletion and active order manager imports.
+  - `test_htf_warmup_gate.py`: Validates cold-start HTF warmup gate state transitions and inference blocking.
 * **Integration Tests (`tests/integration/`):**
   - `test_signal_pipeline_health.py`: End-to-end signal pipeline health verification.
   - `test_database_execution_audit.py`: Validates SQLite WAL persistence and ledger autopsies.
@@ -817,68 +810,37 @@ This matrix explicitly audits claims made in prior documentation against actual 
 
 ---
 
-## 17. Dead, Legacy, & Discrepant Code Inventory
+## 17. Code Inventory & Active Wrappers
 
-During the forensic audit, the following legacy or unreferenced files were identified:
+Active execution entrypoints and wrappers within the repository:
 
-1. **`src/nexus_scalp/features/order_manager.py` (REMOVED - DEAD):**
-   - **Finding:** Unreferenced legacy file. Repository-wide audit confirmed 0 active code imports and zero dynamic loading paths within the repository (`EXTERNAL_REFERENCE_STATUS=NOT_FOUND_IN_REPOSITORY`). Active production order management is strictly handled by `src/nexus_scalp/execution/order_manager.py` (1792 lines).
-   - **Action:** Deleted cleanly; project compile reference removed from `NexusTradingForexBot.pyproj`; verified with `tests/unit/test_order_manager_audit.py`.
+1. **`src/nexus_scalp/execution/order_manager.py` 🟢 VERIFIED:**
+   - Active production order lifecycle engine implementing position protection and dispatch routing.
 
 2. **`src/cli/train_model.py` 🟢 VERIFIED:**
-   - **Finding:** Previously hardcoded an 18D feature selection (`range(18)`). Updated to generate and select all 50 feature columns (`feat_0` .. `feat_49`) matching `WalkForwardTrainer.NUM_FEATURES = 50`.
-   - **Action:** Fixed and verified with unit tests (`tests/unit/test_train_model_cli.py`).
+   - CLI training script aligned to the 50D feature contract (`feat_0` .. `feat_49`).
 
 3. **`NexusTradingForexBot.py` 🟢 VERIFIED:**
-   - **Finding:** Minimal 11-line convenience wrapper forwarding execution to `main.py`.
+   - Minimal convenience wrapper forwarding execution to `main.py`.
 
 ---
 
 ## 18. Prioritized Engineering Recommendations (P0-P3)
 
-The following backlog details prioritized architectural and operational recommendations for future development tasks. **No code changes have been made per the read-only constraint.**
+The following backlog details prioritized architectural and operational recommendations for future development tasks:
 
 ### 🔴 P0 — Critical (Capital Safety & Integrity)
-1. **Update `src/cli/train_model.py` to 50D Contract (FIXED 🟢):**
-   - *Problem:* Previously hardcoded 18D features, conflicting with the 50D `ScalpNet` contract.
-   - *Impact:* Fixed. Script now constructs and passes the full 50D feature matrix (`feat_0` .. `feat_49`).
-   - *Fix:* Updated `src/cli/train_model.py` and added `tests/unit/test_train_model_cli.py`.
+1. **Maintain 50D Contract Consistency Across Custom Pipelines:**
+   - Ensure all future custom training scripts adhere strictly to `WalkForwardTrainer.NUM_FEATURES = 50`.
 
 ### 🟠 P1 — High (Reliability & Architecture Cleanliness)
-2. **Remove Dead Legacy File `src/nexus_scalp/features/order_manager.py` (FIXED 🟢):**
-   - *Problem:* Duplicate filename causes developer confusion with `src/nexus_scalp/execution/order_manager.py`.
-   - *Fix Progress:*
-     - **Bug status:** FIXED
-     - **Root cause:** Unreferenced legacy implementation left behind in `src/nexus_scalp/features/order_manager.py`.
-     - **Classification:** DEAD
-     - **Evidence:** Repository-wide audit found zero active imports or dynamic loading paths in repository (`EXTERNAL_REFERENCE_STATUS=NOT_FOUND_IN_REPOSITORY`). Production executions strictly use `src/nexus_scalp/execution/order_manager.py`.
-     - **Files changed:** `src/nexus_scalp/features/order_manager.py` (deleted), `NexusTradingForexBot.pyproj`, `tests/unit/test_order_manager_audit.py`, `beforePush.sh`, `agents/skill.md`.
-     - **Active implementation preserved:** `src/nexus_scalp/execution/order_manager.py` was untouched and preserved intact.
-     - **Tests added:** `tests/unit/test_order_manager_audit.py` (5 unit tests verifying deletion, project cleanup, active import integrity, repo-wide absence of legacy references, and `[ORDER_MANAGER_AUDIT]` structured log telemetry).
-     - **Verification:** Verified with full unit test suite (83/83 passed) and `beforePush.sh` / `beforePush.ps1` quality gates.
-     - **Remaining risk / uncertainty:** No references or dynamic loading paths were found within the repository. As with any file removal, external systems outside the repository bounds cannot be conclusively verified beyond the repository border (`EXTERNAL_REFERENCE_STATUS=NOT_FOUND_IN_REPOSITORY`).
-
-3. **Add Explicit Warmup Safeguard for HTF Features (FIXED 🟢):**
-   - *Problem:* Cold start in `LiveEngine` processed ticks before sufficient H1/H4 historical bars were available to calculate 50D HTF features (`htf_h4_trend`, `htf_h1_momentum`), causing HTF features to enter neutral fallback defaults while normal trading inference still proceeded.
-   - *Impact:* Fixed. Implemented an explicit HTF Warmup Gate state machine (`WARMING_UP -> READY` or `SAFE_NOT_READY`), async non-blocking historical bar bootstrapping, feature fallback detection, inference gating, periodic recovery re-evaluations, and comprehensive console observability logs.
-   - *Fix Progress:*
-     - **Bug status:** FIXED
-     - **Root cause:** Cold start processed ticks prior to acquiring 14 H1 and 14 H4 historical bars required by the 50D feature pipeline ATR lookbacks, causing HTF features to default to neutral zero values during live inference.
-     - **Warmup requirement:** Derived from `ScalpFeatureEngine` ATR ratios and EMA lookbacks: 14 completed H1 bars and 14 completed H4 bars (bootstrapped from 3500 M1 bars + direct MT5 timeframe queries).
-     - **Fallback handling:** Explicitly differentiates between valid calculated features, missing/insufficient HTF history fallbacks, and NaN/Inf validation fallbacks. Gated ScalpNet inference (`[INFERENCE] BLOCKED reason=HTF_WARMUP_INCOMPLETE`) until all HTF features are validated and no startup fallbacks remain.
-     - **Console observability:** Emits diagnostic console events: `[WARMUP] START`, `[WARMUP] H1`, `[WARMUP] H4`, `[WARMUP] WAITING`, `[FEATURE_FALLBACK]`, `[FEATURE_STATUS]`, `[WARMUP] COMPLETE`, `[INFERENCE] BLOCKED`, `[INFERENCE] ENABLED`, and `[WARMUP] FAILED`.
-     - **Files changed:** `src/nexus_scalp/application/live_engine.py`, `src/nexus_scalp/adapters/mt5/mt5_adapter.py`, `tests/unit/test_htf_warmup_gate.py`, `agents/skill.md`.
-     - **Tests:** Added 11 unit tests in `tests/unit/test_htf_warmup_gate.py` covering all required scenarios.
-     - **Verification:** Verified with unit test suite (11/11 passed) and full pytest suite (75/75 passed).
-     - **Remaining risk:** None.
+2. **HTF Warmup Gate Monitoring:**
+   - Continue monitoring cold-start hydration times on slow network connections.
 
 ### 🟡 P2 — Medium (Performance & Maintainability)
-4. **Optimize Polars DataFrame Allocation in Rolling Buffer:**
-   - *Problem:* `_trigger_async_online_fine_tune()` constructs Polars DataFrame from list of dicts on every retrain trigger.
-   - *Impact:* Minor memory allocation churn during online fine-tuning.
-   - *Fix:* Maintain a pre-allocated rolling Polars DataFrame buffer.
+3. **Optimize Polars DataFrame Allocation in Rolling Buffer:**
+   - Maintain a pre-allocated rolling Polars DataFrame buffer in `_trigger_async_online_fine_tune()` to reduce memory allocation churn during online fine-tuning.
 
 ### 🔵 P3 — Nice-To-Have
-5. **Expand Playwright Web Visualizer E2E Test Coverage:**
-   - *Problem:* Web visualizer test verifies basic loading and API response.
-   - *Fix:* Add automated Playwright interaction tests for rule matrix toggling and configuration updates.
+4. **Expand Playwright Web Visualizer E2E Test Coverage:**
+   - Add automated Playwright interaction tests for rule matrix toggling and configuration updates.
