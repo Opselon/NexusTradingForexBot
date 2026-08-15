@@ -86,63 +86,7 @@ class AuditRepository:
             """
         )
 
-        # PHASE 08: IMMUTABLE EXPERIENCE LEDGER TABLE
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS audit_experiences (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                experience_id TEXT NOT NULL,
-                request_id TEXT NOT NULL,
-                execution_id TEXT DEFAULT '',
-                decision_id TEXT DEFAULT '',
-                idempotency_key TEXT UNIQUE NOT NULL,
-                symbol TEXT NOT NULL,
-                timeframe TEXT NOT NULL,
-                strategy_id TEXT NOT NULL,
-                strategy_version TEXT DEFAULT '1.0.0',
-                decision_timestamp TEXT NOT NULL,
-                outcome_timestamp TEXT,
-                action TEXT NOT NULL,
-                entry_reason TEXT NOT NULL,
-                model_probability REAL DEFAULT 0.0,
-                signal_confidence REAL DEFAULT 0.0,
-                proposed_entry REAL NOT NULL,
-                stop_loss REAL NOT NULL,
-                take_profit REAL NOT NULL,
-                risk_reward_ratio REAL DEFAULT 1.0,
-                approved_volume REAL DEFAULT 0.0,
-                is_executed INTEGER DEFAULT 0,
-                is_closed INTEGER DEFAULT 0,
-                exit_reason TEXT DEFAULT '',
-                realized_pnl_usd REAL DEFAULT 0.0,
-                realized_r_multiple REAL DEFAULT 0.0,
-                mae_points REAL DEFAULT 0.0,
-                mfe_points REAL DEFAULT 0.0,
-                mae_usd REAL DEFAULT 0.0,
-                mfe_usd REAL DEFAULT 0.0,
-                holding_duration_seconds REAL DEFAULT 0.0,
-                feature_hash TEXT DEFAULT '',
-                payload TEXT NOT NULL
-            );
-            """
-        )
-
-        # PHASE 08: STRATEGY INTELLIGENCE REGISTRY TABLE
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS strategy_intelligence_registry (
-                strategy_id TEXT PRIMARY KEY,
-                lifecycle_state TEXT NOT NULL,
-                sample_count INTEGER DEFAULT 0,
-                win_rate REAL DEFAULT 0.0,
-                expectancy_r REAL DEFAULT 0.0,
-                profit_factor REAL DEFAULT 1.0,
-                confidence_score REAL DEFAULT 0.0,
-                score_payload TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            """
-        )
+        self._create_experience_tables(conn)
         self._seed_trading_rules(conn)
         conn.execute(
             """
@@ -328,6 +272,195 @@ class AuditRepository:
             );
             """
         )
+
+    def _create_experience_tables(self, conn: sqlite3.Connection) -> None:
+        """
+        Creates the Phase 08 Experience Intelligence schema.
+
+        Design notes:
+          * `audit_experiences` holds IMMUTABLE decision rows. Nothing in the
+            codebase issues an UPDATE against it.
+          * `audit_experience_outcomes` is append-only and keyed 1:1 by
+            `idempotency_key`, which is what makes duplicate broker close
+            callbacks harmless instead of inflating learning evidence.
+          * `audit_experience_corrections` records additive corrections so
+            historical truth is never destroyed.
+          * `experience_model_registry` stores model METADATA only. Experiences
+            never depend on a model artifact still existing.
+          * Indexes cover every retrieval predicate used on the live path
+            (strategy_id + decision_timestamp, symbol + decision_timestamp) so
+            experience retrieval stays bounded and fast.
+        """
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_experiences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                experience_id TEXT NOT NULL,
+                request_id TEXT NOT NULL,
+                execution_id TEXT DEFAULT '',
+                decision_id TEXT DEFAULT '',
+                idempotency_key TEXT UNIQUE NOT NULL,
+                correction_of TEXT DEFAULT '',
+                record_version INTEGER DEFAULT 2,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                strategy_id TEXT NOT NULL,
+                strategy_version TEXT DEFAULT '1.0.0',
+                decision_timestamp TEXT NOT NULL,
+                action TEXT NOT NULL,
+                entry_reason TEXT NOT NULL,
+                model_probability REAL DEFAULT 0.0,
+                signal_confidence REAL DEFAULT 0.0,
+                proposed_entry REAL NOT NULL,
+                stop_loss REAL NOT NULL,
+                take_profit REAL NOT NULL,
+                risk_reward_ratio REAL DEFAULT 1.0,
+                min_rr_policy REAL DEFAULT 0.0,
+                feature_schema_id TEXT DEFAULT 'scalp_v1',
+                feature_dimension INTEGER DEFAULT 50,
+                feature_hash TEXT DEFAULT '',
+                model_id TEXT DEFAULT '',
+                model_version TEXT DEFAULT '',
+                config_version TEXT DEFAULT '',
+                payload TEXT NOT NULL
+            );
+            """
+        )
+        # Forward migration for databases created by the first Phase 08 revision.
+        for col_name, col_type in [
+            ("correction_of", "TEXT DEFAULT ''"),
+            ("record_version", "INTEGER DEFAULT 1"),
+            ("min_rr_policy", "REAL DEFAULT 0.0"),
+            ("feature_schema_id", "TEXT DEFAULT 'scalp_v1'"),
+            ("feature_dimension", "INTEGER DEFAULT 50"),
+            ("model_id", "TEXT DEFAULT ''"),
+            ("model_version", "TEXT DEFAULT ''"),
+            ("config_version", "TEXT DEFAULT ''"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE audit_experiences ADD COLUMN {col_name} {col_type};")
+            except Exception:
+                pass
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_experience_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                idempotency_key TEXT UNIQUE NOT NULL,
+                execution_id TEXT DEFAULT '',
+                outcome_timestamp TEXT NOT NULL,
+                is_executed INTEGER DEFAULT 0,
+                is_closed INTEGER DEFAULT 0,
+                exit_reason TEXT DEFAULT '',
+                realized_pnl_usd REAL DEFAULT 0.0,
+                realized_r_multiple REAL DEFAULT 0.0,
+                approved_volume REAL DEFAULT 0.0,
+                mae_points REAL DEFAULT 0.0,
+                mfe_points REAL DEFAULT 0.0,
+                mae_usd REAL DEFAULT 0.0,
+                mfe_usd REAL DEFAULT 0.0,
+                mae_r REAL DEFAULT 0.0,
+                mfe_r REAL DEFAULT 0.0,
+                holding_duration_seconds REAL DEFAULT 0.0,
+                slippage_points REAL DEFAULT 0.0,
+                execution_latency_ms REAL DEFAULT 0.0,
+                strategy_quality REAL DEFAULT 0.0,
+                entry_quality REAL DEFAULT 0.0,
+                execution_quality REAL DEFAULT 0.0,
+                management_quality REAL DEFAULT 0.0,
+                exit_quality REAL DEFAULT 0.0,
+                behavioral_flags TEXT DEFAULT '',
+                payload TEXT NOT NULL
+            );
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_experience_corrections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                correction_id TEXT UNIQUE NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                corrected_at TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                field_name TEXT NOT NULL,
+                old_value TEXT DEFAULT '',
+                new_value TEXT DEFAULT ''
+            );
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS strategy_intelligence_registry (
+                strategy_id TEXT PRIMARY KEY,
+                lifecycle_state TEXT NOT NULL,
+                sample_count INTEGER DEFAULT 0,
+                win_rate REAL DEFAULT 0.0,
+                expectancy_r REAL DEFAULT 0.0,
+                recent_expectancy_r REAL DEFAULT 0.0,
+                normalized_drawdown_r REAL DEFAULT 0.0,
+                profit_factor REAL DEFAULT 1.0,
+                confidence_score REAL DEFAULT 0.0,
+                evidence_quality REAL DEFAULT 0.0,
+                replay_validated INTEGER DEFAULT 0,
+                probation_samples INTEGER DEFAULT 0,
+                score_payload TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        for col_name, col_type in [
+            ("recent_expectancy_r", "REAL DEFAULT 0.0"),
+            ("normalized_drawdown_r", "REAL DEFAULT 0.0"),
+            ("evidence_quality", "REAL DEFAULT 0.0"),
+            ("replay_validated", "INTEGER DEFAULT 0"),
+            ("probation_samples", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                conn.execute(
+                    f"ALTER TABLE strategy_intelligence_registry ADD COLUMN {col_name} {col_type};"
+                )
+            except Exception:
+                pass
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS experience_model_registry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_id TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                model_role TEXT DEFAULT 'PRIMARY_SCALP',
+                artifact_path TEXT DEFAULT '',
+                artifact_fingerprint TEXT DEFAULT '',
+                feature_schema_id TEXT DEFAULT 'scalp_v1',
+                feature_dimension INTEGER DEFAULT 50,
+                config_version TEXT DEFAULT '',
+                build_identity TEXT DEFAULT '',
+                was_replacement INTEGER DEFAULT 0,
+                registered_at TEXT NOT NULL,
+                UNIQUE(model_id, model_version, artifact_fingerprint)
+            );
+            """
+        )
+
+        for index_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_exp_strategy_time "
+            "ON audit_experiences(strategy_id, decision_timestamp DESC);",
+            "CREATE INDEX IF NOT EXISTS idx_exp_symbol_time "
+            "ON audit_experiences(symbol, decision_timestamp DESC);",
+            "CREATE INDEX IF NOT EXISTS idx_exp_request ON audit_experiences(request_id);",
+            "CREATE INDEX IF NOT EXISTS idx_exp_schema "
+            "ON audit_experiences(feature_schema_id, feature_dimension);",
+            "CREATE INDEX IF NOT EXISTS idx_exp_outcome_key "
+            "ON audit_experience_outcomes(idempotency_key);",
+            "CREATE INDEX IF NOT EXISTS idx_exp_corrections_key "
+            "ON audit_experience_corrections(idempotency_key);",
+        ):
+            try:
+                conn.execute(index_sql)
+            except Exception:
+                pass
 
     def _start_background_worker(self) -> None:
         """Starts the dedicated background thread for zero-latency database inserts."""

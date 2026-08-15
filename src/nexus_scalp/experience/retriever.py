@@ -1,11 +1,29 @@
 """
-Experience Retriever Subsystem
-==============================
-Phase 08 Experience Intelligence context matching and experience retrieval.
+Experience Retriever & Context Fingerprinting
+=============================================
+Phase 08 causal, bounded retrieval.
 
-Provides sparse, hierarchical context fingerprinting and similarity-based retrieval
-for top-K historical experiences matching live market state.
+Responsibilities:
+
+1. Build a BOUNDED `StrategyContext` from live market state. Continuous values
+   (ATR, HTF trend) are bucketed before hashing so experiences aggregate into
+   families rather than producing one strategy per float vector.
+2. Retrieve top-K historical experiences that are CAUSALLY VALID for a decision
+   timestamp - exact family match first, hierarchical similarity second.
+
+HARD INVARIANTS
+---------------
+* Every retrieval is bounded by `top_k` and by the ledger's own
+  MAX_RETRIEVAL_LIMIT. No unbounded table scan on any tick.
+* Every retrieval filters `decision_timestamp < decision_timestamp_of_now`.
+  Future experiences can never inform a past decision.
+* `build_context` never mutates the caller's `confluence_tokens` list. (The
+  first Phase 08 revision appended to the caller's list, so repeated calls with
+  a shared list produced a drifting fingerprint and a different strategy_id for
+  identical market state - see agents/bugs.md BUG-009.)
 """
+
+from __future__ import annotations
 
 from datetime import datetime
 
@@ -17,89 +35,162 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.experience.retriever")
 
+#: Minimum context similarity accepted for hierarchical (non-exact) matching.
+MIN_GENERALIZED_SIMILARITY: float = 0.60
+
+#: Canonical setup families derived from the existing entry-reason taxonomy.
+SETUP_FAMILIES: tuple[str, ...] = (
+    "SMC_GOD_MODE",
+    "FAST_LIQUIDITY_SWEEP",
+    "PREDICTIVE_LIMIT",
+    "PURE_AI",
+)
+
 
 class ExperienceRetriever:
-    """
-    Retrieves causally valid historical experience records and strategy candidates
-    matching live market context.
-    """
+    """Builds bounded contexts and retrieves causally valid experiences."""
 
     def __init__(self, ledger: ExperienceLedger) -> None:
         self.ledger = ledger
+
+    # ------------------------------------------------------------------
+    # Context construction
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def classify_volatility(atr_value: float) -> str:
+        """Buckets ATR into a bounded volatility regime token."""
+        atr = float(atr_value or 0.0)
+        if atr <= 0.0:
+            return "UNKNOWN"
+        if atr < 0.80:
+            return "LOW"
+        if atr > 3.0:
+            return "EXTREME"
+        if atr > 2.0:
+            return "HIGH"
+        return "NORMAL"
+
+    @staticmethod
+    def classify_session(feature_vector: FeatureVector | None) -> str:
+        """
+        Derives the session token from the recorded session flags.
+
+        Overlap is checked first because it is the most specific state.
+        """
+        if feature_vector is None:
+            return "ALL"
+        if bool(getattr(feature_vector, "session_overlap_london_ny", False)):
+            return "OVERLAP_LONDON_NY"
+        if bool(getattr(feature_vector, "session_london", False)):
+            return "LONDON"
+        if bool(getattr(feature_vector, "session_ny", False)):
+            return "NY"
+        if bool(getattr(feature_vector, "session_tokyo", False)):
+            return "TOKYO"
+        return "OFF_SESSION"
+
+    @staticmethod
+    def classify_trend(feature_vector: FeatureVector | None) -> str:
+        """Buckets HTF alignment into a bounded trend token."""
+        if feature_vector is None:
+            return "NEUTRAL"
+        h4 = float(getattr(feature_vector, "htf_h4_trend", 0.0) or 0.0)
+        if h4 > 0.0:
+            return "BULLISH"
+        if h4 < 0.0:
+            return "BEARISH"
+        return "NEUTRAL"
+
+    @staticmethod
+    def classify_setup(entry_reason: str = "", execution_mode: str = "") -> str:
+        """Maps the policy's reason/mode strings onto a canonical setup family."""
+        blob = f"{entry_reason} {execution_mode}".upper()
+        if "SMC_GOD_MODE" in blob:
+            return "SMC_GOD_MODE"
+        if "SWEEP" in blob:
+            return "FAST_LIQUIDITY_SWEEP"
+        if "LIMIT" in blob:
+            return "PREDICTIVE_LIMIT"
+        if blob.strip():
+            return "PURE_AI"
+        return "UNCLASSIFIED"
+
+    @staticmethod
+    def build_confluence_fingerprint(
+        feature_vector: FeatureVector | None,
+        confluence_tokens: list[str] | None = None,
+    ) -> str:
+        """
+        Builds a deterministic confluence digest.
+
+        Works on a LOCAL copy of `confluence_tokens`; the caller's list is never
+        mutated, so repeated calls with the same inputs always yield the same
+        fingerprint.
+        """
+        tokens: set[str] = set(confluence_tokens or ())
+        if feature_vector is not None:
+            if bool(getattr(feature_vector, "fvg_bullish_active", False)):
+                tokens.add("FVG_BULL")
+            if bool(getattr(feature_vector, "fvg_bearish_active", False)):
+                tokens.add("FVG_BEAR")
+            if bool(getattr(feature_vector, "choch_bullish", False)):
+                tokens.add("CHOCH_BULL")
+            if bool(getattr(feature_vector, "choch_bearish", False)):
+                tokens.add("CHOCH_BEAR")
+            ob_type = int(getattr(feature_vector, "order_block_type", 0) or 0)
+            if ob_type != 0:
+                tokens.add(f"OB_{ob_type}")
+            sweep = int(getattr(feature_vector, "liquidity_sweep_signal", 0) or 0)
+            if sweep != 0:
+                tokens.add(f"SWEEP_{sweep}")
+        return "_".join(sorted(tokens))
 
     def build_context(
         self,
         symbol: str,
         timeframe: str,
-        feature_vector: FeatureVector,
+        feature_vector: FeatureVector | None,
         regime_state: MarketRegimeState | None = None,
-        session: str = "ALL",
+        session: str | None = None,
         confluence_tokens: list[str] | None = None,
+        entry_reason: str = "",
+        execution_mode: str = "",
+        strategy_version: str = "1.0.0",
     ) -> StrategyContext:
         """
-        Constructs a sparse, hierarchical StrategyContext fingerprint from live market state.
+        Constructs a bounded `StrategyContext` and its deterministic family id.
+
+        The returned context is fully self-describing: the same market state
+        always maps to the same `strategy_id`, which is what makes experience
+        aggregation and pre-trade gating reproducible.
         """
         regime_str = regime_state.regime_type.value if regime_state else "UNKNOWN"
+        atr_val = float(getattr(feature_vector, "atr_m1", 0.0) or 0.0) if feature_vector else 0.0
 
-        # Determine volatility regime from M1 ATR relative to baseline
-        raw_atr = getattr(feature_vector, "atr_m1", 1.50)
-        atr_val = float(raw_atr) if raw_atr is not None else 1.50
+        resolved_session = session or self.classify_session(feature_vector)
+        context_fields = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "strategy_version": strategy_version,
+            "session": resolved_session,
+            "regime": regime_str,
+            "volatility_regime": self.classify_volatility(atr_val),
+            "trend_state": self.classify_trend(feature_vector),
+            "setup_type": self.classify_setup(entry_reason, execution_mode),
+            "confluence_fingerprint": self.build_confluence_fingerprint(
+                feature_vector, confluence_tokens
+            ),
+        }
 
-        if atr_val < 0.80:
-            vol_regime = "LOW"
-        elif atr_val > 3.0:
-            vol_regime = "EXTREME"
-        elif atr_val > 2.0:
-            vol_regime = "HIGH"
-        else:
-            vol_regime = "NORMAL"
-
-        # Determine higher-timeframe trend state
-        h4_trend = float(getattr(feature_vector, "htf_h4_trend", 0.0) or 0.0)
-        if h4_trend > 0.0:
-            trend_state = "BULLISH"
-        elif h4_trend < 0.0:
-            trend_state = "BEARISH"
-        else:
-            trend_state = "NEUTRAL"
-
-        # Construct confluence fingerprint string
-        tokens = confluence_tokens or []
-        if getattr(feature_vector, "fvg_bullish_active", False):
-            tokens.append("FVG_BULL")
-        if getattr(feature_vector, "fvg_bearish_active", False):
-            tokens.append("FVG_BEAR")
-        if getattr(feature_vector, "choch_bullish", False):
-            tokens.append("CHOCH_BULL")
-        if getattr(feature_vector, "choch_bearish", False):
-            tokens.append("CHOCH_BEAR")
-        if getattr(feature_vector, "order_block_type", 0) != 0:
-            tokens.append(f"OB_{getattr(feature_vector, 'order_block_type', 0)}")
-
-        confluence_str = "_".join(sorted(tokens))
-
-        temp_ctx = StrategyContext(
-            strategy_id="",
-            symbol=symbol,
-            timeframe=timeframe,
-            session=session,
-            regime=regime_str,
-            volatility_regime=vol_regime,
-            trend_state=trend_state,
-            confluence_fingerprint=confluence_str,
-        )
-
-        strategy_id = self.ledger.generate_strategy_id(temp_ctx)
+        probe = StrategyContext(strategy_id="", **context_fields)
         return StrategyContext(
-            strategy_id=strategy_id,
-            symbol=symbol,
-            timeframe=timeframe,
-            session=session,
-            regime=regime_str,
-            volatility_regime=vol_regime,
-            trend_state=trend_state,
-            confluence_fingerprint=confluence_str,
+            strategy_id=self.ledger.generate_strategy_id(probe), **context_fields
         )
+
+    # ------------------------------------------------------------------
+    # Retrieval
+    # ------------------------------------------------------------------
 
     def retrieve_relevant_experiences(
         self,
@@ -108,75 +199,63 @@ class ExperienceRetriever:
         top_k: int = 50,
     ) -> tuple[list[ExperienceRecord], float]:
         """
-        Retrieves top-K historical experiences matching the given context before decision_timestamp.
-        Returns a tuple of (retrieved_experiences, similarity_score).
+        Retrieves up to `top_k` causally valid experiences for a context.
+
+        Strategy:
+          1. Exact family match (similarity 1.0) - the common, indexed path.
+          2. Hierarchical fallback: bounded symbol-scoped scan, keeping only
+             contexts above MIN_GENERALIZED_SIMILARITY, ranked by similarity.
+
+        Returns (experiences, similarity). An empty list with 0.0 similarity
+        means "no evidence", which the decision gate must treat as
+        INSUFFICIENT_EVIDENCE rather than as approval.
         """
-        # 1. Exact Strategy ID match query
-        exact_matches = self.ledger.get_experiences_for_strategy(
+        bounded_k = max(1, int(top_k))
+
+        exact = self.ledger.get_experiences_for_strategy(
             strategy_id=context.strategy_id,
-            limit=top_k,
+            limit=bounded_k,
             before_timestamp=decision_timestamp,
         )
+        if exact:
+            return exact, 1.0
 
-        if exact_matches:
-            return exact_matches, 1.0
+        candidates = self.ledger.get_experiences_for_symbol(
+            symbol=context.symbol,
+            limit=bounded_k * 2,
+            before_timestamp=decision_timestamp,
+        )
+        scored: list[tuple[ExperienceRecord, float]] = []
+        for rec in candidates:
+            sim = self._calculate_context_similarity(context, rec.context)
+            if sim >= MIN_GENERALIZED_SIMILARITY:
+                scored.append((rec, sim))
 
-        # 2. Hierarchical / Generalized Match (matching symbol + regime + trend_state)
-        # Query experiences table for generalized matches
-        if not self.ledger.audit_repo._is_sqlite:
+        if not scored:
             return [], 0.0
 
-        import json
-        import sqlite3
-
-        generalized_matches = []
-        try:
-            with sqlite3.connect(self.ledger.audit_repo._db_path, timeout=5.0) as conn:
-                conn.row_factory = sqlite3.Row
-                query = """
-                    SELECT payload FROM audit_experiences
-                    WHERE symbol = ? AND decision_timestamp < ?
-                    ORDER BY decision_timestamp DESC LIMIT ?;
-                """
-                cursor = conn.execute(
-                    query, (context.symbol, decision_timestamp.isoformat(), top_k * 2)
-                )
-
-                for row in cursor.fetchall():
-                    raw_payload = row["payload"]
-                    if raw_payload:
-                        data = json.loads(raw_payload)
-                        rec = ExperienceRecord.model_validate(data)
-                        # Compute similarity
-                        sim = self._calculate_context_similarity(context, rec.context)
-                        if sim >= 0.50:
-                            generalized_matches.append((rec, sim))
-
-        except Exception as e:
-            logger.error("Failed to retrieve generalized experiences", error=str(e))
-
-        if not generalized_matches:
-            return [], 0.0
-
-        # Sort by similarity score descending
-        generalized_matches.sort(key=lambda x: x[1], reverse=True)
-        top_records = [m[0] for m in generalized_matches[:top_k]]
-        avg_sim = float(sum(m[1] for m in generalized_matches[:top_k]) / len(top_records))
-
-        return top_records, avg_sim
+        scored.sort(key=lambda pair: pair[1], reverse=True)
+        top = scored[:bounded_k]
+        avg_sim = float(sum(s for _, s in top) / len(top))
+        return [r for r, _ in top], round(avg_sim, 4)
 
     @staticmethod
     def _calculate_context_similarity(c1: StrategyContext, c2: StrategyContext) -> float:
-        """Calculates normalized similarity score [0.0, 1.0] between two StrategyContexts."""
-        score = 0.0
+        """
+        Weighted context similarity in [0.0, 1.0].
+
+        Regime and trend dominate because they determine whether a historical
+        outcome is even relevant; session and setup refine the match.
+        """
         weights = {
-            "symbol": 0.20,
-            "regime": 0.30,
+            "symbol": 0.15,
+            "regime": 0.25,
             "trend_state": 0.20,
             "volatility_regime": 0.15,
-            "session": 0.15,
+            "session": 0.10,
+            "setup_type": 0.15,
         }
-
+        score = 0.0
         if c1.symbol == c2.symbol:
             score += weights["symbol"]
         if c1.regime == c2.regime:
@@ -185,7 +264,8 @@ class ExperienceRetriever:
             score += weights["trend_state"]
         if c1.volatility_regime == c2.volatility_regime:
             score += weights["volatility_regime"]
-        if c1.session in (c2.session, "ALL") or c2.session == "ALL":
+        if c1.session == c2.session or "ALL" in (c1.session, c2.session):
             score += weights["session"]
-
+        if c1.setup_type == c2.setup_type:
+            score += weights["setup_type"]
         return float(round(score, 4))

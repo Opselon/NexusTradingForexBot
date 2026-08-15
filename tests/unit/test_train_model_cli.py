@@ -90,7 +90,14 @@ def test_cli_feature_cols_compatibility_with_walk_forward_trainer() -> None:
     # Validation should succeed cleanly with 50D feature columns
     trainer._validate_training_frame(df_labeled, feature_cols_50d)
 
-    # Verify that an 18D column list explicitly raises ValueError contract violation
+    # Verify that an 18D column list explicitly raises ValueError contract violation.
+    # The message is schema-driven now ("schema=scalp_v1 expected 50 feature columns,
+    # got 18"), so the assertion checks the BEHAVIOUR (raise + reports both widths)
+    # rather than the old hard-coded "50D" prefix.
     feature_cols_18d = [f"feat_{idx}" for idx in range(18)]
-    with pytest.raises(ValueError, match="50D feature contract violation"):
+    with pytest.raises(ValueError, match=r"[Ff]eature contract violation") as exc_info:
         trainer._validate_training_frame(df_labeled, feature_cols_18d)
+
+    message = str(exc_info.value)
+    assert str(WalkForwardTrainer.NUM_FEATURES) in message
+    assert "18" in message

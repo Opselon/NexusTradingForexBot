@@ -42,6 +42,14 @@
     <Compile Include="src\nexus_scalp\domain\models.py" />
     <Compile Include="src\nexus_scalp\domain\__init__.py" />
     <Compile Include="src\nexus_scalp\execution\order_manager.py" />
+    <Compile Include="src\nexus_scalp\experience\evaluator.py" />
+    <Compile Include="src\nexus_scalp\experience\intelligence.py" />
+    <Compile Include="src\nexus_scalp\experience\ledger.py" />
+    <Compile Include="src\nexus_scalp\experience\models.py" />
+    <Compile Include="src\nexus_scalp\experience\provenance.py" />
+    <Compile Include="src\nexus_scalp\experience\quality.py" />
+    <Compile Include="src\nexus_scalp\experience\retriever.py" />
+    <Compile Include="src\nexus_scalp\experience\__init__.py" />
     <Compile Include="src\nexus_scalp\features\regime_classifier.py" />
     <Compile Include="src\nexus_scalp\features\scalp_features.py" />
     <Compile Include="src\nexus_scalp\labeling\triple_barrier.py" />
@@ -83,6 +91,7 @@
     <Folder Include="agents\" />
     <Folder Include="src\" />
     <Folder Include="src\cli\" />
+    <Folder Include="src\nexus_scalp\experience\" />
     <Folder Include="src\nexus_scalp\training\" />
     <Folder Include="src\nexus_scalp\" />
     <Folder Include="src\nexus_scalp\adapters\" />

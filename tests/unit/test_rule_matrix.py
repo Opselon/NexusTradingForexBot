@@ -20,18 +20,26 @@ from nexus_scalp.web.server import create_app
 
 
 @pytest.fixture
-def temp_audit_repo() -> Generator[AuditRepository, None, None]:
-    """Fixture providing a fresh unique SQLite database for rules testing."""
-    db_name = f"test_rules_audit_{uuid.uuid4().hex}.db"
-    repo = AuditRepository(f"sqlite:///{db_name}")
+def temp_audit_repo(tmp_path) -> Generator[AuditRepository, None, None]:
+    """
+    Fixture providing a fresh unique SQLite database for rules testing.
+
+    The database lives under pytest's `tmp_path` rather than the repository root:
+    on Windows the SQLite WAL/SHM sidecar files can stay locked briefly after
+    close(), so root-relative cleanup silently failed and left hundreds of stray
+    `test_rules_audit_*.db` files in the repository (see agents/bugs.md BUG-011).
+    """
+    db_path = tmp_path / f"test_rules_audit_{uuid.uuid4().hex}.db"
+    repo = AuditRepository(f"sqlite:///{db_path.as_posix()}")
     yield repo
     repo.close()
     for ext in ("", "-wal", "-shm"):
-        file_path = db_name + ext
+        file_path = str(db_path) + ext
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
             except Exception:
+                # tmp_path is disposable; a locked sidecar cannot pollute the repo.
                 pass
 
 

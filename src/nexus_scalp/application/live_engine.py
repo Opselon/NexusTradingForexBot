@@ -46,9 +46,12 @@ from nexus_scalp.execution.order_manager import OrderLifecycleManager
 from nexus_scalp.experience.evaluator import StrategyEvaluator
 from nexus_scalp.experience.intelligence import ExperienceIntelligenceEngine
 from nexus_scalp.experience.ledger import ExperienceLedger
+from nexus_scalp.experience.models import PreTradeExperienceDecision
+from nexus_scalp.experience.provenance import ModelRegistry
 from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
+from nexus_scalp.features.schema import active_columns, active_dimension, active_schema
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.models.scalp_net import ScalpNet
@@ -100,8 +103,11 @@ class LiveEngine:
     Production Live Orchestrator for XAUUSD scalping.
     """
 
-    FEATURE_DIM: int = 50
-    FEATURE_COLS: tuple[str, ...] = tuple(f"feat_{i}" for i in range(50))
+    #: Live feature contract, resolved from the single schema registry rather than
+    #: hard-coded, so a future 60D/350D schema needs no change in this class.
+    FEATURE_DIM: int = active_dimension()
+    FEATURE_COLS: tuple[str, ...] = active_columns()
+    FEATURE_SCHEMA_ID: str = active_schema().schema_id
 
     def __init__(
         self,
@@ -164,15 +170,24 @@ class LiveEngine:
         # Module 1: Rule Matrix Engine
         self.rule_matrix = RuleMatrixEngine(audit_repo=self.audit)
 
-        # Phase 08 Experience Intelligence Engine
+        # =====================================================================
+        # PHASE 08: EXPERIENCE INTELLIGENCE SUBSYSTEM
+        # ---------------------------------------------------------------------
+        # Constructed BEFORE the model bundle so that experience memory exists
+        # independently of any model artifact. The model is registered into the
+        # provenance registry afterwards; deleting/retraining/hot-swapping the
+        # artifact never touches the ledger.
+        # =====================================================================
         self.experience_ledger = ExperienceLedger(audit_repo=self.audit)
         self.experience_evaluator = StrategyEvaluator(audit_repo=self.audit)
         self.experience_retriever = ExperienceRetriever(ledger=self.experience_ledger)
+        self.model_registry = ModelRegistry(audit_repo=self.audit)
         self.experience_engine = ExperienceIntelligenceEngine(
             ledger=self.experience_ledger,
             evaluator=self.experience_evaluator,
             retriever=self.experience_retriever,
             enabled=True,
+            provenance=self.model_registry.current,
         )
 
         # Order/risk/policy
@@ -227,12 +242,54 @@ class LiveEngine:
         self._last_regime_state: MarketRegimeState | None = None
         self._last_probs: torch.Tensor | None = None
         self._last_proposal: TradeProposal | None = None
+        #: Most recent Phase 08 pre-trade verdict, surfaced by the REST API.
+        self._last_experience_decision: PreTradeExperienceDecision | None = None
 
         # Preload model/scaler bundle (pre-flight)
         model_path = Path(self.config.model.model_artifact_path)
         self._bundle = self._load_or_create_bundle(
             model_path=model_path, force_fresh=self.force_fresh_model
         )
+
+        # PHASE 08: register the model that is actually serving live inference.
+        # This is metadata only - the experience ledger constructed above is
+        # already fully usable even when this artifact was just created fresh.
+        self._register_active_model(model_path=model_path, replaced=False)
+
+    def _register_active_model(self, model_path: Path, replaced: bool) -> None:
+        """
+        Stamps the active model identity onto future experiences.
+
+        Called at startup and after every hot-swap. Historical experiences keep
+        the provenance of the model that produced them and are never rewritten.
+        """
+        try:
+            provenance = self.model_registry.register_model(
+                artifact_path=model_path,
+                model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+                feature_schema_id=self.FEATURE_SCHEMA_ID,
+                feature_dimension=self.FEATURE_DIM,
+                config_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+                replaced=replaced,
+            )
+            self.experience_engine.set_provenance(provenance)
+        except Exception as e:
+            # Provenance is observability, never a live-path dependency.
+            logger.error("[MODEL] provenance registration failed (isolated)", error=str(e))
+
+    def rebuild_experience_intelligence(self) -> int:
+        """
+        Rebuilds derived strategy intelligence from the immutable ledger.
+
+        Exposed so startup, the REST API and operators can self-heal a corrupt
+        derived registry. Raw experience rows are only read.
+        """
+        try:
+            rebuilt = self.experience_engine.self_heal()
+            return len(rebuilt)
+        except Exception as e:
+            logger.error("[SELF_HEAL] FAILED", error=str(e))
+            return 0
 
     # -------------------------
     # Public lifecycle
@@ -328,6 +385,14 @@ class LiveEngine:
         await self._cold_start_warmup(symbol)
 
         await self._bootstrap_train_if_ready()
+
+        # PHASE 08 STARTUP SEQUENCE (model-independent):
+        #   1. immutable experiences already loaded from disk (SQLite)
+        #   2. verify schema/provenance census
+        #   3. rebuild derived intelligence off the event loop
+        #   4. the active model was registered during construction
+        # A missing/rebuilt model artifact does NOT reset any of this.
+        await self._startup_experience_self_heal()
 
         logger.info(
             "LIVE CONNECTED",
@@ -662,6 +727,32 @@ class LiveEngine:
 
         return is_ready
 
+    async def _startup_experience_self_heal(self) -> None:
+        """
+        Verifies experience provenance and rebuilds derived intelligence.
+
+        Runs the rebuild in a worker thread so a large ledger cannot delay the
+        first live tick, and is fully exception-isolated: a learning-layer
+        failure must never prevent the engine from trading safely.
+        """
+        try:
+            total = await asyncio.to_thread(self.experience_ledger.count_experiences)
+            census = await asyncio.to_thread(self.experience_ledger.get_schema_distribution)
+            logger.info(
+                "[EXPERIENCE] LEDGER LOADED",
+                experiences=total,
+                schema_distribution=census,
+                active_schema=self.experience_engine.provenance.feature_schema_id,
+                active_dimension=self.experience_engine.provenance.feature_dimension,
+            )
+            if total == 0:
+                logger.info("[SELF_HEAL] COMPLETE", status="SKIPPED_EMPTY_LEDGER")
+                return
+            rebuilt = await asyncio.to_thread(self.experience_engine.self_heal)
+            logger.info("[EXPERIENCE] DERIVED INTELLIGENCE READY", strategies=len(rebuilt))
+        except Exception as e:
+            logger.error("[SELF_HEAL] FAILED", error=str(e), exc_info=True)
+
     async def _cold_start_warmup(self, symbol: str) -> None:
         self._warmup_attempt += 1
         logger.info(f"[WARMUP] START\nsymbol={symbol}\nrequired_timeframes=[H1,H4]")
@@ -902,12 +993,21 @@ class LiveEngine:
                 order_manager=self.order_manager,
             )
 
-            # Phase 08 Pre-Trade Experience Intelligence Gate
-            proposal, _exp_decision = self.experience_engine.evaluate_proposal(
+            # =================================================================
+            # PHASE 08 PRE-TRADE EXPERIENCE INTELLIGENCE GATE
+            # -----------------------------------------------------------------
+            # Runs AFTER the signal policy and BEFORE risk sizing / dispatch, so
+            # a rejection here happens strictly before any order placement. The
+            # gate can only down-rank or convert to NO_TRADE; it never sizes,
+            # places or modifies an order, and it never blocks the tick loop
+            # (score lookups are TTL-cached and rate-limited).
+            # =================================================================
+            proposal, exp_decision = self.experience_engine.evaluate_proposal(
                 proposal=proposal,
                 feature_vector=fv,
                 regime_state=regime_state,
             )
+            self._last_experience_decision = exp_decision
 
             self.audit.log_signal(proposal)
 
@@ -1318,6 +1418,12 @@ class LiveEngine:
                     model=updated_model, scaler=scaler, artifact_path=bundle.artifact_path
                 )
 
+            # PHASE 08: the model artifact was just rewritten. Re-register its
+            # provenance so NEW experiences carry the new identity. Existing
+            # experiences, strategy memory and lifecycle state are untouched -
+            # a retrain never resets learning memory.
+            self._register_active_model(model_path=bundle.artifact_path, replaced=True)
+
             self._bars_since_last_retrain = 0
             logger.info("ASYNC RETRAIN SUCCESS")
 
@@ -1480,14 +1586,23 @@ class LiveEngine:
                 self._running = False
 
     # -------------------------
-    # 50D contract validation
+    # -------------------------
+    # Feature contract validation (schema-driven)
     # -------------------------
 
     @classmethod
     def _validate_50d_tensor(cls, features: Sequence[float], context: str) -> list[float]:
+        """
+        Validates and sanitizes a feature vector against the ACTIVE schema.
+
+        Name kept for backward compatibility with existing call sites and tests;
+        the width itself comes from `FEATURE_DIM` (schema registry), so this
+        function keeps working unchanged when the contract widens.
+        """
         if len(features) != cls.FEATURE_DIM:
             raise RuntimeError(
-                f"50D feature contract violation in {context}: expected {cls.FEATURE_DIM}, got {len(features)}"
+                f"Feature contract violation in {context}: schema={cls.FEATURE_SCHEMA_ID} "
+                f"expected {cls.FEATURE_DIM}, got {len(features)}"
             )
 
         out: list[float] = []

@@ -26,6 +26,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus_scalp.domain.models import TickData
+from nexus_scalp.features.schema import active_dimension, active_schema
 from nexus_scalp.market_data.bar_aggregator import BarData
 from nexus_scalp.observability.logging import get_logger
 
@@ -197,9 +198,14 @@ FEATURE_NAMES: tuple[str, ...] = (
 )
 
 NUM_FEATURES: int = len(FEATURE_NAMES)
-if NUM_FEATURES != 50:
+#: The live contract is declared once in `features/schema.py`. This assertion keeps
+#: the concrete FEATURE_NAMES tuple and the registry from silently diverging: if a
+#: future schema widens the contract, both must be updated together.
+if NUM_FEATURES != active_dimension():
     raise RuntimeError(
-        f"ScalpNet feature contract violation: expected 50 features, got {NUM_FEATURES}"
+        f"ScalpNet feature contract violation: FEATURE_NAMES declares {NUM_FEATURES} "
+        f"features but active schema '{active_schema().schema_id}' declares "
+        f"{active_dimension()}"
     )
 
 

@@ -369,6 +369,14 @@ class OrderLifecycleManager:
 
         self._mfe_tracker: dict[int, float] = {}  # Maximum Favorable Excursion
         self._mae_tracker: dict[int, float] = {}  # Maximum Adverse Excursion
+        #: PHASE 08: seconds from open to each observed excursion extreme.
+        self._time_to_mfe_sec: dict[int, float] = {}
+        self._time_to_mae_sec: dict[int, float] = {}
+        #: PHASE 08: execution-quality evidence captured at fill time.
+        self._entry_expected_price: dict[int, float] = {}
+        self._entry_atr: dict[int, float] = {}
+        self._entry_spread: dict[int, float] = {}
+        self._entry_fill_latency_ms: dict[int, float] = {}
         self._entry_timestamps: dict[int, datetime] = {}
         self._last_tick_timestamps: dict[int, datetime] = {}
 
@@ -453,18 +461,26 @@ class OrderLifecycleManager:
         entry_reason: str = "",
         ai_confidence: float = 0.0,
         market_regime: str = "",
+        expected_entry: float = 0.0,
+        dispatch_monotonic: float = 0.0,
     ) -> None:
         """
         Stages the entry context of the order that is about to be dispatched.
 
         The broker ticket does not exist yet at dispatch time, so the context is held
         here and bound to the ticket on the first management pass that observes it.
+
+        `expected_entry` and `dispatch_monotonic` are Phase 08 execution-quality
+        evidence: they let the closing autopsy compute real slippage and fill
+        latency instead of guessing.
         """
         self._pending_entry_context = {
             "order_id": order_id,
             "entry_reason": entry_reason,
             "ai_confidence": float(ai_confidence or 0.0),
             "market_regime": market_regime,
+            "expected_entry": float(expected_entry or 0.0),
+            "dispatch_monotonic": float(dispatch_monotonic or 0.0),
         }
 
     def update_account_snapshot(self, account: Any, peak_equity: float | None = None) -> None:
@@ -725,12 +741,15 @@ class OrderLifecycleManager:
             )
             return False
 
-        # Stage the entry context so the ledger autopsy row carries WHY we entered.
+        # Stage the entry context so the ledger autopsy row carries WHY we entered,
+        # plus the Phase 08 execution-quality baseline (expected fill + dispatch clock).
         self.register_entry_context(
             order_id=getattr(decision, "request_id", "") or "",
             entry_reason=self._resolve_entry_reason(decision),
             ai_confidence=float(getattr(decision, "confidence", 0.0) or 0.0),
             market_regime=str(getattr(decision, "regime", "") or ""),
+            expected_entry=float(getattr(decision, "proposed_entry", 0.0) or 0.0),
+            dispatch_monotonic=time.monotonic(),
         )
 
         logger.info(
@@ -849,6 +868,13 @@ class OrderLifecycleManager:
         self._entry_confidences[ticket] = float(ctx.get("ai_confidence", 0.0) or 0.0)
         self._entry_regimes[ticket] = str(ctx.get("market_regime", "") or "")
         self._entry_order_ids[ticket] = str(ctx.get("order_id", "") or decision_order_id)
+        # PHASE 08 execution-quality evidence.
+        self._entry_expected_price[ticket] = float(ctx.get("expected_entry", 0.0) or 0.0)
+        dispatch_mono = float(ctx.get("dispatch_monotonic", 0.0) or 0.0)
+        if dispatch_mono > 0.0:
+            self._entry_fill_latency_ms[ticket] = max(
+                0.0, (time.monotonic() - dispatch_mono) * 1000.0
+            )
         self._pending_entry_context = None
 
     # =========================================================================
@@ -3692,33 +3718,39 @@ class OrderLifecycleManager:
                     drawdown_percent_after=self._current_drawdown_percent(),
                 )
 
+                # =============================================================
+                # PHASE 08: EXPERIENCE OUTCOME ATTRIBUTION
+                # -------------------------------------------------------------
+                # Records the append-only outcome for the decision that produced
+                # this ticket, including full execution/behaviour evidence so the
+                # experience layer can attribute the result across strategy,
+                # entry, management, exit and execution quality.
+                #
+                # Fully isolated: any failure here is logged and ignored. The
+                # autopsy row above is already persisted, and no execution
+                # decision depends on this call.
+                # =============================================================
                 if self.experience_engine is not None:
-                    try:
-                        req_id = self._entry_order_ids.get(dead_ticket, "")
-                        sl_dist = abs(entry - initial_sl_val) if initial_sl_val > 0 else (atr * 1.5)
-                        contract_sz = self._resolve_contract_size(symbol_info)
-                        risk_usd = max(1.0, sl_dist * vol * contract_sz)
-                        net_pnl_usd = profit_usd - comm_usd - swap_usd
-                        r_multiple = net_pnl_usd / risk_usd
-                        self.experience_engine.record_trade_outcome(
-                            request_id=req_id,
-                            execution_id=str(dead_ticket),
-                            outcome_timestamp=now,
-                            is_executed=True,
-                            is_closed=True,
-                            exit_reason=exit_mechanism,
-                            realized_pnl_usd=net_pnl_usd,
-                            realized_r_multiple=r_multiple,
-                            mae_points=mae_val,
-                            mfe_points=mfe_val,
-                            mae_usd=mae_usd,
-                            mfe_usd=mfe_usd,
-                            holding_duration_seconds=duration_sec,
-                        )
-                    except Exception as exp_err:
-                        logger.error(
-                            "Failed to record experience trade outcome", error=str(exp_err)
-                        )
+                    self._record_experience_outcome(
+                        dead_ticket=dead_ticket,
+                        now=now,
+                        entry=entry,
+                        exit_price=exit_price,
+                        initial_sl_val=initial_sl_val,
+                        vol=vol,
+                        atr=atr,
+                        symbol_info=symbol_info,
+                        profit_usd=profit_usd,
+                        comm_usd=comm_usd,
+                        swap_usd=swap_usd,
+                        mae_val=mae_val,
+                        mfe_val=mfe_val,
+                        mae_usd=mae_usd,
+                        mfe_usd=mfe_usd,
+                        duration_sec=duration_sec,
+                        exit_mechanism=exit_mechanism,
+                        was_sl_modified=bool(was_sl_modified),
+                    )
 
                 logger.info(
                     "[LEDGER AUTOPSY] Closed trade recorded",
@@ -3864,6 +3896,10 @@ class OrderLifecycleManager:
                 # eventual autopsy row carries entry_reason / confidence / regime.
                 self._bind_pending_entry_context(ticket)
                 self._sl_modified_flags[ticket] = False
+                # PHASE 08: freeze the market conditions observed at the fill so
+                # execution quality and stop-placement quality are measurable.
+                self._entry_atr[ticket] = float(atr)
+                self._entry_spread[ticket] = max(0.0, current_tick.ask - current_tick.bid)
 
                 # Robust Financial Ledger opened record
                 self.audit.log_ledger_opened(
@@ -4539,13 +4575,119 @@ class OrderLifecycleManager:
 
         return positions
 
+    def _record_experience_outcome(
+        self,
+        dead_ticket: int,
+        now: datetime,
+        entry: float,
+        exit_price: float,
+        initial_sl_val: float,
+        vol: float,
+        atr: float,
+        symbol_info: SymbolInfo | None,
+        profit_usd: float,
+        comm_usd: float,
+        swap_usd: float,
+        mae_val: float,
+        mfe_val: float,
+        mae_usd: float,
+        mfe_usd: float,
+        duration_sec: float,
+        exit_mechanism: str,
+        was_sl_modified: bool,
+    ) -> None:
+        """
+        Forwards a closed position to the Phase 08 experience layer.
+
+        Responsibilities kept strictly here (never inside the experience layer):
+          * resolve the originating proposal `request_id` for attribution
+          * convert USD PnL into a risk-normalised R multiple
+          * hand over the observed execution/behaviour evidence
+
+        This method NEVER raises: the learning layer is non-critical and the
+        financial autopsy row has already been persisted by the caller.
+        """
+        try:
+            req_id = self._entry_order_ids.get(dead_ticket, "")
+            if not req_id:
+                # Without the originating request id there is no decision to
+                # attribute the outcome to. Recording it anyway would fabricate
+                # evidence with no context, so it is skipped deliberately.
+                logger.warning(
+                    "[EXPERIENCE] INVALID skipped outcome without request_id",
+                    ticket=dead_ticket,
+                )
+                return
+
+            sl_distance = abs(entry - initial_sl_val) if initial_sl_val > 0.0 else (atr * 1.5)
+            contract_sz = self._resolve_contract_size(symbol_info)
+            risk_usd = max(1.0, sl_distance * max(vol, 0.0) * contract_sz)
+            net_pnl_usd = profit_usd - comm_usd - swap_usd
+            r_multiple = net_pnl_usd / risk_usd
+
+            expected_entry = self._entry_expected_price.get(dead_ticket, 0.0)
+            direction = self._entry_directions.get(dead_ticket, "BUY")
+            slippage_points = 0.0
+            if expected_entry > 0.0 and entry > 0.0:
+                raw = entry - expected_entry
+                slippage_points = raw if "BUY" in str(direction).upper() else -raw
+
+            self.experience_engine.record_trade_outcome(
+                request_id=req_id,
+                execution_id=str(dead_ticket),
+                outcome_timestamp=now,
+                is_executed=True,
+                is_closed=True,
+                exit_reason=exit_mechanism,
+                realized_pnl_usd=net_pnl_usd,
+                realized_r_multiple=r_multiple,
+                mae_points=mae_val,
+                mfe_points=mfe_val,
+                mae_usd=mae_usd,
+                mfe_usd=mfe_usd,
+                holding_duration_seconds=duration_sec,
+                approved_volume=vol,
+                actual_entry=entry,
+                slippage_points=slippage_points,
+                execution_latency_ms=self._entry_fill_latency_ms.get(dead_ticket, 0.0),
+                spread_at_execution=self._entry_spread.get(dead_ticket, 0.0),
+                initial_sl_distance=sl_distance,
+                sl_moved=was_sl_modified,
+                partial_closed=bool(self._partial_closed_tickets.get(dead_ticket, False)),
+                atr_at_entry=self._entry_atr.get(dead_ticket, atr),
+                time_to_mae_sec=self._time_to_mae_sec.get(dead_ticket, 0.0),
+                time_to_mfe_sec=self._time_to_mfe_sec.get(dead_ticket, 0.0),
+            )
+        except Exception as exp_err:
+            logger.error(
+                "[EXPERIENCE] outcome forwarding failed (isolated)",
+                ticket=dead_ticket,
+                error=str(exp_err),
+            )
+
     def _update_mfe_mae(self, ticket: int, profit_price_delta: float) -> None:
-        self._mfe_tracker[ticket] = max(
-            self._mfe_tracker.get(ticket, profit_price_delta), profit_price_delta
-        )
-        self._mae_tracker[ticket] = min(
-            self._mae_tracker.get(ticket, profit_price_delta), profit_price_delta
-        )
+        """
+        Advances the monotonic MFE/MAE excursion trackers.
+
+        Also stamps WHEN each new extreme occurred so the Phase 08 position
+        behaviour record can distinguish "ran to target immediately" from
+        "spent an hour underwater first".
+        """
+        prev_mfe = self._mfe_tracker.get(ticket, profit_price_delta)
+        prev_mae = self._mae_tracker.get(ticket, profit_price_delta)
+        new_mfe = max(prev_mfe, profit_price_delta)
+        new_mae = min(prev_mae, profit_price_delta)
+
+        entry_time = self._entry_timestamps.get(ticket)
+        if entry_time is not None:
+            elapsed = (datetime.now(UTC) - entry_time).total_seconds()
+            if new_mfe > prev_mfe or ticket not in self._time_to_mfe_sec:
+                self._time_to_mfe_sec[ticket] = max(0.0, elapsed)
+            if new_mae < prev_mae or ticket not in self._time_to_mae_sec:
+                self._time_to_mae_sec[ticket] = max(0.0, elapsed)
+
+        self._mfe_tracker[ticket] = new_mfe
+        self._mae_tracker[ticket] = new_mae
 
     def _cleanup_ticket_state(self, ticket: int) -> None:
         """Releases all per-ticket state after the closing autopsy row has been written."""
@@ -4555,6 +4697,13 @@ class OrderLifecycleManager:
             self._partial_closed_tickets,
             self._mfe_tracker,
             self._mae_tracker,
+            # PHASE 08 excursion timing & execution-quality evidence
+            self._time_to_mfe_sec,
+            self._time_to_mae_sec,
+            self._entry_expected_price,
+            self._entry_atr,
+            self._entry_spread,
+            self._entry_fill_latency_ms,
             self._entry_timestamps,
             self._last_tick_timestamps,
             self._time_in_profit_sec,

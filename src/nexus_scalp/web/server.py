@@ -1580,9 +1580,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "fetched_at": datetime.now(UTC).isoformat(),
         }
 
-    # Phase 08 Experience Intelligence REST APIs
+    # =========================================================================
+    # PHASE 08 EXPERIENCE INTELLIGENCE REST APIs
+    # -------------------------------------------------------------------------
+    # All endpoints are READ-ONLY over derived state, except the explicit
+    # self-heal endpoint which only rebuilds derived intelligence from the
+    # immutable ledger (it can never modify or delete raw experience rows).
+    # =========================================================================
     @app.get("/api/experience/summary")
     def get_experience_summary() -> dict[str, Any]:
+        """Aggregate experience/gate telemetry including schema provenance."""
         engine = app.state.engine
         if not engine or not hasattr(engine, "experience_engine"):
             return {
@@ -1591,42 +1598,99 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "active_strategies": 0,
             }
 
-        recorded_count = 0
-        active_strats = 0
+        try:
+            summary = dict(engine.experience_engine.summary())
+        except Exception as e:
+            logger.error("Failed to build experience summary", error=str(e))
+            summary = {"enabled": False, "recorded_experiences": 0}
+
+        lifecycle_counts: dict[str, int] = {}
         try:
             with sqlite3.connect(engine.audit._db_path, timeout=5.0) as conn:
-                cursor = conn.execute("SELECT COUNT(*) FROM audit_experiences;")
-                recorded_count = cursor.fetchone()[0]
-                cursor2 = conn.execute(
-                    "SELECT COUNT(*) FROM strategy_intelligence_registry WHERE lifecycle_state = 'ACTIVE';"
-                )
-                active_strats = cursor2.fetchone()[0]
+                rows = conn.execute(
+                    """
+                    SELECT lifecycle_state, COUNT(*) FROM strategy_intelligence_registry
+                    GROUP BY lifecycle_state;
+                    """
+                ).fetchall()
+                lifecycle_counts = {str(r[0]): int(r[1]) for r in rows}
         except Exception:
-            pass
+            lifecycle_counts = {}
 
-        return {
-            "enabled": engine.experience_engine.enabled,
-            "recorded_experiences": recorded_count,
-            "active_strategies": active_strats,
-        }
+        summary["lifecycle_counts"] = lifecycle_counts
+        summary["active_strategies"] = lifecycle_counts.get("ACTIVE", 0)
+        summary["retired_strategies"] = lifecycle_counts.get("RETIRED", 0)
+        summary["fetched_at"] = datetime.now(UTC).isoformat()
+        return serialize_enums(summary)
 
     @app.get("/api/experience/strategies")
     def get_experience_strategies(limit: int = 50) -> list[dict[str, Any]]:
+        """Bounded listing of derived strategy scores, newest first."""
         engine = app.state.engine
         if not engine:
             return []
 
+        bounded = max(1, min(int(limit), 500))
         try:
             with sqlite3.connect(engine.audit._db_path, timeout=5.0) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT * FROM strategy_intelligence_registry ORDER BY updated_at DESC LIMIT ?;",
-                    (limit,),
+                    (bounded,),
                 )
                 return [dict(r) for r in cursor.fetchall()]
         except Exception as e:
             logger.error("Failed to retrieve experience strategies", error=str(e))
             return []
+
+    @app.get("/api/experience/decision")
+    def get_last_experience_decision() -> dict[str, Any]:
+        """Most recent pre-trade experience verdict, for live explainability."""
+        engine = app.state.engine
+        decision = getattr(engine, "_last_experience_decision", None) if engine else None
+        if decision is None:
+            return {"available": False}
+        try:
+            payload = json.loads(decision.model_dump_json())
+        except Exception as e:
+            logger.error("Failed to serialize experience decision", error=str(e))
+            return {"available": False}
+        return {"available": True, "decision": payload}
+
+    @app.get("/api/experience/models")
+    def get_experience_models(limit: int = 25) -> list[dict[str, Any]]:
+        """
+        Registered model provenance history.
+
+        Proves model/memory separation: entries here may reference artifacts that
+        no longer exist while the experience ledger remains intact.
+        """
+        engine = app.state.engine
+        registry = getattr(engine, "model_registry", None) if engine else None
+        if registry is None:
+            return []
+        try:
+            return [dict(r) for r in registry.list_registered_models(limit=limit)]
+        except Exception as e:
+            logger.error("Failed to retrieve model registry", error=str(e))
+            return []
+
+    @app.post("/api/experience/self-heal")
+    def trigger_experience_self_heal() -> dict[str, Any]:
+        """
+        Rebuilds derived strategy intelligence from the immutable ledger.
+
+        Raw experience rows are read-only during this operation.
+        """
+        engine = app.state.engine
+        if not engine or not hasattr(engine, "rebuild_experience_intelligence"):
+            return {"success": False, "rebuilt_strategies": 0, "reason": "ENGINE_UNAVAILABLE"}
+        try:
+            count = engine.rebuild_experience_intelligence()
+            return {"success": True, "rebuilt_strategies": int(count)}
+        except Exception as e:
+            logger.error("Experience self-heal failed", error=str(e))
+            return {"success": False, "rebuilt_strategies": 0, "reason": str(e)}
 
     # Observability stats
     @app.get("/api/observability/stats")

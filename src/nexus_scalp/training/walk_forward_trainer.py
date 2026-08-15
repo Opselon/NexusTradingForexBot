@@ -34,10 +34,22 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from nexus_scalp.domain.enums import ActionType
+from nexus_scalp.features.schema import FEATURE_SCHEMAS, FeatureSchema, active_dimension
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.training.walk_forward_trainer")
+
+
+def resolve_schema(schema_id: str | None) -> FeatureSchema:
+    """
+    Resolves a feature schema for the trainer.
+
+    Kept as a module-level helper so the trainer never falls back to a guessed
+    dimension: an unknown id raises rather than silently training a model whose
+    width does not match what the runtime emits.
+    """
+    return FEATURE_SCHEMAS.resolve(schema_id)
 
 
 # =============================================================================
@@ -109,10 +121,20 @@ class ScalerBundle:
 class WalkForwardTrainer:
     """
     Production-grade purged time-series trainer for ScalpNet.
+
+    Feature geometry is SCHEMA-DRIVEN: `NUM_FEATURES` mirrors the active contract
+    declared in `nexus_scalp.features.schema`, and each instance carries a
+    resolved `feature_schema`. Training a future 60D/350D model is therefore a
+    constructor argument (`feature_schema_id=...`) plus a retrain, not a code
+    change in this class.
     """
 
-    NUM_FEATURES: int = 50
+    #: Active live contract width (kept as a class attribute for backward
+    #: compatibility with existing call sites and regression tests).
+    NUM_FEATURES: int = active_dimension()
     NUM_CLASSES: int = 3
+    #: ScalpNet's deployed head width (NO_TRADE, BUY, SELL, WAIT).
+    MODEL_HEAD_CLASSES: int = 4
 
     def __init__(
         self,
@@ -135,6 +157,8 @@ class WalkForwardTrainer:
         focal_gamma: float = 2.0,  # Focal Loss exponent focusing on hard minority examples
         label_smoothing: float = 0.08,  # Label smoothing factor for regularization
         use_oversampling: bool = True,  # Enables Random Oversampling on BUY/SELL in buffer
+        feature_schema_id: str | None = None,
+        embargo_bars: int | None = None,
     ) -> None:
         self.num_folds = int(num_folds)
         self.train_ratio = float(train_ratio)
@@ -155,6 +179,25 @@ class WalkForwardTrainer:
         self.focal_gamma = 1.0  # Reduced gamma from 2.0 to 1.0 for small-buffer stability
         self.label_smoothing = float(label_smoothing)
         self.use_oversampling = bool(use_oversampling)
+
+        # ---------------------------------------------------------------------
+        # FEATURE SCHEMA BINDING
+        # ---------------------------------------------------------------------
+        # Resolved once, then used for every dimension check (frame validation,
+        # scaler save/load, metadata, model construction). Passing an explicit
+        # `feature_schema_id` is how a 60D/350D model is trained without touching
+        # the live 50D contract.
+        self.feature_schema = resolve_schema(feature_schema_id)
+        self.num_features = self.feature_schema.dimension
+
+        # ---------------------------------------------------------------------
+        # PURGE + EMBARGO
+        # ---------------------------------------------------------------------
+        # Purge removes train samples whose label horizon overlaps the validation
+        # block; embargo additionally drops samples immediately AFTER the
+        # validation block so serial correlation cannot leak backwards into the
+        # next fold's training data. Defaults to the purge gap when unspecified.
+        self.embargo_bars = int(embargo_bars) if embargo_bars is not None else int(self.purge_gap)
 
         # Configurable Quality Gate & Buffer Settings
         self.min_validation_accuracy = 0.35  # Required minimum 35% validation accuracy
@@ -232,14 +275,17 @@ class WalkForwardTrainer:
             if len(fold_X) < 10:
                 continue
 
-            raw_split_point = int(len(fold_X) * self.train_ratio)
-            train_end_point = max(0, raw_split_point - self.purge_gap)
-            test_start_point = raw_split_point
+            # PURGED + EMBARGOED split. The embargo tail is dropped from the
+            # validation block so labels whose horizon runs past the fold cannot be
+            # scored with information the model would not have had at decision time.
+            train_end_point, test_start_point, test_end_point = self._split_fold_with_embargo(
+                len(fold_X)
+            )
 
             X_train_raw = fold_X[:train_end_point]
             y_train = fold_y[:train_end_point]
-            X_test_raw = fold_X[test_start_point:]
-            y_test = fold_y[test_start_point:]
+            X_test_raw = fold_X[test_start_point:test_end_point]
+            y_test = fold_y[test_start_point:test_end_point]
 
             if (
                 len(X_train_raw) < self.min_rows_per_train_split
@@ -804,11 +850,14 @@ class WalkForwardTrainer:
     # =========================================================================
 
     def _validate_training_frame(self, df: pl.DataFrame, feature_cols: list[str]) -> None:
-        if len(feature_cols) != self.NUM_FEATURES:
-            raise ValueError(
-                f"50D feature contract violation: expected {self.NUM_FEATURES} "
-                f"feature columns, got {len(feature_cols)}"
-            )
+        """
+        Validates a training frame against the BOUND feature schema.
+
+        Uses `self.feature_schema` (not a hard-coded 50) so a 60D/350D trainer
+        instance validates against its own contract while the live 50D pipeline
+        is unaffected.
+        """
+        self.feature_schema.validate_columns(feature_cols, context="training_frame")
 
         missing = [col for col in feature_cols if col not in df.columns]
         if missing:
@@ -873,9 +922,48 @@ class WalkForwardTrainer:
     # =========================================================================
 
     def _create_model(self, num_features: int) -> ScalpNet:
-        model = ScalpNet(num_features=num_features, num_classes=4)
+        """
+        Constructs a ScalpNet for the given input width.
+
+        The head stays at `MODEL_HEAD_CLASSES` (4: NO_TRADE/BUY/SELL/WAIT) which is
+        what the deployed artifact and the live inference path expect; only the
+        INPUT width follows the feature schema.
+        """
+        if num_features != self.num_features:
+            logger.warning(
+                "Model input width differs from bound schema",
+                requested=num_features,
+                schema=self.feature_schema.schema_id,
+                schema_dimension=self.num_features,
+            )
+        model = ScalpNet(num_features=num_features, num_classes=self.MODEL_HEAD_CLASSES)
         model.to(self.device)
         return model
+
+    def _split_fold_with_embargo(
+        self, fold_length: int
+    ) -> tuple[int, int, int]:
+        """
+        Computes the purged + embargoed boundaries of a single fold.
+
+        Layout (chronological):
+
+            [ ---- TRAIN ---- ][ PURGE ][ ---- VALIDATION ---- ][ EMBARGO ]
+
+        * PURGE removes the samples immediately BEFORE validation whose
+          triple-barrier horizon can overlap into the validation block.
+        * EMBARGO removes samples at the END of the validation block, so a label
+          whose horizon extends past the fold cannot be scored on information the
+          model would not have had. This closes the residual leakage the previous
+          implementation left open (it purged but never embargoed).
+
+        Returns (train_end, val_start, val_end) as indices within the fold.
+        """
+        raw_split = int(fold_length * self.train_ratio)
+        train_end = max(0, raw_split - self.purge_gap)
+        val_start = raw_split
+        val_end = max(val_start, fold_length - self.embargo_bars)
+        return train_end, val_start, val_end
 
     def _build_class_weights(
         self, y: np.ndarray, is_online_fine_tune: bool = False
@@ -1200,10 +1288,11 @@ class WalkForwardTrainer:
             mean = np.asarray(scaler.mean, dtype=np.float32).reshape(-1)
             std = np.asarray(scaler.std, dtype=np.float32).reshape(-1)
 
-            if mean.size != self.NUM_FEATURES or std.size != self.NUM_FEATURES:
+            if mean.size != self.num_features or std.size != self.num_features:
                 raise RuntimeError(
                     f"Scaler dim invalid on save: mean{mean.shape} std{std.shape} "
-                    f"expected ({self.NUM_FEATURES},)"
+                    f"expected ({self.num_features},) for schema "
+                    f"{self.feature_schema.schema_id}"
                 )
 
             with open(tmp_path, "wb") as f:
@@ -1237,10 +1326,10 @@ class WalkForwardTrainer:
         mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
         std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
 
-        if mean.size != self.NUM_FEATURES or std.size != self.NUM_FEATURES:
+        if mean.size != self.num_features or std.size != self.num_features:
             raise RuntimeError(
                 f"Scaler dim invalid on load: mean{mean.shape} std{std.shape} "
-                f"expected ({self.NUM_FEATURES},)"
+                f"expected ({self.num_features},) for schema {self.feature_schema.schema_id}"
             )
 
         return ScalerBundle(mean=mean, std=std)
@@ -1250,13 +1339,17 @@ class WalkForwardTrainer:
         tmp_path = meta_path.with_name(meta_path.name + ".tmp")
 
         payload = {
-            "num_features": self.NUM_FEATURES,
+            "num_features": self.num_features,
             "num_classes": self.NUM_CLASSES,
+            "model_head_classes": self.MODEL_HEAD_CLASSES,
+            "feature_schema_id": self.feature_schema.schema_id,
+            "feature_schema_dimension": self.feature_schema.dimension,
             "feature_columns": feature_cols,
             "label_mapping": self.label_map,
             "train_ratio": self.train_ratio,
             "num_folds": self.num_folds,
             "purge_gap_bars": self.purge_gap,
+            "embargo_bars": self.embargo_bars,
             "epochs_per_fold": self.epochs,
             "batch_size": self.batch_size,
             "learning_rate": self.learning_rate,
