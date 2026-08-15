@@ -20,13 +20,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from nexus_scalp.accounting.periods import PeriodKind
 
 
-class ExitClassification(str, Enum):
+class ExitClassification(StrEnum):
     """
     How a position actually ended, derived from stored execution evidence.
 
@@ -56,7 +56,7 @@ class ExitClassification(str, Enum):
         )
 
 
-class TradeOutcome(str, Enum):
+class TradeOutcome(StrEnum):
     """Financial result of a closed trade, decided by realized net PnL only."""
 
     WIN = "WIN"
@@ -64,7 +64,7 @@ class TradeOutcome(str, Enum):
     BREAKEVEN = "BREAKEVEN"
 
 
-class LossAttribution(str, Enum):
+class LossAttribution(StrEnum):
     """
     Evidence-based classification of WHERE a losing trade failed.
 

@@ -168,11 +168,9 @@ def intraperiod_drawdown(
         if peak <= 0.0:
             continue
         drop_usd = peak - snap.equity
-        if drop_usd > max_usd:
-            max_usd = drop_usd
+        max_usd = max(max_usd, drop_usd)
         drop_pct = drop_usd / peak * 100.0
-        if drop_pct > max_pct:
-            max_pct = drop_pct
+        max_pct = max(max_pct, drop_pct)
     return max_pct, max_usd
 
 
@@ -236,9 +234,7 @@ def compute_drawdown(snapshots: Sequence[AccountSnapshot]) -> DrawdownReport:
 
     current_usd = max(0.0, peak_equity - last.equity)
     report.current_drawdown_usd = current_usd
-    report.current_drawdown_pct = (
-        (current_usd / peak_equity * 100.0) if peak_equity > 0.0 else None
-    )
+    report.current_drawdown_pct = (current_usd / peak_equity * 100.0) if peak_equity > 0.0 else None
     report.in_drawdown = current_usd > 0.0
 
     if report.in_drawdown and current_dd_start is not None:

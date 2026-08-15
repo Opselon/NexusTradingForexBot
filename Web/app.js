@@ -1871,3 +1871,251 @@ async function saveRuleParameters(ruleId, originalParamsEncoded) {
         console.error("Failed to save rule parameters", err);
     }
 }
+
+/* =========================================================================
+ * PHASE 08: ACCOUNT PERFORMANCE & INTELLIGENCE PANEL
+ * All numbers are fetched from the canonical AccountingCore REST endpoints.
+ * There is NO synthetic fallback: unavailable data renders explicit states.
+ * ========================================================================= */
+
+function acctLineChart(canvasId, emptyId, labels, series, color, fmt) {
+    const canvas = document.getElementById(canvasId);
+    const empty = document.getElementById(emptyId);
+    if (!canvas) return;
+    if (!labels || labels.length === 0 || !series || series.every(v => v == null)) {
+        if (empty) empty.classList.remove('hidden');
+        canvas.style.display = 'none';
+        return;
+    }
+    if (empty) empty.classList.add('hidden');
+    canvas.style.display = 'block';
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = rect.width || 300;
+    const h = rect.height || 180;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#090d16';
+    ctx.fillRect(0, 0, w, h);
+
+    const padL = 52, padR = 12, padT = 14, padB = 26;
+    const values = series.filter(v => v != null).map(Number);
+    if (values.length === 0) return;
+    const min = Math.min(...values), max = Math.max(...values);
+    const range = (max - min) || 1;
+    const lo = min - range * 0.08, hi = max + range * 0.08;
+    const px = i => padL + (i / (labels.length - 1 || 1)) * (w - padL - padR);
+    const py = v => padT + (1 - (v - lo) / (hi - lo)) * (h - padT - padB);
+
+    ctx.strokeStyle = '#121826';
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px monospace';
+    ctx.lineWidth = 1;
+    for (let g = 0; g <= 4; g++) {
+        const v = lo + (hi - lo) * g / 4;
+        const y = py(v);
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+        ctx.textAlign = 'right';
+        ctx.fillText(fmt ? fmt(v) : v.toFixed(2), padL - 4, y + 3);
+    }
+    ctx.strokeStyle = color || '#22d3ee';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    series.forEach((v, i) => {
+        if (v == null) return;
+        const x = px(i), y = py(Number(v));
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    const lastIdx = series.map((v, i) => v == null ? -1 : i).filter(i => i >= 0).pop();
+    if (lastIdx != null) {
+        ctx.fillStyle = color || '#22d3ee';
+        ctx.beginPath();
+        ctx.arc(px(lastIdx), py(Number(series[lastIdx])), 2.5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.textAlign = 'center';
+    const step = Math.max(1, Math.floor(labels.length / 6));
+    labels.forEach((lab, i) => {
+        if (i % step !== 0) return;
+        ctx.fillText(String(lab), px(i), h - 8);
+    });
+}
+
+function acctFmtMoney(v) {
+    if (v == null) return '--';
+    const n = Number(v);
+    return (n >= 0 ? '+' : '-') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2 });
+}
+
+function acctFmtPct(v) {
+    if (v == null) return '--';
+    return Number(v).toFixed(2) + '%';
+}
+
+function acctFmtNum(v, digits) {
+    if (v == null) return '--';
+    return Number(v).toFixed(digits == null ? 2 : digits);
+}
+
+async function loadAccountPerformance() {
+    try {
+        const res = await fetch('/api/account/performance');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.available) return;
+
+        if (data.live) {
+            const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+            if (data.live.balance != null) setText('acc-balance', '$' + Number(data.live.balance).toLocaleString('en-US', { minimumFractionDigits: 2 }));
+            if (data.live.equity != null) setText('acc-equity', '$' + Number(data.live.equity).toLocaleString('en-US', { minimumFractionDigits: 2 }));
+            if (data.live.floating_pnl != null) setText('acc-floating', acctFmtMoney(data.live.floating_pnl));
+            if (data.live.margin_free != null) setText('acc-margin-free', '$' + Number(data.live.margin_free).toLocaleString('en-US', { minimumFractionDigits: 2 }));
+            if (data.live.open_positions != null) setText('acc-open-positions', String(data.live.open_positions));
+        }
+        if (data.drawdown && data.drawdown.has_data && data.drawdown.current_drawdown_pct != null) {
+            const el = document.getElementById('acc-drawdown');
+            if (el) el.textContent = Number(data.drawdown.current_drawdown_pct).toFixed(2) + '%';
+        }
+        if (data.totals && data.totals.win_rate != null) {
+            const el = document.getElementById('acc-winrate');
+            if (el) el.textContent = Number(data.totals.win_rate).toFixed(1) + '%';
+        }
+    } catch (err) {
+        console.error('Account performance load failed', err);
+    }
+}
+
+async function loadAccountPeriod(kind, btn) {
+    try {
+        const res = await fetch('/api/account/performance/' + kind);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.available || !data.period) return;
+        const p = data.period;
+        document.getElementById('acct-net-pnl').textContent = acctFmtMoney(p.net_pnl);
+        document.getElementById('acct-net-pnl').className = 'font-mono font-black text-sm ' + (p.net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400');
+        document.getElementById('acct-pnl-pct').textContent = acctFmtPct(p.pnl_pct);
+        document.getElementById('acct-trades').textContent = String(p.total_trades);
+        document.getElementById('acct-winrate-period').textContent = acctFmtPct(p.win_rate);
+        document.getElementById('acct-expectancy').textContent = acctFmtMoney(p.expectancy);
+        document.getElementById('acct-profit-factor').textContent = acctFmtNum(p.profit_factor, 3);
+        document.getElementById('acct-avg-r').textContent = acctFmtNum(p.average_r, 3);
+        document.getElementById('acct-max-dd').textContent = acctFmtPct(p.max_drawdown_pct);
+        document.getElementById('acct-best-trade').textContent = acctFmtMoney(p.best_trade);
+        document.getElementById('acct-worst-trade').textContent = acctFmtMoney(p.worst_trade);
+        document.getElementById('acct-avg-hold').textContent = p.average_holding_sec != null ? Math.round(p.average_holding_sec) + 's' : '--';
+        document.getElementById('acct-risk-deployed').textContent = acctFmtMoney(p.total_risk_deployed);
+
+        document.querySelectorAll('.acct-period-btn').forEach(b => {
+            b.className = 'acct-period-btn px-4 py-1.5 rounded-lg text-xs font-bold bg-darkBg text-textMuted border border-borderClr';
+        });
+        if (btn) btn.className = 'acct-period-btn px-4 py-1.5 rounded-lg text-xs font-bold bg-accentCyan/15 text-accentCyan border border-accentCyan/30';
+
+        loadPeriodSeries(kind);
+    } catch (err) {
+        console.error('Account period load failed', err);
+    }
+}
+
+async function loadPeriodSeries(kind) {
+    try {
+        const res = await fetch('/api/account/performance/' + kind + '/series?count=12');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.available || !data.periods || data.periods.length === 0) return;
+        const labels = data.periods.map(p => p.key);
+        const net = data.periods.map(p => p.net_pnl);
+        acctLineChart('acct-period-chart', 'acct-period-chart-empty', labels, net, '#22d3ee', acctFmtMoney);
+    } catch (err) {
+        console.error('Period series load failed', err);
+    }
+}
+
+async function loadAccountCharts() {
+    try {
+        const res = await fetch('/api/account/equity-curve');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.available) return;
+
+        const curve = data.equity_curve || [];
+        const labels = curve.map(c => { const t = new Date(c.timestamp); return (t.getMonth() + 1) + '/' + t.getDate(); });
+        acctLineChart('acct-equity-chart', 'acct-equity-empty', labels, curve.map(c => c.equity), '#34d399', v => '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }));
+        acctLineChart('acct-drawdown-chart', 'acct-drawdown-empty', labels, curve.map(c => c.drawdown_pct), '#fb7185', v => Number(v).toFixed(2) + '%');
+
+        const cum = data.cumulative_pnl || [];
+        acctLineChart('acct-cumulative-chart', 'acct-cumulative-empty', cum.map(c => { const t = new Date(c.timestamp); return (t.getMonth() + 1) + '/' + t.getDate(); }), cum.map(c => c.cumulative_pnl), '#fbbf24', acctFmtMoney);
+    } catch (err) {
+        console.error('Account charts load failed', err);
+    }
+}
+
+async function loadAccountStrategies() {
+    try {
+        const res = await fetch('/api/account/strategies');
+        if (!res.ok) return;
+        const data = await res.json();
+        const tbody = document.getElementById('acct-strategy-table');
+        if (!tbody) return;
+        if (!data.available || !data.strategies || data.strategies.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="py-4 text-center text-textMuted italic font-sans">NO STRATEGY EVIDENCE AVAILABLE</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.strategies.map(s => {
+            const lifecycle = s.lifecycle_state || 'UNKNOWN';
+            const lifeColor = lifecycle === 'ACTIVE' ? 'text-emerald-400' : (lifecycle === 'RETIRED' || lifecycle === 'QUARANTINED') ? 'text-rose-400' : 'text-amber-400';
+            return '<tr class="border-b border-borderClr/30">' +
+                '<td class="py-2 pl-2 font-mono text-accentCyan">' + s.strategy_id + '</td>' +
+                '<td class="py-2">' + s.trade_count + '</td>' +
+                '<td class="py-2 ' + (s.net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400') + '">' + acctFmtMoney(s.net_pnl) + '</td>' +
+                '<td class="py-2">' + acctFmtPct(s.win_rate) + '</td>' +
+                '<td class="py-2">' + acctFmtNum(s.profit_factor, 3) + '</td>' +
+                '<td class="py-2">' + acctFmtNum(s.average_r, 3) + '</td>' +
+                '<td class="py-2 ' + lifeColor + '">' + lifecycle + '</td>' +
+                '<td class="py-2 pr-2 text-right">' + acctFmtNum(s.confidence, 4) + '</td>' +
+                '</tr>';
+        }).join('');
+    } catch (err) {
+        console.error('Account strategies load failed', err);
+    }
+}
+
+async function loadTradeForensics() {
+    const input = document.getElementById('acct-forensic-ticket');
+    const out = document.getElementById('acct-forensic-output');
+    if (!input || !out) return;
+    const ticket = String(input.value || '').trim();
+    if (!ticket) { out.textContent = 'Enter a ticket to inspect.'; out.classList.remove('hidden'); return; }
+    try {
+        const res = await fetch('/api/account/trades/' + encodeURIComponent(ticket));
+        if (!res.ok) { out.textContent = 'HTTP ' + res.status; out.classList.remove('hidden'); return; }
+        const data = await res.json();
+        out.textContent = JSON.stringify(data, null, 2);
+        out.classList.remove('hidden');
+    } catch (err) {
+        out.textContent = 'Inspection failed: ' + err;
+        out.classList.remove('hidden');
+    }
+}
+
+function initAccountIntelligence() {
+    loadAccountPerformance();
+    loadAccountPeriod('DAY', document.querySelector('.acct-period-btn'));
+    loadAccountCharts();
+    loadAccountStrategies();
+}
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initAccountIntelligence, 1200);
+    const observer = new MutationObserver(() => {
+        const tab = document.getElementById('tab-account');
+        if (tab && !tab.classList.contains('hidden') && !window.__acctIntelLoaded) {
+            window.__acctIntelLoaded = true;
+            initAccountIntelligence();
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+});

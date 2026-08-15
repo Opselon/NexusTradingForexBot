@@ -395,3 +395,79 @@ Ran `pytest tests/unit/test_walk_forward_trainer.py`.
 
 ### Architectural Lessons / Regression Guards
 - When constructing filter conditions in Polars DataFrames, always use bitwise operators (`~`, `&`, `|`) instead of Python logical operators (`not`, `and`, `or`).
+
+
+---
+
+## BUG-008 — AccountingCore Strategy Attribution Join Keyed on Empty Column
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Phase 08 Continuation Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_accounting_core.py` and `tests/integration/test_accounting_api.py`
+
+### Affected Components
+- `src/nexus_scalp/accounting/core.py` (`AccountingCore._attach_identity`)
+- `src/nexus_scalp/experience/ledger.py` / `intelligence.py` (decision + outcome persistence)
+
+### Problem
+`AccountingCore._attach_identity()` joined closed trades to their Experience
+decision using `audit_experiences.execution_id = trade.ticket`. Because the
+experience row is written at DECISION time (before a broker ticket exists) and
+is IMMUTABLE (nothing in the codebase ever issues an UPDATE against
+`audit_experiences`), that column is ALWAYS empty. The join therefore matched
+nothing, and every trade silently lost its strategy/model/schema attribution.
+
+### Root Cause
+The identity chain in the actual schema runs through the OUTCOME table:
+
+    audit_ledger.ticket = audit_experience_outcomes.execution_id
+    audit_experience_outcomes.idempotency_key = audit_experiences.idempotency_key
+
+The experience row's `execution_id` is a placeholder by design (decision-time
+insert), while the broker ticket only ever appears on the outcome row. Joining
+the ledger directly to `audit_experiences.execution_id` can never resolve.
+
+### Evidence
+- `ExperienceLedger.record_experience()` writes `execution_id` from the
+  decision-time record (empty).
+- `ExperienceIntelligenceEngine.record_trade_outcome()` writes the broker
+  ticket into `audit_experience_outcomes.execution_id`.
+- grep confirmed zero UPDATE statements targeting `audit_experiences`.
+- Live-data check on `artifacts/audit.db`: strategy contributions returned an
+  empty list even with 36 closed trades, because no ledger row could be joined.
+
+### Impact
+Strategy attribution, model provenance, feature-schema provenance, loss
+attribution with strategy context, and the dashboard Strategy Attribution
+panel would all silently report "no evidence" despite the ledger containing
+fully-attributable trades.
+
+### Fix
+Rewrote `AccountingCore._attach_identity` to join through the outcome table
+(see source diff: audit_experience_outcomes o JOIN audit_experiences e ON
+e.idempotency_key = o.idempotency_key WHERE o.execution_id IN (...)).
+
+### Regression Tests
+- `tests/unit/test_accounting_core.py::TestStrategyAttribution::test_trade_linked_to_strategy_via_outcome`
+- `tests/unit/test_accounting_core.py::TestStrategyAttribution::test_strategy_contributions_aggregate`
+- `tests/integration/test_accounting_api.py::TestAccountingApi::test_strategies_endpoint_linked`
+- `tests/integration/test_accounting_api.py::TestAccountingApi::test_trade_forensics_endpoint`
+
+### Verification
+All regression tests green; strategy attribution now resolves real strategy
+identity from the outcome table.
+
+### Relevant Files
+- `src/nexus_scalp/accounting/core.py`
+- `tests/unit/test_accounting_core.py`
+- `tests/integration/test_accounting_api.py`
+
+### Architectural Lessons / Regression Guards
+- Immutable decision rows cannot carry runtime-only identifiers (broker
+  tickets). Any cross-table identity join MUST use the outcome/event table as
+  the bridge, never the immutable decision row.
+- When auditing a join, verify against the ACTUAL schema write paths, not the
+  column's declared intent.

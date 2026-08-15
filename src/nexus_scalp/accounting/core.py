@@ -34,13 +34,13 @@ from typing import Any
 from nexus_scalp.accounting.aggregation import aggregate_period, compute_drawdown
 from nexus_scalp.accounting.models import (
     AccountSnapshot,
-    ExitClassification,
-    LossAttribution,
-    TradeForensicTrace,
     DrawdownReport,
+    ExitClassification,
     LiveAccountState,
+    LossAttribution,
     PeriodReport,
     StrategyContribution,
+    TradeForensicTrace,
     TradeOutcome,
     TradeRecord,
 )
@@ -149,7 +149,9 @@ class AccountingCore:
             state.margin_level = state.equity / state.margin * 100.0
 
         try:
-            positions = self.adapter.get_positions(symbol) if symbol else self.adapter.get_positions()
+            positions = (
+                self.adapter.get_positions(symbol) if symbol else self.adapter.get_positions()
+            )
             positions = positions or []
             state.open_positions = len(positions)
             state.open_volume = sum(float(getattr(p, "volume", 0.0)) for p in positions)
@@ -264,9 +266,18 @@ class AccountingCore:
         """
         Joins each trade to its Experience decision (strategy/model/schema).
 
-        The join key is the broker ticket, which the Experience layer stores as
-        `execution_id` — an EXISTING identifier, so no parallel id space is
-        created. Trades with no linked decision keep empty identity fields.
+        THE JOIN CHAIN (verified against the actual schema):
+
+            audit_ledger.ticket
+                = audit_experience_outcomes.execution_id     (broker ticket)
+            audit_experience_outcomes.idempotency_key
+                = audit_experiences.idempotency_key          (decision row)
+
+        The experience row is written at DECISION time and is immutable, so its
+        `execution_id` column is empty; the broker ticket only ever appears on
+        the outcome row. Joining on `audit_experiences.execution_id` directly
+        would silently drop every attribution. Trades with no linked decision
+        keep empty identity fields.
         """
         if not records or not self._enabled:
             return records
@@ -283,9 +294,12 @@ class AccountingCore:
                     chunk = tickets[start : start + 400]
                     placeholders = ",".join("?" * len(chunk))
                     sql = (
-                        "SELECT execution_id, experience_id, strategy_id, strategy_version, "
-                        "model_id, model_version, feature_schema_id, feature_dimension "
-                        f"FROM audit_experiences WHERE execution_id IN ({placeholders})"
+                        "SELECT o.execution_id, e.experience_id, e.strategy_id, "
+                        "e.strategy_version, e.model_id, e.model_version, "
+                        "e.feature_schema_id, e.feature_dimension "
+                        "FROM audit_experience_outcomes o "
+                        "JOIN audit_experiences e ON e.idempotency_key = o.idempotency_key "
+                        f"WHERE o.execution_id IN ({placeholders})"
                     )
                     for row in conn.execute(sql, tuple(chunk)).fetchall():
                         mapping[str(row["execution_id"])] = dict(row)
@@ -355,9 +369,21 @@ class AccountingCore:
         Bounded series of consecutive periods, oldest -> newest.
 
         One query per period keeps memory flat and lets SQLite use the timestamp
-        index rather than materializing the whole history.
+        index rather than materializing the whole history. Each computed report
+        is also stored into the derived cache so the worker warms series for
+        chart refreshes.
         """
-        return [self._compute_period(b) for b in recent_periods(kind, count, at)]
+        reports: list[PeriodReport] = []
+        for bounds in recent_periods(kind, count, at):
+            cached = self._report_cache.get(f"{kind.value}:{bounds.key}")
+            if cached is not None:
+                reports.append(cached)
+                continue
+            report = self._compute_period(bounds)
+            with self._lock:
+                self._report_cache[f"{kind.value}:{bounds.key}"] = report
+            reports.append(report)
+        return reports
 
     def all_period_reports(self, at: datetime | None = None) -> dict[str, PeriodReport]:
         """DAY/WEEK/MONTH/YEAR reports for the same instant, one shared source."""
@@ -465,7 +491,9 @@ class AccountingCore:
                 trade.net_pnl if entry.best_trade is None else max(entry.best_trade, trade.net_pnl)
             )
             entry.worst_trade = (
-                trade.net_pnl if entry.worst_trade is None else min(entry.worst_trade, trade.net_pnl)
+                trade.net_pnl
+                if entry.worst_trade is None
+                else min(entry.worst_trade, trade.net_pnl)
             )
             if trade.realized_r is not None:
                 entry.r_sample_count += 1

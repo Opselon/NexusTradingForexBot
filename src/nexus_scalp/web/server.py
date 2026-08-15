@@ -22,6 +22,8 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from nexus_scalp.accounting import PeriodKind
+from nexus_scalp.accounting.worker import format_worker_status
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ActionType, ExecutionMode
 from nexus_scalp.domain.models import TickData
@@ -1691,6 +1693,174 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except Exception as e:
             logger.error("Experience self-heal failed", error=str(e))
             return {"success": False, "rebuilt_strategies": 0, "reason": str(e)}
+
+    # =========================================================================
+    # PHASE 08: UNIFIED ACCOUNTING & PERFORMANCE INTELLIGENCE REST APIs
+    # -------------------------------------------------------------------------
+    # Every endpoint reads REAL data through the single canonical AccountingCore
+    # facade (authoritative SQLite tables + derived cache warmed by the worker).
+    # There is no synthetic fallback anywhere: when a metric cannot be derived
+    # it is null and the dashboard renders an explicit unavailable state.
+    # =========================================================================
+
+    def _accounting() -> tuple[Any, Any] | None:
+        """Returns (accounting_core, accounting_worker) when available."""
+        engine = app.state.engine
+        if not engine or not hasattr(engine, "accounting_core"):
+            return None
+        return engine.accounting_core, getattr(engine, "accounting_worker", None)
+
+    @app.get("/api/account/performance")
+    def get_account_performance() -> dict[str, Any]:
+        """Canonical live + period performance overview (single truth)."""
+        pair = _accounting()
+        if pair is None:
+            return {"available": False, "reason": "ENGINE_UNAVAILABLE"}
+        core, worker = pair
+        try:
+            live = core.live_state()
+            periods = core.all_period_reports()
+            dd = core.drawdown_report()
+            trades = core.load_trades(limit=1000)
+            closed = [t for t in trades if t.closed_at is not None]
+            wins = sum(1 for t in closed if t.is_win)
+            losses = sum(1 for t in closed if t.outcome.value == "LOSS")
+            decided = wins + losses
+            realized_pnl = sum(t.net_pnl for t in closed)
+            return serialize_enums(
+                {
+                    "available": True,
+                    "live": live.to_dict(),
+                    "periods": {k: v.to_dict() for k, v in periods.items()},
+                    "drawdown": dd.to_dict(),
+                    "worker": format_worker_status(worker) if worker else None,
+                    "totals": {
+                        "closed_trades": len(closed),
+                        "win_count": wins,
+                        "loss_count": losses,
+                        "win_rate": round(wins / decided * 100.0, 2) if decided else None,
+                        "realized_pnl": round(realized_pnl, 2),
+                    },
+                    "fetched_at": datetime.now(UTC).isoformat(),
+                }
+            )
+        except Exception as e:
+            logger.error("Account performance read failed", error=str(e))
+            return {"available": False, "reason": str(e)}
+
+    @app.get("/api/account/performance/{kind}")
+    def get_account_performance_period(kind: str) -> dict[str, Any]:
+        """Canonical report for one granularity (DAY/WEEK/MONTH/YEAR)."""
+        pair = _accounting()
+        if pair is None:
+            return {"available": False, "reason": "ENGINE_UNAVAILABLE"}
+        core, _ = pair
+        try:
+            enum_kind = PeriodKind(kind.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Unknown period kind: {kind}") from None
+        try:
+            report = core.period_report(enum_kind)
+            return {"available": True, "period": report.to_dict()}
+        except Exception as e:
+            logger.error("Period report failed", kind=kind, error=str(e))
+            return {"available": False, "reason": str(e)}
+
+    @app.get("/api/account/performance/{kind}/series")
+    def get_account_performance_series(kind: str, count: int = 30) -> dict[str, Any]:
+        """Bounded consecutive-period series for charts (oldest -> newest)."""
+        pair = _accounting()
+        if pair is None:
+            return {"available": False, "reason": "ENGINE_UNAVAILABLE"}
+        core, _ = pair
+        try:
+            enum_kind = PeriodKind(kind.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Unknown period kind: {kind}") from None
+        bounded = max(1, min(int(count), 60))
+        try:
+            reports = core.period_series(enum_kind, count=bounded)
+            return {
+                "available": True,
+                "kind": enum_kind.value,
+                "periods": [r.to_dict() for r in reports],
+            }
+        except Exception as e:
+            logger.error("Period series failed", kind=kind, error=str(e))
+            return {"available": False, "reason": str(e)}
+
+    @app.get("/api/account/equity-curve")
+    def get_account_equity_curve(lookback_days: int | None = None) -> dict[str, Any]:
+        """Canonical balance/equity/drawdown time series for the dashboard."""
+        pair = _accounting()
+        if pair is None:
+            return {"available": False, "reason": "ENGINE_UNAVAILABLE"}
+        core, _ = pair
+        try:
+            bounded = max(1, min(int(lookback_days), 730)) if lookback_days else None
+            curve = core.equity_curve(lookback_days=bounded)
+            cumulative = core.cumulative_pnl_curve(limit=500)
+            return {
+                "available": True,
+                "equity_curve": curve,
+                "cumulative_pnl": cumulative,
+                "fetched_at": datetime.now(UTC).isoformat(),
+            }
+        except Exception as e:
+            logger.error("Equity curve read failed", error=str(e))
+            return {"available": False, "reason": str(e)}
+
+    @app.get("/api/account/drawdown")
+    def get_account_drawdown(lookback_days: int | None = None) -> dict[str, Any]:
+        """Canonical drawdown state (ONE methodology for the whole system)."""
+        pair = _accounting()
+        if pair is None:
+            return {"available": False, "reason": "ENGINE_UNAVAILABLE"}
+        core, _ = pair
+        try:
+            bounded = max(1, min(int(lookback_days), 730)) if lookback_days else None
+            report = core.drawdown_report(lookback_days=bounded)
+            out = report.to_dict()
+            out["available"] = report.has_data or True
+            return out
+        except Exception as e:
+            logger.error("Drawdown read failed", error=str(e))
+            return {"available": False, "reason": str(e)}
+
+    @app.get("/api/account/trades/{trade_id}")
+    def get_account_trade_forensics(trade_id: int) -> dict[str, Any]:
+        """Forensic reconstruction of one closed trade (ledger + orders + experience)."""
+        pair = _accounting()
+        if pair is None:
+            return {"available": False, "reason": "ENGINE_UNAVAILABLE"}
+        core, _ = pair
+        try:
+            trace = core.trade_trace(ticket=int(trade_id))
+            payload = trace.to_dict()
+            payload["available"] = trace.found
+            return payload
+        except Exception as e:
+            logger.error("Trade forensics failed", ticket=trade_id, error=str(e))
+            return {"available": False, "reason": str(e)}
+
+    @app.get("/api/account/strategies")
+    def get_account_strategies(limit: int = 50) -> dict[str, Any]:
+        """Per-strategy contribution joined to Strategy Intelligence."""
+        pair = _accounting()
+        if pair is None:
+            return {"available": False, "reason": "ENGINE_UNAVAILABLE"}
+        core, _ = pair
+        try:
+            bounded = max(1, min(int(limit), 200))
+            contributions = core.strategy_contributions(limit=bounded)
+            return {
+                "available": True,
+                "strategies": [c.to_dict() for c in contributions],
+                "fetched_at": datetime.now(UTC).isoformat(),
+            }
+        except Exception as e:
+            logger.error("Strategy contributions failed", error=str(e))
+            return {"available": False, "reason": str(e)}
 
     # Observability stats
     @app.get("/api/observability/stats")

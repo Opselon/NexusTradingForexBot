@@ -31,6 +31,7 @@ import numpy as np
 import polars as pl
 import torch
 
+from nexus_scalp.accounting import AccountingCore, AccountingWorker
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ActionType
@@ -189,6 +190,28 @@ class LiveEngine:
             enabled=True,
             provenance=self.model_registry.current,
         )
+
+        # =====================================================================
+        # PHASE 08: UNIFIED ACCOUNTING & PERFORMANCE INTELLIGENCE CORE
+        # ---------------------------------------------------------------------
+        # Constructed after the experience subsystem so trade attribution can be
+        # joined to Experience identity. The AccountingCore is a READ facade over
+        # the authoritative audit tables; it writes no raw financial rows. The
+        # AccountingWorker refreshes the derived report cache off the event loop.
+        # =====================================================================
+        self.accounting_core = AccountingCore(
+            audit_repo=self.audit,
+            adapter=adapter,
+            experience_ledger=self.experience_ledger,
+            strategy_evaluator=self.experience_evaluator,
+        )
+        self.accounting_worker = AccountingWorker(
+            core=self.accounting_core,
+            interval_sec=30.0,
+            lookback_days=90,
+        )
+        self._accounting_task: asyncio.Task | None = None
+        self._accounting_worker_started: bool = False
 
         # Order/risk/policy
         self.signal_policy = SignalPolicy(
@@ -394,6 +417,11 @@ class LiveEngine:
         # A missing/rebuilt model artifact does NOT reset any of this.
         await self._startup_experience_self_heal()
 
+        # PHASE 08: start the accounting worker (background derived refresh).
+        # It never touches the tick path; the periodic kick below only ever
+        # schedules `to_thread` refreshes.
+        self._start_accounting_worker()
+
         logger.info(
             "LIVE CONNECTED",
             login=getattr(account, "login", 0) if account else 0,
@@ -444,6 +472,15 @@ class LiveEngine:
 
                 self._process_tick_pipeline(tick=tick, account=live_account)
                 self._last_tick_processed_time = time.time()
+                # PHASE 08: accounting worker kick (throttled internally). This
+                # is the ONLY touch point and it schedules bounded to_thread
+                # work; it can never block the tick loop.
+                if self._accounting_worker_started:
+                    try:
+                        await asyncio.to_thread(self.accounting_worker.tick)
+                    except Exception:
+                        # Worker failure is fully isolated; never disturb ticks.
+                        pass
                 await asyncio.sleep(0.05)
 
             except Exception as e:
@@ -457,6 +494,12 @@ class LiveEngine:
         await self._shutdown_async()
 
     async def _shutdown_async(self) -> None:
+        # Stop the accounting worker first (derived refresh, not financial truth).
+        try:
+            await self._stop_accounting_worker()
+        except Exception:
+            pass
+
         # Cancel retrain task safely
         try:
             if self._retrain_task and not self._retrain_task.done():
@@ -726,6 +769,32 @@ class LiveEngine:
             logger.info("[INFERENCE] ENABLED\nreason=HTF_WARMUP_COMPLETE")
 
         return is_ready
+
+    def _start_accounting_worker(self) -> None:
+        """
+        Starts the accounting worker (idempotent).
+
+        The worker itself is a throttled synchronous refresher; it is kicked
+        periodically via `asyncio.to_thread` from the run loop. This method
+        only flips its state so the kick is enabled.
+        """
+        if self._accounting_worker_started:
+            return
+        self._accounting_worker_started = True
+        try:
+            self.accounting_worker.start()
+        except Exception as err:
+            # Isolation: worker startup must never block the engine.
+            logger.error("[ACCOUNTING_WORKER] event=START status=FAILED", error=str(err))
+            self._accounting_worker_started = False
+
+    async def _stop_accounting_worker(self) -> None:
+        """Stops the accounting worker (idempotent, never raises)."""
+        self._accounting_worker_started = False
+        try:
+            self.accounting_worker.stop()
+        except Exception as err:
+            logger.error("[ACCOUNTING_WORKER] event=STOP status=FAILED", error=str(err))
 
     async def _startup_experience_self_heal(self) -> None:
         """

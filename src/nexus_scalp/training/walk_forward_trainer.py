@@ -940,9 +940,7 @@ class WalkForwardTrainer:
         model.to(self.device)
         return model
 
-    def _split_fold_with_embargo(
-        self, fold_length: int
-    ) -> tuple[int, int, int]:
+    def _split_fold_with_embargo(self, fold_length: int) -> tuple[int, int, int]:
         """
         Computes the purged + embargoed boundaries of a single fold.
 

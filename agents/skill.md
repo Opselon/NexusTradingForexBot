@@ -31,11 +31,12 @@
 11. [Web UI, REST API, SSE, WebSocket, & Debug Hub Forensics](#11-web-ui-rest-api-sse-websocket--debug-hub-forensics)
 12. [Observability, Database Persistence, & Ledger Autopsy](#12-observability-database-persistence--ledger-autopsy)
 13. [Configuration Architecture & Dynamic Propagation](#13-configuration-architecture--dynamic-propagation)
-14. [Known Engineering Pitfalls & Invariants](#14-known-engineering-pitfalls--invariants)
-15. [Testing & CI/CD Pipeline Audit](#15-testing--cicd-pipeline-audit)
-16. [Documentation vs. Reality Audit Matrix](#16-documentation-vs-reality-audit-matrix)
-17. [Code Inventory & Active Wrappers](#17-code-inventory--active-wrappers)
-18. [Prioritized Engineering Recommendations (P0-P3)](#18-prioritized-engineering-recommendations-p0-p3)
+14. [Unified Accounting & Performance Intelligence Core (PHASE 08)](#14-unified-accounting--performance-intelligence-core-phase-08)
+15. [Known Engineering Pitfalls & Invariants](#15-known-engineering-pitfalls--invariants)
+16. [Testing & CI/CD Pipeline Audit](#16-testing--cicd-pipeline-audit)
+17. [Documentation vs. Reality Audit Matrix](#17-documentation-vs-reality-audit-matrix)
+18. [Code Inventory & Active Wrappers](#18-code-inventory--active-wrappers)
+19. [Prioritized Engineering Recommendations (P0-P3)](#19-prioritized-engineering-recommendations-p0-p3)
 
 ---
 
@@ -105,6 +106,14 @@ NexusTradingForexBot/
 │   ├── cli/
 │   │   └── train_model.py             # 🟢 CLI Training Script (50D contract aligned)
 │   └── nexus_scalp/
+│       ├── accounting/                # 🟢 PHASE 08: UNIFIED ACCOUNTING & PERFORMANCE INTELLIGENCE CORE
+│       │   ├── __init__.py            # 🟢 Package exports (models, core, worker)
+│       │   ├── models.py              # 🟢 Canonical value objects (TradeRecord, PeriodReport, DrawdownReport, ...)
+│       │   ├── periods.py             # 🟢 Deterministic UTC DAY/WEEK/MONTH/YEAR boundaries
+│       │   ├── normalize.py           # 🟢 Ledger row -> canonical TradeRecord normalization
+│       │   ├── aggregation.py         # 🟢 Pure period & drawdown aggregation math
+│       │   ├── core.py                # 🟢 AccountingCore: single read facade + derived cache
+│       │   └── worker.py              # 🟢 AccountingWorker: background derived refresh (idempotent, isolated)
 │       ├── adapters/                  # External Infrastructure Integration
 │       │   ├── database/
 │       │   │   └── audit_repository.py# 🟢 SQLite WAL Audit Repository & Ledger Autopsy
@@ -124,9 +133,19 @@ NexusTradingForexBot/
 │       │   └── models.py              # 🟢 Domain Data Contracts (Pydantic frozen=True)
 │       ├── execution/
 │       │   └── order_manager.py       # 🟢 Authoritative Order Lifecycle Manager
+│       ├── experience/                # 🟢 PHASE 08: EXPERIENCE-DRIVEN STRATEGY INTELLIGENCE
+│       │   ├── __init__.py            # 🟢 Subsystem exports
+│       │   ├── models.py              # 🟢 Immutable memory contracts (records, outcomes, scores, provenance)
+│       │   ├── ledger.py              # 🟢 Append-only experience ledger + dedup + corrections
+│       │   ├── evaluator.py           # 🟢 Statistical scoring, confidence, lifecycle, self-heal rebuild
+│       │   ├── intelligence.py        # 🟢 Pre-trade decision gate + post-trade outcome recorder
+│       │   ├── retriever.py           # 🟢 Bounded context fingerprinting & top-K retrieval
+│       │   ├── quality.py             # 🟢 Deterministic outcome decomposition + behavioral flags
+│       │   └── provenance.py          # 🟢 Model registry (metadata only, never weights)
 │       ├── features/
 │       │   ├── regime_classifier.py   # 🟢 Market Regime Classifier (10 Regimes)
-│       │   └── scalp_features.py      # 🟢 50D Master Feature Vector Pipeline
+│       │   ├── scalp_features.py      # 🟢 50D Master Feature Vector Pipeline
+│       │   └── schema.py              # 🟢 Feature Schema Registry (50D active; 60D/350D forward-declared)
 │       ├── labeling/
 │       │   └── triple_barrier.py      # 🟢 Cost-Aware Purged Triple-Barrier Labeler
 │       ├── models/
@@ -662,6 +681,13 @@ $$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\
 | `/api/account/summary` | `GET` | Get financial ledger performance | None | Win rate, profit factor, total trades | 🟢 VERIFIED |
 | `/api/account/trades` | `GET` | Paginated closed trade autopsies | Query params | List of completed trade autopsies | 🟢 VERIFIED |
 | `/api/account/growth` | `GET` | Historical account equity curve | Query params | Time-series equity/balance array | 🟢 VERIFIED |
+| `/api/account/performance` | `GET` | Canonical live + period performance overview | None | Live state, 4 periods, drawdown, worker telemetry, totals | 🟢 VERIFIED |
+| `/api/account/performance/{kind}` | `GET` | Single period report (DAY/WEEK/MONTH/YEAR) | Path param | Canonical `PeriodReport` JSON | 🟢 VERIFIED |
+| `/api/account/performance/{kind}/series` | `GET` | Bounded consecutive-period series | Query `count` | Ordered period list for charts | 🟢 VERIFIED |
+| `/api/account/equity-curve` | `GET` | Balance/equity/drawdown + cumulative PnL series | Query `lookback_days` | Time-series arrays | 🟢 VERIFIED |
+| `/api/account/drawdown` | `GET` | Canonical drawdown state | Query `lookback_days` | DrawdownReport JSON | 🟢 VERIFIED |
+| `/api/account/trades/{trade_id}` | `GET` | Forensic trade reconstruction | Path param | Ledger+orders+experience trace | 🟢 VERIFIED |
+| `/api/account/strategies` | `GET` | Per-strategy contribution joined to Intelligence | Query `limit` | Strategy contribution list | 🟢 VERIFIED |
 | `/api/engine/toggle` | `POST` | Pause or Resume LiveEngine loop | `ToggleRequest` | Engine execution state | 🟢 VERIFIED |
 | `/api/config` | `GET` | Retrieve active system config | None | `AppConfig` serialized JSON | 🟢 VERIFIED |
 | `/api/config` | `POST` | Update active system config | `AlgoConfigRequest` | Success status & updated config | 🟢 VERIFIED |
@@ -733,7 +759,130 @@ Tick Sync in LiveEngine._process_tick_pipeline():
 
 ---
 
-## 14. Known Engineering Pitfalls & Invariants
+## 14. Unified Accounting & Performance Intelligence Core (PHASE 08)
+
+### 📐 Overview
+
+The **`nexus_scalp/accounting/`** package is the SINGLE canonical accounting
+authority. The REST API, the dashboard, the background worker, and Experience
+Intelligence all read performance truth through `AccountingCore`; none of them
+computes PnL, drawdown, or period boundaries independently.
+
+```
+MT5 / Paper Adapter  -> live balance/equity/margin/positions (real data)
+audit_account_snapshots -> historical equity & balance series
+audit_ledger         -> closed-trade financial records (authoritative)
+audit_orders         -> order lifecycle events (forensic trace)
+audit_experiences(+outcomes) -> decision/strategy/model identity chain
+strategy_intelligence_registry -> lifecycle & confidence (READ, never recomputed)
+
+        ALL READ EXCLUSIVELY THROUGH AccountingCore (src/nexus_scalp/accounting/)
+        ──► canonical TradeRecord / PeriodReport / DrawdownReport / curves
+        ──► consumed by REST API, dashboard, worker, Experience layer
+```
+
+### 🔒 Accounting Invariants (hard rules)
+
+1. **NO SYNTHETIC NUMBERS.** Every metric that cannot be derived from stored
+   evidence is `None`, never a fabricated `0.0` — an unavailable metric renders
+   as "n/a" or "NO ACCOUNT HISTORY AVAILABLE", never as a fake zero row.
+2. **WIN/LOSS IS DECIDED BY REALIZED MONEY ONLY.** A stop that had been moved
+   to breakeven is STILL a stop-out; it is classified `BREAKEVEN_STOP` and its
+   `outcome` reflects net PnL (which may be LOSS after costs). It is NEVER
+   reclassified as a WIN because the SL happened to sit at entry.
+3. **ONE PERIOD POLICY.** All DAY/WEEK/MONTH/YEAR boundaries are half-open UTC
+   intervals resolved in `accounting/periods.py`. A trade at 00:00:00 UTC
+   belongs to the NEW period, never to both. No consumer uses local time.
+4. **ONE DRAWDOWN METHODOLOGY.** `compute_drawdown()` in `aggregation.py` is
+   the only drawdown implementation (peak-to-trough on the equity snapshot
+   series). Dashboard, API and risk never disagree.
+5. **NET PNL COMPUTED EXACTLY ONCE.** `normalize_trade_row()` computes
+   `net = gross - commission - swap` and stores it; consumers read it.
+6. **IDEMPOTENT CLOSURE.** `audit_ledger` upserts on `ticket`; the outcome
+   table's UNIQUE `idempotency_key` discards duplicate close callbacks. No
+   duplicate financial records can be created.
+7. **DERIVED AGGREGATES ARE REBUILDABLE.** Raw snapshots + ledger + outcomes
+   can always rebuild every period report; nothing patches totals.
+8. **MODEL REBUILD NEVER ERASES MEMORY.** Experiences carry their own
+   `feature_schema_id`/`feature_dimension`/`model_id`/`model_version` at
+   decision time (via `features/schema.py` registry + `experience/provenance.py`).
+   The live contract remains 50D (`scalp_v1`); 60D (`scalp_v2`) and 350D
+   (`scalp_v3`) are forward-declared for future widening.
+
+### 🗄️ Canonical Tables (all in `audit.db`, SQLite WAL)
+
+- `audit_ledger` — ONE row per trade lifecycle (opened placeholder + closed
+  upsert). Entry context, SL geometry, MAE/MFE in points and USD, net PnL.
+- `audit_account_snapshots` — throttled (balance change or 60s) equity/balance
+  series with running `peak_equity`.
+- `audit_experiences` — IMMUTABLE decision rows keyed by `idempotency_key`
+  (`exp_<request_id>`). Column `execution_id` is EMPTY by design.
+- `audit_experience_outcomes` — append-only outcome events; carries the broker
+  ticket in `execution_id`. **The trade→strategy identity bridge.**
+- `strategy_intelligence_registry` — derived strategy scores (lifecycle,
+  confidence, expectancy_r), rebuildable via `ExperienceEngine.self_heal()`.
+- `experience_model_registry` — model metadata only; never model weights.
+
+### 🔗 Trade → Strategy Identity Chain (CRITICAL)
+
+```
+audit_ledger.ticket == audit_experience_outcomes.execution_id
+audit_experience_outcomes.idempotency_key == audit_experiences.idempotency_key
+```
+
+`AccountingCore._attach_identity()` joins through the OUTCOME table (never
+`audit_experiences.execution_id`, which is empty by design — see BUG-008
+in `agents/bugs.md`).
+
+### ⚙️ AccountingWorker (`accounting/worker.py`)
+
+- Background derived-refresh loop, kicked via `asyncio.to_thread` from
+  `LiveEngine.run_loop` — NEVER on the tick hot path.
+- Idempotent (repeating a cycle with no new data is a no-op), restartable
+  (`start`/`stop` state machine), failure-isolated (a cycle failure is logged
+  with `[ACCOUNTING_WORKER] event=FAILURE` and the worker continues).
+- Owns NO tables: it writes nothing to the audit tables; its only side effect
+  is the in-process derived-report cache of `AccountingCore`.
+- Logs: `[ACCOUNTING_WORKER] event=START/UPDATE/FAILURE/RECOVERY` with cycle
+  counts, durations, and updated periods.
+
+### 🌐 Accounting REST API (in `web/server.py`)
+
+| Route | Method | Purpose |
+| :--- | :---: | :--- |
+| `/api/account/performance` | GET | Live state + all 4 current periods + drawdown + worker telemetry |
+| `/api/account/performance/{kind}` | GET | Single period report (DAY/WEEK/MONTH/YEAR) |
+| `/api/account/performance/{kind}/series` | GET | Bounded period series for charts |
+| `/api/account/equity-curve` | GET | Balance/equity/drawdown time series + cumulative PnL |
+| `/api/account/drawdown` | GET | Canonical drawdown state |
+| `/api/account/trades/{trade_id}` | GET | Forensic reconstruction (ledger+orders+experience) |
+| `/api/account/strategies` | GET | Per-strategy contribution joined to Intelligence |
+
+Every endpoint returns REAL data from authoritative tables. When no data
+exists the response carries `available`/`has_data` flags and the dashboard
+renders an explicit empty state.
+
+### 🖥️ Dashboard (Web/)
+
+The Account tab contains the **Account Performance & Intelligence** panel:
+period tabs (DAY/WEEK/MONTH/YEAR), live metrics (balance, equity, floating
+PnL, drawdown, free margin, open positions), canvas charts (equity growth,
+drawdown, cumulative PnL, period performance), the Strategy Attribution
+table, and the Trade Forensics inspector (by ticket). All data comes from the
+canonical `/api/account/*` endpoints; no frontend-side recomputation.
+
+### 🧪 Tests
+
+- `tests/unit/test_accounting_core.py` — 64 unit tests: periods, snapshots,
+  aggregation, drawdown/recovery, closure classification, normalization,
+  attribution, loss attribution, forensics, worker, self-healing, provenance.
+- `tests/integration/test_accounting_api.py` — 13 integration tests: REST
+  endpoints return real data, worker wiring in LiveEngine, cold-start
+  survival without a model artifact.
+
+---
+
+## 16. Known Engineering Pitfalls & Invariants
 
 If you are an AI coding agent making changes to this repository in the future, **memorize these active engineering rules and constraints**:
 
@@ -764,7 +913,7 @@ If you are an AI coding agent making changes to this repository in the future, *
 
 ---
 
-## 15. Testing & CI/CD Pipeline Audit
+## 17. Testing & CI/CD Pipeline Audit
 
 ### 🧪 Test Suite Structure
 
@@ -779,9 +928,11 @@ If you are an AI coding agent making changes to this repository in the future, *
   - `test_train_model_cli.py`: Validates CLI 50D feature extraction and dataset validation alignment.
   - `test_order_manager_audit.py`: Validates legacy file deletion and active order manager imports.
   - `test_htf_warmup_gate.py`: Validates cold-start HTF warmup gate state transitions and inference blocking.
+  - `test_accounting_core.py`: Validates the Phase 08 unified accounting core (periods, snapshots, drawdown/recovery, closure classification, attribution, forensics, worker, self-healing, provenance).
 * **Integration Tests (`tests/integration/`):**
   - `test_signal_pipeline_health.py`: End-to-end signal pipeline health verification.
   - `test_database_execution_audit.py`: Validates SQLite WAL persistence and ledger autopsies.
+  - `test_accounting_api.py`: Validates the Phase 08 accounting REST API + worker wiring end-to-end.
   - `test_playwright_e2e.py`: Playwright end-to-end web visualizer verification. 🟢 VERIFIED
 
 ### ⚙️ CI/CD Workflows (`.github/workflows/`)
@@ -793,7 +944,7 @@ If you are an AI coding agent making changes to this repository in the future, *
 
 ---
 
-## 16. Documentation vs. Reality Audit Matrix
+## 18. Documentation vs. Reality Audit Matrix
 
 This matrix explicitly audits claims made in prior documentation against actual codebase evidence:
 
@@ -810,7 +961,7 @@ This matrix explicitly audits claims made in prior documentation against actual 
 
 ---
 
-## 17. Code Inventory & Active Wrappers
+## 19. Code Inventory & Active Wrappers
 
 Active execution entrypoints and wrappers within the repository:
 
@@ -825,7 +976,7 @@ Active execution entrypoints and wrappers within the repository:
 
 ---
 
-## 18. Prioritized Engineering Recommendations (P0-P3)
+## 20. Prioritized Engineering Recommendations (P0-P3)
 
 The following backlog details prioritized architectural and operational recommendations for future development tasks:
 

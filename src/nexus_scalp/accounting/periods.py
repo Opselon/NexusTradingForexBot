@@ -34,13 +34,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 
 #: SQLite text timestamp format used across the audit schema.
 SQL_TS_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-class PeriodKind(str, Enum):
+class PeriodKind(StrEnum):
     """Supported reporting granularities."""
 
     DAY = "DAY"
@@ -159,9 +159,7 @@ def previous_period(bounds: PeriodBounds) -> PeriodBounds:
     return period_bounds(bounds.kind, bounds.start - timedelta(seconds=1))
 
 
-def recent_periods(
-    kind: PeriodKind, count: int, at: datetime | None = None
-) -> list[PeriodBounds]:
+def recent_periods(kind: PeriodKind, count: int, at: datetime | None = None) -> list[PeriodBounds]:
     """
     Returns the `count` most recent periods ending with the one containing `at`,
     ordered oldest -> newest (chart-friendly).

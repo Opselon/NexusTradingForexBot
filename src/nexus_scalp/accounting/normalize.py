@@ -87,7 +87,9 @@ def _classify_stop(
     if not (was_sl_modified or risk_free_flag):
         return ExitClassification.INITIAL_STOP
     if final_sl <= 0.0 or entry <= 0.0:
-        return ExitClassification.BREAKEVEN_STOP if risk_free_flag else ExitClassification.INITIAL_STOP
+        return (
+            ExitClassification.BREAKEVEN_STOP if risk_free_flag else ExitClassification.INITIAL_STOP
+        )
 
     delta = (final_sl - entry) if is_long else (entry - final_sl)
     if delta > point_tolerance:
