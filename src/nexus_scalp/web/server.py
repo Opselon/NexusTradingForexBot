@@ -9,6 +9,7 @@ and risk engines.
 import asyncio
 import json
 import math
+import sqlite3
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -1578,6 +1579,54 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "max_total_exposure": 1,
             "fetched_at": datetime.now(UTC).isoformat(),
         }
+
+    # Phase 08 Experience Intelligence REST APIs
+    @app.get("/api/experience/summary")
+    def get_experience_summary() -> dict[str, Any]:
+        engine = app.state.engine
+        if not engine or not hasattr(engine, "experience_engine"):
+            return {
+                "enabled": False,
+                "recorded_experiences": 0,
+                "active_strategies": 0,
+            }
+
+        recorded_count = 0
+        active_strats = 0
+        try:
+            with sqlite3.connect(engine.audit._db_path, timeout=5.0) as conn:
+                cursor = conn.execute("SELECT COUNT(*) FROM audit_experiences;")
+                recorded_count = cursor.fetchone()[0]
+                cursor2 = conn.execute(
+                    "SELECT COUNT(*) FROM strategy_intelligence_registry WHERE lifecycle_state = 'ACTIVE';"
+                )
+                active_strats = cursor2.fetchone()[0]
+        except Exception:
+            pass
+
+        return {
+            "enabled": engine.experience_engine.enabled,
+            "recorded_experiences": recorded_count,
+            "active_strategies": active_strats,
+        }
+
+    @app.get("/api/experience/strategies")
+    def get_experience_strategies(limit: int = 50) -> list[dict[str, Any]]:
+        engine = app.state.engine
+        if not engine:
+            return []
+
+        try:
+            with sqlite3.connect(engine.audit._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    "SELECT * FROM strategy_intelligence_registry ORDER BY updated_at DESC LIMIT ?;",
+                    (limit,),
+                )
+                return [dict(r) for r in cursor.fetchall()]
+        except Exception as e:
+            logger.error("Failed to retrieve experience strategies", error=str(e))
+            return []
 
     # Observability stats
     @app.get("/api/observability/stats")
