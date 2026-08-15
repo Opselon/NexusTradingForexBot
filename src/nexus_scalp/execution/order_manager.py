@@ -316,6 +316,7 @@ class OrderLifecycleManager:
         rule_matrix: RuleMatrixEngine | None = None,
         algo_config: AlgoConfig | None = None,
         risk_engine: Any = None,
+        experience_engine: Any = None,
     ) -> None:
         self._last_mod_price: dict[int, float] = {}
         self._last_mod_time: dict[int, datetime] = {}
@@ -328,6 +329,7 @@ class OrderLifecycleManager:
         # Optional RiskEngine used to clamp every dispatch to HARD_MAX_LOTS and
         # perform free-margin pre-checks. When absent, a local clamp still applies.
         self.risk_engine = risk_engine
+        self.experience_engine = experience_engine
         self._processed_orders: dict[str, bool] = {}
 
         import threading
@@ -3689,6 +3691,34 @@ class OrderLifecycleManager:
                     account_equity_after=self._last_account_equity,
                     drawdown_percent_after=self._current_drawdown_percent(),
                 )
+
+                if self.experience_engine is not None:
+                    try:
+                        req_id = self._entry_order_ids.get(dead_ticket, "")
+                        sl_dist = abs(entry - initial_sl_val) if initial_sl_val > 0 else (atr * 1.5)
+                        contract_sz = self._resolve_contract_size(symbol_info)
+                        risk_usd = max(1.0, sl_dist * vol * contract_sz)
+                        net_pnl_usd = profit_usd - comm_usd - swap_usd
+                        r_multiple = net_pnl_usd / risk_usd
+                        self.experience_engine.record_trade_outcome(
+                            request_id=req_id,
+                            execution_id=str(dead_ticket),
+                            outcome_timestamp=now,
+                            is_executed=True,
+                            is_closed=True,
+                            exit_reason=exit_mechanism,
+                            realized_pnl_usd=net_pnl_usd,
+                            realized_r_multiple=r_multiple,
+                            mae_points=mae_val,
+                            mfe_points=mfe_val,
+                            mae_usd=mae_usd,
+                            mfe_usd=mfe_usd,
+                            holding_duration_seconds=duration_sec,
+                        )
+                    except Exception as exp_err:
+                        logger.error(
+                            "Failed to record experience trade outcome", error=str(exp_err)
+                        )
 
                 logger.info(
                     "[LEDGER AUTOPSY] Closed trade recorded",

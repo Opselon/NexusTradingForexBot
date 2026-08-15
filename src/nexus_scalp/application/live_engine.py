@@ -43,6 +43,10 @@ from nexus_scalp.domain.models import (
     TradeProposal,
 )
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
+from nexus_scalp.experience.evaluator import StrategyEvaluator
+from nexus_scalp.experience.intelligence import ExperienceIntelligenceEngine
+from nexus_scalp.experience.ledger import ExperienceLedger
+from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
@@ -160,6 +164,17 @@ class LiveEngine:
         # Module 1: Rule Matrix Engine
         self.rule_matrix = RuleMatrixEngine(audit_repo=self.audit)
 
+        # Phase 08 Experience Intelligence Engine
+        self.experience_ledger = ExperienceLedger(audit_repo=self.audit)
+        self.experience_evaluator = StrategyEvaluator(audit_repo=self.audit)
+        self.experience_retriever = ExperienceRetriever(ledger=self.experience_ledger)
+        self.experience_engine = ExperienceIntelligenceEngine(
+            ledger=self.experience_ledger,
+            evaluator=self.experience_evaluator,
+            retriever=self.experience_retriever,
+            enabled=True,
+        )
+
         # Order/risk/policy
         self.signal_policy = SignalPolicy(
             confidence_threshold=config.model.confidence_threshold,
@@ -178,9 +193,8 @@ class LiveEngine:
             notifier=self.notifier,
             rule_matrix=self.rule_matrix,
             algo_config=config.algo,
-            # Routing every dispatch through the risk engine enforces dynamic clamps
-            # and the free-margin pre-check at the execution boundary.
             risk_engine=self.risk_engine,
+            experience_engine=self.experience_engine,
         )
 
         # Online training toolchain
@@ -887,6 +901,14 @@ class LiveEngine:
                 force_log=force_log,
                 order_manager=self.order_manager,
             )
+
+            # Phase 08 Pre-Trade Experience Intelligence Gate
+            proposal, _exp_decision = self.experience_engine.evaluate_proposal(
+                proposal=proposal,
+                feature_vector=fv,
+                regime_state=regime_state,
+            )
+
             self.audit.log_signal(proposal)
 
             # Update synchronization properties for the Web backend

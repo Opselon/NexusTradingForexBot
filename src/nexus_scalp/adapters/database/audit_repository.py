@@ -85,6 +85,64 @@ class AuditRepository:
             );
             """
         )
+
+        # PHASE 08: IMMUTABLE EXPERIENCE LEDGER TABLE
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_experiences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                experience_id TEXT NOT NULL,
+                request_id TEXT NOT NULL,
+                execution_id TEXT DEFAULT '',
+                decision_id TEXT DEFAULT '',
+                idempotency_key TEXT UNIQUE NOT NULL,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                strategy_id TEXT NOT NULL,
+                strategy_version TEXT DEFAULT '1.0.0',
+                decision_timestamp TEXT NOT NULL,
+                outcome_timestamp TEXT,
+                action TEXT NOT NULL,
+                entry_reason TEXT NOT NULL,
+                model_probability REAL DEFAULT 0.0,
+                signal_confidence REAL DEFAULT 0.0,
+                proposed_entry REAL NOT NULL,
+                stop_loss REAL NOT NULL,
+                take_profit REAL NOT NULL,
+                risk_reward_ratio REAL DEFAULT 1.0,
+                approved_volume REAL DEFAULT 0.0,
+                is_executed INTEGER DEFAULT 0,
+                is_closed INTEGER DEFAULT 0,
+                exit_reason TEXT DEFAULT '',
+                realized_pnl_usd REAL DEFAULT 0.0,
+                realized_r_multiple REAL DEFAULT 0.0,
+                mae_points REAL DEFAULT 0.0,
+                mfe_points REAL DEFAULT 0.0,
+                mae_usd REAL DEFAULT 0.0,
+                mfe_usd REAL DEFAULT 0.0,
+                holding_duration_seconds REAL DEFAULT 0.0,
+                feature_hash TEXT DEFAULT '',
+                payload TEXT NOT NULL
+            );
+            """
+        )
+
+        # PHASE 08: STRATEGY INTELLIGENCE REGISTRY TABLE
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS strategy_intelligence_registry (
+                strategy_id TEXT PRIMARY KEY,
+                lifecycle_state TEXT NOT NULL,
+                sample_count INTEGER DEFAULT 0,
+                win_rate REAL DEFAULT 0.0,
+                expectancy_r REAL DEFAULT 0.0,
+                profit_factor REAL DEFAULT 1.0,
+                confidence_score REAL DEFAULT 0.0,
+                score_payload TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
         self._seed_trading_rules(conn)
         conn.execute(
             """
