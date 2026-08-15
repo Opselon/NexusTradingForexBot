@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import os
 import signal
 import threading
@@ -125,6 +126,15 @@ class LiveEngine:
 
         self._consecutive_losses: int = 0
         self._survival_mode_active: bool = False
+
+        # HTF Warmup State Machine
+        self.warmup_state: str = "WARMING_UP"
+        self._inference_enabled: bool = False
+        self._warmup_attempt: int = 0
+        self._last_inference_blocked_log: float = 0.0
+        self._last_waiting_log: float = 0.0
+        self.H1_REQUIRED_BARS: int = 14
+        self.H4_REQUIRED_BARS: int = 14
 
         # Diagnostics & Heartbeat
         self._last_radar_log_time: float = 0.0
@@ -551,39 +561,147 @@ class LiveEngine:
     # Warmup + bootstrap training
     # -------------------------
 
-    async def _cold_start_warmup(self, symbol: str) -> None:
-        logger.info("Cold-start warmup: fetching 1200 M1 bars...")
-        hist_bars = (
-            self.adapter.get_historical_bars(symbol=symbol, timeframe="M1", count=1200) or []
+    def evaluate_warmup_readiness(self, symbol: str, h1_bars: list, h4_bars: list) -> bool:
+        """
+        Evaluates HTF bar counts and feature vector validation state to determine if warmup is complete.
+        """
+        h1_status = "READY" if len(h1_bars) >= self.H1_REQUIRED_BARS else "INSUFFICIENT"
+        logger.info(
+            f"[WARMUP] H1\nrequired_bars={self.H1_REQUIRED_BARS}\navailable_bars={len(h1_bars)}\nstatus={h1_status}"
         )
 
-        for b in hist_bars:
+        h4_status = "READY" if len(h4_bars) >= self.H4_REQUIRED_BARS else "INSUFFICIENT"
+        logger.info(
+            f"[WARMUP] H4\nrequired_bars={self.H4_REQUIRED_BARS}\navailable_bars={len(h4_bars)}\nstatus={h4_status}"
+        )
+
+        completed_bars = self.aggregator.get_completed_bars()
+        htf_fallbacks = 0
+        valid_count = 0
+        fallback_count = 0
+        invalid_count = 0
+
+        if completed_bars:
+            last_b = completed_bars[-1]
+            last_tick = TickData(
+                symbol=symbol,
+                timestamp=getattr(last_b, "timestamp", datetime.now(UTC)),
+                bid=last_b.close,
+                ask=last_b.close + 0.20,
+                volume=last_b.tick_volume,
+            )
+            sample_fv = self.feature_engine.compute_from_bars(completed_bars, last_tick)
+
+            # Check if HTF features are in default cold start fallback states
+            if sample_fv.htf_h4_trend == 0.0:
+                htf_fallbacks += 1
+                logger.warning(
+                    "[FEATURE_FALLBACK]\ntimeframe=H4\nfeature=htf_h4_trend\nreason=INSUFFICIENT_H4_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state="
+                    + self.warmup_state
+                )
+            if sample_fv.htf_h1_momentum == 0.0:
+                htf_fallbacks += 1
+                logger.warning(
+                    "[FEATURE_FALLBACK]\ntimeframe=H1\nfeature=htf_h1_momentum\nreason=INSUFFICIENT_H1_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state="
+                    + self.warmup_state
+                )
+
+            x50 = sample_fv.to_tensor_input()
+            for val in x50:
+                if math.isnan(val) or math.isinf(val):
+                    invalid_count += 1
+                elif val == 0.0:
+                    fallback_count += 1
+                else:
+                    valid_count += 1
+
+        is_ready = (h1_status == "READY") and (h4_status == "READY") and (htf_fallbacks == 0)
+
+        if not is_ready:
+            missing_h1 = max(0, self.H1_REQUIRED_BARS - len(h1_bars))
+            missing_h4 = max(0, self.H4_REQUIRED_BARS - len(h4_bars))
+            missing_tf = "H1" if missing_h1 > 0 else "H4"
+            missing_cnt = missing_h1 if missing_h1 > 0 else missing_h4
+            req_cnt = self.H1_REQUIRED_BARS if missing_h1 > 0 else self.H4_REQUIRED_BARS
+            avail_cnt = len(h1_bars) if missing_h1 > 0 else len(h4_bars)
+
+            logger.info(
+                f"[WARMUP] WAITING\ntimeframe={missing_tf}\nrequired={req_cnt}\navailable={avail_cnt}\nmissing={missing_cnt}\nattempt={self._warmup_attempt}"
+            )
+            logger.info(
+                f"[FEATURE_STATUS]\ntotal_features=50\nvalid={valid_count}\nfallback={fallback_count}\ninvalid={invalid_count}\nhtf_fallbacks={htf_fallbacks}\nstatus=NOT_READY"
+            )
+            self.warmup_state = "SAFE_NOT_READY"
+            self._inference_enabled = False
+            logger.error("[WARMUP] FAILED\nreason=INSUFFICIENT_HTF_HISTORY\nstate=SAFE_NOT_READY")
+            logger.warning("[INFERENCE] BLOCKED\nreason=HTF_WARMUP_INCOMPLETE")
+        else:
+            self.warmup_state = "READY"
+            self._inference_enabled = True
+            logger.info(
+                f"[FEATURE_STATUS]\ntotal_features=50\nvalid={valid_count}\nfallback={fallback_count}\ninvalid={invalid_count}\nhtf_fallbacks={htf_fallbacks}\nstatus=READY"
+            )
+            logger.info(
+                f"[WARMUP] COMPLETE\nsymbol={symbol}\nH1={len(h1_bars)}/{self.H1_REQUIRED_BARS}\nH4={len(h4_bars)}/{self.H4_REQUIRED_BARS}\nfallback_features={htf_fallbacks}\nstatus=READY"
+            )
+            logger.info("[INFERENCE] ENABLED\nreason=HTF_WARMUP_COMPLETE")
+
+        return is_ready
+
+    async def _cold_start_warmup(self, symbol: str) -> None:
+        self._warmup_attempt += 1
+        logger.info(f"[WARMUP] START\nsymbol={symbol}\nrequired_timeframes=[H1,H4]")
+
+        # Non-blocking async fetch of HTF historical bars
+        h1_bars = (
+            await asyncio.to_thread(
+                self.adapter.get_historical_bars, symbol, "H1", self.H1_REQUIRED_BARS
+            )
+            or []
+        )
+        h4_bars = (
+            await asyncio.to_thread(
+                self.adapter.get_historical_bars, symbol, "H4", self.H4_REQUIRED_BARS
+            )
+            or []
+        )
+
+        # Fetch 3500 M1 bars (3500 M1 bars = 14.5 H4 bars) to populate full M1/H1/H4 aggregations
+        hist_m1_bars = (
+            await asyncio.to_thread(self.adapter.get_historical_bars, symbol, "M1", 3500) or []
+        )
+
+        for b in hist_m1_bars:
             self.aggregator._completed_bars.append(b)
 
-            completed = self.aggregator.get_completed_bars()
-            if len(completed) < 55:
-                continue
+        completed = self.aggregator.get_completed_bars()
+        if len(completed) >= 55:
+            last_300 = completed[-300:] if len(completed) > 300 else completed
+            for i in range(54, len(last_300)):
+                window = last_300[: i + 1]
+                b = last_300[i]
+                bar_time = getattr(b, "timestamp", getattr(b, "time", datetime.now(UTC)))
+                synthetic_tick = TickData(
+                    symbol=symbol,
+                    timestamp=bar_time,
+                    bid=b.close,
+                    ask=b.close + 0.20,
+                    volume=b.tick_volume,
+                )
+                fv = self.feature_engine.compute_from_bars(window, synthetic_tick)
+                x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="cold_start_warmup")
+                record = {f"feat_{idx}": float(x50[idx]) for idx in range(self.FEATURE_DIM)}
+                record.update(
+                    close=b.close,
+                    high=b.high,
+                    low=b.low,
+                    open=b.open,
+                    spread=0.20,
+                    atr_m1=fv.atr_m1,
+                )
+                self._rolling_feature_records.append(record)
 
-            bar_time = getattr(b, "timestamp", getattr(b, "time", datetime.now(UTC)))
-            synthetic_tick = TickData(
-                symbol=symbol,
-                timestamp=bar_time,
-                bid=b.close,
-                ask=b.close + 0.20,
-                volume=b.tick_volume,
-            )
-
-            # Slice window to last 300 bars for O(1) feature calculation speed
-            bars_window = completed[-300:] if len(completed) > 300 else completed
-            fv = self.feature_engine.compute_from_bars(bars_window, synthetic_tick)
-            x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="cold_start_warmup")
-            record = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
-            record.update(
-                close=b.close, high=b.high, low=b.low, open=b.open, spread=0.20, atr_m1=fv.atr_m1
-            )
-            self._rolling_feature_records.append(record)
-
-        logger.info("Warmup complete", buffer_size=len(self._rolling_feature_records))
+        self.evaluate_warmup_readiness(symbol, h1_bars, h4_bars)
 
         # Immediately extract and update real SMC overlays to prevent cold-start blank canvas in MT5 mode
         completed_bars = self.aggregator.get_completed_bars()
@@ -701,6 +819,51 @@ class LiveEngine:
                 account=account,
             )
             current_pos_count = len(active_positions)
+
+            # Check Warmup Readiness Gate before Inference
+            if not self._inference_enabled or self.warmup_state != "READY":
+                import time
+
+                curr_t = time.time()
+
+                # On new bar or every 15 seconds, attempt to re-evaluate warmup readiness
+                if is_new_bar or (curr_t - getattr(self, "_last_warmup_check_time", 0.0)) >= 15.0:
+                    self._last_warmup_check_time = curr_t
+                    h1_bars = (
+                        self.adapter.get_historical_bars(tick.symbol, "H1", self.H1_REQUIRED_BARS)
+                        or []
+                    )
+                    h4_bars = (
+                        self.adapter.get_historical_bars(tick.symbol, "H4", self.H4_REQUIRED_BARS)
+                        or []
+                    )
+                    if self.evaluate_warmup_readiness(tick.symbol, h1_bars, h4_bars):
+                        logger.info("[WARMUP] RE-EVALUATION PASSED -> Engine transition to READY")
+
+                if not self._inference_enabled or self.warmup_state != "READY":
+                    if curr_t - self._last_inference_blocked_log >= 10.0:
+                        logger.warning("[INFERENCE] BLOCKED\nreason=HTF_WARMUP_INCOMPLETE")
+                        self._last_inference_blocked_log = curr_t
+
+                    # Return NO_TRADE proposal safely when inference is blocked
+                    proposal = TradeProposal(
+                        request_id=f"blocked_{int(curr_t)}",
+                        symbol=tick.symbol,
+                        generated_at=tick.timestamp,
+                        action=ActionType.NO_TRADE,
+                        confidence=0.0,
+                        proposed_entry=tick.bid,
+                        stop_loss=tick.bid * 0.99,
+                        take_profit=tick.bid * 1.01,
+                        risk_reward_ratio=1.0,
+                        reason_code="HTF_WARMUP_INCOMPLETE",
+                    )
+                    self.audit.log_signal(proposal)
+                    self._last_tick = tick
+                    self._last_fv = fv
+                    self._last_regime_state = regime_state
+                    self._last_proposal = proposal
+                    return
 
             # Inference
             probs = self._infer_probabilities(fv=fv)

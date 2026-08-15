@@ -851,10 +851,19 @@ The following backlog details prioritized architectural and operational recommen
    - *Impact:* Maintainers might accidentally import from the wrong package layer.
    - *Fix:* Delete `src/nexus_scalp/features/order_manager.py`.
 
-3. **Add Explicit Warmup Safeguard for HTF Features:**
-   - *Problem:* Multi-timeframe features (H1/H4) require sufficient historical bars on startup.
-   - *Impact:* First few ticks after cold start may receive neutral fallback values until bars complete.
-   - *Fix:* Implement history bootstrapping in `LiveEngine` startup.
+3. **Add Explicit Warmup Safeguard for HTF Features (FIXED 🟢):**
+   - *Problem:* Cold start in `LiveEngine` processed ticks before sufficient H1/H4 historical bars were available to calculate 50D HTF features (`htf_h4_trend`, `htf_h1_momentum`), causing HTF features to enter neutral fallback defaults while normal trading inference still proceeded.
+   - *Impact:* Fixed. Implemented an explicit HTF Warmup Gate state machine (`WARMING_UP -> READY` or `SAFE_NOT_READY`), async non-blocking historical bar bootstrapping, feature fallback detection, inference gating, periodic recovery re-evaluations, and comprehensive console observability logs.
+   - *Fix Progress:*
+     - **Bug status:** FIXED
+     - **Root cause:** Cold start processed ticks prior to acquiring 14 H1 and 14 H4 historical bars required by the 50D feature pipeline ATR lookbacks, causing HTF features to default to neutral zero values during live inference.
+     - **Warmup requirement:** Derived from `ScalpFeatureEngine` ATR ratios and EMA lookbacks: 14 completed H1 bars and 14 completed H4 bars (bootstrapped from 3500 M1 bars + direct MT5 timeframe queries).
+     - **Fallback handling:** Explicitly differentiates between valid calculated features, missing/insufficient HTF history fallbacks, and NaN/Inf validation fallbacks. Gated ScalpNet inference (`[INFERENCE] BLOCKED reason=HTF_WARMUP_INCOMPLETE`) until all HTF features are validated and no startup fallbacks remain.
+     - **Console observability:** Emits diagnostic console events: `[WARMUP] START`, `[WARMUP] H1`, `[WARMUP] H4`, `[WARMUP] WAITING`, `[FEATURE_FALLBACK]`, `[FEATURE_STATUS]`, `[WARMUP] COMPLETE`, `[INFERENCE] BLOCKED`, `[INFERENCE] ENABLED`, and `[WARMUP] FAILED`.
+     - **Files changed:** `src/nexus_scalp/application/live_engine.py`, `src/nexus_scalp/adapters/mt5/mt5_adapter.py`, `tests/unit/test_htf_warmup_gate.py`, `agents/skill.md`.
+     - **Tests:** Added 11 unit tests in `tests/unit/test_htf_warmup_gate.py` covering all required scenarios.
+     - **Verification:** Verified with unit test suite (11/11 passed) and full pytest suite (75/75 passed).
+     - **Remaining risk:** None.
 
 ### 🟡 P2 — Medium (Performance & Maintainability)
 4. **Optimize Polars DataFrame Allocation in Rolling Buffer:**

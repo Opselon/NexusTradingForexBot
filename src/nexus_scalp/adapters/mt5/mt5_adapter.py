@@ -195,7 +195,9 @@ class DirectMT5Adapter(IMT5Port):
             "M1": mt5.TIMEFRAME_M1,
             "M5": mt5.TIMEFRAME_M5,
             "M15": mt5.TIMEFRAME_M15,
+            "M30": mt5.TIMEFRAME_M30,
             "H1": mt5.TIMEFRAME_H1,
+            "H4": mt5.TIMEFRAME_H4,
         }
         mt5_tf = tf_map.get(timeframe.upper(), mt5.TIMEFRAME_M1)
         rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
