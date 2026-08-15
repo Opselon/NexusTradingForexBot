@@ -167,7 +167,6 @@ NexusTradingForexBot/
 | `src/nexus_scalp/models/scalp_net.py` | Models | PyTorch Deep Neural Network | `ScalpNet`, `CausalConv1d`, `SinusoidalPositionalEncoding` | `LiveEngine`, `WalkForwardTrainer` | `torch.nn` | 50D Tensor `(B, 50)` | 4 Logits `(B, 4)` | 🟢 VERIFIED | Medium |
 | `src/nexus_scalp/features/scalp_features.py` | Features | 50D Master Feature Engineering | `ScalpFeatureEngine`, `FeatureVector`, `FeaturePipelineFrozenError` | `LiveEngine`, Trainer, Tests | `numpy`, `polars` | Bar list, TickData | 50D FeatureVector | 🟢 VERIFIED | Medium |
 | `src/nexus_scalp/features/regime_classifier.py` | Features | Market Regime Classification | `MarketRegimeClassifier`, `MarketRegimeState`, `RegimeType` | `LiveEngine`, Policy | Internal math | Ticks, Spreads, Volatility | MarketRegimeState | 🟢 VERIFIED | Low |
-| `src/nexus_scalp/features/order_manager.py` | Features | Legacy/Dead Order Manager | `OrderLifecycleManager` | None | None | None | None | ⚫ DEAD / UNUSED | Low (Orphaned file) |
 | `src/nexus_scalp/labeling/triple_barrier.py` | Labeling | Cost-Aware Purged Triple Barrier | `TripleBarrierLabeler` | Trainer, `LiveEngine` online retrain | `polars`, `numpy` | OHLCV DataFrame | Labeled DataFrame (`0, 1, 2`) | 🟢 VERIFIED | Medium |
 | `src/nexus_scalp/training/walk_forward_trainer.py` | Training | Purged Walk-Forward & Online Fine-Tuner | `WalkForwardTrainer`, `ScalpDataset`, `FocalLossWithSmoothing` | CLI, `LiveEngine` async task | `torch`, `polars`, `sklearn` | Labeled DataFrame | Trained ScalpNet, ScalerBundle | 🟢 VERIFIED | High (Torch CUDA/CPU load) |
 | `src/nexus_scalp/signals/policy.py` | Signals | Signal Policy Engine & SMC God Mode | `SignalPolicy` | `LiveEngine` | `RuleMatrixEngine` | Features, Regime, AlgoConfig | `TradeProposal` | 🟢 VERIFIED | Medium |
@@ -813,7 +812,7 @@ This matrix explicitly audits claims made in prior documentation against actual 
 | **Hot Path Latency** | Guaranteed 50ms execution | No hard real-time latency guarantee in code | 🟡 PARTIALLY VERIFIED | 50ms is an async event-loop target, not a real-time hardware SLA. |
 | **Position States** | 11 Position lifecycles | `PositionState` enum defines exactly 11 states in `order_manager.py` | 🟢 VERIFIED | 11 explicit lifecycles managed in hybrid state machine. |
 | **Pending Order Protection** | 30s lock & 1.0x ATR drift | `policy.py` checks 30s lock and 1.0 * ATR drift | 🟢 VERIFIED | Prevents high-frequency pending order churn on MT5 terminal. |
-| **Legacy Order Manager** | Active order manager | `src/nexus_scalp/features/order_manager.py` is orphaned | ⚫ DEAD / UNUSED | Active production order manager is in `src/nexus_scalp/execution/order_manager.py`. |
+| **Legacy Order Manager** | Active order manager | `src/nexus_scalp/features/order_manager.py` was dead/orphaned | 🟢 VERIFIED (REMOVED) | Dead legacy file deleted; active production order manager preserved in `src/nexus_scalp/execution/order_manager.py`. |
 | **Legacy CLI Training Script** | Active training script | `src/cli/train_model.py` aligned to 50D feature contract | 🟢 VERIFIED | Updated to pass full 50D feature vector to `WalkForwardTrainer`. |
 
 ---
@@ -822,9 +821,9 @@ This matrix explicitly audits claims made in prior documentation against actual 
 
 During the forensic audit, the following legacy or unreferenced files were identified:
 
-1. **`src/nexus_scalp/features/order_manager.py` (234 lines) ⚫ DEAD / UNUSED:**
-   - **Finding:** Unreferenced legacy file. Active production order management is strictly handled by `src/nexus_scalp/execution/order_manager.py` (1792 lines).
-   - **Action:** Retained read-only; documented as dead code.
+1. **`src/nexus_scalp/features/order_manager.py` (REMOVED - DEAD):**
+   - **Finding:** Unreferenced legacy file. Repository-wide audit confirmed 0 active code imports and zero dynamic loading paths within the repository (`EXTERNAL_REFERENCE_STATUS=NOT_FOUND_IN_REPOSITORY`). Active production order management is strictly handled by `src/nexus_scalp/execution/order_manager.py` (1792 lines).
+   - **Action:** Deleted cleanly; project compile reference removed from `NexusTradingForexBot.pyproj`; verified with `tests/unit/test_order_manager_audit.py`.
 
 2. **`src/cli/train_model.py` 🟢 VERIFIED:**
    - **Finding:** Previously hardcoded an 18D feature selection (`range(18)`). Updated to generate and select all 50 feature columns (`feat_0` .. `feat_49`) matching `WalkForwardTrainer.NUM_FEATURES = 50`.
@@ -846,10 +845,18 @@ The following backlog details prioritized architectural and operational recommen
    - *Fix:* Updated `src/cli/train_model.py` and added `tests/unit/test_train_model_cli.py`.
 
 ### 🟠 P1 — High (Reliability & Architecture Cleanliness)
-2. **Remove Dead Legacy File `src/nexus_scalp/features/order_manager.py`:**
+2. **Remove Dead Legacy File `src/nexus_scalp/features/order_manager.py` (FIXED 🟢):**
    - *Problem:* Duplicate filename causes developer confusion with `src/nexus_scalp/execution/order_manager.py`.
-   - *Impact:* Maintainers might accidentally import from the wrong package layer.
-   - *Fix:* Delete `src/nexus_scalp/features/order_manager.py`.
+   - *Fix Progress:*
+     - **Bug status:** FIXED
+     - **Root cause:** Unreferenced legacy implementation left behind in `src/nexus_scalp/features/order_manager.py`.
+     - **Classification:** DEAD
+     - **Evidence:** Repository-wide audit found zero active imports or dynamic loading paths in repository (`EXTERNAL_REFERENCE_STATUS=NOT_FOUND_IN_REPOSITORY`). Production executions strictly use `src/nexus_scalp/execution/order_manager.py`.
+     - **Files changed:** `src/nexus_scalp/features/order_manager.py` (deleted), `NexusTradingForexBot.pyproj`, `tests/unit/test_order_manager_audit.py`, `beforePush.sh`, `agents/skill.md`.
+     - **Active implementation preserved:** `src/nexus_scalp/execution/order_manager.py` was untouched and preserved intact.
+     - **Tests added:** `tests/unit/test_order_manager_audit.py` (5 unit tests verifying deletion, project cleanup, active import integrity, repo-wide absence of legacy references, and `[ORDER_MANAGER_AUDIT]` structured log telemetry).
+     - **Verification:** Verified with full unit test suite (83/83 passed) and `beforePush.sh` / `beforePush.ps1` quality gates.
+     - **Remaining risk / uncertainty:** No references or dynamic loading paths were found within the repository. As with any file removal, external systems outside the repository bounds cannot be conclusively verified beyond the repository border (`EXTERNAL_REFERENCE_STATUS=NOT_FOUND_IN_REPOSITORY`).
 
 3. **Add Explicit Warmup Safeguard for HTF Features (FIXED 🟢):**
    - *Problem:* Cold start in `LiveEngine` processed ticks before sufficient H1/H4 historical bars were available to calculate 50D HTF features (`htf_h4_trend`, `htf_h1_momentum`), causing HTF features to enter neutral fallback defaults while normal trading inference still proceeded.
