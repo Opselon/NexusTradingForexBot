@@ -42,7 +42,6 @@
     <Compile Include="src\nexus_scalp\domain\models.py" />
     <Compile Include="src\nexus_scalp\domain\__init__.py" />
     <Compile Include="src\nexus_scalp\execution\order_manager.py" />
-    <Compile Include="src\nexus_scalp\features\order_manager.py" />
     <Compile Include="src\nexus_scalp\features\regime_classifier.py" />
     <Compile Include="src\nexus_scalp\features\scalp_features.py" />
     <Compile Include="src\nexus_scalp\labeling\triple_barrier.py" />
