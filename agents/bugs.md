@@ -471,3 +471,327 @@ identity from the outcome table.
   the bridge, never the immutable decision row.
 - When auditing a join, verify against the ACTUAL schema write paths, not the
   column's declared intent.
+## BUG-009 — ExperienceRetriever Mutated Caller's Confluence Token List
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Phase 08 Continuation Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_experience_intelligence.py`
+
+### Affected Components
+- `src/nexus_scalp/experience/retriever.py` (`ExperienceRetriever.build_confluence_fingerprint`)
+
+### Problem
+`build_confluence_fingerprint` appended tokens to the caller's `confluence_tokens`
+list (`tokens.update(...)` on the shared list), so repeated calls with a shared
+list produced a drifting fingerprint and a different `strategy_id` for identical
+market state.
+
+### Root Cause
+The function worked on the caller's list object rather than a local copy.
+
+### Fix
+The function now builds a `set(confluence_tokens or ())` local copy and never
+mutates the caller's list.
+
+### Regression Guards
+- `build_confluence_fingerprint` must never mutate its caller's list.
+
+---
+
+## BUG-010 — Experience Gate Gated Every Non-NO_TRADE Action
+
+- **Status**: FIXED
+- **Severity**: CRITICAL
+- **Confidence**: HIGH
+- **Discovered**: Phase 08 Continuation Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_experience_intelligence.py`
+
+### Affected Components
+- `src/nexus_scalp/experience/intelligence.py` (`ExperienceIntelligenceEngine`)
+
+### Problem
+The first Phase 08 revision gated every non-NO_TRADE action, so a retired
+strategy could suppress a protective CLOSE_POSITION / PARTIAL_CLOSE /
+MODIFY_SL_TP / CANCEL_ORDER — a capital-safety failure.
+
+### Root Cause
+The gate scope was broader than the intended "only entry proposals are gated".
+
+### Fix
+The gate now gates ONLY entry actions (`GATED_ENTRY_ACTIONS`); position-management
+actions pass through untouched.
+
+### Regression Guards
+- `GATED_ENTRY_ACTIONS` must never include a position-management action.
+
+---
+
+## BUG-011 — Position Lifecycle Giveback Required Non-Negative Floating PnL
+
+- **Status**: FIXED
+- **Severity**: LOW
+- **Confidence**: HIGH
+- **Discovered**: Phase 09 Development (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_intelligence_phase09.py::TestPositionLifecycle::test_profit_giveback_detection`
+
+### Affected Components
+- `src/nexus_scalp/intelligence/lifecycle.py` (`PositionLifecycleTracker.observe_position`)
+
+### Problem
+The `POSITION_PROFIT_GIVEBACK` event required `snapshot.floating_pnl >= 0.0`. A
+position that ran to +$150 and was still closed at +$20 correctly triggers; but
+a position that ran to a loss of -$6 (after peaking at +$20) never produced the
+giveback event, even though an 87% giveback of peak profit occurred.
+
+### Root Cause
+The giveback classification conflated "still in profit" with "gave back profit";
+a deep adverse swing after a profit peak is exactly the behavior the event must
+record, yet the `floating_pnl >= 0.0` guard suppressed it.
+
+### Fix
+The giveback event now fires whenever `peak_profit > 0.0` and the recorded
+`profit_giveback_pct` clears the notice threshold, regardless of whether the
+position is still net positive. The `profit_giveback_pct` is derived from the
+recorded peak vs current excursion, which is the objective signal.
+
+### Regression Guards
+- Giveback detection must measure surrender of peak profit, not the sign of
+  current floating PnL.
+
+---
+
+## BUG-012 — Phase 09 Gate WARN Tier Unreachable Without Evidence Path
+
+- **Status**: FIXED
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Phase 09 Development (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_intelligence_phase09.py::TestGate::test_warn_tier_on_elevated_drawdown`
+
+### Affected Components
+- `src/nexus_scalp/intelligence/gate.py` (`PreTradeIntelligenceGate`)
+
+### Problem
+The initial `SuitabilityTier` subclassing of `ExperienceAction` raised a
+`TypeError: <enum 'SuitabilityTier'> cannot extend <enum 'ExperienceAction'>`
+because StrEnum cannot be extended at runtime with new members. This also left
+the WARN tier logic unreachable in the first draft (the evidence path never ran).
+
+### Root Cause
+Runtime enum extension is not allowed for `StrEnum` subclasses with new members.
+
+### Fix
+`SuitabilityTier` is now a standalone `StrEnum` and the evidence-based verdict
+logic is factored into `_evaluate_with_evidence()` so it is directly testable.
+
+### Regression Guards
+- Do not subclass a `StrEnum` with additional members; use a standalone enum.
+
+---
+
+## BUG-013 — Hold Score Pegged at 97-100 During Deep Drawdown (Linear Penalty + Bonus Masking)
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Runtime log autopsy (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_log_autopsy_fixes.py::TestHoldScoreDegradation` and
+  `tests/unit/test_rule_matrix.py::test_dynamic_hold_score_calculation`
+
+### Affected Components
+- `src/nexus_scalp/execution/order_manager.py::_calculate_hold_value_score`
+
+### Problem
+During heavy drawdown (e.g. ticket at peak loss -$80.60 against a ~$100 risk
+budget), `hold_score` remained pegged at 97-100/100. The engine therefore held
+the losing trade until the hard time horizon expired, then fired a sudden
+`[HYSTERESIS BYPASS - EMERGENCY TRANSITION]` instead of de-risking gracefully.
+
+### Root Cause
+1. `DRAWDOWN_PENALTY` was linear (`ratio * 40`, capped at 40) so a 50%-of-risk
+   drawdown only removed ~8-20 points.
+2. `TREND_ALIGNMENT_BONUS (+10)` was applied UNCONDITIONALLY, cancelling the
+   drawdown penalty whenever the higher-timeframe trend was aligned.
+3. `PROFIT_SHIELD_SCORE_FLOOR_ACTIVE` (`max(85, score)`) was keyed on
+   `price_current vs price_open` rather than actual floating PnL, so a whipsaw
+   could push a genuinely losing position to an 85+ floor.
+
+### Fix
+- Convex drawdown penalty: `80 * ratio^1.5` (capped at 80) - a 50% drawdown now
+  removes ~28 points, a 90% drawdown ~68.
+- Trend bonus is suppressed whenever the drawdown ratio is >= 0.30.
+- Profit-shield floor now uses `pos.profit >= 0.0` and is disabled underwater.
+
+### Regression Guards
+- A 50% drawdown must drive `hold_score` below ~60 (was ~97-100).
+
+---
+
+## BUG-014 — Profit Giveback Closed Micro-Scalps at Break-Even (Noise Trip)
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Runtime log autopsy (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_log_autopsy_fixes.py::TestTieredGivebackProtection`
+
+### Affected Components
+- `src/nexus_scalp/execution/order_manager.py::evaluate_profit_giveback`,
+  `_tiered_giveback_floor`, `_evaluate_candidate_state`
+
+### Problem
+Trades like ticket #152486259094 (peak +$21.06, closed +$4.32 = 20.5% retention)
+and #152486296273 (peak +$23.12, closed +$1.36 = 5.9%) were cut at net $0.00.
+On 0.5-0.7 lots of XAUUSD a ~$20 peak is only 3-4 pips, so normal bid/ask noise
+tripped the flat 30% retention floor and killed runners at break-even.
+
+### Root Cause
+The giveback protection armed at a flat `PROFIT_GIVEBACK_PEAK_USD = $20` and
+used a flat `PROFIT_GIVEBACK_MIN_RETENTION = 0.30` floor, regardless of the
+peak's size in R. A 3-pip scalp has no meaningful cushion to lose before the
+floor fires.
+
+### Fix
+Introduced a TIERED retention floor derived from the peak's R multiple
+(`_tiered_giveback_floor`):
+- peak < 0.5R  -> protection DISARMED (micro-profit noise zone)
+- 0.5R-1.0R    -> retain >= 40%
+- 1.0R-1.5R    -> retain >= 50%
+- >= 1.5R      -> retain >= 70%
+
+### Regression Guards
+- A <0.5R peak pulled back to 20% retention must NOT be closed.
+- A >1.5R peak at <70% retention MUST still be closed.
+
+---
+
+## BUG-015 — Cold-Start Fallback Scaler Never Persisted Until First Accepted Fine-Tune
+
+- **Status**: FIXED
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Runtime log autopsy (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_log_autopsy_fixes.py::TestScalerColdStartPersistence`
+
+### Affected Components
+- `src/nexus_scalp/training/walk_forward_trainer.py::fine_tune_online`
+
+### Problem
+On every cold start `model.scaler.npz` was missing; the trainer fitted a
+fallback scaler on a tiny (~196 sample) non-representative buffer but did NOT
+persist it. When the quality gate rejected the fine-tune (which it did on every
+bootstrap run), the scaler was never written, so every reboot re-fitted on a
+different tiny buffer - destabilising the live feature distribution between
+restarts.
+
+### Fix
+The cold-start fallback scaler is now persisted to disk immediately after
+fitting (`_save_scaler(scaler)`), regardless of whether the fine-tune later
+passes the quality gate.
+
+### Regression Guards
+- `_get_scaler_path()` must exist after the first cold-start fit.
+
+---
+
+## BUG-016 — Mono-Class Model Collapse Never Recovered (Broken Baseline Served Indefinitely)
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Runtime log autopsy (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `src/nexus_scalp/application/live_engine.py::_reinitialize_collapsed_model`
+  (smoke-tested via `tests/integration/test_intelligence_api.py`)
+
+### Affected Components
+- `src/nexus_scalp/application/live_engine.py`
+
+### Problem
+Diagnostics showed `class_dist=BUY 0.0% | SELL 100.0% | NO_TRADE 0.0%` - the
+model had collapsed to a single class. The fine-tuning quality gate rejected
+every bootstrap run and rolled back to the SAME collapsed baseline, so the
+engine served a permanently broken model.
+
+### Fix
+Added `_detect_model_collapse` + `_reinitialize_collapsed_model`: after the
+bootstrap diagnostics, if the (possibly rolled-back) model shows >= 85%
+mono-class dominance on an active class, the model is re-initialized with fresh
+weights atomically under `_bundle_lock`. The experience ledger and strategy
+memory are untouched.
+
+### Regression Guards
+- A 100% mono-class model must be re-initialized rather than served.
+
+---
+
+## BUG-017 — Breakeven SL Did Not Include Live Spread in Stop-Distance Clearance
+
+- **Status**: FIXED
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Runtime log autopsy (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_log_autopsy_fixes.py::TestBreakevenClearance`
+
+### Affected Components
+- `src/nexus_scalp/execution/order_manager.py::apply_breakeven_lock`
+
+### Problem
+`BREAKEVEN DEFERRED: market pulled back, SL would cross market price` loops
+occurred because the breakeven clearance used only the broker STOP_LEVEL
+distance, which can be smaller than the live spread on XAUUSD. A breakeven SL
+placed at exactly STOP_LEVEL distance can still be rejected (or crossed by the
+fill).
+
+### Fix
+`effective_freeze_gap` now includes the live spread:
+`max(min_stop_gap, 0.35) + max(live_spread, 0.0)`. The modification is deferred
+until price gives enough room rather than firing a guaranteed-reject request.
+
+### Regression Guards
+- A breakeven SL must stay at least (STOP_LEVEL + spread) from the market.
+
+---
+
+## BUG-018 — Emergency Exit Suppressed on First Observation of a Restarted Split Leg
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Log-autopsy fix development (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_log_autopsy_fixes.py::TestSplitOrderSync`
+
+### Affected Components
+- `src/nexus_scalp/execution/order_manager.py::transition_state_with_hysteresis`,
+  `_close_sibling_legs`
+
+### Problem
+Two tickets of one split dispatch frequently desynchronized: one entered
+`LOSS_HARD_EXIT` while the sibling stayed in `LOSS_RECOVERY_CANDIDATE`, leaving
+the position half-closed. On a restart, the first observation of an already-old
+leg with exhausted recovery budget was ALSO debounced into the safe neutral
+state (`LOSS_RECOVERY_CANDIDATE`) because the emergency bypass only ran when a
+current state already existed.
+
+### Fix
+1. `_close_sibling_legs`: when a leg is emergency-closed, sibling tickets sharing
+   the same originating order_id are closed together.
+2. `transition_state_with_hysteresis` now honors `LOSS_HARD_EXIT` /
+   `PROFIT_GIVEBACK_CRITICAL` even on the FIRST observation, so a restart can
+   never silently "un-de-risk" an already-exhausted split leg.
+
+### Regression Guards
+- An emergency close of one split leg must close the sibling leg.
+- Unrelated tickets must never be cross-closed.
+

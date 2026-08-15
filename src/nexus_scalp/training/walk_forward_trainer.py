@@ -492,6 +492,22 @@ class WalkForwardTrainer:
                 "No pre-existing scaler artifact found for fine-tuning. Fitting initial scaler on recent memory buffer."
             )
             scaler = self._fit_scaler(X_raw)
+            # Persist the fitted fallback scaler IMMEDIATELY. Previously it was only
+            # saved when a fine-tune passed the quality gate, so a rejected cold-start
+            # model left `model.scaler.npz` permanently missing and every reboot re-fitted
+            # on a tiny, non-representative buffer - destabilising the live feature
+            # distribution between restarts.
+            try:
+                self._save_scaler(scaler)
+                logger.info(
+                    "Persisted cold-start fallback scaler artifact",
+                    scaler_path=str(self._get_scaler_path()),
+                )
+            except Exception as save_err:
+                logger.warning(
+                    "Failed to persist cold-start fallback scaler (isolated)",
+                    error=str(save_err),
+                )
 
         X_scaled = self._transform_features(X_raw, scaler)
 

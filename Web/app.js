@@ -301,6 +301,9 @@ function switchTab(tabId, element) {
     if (tabId === 'tab-rules') {
         loadRules();
     }
+    if (tabId === 'tab-ai-analysis') {
+        loadIntelligenceSummary();
+    }
     if (tabId === 'tab-debug') {
         startDebugHub();
     } else {
@@ -2108,13 +2111,146 @@ function initAccountIntelligence() {
     loadAccountCharts();
     loadAccountStrategies();
 }
+// =============================================================================
+// PHASE 09: TRADE INTELLIGENCE BRAIN (lifecycle / autopsy / behavior / evolution)
+// =============================================================================
+
+function esc(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+async function loadIntelligenceSummary() {
+    try {
+        const res = await fetch('/api/intelligence/summary');
+        if (!res.ok) return;
+        const body = await res.json();
+        if (!body.available) return;
+        document.getElementById('intel-lifecycle-count').textContent = body.lifecycle_events ?? '--';
+        document.getElementById('intel-autopsy-count').textContent = body.autopsies ?? '--';
+        const w = body.worker || {};
+        document.getElementById('intel-worker-status').textContent =
+            'worker: ' + (w.status || '--') + ' · cycles: ' + (w.cycle_count || 0);
+        if (body.last_suitability) {
+            const s = body.last_suitability;
+            document.getElementById('intel-suitability').innerHTML =
+                '<b class="text-accentCyan">' + esc(s.decision) + '</b> · ' +
+                'suitability ' + s.suitability_score + ' · ' + esc(s.reason) +
+                ' <span class="text-textMuted">(' + esc(s.strategy_id) + ')</span>';
+        }
+        // Load evolution candidates whenever the panel is refreshed.
+        loadIntelligenceEvolution();
+        loadIntelligenceAutopsies();
+    } catch (e) {
+        console.warn('intelligence summary failed', e);
+    }
+}
+
+async function loadIntelligenceTimeline() {
+    const ticket = (document.getElementById('intel-ticket-input').value || '').trim();
+    if (!ticket) return;
+    const box = document.getElementById('intel-timeline');
+    box.innerHTML = '<div class="text-textMuted italic">Loading timeline…</div>';
+    try {
+        const res = await fetch('/api/intelligence/positions/' + encodeURIComponent(ticket) + '/timeline');
+        const body = await res.json();
+        if (!body.available || !body.events.length) {
+            box.innerHTML = '<div class="text-textMuted italic">No lifecycle events for ticket ' + esc(ticket) + '.</div>';
+            return;
+        }
+        box.innerHTML = body.events.map(ev =>
+            '<div class="flex items-start justify-between bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+                '<span><span class="text-accentCyan font-bold">' + esc(ev.event_type) + '</span>' +
+                ' <span class="text-textMuted">' + esc(ev.detail || '') + '</span></span>' +
+                '<span class="text-textMuted whitespace-nowrap ml-2">MFE ' + (ev.performance ? ev.performance.mfe : 0) +
+                ' · MAE ' + (ev.performance ? ev.performance.mae : 0) + '</span>' +
+            '</div>'
+        ).join('');
+    } catch (e) {
+        box.innerHTML = '<div class="text-textMuted italic">Timeline load failed.</div>';
+    }
+}
+
+async function loadIntelligenceAutopsies() {
+    try {
+        const res = await fetch('/api/intelligence/autopsies?limit=8');
+        const body = await res.json();
+        const box = document.getElementById('intel-autopsies');
+        if (!body.available || !body.autopsies.length) {
+            box.innerHTML = '<div class="text-textMuted italic">No autopsies available.</div>';
+            return;
+        }
+        box.innerHTML = body.autopsies.map(a =>
+            '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+                '<div class="flex justify-between"><span class="text-accentCyan font-bold">' + esc(a.quality_verdict || 'UNKNOWN') +
+                '</span><span class="text-textMuted">ticket ' + esc(a.ticket) + '</span></div>' +
+                '<div class="text-textMuted">' + esc(a.narrative || '') + '</div>' +
+            '</div>'
+        ).join('');
+        document.getElementById('intel-behavior-count').textContent = '--';
+    } catch (e) {
+        console.warn('autopsies load failed', e);
+    }
+}
+
+async function loadIntelligenceEvolution() {
+    try {
+        const res = await fetch('/api/intelligence/evolution?limit=8');
+        const body = await res.json();
+        const box = document.getElementById('intel-evolution');
+        if (!body.available || !body.candidates.length) {
+            box.innerHTML = '<div class="text-textMuted italic">No evolution candidates. Click "Scan Now" to discover strategy variations.</div>';
+            return;
+        }
+        document.getElementById('intel-evolution-count').textContent = body.candidates.length;
+        box.innerHTML = body.candidates.map(c =>
+            '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+                '<div class="flex justify-between"><span class="text-accentCyan font-bold">' + esc(c.status) +
+                '</span><span class="text-textMuted">' + esc(c.candidate_id.slice(0, 14)) + '</span></div>' +
+                '<div class="text-textMuted">' + esc(c.hypothesis) + '</div>' +
+            '</div>'
+        ).join('');
+    } catch (e) {
+        console.warn('evolution load failed', e);
+    }
+}
+
+async function scanIntelligenceEvolution() {
+    const box = document.getElementById('intel-evolution');
+    box.innerHTML = '<div class="text-textMuted italic">Scanning for strategy variations…</div>';
+    try {
+        const res = await fetch('/api/intelligence/evolution/scan', { method: 'POST' });
+        const body = await res.json();
+        if (!body.available) {
+            box.innerHTML = '<div class="text-textMuted italic">Scan failed.</div>';
+            return;
+        }
+        box.innerHTML = (body.candidates && body.candidates.length)
+            ? body.candidates.map(c =>
+                '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+                    '<span class="text-accentCyan font-bold">' + esc(c.status) + '</span> ' +
+                    esc(c.hypothesis) +
+                '</div>').join('')
+            : '<div class="text-textMuted italic">No new candidates discovered.</div>';
+    } catch (e) {
+        box.innerHTML = '<div class="text-textMuted italic">Scan failed.</div>';
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initAccountIntelligence, 1200);
+    setTimeout(loadIntelligenceSummary, 1500);
     const observer = new MutationObserver(() => {
         const tab = document.getElementById('tab-account');
         if (tab && !tab.classList.contains('hidden') && !window.__acctIntelLoaded) {
             window.__acctIntelLoaded = true;
             initAccountIntelligence();
+        }
+        const aiTab = document.getElementById('tab-ai-analysis');
+        if (aiTab && !aiTab.classList.contains('hidden') && !window.__aiIntelLoaded) {
+            window.__aiIntelLoaded = true;
+            loadIntelligenceSummary();
         }
     });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });

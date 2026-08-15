@@ -88,8 +88,26 @@ DEFAULT_PIP_SIZE: float = 0.10
 PROFIT_GIVEBACK_PEAK_USD: float = 20.00
 
 #: Minimum fraction of peak profit that must be retained. Below this the engine
-#: treats the trade as a failed winner and cuts it.
+#: treats the trade as a failed winner and cuts it. This is the FLOOR used when
+#: the trade has NOT yet crossed the first tier (see TIERED retention below).
 PROFIT_GIVEBACK_MIN_RETENTION: float = 0.30
+
+#: TIERED retention floor. The absolute-dollar arming threshold ($20) is too
+#: coarse for small scalps: on 0.5-0.7 lots of XAUUSD, $20 peak is only ~3 pips,
+#: and normal bid/ask noise trips a flat 30% retention floor, killing runners at
+#: break-even. The floor is therefore derived from the PEAK's R multiple:
+#:   peak < 0.5R          -> protection stays DISARMED (micro-profit noise zone)
+#:   0.5R <= peak < 1.0R  -> allow up to 60% giveback (retain >= 0.40)
+#:   1.0R <= peak < 1.5R  -> require >= 0.50 retention
+#:   peak >= 1.5R         -> lock in >= 0.70 of the move
+TIERED_GIVEBACK_RETENTION_FLOOR: tuple[tuple[float, float], ...] = (
+    (0.50, 0.40),  # peak R >= 0.5  -> retain >= 40%
+    (1.00, 0.50),  # peak R >= 1.0  -> retain >= 50%
+    (1.50, 0.70),  # peak R >= 1.5  -> retain >= 70%
+)
+#: Below this peak R the giveback protection is DISARMED entirely so micro-profit
+#: noise (a 2-pip pullback on a 3-pip scalp) can never close a winner at flat.
+TIERED_GIVEBACK_ARM_R: float = 0.50
 
 #: Hold-score penalty applied when profit retention breaches the floor.
 PROFIT_GIVEBACK_HOLD_SCORE_PENALTY: int = 50
@@ -1381,9 +1399,17 @@ class OrderLifecycleManager:
             self._sl_modified_flags[pos.ticket] = True
             return False
 
-        # Respect the broker's minimum stop distance; retry on a later pass instead of
-        # burning a guaranteed-reject modification request.
-        effective_freeze_gap = max(min_stop_gap, 0.35)
+        # Respect the broker's minimum stop distance PLUS the live spread so a
+        # breakeven modification can never cross into the opposing book. The broker
+        # STOP_LEVEL alone is insufficient: on a 2-digit XAUUSD symbol the stops
+        # level can be ~0.10-0.35, smaller than the 0.20-0.25 live spread, so a
+        # breakeven SL placed exactly at STOP_LEVEL distance would still be rejected
+        # (or worse, crossed by the fill). Retry on a later pass instead of burning a
+        # guaranteed-reject modification request.
+        live_spread = (
+            float(current_tick.ask - current_tick.bid) if current_tick is not None else 0.0
+        )
+        effective_freeze_gap = max(min_stop_gap, 0.35) + max(live_spread, 0.0)
         if current_tick is not None:
             is_buy = pos.type == OrderType.BUY
             current_market_price = current_tick.bid if is_buy else current_tick.ask
@@ -1579,6 +1605,31 @@ class OrderLifecycleManager:
             stop_loss=breakeven_sl,
         )
 
+    def _tiered_giveback_floor(self, ticket: int, peak: float) -> tuple[float, bool]:
+        """
+        Returns (retention_floor, armed) for a peak profit.
+
+        The floor is derived from the PEAK expressed in R (peak USD / initial risk
+        USD). Tiers let small scalps tolerate normal noise while locking in a
+        meaningful share of larger runners. `armed=False` means the giveback
+        protection stays DISARMED (micro-profit noise zone).
+        """
+        risk_usd = self._initial_risks.get(ticket, 0.0)
+        if risk_usd <= 0.0 or peak <= 0.0:
+            # Without a known planned risk we fall back to the absolute floor so
+            # protection is never silently disabled.
+            return PROFIT_GIVEBACK_MIN_RETENTION, True
+        peak_r = peak / risk_usd
+        if peak_r < TIERED_GIVEBACK_ARM_R:
+            return PROFIT_GIVEBACK_MIN_RETENTION, False
+        floor = PROFIT_GIVEBACK_MIN_RETENTION
+        for tier_r, tier_floor in TIERED_GIVEBACK_RETENTION_FLOOR:
+            if peak_r >= tier_r:
+                floor = tier_floor
+            else:
+                break
+        return floor, True
+
     def evaluate_profit_giveback(
         self,
         ticket: int,
@@ -1600,6 +1651,10 @@ class OrderLifecycleManager:
         if peak < PROFIT_GIVEBACK_PEAK_USD:
             return max(0, min(100, score)), False, ""
 
+        retention_floor, armed = self._tiered_giveback_floor(ticket, peak)
+        if not armed:
+            return max(0, min(100, score)), False, ""
+
         retention = state.retention_ratio(current_pnl_usd)
 
         # --- Priority 3: negative PnL after a meaningful profit -----------------
@@ -1612,14 +1667,15 @@ class OrderLifecycleManager:
                 f"NEGATIVE_PNL_AFTER_PEAK peak=${peak:.2f} current=${current_pnl_usd:.2f}",
             )
 
-        # --- Priority 2: profit retention floor breached ------------------------
-        if retention < PROFIT_GIVEBACK_MIN_RETENTION:
+        # --- Priority 2: tiered profit retention floor breached -----------------
+        if retention < retention_floor:
             score -= PROFIT_GIVEBACK_HOLD_SCORE_PENALTY
             score = max(0, min(100, score))
             return (
                 score,
                 True,
-                f"PROFIT_RETENTION_BREACH peak=${peak:.2f} current=${current_pnl_usd:.2f} retention={retention:.2%}",
+                f"PROFIT_RETENTION_BREACH peak=${peak:.2f} current=${current_pnl_usd:.2f} "
+                f"retention={retention:.2%} floor={retention_floor:.2%}",
             )
 
         return max(0, min(100, score)), False, ""
@@ -2321,7 +2377,11 @@ class OrderLifecycleManager:
         reasons: list[str] = []
         ticket = pos.ticket
 
-        # --- Penalty 1: Drawdown vs Initial Risk/ATR (up to -40) ---
+        # --- Penalty 1: Drawdown vs Initial Risk/ATR (convex, up to -80) ---
+        # Non-linear: as drawdown deepens relative to the planned risk, the penalty
+        # accelerates so the engine de-risks gracefully LONG before the emergency
+        # horizon. A linear ratio*40 leaves a 50%-of-risk drawdown at score ~80,
+        # which keeps the position in the "hold" band until a hard bailout.
         initial_sl = self._entry_sls.get(ticket, pos.sl)
         is_buy = pos.type == OrderType.BUY
         current_loss = 0.0
@@ -2336,10 +2396,13 @@ class OrderLifecycleManager:
 
         if current_loss > 0.0:
             ratio = current_loss / max(0.01, initial_risk)
-            penalty1 = int(min(40.0, ratio * 40.0))
+            # Convex curve: ratio=0.2 -> ~9, ratio=0.5 -> ~36, ratio=0.8 -> ~72,
+            # ratio=1.0 -> 80. Score drops decisively below the <50 de-risk band
+            # around 40-50% of planned risk, well before a hard stop is needed.
+            penalty1 = int(min(80.0, 80.0 * (min(ratio, 1.0) ** 1.5)))
             if penalty1 > 0:
                 score -= penalty1
-                reasons.append(f"DRAWDOWN_PENALTY (-{penalty1})")
+                reasons.append(f"DRAWDOWN_PENALTY (-{penalty1}, ratio={ratio:.2f})")
 
         # --- Penalty 2: Time-in-Loss Decay (up to -30) ---
         entry_time = self._entry_timestamps.get(ticket)
@@ -2364,7 +2427,11 @@ class OrderLifecycleManager:
                 score -= 20
                 reasons.append("SPREAD_EXPANSION_PENALTY (-20)")
 
-        # --- Bonus: AI/Trend alignment (+10) ---
+        # --- Bonus: AI/Trend alignment (+10), suppressed while meaningfully underwater ---
+        # A positive trend signal must never mask a deep drawdown: bonuses are only
+        # worth considering when the position is not materially adverse.
+        drawdown_ratio = current_loss / max(0.01, initial_risk) if current_loss > 0.0 else 0.0
+        underwater = drawdown_ratio >= 0.30
         if features is not None:
             aligned = False
             if is_buy and features.is_above_kumo:
@@ -2372,15 +2439,18 @@ class OrderLifecycleManager:
             elif not is_buy and features.is_below_kumo:
                 aligned = True
 
-            if aligned:
+            if aligned and not underwater:
                 score += 10
                 reasons.append("TREND_ALIGNMENT_BONUS (+10)")
+            elif aligned and underwater:
+                reasons.append("TREND_BONUS_SUPPRESSED_UNDERWATER")
 
-        # PROFIT SHIELD GUARD: Winning trades get guaranteed high floor score of 85
-        is_in_profit = (
-            (price_current > pos.price_open) if is_buy else (price_current < pos.price_open)
-        )
-        if is_in_profit:
+        # PROFIT SHIELD GUARD: Winning trades get guaranteed high floor score of 85.
+        # The guard is based on ACTUAL floating PnL, not price-vs-open (which can be
+        # fooled by spread/whipsaw), and it is disabled once the position is under
+        # water by more than 30% of planned risk so a real loss can never be masked.
+        is_in_profit = pos.profit >= 0.0
+        if is_in_profit and not underwater:
             score = max(85, score)
             reasons.append("PROFIT_SHIELD_SCORE_FLOOR_ACTIVE")
 
@@ -2747,7 +2817,20 @@ class OrderLifecycleManager:
         current_state = self._position_states.get(ticket)
         if current_state is None:
             # BUGFIX: First initialization - Default to a safe neutral state.
-            # NEVER allow a critical exit state on tick 1 to bypass hysteresis debounce.
+            # NEVER allow a critical exit state on tick 1 to bypass hysteresis debounce,
+            # EXCEPT the emergency bypass states: a LOSS_HARD_EXIT / PROFIT_GIVEBACK_CRITICAL
+            # verdict on the very first observation (e.g. a restart where a split leg is
+            # already deep past its recovery budget) must still be honored immediately
+            # rather than reset to a "hold" state that silently keeps trading a
+            # position that has already exhausted its protection.
+            if target_state in (
+                PositionState.LOSS_HARD_EXIT,
+                PositionState.PROFIT_GIVEBACK_CRITICAL,
+            ):
+                self._position_states[ticket] = target_state
+                self._state_transition_candidates.pop(ticket, None)
+                return target_state
+
             safe_initial_state = (
                 PositionState.PROFIT_UNPROTECTED
                 if target_state
@@ -2834,9 +2917,10 @@ class OrderLifecycleManager:
         state_p = self.get_protection_state(ticket)
         retention = state_p.retention_ratio(pnl)
         if state_p.peak_win_usd >= PROFIT_GIVEBACK_PEAK_USD:
-            if pnl < 0.0 or retention <= PROFIT_GIVEBACK_MIN_RETENTION:
+            retention_floor, armed = self._tiered_giveback_floor(ticket, state_p.peak_win_usd)
+            if pnl < 0.0 or (armed and retention <= retention_floor):
                 return PositionState.PROFIT_GIVEBACK_CRITICAL
-            elif retention < 0.70:
+            elif armed and retention < 0.70:
                 return PositionState.PROFIT_GIVEBACK_WARNING
 
         if is_profitable:
@@ -4461,6 +4545,13 @@ class OrderLifecycleManager:
                     # management pass writes the single data-rich autopsy row.
                     with self._live_tickets_lock:
                         self._live_tickets_cache.pop(ticket, None)
+
+                    # SPLIT-ORDER DESYNC GUARD: a position split across multiple MT5
+                    # tickets from the SAME dispatch (same order_id/request) must never
+                    # desync into one ticket closed while its sibling keeps trading.
+                    # When an emergency/hard exit fires for one leg, propagate the close
+                    # to every live sibling leg of the same order.
+                    self._close_sibling_legs(ticket, scenario, now)
                 else:
                     self._forced_exit_mechanisms.pop(ticket, None)
                 continue
@@ -4688,6 +4779,53 @@ class OrderLifecycleManager:
 
         self._mfe_tracker[ticket] = new_mfe
         self._mae_tracker[ticket] = new_mae
+
+    def _close_sibling_legs(self, ticket: int, scenario: str, now: datetime) -> None:
+        """
+        Closes sibling tickets that belong to the SAME dispatch as `ticket`.
+
+        A split order (multi-lot) can surface as several broker tickets sharing the
+        originating order_id/request (`_entry_order_ids`). If one leg is being
+        emergency-closed (LOSS_HARD_EXIT / PROFIT_GIVEBACK_CRITICAL / hold-score
+        bailout), every live sibling leg must close too so the position is not left
+        half-open and desynchronized. Never raises; a sibling failure is isolated.
+        """
+        try:
+            order_id = self._entry_order_ids.get(ticket, "")
+            if not order_id:
+                return
+            sibling_tickets = [
+                t for t, oid in self._entry_order_ids.items() if oid == order_id and t != ticket
+            ]
+            if not sibling_tickets:
+                return
+            logger.warning(
+                "[POSITION] SPLIT_DESYNC_SYNC_CLOSE",
+                origin_ticket=ticket,
+                siblings=sibling_tickets,
+                scenario=scenario,
+            )
+            for sibling in sibling_tickets:
+                try:
+                    if self.adapter.close_position(ticket=sibling):
+                        self._forced_exit_mechanisms.setdefault(
+                            sibling, ExitMechanism.HOLD_SCORE_DECAY
+                        )
+                        with self._live_tickets_lock:
+                            self._live_tickets_cache.pop(sibling, None)
+                        logger.warning(
+                            "[POSITION] SPLIT_SIBLING_CLOSED",
+                            sibling=sibling,
+                            origin_ticket=ticket,
+                        )
+                except Exception as leg_err:
+                    logger.error(
+                        "[POSITION] SPLIT_SIBLING_CLOSE_FAILED (isolated)",
+                        sibling=sibling,
+                        error=str(leg_err),
+                    )
+        except Exception as err:
+            logger.error("[POSITION] SPLIT_SYNC close failed (isolated)", error=str(err))
 
     def _cleanup_ticket_state(self, ticket: int) -> None:
         """Releases all per-ticket state after the closing autopsy row has been written."""

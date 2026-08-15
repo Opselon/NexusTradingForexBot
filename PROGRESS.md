@@ -75,3 +75,71 @@ This document outlines the log trace diagnostics, applied architectural stabiliz
 3. **No Churning Loop:** verified 30-second pending lock and 1.0 ATR drift hysteresis fully resolved high-frequency pending order churning.
 4. **Volume Safety:** verified calculated lot size never exceeds `2.0` lots under any condition.
 5. **Testing Verification:** verified all unit tests run and pass at 100% success rate.
+
+---
+
+# PHASE 09 — Trade Intelligence Brain
+
+## Summary
+
+The engine evolved from *"a system that executes strategies"* into *"a system
+that understands its own trading behavior."* Phase 09 adds the adaptive strategy
+evolution + position lifecycle intelligence layer on top of the Phase 08
+experience ledger.
+
+## Delivered
+
+1. **Position Lifecycle Intelligence** — immutable position-timeline recorder
+   (`PositionLifecycleTracker`) emitting CREATED / OPENED / MOVING /
+   EXPECTATION_CONFIRMED / MFE_REACHED / PROFIT_GIVEBACK / DEGRADING /
+   RECOVERY_ATTEMPT / EXITED events, each carrying identity, market context,
+   position snapshot, performance (MFE/MAE/giveback/duration) and the decision
+   context.
+2. **Trade Autopsy Engine** (`TradeAutopsyEngine`) — forensic "why did this
+   trade win/lose?" narrative with CLEAN_WIN / LUCKY_WIN / MANAGED_LOSS /
+   COSTLY_LOSS / EVEN verdicts. Separates strategy quality from management,
+   entry, exit and execution quality.
+3. **Behavior Detection Engine** (`BehaviorDetectionEngine`) — measurable
+   patterns (GREED_PATTERN, PANIC_EXIT_PATTERN, EARLY_EXIT_PATTERN,
+   LATE_EXIT_PATTERN, BAD_RECOVERY_PATTERN, OVERTRADING_PATTERN) from recorded
+   numbers only; no emotional attribution.
+4. **Adaptive Strategy Memory** — strategy lifecycle with quality/confidence
+   decomposition (already DISCOVERED -> EVALUATING -> VALIDATED -> ACTIVE ->
+   DEGRADED -> RETIRED, plus probation recovery).
+5. **Strategy Evolution** (`StrategyEvolutionEngine`) — controlled candidate
+   discovery from history (Historical Experience -> Pattern Discovery ->
+   Candidate -> Backtest -> Validation). A candidate is NEVER live until
+   validated.
+6. **Strategy Degradation** — bad strategies naturally lose authority; a
+   DEGRADED / RETIRED family is PENALIZED / REJECTED before dispatch.
+7. **Pre-Trade Intelligence Gate** (`PreTradeIntelligenceGate`) — layered WARN
+   tier + bounded suitability score on top of the Phase 08 gate. Only
+   down-grades, never upgrades.
+8. **Self-Healing** — all derived intelligence rebuildable from the immutable
+   ledger.
+9. **Background Intelligence Worker** (`IntelligenceWorker`) — async, restart-
+   safe, failure-isolated, never blocks trading.
+10. **New DB tables** — `position_lifecycle_events`, `trade_autopsies`,
+    `behavior_detections`, `strategy_evolution_candidates`,
+    `intelligence_worker_state`.
+11. **REST API** — `/api/intelligence/*` endpoints (summary, timeline,
+    autopsies, behavior, evolution, scan, validate, self-heal).
+12. **Tests** — `tests/unit/test_intelligence_phase09.py` (18 tests) and
+    `tests/integration/test_intelligence_api.py` (7 tests) covering all 15 spec
+    requirements including the no-bypass safety contract and no-MT5 operation.
+
+## Safety
+
+The safety contract is enforced by construction and by test: intelligence
+engines hold no adapter / order manager / risk engine, rejection is a NO_TRADE
+before risk sizing, and learning can only analyze, score, recommend and reject
+through bounded interfaces.
+
+## Verification
+
+- Ruff: all checks passed.
+- Mypy: 0 errors across 63 source files.
+- Unit tests: 219 passed.
+- Integration tests: 27 passed (excluding the pre-existing Playwright
+  collection error caused by the playwright package not being installed in this
+  environment).

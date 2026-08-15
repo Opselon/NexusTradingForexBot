@@ -649,6 +649,86 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- =========================================================
+                     PHASE 09: TRADE INTELLIGENCE BRAIN
+                     Position lifecycles, trade autopsies, behavior patterns
+                     and strategy evolution candidates.
+                     ========================================================= -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl">
+                    <div class="flex justify-between items-center mb-3 border-b border-borderClr pb-2">
+                        <h3 class="text-md font-bold text-white flex items-center">
+                            <i class="fa-solid fa-brain mr-2 text-accentCyan"></i>
+                            Trade Intelligence Brain
+                        </h3>
+                        <span id="intel-worker-status" class="text-[10px] uppercase tracking-widest text-textMuted font-sans">worker: --</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                        <div class="bg-darkBg/60 p-3 rounded-lg border border-borderClr">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans">Lifecycle Events</div>
+                            <div id="intel-lifecycle-count" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
+                        </div>
+                        <div class="bg-darkBg/60 p-3 rounded-lg border border-borderClr">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans">Autopsies</div>
+                            <div id="intel-autopsy-count" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
+                        </div>
+                        <div class="bg-darkBg/60 p-3 rounded-lg border border-borderClr">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans">Behavior Detections</div>
+                            <div id="intel-behavior-count" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
+                        </div>
+                        <div class="bg-darkBg/60 p-3 rounded-lg border border-borderClr">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans">Evolution Candidates</div>
+                            <div id="intel-evolution-count" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
+                        </div>
+                    </div>
+
+                    <!-- Last suitability verdict -->
+                    <div id="intel-suitability" class="mb-4 p-3 rounded-lg border border-borderClr bg-darkBg/40 text-xs text-gray-300 font-mono">
+                        No pre-trade suitability verdict yet.
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <!-- Position timeline -->
+                        <div class="rounded-lg border border-borderClr overflow-hidden">
+                            <div class="bg-darkBg/60 px-3 py-2 text-xs font-bold text-white flex items-center justify-between">
+                                <span><i class="fa-solid fa-timeline mr-2 text-accentCyan"></i>Position Timeline</span>
+                                <span class="text-textMuted font-sans normal-case font-normal">ticket lookup</span>
+                            </div>
+                            <div class="p-3 space-y-2">
+                                <div class="flex space-x-2">
+                                    <input id="intel-ticket-input" type="text" placeholder="ticket e.g. 501"
+                                           class="flex-1 bg-darkBg border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 focus:outline-none focus:border-accentCyan">
+                                    <button onclick="loadIntelligenceTimeline()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1.5 text-xs font-bold hover:bg-accentCyan/20 transition">View</button>
+                                </div>
+                                <div id="intel-timeline" class="max-h-64 overflow-y-auto space-y-1.5 text-[11px] font-mono text-gray-300">
+                                    <div class="text-textMuted italic">Enter a ticket to load its immutable position timeline.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recent autopsies + behavior -->
+                        <div class="rounded-lg border border-borderClr overflow-hidden">
+                            <div class="bg-darkBg/60 px-3 py-2 text-xs font-bold text-white">
+                                <i class="fa-solid fa-microscope mr-2 text-accentCyan"></i>Recent Trade Autopsies &amp; Behavior
+                            </div>
+                            <div id="intel-autopsies" class="max-h-64 overflow-y-auto p-3 space-y-2 text-[11px] font-mono text-gray-300">
+                                <div class="text-textMuted italic">No autopsies available.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Evolution candidates -->
+                    <div class="mt-4 rounded-lg border border-borderClr overflow-hidden">
+                        <div class="bg-darkBg/60 px-3 py-2 text-xs font-bold text-white flex items-center justify-between">
+                            <span><i class="fa-solid fa-flask mr-2 text-accentCyan"></i>Strategy Evolution Candidates</span>
+                            <button onclick="scanIntelligenceEvolution()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Scan Now</button>
+                        </div>
+                        <div id="intel-evolution" class="max-h-48 overflow-y-auto p-3 space-y-2 text-[11px] font-mono text-gray-300">
+                            <div class="text-textMuted italic">No evolution candidates. Click "Scan Now" to discover strategy variations.</div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- TAB 5: SCALPING RULES PANEL -->

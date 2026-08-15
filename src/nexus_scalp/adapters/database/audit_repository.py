@@ -87,6 +87,7 @@ class AuditRepository:
         )
 
         self._create_experience_tables(conn)
+        self._create_intelligence_tables(conn)
         self._seed_trading_rules(conn)
         conn.execute(
             """
@@ -456,6 +457,177 @@ class AuditRepository:
             "ON audit_experience_outcomes(idempotency_key);",
             "CREATE INDEX IF NOT EXISTS idx_exp_corrections_key "
             "ON audit_experience_corrections(idempotency_key);",
+        ):
+            try:
+                conn.execute(index_sql)
+            except Exception:
+                pass
+
+    def _create_intelligence_tables(self, conn: sqlite3.Connection) -> None:
+        """
+        Creates the PHASE 09 Trade Intelligence Brain schema.
+
+        All rows here are derived/buildable intelligence layered on top of the
+        authoritative Phase 08 experience tables. Design rules:
+
+          * `position_lifecycle_events`  -- IMMUTABLE append-only position-timeline
+            events keyed by (ticket, event_key) so replay can never duplicate or
+            reorder the timeline of a position.
+          * `trade_autopsies`            -- ONE forensic narrative row per closed
+            ticket (upsert on ticket), answering "why did this trade win/lose?".
+          * `behavior_detections`        -- append-only measurable behavioral
+            pattern evidence (GREED_PATTERN, PANIC_EXIT_PATTERN, ...).
+          * `strategy_evolution_candidates` -- discovered-but-unvalidated strategy
+            variations. A candidate is NEVER executed live; only backtested and
+            validated before it may enter strategy memory.
+          * `intelligence_worker_state`  -- restart-safe worker bookkeeping so a
+            crash mid-cycle resumes from the last checkpoint instead of redoing
+            history.
+        """
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS position_lifecycle_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_key TEXT UNIQUE NOT NULL,
+                ticket TEXT NOT NULL,
+                trade_id TEXT DEFAULT '',
+                experience_id TEXT DEFAULT '',
+                symbol TEXT NOT NULL,
+                timeframe TEXT DEFAULT '',
+                event_type TEXT NOT NULL,
+                sequence INTEGER DEFAULT 0,
+                event_timestamp TEXT NOT NULL,
+                market_context TEXT DEFAULT '{}',
+                position_snapshot TEXT DEFAULT '{}',
+                payload TEXT DEFAULT '{}'
+            );
+            """
+        )
+        for col_name, col_type in [
+            ("experience_id", "TEXT DEFAULT ''"),
+            ("sequence", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                conn.execute(
+                    f"ALTER TABLE position_lifecycle_events ADD COLUMN {col_name} {col_type};"
+                )
+            except Exception:
+                pass
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS trade_autopsies (
+                ticket TEXT PRIMARY KEY,
+                trade_id TEXT DEFAULT '',
+                experience_id TEXT DEFAULT '',
+                strategy_id TEXT DEFAULT '',
+                strategy_version TEXT DEFAULT '',
+                symbol TEXT NOT NULL,
+                timeframe TEXT DEFAULT '',
+                entry_price REAL DEFAULT 0.0,
+                exit_price REAL DEFAULT 0.0,
+                volume REAL DEFAULT 0.0,
+                direction TEXT DEFAULT '',
+                entry_reason TEXT DEFAULT '',
+                realized_pnl_usd REAL DEFAULT 0.0,
+                realized_r REAL DEFAULT 0.0,
+                mfe_r REAL DEFAULT 0.0,
+                mae_r REAL DEFAULT 0.0,
+                giveback_pct REAL DEFAULT 0.0,
+                holding_duration_sec REAL DEFAULT 0.0,
+                exit_mechanism TEXT DEFAULT '',
+                strategy_quality REAL DEFAULT 0.0,
+                entry_quality REAL DEFAULT 0.0,
+                management_quality REAL DEFAULT 0.0,
+                exit_quality REAL DEFAULT 0.0,
+                execution_quality REAL DEFAULT 0.0,
+                quality_verdict TEXT DEFAULT '',
+                behavioral_flags TEXT DEFAULT '',
+                narrative TEXT DEFAULT '',
+                autopsied_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+            """
+        )
+        for col_name, col_type in [
+            ("strategy_version", "TEXT DEFAULT ''"),
+            ("symbol", "TEXT NOT NULL DEFAULT ''"),
+            ("timeframe", "TEXT DEFAULT ''"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE trade_autopsies ADD COLUMN {col_name} {col_type};")
+            except Exception:
+                pass
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS behavior_detections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                behavior_key TEXT UNIQUE NOT NULL,
+                behavior_id TEXT NOT NULL,
+                ticket TEXT NOT NULL,
+                experience_id TEXT DEFAULT '',
+                ticket_ctx TEXT DEFAULT '',
+                pattern TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                confidence REAL DEFAULT 0.0,
+                evidence TEXT DEFAULT '{}',
+                detected_at TEXT NOT NULL,
+                autocorrected INTEGER DEFAULT 0
+            );
+            """
+        )
+        for col_name, col_type in [
+            ("ticket_ctx", "TEXT DEFAULT ''"),
+            ("behavior_key", "TEXT DEFAULT ''"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE behavior_detections ADD COLUMN {col_name} {col_type};")
+            except Exception:
+                pass
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS strategy_evolution_candidates (
+                candidate_id TEXT PRIMARY KEY,
+                source_strategy_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                timeframe TEXT DEFAULT '',
+                hypothesis TEXT NOT NULL,
+                parameter_delta TEXT DEFAULT '{}',
+                pattern_evidence TEXT DEFAULT '{}',
+                status TEXT NOT NULL,
+                backtest_expectancy_r REAL DEFAULT 0.0,
+                backtest_sample_count INTEGER DEFAULT 0,
+                validated_at TEXT DEFAULT '',
+                discovered_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS intelligence_worker_state (
+                scope TEXT PRIMARY KEY,
+                last_checkpoint TEXT DEFAULT '',
+                last_cycle_at TEXT DEFAULT '',
+                last_error TEXT DEFAULT '',
+                cycle_count INTEGER DEFAULT 0
+            );
+            """
+        )
+
+        for index_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_lifecycle_ticket "
+            "ON position_lifecycle_events(ticket, sequence);",
+            "CREATE INDEX IF NOT EXISTS idx_lifecycle_type "
+            "ON position_lifecycle_events(event_type);",
+            "CREATE INDEX IF NOT EXISTS idx_autopsy_strategy ON trade_autopsies(strategy_id);",
+            "CREATE INDEX IF NOT EXISTS idx_behavior_ticket ON behavior_detections(ticket);",
+            "CREATE INDEX IF NOT EXISTS idx_behavior_pattern ON behavior_detections(pattern);",
+            "CREATE INDEX IF NOT EXISTS idx_evolution_status "
+            "ON strategy_evolution_candidates(status);",
         ):
             try:
                 conn.execute(index_sql)

@@ -32,6 +32,7 @@
 12. [Observability, Database Persistence, & Ledger Autopsy](#12-observability-database-persistence--ledger-autopsy)
 13. [Configuration Architecture & Dynamic Propagation](#13-configuration-architecture--dynamic-propagation)
 14. [Unified Accounting & Performance Intelligence Core (PHASE 08)](#14-unified-accounting--performance-intelligence-core-phase-08)
+15b. [Trade Intelligence Brain (PHASE 09)](#15b-trade-intelligence-brain-phase-09)
 15. [Known Engineering Pitfalls & Invariants](#15-known-engineering-pitfalls--invariants)
 16. [Testing & CI/CD Pipeline Audit](#16-testing--cicd-pipeline-audit)
 17. [Documentation vs. Reality Audit Matrix](#17-documentation-vs-reality-audit-matrix)
@@ -142,6 +143,16 @@ NexusTradingForexBot/
 │       │   ├── retriever.py           # 🟢 Bounded context fingerprinting & top-K retrieval
 │       │   ├── quality.py             # 🟢 Deterministic outcome decomposition + behavioral flags
 │       │   └── provenance.py          # 🟢 Model registry (metadata only, never weights)
+│       ├── intelligence/              # 🟢 PHASE 09: TRADE INTELLIGENCE BRAIN
+│       │   ├── __init__.py            # 🟢 Subsystem exports
+│       │   ├── models.py              # 🟢 Position-lifecycle / autopsy / behavior / evolution contracts
+│       │   ├── lifecycle.py           # 🟢 PositionLifecycleTracker: immutable position timeline
+│       │   ├── autopsy.py             # 🟢 TradeAutopsyEngine: WHY did this trade win/lose?
+│       │   ├── behavior.py            # 🟢 BehaviorDetectionEngine: measurable patterns
+│       │   ├── evolution.py           # 🟢 StrategyEvolutionEngine: controlled candidate discovery
+│       │   ├── gate.py                # 🟢 PreTradeIntelligenceGate: WARN/suitability decision
+│       │   ├── worker.py              # 🟢 IntelligenceWorker: isolated background refresh
+│       │   └── store.py               # 🟢 Bounded read facade over intelligence tables
 │       ├── features/
 │       │   ├── regime_classifier.py   # 🟢 Market Regime Classifier (10 Regimes)
 │       │   ├── scalp_features.py      # 🟢 50D Master Feature Vector Pipeline
@@ -619,10 +630,24 @@ The `OrderLifecycleManager` (`src/nexus_scalp/execution/order_manager.py`) runs 
 
 For positions in drawdown, `OrderLifecycleManager` calculates a multi-dimensional risk `hold_score`:
 
-$$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\text{Spread Expansion Penalty})$$
+$$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\text{Spread Expansion Penalty}) + (\text{trend bonus, suppressed underwater})$$
 
 * **Evaluation Throttling:** Evaluated every 500ms per position.
+* **CONVEX DRAWDOWN PENALTY:** `80 * ratio^1.5` (capped at 80). A 50%-of-risk
+  drawdown removes ~28 points, a 90% drawdown ~68, so the engine de-risks
+  gracefully well before the emergency horizon. (Linear `ratio*40` previously
+  pegged deep drawdowns at 97-100 - see BUG-013.)
+* **Bonus Suppression:** `TREND_ALIGNMENT_BONUS (+10)` is suppressed whenever the
+  drawdown ratio is >= 0.30, so a favourable higher-timeframe trend can never
+  mask a real loss.
+* **Profit-Shield Floor:** `max(85, score)` applies only when `pos.profit >= 0.0`
+  AND the position is not underwater; it is disabled for a genuinely losing
+  position.
 * **Critical Breach Bailout:** If `hold_score < 30.0` while in drawdown, triggers immediate early risk exit (`S09_CRITICAL_HOLD_SCORE_BREACH_BAILOUT`). 🟢 VERIFIED
+* **Split-Order Sync:** an emergency close of one leg closes every sibling leg
+  sharing the same originating order_id (`_close_sibling_legs`), and emergency
+  states (`LOSS_HARD_EXIT` / `PROFIT_GIVEBACK_CRITICAL`) are honored even on the
+  FIRST observation of a ticket (see BUG-018).
 
 ---
 
@@ -882,6 +907,135 @@ canonical `/api/account/*` endpoints; no frontend-side recomputation.
 
 ---
 
+## 15b. Trade Intelligence Brain (PHASE 09)
+
+### 📐 Overview
+
+The **`nexus_scalp/intelligence/`** package turns the engine from *"a system that
+executes strategies"* into *"a system that understands its own trading
+behavior."* It is the adaptive-strategy-evolution + position-lifecycle layer
+built on top of the Phase 08 experience ledger.
+
+```
+Live path (tick)  ->  PositionLifecycleTracker.observe_position()
+                              |
+                              v
+              immutable position_lifecycle_events  (timeline)
+                              |
+        TradeAutopsyEngine (WHY did it win/lose?)
+        BehaviorDetectionEngine (measurable patterns)
+        StrategyEvolutionEngine (candidate discovery, never live until validated)
+        PreTradeIntelligenceGate (WARN/suitability, layered on Phase 08 gate)
+        IntelligenceWorker (isolated background refresh, self-heal)
+```
+
+### 🔒 Non-Negotiable Safety Contract (PHASE 09)
+
+Learning intelligence MUST NEVER:
+- place orders, modify orders, or modify SL/TP directly
+- bypass RiskEngine / exposure limits / kill switches
+- force execution or disable protections
+
+Learning can only **analyze, score, recommend, and reject before execution
+through bounded interfaces**. Every intelligence engine owns NO adapter, NO
+order manager and NO risk engine by construction (verified by
+`tests/unit/test_intelligence_phase09.py::TestSafetyContract`).
+
+Required flow:
+```
+Existing Strategy -> Existing Signal -> Trade Intelligence Brain
+  -> Suitability/Quality Decision -> RiskEngine -> OrderManager -> MT5
+```
+
+### 🗄️ New Canonical Tables (all in `audit.db`, SQLite WAL)
+
+- `position_lifecycle_events` — IMMUTABLE append-only position timeline, keyed by
+  `event_key` (ticket|sequence|type). Replaying an upstream observation is a no-op.
+- `trade_autopsies` — ONE forensic narrative row per closed ticket (upsert),
+  answering "why did this trade win/lose?".
+- `behavior_detections` — append-only measurable behavioral patterns
+  (GREED_PATTERN, PANIC_EXIT_PATTERN, EARLY_EXIT_PATTERN, LATE_EXIT_PATTERN,
+  BAD_RECOVERY_PATTERN, OVERTRADING_PATTERN, ...).
+- `strategy_evolution_candidates` — discovered-but-unvalidated strategy
+  variations. A candidate is NEVER live until backtested and validated.
+- `intelligence_worker_state` — restart-safe worker bookkeeping.
+
+### 🧠 Position Lifecycle Events
+
+Every open position emits a timeline of immutable observations:
+`POSITION_CREATED`, `POSITION_OPENED`, `POSITION_MOVING`,
+`POSITION_EXPECTATION_CONFIRMED`, `POSITION_MFE_REACHED`,
+`POSITION_PROFIT_GIVEBACK`, `POSITION_DEGRADING`,
+`POSITION_RECOVERY_ATTEMPT`, `POSITION_EXITED`, `POSITION_MODIFIED`.
+
+Each event carries identity (ticket, trade_id, experience_id, event_key),
+market context (symbol, timeframe, session, regime, volatility, ATR, spread),
+position snapshot (entry/current/volume/SL/TP/floating/realized PnL),
+performance (MFE, MAE, max profit/loss, giveback %, holding duration) and the
+decision context that produced the trade (strategy_id, version, schema, model).
+
+### 🩺 Trade Autopsy Verdict Model
+
+| Verdict | Meaning |
+| :--- | :--- |
+| `CLEAN_WIN` | profitable, correct thesis, sound execution/management |
+| `LUCKY_WIN` | profitable but thesis/entry evidence was poor |
+| `MANAGED_LOSS` | negative but stop/risk respected (acceptable loss) |
+| `COSTLY_LOSS` | negative AND a management/execution failure amplified it |
+| `EVEN` | closed around breakeven |
+
+This separation prevents "losing trade" from collapsing into "bad strategy":
+a well-managed stop-out is a `MANAGED_LOSS`, not evidence the strategy is broken.
+
+### 🧠 Strategy Evolution
+
+The system discovers strategy variations from history:
+```
+Historical Experience -> Pattern Discovery -> Strategy Candidate
+  -> Backtest -> Validation -> Memory (operator-promoted)
+```
+Candidates are produced by `StrategyEvolutionEngine.scan()` and persisted as
+`strategy_evolution_candidates`. They NEVER affect live trading until backtested
+and validated (`validate_candidate()` requires a positive expectancy over a
+sample floor). Promotion to real strategy memory is a separate, operator-gated
+action.
+
+### ⚙️ IntelligenceWorker (`intelligence/worker.py`)
+
+- Background derived-refresh loop, kicked via `asyncio.to_thread()` from
+  `LiveEngine.run_loop` — NEVER on the tick hot path.
+- Restart-safe (`start`/`stop` state machine), failure-isolated (each cycle is
+  wrapped; a failure logs `[INTELLIGENCE_WORKER] event=FAILURE` and the worker
+  continues), idempotent (repeating a cycle with no new data is a no-op).
+- Owns NO tables for raw truth; its side effects are the derived intelligence
+  tables only.
+
+### 🌐 Intelligence REST API (in `web/server.py`)
+
+| Route | Method | Purpose |
+| :--- | :---: | :--- |
+| `/api/intelligence/summary` | GET | Aggregated brain telemetry + worker status + last suitability |
+| `/api/intelligence/positions/{ticket}/timeline` | GET | Immutable position lifecycle timeline |
+| `/api/intelligence/autopsies` | GET | Bounded autopsy listing (optionally by strategy) |
+| `/api/intelligence/autopsies/{ticket}` | GET | Single forensic autopsy |
+| `/api/intelligence/behavior` | GET | Measurable behavioral detections |
+| `/api/intelligence/evolution` | GET | Evolution candidates |
+| `/api/intelligence/evolution/scan` | POST | Run a bounded evolution discovery pass |
+| `/api/intelligence/evolution/validate` | POST | Record a backtest result (candidate → VALIDATED/REJECTED) |
+| `/api/intelligence/self-heal` | POST | Rebuild all derived intelligence from the immutable ledger |
+
+### 🧪 Phase 09 Tests
+
+- `tests/unit/test_intelligence_phase09.py` — 18 tests covering lifecycle
+  tracking, MFE/MAE, giveback, decomposition, bad-management≠bad-strategy,
+  degradation, recovery, similarity, pre-trade rejection, schema migration,
+  self-heal rebuild, worker isolation, and the no-bypass safety contract.
+- `tests/integration/test_intelligence_api.py` — 7 tests covering LiveEngine
+  wiring, timeline/autopsy/behavior/evolution endpoints, worker restart-safety
+  and no-MT5 operation.
+
+---
+
 ## 16. Known Engineering Pitfalls & Invariants
 
 If you are an AI coding agent making changes to this repository in the future, **memorize these active engineering rules and constraints**:
@@ -929,10 +1083,12 @@ If you are an AI coding agent making changes to this repository in the future, *
   - `test_order_manager_audit.py`: Validates legacy file deletion and active order manager imports.
   - `test_htf_warmup_gate.py`: Validates cold-start HTF warmup gate state transitions and inference blocking.
   - `test_accounting_core.py`: Validates the Phase 08 unified accounting core (periods, snapshots, drawdown/recovery, closure classification, attribution, forensics, worker, self-healing, provenance).
+  - `test_intelligence_phase09.py`: Validates the Phase 09 Trade Intelligence Brain (position lifecycle timeline, MFE/MAE, giveback, quality decomposition, bad-management≠bad-strategy, degradation, recovery, similarity, pre-trade rejection, schema migration, self-heal rebuild, worker isolation, no-bypass safety, no-MT5).
 * **Integration Tests (`tests/integration/`):**
   - `test_signal_pipeline_health.py`: End-to-end signal pipeline health verification.
   - `test_database_execution_audit.py`: Validates SQLite WAL persistence and ledger autopsies.
   - `test_accounting_api.py`: Validates the Phase 08 accounting REST API + worker wiring end-to-end.
+  - `test_intelligence_api.py`: Validates the Phase 09 intelligence REST API + LiveEngine wiring end-to-end (timeline, autopsy, behavior, evolution, worker restart-safety, no-MT5).
   - `test_playwright_e2e.py`: Playwright end-to-end web visualizer verification. 🟢 VERIFIED
 
 ### ⚙️ CI/CD Workflows (`.github/workflows/`)

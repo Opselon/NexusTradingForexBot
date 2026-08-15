@@ -468,9 +468,11 @@ def test_dynamic_hold_score_calculation(temp_audit_repo: AuditRepository) -> Non
 
     # 2. Price drops to 2321.0 (90% of the way to SL)
     # The loss is 9.0 points out of 10.0 initial risk.
-    # Penalty 1 should be ratio (0.90) * 40 = 36 points -> Score 64.
+    # Penalty 1 uses the CONVEX curve (80 * ratio^1.5) so the score collapses well
+    # below the de-risk band long before the emergency horizon:
+    #   80 * (0.90 ** 1.5) = 68 -> Score 32.
     score2, reasons = om._calculate_hold_value_score(pos, 2321.0, fv, 0.25, 1.0)
-    assert score2 == 64
+    assert score2 == 32
     assert any("DRAWDOWN_PENALTY" in r for r in reasons)
 
     # 3. Simulate high time in drawdown (decay)
