@@ -517,6 +517,8 @@ release/
 build-info.json
 *.spec
 installer/*.exe
+!src/nexus_scalp/release/
+!scripts/build/
 
 # VS Code & JetBrains IDEs
 .vscode/
