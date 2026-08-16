@@ -2447,6 +2447,226 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             logger.error("Training worker cancel failed", error=str(e))
             return {"available": False, "error": str(e)}
 
+    # =========================================================================
+    # PHASE 11: CHALLENGER SHADOW TRADING & CHAMPION EVALUATION (read + control)
+    # -------------------------------------------------------------------------
+    # Shadow evaluation is SHADOW-ONLY: the Challenger has zero order authority,
+    # every result is marked SHADOW/SIMULATED, and the production Champion is
+    # never modified. A Challenger can never be auto-promoted here.
+    # =========================================================================
+
+    def _shadow() -> Any:
+        """Returns the engine when the shadow subsystem is available."""
+        engine = app.state.engine
+        if not engine or not hasattr(engine, "shadow_engine"):
+            return None
+        return engine
+
+    @app.get("/api/models/shadow/summary")
+    def get_shadow_summary() -> dict[str, Any]:
+        """Shadow runs + decisions + promotions + worker + active challenger."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            summary = engine.shadow_store.summary()
+            worker = getattr(engine, "shadow_worker", None)
+            if worker is not None:
+                from nexus_scalp.shadow.worker import format_shadow_worker_status
+
+                summary["worker"] = format_shadow_worker_status(worker)
+            summary["active_challenger"] = (
+                engine._shadow_challenger.summary() if engine._shadow_challenger else None
+            )
+            summary["active_run"] = engine.shadow_engine.current_evidence()
+            return serialize_enums({"available": True, "summary": summary})
+        except Exception as e:
+            logger.error("Shadow summary failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models/shadow/runs")
+    def get_shadow_runs(limit: int = 50) -> dict[str, Any]:
+        """Append-only shadow run history."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            rows = engine.shadow_store.list_runs(limit=limit)
+            return serialize_enums({"available": True, "runs": rows})
+        except Exception as e:
+            logger.error("Shadow runs failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models/shadow/decisions")
+    def get_shadow_decisions(run_id: str | None = None, limit: int = 200) -> dict[str, Any]:
+        """Shadow decision records (all marked simulated)."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            rows = engine.shadow_store.list_decisions(run_id=run_id, limit=limit)
+            return serialize_enums({"available": True, "decisions": rows})
+        except Exception as e:
+            logger.error("Shadow decisions failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models/shadow/compare/{run_id}")
+    def get_shadow_compare(run_id: str) -> dict[str, Any]:
+        """Multi-dimension Champion vs Challenger comparison for a shadow run."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            row = engine.shadow_store.get_comparison(run_id)
+            if row is None:
+                return {"available": False, "reason": "NO_COMPARISON"}
+            return serialize_enums({"available": True, "comparison": row})
+        except Exception as e:
+            logger.error("Shadow compare failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models/shadow/promotion/{run_id}")
+    def get_shadow_promotion(run_id: str) -> dict[str, Any]:
+        """Promotion evaluation (eligibility + vetoes) for a shadow run."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            row = engine.shadow_store.get_promotion(run_id)
+            if row is None:
+                return {"available": False, "reason": "NO_PROMOTION"}
+            return serialize_enums({"available": True, "promotion": row})
+        except Exception as e:
+            logger.error("Shadow promotion failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/models/shadow/attach")
+    def attach_shadow_challenger() -> dict[str, Any]:
+        """Attaches a validated Challenger artifact for shadow evaluation.
+
+        The Challenger is loaded with full integrity checks; an invalid or
+        schema-incompatible artifact is SHADOW_LOAD_FAILED and never used.
+        """
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
+            from nexus_scalp.shadow.challenger import load_challenger
+
+            # Find the most recent CHALLENGER registry row.
+            lifecycle = ModelLifecycleRegistry(
+                audit_repo=engine.audit,
+                model_registry=engine.model_registry,
+            )
+            challengers = lifecycle.list_models(status="CHALLENGER", limit=5)
+            if not challengers:
+                return {"available": False, "reason": "NO_VALIDATED_CHALLENGER"}
+            row = challengers[0]
+            artifact_path = row.get("artifact_path", "")
+            model_id = row.get("model_id", "")
+            model_version = row.get("model_version", "")
+            if not artifact_path:
+                return {"available": False, "reason": "CHALLENGER_ARTIFACT_MISSING"}
+            from pathlib import Path
+
+            path = Path(artifact_path)
+            if not path.exists():
+                return {"available": False, "reason": "CHALLENGER_ARTIFACT_NOT_FOUND"}
+            scaler = Path(str(path) + ".scaler.npz")
+            runtime = load_challenger(
+                artifact_path=path,
+                scaler_path=scaler,
+                model_id=model_id,
+                model_version=model_version,
+                live_schema_id=engine.FEATURE_SCHEMA_ID,
+                live_dimension=engine.FEATURE_DIM,
+            )
+            engine._shadow_challenger = runtime
+            engine.shadow_engine.attach_challenger(runtime)
+            # Start a fresh shadow run bound to this challenger.
+            from nexus_scalp.shadow.models import ShadowModelRef
+
+            champ = engine.champion_manager.champion_or_none()
+            champ_ref = (
+                ShadowModelRef(
+                    model_id=champ.model_id,
+                    model_version=champ.model_version,
+                    feature_schema_id=champ.feature_schema_id,
+                    feature_dimension=champ.feature_dimension,
+                    artifact_hash=champ.artifact_hash,
+                    is_champion=True,
+                )
+                if champ
+                else None
+            )
+            run_id = engine.shadow_engine.start_run(
+                run_id=None,
+                champion=champ_ref or ShadowModelRef(model_id="none", model_version=""),
+                challenger_ref=runtime.ref or ShadowModelRef(model_id="none", model_version=""),
+            )
+            return serialize_enums(
+                {
+                    "available": True,
+                    "challenger": runtime.summary(),
+                    "run_id": run_id,
+                }
+            )
+        except Exception as e:
+            logger.error("Shadow attach failed", error=str(e))
+            return {"available": False, "error": str(e), "reason": "SHADOW_LOAD_FAILED"}
+
+    @app.post("/api/models/shadow/evaluate-promotion")
+    def evaluate_shadow_promotion(run_id: str) -> dict[str, Any]:
+        """Computes the explainable promotion evaluation + vetoes for a run."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            comparison_row = engine.shadow_store.get_comparison(run_id)
+            if comparison_row is None:
+                return {"available": False, "reason": "NO_COMPARISON"}
+            import json as _json
+
+            payload = _json.loads(comparison_row.get("payload") or "{}")
+            from nexus_scalp.shadow.models import ShadowComparison
+
+            comparison = ShadowComparison.model_validate(payload)
+            evaluation = engine.shadow_engine.comparer.evaluate_promotion(comparison)
+            engine.shadow_store.save_promotion(evaluation)
+            return serialize_enums(
+                {"available": True, "evaluation": evaluation.model_dump(mode="json")}
+            )
+        except Exception as e:
+            logger.error("Shadow promotion eval failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/models/shadow/worker/start")
+    def start_shadow_worker() -> dict[str, Any]:
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            engine._start_shadow_worker()
+            return {"available": True, "started": engine._shadow_worker_started}
+        except Exception as e:
+            logger.error("Shadow worker start failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/models/shadow/worker/stop")
+    def stop_shadow_worker() -> dict[str, Any]:
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            import asyncio
+
+            asyncio.run(engine._stop_shadow_worker())
+            return {"available": True, "stopped": not engine._shadow_worker_started}
+        except Exception as e:
+            logger.error("Shadow worker stop failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
     def _intelligence_worker_status(worker: Any) -> dict[str, Any]:
         from nexus_scalp.intelligence.worker import format_intelligence_worker_status
 

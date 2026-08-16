@@ -35,6 +35,7 @@
 15b. [Trade Intelligence Brain (PHASE 09)](#15b-trade-intelligence-brain-phase-09)
 15c. [Strategy Research, Backtest & Validation Engine (PHASE 09B)](#15c-strategy-research-backtest--validation-engine-phase-09b)
 15d. [Controlled Model Training & Challenger Engine (PHASE 10)](#15d-controlled-model-training--challenger-engine-phase-10)
+15e. [Challenger Shadow Trading & Champion Evaluation (PHASE 11)](#15e-challenger-shadow-trading--champion-evaluation-phase-11)
 15. [Known Engineering Pitfalls & Invariants](#15-known-engineering-pitfalls--invariants)
 16. [Testing & CI/CD Pipeline Audit](#16-testing--cicd-pipeline-audit)
 17. [Documentation vs. Reality Audit Matrix](#17-documentation-vs-reality-audit-matrix)
@@ -1259,6 +1260,99 @@ with `auto_train_enabled=False` by default (operator-triggered training).
 - `tests/integration/test_model_lifecycle_api.py` — 7 tests covering LiveEngine
   wiring, summary/models/champion/challengers/runs endpoints, worker
   start/stop/cancel, and no-MT5/no-risk-engine exposure.
+
+---
+
+## 15e. Challenger Shadow Trading & Champion Evaluation (PHASE 11)
+
+> **NOTE (2026-08-16 Forensic Audit):** This section was ADDED by the Phase
+> 08-11 forensic audit. The shadow subsystem existed in code (uncommitted at
+> audit time) but was undocumented in this file. Audit also fixed BUG-025 /
+> BUG-026 / BUG-027 / BUG-028 / BUG-029 (see `agents/bugs.md`): shadow
+> decisions are now persisted correctly, the audit queue can no longer
+> deadlock on insert errors, and the Champion/Challenger comparison derives
+> each side's R from its OWN action (absolute + relative degradation floors).
+
+### 📐 Overview
+
+The **`nexus_scalp/shadow/`** package evaluates a validated Challenger model
+under the SAME live market state as the production Champion, entirely in
+shadow: zero order authority, every result marked `simulated=True`.
+
+```
+VALIDATED CHALLENGER -> attach (operator) -> shadow run (same live feature
+vector as Champion) -> shadow decisions (bounded, queued persistence)
+-> aggregate comparison (expectancy/drawdown/calibration/regime/strategy)
+-> promotion evaluation (hard vetoes) -> NEVER auto-promoted
+```
+
+### 🗄️ Canonical Shadow Engine (`src/nexus_scalp/shadow/`)
+
+| File | Responsibility |
+| :--- | :--- |
+| `models.py` | Immutable contracts: `ShadowRun`, `ShadowDecisionRecord` (always `simulated=True`), `ShadowComparison`, `PromotionEvaluation`, `ShadowModelRef`, `SharedInputRef`. |
+| `challenger.py` | `ChallengerRuntime` — loads a validated Challenger artifact with integrity checks; `infer()` returns a hypothetical proposal ONLY. |
+| `engine.py` | `ShadowEngine` — records one parallel Champion/Challenger decision per live tick on the SAME feature vector; schema-safety gate; bounded in-memory decision list. |
+| `comparison.py` | `ShadowComparer` — multi-dimension comparison + explainable promotion evaluation with hard vetoes. |
+| `store.py` | Persistence for `shadow_runs`, `shadow_decisions`, `shadow_comparisons`, `shadow_promotions` (queued writes, schema guarded once per process). |
+| `worker.py` | `ShadowWorker` — isolated, restart-safe, cancellable background aggregation; finalizes runs at `finalize_after_decisions` (default 30). |
+
+### 🔒 Safety Contract (PHASE 11)
+
+- A Challenger has ZERO order authority: `shadow/` imports no adapter, no
+  order manager, no risk engine (tested).
+- Every recorded decision is flagged `simulated=True`; nothing is ever
+  presented as real account PnL.
+- Schema mismatch (feature_schema_id / feature_dimension) ⇒ decision marked
+  invalid, never used in comparison.
+- Shadow evaluation NEVER blocks trading: write path is the audit queue;
+  aggregation runs in the worker via `asyncio.to_thread` (never in the tick
+  pipeline); a shadow failure is logged and ignored.
+- Promotion is NEVER automatic: `evaluate_promotion()` produces eligibility +
+  vetoes; no code path moves a Challenger into the live bundle.
+
+### 🗄️ New Canonical Tables (all in `audit.db`, SQLite WAL)
+
+- `shadow_runs` — one bounded shadow evaluation run (status RUNNING/COMPLETED/INCOMPLETE).
+- `shadow_decisions` — one parallel Champion/Challenger decision per row (marked simulated).
+- `shadow_comparisons` — aggregated multi-dimension comparison snapshot per run.
+- `shadow_promotions` — explainable promotion evaluation + vetoes per run.
+
+### ⚙️ LiveEngine Wiring
+
+`LiveEngine` constructs `shadow_store`, `shadow_engine`, `shadow_worker` and
+starts the worker in `run_loop` (bounded/throttled via `asyncio.to_thread`).
+`_record_shadow_decision()` runs after the Phase 08/09 gates on the SAME live
+feature vector; it is fully exception-isolated (a Challenger fault can never
+affect production).
+
+### 🌐 Shadow REST API (in `web/server.py`)
+
+| Route | Method | Purpose |
+| :--- | :---: | :--- |
+| `/api/models/shadow/summary` | GET | Runs + decisions + promotions + worker + active challenger |
+| `/api/models/shadow/runs` | GET | Append-only shadow run history |
+| `/api/models/shadow/decisions` | GET | Shadow decision records (all simulated) |
+| `/api/models/shadow/compare/{run_id}` | GET | Multi-dimension Champion vs Challenger comparison |
+| `/api/models/shadow/promotion/{run_id}` | GET | Promotion evaluation (eligibility + vetoes) |
+| `/api/models/shadow/attach` | POST | Attach a validated Challenger (integrity-checked) and start a run |
+| `/api/models/shadow/evaluate-promotion` | POST | Compute + persist promotion evaluation for a run |
+| `/api/models/shadow/worker/start` | POST | Start the shadow worker |
+| `/api/models/shadow/worker/stop` | POST | Stop the shadow worker |
+
+### 🧪 Phase 11 Tests
+
+- `tests/unit/test_shadow_phase11.py` — 35 tests: basic loads, identical
+  inputs, schema mismatch rejection, corrupt artifact rejection, shadow
+  decision cannot submit MT5, simulated marking, persistence round-trip,
+  champion unchanged during shadow, metrics comparison, small-sample
+  insufficiency, OOS/drawdown/robustness/strategy-regression/calibration
+  vetoes, regime-specific comparison, critical regime degradation not
+  averaged away, strategy-specific comparison, retired strategy blocked,
+  failure isolation (challenger and DB failures cannot stop trading),
+  worker restart/cancellation, invalid challenger exclusion, model-rebuild
+  history survival, feature-schema provenance, lineage preservation, and
+  Phase 08/09/10 + hot-path regression.
 
 ---
 

@@ -1047,3 +1047,340 @@ Built `src/nexus_scalp/model_lifecycle/`:
 - Schema mismatch (dimension/class/scaler) fails explicitly (tested).
 
 ---
+
+## BUG-025 — Shadow Decision INSERT 31 Values for 30 Columns (Silent Total Data Loss)
+
+- **Status**: FIXED
+- **Severity**: CRITICAL
+- **Confidence**: HIGH
+- **Discovered**: Phase 11 Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_shadow_phase11.py` (35/35 green; previously hung)
+
+### Affected Components
+- `src/nexus_scalp/shadow/store.py` (`_INSERT_DECISION_SQL`)
+
+### Problem
+Every shadow-decision insert failed with `error=31 values for 30 columns`:
+the SQL column list had 30 columns but the VALUES clause had 31 `?`
+placeholders. The background queue worker logged the error and **dropped the
+row**. No shadow decision was ever persisted in production.
+
+### Root Cause
+The VALUES placeholder count drifted from the column list when the
+`hypothetical_pnl_usd` field was added; the mismatch was never caught because
+`test_shadow_outcomes_persisted` **hung** on `queue.join()` (see BUG-026) and
+was therefore never observed as a failure.
+
+### Evidence
+- Column list: 30 names (`shadow_decision_id` .. `payload`).
+- VALUES clause: 31 placeholders. Verified by regex count + live repro:
+  `Audit Background Worker failed to insert batch error=31 values for 30 columns`.
+
+### Failure Scenario
+Attaching a Challenger and running shadow evaluation produced zero persisted
+decisions; the comparison and promotion layers had no data to evaluate.
+
+### Impact
+Phase 11 shadow evaluation was completely non-functional at the persistence
+layer (silent data loss).
+
+### Fix
+Removed the extra placeholder so 30 values map to 30 columns.
+
+### Regression Tests
+- `test_shadow_outcomes_persisted` now passes (row round-trips through the DB).
+
+### Verification
+`pytest tests/unit/test_shadow_phase11.py` → 35 passed.
+
+### Architectural Lessons / Regression Guards
+- Any INSERT with N columns must have exactly N placeholders; add a
+  static placeholder-count smoke test when schema columns change.
+
+---
+
+## BUG-026 — Audit Queue Worker Never Calls task_done() on Insert Error (Permanent Deadlock)
+
+- **Status**: FIXED
+- **Severity**: CRITICAL
+- **Confidence**: HIGH
+- **Discovered**: Phase 11 Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_shadow_phase11.py::TestShadow::test_shadow_outcomes_persisted` (no longer hangs)
+
+### Affected Components
+- `src/nexus_scalp/adapters/database/audit_repository.py` (`_process_queue_worker`)
+
+### Problem
+When a batch insert failed (e.g. BUG-025's 31-vs-30 placeholder mismatch), the
+`except` branch logged and slept but **never called `task_done()`** for the
+already-`get()`-ed items. Any subsequent `queue.join()` — including
+`AuditRepository.close()` and test teardown — blocked forever. The failed
+items were also lost (never re-queued, never persisted).
+
+### Root Cause
+The error path of the bulk-transaction loop omitted the bookkeeping that the
+success path performed.
+
+### Evidence
+`test_shadow_outcomes_persisted` hung indefinitely at `repo._queue.join()` with
+the worker logging `error=31 values for 30 columns` in a loop.
+
+### Failure Scenario
+Any persistent insert error (bad SQL, schema drift, DB lock) permanently
+deadlocked every `join()` caller: engine shutdown (`close()`), worker teardown,
+and test fixtures.
+
+### Impact
+Unrecoverable hang on shutdown; silent loss of the failed rows.
+
+### Fix
+The error path now also calls `task_done()` for each item in the failed batch
+before backing off. `join()` can always return; failed rows are logged as lost
+instead of wedging the process.
+
+### Regression Tests
+- `test_shadow_outcomes_persisted` completes instead of hanging.
+
+### Verification
+`pytest tests/unit/test_shadow_phase11.py` → 35 passed.
+
+### Architectural Lessons / Regression Guards
+- `queue.get()` must ALWAYS be paired with `task_done()` in every path
+  (success AND failure). Add a failure-injection test for the queue worker.
+
+---
+
+## BUG-027 — Shadow Comparison Numerically Degenerate (Champion R Proxied as Challenger R)
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Phase 11 Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_shadow_phase11.py::TestRegimeStrategy::test_critical_regime_degradation_not_averaged_away`
+
+### Affected Components
+- `src/nexus_scalp/shadow/comparison.py` (`ShadowComparer.compare`,
+  `evaluate_promotion`)
+
+### Problem
+The comparison used `champ_r = [d.hypothetical_r * 1.0 ...]` — the champion's
+realized R was numerically identical to the challenger's. Per-regime and
+per-strategy deltas were therefore always `0.0`, and the
+`degraded_regimes` / `degraded_strategies` / `improved_strategies` /
+promotion-veto signals could never fire. Shadow-based promotion evaluation was
+statistically meaningless.
+
+### Root Cause
+`hypothetical_r` is the challenger's realized R on the simulated path. When the
+two models disagree on direction, the champion's R on the SAME path has the
+opposite sign; the code ignored this and reused the challenger's value.
+
+### Evidence
+`test_critical_regime_degradation_not_averaged_away` failed: HIGH_VOLATILITY
+delta stayed `0.0` and `degraded_regimes=[]` despite -0.9R challenger outcomes.
+
+### Failure Scenario
+A Challenger that collapses in a critical regime shows no degradation signal;
+promotion vetoes never trigger; a genuinely worse Challenger could look neutral.
+
+### Impact
+False confidence in Champion/Challenger comparisons; broken promotion
+eligibility signals.
+
+### Fix
+- Champion-side R is now derived from the champion's OWN action on the same
+  path: identical to `hypothetical_r` when actions agree, `-hypothetical_r`
+  when they disagree (one wins, one loses).
+- Per-regime/per-strategy/per-session aggregation uses the same derived
+  champion-side R.
+- Regimes are additionally flagged degraded when the challenger's absolute
+  expectancy falls below `MIN_REGIME_EXPECTANCY_R` (0.0), so a bad regime is
+  never averaged away by good ones.
+
+### Regression Tests
+- `test_critical_regime_degradation_not_averaged_away` (unchanged) now passes.
+
+### Verification
+`pytest tests/unit/test_shadow_phase11.py` → 35 passed.
+
+### Architectural Lessons / Regression Guards
+- Any "champion vs challenger" numeric comparison must derive each side from
+  its OWN action/decision, never proxy one from the other.
+- Absolute degradation floors complement relative deltas so critical regimes
+  cannot hide behind good ones.
+
+---
+
+## BUG-028 — ShadowStore/ModelLifecycleStore None-Repo Guard Missing (Isolation Contract)
+
+- **Status**: FIXED
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Phase 11 Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_shadow_phase11.py::TestFailureIsolation` (5/5)
+
+### Affected Components
+- `src/nexus_scalp/shadow/store.py` (all save/list methods)
+- `src/nexus_scalp/model_lifecycle/store.py` (all save/list methods)
+
+### Problem
+A store constructed with `audit_repo=None` raised `AttributeError:
+'NoneType' object has no attribute '_is_sqlite'` instead of failing closed /
+isolating. The failure-isolation contract (a broken store must never raise
+through the engine) was violated.
+
+### Fix
+All guards now use `if not self.audit_repo or not self.audit_repo._is_sqlite:`.
+
+### Regression Tests
+- `test_shadow_db_failure_cannot_stop_trading` (unchanged) now passes.
+
+### Verification
+`pytest tests/unit/test_shadow_phase11.py::TestFailureIsolation` → 5 passed.
+
+### Architectural Lessons / Regression Guards
+- Every persistence guard must be None-safe; a degraded store degrades to
+  "return False / no-op", never to an exception.
+
+---
+
+## BUG-029 — Shadow Store ensure_schema() Synchronous SQLite I/O on Live Tick Path
+
+- **Status**: FIXED
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Phase 11 Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `pytest tests/unit/test_shadow_phase11.py` (35/35) + micro-benchmark
+
+### Affected Components
+- `src/nexus_scalp/shadow/store.py` (`ShadowStore.ensure_schema`)
+- `src/nexus_scalp/application/live_engine.py` (`_record_shadow_decision`)
+
+### Problem
+`ShadowStore.save_decision()` -> `ensure_schema()` opened a synchronous
+`sqlite3.connect()` + 4 `CREATE TABLE IF NOT EXISTS` + 3 `CREATE INDEX` +
+`commit()` on EVERY live tick while a Challenger was attached (~0.65ms per
+cycle benchmarked; ~13ms/s at 20 ticks/s). This is blocking DB I/O on the hot
+path, violating the "NO Phase 08-11 work may block the live tick path"
+invariant. A per-tick `[SHADOW] event=DECISION` info log also spammed output.
+
+### Fix
+`ensure_schema()` is now guarded by an in-process `_schema_ensured` flag: the
+DDL runs at most once per process; every subsequent call is a no-op returning
+in microseconds. The per-tick decision log was left intact (bounded by active
+shadow runs) but no longer has DDL cost behind it.
+
+### Regression Tests
+- Full shadow suite still green (persistence round-trip unchanged).
+
+### Verification
+Micro-benchmark: per-call cost drops from ~0.65ms to ~0.0002ms after the first
+call.
+
+### Architectural Lessons / Regression Guards
+- Schema DDL belongs in explicit init paths, never behind a per-record write.
+- Any `ensure_schema()` invoked from write paths must be process-guarded.
+
+---
+
+## BUG-030 — Phase Tables Use INSERT OR REPLACE on "Immutable" Rows (Id-Churn, Not Data Loss)
+
+- **Status**: WONT_FIX (documented; low risk given UUID keys)
+- **Severity**: LOW
+- **Confidence**: HIGH
+- **Discovered**: Phase 08-11 Forensic Audit / DB Schema Audit (2026-08-16)
+
+### Affected Components
+- `src/nexus_scalp/shadow/store.py` (`_INSERT_RUN_SQL`, `_INSERT_DECISION_SQL`,
+  `_INSERT_COMPARISON_SQL`, `_INSERT_PROMOTION_SQL`)
+- `src/nexus_scalp/model_lifecycle/store.py` (`_INSERT_RUN_SQL`,
+  `_INSERT_COMPARISON_SQL`)
+- `src/nexus_scalp/intelligence/evolution.py` (`strategy_evolution_candidates`)
+
+### Problem
+Six phase tables documented as "append-only / immutable" use
+`INSERT OR REPLACE` on UNIQUE keys. REPLACE = DELETE+INSERT, which rewrites
+the AUTOINCREMENT row id and can in principle orphan cross-table references
+(e.g. `model_comparisons.run_id`), contradicting the immutability claim.
+The correct append-only pattern used elsewhere is `INSERT ... ON CONFLICT
+DO NOTHING` (experiences, lifecycle events).
+
+### Impact
+Low in practice: all writes carry freshly generated UUID keys
+(`shadow_<hex>`, `run_<hex>`, `sd_<hex>`), so REPLACE virtually never
+collides; row-id churn is invisible to consumers who key on the UUID.
+No data loss occurs.
+
+### Recommendation (future)
+Switch these to `ON CONFLICT(run_id/shadow_decision_id) DO NOTHING` when
+next touching these files. Not a production-safety defect today.
+
+---
+
+## BUG-031 — Phase ensure_schema() Has No ALTER-Based Migration Path
+
+- **Status**: WONT_FIX (documented; future-schema readiness item)
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Phase 08-11 Forensic Audit / DB Schema Audit (2026-08-16)
+
+### Affected Components
+- `src/nexus_scalp/shadow/store.py::ensure_schema`
+- `src/nexus_scalp/model_lifecycle/store.py::ensure_schema`
+- research/intelligence phase stores
+
+### Problem
+Phase stores create tables with `CREATE TABLE IF NOT EXISTS` + indexes only.
+If a phase table already exists with an older column set, a later release
+adding columns silently does nothing — the INSERT then fails with
+`no such column` at write time, and the queued worker drops the whole batch
+(BUG-026 path). audit_repository.py handles this with defensive
+`ALTER TABLE ... ADD COLUMN` in try/except; phase stores do not.
+
+### Impact
+Future schema evolution of phase tables (e.g. 60D/350D feature schemas)
+requires a manual migration step or a hard DROP + recreate (data loss).
+Not a defect in the current 50D schema.
+
+### Recommendation (future)
+Centralize schema migration: a shared `_add_columns_if_missing(conn, table,
+cols)` helper used by every phase store before writes, or a schema_version
+table with explicit migrations.
+
+---
+
+## BUG-032 — Queue-Full Drops Telemetry Silently; audit_signals Dedup Is In-Memory Only
+
+- **Status**: WONT_FIX (bounded-by-design; documented)
+- **Severity**: LOW
+- **Confidence**: HIGH
+- **Discovered**: Phase 08-11 Forensic Audit / DB Schema Audit (2026-08-16)
+
+### Affected Components
+- `src/nexus_scalp/adapters/database/audit_repository.py` (`log_signal`,
+  `_process_queue_worker`)
+
+### Problem
+1. `_queue.put_nowait` on a full queue (maxsize 10000) drops the record with
+   only a log line — no spill, no retry. Bounded and intentional (hot-path
+   protection), but a 10k-row burst loses telemetry.
+2. `audit_signals` dedup is a single in-memory `_last_logged_signal_key`
+   (protects consecutive duplicates only; lost on restart) — no UNIQUE
+   constraint on the table, so restart/worker-crash can produce duplicate
+   signal rows.
+
+### Impact
+Observability loss under extreme bursts; duplicate signal rows after crash.
+Neither affects trading decisions (audit is telemetry).
+
+### Recommendation (future)
+Add a SQL-level dedup (e.g. UNIQUE index on the 5-tuple) or accept the
+bounded-loss contract and document it in skill.md (already documented as
+"queue full -> drop telemetry").
+
+---

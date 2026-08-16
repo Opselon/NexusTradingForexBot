@@ -58,7 +58,7 @@ class TrainingRunStore:
 
     def ensure_schema(self) -> None:
         """Creates the Phase 10 tables if missing (idempotent)."""
-        if not self.audit_repo._is_sqlite:
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
             return
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
@@ -132,7 +132,7 @@ class TrainingRunStore:
 
     def save_run(self, run: TrainingRun) -> bool:
         """Persists an immutable training run. Idempotent on run_id."""
-        if not self.audit_repo._is_sqlite:
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
             return False
         self.ensure_schema()
         args = (
@@ -169,7 +169,7 @@ class TrainingRunStore:
             return False
 
     def save_comparison(self, comparison: ChampionChallengerComparison) -> bool:
-        if not self.audit_repo._is_sqlite:
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
             return False
         self.ensure_schema()
         args = (
@@ -195,7 +195,7 @@ class TrainingRunStore:
     # ------------------------------------------------------------------
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
-        if not self.audit_repo._is_sqlite:
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
             return None
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
@@ -212,7 +212,7 @@ class TrainingRunStore:
             return None
 
     def list_runs(self, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
-        if not self.audit_repo._is_sqlite:
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
         sql = "SELECT * FROM training_runs"
@@ -236,7 +236,7 @@ class TrainingRunStore:
         return out
 
     def get_comparison(self, run_id: str) -> dict[str, Any] | None:
-        if not self.audit_repo._is_sqlite:
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
             return None
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
@@ -253,7 +253,7 @@ class TrainingRunStore:
             return None
 
     def list_comparisons(self, limit: int = 50) -> list[dict[str, Any]]:
-        if not self.audit_repo._is_sqlite:
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
             return []
         bounded = max(1, min(int(limit), 200))
         out: list[dict[str, Any]] = []
@@ -276,7 +276,7 @@ class TrainingRunStore:
     def summary(self) -> dict[str, Any]:
         """Training run + comparison counts for the dashboard."""
         out: dict[str, Any] = {"available": False, "runs": {}, "comparisons": 0}
-        if not self.audit_repo._is_sqlite:
+        if not self.audit_repo or not self.audit_repo._is_sqlite:
             return out
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)

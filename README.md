@@ -1,5 +1,5 @@
 
-# 👑 Nexus Scalp Engine (NSE) v7.5
+# 👑 Nexus Scalp Engine (NSE) v8.0
 ### *Production-Grade High-Frequency Quantitative Scalping Infrastructure*
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -87,6 +87,43 @@ NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture*
 ### 5. Institutional Financial Accounting Ledger
 - **Complete Post-Trade Autopsy:** Logs every closed trade into SQLite (`artifacts/audit.db`) with `MAE` (Maximum Adverse Excursion), `MFE` (Maximum Favorable Excursion), `entry_rule_id`, `exit_mechanism` (`TP_HIT`, `HARD_SL_HIT`, `RISK_FREE_SL_HIT`, `TIME_DECAY_EXIT`), initial/final SL prices, and running equity snapshots.
 
+### 6. Experience-Driven Strategy Intelligence (Phase 08)
+- **Immutable Experience Ledger:** Every decision is recorded at decision-time with deterministic `idempotency_key` dedup; every outcome is appended with the broker ticket as the identity bridge. Duplicate callbacks, reconnect replays, and worker retries can never create duplicate evidence.
+- **Pre-Trade Experience Gate:** Runs after the signal policy, before risk sizing. A retired strategy family (`PERSISTENT_NEGATIVE_EXPECTANCY`) is REJECTED; a degraded family is confidence-penalized; a validated high-expectancy family earns a bounded boost. The gate only down-ranks, never upgrades, and never touches position-management actions.
+- **TTL-Cached + Rate-Limited Hot-Path Lookups:** Score refreshes are cached (30s) and budget-limited so the live tick path never blocks on SQLite.
+
+### 7. Unified Accounting & Performance Intelligence Core (Phase 08)
+- **ONE canonical accounting authority:** REST API, dashboard, background worker and Experience all read performance truth through `AccountingCore` — no consumer computes PnL/drawdown/period boundaries independently.
+- **NO SYNTHETIC NUMBERS:** any metric without stored evidence renders `n/a`, never a fake `0.0`.
+- **ONE PERIOD POLICY (UTC), ONE DRAWDOWN METHODOLOGY, NET PNL COMPUTED EXACTLY ONCE, IDEMPOTENT CLOSURE** — institutional invariants enforced by 64 unit tests.
+
+### 8. Trade Intelligence Brain (Phase 09)
+- **Immutable Position Lifecycle Timeline:** every open position emits typed events (`POSITION_CREATED`, `POSITION_PROFIT_GIVEBACK`, `POSITION_DEGRADING`, ...) with full market/decision context.
+- **Trade Autopsy Engine:** separates strategy quality, entry quality, risk quality, management quality and exit quality — a `MANAGED_LOSS` is never mistaken for a broken strategy.
+- **Behavior Detection:** measurable, deterministic patterns (`EARLY_EXIT`, `PANIC_EXIT`, `OVERTRADING`, ...) with timestamps and severity.
+- **Strategy Evolution:** controlled candidate discovery from history; a candidate is NEVER live until backtested and validated.
+- **Pre-Trade Intelligence Gate:** layered WARN tier + bounded suitability score — only down-grades.
+
+### 9. Strategy Research, Backtest & Validation Engine (Phase 09B)
+- **Causal-safe dataset builder** over the immutable experience ledger (future outcomes can never enter discovery).
+- **Deterministic friction-aware backtest** (spread/slippage/commission) + purged/embargoed temporal walk-forward + hard OOS gate (OOS failure ⇒ REJECTED even with high win rate).
+- **Robustness engine** (spread/slippage/latency stress, degradation measured) + explainable multi-dimension score with small-sample protection.
+- **Content-addressed strategy versioning:** a modified strategy is a NEW version that must be revalidated; old validation records stay immutable.
+- **Enduring `strategy_registry`** independent of model files — survives model rebuilds and schema-width changes.
+
+### 10. Controlled Model Training & Challenger Engine (Phase 10)
+- **Champion NEVER overwritten:** candidate training writes only to `candidate/<run_id>/` staging paths (hash-verified).
+- **12 validation gates** (dataset, schema, labels, stability, validation, walk-forward, OOS, robustness, risk, comparison, artifact, reproducibility) + mono-class collapse protection.
+- **Immutable `training_runs` + `model_comparisons`** lineage; additive lifecycle columns on the existing model registry (no duplicate registry).
+- **No auto-promotion:** a validated Challenger is stored `CHALLENGER` (shadow-eligible); production authority stays with the controlled process.
+
+### 11. Challenger Shadow Trading & Champion Evaluation (Phase 11)
+- **Same-input integrity:** the Challenger runs on the IDENTICAL live feature vector as the Champion, every tick.
+- **Zero order authority:** `shadow/` holds no adapter, order manager or risk engine — a Challenger can never place, modify or close an order.
+- **Every result marked `simulated=True`** — never presented as real account PnL.
+- **Explainable promotion evaluation with hard vetoes** (insufficient evidence, negative OOS, critical drawdown increase, robustness failure, calibration collapse, strategy regressions, tail-risk degradation).
+- **Bounded, failure-isolated:** queued persistence, worker aggregation via `asyncio.to_thread`, schema DDL guarded once per process; a shadow failure can never stop trading.
+
 ---
 
 ## 📂 Repository Layout
@@ -98,6 +135,12 @@ NexusTradingForexBot/
 │   ├── base.yaml                            # System parameters, risk limits, & model configs
 │   └── live.yaml                            # Production live environment configurations
 ├── src/nexus_scalp/
+│   ├── accounting/                       # PHASE 08: Unified Accounting & Performance Core
+│   ├── experience/                       # PHASE 08: Experience-Driven Strategy Intelligence
+│   ├── intelligence/                     # PHASE 09: Trade Intelligence Brain
+│   ├── research/                         # PHASE 09B: Strategy Research, Backtest & Validation
+│   ├── model_lifecycle/                  # PHASE 10: Controlled Model Training & Challenger Engine
+│   ├── shadow/                           # PHASE 11: Challenger Shadow Trading & Evaluation
 │   ├── adapters/
 │   │   ├── database/audit_repository.py      # SQLite WAL ledger & signal telemetry DB
 │   │   └── mt5/mt5_adapter.py               # Win32 C++ IPC Direct Local MT5 Driver
@@ -143,6 +186,59 @@ NexusTradingForexBot/
 | **`feat_47`** | **`feat_ob_equilibrium_ratio`**| **SMC Engine** | Position of OB relative to 50% impulse equilibrium (0.0 to 1.0). |
 | **`feat_48`** | **`feat_ob_liquidity_swept`** | **SMC Engine** | Binary flag (1/0) indicating liquidity sweep presence (`liq`). |
 | **`feat_49`** | **`feat_ob_fib_50_60_align`** | **SMC Engine** | Proximity of OB to 50%-60% Fibonacci OTE retracement zone. |
+
+---
+
+## 🧠 Self-Learning & Validation Loop (Phases 08-11)
+
+The engine forms a real closed learning loop, with every stage evidence-driven
+and safety-gated:
+
+```text
+LIVE TRADE ──► ACCOUNTING (audit_ledger, authoritative PnL)
+   ▲              │
+   │              ▼
+   │          EXPERIENCE (immutable audit_experiences + outcomes,
+   │                      broker-ticket identity bridge)
+   │              │
+   │              ▼
+   │          TRADE AUTOPSY (strategy/entry/risk/management/exit quality,
+   │                      behavior detection, lifecycle timeline)
+   │              │
+   │              ▼
+   │          STRATEGY INTELLIGENCE (lifecycle + confidence + expectancy R,
+   │                      self-heal rebuildable)
+   │              │
+   │              ▼
+   │          RESEARCH (causal dataset ─► backtest ─► walk-forward
+   │                      ─► OOS gate ─► robustness ─► score ─► registry)
+   │              │
+   │              ▼
+   │          MODEL TRAINING (candidate staging ─► 12 gates ─► CHALLENGER)
+   │              │
+   │              ▼
+   │          SHADOW TRADING (same live vector, simulated=True,
+   │                      comparison ─► promotion vetoes)
+   │              │
+   └── FUTURE DECISIONS (pre-trade gates consume experience; nothing ever
+                  promotes itself to LIVE automatically)
+```
+
+**Hard safety invariants across all phases:**
+
+- Research, training, shadow and experience workers NEVER place, modify or
+  close an order (`asyncio.to_thread` + no adapter/order-manager/risk-engine
+  imports by construction, test-enforced).
+- A strategy/model candidate NEVER becomes LIVE automatically — promotion is
+  strictly operator-gated and veto-protected.
+- OOS failure ⇒ REJECTED regardless of in-sample performance.
+- Schema mismatch (feature dimension/class count/scaler) fails explicitly —
+  never silent reshape/truncate.
+- All derived intelligence (strategy scores, accounting reports, research
+  registry, shadow summaries) is REBUILDABLE from the immutable ledger; raw
+  ledger rows are never modified.
+- The live tick path never blocks on Phase 08-11 work (queued persistence,
+  TTL/rate-limited lookups, out-of-loop workers).
 
 ---
 
@@ -219,12 +315,32 @@ Open your browser and navigate to the Web Dashboard:
 
 ## 🧪 Verification & Test Suite
 
-The engine includes an extensive, hardened test suite covering unit logic, PyTorch tensor contracts, risk clamps, and integration workflows.
+The engine includes an extensive, hardened test suite covering unit logic,
+PyTorch tensor contracts, risk clamps, accounting invariants, experience
+idempotency, research causality/OOS gates, model-lifecycle gates and shadow
+safety contracts.
 
 ### Run All Unit & Integration Tests:
 ```bash
 pytest tests/unit/ tests/integration/ -v
 ```
+
+### Phase Suites (Phases 08-11):
+```bash
+pytest tests/unit/test_accounting_core.py            # 66 tests - accounting core
+pytest tests/unit/test_experience_intelligence.py    # Phase 08 experience
+pytest tests/unit/test_intelligence_phase09.py       # 18 tests - Phase 09 brain
+pytest tests/unit/test_research_phase09b.py          # 45 tests - Phase 09B research
+pytest tests/unit/test_model_lifecycle_phase10.py    # 32 tests - Phase 10 training
+pytest tests/unit/test_shadow_phase11.py             # 35 tests - Phase 11 shadow
+pytest tests/unit/test_log_autopsy_fixes.py          # BUG-013..018 regression guards
+```
+
+### Quality Gates (beforePush.sh / beforePush.ps1):
+- Ruff lint (`ruff check . --fix --unsafe-fixes`)
+- Ruff format (`ruff format .`)
+- Mypy strict static analysis (`mypy src/nexus_scalp`)
+- Full unit test suite (`pytest tests/unit`)
 
 ### Run Coverage Report:
 ```bash

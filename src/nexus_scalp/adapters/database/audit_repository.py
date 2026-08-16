@@ -747,6 +747,13 @@ class AuditRepository:
                         self._queue.task_done()
                 except Exception as e:
                     logger.error("Audit Background Worker failed to insert batch", error=str(e))
+                    # Never leave the queue items un-accounted: a persistent
+                    # insert error must not deadlock every future join() caller
+                    # (including close()/shutdown). The failed items are
+                    # dropped (data loss is logged above) but task_done() is
+                    # still called so queue.join() can always return.
+                    for _ in batch:
+                        self._queue.task_done()
                     time.sleep(1.0)  # Backoff on error
 
         conn.close()

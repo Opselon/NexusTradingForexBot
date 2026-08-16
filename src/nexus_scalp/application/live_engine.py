@@ -80,6 +80,11 @@ from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.worker import ResearchWorker
 from nexus_scalp.risk.risk_engine import RiskEngine
+from nexus_scalp.shadow.challenger import ChallengerRuntime
+from nexus_scalp.shadow.comparison import ShadowComparer
+from nexus_scalp.shadow.engine import ShadowEngine
+from nexus_scalp.shadow.store import ShadowStore
+from nexus_scalp.shadow.worker import ShadowWorker
 from nexus_scalp.signals.policy import SignalPolicy
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
@@ -314,6 +319,27 @@ class LiveEngine:
         )
         self._training_worker_started: bool = False
 
+        # =====================================================================
+        # PHASE 11: CHALLENGER SHADOW TRADING & CHAMPION EVALUATION
+        # ---------------------------------------------------------------------
+        # Evaluates a validated Challenger under the SAME live market state as
+        # the production Champion. Shadow=ONLY: zero order authority, marked
+        # SHADOW/SIMULATED, isolated worker, never blocks the tick path.
+        # =====================================================================
+        self.shadow_store = ShadowStore(audit_repo=self.audit)
+        self.shadow_engine = ShadowEngine(
+            store=self.shadow_store,
+            comparer=ShadowComparer(),
+        )
+        self.shadow_worker = ShadowWorker(
+            audit_repo=self.audit,
+            engine=self.shadow_engine,
+            interval_sec=300.0,
+            finalize_after_decisions=30,
+        )
+        self._shadow_worker_started: bool = False
+        self._shadow_challenger: ChallengerRuntime | None = None
+
         # Order/risk/policy
         self.signal_policy = SignalPolicy(
             confidence_threshold=config.model.confidence_threshold,
@@ -536,6 +562,10 @@ class LiveEngine:
         # ONLY in worker threads, never in the tick pipeline; fully isolated.
         self._start_training_worker()
 
+        # PHASE 11: start the shadow-aggregation worker. Shadow evaluation is
+        # bounded + isolated; it can never stop trading or touch orders.
+        self._start_shadow_worker()
+
         logger.info(
             "LIVE CONNECTED",
             login=getattr(account, "login", 0) if account else 0,
@@ -621,6 +651,13 @@ class LiveEngine:
                         await asyncio.to_thread(self.training_worker.tick)
                     except Exception:
                         pass
+
+                # PHASE 11: shadow-aggregation worker kick (bounded, isolated).
+                if self._shadow_worker_started:
+                    try:
+                        await asyncio.to_thread(self.shadow_worker.tick)
+                    except Exception:
+                        pass
                 await asyncio.sleep(0.05)
 
             except Exception as e:
@@ -655,6 +692,12 @@ class LiveEngine:
         # PHASE 10: stop the controlled training worker (isolated).
         try:
             await self._stop_training_worker()
+        except Exception:
+            pass
+
+        # PHASE 11: stop the shadow-aggregation worker (isolated).
+        try:
+            await self._stop_shadow_worker()
         except Exception:
             pass
 
@@ -1010,6 +1053,25 @@ class LiveEngine:
         except Exception as err:
             logger.error("[TRAINING_WORKER] event=STOP status=FAILED", error=str(err))
 
+    def _start_shadow_worker(self) -> None:
+        """Starts the shadow-aggregation worker (idempotent)."""
+        if self._shadow_worker_started:
+            return
+        self._shadow_worker_started = True
+        try:
+            self.shadow_worker.start()
+        except Exception as err:
+            logger.error("[SHADOW_WORKER] event=START status=FAILED", error=str(err))
+            self._shadow_worker_started = False
+
+    async def _stop_shadow_worker(self) -> None:
+        """Stops the shadow-aggregation worker (idempotent, never raises)."""
+        self._shadow_worker_started = False
+        try:
+            self.shadow_worker.stop()
+        except Exception as err:
+            logger.error("[SHADOW_WORKER] event=STOP status=FAILED", error=str(err))
+
     async def _stop_research_worker(self) -> None:
         """Stops the strategy research worker (idempotent, never raises)."""
         self._research_worker_started = False
@@ -1337,6 +1399,21 @@ class LiveEngine:
             self._last_regime_state = regime_state
             self._last_probs = probs
             self._last_proposal = proposal
+
+            # =================================================================
+            # PHASE 11: CHALLENGER SHADOW RECORDING (SAME live feature vector)
+            # -----------------------------------------------------------------
+            # Records the Champion's real decision and runs the Challenger on
+            # the IDENTICAL feature vector used by the live path. Purely
+            # observational: the Challenger produces a hypothetical proposal
+            # only and can never place an order. Bounded + failure-isolated.
+            # =================================================================
+            self._record_shadow_decision(
+                tick=tick,
+                fv=fv,
+                regime_state=regime_state,
+                proposal=proposal,
+            )
 
             # Extract and update real SMC overlays for the live chart canvas
             real_overlays = self.signal_policy.extract_live_chart_overlays(
@@ -1795,6 +1872,73 @@ class LiveEngine:
         bundle.model.eval()
         with torch.inference_mode():
             return bundle.model(x)
+
+    def _record_shadow_decision(
+        self,
+        tick: TickData,
+        fv: Any,
+        regime_state: MarketRegimeState,
+        proposal: TradeProposal,
+    ) -> None:
+        """
+        Records one parallel Champion/Challenger decision on the SAME live
+        feature vector (spec 3 / 4). Bounded + failure-isolated: a Challenger
+        fault must never affect production execution (spec 17).
+        """
+        if self._shadow_challenger is None:
+            return
+        try:
+            engine = self.shadow_engine
+            if not engine.active_run_id:
+                return
+            # Same feature vector the Champion used:
+            x50 = (
+                fv.to_tensor_input() if hasattr(fv, "to_tensor_input") else [0.0] * self.FEATURE_DIM
+            )
+            feature_hash = getattr(fv, "feature_hash", "") or str(hash(tuple(x50[:5])))
+            regime_str = getattr(getattr(regime_state, "regime", None), "value", "UNKNOWN")
+            if isinstance(regime_str, str) is False and regime_str is not None:
+                regime_str = str(regime_str)
+            from nexus_scalp.shadow.models import ShadowModelRef
+
+            champ = self.champion_manager.champion_or_none()
+            champ_ref = ShadowModelRef(
+                model_id=(champ.model_id if champ else self.champion_manager.model_id),
+                model_version=(
+                    champ.model_version if champ else self.champion_manager.model_version
+                ),
+                feature_schema_id=self.FEATURE_SCHEMA_ID,
+                feature_dimension=self.FEATURE_DIM,
+                artifact_hash=(champ.artifact_hash if champ else ""),
+                is_champion=True,
+            )
+            engine.set_champion_ref(champ_ref)
+            engine.record_shadow_decision(
+                timestamp=tick.timestamp,
+                symbol=tick.symbol,
+                timeframe="M1",
+                feature_hash=feature_hash,
+                feature_schema_id=self.FEATURE_SCHEMA_ID,
+                feature_dimension=self.FEATURE_DIM,
+                regime=regime_str,
+                session=getattr(proposal, "session", "") or "ALL",
+                configuration_version=str(getattr(self.config.model, "feature_schema_version", "")),
+                champion_ref=champ_ref,
+                champion_action=proposal.action.value
+                if hasattr(proposal.action, "value")
+                else str(proposal.action),
+                champion_confidence=float(getattr(proposal, "confidence", 0.0)),
+                champion_probabilities=[
+                    float(v)
+                    for v in (self._last_probs.tolist() if self._last_probs is not None else [])
+                ],
+                champion_strategy_id="",
+                decision_id=getattr(proposal, "request_id", ""),
+                feature_vector=x50,
+            )
+        except Exception as e:
+            # Shadow is observability only: a failure here NEVER disturbs live.
+            logger.error("[SHADOW] event=RECORD_FAILURE (isolated)", error=str(e))
 
     # -------------------------
     # Async retraining worker
