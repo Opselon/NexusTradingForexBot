@@ -815,5 +815,154 @@ def config_validate_cmd(
         raise typer.Exit(1) from None
 
 
+# =============================================================================
+# PHASE 13: MODEL GENERATION MIGRATION — artifact-first model factory CLI
+# -----------------------------------------------------------------------------
+# nse dataset build / experiment create / train / inspect / validate /
+# replay / doctor — all operate on filesystem artifacts (no DB required).
+# =============================================================================
+
+
+def _mg_store() -> Any:
+    from nexus_scalp.model_generation import ArtifactStore, default_artifact_root
+
+    return ArtifactStore(default_artifact_root())
+
+
+@app.command("model-dataset-build")
+def model_dataset_build(
+    bars_csv: Path = typer.Option(Path(""), "--bars", "-b", help="CSV/parquet of raw bars"),
+    symbol: str = typer.Option("XAUUSD", "--symbol"),
+    timeframe: str = typer.Option("M5", "--timeframe"),
+    schema: str = typer.Option("scalp_v1", "--schema", help="feature schema id"),
+    with_news: bool = typer.Option(False, "--with-news", help="attach news context"),
+    news_csv: Path = typer.Option(Path(""), "--news", "-n", help="news frame parquet/csv"),
+) -> None:
+    """Build a dataset artifact (deterministic, artifact-first)."""
+    import polars as pl
+
+    from nexus_scalp.model_generation import DatasetFactory
+
+    if not bars_csv.exists():
+        console.print("[red]No bars file provided (--bars).[/red]")
+        raise typer.Exit(1)
+    df = pl.read_csv(bars_csv) if bars_csv.suffix.lower() == ".csv" else pl.read_parquet(bars_csv)
+    news_frame = None
+    if with_news:
+        news_frame = (
+            (
+                pl.read_csv(news_csv)
+                if news_csv.suffix.lower() == ".csv"
+                else pl.read_parquet(news_csv)
+            )
+            if news_csv.exists()
+            else None
+        )
+    store = _mg_store()
+    handle = DatasetFactory(store=store).build(
+        df, symbol=symbol, timeframe=timeframe, news_frame=news_frame
+    )
+    console.print(
+        f"[green]Dataset built:[/green] {handle['dataset_id']} rows={handle['counts']['total']}"
+    )
+    _emit(handle, as_json=False, plain=True)
+
+
+@app.command("model-experiment-create")
+def model_experiment_create(
+    dataset_id: str = typer.Option(..., "--dataset", help="dataset artifact id"),
+    template: str = typer.Option("baseline_scalpnet_v1", "--template"),
+) -> None:
+    """Create a bounded experiment on a dataset artifact."""
+    from nexus_scalp.model_generation import ExperimentFactory
+
+    cfg = ExperimentFactory(store=_mg_store()).create(dataset_id, template=template)
+    console.print(f"[green]Experiment created:[/green] {cfg.experiment_id} arch={cfg.architecture}")
+    _emit(cfg.model_dump(mode="json"), as_json=False, plain=True)
+
+
+@app.command("model-train")
+def model_train(
+    experiment_id: str = typer.Option(..., "--experiment"),
+    model_id: str = typer.Option("", "--model-id"),
+) -> None:
+    """Train a candidate from an experiment (never touches Champion)."""
+    from nexus_scalp.model_generation import CandidateTrainer, ExperimentFactory
+
+    store = _mg_store()
+    exp = ExperimentFactory(store=store).load(experiment_id)
+    frame = store.read_dataset(exp.dataset_id)
+    res = CandidateTrainer(store=store).train_candidate(exp, frame, model_id=model_id or None)
+    console.print(f"[green]Train:[/green] {res['status']} model={res.get('model_id')}")
+    if res["status"] == "FAILED":
+        console.print(f"[red]{res.get('error', '')}[/red]")
+        raise typer.Exit(1)
+    _emit(res, as_json=False, plain=True)
+
+
+@app.command("model-inspect")
+def model_inspect(model_id: str = typer.Option(..., "--model")) -> None:
+    """Inspect a model artifact manifest + integrity."""
+    store = _mg_store()
+    man = store.read_model_manifest(model_id)
+    if not man:
+        console.print(f"[red]Model {model_id} not found.[/red]")
+        raise typer.Exit(1)
+    v = store.verify_artifact(model_id)
+    console.print(f"[cyan]Model[/cyan] {model_id} integrity={v['ok']}")
+    _emit({"manifest": man, "integrity": v}, as_json=False, plain=True)
+
+
+@app.command("model-validate")
+def model_validate(
+    model_id: str = typer.Option(..., "--model"),
+    dataset_id: str = typer.Option(..., "--dataset"),
+) -> None:
+    """Validate a candidate artifact against its dataset (OOS/regime/collapse)."""
+    from nexus_scalp.model_generation import ValidationFactory
+
+    store = _mg_store()
+    frame = store.read_dataset(dataset_id)
+    import numpy as np
+
+    labels = frame["label"].to_numpy().astype(np.int64)
+    vf = ValidationFactory()
+    vr = vf.validate(model_id, "cli", frame, None, labels)
+    console.print(f"[cyan]Validation:[/cyan] {vr.verdict} passed={vr.passed}")
+    _emit(vr.model_dump(mode="json"), as_json=False, plain=True)
+
+
+@app.command("model-replay")
+def model_replay(
+    dataset_id: str = typer.Option(..., "--dataset"),
+    sample_id: str = typer.Option(..., "--sample"),
+    model_id: str = typer.Option("", "--model"),
+) -> None:
+    """Replay one sample (historical context + optional model prediction)."""
+    from nexus_scalp.model_generation import SampleReplay
+
+    rec = SampleReplay(store=_mg_store()).replay(dataset_id, sample_id, model_id=model_id or None)
+    _emit(rec, as_json=False, plain=True)
+
+
+@app.command("model-doctor")
+def model_doctor(model_id: str = typer.Option(..., "--model")) -> None:
+    """Run the model doctor: integrity + load + metadata health."""
+    from nexus_scalp.model_generation import LocalModelRuntime
+
+    store = _mg_store()
+    v = store.verify_artifact(model_id)
+    if not v["ok"]:
+        console.print(f"[red]Model {model_id} FAILED integrity: {v.get('reason')}[/red]")
+        raise typer.Exit(1)
+    try:
+        rt = LocalModelRuntime(store=store).load(model_id)
+        console.print(f"[green]Model healthy:[/green] {model_id}")
+        _emit({"integrity": v, "health": rt.health()}, as_json=False, plain=True)
+    except Exception as e:
+        console.print(f"[red]Model {model_id} failed to load: {e}[/red]")
+        raise typer.Exit(1) from None
+
+
 if __name__ == "__main__":
     app()

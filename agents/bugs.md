@@ -1454,3 +1454,181 @@ silently fail every cycle for those sources (no articles, no error surfaced).
 - Fresh DB: 10 enabled sources, CFTC disabled; unit suite green (406).
 
 ---
+
+## BUG-033 — Packaged EXE Ran Legacy Argparse Launcher Instead of the Release CLI
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Release Engineering build (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: packaged EXE `version --plain` / `health --json` return the Typer CLI output
+
+### Affected Components
+- `scripts/build/build_release.ps1` / CI `release.yml` (PyInstaller entrypoint)
+- `src/nexus_scalp/release/packaged_main.py` (new)
+
+### Problem
+The first PyInstaller onedir build used `NexusTradingForexBot.py` as the
+entrypoint. PyInstaller packages that script as `__main__`, so the EXE exposed
+the argparse launcher (`--config/--doctor/--gateway/--symbol`) and rejected
+`version --plain` / `health --json` with "unrecognized arguments". The
+packaged product had no release CLI surface at all.
+
+### Root Cause
+The launcher entrypoint predates the release CLI; the release build reused it
+without checking what CLI surface it exposes.
+
+### Fix
+New `src/nexus_scalp/release/packaged_main.py` — a PyInstaller entrypoint that
+delegates to the Typer `nexus` app. Both build paths (local ps1 + CI) now
+build from it.
+
+### Regression Guards
+- `tests/unit/test_release_build_system.py::test_build_scripts_reference_packaged_entrypoint`
+- packaged EXE smoke (build_release.ps1 + verify_release.ps1) asserts
+  `version --plain` and `health --json` succeed.
+
+---
+
+## BUG-034 — Silent Uninstall Aborted Because the Data-Preservation Wizard Page Required Input
+
+- **Status**: FIXED
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Installer smoke test (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `clean_install_test.ps1` silent install → uninstall passes (exit 0)
+
+### Affected Components
+- `installer/NexusScalpEngine.iss` (custom uninstall wizard page)
+
+### Problem
+`unins000.exe /VERYSILENT` exited 1: the custom `CreateInputOptionPage`
+("preserve your data?") required input pages in non-interactive uninstall.
+Automated/CI uninstalls therefore failed and could leave the app installed.
+
+### Root Cause
+The uninstall wizard page was shown unconditionally; silent mode has no way to
+answer it.
+
+### Fix
+Deletion of user data now happens only when `not UninstallSilent` AND the
+checkbox is ticked. Silent uninstall always preserves user data (exit 0).
+
+### Regression Guards
+- Installer smoke: silent install → reinstall → uninstall all exit 0.
+- User data under `{localappdata}\NexusScalpEngine` preserved after
+  uninstall (checked by `clean_install_test.ps1`).
+
+---
+
+## BUG-035 — Runtime Web/News Dependencies Missing from Canonical Dependency Declarations
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Release Engineering dependency audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `pip install -e .[web,release]` + packaged EXE launches web server deps
+
+### Affected Components
+- `pyproject.toml` `[project] dependencies` + `[project.optional-dependencies]`
+- `requirements.txt`
+
+### Problem
+`fastapi`, `uvicorn`, `httpx` were required at runtime (web server, news
+ingestion) but declared nowhere in `pyproject.toml` dependencies —
+`ci.yml` papered over this with a manual `pip install fastapi uvicorn httpx`.
+`feedparser` (used by the Phase 12 news sources) was also undeclared. Any
+clean install or packaged build without the manual pip step silently lacked
+the web/news runtime.
+
+### Root Cause
+Dependency declarations drifted from the runtime import graph (the `web`
+extra was referenced by ci.yml but never defined).
+
+### Fix
+- Added `fastapi`, `uvicorn`, `httpx` (+ `feedparser` conditional) to core deps,
+  defined `web` and `release` extras (pyinstaller), and mirrored the runtime
+  list in `requirements.txt`.
+- `ci.yml` now installs `.[dev,web]` with no manual fallback.
+
+### Regression Guards
+- `tests/unit/test_release_build_system.py::test_requirements_cover_web_and_news_runtime`
+- fresh venv `pip install -e .` pulls the full runtime.
+
+---
+
+## BUG-036 — News-Aware Candidate Manifests Did Not Record the Neural Input Width (Load/Replay Mismatch)
+
+- **Status**: FIXED (2026-08-16, Phase 13 migration)
+- **Severity**: HIGH (news-aware models could not be reloaded)
+- **Confidence**: HIGH (proven by integration test)
+- **Discovered**: Phase 13 model-generation migration (runtime load path)
+
+### Symptom
+A candidate trained with `news_enabled=true` (50 base features + 12 news
+dims = 62 inputs) could not be loaded by `LocalModelRuntime`: the runtime
+reconstructed the model with `input_dim = feature_dimension (50)`, so the
+state_dict load failed with a shape mismatch. `SampleReplay` also predicted
+with the wrong width.
+
+### Evidence
+`training.py` wrote `feature_dimension=len(feat_cols)` (50) while the model
+was built with `input_dim = len(feat_cols)+len(news_cols)` (62). The runtime
+had no record of the actual neural input width.
+
+### Root Cause
+The manifest stored only the BASE feature schema dimension; the extra news
+dimensions were implicit in the state dict shape but not recorded.
+
+### Fix
+- `training.py`: `build_metadata["input_dimension"]` records the exact
+  neural input width (base + news).
+- `runtime.py`: model construction + `predict()` input validation use
+  `input_dimension`; a manifest whose `input_dimension < feature_dimension`
+  or (news disabled yet dims differ) is REJECTED as corrupted.
+- `replay.py`: when the model is news-aware, the replay appends the sample's
+  news context vector (schema order) before predicting.
+
+### Verification
+- `tests/integration/test_model_generation.py::test_full_artifact_flow` —
+  news-aware candidate loads + predicts with DB import blocked.
+- `tests/unit/test_model_generation_phase13.py::test_36/37/38` — corrupted
+  manifests and narrowed schemas now raise `ManifestValidationError`.
+- All 55 Phase 13 tests pass.
+
+---
+
+## BUG-037 — Docstring/Manifest Claimed 3-Class Contract While Legacy Head Outputs 4 (Contract Ambiguity)
+
+- **Status**: DOCUMENTED (by design — legacy bridge, not a label)
+- **Severity**: LOW
+- **Confidence**: HIGH
+- **Discovered**: Phase 13 migration (label contract audit)
+
+### Symptom
+The labeler is 3-class (NO_TRADE/BUY/SELL; WAIT is policy-derived) but the
+legacy ScalpNet head outputs 4 logits (0=NO_TRADE,1=BUY,2=SELL,3=WAIT).
+Without an explicit contract this looks like a bug.
+
+### Root Cause
+Legacy architecture: the 4th logit is a POLICY bridge (WAIT state), never a
+training label. Phase 10's `EXPECTED_NUM_CLASSES=4` encoded this implicitly.
+
+### Resolution
+Phase 13 makes the contract explicit:
+- `LabelSchema` (`triple_barrier_3class_v1`): class_count=3, WAIT is NOT a
+  label — `schema.encode("WAIT")` raises.
+- `ModelManifest.class_count=3` + `classes=[NO_TRADE,BUY_MARKET,SELL_MARKET]`;
+  `ModelFactory` keeps the legacy 4-head geometry ONLY for
+  `LEGACY_SCALPNET_V1` (with an explicit comment) and 3 heads for all new
+  architectures.
+- Tests enforce: label layer rejects class 3; runtime decode maps argmax 3 →
+  policy WAIT in the legacy baseline only.
+
+### Verification
+- `test_09_label_mismatch_rejected`, `test_22_3class_label_contract_enforced`.
+
+---

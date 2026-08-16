@@ -66,8 +66,8 @@ Name: "startup"; Description: "Start the engine automatically when I log in"; Gr
 [Files]
 Source: "{#NSE_SOURCE_DIR}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; Always ship a safe (PAPER) config template that the first-run wizard copies.
-Source: "configs\base.yaml"; DestDir: "{localappdata}\NexusScalpEngine\config"; Flags: onlyifdoesntexist uninsneveruninstall
-Source: "docs\*"; DestDir: "{app}\docs"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\configs\base.yaml"; DestDir: "{localappdata}\NexusScalpEngine\config"; Flags: onlyifdoesntexist uninsneveruninstall
+Source: "..\docs\*"; DestDir: "{app}\docs"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{group}\Nexus Scalp Engine"; Filename: "{app}\{#MyAppExeName}"
@@ -117,6 +117,8 @@ var
 
 procedure InitializeWizard;
 begin
+  // Only shown in interactive uninstalls; silent (/VERYSILENT) uninstalls
+  // must complete without input and always preserve user data.
   RemoveDataPage := CreateInputOptionPage(wpReady, 'Preserve your data?', '',
     'Your trading data (databases, models, configuration, logs) is stored outside ' +
     'the application folder and is preserved by default. Tick the box below ONLY ' +
@@ -128,9 +130,12 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
-    if RemoveDataPage.Values[0] then
+    if not UninstallSilent then
     begin
-      DelTree(ExpandConstant('{localappdata}\NexusScalpEngine'), True, True, True);
+      if RemoveDataPage.Values[0] then
+      begin
+        DelTree(ExpandConstant('{localappdata}\NexusScalpEngine'), True, True, True);
+      end;
     end;
   end;
 end;

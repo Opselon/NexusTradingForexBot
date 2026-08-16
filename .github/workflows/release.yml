@@ -205,10 +205,11 @@ jobs:
             "$Out\NexusScalpEngine-$V-win-x64-setup.exe"
           )
           $lines = foreach ($a in $Artifacts) {
-            $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
-            "$h  $(Split-Path $a -Leaf)"
-          }
-          Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
+                      $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
+                      $rel = [System.IO.Path]::GetRelativePath("$PWD\$Out", $a)
+                      "$h  $rel"
+                    }
+                    Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
           python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip'))+list(root.glob('*-setup.exe')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); p.generate_sbom(out=root/'sbom'/'sbom.spdx.json'); print('manifest+sbom ok')"
       - name: verify-release (full self-check incl. secrets)
         shell: pwsh

@@ -1,6 +1,13 @@
 # 👑 Nexus Scalp Engine (NSE) v9.0
 ### *Production-Grade High-Frequency Quantitative Scalping Infrastructure*
 
+> **Model Generation Migration (PHASE 13):** ScalpNet is now a **LEGACY
+> BASELINE** (control group) inside an artifact-first Model Factory. Models
+> and datasets are filesystem artifacts with full manifests; inference
+> requires NO database. Explicit 3-class label contract; NewsContext is a
+> versioned, causally-correct model input; experiments are bounded and
+> explainable; legacy baseline remains reproducible for benchmarking.
+
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-EE4C2C.svg?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![MetaTrader 5](https://img.shields.io/badge/MetaTrader-5_Terminal-2962FF.svg?style=for-the-badge&logo=metatrader5&logoColor=white)](https://www.mql5.com/)
@@ -193,7 +200,8 @@ NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture*
 | **Features** | [`src/nexus_scalp/features/`](src/nexus_scalp/features) | `scalp_features.py` (50D causal engine + SMC) · `regime_classifier.py` (10 regimes) · `schema.py` (50D active; 60D/350D declared) |
 | **Labeling** | [`src/nexus_scalp/labeling/triple_barrier.py`](src/nexus_scalp/labeling/triple_barrier.py) | Cost-aware purged triple-barrier labeler |
 | **Market Data** | [`src/nexus_scalp/market_data/`](src/nexus_scalp/market_data) | `bar_aggregator.py` · `tick_storage.py` |
-| **Models** | [`src/nexus_scalp/models/scalp_net.py`](src/nexus_scalp/models/scalp_net.py) | PyTorch dual-path TCN + Self-Attention network |
+| **Models** | [`src/nexus_scalp/models/scalp_net.py`](src/nexus_scalp/models/scalp_net.py) | 🟡 LEGACY BASELINE ScalpNet (control group — kept for benchmarking) |
+| **Model Generation** | [`src/nexus_scalp/model_generation/`](src/nexus_scalp/model_generation) | 🟢 PHASE 13 — artifact-first Model Factory: contracts, artifact store, dataset/sample/experiment factories, runtime, replay, drift |
 | **Observability** | [`src/nexus_scalp/observability/`](src/nexus_scalp/observability) | `logging.py` (structured JSON) · `telegram_notifier.py` |
 | **Ports** | [`src/nexus_scalp/ports/`](src/nexus_scalp/ports) | `mt5_port.py` (`IMT5Port`) · `gateway_port.py` (`IGatewayPort`) |
 | **Risk** | [`src/nexus_scalp/risk/risk_engine.py`](src/nexus_scalp/risk/risk_engine.py) | Fractional-Kelly lot sizing, Almgren-Chriss slippage, margin clamps |
@@ -205,8 +213,8 @@ NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture*
 
 | Suite | Path | Scope |
 | :--- | :--- | :--- |
-| **Unit (27 active suites)** | [`tests/unit/`](tests/unit) | Domain, features, trainer, policy, risk, order manager, rule matrix, hardening, HTF warmup gate, accounting (64), intelligence (18), research (45), model lifecycle (32), shadow (35), **news (63)**, regression guards (BUG-013..018) |
-| **Integration (9 suites)** | [`tests/integration/`](tests/integration) | Accounting API · Intelligence API · Research API · Model-Lifecycle API · News API · DB execution audit · experience execution boundary · signal pipeline health · Playwright E2E |
+| **Unit (28 active suites)** | [`tests/unit/`](tests/unit) | Domain, features, trainer, policy, risk, order manager, rule matrix, hardening, HTF warmup gate, accounting (64), intelligence (18), research (45), model lifecycle (32), shadow (35), news (63), **model generation (52)**, regression guards (BUG-013..018) |
+| **Integration (10 suites)** | [`tests/integration/`](tests/integration) | Accounting API · Intelligence API · Research API · Model-Lifecycle API · News API · **Model-Generation API** · DB execution audit · experience execution boundary · signal pipeline health · Playwright E2E |
 
 ### 🗄️ Runtime Artifacts
 
@@ -299,11 +307,32 @@ LIVE TRADE ──► ACCOUNTING (audit_ledger, authoritative PnL)
 ## 🚀 How To Run & Deploy
 
 ### 1. System Requirements & Prerequisites
-- **OS:** Windows 10/11 (for Direct Win32 MT5 IPC) or Linux (for Containerized Gateway runs).
-- **Python:** Python 3.11.x installed.
+- **OS:** Windows 10/11 x64 (for Direct Win32 MT5 IPC) or Linux (for Containerized Gateway runs).
+  Windows **ARM64 is not supported** by the dependency stack (PyTorch/Polars/MetaTrader5 ship no
+  ARM64 wheels) — the installer and `nexus doctor` report this explicitly.
+- **Python:** Python 3.11.x (source install) — **no Python needed for the packaged release**:
+  the installer bundles the full runtime via PyInstaller.
 - **Broker:** MetaTrader 5 Terminal logged into a Live/Demo account with **"Allow Algo Trading"** enabled in Terminal settings.
 
-### 2. Installation
+### 1b. End-User Installation (packaged release — no Python required)
+
+Normal users download from GitHub Releases:
+
+1. **`NexusScalpEngine-<version>-win-x64-setup.exe`** — installer with
+   compatibility check, shortcuts, uninstall entry. Or the **portable ZIP**
+   (`NexusScalpEngine-<version>-win-x64.zip`).
+2. First run opens the **setup wizard**: compatibility report → mode
+   (default **PAPER**, never silently LIVE) → symbol → health check.
+3. Operate with the bundled `nexus` CLI:
+   `nexus health` · `nexus doctor` · `nexus start [--mode paper|shadow|live]` ·
+   `nexus logs` · `nexus repair` · `nexus update` · `nexus uninstall`.
+4. User data (config/logs/databases/models) is stored under
+   `%LOCALAPPDATA%\NexusScalpEngine` and survives upgrades/uninstalls.
+
+Full details: [`docs/RELEASE.md`](docs/RELEASE.md) · release pipeline:
+`.github/workflows/release.yml` · build scripts: `scripts/build/`.
+
+### 2. Developer Installation (source)
 ```bash
 # 1. Clone the repository
 git clone https://github.com/your-org/NexusTradingForexBot.git

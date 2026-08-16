@@ -1486,6 +1486,197 @@ bullish/bearish scores, active-event count, "Analyze with AI" button
 
 ---
 
+## 15f. Release Engineering & Distribution System (RELEASE, not a trading phase)
+
+> **NOTE (2026-08-16):** This section was ADDED by the Release Engineering
+> build. It is additive operational infrastructure — it does NOT modify
+> trading logic. The release system is described in full in
+> `docs/RELEASE.md`; this is the architecture map for agents.
+
+### 📐 Overview
+
+The release system turns the repository into a user-installable Windows
+product while keeping the canonical trading engine untouched. Everything
+lives in `src/nexus_scalp/release/` (packaging/health/CLI concerns) plus
+`scripts/build/`, `installer/`, `.github/workflows/release.yml`.
+
+```
+pyproject.toml (version = 9.0.0)  <- SINGLE canonical version source
+        │
+        ├── src/nexus_scalp/release/metadata.py   (reads pyproject; build-info.json)
+        ├── src/nexus_scalp/release/paths.py      (AppData separation: user data)
+        ├── src/nexus_scalp/release/environment.py (OS/arch/Python/RAM/disk/GPU/MT5/...)
+        ├── src/nexus_scalp/release/evaluate.py    (PASS/WARNING/BLOCKED/UNKNOWN)
+        ├── src/nexus_scalp/release/health.py      (19-category HealthEngine)
+        ├── src/nexus_scalp/release/repair.py      (non-destructive repairs)
+        ├── src/nexus_scalp/release/diagnostics.py (sanitized ZIP export)
+        ├── src/nexus_scalp/release/update.py      (safe update/rollback planner)
+        ├── src/nexus_scalp/release/packaging.py   (manifest + SHA-256 + SBOM)
+        ├── src/nexus_scalp/release/verify.py      (release self-check incl. secrets)
+        ├── src/nexus_scalp/release/cli_shim.py    (nexus console script)
+        └── src/nexus_scalp/release/packaged_main.py (PyInstaller EXE entrypoint)
+```
+
+### 🔌 CLI (`nexus`, legacy `nse` still works)
+
+`version · doctor · health · status · test (quick|unit|integration|health|release|all)
+· logs (--tail/--errors/--worker/--export) · config · repair · diagnostics /
+export-diagnostics · verify-release · update · install/setup · start (--mode
+paper|shadow|live) · stop · restart · uninstall · run · config-validate`
+
+**Safety contract (tested):**
+- `nexus start` defaults to PAPER. `--mode live` prints account/broker/symbol/
+  risk/kill-switch and requires explicit confirmation. First-run wizard
+  defaults PAPER.
+- `--json` / `--plain` / `--no-color` supported for CI (JSON never contains
+  ANSI).
+- Heavy engine imports (torch/polars/MetaTrader5) are lazy in cli/main.py so
+  the slim onefile CLI (which excludes them) works for version/health/
+  diagnostics.
+
+### 🏗️ Build & packaging (PyInstaller, onedir + onefile)
+
+- `scripts/build/build_release.ps1` orchestrates: validate version → git state
+  → gates → PyInstaller onedir (full engine + Web/configs/docs assets) →
+  onefile CLI (no torch/polars) → EXE smoke → stage portable tree → Inno
+  Setup installer → checksums + manifest + SBOM + secrets scan →
+  verify-release. Any failure = STOP RELEASE.
+- **Entrypoints:** packaged EXE runs `packaged_main.py` (the Typer CLI), NOT
+  the argparse launcher. CLI onefile runs `cli_shim.py`.
+- **ARM64 is explicitly UNSUPPORTED** (torch/polars/pyarrow/MetaTrader5 have
+  no Windows ARM64 wheels). The evaluator BLOCKs it, the update planner
+  refuses ARM64 artifacts, CI reports it loudly. Only windows-x64 is
+  published.
+- User data (config/logs/databases/models) lives in
+  `%LOCALAPPDATA%\NexusScalpEngine` — outside the install dir. Upgrades,
+  repairs and uninstalls preserve it (installer `uninsneveruninstall`,
+  uninstall deletes only with an explicit checkbox; silent uninstall always
+  preserves).
+
+### 🦺 Secrets & user-data protection
+
+- CI validate job scans the tree for secret-shaped strings; `verify-release`
+  scans the staged tree (API keys, bot tokens, JWTs, quoted passwords).
+- `configs/live.yaml` ships with an EMPTY telegram `bot_token` — never a real
+  token (found & sanitized during build).
+- `artifacts/audit.db`, dev DBs, credentials, private config never packaged.
+- `export-diagnostics` redacts secrets and contains only metadata + recent
+  logs.
+
+### 🧪 Release tests
+
+- `tests/unit/test_release_system.py` — 22 tests: canonical version vs
+  pyproject, manifest/checksum round-trips + corruption detection, arm64
+  BLOCKED, healthy categories, repair never deletes, update safety (digest
+  required, prerelease refused, ARM64 refused), no-LIVE-by-default, CLI
+  contract, diagnostics sanitized.
+- `tests/unit/test_release_build_system.py` — 6 tests: scripts/installer/
+  workflow exist, packaged entrypoint referenced, safe installer defaults,
+  requirements cover web/news runtime.
+
+### 🌐 CI/CD
+
+- `ci.yml`: quality gates on push/PR (ruff, mypy, pytest unit + integration
+  without browser/MT5).
+- `release.yml` (v* tag): validate (tag==pyproject version, secrets scan) →
+  gates → build windows-x64 → EXE smoke → stage → installer → checksums +
+  manifest + SBOM → verify-release → publish (assets attached). ARM64 job
+  reports explicit non-support. Prereleases for `vX.Y.Z-*`.
+
+---
+
+## 15g. Model Generation Migration — Artifact-First Model Factory (PHASE 13)
+
+> Legacy ScalpNet is classified as **LEGACY BASELINE** (control group) — NOT
+> deleted, remains loadable/reproducible for benchmarking. The new centre of
+> the ML system is the **MODEL ARTIFACT** on the filesystem. Databases are
+> history/telemetry/registry only — **model inference requires NO database**.
+
+### Architecture
+```
+src/nexus_scalp/model_generation/
+  models.py          explicit contracts: LabelSchema (3-class: NO_TRADE/BUY/
+                     SELL; WAIT is policy-derived), NewsContextSchema (12
+                     versioned numeric fields), SampleContract / SetupContract /
+                     StrategyContract (independently versionable), ModelManifest
+                     (identity+architecture+input+labels+training+strategy+
+                     news+validation+integrity), DatasetManifest, ExperimentConfig
+  artifact_store.py  filesystem hierarchy artifacts/model_generation/
+                     {datasets,experiments,models}/<id>/* + hashing + atomic
+                     writes + verify_artifact()
+  sample_factory.py  raw bars -> features (FeatureSchemaRegistry) -> regime ->
+                     causal news context -> setup -> 3-class labels -> Sample
+  dataset_factory.py deterministic DatasetArtifact (parquet + manifest; temporal
+                     split; purge/embargo preserved; no live-model dependency)
+  model_factory.py   architecture registry (LEGACY_SCALPNET_V1 baseline, MLP_V2,
+                     TCN_V2/TCN_ATTENTION_V1/TRANSFORMER_V1 registered-not-built)
+  experiment_factory.py bounded explainable experiment space + persistence
+  training.py        CandidateTrainer (candidate artifacts only; Champion never
+                     overwritten; failures are FAILED, never CHALLENGER)
+  validation.py      ValidationFactory: label integrity, class-collapse, regime
+                     results, calibration (ECE), OOS floor, news ablation
+  runtime.py         LocalModelRuntime: load/validate/predict/health — NO DB
+  replay.py          SampleReplay (reconstruct context + prediction) + drift
+                     detection (feature/prediction) — alert only, never auto-retrain
+```
+
+### Contracts (all immutable, independently versionable)
+- **LabelSchema** `triple_barrier_3class_v1`: class_count=3,
+  {NO_TRADE:0, BUY_MARKET:1, SELL_MARKET:2}; WAIT is rejected (`encode("WAIT")`
+  raises). The legacy ScalpNet 4th logit is a POLICY bridge, never a label.
+- **ModelManifest**: model_id/version/role/status, architecture_id+params,
+  feature_schema_id+dimension, label schema, dataset_id+hash, training run,
+  strategy_id/version, news schema + news_enabled + provenance,
+  validation statuses, artifact/manifest/scaler hashes, created_at.
+- **DatasetManifest**: dataset_id/version, source hash, row counts, temporal
+  range, symbol/timeframe, feature/label schema ids, split/purge/embargo
+  hashes, news schema + range, dataset_hash.
+- **NewsContextSchema** `news_context_v1`: 12 normalized numeric fields
+  (active_high_impact_events, xauusd_relevance, usd_relevance, bullish/bearish
+  pressure, conflict, novelty, freshness, confidence, source_consensus,
+  news_state, time_since_event). Causally correct: only events published at or
+  before the sample timestamp enter the vector (epoch-us comparison, tz-safe).
+
+### Safety invariants (code + test verified)
+- Inference NEVER touches the DB: `LocalModelRuntime` reads only the artifact
+  dir; integration test blocks the sqlite3 import and prediction still works.
+- Candidate training NEVER overwrites Champion (candidate ids; legacy
+  artifacts/models/scalp path untouched).
+- Corrupted artifacts / schema mismatches / label mismatches FAIL loudly
+  (ManifestValidationError), never silently reshape.
+- News-aware candidates record the exact neural input width
+  (`build_metadata.input_dimension`) so they reload+replay correctly.
+- Class collapse (>=95% one class) is detected; calibration (ECE) is
+  measured; regime results surface per-regime catastrophes.
+- News vs no-news experiments compare on identical split/labels/friction
+  (compare_news_ablation); news features must EARN their place.
+- Drift detection is an ALERT/RESEARCH trigger — no automatic retrain.
+- No MT5/order-manager/risk-engine imports in model_generation.
+
+### CLI (existing Typer app)
+`model-dataset-build --bars --symbol --timeframe --schema [--with-news --news]`
+· `model-experiment-create --dataset --template`
+· `model-train --experiment [--model-id]`
+· `model-inspect --model` · `model-validate --model --dataset`
+· `model-replay --dataset --sample [--model]` · `model-doctor --model`
+
+### Legacy classification
+- `models/scalp_net.py` = LEGACY BASELINE (control group). Zero new
+  architecture claims superiority until it beats the baseline on the SAME
+  dataset/split/labels/friction via the new pipeline.
+
+### Tests
+- `tests/unit/test_model_generation_phase13.py` — 52 tests (legacy loads,
+  manifest/hash/corruption, dataset determinism/provenance/purge/embargo/news
+  causality, sample/setup/strategy identity, factory builds, 3-class contract,
+  class collapse, calibration, news train on/off, validation gates, no-DB
+  runtime, mismatch/corruption rejection, atomic swap, replay/drift, safety,
+  failure isolation, Phase 08-12 regression).
+- `tests/integration/test_model_generation.py` — 3 tests (full artifact flow
+  with DB-blocked prediction, CLI registration, baseline reproducibility).
+
+---
+
 ## 16. Known Engineering Pitfalls & Invariants
 
 If you are an AI coding agent making changes to this repository in the future, **memorize these active engineering rules and constraints**:
