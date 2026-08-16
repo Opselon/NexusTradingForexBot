@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,23 @@ import numpy as np
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.model_generation.artifact_store")
+
+#: Allowed characters for artifact identifiers (model_id / dataset_id /
+#: experiment_id). Prevents path traversal and accidental writes outside
+#: the artifact root (forensic audit T03/T58).
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def validate_artifact_id(artifact_id: str) -> str:
+    """Rejects artifact ids that could escape the store root (path
+    traversal / separators / traversal sequences)."""
+    if not artifact_id or not isinstance(artifact_id, str):
+        raise ValueError(f"Invalid artifact id: {artifact_id!r}")
+    if not _SAFE_ID_RE.match(artifact_id):
+        raise ValueError(f"Unsafe artifact id {artifact_id!r}: only [A-Za-z0-9_.-] allowed")
+    if ".." in artifact_id:
+        raise ValueError(f"Unsafe artifact id {artifact_id!r}: '..' not allowed")
+    return artifact_id
 
 
 def sha256_file(path: Path) -> str:
@@ -90,7 +108,7 @@ class ArtifactStore:
     # ------------------------------------------------------------------
 
     def dataset_dir(self, dataset_id: str) -> Path:
-        return self.datasets_dir / dataset_id
+        return self.datasets_dir / validate_artifact_id(dataset_id)
 
     def dataset_path(self, dataset_id: str) -> Path:
         return self.dataset_dir(dataset_id) / "dataset.parquet"
@@ -125,7 +143,7 @@ class ArtifactStore:
     # ------------------------------------------------------------------
 
     def experiment_path(self, experiment_id: str) -> Path:
-        return self.experiments_dir / experiment_id / "experiment.json"
+        return self.experiments_dir / validate_artifact_id(experiment_id) / "experiment.json"
 
     def save_experiment(self, experiment_id: str, config: dict[str, Any]) -> Path:
         p = self.experiment_path(experiment_id)
@@ -140,7 +158,7 @@ class ArtifactStore:
     # ------------------------------------------------------------------
 
     def model_dir(self, model_id: str) -> Path:
-        return self.models_dir / model_id
+        return self.models_dir / validate_artifact_id(model_id)
 
     def model_weights_path(self, model_id: str) -> Path:
         return self.model_dir(model_id) / "model.pt"
@@ -184,9 +202,16 @@ class ArtifactStore:
         if scaler is not None:
             mean, std = scaler
             scaler_path = self.model_scaler_path(model_id)
-            tmp_s = scaler_path.with_name(scaler_path.name + ".tmp")
-            np.savez(tmp_s, mean=mean, std=std)
-            tmp_s.replace(scaler_path)
+            # np.savez auto-appends ".npz"; write to a tmp WITHOUT the suffix
+            # then atomically rename to the final scaler.npz.
+            tmp_s = scaler_path.with_name("scaler.tmp")
+            try:
+                np.savez(tmp_s, mean=mean, std=std)
+                Path(str(tmp_s) + ".npz").replace(scaler_path)
+            finally:
+                for leftover in (tmp_s, Path(str(tmp_s) + ".npz")):
+                    if leftover.exists():
+                        leftover.unlink(missing_ok=True)
             manifest["scaler_hash"] = sha256_file(scaler_path)
         else:
             manifest["scaler_hash"] = ""

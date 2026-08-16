@@ -103,6 +103,18 @@ class CandidateTrainer:
         if len(train_idx) == 0 or len(val_idx) == 0:
             return {"status": "FAILED", "error": "empty train/val split"}
 
+        # ------------------------------------------------------------------
+        # Feature scaling (distribution parity, forensic audit T24).
+        # Fit mean/std on the TRAIN split ONLY (zero leakage into val/OOS) and
+        # persist it with the artifact so the runtime applies the SAME
+        # transform during inference. Matches the legacy WalkForwardTrainer's
+        # isolated-fitted-scaler invariant.
+        # ------------------------------------------------------------------
+        feat_mean = X_arr[train_idx].mean(axis=0).astype(np.float32)
+        feat_std = X_arr[train_idx].std(axis=0).astype(np.float32)
+        feat_std = np.where(feat_std < 1e-8, 1.0, feat_std)  # constant cols -> identity
+        X_scaled = (X_arr - feat_mean) / feat_std
+
         model = self.model_factory.build(
             architecture=experiment.architecture,
             num_classes=int(experiment.class_count or 3),
@@ -121,7 +133,7 @@ class CandidateTrainer:
         batch_size = int((experiment.training or {}).get("batch_size", 256))
 
         train_ds = TensorDataset(
-            torch.from_numpy(X_arr[train_idx]),
+            torch.from_numpy(X_scaled[train_idx]),
             torch.from_numpy(labels[train_idx]),
         )
         loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
@@ -138,10 +150,10 @@ class CandidateTrainer:
                 loss.backward()
                 optimizer.step()
 
-        # eval on validation
+        # eval on validation (SCALED with the train-fitted transform)
         model.eval()
         with torch.inference_mode():
-            val_logits = model(torch.from_numpy(X_arr[val_idx]))
+            val_logits = model(torch.from_numpy(X_scaled[val_idx]))
             val_preds = val_logits.argmax(dim=1).numpy()
         val_acc = float(np.mean(val_preds == labels[val_idx])) if len(val_idx) else 0.0
 
@@ -191,7 +203,7 @@ class CandidateTrainer:
             mid,
             model.state_dict(),
             manifest.model_dump(mode="json"),
-            scaler=None,
+            scaler=(feat_mean, feat_std),
         )
         logger.info("[TRAIN] event=CANDIDATE_READY model_id=%s val_acc=%.4f", mid, val_acc)
         return {

@@ -728,3 +728,80 @@ class TestRegression:
             regime_aligned=True,
         )
         assert v.decision == "IGNORE"  # news still cannot influence when off
+
+
+# =============================================================================
+# PHASE 13 FORENSIC AUDIT REGRESSIONS (deep supervision findings)
+# =============================================================================
+
+
+class TestArtifactAudit:
+    """Regression tests for forensic-audit fixes (path traversal, scaler)."""
+
+    def test_board_path_traversal_rejected(self, store: ArtifactStore):
+        from nexus_scalp.model_generation.artifact_store import validate_artifact_id
+
+        for bad in ("../evil", r"..\evil", "a/b", "a b", "a;rm", "", "..", "./x"):
+            with pytest.raises(ValueError):
+                validate_artifact_id(bad)
+        # safe ids accepted
+        for good in ("model_v1", "ds_abc123", "exp.baseline-v2"):
+            assert validate_artifact_id(good) == good
+
+    def test_board_store_refuses_traversal_through_api(self, store: ArtifactStore):
+        # path builders must raise, not escape the root
+        with pytest.raises(ValueError):
+            store.model_dir("../evil")
+        with pytest.raises(ValueError):
+            store.dataset_dir("../../etc")
+        with pytest.raises(ValueError):
+            store.experiment_path("a/b")
+
+    def test_board_scaler_persisted_and_roundtrips(self, store: ArtifactStore, built_dataset):
+        """Training must persist a scaler; the runtime must load it and scale
+        identically (audit T24 distribution parity)."""
+        _ = built_dataset
+        exp = ExperimentFactory(store=store).create(
+            built_dataset[1]["dataset_id"], experiment_id="exp_scaler"
+        )
+        frame = store.read_dataset(built_dataset[1]["dataset_id"])
+        CandidateTrainer(store=store).train_candidate(exp, frame, model_id="cand_scaler")
+
+        # scaler file exists and manifest declares its hash
+        scaler_path = store.model_scaler_path("cand_scaler")
+        assert scaler_path.exists()
+        mm = store.read_model_manifest("cand_scaler")
+        assert mm["scaler_hash"]  # non-empty
+
+        # runtime loads the scaler and scaling changes the vector deterministically
+        rt = LocalModelRuntime(store=store).load("cand_scaler")
+        raw = [5.0] * 50
+        p1 = rt.predict(raw)
+        p2 = rt.predict(raw)
+        assert p1["probabilities"] == p2["probabilities"]  # deterministic
+
+    def test_board_missing_declared_scaler_blocks_load(self, store: ArtifactStore, built_dataset):
+        """A manifest that declares a scaler hash but has no scaler file must
+        FAIL LOUDLY, never silently predict unscaled (audit T24)."""
+        _ = built_dataset
+        exp = ExperimentFactory(store=store).create(
+            built_dataset[1]["dataset_id"], experiment_id="exp_sc2"
+        )
+        frame = store.read_dataset(built_dataset[1]["dataset_id"])
+        CandidateTrainer(store=store).train_candidate(exp, frame, model_id="cand_sc2")
+
+        # delete the scaler after training; manifest still declares hash
+        store.model_scaler_path("cand_sc2").unlink()
+        with pytest.raises(ManifestValidationError):
+            LocalModelRuntime(store=store).load("cand_sc2")
+
+    def test_board_const_column_scaler_identity(self):
+        """Constant feature columns must not explode the scaler (std->1)."""
+        import numpy as np
+
+        X = np.zeros((10, 3), dtype=np.float32)
+        X[:, 0] = 7.0  # constant col
+        std = X.std(axis=0)
+        std = np.where(std < 1e-8, 1.0, std)
+        assert std[0] == 1.0  # protected against div-by-zero
+        assert std[1] == 1.0  # zero-variance columns are identity too

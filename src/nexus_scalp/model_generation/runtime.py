@@ -117,6 +117,15 @@ class LocalModelRuntime:
         self._model = model
         self._manifest = manifest
         self._scaler = self.store.read_scaler(model_id)
+        # A manifest that DECLARES a scaler hash but whose scaler file is
+        # missing/corrupt must FAIL — silent skip would predict with the
+        # wrong distribution (forensic audit T24).
+        declared_scaler = manifest.get("scaler_hash", "")
+        if declared_scaler and self._scaler is None:
+            raise ManifestValidationError(
+                f"model {model_id}: scaler declared in manifest "
+                f"(hash={declared_scaler}) but scaler file missing/corrupt"
+            )
         logger.info("[MODEL] event=LOADED model_id=%s device=%s", model_id, self._device)
         return self
 

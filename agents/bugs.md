@@ -1632,3 +1632,106 @@ Phase 13 makes the contract explicit:
 - `test_09_label_mismatch_rejected`, `test_22_3class_label_contract_enforced`.
 
 ---
+
+## BUG-038 — Artifact Store ID Path Traversal (model_id/dataset_id Unsanitized)
+
+- **Status**: FIXED (2026-08-16, Phase 13 forensic supervision audit)
+- **Severity**: MEDIUM (security; no exploit in production since ids are
+  generated internally, but the public API was unsafe)
+- **Confidence**: HIGH
+- **Discovered**: Forensic audit T03/T58 (path traversal review)
+
+### Symptom
+`ArtifactStore.model_dir(model_id)` / `dataset_dir(dataset_id)` /
+`experiment_path(experiment_id)` concatenated the raw id into a `Path`
+without validation. A model_id like `../champion` or `../../etc` would
+resolve OUTSIDE the artifact root.
+
+### Evidence
+`artifact_store.py` — `return self.models_dir / model_id` with no
+sanitization; id values come from callers (CLI `--model`, tests, API).
+
+### Root Cause
+No identifier validation at the store boundary; ids assumed trusted.
+
+### Fix
+`validate_artifact_id()`: only `[A-Za-z0-9_.-]`, no `..`, no path
+separators; applied to model/dataset/experiment path builders. Invalid ids
+raise `ValueError`.
+
+### Verification
+`test_board_path_traversal_rejected` + `test_board_store_refuses_traversal_through_api`
+— traversal ids raise; safe ids accepted.
+
+---
+
+## BUG-039 — CandidateTrainer Trained Raw Features, Never Persisted a Scaler (Distribution Parity Gap)
+
+- **Status**: FIXED (2026-08-16, Phase 13 forensic supervision audit)
+- **Severity**: HIGH (training↔inference distribution mismatch)
+- **Confidence**: HIGH
+- **Discovered**: Forensic audit T24 (scaler/preprocessor)
+
+### Symptom
+`CandidateTrainer.train_candidate` trained on UN-normalized raw features
+and saved artifacts with `scaler=None`. The manifest declared `scaler_hash`
+as `""` while the legacy WalkForwardTrainer (and the production champion
+path) always fits + persists a scaler (mean/std). A model-generation
+candidate therefore had no reproducible distribution transform; the runtime
+silently skipped scaling.
+
+### Evidence
+`training.py` line ~194 `scaler=None`; `runtime.py` scaling block gated on
+`self._scaler is not None` (silent skip).
+
+### Root Cause
+The artifact-first pipeline had not wired the train-fitted scaler that the
+rest of the system treats as an invariant.
+
+### Fix
+- `CandidateTrainer`: fits mean/std on the TRAIN split ONLY (zero leakage
+  into val/OOS), trains + evaluates on scaled features, persists the scaler
+  with the artifact (fixing an `np.savez` path bug found in the same sweep,
+  BUG-040).
+- `LocalModelRuntime.load`: if the manifest DECLARES a scaler hash but the
+  scaler file is missing/corrupt, loading FAILS (no silent unscaled
+  prediction).
+
+### Verification
+`test_board_scaler_persisted_and_roundtrips` (scaler file + hash +
+deterministic scaled prediction), `test_board_missing_declared_scaler_blocks_load`
+(missing scaler with declared hash -> ManifestValidationError).
+
+---
+
+## BUG-040 — np.savez Appends ".npz" Breaking Atomic Scaler Replace
+
+- **Status**: FIXED (2026-08-16, Phase 13 forensic supervision audit)
+- **Severity**: MEDIUM (crashed every scaler save once scaler wiring landed)
+- **Confidence**: HIGH
+- **Discovered**: Forensic audit T06/T24 (exercised the new scaler path)
+
+### Symptom
+`np.savez(tmp_path, ...)` appends `.npz` to its path argument; the code then
+attempted `tmp_path.replace(final_path)` on a file that did not exist
+(`scaler.npz.tmp`), raising `FileNotFoundError` (WinError 2) on every model
+save that included a scaler.
+
+### Evidence
+`artifact_store.py` `save_model_artifact` scaler branch:
+`np.savez(tmp_s, ...)` then `tmp_s.replace(scaler_path)` — the actual file
+written was `tmp_s + ".npz"`.
+
+### Root Cause
+`np.savez`'s implicit `.npz` suffix was not accounted for.
+
+### Fix
+Save to `scaler.tmp` (no suffix), then atomically rename
+`scaler.tmp.npz` -> `scaler.npz`, with `finally` cleanup of both leftovers.
+
+### Verification
+All Phase 13 training tests pass with the scaler persisted
+(`test_board_scaler_persisted_and_roundtrips`), no `.tmp`/`tmp.npz`
+leftovers (audit T03 concurrency/atomicity check).
+
+---
