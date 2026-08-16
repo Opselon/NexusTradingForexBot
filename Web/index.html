@@ -88,10 +88,14 @@
                 <span>Account Center</span>
             </button>
             <button onclick="switchTab('tab-ai-analysis', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
-                <i class="fa-solid fa-brain text-lg w-5 text-accentCyan"></i>
-                <span>AI Intel Hub</span>
-            </button>
-            <button onclick="switchTab('tab-rules', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-brain text-lg w-5 text-accentCyan"></i>
+                            <span>AI Intel Hub</span>
+                        </button>
+                        <button onclick="switchTab('tab-research', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-flask-vial text-lg w-5 text-accentCyan"></i>
+                            <span>Strategy Research</span>
+                        </button>
+                        <button onclick="switchTab('tab-rules', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
                 <i class="fa-solid fa-shield-halved text-lg w-5 text-accentCyan"></i>
                 <span>Scalping Rules</span>
             </button>
@@ -725,14 +729,89 @@
                             <button onclick="scanIntelligenceEvolution()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Scan Now</button>
                         </div>
                         <div id="intel-evolution" class="max-h-48 overflow-y-auto p-3 space-y-2 text-[11px] font-mono text-gray-300">
-                            <div class="text-textMuted italic">No evolution candidates. Click "Scan Now" to discover strategy variations.</div>
+                                                    <div class="text-textMuted italic">No evolution candidates. Click "Scan Now" to discover strategy variations.</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <!-- PHASE 09B: STRATEGY RESEARCH PANEL -->
+                                                <section id="tab-research" class="tab-content hidden space-y-6">
+                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                    <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
+                        <div>
+                            <h3 class="text-md font-bold text-white flex items-center">
+                            <i class="fa-solid fa-flask-vial mr-2 text-accentCyan"></i>
+                            Strategy Research &amp; Validation Engine
+                            </h3>
+                            <p class="text-xs text-textMuted mt-1">
+                            EVIDENCE-DRIVEN GATES: discovery → backtest → walk-forward → OOS → robustness → score. A candidate NEVER goes live automatically.
+                            </p>
                         </div>
-                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="scanResearchDiscovery()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Discover</button>
+                        <button onclick="loadResearchSummary()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-3 py-1.5 rounded text-xs font-bold transition flex items-center space-x-1">
+                            <i class="fa-solid fa-arrows-rotate"></i> <span>Refresh</span>
+                        </button>
                 </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Registry stats -->
+                <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
+                    <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans">Registry</div>
+                    <div class="grid grid-cols-2 gap-3 mt-3">
+                        <div>
+                            <div class="text-xs text-textMuted">Total</div>
+                            <div id="research-registry-total" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
+                        </div>
+                    <div>
+                        <div class="text-xs text-textMuted">Validated</div>
+                        <div id="research-validated-count" class="text-2xl font-black font-mono text-accentGreen mt-1">--</div>
+                    </div>
+                <div>
+                    <div class="text-xs text-textMuted">Rejected</div>
+                    <div id="research-rejected-count" class="text-2xl font-black font-mono text-accentRed mt-1">--</div>
+                </div>
+            <div>
+                <div class="text-xs text-textMuted">Worker</div>
+                <div id="research-worker-status" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
+            </div>
+            </div>
+            </div>
+
+            <!-- Registry listing -->
+            <div class="lg:col-span-2 bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
+                <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-2">Validated Strategy Registry</div>
+                <div id="research-registry" class="max-h-72 overflow-y-auto space-y-2 text-[11px] font-mono text-gray-300">
+                    <div class="text-textMuted italic">Run discovery to populate the strategy registry.</div>
+                </div>
+            </div>
+            </div>
+            </div>
+
+            <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
+                    <div>
+                        <h3 class="text-md font-bold text-white flex items-center">
+                        <i class="fa-solid fa-flask mr-2 text-accentCyan"></i>
+                        Validate a Candidate
+                        </h3>
+                        <p class="text-xs text-textMuted mt-1">Runs the full gate chain (backtest → walk-forward → OOS → robustness → score). Result is VALIDATED or REJECTED — never ACTIVE.</p>
+                    </div>
+                <button onclick="validateResearchCandidate()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Run Validation</button>
+            </div>
+            <div class="flex items-center gap-2">
+                <input id="research-validate-id" type="text" placeholder="strategy_id e.g. STRAT-XXXX" class="flex-1 bg-darkBg/60 border border-borderClr rounded px-3 py-2 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50"/>
+            </div>
+            <div id="research-validation-result" class="mt-3 p-3 rounded-lg border border-borderClr bg-darkBg/40 text-xs text-gray-300 font-mono max-h-48 overflow-y-auto">
+                <div class="text-textMuted italic">Enter a discovered candidate id and run validation.</div>
+            </div>
+            </div>
             </section>
 
             <!-- TAB 5: SCALPING RULES PANEL -->
-            <section id="tab-rules" class="tab-content hidden space-y-6">
+<section id="tab-rules" class="tab-content hidden space-y-6">
                 <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
                     <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
                         <div>

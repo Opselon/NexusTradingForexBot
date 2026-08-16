@@ -352,8 +352,6 @@ class AccountingCore:
             if cached is not None:
                 return cached
         report = self._compute_period(bounds)
-        with self._lock:
-            self._report_cache[f"{kind.value}:{bounds.key}"] = report
         return report
 
     def _compute_period(self, bounds: PeriodBounds) -> PeriodReport:
@@ -703,7 +701,23 @@ class AccountingCore:
         return trace
 
     def _attach_experience_detail(self, trace: TradeForensicTrace, record: TradeRecord) -> None:
-        """Pulls decomposition/behavioral flags and the strategy score at entry."""
+        """
+        Pulls decomposition/behavioral flags and the strategy score at entry.
+
+        THE JOIN CHAIN (verified against the actual schema - same as
+        `_attach_identity`):
+
+            audit_ledger.ticket
+                = audit_experience_outcomes.execution_id     (broker ticket)
+            audit_experience_outcomes.idempotency_key
+                = audit_experiences.idempotency_key          (decision row)
+
+        The broker ticket NEVER appears on `audit_experiences.execution_id`
+        (decision rows are immutable and written before a ticket exists), so a
+        naive `WHERE e.execution_id = ?` can never resolve (see agents/bugs.md
+        BUG-008 for the exact same trap). The first Phase 08 revision used that
+        join and silently produced `NO_EXPERIENCE_OUTCOME` for every trade.
+        """
         if not record.experience_id and not record.strategy_id:
             trace.notes.append("NO_EXPERIENCE_LINK")
             return
@@ -718,7 +732,7 @@ class AccountingCore:
                            o.realized_r_multiple
                     FROM audit_experience_outcomes o
                     JOIN audit_experiences e ON e.idempotency_key = o.idempotency_key
-                    WHERE e.execution_id = ?
+                    WHERE o.execution_id = ?
                     LIMIT 1
                     """,
                     (str(record.ticket),),

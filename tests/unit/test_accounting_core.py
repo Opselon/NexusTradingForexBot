@@ -1171,12 +1171,17 @@ class TestWorker:
         assert w.running is False
 
     def test_worker_cycle_refreshes_cache(self, audit, core) -> None:
+        # Close the trade inside the CURRENT UTC day so the worker's refresh and
+        # the subsequent read target the same period (a close in a previous UTC
+        # day belongs to that day's report, not today's).
+        now_utc = datetime.now(UTC)
+        close_ts = now_utc.replace(hour=10, minute=0, second=0, microsecond=0)
         _ledger_closed(
             audit,
             1,
             exit_price=2002.0,
             pnl=100.0,
-            close_ts=datetime(2026, 8, 15, 10, 0, tzinfo=UTC),
+            close_ts=close_ts,
             exit_mechanism="TAKE_PROFIT_HIT",
         )
         w = AccountingWorker(core=core, interval_sec=0.0)
@@ -1331,3 +1336,167 @@ class TestProvenanceSurvival:
         assert row is not None
         assert row[0] == "scalp_v1"
         assert row[1] == 50
+
+
+# ---------------------------------------------------------------------------
+# 11. Forensic trace quality join (regression for the BUG-008 join pattern)
+# ---------------------------------------------------------------------------
+
+
+class TestForensicQualityJoin:
+    """
+    The forensic trade trace must surface the outcome decomposition and
+    behavioral flags. The first Phase 08 revision joined the outcome table on
+    `audit_experiences.execution_id` (always empty by design), so every trace
+    silently carried `NO_EXPERIENCE_OUTCOME` even for fully-attributable trades
+    - the exact BUG-008 trap applied a second time inside the trace builder.
+    """
+
+    def test_trace_surfaces_outcome_decomposition_and_flags(self, audit, core) -> None:
+        from nexus_scalp.experience.models import (
+            BehavioralFlag,
+            OutcomeDecomposition,
+        )
+
+        ledger = ExperienceLedger(audit_repo=audit)
+        core.experience_ledger = ledger
+        base = datetime(2026, 8, 15, 10, 0, tzinfo=UTC)
+
+        # Seed a decision + outcome carrying a NON-EMPTY decomposition and
+        # behavioral flags (the _seed_experience helper leaves them default,
+        # which is why this path was previously never exercised).
+        ctx = StrategyContext(strategy_id="strat_q", regime="TRENDING_MOMENTUM")
+        key = "exp_req_q1"
+        exp = ExperienceRecord(
+            experience_id="exp_q1",
+            request_id="req_q1",
+            idempotency_key=key,
+            symbol="XAUUSD",
+            decision_timestamp=base,
+            strategy_id="strat_q",
+            context=ctx,
+            feature_snapshot=FeatureSnapshot(values=[0.1] * 50),
+            action="BUY_MARKET",
+            entry_reason="PURE_AI",
+            model_probability=0.8,
+            signal_confidence=0.8,
+            proposed_entry=2000.0,
+            stop_loss=1990.0,
+            take_profit=2020.0,
+            risk_reward_ratio=2.0,
+        )
+        ledger.record_experience(exp)
+        ledger.record_outcome(
+            ExperienceOutcome(
+                idempotency_key=key,
+                execution_id="701",
+                outcome_timestamp=base + timedelta(minutes=5),
+                is_executed=True,
+                is_closed=True,
+                exit_reason="TAKE_PROFIT_HIT",
+                realized_pnl_usd=100.0,
+                realized_r_multiple=1.0,
+                behavior=compute_behavior_metrics(
+                    mae_points=-3.0,
+                    mfe_points=8.0,
+                    mae_usd=-30.0,
+                    mfe_usd=80.0,
+                    planned_risk_distance=10.0,
+                    duration_sec=300.0,
+                    initial_sl_distance=10.0,
+                    atr_at_entry=4.0,
+                ),
+                decomposition=OutcomeDecomposition(
+                    strategy_quality=0.8,
+                    entry_quality=0.7,
+                    execution_quality=0.9,
+                    position_management_quality=0.6,
+                    exit_quality=0.8,
+                ),
+                behavioral_flags=[BehavioralFlag.EARLY_EXIT],
+            )
+        )
+        _ledger_closed(
+            audit,
+            701,
+            exit_price=2008.0,
+            pnl=101.0,
+            commission=1.0,
+            close_ts=base + timedelta(minutes=5),
+            exit_mechanism="TAKE_PROFIT_HIT",
+            initial_sl=1990.0,
+            final_sl=1990.0,
+            mae=-3.0,
+            mfe=8.0,
+            mae_usd=-30.0,
+            mfe_usd=80.0,
+        )
+        _flush(audit)
+
+        trace = core.trade_trace(701)
+        assert trace.found is True
+        assert "NO_EXPERIENCE_OUTCOME" not in trace.notes, (
+            f"trace must resolve the outcome via the outcome-table join; notes={trace.notes}"
+        )
+        # Decomposition columns must be present and real.
+        assert trace.quality.get("strategy_quality") == pytest.approx(0.8)
+        assert trace.quality.get("entry_quality") == pytest.approx(0.7)
+        assert trace.quality.get("execution_quality") == pytest.approx(0.9)
+        assert trace.quality.get("management_quality") == pytest.approx(0.6)
+        assert trace.quality.get("exit_quality") == pytest.approx(0.8)
+        # Behavioral flags must round-trip.
+        assert "EARLY_EXIT" in trace.behavioral_flags
+
+    def test_trace_without_outcome_reports_identity_gap(self, audit, core) -> None:
+        """
+        A trade whose decision has NO outcome row cannot be attributed through
+        the outcome-bridge design (audit_ledger.ticket only ever equals
+        audit_experience_outcomes.execution_id), so the honest gap note is
+        `NO_EXPERIENCE_LINK` - never fabricated strategy identity.
+        """
+        ledger = ExperienceLedger(audit_repo=audit)
+        core.experience_ledger = ledger
+        base = datetime(2026, 8, 15, 10, 0, tzinfo=UTC)
+        ctx = StrategyContext(strategy_id="strat_q", regime="TRENDING_MOMENTUM")
+        key = "exp_req_q2"
+        ledger.record_experience(
+            ExperienceRecord(
+                experience_id="exp_q2",
+                request_id="req_q2",
+                idempotency_key=key,
+                symbol="XAUUSD",
+                decision_timestamp=base,
+                strategy_id="strat_q",
+                context=ctx,
+                feature_snapshot=FeatureSnapshot(values=[0.1] * 50),
+                action="BUY_MARKET",
+                entry_reason="PURE_AI",
+                model_probability=0.8,
+                signal_confidence=0.8,
+                proposed_entry=2000.0,
+                stop_loss=1990.0,
+                take_profit=2020.0,
+                risk_reward_ratio=2.0,
+            )
+        )
+        # NOTE: no outcome row is recorded for this decision.
+        _ledger_closed(
+            audit,
+            702,
+            exit_price=2001.0,
+            pnl=10.0,
+            close_ts=base + timedelta(minutes=5),
+            exit_mechanism="TAKE_PROFIT_HIT",
+            initial_sl=1990.0,
+            final_sl=1990.0,
+            mae=-2.0,
+            mfe=3.0,
+            mae_usd=-20.0,
+            mfe_usd=30.0,
+        )
+        _flush(audit)
+        trace = core.trade_trace(702)
+        assert trace.found is True
+        assert "NO_EXPERIENCE_LINK" in trace.notes, trace.notes
+        assert trace.quality == {}
+        assert trace.identity["strategy_id"] == ""

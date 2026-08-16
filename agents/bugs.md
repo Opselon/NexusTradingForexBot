@@ -795,3 +795,210 @@ current state already existed.
 - An emergency close of one split leg must close the sibling leg.
 - Unrelated tickets must never be cross-closed.
 
+
+## BUG-019 — Legacy Metrics Calculator Reversed Commission/Swap Sign (Duplicate Engine Drift)
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Phase 08 Continuation Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_accounting_hedging.py` (assertion recomputed to the
+  correct 3.40 profit factor) + full unit suite
+
+### Affected Components
+- `src/nexus_scalp/adapters/database/audit_repository.py::get_account_performance_metrics`
+- `src/nexus_scalp/web/server.py::get_account_summary` (consumed it)
+
+### Problem
+`get_account_performance_metrics` computed `net = pnl + commission + swap`, i.e. it
+ADDED commission and swap back to gross PnL. Commission and swap are COSTS; the
+canonical `log_ledger_closed` and `AccountingCore.normalize_trade_row` both compute
+`net = gross - commission - swap`. The legacy calculator therefore inflated profits
+and disagreed with the canonical accounting core - a second, wrong calculation
+engine contradicting the ONE-engine invariant. `/api/account/summary` served those
+inflated numbers.
+
+### Root Cause
+The sign convention used when the ledger was first written (commission/swap as
+positive magnitudes to subtract) was not applied in this calculator, and its
+`commission` column reads the RAW signed value passed by `log_ledger_closed`
+(e.g. -2.0), so the formula must use `abs(commission)` exactly like
+`normalize_trade_row` does.
+
+### Evidence
+- `tests/unit/test_accounting_hedging.py` seeded commissions as `-2.0`/`-1.0`
+  and asserted profit_factor 3.40 (the CORRECT math); the buggy calculator
+  returned 3.61 (inflated), failing the assertion.
+
+### Fix
+`net_pnl = pnl - abs(commission) - swap` (swap kept signed - a credit is a credit).
+
+### Regression Guards
+- `get_account_performance_metrics` must agree with `AccountingCore` period
+  reports within float tolerance for the same ledger rows.
+- The hedging test's 3.40 profit-factor assertion is now the regression guard.
+
+---
+
+## BUG-020 — Dashboard/API Served Synthetic Placeholder Numbers
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Phase 08 Continuation Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/integration/test_accounting_api.py::TestWorkerWithEngine::test_account_summary_never_serves_synthetic_numbers`
+
+### Affected Components
+- `src/nexus_scalp/web/server.py::get_account_summary` (`/api/account/summary`)
+- `src/nexus_scalp/web/server.py::get_system_state` (`/api/status` account block)
+- `Web/app.js` account rendering (null-safe)
+
+### Problem
+`/api/account/summary` returned hardcoded `balance=10000.00`, `equity=10000.00`,
+`win_rate=0.0`, `profit_factor=0.0` placeholders whenever the adapter could not be
+read or no history existed, and `/api/status` defaulted `account_data` to
+`balance=10000.00` / `win_rate=78.5`. This violated the Phase 08 no-synthetic-
+numbers invariant on LIVE dashboard endpoints and made failures indistinguishable
+from genuine flat results.
+
+### Root Cause
+Legacy pre-Phase-08 endpoint bodies relied on default constants instead of the
+canonical `AccountingCore` facade; the Phase 08 refactor added the facade but did
+not rewire these legacy endpoints.
+
+### Fix
+- `/api/account/summary` now reads `AccountingCore.live_state()` + ledger-backed
+  totals; unavailable fields are `None`, never placeholders.
+- `/api/status` account block defaults to `available=False` with `None` fields and
+  reads the real win rate from the canonical core when an engine exists.
+- `Web/app.js` renders `n/a` for null account fields instead of crashing on
+  `.toFixed()` of `null`/`NaN`.
+
+### Regression Guards
+- No endpoint may return a hardcoded balance/win-rate constant. Any fake-zero
+  dashboard value is a regression.
+- `test_account_summary_never_serves_synthetic_numbers` asserts real values when
+  the adapter is up and None fields when the adapter raises.
+
+---
+
+## BUG-021 — Forensic Trace Quality Join Reused the BUG-008 Empty-Column Trap
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Phase 08 Continuation Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_accounting_core.py::TestForensicQualityJoin`
+
+### Affected Components
+- `src/nexus_scalp/accounting/core.py::_attach_experience_detail`
+
+### Problem
+`_attach_experience_detail` (forensic trade trace quality section) joined the
+outcome table with `WHERE e.execution_id = ?` where `e` is `audit_experiences`.
+That column is ALWAYS empty by design (immutable decision row written before a
+broker ticket exists - see BUG-008). Every forensic trace therefore silently
+reported `NO_EXPERIENCE_OUTCOME` and carried an empty quality decomposition even
+for fully-attributable trades, and behavioral flags never reached the dashboard.
+
+### Root Cause
+The BUG-008 join trap was applied a second time in a different function
+(`_attach_identity` was fixed, `_attach_experience_detail` was not).
+
+### Fix
+Rewrote the join to go through the outcome table, matching `_attach_identity`:
+`WHERE o.execution_id = ?` (`o` = `audit_experience_outcomes`).
+
+### Regression Guards
+- Forensic traces for outcome-linked trades must carry the decomposition columns
+  and behavioral flags (regression test asserts strategy/entry/execution/
+  management/exit quality and `EARLY_EXIT` round-trip).
+- Grep guard: no `WHERE e.execution_id = ?` may exist against
+  `audit_experiences` anywhere in `src/`.
+
+---
+
+## BUG-022 — intelligence_worker_state Table Was Dead (Checkpoint Never Written)
+
+- **Status**: FIXED
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Phase 08 Continuation Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_intelligence_phase09.py::TestWorkerIsolation::test_worker_checkpoint_persists_across_restart`
+
+### Affected Components
+- `src/nexus_scalp/intelligence/worker.py` (`IntelligenceWorker`)
+- `src/nexus_scalp/adapters/database/audit_repository.py` (schema)
+
+### Problem
+The schema created `intelligence_worker_state`, but NO code ever wrote to or read
+from it. The worker's docstring claimed "a checkpoint is recorded so nothing is
+rebuilt redundantly", yet a restart simply redid the full cycle from zero state -
+the restart-safety story was documentation-only.
+
+### Root Cause
+Checkpoint persistence was specified but never implemented when the worker was
+introduced.
+
+### Fix
+`IntelligenceWorker.start()` now loads the checkpoint (`_load_checkpoint`) and
+`stop()` persists it (`_save_checkpoint`), restoring `cycle_count` and the last
+autopsy count across restarts. Reads/writes are failure-isolated (a missing table
+simply means first run).
+
+### Regression Guards
+- A fresh worker instance must restore `cycle_count >= 1` after a prior
+  start/tick/stop against the same database.
+
+---
+
+## BUG-023 — No Real Market-Data Backtest / Validation Layer (Phase 09 gap)
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Phase 09B Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_research_phase09b.py` (45 tests),
+  `tests/integration/test_research_api.py` (7 tests)
+
+### Affected Components
+- `src/nexus_scalp/intelligence/evolution.py` (`validate_candidate` was only a
+  bounded recording API, not a market-data backtest)
+- Missing: deterministic backtest, walk-forward, OOS gate, robustness engine,
+  multi-dimension scoring, strategy registry.
+
+### Root Cause
+The prior Phase 09 delivered candidate *discovery* and operator-gated
+*promotion*, but the actual market-data backtest harness, walk-forward, OOS,
+robustness and scoring engines were never implemented. `validate_candidate`
+only recorded an expectancy/sample count supplied by the caller - it did not
+evaluate the candidate over historical data, so a "validated" candidate could
+not be distinguished from an unbacktested hypothesis on statistical evidence.
+
+### Fix
+Built a full `src/nexus_scalp/research/` subsystem:
+- causal-safe dataset builder over the immutable experience ledger,
+- temporal splits + walk-forward with purge/embargo,
+- deterministic friction-aware backtest (`BacktestEngine`),
+- hard OOS gate (OOS failure ⇒ REJECTED),
+- robustness engine (spread/slippage/latency stress, degradation measured),
+- explainable multi-dimension `StrategyScore` with small-sample protection,
+- content-addressed `StrategyCandidate` versioning (modified strategy = new
+  version, old records immutable),
+- `StrategyRegistry` + `research_runs` + `research_worker_state` tables,
+- isolated `ResearchWorker` + 7 REST endpoints + LiveEngine wiring.
+
+### Regression Guards
+- Candidate can never bypass RiskEngine / OrderManager / MT5 (tested).
+- Pipeline never promotes a candidate to ACTIVE automatically (tested).
+- OOS failure forces REJECTED regardless of in-sample/win-rate (tested).
+- Small samples never receive high confidence (tested).
+- Modified strategy gets a new version; old validation record stays intact
+  (tested).
+
+---

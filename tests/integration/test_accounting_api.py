@@ -180,8 +180,13 @@ def wired_app(tmp_path):
     )
     engine = LiveEngine(config=config, adapter=adapter, audit_repo=repo, force_fresh_model=True)
 
-    # Seed real historical data BEFORE any request.
-    day = datetime(2026, 8, 15, 10, 0, tzinfo=UTC)
+    # Seed real historical data BEFORE any request. Trade close times are
+    # anchored to the CURRENT UTC day (not a fixed date) so DAY/WEEK/MONTH/YEAR
+    # reports all contain them regardless of when the suite runs. The previous
+    # revision anchored to 2026-08-15, which silently broke every run after that
+    # date because the current DAY period starts at 2026-08-16 midnight.
+    now_utc = datetime.now(UTC)
+    day = now_utc.replace(hour=10, minute=0, second=0, microsecond=0)
     _seed_closed_trade(repo, 1001, day, 200.0, strategy_id="strat_alpha")
     _seed_closed_trade(
         repo,
@@ -191,8 +196,8 @@ def wired_app(tmp_path):
         exit_mechanism="HARD_SL_HIT",
         strategy_id="strat_alpha",
     )
-    _snapshot(repo, datetime(2026, 8, 15, 0, 0, 1, tzinfo=UTC), 10000.0, 10000.0)
-    _snapshot(repo, datetime(2026, 8, 15, 23, 59, 0, tzinfo=UTC), 10100.0, 10100.0)
+    _snapshot(repo, now_utc.replace(hour=0, minute=0, second=1, microsecond=0), 10000.0, 10000.0)
+    _snapshot(repo, now_utc.replace(hour=23, minute=59, second=0, microsecond=0), 10100.0, 10100.0)
 
     engine.accounting_worker.start()
     engine.accounting_worker.tick()
@@ -383,6 +388,44 @@ class TestWorkerWithEngine:
         after = engine.accounting_core.load_trades()
         assert len(after) == len(before)
         assert engine.accounting_worker.cycle_count >= 2
+
+    def test_account_summary_never_serves_synthetic_numbers(self, wired_app) -> None:
+        """
+        /api/account/summary must read the canonical AccountingCore and must
+        NEVER serve hardcoded placeholders (the previous revision returned
+        balance=10000.00 / win_rate=0.0 even when the broker adapter was down -
+        see agents/bugs.md BUG-020).
+        """
+        _, engine, app = wired_app
+        with TestClient(app) as client:
+            res = client.get("/api/account/summary")
+        assert res.status_code == 200
+        data = res.json()
+        # Real account present (Paper adapter connected).
+        assert data["available"] is True
+        assert data["balance"] == pytest.approx(10000.0)
+        assert data["equity"] == pytest.approx(10000.0)
+        # Real ledger totals: 1 win + 1 loss.
+        assert data["total_trades"] == 2
+        assert data["win_rate"] == pytest.approx(50.0)
+
+        # Simulate a broker failure: the endpoint must degrade to None fields,
+        # never fall back to fake zeros.
+        from unittest import mock
+
+        with mock.patch.object(
+            engine.adapter, "get_account_info", side_effect=RuntimeError("broker down")
+        ):
+            with TestClient(app) as client:
+                res2 = client.get("/api/account/summary")
+        assert res2.status_code == 200
+        data2 = res2.json()
+        assert data2["available"] is False
+        assert data2["balance"] is None
+        assert data2["equity"] is None
+        # Win rate / totals still come from the real ledger.
+        assert data2["win_rate"] is not None
+        assert data2["total_trades"] == 2
 
     def test_engine_construction_does_not_require_model_artifact(self, tmp_path) -> None:
         """Accounting must survive a cold start with no model file."""

@@ -177,12 +177,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         engine_running = False
         execution_mode = "LIVE"
 
-        account_data = {
-            "balance": 10000.00,
-            "equity": 10000.00,
-            "floating": 0.00,
-            "drawdown": 0.00,
-            "win_rate": 78.5,
+        account_data: dict[str, Any] = {
+            # PHASE 08 HARDENING: no synthetic placeholders. When there is no
+            # engine the account fields stay None so the UI renders an
+            # explicit unavailable state instead of a fake $10,000 balance and
+            # a fake 78.5% win rate (see agents/bugs.md BUG-020).
+            "available": False,
+            "balance": None,
+            "equity": None,
+            "floating": None,
+            "drawdown": None,
+            "win_rate": None,
         }
 
         positions_list: list[dict[str, Any]] = []
@@ -228,6 +233,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             try:
                 acc = engine.adapter.get_account_info()
                 if acc:
+                    account_data["available"] = True
                     account_data["balance"] = acc.balance
                     account_data["equity"] = acc.equity
                     account_data["floating"] = acc.equity - acc.balance
@@ -239,10 +245,18 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             except Exception:
                 pass
 
-            # Calculate actual win rate from audit DB
+            # Real win rate from the canonical AccountingCore (authoritative
+            # ledger), not from the legacy duplicate calculator. Unavailable
+            # stays None.
             try:
-                engine.audit.get_last_account_snapshot()
-                # Use standard metrics
+                core = getattr(engine, "accounting_core", None)
+                if core is not None:
+                    trades = core.load_trades(limit=1000)
+                    closed = [t for t in trades if t.closed_at is not None]
+                    decided = sum(1 for t in closed if t.outcome.value in ("WIN", "LOSS"))
+                    wins = sum(1 for t in closed if t.is_win)
+                    if decided:
+                        account_data["win_rate"] = round(wins / decided * 100.0, 2)
             except Exception:
                 pass
 
@@ -740,54 +754,59 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # REST APIs: Account summary
     @app.get("/api/account/summary")
     def get_account_summary() -> dict[str, Any]:
+        """
+        Canonical account + performance summary.
+
+        PHASE 08 HARDENING: every number here comes from `AccountingCore`
+        (broker adapter -> live state; authoritative ledger -> performance
+        totals). When the adapter cannot be read or there is no closed-trade
+        history, the fields are `None` - NEVER hardcoded placeholders like
+        balance=10000 or win_rate=0.0 (the previous revision served synthetic
+        zeros, contradicting the no-synthetic-numbers invariant and the
+        duplicate-engine rule; see agents/bugs.md BUG-020).
+        """
         engine = app.state.engine
+        core = getattr(engine, "accounting_core", None) if engine else None
+        if core is None:
+            return {
+                "available": False,
+                "balance": None,
+                "equity": None,
+                "margin": None,
+                "open_positions": None,
+                "win_rate": None,
+                "profit_factor": None,
+                "max_drawdown": None,
+                "total_trades": None,
+            }
 
-        balance = 10000.00
-        equity = 10000.00
-        margin = 0.0
-        open_positions_count = 0
-
-        # Default metrics
-        win_rate = 0.0
-        profit_factor = 0.0
-        max_drawdown = 0.0
-        total_trades = 0
-
-        if engine:
-            try:
-                acc = engine.adapter.get_account_info()
-                if acc:
-                    balance = acc.balance
-                    equity = acc.equity
-                    margin = acc.margin
-            except Exception:
-                pass
-
-            try:
-                positions = engine.adapter.get_positions(symbol=engine.config.execution.symbol)
-                open_positions_count = len(positions)
-            except Exception:
-                pass
-
-            try:
-                metrics = engine.audit.get_account_performance_metrics()
-                win_rate = metrics["win_rate"]
-                profit_factor = metrics["profit_factor"]
-                max_drawdown = metrics["max_drawdown"]
-                total_trades = metrics["total_trades"]
-            except Exception:
-                pass
-
-        return {
-            "balance": balance,
-            "equity": equity,
-            "margin": margin,
-            "open_positions": open_positions_count,
-            "win_rate": win_rate,
-            "profit_factor": profit_factor,
-            "max_drawdown": max_drawdown,
-            "total_trades": total_trades,
-        }
+        try:
+            live = core.live_state()
+            trades = core.load_trades(limit=1000)
+            closed = [t for t in trades if t.closed_at is not None]
+            decided = sum(1 for t in closed if t.outcome.value in ("WIN", "LOSS"))
+            wins = sum(1 for t in closed if t.is_win)
+            gross_profit = sum(t.net_pnl for t in closed if t.net_pnl > 0.0)
+            gross_loss = abs(sum(t.net_pnl for t in closed if t.net_pnl < 0.0))
+            dd = core.drawdown_report()
+            return serialize_enums(
+                {
+                    "available": live.available,
+                    "balance": live.balance,
+                    "equity": live.equity,
+                    "margin": live.margin,
+                    "open_positions": live.open_positions,
+                    "win_rate": round(wins / decided * 100.0, 2) if decided else None,
+                    "profit_factor": (
+                        round(gross_profit / gross_loss, 2) if gross_loss > 0.0 else None
+                    ),
+                    "max_drawdown": dd.max_drawdown_pct,
+                    "total_trades": len(closed),
+                }
+            )
+        except Exception as e:
+            logger.error("Account summary read failed", error=str(e))
+            return {"available": False, "reason": str(e)}
 
     # REST APIs: Historical trade logs with pagination/filters
     @app.get("/api/account/trades")
@@ -2064,6 +2083,162 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return {"available": True, "rebuilt_strategies": int(count)}
         except Exception as e:
             logger.error("Intelligence self-heal failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    # =========================================================================
+    # PHASE 09B: STRATEGY RESEARCH, BACKTEST & VALIDATION ENGINE (read + gates)
+    # -------------------------------------------------------------------------
+    # Research consumes the immutable experience ledger ONLY. Every endpoint is
+    # bounded; validation runs live in the background worker or are triggered
+    # explicitly by an operator. Research NEVER places, modifies or closes an
+    # order, and a candidate can NEVER become ACTIVE automatically.
+    # =========================================================================
+
+    def _research() -> Any:
+        """Returns the research pipeline when available."""
+        engine = app.state.engine
+        if not engine or not hasattr(engine, "research_pipeline"):
+            return None
+        return engine
+
+    @app.get("/api/research/summary")
+    def get_research_summary() -> dict[str, Any]:
+        """Candidate count, validation status, lifecycle distribution."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.store import registry_summary
+
+            summary = registry_summary(engine.audit)
+            worker = getattr(engine, "research_worker", None)
+            if worker is not None:
+                from nexus_scalp.research.worker import format_research_worker_status
+
+                summary["worker"] = format_research_worker_status(worker)
+            return serialize_enums({"available": True, "summary": summary})
+        except Exception as e:
+            logger.error("Research summary failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/research/registry")
+    def get_research_registry(lifecycle: str | None = None, limit: int = 200) -> dict[str, Any]:
+        """Bounded registry listing (validation lineage, results, score)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.store import list_registry
+
+            rows = list_registry(engine.audit, lifecycle=lifecycle, limit=limit)
+            return serialize_enums({"available": True, "registry": rows})
+        except Exception as e:
+            logger.error("Research registry failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/research/registry/{strategy_id}")
+    def get_research_registry_entry(strategy_id: str) -> dict[str, Any]:
+        """Single registry entry for a strategy (latest version)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.store import get_registry_entry
+
+            row = get_registry_entry(engine.audit, strategy_id)
+            if row is None:
+                return {"available": False, "reason": "NOT_IN_REGISTRY"}
+            return serialize_enums({"available": True, "entry": row})
+        except Exception as e:
+            logger.error("Research registry entry failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/research/runs")
+    def get_research_runs(strategy_id: str | None = None, limit: int = 100) -> dict[str, Any]:
+        """Append-only validation run records (reproducibility lineage)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.store import list_research_runs
+
+            rows = list_research_runs(engine.audit, strategy_id=strategy_id, limit=limit)
+            return serialize_enums({"available": True, "runs": rows})
+        except Exception as e:
+            logger.error("Research runs failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/research/discover")
+    def trigger_research_discovery() -> dict[str, Any]:
+        """Builds the dataset + runs bounded candidate discovery.
+
+        Candidates are NEVER live; they enter the validation pipeline only.
+        """
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            dataset = engine.research_dataset_builder.build()
+            candidates = engine.research_pipeline.discover(dataset)
+            return serialize_enums(
+                {
+                    "available": True,
+                    "dataset_id": dataset.dataset_id,
+                    "samples": len(dataset.samples),
+                    "candidates": [c.model_dump() for c in candidates],
+                }
+            )
+        except Exception as e:
+            logger.error("Research discovery failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/research/validate")
+    def trigger_research_validate(strategy_id: str) -> dict[str, Any]:
+        """Runs the full validation gate chain for one candidate by strategy_id.
+
+        Pipeline: backtest -> walk-forward -> OOS -> robustness -> score ->
+        registry. The result can be VALIDATED or REJECTED - NEVER ACTIVE.
+        """
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            dataset = engine.research_dataset_builder.build()
+            candidates = engine.research_pipeline.discover(dataset)
+            target = next((c for c in candidates if c.strategy_id == strategy_id), None)
+            if target is None:
+                # Try the registry: validate the recorded definition.
+                entry = engine.strategy_registry.get(strategy_id)
+                if entry is None:
+                    return {"available": False, "reason": "CANDIDATE_NOT_FOUND"}
+                from nexus_scalp.research.candidates import StrategyCandidate
+
+                target = StrategyCandidate(
+                    strategy_id=entry.strategy_id,
+                    strategy_version=entry.strategy_version,
+                    feature_schema_id=entry.feature_schema_id,
+                    feature_dimension=entry.feature_dimension,
+                    context_definition=entry.context_definition,
+                )
+            result = engine.research_pipeline.validate_candidate(target, dataset)
+            return serialize_enums({"available": True, "result": result})
+        except Exception as e:
+            logger.error("Research validate failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/research/self-heal")
+    def trigger_research_self_heal() -> dict[str, Any]:
+        """Rebuilds derived research state from the immutable ledger."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.store import self_heal_research
+
+            repaired = self_heal_research(engine.audit, engine.strategy_registry)
+            return {"available": True, "repaired": int(repaired)}
+        except Exception as e:
+            logger.error("Research self-heal failed", error=str(e))
             return {"available": False, "error": str(e)}
 
     def _intelligence_worker_status(worker: Any) -> dict[str, Any]:

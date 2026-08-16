@@ -33,6 +33,7 @@
 13. [Configuration Architecture & Dynamic Propagation](#13-configuration-architecture--dynamic-propagation)
 14. [Unified Accounting & Performance Intelligence Core (PHASE 08)](#14-unified-accounting--performance-intelligence-core-phase-08)
 15b. [Trade Intelligence Brain (PHASE 09)](#15b-trade-intelligence-brain-phase-09)
+15c. [Strategy Research, Backtest & Validation Engine (PHASE 09B)](#15c-strategy-research-backtest--validation-engine-phase-09b)
 15. [Known Engineering Pitfalls & Invariants](#15-known-engineering-pitfalls--invariants)
 16. [Testing & CI/CD Pipeline Audit](#16-testing--cicd-pipeline-audit)
 17. [Documentation vs. Reality Audit Matrix](#17-documentation-vs-reality-audit-matrix)
@@ -164,6 +165,25 @@ NexusTradingForexBot/
 │       ├── ports/
 │       │   ├── gateway_port.py        # 🟢 Remote Gateway Protocol Port
 │       │   └── mt5_port.py            # 🟢 MT5 Adapter Protocol Port
+│       ├── research/                   # 🟢 PHASE 09B: STRATEGY RESEARCH, BACKTEST & VALIDATION ENGINE
+│       │   ├── __init__.py             # 🟢 Subsystem exports
+│       │   ├── models.py               # 🟢 Immutable research domain contracts (samples, results, score, registry)
+│       │   ├── dataset.py              # 🟢 Deterministic causal dataset builder from experience ledger
+│       │   ├── splitting.py            # 🟢 Temporal splits + walk-forward with purge/embargo
+│       │   ├── leakage.py              # 🟢 Future/leakage guards (fit-on-train, embargo/purge)
+│       │   ├── metrics.py              # 🟢 Pure performance/risk statistics
+│       │   ├── backtest.py             # 🟢 Deterministic friction-aware backtest engine
+│       │   ├── walkforward.py          # 🟢 Walk-forward validation engine
+│       │   ├── oos.py                  # 🟢 Hard out-of-sample gate
+│       │   ├── robustness.py           # 🟢 Spread/slippage/latency stress engine
+│       │   ├── scoring.py              # 🟢 Explainable multi-dimension strategy score
+│       │   ├── candidates.py           # 🟢 Strategy candidate contract + content-derived versioning
+│       │   ├── discovery.py            # 🟢 Bounded context-family candidate discovery
+│       │   ├── lifecycle.py            # 🟢 Research lifecycle state machine
+│       │   ├── registry.py             # 🟢 Enduring strategy registry persistence
+│       │   ├── pipeline.py             # 🟢 End-to-end validation orchestrator
+│       │   ├── worker.py               # 🟢 Isolated/restart-safe background research worker
+│       │   └── store.py                # 🟢 Bounded read facade over research tables
 │       ├── risk/
 │       │   └── risk_engine.py         # 🟢 Quantitative Risk & Lot Sizing Engine
 │       ├── signals/
@@ -703,7 +723,7 @@ $$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\
 | `/api/status` | `GET` | Live telemetry & system status | None | System state, balance, regime, visual overlays | 🟢 VERIFIED |
 | `/api/rules` | `GET` | Get rule matrix configuration | None | JSON map of 30+ scalping rules & enabled states | 🟢 VERIFIED |
 | `/api/rules/toggle` | `POST` | Toggle specific rule state | `ToggleRuleRequest` | Updated rule matrix state | 🟢 VERIFIED |
-| `/api/account/summary` | `GET` | Get financial ledger performance | None | Win rate, profit factor, total trades | 🟢 VERIFIED |
+| `/api/account/summary` | `GET` | Canonical account summary via `AccountingCore.live_state` + ledger totals (no synthetic zeros; null when unavailable) | None | balance/equity/margin/win rate/profit factor/total trades | 🟢 VERIFIED |
 | `/api/account/trades` | `GET` | Paginated closed trade autopsies | Query params | List of completed trade autopsies | 🟢 VERIFIED |
 | `/api/account/growth` | `GET` | Historical account equity curve | Query params | Time-series equity/balance array | 🟢 VERIFIED |
 | `/api/account/performance` | `GET` | Canonical live + period performance overview | None | Live state, 4 periods, drawdown, worker telemetry, totals | 🟢 VERIFIED |
@@ -811,6 +831,8 @@ strategy_intelligence_registry -> lifecycle & confidence (READ, never recomputed
 1. **NO SYNTHETIC NUMBERS.** Every metric that cannot be derived from stored
    evidence is `None`, never a fabricated `0.0` — an unavailable metric renders
    as "n/a" or "NO ACCOUNT HISTORY AVAILABLE", never as a fake zero row.
+   Enforced on ALL dashboard/API endpoints incl. the legacy `/api/status` and
+   `/api/account/summary` (BUG-020); the frontend renders `n/a` for null fields.
 2. **WIN/LOSS IS DECIDED BY REALIZED MONEY ONLY.** A stop that had been moved
    to breakeven is STILL a stop-out; it is classified `BREAKEVEN_STOP` and its
    `outcome` reflects net PnL (which may be LOSS after costs). It is NEVER
@@ -855,9 +877,10 @@ audit_ledger.ticket == audit_experience_outcomes.execution_id
 audit_experience_outcomes.idempotency_key == audit_experiences.idempotency_key
 ```
 
-`AccountingCore._attach_identity()` joins through the OUTCOME table (never
-`audit_experiences.execution_id`, which is empty by design — see BUG-008
-in `agents/bugs.md`).
+`AccountingCore._attach_identity()` AND `_attach_experience_detail()` (forensic
+trace quality decomposition) join through the OUTCOME table (never
+`audit_experiences.execution_id`, which is empty by design — see BUG-008 and
+BUG-021 in `agents/bugs.md`).
 
 ### ⚙️ AccountingWorker (`accounting/worker.py`)
 
@@ -958,7 +981,7 @@ Existing Strategy -> Existing Signal -> Trade Intelligence Brain
   BAD_RECOVERY_PATTERN, OVERTRADING_PATTERN, ...).
 - `strategy_evolution_candidates` — discovered-but-unvalidated strategy
   variations. A candidate is NEVER live until backtested and validated.
-- `intelligence_worker_state` — restart-safe worker bookkeeping.
+- `intelligence_worker_state` — restart-safe worker bookkeeping (checkpoint persisted on `stop()`, restored on `start()`; verifiable via `test_worker_checkpoint_persists_across_restart`).
 
 ### 🧠 Position Lifecycle Events
 
@@ -1004,11 +1027,12 @@ action.
 
 - Background derived-refresh loop, kicked via `asyncio.to_thread()` from
   `LiveEngine.run_loop` — NEVER on the tick hot path.
-- Restart-safe (`start`/`stop` state machine), failure-isolated (each cycle is
+- Restart-safe (`start`/`stop` state machine with persisted checkpoint in
+  `intelligence_worker_state`), failure-isolated (each cycle is
   wrapped; a failure logs `[INTELLIGENCE_WORKER] event=FAILURE` and the worker
   continues), idempotent (repeating a cycle with no new data is a no-op).
 - Owns NO tables for raw truth; its side effects are the derived intelligence
-  tables only.
+  tables and its own worker-state checkpoint.
 
 ### 🌐 Intelligence REST API (in `web/server.py`)
 
@@ -1033,6 +1057,98 @@ action.
 - `tests/integration/test_intelligence_api.py` — 7 tests covering LiveEngine
   wiring, timeline/autopsy/behavior/evolution endpoints, worker restart-safety
   and no-MT5 operation.
+
+---
+
+## 15c. Strategy Research, Backtest & Validation Engine (PHASE 09B)
+
+### 📐 Overview
+
+The **`nexus_scalp/research/`** package is the evidence-driven strategy
+discovery + backtest + walk-forward + OOS + robustness + validation layer built
+on top of the Phase 08 experience ledger and the Phase 09 intelligence brain.
+
+It implements the research process:
+
+```
+EXPERIENCE -> RESEARCH -> CANDIDATE -> BACKTEST -> WALK-FORWARD
+    -> OUT-OF-SAMPLE -> ROBUSTNESS -> STATISTICAL SCORE
+    -> VALIDATED / SHADOW -> OPERATOR-APPROVED (NEVER automatic)
+```
+
+### 🗄️ Canonical Research Engine (`src/nexus_scalp/research/`)
+
+| File | Responsibility |
+| :--- | :--- |
+| `models.py` | Immutable domain contracts: `ResearchSample`, `ResearchDataset`, `BacktestResult`, `WalkForwardResult`, `OOSResult`, `RobustnessResult`, `StrategyScore`, `StrategyRegistryEntry`, `ResearchRun`, `ExecutionAssumptions`, `CandidateLifecycle`. |
+| `dataset.py` | `ResearchDatasetBuilder` — deterministic, causally-ordered dataset from the immutable experience ledger; provenance + feature-schema preserved per sample. |
+| `splitting.py` | `split_temporal()` + `walk_forward_folds()` — temporal TRAIN/VALIDATION/OOS with purge + embargo. Never random splits. |
+| `leakage.py` | Causal guards: `assert_no_future_decisions()`, `fit_forward_stats()` (fit-on-train-only), `validate_no_train_leakage()`. |
+| `metrics.py` | Pure deterministic statistics (expectancy, PF, drawdown, MAE/MFE, consecutive losses, friction modeling). |
+| `backtest.py` | `BacktestEngine` — deterministic, friction-aware backtest over recorded trades. |
+| `walkforward.py` | `WalkForwardEngine` — repeated temporal re-evaluation, tracks fold stability/degradation. |
+| `oos.py` | `OOSGate` — hard out-of-sample gate; OOS failure ⇒ REJECTED even with high win rate. |
+| `robustness.py` | `RobustnessEngine` — spread / slippage / latency stress; measures degradation, not just "still profitable". |
+| `scoring.py` | `compute_strategy_score()` — decomposable multi-dimension score with small-sample protection. |
+| `candidates.py` | `StrategyCandidate` — deterministic content-addressed identity + immutable versioning. |
+| `discovery.py` | `discover_candidates()` — bounded context-family discovery (no micro-strategy explosion). |
+| `lifecycle.py` | Research lifecycle state machine (DISCOVERED → … → VALIDATED → SHADOW → ACTIVE; REJECTED/DEGRADED/RETIRED). |
+| `registry.py` | `StrategyRegistry` — enduring persistence of validation truth, independent of model files. |
+| `pipeline.py` | `ResearchPipeline` — orchestrates dataset → discovery → gates → score → registry. |
+| `worker.py` | `ResearchWorker` — isolated, restart-safe, idempotent background research loop. |
+| `store.py` | Bounded read facade for the research tables. |
+
+### 🔒 Safety Contract (PHASE 09B)
+
+- Research NEVER places, modifies or closes an order: the package holds no
+  adapter, no order manager and no risk engine (verified by tests).
+- A candidate NEVER becomes LIVE automatically. Only
+  SHADOW/VALIDATED → ACTIVE via a deliberate operator-gated `approve_for_live()`.
+- A strategy that fails OOS is REJECTED regardless of in-sample / win rate.
+- A modified strategy is a NEW VERSION and must be revalidated.
+- 50D (`scalp_v1`) works today; 60D/350D are supported at the schema/provenance
+  layer via `feature_schema_id` + `feature_dimension` per candidate/registry row.
+
+### 🗄️ New Canonical Tables (all in `audit.db`, SQLite WAL)
+
+- `strategy_registry` — enduring validation truth keyed by
+  `(strategy_id, strategy_version)` UNIQUE; preserves backtest / walk-forward /
+  OOS / robustness / score / confidence / lifecycle / lineage. Independent of
+  the current model file (survives model rebuilds + schema-width changes).
+- `research_runs` — append-only record of every validation run (reproducibility).
+- `research_worker_state` — restart-safe worker checkpoint.
+
+### ⚙️ LiveEngine Wiring
+
+`LiveEngine` constructs `strategy_registry`, `research_dataset_builder`,
+`research_pipeline` and `research_worker`. The worker is kicked via
+`asyncio.to_thread()` from the periodic loop — NEVER inside
+`_process_tick_pipeline()` — and is failure-isolated (cannot stop trading).
+
+### 🌐 Research REST API (in `web/server.py`)
+
+| Route | Method | Purpose |
+| :--- | :---: | :--- |
+| `/api/research/summary` | GET | Candidate count / status / lifecycle distribution + worker status |
+| `/api/research/registry` | GET | Bounded registry listing |
+| `/api/research/registry/{strategy_id}` | GET | Single registry entry |
+| `/api/research/runs` | GET | Append-only validation run records |
+| `/api/research/discover` | POST | Build dataset + bounded candidate discovery |
+| `/api/research/validate` | POST | Full gate chain for one candidate (never ACTIVE) |
+| `/api/research/self-heal` | POST | Rebuild derived research state |
+
+### 🧪 Phase 09B Tests
+
+- `tests/unit/test_research_phase09b.py` — 45 tests covering dataset causality,
+  provenance, future-leakage defense, deterministic identity/versioning,
+  deterministic backtest + friction, temporal folds, purge/embargo, OOS gate
+  (in-sample success + OOS failure ⇒ REJECTED), robustness stress, multi-dim
+  scoring + small-sample protection, lifecycle, versioning immutability, safety
+  (no RiskEngine/OrderManager/MT5), worker isolation/restart, and full-pipeline
+  non-promotion to ACTIVE.
+- `tests/integration/test_research_api.py` — 7 tests covering LiveEngine wiring,
+  summary/registry/discover/validate/self-heal endpoints, worker restart-safety
+  and no-MT5/no-risk-engine exposure.
 
 ---
 
@@ -1084,11 +1200,13 @@ If you are an AI coding agent making changes to this repository in the future, *
   - `test_htf_warmup_gate.py`: Validates cold-start HTF warmup gate state transitions and inference blocking.
   - `test_accounting_core.py`: Validates the Phase 08 unified accounting core (periods, snapshots, drawdown/recovery, closure classification, attribution, forensics, worker, self-healing, provenance).
   - `test_intelligence_phase09.py`: Validates the Phase 09 Trade Intelligence Brain (position lifecycle timeline, MFE/MAE, giveback, quality decomposition, bad-management≠bad-strategy, degradation, recovery, similarity, pre-trade rejection, schema migration, self-heal rebuild, worker isolation, no-bypass safety, no-MT5).
+  - `test_research_phase09b.py`: Validates the Phase 09B Strategy Research / Backtest / Validation Engine (dataset causality/provenance, future-leakage defense, deterministic candidate identity/versioning, deterministic friction-aware backtest, temporal folds, purge/embargo, OOS gate rejection on OOS failure, robustness stress, multi-dimension scoring + small-sample protection, lifecycle, versioning immutability, safety, worker isolation/restart, full-pipeline non-promotion).
 * **Integration Tests (`tests/integration/`):**
   - `test_signal_pipeline_health.py`: End-to-end signal pipeline health verification.
   - `test_database_execution_audit.py`: Validates SQLite WAL persistence and ledger autopsies.
   - `test_accounting_api.py`: Validates the Phase 08 accounting REST API + worker wiring end-to-end.
   - `test_intelligence_api.py`: Validates the Phase 09 intelligence REST API + LiveEngine wiring end-to-end (timeline, autopsy, behavior, evolution, worker restart-safety, no-MT5).
+  - `test_research_api.py`: Validates the Phase 09B research REST API + LiveEngine wiring end-to-end (summary, registry, discover, validate, self-heal, worker restart-safety, no-MT5 / no-risk-engine exposure).
   - `test_playwright_e2e.py`: Playwright end-to-end web visualizer verification. 🟢 VERIFIED
 
 ### ⚙️ CI/CD Workflows (`.github/workflows/`)

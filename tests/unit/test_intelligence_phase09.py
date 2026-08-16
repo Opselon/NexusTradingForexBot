@@ -746,6 +746,64 @@ class TestWorkerIsolation:
         worker.tick() or worker.last_error == ""
         worker.stop()
 
+    def test_worker_checkpoint_persists_across_restart(self, tmp_path, base_components):
+        """
+        The intelligence_worker_state table must actually persist worker
+        bookkeeping so a crash/restart resumes without redoing everything.
+
+        (The table existed in the schema but nothing ever wrote to it - a dead
+        table. Restart-safety was claimed in the docs but not implemented.)
+        """
+        from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
+        db_url = f"sqlite:///{tmp_path / 'checkpoint.db'}"
+        repo = AuditRepository(db_url=db_url, flush_interval_sec=0.05)
+        try:
+            # Reuse the real ledger wiring from a second repo so episodes are
+            # independent of base_components' database.
+            from nexus_scalp.experience.ledger import ExperienceLedger
+
+            new_ledger = ExperienceLedger(audit_repo=repo)
+            worker = IntelligenceWorker(
+                audit_repo=repo,
+                ledger=new_ledger,
+                interval_sec=0.0,
+            )
+            worker.start()
+            worker.tick()
+            # Force a nonzero cycle count before stopping.
+            worker._last_run_ts = 0.0
+            worker.tick()
+            worker.stop()
+
+            # Flush the queued checkpoint write.
+            import time
+
+            time.sleep(0.6)
+            import sqlite3
+
+            conn = sqlite3.connect(repo._db_path)
+            try:
+                row = conn.execute(
+                    "SELECT cycle_count, last_checkpoint FROM intelligence_worker_state "
+                    "WHERE scope = 'intelligence'"
+                ).fetchone()
+            finally:
+                conn.close()
+            assert row is not None, "checkpoint row must be persisted on stop"
+            assert int(row[0]) >= 1
+
+            # A fresh worker instance must restore the cycle counter.
+            worker2 = IntelligenceWorker(audit_repo=repo, ledger=new_ledger, interval_sec=0.0)
+            worker2.start()
+            assert worker2.cycle_count >= 1, "restart must resume from the checkpoint"
+            worker2.stop()
+        finally:
+            repo.close()
+            import gc
+
+            gc.collect()
+
 
 # =============================================================================
 # 13-14. LEARNING CANNOT BYPASS RISK / ORDER

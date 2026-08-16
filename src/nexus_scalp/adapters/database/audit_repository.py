@@ -88,6 +88,7 @@ class AuditRepository:
 
         self._create_experience_tables(conn)
         self._create_intelligence_tables(conn)
+        self._create_research_tables(conn)
         self._seed_trading_rules(conn)
         conn.execute(
             """
@@ -634,6 +635,84 @@ class AuditRepository:
             except Exception:
                 pass
 
+    def _create_research_tables(self, conn: sqlite3.Connection) -> None:
+        """
+        Creates the PHASE 09B Strategy Research / Backtest / Validation schema.
+
+        All rows here are DERIVED from the authoritative Phase 08 experience
+        ledger and are rebuildable. The registry preserves historical validation
+        truth (spec 20 / 28); validation runs are append-only (spec 26).
+        """
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS strategy_registry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                strategy_id TEXT NOT NULL,
+                strategy_version TEXT NOT NULL,
+                feature_schema_id TEXT DEFAULT 'scalp_v1',
+                feature_dimension INTEGER DEFAULT 50,
+                discovery_source TEXT DEFAULT '',
+                discovery_window TEXT DEFAULT '',
+                context_definition TEXT DEFAULT '{}',
+                parent_strategy_ids TEXT DEFAULT '[]',
+                lifecycle TEXT NOT NULL,
+                backtest TEXT DEFAULT '{}',
+                walkforward TEXT DEFAULT '{}',
+                oos TEXT DEFAULT '{}',
+                robustness TEXT DEFAULT '{}',
+                score TEXT DEFAULT '{}',
+                confidence REAL DEFAULT 0.0,
+                sample_count INTEGER DEFAULT 0,
+                validation_lineage TEXT DEFAULT '[]',
+                retirement_reason TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (strategy_id, strategy_version)
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                dataset_id TEXT NOT NULL,
+                strategy_id TEXT NOT NULL,
+                strategy_version TEXT NOT NULL,
+                executed_at TEXT NOT NULL,
+                config TEXT DEFAULT '{}',
+                build_identity TEXT DEFAULT '',
+                result_summary TEXT DEFAULT '{}',
+                UNIQUE (run_id)
+            );
+            """
+        )
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_registry_id ON strategy_registry(strategy_id, updated_at);"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_registry_lifecycle ON strategy_registry(lifecycle);"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_research_runs_strategy ON research_runs(strategy_id);"
+            )
+        except Exception:
+            pass
+
+        # Restart-safe research worker bookkeeping.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_worker_state (
+                scope TEXT PRIMARY KEY,
+                last_checkpoint TEXT DEFAULT '',
+                last_cycle_at TEXT DEFAULT '',
+                last_error TEXT DEFAULT '',
+                cycle_count INTEGER DEFAULT 0
+            );
+            """
+        )
+
     def _start_background_worker(self) -> None:
         """Starts the dedicated background thread for zero-latency database inserts."""
         self._running = True
@@ -1139,7 +1218,13 @@ class AuditRepository:
                 total_duration = 0.0
 
                 for r in rows:
-                    net_pnl = float(r["pnl"]) + float(r["commission"]) + float(r["swap"])
+                    # IMPORTANT: commission and swap are COSTS and must be
+                    # SUBTRACTED (net = pnl - commission - swap), exactly as
+                    # `log_ledger_closed` persists `net_pnl_usd`. The previous
+                    # implementation used `pnl + commission + swap`, which
+                    # inflated profits and disagreed with the canonical
+                    # AccountingCore (agents/bugs.md BUG-019).
+                    net_pnl = float(r["pnl"]) - abs(float(r["commission"])) - float(r["swap"])
                     if net_pnl > 0:
                         wins += 1
                         gross_profit += net_pnl

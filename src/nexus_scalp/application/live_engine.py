@@ -71,6 +71,10 @@ from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import configure_logging, get_logger
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 from nexus_scalp.ports.mt5_port import IMT5Port
+from nexus_scalp.research.dataset import ResearchDatasetBuilder
+from nexus_scalp.research.pipeline import ResearchPipeline
+from nexus_scalp.research.registry import StrategyRegistry
+from nexus_scalp.research.worker import ResearchWorker
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.signals.policy import SignalPolicy
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
@@ -251,6 +255,27 @@ class LiveEngine:
         self._intelligence_worker_started: bool = False
         #: Most recent Phase 09 suitability verdict, surfaced by the REST API.
         self._last_suitability_verdict: Any = None
+
+        # =====================================================================
+        # PHASE 09B: STRATEGY RESEARCH, BACKTEST & VALIDATION ENGINE
+        # ---------------------------------------------------------------------
+        # Consumes the immutable experience ledger ONLY. Research is OFFLINE /
+        # BACKGROUND; it can never place, modify or close an order, and it can
+        # never promote a candidate to live automatically.
+        # =====================================================================
+        self.strategy_registry = StrategyRegistry(audit_repo=self.audit)
+        self.research_dataset_builder = ResearchDatasetBuilder(ledger=self.experience_ledger)
+        self.research_pipeline = ResearchPipeline(
+            dataset_builder=self.research_dataset_builder,
+            registry=self.strategy_registry,
+        )
+        self.research_worker = ResearchWorker(
+            audit_repo=self.audit,
+            ledger=self.experience_ledger,
+            pipeline=self.research_pipeline,
+            interval_sec=60.0,
+        )
+        self._research_worker_started: bool = False
 
         # Order/risk/policy
         self.signal_policy = SignalPolicy(
@@ -465,6 +490,11 @@ class LiveEngine:
         # a failure inside it can never stop trading.
         self._start_intelligence_worker()
 
+        # PHASE 09B: start the background strategy research worker. Research is
+        # OFFLINE / BACKGROUND (dataset rebuild, discovery, validation gates).
+        # Fully isolated: it can never stop trading and never places orders.
+        self._start_research_worker()
+
         logger.info(
             "LIVE CONNECTED",
             login=getattr(account, "login", 0) if account else 0,
@@ -533,6 +563,15 @@ class LiveEngine:
                         await asyncio.to_thread(self.intelligence_worker.tick)
                     except Exception:
                         pass
+
+                # PHASE 09B: research worker kick (throttled internally, runs in
+                # a worker thread). Research NEVER runs inside the tick
+                # pipeline; a failure here can never disturb trading.
+                if self._research_worker_started:
+                    try:
+                        await asyncio.to_thread(self.research_worker.tick)
+                    except Exception:
+                        pass
                 await asyncio.sleep(0.05)
 
             except Exception as e:
@@ -555,6 +594,12 @@ class LiveEngine:
         # PHASE 09: stop the intelligence worker (derived intelligence, isolated).
         try:
             await self._stop_intelligence_worker()
+        except Exception:
+            pass
+
+        # PHASE 09B: stop the strategy research worker (isolated).
+        try:
+            await self._stop_research_worker()
         except Exception:
             pass
 
@@ -877,6 +922,26 @@ class LiveEngine:
             self.intelligence_worker.stop()
         except Exception as err:
             logger.error("[INTELLIGENCE_WORKER] event=STOP status=FAILED", error=str(err))
+
+    def _start_research_worker(self) -> None:
+        """Starts the background strategy research worker (idempotent)."""
+        if self._research_worker_started:
+            return
+        self._research_worker_started = True
+        try:
+            self.research_worker.start()
+        except Exception as err:
+            # Isolation: research startup must never block the engine.
+            logger.error("[RESEARCH_WORKER] event=START status=FAILED", error=str(err))
+            self._research_worker_started = False
+
+    async def _stop_research_worker(self) -> None:
+        """Stops the strategy research worker (idempotent, never raises)."""
+        self._research_worker_started = False
+        try:
+            self.research_worker.stop()
+        except Exception as err:
+            logger.error("[RESEARCH_WORKER] event=STOP status=FAILED", error=str(err))
 
     async def _startup_experience_self_heal(self) -> None:
         """

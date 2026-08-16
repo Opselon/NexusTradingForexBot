@@ -791,13 +791,19 @@ function handleIncomingLiveTick(payload) {
     document.getElementById('prob-sell').textContent = `${pSell}%`;
     document.getElementById('prob-sell-bar').style.width = `${pSell}%`;
 
-    // Account Section
-    document.getElementById('acc-balance').textContent = `$${payload.account.balance.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-    document.getElementById('acc-equity').textContent = `$${payload.account.equity.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-    document.getElementById('acc-floating').textContent = `${payload.account.floating >= 0 ? '+' : ''}$${payload.account.floating.toFixed(2)}`;
-    document.getElementById('acc-floating').className = `text-lg font-black font-mono ${payload.account.floating >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
-    document.getElementById('acc-drawdown').textContent = `${payload.account.drawdown.toFixed(2)}%`;
-    document.getElementById('acc-winrate').textContent = `${payload.account.win_rate.toFixed(1)}%`;
+    // Account Section (fields may be null when the broker adapter is
+        // unavailable - render an explicit unavailable state, never $"NaN")
+        const accBal = payload.account.balance;
+        const accEq = payload.account.equity;
+        const accFloat = payload.account.floating;
+        const accDd = payload.account.drawdown;
+        const accWr = payload.account.win_rate;
+        document.getElementById('acc-balance').textContent = (accBal != null) ? `$${accBal.toLocaleString('en-US', {minimumFractionDigits: 2})}` : 'n/a';
+        document.getElementById('acc-equity').textContent = (accEq != null) ? `$${accEq.toLocaleString('en-US', {minimumFractionDigits: 2})}` : 'n/a';
+        document.getElementById('acc-floating').textContent = (accFloat != null) ? `${accFloat >= 0 ? '+' : ''}$${accFloat.toFixed(2)}` : 'n/a';
+        document.getElementById('acc-floating').className = `text-lg font-black font-mono ${(accFloat != null && accFloat < 0) ? 'text-rose-400' : 'text-emerald-400'}`;
+        document.getElementById('acc-drawdown').textContent = (accDd != null) ? `${accDd.toFixed(2)}%` : 'n/a';
+        document.getElementById('acc-winrate').textContent = (accWr != null) ? `${accWr.toFixed(1)}%` : 'n/a';
 
     if (payload.support_levels) {
         supportLevels = payload.support_levels;
@@ -2112,6 +2118,108 @@ function initAccountIntelligence() {
     loadAccountStrategies();
 }
 // =============================================================================
+
+// =============================================================================
+// PHASE 09B: STRATEGY RESEARCH ENGINE (registry / discovery / validation)
+// =============================================================================
+
+async function loadResearchSummary() {
+    try {
+        const res = await fetch('/api/research/summary');
+        if (!res.ok) return;
+        const body = await res.json();
+        if (!body.available || !body.summary) return;
+        const s = body.summary;
+        document.getElementById('research-registry-total').textContent = s.total ?? '--';
+        const by = s.by_lifecycle || {};
+        document.getElementById('research-validated-count').textContent = by.VALIDATED ?? '0';
+        document.getElementById('research-rejected-count').textContent =
+            (by.REJECTED || 0) + (by.DEGRADED || 0) + (by.RETIRED || 0);
+        const w = s.worker || {};
+        document.getElementById('research-worker-status').textContent =
+            (w.status || '--') + ' · ' + (w.cycle_count || 0) + 'cyc';
+        loadResearchRegistry();
+    } catch (e) {
+        console.warn('research summary failed', e);
+    }
+}
+
+async function loadResearchRegistry() {
+    try {
+        const res = await fetch('/api/research/registry?limit=20');
+        if (!res.ok) return;
+        const body = await res.json();
+        if (!body.available) return;
+        const box = document.getElementById('research-registry');
+        const rows = body.registry || [];
+        if (!rows.length) {
+            box.innerHTML = '<div class="text-textMuted italic">No strategies in the registry yet. Run discovery first.</div>';
+            return;
+        }
+        box.innerHTML = rows.map(r => {
+            const sc = r.score ? (JSON.parse(r.score).final_score ?? '--') : '--';
+            const lc = esc(r.lifecycle || '--');
+            return '<div class="flex items-center justify-between bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+                '<span class="text-accentCyan font-bold">' + esc(r.strategy_id) + '</span>' +
+                '<span class="text-textMuted">v' + esc(r.strategy_version.slice(0, 8)) + '</span>' +
+                '<span class="text-textMuted">' + esc(r.feature_schema_id) + '</span>' +
+                '<span class="text-accentGreen font-bold">' + esc(lc) + '</span>' +
+                '<span class="text-textMuted">score ' + esc(String(sc)) + '</span>' +
+                '</div>';
+        }).join('');
+    } catch (e) {
+        console.warn('research registry failed', e);
+    }
+}
+
+async function scanResearchDiscovery() {
+    const box = document.getElementById('research-registry');
+    box.innerHTML = '<div class="text-textMuted italic">Discovering candidates from experience ledger…</div>';
+    try {
+        const res = await fetch('/api/research/discover', { method: 'POST' });
+        const body = await res.json();
+        if (!body.available) {
+            box.innerHTML = '<div class="text-accentRed italic">Discovery unavailable: ' + esc(body.error || '') + '</div>';
+            return;
+        }
+        box.innerHTML = '<div class="text-accentGreen">Dataset ' + esc(body.dataset_id) + ' · ' +
+            body.samples + ' samples · ' + (body.candidates || []).length + ' candidates discovered.</div>' +
+            (body.candidates || []).slice(0, 10).map(c =>
+                '<div class="flex items-center justify-between bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+                '<span class="text-accentCyan font-bold">' + esc(c.strategy_id) + '</span>' +
+                '<span class="text-textMuted">' + esc(c.discovery_method) + '</span>' +
+                '<span class="text-textMuted">' + (c.discovery_evidence.samples ?? '--') + ' samples</span>' +
+                '</div>').join('');
+        loadResearchSummary();
+    } catch (e) {
+        console.warn('research discovery failed', e);
+    }
+}
+
+async function validateResearchCandidate() {
+    const sid = (document.getElementById('research-validate-id').value || '').trim();
+    const box = document.getElementById('research-validation-result');
+    if (!sid) { box.innerHTML = '<div class="text-accentRed italic">Enter a strategy_id first.</div>'; return; }
+    box.innerHTML = '<div class="text-textMuted italic">Running backtest → walk-forward → OOS → robustness → score…</div>';
+    try {
+        const res = await fetch('/api/research/validate?strategy_id=' + encodeURIComponent(sid), { method: 'POST' });
+        const body = await res.json();
+        if (!body.available) {
+            box.innerHTML = '<div class="text-accentRed italic">Validation unavailable: ' + esc(body.reason || body.error || '') + '</div>';
+            return;
+        }
+        const r = body.result || {};
+        box.innerHTML = '<div class="text-accentCyan font-bold">lifecycle: ' + esc(r.lifecycle) + '</div>' +
+            '<div>expectancy_r: ' + esc(r.backtest?.expectancy_r ?? '--') + '</div>' +
+            '<div>oos_expectancy_r: ' + esc(r.oos?.oos_expectancy_r ?? '--') + ' · oos_status: ' + esc(r.oos?.status ?? '--') + '</div>' +
+            '<div>robustness: ' + esc(r.robustness?.status ?? '--') + '</div>' +
+            '<div>score: ' + esc(r.score?.final_score ?? '--') + ' · verdict: ' + esc(r.score?.verdict ?? '--') + '</div>';
+        loadResearchSummary();
+    } catch (e) {
+        console.warn('research validate failed', e);
+    }
+}
+
 // PHASE 09: TRADE INTELLIGENCE BRAIN (lifecycle / autopsy / behavior / evolution)
 // =============================================================================
 

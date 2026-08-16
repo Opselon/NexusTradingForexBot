@@ -28,6 +28,7 @@ CONTRACT
 
 from __future__ import annotations
 
+import sqlite3
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -90,6 +91,7 @@ class IntelligenceWorker:
             return
         self.running = True
         self._last_run_ts = 0.0
+        self._load_checkpoint()
         logger.info("[INTELLIGENCE_WORKER] event=START status=RUNNING")
 
     def stop(self) -> None:
@@ -97,7 +99,61 @@ class IntelligenceWorker:
         if not self.running:
             return
         self.running = False
+        self._save_checkpoint()
         logger.info("[INTELLIGENCE_WORKER] event=STOP status=IDLE")
+
+    # ------------------------------------------------------------------
+    # Restart-safe checkpoint (intelligence_worker_state table)
+    # ------------------------------------------------------------------
+
+    def _load_checkpoint(self) -> None:
+        """
+        Restores cycle counters from `intelligence_worker_state` so a crash or
+        restart resumes cleanly instead of silently redoing history.
+
+        The table is created by the audit schema; a missing table or row simply
+        means "first run" - never an error on the live path.
+        """
+        try:
+            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+            try:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT cycle_count, last_checkpoint FROM intelligence_worker_state "
+                    "WHERE scope = 'intelligence' LIMIT 1;"
+                ).fetchone()
+            finally:
+                conn.close()
+            if row is not None:
+                self.cycle_count = max(self.cycle_count, int(row["cycle_count"] or 0))
+                prior = str(row["last_checkpoint"] or "")
+                if prior:
+                    self._last_autopsy_count = max(self._last_autopsy_count, int(prior))
+        except Exception as e:
+            logger.debug("[INTELLIGENCE_WORKER] checkpoint load skipped", error=str(e))
+
+    def _save_checkpoint(self) -> None:
+        """Persists restart-safe bookkeeping through the async audit queue."""
+        try:
+            query = """
+                INSERT INTO intelligence_worker_state
+                (scope, last_checkpoint, last_cycle_at, last_error, cycle_count)
+                VALUES ('intelligence', ?, ?, ?, ?)
+                ON CONFLICT(scope) DO UPDATE SET
+                    last_checkpoint=excluded.last_checkpoint,
+                    last_cycle_at=excluded.last_cycle_at,
+                    last_error=excluded.last_error,
+                    cycle_count=excluded.cycle_count;
+            """
+            args = (
+                str(self._last_autopsy_count),
+                self.last_cycle_start.isoformat() if self.last_cycle_start else "",
+                self.last_error or "",
+                self.cycle_count,
+            )
+            self.audit_repo._queue.put_nowait((query, args))
+        except Exception as e:
+            logger.debug("[INTELLIGENCE_WORKER] checkpoint save skipped", error=str(e))
 
     # ------------------------------------------------------------------
     # Cycle
