@@ -1002,3 +1002,48 @@ Built a full `src/nexus_scalp/research/` subsystem:
   (tested).
 
 ---
+
+## BUG-024 — No Controlled Training / Champion Protection Boundary (Phase 10 gap)
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Phase 10 Forensic Audit (2026-08-16)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/unit/test_model_lifecycle_phase10.py` (32 tests),
+  `tests/integration/test_model_lifecycle_api.py` (7 tests)
+
+### Affected Components
+- Missing: deterministic training dataset builder, TrainingRun lineage, candidate
+  staging paths, validation gates, Champion/Challenger comparison, lifecycle
+  status on the model registry, training worker isolation.
+
+### Root Cause
+The repository had production-grade training infrastructure
+(`WalkForwardTrainer`, `ScalpNet`, `experience_model_registry`, schema
+registry) but NO controlled-training boundary: nothing prevented a training
+run from overwriting the Champion artifact, nothing recorded immutable
+TrainingRuns, and there was no candidate/Challenger lifecycle or validation
+gate chain. A retrain was effectively an uncontrolled mutation of the
+production model path.
+
+### Fix
+Built `src/nexus_scalp/model_lifecycle/`:
+- deterministic causal TrainingDatasetBuilder over the experience ledger,
+- ChallengerTrainer writing only to `candidate/<run_id>/` staging paths —
+  the Champion artifact is never overwritten (tested via hash invariance),
+- 12 validation gates + collapse guard,
+- Champion vs Challenger multi-dimension comparator,
+- additive lifecycle status columns on the existing `experience_model_registry`
+  (no duplicate registry),
+- immutable `training_runs` + `model_comparisons` tables,
+- isolated/bounded/cancellable TrainingWorker wired into LiveEngine via
+  `asyncio.to_thread` (never in the tick pipeline).
+
+### Regression Guards
+- Champion artifact hash must stay unchanged across a training run (tested).
+- Failed/interrupted training remains FAILED/INCOMPLETE, never VALIDATED.
+- No auto-promotion: validated Challenger stays shadow-eligible (tested).
+- Schema mismatch (dimension/class/scaler) fails explicitly (tested).
+
+---

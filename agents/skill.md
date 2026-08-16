@@ -34,6 +34,7 @@
 14. [Unified Accounting & Performance Intelligence Core (PHASE 08)](#14-unified-accounting--performance-intelligence-core-phase-08)
 15b. [Trade Intelligence Brain (PHASE 09)](#15b-trade-intelligence-brain-phase-09)
 15c. [Strategy Research, Backtest & Validation Engine (PHASE 09B)](#15c-strategy-research-backtest--validation-engine-phase-09b)
+15d. [Controlled Model Training & Challenger Engine (PHASE 10)](#15d-controlled-model-training--challenger-engine-phase-10)
 15. [Known Engineering Pitfalls & Invariants](#15-known-engineering-pitfalls--invariants)
 16. [Testing & CI/CD Pipeline Audit](#16-testing--cicd-pipeline-audit)
 17. [Documentation vs. Reality Audit Matrix](#17-documentation-vs-reality-audit-matrix)
@@ -162,6 +163,19 @@ NexusTradingForexBot/
 │       │   └── triple_barrier.py      # 🟢 Cost-Aware Purged Triple-Barrier Labeler
 │       ├── models/
 │       │   └── scalp_net.py           # 🟢 ScalpNet Deep Neural Network
+│       ├── model_lifecycle/           # 🟢 PHASE 10: CONTROLLED MODEL TRAINING & CHALLENGER ENGINE
+│       │   ├── __init__.py            # 🟢 Subsystem exports
+│       │   ├── models.py              # 🟢 Immutable contracts (TrainingRun, TrainingDataset, ModelStatus)
+│       │   ├── dataset.py             # 🟢 Deterministic causal training dataset builder
+│       │   ├── integrity.py           # 🟢 Artifact hash/dimension/class-count/scaler compatibility
+│       │   ├── champion.py            # 🟢 Champion loading + verification (production only)
+│       │   ├── trainer.py             # 🟢 ChallengerTrainer: offline candidate training (staging paths)
+│       │   ├── gates.py               # 🟢 12 validation gates + collapse protection
+│       │   ├── comparison.py          # 🟢 Champion vs Challenger multi-dim comparison
+│       │   ├── registry.py            # 🟢 Additive lifecycle status over experience_model_registry
+│       │   ├── store.py               # 🟢 Immutable training_runs + model_comparisons persistence
+│       │   ├── orchestrator.py        # 🟢 End-to-end controlled training pipeline
+│       │   └── worker.py              # 🟢 Isolated/bounded/cancellable background training worker
 │       ├── ports/
 │       │   ├── gateway_port.py        # 🟢 Remote Gateway Protocol Port
 │       │   └── mt5_port.py            # 🟢 MT5 Adapter Protocol Port
@@ -1152,6 +1166,102 @@ EXPERIENCE -> RESEARCH -> CANDIDATE -> BACKTEST -> WALK-FORWARD
 
 ---
 
+## 15d. Controlled Model Training & Challenger Engine (PHASE 10)
+
+### 📐 Overview
+
+The **`nexus_scalp/model_lifecycle/`** package implements controlled OFFLINE
+model training + Champion/Challenger management built on top of Phases 08/09
+(experience ledger, strategy research, validation gates, feature schema
+registry, existing WalkForwardTrainer).
+
+```
+VERIFIED EXPERIENCE -> TRAINING DATASET -> CANDIDATE MODEL
+    -> VALIDATION GATES (1..12) -> CHAMPION COMPARISON
+    -> CHALLENGER (shadow-eligible)   [NEVER auto-promoted]
+```
+
+The production Champion is NEVER touched by candidate training. A Challenger
+can never reach the production inference path by accident; only the existing
+controlled promotion process may move a Challenger toward production.
+
+### 🗄️ Canonical Model Lifecycle Engine (`src/nexus_scalp/model_lifecycle/`)
+
+| File | Responsibility |
+| :--- | :--- |
+| `models.py` | Immutable contracts: `TrainingRun` (full lineage), `TrainingDataset`, `TrainingDatasetRow`, `GateResult`, `ModelArtifactInfo`, `ModelStatus` (CANDIDATE/CHALLENGER/CHAMPION/REJECTED/ARCHIVED/INVALID), `TrainingRunStatus`. |
+| `dataset.py` | Deterministic, causally-safe training dataset builder from the experience ledger (all outcome classes represented; no future leakage). |
+| `integrity.py` | Artifact hash/dimension/class-count/scaler compatibility; explicit SchemaCompatibilityError on mismatch. |
+| `champion.py` | Champion loading + verification; production model only; corrupted artifact never silently loaded. |
+| `trainer.py` | `ChallengerTrainer` — offline candidate training reusing `WalkForwardTrainer`; writes to candidate/staging paths only. |
+| `gates.py` | 12 validation gates (dataset, schema, labels, stability, validation, walk-forward, OOS, robustness, risk, comparison, artifact, reproducibility) + collapse protection. |
+| `comparison.py` | Champion vs Challenger multi-dimension comparison + eligibility (improvement without critical degradation). |
+| `registry.py` | Additive lifecycle-status extension of the canonical `experience_model_registry` (NO duplicate registry). |
+| `store.py` | Immutable persistence for `training_runs` + `model_comparisons` tables. |
+| `orchestrator.py` | End-to-end controlled training pipeline wiring dataset → train → gates → compare → registry. |
+| `worker.py` | Isolated, bounded, cancellable, restart-safe background training worker. |
+
+### 🔒 Safety Contract (PHASE 10)
+
+- Training is OFFLINE/BACKGROUND only; heavy PyTorch work NEVER runs inside
+  `LiveEngine._process_tick_pipeline()` (worker threads via `asyncio.to_thread`).
+- A candidate is written to `candidate/staging` paths; the Champion artifact is
+  NEVER overwritten (verified by test: champion hash unchanged during training).
+- A failed/interrupted training run stays FAILED/INCOMPLETE — never VALIDATED.
+- No auto-promotion: a validated Challenger is stored `CHALLENGER`
+  (shadow-eligible); production authority stays with the controlled process.
+- Schema mismatch fails explicitly (50D today; 60D/350D additive via
+  `feature_schema_id`; never silent reshape/truncate).
+- The package holds no adapter, no order manager and no risk engine.
+
+### 🗄️ New Canonical Tables (append/additive)
+
+- `training_runs` — append-only immutable record of every controlled training
+  execution (dataset, schema, hyperparameters, seed, ranges, embargo, parent
+  champion, artifacts, metrics, gates, status).
+- `model_comparisons` — Champion-vs-Challenger comparison lineage.
+- `experience_model_registry` — additive columns: `lifecycle_status`,
+  `training_run_id`, `parent_model_id/version`, `promotion_reason`,
+  `gate_summary`, `validation_run_ids` (existing Phase 08 registry reused).
+
+### ⚙️ LiveEngine Wiring
+
+`LiveEngine` constructs `champion_manager`, `training_run_store`,
+`model_lifecycle_orchestrator` and `training_worker`. The worker is kicked via
+`asyncio.to_thread()` from the periodic loop (NEVER in the tick pipeline),
+with `auto_train_enabled=False` by default (operator-triggered training).
+
+### 🌐 Model Lifecycle REST API (in `web/server.py`)
+
+| Route | Method | Purpose |
+| :--- | :---: | :--- |
+| `/api/models/summary` | GET | Registry + run + worker + champion status |
+| `/api/models` | GET | Bounded model registry listing (by status) |
+| `/api/models/champion` | GET | Production Champion metadata + integrity |
+| `/api/models/challengers` | GET | Validated Challengers (shadow-eligible) |
+| `/api/models/runs` | GET | Append-only training-run records |
+| `/api/models/runs/{run_id}` | GET | Single run with gates + artifacts |
+| `/api/models/comparison/{run_id}` | GET | Champion vs Challenger comparison |
+| `/api/models/train` | POST | One controlled training pass (candidate only) |
+| `/api/models/worker/start` | POST | Start background training worker |
+| `/api/models/worker/stop` | POST | Stop background training worker |
+| `/api/models/worker/cancel` | POST | Cancel in-flight training safely |
+
+### 🧪 Phase 10 Tests
+
+- `tests/unit/test_model_lifecycle_phase10.py` — 32 tests covering dataset
+  reproducibility/provenance/temporal-order/no-future-leakage/schema-identity,
+  wins+losses+neutral representation, strategy context retention, 50D
+  compatibility + future-schema boundary, dimension/scaler mismatch rejection,
+  gate failures (OOS/robustness/drawdown/collapse), Champion hash invariance,
+  rejected-challenger-cannot-become-champion, lineage immutability, worker
+  isolation/cancellation/restart, and Phase 08/09 regression.
+- `tests/integration/test_model_lifecycle_api.py` — 7 tests covering LiveEngine
+  wiring, summary/models/champion/challengers/runs endpoints, worker
+  start/stop/cancel, and no-MT5/no-risk-engine exposure.
+
+---
+
 ## 16. Known Engineering Pitfalls & Invariants
 
 If you are an AI coding agent making changes to this repository in the future, **memorize these active engineering rules and constraints**:
@@ -1201,12 +1311,14 @@ If you are an AI coding agent making changes to this repository in the future, *
   - `test_accounting_core.py`: Validates the Phase 08 unified accounting core (periods, snapshots, drawdown/recovery, closure classification, attribution, forensics, worker, self-healing, provenance).
   - `test_intelligence_phase09.py`: Validates the Phase 09 Trade Intelligence Brain (position lifecycle timeline, MFE/MAE, giveback, quality decomposition, bad-management≠bad-strategy, degradation, recovery, similarity, pre-trade rejection, schema migration, self-heal rebuild, worker isolation, no-bypass safety, no-MT5).
   - `test_research_phase09b.py`: Validates the Phase 09B Strategy Research / Backtest / Validation Engine (dataset causality/provenance, future-leakage defense, deterministic candidate identity/versioning, deterministic friction-aware backtest, temporal folds, purge/embargo, OOS gate rejection on OOS failure, robustness stress, multi-dimension scoring + small-sample protection, lifecycle, versioning immutability, safety, worker isolation/restart, full-pipeline non-promotion).
+  - `test_model_lifecycle_phase10.py`: Validates the Phase 10 Controlled Model Training / Challenger Engine (dataset reproducibility/provenance/temporal-order/no-future-leakage/schema-identity, wins+losses+neutral representation, 50D + future-schema compatibility, dimension/scaler mismatch rejection, OOS/robustness/drawdown/collapse gate failures, Champion hash invariance, rejected-challenger-cannot-become-champion, lineage immutability, worker isolation/cancellation/restart, Phase 08/09 regression).
 * **Integration Tests (`tests/integration/`):**
   - `test_signal_pipeline_health.py`: End-to-end signal pipeline health verification.
   - `test_database_execution_audit.py`: Validates SQLite WAL persistence and ledger autopsies.
   - `test_accounting_api.py`: Validates the Phase 08 accounting REST API + worker wiring end-to-end.
   - `test_intelligence_api.py`: Validates the Phase 09 intelligence REST API + LiveEngine wiring end-to-end (timeline, autopsy, behavior, evolution, worker restart-safety, no-MT5).
   - `test_research_api.py`: Validates the Phase 09B research REST API + LiveEngine wiring end-to-end (summary, registry, discover, validate, self-heal, worker restart-safety, no-MT5 / no-risk-engine exposure).
+  - `test_model_lifecycle_api.py`: Validates the Phase 10 model-lifecycle REST API + LiveEngine wiring end-to-end (summary, models, champion, challengers, runs, comparisons, worker start/stop/cancel, no-MT5 / no-risk-engine exposure).
   - `test_playwright_e2e.py`: Playwright end-to-end web visualizer verification. 🟢 VERIFIED
 
 ### ⚙️ CI/CD Workflows (`.github/workflows/`)

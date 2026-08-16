@@ -141,6 +141,15 @@ def _classify_feature(value: Any) -> tuple[float, str]:
     return fval, "VALID"
 
 
+async def _run_training_async(orchestrator: Any, dataset: Any, num_epochs: int) -> dict[str, Any]:
+    """Runs controlled training off the event loop via asyncio.to_thread."""
+    import asyncio
+
+    return await asyncio.to_thread(
+        orchestrator.run_controlled_training, dataset, num_epochs=num_epochs
+    )
+
+
 def create_app(engine_ref: Any = None) -> FastAPI:
     """Creates and configures the FastAPI web server instance."""
     app = FastAPI(title="Nexus Scalp Engine Control Center", version="0.1.0")
@@ -2239,6 +2248,203 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return {"available": True, "repaired": int(repaired)}
         except Exception as e:
             logger.error("Research self-heal failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    # =========================================================================
+    # PHASE 10: CONTROLLED MODEL TRAINING & CHALLENGER ENGINE (read + trigger)
+    # -------------------------------------------------------------------------
+    # Exposes real model-training state. Training is OFFLINE/BACKGROUND; the
+    # production Champion is never touched by candidate training, and a
+    # validated Challenger is never auto-promoted.
+    # =========================================================================
+
+    def _model_lifecycle() -> Any:
+        """Returns the engine when the model-lifecycle subsystem is available."""
+        engine = app.state.engine
+        if not engine or not hasattr(engine, "model_lifecycle_orchestrator"):
+            return None
+        return engine
+
+    @app.get("/api/models/summary")
+    def get_models_summary() -> dict[str, Any]:
+        """Model registry status + training run counts + worker state."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            summary = engine.training_run_store.summary()
+            summary["registry"] = engine.model_lifecycle_orchestrator.lifecycle_registry.summary()
+            worker = getattr(engine, "training_worker", None)
+            if worker is not None:
+                from nexus_scalp.model_lifecycle.worker import format_training_worker_status
+
+                summary["worker"] = format_training_worker_status(worker)
+            champ = engine.champion_manager.champion_or_none()
+            if champ is not None:
+                summary["champion"] = champ.summary()
+            else:
+                summary["champion"] = {"available": False}
+            return serialize_enums({"available": True, "summary": summary})
+        except Exception as e:
+            logger.error("Model summary failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models")
+    def get_models_list(status: str | None = None, limit: int = 100) -> dict[str, Any]:
+        """Bounded model registry listing (champion/challenger/candidate...)."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            rows = engine.model_lifecycle_orchestrator.lifecycle_registry.list_models(
+                status=status, limit=limit
+            )
+            return serialize_enums({"available": True, "models": rows})
+        except Exception as e:
+            logger.error("Model list failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models/champion")
+    def get_models_champion() -> dict[str, Any]:
+        """Current production Champion (metadata + integrity)."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            champ = engine.champion_manager.champion_or_none()
+            if champ is None:
+                return {"available": True, "champion": {"available": False}}
+            return serialize_enums({"available": True, "champion": champ.summary()})
+        except Exception as e:
+            logger.error("Model champion failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models/challengers")
+    def get_models_challengers(limit: int = 50) -> dict[str, Any]:
+        """Validated Challengers (shadow-eligible, never production)."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            rows = engine.model_lifecycle_orchestrator.lifecycle_registry.list_models(
+                status="CHALLENGER", limit=limit
+            )
+            return serialize_enums({"available": True, "challengers": rows})
+        except Exception as e:
+            logger.error("Model challengers failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models/runs")
+    def get_models_runs(status: str | None = None, limit: int = 50) -> dict[str, Any]:
+        """Append-only training-run records."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            rows = engine.training_run_store.list_runs(status=status, limit=limit)
+            return serialize_enums({"available": True, "runs": rows})
+        except Exception as e:
+            logger.error("Model runs failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models/runs/{run_id}")
+    def get_models_run(run_id: str) -> dict[str, Any]:
+        """Single training run with gates and artifacts."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            row = engine.training_run_store.get_run(run_id)
+            if row is None:
+                return {"available": False, "reason": "RUN_NOT_FOUND"}
+            return serialize_enums({"available": True, "run": row})
+        except Exception as e:
+            logger.error("Model run failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.get("/api/models/comparison/{run_id}")
+    def get_models_comparison(run_id: str) -> dict[str, Any]:
+        """Champion vs Challenger comparison for a training run."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            row = engine.training_run_store.get_comparison(run_id)
+            if row is None:
+                return {"available": False, "reason": "NO_COMPARISON"}
+            return serialize_enums({"available": True, "comparison": row})
+        except Exception as e:
+            logger.error("Model comparison failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/models/train")
+    def trigger_model_training(num_epochs: int = 10) -> dict[str, Any]:
+        """Runs ONE controlled training pass (candidate only, never Champion).
+
+        Triggers the pipeline synchronously for operator use; the background
+        worker handles scheduled training. Heavy CPU work is off the event loop.
+        """
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            orchestrator = engine.model_lifecycle_orchestrator
+            dataset = orchestrator.build_training_dataset(
+                include_no_trade=True, weight_no_trade=0.25, only_executed=True
+            )
+            if dataset.sample_count < 50:
+                return {
+                    "available": False,
+                    "reason": "INSUFFICIENT_SAMPLES",
+                    "samples": dataset.sample_count,
+                }
+            import asyncio
+
+            result = asyncio.run(_run_training_async(orchestrator, dataset, num_epochs))
+            return serialize_enums({"available": True, "result": result})
+        except Exception as e:
+            logger.error("Model training trigger failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/models/worker/start")
+    def start_training_worker() -> dict[str, Any]:
+        """Starts the background training worker (idempotent, isolated)."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            engine._start_training_worker()
+            return {"available": True, "started": engine._training_worker_started}
+        except Exception as e:
+            logger.error("Training worker start failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/models/worker/stop")
+    def stop_training_worker() -> dict[str, Any]:
+        """Stops the background training worker (idempotent)."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            import asyncio
+
+            asyncio.run(engine._stop_training_worker())
+            return {"available": True, "stopped": not engine._training_worker_started}
+        except Exception as e:
+            logger.error("Training worker stop failed", error=str(e))
+            return {"available": False, "error": str(e)}
+
+    @app.post("/api/models/worker/cancel")
+    def cancel_training_worker() -> dict[str, Any]:
+        """Requests cancellation of any in-flight training (bounded, safe)."""
+        engine = _model_lifecycle()
+        if engine is None:
+            return {"available": False}
+        try:
+            engine.training_worker.request_cancel()
+            return {"available": True}
+        except Exception as e:
+            logger.error("Training worker cancel failed", error=str(e))
             return {"available": False, "error": str(e)}
 
     def _intelligence_worker_status(worker: Any) -> dict[str, Any]:

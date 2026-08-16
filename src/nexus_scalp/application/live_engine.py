@@ -67,6 +67,10 @@ from nexus_scalp.intelligence import (
 )
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
+from nexus_scalp.model_lifecycle.champion import ChampionManager
+from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
+from nexus_scalp.model_lifecycle.store import TrainingRunStore
+from nexus_scalp.model_lifecycle.worker import TrainingWorker
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import configure_logging, get_logger
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
@@ -276,6 +280,39 @@ class LiveEngine:
             interval_sec=60.0,
         )
         self._research_worker_started: bool = False
+
+        # =====================================================================
+        # PHASE 10: CONTROLLED MODEL TRAINING & CHALLENGER ENGINE
+        # ---------------------------------------------------------------------
+        # Trains candidate models OFFLINE from verified experience. The
+        # production Champion is NEVER touched by candidate training; a
+        # Challenger is validated and compared but never auto-promoted.
+        # =====================================================================
+        self.champion_manager = ChampionManager(
+            artifact_path=self.config.model.model_artifact_path,
+            model_id="primary_scalp",
+            model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+            feature_schema_id=self.FEATURE_SCHEMA_ID,
+            feature_dimension=self.FEATURE_DIM,
+            num_classes=4,
+        )
+        self.training_run_store = TrainingRunStore(audit_repo=self.audit)
+        self.model_lifecycle_orchestrator = ModelLifecycleOrchestrator(
+            audit_repo=self.audit,
+            ledger=self.experience_ledger,
+            champion_manager=self.champion_manager,
+            model_registry=self.model_registry,
+            run_store=self.training_run_store,
+        )
+        self.training_worker = TrainingWorker(
+            audit_repo=self.audit,
+            ledger=self.experience_ledger,
+            orchestrator=self.model_lifecycle_orchestrator,
+            interval_sec=300.0,
+            max_concurrent_trainings=1,
+            auto_train_enabled=False,  # conservative default: operator-triggered
+        )
+        self._training_worker_started: bool = False
 
         # Order/risk/policy
         self.signal_policy = SignalPolicy(
@@ -495,6 +532,10 @@ class LiveEngine:
         # Fully isolated: it can never stop trading and never places orders.
         self._start_research_worker()
 
+        # PHASE 10: start the controlled training worker. Heavy training runs
+        # ONLY in worker threads, never in the tick pipeline; fully isolated.
+        self._start_training_worker()
+
         logger.info(
             "LIVE CONNECTED",
             login=getattr(account, "login", 0) if account else 0,
@@ -572,6 +613,14 @@ class LiveEngine:
                         await asyncio.to_thread(self.research_worker.tick)
                     except Exception:
                         pass
+
+                # PHASE 10: controlled training worker kick (heavy CPU work is
+                # bounded to worker threads; training can NEVER block ticks).
+                if self._training_worker_started:
+                    try:
+                        await asyncio.to_thread(self.training_worker.tick)
+                    except Exception:
+                        pass
                 await asyncio.sleep(0.05)
 
             except Exception as e:
@@ -600,6 +649,12 @@ class LiveEngine:
         # PHASE 09B: stop the strategy research worker (isolated).
         try:
             await self._stop_research_worker()
+        except Exception:
+            pass
+
+        # PHASE 10: stop the controlled training worker (isolated).
+        try:
+            await self._stop_training_worker()
         except Exception:
             pass
 
@@ -934,6 +989,26 @@ class LiveEngine:
             # Isolation: research startup must never block the engine.
             logger.error("[RESEARCH_WORKER] event=START status=FAILED", error=str(err))
             self._research_worker_started = False
+
+    def _start_training_worker(self) -> None:
+        """Starts the controlled training worker (idempotent)."""
+        if self._training_worker_started:
+            return
+        self._training_worker_started = True
+        try:
+            self.training_worker.start()
+        except Exception as err:
+            # Isolation: training startup must never block the engine.
+            logger.error("[TRAINING_WORKER] event=START status=FAILED", error=str(err))
+            self._training_worker_started = False
+
+    async def _stop_training_worker(self) -> None:
+        """Stops the controlled training worker (idempotent, never raises)."""
+        self._training_worker_started = False
+        try:
+            self.training_worker.stop()
+        except Exception as err:
+            logger.error("[TRAINING_WORKER] event=STOP status=FAILED", error=str(err))
 
     async def _stop_research_worker(self) -> None:
         """Stops the strategy research worker (idempotent, never raises)."""
