@@ -1735,3 +1735,190 @@ All Phase 13 training tests pass with the scaler persisted
 leftovers (audit T03 concurrency/atomicity check).
 
 ---
+
+## BUG-041 — NaN/Inf Training Inputs Produced COMPLETED (Garbage) Candidates Instead of FAILED
+
+- **Status**: FIXED (2026-08-16, Phase 13 forensic supervision audit, round 2)
+- **Severity**: HIGH (a NaN-trained model could reach CHALLENGER eligibility)
+- **Confidence**: HIGH (proven by adversarial probe)
+- **Discovered**: Forensic audit T29 (failed-training simulation)
+
+### Symptom
+A dataset containing NaN/Inf feature values trained successfully: `status="COMPLETED"` with `val_acc=0.0000`. NaN loss propagates silently through the optimizer → a numerically garbage model that looks trained. Violates the invariant "failed training is FAILED, never CHALLENGER".
+
+### Evidence
+Adversarial probe with `feat_0=[nan,1,2]` + `MLP_V2` produced
+`[TRAIN] event=CANDIDATE_READY val_acc=0.0000`. The training path never
+validated input finiteness.
+
+### Root Cause
+No finite-input gate before the training loop; NaN/Inf features flow
+straight into loss.backward().
+
+### Fix
+`CandidateTrainer.train_candidate` now rejects non-finite feature matrices
+up front: `if not np.isfinite(X_arr).all(): return {"status": "FAILED", ...}`.
+(The 3-class label schema already rejects invalid label values.)
+
+### Verification
+`test_board_nan_features_fail_training`, `test_board_inf_features_fail_training`,
+`test_board_nan_labels_fail_training` — all assert FAILED + reason.
+
+---
+
+## BUG-037 — Onefile Packaged CLI Exited 1 on `--help` (sys.exit Wrapped Typer SystemExit)
+
+- **Status**: FIXED
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Runtime test pass (2026-08-16 hardening)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/runtime/test_packaged_cli.ps1` — `--help` now exits 0
+
+### Affected Components
+- `src/nexus_scalp/release/cli_shim.py`
+
+### Problem
+The onefile `NexusScalpEngine-CLI.exe --help` exited 1 instead of 0. The
+source interpreter path (`python cli_shim.py --help`) exited 0, so the defect
+only appeared in the frozen PyInstaller build — the exact class of packaging
+bug the runtime test suite exists to catch.
+
+### Root Cause
+The app-level Typer help string contained a U+2014 EM DASH
+("Nexus Trading Forex Bot — operational [and] release console"). The frozen
+onefile console encodes output in the active code page; the em dash maps to
+`<undefined>` and the script aborted with `unhandled exception` + a code-page
+error, exiting 1. The `sys.exit(app())` wrap was a contributing factor but not
+the primary defect.
+
+### Fix
+- Replaced non-ASCII characters (em dash, arrow) in every Typer `help=`
+  string with ASCII-safe equivalents (`-`, `to`).
+- `cli_shim.py` now calls `app()` directly and lets Typer's own `SystemExit`
+  propagate (kept as defence-in-depth; documented in the module docstring).
+
+### Regression Guards
+- `tests/runtime/test_packaged_cli.ps1` (`--help` exits 0).
+- `test_cli_version_and_help` asserts help/version exit 0.
+
+---
+
+## NOTE — Phase 13B Benchmark-Era Pre-Merge Defects (fixed in new code, no BUG id)
+
+The TCN_ATTENTION_V1 benchmark introduced new modules; two defects were
+found and fixed BEFORE merge (no production impact, no persisted artifact
+became invalid):
+
+1. **SequenceBuilder news leak with news_enabled=False** — the sequence
+   feature vector always appended `news_*` columns, so a news-OFF TCN
+   reported `input_dimension=62` instead of 50, violating the runtime's
+   manifest consistency guard (failed at load). Fixed by threading
+   `news_enabled` through `SequenceBuilder` / `SequenceCandidateTrainer` /
+   benchmark prediction helper. Regression: `test_11_news_off_input_50`,
+   `test_12_news_on_input_62`.
+
+2. **Lexicographic feature ordering** — `sorted(feat_*)` reordered
+   `feat_10` before `feat_2`, silently diverging from the frame-order used
+   by the 2D trainer and DatasetFactory. Fixed to frame-order everywhere
+   (no index shifts between training/eval paths). Regression:
+   `test_05_causal_no_future` (vector == frame row values).
+
+3. **Benchmark `_predict_probs` 2D path ignored the manifest's
+   news_enabled** (scaler 50-wide vs 62-wide X broadcast error). Fixed to
+   read the manifest. Regression: benchmark matrix runs green.
+
+Also note: agents/bugs.md contains a pre-existing id collision — the
+release-work branch reused BUG-037 after BUG-041 (a parallel-stream WIP
+item). No action taken (out of audit scope); future entries should
+continue from BUG-044+ to avoid overlap.
+
+## BUG-038 — Packaged `nexus repair` Could Not Find Config Template (PyInstaller _internal Layout)
+
+- **Status**: FIXED
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Runtime repair test (2026-08-16 hardening)
+- **Fixed**: 2026-08-16
+- **Verified**: `tests/runtime/test_repair.ps1` — repair restores config from template
+
+### Affected Components
+- `src/nexus_scalp/release/repair.py` (`RepairEngine._default_template`)
+
+### Problem
+In the packaged onedir layout, `configs/base.yaml` lands under
+`_internal/configs/` (PyInstaller data dir). `RepairEngine` looked only at
+`<workspace>/configs/base.yaml`, so `nexus repair --recreate-config` reported
+`SKIPPED: no template found` and never restored a deleted user config —
+exactly the case the repair command exists for.
+
+### Root Cause
+The template lookup assumed the source checkout layout; the packaged layout
+(`_internal/`) was not considered.
+
+### Fix
+`_default_template()` now also checks `<workspace>/_internal/configs/base.yaml`
+(and the `live.yaml.example` fallback in both locations).
+
+### Regression Guards
+- `tests/runtime/test_repair.ps1` restores config on the real packaged EXE.
+- Synthetic fixture in `tests/unit/test_release_system.py` still covers the
+  source-layout path.
+
+---
+
+## BUG-039 — `--help` Non-ASCII in Typer help strings Broke Frozen CLI (documented root cause)
+
+- **Status**: FIXED (see BUG-037 for the full story)
+- **Severity**: MEDIUM
+- **Discovered**: Runtime CLI test (2026-08-16 hardening)
+- **Verified**: `tests/runtime/test_packaged_cli.ps1` (`--help` exit 0);
+  ASCII-only regression test in `tests/release/test_build_script_hardening.py`
+- **Guard**: `test_cli_help_strings_are_ascii_safe` fails if any `help=`
+  string is non-ASCII."""
+
+## BUG-040 — Web API Exposed Raw Exception Text / Stack Traces to Clients (CodeQL py/stack-trace-exposure)
+
+- **Status**: VERIFIED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Dashboard hardening audit (2026-08-17)
+- **Fixed**: 2026-08-17
+- **Verified**: `tests/unit/test_web_security.py` (behavioral payload/log assertions)
+
+### Affected Components
+- `src/nexus_scalp/web/server.py` (all FastAPI routes, SSE, WebSocket, news/accounting/research/model/shadow endpoints)
+
+### Problem
+Repeated `except Exception as e: return {... "error": str(e)}` patterns returned
+raw exception text (including filesystem paths, SQL fragments, exception class
+names) to API clients. CodeQL flagged these as `py/stack-trace-exposure`
+(information leakage) across the API surface.
+
+### Root Cause
+No centralized error contract; each route implemented its own inline handler with
+`str(e)` in the public payload. The SSE generator and WebSocket handler also had
+no sanitized error path.
+
+### Fix
+- New `src/nexus_scalp/web/errors.py`: request-correlation IDs, `safe_error_payload`
+  (stable code + generic message + request_id), `log_web_error` (full traceback to
+  logs only), and an HTTP middleware that sanitizes unhandled 500s and echoes
+  `X-Request-ID`.
+- `server.py`: every leaking return converted to `_err(code)`; every logger.error
+  with `error=str(e)` converted to `_log_err(exc, msg)`; model-test/health/sse/ws
+  paths sanitized (no f-string exception interpolation anywhere).
+- Frontend: new `Web/api_client.js` central API client (X-Request-ID header,
+  safe error parsing, [UI_ERROR] diagnostics, deduped GETs) wired before app.js;
+  SSE hardened with bounded exponential reconnect + stale detection.
+
+### Regression Guards
+- `tests/unit/test_web_security.py` asserts payload has no traceback/path/SQL,
+  has stable error code, has request_id (header + body), and server log (via
+  structlog) contains the detailed exception.
+
+### Verification
+`pytest tests/unit/test_web_security.py tests/integration/test_accounting_api.py
+tests/integration/test_intelligence_api.py tests/integration/test_research_api.py
+tests/integration/test_model_lifecycle_api.py tests/integration/test_news_api.py`
+all pass. `str(e)` count in server.py returns: 0.

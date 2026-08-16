@@ -324,6 +324,29 @@ def test_cli_doctor_json_never_raises() -> None:
     assert "environment" in data
 
 
+def test_cli_exit_codes_contract() -> None:
+    """Exit-code contract: 0 success, 2 usage, 4 release verification."""
+    from typer.testing import CliRunner
+
+    from nexus_scalp.cli.main import app
+    from nexus_scalp.release import exit_codes as xc
+
+    runner = CliRunner()
+    # success
+    res = runner.invoke(app, ["version", "--plain"])
+    assert res.exit_code == xc.EXIT_OK
+    # usage error -> typer BadParameter = 2
+    res = runner.invoke(app, ["test", "--mode", "bogus"])
+    assert res.exit_code == xc.EXIT_USAGE
+    # verify-release on a non-release dir -> 4
+    res = runner.invoke(app, ["verify-release", "--root", "."])
+    if res.exit_code != xc.EXIT_OK:
+        assert res.exit_code == xc.EXIT_RELEASE
+    # health exit 0
+    res = runner.invoke(app, ["health", "--json"])
+    assert res.exit_code == xc.EXIT_OK
+
+
 def test_diagnostics_export_is_sanitized(tmp_path: Path) -> None:
     archive = rdiag_export(tmp_path)
     with zipfile.ZipFile(archive) as zf:

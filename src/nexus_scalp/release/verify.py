@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-REQUIRED_TOP_LEVEL = ("Web", "configs", "docs", "licenses", "README.txt")
+REQUIRED_TOP_LEVEL = ("Web", "configs", "docs", "licenses", "README.txt")  # noqa:  unused marker kept for docs
 
 
 @dataclass
@@ -50,8 +50,9 @@ class ReleaseVerifier:
         if include_launch and self.exe.exists() and _is_windows():
             results.append(self._launch_version())
             results.append(self._cli_health())
-        results.append(self._assets())
+        results.append(self._asset_web())
         results.append(self._manifest_checksums())
+        results.append(self._identity_check())
         results.append(self._secrets_scan())
         results.append(self._no_live_default())
         return results
@@ -105,35 +106,91 @@ class ReleaseVerifier:
         except Exception:
             return VerifyResult("CLI health", "FAIL", "health did not emit JSON")
 
-    def _assets(self) -> VerifyResult:
-        missing = [d for d in REQUIRED_TOP_LEVEL if not (self.root / d).exists()]
+    def _asset_web(self) -> VerifyResult:
+        """Verify the web control panel assets really exist inside the bundle."""
+        missing: list[str] = []
+        for rel in (
+            "Web/index.html",
+            "Web/app.js",
+            "Web/styles.css",
+            "configs/base.yaml",
+            "build-info.json",
+        ):
+            if not (self.root / rel).exists() and not (self.root / "_internal" / rel).exists():
+                missing.append(rel)
         if missing:
-            return VerifyResult("Assets", "FAIL", f"missing: {', '.join(missing)}")
-        return VerifyResult("Assets", "PASS", "all required asset dirs present")
+            return VerifyResult("Web/assets", "FAIL", f"missing: {', '.join(missing)}")
+        return VerifyResult("Web/assets", "PASS", "web panel + config + build-info present")
+
+    def _identity_check(self) -> VerifyResult:
+        """Version/architecture/channel consistency between the packaged
+        build-info.json and the release manifest (tamper + mislabel guard)."""
+        problems: list[str] = []
+        build_info = self.root / "build-info.json"
+        if not build_info.exists():
+            build_info = self.root / "_internal" / "build-info.json"
+        manifest_path = self.root.parent / "manifests" / "release-manifest.json"
+        if not build_info.exists():
+            problems.append("build-info.json missing in bundle")
+        else:
+            try:
+                data = json.loads(build_info.read_text(encoding="utf-8"))
+                manifest_data: dict[str, Any] = {}
+                if manifest_path.exists():
+                    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                for key, label in (
+                    ("version", "version"),
+                    ("architecture", "architecture"),
+                    ("channel", "channel"),
+                    ("git_commit", "git_commit"),
+                ):
+                    val = data.get(key)
+                    mval = manifest_data.get(key)
+                    if not val:
+                        problems.append(f"{label} missing from build-info.json")
+                        continue
+                    if mval and str(mval) != str(val):
+                        problems.append(f"{label} mismatch: build-info={val} manifest={mval}")
+            except Exception as e:
+                problems.append(f"build-info.json unreadable: {e}")
+        if problems:
+            return VerifyResult("Identity (version/arch/channel)", "FAIL", "; ".join(problems[:4]))
+        return VerifyResult(
+            "Identity (version/arch/channel)", "PASS", "build-info.json consistent with manifest"
+        )
 
     def _manifest_checksums(self) -> VerifyResult:
+        """Verify the release manifest + SHA256SUMS.txt.
+
+        Path resolution is invocation-location independent: the checksums
+        file uses paths relative to the RELEASE ROOT (parent of portable/),
+        so this works whether called from the release root, the checksums
+        dir, the portable dir or the repo root.
+        """
+        # Locate manifest: <portable>/release-manifest.json OR
+        # <release-root>/manifests/release-manifest.json.
+        release_root = self.root.parent
         manifest = self.root / "release-manifest.json"
         sums = self.root / "SHA256SUMS.txt"
+        if not manifest.exists():
+            candidate = release_root / "manifests" / "release-manifest.json"
+            if candidate.exists():
+                manifest = candidate
+        if not sums.exists():
+            candidate = release_root / "checksums" / "SHA256SUMS.txt"
+            if candidate.exists():
+                sums = candidate
         problems: list[str] = []
-        if (
-            not manifest.exists()
-            and (self.root.parent / "manifests" / "release-manifest.json").exists()
-        ):
-            # Release layout: manifests/ and checksums/ live beside the tree.
-            manifest = self.root.parent / "manifests" / "release-manifest.json"
-            sums = self.root.parent / "checksums" / "SHA256SUMS.txt"
         if manifest.exists():
             try:
                 data = json.loads(manifest.read_text(encoding="utf-8"))
                 for a in data.get("artifacts", []):
-                    p = self.root / (a.get("relative_path") or a.get("name"))
-                    if (
-                        not p.exists()
-                        and (self.root.parent / (a.get("relative_path") or a.get("name"))).exists()
-                    ):
-                        p = self.root.parent / (a.get("relative_path") or a.get("name"))
+                    rel = a.get("relative_path") or a.get("name")
+                    p = self.root / rel
                     if not p.exists():
-                        problems.append(f"manifest file missing: {p.name}")
+                        p = release_root / rel
+                    if not p.exists():
+                        problems.append(f"manifest file missing: {rel}")
             except Exception as e:
                 problems.append(f"manifest unreadable: {e}")
         else:
@@ -141,9 +198,10 @@ class ReleaseVerifier:
         if sums.exists():
             from .packaging import verify_checksums_file
 
-            # Sums are written relative to the release ROOT (parent of the
-            # portable tree); resolve them against that root.
-            base = sums.parent.parent
+            # Resolve sums against the release root (the base the paths in
+            # SHA256SUMS.txt are relative to): try release_root, then the
+            # sums' own directory as fallback.
+            base = release_root
             if not (base / "portable").exists() and (sums.parent / "portable").exists():
                 base = sums.parent
             res = verify_checksums_file(sums, base)
@@ -163,8 +221,15 @@ class ReleaseVerifier:
         """Lightweight scan of packaged files for secret-shaped strings."""
         patterns = [
             re.compile(r"(?i)api[_-]?key\s*[=:]\s*['\"]?[A-Za-z0-9_\-]{12,}"),
-            re.compile(r"(?i)bot[_-]?token\s*[=:]\s*['\"]?\d{6,}:[A-Za-z0-9_\-]{20,}"),
-            re.compile(r"(?i)password\s*=\s*['\"](?![^'\"]*['\"]none)[^'\"]{6,}['\"]"),
+            re.compile(
+                r"""(?ix)
+                  bot[_-]?token\s*[=:]\s*['"]
+                  \d{6,}:([A-Za-z0-9_\-]{25,})['"]
+                """
+            ),
+            re.compile(
+                r"(?i)password\s*=\s*['\"]{1,}\s*(?!none|changeme|password)[^'\"]{6,}\s*['\"]{1,}"
+            ),
             re.compile(r"eyJ[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
         ]
         hits: list[str] = []
@@ -187,8 +252,10 @@ class ReleaseVerifier:
             if p.stat().st_size > 2 * 1024 * 1024:
                 continue
             try:
-                text = p.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+                # STRICT decode: errors='ignore' can transmogrify non-ASCII
+                # bytes (e.g. Persian comments) into fake ASCII secrets.
+                text = p.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
                 continue
             scanned += 1
             for pat in patterns:

@@ -100,11 +100,39 @@ nexus start [--mode paper|shadow|live] [--gateway] [--daemon]
 nexus stop | restart
 ```
 
+### Exit codes (stable contract)
+
+| Code | Meaning | Used by |
+| :--- | :--- | :--- |
+| 0 | success | all commands |
+| 1 | runtime/validation failure | config invalid, health NOT READY, test failures |
+| 2 | invalid usage | bad `--mode`, unknown command (Typer `BadParameter`) |
+| 3 | environment blocked | ARM64 / unsupported platform (never install blindly) |
+| 4 | release verification failure | tamper, checksum mismatch, secret found, missing artifact |
+
+`--json` output for `verify-release` and `status` includes an `exit_code`
+field so automation can branch without scraping stdout.
+
+### Runtime test suite
+
+```
+.\tests\runtime\test_packaged_cli.ps1          # onefile CLI: help/version/health/doctor/status
+.\tests\runtime\test_packaged_engine.ps1       # onedir EXE + LIVE-safety negative test
+.\tests\runtime\test_health_runtime.ps1        # 19 categories on the real EXE
+.\tests\runtime\test_no_python_dependency.ps1  # self-containment (stripped PATH)
+.\tests\runtime\test_installer.ps1             # install/reinstall/user-data/uninstall
+.\tests\runtime\test_repair.ps1                # damage + repair on the real EXE
+.\tests\runtime\run_runtime_tests.ps1          # runs all of the above
+```
+
 Safety:
 * `nexus start` defaults to **PAPER**.
 * `--mode live` shows account/broker/symbol/risk/kill-switch and requires an
   explicit interactive confirmation.
 * `--json` / `--plain` / `--no-color` for CI and automation (no ANSI in JSON).
+* Packaged help strings are ASCII-only — non-ASCII (em dash, arrow) in a
+  Typer `help=` string aborts the frozen onefile `--help` with
+  `UnicodeEncodeError` on code-page consoles (BUG-037).
 
 ## 7. Health / Doctor
 

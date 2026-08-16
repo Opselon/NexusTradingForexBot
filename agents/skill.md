@@ -1666,14 +1666,133 @@ src/nexus_scalp/model_generation/
   dataset/split/labels/friction via the new pipeline.
 
 ### Tests
-- `tests/unit/test_model_generation_phase13.py` — 52 tests (legacy loads,
+- `tests/unit/test_model_generation_phase13.py` — 63 tests (legacy loads,
   manifest/hash/corruption, dataset determinism/provenance/purge/embargo/news
   causality, sample/setup/strategy identity, factory builds, 3-class contract,
   class collapse, calibration, news train on/off, validation gates, no-DB
   runtime, mismatch/corruption rejection, atomic swap, replay/drift, safety,
-  failure isolation, Phase 08-12 regression).
+  failure isolation, NaN/Inf training rejection (BUG-041), Phase 08-12
+  regression).
 - `tests/integration/test_model_generation.py` — 3 tests (full artifact flow
   with DB-blocked prediction, CLI registration, baseline reproducibility).
+
+---
+
+## 15h. First New Architecture Benchmark — TCN_ATTENTION_V1 (PHASE 13B)
+
+> STATUS (2026-08-16/17): benchmarked on a shared synthetic-style dataset —
+> **NEW_MODEL_WORSE, NEWS_INCONCLUSIVE**. TCN_ATTENTION_V1 is implemented,
+> artifact-complete, loadable DB-free, but did NOT beat the legacy baseline
+> (val_acc 0.745-0.764 vs 0.819; macro-F1 0.25 vs 0.29). All four A/B/C/D
+> candidates REJECTED by the validation gates. NO Challenger promoted.
+> Champion untouched. Remainder of this section = the verified architecture.
+
+### Architecture
+`model_generation/architectures.py` — `TCNAttentionV1` (ARCHITECTURE_VERSION
+1.0.0): Linear projection → N dilated CAUSAL conv blocks (residual +
+LayerNorm, dilation 2^i) → multi-head self-attention → final-state pooling
+(last timestep) → **3-logit head** (no 4-head WAIT bridge). Configurable
+hidden_dim/blocks/kernel_size/attention_heads/dropout/max_seq_len with
+deterministic init under a caller-set torch seed.
+
+### Sequence contract
+`model_generation/sequence.py` — `SequenceBuilder`: strict causality
+(timestamp_0 < ... < timestamp_N), same-symbol/same-timeframe windows,
+configurable max-gap (µs), deterministic; **frame-order columns** (never
+lexicographic — feat_10 must follow feat_2). `news_enabled=False` removes
+news_* columns entirely (50D); `news_enabled=True` appends the 12
+NewsContext fields (62D). No sequence crosses a symbol/timeframe boundary.
+
+### Trainer + benchmark
+`sequence_training.py` — `SequenceCandidateTrainer`: train-only scaler fit,
+NaN/Inf loss/gradient gates (FAILED never COMPLETED), seed control.
+`benchmark.py` — `BenchmarkRunner`: ONE shared dataset for A (legacy no
+news) / B (legacy news) / C (TCN no news) / D (TCN news); reports JSON+MD
+to `artifacts/model_generation/model_benchmark_report.{json,md}`; fair
+comparison (same labels/splits/purge/embargo/friction, from the labeler).
+
+### Decision rule
+Point estimates only at n≈800 → LOW EVIDENCE. A candidate earns CHALLENGER
+only via the validation gates (class collapse ≤95%, OOS floor, regime
+coverage, calibration) — none passed. No auto-promotion ever.
+
+### Tests
+- `tests/unit/test_model_benchmark_phase13b.py` — 28 tests (build/config,
+  sequence ordering/boundaries/causality, NaN/Inf/loss gates, news 50D/62D,
+  causality, manifest provenance, fair-matrix/dataset parity, OOS rejection,
+  class collapse, calibration/confusion, champion safety, DB-free load,
+  artifact integrity/corruption, no-execution-access, Phase 08-12 imports).
+
+---
+
+## 15g. Release Engineering Hardening — Runtime-Tested Distribution System (2026-08-16)
+
+Additive to §15f. This hardening pass was driven by REAL artifact runtime
+tests (not source inspection). Active architecture:
+
+### Runtime test suites (REAL artifacts; the acceptance gate)
+- `tests/runtime/test_packaged_cli.ps1` — onefile CLI: help/version/health/doctor/status,
+  JSON validity, no traceback, exit codes.
+- `tests/runtime/test_packaged_engine.ps1` — onedir EXE: version/health/doctor/setup +
+  **LIVE-safety negative test** (start --mode live must abort without confirmation).
+- `tests/runtime/test_health_runtime.ps1` — 19 categories, real verdicts.
+- `tests/runtime/test_no_python_dependency.ps1` — strips PATH to System32; proves
+  self-containment (both EXEs must run without system Python).
+- `tests/runtime/test_installer.ps1` — silent install → version → health →
+  reinstall (idempotent) → silent uninstall → user-data preserved.
+- `tests/runtime/test_repair.ps1` — destroys config+logs dirs, `nexus repair`
+  restores from template without touching user data.
+- `tests/runtime/run_runtime_tests.ps1` — runs all of the above (direct named
+  args; PowerShell 7 splatting of [string[]] into child scripts mangles args —
+  call each script with explicit `-Param value`).
+
+### Invariants learned (encode these before changing release code)
+1. **PyInstaller is not a cross-compiler; artifacts are layout-sensitive.**
+   configs/ and Web/ land under `_internal/` in onedir — every file lookup
+   (repair template, verify assets, identity) must check both
+   `<root>/<rel>` and `<root>/_internal/<rel>` (BUG-038).
+2. **Frozen onefile console = active code page.** Any non-ASCII char
+   (em dash, arrow) in a Typer `help=` string aborts `--help` with
+   `UnicodeEncodeError` → exit 1. Keep ALL Typer help strings ASCII-only
+   (BUG-037/039). Regression test: `test_cli_help_strings_are_ascii_safe`.
+3. **Never bundle a real credential.** `configs/live.yaml` carried a real
+   Telegram bot token and shipped inside the artifact (BUG-036).
+   build_release.ps1 + CI now HARD-REFUSE to build with a real
+   `bot_token` (masked placeholder only). Secrets scanner decodes STRICTLY
+   (errors='ignore' transmogrifies Persian UTF-8 comments into fake ASCII
+   "tokens" → false positives; the tight pattern requires a quoted
+   ≥25-char alnum body).
+4. **Entrypoints**: engine build = `src/nexus_scalp/release/packaged_main.py`;
+   CLI build = `src/nexus_scalp/release/cli_shim.py`. NEVER regress to
+   `NexusTradingForexBot.py` (argparse) — BUG-033.
+5. **Exit-code contract (stable)**: 0 success · 1 runtime/validation ·
+   2 usage · 3 environment blocked · 4 release verification failure.
+   `src/nexus_scalp/release/exit_codes.py` is the single source.
+6. **PowerShell $LASTEXITCODE is clobbered by pipelines** (`| Out-String`,
+   `ForEach-Object`). Capture it immediately after direct invocation.
+7. **build_release.ps1 hardened**: deletes stale release/build before
+   PyInstaller (WinError-32 lock guard — kills only processes whose image
+   path is under the release tree), uses native `$Root\...` paths.
+8. **verify_release checks**: EXE exists/launches/version · Web/assets
+   (incl. build-info.json) · Checksums/manifest (invocation-location
+   independent) · Identity (build-info.json vs manifest: version, arch,
+   channel, commit) · Secrets scan · No-LIVE-by-default.
+9. Built artifacts must never be committed (gitignored); checksums file
+   paths are relative to the release root (`portable/...`, `cli/...`);
+   verify works from any invocation directory.
+10. `git_commit`/`architecture`/`channel` in the manifest MUST come from
+    the stamped build-info.json (single source of truth), never from
+    runtime introspection.
+
+### Release self-verification
+- `nexus verify-release --root release/v9.0.0/windows/x64/portable`
+- PowerShell: `.\scripts\build\build_release.ps1 -Version 9.0.0`
+  (runs gates → secret guard → PyInstaller onedir + onefile → stage →
+  installer → checksums → manifest → SBOM → verify) and
+  `.\scripts\build\verify_release.ps1`.
+- CI: tag `vX.Y.Z` → validate (incl. tag/version consistency + secret scan)
+  → gates → build → smoke → installer → checksums/manifest/SBOM → verify →
+  publish. ARM64 job reports UNSUPPORTED explicitly.
 
 ---
 
@@ -1705,6 +1824,15 @@ If you are an AI coding agent making changes to this repository in the future, *
 * **Pitfall:** Performing synchronous file I/O, heavy PyTorch model fitting, or synchronous network calls inside `LiveEngine._process_tick_pipeline()`.
 * **Symptom:** Freezes live tick processing loop, causes tick stagnation watchdog warnings and order slippage.
 * **Rule:** All heavy or blocking work MUST be offloaded using `asyncio.to_thread()`, background worker threads, or async HTTP clients (`httpx`).
+
+### 🚨 6. Web Error Hygiene — Never Return Exception Text to Clients (BUG-040)
+* **Pitfall:** `except Exception as e: return {"error": str(e)}` anywhere in `web/server.py` leaks internal paths/SQL/exception classes (CodeQL py/stack-trace-exposure).
+* **Rule:** All routes use the centralized helpers in `src/nexus_scalp/web/errors.py`:
+  `_err(code, **kw)` → sanitized `{available, success, error:{code, message, request_id}}` envelope;
+  `_log_err(exc, msg, endpoint=...)` → full traceback to structured logs ONLY.
+* **Correlation:** every HTTP response carries `X-Request-ID`; the browser API client (`Web/api_client.js`) preserves it for log correlation; unhandled 500s become the safe envelope via middleware.
+* **SSE/WS:** sanitized error paths, bounded exponential reconnect, stale detection; never stream `str(e)`.
+* **No synthetic dashboard data:** chart history must never fabricate random candles or mock SMC rectangles (removed in BUG-040).
 
 ---
 

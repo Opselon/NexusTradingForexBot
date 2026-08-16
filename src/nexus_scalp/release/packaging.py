@@ -73,19 +73,35 @@ def generate_manifest(
     installer_version: str = "1.0.0",
     base_dir: Path | None = None,
 ) -> Path:
-    """Write release-manifest.json for a set of artifacts."""
+    """Write release-manifest.json for a set of artifacts.
+
+    Architecture/channel/version come from the canonical build identity
+    (build-info.json when present, else runtime platform) so the manifest
+    never disagrees with the packaged bundle.
+    """
     info = get_version_info()
     base_dir = base_dir or out.parent
+    # Prefer the STAMPED build-info.json at the release root (the canonical
+    # build identity for this exact artifact set) over runtime introspection,
+    # so the manifest never disagrees with the packaged bundle.
+    stamped = base_dir / "portable" / "build-info.json"
+    if not stamped.exists():
+        stamped = base_dir / "build-info.json"
+    if stamped.exists():
+        try:
+            info = {**info, **json.loads(stamped.read_text(encoding="utf-8"))}
+        except Exception:
+            pass
     manifest: dict[str, Any] = {
         "product": info["product"],
         "product_display": info["product_display"],
         "version": info.get("version") or get_version(),
-        "git_commit": info.get("commit"),
+        "git_commit": info.get("git_commit") or info.get("commit"),
         "build_timestamp": info.get("build_timestamp") or datetime.now(UTC).isoformat(),
-        "channel": channel,
+        "channel": channel or info.get("channel") or "stable",
         "platform": "windows",
-        "architecture": info.get("architecture"),
-        "build_mode": build_mode,
+        "architecture": info.get("architecture") or platform.machine(),
+        "build_mode": build_mode or info.get("build_mode") or "Release",
         "python_compatibility": "3.11.x",
         "feature_schema": info.get("feature_schema", "scalp_v1"),
         "model_compatibility": "scalp_v1 / 50D",

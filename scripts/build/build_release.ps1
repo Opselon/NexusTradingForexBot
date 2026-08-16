@@ -59,9 +59,9 @@ if ($Version -notmatch '^\d+\.\d+\.\d+') {
 Pass "Canonical version: $Version (channel: $Channel)"
 
 # ---------------------------------------------------------------------------
-# 2. Git state
+# 2. Git state + secret guard
 # ---------------------------------------------------------------------------
-Write-Step "2/10 Repository audit (git state)"
+Write-Step "2/10 Repository audit (git state + secret guard)"
 $GitCommit = (& git rev-parse --short HEAD).Trim()
 $Dirty = (& git status --porcelain) -ne $null -and (& git status --porcelain | Measure-Object).Count -gt 0
 $Tag = (& git describe --tags --exact-match 2>$null)
@@ -69,6 +69,13 @@ if ($Dirty) {
     Write-Host "[RELEASE] WARNING: working tree is dirty (build still proceeds with dirty marker)." -ForegroundColor Yellow
 }
 Pass "commit=$GitCommit dirty=$Dirty tag=$Tag"
+
+# HARD SECRET GUARD: refuse to build from a config carrying a real token.
+$TokenGuard = (& $Py -c "import re,pathlib; t=pathlib.Path('configs/live.yaml').read_text(encoding='utf-8'); import sys; sys.exit(0 if re.search(r'bot[_-]?token\s*[=:]\s*['\"]?\d{6,}:[A-Za-z0-9_\-]{25,}', t) is None else 1)")
+if ($LASTEXITCODE -ne 0) {
+    Fail "configs/live.yaml contains a real bot token — mask it before building a release."
+}
+Pass "secret guard: no real telegram token in configs/live.yaml"
 
 # ---------------------------------------------------------------------------
 # 3. Quality gates
@@ -96,6 +103,19 @@ if ($Arch -ne "x64") {
 $BuildDir = Join-Path $Root "release\build\windows-x64"
 if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+
+# Stale-EXE lock guard (WinError 32 hardening): if a previous build's EXE is
+# still running it locks the onedir and --clean fails. Terminate ONLY the
+# process whose image path is inside this build's output tree — never a
+# user-launched engine elsewhere.
+$StaleLock = Get-Process -Name "NexusScalpEngine" -ErrorAction SilentlyContinue | Where-Object {
+    try { $_.Path -like "$BuildDir*" -or $_.Path -like "$Root\release\*" } catch { $false }
+}
+foreach ($p in $StaleLock) {
+    Write-Host "[RELEASE] Terminating stale packaged EXE from previous build (pid $($p.Id): $($p.Path))" -ForegroundColor Yellow
+    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+}
+if ($StaleLock) { Start-Sleep -Seconds 1 }
 
 $PyInstaller = Join-Path $Root ".venv\Scripts\pyinstaller.exe"
 if (-not (Test-Path $PyInstaller)) { Fail "pyinstaller not found — install with: .venv\Scripts\python -m pip install pyinstaller" }
@@ -194,6 +214,9 @@ New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item (Join-Path $BuildDir "onedir\NexusScalpEngine\*") $Stage -Recurse -Force
 New-Item -ItemType Directory -Force -Path (Join-Path $Stage "docs") | Out-Null
 Copy-Item (Join-Path $Root "docs\*") (Join-Path $Stage "docs") -Recurse -Force
+# Stage the canonical build identity at the portable root (next to the EXE)
+# so verify-release can cross-check it against the manifest.
+Copy-Item (Join-Path $Root "build-info.json") (Join-Path $Stage "build-info.json") -Force
 
 # licenses/
 New-Item -ItemType Directory -Force -Path (Join-Path $Stage "licenses") | Out-Null

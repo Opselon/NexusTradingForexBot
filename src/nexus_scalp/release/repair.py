@@ -44,10 +44,13 @@ class RepairEngine:
     def _default_template(self) -> Path:
         # Packaged bundles ship a template next to the exe; source checkouts
         # use configs/base.yaml (PAPER, safe default — NEVER the LIVE example
-        # for a fresh user config, see safety contract).
+        # for a fresh user config, see safety contract). In PyInstaller
+        # onedir the configs land under _internal/configs/.
         candidates = [
             self.workspace / "configs" / "base.yaml",
+            self.workspace / "_internal" / "configs" / "base.yaml",
             self.workspace / "configs" / "live.yaml.example",
+            self.workspace / "_internal" / "configs" / "live.yaml.example",
         ]
         for c in candidates:
             if c.exists():

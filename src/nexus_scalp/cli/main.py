@@ -35,6 +35,7 @@ from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.release import diagnostics as rdiag
 from nexus_scalp.release import environment as renv
 from nexus_scalp.release import evaluate as reval
+from nexus_scalp.release import exit_codes as xc
 from nexus_scalp.release import health as rhealth
 from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release import repair as rrepair
@@ -44,7 +45,7 @@ from nexus_scalp.release.metadata import PRODUCT_DISPLAY, get_version_info
 
 app = typer.Typer(
     name="nexus",
-    help=f"{PRODUCT_DISPLAY} — operational & release console",
+    help=f"{PRODUCT_DISPLAY} - operational & release console",
     add_completion=False,
 )
 console = Console()
@@ -147,7 +148,7 @@ def doctor_cmd(
     verbose: bool = typer.Option(False, "--verbose", help="Show full reasons/suggestions."),
     no_color: bool = typer.Option(False, "--no-color", help="Disable ANSI colors."),
 ) -> None:
-    """Run the full system doctor (SYSTEM → ACCOUNTING)."""
+    """Run the full system doctor (SYSTEM to ACCOUNTING)."""
     if no_color:
         console.print = lambda *a, **k: print(*[str(x) for x in a])  # type: ignore[assignment]
     verdict, entries = _health_entries()
@@ -169,7 +170,7 @@ def doctor_cmd(
     for e in entries:
         detail = e.reason
         if verbose and e.suggestion:
-            detail += f"  → {e.suggestion}"
+            detail += f"  -> {e.suggestion}"
         table.add_row(e.category, _verdict_style(e.verdict), detail)
     console.print(table)
     console.print(Panel(f"Overall: [bold]{verdict}[/bold]", border_style="cyan"))
@@ -427,6 +428,7 @@ def verify_cmd(
         progress.add_task("verify", total=None)
         result = rverify.verify_release(root)
     if json_mode:
+        result["exit_code"] = xc.EXIT_OK if result["valid"] else xc.EXIT_RELEASE
         _emit(result, True)
         return
     for c in result["checks"]:
@@ -438,7 +440,7 @@ def verify_cmd(
             border_style="green" if result["valid"] else "red",
         )
     )
-    raise typer.Exit(0 if result["valid"] else 1)
+    raise typer.Exit(xc.EXIT_OK if result["valid"] else xc.EXIT_RELEASE)
 
 
 # ---------------------------------------------------------------------------
@@ -470,7 +472,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     console.print(
         Panel(
             "[bold cyan]Nexus First-Run Setup Wizard[/bold cyan]\n"
-            "Compatibility check → install → database → model → mode → health",
+            "Compatibility check, install, database, model, mode, health",
             border_style="cyan",
         )
     )
@@ -484,7 +486,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
         console.print(f"  {_verdict_style(r.verdict):8} {r.name:14} {r.detail}")
 
     if verdict == "BLOCKED":
-        raise typer.Exit(1)
+        raise typer.Exit(xc.EXIT_ENVIRONMENT)
 
     engine = rrepair.RepairEngine()
     repaired = engine.run()
@@ -550,7 +552,7 @@ def _write_effective_config(path: Path, cfg: AppConfig) -> None:
 def setup_cmd(
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """First-run setup wizard (compat → install → DB → model → mode → health)."""
+    """First-run setup wizard (compat, install, DB, model, mode, health)."""
     outcome = _wizard_flow(json_mode)
     if json_mode:
         _emit(outcome, True)
@@ -602,7 +604,7 @@ def _pidfile() -> Path:
 @app.command("start")
 def start_cmd(
     mode: str = typer.Option(
-        "paper", "--mode", "-m", help="paper | shadow | live (default: paper — NEVER live)"
+        "paper", "--mode", "-m", help="paper | shadow | live (default: paper - NEVER live)"
     ),
     config: Path | None = typer.Option(
         None, "--config", "-c", help="Config path (default: user config)."
