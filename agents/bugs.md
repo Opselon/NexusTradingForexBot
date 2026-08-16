@@ -1384,3 +1384,73 @@ bounded-loss contract and document it in skill.md (already documented as
 "queue full -> drop telemetry").
 
 ---
+
+## BUG-033 — CurrentNewsContext Rebuilt Inside Tick Path on TTL Expiry (Per-60s Sync DB Read on Event Loop)
+
+- **Status**: FIXED (2026-08-16, Phase 12 completion)
+- **Severity**: MEDIUM
+- **Confidence**: HIGH
+- **Discovered**: Phase 12 forensic audit (live code inspection)
+
+### Symptom
+`CurrentNewsContextCache.get()` rebuilt the context (a synchronous SQLite
+`SELECT * FROM news_analysis ORDER BY analyzed_at DESC LIMIT 100`) whenever
+the 60s TTL expired — including when called from
+`LiveEngine._process_tick_pipeline()` via `news_engine.current_context()`.
+Violates the "no DB access on the live tick path" invariant.
+
+### Evidence
+`src/nexus_scalp/news/context.py` — `get()` had `if (now_mono - last)<ttl: return cached; self._context = self.build()` (build → `db.list_analysis`).
+`live_engine.py` `_process_tick_pipeline` called `current_context()` per tick.
+
+### Root Cause
+The tick path triggered the TTL-expired rebuild itself instead of relying on
+the background worker to refresh the context off-loop.
+
+### Fix
+- `NewsContextCache.get()` is now **cache-only** on the live path (returns
+  the cached object or a safe first-run default; NEVER touches the DB).
+- New `NewsContextCache.refresh()` rebuilds from DB and is called by the
+  NewsWorker cycle (`asyncio.to_thread`) and by `engine.self_heal()` /
+  explicit API requests (`force=True`) only.
+- `NewsEngine.current_context(force=True)` remains for API/worker/self-heal.
+
+### Verification
+- Unit: `test_53_context_cache_bounded` passes (cache returns same timestamp).
+- Full regression: 406 unit + 56 integration tests green.
+- Live path now reads only an in-memory object per tick.
+
+---
+
+## BUG-034 — Seeded Source URLs Broken (BEA 404 / CFTC RSS 404 / Treasury RSS 503) — Silent Empty Feeds
+
+- **Status**: FIXED (2026-08-16, Phase 12 completion)
+- **Severity**: MEDIUM
+- **Confidence**: HIGH (verified by live HTTP checks)
+- **Discovered**: Phase 12 source-reachability audit
+
+### Symptom
+Several Tier-1 official source URLs were dead, causing the fetcher to
+silently fail every cycle for those sources (no articles, no error surfaced).
+
+### Evidence (2026-08-16 live checks)
+- BEA `https://www.bea.gov/rss/news` → HTTP 404
+- CFTC `https://www.cftc.gov/RSS/CFTC_RSS.xml` → HTTP 404 (no public CFTC
+  RSS exists; RSS/rss.aspx also 404)
+- U.S. Treasury `https://home.treasury.gov/rss/press-releases.xml` → HTTP 503
+- Working alternatives verified: `https://www.bea.gov/news` (200),
+  `https://home.treasury.gov/news/press-releases` (200)
+
+### Fix
+- `seed.py` (SEED_VERSION bumped to `2026-08-16-v2`): BEA and Treasury now
+  point at the verified live pages (HTML extraction path); CFTC registered
+  but **disabled by default** (`enabled: False`) since no public feed exists.
+- The fetcher health tracker continues to mark unreachable sources
+  unhealthy/backed-off after consecutive failures instead of silent empty.
+
+### Verification
+- Seed idempotency test (`test_50_seed_idempotent`) passes.
+- `test_07_source_disablement` passes.
+- Fresh DB: 10 enabled sources, CFTC disabled; unit suite green (406).
+
+---

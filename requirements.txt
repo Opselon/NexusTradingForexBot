@@ -37,6 +37,14 @@ rich>=13.7.0,<14.0.0               # Colored terminal presentation and status ta
 MetaTrader5>=5.0.45; platform_system == 'Windows'  # Official MT5 C++ Python IPC API bindings
 
 # ------------------------------------------------------------------------------
+# Web Control Server & News Intelligence (Runtime)
+# ------------------------------------------------------------------------------
+fastapi>=0.110.0,<1.0.0            # REST/SSE/WebSocket control server
+uvicorn>=0.27.0,<1.0.0             # ASGI server for the web control panel
+httpx>=0.26.0,<1.0.0               # Async HTTP client (news sources / AI provider)
+feedparser>=6.0.0,<7.0.0           # RSS/Atom news feed parsing (Phase 12)
+
+# ------------------------------------------------------------------------------
 # Testing, Code Quality & Development Environment
 # ------------------------------------------------------------------------------
 pytest>=8.0.0                      # Automated unit and integration testing runner

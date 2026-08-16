@@ -510,6 +510,14 @@ ipch/
 *.coverage
 *.coveragexml
 
+# ==============================================================================
+# RELEASE ENGINEERING OUTPUTS (never commit generated artifacts)
+# ==============================================================================
+release/
+build-info.json
+*.spec
+installer/*.exe
+
 # VS Code & JetBrains IDEs
 .vscode/
 !.vscode/settings.json

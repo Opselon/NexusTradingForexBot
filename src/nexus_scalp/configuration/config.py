@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from nexus_scalp.domain.enums import ExecutionMode
+from nexus_scalp.news.config import NewsConfig
 
 
 class ExecutionConfig(BaseModel):
@@ -104,6 +105,8 @@ class AppConfig(BaseSettings):
     mt5: MT5Config = MT5Config()
     model: ModelConfig = ModelConfig()
     algo: AlgoConfig = AlgoConfig()
+    # PHASE 12: NEWS INTELLIGENCE (optional; disabled by default via NewsConfig.enabled)
+    news: NewsConfig | None = None
 
     @classmethod
     def load_from_yaml(cls, yaml_path: Path) -> "AppConfig":

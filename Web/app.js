@@ -2363,3 +2363,108 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
 });
+
+// PHASE 12: NEWS INTELLIGENCE (live feed / state / fetch / analyze)
+// =============================================================================
+
+async function loadNewsState() {
+    try {
+        const res = await fetch('/api/news/state');
+        if (!res.ok) return;
+        const body = await res.json();
+        if (!body.available) {
+            document.getElementById('news-state-value').textContent = 'OFF';
+            document.getElementById('news-state-badge').textContent = 'OFF';
+            return;
+        }
+        const state = body.state || 'NORMAL';
+        document.getElementById('news-state-value').textContent = state;
+        document.getElementById('news-state-badge').textContent = state;
+        const badge = document.getElementById('news-nav-state');
+        if (badge) { badge.textContent = state; badge.className = 'ml-auto text-[9px] font-black px-1.5 py-0.5 rounded border ' + stateColor(state); }
+        document.getElementById('news-xauusd-rel').textContent = (body.xauusd_relevance * 100).toFixed(0) + '%';
+        document.getElementById('news-bull').textContent = (body.bullish_score * 100).toFixed(0) + '%';
+        document.getElementById('news-bear').textContent = (body.bearish_score * 100).toFixed(0) + '%';
+        document.getElementById('news-events').textContent = body.active_event_count ?? 0;
+        loadNewsFeed();
+    } catch (e) {
+        console.warn('news state failed', e);
+    }
+}
+
+function stateColor(state) {
+    const colors = {
+        BREAKING: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+        HIGH_IMPACT: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+        CONFLICTED: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
+        ELEVATED: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        STALE: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+        NORMAL: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    };
+    return colors[state] || colors.NORMAL;
+}
+
+async function loadNewsFeed() {
+    try {
+        const res = await fetch('/api/news?limit=20');
+        if (!res.ok) return;
+        const body = await res.json();
+        const feed = document.getElementById('news-feed');
+        if (!body.available || !body.articles || body.articles.length === 0) {
+            feed.innerHTML = '<div class="text-textMuted italic">No news events yet. Click "Fetch News" or wait for the worker.</div>';
+            return;
+        }
+        feed.innerHTML = body.articles.map(a => {
+            const dir = a.analysis ? (a.analysis.direction || 'NEUTRAL') : 'NEUTRAL';
+            const dirColor = dir === 'BULLISH' ? 'text-accentGreen' : dir === 'BEARISH' ? 'text-accentRed' : 'text-slate-400';
+            const imp = Math.round((a.importance_score || 0) * 100);
+            const rel = a.analysis ? Math.round((a.analysis.relevance_to_xauusd || 0) * 100) + '%' : '--';
+            return '<div class="bg-darkBg/40 border border-borderClr/40 rounded p-2.5">' +
+                '<div class="flex justify-between items-center gap-2">' +
+                '<span class="font-bold text-white truncate">' + esc(a.title) + '</span>' +
+                '<span class="text-[9px] ' + dirColor + ' font-black shrink-0">' + esc(dir) + '</span></div>' +
+                '<div class="flex items-center gap-3 mt-1 text-[10px] text-textMuted">' +
+                '<span>' + esc(a.source_name || a.source_id || '') + '</span>' +
+                '<span>imp ' + imp + '</span>' +
+                '<span>XAU ' + rel + '</span>' +
+                '<span>' + esc(String(a.published_at || '').slice(0, 16)) + '</span></div>' +
+                '<div class="flex gap-2 mt-1">' +
+                '<button onclick="analyzeNewsWithAI(\'' + a.article_id + '\')" class="text-[9px] bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-2 py-0.5 hover:bg-accentCyan/20">Analyze with AI</button>' +
+                '</div></div>';
+        }).join('');
+    } catch (e) {
+        console.warn('news feed failed', e);
+    }
+}
+
+async function analyzeNewsWithAI(articleId) {
+    try {
+        const res = await fetch('/api/news/analyze/' + articleId, { method: 'POST' });
+        const body = await res.json();
+        alert(body && body.ok ? 'Analysis queued (status: ' + (body.status || 'QUEUED') + ')' : 'Analysis request failed');
+        setTimeout(loadNewsFeed, 1500);
+    } catch (e) {
+        console.warn('news analyze failed', e);
+    }
+}
+
+async function triggerNewsRefresh() {
+    try {
+        const res = await fetch('/api/news/refresh', { method: 'POST' });
+        const body = await res.json();
+        alert(body && body.available ? 'News fetch complete: ' + JSON.stringify(body.ingested || {}) : 'News engine unavailable');
+        loadNewsState();
+    } catch (e) {
+        console.warn('news refresh failed', e);
+    }
+}
+
+// auto-load news state on tab open
+const __newsTabObserver = new MutationObserver(() => {
+    const tab = document.getElementById('tab-news');
+    if (tab && !tab.classList.contains('hidden') && !window.__newsIntelLoaded) {
+        window.__newsIntelLoaded = true;
+        loadNewsState();
+    }
+});
+__newsTabObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });

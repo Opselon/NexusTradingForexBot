@@ -36,6 +36,7 @@
 15c. [Strategy Research, Backtest & Validation Engine (PHASE 09B)](#15c-strategy-research-backtest--validation-engine-phase-09b)
 15d. [Controlled Model Training & Challenger Engine (PHASE 10)](#15d-controlled-model-training--challenger-engine-phase-10)
 15e. [Challenger Shadow Trading & Champion Evaluation (PHASE 11)](#15e-challenger-shadow-trading--champion-evaluation-phase-11)
+15f. [News Intelligence Engine (PHASE 12)](#15f-news-intelligence-engine-phase-12)
 15. [Known Engineering Pitfalls & Invariants](#15-known-engineering-pitfalls--invariants)
 16. [Testing & CI/CD Pipeline Audit](#16-testing--cicd-pipeline-audit)
 17. [Documentation vs. Reality Audit Matrix](#17-documentation-vs-reality-audit-matrix)
@@ -1353,6 +1354,135 @@ affect production).
   worker restart/cancellation, invalid challenger exclusion, model-rebuild
   history survival, feature-schema provenance, lineage preservation, and
   Phase 08/09/10 + hot-path regression.
+
+---
+
+## 15f. News Intelligence Engine (PHASE 12)
+
+> The system collects, deduplicates, classifies, analyzes, scores, ages, and
+> correlates financial/news events with the existing Nexus trading
+> intelligence. XAUUSD/GOLD is the primary target; USD, EUR, GBP, JPY, CHF
+> and major FX are secondary. News is CONTEXTUAL INTELLIGENCE ONLY — it can
+> never generate a BUY/SELL, never place an order, and never bypass
+> RiskEngine/OrderManager protections.
+
+### Architecture
+```
+src/nexus_scalp/news/
+  models.py        domain contracts (NewsArticle, NewsImpact, NewsState,
+                   CurrentNewsContext, NewsConsensus, NewsNovelty, ...)
+  config.py        NewsConfig: LOCAL_ONLY/API_ONLY/HYBRID, decay half-lives,
+                   impact caps (max_confidence_boost 0.05 / penalty 0.10),
+                   queue size, polling intervals, AI timeout
+  database.py      DEDICATED SQLite artifacts/news.db (WAL, 13 tables +
+                   indexes). Trading/accounting DB untouched.
+  seed.py          deterministic, idempotent, versioned seed (v2):
+                   11 sources (7 official Tier-1 + 4 RSS), asset profiles
+  sources/         base.py (Source/Fetcher/Normalizer contract, RSS 2.0 +
+                   Atom parsing, official adapter, HTML extraction)
+  ingest/          deduplicator.py (article_hash + normalized-title +
+                   publication-time syndication window), fetcher.py
+                   (rate-limit/backoff/jitter/source-health/scheduler)
+  analysis/        local.py (entities/topics/XAUUSD+USD relevance/direction/
+                   importance), consensus.py (tier-weighted), decay.py
+                   (BREAKING/MACRO/POLICY/STRUCTURAL half-lives),
+                   pipeline.py (multi-stage local -> optional external AI ->
+                   schema validation -> fallback -> persist)
+  memory/          post_event.py (predicted-vs-actual impact validation)
+  context.py       CurrentNewsContext cache (worker-refreshed, cache-only
+                   on the tick path — NO per-tick DB access)
+  gate.py          NewsGate (bounded confidence adjustment, position-
+                   protection actions never gated)
+  engine.py        orchestrator (ingest_cycle/analysis_cycle/self_heal/
+                   health/record_market_response/link_trade)
+  worker.py        NewsWorker (bounded priority queue, dedup, expiry,
+                   retries<=3, checkpoint/restart-safe, asyncio.to_thread)
+```
+
+### Database (artifacts/news.db)
+news_sources, news_articles, news_article_versions, news_entities,
+news_topics, news_analysis, news_impacts, news_consensus, news_analysis_runs,
+news_worker_state, news_event_links, news_trade_links, news_health.
+Indices on article_hash, title_hash, article_id, published_at, asset.
+
+### Source registry (seed v2)
+- Tier-1 official: Fed, BLS, BEA, ECB, BoE, CFTC (disabled — no public RSS),
+  U.S. Treasury. Verified live URLs 2026-08-16.
+- Tier-2: Reuters, MarketWatch. Tier-3: ForexLive, ZeroHedge.
+Broken/unreachable sources become disabled or are marked unhealthy by the
+fetcher's health tracker (consecutive failures -> exponential backoff).
+
+### Deduplication
+One canonical event = multiple source evidence. Identity = deterministic
+article_hash (content + URL + source) + normalized-title hash + publication
+time (60s bucket) + syndication merge window (1h by publication proximity,
+not ingestion wall-clock). Updated articles create versions, never silent
+overwrites.
+
+### Local analysis (NO API key required)
+Entity/topic extraction, XAUUSD relevance (drivers: USD, real yields,
+inflation, rates, geopolitics, safe-haven, energy, liquidity — context
+matters: "gold medal" != XAUUSD event), USD relevance, directional
+hypothesis, importance, source trust. Fully functional in LOCAL_ONLY.
+
+### External AI (optional, fail-safe)
+IExternalNewsAnalyzer interface. HYBRID default: local first, external only
+for high-importance/ambiguous/conflicting/high-XAUUSD-relevance articles.
+Missing key -> LOCAL_ONLY. Rate limit/timeout/invalid JSON/provider failure
+-> LOCAL fallback (never fabricate). Final record flags LOCAL_ONLY / API /
+COMBINED / FAILED.
+
+### Impact & bounded gate
+NewsImpact = SourceTrust x Importance x AssetRelevance x Novelty x Consensus
+x Freshness x DirectionalConfidence. Decay classes BREAKING/MACRO/POLICY/
+STRUCTURAL. NewsGate: alignment -> bounded boost (<= +0.05), conflict ->
+bounded penalty (<= -0.10), HIGH_IMPACT/BREAKING state -> CAUTION,
+position-protection actions NEVER gated, stale/unavailable news -> no-op.
+Only the proposal's confidence field is adjusted via model_copy — the
+action/direction is never changed.
+
+### LiveEngine integration (non-blocking)
+Ordering in _process_tick_pipeline: Phase 08 experience gate -> Phase 09
+intelligence gate -> PHASE 12 news gate -> risk sizing -> OrderManager.
+NewsWorker runs via asyncio.to_thread in run_loop; context refreshed
+off-loop by the worker; tick path reads the cached CurrentNewsContext only.
+
+### Post-event learning & attribution
+record_market_response() stores predicted-vs-actual direction/magnitude/
+timing/persistence with regime context (evidence only — never trains the
+production model). link_trade() connects trade_id/experience_id/news_event_id/
+strategy_id/model_version for Experience Intelligence.
+
+### API (14 routes)
+GET /api/news, /api/news/latest, /api/news/{id}, /api/news/impact,
+/api/news/state, /api/news/sources, /api/news/health,
+/api/news/analysis/{id}, /api/news/trades/{trade_id};
+POST /api/news/analyze/{id} (async job), /api/news/refresh,
+/api/news/self-heal. Disabled subsystem returns available=False (honest, no
+synthetic data).
+
+### Web UI
+News Intelligence tab (#tab-news): live feed, state badge
+(NORMAL/ELEVATED/HIGH_IMPACT/CONFLICTED/BREAKING/STALE), XAUUSD relevance,
+bullish/bearish scores, active-event count, "Analyze with AI" button
+(async, LOCAL/API/COMBINED status), Fetch News trigger.
+
+### Safety invariants (tested)
+- News can never force BUY/SELL (action unchanged by gate)
+- News can never bypass RiskEngine/OrderManager/exposure protections
+- No per-tick DB query (context cached; worker refreshes off-loop)
+- Worker/DB failure never stops trading (safe defaults, failure-isolated)
+- No fake confidence: empty evidence -> available=False, confidence 0.0
+- Self-healing rebuilds derived state from authoritative raw records only
+
+### Tests
+- tests/unit/test_news_phase12.py — 63 tests: ingestion, dedup, decay,
+  local analysis, external-AI fallback, gate safety, memory, worker, DB
+  idempotency, self-heal, engine, regressions.
+- tests/integration/test_news_api.py — 14 tests: real API data, state,
+  health (no synthetic), detail, async analyze, refresh, self-heal,
+  sources, disabled availability, worker isolation, DB independence,
+  analysis persistence, trade links.
 
 ---
 

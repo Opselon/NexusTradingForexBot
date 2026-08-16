@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexus-scalp-engine"
-version = "0.1.0"
+version = "9.0.0"
 description = "Production-grade, high-frequency, multi-timeframe scalp trading engine using PyTorch and MetaTrader 5"
 authors = [
     { name = "Nexus Quantitative Engineering Team", email = "quant@nexus-trading.internal" }
@@ -23,7 +23,11 @@ dependencies = [
     "pyarrow>=15.0.0,<16.0.0",
     "numpy>=1.26.0,<2.0.0",
     "torch>=2.2.0,<3.0.0",
+    "fastapi>=0.110.0,<1.0.0",
+    "uvicorn>=0.27.0,<1.0.0",
+    "httpx>=0.26.0,<1.0.0",
     "MetaTrader5>=5.0.45; platform_system == 'Windows'",
+    "feedparser>=6.0.0,<7.0.0; python_version >= '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -35,10 +39,20 @@ dev = [
     "mypy>=1.8.0",
     "types-pyyaml>=6.0.12",
     "types-requests>=2.31.0",
-    "types-setuptools>=68.0.0"
+    "types-setuptools>=68.0.0",
+]
+web = [
+    "fastapi>=0.110.0,<1.0.0",
+    "uvicorn>=0.27.0,<1.0.0",
+    "httpx>=0.26.0,<1.0.0",
+]
+release = [
+    "pyinstaller>=6.0.0",
+    "feedparser>=6.0.0,<7.0.0",
 ]
 
 [project.scripts]
+nexus = "nexus_scalp.release.cli_shim:app"
 nse = "nexus_scalp.cli.main:app"
 
 [tool.setuptools.packages.find]

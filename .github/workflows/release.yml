@@ -4,25 +4,280 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (must match pyproject.toml)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
 
+env:
+  PYTHON_VERSION: "3.11"
+
 jobs:
-  release:
-    name: Create GitHub Release
+  # ---------------------------------------------------------------------------
+  # A. VALIDATE — tag/version consistency + secrets + clean tree
+  # ---------------------------------------------------------------------------
+  validate:
+    name: Validate tag & version
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Verify tag matches pyproject version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PYPROJ_VERSION="$(grep -E '^version = ' pyproject.toml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          echo "tag=$TAG pyproject=$PYPROJ_VERSION"
+          if [ "$TAG" != "$PYPROJ_VERSION" ]; then
+            echo "::error::Tag v$TAG does not match pyproject version $PYPROJ_VERSION — releasegate blocks."
+            exit 1
+          fi
+      - name: Scan for secrets in the tree
+        shell: bash
+        run: |
+          set -e
+          echo "Scanning for secret-shaped strings (best effort)..."
+          if grep -RIlE "(api[_-]?key\s*[=:]\s*['\"]?[A-Za-z0-9_\-]{12,}|bot[_-]?token\s*[=:]\s*['\"]?\d{6,}:[A-Za-z0-9_\-]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)" \
+              --exclude-dir=.git --exclude-dir=.venv --exclude-dir=release --exclude-dir=artifacts . ; then
+            echo "::error::Secret-shaped strings found in tree."
+            exit 1
+          fi
+          echo "Tree scan clean."
+      - name: Ensure no user/dev artifacts are staged
+        shell: bash
+        run: |
+          if git ls-files | grep -E 'artifacts/audit\.db|\.env|credentials|private_key' ; then
+            echo "::error::Developer/user artifact tracked in git."
+            exit 1
+          fi
+          echo "No dev artifacts tracked."
 
-      - name: Create GitHub Release
+  # ---------------------------------------------------------------------------
+  # B. GATES — ruff / mypy / pytest (Linux, mirror of beforePush)
+  # ---------------------------------------------------------------------------
+  gates:
+    name: Quality gates (ruff / mypy / pytest)
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+          pip install pytest-cov
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Mypy
+        run: mypy src
+      - name: Unit tests
+        run: pytest tests/unit/ -q --tb=short
+      - name: Integration tests (no MT5, no browser)
+        run: pytest tests/integration/ -q --tb=short \
+             --ignore=tests/integration/test_playwright_e2e.py
+
+  # ---------------------------------------------------------------------------
+  # C. BUILD — windows-x64 (the only supported architecture)
+  # ---------------------------------------------------------------------------
+  build-windows-x64:
+    name: Build windows-x64 (onedir + onefile + installer)
+    runs-on: windows-latest
+    needs: gates
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+      - name: Install deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -e ".[dev,web,release]"
+          python -m pip install pytest-cov
+          Write-Host "torch/pyinstaller ready"
+      - name: Write build-info.json
+        shell: pwsh
+        run: |
+          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
+          $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+          $commit = (git rev-parse --short HEAD)
+          $dirty = if ((git status --porcelain | Measure-Object).Count -gt 0) { $true } else { $false }
+          $info = @{
+            product = "NexusScalpEngine"
+            version = $V; git_commit = $commit; dirty_tree = $dirty
+            build_timestamp = $stamp; platform = "windows"; architecture = "x64"
+            python = $env:PYTHON_VERSION; channel = "stable"; build_mode = "Release"
+            feature_schema = "scalp_v1"; installer_version = "1.0.0"
+          } | ConvertTo-Json
+          Set-Content build-info.json $info -Encoding utf8
+      - name: PyInstaller onedir
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --name NexusScalpEngine `
+            --add-data "$PWD\Web;Web" --add-data "$PWD\configs;configs" `
+            --add-data "$PWD\docs;docs" --add-data "$PWD\build-info.json;." `
+            --collect-submodules "uvicorn" --collect-submodules "fastapi" `
+            --collect-submodules "feedparser" `
+            --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
+            --distpath "release\build\windows-x64\onedir" `
+            --workpath "release\build\windows-x64\work" `
+            --specpath "release\build\windows-x64" `
+            src/nexus_scalp/release/packaged_main.py
+      - name: PyInstaller onefile CLI
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --name NexusScalpEngine-CLI `
+            --exclude-module "torch" --exclude-module "polars" --exclude-module "numpy" `
+            --exclude-module "pyarrow" --exclude-module "MetaTrader5" `
+            --distpath "release\build\windows-x64\onefile" `
+            --workpath "release\build\windows-x64\work-cli" `
+            --specpath "release\build\windows-x64" `
+            src\nexus_scalp\release\cli_shim.py
+      - name: EXE smoke tests
+        shell: pwsh
+        run: |
+          & "release\build\windows-x64\onedir\NexusScalpEngine\NexusScalpEngine.exe" version --plain
+          if ($LASTEXITCODE -ne 0) { throw "onedir version failed" }
+          $h = & "release\build\windows-x64\onedir\NexusScalpEngine\NexusScalpEngine.exe" health --json | Out-String
+          if ($h -notmatch '"overall"') { throw "health JSON missing" }
+          & "release\build\windows-x64\onefile\NexusScalpEngine-CLI.exe" version --plain
+          if ($LASTEXITCODE -ne 0) { throw "onefile CLI failed" }
+      - name: Stage release tree
+        shell: pwsh
+        run: |
+          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
+          $Out = "release\v$V\windows\x64"
+          New-Item -ItemType Directory -Force -Path "$Out\portable" | Out-Null
+          Copy-Item "release\build\windows-x64\onedir\NexusScalpEngine\*" "$Out\portable" -Recurse -Force
+          New-Item -ItemType Directory -Force -Path "$Out\portable\docs" | Out-Null
+          Copy-Item "docs\*" "$Out\portable\docs" -Recurse -Force
+          New-Item -ItemType Directory -Force -Path "$Out\portable\licenses" | Out-Null
+          if (Test-Path LICENSE) { Copy-Item LICENSE "$Out\portable\licenses" -Force }
+          Set-Content "$Out\portable\README.txt" "Nexus Scalp Engine portable - v$V"
+          New-Item -ItemType Directory -Force -Path "$Out\cli" | Out-Null
+          Copy-Item "release\build\windows-x64\onefile\NexusScalpEngine-CLI.exe" "$Out\cli" -Force
+          $zip = "$Out\NexusScalpEngine-$V-win-x64.zip"
+          Compress-Archive -Path "$Out\portable\*" -DestinationPath $zip
+          Write-Host "staged: $Out"
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
+          winget install --id JRSoftware.InnoSetup -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+          $Iscc = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          $Out = "release\v$V\windows\x64"
+          & $Iscc "installer\NexusScalpEngine.iss" `
+            "/DNSE_VERSION=$V" "/DNSE_CHANNEL=stable" `
+            "/DNSE_SOURCE_DIR=$PWD\$Out\portable" "/DNSE_OUTPUT_DIR=$PWD\$Out"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+      - name: Checksums + manifest + SBOM
+        shell: pwsh
+        run: |
+          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
+          $Out = "release\v$V\windows\x64"
+          New-Item -ItemType Directory -Force -Path "$Out\checksums" | Out-Null
+          $Artifacts = @(
+            "$Out\portable\NexusScalpEngine.exe",
+            "$Out\cli\NexusScalpEngine-CLI.exe",
+            "$Out\NexusScalpEngine-$V-win-x64.zip",
+            "$Out\NexusScalpEngine-$V-win-x64-setup.exe"
+          )
+          $lines = foreach ($a in $Artifacts) {
+            $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
+            "$h  $(Split-Path $a -Leaf)"
+          }
+          Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
+          python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip'))+list(root.glob('*-setup.exe')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); p.generate_sbom(out=root/'sbom'/'sbom.spdx.json'); print('manifest+sbom ok')"
+      - name: verify-release (full self-check incl. secrets)
+        shell: pwsh
+        run: |
+          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
+          $Out = "release\v$V\windows\x64"
+          python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import verify as v; r=v.verify_release(Path(r'$Out\portable')); print('OVERALL', r['overall']); [print(c['status'], c['check']) for c in r['checks']]; sys.exit(0 if r['valid'] else 1)"
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-release-windows-x64
+          path: |
+            release/v*/windows/x64/**/*
+            !release/v*/windows/x64/portable/**/*        # zip carries portable
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # D. ARM64 — explicitly reported unsupported (never silent)
+  # ---------------------------------------------------------------------------
+  arm64-report:
+    name: ARM64 support report (unsupported — dependency stack)
+    runs-on: ubuntu-latest
+    needs: gates
+    timeout-minutes: 5
+    steps:
+      - name: Report unsupported architecture
+        run: |
+          echo "::warning::Windows ARM64 is UNSUPPORTED by the current dependency stack"
+          echo "(PyTorch/Polars/PyArrow/MetaTrader5 publish no Windows ARM64 wheels)."
+          echo "No ARM64 installer will be produced. This is an explicit, loud non-support."
+          echo "::set-output name=message::unsupported"
+
+  # ---------------------------------------------------------------------------
+  # E. RELEASE — publish (only after B + C succeed)
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate, gates, build-windows-x64]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: nexus-release-windows-x64
+          path: release-assets
+      - name: Build release notes from commits
+        shell: bash
+        run: |
+          PREV="$(git tag --sort=-v:refname | sed -n '2p')"
+          echo "## What's new in ${{ github.ref_name }}" > notes.md
+          if [ -n "$PREV" ]; then
+            git log --oneline --no-merges "$PREV..HEAD" | sed 's/^/- /' >> notes.md
+          else
+            git log --oneline --no-merges -20 | sed 's/^/- /' >> notes.md
+          fi
+          echo "" >> notes.md
+          echo "## Architecture support" >> notes.md
+          echo "- Windows x64: SUPPORTED (PyTorch/Polars/MetaTrader5 wheels exist)" >> notes.md
+          echo "- Windows ARM64: UNSUPPORTED — no wheels for the dependency stack" >> notes.md
+          echo "" >> notes.md
+          echo "> Tests ran in this workflow (gates job). No claims beyond that." >> notes.md
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+          body_path: notes.md
+          files: |
+            release-assets/**/*

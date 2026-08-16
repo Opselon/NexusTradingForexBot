@@ -340,6 +340,43 @@ class LiveEngine:
         self._shadow_worker_started: bool = False
         self._shadow_challenger: ChallengerRuntime | None = None
 
+        # =====================================================================
+        # PHASE 12: NEWS INTELLIGENCE ENGINE (isolated, optional)
+        # ---------------------------------------------------------------------
+        # Dedicated news.db; worker via asyncio.to_thread; news gate applies a
+        # BOUNDED confidence adjustment only. News can never place/modify/close
+        # an order and can never override risk/exposure/kill-switch. If the
+        # news subsystem fails to construct, trading continues unaffected.
+        # =====================================================================
+        self._news_enabled: bool = bool(getattr(config, "news", None) and config.news.enabled)
+        self.news_engine: Any | None = None
+        self.news_worker: Any | None = None
+        self.news_gate: Any | None = None
+        self._news_worker_started: bool = False
+        self._last_news_gate: Any | None = None
+        if self._news_enabled:
+            try:
+                from nexus_scalp.news import NewsEngine, NewsGate, NewsWorker
+
+                news_config = config.news
+                self.news_engine = NewsEngine(config=news_config)
+                self.news_worker = NewsWorker(
+                    engine=self.news_engine,
+                    interval_sec=float(getattr(news_config, "worker_interval_sec", 60)),
+                    max_queue=int(getattr(news_config, "max_queue_size", 1000)),
+                )
+                self.news_gate = NewsGate(config=news_config)
+                logger.info("[NEWS] event=CONSTRUCTED status=ENABLED")
+            except Exception as news_err:
+                self._news_enabled = False
+                self.news_engine = None
+                self.news_worker = None
+                self.news_gate = None
+                logger.error(
+                    "[NEWS] event=CONSTRUCT_FAILED status=DISABLED (trading unaffected)",
+                    error=str(news_err),
+                )
+
         # Order/risk/policy
         self.signal_policy = SignalPolicy(
             confidence_threshold=config.model.confidence_threshold,
@@ -566,6 +603,9 @@ class LiveEngine:
         # bounded + isolated; it can never stop trading or touch orders.
         self._start_shadow_worker()
 
+        # PHASE 12: start the news intelligence worker (isolated, optional).
+        self._start_news_worker()
+
         logger.info(
             "LIVE CONNECTED",
             login=getattr(account, "login", 0) if account else 0,
@@ -658,6 +698,13 @@ class LiveEngine:
                         await asyncio.to_thread(self.shadow_worker.tick)
                     except Exception:
                         pass
+
+                # PHASE 12: news intelligence worker kick (bounded, isolated).
+                if self._news_enabled and self._news_worker_started:
+                    try:
+                        await asyncio.to_thread(self.news_worker.tick)
+                    except Exception:
+                        pass
                 await asyncio.sleep(0.05)
 
             except Exception as e:
@@ -698,6 +745,12 @@ class LiveEngine:
         # PHASE 11: stop the shadow-aggregation worker (isolated).
         try:
             await self._stop_shadow_worker()
+        except Exception:
+            pass
+
+        # PHASE 12: stop the news intelligence worker (isolated, optional).
+        try:
+            await self._stop_news_worker()
         except Exception:
             pass
 
@@ -1072,6 +1125,47 @@ class LiveEngine:
         except Exception as err:
             logger.error("[SHADOW_WORKER] event=STOP status=FAILED", error=str(err))
 
+    def _start_news_worker(self) -> None:
+        """Starts the news intelligence worker (idempotent, never raises).
+
+        PHASE 12: fully isolated - a news startup failure logs and the engine
+        keeps trading with the news subsystem disabled.
+        """
+        if not self._news_enabled or self._news_worker_started:
+            return
+        self._news_worker_started = True
+        try:
+            self.news_worker.start()
+            logger.info("[NEWS_WORKER] event=START status=RUNNING")
+        except Exception as err:
+            self._news_worker_started = False
+            logger.error("[NEWS_WORKER] event=START status=FAILED", error=str(err))
+
+    async def _stop_news_worker(self) -> None:
+        """Stops the news worker (idempotent, never raises)."""
+        if not self._news_enabled or not self._news_worker_started:
+            return
+        self._news_worker_started = False
+        try:
+            self.news_worker.stop()
+        except Exception as err:
+            logger.error("[NEWS_WORKER] event=STOP status=FAILED", error=str(err))
+
+    def _news_strategy_direction(self, proposal: Any) -> str:
+        """Infers the strategy direction behind a proposal for the news gate.
+
+        Pure read of the proposal action - the news gate never decides the
+        direction itself.
+        """
+        action = getattr(proposal, "action", None)
+        action_str = action.value if hasattr(action, "value") else str(action or "")
+        upper = str(action_str).upper()
+        if upper in ("BUY", "BUY_MARKET", "BUY_LIMIT", "BUY_STOP"):
+            return "BULLISH"
+        if upper in ("SELL", "SELL_MARKET", "SELL_LIMIT", "SELL_STOP"):
+            return "BEARISH"
+        return "NEUTRAL"
+
     async def _stop_research_worker(self) -> None:
         """Stops the strategy research worker (idempotent, never raises)."""
         self._research_worker_started = False
@@ -1390,6 +1484,53 @@ class LiveEngine:
             )
             self._last_experience_decision = exp_decision
             self._last_suitability_verdict = suitability
+
+            # =================================================================
+            # PHASE 12: NEWS INTELLIGENCE GATE (bounded, isolated, optional)
+            # -----------------------------------------------------------------
+            # Applies a BOUNDED confidence adjustment from the current news
+            # context. News can NEVER force a direction: alignment gives at
+            # most max_confidence_boost (default 0.05), conflict lowers
+            # confidence by at most max_confidence_penalty (default 0.10).
+            # Position-protection actions are never gated; when the news
+            # subsystem is disabled/unavailable this is a pure no-op.
+            # =================================================================
+            if self._news_enabled and self.news_gate is not None:
+                try:
+                    news_ctx = self.news_engine.current_context()
+                    news_verdict = self.news_gate.evaluate(
+                        context=news_ctx,
+                        proposal_action=(
+                            proposal.action.value
+                            if hasattr(proposal.action, "value")
+                            else str(proposal.action)
+                        ),
+                        strategy_direction=self._news_strategy_direction(proposal),
+                        proposal_confidence=float(getattr(proposal, "confidence", 0.0) or 0.0),
+                        regime_aligned=True,
+                    )
+                    self._last_news_gate = news_verdict
+                    adjustment = news_verdict.confidence_adjustment
+                    if adjustment != 0.0:
+                        proposal = proposal.model_copy(
+                            update={
+                                "confidence": round(
+                                    max(0.0, min(1.0, proposal.confidence + adjustment)), 4
+                                )
+                            }
+                        )
+                    logger.debug(
+                        "[NEWS_GATE] decision=%s strategy=%s adjustment=%+.4f",
+                        news_verdict.decision,
+                        news_verdict.strategy_direction,
+                        adjustment,
+                    )
+                except Exception as news_gate_err:
+                    # News must never disturb trading: failure = no-op.
+                    self._last_news_gate = None
+                    logger.debug(
+                        "[NEWS_GATE] event=FAILED (isolated, no-op)", error=str(news_gate_err)
+                    )
 
             self.audit.log_signal(proposal)
 

@@ -95,6 +95,11 @@
                             <i class="fa-solid fa-flask-vial text-lg w-5 text-accentCyan"></i>
                             <span>Strategy Research</span>
                         </button>
+                        <button onclick="switchTab('tab-news', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-newspaper text-lg w-5 text-accentCyan"></i>
+                            <span>News Intelligence</span>
+                            <span id="news-nav-state" class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">--</span>
+                        </button>
                         <button onclick="switchTab('tab-rules', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
                 <i class="fa-solid fa-shield-halved text-lg w-5 text-accentCyan"></i>
                 <span>Scalping Rules</span>
@@ -810,10 +815,60 @@
             </div>
             </section>
 
-            <!-- TAB 5: SCALPING RULES PANEL -->
-<section id="tab-rules" class="tab-content hidden space-y-6">
-                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
-                    <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
+            <!-- TAB 5: NEWS INTELLIGENCE PANEL (PHASE 12) -->
+            <section id="tab-news" class="tab-content hidden space-y-6">
+                            <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                                <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
+                                    <div>
+                                        <h3 class="text-md font-bold text-white flex items-center">
+                                            <i class="fa-solid fa-newspaper mr-2 text-accentCyan"></i>
+                                            News Intelligence Engine
+                                        </h3>
+                                        <p class="text-xs text-textMuted mt-1">
+                                            PERSISTENT NEWS INTELLIGENCE: canonical events, source consensus, XAUUSD/USD impact, time decay. News can never force a trade.
+                                        </p>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <span id="news-state-badge" class="text-[10px] font-black px-2 py-1 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">--</span>
+                                        <button onclick="loadNewsState()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-3 py-1.5 rounded text-xs font-bold transition">Refresh</button>
+                                        <button onclick="triggerNewsRefresh()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Fetch News</button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                                        <div class="text-[10px] uppercase tracking-widest text-textMuted">News State</div>
+                                        <div id="news-state-value" class="text-lg font-black font-mono text-accentCyan mt-1">--</div>
+                                    </div>
+                                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                                        <div class="text-[10px] uppercase tracking-widest text-textMuted">XAUUSD Relevance</div>
+                                        <div id="news-xauusd-rel" class="text-lg font-black font-mono text-amber-400 mt-1">--</div>
+                                    </div>
+                                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Bullish / Bearish</div>
+                                        <div class="flex items-center space-x-3 mt-1">
+                                            <span id="news-bull" class="text-lg font-black font-mono text-accentGreen">--</span>
+                                            <span class="text-textMuted text-xs">/</span>
+                                            <span id="news-bear" class="text-lg font-black font-mono text-accentRed">--</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Active Events</div>
+                                        <div id="news-events" class="text-lg font-black font-mono text-accentCyan mt-1">--</div>
+                                    </div>
+                                </div>
+
+                                <div class="text-[10px] uppercase tracking-widest text-textMuted mb-2">Live News</div>
+                                <div id="news-feed" class="max-h-96 overflow-y-auto space-y-2 text-[11px] font-mono text-gray-300">
+                                    <div class="text-textMuted italic">News engine idle. Click "Fetch News" or wait for the worker cycle.</div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- TAB 6: SCALPING RULES PANEL -->
+            <section id="tab-rules" class="tab-content hidden space-y-6">
+                            <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                                <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
                         <div>
                             <h3 class="text-md font-bold text-white flex items-center">
                                 <i class="fa-solid fa-shield-halved mr-2 text-accentCyan"></i>
