@@ -76,14 +76,14 @@ class EnvironmentInfo:
 
     @property
     def architecture_supported(self) -> bool:
-        return self.architecture in SUPPORTED_ARCHES or self.process_architecture in SUPPORTED_ARCHES
+        return (
+            self.architecture in SUPPORTED_ARCHES or self.process_architecture in SUPPORTED_ARCHES
+        )
 
 
 def _run(cmd: list[str], timeout: int = 5) -> str | None:
     try:
-        out = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout, check=False
-        )
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         return (out.stdout or out.stderr).strip() or None
     except Exception:
         return None
@@ -164,8 +164,8 @@ def _detect_gpu() -> tuple[str | None, str | None, bool, str | None]:
             ],
             timeout=8,
         )
-        for line in (out or "").splitlines()[1:]:
-            line = line.strip()
+        for raw in (out or "").splitlines()[1:]:
+            line = raw.strip()
             if not line:
                 continue
             parts = line.rsplit(None, 1)
@@ -254,7 +254,7 @@ def _detect_network(timeout: int = 4) -> bool | None:
         import urllib.request
 
         req = urllib.request.Request("https://pypi.org", method="HEAD")
-        with urllib.request.urlopen(req, timeout=timeout):  # noqa: S310
+        with urllib.request.urlopen(req, timeout=timeout):
             return True
     except Exception:
         pass
@@ -342,7 +342,9 @@ def format_hardware_block(info: EnvironmentInfo) -> dict[str, Any]:
     else:
         mode = "CPU"
     return {
-        "CPU": f"{info.cpu_name or 'unknown'} ({info.cpu_cores} cores)" if info.cpu_cores else "unknown",
+        "CPU": f"{info.cpu_name or 'unknown'} ({info.cpu_cores} cores)"
+        if info.cpu_cores
+        else "unknown",
         "RAM": f"{info.ram_mb} MB" if info.ram_mb else "unknown",
         "GPU": info.gpu_name or "none detected",
         "Driver": info.nvidia_driver or "n/a",

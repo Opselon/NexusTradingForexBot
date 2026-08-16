@@ -105,9 +105,14 @@ class UpdateEngine:
             plan.decisions.append(f"already at {current_version}; no newer release ({tag})")
             return plan
 
-        suffix = {"x64": "win-x64", "AMD64": "win-x64", "x86_64": "win-x64",
-                  "ARM64": "win-arm64", "arm64": "win-arm64"}.get(self.architecture, "win-x64")
-        wished = f"win-x64" if self.architecture in ("x64", "AMD64", "x86_64") else None
+        suffix = {
+            "x64": "win-x64",
+            "AMD64": "win-x64",
+            "x86_64": "win-x64",
+            "ARM64": "win-arm64",
+            "arm64": "win-arm64",
+        }.get(self.architecture, "win-x64")
+        wished = "win-x64" if self.architecture in ("x64", "AMD64", "x86_64") else None
         asset = None
         for a in available.get("assets", []):
             name = str(a.get("name", ""))
@@ -126,9 +131,7 @@ class UpdateEngine:
         plan.artifact_sha256 = asset.get("digest_sha256") or asset.get("sha256")
         plan.mirror = asset.get("browser_download_url")
         plan.release_notes_url = available.get("html_url")
-        plan.decisions.append(
-            f"release {tag} offers {plan.artifact_name} for {self.architecture}"
-        )
+        plan.decisions.append(f"release {tag} offers {plan.artifact_name} for {self.architecture}")
         if plan.artifact_sha256:
             plan.decisions.append("SHA-256 will be verified before install")
         else:
@@ -140,10 +143,10 @@ class UpdateEngine:
 
 def format_update_report(plan: UpdatePlan) -> str:
     try:
-        from rich.console import Console
-        from rich.table import Table
-        from rich.panel import Panel
         from rich import box
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
 
         console = Console()
         table = Table(title="Nexus Update", box=box.SIMPLE, show_header=False)

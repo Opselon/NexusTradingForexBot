@@ -27,7 +27,9 @@ from .health import HealthEngine
 from .metadata import get_version_info
 
 _SECRET_PATTERNS = [
-    re.compile(r"(?i)(password|passwd|secret|token|api[_-]?key|apikey|private[_-]?key|bot[_-]?token)\s*[=:]\s*['\"]?[^\s'\"]+"),
+    re.compile(
+        r"(?i)(password|passwd|secret|token|api[_-]?key|apikey|private[_-]?key|bot[_-]?token)\s*[=:]\s*['\"]?[^\s'\"]+"
+    ),
     re.compile(r"(?i)ey[A-Za-z0-9_\-]{20,}"),
     re.compile(r"(?i)sk-[A-Za-z0-9]{20,}"),
 ]
@@ -35,8 +37,18 @@ _SECRET_PATTERNS = [
 
 def _dependency_versions() -> dict[str, str]:
     out: dict[str, str] = {}
-    for mod in ("torch", "numpy", "polars", "pydantic", "rich", "fastapi",
-                "uvicorn", "httpx", "yaml", "structlog"):
+    for mod in (
+        "torch",
+        "numpy",
+        "polars",
+        "pydantic",
+        "rich",
+        "fastapi",
+        "uvicorn",
+        "httpx",
+        "yaml",
+        "structlog",
+    ):
         try:
             m = __import__(mod)
             out[mod] = getattr(m, "__version__", "unknown")
@@ -131,7 +143,7 @@ def export_diagnostics(workspace: Path | None = None) -> Path:
 
 def _feature_schema() -> dict[str, Any]:
     try:
-        from nexus_scalp.features.schema import FEATURE_SCHEMAS, ACTIVE_SCHEMA_ID
+        from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID, FEATURE_SCHEMAS
 
         s = FEATURE_SCHEMAS.resolve(ACTIVE_SCHEMA_ID)
         return {"schema_id": s.schema_id, "dimension": s.dimension, "active": s.is_active}

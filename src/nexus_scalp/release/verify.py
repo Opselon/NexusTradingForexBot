@@ -18,7 +18,7 @@ import json
 import re
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,8 +36,9 @@ class VerifyResult:
 
 
 class ReleaseVerifier:
-    def __init__(self, root: Path, exe_name: str = "NexusScalpEngine.exe",
-                 timeout: int = 90) -> None:
+    def __init__(
+        self, root: Path, exe_name: str = "NexusScalpEngine.exe", timeout: int = 90
+    ) -> None:
         self.root = root
         self.exe = root / exe_name
         self.timeout = timeout
@@ -64,12 +65,16 @@ class ReleaseVerifier:
     def _launch_version(self) -> VerifyResult:
         proc = subprocess.run(
             [str(self.exe), "version", "--plain"],
-            capture_output=True, text=True, timeout=self.timeout, check=False,
+            capture_output=True,
+            text=True,
+            timeout=self.timeout,
+            check=False,
         )
         out = (proc.stdout or "") + (proc.stderr or "")
         if proc.returncode != 0:
-            return VerifyResult("EXE launches + version", "FAIL",
-                                f"exit {proc.returncode}: {out[:300]}")
+            return VerifyResult(
+                "EXE launches + version", "FAIL", f"exit {proc.returncode}: {out[:300]}"
+            )
         if "version" not in out.lower() and self._json_version(proc.stdout):
             return VerifyResult("EXE launches + version", "PASS", "version json ok")
         return VerifyResult("EXE launches + version", "PASS", out.strip()[:200])
@@ -85,7 +90,10 @@ class ReleaseVerifier:
     def _cli_health(self) -> VerifyResult:
         proc = subprocess.run(
             [str(self.exe), "health", "--json"],
-            capture_output=True, text=True, timeout=self.timeout, check=False,
+            capture_output=True,
+            text=True,
+            timeout=self.timeout,
+            check=False,
         )
         raw = (proc.stdout or "") + (proc.stderr or "")
         if proc.returncode != 0:
@@ -107,7 +115,10 @@ class ReleaseVerifier:
         manifest = self.root / "release-manifest.json"
         sums = self.root / "SHA256SUMS.txt"
         problems: list[str] = []
-        if not manifest.exists() and (self.root.parent / "manifests" / "release-manifest.json").exists():
+        if (
+            not manifest.exists()
+            and (self.root.parent / "manifests" / "release-manifest.json").exists()
+        ):
             # Release layout: manifests/ and checksums/ live beside the tree.
             manifest = self.root.parent / "manifests" / "release-manifest.json"
             sums = self.root.parent / "checksums" / "SHA256SUMS.txt"
@@ -116,7 +127,10 @@ class ReleaseVerifier:
                 data = json.loads(manifest.read_text(encoding="utf-8"))
                 for a in data.get("artifacts", []):
                     p = self.root / (a.get("relative_path") or a.get("name"))
-                    if not p.exists() and (self.root.parent / (a.get("relative_path") or a.get("name"))).exists():
+                    if (
+                        not p.exists()
+                        and (self.root.parent / (a.get("relative_path") or a.get("name"))).exists()
+                    ):
                         p = self.root.parent / (a.get("relative_path") or a.get("name"))
                     if not p.exists():
                         problems.append(f"manifest file missing: {p.name}")
@@ -158,8 +172,17 @@ class ReleaseVerifier:
         for p in self.root.rglob("*"):
             if not p.is_file():
                 continue
-            if p.suffix.lower() in (".pyc", ".dll", ".exe", ".pyd", ".pt", ".bin",
-                                    ".db", ".zip", ".7z"):
+            if p.suffix.lower() in (
+                ".pyc",
+                ".dll",
+                ".exe",
+                ".pyd",
+                ".pt",
+                ".bin",
+                ".db",
+                ".zip",
+                ".7z",
+            ):
                 continue
             if p.stat().st_size > 2 * 1024 * 1024:
                 continue
@@ -185,14 +208,16 @@ class ReleaseVerifier:
                 m = re.search(r"(?m)^\s*mode\s*:\s*(\S+)", text)
                 if m and m.group(1).upper() == "LIVE":
                     return VerifyResult(
-                        "No LIVE by default", "FAIL",
+                        "No LIVE by default",
+                        "FAIL",
                         "live.yaml has mode=LIVE — first-run must be PAPER/SHADOW",
                     )
             except OSError:
                 pass
         # Engine mode default is controlled LIVE-safe by the start command.
         return VerifyResult(
-            "No LIVE by default", "PASS",
+            "No LIVE by default",
+            "PASS",
             "start defaults are non-LIVE; LIVE requires explicit confirmation",
         )
 
@@ -201,8 +226,9 @@ def _is_windows() -> bool:
     return sys.platform == "win32"
 
 
-def verify_release(root: Path, exe_name: str = "NexusScalpEngine.exe",
-                   include_launch: bool = True) -> dict[str, Any]:
+def verify_release(
+    root: Path, exe_name: str = "NexusScalpEngine.exe", include_launch: bool = True
+) -> dict[str, Any]:
     verifier = ReleaseVerifier(root=root, exe_name=exe_name)
     results = verifier.run(include_launch=include_launch)
     failed = [r for r in results if r.status == "FAIL"]

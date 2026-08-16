@@ -34,9 +34,9 @@ from .paths import (
 
 __all__ = [
     "PRODUCT_NAME",
-    "get_version_info",
     "get_data_root",
     "get_logs_dir",
     "get_user_config_path",
+    "get_version_info",
     "user_data_initialized",
 ]

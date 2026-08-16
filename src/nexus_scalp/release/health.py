@@ -15,15 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 import sqlite3
 import sys
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from . import environment as envmod
-from . import evaluate
 from . import paths
 from .metadata import get_version_info
 
@@ -89,9 +88,12 @@ def _db_health(db_path: Path) -> tuple[str, str]:
             integrity = con.execute("PRAGMA integrity_check").fetchone()
             if integrity and integrity[0] != "ok":
                 return "FAIL", f"integrity_check -> {integrity[0]}"
-            tables = [r[0] for r in con.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            )]
+            tables = [
+                r[0]
+                for r in con.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+                )
+            ]
             return "PASS", f"{len(tables)} tables, integrity ok"
         finally:
             con.close()
@@ -105,12 +107,7 @@ def _db_tables(db_path: Path) -> set[str]:
     try:
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2)
         try:
-            return {
-                r[0]
-                for r in con.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
-            }
+            return {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         finally:
             con.close()
     except sqlite3.Error:
@@ -162,11 +159,13 @@ class HealthEngine:
         env = self.env()
         if env.architecture_supported:
             return HealthEntry(
-                "SYSTEM", "PASS",
+                "SYSTEM",
+                "PASS",
                 f"{env.os_name} {env.os_version} / {env.architecture}",
             )
         return HealthEntry(
-            "SYSTEM", "FAIL",
+            "SYSTEM",
+            "FAIL",
             f"Unsupported architecture: {env.architecture}",
             "Run on a Windows x64 machine (ARM64 unsupported by dependency stack).",
         )
@@ -175,7 +174,8 @@ class HealthEngine:
         v = get_version_info()
         py = f"Python {sys.version.split()[0]}"
         return HealthEntry(
-            "RUNTIME", "PASS",
+            "RUNTIME",
+            "PASS",
             f"version {v['version']} · {v['channel']} · {py} · commit {v['commit'] or 'n/a'}",
         )
 
@@ -184,20 +184,23 @@ class HealthEngine:
         if cfg is None:
             err = getattr(self, "_config_error", "unknown")
             return HealthEntry(
-                "CONFIGURATION", "FAIL",
+                "CONFIGURATION",
+                "FAIL",
                 f"config '{self.config_path}' failed to load: {err}",
                 "Run `nexus repair` to restore from template, or fix the YAML.",
             )
         if cfg is False:
             return HealthEntry(
-                "CONFIGURATION", "FAIL",
+                "CONFIGURATION",
+                "FAIL",
                 f"config '{self.config_path}' missing",
                 "Run `nexus setup` or `nexus repair`.",
             )
         mode = getattr(getattr(cfg, "execution", None), "mode", None)
         mode_txt = str(getattr(mode, "value", mode))
         return HealthEntry(
-            "CONFIGURATION", "PASS",
+            "CONFIGURATION",
+            "PASS",
             f"mode={mode_txt} symbol={cfg.execution.symbol} schema={cfg.model.feature_schema_version}",
         )
 
@@ -205,7 +208,9 @@ class HealthEngine:
         verdict, reason = _db_health(self.db_path)
         entry = HealthEntry("DATABASE", verdict, f"audit.db: {reason}")
         if verdict != "PASS":
-            entry.suggestion = "Run `nexus repair --database` (non-destructive) — or restore from backup."
+            entry.suggestion = (
+                "Run `nexus repair --database` (non-destructive) — or restore from backup."
+            )
         else:
             # Phase tables presence check (informative, not gate-keeping).
             tables = _db_tables(self.db_path)
@@ -240,7 +245,8 @@ class HealthEngine:
                 candidate = matches[0]
         if candidate is None or not candidate.exists():
             return HealthEntry(
-                "MODEL", "FAIL",
+                "MODEL",
+                "FAIL",
                 "no model artifact found (bundled or downloaded)",
                 "Run `nexus setup`/`nexus repair --model` to initialize from the release bundle.",
             )
@@ -252,28 +258,30 @@ class HealthEngine:
                 if isinstance(sd, dict):
                     tensors = sd.get("state_dict", sd)
                     n = len(tensors) if isinstance(tensors, dict) else len(sd)
-                    return HealthEntry("MODEL", "PASS",
-                                       f"{candidate} ({n} tensors)")
+                    return HealthEntry("MODEL", "PASS", f"{candidate} ({n} tensors)")
         except Exception:
             pass
         return HealthEntry(
-            "MODEL", "WARNING",
+            "MODEL",
+            "WARNING",
             f"artifact exists but could not be introspected: {candidate}",
             "Run `nexus doctor --verbose` for a full trace.",
         )
 
     def check_feature_schema(self) -> HealthEntry:
         try:
-            from nexus_scalp.features.schema import FEATURE_SCHEMAS, ACTIVE_SCHEMA_ID
+            from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID, FEATURE_SCHEMAS
 
             schema = FEATURE_SCHEMAS.resolve(ACTIVE_SCHEMA_ID)
             return HealthEntry(
-                "FEATURE_SCHEMA", "PASS",
+                "FEATURE_SCHEMA",
+                "PASS",
                 f"{schema.schema_id} / {schema.dimension}D (active contract)",
             )
         except Exception as e:
             return HealthEntry(
-                "FEATURE_SCHEMA", "FAIL",
+                "FEATURE_SCHEMA",
+                "FAIL",
                 f"schema registry failed: {e}",
                 "Reinstall the application bundle.",
             )
@@ -286,7 +294,8 @@ class HealthEngine:
             )
         if env.gpu_name and "nvidia" in env.gpu_name.lower():
             return HealthEntry(
-                "GPU", "WARNING",
+                "GPU",
+                "WARNING",
                 f"NVIDIA {env.gpu_name} without CUDA (driver {env.nvidia_driver or '?'})",
                 "Update the NVIDIA driver or keep CPU mode.",
             )
@@ -298,12 +307,15 @@ class HealthEngine:
         env = self.env()
         if env.mt5_available:
             return HealthEntry(
-                "MT5", "PASS",
-                "terminal detected" if env.mt5_available and env.os_name.lower() == "windows"
+                "MT5",
+                "PASS",
+                "terminal detected"
+                if env.mt5_available and env.os_name.lower() == "windows"
                 else "native module available",
             )
         return HealthEntry(
-            "MT5", "WARNING",
+            "MT5",
+            "WARNING",
             "MetaTrader 5 not detected",
             "Required only for LIVE execution; PAPER/SHADOW work without it.",
         )
@@ -314,11 +326,14 @@ class HealthEngine:
             return HealthEntry("NETWORK", "PASS", "outbound HTTPS ok")
         if env.network_reachable is False:
             return HealthEntry(
-                "NETWORK", "WARNING", "no outbound connectivity",
+                "NETWORK",
+                "WARNING",
+                "no outbound connectivity",
                 "News feeds and updates need internet; local features work.",
             )
-        return HealthEntry("NETWORK", "UNKNOWN" if False else "WARNING",
-                           "connectivity undetermined")
+        return HealthEntry(
+            "NETWORK", "UNKNOWN" if False else "WARNING", "connectivity undetermined"
+        )
 
     def check_disk(self) -> HealthEntry:
         env = self.env()
@@ -326,12 +341,16 @@ class HealthEngine:
             return HealthEntry("DISK", "WARNING", "free disk undetermined")
         if env.free_disk_mb < envmod.MIN_FREE_DISK_MB:
             return HealthEntry(
-                "DISK", "FAIL", f"{env.free_disk_mb} MB free",
+                "DISK",
+                "FAIL",
+                f"{env.free_disk_mb} MB free",
                 f"Free at least {envmod.MIN_FREE_DISK_MB} MB.",
             )
         if env.free_disk_mb < envmod.RECOMMENDED_FREE_DISK_MB:
             return HealthEntry(
-                "DISK", "WARNING", f"{env.free_disk_mb} MB free",
+                "DISK",
+                "WARNING",
+                f"{env.free_disk_mb} MB free",
                 f"Recommended >= {envmod.RECOMMENDED_FREE_DISK_MB} MB.",
             )
         return HealthEntry("DISK", "PASS", f"{env.free_disk_mb} MB free")
@@ -342,12 +361,16 @@ class HealthEngine:
             return HealthEntry("MEMORY", "WARNING", "RAM undetermined")
         if env.ram_mb < envmod.MIN_RAM_MB:
             return HealthEntry(
-                "MEMORY", "FAIL", f"{env.ram_mb} MB RAM",
+                "MEMORY",
+                "FAIL",
+                f"{env.ram_mb} MB RAM",
                 f"Minimum {envmod.MIN_RAM_MB} MB required.",
             )
         if env.ram_mb < envmod.RECOMMENDED_RAM_MB:
             return HealthEntry(
-                "MEMORY", "WARNING", f"{env.ram_mb} MB RAM",
+                "MEMORY",
+                "WARNING",
+                f"{env.ram_mb} MB RAM",
                 f"Recommended >= {envmod.RECOMMENDED_RAM_MB} MB.",
             )
         return HealthEntry("MEMORY", "PASS", f"{env.ram_mb} MB RAM")
@@ -363,7 +386,9 @@ class HealthEngine:
                 size = 0
             return HealthEntry("LOGGING", "PASS", f"{latest.name} ({size} bytes)")
         return HealthEntry(
-            "LOGGING", "WARNING", "no log files yet",
+            "LOGGING",
+            "WARNING",
+            "no log files yet",
             "Logs appear after the first engine start.",
         )
 
@@ -374,24 +399,26 @@ class HealthEngine:
             "intelligence_worker_state",
             "research_worker_state",
         }
-        present = known & tables
+        known & tables
         missing = known - tables
         if not missing:
-            return HealthEntry("WORKERS", "PASS",
-                               "worker checkpoint tables present")
+            return HealthEntry("WORKERS", "PASS", "worker checkpoint tables present")
         return HealthEntry(
-            "WORKERS", "WARNING",
+            "WORKERS",
+            "WARNING",
             f"worker checkpoint tables missing: {', '.join(sorted(missing))}",
             "Created automatically on first engine start.",
         )
 
-    def _check_phase(self, category: str, tables: set[str], needs: set[str],
-                     label: str) -> HealthEntry:
+    def _check_phase(
+        self, category: str, tables: set[str], needs: set[str], label: str
+    ) -> HealthEntry:
         missing = needs - tables
         if not missing:
             return HealthEntry(category, "PASS", f"{label} tables present")
         return HealthEntry(
-            category, "WARNING",
+            category,
+            "WARNING",
             f"{label} tables missing: {', '.join(sorted(missing))}",
             "Created on first engine start; not a blocker.",
         )
@@ -400,15 +427,16 @@ class HealthEngine:
         tables = _db_tables(self.news_db_path) if self.news_db_path.exists() else set()
         if not tables:
             return HealthEntry(
-                "NEWS", "WARNING", "news DB not initialized (feature disabled)",
+                "NEWS",
+                "WARNING",
+                "news DB not initialized (feature disabled)",
                 "Enable `news:` in config and run `nexus repair --news`.",
             )
         return self._check_phase("NEWS", tables, {"articles", "events"}, "News")
 
     def check_experience(self) -> HealthEntry:
         tables = _db_tables(self.db_path)
-        needs = {"audit_experiences", "audit_experience_outcomes",
-                 "experience_model_registry"}
+        needs = {"audit_experiences", "audit_experience_outcomes", "experience_model_registry"}
         return self._check_phase("EXPERIENCE", tables, needs, "Experience")
 
     def check_research(self) -> HealthEntry:
@@ -467,8 +495,9 @@ class HealthEngine:
                 entries.append(fn())
             except Exception as e:  # failure isolation
                 entries.append(
-                    HealthEntry(_category, "FAIL", f"check raised: {e}",
-                                "Run `nexus doctor --verbose`.")
+                    HealthEntry(
+                        _category, "FAIL", f"check raised: {e}", "Run `nexus doctor --verbose`."
+                    )
                 )
         return entries
 

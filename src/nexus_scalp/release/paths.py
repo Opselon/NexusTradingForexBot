@@ -30,6 +30,7 @@ DIAGNOSTICS_DIR_NAME = "diagnostics"
 def is_windows() -> bool:
     return sys.platform == "win32"
 
+
 # Subdirectories that may be expected inside configured workspace roots.
 RUNTIME_SUBDIRS = ("artifacts", "configs", "data", "logs", "Web")
 

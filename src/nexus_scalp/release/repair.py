@@ -13,7 +13,7 @@ Philosophy:
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -55,8 +55,7 @@ class RepairEngine:
         return candidates[0]
 
     # ------------------------------------------------------------------
-    def run(self, *, recreate_dirs: bool = False, with_news: bool = False
-            ) -> list[RepairResult]:
+    def run(self, *, recreate_dirs: bool = False, with_news: bool = False) -> list[RepairResult]:
         results: list[RepairResult] = []
         results.append(self._ensure_dirs())
         results.append(self._ensure_config(recreate=recreate_dirs))
@@ -79,19 +78,19 @@ class RepairEngine:
     def _ensure_config(self, *, recreate: bool = False) -> RepairResult:
         target = paths.get_user_config_path()
         if target.exists() and not recreate:
-            return RepairResult(
-                "config", "OK", f"existing config preserved: {target}"
-            )
+            return RepairResult("config", "OK", f"existing config preserved: {target}")
         if not self.template_config.exists():
             return RepairResult(
-                "config", "SKIPPED",
+                "config",
+                "SKIPPED",
                 f"no template found at {self.template_config}",
             )
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(self.template_config, target)
             return RepairResult(
-                "config", "OK" if not recreate else "OK",
+                "config",
+                "OK",
                 f"{'recreated' if recreate else 'created'} config from template",
             )
         except OSError as e:
@@ -134,11 +133,10 @@ class RepairEngine:
             return RepairResult("models", "FAILED", str(e))
         present = list(model_dir.rglob("model.pt"))
         if present:
-            return RepairResult(
-                "models", "OK", f"{len(present)} artifact(s) present"
-            )
+            return RepairResult("models", "OK", f"{len(present)} artifact(s) present")
         return RepairResult(
-            "models", "SKIPPED",
+            "models",
+            "SKIPPED",
             "no model artifact — external/optional until training runs",
         )
 

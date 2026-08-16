@@ -14,7 +14,7 @@ BLOCKED requirement exists; engine start: only the critical subset gates).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from .environment import (
@@ -36,8 +36,12 @@ class RequirementResult:
     suggestion: str = ""
 
     def to_row(self) -> dict[str, str]:
-        return {"name": self.name, "verdict": self.verdict, "detail": self.detail,
-                "suggestion": self.suggestion}
+        return {
+            "name": self.name,
+            "verdict": self.verdict,
+            "detail": self.detail,
+            "suggestion": self.suggestion,
+        }
 
 
 def evaluate_requirements(env: EnvironmentInfo) -> list[RequirementResult]:
@@ -88,8 +92,9 @@ def _os(env: EnvironmentInfo) -> RequirementResult:
             "Linux is a developer/container target (remote-gateway mode).",
             "Use a Windows host for the packaged release.",
         )
-    return RequirementResult("OS", "BLOCKED", f"Unsupported OS: {env.os_name}",
-                             "Nexus release targets Windows.")
+    return RequirementResult(
+        "OS", "BLOCKED", f"Unsupported OS: {env.os_name}", "Nexus release targets Windows."
+    )
 
 
 def _architecture(env: EnvironmentInfo) -> RequirementResult:
@@ -105,21 +110,26 @@ def _architecture(env: EnvironmentInfo) -> RequirementResult:
             "(PyTorch / Polars / MetaTrader5 ship no Windows ARM64 wheels).",
             "Run on a Windows x64 machine.",
         )
-    return RequirementResult("Architecture", "BLOCKED", f"Unknown architecture {env.architecture}",
-                             "Windows x64 required.")
+    return RequirementResult(
+        "Architecture",
+        "BLOCKED",
+        f"Unknown architecture {env.architecture}",
+        "Windows x64 required.",
+    )
 
 
 def _python(env: EnvironmentInfo) -> RequirementResult:
     if not env.python_available:
         return RequirementResult(
             "Python",
-            env.python_path is None and "UNKNOWN" or "WARNING",
+            (env.python_path is None and "UNKNOWN") or "WARNING",
             f"Python {'unavailable' if not env.python_path else 'too old'}: "
             f"{'.'.join(map(str, env.python_version)) if env.python_version else 'none detected'}",
             "Packaged releases bundle Python via PyInstaller; source/dev installs need Python 3.11.",
         )
-    return RequirementResult("Python", "PASS",
-                             f"Python {'.'.join(map(str, env.python_version))} @ {env.python_path}")
+    return RequirementResult(
+        "Python", "PASS", f"Python {'.'.join(map(str, env.python_version))} @ {env.python_path}"
+    )
 
 
 def _ram(env: EnvironmentInfo) -> RequirementResult:
@@ -129,11 +139,15 @@ def _ram(env: EnvironmentInfo) -> RequirementResult:
         return RequirementResult("RAM", "PASS", f"{env.ram_mb} MB")
     if env.ram_mb >= MIN_RAM_MB:
         return RequirementResult(
-            "RAM", "WARNING", f"{env.ram_mb} MB (recommended >= {RECOMMENDED_RAM_MB} MB)",
+            "RAM",
+            "WARNING",
+            f"{env.ram_mb} MB (recommended >= {RECOMMENDED_RAM_MB} MB)",
             "Close heavy applications while trading.",
         )
     return RequirementResult(
-        "RAM", "BLOCKED", f"{env.ram_mb} MB (minimum {MIN_RAM_MB} MB)",
+        "RAM",
+        "BLOCKED",
+        f"{env.ram_mb} MB (minimum {MIN_RAM_MB} MB)",
         "Upgrade RAM to run the engine reliably.",
     )
 
@@ -145,11 +159,15 @@ def _disk(env: EnvironmentInfo) -> RequirementResult:
         return RequirementResult("Disk", "PASS", f"{env.free_disk_mb} MB free")
     if env.free_disk_mb >= MIN_FREE_DISK_MB:
         return RequirementResult(
-            "Disk", "WARNING", f"{env.free_disk_mb} MB free (recommended >= {RECOMMENDED_FREE_DISK_MB} MB)",
+            "Disk",
+            "WARNING",
+            f"{env.free_disk_mb} MB free (recommended >= {RECOMMENDED_FREE_DISK_MB} MB)",
             "Free up disk space.",
         )
     return RequirementResult(
-        "Disk", "BLOCKED", f"{env.free_disk_mb} MB free (minimum {MIN_FREE_DISK_MB} MB)",
+        "Disk",
+        "BLOCKED",
+        f"{env.free_disk_mb} MB free (minimum {MIN_FREE_DISK_MB} MB)",
         "Free up disk space before installing.",
     )
 
@@ -187,8 +205,9 @@ def _mt5(env: EnvironmentInfo) -> RequirementResult:
 
 def _gpu(env: EnvironmentInfo) -> RequirementResult:
     if env.cuda_available:
-        return RequirementResult("GPU/CUDA", "PASS",
-                                 f"{env.gpu_name or 'CUDA GPU'} (CUDA {env.cuda_version or '?'})")
+        return RequirementResult(
+            "GPU/CUDA", "PASS", f"{env.gpu_name or 'CUDA GPU'} (CUDA {env.cuda_version or '?'})"
+        )
     if env.gpu_name and "nvidia" in env.gpu_name.lower():
         return RequirementResult(
             "GPU/CUDA",
@@ -208,7 +227,9 @@ def _network(env: EnvironmentInfo) -> RequirementResult:
         return RequirementResult("Network", "PASS", "Outbound HTTPS OK")
     if env.network_reachable is False:
         return RequirementResult(
-            "Network", "WARNING", "No outbound connectivity detected",
+            "Network",
+            "WARNING",
+            "No outbound connectivity detected",
             "Local/paper features still work; news feeds and updates need internet.",
         )
     return RequirementResult("Network", "UNKNOWN", "Connectivity could not be determined")
@@ -219,7 +240,9 @@ def _privileges(env: EnvironmentInfo) -> RequirementResult:
         return RequirementResult("Privileges", "PASS", "n/a")
     if env.is_admin:
         return RequirementResult(
-            "Privileges", "WARNING", "Running as Administrator",
+            "Privileges",
+            "WARNING",
+            "Running as Administrator",
             "Not required; per-user install is recommended.",
         )
     return RequirementResult("Privileges", "PASS", "Standard user (per-user install)")
@@ -231,7 +254,9 @@ def _powershell(env: EnvironmentInfo) -> RequirementResult:
     if env.powershell_available:
         return RequirementResult("PowerShell", "PASS", "available")
     return RequirementResult(
-        "PowerShell", "WARNING", "PowerShell not found",
+        "PowerShell",
+        "WARNING",
+        "PowerShell not found",
         "Used by maintenance scripts; the engine itself does not require it.",
     )
 

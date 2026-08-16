@@ -24,8 +24,7 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return h.hexdigest()
 
 
-def checksums_file(paths: list[Path], out: Path, *,
-                   base_dir: Path | None = None) -> Path:
+def checksums_file(paths: list[Path], out: Path, *, base_dir: Path | None = None) -> Path:
     """Write SHA256SUMS.txt (path relative to base_dir)."""
     base_dir = base_dir or out.parent
     lines: list[str] = []
@@ -82,8 +81,7 @@ def generate_manifest(
         "product_display": info["product_display"],
         "version": info.get("version") or get_version(),
         "git_commit": info.get("commit"),
-        "build_timestamp": info.get("build_timestamp")
-        or datetime.now(UTC).isoformat(),
+        "build_timestamp": info.get("build_timestamp") or datetime.now(UTC).isoformat(),
         "channel": channel,
         "platform": "windows",
         "architecture": info.get("architecture"),
@@ -102,8 +100,7 @@ def generate_manifest(
         "artifacts": [
             {
                 "name": a.name,
-                "relative_path": a.relative_to(base_dir).as_posix()
-                if base_dir else a.name,
+                "relative_path": a.relative_to(base_dir).as_posix() if base_dir else a.name,
                 "size_bytes": a.stat().st_size,
                 "sha256": sha256_file(a),
             }
@@ -138,7 +135,9 @@ def verify_manifest(manifest_path: Path, base_dir: Path | None = None) -> dict[s
     return {"valid": ok and bool(results), "files": results, "manifest": data}
 
 
-def generate_sbom(dependencies: dict[str, str] | None = None, out: Path | None = None) -> dict[str, Any]:
+def generate_sbom(
+    dependencies: dict[str, str] | None = None, out: Path | None = None
+) -> dict[str, Any]:
     """SPDX-lite SBOM (dependency inventory). Not a security guarantee."""
     deps = dependencies or _installed_versions()
     sbom: dict[str, Any] = {
@@ -146,10 +145,7 @@ def generate_sbom(dependencies: dict[str, str] | None = None, out: Path | None =
         "spdxVersion": "SPDX-2.3",
         "name": f"nexus-scalp-engine-{get_version()}",
         "created": datetime.now(UTC).isoformat(),
-        "packages": [
-            {"name": name, "versionInfo": ver}
-            for name, ver in sorted(deps.items())
-        ],
+        "packages": [{"name": name, "versionInfo": ver} for name, ver in sorted(deps.items())],
     }
     if out is not None:
         out.write_text(json.dumps(sbom, indent=2), encoding="utf-8")
@@ -158,9 +154,24 @@ def generate_sbom(dependencies: dict[str, str] | None = None, out: Path | None =
 
 def _installed_versions() -> dict[str, str]:
     out: dict[str, str] = {}
-    for mod in ("pydantic", "pydantic_settings", "yaml", "structlog", "typer",
-                "rich", "polars", "pyarrow", "numpy", "torch", "fastapi",
-                "uvicorn", "httpx", "pytest", "ruff", "mypy"):
+    for mod in (
+        "pydantic",
+        "pydantic_settings",
+        "yaml",
+        "structlog",
+        "typer",
+        "rich",
+        "polars",
+        "pyarrow",
+        "numpy",
+        "torch",
+        "fastapi",
+        "uvicorn",
+        "httpx",
+        "pytest",
+        "ruff",
+        "mypy",
+    ):
         try:
             m = __import__(mod)
             out[mod] = str(getattr(m, "__version__", "unknown"))
