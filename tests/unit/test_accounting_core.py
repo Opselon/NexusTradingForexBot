@@ -964,6 +964,37 @@ class TestStrategyAttribution:
         assert contribs[0].lifecycle_state == "RETIRED"
         assert contribs[0].confidence == pytest.approx(0.9)
 
+    def test_unregistered_strategy_with_trades_is_discovered_not_unknown(self, audit, core) -> None:
+        """A strategy family with trades but no intelligence-registry row must
+        render as DISCOVERED (authoritative below-floor default), never the
+        empty/UNKNOWN the UI previously showed."""
+        from nexus_scalp.experience.ledger import ExperienceLedger
+
+        ledger = ExperienceLedger(audit_repo=audit)
+        _seed_experience(
+            ledger,
+            request_id="ru",
+            execution_id="88",
+            strategy_id="strat_noreg",
+            realized_pnl=5.0,
+            realized_r=0.05,
+        )
+        _ledger_closed(
+            audit,
+            88,
+            exit_price=2000.15,
+            pnl=5.0,
+            close_ts=datetime(2026, 8, 15, 11, 5, tzinfo=UTC),
+            exit_mechanism="MANUAL_CLOSE",
+        )
+        # NO evaluator registered score for this id -> the accounting layer
+        # must fall back to the truthful DISCOVERED lifecycle.
+        contribs = core.strategy_contributions()
+        assert len(contribs) == 1
+        assert contribs[0].strategy_id == "strat_noreg"
+        assert contribs[0].lifecycle_state == "DISCOVERED"
+        assert contribs[0].confidence == 0.0
+
 
 # ---------------------------------------------------------------------------
 # 8. Loss attribution

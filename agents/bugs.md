@@ -2663,3 +2663,29 @@ The operator wanted the two Pine Script `Ichimili` strategies (the "Final Versio
 - `test_seed_is_idempotent_and_preserves_validation` — re-seeding never clobbers existing backtest results
 - `test_worker_seeds_on_first_cycle` — ResearchWorker seed step persists both candidates
 - Future strategies: implement the `Strategy` protocol, call `register_strategy()` at import, add tests → automatically discoverable via `builtin_candidates()` and seeded by the worker.
+
+---
+
+## BUG-066 — Strategy Attribution Lifecycle Rendered UNKNOWN for Unregistered Families
+
+- **Status**: FIXED (2026-08-17, accounting/UI truthfulness)
+- **Severity**: MEDIUM (misleading dashboard state — every `strat_*` family without an intelligence-registry row showed UNKNOWN)
+- **Confidence**: HIGH (root-caused: `_attach_strategy_intelligence` returned early on `score is None`, leaving `StrategyContribution.lifecycle_state` empty; frontend `s.lifecycle_state || 'UNKNOWN'` rendered the empty string as UNKNOWN)
+- **Verified**: `tests/unit/test_accounting_core.py::TestStrategyAttribution::test_unregistered_strategy_with_trades_is_discovered_not_unknown`
+
+### Symptom
+Strategy Attribution panel listed families like `strat_9a99b39c4eb6` (with REAL trades and PnL) but every row's LIFECYCLE column showed `UNKNOWN` and CONFIDENCE `--`.
+
+### Root Cause
+Two compounding issues:
+1. `AccountingCore._attach_strategy_intelligence()` returned immediately when `strategy_evaluator.get_registered_strategy_score()` returned None (no row in `strategy_intelligence_registry`). The `lifecycle_state` stayed `""` — even though the family EXISTS with attributed trades.
+2. `Web/app.js` rendered `s.lifecycle_state || 'UNKNOWN'` — so the empty string became the misleading literal "UNKNOWN".
+
+### Fix
+- **Backend**: when no registered score exists but the contribution HAS trades, the lifecycle is now set to `DISCOVERED` (the authoritative default lifecycle for an observed-but-below-floor family — matches `StrategyScore.lifecycle_state`'s own default) and confidence `0.0`. Registry rows (when present) still win — single source of truth preserved.
+- **Frontend**: `s.lifecycle_state || 'DISCOVERED'` fallback + a distinct `text-sky-400` style for the DISCOVERED state so it reads as informational, not an error.
+
+### Regression Guards
+- Strategy with trades + NO registry row → `lifecycle_state == "DISCOVERED"`, confidence 0.0
+- Strategy with a registered RETIRED score → `lifecycle_state == "RETIRED"`, confidence from score (existing test still green)
+- `test_accounting_core.py` (67) + `test_accounting_api.py` + `test_frontend_assets_phase14.py` all pass

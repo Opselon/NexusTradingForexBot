@@ -1335,6 +1335,28 @@ function handleIncomingLiveTick(payload, opts) {
         setTxt('acc-winrate', (accWr != null) ? `${accWr.toFixed(1)}%` : '—');
         setTxt('acc-margin-free', (accMargin != null) ? `$${accMargin.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '—');
         setTxt('acc-open-positions', (payload.account && payload.account.open_positions != null) ? String(payload.account.open_positions) : '—');
+
+    // TRADE-CLOSE DETECTOR (live update with orders):
+    // when open_positions drops or floating PnL settles from non-zero to
+    // zero, a position just closed — refresh the accounting panel NOW so the
+    // charts and PnL statistics update with the order (not on the 30s timer).
+    const curOpen = (payload.account && payload.account.open_positions != null) ? Number(payload.account.open_positions) : null;
+    const curFloat = (payload.account && payload.account.floating != null) ? Number(payload.account.floating) : null;
+    if (curOpen != null && window.__lastOpenCount != null && curOpen < window.__lastOpenCount) {
+        window.__acctRefreshAt = Date.now();
+        loadAccountPerformance();
+        loadAdvancedMetrics();
+        loadAccountCharts();
+        loadClosedTrades();
+    } else if (curFloat != null && window.__lastFloatVal != null && window.__lastFloatVal !== 0 && curFloat === 0) {
+        window.__acctRefreshAt = Date.now();
+        loadAccountPerformance();
+        loadAdvancedMetrics();
+        loadAccountCharts();
+        loadClosedTrades();
+    }
+    window.__lastOpenCount = curOpen;
+    window.__lastFloatVal = curFloat;
         // Real broker account identity (from the typed snapshot)
         const acc = payload.account || {};
         setTxt('acc-login', (acc.login != null) ? String(acc.login) : '—');
@@ -2594,6 +2616,41 @@ async function loadAccountPerformance() {
     }
 }
 
+// Advanced risk metrics (Sharpe/Sortino/Calmar/SQN/... from accounting core).
+async function loadAdvancedMetrics() {
+    try {
+        const res = await fetch('/api/account/performance');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.available || !data.advanced) return;
+        const a = data.advanced;
+        const setText = (id, txt, cls) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (cls) el.className = 'font-mono font-black text-sm ' + cls;
+            el.textContent = txt;
+        };
+        const color = v => (v == null ? 'text-gray-400' : (v >= 0 ? 'text-emerald-400' : 'text-rose-400'));
+        const fmt = (v, d = 2) => (v == null ? 'n/a' : Number(v).toFixed(d));
+        setText('acct-sharpe', fmt(a.sharpe_ratio), color(a.sharpe_ratio));
+        setText('acct-sortino', fmt(a.sortino_ratio), color(a.sortino_ratio));
+        setText('acct-calmar', fmt(a.calmar_ratio), color(a.calmar_ratio));
+        setText('acct-sqn', fmt(a.sqn), color(a.sqn));
+        setText('acct-recovery-factor', fmt(a.recovery_factor), color(a.recovery_factor));
+        setText('acct-payoff', fmt(a.payoff_ratio), color(a.payoff_ratio));
+        setText('acct-avg-win', a.average_win == null ? 'n/a' : acctFmtMoney(a.average_win), 'text-emerald-400');
+        setText('acct-avg-loss', a.average_loss == null ? 'n/a' : acctFmtMoney(a.average_loss), 'text-rose-400');
+        setText('acct-win-streak', String(a.max_consecutive_wins ?? 'n/a'), 'text-emerald-400');
+        setText('acct-loss-streak', String(a.max_consecutive_losses ?? 'n/a'), 'text-rose-400');
+        setText('acct-eq-vol', a.equity_volatility_pct == null ? 'n/a' : fmt(a.equity_volatility_pct) + '%');
+        setText('acct-pnl-tstat', fmt(a.profit_standard_error), color(a.profit_standard_error));
+        const src = document.getElementById('acct-adv-source');
+        if (src) src.textContent = 'source: accounting core · ' + a.sample_trades + ' closed trades';
+    } catch (err) {
+        console.error('Advanced metrics load failed', err);
+    }
+}
+
 async function loadAccountPeriod(kind, btn) {
     try {
         const res = await fetch('/api/account/performance/' + kind);
@@ -2671,8 +2728,12 @@ async function loadAccountStrategies() {
             return;
         }
         tbody.innerHTML = data.strategies.map(s => {
-            const lifecycle = s.lifecycle_state || 'UNKNOWN';
-            const lifeColor = lifecycle === 'ACTIVE' ? 'text-emerald-400' : (lifecycle === 'RETIRED' || lifecycle === 'QUARANTINED') ? 'text-rose-400' : 'text-amber-400';
+            const lifecycle = s.lifecycle_state || 'DISCOVERED';
+            // Distinct, truthful styling per lifecycle. DISCOVERED (observed
+            // but unscored family) is informational, never an error.
+            const lifeColor = lifecycle === 'ACTIVE' ? 'text-emerald-400' :
+                (lifecycle === 'RETIRED' || lifecycle === 'QUARANTINED') ? 'text-rose-400' :
+                (lifecycle === 'DISCOVERED') ? 'text-sky-400' : 'text-amber-400';
             return '<tr class="border-b border-borderClr/30">' +
                 '<td class="py-2 pl-2 font-mono text-accentCyan">' + s.strategy_id + '</td>' +
                 '<td class="py-2">' + s.trade_count + '</td>' +
@@ -2709,6 +2770,7 @@ async function loadTradeForensics() {
 
 function initAccountIntelligence() {
     loadAccountPerformance();
+    loadAdvancedMetrics();
     loadAccountPeriod('DAY', document.querySelector('.acct-period-btn'));
     loadAccountCharts();
     loadAccountStrategies();
@@ -3097,6 +3159,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // real values after engine start; charts need fresh points to render).
     setInterval(() => {
         loadAccountPerformance();
+        loadAdvancedMetrics();
         loadAccountCharts();
         loadClosedTrades();
     }, 30000);

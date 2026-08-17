@@ -595,15 +595,26 @@ class AccountingCore:
         return ordered[:limit]
 
     def _attach_strategy_intelligence(self, entry: StrategyContribution) -> None:
-        """Copies lifecycle/confidence from the authoritative strategy registry."""
-        if self.strategy_evaluator is None:
-            return
-        try:
-            score = self.strategy_evaluator.get_registered_strategy_score(entry.strategy_id)
-        except Exception as err:
-            logger.debug("[ACCOUNTING] strategy score read failed", error=str(err))
-            return
+        """Copies lifecycle/confidence from the authoritative strategy registry.
+
+        A strategy family WITH trades but WITHOUT a registered intelligence
+        score is by definition an observed-but-unscored family: its lifecycle
+        is DISCOVERED (the authoritative default for below-floor evidence),
+        never the misleading empty/UNKNOWN the UI previously rendered. When a
+        registry row exists its lifecycle/confidence win — the registry is the
+        single source of truth.
+        """
+        score = None
+        if self.strategy_evaluator is not None:
+            try:
+                score = self.strategy_evaluator.get_registered_strategy_score(entry.strategy_id)
+            except Exception as err:
+                logger.debug("[ACCOUNTING] strategy score read failed", error=str(err))
         if score is None:
+            # No registered intelligence row yet: the family is DISCOVERED by
+            # the mere existence of attributed trades (entry.trade_count > 0).
+            entry.lifecycle_state = "DISCOVERED" if entry.trade_count > 0 else entry.lifecycle_state
+            entry.confidence = 0.0
             return
         entry.lifecycle_state = getattr(
             getattr(score, "lifecycle_state", None), "value", ""
@@ -612,10 +623,6 @@ class AccountingCore:
         entry.expectancy_r = float(getattr(score, "expectancy_r", 0.0))
         entry.recent_expectancy_r = float(getattr(score, "recency_weighted_expectancy_r", 0.0))
         entry.sample_count = int(getattr(score, "sample_count", 0))
-
-    # ------------------------------------------------------------------
-    # Loss attribution
-    # ------------------------------------------------------------------
 
     def attribute_loss(
         self, trade: TradeRecord, expected_r: float | None = None
