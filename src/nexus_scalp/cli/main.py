@@ -839,8 +839,17 @@ def model_dataset_build(
     schema: str = typer.Option("scalp_v1", "--schema", help="feature schema id"),
     with_news: bool = typer.Option(False, "--with-news", help="attach news context"),
     news_csv: Path = typer.Option(Path(""), "--news", "-n", help="news frame parquet/csv"),
+    news_db: Path = typer.Option(
+        Path(""), "--news-db", help="export the news database (artifacts/news.db) into the frame"
+    ),
 ) -> None:
-    """Build a dataset artifact (deterministic, artifact-first)."""
+    """Build a dataset artifact (deterministic, artifact-first).
+
+    News context is attached when ``--with-news``.  The news frame may be
+    given explicitly (``--news``) OR exported from the News subsystem's
+    database (``--news-db``, default ``artifacts/news.db``) via the
+    causally-correct bridge (model_generation.news_bridge).
+    """
     import polars as pl
 
     from nexus_scalp.model_generation import DatasetFactory
@@ -851,15 +860,56 @@ def model_dataset_build(
     df = pl.read_csv(bars_csv) if bars_csv.suffix.lower() == ".csv" else pl.read_parquet(bars_csv)
     news_frame = None
     if with_news:
-        news_frame = (
-            (
+        if news_db.exists():
+            from nexus_scalp.model_generation.news_bridge import (
+                build_news_frame_from_db,
+                news_benchmark_readiness,
+            )
+            from nexus_scalp.news.database import NewsDatabase
+
+            news_frame = build_news_frame_from_db(NewsDatabase(news_db))
+            console.print(
+                f"[cyan]News frame exported from DB:[/cyan] {news_db} "
+                f"rows={news_frame.height if news_frame is not None else 0}"
+            )
+            if news_frame is None or news_frame.is_empty():
+                console.print(
+                    "[yellow]News database contains NO analysis records — the dataset "
+                    "will carry all-zero news context (news ON == news OFF). "
+                    "Collect real news first.[/yellow]"
+                )
+            else:
+                gate = news_benchmark_readiness(news_frame)
+                if not gate["ready"]:
+                    console.print(
+                        "[yellow]NEWS READINESS GATE: NOT READY — the news frame does not "
+                        "satisfy the real-data requirements (non-neutral > 0, XAUUSD > 0, "
+                        "multiple events, distinct vectors). News context in this dataset "
+                        "may be uninformative. Do NOT use it for a news benchmark.[/yellow]"
+                    )
+                    console.print(f"[yellow]Failed checks: {gate['checks']}[/yellow]")
+                else:
+                    console.print("[green]NEWS READINESS GATE: READY — real news context.[/green]")
+        elif news_csv.exists():
+            news_frame = (
                 pl.read_csv(news_csv)
                 if news_csv.suffix.lower() == ".csv"
                 else pl.read_parquet(news_csv)
             )
-            if news_csv.exists()
-            else None
-        )
+            from nexus_scalp.model_generation.news_bridge import news_benchmark_readiness
+
+            gate = news_benchmark_readiness(news_frame)
+            if not gate["ready"]:
+                console.print(
+                    "[yellow]NEWS READINESS GATE: NOT READY for --news file — the frame "
+                    "does not satisfy the real-data requirements. "
+                    "Do NOT use it for a news benchmark.[/yellow]"
+                )
+        else:
+            console.print(
+                "[yellow]--with-news given but no --news file or --news-db found; "
+                "news context will be all-zero (news ON == news OFF).[/yellow]"
+            )
     store = _mg_store()
     handle = DatasetFactory(store=store).build(
         df, symbol=symbol, timeframe=timeframe, news_frame=news_frame

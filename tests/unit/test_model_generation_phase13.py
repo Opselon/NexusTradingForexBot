@@ -805,3 +805,52 @@ class TestArtifactAudit:
         std = np.where(std < 1e-8, 1.0, std)
         assert std[0] == 1.0  # protected against div-by-zero
         assert std[1] == 1.0  # zero-variance columns are identity too
+
+
+class TestTrainingInputValidation:
+    """Regression tests for forensic-audit T29 (NaN/Inf must FAIL training)."""
+
+    def test_board_nan_features_fail_training(self, store: ArtifactStore):
+        from nexus_scalp.model_generation.models import ExperimentConfig
+
+        bad = pl.DataFrame(
+            {"label": [0, 1, 2], "feat_0": [float("nan"), 1.0, 2.0], "feat_1": [3.0, 4.0, 5.0]}
+        )
+        exp = ExperimentConfig(
+            experiment_id="exp_nan",
+            dataset_id="ds",
+            architecture="MLP_V2",
+            architecture_parameters={"input_dim": 2},
+        )
+        res = CandidateTrainer(store=store).train_candidate(exp, bad)
+        assert res["status"] == "FAILED"
+        assert "finite" in res.get("error", "")
+
+    def test_board_inf_features_fail_training(self, store: ArtifactStore):
+        from nexus_scalp.model_generation.models import ExperimentConfig
+
+        bad = pl.DataFrame({"label": [0, 1], "feat_0": [float("inf"), 1.0], "feat_1": [2.0, 3.0]})
+        exp = ExperimentConfig(
+            experiment_id="exp_inf",
+            dataset_id="ds",
+            architecture="MLP_V2",
+            architecture_parameters={"input_dim": 2},
+        )
+        res = CandidateTrainer(store=store).train_candidate(exp, bad)
+        assert res["status"] == "FAILED"
+
+    def test_board_nan_labels_fail_training(self, store: ArtifactStore):
+        from nexus_scalp.model_generation.models import ExperimentConfig
+
+        # NaN label is not a valid 3-class int — schema validation rejects
+        bad = pl.DataFrame(
+            {"label": [0, 1, 7], "feat_0": [1.0, 2.0, 3.0], "feat_1": [4.0, 5.0, 6.0]}
+        )
+        exp = ExperimentConfig(
+            experiment_id="exp_badlabel",
+            dataset_id="ds",
+            architecture="MLP_V2",
+            architecture_parameters={"input_dim": 2},
+        )
+        res = CandidateTrainer(store=store).train_candidate(exp, bad)
+        assert res["status"] == "FAILED"

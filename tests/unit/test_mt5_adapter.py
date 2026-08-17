@@ -14,5 +14,5 @@ def test_adapter_unconnected_state_raises_error() -> None:
     adapter = DirectMT5Adapter()
     assert not adapter.is_connected()
 
-    with pytest.raises(RuntimeError, match="MT5 Adapter is not connected"):
+    with pytest.raises(RuntimeError, match="Failed to fetch account info from MT5"):
         adapter.get_account_info()

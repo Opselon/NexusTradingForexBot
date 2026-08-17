@@ -47,6 +47,40 @@ EXPERIMENT_SPACE: dict[str, dict[str, Any]] = {
         "training": {"epochs": 12, "batch_size": 256, "learning_rate": 0.001, "seed": 42},
         "news_enabled": True,
     },
+    "tcn_attention_v1": {
+        "architecture": "TCN_ATTENTION_V1",
+        "architecture_parameters": {
+            "hidden_dim": 128,
+            "blocks": 3,
+            "attention_heads": 4,
+            "dropout": 0.15,
+        },
+        "training": {
+            "epochs": 12,
+            "batch_size": 128,
+            "learning_rate": 0.001,
+            "weight_decay": 0.0001,
+            "seed": 42,
+        },
+        "news_enabled": False,
+    },
+    "tcn_attention_v1_news": {
+        "architecture": "TCN_ATTENTION_V1",
+        "architecture_parameters": {
+            "hidden_dim": 128,
+            "blocks": 3,
+            "attention_heads": 4,
+            "dropout": 0.15,
+        },
+        "training": {
+            "epochs": 12,
+            "batch_size": 128,
+            "learning_rate": 0.001,
+            "weight_decay": 0.0001,
+            "seed": 42,
+        },
+        "news_enabled": True,
+    },
 }
 
 

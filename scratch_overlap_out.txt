@@ -1,0 +1,18 @@
+broker order tickets: 60 range 152486859966 .. 152487596461
+broker deal tickets: 42
+broker pos_ids: 21 range 152486859966 .. 152487091510
+engine ledger tickets: 99 range 152487837184 .. 152488471867
+engine outcome tickets: 20
+
+ledger tickets found as broker ORDER ticket: 0
+ledger tickets found as broker DEAL ticket: 0
+ledger tickets found as broker POSITION id: 0
+
+sample ledger tickets: [152487837184, 152487871322, 152487871342, 152487871361, 152487871382, 152487871408, 152487871455, 152487935198, 152487935223, 152487935244]
+sample broker order tickets: [152486859966, 152486859992, 152486860004, 152486860012, 152486866214, 152486866412, 152486866449, 152486866520, 152486906832, 152486908051]
+
+broker closed positions with real PnL: 21
+sample: [(152486859966, -10.88), (152486859992, -7.92), (152486860004, -8.96), (152486860012, -11.6), (152486906832, -1.8199999999999998), (152486910279, 12.0), (152486910300, 12.0), (152486910317, 12.0), (152486910332, 12.0), (152486910359, 12.0)]
+broker closed positions that appear as engine outcome tickets: 0
+
+engine outcomes ticket sample vs broker: no overlap

@@ -317,7 +317,11 @@ def test_order_modification_and_sl_shift():
     is_rf, final_sl_db, exit_mechanism = row
     assert is_rf == 1  # Risk-free hit is True!
     assert final_sl_db == 2000.10
-    assert exit_mechanism == "RISK_FREE_SL_HIT"
+    # Phase 14 (BUG-045): a protective stop moved to/above entry is the
+    # canonical BREAK_EVEN_SL_HIT class (spec: break-even is first-class).
+    # RISK_FREE_SL_HIT remains for legacy rows; accounting maps both to
+    # ExitClassification.BREAKEVEN_STOP.
+    assert exit_mechanism == "BREAK_EVEN_SL_HIT"
 
 
 def test_trade_autopsy_db_persistence():

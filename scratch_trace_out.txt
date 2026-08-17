@@ -1,0 +1,38 @@
+=== FIRST audit_orders rows (chronological) ===
+id=1 ts=2026-08-17 02:10:21 ticket=152487837184 action=BREAKEVEN_FAILED price=4395.29 vol=0.41 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Ask: $4395.04), SL w
+id=2 ts=2026-08-17 02:10:21 ticket=152487837184 action=BREAKEVEN_FAILED price=4395.29 vol=0.41 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Ask: $4394.72), SL w
+id=3 ts=2026-08-17 02:10:21 ticket=152487837184 action=BREAKEVEN_FAILED price=4395.29 vol=0.41 mode=PROTECTION reason=BREAKEVEN LOCK FAILED: broker rejected modification, retry p
+id=4 ts=2026-08-17 02:11:36 ticket=152487837184 action=PROFIT_GIVEBACK_PROTECTION price=4395.29 vol=0.41 mode=PROTECTION reason=PROFIT_RETENTION_BREACH peak=$98.81 current=$39.36 retention
+id=5 ts=2026-08-17 02:11:36 ticket=152487837184 action=PROFIT_GIVEBACK_CLOSE_FAILED price=4395.29 vol=0.41 mode=PROTECTION reason=PROFIT_RETENTION_BREACH peak=$98.81 current=$39.36 retention
+id=6 ts=2026-08-17 02:26:21 ticket=152487871322 action=BREAKEVEN_FAILED price=4395.34 vol=0.24 mode=PROTECTION reason=BREAKEVEN LOCK FAILED: broker rejected modification, retry p
+id=7 ts=2026-08-17 02:26:21 ticket=152487871342 action=BREAKEVEN_FAILED price=4395.34 vol=0.24 mode=PROTECTION reason=BREAKEVEN LOCK FAILED: broker rejected modification, retry p
+id=8 ts=2026-08-17 02:26:21 ticket=152487871361 action=BREAKEVEN_FAILED price=4395.44 vol=0.24 mode=PROTECTION reason=BREAKEVEN LOCK FAILED: broker rejected modification, retry p
+id=9 ts=2026-08-17 02:26:21 ticket=152487871382 action=BREAKEVEN_FAILED price=4395.44 vol=0.24 mode=PROTECTION reason=BREAKEVEN LOCK FAILED: broker rejected modification, retry p
+id=10 ts=2026-08-17 02:26:21 ticket=152487871408 action=BREAKEVEN_FAILED price=4395.44 vol=0.24 mode=PROTECTION reason=BREAKEVEN LOCK FAILED: broker rejected modification, retry p
+id=11 ts=2026-08-17 02:26:21 ticket=152487871455 action=BREAKEVEN_FAILED price=4395.44 vol=0.24 mode=PROTECTION reason=BREAKEVEN LOCK FAILED: broker rejected modification, retry p
+id=12 ts=2026-08-17 02:31:24 ticket=152487935198 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.17), SL w
+id=13 ts=2026-08-17 02:31:24 ticket=152487935223 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.17), SL w
+id=14 ts=2026-08-17 02:31:24 ticket=152487935273 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.17), SL w
+id=15 ts=2026-08-17 02:31:24 ticket=152487935310 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.17), SL w
+id=16 ts=2026-08-17 02:31:24 ticket=152487935198 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.17), SL w
+id=17 ts=2026-08-17 02:31:24 ticket=152487935223 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.17), SL w
+id=18 ts=2026-08-17 02:31:24 ticket=152487935273 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.17), SL w
+id=19 ts=2026-08-17 02:31:24 ticket=152487935310 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.17), SL w
+id=20 ts=2026-08-17 02:31:24 ticket=152487935198 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.28), SL w
+id=21 ts=2026-08-17 02:31:24 ticket=152487935223 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.28), SL w
+id=22 ts=2026-08-17 02:31:24 ticket=152487935273 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.28), SL w
+id=23 ts=2026-08-17 02:31:24 ticket=152487935310 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.28), SL w
+id=24 ts=2026-08-17 02:31:24 ticket=152487935198 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.26), SL w
+id=25 ts=2026-08-17 02:31:24 ticket=152487935223 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.26), SL w
+id=26 ts=2026-08-17 02:31:24 ticket=152487935273 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.26), SL w
+id=27 ts=2026-08-17 02:31:24 ticket=152487935310 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.26), SL w
+id=28 ts=2026-08-17 02:31:24 ticket=152487935198 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.26), SL w
+id=29 ts=2026-08-17 02:31:24 ticket=152487935223 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.26), SL w
+id=30 ts=2026-08-17 02:31:24 ticket=152487935273 action=BREAKEVEN_FAILED price=4396.82 vol=0.44 mode=PROTECTION reason=BREAKEVEN DEFERRED: market pulled back (Bid: $4397.26), SL w
+
+=== MIN/MAX audit_orders timestamp ===
+2026-08-17 02:10:21 .. 2026-08-17 04:28:55 count= 5151
+
+=== First 'Executed order' entries for phantom tickets (real dispatch rows) ===
+
+=== First 'Generated candidate' pending rows for phantom tickets ===

@@ -386,6 +386,27 @@ class ExperienceLedger:
         rows = self._query_records("e.idempotency_key = ?", (idempotency_key,), 1)
         return rows[0] if rows else None
 
+    def get_experiences_by_order_id(
+        self, request_id: str, limit: int = 20
+    ) -> list[ExperienceRecord]:
+        """
+        Phase 14 POSITION_STATE correlation fallback: retrieves decision
+        experiences carrying a given request_id in ANY identifier column
+        (request_id, decision_id, execution_id, experience_id).
+
+        Used when the order manager lost its in-memory ticket->request_id map
+        (restart / reconciliation) but the immutable ledger still holds the
+        originating decision. Never fabricates an identity: the caller logs
+        which fallback matched.
+        """
+        if not request_id:
+            return []
+        return self._query_records(
+            "e.request_id = ? OR e.decision_id = ? OR e.execution_id = ? OR e.experience_id = ?",
+            (request_id, request_id, request_id, request_id),
+            limit,
+        )
+
     def has_outcome(self, idempotency_key: str) -> bool:
         """True when an outcome event already exists for this experience."""
         if not self.audit_repo._is_sqlite:

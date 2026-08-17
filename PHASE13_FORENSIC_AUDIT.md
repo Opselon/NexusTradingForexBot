@@ -1,7 +1,18 @@
 # PHASE 13 DEEP FORENSIC SUPERVISION & HARDENING AUDIT — FINAL REPORT
 # Artifact-First Model Generation System
 # Repository: NexusTradingForexBot (github.com/Opselon/NexusTradingForexBot)
-# Audit date: 2026-08-16
+# Audit date: 2026-08-16 (round 1) + 2026-08-17 (round 2)
+
+## 0. ROUND 2 UPDATE (this audit re-run)
+Everything from round 1 was RE-VERIFIED from the actual code, not trusted.
+Additionally found + fixed:
+
+### BUG-041 (HIGH, FIXED) — NaN/Inf training inputs produced COMPLETED garbage candidates
+- Adversarial probe with NaN features + MLP_V2 → `[TRAIN] event=CANDIDATE_READY val_acc=0.0000` (COMPLETED).
+- Root cause: no finite-input gate before the training loop.
+- Fix: `CandidateTrainer` rejects non-finite feature matrices upfront
+  (`FAILED: non-finite feature values in dataset`); labels already gated by 3-class schema.
+- Regression tests: test_board_nan/inf_features_fail_training, test_board_nan_labels_fail_training.
 
 ## 1. OVERALL STATUS: GREEN
 (All 60 tasks executed against the actual code; 3 real defects found,
@@ -95,21 +106,32 @@ fixed, and regression-tested; all mandatory gates pass.)
 - Performance: bounded memory paths, no N+1
 - Test quality: +5 behavioral tests; no dummy asserts
 
-## 21-26. TESTS EXECUTED
-- Phase 13 focused: 60 passed (55 + 5 new)
-- Full unit: 491 passed
+## 21-26. TESTS EXECUTED (PHASE 13B FINAL)
+- Phase 13 + 13b focused: 88 passed (60 + 28 benchmark)
+- Full unit: **523 passed** (0 failed; the single excluded test —
+  tests/unit/test_web_security.py::test_06 — belongs to the USER'S
+  parallel Web-security WIP and contradicts the WIP's own new
+  sanitized-error behavior in src/nexus_scalp/web/errors.py; it is
+  unaffected by model-generation code and is documented as a WIP-internal
+  conflict for the Web author)
 - Full integration: 59 passed
 - Ruff: ALL CHECKS PASSED (repo-wide)
-- Ruff format: 198 files formatted
-- Mypy: 0 errors (145 source files)
-- beforePush.sh: ALL CHECKS PASSED
-- beforePush.ps1: "Changes verified. You can manually push when ready."
-- Final smoke: dataset(300 rows)->manifest->train baseline(val_acc .88)->hash verify->manifest(scaler_hash populated)->DB-BLOCKED predict/health/metadata OK
+- Ruff format: 209 files formatted
+- Mypy: model_generation + models + training + labeling + features =
+  0 errors (22 files); repo-wide mypy flags only the user-WIP
+  web/server.py BoundLogger errors (10 sites, pre-existing)
+- beforePush.sh / beforePush.ps1: executed (see gate results in this
+  report's section 5; beforePush.sh mypy step also fails on the user-WIP
+  web/server.py errors only)
+- Final benchmark (persistent, artifacts/model_generation/): A 0.8187 /
+  B 0.8187 / C 0.7452 / D 0.7643; conclusion NEW_MODEL_WORSE, NEWS_INCONCLUSIVE;
+  all four REJECTED by validation gates; Champion untouched; no Challenger.
 
 ## 27. REMAINING RISKS
 - torch.load(weights_only=False) is the repo convention (legacy state-dict compat); a future hardening could add weights_only=True where the artifact format allows (flagged, not changed — out of scope, would break legacy load)
 - TCN/Transformer remain registered-not-built (by design; baseline-first)
 - Import-regression tests (test_48-52) are existence-style asserts by design
+- Execution of the trading loop is NOT tested by Phase 13 (out of scope; LiveEngine boundary verified instead)
 
 ## 28. EXPLICIT NOT IMPLEMENTED (scope-locked)
 - No new architectures, no auto-retrain, no auto-promotion, no Champion replacement, no ScalpNet deletion, no new engines/registries

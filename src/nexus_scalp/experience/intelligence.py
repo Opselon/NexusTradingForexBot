@@ -49,11 +49,13 @@ from nexus_scalp.experience.models import (
     ExperienceRecord,
     FeatureSnapshot,
     ModelProvenance,
+    OutcomeCorrelationSource,
     PreTradeExperienceDecision,
     StrategyContext,
     StrategyLifecycle,
     StrategyScore,
 )
+from nexus_scalp.experience.outcome_recovery import resolve_outcome_correlation
 from nexus_scalp.experience.quality import OutcomeAnalyzer, compute_behavior_metrics
 from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.features.regime_classifier import MarketRegimeState
@@ -633,6 +635,9 @@ class ExperienceIntelligenceEngine:
         time_to_mfe_sec: float = 0.0,
         broker_retcode: int = 0,
         rejection_reason: str = "",
+        correlation_source: str = "",
+        correlation_detail: str = "",
+        broker_outcome: dict[str, object] | None = None,
     ) -> bool:
         """
         Records the append-only outcome for a decision, including the full
@@ -641,24 +646,65 @@ class ExperienceIntelligenceEngine:
         Idempotent: a duplicate close callback is discarded by the outcome
         table's UNIQUE constraint. Fully exception-isolated so OrderManager can
         never be disrupted by learning.
+
+        Phase 14: BREAK_EVEN is a first-class outcome. The outcome is recorded
+        for WIN / LOSS / BREAK_EVEN whenever a correlatable decision exists;
+        a zero or near-zero net PnL is NEVER a reason to skip learning.
+        Correlation provenance (correlation_source / correlation_detail)
+        survives into the persisted outcome payload.
         """
         try:
             key = self.build_idempotency_key(request_id)
             if not request_id:
-                logger.warning(
-                    "[EXPERIENCE] INVALID outcome without request_id",
-                    execution_id=execution_id,
+                # Phase 14: attempt deterministic correlation recovery instead
+                # of silently discarding the outcome (BUG-045).
+                recovered = resolve_outcome_correlation(
+                    request_id=request_id,
+                    ticket=str(execution_id),
+                    ledger=self.ledger,
+                    build_idempotency_key_fn=self.build_idempotency_key,
                 )
-                return False
+                if recovered is None:
+                    logger.warning(
+                        "[EXPERIENCE_OUTCOME] event=CORRELATION_FAILED",
+                        ticket=execution_id,
+                        reason="NO_CORRELATABLE_EXPERIENCE",
+                        identifiers_available={
+                            "ticket": execution_id,
+                            "correlation_source": correlation_source or "",
+                        },
+                    )
+                    return False
+                key, recovered_source, recovered_detail = recovered
+                correlation_source = correlation_source or recovered_source
+                correlation_detail = correlation_detail or recovered_detail
+                logger.info(
+                    "[EXPERIENCE_OUTCOME] event=CORRELATION_RECOVERY",
+                    ticket=execution_id,
+                    fallback=recovered_source,
+                    idempotency_key=key,
+                    status="RECOVERED",
+                )
+            else:
+                # Normal path: the originating request_id IS the correlation
+                # identity. Record explicit ORIGINAL_REQUEST provenance.
+                correlation_source = (
+                    correlation_source or OutcomeCorrelationSource.ORIGINAL_REQUEST.value
+                )
+                if not correlation_detail:
+                    correlation_detail = f"request_id={request_id}"
 
             record = self.ledger.get_experience_by_key(key)
             if record is None:
                 # No decision snapshot: recording an orphan outcome would
-                # fabricate evidence with no context, so it is refused.
+                # fabricate evidence with no context, so it is refused - but
+                # with full diagnostics.
                 logger.warning(
-                    "[EXPERIENCE] INVALID orphan outcome (no decision snapshot)",
+                    "[EXPERIENCE_OUTCOME] event=RECORD_FAILED",
+                    ticket=execution_id,
+                    reason="NO_DECISION_SNAPSHOT",
                     idempotency_key=key,
-                    execution_id=execution_id,
+                    correlation_source=correlation_source or "",
                 )
                 return False
 
@@ -716,6 +762,15 @@ class ExperienceIntelligenceEngine:
                 recent_context_entries=recent_entries,
             )
 
+            broker = None
+            if broker_outcome is not None:
+                try:
+                    from nexus_scalp.experience.models import BrokerOutcome
+
+                    broker = BrokerOutcome.model_validate(broker_outcome)
+                except Exception:
+                    broker = None
+
             outcome = ExperienceOutcome(
                 idempotency_key=key,
                 execution_id=execution_id,
@@ -730,6 +785,9 @@ class ExperienceIntelligenceEngine:
                 execution=execution,
                 decomposition=decomposition,
                 behavioral_flags=flags,
+                correlation_source=correlation_source or "",
+                correlation_detail=correlation_detail or "",
+                broker_outcome=broker,
             )
             ok = self.ledger.record_outcome(outcome)
 

@@ -1,0 +1,23 @@
+=== broker real closes (UTC) vs engine outcomes (UTC) — shift test ===
+Broker position ids are NOT the same numbers as engine tickets, so compare TIMES:
+  broker pos 152486859966 close 01:13:00 +3h=04:13:00 profit=-10.88  -> no engine outcome near
+  broker pos 152486859992 close 01:13:03 +3h=04:13:03 profit=-7.92  -> no engine outcome near
+  broker pos 152486860004 close 01:13:03 +3h=04:13:03 profit=-8.96  -> no engine outcome near
+  broker pos 152486860012 close 01:13:05 +3h=04:13:05 profit=-11.60  -> no engine outcome near
+  broker pos 152486906832 close 01:29:39 +3h=04:29:39 profit=-1.82  -> no engine outcome near
+  broker pos 152486910279 close 01:32:05 +3h=04:32:05 profit=+12.00  -> no engine outcome near
+  broker pos 152486910300 close 01:32:05 +3h=04:32:05 profit=+12.00  -> no engine outcome near
+  broker pos 152486910317 close 01:32:05 +3h=04:32:05 profit=+12.00  -> no engine outcome near
+  broker pos 152486910332 close 01:32:05 +3h=04:32:05 profit=+12.00  -> no engine outcome near
+  broker pos 152486910359 close 01:32:05 +3h=04:32:05 profit=+12.00  -> no engine outcome near
+  broker pos 152486910376 close 01:32:05 +3h=04:32:05 profit=+12.00  -> no engine outcome near
+  broker pos 152486919298 close 01:34:11 +3h=04:34:11 profit=+27.95  -> no engine outcome near
+  broker pos 152486919320 close 01:34:11 +3h=04:34:11 profit=+27.95  -> no engine outcome near
+  broker pos 152486919343 close 01:34:11 +3h=04:34:11 profit=+27.95  -> no engine outcome near
+  broker pos 152486919365 close 01:34:11 +3h=04:34:11 profit=+27.95  -> no engine outcome near
+  broker pos 152486919378 close 01:34:11 +3h=04:34:11 profit=+27.95  -> no engine outcome near
+  broker pos 152486919392 close 01:34:11 +3h=04:34:11 profit=+27.95  -> no engine outcome near
+  broker pos 152487091374 close 02:35:01 +3h=05:35:01 profit=+23.20  -> engine ticket 152487952111 outcome 05:35:45 Δ=1min
+  broker pos 152487091385 close 02:35:01 +3h=05:35:01 profit=+23.20  -> engine ticket 152487952111 outcome 05:35:45 Δ=1min
+  broker pos 152487091414 close 02:35:01 +3h=05:35:01 profit=+23.20  -> engine ticket 152487952111 outcome 05:35:45 Δ=1min
+  broker pos 152487091510 close 02:35:02 +3h=05:35:02 profit=+26.40  -> engine ticket 152487952111 outcome 05:35:45 Δ=1min

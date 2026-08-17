@@ -36,6 +36,10 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.experience.outcome_recovery import (
+    classify_exit_reason,
+    reconstruct_broker_outcome,
+)
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
@@ -468,6 +472,9 @@ class OrderLifecycleManager:
         self._peak_equity: float = 0.0
         #: Entry context staged by the policy/engine before the ticket exists.
         self._pending_entry_context: dict[str, Any] | None = None
+        #: Phase 14: tickets already reconciled from broker history (dedup guard
+        #: for the reconciliation close-loop across repeated passes/restarts).
+        self._reconcile_seen: dict[int, bool] = {}
 
     # =========================================================================
     # MODULE A: LEDGER AUTOPSY CONTEXT INGESTION
@@ -3646,6 +3653,24 @@ class OrderLifecycleManager:
 
         now = current_tick.timestamp
 
+        # Phase 14: reconciliation close-loop (BUG-045). Runs BEFORE the
+        # dead-ticket sweep: tracked tickets are skipped by the
+        # _entry_timestamps guard, while broker-closed tickets that internal
+        # state never tracked (restart gap) are discovered here and routed
+        # through the same autopsy + experience outcome path. Best-effort and
+        # never raising. Runs even when no positions are currently open.
+        try:
+            self.reconcile_missed_closes(
+                symbol=symbol,
+                current_tick=current_tick,
+                symbol_info=symbol_info,
+            )
+        except Exception as reconcile_err:
+            logger.error(
+                "[RECONCILIATION] close-loop failed (isolated)",
+                error=str(reconcile_err),
+            )
+
         active_tickets = {pos.ticket for pos in positions} if positions else set()
         tracked_tickets = set(self._entry_timestamps.keys())
         dead_tickets = tracked_tickets - active_tickets
@@ -3716,6 +3741,9 @@ class OrderLifecycleManager:
                 final_sl_val = float(self._last_modify_sl.get(dead_ticket, initial_sl_val))
 
                 # was_sl_modified: True only when trailing/breakeven actually shifted the SL.
+                # Phase 14: also honour the explicit modification flag - a
+                # breakeven/trailing lock that was applied in-process but later
+                # reconciled must survive the autopsy (BUG-045 anomaly E).
                 was_sl_modified = bool(
                     self._sl_modified_flags.get(dead_ticket, False)
                     or abs(final_sl_val - initial_sl_val) > 1e-9
@@ -3735,20 +3763,48 @@ class OrderLifecycleManager:
 
                 # ---- Exit mechanism resolution (engine intent overrides broker heuristic) ----
                 forced_mechanism = self._forced_exit_mechanisms.pop(dead_ticket, None)
-                if forced_mechanism:
-                    exit_mechanism = forced_mechanism
-                elif status_str == "CLOSED_TP":
-                    exit_mechanism = ExitMechanism.TAKE_PROFIT_HIT
-                elif status_str == "CLOSED_SL":
-                    exit_mechanism = (
-                        ExitMechanism.RISK_FREE_SL_HIT
-                        if is_risk_free_hit
-                        else ExitMechanism.HARD_SL_HIT
-                    )
-                elif status_str == "MANUALLY_CLOSED":
-                    exit_mechanism = ExitMechanism.MANUAL_CLOSE
-                else:
-                    exit_mechanism = ExitMechanism.MANUAL_CLOSE
+                # Phase 14: map to the canonical taxonomy via broker evidence
+                # (DEAL_REASON + SL/TP geometry + protective context). A stop-out
+                # is NEVER labelled MANUAL_CLOSE merely because the internal
+                # state machine performed protection logic first (BUG-045).
+                exit_mechanism = classify_exit_reason(
+                    deal_reason_code=matched_deal.get("reason", 0) if matched_deal else 0,
+                    comment=matched_deal.get("comment", "") if matched_deal else "",
+                    profit_usd=profit_usd,
+                    exit_price=exit_price,
+                    tp_price=tp_price,
+                    sl_price=sl_price,
+                    final_sl=final_sl_val,
+                    entry_price=entry,
+                    was_sl_modified=bool(was_sl_modified),
+                    direction=direction,
+                    forced_mechanism=forced_mechanism,
+                )
+
+                # Phase 14: authoritative broker closure reconstruction. When the
+                # broker deal evidence is available (multi-deal aggregation
+                # included), the realized result comes from the DEAL path - never
+                # from a stale floating-PnL default of zero (BUG-045).
+                broker_outcome = reconstruct_broker_outcome(
+                    ticket=dead_ticket,
+                    symbol=symbol,
+                    direction=direction,
+                    deals=history_deals,
+                    matched_deal=matched_deal,
+                    entry_price=entry,
+                    initial_sl=initial_sl_val,
+                    final_sl=final_sl_val,
+                    tp_price=tp_price,
+                    volume=vol,
+                    fallback_exit_price=exit_price,
+                    close_time=now,
+                    entry_time=entry_time,
+                )
+                if broker_outcome.reconstruction_source != "NONE":
+                    profit_usd = broker_outcome.gross_profit
+                    comm_usd = broker_outcome.commission
+                    swap_usd = broker_outcome.swap
+                    exit_price = broker_outcome.exit_price
 
                 # ---- Quant risk excursions converted to account currency ----
                 mae_usd = self._price_delta_to_usd(min(mae_val, 0.0), vol, symbol_info)
@@ -3834,6 +3890,7 @@ class OrderLifecycleManager:
                         duration_sec=duration_sec,
                         exit_mechanism=exit_mechanism,
                         was_sl_modified=bool(was_sl_modified),
+                        broker_outcome=broker_outcome,
                     )
 
                 logger.info(
@@ -4083,7 +4140,16 @@ class OrderLifecycleManager:
                             new_value=pos.sl,
                             reply_to_message_id=self._order_message_ids.get(ticket),
                         )
-                    self._entry_sls[ticket] = pos.sl
+                    # Phase 14 (BUG-045): the CURRENT broker-side SL is tracked in
+                    # _last_modify_sl (for the autopsy's final_sl), while
+                    # _entry_sls remains the SL AT ENTRY. Previously this line
+                    # overwrote the entry SL, so initial_sl_price == final_sl_price
+                    # on every autopsy row and the SL modification timeline was
+                    # lost. _entry_sls is now frozen at open; only the broker-side
+                    # tracker advances.
+                    self._last_modify_sl[ticket] = pos.sl
+                    self._sl_modified_flags[ticket] = True
+                    self._entry_sls[ticket] = self._entry_sls.get(ticket, pos.sl) or pos.sl
 
                 if pos.tp != old_tp:
                     if self.notifier:
@@ -4666,6 +4732,185 @@ class OrderLifecycleManager:
 
         return positions
 
+    def reconcile_missed_closes(
+        self,
+        symbol: str,
+        current_tick: TickData,
+        symbol_info: SymbolInfo | None = None,
+        hours_back: int = 24,
+    ) -> int:
+        """
+        Phase 14 reconciliation close-loop (BUG-045 spec 23).
+
+        After a restart (or a missed broker close event) the internal ticket
+        trackers may be empty while the broker history shows a position that
+        was already closed. This method queries the authoritative broker deal
+        history and, for every closed position ticket that has a ledger OPENED
+        row but no CLOSED row AND no internal tracking, emits the same
+        autopsy + experience outcome path as a live close.
+
+        Never raises: reconciliation is a best-effort background concern.
+        Learning never blocks protective execution (the close already
+        happened at the broker - this only records it).
+
+        Returns the number of missed closes reconciled.
+        """
+        try:
+            history_deals = self.adapter.get_closed_deals_history(
+                symbol=symbol, hours_back=hours_back
+            )
+            if not history_deals:
+                return 0
+
+            # Ticket -> aggregated deal evidence (partial closes merge into one).
+            ticket_deals: dict[int, list[dict]] = {}
+            for d in history_deals:
+                pt = d.get("position_ticket")
+                if pt is not None:
+                    ticket_deals.setdefault(int(pt), []).append(d)
+
+            reconciled = 0
+            now = current_tick.timestamp
+            for ticket, deals in ticket_deals.items():
+                if ticket in self._entry_timestamps:
+                    continue  # already tracked/closed through the live path
+                if self._reconcile_seen.get(ticket, False):
+                    continue
+                # Only reconcile positions we can attribute to this engine
+                # (a ledger OPENED placeholder exists for the ticket).
+                if not self.audit.has_ledger_opened(ticket):
+                    continue
+
+                matched = deals[0]
+                entry = float(matched.get("entry_price", 0.0) or 0.0)
+                exit_price = float(matched.get("price", 0.0) or 0.0)
+                direction = str(matched.get("direction", "BUY") or "BUY")
+                vol = float(matched.get("volume", 0.0) or 0.0)
+                profit_usd = float(matched.get("profit", 0.0) or 0.0)
+
+                # Entry context recovered from the ledger OPENED row.
+                opened = self.audit.get_ledger_opened(ticket)
+                if opened:
+                    entry = float(opened.get("entry_price", entry) or entry)
+                    direction = str(opened.get("direction", direction) or direction)
+                    vol = float(opened.get("volume", vol) or vol)
+                    # Phase 14: restore the originating request_id so the
+                    # experience outcome is attributed to the ORIGINAL decision
+                    # (ORIGINAL_REQUEST provenance), not a fallback.
+                    opened_order_id = str(opened.get("order_id", "") or "")
+                    if opened_order_id:
+                        self._entry_order_ids[ticket] = opened_order_id
+                        self._entry_reasons[ticket] = (
+                            str(opened.get("entry_reason", "") or "") or "PURE_AI"
+                        )
+                        self._entry_confidences[ticket] = float(
+                            opened.get("ai_confidence_at_open", 0.0) or 0.0
+                        )
+                        self._entry_regimes[ticket] = str(
+                            opened.get("market_regime_at_open", "") or ""
+                        )
+
+                atr = max(self._safe_feature_float(None, "atr_m1", 0.80), 0.50)
+                initial_sl = float(opened.get("initial_sl_price", 0.0) or 0.0)
+                final_sl = float(matched.get("sl", initial_sl) or initial_sl)
+                broker_outcome = reconstruct_broker_outcome(
+                    ticket=ticket,
+                    symbol=symbol,
+                    direction=direction,
+                    deals=deals,
+                    matched_deal=None,
+                    entry_price=entry,
+                    initial_sl=initial_sl,
+                    final_sl=final_sl,
+                    tp_price=float(matched.get("tp", 0.0) or 0.0),
+                    volume=vol,
+                    fallback_exit_price=exit_price,
+                    close_time=now,
+                    entry_time=None,
+                )
+                exit_mechanism = classify_exit_reason(
+                    deal_reason_code=int(matched.get("reason", 0) or 0),
+                    comment=matched.get("comment", ""),
+                    profit_usd=profit_usd,
+                    exit_price=exit_price,
+                    tp_price=float(matched.get("tp", 0.0) or 0.0),
+                    sl_price=float(matched.get("sl", 0.0) or 0.0),
+                    final_sl=final_sl,
+                    entry_price=entry,
+                    was_sl_modified=bool(initial_sl and abs(final_sl - initial_sl) > 1e-9),
+                    direction=direction,
+                )
+
+                # Persist the same single autopsy row the live path writes.
+                self.audit.log_ledger_closed(
+                    ticket=ticket,
+                    symbol=symbol,
+                    direction=direction,
+                    volume=vol,
+                    entry_price=entry,
+                    exit_price=broker_outcome.exit_price,
+                    status="RECONCILED",
+                    pnl=broker_outcome.gross_profit,
+                    commission=broker_outcome.commission,
+                    swap=broker_outcome.swap,
+                    duration_sec=0.0,
+                    timestamp_str=now.isoformat() if hasattr(now, "isoformat") else str(now),
+                    mae=0.0,
+                    mfe=0.0,
+                    initial_sl_price=initial_sl,
+                    final_sl_price=final_sl,
+                    is_risk_free_hit=1 if "BREAK_EVEN" in exit_mechanism else 0,
+                    exit_mechanism=exit_mechanism,
+                    order_id=opened.get("order_id", "") if opened else "",
+                    open_time=opened.get("open_time", "") if opened else "",
+                    close_time=now.isoformat() if hasattr(now, "isoformat") else str(now),
+                    entry_reason=opened.get("entry_reason", "") if opened else "",
+                    ai_confidence_at_open=float(opened.get("ai_confidence_at_open", 0.0) or 0.0),
+                    market_regime_at_open=opened.get("market_regime_at_open", "") if opened else "",
+                    was_sl_modified=1 if (initial_sl and abs(final_sl - initial_sl) > 1e-9) else 0,
+                    mae_usd=0.0,
+                    mfe_usd=0.0,
+                    account_balance_after=self._last_account_balance,
+                    account_equity_after=self._last_account_equity,
+                    drawdown_percent_after=self._current_drawdown_percent(),
+                )
+
+                if self.experience_engine is not None:
+                    self._record_experience_outcome(
+                        dead_ticket=ticket,
+                        now=now,
+                        entry=entry,
+                        exit_price=broker_outcome.exit_price,
+                        initial_sl_val=initial_sl,
+                        vol=vol,
+                        atr=atr,
+                        symbol_info=symbol_info,
+                        profit_usd=broker_outcome.gross_profit,
+                        comm_usd=broker_outcome.commission,
+                        swap_usd=broker_outcome.swap,
+                        mae_val=0.0,
+                        mfe_val=0.0,
+                        mae_usd=0.0,
+                        mfe_usd=0.0,
+                        duration_sec=0.0,
+                        exit_mechanism=exit_mechanism,
+                        was_sl_modified=bool(initial_sl and abs(final_sl - initial_sl) > 1e-9),
+                        broker_outcome=broker_outcome,
+                    )
+
+                self._reconcile_seen[ticket] = True
+                reconciled += 1
+                logger.info(
+                    "[RECONCILIATION] missed close recorded",
+                    ticket=ticket,
+                    exit_mechanism=exit_mechanism,
+                    pnl=broker_outcome.gross_profit,
+                )
+            return reconciled
+        except Exception as err:
+            logger.error("[RECONCILIATION] pass failed (isolated)", error=str(err))
+            return 0
+
     def _record_experience_outcome(
         self,
         dead_ticket: int,
@@ -4686,6 +4931,8 @@ class OrderLifecycleManager:
         duration_sec: float,
         exit_mechanism: str,
         was_sl_modified: bool,
+        request_id: str = "",
+        broker_outcome: Any = None,
     ) -> None:
         """
         Forwards a closed position to the Phase 08 experience layer.
@@ -4695,20 +4942,28 @@ class OrderLifecycleManager:
           * convert USD PnL into a risk-normalised R multiple
           * hand over the observed execution/behaviour evidence
 
+        Phase 14 (BUG-045): when the in-memory request_id map is empty (lost
+        across restart / reconciliation), the broker ticket is forwarded so the
+        experience layer can attempt deterministic correlation recovery. The
+        outcome is NEVER silently discarded while a correlatable decision may
+        exist. The reconstructed broker outcome is passed through so the
+        authoritative deal result survives into the experience record.
+
         This method NEVER raises: the learning layer is non-critical and the
         financial autopsy row has already been persisted by the caller.
         """
         try:
-            req_id = self._entry_order_ids.get(dead_ticket, "")
+            req_id = self._entry_order_ids.get(dead_ticket, "") or request_id
             if not req_id:
-                # Without the originating request id there is no decision to
-                # attribute the outcome to. Recording it anyway would fabricate
-                # evidence with no context, so it is skipped deliberately.
-                logger.warning(
-                    "[EXPERIENCE] INVALID skipped outcome without request_id",
-                    ticket=dead_ticket,
-                )
-                return
+                # No originating request id in memory: forward the broker ticket
+                # as the correlation key; the experience layer attempts
+                # deterministic recovery (ORIGINAL_REQUEST / POSITION_STATE /
+                # BROKER_TICKET_FALLBACK) and only then may reject with full
+                # diagnostics. It never silently discards (BUG-045).
+                req_id = ""
+                correlation_ticket = str(dead_ticket)
+            else:
+                correlation_ticket = req_id
 
             sl_distance = abs(entry - initial_sl_val) if initial_sl_val > 0.0 else (atr * 1.5)
             contract_sz = self._resolve_contract_size(symbol_info)
@@ -4723,9 +4978,16 @@ class OrderLifecycleManager:
                 raw = entry - expected_entry
                 slippage_points = raw if "BUY" in str(direction).upper() else -raw
 
+            broker_payload = None
+            if broker_outcome is not None:
+                try:
+                    broker_payload = broker_outcome.model_dump()
+                except Exception:
+                    broker_payload = None
+
             self.experience_engine.record_trade_outcome(
                 request_id=req_id,
-                execution_id=str(dead_ticket),
+                execution_id=correlation_ticket if not req_id else str(dead_ticket),
                 outcome_timestamp=now,
                 is_executed=True,
                 is_closed=True,
@@ -4748,6 +5010,7 @@ class OrderLifecycleManager:
                 atr_at_entry=self._entry_atr.get(dead_ticket, atr),
                 time_to_mae_sec=self._time_to_mae_sec.get(dead_ticket, 0.0),
                 time_to_mfe_sec=self._time_to_mfe_sec.get(dead_ticket, 0.0),
+                broker_outcome=broker_payload,
             )
         except Exception as exp_err:
             logger.error(

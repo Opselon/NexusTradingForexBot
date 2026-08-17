@@ -1,0 +1,55 @@
+=== shift sweep ===
+  shift= 2.0h  matched=0/21
+  shift= 2.1h  matched=0/21
+  shift= 2.2h  matched=0/21
+  shift= 2.3h  matched=0/21
+  shift= 2.4h  matched=0/21
+  shift= 2.5h  matched=4/21
+  shift= 2.6h  matched=4/21
+  shift= 2.7h  matched=4/21
+  shift= 2.8h  matched=4/21
+  shift= 2.9h  matched=4/21
+  shift= 3.0h  matched=4/21
+  shift= 3.1h  matched=4/21
+  shift= 3.2h  matched=4/21
+  shift= 3.3h  matched=4/21
+  shift= 3.4h  matched=4/21
+  shift= 3.5h  matched=16/21
+  shift= 3.6h  matched=17/21
+  shift= 3.7h  matched=17/21
+  shift= 3.8h  matched=17/21
+  shift= 3.9h  matched=21/21
+  shift= 4.0h  matched=21/21
+  shift= 4.1h  matched=21/21
+  shift= 4.2h  matched=21/21
+  shift= 4.3h  matched=21/21
+  shift= 4.4h  matched=21/21
+  shift= 4.5h  matched=21/21
+  shift= 4.6h  matched=21/21
+  shift= 4.7h  matched=21/21
+  shift= 4.8h  matched=21/21
+  shift= 4.9h  matched=21/21
+  shift= 5.0h  matched=21/21
+
+=== detailed mapping at best shift 4.0h ===
+  broker_close=01:13:00 +4h -> engine ticket=152487837184 outcome=05:11:34 Δ=1min profit=-10.88
+  broker_close=01:13:03 +4h -> engine ticket=152487837184 outcome=05:11:34 Δ=1min profit=-7.92
+  broker_close=01:13:03 +4h -> engine ticket=152487837184 outcome=05:11:34 Δ=1min profit=-8.96
+  broker_close=01:13:05 +4h -> engine ticket=152487837184 outcome=05:11:34 Δ=2min profit=-11.60
+  broker_close=01:29:39 +4h -> engine ticket=152487871361 outcome=05:29:14 Δ=0min profit=-1.82
+  broker_close=01:32:05 +4h -> engine ticket=152487935198 outcome=05:31:32 Δ=1min profit=+12.00
+  broker_close=01:32:05 +4h -> engine ticket=152487935198 outcome=05:31:32 Δ=1min profit=+12.00
+  broker_close=01:32:05 +4h -> engine ticket=152487935198 outcome=05:31:32 Δ=1min profit=+12.00
+  broker_close=01:32:05 +4h -> engine ticket=152487935198 outcome=05:31:32 Δ=1min profit=+12.00
+  broker_close=01:32:05 +4h -> engine ticket=152487935198 outcome=05:31:32 Δ=1min profit=+12.00
+  broker_close=01:32:05 +4h -> engine ticket=152487935198 outcome=05:31:32 Δ=1min profit=+12.00
+  broker_close=01:34:11 +4h -> engine ticket=152487940044 outcome=05:33:45 Δ=0min profit=+27.95
+  broker_close=01:34:11 +4h -> engine ticket=152487940044 outcome=05:33:45 Δ=0min profit=+27.95
+  broker_close=01:34:11 +4h -> engine ticket=152487940044 outcome=05:33:45 Δ=0min profit=+27.95
+  broker_close=01:34:11 +4h -> engine ticket=152487940044 outcome=05:33:45 Δ=0min profit=+27.95
+  broker_close=01:34:11 +4h -> engine ticket=152487940044 outcome=05:33:45 Δ=0min profit=+27.95
+  broker_close=01:34:11 +4h -> engine ticket=152487940044 outcome=05:33:45 Δ=0min profit=+27.95
+  broker_close=02:35:01 +4h -> engine ticket=152488210631 outcome=06:29:22 Δ=6min profit=+23.20
+  broker_close=02:35:01 +4h -> engine ticket=152488210631 outcome=06:29:22 Δ=6min profit=+23.20
+  broker_close=02:35:01 +4h -> engine ticket=152488210631 outcome=06:29:22 Δ=6min profit=+23.20
+  broker_close=02:35:02 +4h -> engine ticket=152488210631 outcome=06:29:22 Δ=6min profit=+26.40

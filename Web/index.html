@@ -4,27 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nexus Scalp Engine - Control Center</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        darkBg: '#090d16',
-                        panelBg: '#121826',
-                        borderClr: '#1e293b',
-                        accentCyan: '#06b6d4',
-                        accentRose: '#f43f5e',
-                        accentGold: '#eab308',
-                        textMuted: '#94a3b8'
-                    }
-                }
-            }
-        }
-    </script>
-    <!-- FontAwesome icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Tailwind CSS (compiled locally at build time - NO runtime CDN dependency) -->
+    <link rel="stylesheet" href="tailwind.css">
+    <!-- FontAwesome icons (local vendor assets - offline/deterministic) -->
+    <link rel="stylesheet" href="vendor/fontawesome/all.min.css">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -38,40 +21,51 @@
             </div>
             <div>
                 <h1 class="text-lg font-bold tracking-tight text-white flex items-center">
-                    NEXUS SCALP ENGINE
-                    <span id="system-status-badge" class="ml-3 text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center">
-                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span>
-                        ACTIVE
-                    </span>
-                </h1>
-                <p class="text-xs text-textMuted">Production Quant Control Center</p>
-            </div>
-        </div>
+                                                    NEXUS SCALP ENGINE
+                                                    <span id="system-status-badge" class="ml-3 text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center">
+                                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span>
+                                                        ACTIVE
+                                                    </span>
+                                                    <span id="state-version-indicator" class="ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded bg-darkBg border border-borderClr text-textMuted">v—</span>
+                                                    <span id="header-health-badge" class="ml-2 text-[10px] px-2 py-0.5 rounded bg-slate-500/10 text-slate-300 border border-slate-500/30">—</span>
+                                                </h1>
+                                                <p class="text-xs text-textMuted">Production Quant Control Center</p>
+                                <p id="obs-strip" class="text-[9px] font-mono text-textMuted/70 mt-0.5">rest — · sse — · v—</p>
+                                <p id="header-health-detail" class="text-[9px] font-mono text-textMuted/60 mt-0.5">—</p>
+                            </div>
+                        </div>
 
-        <!-- Quick System Stats -->
-        <div class="flex items-center space-x-6 text-sm">
-            <div class="hidden sm:block">
-                <span class="text-xs text-textMuted block">SYMBOL</span>
-                <span id="quick-symbol" class="font-mono font-bold text-accentCyan">XAUUSD</span>
-            </div>
-            <div class="hidden sm:block">
-                <span class="text-xs text-textMuted block">BID / ASK</span>
-                <span id="quick-bid-ask" class="font-mono font-bold text-gray-300">2334.21 / 2334.41</span>
-            </div>
-            <div class="hidden sm:block">
-                <span class="text-xs text-textMuted block">REGIME</span>
-                <span id="quick-regime" class="font-mono font-bold text-accentGold">NORMAL_VOLATILITY</span>
-            </div>
-            <div>
-                <span class="text-xs text-textMuted block">MODE</span>
-                <select id="execution-mode-selector" class="bg-darkBg border border-borderClr text-accentCyan text-xs rounded px-2 py-1 font-bold focus:outline-none focus:border-accentCyan cursor-pointer transition">
-                    <option value="LIVE">LIVE TRADING</option>
-                    <option value="SIMULATION">SIMULATION</option>
-                    <option value="REPLAY">HIST_REPLAY</option>
-                </select>
-            </div>
-        </div>
-    </header>
+                        <!-- Quick System Stats -->
+                        <div class="flex items-center space-x-6 text-sm">
+                            <div class="hidden sm:block">
+                                <span class="text-xs text-textMuted block">SYMBOL</span>
+                                <span id="quick-symbol" class="font-mono font-bold text-accentCyan">—</span>
+                            </div>
+                            <div class="hidden sm:block">
+                                <span class="text-xs text-textMuted block">BID / ASK</span>
+                                <span id="quick-bid-ask" class="font-mono font-bold text-gray-300">WAITING FOR LIVE STATE</span>
+                            </div>
+                            <div class="hidden sm:block">
+                                <span class="text-xs text-textMuted block">REGIME</span>
+                                <span id="quick-regime" class="font-mono font-bold text-accentGold">—</span>
+                            </div>
+                            <div class="hidden sm:block">
+                                <span class="text-xs text-textMuted block">LAST UPDATE</span>
+                                <span id="header-last-update" class="font-mono font-bold text-gray-300">—</span>
+                            </div>
+                            <div>
+                                <span class="text-xs text-textMuted block">MODE</span>
+                                <div class="flex items-center gap-2">
+                                    <select id="execution-mode-selector" class="bg-darkBg border border-borderClr text-accentCyan text-xs rounded px-2 py-1 font-bold focus:outline-none focus:border-accentCyan cursor-pointer transition">
+                                        <option value="LIVE">LIVE TRADING</option>
+                                        <option value="SIMULATION">SIMULATION</option>
+                                        <option value="REPLAY">HIST_REPLAY</option>
+                                    </select>
+                                    <span id="runtime-mode-badge" title="Real runtime mode derived from MT5 connection state" class="text-[10px] px-2 py-0.5 rounded font-black bg-rose-500/10 text-rose-400 border border-rose-500/30">UNKNOWN</span>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
 
     <!-- Main Workspace -->
     <div class="flex flex-1 flex-col lg:flex-row overflow-hidden">
@@ -163,16 +157,28 @@
                                     <i class="fa-solid fa-expand mr-1"></i> Auto Fit
                                 </button>
                                 <button onclick="resetChart()" class="px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan transition">
-                                    <i class="fa-solid fa-arrows-rotate mr-1"></i> Reset View
-                                </button>
-                            </div>
-                        </div>
+                                                                    <i class="fa-solid fa-arrows-rotate mr-1"></i> Reset View
+                                                                </button>
+                                                                <button onclick="toggleAiView()" id="btn-ai-view" class="px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-gray-400 transition">
+                                                                    <i class="fa-solid fa-robot mr-1"></i> AI View
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <!-- AI VIEW forensic snapshot panel (per-candle AI-visible state) -->
+                                                        <div id="ai-snapshot-panel" class="mt-2 hidden bg-darkBg/40 border border-borderClr/60 rounded-lg p-3 text-[11px] font-mono"></div>
+                                                        <div id="feature-delta-view" class="mt-2 bg-darkBg/40 border border-borderClr/60 rounded-lg p-3 text-[11px] font-mono"></div>
                         <!-- Canvas for Candlestick Chart -->
-                        <div class="relative w-full h-[380px] bg-darkBg rounded-lg border border-borderClr overflow-hidden flex items-center justify-center cursor-crosshair select-none" id="chart-container">
-                            <canvas id="candleChart" class="w-full h-full absolute inset-0"></canvas>
-                            <!-- Crosshair and hover info overlays -->
-                            <div id="chart-tooltip" class="absolute hidden bg-panelBg/95 border border-borderClr p-2 rounded shadow-2xl text-[10px] text-gray-300 font-mono pointer-events-none z-10 space-y-1"></div>
-                        </div>
+                                                <div class="relative w-full h-[380px] bg-darkBg rounded-lg border border-borderClr overflow-hidden flex items-center justify-center cursor-crosshair select-none" id="chart-container">
+                                                                                                    <canvas id="candleChart" class="w-full h-full absolute inset-0"></canvas>
+                                                                                                    <!-- Chart status line: loading / empty / error / stale (no synthetic data) -->
+                                                                                                    <div id="chart-status" class="absolute top-2 left-2 text-[10px] font-mono text-textMuted z-10"></div>
+                                                                                                    <!-- Crosshair and hover info overlays -->
+                                                                                                    <div id="chart-meta" class="absolute top-2 right-2 text-[9px] font-mono text-textMuted z-10 flex items-center gap-2">
+                                                                                                        <span id="chart-bars-meta" class="px-1.5 py-0.5 rounded bg-darkBg/80 border border-borderClr/60">0 bars</span>
+                                                                                                        <span id="chart-source-badge" class="px-1.5 py-0.5 rounded bg-darkBg/80 border border-borderClr/60">sync —</span>
+                                                                                                    </div>
+                                                                                                    <div id="chart-tooltip" class="absolute hidden bg-panelBg/95 border border-borderClr p-2 rounded shadow-2xl text-[10px] text-gray-300 font-mono pointer-events-none z-10 space-y-1"></div>
+                                                </div>
                     </div>
 
                     <!-- Market Data & Current Decision Panel -->
@@ -185,12 +191,12 @@
                         <!-- Price display -->
                         <div class="grid grid-cols-2 gap-3 bg-darkBg/60 p-3 rounded-lg border border-borderClr">
                             <div>
-                                <span class="text-[10px] text-textMuted block font-semibold uppercase">Bid Price</span>
-                                <span id="monitor-bid" class="text-xl font-mono font-black text-emerald-400">2334.21</span>
+                                <span class="text-[10px] text-textMuted block font-semibold uppercase">Bid Price <span id="monitor-tick-state" class="ml-1 text-[9px]">—</span></span>
+                                <span id="monitor-bid" class="text-xl font-mono font-black text-emerald-400">—</span>
                             </div>
                             <div>
                                 <span class="text-[10px] text-textMuted block font-semibold uppercase">Ask Price</span>
-                                <span id="monitor-ask" class="text-xl font-mono font-black text-rose-400">2334.41</span>
+                                <span id="monitor-ask" class="text-xl font-mono font-black text-rose-400">—</span>
                             </div>
                         </div>
 
@@ -198,15 +204,15 @@
                         <div class="grid grid-cols-3 gap-2 text-center">
                             <div class="bg-darkBg/40 p-2 rounded border border-borderClr/60">
                                 <span class="text-[9px] text-textMuted block font-bold">Spread</span>
-                                <span id="monitor-spread" class="font-mono font-bold text-accentCyan text-sm">20 pts</span>
+                                <span id="monitor-spread" class="font-mono font-bold text-accentCyan text-sm">—</span>
                             </div>
                             <div class="bg-darkBg/40 p-2 rounded border border-borderClr/60">
                                 <span class="text-[9px] text-textMuted block font-bold">ATR (M1)</span>
-                                <span id="monitor-atr" class="font-mono font-bold text-accentGold text-sm">1.15</span>
+                                <span id="monitor-atr" class="font-mono font-bold text-accentGold text-sm">—</span>
                             </div>
                             <div class="bg-darkBg/40 p-2 rounded border border-borderClr/60">
                                 <span class="text-[9px] text-textMuted block font-bold">Regime State</span>
-                                <span id="monitor-regime" class="font-mono font-bold text-white text-[11px] truncate">NORMAL</span>
+                                <span id="monitor-regime" class="font-mono font-bold text-white text-[11px] truncate">—</span>
                             </div>
                         </div>
 
@@ -215,16 +221,14 @@
                             <div>
                                 <span class="text-xs text-textMuted block font-semibold mb-1 uppercase">Active Intelligence Output</span>
                                 <div class="flex items-baseline justify-between">
-                                    <span id="ai-decision-badge" class="text-2xl font-black tracking-wider text-accentCyan">NO_ACTION</span>
-                                    <span id="ai-confidence" class="font-mono text-sm text-textMuted font-bold">Conf: 0.00%</span>
+                                    <span id="ai-decision-badge" class="text-2xl font-black tracking-wider text-accentCyan">—</span>
+                                    <span id="ai-confidence" class="font-mono text-sm text-textMuted font-bold">Conf: —</span>
                                 </div>
-                                <div id="ai-reason-text" class="text-xs text-textMuted mt-2 italic leading-relaxed">
-                                    "Neural weights are stable. Waiting for structural volatility thresholds or statistical ICT block confluence."
-                                </div>
+                                <div id="ai-reason-text" class="text-xs text-textMuted mt-2 italic leading-relaxed">Awaiting live AI state…</div>
                             </div>
                             <div class="pt-4 mt-4 border-t border-borderClr/60 flex items-center justify-between">
                                 <span class="text-xs text-textMuted">Regime Strength:</span>
-                                <span id="regime-strength-bar" class="font-mono font-black text-accentCyan">Stable</span>
+                                <span id="regime-strength-bar" class="font-mono font-black text-accentCyan">—</span>
                             </div>
                         </div>
                     </div>
@@ -299,39 +303,149 @@
                 </div>
             </section>
 
+            <!-- TAB: SYSTEM HEALTH (LiveUiState.2 health section) -->
+            <section id="tab-health" class="tab-content hidden space-y-6">
+                <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl">
+                    <div class="flex justify-between items-center mb-4 border-b border-borderClr pb-3">
+                        <h3 class="text-md font-bold text-white flex items-center">
+                            <i class="fa-solid fa-heart-pulse mr-2 text-accentCyan"></i>
+                            System Health &amp; Diagnostics
+                        </h3>
+                        <div class="flex items-center gap-2">
+                            <span id="health-overall-badge" class="px-2.5 py-1 rounded bg-slate-500/10 text-slate-300 border border-slate-500/30 text-xs font-black">—</span>
+                            <button onclick="loadHealthPanel()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-3 py-1.5 rounded text-xs font-bold transition flex items-center space-x-1">
+                                <i class="fa-solid fa-arrows-rotate"></i> <span>Refresh</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="health-subsystem-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4 text-xs text-textMuted italic">
+                            Waiting for health snapshot…
+                        </div>
+                    </div>
+                    <div class="mt-4 border-t border-borderClr/40 pt-3">
+                        <div class="text-[10px] uppercase tracking-widest text-textMuted mb-2">Runtime Diagnostics</div>
+                        <div id="health-diag-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 text-[11px] font-mono text-gray-300">
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">State Age</span>
+                                <span id="diag-state-age">—</span>
+                            </div>
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">Tick Age</span>
+                                <span id="diag-tick-age">—</span>
+                            </div>
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">Features Age</span>
+                                <span id="diag-features-age">—</span>
+                            </div>
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">Inference Age</span>
+                                <span id="diag-inference-age">—</span>
+                            </div>
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">Proposal Age</span>
+                                <span id="diag-proposal-age">—</span>
+                            </div>
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">Chart Age</span>
+                                <span id="diag-chart-age">—</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- TAB 2: ACCOUNT MANAGEMENT -->
             <section id="tab-account" class="tab-content hidden space-y-6">
                 <!-- Account Metrics Cards -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
                         <span class="text-xs text-textMuted block font-semibold mb-1 uppercase">Balance</span>
-                        <span id="acc-balance" class="text-lg font-black font-mono text-gray-200">$10,000.00</span>
+                        <span id="acc-balance" class="text-lg font-black font-mono text-gray-200">—</span>
                     </div>
                     <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
                         <span class="text-xs text-textMuted block font-semibold mb-1 uppercase">Equity</span>
-                        <span id="acc-equity" class="text-lg font-black font-mono text-gray-200">$10,000.00</span>
+                        <span id="acc-equity" class="text-lg font-black font-mono text-gray-200">—</span>
                     </div>
                     <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
                         <span class="text-xs text-textMuted block font-semibold mb-1 uppercase">Floating P&L</span>
-                        <span id="acc-floating" class="text-lg font-black font-mono text-emerald-400">+$0.00</span>
+                        <span id="acc-floating" class="text-lg font-black font-mono text-emerald-400">—</span>
                     </div>
                     <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
                         <span class="text-xs text-textMuted block font-semibold mb-1 uppercase">Max Drawdown</span>
-                        <span id="acc-drawdown" class="text-lg font-black font-mono text-rose-400">0.00%</span>
+                        <span id="acc-drawdown" class="text-lg font-black font-mono text-rose-400">—</span>
                     </div>
                     <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
                         <span class="text-xs text-textMuted block font-semibold mb-1 uppercase">Win Rate</span>
-                        <span id="acc-winrate" class="text-lg font-black font-mono text-accentCyan">78.5%</span>
+                        <span id="acc-winrate" class="text-lg font-black font-mono text-accentCyan">—</span>
                     </div>
                     <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
                         <span class="text-xs text-textMuted block font-semibold mb-1 uppercase">Free Margin</span>
-                        <span id="acc-margin-free" class="text-lg font-black font-mono text-gray-200">$10,000.00</span>
+                        <span id="acc-margin-free" class="text-lg font-black font-mono text-gray-200">—</span>
                     </div>
                     <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
-                        <span class="text-xs text-textMuted block font-semibold mb-1 uppercase">Open Positions</span>
-                        <span id="acc-open-positions" class="text-lg font-black font-mono text-gray-200">0</span>
-                    </div>
-                </div>
+                                            <span class="text-xs text-textMuted block font-semibold mb-1 uppercase">Open Positions</span>
+                                            <span id="acc-open-positions" class="text-lg font-black font-mono text-gray-200">0</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Account identity (real broker snapshot) -->
+                                    <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 mt-4">
+                                        <div class="bg-darkBg/40 p-2 rounded border border-borderClr/60">
+                                            <span class="text-[9px] text-textMuted block font-bold uppercase">Login</span>
+                                            <span id="acc-login" class="font-mono font-black text-accentCyan text-sm">—</span>
+                                        </div>
+                                        <div class="bg-darkBg/40 p-2 rounded border border-borderClr/60">
+                                            <span class="text-[9px] text-textMuted block font-bold uppercase">Broker</span>
+                                            <span id="acc-server" class="font-mono font-black text-gray-300 text-sm truncate">—</span>
+                                        </div>
+                                        <div class="bg-darkBg/40 p-2 rounded border border-borderClr/60">
+                                            <span class="text-[9px] text-textMuted block font-bold uppercase">Currency</span>
+                                            <span id="acc-currency" class="font-mono font-black text-gray-300 text-sm">—</span>
+                                        </div>
+                                        <div class="bg-darkBg/40 p-2 rounded border border-borderClr/60">
+                                            <span class="text-[9px] text-textMuted block font-bold uppercase">Leverage</span>
+                                            <span id="acc-leverage" class="font-mono font-black text-gray-300 text-sm">—</span>
+                                        </div>
+                                        <div class="bg-darkBg/40 p-2 rounded border border-borderClr/60">
+                                            <span class="text-[9px] text-textMuted block font-bold uppercase">Margin Level</span>
+                                            <span id="acc-margin-level" class="font-mono font-black text-accentGold text-sm">—</span>
+                                        </div>
+                                        <div class="bg-darkBg/40 p-2 rounded border border-borderClr/60">
+                                            <span class="text-[9px] text-textMuted block font-bold uppercase">Trade Allowed</span>
+                                            <span id="acc-trade-allowed" class="font-mono font-black text-gray-300 text-sm">—</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Risk Plan (authoritative: RiskEngine via /api/live/accounting) -->
+                                    <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <h3 class="text-sm font-bold text-white flex items-center">
+                                                <i class="fa-solid fa-scale-balanced mr-2 text-accentGold"></i>
+                                                Risk Plan (RiskEngine — single source of truth)
+                                            </h3>
+                                            <span id="risk-plan-source" class="text-[9px] font-mono text-textMuted">—</span>
+                                        </div>
+                                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                                            <div>
+                                                <span class="text-[10px] text-textMuted block uppercase">Risk / Trade</span>
+                                                <span id="rp-risk-usd" class="font-mono font-black text-accentGold">—</span>
+                                            </div>
+                                            <div>
+                                                <span class="text-[10px] text-textMuted block uppercase">Lot Size</span>
+                                                <span id="rp-lot-size" class="font-mono font-black text-accentCyan">—</span>
+                                            </div>
+                                            <div>
+                                                <span class="text-[10px] text-textMuted block uppercase">Margin Required</span>
+                                                <span id="rp-margin" class="font-mono font-black text-gray-200">—</span>
+                                            </div>
+                                            <div>
+                                                <span class="text-[10px] text-textMuted block uppercase">Exposure / Equity</span>
+                                                <span id="rp-exposure" class="font-mono font-black text-gray-200">—</span>
+                                            </div>
+                                        </div>
+                                        <div id="rp-note" class="mt-2 text-[10px] text-textMuted font-mono"></div>
+                                    </div>
 
                 <!-- Open Positions -->
                 <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl">
@@ -590,44 +704,78 @@
                 <!-- Deep Model Reasoning & Confidence Center -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl">
-                        <h3 class="text-md font-bold text-white border-b border-borderClr pb-2 mb-4">
-                            <i class="fa-solid fa-layer-group mr-2 text-accentCyan"></i>
-                            PyTorch ScalpNet v3 Reasoning (TCN + Attention)
-                        </h3>
-                        <p class="text-xs text-textMuted mb-4 leading-relaxed">
-                            Neural activation output vectors representing probability distribution across multi-confluence trading scenarios.
-                        </p>
-                        <div class="space-y-4">
-                            <!-- Softmax bars -->
-                            <div>
-                                <div class="flex justify-between text-xs font-semibold mb-1">
-                                    <span>NO_TRADE Probability</span>
-                                    <span id="prob-no-trade" class="font-mono text-accentCyan">99.5%</span>
-                                </div>
-                                <div class="w-full bg-darkBg rounded-full h-2 overflow-hidden border border-borderClr">
-                                    <div id="prob-no-trade-bar" class="bg-accentCyan h-full" style="width: 99.5%"></div>
-                                </div>
-                            </div>
-                            <div>
-                                <div class="flex justify-between text-xs font-semibold mb-1">
-                                    <span>BUY_MARKET Confluence</span>
-                                    <span id="prob-buy" class="font-mono text-emerald-400">0.2%</span>
-                                </div>
-                                <div class="w-full bg-darkBg rounded-full h-2 overflow-hidden border border-borderClr">
-                                    <div id="prob-buy-bar" class="bg-emerald-400 h-full" style="width: 0.2%"></div>
-                                </div>
-                            </div>
-                            <div>
-                                <div class="flex justify-between text-xs font-semibold mb-1">
-                                    <span>SELL_MARKET Confluence</span>
-                                    <span id="prob-sell" class="font-mono text-rose-400">0.3%</span>
-                                </div>
-                                <div class="w-full bg-darkBg rounded-full h-2 overflow-hidden border border-borderClr">
-                                    <div id="prob-sell-bar" class="bg-rose-400 h-full" style="width: 0.3%"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                                            <h3 class="text-md font-bold text-white border-b border-borderClr pb-2 mb-4">
+                                                <i class="fa-solid fa-layer-group mr-2 text-accentCyan"></i>
+                                                PyTorch ScalpNet v3 Reasoning (TCN + Attention)
+                                            </h3>
+                                            <p class="text-xs text-textMuted mb-4 leading-relaxed">
+                                                Neural activation output vectors representing probability distribution across multi-confluence trading scenarios.
+                                            </p>
+                                            <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4 text-[10px] font-mono">
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Model ID</div>
+                                                    <div id="model-id" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Version</div>
+                                                    <div id="model-version" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Architecture</div>
+                                                    <div id="model-architecture" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40 col-span-2">
+                                                    <div class="text-textMuted uppercase">Artifact Path</div>
+                                                    <div id="model-artifact" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Scaler</div>
+                                                    <div id="model-scaler" class="text-accentGold font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Feature Schema</div>
+                                                    <div id="model-schema" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Inference Time</div>
+                                                    <div id="model-inference-time" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Data Source</div>
+                                                    <div id="model-data-source" class="text-accentCyan font-bold truncate">LIVE</div>
+                                                </div>
+                                            </div>
+                                            <div class="space-y-4">
+                                                <!-- Softmax bars -->
+                                                <div>
+                                                    <div class="flex justify-between text-xs font-semibold mb-1">
+                                                        <span>NO_TRADE Probability</span>
+                                                        <span id="prob-no-trade" class="font-mono text-accentCyan">—</span>
+                                                    </div>
+                                                    <div class="w-full bg-darkBg rounded-full h-2 overflow-hidden border border-borderClr">
+                                                        <div id="prob-no-trade-bar" class="bg-accentCyan h-full" style="width: 0%"></div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div class="flex justify-between text-xs font-semibold mb-1">
+                                                        <span>BUY_MARKET Confluence</span>
+                                                        <span id="prob-buy" class="font-mono text-emerald-400">—</span>
+                                                    </div>
+                                                    <div class="w-full bg-darkBg rounded-full h-2 overflow-hidden border border-borderClr">
+                                                        <div id="prob-buy-bar" class="bg-emerald-400 h-full" style="width: 0%"></div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div class="flex justify-between text-xs font-semibold mb-1">
+                                                        <span>SELL_MARKET Confluence</span>
+                                                        <span id="prob-sell" class="font-mono text-rose-400">—</span>
+                                                    </div>
+                                                    <div class="w-full bg-darkBg rounded-full h-2 overflow-hidden border border-borderClr">
+                                                        <div id="prob-sell-bar" class="bg-rose-400 h-full" style="width: 0%"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
 
                     <!-- AI Prediction vs Actual Movement Table -->
                     <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl flex flex-col justify-between">
@@ -722,10 +870,11 @@
                                 <i class="fa-solid fa-microscope mr-2 text-accentCyan"></i>Recent Trade Autopsies &amp; Behavior
                             </div>
                             <div id="intel-autopsies" class="max-h-64 overflow-y-auto p-3 space-y-2 text-[11px] font-mono text-gray-300">
-                                <div class="text-textMuted italic">No autopsies available.</div>
-                            </div>
-                        </div>
-                    </div>
+                                                            <div class="text-textMuted italic">No autopsies available.</div>
+                                                        </div>
+                                                        <div id="intel-behavior" class="max-h-40 overflow-y-auto p-3 space-y-2 text-[11px] font-mono text-gray-300 border-t border-borderClr/40"></div>
+                                                    </div>
+                                                </div>
 
                     <!-- Evolution candidates -->
                     <div class="mt-4 rounded-lg border border-borderClr overflow-hidden">
@@ -1314,6 +1463,7 @@
     </footer>
 
     <!-- App Logic -->
+    <script src="api_client.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

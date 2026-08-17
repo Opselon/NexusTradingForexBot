@@ -13,6 +13,7 @@ Concepts (all independently versionable):
 
 from __future__ import annotations
 
+from nexus_scalp.model_generation.architectures import ARCHITECTURE_VERSION, TCNAttentionV1
 from nexus_scalp.model_generation.artifact_store import ArtifactStore, default_artifact_root
 from nexus_scalp.model_generation.dataset_factory import DatasetFactory
 from nexus_scalp.model_generation.experiment_factory import EXPERIMENT_SPACE, ExperimentFactory
@@ -39,6 +40,8 @@ from nexus_scalp.model_generation.replay import (
 )
 from nexus_scalp.model_generation.runtime import LocalModelRuntime, ManifestValidationError
 from nexus_scalp.model_generation.sample_factory import SampleFactory, deterministic_sample_id
+from nexus_scalp.model_generation.sequence import SequenceBuilder
+from nexus_scalp.model_generation.sequence_training import SequenceCandidateTrainer
 from nexus_scalp.model_generation.training import CandidateTrainer
 from nexus_scalp.model_generation.validation import (
     ValidationFactory,
@@ -48,6 +51,7 @@ from nexus_scalp.model_generation.validation import (
 )
 
 __all__ = [
+    "ARCHITECTURE_VERSION",
     "EXPERIMENT_SPACE",
     "ArtifactStore",
     "CandidateTrainer",
@@ -66,8 +70,11 @@ __all__ = [
     "SampleContract",
     "SampleFactory",
     "SampleReplay",
+    "SequenceBuilder",
+    "SequenceCandidateTrainer",
     "SetupContract",
     "StrategyContract",
+    "TCNAttentionV1",
     "ValidationFactory",
     "ValidationResults",
     "compare_news_ablation",

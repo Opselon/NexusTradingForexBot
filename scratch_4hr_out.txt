@@ -1,0 +1,44 @@
+=== audit_orders time range ===
+orders: 2026-08-17 02:10:21 .. 2026-08-17 04:33:26
+
+=== audit_signals time range ===
+signals: 2026-08-17T04:23:31+00:00 .. 2026-08-17T07:34:44+00:00
+
+=== audit_experiences decision time range ===
+experiences: 2026-08-17T04:24:25+00:00 .. 2026-08-17T07:33:18+00:00
+
+=== audit_experience_outcomes outcome time range ===
+outcomes: 2026-08-17T05:11:34+00:00 .. 2026-08-17T07:28:50+00:00
+
+=== audit_ledger time range ===
+ledger: 2026-08-17T03:19:49.399458+00:00 .. 2026-08-17T07:28:50+00:00
+
+=== audit_account_snapshots time range ===
+snapshots: 2026-08-17 01:23:37 .. 2026-08-17 04:33:52
+
+=== first audit_orders rows per ticket (grouped) ===
+  ticket=152487837184 first_ts=2026-08-17 02:10:21 rows=5
+  ticket=152487871322 first_ts=2026-08-17 02:26:21 rows=1
+  ticket=152487871342 first_ts=2026-08-17 02:26:21 rows=1
+  ticket=152487871361 first_ts=2026-08-17 02:26:21 rows=1
+  ticket=152487871382 first_ts=2026-08-17 02:26:21 rows=1
+  ticket=152487871408 first_ts=2026-08-17 02:26:21 rows=1
+  ticket=152487871455 first_ts=2026-08-17 02:26:21 rows=1
+  ticket=152487935198 first_ts=2026-08-17 02:31:24 rows=15
+  ticket=152487935223 first_ts=2026-08-17 02:31:24 rows=15
+  ticket=152487935273 first_ts=2026-08-17 02:31:24 rows=15
+  ticket=152487935310 first_ts=2026-08-17 02:31:24 rows=15
+  ticket=152487935244 first_ts=2026-08-17 02:32:11 rows=44
+  ticket=152487935250 first_ts=2026-08-17 02:32:11 rows=44
+  ticket=152487940044 first_ts=2026-08-17 02:33:14 rows=19
+  ticket=152487952111 first_ts=2026-08-17 02:34:33 rows=15
+  ticket=152487952127 first_ts=2026-08-17 02:34:33 rows=15
+  ticket=152487952148 first_ts=2026-08-17 02:34:33 rows=15
+  ticket=152487952167 first_ts=2026-08-17 02:34:33 rows=15
+  ticket=152487952183 first_ts=2026-08-17 02:34:33 rows=15
+  ticket=152487952190 first_ts=2026-08-17 02:34:33 rows=15
+  ticket=152487963500 first_ts=2026-08-17 02:37:43 rows=10
+  ticket=152487972919 first_ts=2026-08-17 02:38:54 rows=40
+  ticket=152487972935 first_ts=2026-08-17 02:38:54 rows=40
+  ticket=152488008537 first_ts=2026-08-17 02:45:06 rows=31
+  ticket=152488008575 first_ts=2026-08-17 02:45:06 rows=31

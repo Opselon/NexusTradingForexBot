@@ -82,53 +82,14 @@ class SampleFactory:
         a future news event can never enter a historical sample. Returns the
         versioned numeric vector.
 
-        Timestamp comparison is done on epoch microseconds so tz-aware and
-        tz-naive frames compare deterministically (no coercion panics).
+        Uses the canonical bridge (``model_generation.news_bridge``) so the
+        12-field schema is fully produced — including categorical encoding
+        (``news_state`` / ``novelty``) and per-sample ``time_since_event_sec``
+        — instead of copying a single prior row verbatim.
         """
-        zero = {f: 0.0 for f in news_schema.fields}
-        if news_frame is None or news_frame.is_empty():
-            return zero
+        from nexus_scalp.model_generation.news_bridge import news_context_at as bridge_at
 
-        ts_col = "published_at" if "published_at" in news_frame.columns else None
-        if ts_col is None:
-            return zero
-
-        sample_ts_us = int(timestamp.timestamp() * 1_000_000)
-
-        # Normalize the news column to epoch microseconds for comparison.
-        try:
-            news_ts = news_frame[ts_col].cast(pl.Datetime("us")).dt.epoch("us")
-            prior_mask = news_ts <= sample_ts_us
-        except Exception:
-            # Non-datetime timestamps: parse strings where possible.
-            parsed = news_frame.with_columns(
-                pl.col(ts_col)
-                .str.to_datetime(time_zone="UTC", strict=False)
-                .dt.epoch("us")
-                .alias("_ts_us")
-            )
-            prior_mask = parsed["_ts_us"] <= sample_ts_us
-
-        prior_ids = (
-            news_frame.with_columns(prior_mask.alias("_prior"))
-            .filter(pl.col("_prior"))
-            .select(pl.col(ts_col))
-        )
-        if prior_ids.is_empty():
-            return zero
-
-        # Latest prior event defines the context snapshot.
-        last = news_frame.join(
-            prior_ids.sort(ts_col, descending=True).head(1), on=ts_col, how="semi"
-        ).row(0, named=True)
-        ctx: dict[str, float] = {}
-        for f in news_schema.fields:
-            raw = last.get(f, 0.0)
-            try:
-                ctx[f] = float(raw)
-            except (TypeError, ValueError):
-                ctx[f] = 0.0
-        return ctx
+        return bridge_at(news_frame, timestamp, news_schema)
 
     # ------------------------------------------------------------------
     # Setup detection (simple deterministic rule set, spec 9 / 15)

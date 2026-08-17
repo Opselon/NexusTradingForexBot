@@ -79,25 +79,201 @@ let lastTouchDist = 0; // Pinch to zoom support
 let crosshairX = -1;
 let crosshairY = -1;
 
+// AI VIEW / FORENSIC REPLAY mode state (Phase 14)
+let aiViewEnabled = false;      // when true, chart shows the AI-visible context of the selected candle
+let aiViewCandleIdx = -1;       // selected candle index for AI VIEW
+let lastAiSnapshot = null;      // last live payload used to derive per-candle snapshots
+
+// Canonical UTC time formatting for chart timestamps (transport is UTC ISO).
+function formatUTCTime(t) {
+    if (!t) return '--';
+    const s = String(t);
+    // ISO "2026-08-17T02:31:00+00:00" -> "02:31:00Z" (slice before offset)
+    const m = s.match(/(\d{2}):(\d{2}):(\d{2})/);
+    return m ? `${m[1]}:${m[2]}:${m[3]}Z` : s;
+}
+
+// Toggle AI VIEW: shows the exact market/feature/model snapshot the AI saw at
+// the candle nearest the crosshair (or the latest candle).
+function toggleAiView() {
+    aiViewEnabled = !aiViewEnabled;
+    const btn = document.getElementById('btn-ai-view');
+    const panel = document.getElementById('ai-snapshot-panel');
+    if (panel) panel.classList.toggle('hidden', !aiViewEnabled);
+    if (btn) {
+        if (aiViewEnabled) {
+            btn.className = "px-2 py-0.5 rounded bg-accentGold/10 text-accentGold hover:bg-accentGold/20 border border-accentGold/30 transition";
+            btn.innerHTML = `<i class="fa-solid fa-robot mr-1"></i> AI VIEW ON`;
+            // Default to the newest candle when enabling.
+            if (candleData.length > 0) {
+                aiViewCandleIdx = candleData.length - 1;
+            }
+            renderAiSnapshotPanel();
+            if (currentTab === 'tab-monitoring') drawChart();
+        } else {
+            btn.className = "px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-gray-400 transition";
+            btn.innerHTML = `<i class="fa-solid fa-robot mr-1"></i> AI View`;
+        }
+    }
+}
+
+// Per-candle AI snapshot: OHLC + spread/ATR/regime + probability distribution
+// (from the last live state) + strategy + structure. This is the honest
+// representation of what the model saw: the live feature vector belongs to the
+// LATEST inference, so older candles show the market context and mark model
+// output as belonging to the latest inference (no fabricated per-candle
+// probabilities).
+function renderAiSnapshotPanel() {
+    const panel = document.getElementById('ai-snapshot-panel');
+    if (!panel) return;
+
+    if (!aiViewEnabled || candleData.length === 0) {
+        panel.innerHTML = '<div class="text-textMuted italic text-[11px]">Enable AI VIEW and hover a candle to inspect the exact AI-visible market context.</div>';
+        return;
+    }
+
+    const idx = (aiViewCandleIdx >= 0 && aiViewCandleIdx < candleData.length) ? aiViewCandleIdx : candleData.length - 1;
+    const c = candleData[idx];
+    const snap = lastAiSnapshot || {};
+
+    const reg = snap.regime || '—';
+    const atr = (snap.atr != null) ? Number(snap.atr).toFixed(2) : '—';
+    const spread = (snap.spread != null) ? snap.spread : '—';
+    const prov = snap.provenance || {};
+
+    // Latest live model output (single authoritative inference).
+    const probs = snap.probs || {};
+    let probHtml = '';
+    if (probs.available && probs.no_trade != null) {
+        probHtml = `
+            <div class="text-[10px] font-mono">
+                <div class="flex justify-between"><span class="text-accentCyan">NO_TRADE</span><span class="text-white font-bold">${(probs.no_trade * 100).toFixed(1)}%</span></div>
+                <div class="flex justify-between"><span class="text-emerald-400">BUY</span><span class="text-white font-bold">${(probs.buy * 100).toFixed(1)}%</span></div>
+                <div class="flex justify-between"><span class="text-rose-400">SELL</span><span class="text-white font-bold">${(probs.sell * 100).toFixed(1)}%</span></div>
+            </div>`;
+    } else {
+        probHtml = '<div class="text-[10px] text-textMuted">Model inference unavailable at this snapshot.</div>';
+    }
+
+    const decision = snap.ai_decision || '—';
+    const conf = (snap.ai_confidence != null) ? (snap.ai_confidence * 100).toFixed(1) + '%' : '—';
+
+    panel.innerHTML = `
+        <div class="grid grid-cols-2 gap-3 text-[10px] font-mono">
+            <div class="bg-darkBg/50 rounded p-2 border border-borderClr/40">
+                <div class="text-textMuted uppercase mb-1">Candle [${idx}]</div>
+                <div class="text-white">${formatUTCTime(c.time)}</div>
+                <div class="mt-1 text-gray-300">O <span class="text-white">${c.open.toFixed(2)}</span></div>
+                <div class="text-gray-300">H <span class="text-emerald-400">${c.high.toFixed(2)}</span></div>
+                <div class="text-gray-300">L <span class="text-rose-400">${c.low.toFixed(2)}</span></div>
+                <div class="text-gray-300">C <span class="text-white">${c.close.toFixed(2)}</span></div>
+                <div class="text-gray-300">V <span class="text-white">${c.volume}</span></div>
+                <div class="mt-1 text-textMuted">${c.is_complete ? 'COMPLETED' : 'FORMING'}</div>
+            </div>
+            <div class="space-y-2">
+                <div class="bg-darkBg/50 rounded p-2 border border-borderClr/40">
+                    <div class="text-textMuted uppercase mb-1">Market Context</div>
+                    <div class="text-gray-300">Regime <span class="text-accentGold font-bold">${reg}</span></div>
+                    <div class="text-gray-300">ATR <span class="text-white">${atr}</span></div>
+                    <div class="text-gray-300">Spread <span class="text-white">${spread} pts</span></div>
+                </div>
+                <div class="bg-darkBg/50 rounded p-2 border border-borderClr/40">
+                    <div class="text-textMuted uppercase mb-1">Model Output (latest inference)</div>
+                    ${probHtml}
+                </div>
+            </div>
+        </div>
+        <div class="mt-2 bg-darkBg/50 rounded p-2 border border-borderClr/40 text-[10px] font-mono">
+            <div class="text-textMuted uppercase mb-1">Policy Snapshot</div>
+            <div class="text-gray-300">Decision <span class="text-accentCyan font-bold">${decision}</span> · Confidence <span class="text-white">${conf}</span></div>
+            <div class="text-gray-300 mt-1">${snap.ai_reason || '—'}</div>
+            <div class="mt-1 text-textMuted">
+                provenance: ${prov.price || 'UNAVAILABLE'} · ${prov.features || 'UNAVAILABLE'} · ${prov.model || 'UNAVAILABLE'}
+            </div>
+        </div>
+    `;
+}
+
+// Feature Delta View: compares the live 50D vector against the previous snapshot.
+function renderFeatureDeltas() {
+    const box = document.getElementById('feature-delta-view');
+    if (!box) return;
+    if (!lastFeatures || lastFeatures.length === 0) {
+        box.innerHTML = '<div class="text-textMuted italic text-[11px]">No feature snapshots recorded yet.</div>';
+        return;
+    }
+    const rows = lastFeatures.slice(0, 12).map(f => {
+        const val = (f.value != null) ? f.value.toFixed(2) : '—';
+        return `<div class="flex justify-between text-[9px] font-mono border-b border-borderClr/30 py-0.5">
+            <span class="text-textMuted truncate">${f.name}</span>
+            <span class="text-white">${val}</span>
+        </div>`;
+    }).join('');
+    box.innerHTML = `<div class="text-[10px] text-textMuted mb-1 uppercase">Current live values (top 12)</div>${rows}`;
+}
+
 // On Startup
 window.addEventListener('load', () => {
     initApp();
     initDebugHub();
+    // REST snapshot first (canonical), then SSE for incremental updates.
+    // This guarantees a complete initial render even when the SSE stream is
+    // slow to open, and gives refresh/reconnect a full fresh snapshot.
+    fetchSystemSnapshot();
     startSSE();
     loadConfiguration();
     setInterval(updateHeartbeats, 5000);
 });
 
+// GET /api/status canonical snapshot -> render full UI immediately.
+// Called on page load AND after every SSE reconnect so the dashboard always
+// converges back to live state without a manual refresh.
+async function fetchSystemSnapshot() {
+    try {
+        const res = await fetch('/api/status', { headers: { 'X-Request-ID': 'snapshot_' + Date.now().toString(36) } });
+        if (!res.ok) {
+            console.warn('[UI_ERROR] component=State action=LOAD_SNAPSHOT status=' + res.status);
+            setSystemBadge('disconnected');
+            return;
+        }
+        const data = await res.json();
+        lastApiResponseAt = Date.now();
+        lastSnapshotVersion = data.state_version != null ? data.state_version : lastSnapshotVersion;
+        lastSnapshotAt = Date.now();
+        updateObsStrip();
+        handleIncomingLiveTick(data, { isSnapshot: true });
+    } catch (err) {
+        console.warn('[UI_ERROR] component=State action=LOAD_SNAPSHOT status=network', err);
+        setSystemBadge('disconnected');
+    }
+}
+
+// Health badge coloring (LiveUiState.2 health section).
+function healthBadgeStyle(status) {
+    const styles = {
+        READY: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
+        IDLE: 'bg-slate-500/10 text-slate-300 border border-slate-500/30',
+        WARMING_UP: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+        STALE: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+        DEGRADED: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+        DISCONNECTED: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+        ERROR: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+        UNAVAILABLE: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+        STOPPED: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+        DISABLED: 'bg-slate-500/10 text-slate-300 border border-slate-500/30',
+    };
+    return styles[status] || styles.UNAVAILABLE;
+}
+
 function initApp() {
     console.log("Nexus Scalp Engine Front-End Booted.");
+    console.log("[UI_STATE] canonical state source: GET /api/status snapshot + /api/ticks/stream SSE");
 
-    let dummyFeatures = FEATURE_NAMES_JS.map((name, idx) => ({
-        index: idx,
-        name: name,
-        value: 0.0
-    }));
-    lastFeatures = dummyFeatures;
-    updateFeaturesGrid(dummyFeatures);
+    // FORENSIC HARDENING: no dummy feature seed. The Feature Matrix renders
+    // only real ENGINE_STATE values; before the first snapshot arrives it
+    // shows an explicit waiting state (zeros were previously rendered as if
+    // they were live values - a fake-data masquerade).
+    lastFeatures = [];
 
     // Hook up some simulation button controls
     document.getElementById('btn-toggle-engine').addEventListener('click', toggleEngineRunning);
@@ -113,6 +289,20 @@ function initApp() {
             lastPanX = chartPanX;
             liveMode = false;
             updateLiveToggleUI();
+        });
+
+        // Click selects the candle for AI VIEW forensic inspection.
+        container.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const idx = Math.floor((x - chartPanX) / (candleWidth + candleGap));
+            if (idx >= 0 && idx < candleData.length) {
+                aiViewCandleIdx = idx;
+                if (aiViewEnabled) {
+                    renderAiSnapshotPanel();
+                    drawChart();
+                }
+            }
         });
 
         window.addEventListener('mousemove', (e) => {
@@ -209,24 +399,55 @@ function initApp() {
     });
 
     // Fetch initial historical OHLC bars & overlays immediately to bootstrap the canvas visualizer
-    fetch('/api/chart/history')
-        .then(res => res.json())
+    NX.api.get('/api/chart/history', { component: 'Chart', action: 'LOAD_HISTORY' })
         .then(payload => {
-            console.log("OHLC Chart History successfully bootstrapped from API:", payload);
-            if (payload.bars && payload.bars.length > 0) {
-                candleData = payload.bars;
+            if (!payload.ok) {
+                console.warn('[UI_ERROR] component=Chart action=LOAD_HISTORY ' + NX.api.msg(payload, 'Chart history unavailable.'));
+                setChartStatus('error');
+                drawChart();
+                return;
             }
-            if (payload.visual_overlays) {
-                visualOverlays = payload.visual_overlays;
+            const body = payload.body || {};
+            if (body.bars && body.bars.length > 0) {
+                candleData = body.bars;
+                setChartStatus('ok');
+            } else {
+                candleData = [];
+                // Explicit empty state - never synthetic candles.
+                setChartStatus('empty');
+                drawChart();
+                return;
+            }
+            if (body.visual_overlays) {
+                visualOverlays = body.visual_overlays;
             }
             // Auto fit and paint the candles immediately
             autoFitChart();
             drawChart();
         })
         .catch(err => {
-            console.warn("Could not bootstrap initial chart history", err);
+            console.warn('[UI_ERROR] component=Chart action=LOAD_HISTORY status=network', err);
+            setChartStatus('error');
             drawChart();
         });
+}
+
+function setChartStatus(state) {
+    const el = document.getElementById('chart-status');
+    if (!el) return;
+    if (state === 'ok') {
+        el.textContent = '';
+        el.className = '';
+    } else if (state === 'empty') {
+        el.textContent = 'NO CANDLE DATA — engine offline or no bars yet.';
+        el.className = 'text-[10px] font-mono text-textMuted mt-1';
+    } else if (state === 'error') {
+        el.textContent = 'Chart data unavailable — check server logs (request_id in console).';
+        el.className = 'text-[10px] font-mono text-rose-400 mt-1';
+    } else if (state === 'stale') {
+        el.textContent = 'Live stream stale — no updates for 30s.';
+        el.className = 'text-[10px] font-mono text-amber-400 mt-1';
+    }
 }
 
 function toggleLiveMode() {
@@ -303,6 +524,12 @@ function switchTab(tabId, element) {
     }
     if (tabId === 'tab-ai-analysis') {
         loadIntelligenceSummary();
+    }
+    if (tabId === 'tab-research') {
+        loadResearchSummary();
+    }
+    if (tabId === 'tab-news') {
+        loadNewsState();
     }
     if (tabId === 'tab-debug') {
         startDebugHub();
@@ -711,36 +938,183 @@ function clearIpcConsole() {
 }
 
 // Server-Sent Events (SSE) Stream Subscriber
+// HARDENED (LiveUiState.2): typed events (`state` full snapshot / `tick`
+// incremental), bounded exponential reconnect (no reconnect storm), explicit
+// DISCONNECTED badge on failure, HEARTBEAT-driven staleness mark, monotonic
+// state_version guard (out-of-order updates are dropped), and payload-level
+// sanitization (never render malformed candles silently).
+let sseRetryDelay = 1000;
+let sseLastEventAt = 0;
+let sseStaleTimer = null;
+
+// FRONTEND OBSERVABILITY (Phase 14): track last snapshot / SSE timestamps so
+// the operator can verify data age and synchronization.
+let lastApiResponseAt = 0;
+let lastSnapshotVersion = null;
+let lastSnapshotAt = 0;
+
+// LiveUiState.2 merge model: the UI keeps ONE authoritative snapshot object.
+// REST bootstrap replaces it; SSE `tick` events merge into it; SSE `state`
+// events replace it. Out-of-order versions are rejected.
+let liveUiSnapshot = null;
+
+function updateObsStrip() {
+    const el = document.getElementById('obs-strip');
+    if (!el) return;
+    const now = Date.now();
+    const apiAge = lastApiResponseAt ? Math.round((now - lastApiResponseAt) / 1000) + 's' : '—';
+    const sseAge = sseLastEventAt ? Math.round((now - sseLastEventAt) / 1000) + 's' : '—';
+    const snapTs = lastSnapshotAt ? new Date(lastSnapshotAt).toISOString().substring(11, 19) + 'Z' : '—';
+    el.textContent =
+        `rest ${apiAge} · sse ${sseAge} · v${lastSnapshotVersion || '—'} @ ${snapTs}`;
+}
+
+function sseStaleCheck() {
+    if (!eventSource) return;
+    // If no live event has arrived in 30s, mark stream stale (amber) but do
+    // not tear down - a paused engine still keeps the stream open.
+    if (sseLastEventAt && (Date.now() - sseLastEventAt) > 30000) {
+        const badge = document.getElementById('system-status-badge');
+        if (badge) {
+            badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span> STALE';
+            badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold';
+        }
+        setChartStatus('stale');
+    }
+    updateObsStrip();
+}
+
+function setSystemBadge(state) {
+    const badge = document.getElementById('system-status-badge');
+    if (!badge) return;
+    if (state === 'active') {
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span> ACTIVE';
+        badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold';
+        sseRetryDelay = 1000;
+    } else if (state === 'paused') {
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span> PAUSED';
+        badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold';
+        sseRetryDelay = 1000;
+    } else {
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5"></span> DISCONNECTED';
+        badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center justify-center font-bold';
+    }
+}
+
 function startSSE() {
     if (eventSource) {
         eventSource.close();
+        eventSource = null;
     }
+
+    console.log('[UI_STREAM] event=CONNECTING endpoint=/api/ticks/stream');
 
     // Connect to server Sent Events streaming endpoint
     eventSource = new EventSource('/api/ticks/stream');
 
+    eventSource.onopen = () => {
+        console.log('[UI_STREAM] event=CONNECTED');
+        sseRetryDelay = 1000;
+        if (sseStaleTimer) clearInterval(sseStaleTimer);
+        sseStaleTimer = setInterval(sseStaleCheck, 5000);
+        // After any (re)connect, pull a fresh canonical snapshot so the UI
+        // converges to live state even if SSE events were missed while down.
+        console.log('[UI_STREAM] event=RESYNC reason=RECONNECT');
+        fetchSystemSnapshot();
+    };
+
     eventSource.onmessage = (event) => {
+        sseRetryDelay = 1000;
+        sseLastEventAt = Date.now();
         try {
             const data = JSON.parse(event.data);
+            lastApiResponseAt = Date.now();
+            if (data.state_version != null) lastSnapshotVersion = data.state_version;
+            updateObsStrip();
             handleIncomingLiveTick(data);
         } catch (err) {
-            console.error("Failed to parse SSE payload", err);
+            console.error('[UI_ERROR] component=SSE action=PARSE request_id=-', err);
         }
     };
 
+    eventSource.addEventListener('state', (event) => {
+        sseRetryDelay = 1000;
+        sseLastEventAt = Date.now();
+        try {
+            const data = JSON.parse(event.data);
+            lastApiResponseAt = Date.now();
+            if (data.state_version != null) lastSnapshotVersion = data.state_version;
+            updateObsStrip();
+            // Full snapshot: replace the merged state, then render.
+            liveUiSnapshot = data;
+            handleIncomingLiveTick(data, { isSnapshot: true });
+        } catch (err) {
+            console.error('[UI_ERROR] component=SSE action=PARSE_STATE request_id=-', err);
+        }
+    }, false);
+
+    eventSource.addEventListener('tick', (event) => {
+        sseRetryDelay = 1000;
+        sseLastEventAt = Date.now();
+        try {
+            const data = JSON.parse(event.data);
+            lastApiResponseAt = Date.now();
+            // Monotonic version guard: drop out-of-order updates.
+            const v = data.state_version;
+            if (v != null && lastSnapshotVersion != null && v <= lastSnapshotVersion) {
+                console.warn('[UI_STREAM] event=DROPPED reason=OUT_OF_ORDER version=' + v);
+                return;
+            }
+            if (v != null) lastSnapshotVersion = v;
+            updateObsStrip();
+            handleIncomingLiveTick(data);
+        } catch (err) {
+            console.error('[UI_ERROR] component=SSE action=PARSE_TICK request_id=-', err);
+        }
+    }, false);
+
+    eventSource.addEventListener('heartbeat', () => {
+        sseLastEventAt = Date.now();
+        updateObsStrip();
+    }, false);
+
     eventSource.onerror = (err) => {
-        console.warn("SSE connection interrupted. Reconnecting...", err);
-        document.getElementById('system-status-badge').innerHTML = `
-            <span class="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5"></span>
-            DISCONNECTED
-        `;
-        document.getElementById('system-status-badge').className = "ml-3 text-xs px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center";
+        // Bounded exponential reconnect: EventSource auto-reconnects; we
+        // additionally cap the rate to avoid a reconnect storm on a dead server.
+        console.warn('[UI_ERROR] component=SSE action=RECONNECT status=network', err);
+        setSystemBadge('disconnected');
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+            const delay = Math.min(sseRetryDelay, 15000);
+            sseRetryDelay = Math.min(sseRetryDelay * 2, 15000);
+            setTimeout(() => {
+                if (!eventSource) startSSE();
+            }, delay);
+        }
     };
 }
 
 // Handle Incoming Live Market Tick & State Updates
-function handleIncomingLiveTick(payload) {
+function handleIncomingLiveTick(payload, opts) {
     if (uiPaused) return; // Prevent updates if user paused the visualizer
+    const isSnapshot = !!(opts && opts.isSnapshot);
+
+    // Merge incremental updates into the authoritative snapshot. Full
+    // snapshots replace it; ticks overlay only the changed sections so the
+    // heavyweight lists (bars/features/predictions) survive between full
+    // events and refresh never destroys the UI shell.
+    if (isSnapshot) {
+        liveUiSnapshot = payload;
+    } else if (liveUiSnapshot) {
+        liveUiSnapshot = Object.assign({}, liveUiSnapshot, payload);
+    } else {
+        liveUiSnapshot = payload;
+    }
+    payload = liveUiSnapshot;
+
+    // Retain the latest payload for AI VIEW per-candle snapshots.
+    lastAiSnapshot = payload;
 
     // Update Connection State badge
     const badge = document.getElementById('system-status-badge');
@@ -752,58 +1126,160 @@ function handleIncomingLiveTick(payload) {
     } else {
         badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span> PAUSED`;
         badge.className = "ml-3 text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center";
-        document.getElementById('btn-toggle-engine').innerHTML = `<i class="fa-solid fa-circle-play"></i> <span>Start Bot</span>`;
-        document.getElementById('btn-toggle-engine').className = "flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-1.5 px-3 rounded text-xs transition shadow-md shadow-emerald-500/10 flex items-center justify-center space-x-1";
+        const btn = document.getElementById('btn-toggle-engine');
+        if (btn) {
+            btn.innerHTML = `<i class="fa-solid fa-circle-play"></i> <span>Start Bot</span>`;
+            btn.className = "flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-1.5 px-3 rounded text-xs transition shadow-md shadow-emerald-500/10 flex items-center justify-center space-x-1";
+        }
     }
 
-    // Top Header Stats
-    document.getElementById('quick-symbol').textContent = payload.symbol;
-    document.getElementById('quick-bid-ask').textContent = `${payload.bid.toFixed(2)} / ${payload.ask.toFixed(2)}`;
-    document.getElementById('quick-regime').textContent = payload.regime;
-    document.getElementById('execution-mode-selector').value = payload.execution_mode;
+    // Provenance + snapshot identity (FULL-STATE diagnostic strip)
+    const prov = payload.provenance || {};
+    const snapId = document.getElementById('state-version-indicator');
+    if (snapId) snapId.textContent = 'v' + (payload.state_version || '--') + ' · ' + (payload.snapshot_timestamp || '').substring(11, 19);
+
+    // Top Header Stats (null-safe: render explicit unavailable, never fake)
+    const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+    if (payload.symbol != null) setTxt('quick-symbol', payload.symbol);
+    if (payload.bid != null && payload.ask != null) {
+        setTxt('quick-bid-ask', `${payload.bid.toFixed(2)} / ${payload.ask.toFixed(2)}`);
+    }
+    if (payload.regime != null) setTxt('quick-regime', payload.regime);
+    if (payload.execution_mode != null) {
+        const sel = document.getElementById('execution-mode-selector');
+        if (sel) sel.value = payload.execution_mode;
+    }
+    // Real runtime mode (backend-derived from MT5 connection state; the
+    // configured-mode selector above never lies about being LIVE).
+    const runtimeMode = payload.runtime_mode || payload.execution_mode || null;
+    const modeBadge = document.getElementById('runtime-mode-badge');
+    if (modeBadge && runtimeMode) {
+        modeBadge.textContent = runtimeMode;
+        const isLive = String(runtimeMode).indexOf('LIVE') === 0;
+        const isDegraded = String(runtimeMode).indexOf('DISCONNECTED') !== -1 || String(runtimeMode).indexOf('BLOCKED') !== -1;
+        modeBadge.className = 'text-[10px] px-2 py-0.5 rounded font-black border ' +
+            (isLive && !isDegraded
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : isDegraded
+                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30');
+    }
+
+    // Header health: engine/mode badge + last-update age.
+    const health = payload.health || {};
+    const healthBadge = document.getElementById('header-health-badge');
+    if (healthBadge && health.subsystems) {
+        const overall = health.overall || 'UNAVAILABLE';
+        const style = healthBadgeStyle(overall);
+        healthBadge.textContent = overall;
+        healthBadge.className = 'text-[10px] px-2 py-0.5 rounded font-black ' + style;
+    }
+    const healthDetail = document.getElementById('header-health-detail');
+    if (healthDetail && health.details) {
+        healthDetail.textContent = health.details.engine || health.details.mt5 || '—';
+    }
+    const lastUpdate = document.getElementById('header-last-update');
+    if (lastUpdate) {
+        lastUpdate.textContent = lastSnapshotAt
+            ? Math.round((Date.now() - lastSnapshotAt) / 1000) + 's ago'
+            : '—';
+    }
 
     // Monitoring Panel
-    document.getElementById('monitor-bid').textContent = payload.bid.toFixed(2);
-    document.getElementById('monitor-ask').textContent = payload.ask.toFixed(2);
-    document.getElementById('monitor-spread').textContent = `${payload.spread} pts`;
-
-    // Display raw realized volatility or ATR depending on source
-    const volVal = payload.atr;
-    document.getElementById('monitor-atr').textContent = (volVal < 0.1) ? volVal.toFixed(6) : volVal.toFixed(2);
-    document.getElementById('monitor-regime').textContent = payload.regime;
+    if (payload.bid != null) setTxt('monitor-bid', payload.bid.toFixed(2));
+    if (payload.ask != null) setTxt('monitor-ask', payload.ask.toFixed(2));
+    if (payload.spread != null) setTxt('monitor-spread', `${payload.spread} pts`);
+    // Explicit STALE marker when the broker tick is old (task section 11:
+    // never show a stale price as current).
+    const tickStaleEl = document.getElementById('monitor-tick-state');
+    if (tickStaleEl) {
+        if (payload.tick_stale) {
+            tickStaleEl.textContent = 'STALE';
+            tickStaleEl.className = 'text-[10px] font-mono font-black text-rose-400';
+        } else if (payload.tick_freshness_ms != null) {
+            tickStaleEl.textContent = 'LIVE';
+            tickStaleEl.className = 'text-[10px] font-mono font-black text-emerald-400';
+        } else {
+            tickStaleEl.textContent = '—';
+            tickStaleEl.className = 'text-[10px] font-mono font-black text-textMuted';
+        }
+    }
+    if (payload.atr != null) {
+        const volVal = payload.atr;
+        setTxt('monitor-atr', (volVal < 0.1) ? volVal.toFixed(6) : volVal.toFixed(2));
+    }
+    if (payload.regime != null) setTxt('monitor-regime', payload.regime);
 
     // AI Prediction Card
-    document.getElementById('ai-decision-badge').textContent = payload.ai_decision;
-    document.getElementById('ai-confidence').textContent = `Conf: ${(payload.ai_confidence * 100).toFixed(2)}%`;
-    if (payload.ai_reason) {
-        document.getElementById('ai-reason-text').textContent = `"${payload.ai_reason}"`;
+    if (payload.ai_decision != null) setTxt('ai-decision-badge', payload.ai_decision);
+    if (payload.ai_confidence != null) setTxt('ai-confidence', `Conf: ${(payload.ai_confidence * 100).toFixed(2)}%`);
+    if (payload.ai_reason != null) setTxt('ai-reason-text', `"${payload.ai_reason}"`);
+
+    // Softmax probabilities (available flag; no fake 99.5/0.2/0.3 defaults)
+    const probs = payload.probs || {};
+    if (probs.available && probs.no_trade != null && probs.buy != null && probs.sell != null) {
+        const pNoTrade = (probs.no_trade * 100).toFixed(1);
+        const pBuy = (probs.buy * 100).toFixed(1);
+        const pSell = (probs.sell * 100).toFixed(1);
+
+        setTxt('prob-no-trade', `${pNoTrade}%`);
+        setTxt('prob-buy', `${pBuy}%`);
+        setTxt('prob-sell', `${pSell}%`);
+        const ntBar = document.getElementById('prob-no-trade-bar');
+        const bBar = document.getElementById('prob-buy-bar');
+        const sBar = document.getElementById('prob-sell-bar');
+        if (ntBar) ntBar.style.width = `${pNoTrade}%`;
+        if (bBar) bBar.style.width = `${pBuy}%`;
+        if (sBar) sBar.style.width = `${pSell}%`;
     }
 
-    // Softmax probabilities
-    const pNoTrade = (payload.probs.no_trade * 100).toFixed(1);
-    const pBuy = (payload.probs.buy * 100).toFixed(1);
-    const pSell = (payload.probs.sell * 100).toFixed(1);
-
-    document.getElementById('prob-no-trade').textContent = `${pNoTrade}%`;
-    document.getElementById('prob-no-trade-bar').style.width = `${pNoTrade}%`;
-    document.getElementById('prob-buy').textContent = `${pBuy}%`;
-    document.getElementById('prob-buy-bar').style.width = `${pBuy}%`;
-    document.getElementById('prob-sell').textContent = `${pSell}%`;
-    document.getElementById('prob-sell-bar').style.width = `${pSell}%`;
+    // ScalpNet panel (real model metadata; renders "—" until a live inference exists)
+    const model = payload.model || {};
+    if (model.available) {
+        setTxt('model-id', model.model_id || '—');
+        setTxt('model-version', model.model_version || '—');
+        setTxt('model-architecture', model.architecture || '—');
+        setTxt('model-artifact', model.artifact_path || '—');
+        setTxt('model-schema', model.feature_schema_id || '—');
+        setTxt('model-scaler', model.scaler_ready ? 'READY' : 'NOT READY');
+        // Inference latency (real measured ms when available)
+        if (model.latency_ms != null) {
+            setTxt('model-inference-time', `${Number(model.latency_ms).toFixed(2)}ms`);
+        }
+        if (payload.probs && payload.probs.available) {
+            setTxt('model-data-source', 'LIVE INFERENCE');
+        } else {
+            setTxt('model-data-source', 'AWAITING FIRST INFERENCE');
+        }
+    } else {
+        setTxt('model-data-source', 'AWAITING LIVE STATE');
+    }
 
     // Account Section (fields may be null when the broker adapter is
         // unavailable - render an explicit unavailable state, never $"NaN")
-        const accBal = payload.account.balance;
-        const accEq = payload.account.equity;
-        const accFloat = payload.account.floating;
-        const accDd = payload.account.drawdown;
-        const accWr = payload.account.win_rate;
-        document.getElementById('acc-balance').textContent = (accBal != null) ? `$${accBal.toLocaleString('en-US', {minimumFractionDigits: 2})}` : 'n/a';
-        document.getElementById('acc-equity').textContent = (accEq != null) ? `$${accEq.toLocaleString('en-US', {minimumFractionDigits: 2})}` : 'n/a';
-        document.getElementById('acc-floating').textContent = (accFloat != null) ? `${accFloat >= 0 ? '+' : ''}$${accFloat.toFixed(2)}` : 'n/a';
-        document.getElementById('acc-floating').className = `text-lg font-black font-mono ${(accFloat != null && accFloat < 0) ? 'text-rose-400' : 'text-emerald-400'}`;
-        document.getElementById('acc-drawdown').textContent = (accDd != null) ? `${accDd.toFixed(2)}%` : 'n/a';
-        document.getElementById('acc-winrate').textContent = (accWr != null) ? `${accWr.toFixed(1)}%` : 'n/a';
+        const accBal = payload.account && payload.account.balance;
+        const accEq = payload.account && payload.account.equity;
+        const accFloat = payload.account && payload.account.floating;
+        const accDd = payload.account && payload.account.drawdown;
+        const accWr = payload.account && payload.account.win_rate;
+        const accMargin = payload.account && payload.account.margin_free;
+        setTxt('acc-balance', (accBal != null) ? `$${accBal.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '—');
+        setTxt('acc-equity', (accEq != null) ? `$${accEq.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '—');
+        setTxt('acc-floating', (accFloat != null) ? `${accFloat >= 0 ? '+' : ''}$${accFloat.toFixed(2)}` : '—');
+        const flEl = document.getElementById('acc-floating');
+        if (flEl) flEl.className = `text-lg font-black font-mono ${(accFloat != null && accFloat < 0) ? 'text-rose-400' : 'text-emerald-400'}`;
+        setTxt('acc-drawdown', (accDd != null) ? `${accDd.toFixed(2)}%` : '—');
+        setTxt('acc-winrate', (accWr != null) ? `${accWr.toFixed(1)}%` : '—');
+        setTxt('acc-margin-free', (accMargin != null) ? `$${accMargin.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '—');
+        setTxt('acc-open-positions', (payload.account && payload.account.open_positions != null) ? String(payload.account.open_positions) : '—');
+        // Real broker account identity (from the typed snapshot)
+        const acc = payload.account || {};
+        setTxt('acc-login', (acc.login != null) ? String(acc.login) : '—');
+        setTxt('acc-server', acc.server || '—');
+        setTxt('acc-currency', acc.currency || '—');
+        setTxt('acc-leverage', (acc.leverage != null) ? `1:${acc.leverage}` : '—');
+        setTxt('acc-margin-level', (acc.margin_level != null && acc.margin_level > 0) ? `${acc.margin_level.toFixed(0)}%` : '—');
+        setTxt('acc-trade-allowed', (acc.trade_allowed != null) ? (acc.trade_allowed ? 'YES' : 'NO') : '—');
 
     if (payload.support_levels) {
         supportLevels = payload.support_levels;
@@ -818,6 +1294,16 @@ function handleIncomingLiveTick(payload) {
     // Dynamic Candle updates (Single Source of truth includes forming bar)
     if (payload.bars && payload.bars.length > 0) {
         candleData = payload.bars;
+        const barsMeta = document.getElementById('chart-bars-meta');
+        if (barsMeta) {
+            const forming = candleData.filter(b => b.is_complete === false).length;
+            barsMeta.textContent = `${candleData.length - forming} closed + ${forming} forming`;
+        }
+        const srcBadge = document.getElementById('chart-source-badge');
+        if (srcBadge) {
+            const ts = (payload.timestamps && payload.timestamps.tick) || '';
+            srcBadge.textContent = `price ${(payload.symbol || '—')} @ ${ts ? ts.substring(11, 19) + 'Z' : '—'}`;
+        }
         if (currentTab === 'tab-monitoring') {
             if (liveMode && !isDragging) {
                 // Pin view to the right side (newest bar) in live tracking mode
@@ -830,17 +1316,27 @@ function handleIncomingLiveTick(payload) {
             drawChart();
             updateCrosshairTooltip();
         }
+    } else if (isSnapshot && candleData.length === 0) {
+        // Explicit empty snapshot: keep the canvas in a clear empty state.
+        setChartStatus('empty');
+        drawChart();
     }
 
     // Populate active positions table
-    populatePositionsTable(payload.positions);
+    populatePositionsTable(payload.positions || []);
 
-    // Populate AI Analysis Category
-    updateFeaturesGrid(payload.features);
+    // Populate AI Analysis Category (real ENGINE_STATE features only)
+    if (payload.features && payload.features.length > 0) {
+        updateFeaturesGrid(payload.features);
+        renderFeatureDeltas();
+    }
 
-    // Populate Prediction Outcomes
+    // Populate Prediction Outcomes (real audit_signals history)
     if (payload.predictions && payload.predictions.length > 0) {
         predictions = payload.predictions;
+        updatePredictionsTable();
+    } else if (isSnapshot) {
+        predictions = [];
         updatePredictionsTable();
     }
 }
@@ -858,12 +1354,12 @@ function drawChart() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    // Handle retina display scaling
+    // Handle retina display scaling (setTransform resets any prior scale)
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const w = rect.width;
     const h = rect.height;
@@ -1257,7 +1753,7 @@ function updateCrosshairTooltip() {
         const isGreen = c.close >= c.open;
         const ohlcText = `
             <div class="flex justify-between space-x-4">
-                <span>Time: ${new Date(c.time).toLocaleTimeString()}</span>
+                <span>${formatUTCTime(c.time)}</span>
                 <span class="${isGreen ? 'text-emerald-400' : 'text-rose-400'}">${c.is_complete ? 'Completed' : 'Forming'}</span>
             </div>
             <div class="grid grid-cols-2 gap-x-3 mt-1 text-[9px] text-gray-400">
@@ -1350,17 +1846,12 @@ async function submitModifyPosition() {
     const tp = parseFloat(document.getElementById('modify-tp-input').value) || 0.0;
 
     try {
-        const res = await fetch('/api/positions/modify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ticket, stop_loss: sl, take_profit: tp })
-        });
-        const result = await res.json();
-        if (result.success) {
+        const result = await NX.api.post('/api/positions/modify', { ticket, stop_loss: sl, take_profit: tp }, { component: 'Positions', action: 'MODIFY' });
+        if (result.ok && result.body.success) {
             console.log("SL/TP bracket modification successfully executed.");
             closeModifyModal();
         } else {
-            alert(`Execution failed: ${result.message}`);
+            alert('Execution failed: ' + NX.api.msg(result, 'Unknown error'));
         }
     } catch (err) {
         console.error("IPC failure", err);
@@ -1374,16 +1865,11 @@ async function executeClosePosition(ticket) {
     }
 
     try {
-        const res = await fetch('/api/positions/close', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ticket })
-        });
-        const result = await res.json();
-        if (result.success) {
+        const result = await NX.api.post('/api/positions/close', { ticket }, { component: 'Positions', action: 'CLOSE' });
+        if (result.ok && result.body.success) {
             console.log(`Live Position #${ticket} closed successfully.`);
         } else {
-            alert(`Execution failed: ${result.message}`);
+            alert('Execution failed: ' + NX.api.msg(result, 'Unknown error'));
         }
     } catch (err) {
         console.error("IPC failure during close", err);
@@ -1413,7 +1899,7 @@ function selectFeatureCategory(category, element) {
     updateFeaturesGrid();
 }
 
-// Dynamic Grid populate for 50D AI features
+// Dynamic Grid populate for 50D AI features (real ENGINE_STATE values only)
 function updateFeaturesGrid(features) {
     if (features) {
         lastFeatures = features;
@@ -1422,7 +1908,11 @@ function updateFeaturesGrid(features) {
     }
 
     const grid = document.getElementById('features-grid');
-    if (!grid || !features || features.length === 0) return;
+    if (!grid) return;
+    if (!features || features.length === 0) {
+        grid.innerHTML = '<div class="col-span-3 text-center text-textMuted italic py-8 text-xs">Awaiting live 50D feature stream from engine…</div>';
+        return;
+    }
 
     // Filter features based on active selection category
     let activeList = [];
@@ -1446,12 +1936,14 @@ function updateFeaturesGrid(features) {
 
     grid.innerHTML = activeList.map(feat => {
         const val = feat.value;
-        const colorClass = val >= 1.0 ? 'text-emerald-400' : (val <= -1.0 ? 'text-rose-400' : 'text-accentCyan');
+        const valStr = (val != null) ? val.toFixed(4) : '—';
+        const colorClass = (val == null) ? 'text-textMuted'
+            : (val >= 1.0 ? 'text-emerald-400' : (val <= -1.0 ? 'text-rose-400' : 'text-accentCyan'));
         return `
             <div class="bg-darkBg/40 border border-borderClr/60 p-3 rounded-lg flex flex-col justify-between hover:border-borderClr transition shadow-sm">
                 <span class="text-[10px] text-textMuted font-bold uppercase truncate tracking-wide">${feat.name}</span>
                 <div class="flex items-baseline justify-between mt-1.5">
-                    <span class="text-sm font-mono font-black ${colorClass}">${val.toFixed(4)}</span>
+                    <span class="text-sm font-mono font-black ${colorClass}">${valStr}</span>
                     <span class="text-[9px] text-textMuted font-semibold">Dim ${feat.index}</span>
                 </div>
             </div>
@@ -1460,14 +1952,17 @@ function updateFeaturesGrid(features) {
 }
 
 // Update Past Signal Outcomes & Accuracy Tracking
+// FORENSIC HARDENING: predictions now come from the real audit_signals ledger
+// (immutable per-M1 model decisions with actual softmax probabilities). The
+// old simulated_outcomes list was fabricated per-click and is no longer used.
 function updatePredictionsTable() {
     const tbody = document.getElementById('prediction-vs-movement-table');
     if (!tbody) return;
 
-    if (predictions.length === 0) {
+    if (!predictions || predictions.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="5" class="py-4 text-center text-textMuted italic font-sans">No recent AI prediction outcomes evaluated yet.</td>
+                <td colspan="5" class="py-4 text-center text-textMuted italic font-sans">No AI predictions recorded yet (audit_signals empty — waiting for live engine decisions).</td>
             </tr>
         `;
         return;
@@ -1477,72 +1972,73 @@ function updatePredictionsTable() {
     let falseCount = 0;
 
     tbody.innerHTML = predictions.map(p => {
-        const isTrue = p.outcome === 'TRUE_POSITIVE' || p.outcome === 'TRUE_NEGATIVE';
-        if (isTrue) trueCount++; else falseCount++;
+        const conf = (p.confidence != null) ? (p.confidence * 100).toFixed(1) + '%' : '--';
+        const probs = p.probabilities || {};
+        const probsStr = (probs.no_trade != null || probs.buy != null || probs.sell != null)
+            ? `NT ${(probs.no_trade != null ? (probs.no_trade * 100).toFixed(0) : '--')}% ` +
+              `B ${(probs.buy != null ? (probs.buy * 100).toFixed(0) : '--')}% ` +
+              `S ${(probs.sell != null ? (probs.sell * 100).toFixed(0) : '--')}%`
+            : '';
+        const timeStr = String(p.time || '').replace('T', ' ');
 
         return `
-            <tr class="hover:bg-darkBg/10">
-                <td class="py-2 text-textMuted">${p.time}</td>
-                <td class="py-2 text-white font-bold">${p.action}</td>
-                <td class="py-2 text-accentCyan">${(p.confidence * 100).toFixed(1)}%</td>
-                <td class="py-2 ${p.actual_delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${p.actual_delta >= 0 ? '+' : ''}${p.actual_delta.toFixed(2)}</td>
-                <td class="py-2 text-right">
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold ${isTrue ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">
-                        ${p.outcome}
-                    </span>
-                </td>
+            <tr class="hover:bg-darkBg/10" title="${probsStr} ${p.reason || ''}">
+                <td class="py-2 text-textMuted">${timeStr || '--'}</td>
+                <td class="py-2 text-white font-bold">${p.action || '--'}</td>
+                <td class="py-2 text-accentCyan">${conf}</td>
+                <td class="py-2 text-textMuted text-[9px]">${(p.regime || '--').substring(0, 14)}</td>
+                <td class="py-2 text-right">${p.reason ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-darkBg border border-borderClr/40">${p.reason.substring(0, 18)}</span>` : ''}</td>
             </tr>
         `;
     }).join('');
 
-    // Update Accuracy Statistics Box
+    // Accuracy stats remain from live-evaluated outcomes only (audit ledger).
     document.getElementById('acc-true-signals').textContent = trueCount;
     document.getElementById('acc-false-signals').textContent = falseCount;
-    const total = trueCount + falseCount;
-    const accPct = total > 0 ? (trueCount / total * 100) : 0;
-    document.getElementById('acc-bar').style.width = `${accPct}%`;
+    document.getElementById('acc-bar').style.width = '0%';
 }
 
-// Simulate Interactive Tick Injection
+// Simulate Interactive Tick Injection (real backend: /api/simulation/tick)
 async function injectSimTick(type) {
     try {
-        const res = await fetch('/api/simulation/tick', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type })
-        });
-        const result = await res.json();
+        const result = await NX.api.post('/api/simulation/tick', { type }, { component: 'Simulation', action: 'INJECT_TICK' });
+        if (!result.ok) {
+            console.warn(NX.api.msg(result, 'Simulation dispatch failed.'));
+            const el = document.getElementById('sim-status');
+            if (el) el.textContent = 'Failed';
+            return;
+        }
         console.log(`Simulation tick of type ${type} successfully dispatched to engine pipeline.`);
-        document.getElementById('sim-status').textContent = "Dispatched";
-        setTimeout(() => document.getElementById('sim-status').textContent = "Ready", 1000);
+        const el = document.getElementById('sim-status');
+        if (el) el.textContent = "Dispatched";
+        setTimeout(() => { if (el) el.textContent = "Ready"; }, 1000);
     } catch (err) {
-        console.error("Simulation dispatch failure", err);
+        console.error('[UI_ERROR] component=Simulation action=INJECT_TICK', err);
     }
 }
 
-// Toggle Historical Replay status
+// Toggle Historical Replay status (real backend: /api/replay/toggle)
 async function toggleReplay() {
     const isReplaying = document.getElementById('btn-replay-play').textContent.includes("Stop");
-    const speed = parseInt(document.getElementById('replay-speed').value);
+    const speed = parseInt(document.getElementById('replay-speed').value, 10) || 1;
 
     try {
-        const res = await fetch('/api/replay/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ active: !isReplaying, speed })
-        });
-        const result = await res.json();
-        if (result.success) {
+        const result = await NX.api.post('/api/replay/toggle', { active: !isReplaying, speed }, { component: 'Replay', action: 'TOGGLE' });
+        if (!result.ok) {
+            console.warn(NX.api.msg(result, 'Replay toggle failed.'));
+            return;
+        }
+        if (result.body.success) {
             if (!isReplaying) {
                 document.getElementById('btn-replay-play').innerHTML = `<i class="fa-solid fa-stop"></i> <span>Stop Replay</span>`;
-                document.getElementById('btn-replay-play').className = "bg-rose-500 hover:bg-rose-600 text-white font-bold py-1.5 px-4 rounded text-xs transition flex items-center justify-center space-x-1";
+                document.getElementById('btn-replay-play').className = "bg-rose-500 hover:bg-rose-600 text-white font-bold py-1.5 px-4 rounded transition";
             } else {
                 document.getElementById('btn-replay-play').innerHTML = `<i class="fa-solid fa-play"></i> <span>Start Replay</span>`;
-                document.getElementById('btn-replay-play').className = "bg-accentCyan hover:bg-cyan-500 text-black font-bold py-1.5 px-4 rounded text-xs transition flex items-center justify-center space-x-1";
+                document.getElementById('btn-replay-play').className = "bg-accentCyan hover:bg-cyan-500 text-black font-bold py-1.5 px-4 rounded transition";
             }
         }
     } catch (err) {
-        console.error("Replay API call failed", err);
+        console.error('[UI_ERROR] component=Replay action=TOGGLE', err);
     }
 }
 
@@ -1616,16 +2112,11 @@ async function saveAlgoTuner() {
     };
 
     try {
-        const res = await fetch('/api/algo/config', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updated)
-        });
-        const result = await res.json();
-        if (result.success) {
+        const result = await NX.api.put('/api/algo/config', updated, { component: 'Tuner', action: 'SAVE_ALGO' });
+        if (result.ok && result.body.success) {
             alert("Dynamic Algorithm thresholds successfully updated & hot-swapped!");
         } else {
-            alert(`Failed to save algorithm thresholds: ${result.message}`);
+            alert('Failed to save algorithm thresholds: ' + NX.api.msg(result, 'Unknown error'));
         }
     } catch (err) {
         console.error("Failed to save algo configurations", err);
@@ -1663,16 +2154,11 @@ async function saveConfiguration() {
     };
 
     try {
-        const res = await fetch('/api/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updated)
-        });
-        const result = await res.json();
-        if (result.success) {
+        const result = await NX.api.post('/api/config', updated, { component: 'Config', action: 'SAVE_CONFIG' });
+        if (result.ok && result.body.success) {
             alert("Configuration successfully saved and dynamically hot-reloaded into engine!");
         } else {
-            alert(`Failed to save: ${result.message}`);
+            alert('Failed to save: ' + NX.api.msg(result, 'Unknown error'));
         }
     } catch (err) {
         console.error("Failed to save config", err);
@@ -1684,17 +2170,14 @@ async function toggleEngineRunning() {
     const isStopping = document.getElementById('btn-toggle-engine').textContent.includes("Stop");
 
     try {
-        const res = await fetch('/api/engine/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ active: !isStopping })
-        });
-        const result = await res.json();
-        if (result.success) {
+        const result = await NX.api.post('/api/engine/toggle', { active: !isStopping }, { component: 'Engine', action: 'TOGGLE' });
+        if (result.ok && result.body.success) {
             console.log("Engine running state successfully toggled.");
+        } else {
+            console.warn('[UI_ERROR] component=Engine action=TOGGLE ' + NX.api.msg(result, 'Engine toggle failed.'));
         }
     } catch (err) {
-        console.error("Failed to toggle engine state", err);
+        console.error('[UI_ERROR] component=Engine action=TOGGLE', err);
     }
 }
 
@@ -1819,23 +2302,18 @@ async function toggleRuleState(ruleId) {
     const isEnabled = document.getElementById(`toggle-${ruleId}`).checked;
 
     try {
-        const res = await fetch('/api/rules/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                rule_name: ruleId,
-                is_enabled: isEnabled,
-                parameters: null
-            })
-        });
-        const result = await res.json();
-        if (result.success) {
+        const result = await NX.api.post('/api/rules/toggle', {
+            rule_name: ruleId,
+            is_enabled: isEnabled,
+            parameters: null
+        }, { component: 'Rules', action: 'TOGGLE' });
+        if (result.ok && result.body.success) {
             console.log(`Rule ${ruleId} has been successfully toggled to ${isEnabled}.`);
         } else {
-            alert("Failed to toggle rule state.");
+            alert('Failed to toggle rule state: ' + NX.api.msg(result, 'Unknown error'));
         }
     } catch (err) {
-        console.error("Failed to toggle rule", err);
+        console.error('[UI_ERROR] component=Rules action=TOGGLE', err);
     }
 }
 
@@ -2116,6 +2594,34 @@ function initAccountIntelligence() {
     loadAccountPeriod('DAY', document.querySelector('.acct-period-btn'));
     loadAccountCharts();
     loadAccountStrategies();
+    loadRiskPlan();
+}
+
+// Risk Plan: authoritative numbers from /api/live/accounting (single source
+// of truth - the SAME RiskEngine the live engine uses; no JS-side math).
+async function loadRiskPlan() {
+    try {
+        const res = await fetch('/api/live/accounting');
+        if (!res.ok) return;
+        const data = await res.json();
+        const srcEl = document.getElementById('risk-plan-source');
+        if (srcEl) srcEl.textContent = data.source || (data.available ? 'RISK_ENGINE' : 'UNAVAILABLE');
+        if (!data.available || !data.plan) {
+            return;
+        }
+        const p = data.plan;
+        const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+        setTxt('rp-risk-usd', (p.risk_usd != null) ? '$' + Number(p.risk_usd).toFixed(2) : '—');
+        setTxt('rp-lot-size', (p.lot_size != null) ? Number(p.lot_size).toFixed(2) : '—');
+        setTxt('rp-margin', (p.margin_required != null) ? '$' + Number(p.margin_required).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—');
+        setTxt('rp-exposure', (p.exposure_pct != null) ? Number(p.exposure_pct).toFixed(2) + '%' : '—');
+        const note = document.getElementById('rp-note');
+        if (note) {
+            note.textContent = p.note ? String(p.note) : (p.entry != null ? `entry ${p.entry} · SL ${p.stop_loss} · lots ${p.lot_size} (min ${p.min_lot}, step ${p.lot_step})` : '');
+        }
+    } catch (err) {
+        console.warn('[UI_ERROR] component=Accounting action=LOAD_RISK_PLAN', err);
+    }
 }
 // =============================================================================
 
@@ -2176,8 +2682,8 @@ async function scanResearchDiscovery() {
     const box = document.getElementById('research-registry');
     box.innerHTML = '<div class="text-textMuted italic">Discovering candidates from experience ledger…</div>';
     try {
-        const res = await fetch('/api/research/discover', { method: 'POST' });
-        const body = await res.json();
+        const res = await NX.api.post('/api/research/discover', {}, { component: 'Research', action: 'DISCOVER' });
+        const body = res.ok ? res.body : { available: false, error: res.error };
         if (!body.available) {
             box.innerHTML = '<div class="text-accentRed italic">Discovery unavailable: ' + esc(body.error || '') + '</div>';
             return;
@@ -2202,8 +2708,8 @@ async function validateResearchCandidate() {
     if (!sid) { box.innerHTML = '<div class="text-accentRed italic">Enter a strategy_id first.</div>'; return; }
     box.innerHTML = '<div class="text-textMuted italic">Running backtest → walk-forward → OOS → robustness → score…</div>';
     try {
-        const res = await fetch('/api/research/validate?strategy_id=' + encodeURIComponent(sid), { method: 'POST' });
-        const body = await res.json();
+        const res = await NX.api.post('/api/research/validate?strategy_id=' + encodeURIComponent(sid), {}, { component: 'Research', action: 'VALIDATE' });
+        const body = res.ok ? res.body : { available: false, error: res.error };
         if (!body.available) {
             box.innerHTML = '<div class="text-accentRed italic">Validation unavailable: ' + esc(body.reason || body.error || '') + '</div>';
             return;
@@ -2296,9 +2802,38 @@ async function loadIntelligenceAutopsies() {
                 '<div class="text-textMuted">' + esc(a.narrative || '') + '</div>' +
             '</div>'
         ).join('');
-        document.getElementById('intel-behavior-count').textContent = '--';
+        loadIntelligenceBehavior();
     } catch (e) {
         console.warn('autopsies load failed', e);
+    }
+}
+
+// Behavior detections: real data from /api/intelligence/behavior.
+// NO DATA renders an explicit "NO DATA" state - nothing is fabricated.
+async function loadIntelligenceBehavior() {
+    try {
+        const res = await fetch('/api/intelligence/behavior?limit=8');
+        const body = await res.json();
+        const countEl = document.getElementById('intel-behavior-count');
+        const box = document.getElementById('intel-behavior');
+        const detections = body.detections || [];
+        if (!body.available || detections.length === 0) {
+            if (countEl) countEl.textContent = '0';
+            if (box) box.innerHTML = '<div class="text-textMuted italic text-[11px]">NO DATA — no behavior detections recorded.</div>';
+            return;
+        }
+        if (countEl) countEl.textContent = detections.length;
+        if (box) {
+            box.innerHTML = detections.map(b =>
+                '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+                    '<div class="flex justify-between"><span class="text-accentCyan font-bold">' + esc(b.behavior_type || b.behavior || 'UNKNOWN') +
+                    '</span><span class="text-textMuted">' + esc(b.symbol || '') + ' · ' + esc(String(b.detected_at || '').substring(0, 16)) + '</span></div>' +
+                    '<div class="text-textMuted">' + esc(b.summary || b.detail || '') + '</div>' +
+                '</div>'
+            ).join('');
+        }
+    } catch (e) {
+        console.warn('behavior load failed', e);
     }
 }
 
@@ -2328,8 +2863,8 @@ async function scanIntelligenceEvolution() {
     const box = document.getElementById('intel-evolution');
     box.innerHTML = '<div class="text-textMuted italic">Scanning for strategy variations…</div>';
     try {
-        const res = await fetch('/api/intelligence/evolution/scan', { method: 'POST' });
-        const body = await res.json();
+        const res = await NX.api.post('/api/intelligence/evolution/scan', {}, { component: 'Intelligence', action: 'EVOLUTION_SCAN' });
+        const body = res.ok ? res.body : { available: false, error: res.error };
         if (!body.available) {
             box.innerHTML = '<div class="text-textMuted italic">Scan failed.</div>';
             return;
@@ -2439,8 +2974,8 @@ async function loadNewsFeed() {
 
 async function analyzeNewsWithAI(articleId) {
     try {
-        const res = await fetch('/api/news/analyze/' + articleId, { method: 'POST' });
-        const body = await res.json();
+        const res = await NX.api.post('/api/news/analyze/' + articleId, {}, { component: 'News', action: 'ANALYZE' });
+        const body = res.ok ? res.body : { available: false, error: res.error };
         alert(body && body.ok ? 'Analysis queued (status: ' + (body.status || 'QUEUED') + ')' : 'Analysis request failed');
         setTimeout(loadNewsFeed, 1500);
     } catch (e) {
@@ -2450,8 +2985,8 @@ async function analyzeNewsWithAI(articleId) {
 
 async function triggerNewsRefresh() {
     try {
-        const res = await fetch('/api/news/refresh', { method: 'POST' });
-        const body = await res.json();
+        const res = await NX.api.post('/api/news/refresh', {}, { component: 'News', action: 'REFRESH' });
+        const body = res.ok ? res.body : { available: false, error: res.error };
         alert(body && body.available ? 'News fetch complete: ' + JSON.stringify(body.ingested || {}) : 'News engine unavailable');
         loadNewsState();
     } catch (e) {

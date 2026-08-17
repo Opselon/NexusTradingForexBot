@@ -49,15 +49,22 @@ def make_bars(n: int = 300, seed: int = 21) -> pl.DataFrame:
 
 
 def make_news() -> pl.DataFrame:
+    """Realistic 12-field NewsContext input (full canonical schema)."""
     ts = np.array([30, 90, 150, 220], dtype="int64").astype("datetime64[us]")
     return pl.DataFrame(
         {
             "published_at": ts,
+            "active_high_impact_events": [1, 2, 0, 1],
             "xauusd_relevance": [0.9, 0.2, 0.8, 0.6],
             "usd_relevance": [0.6, 0.2, 0.5, 0.4],
             "bullish_pressure": [0.1, 0.6, 0.2, 0.4],
             "bearish_pressure": [0.8, 0.1, 0.7, 0.3],
+            "conflict_score": [0.1, 0.0, 0.2, 0.0],
+            "novelty": ["NEW", "UPDATED", "CONFIRMATION", "NEW"],
+            "freshness": [0.9, 0.5, 0.4, 0.3],
             "confidence": [0.9, 0.5, 0.8, 0.6],
+            "source_consensus": [0.7, 0.3, 0.6, 0.4],
+            "news_state": ["HIGH_IMPACT", "ELEVATED", "NORMAL", "ELEVATED"],
         }
     )
 

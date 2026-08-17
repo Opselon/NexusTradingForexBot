@@ -159,6 +159,11 @@ class LiveEngine:
         self._peak_equity: float = 0.0
         self._last_balance: float = 0.0
         self._last_active_position_count: int = 0
+        #: Broker-aware account snapshot cache (typed; refreshed off the hot path).
+        self._account_snapshot: Any = None
+        #: Real runtime execution mode - updated from connection state, never
+        #: blindly trusted from config (task section 8: mode must be real).
+        self._runtime_mode: str = ""
 
         self._consecutive_losses: int = 0
         self._survival_mode_active: bool = False
@@ -429,6 +434,7 @@ class LiveEngine:
         self._last_regime_state: MarketRegimeState | None = None
         self._last_probs: torch.Tensor | None = None
         self._last_proposal: TradeProposal | None = None
+        self._last_inference_latency_ms: float | None = None
         #: Most recent Phase 08 pre-trade verdict, surfaced by the REST API.
         self._last_experience_decision: PreTradeExperienceDecision | None = None
 
@@ -566,6 +572,14 @@ class LiveEngine:
         account = self.adapter.get_account_info()
         self._symbol_info = self.adapter.get_symbol_info(symbol)
 
+        # PHASE 14: refresh the typed broker-aware account snapshot and derive
+        # the REAL runtime mode from connection state + account permissions.
+        try:
+            self._account_snapshot = self.adapter.get_account_snapshot()
+        except Exception:
+            self._account_snapshot = None
+        self._update_runtime_mode()
+
         self._restore_peak_equity(account)
         self._notify_startup(account)
 
@@ -653,6 +667,16 @@ class LiveEngine:
 
                 if self._symbol_info is None:
                     self._symbol_info = self.adapter.get_symbol_info(symbol)
+
+                # PHASE 14: periodically refresh the typed broker-aware account
+                # snapshot + REAL runtime mode (throttled - never per tick).
+                if getattr(self, "_last_snapshot_refresh", 0.0) + 5.0 < time.time():
+                    try:
+                        self._account_snapshot = self.adapter.get_account_snapshot()
+                    except Exception:
+                        pass
+                    self._update_runtime_mode()
+                    self._last_snapshot_refresh = time.time()
 
                 self._process_tick_pipeline(tick=tick, account=live_account)
                 self._last_tick_processed_time = time.time()
@@ -1998,6 +2022,9 @@ class LiveEngine:
                 pass
 
     def _infer_probabilities(self, fv) -> torch.Tensor:
+        import time as _time
+
+        _start = _time.perf_counter()
         x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="live_inference")
         x_np = np.array(x50, dtype=np.float32).reshape(1, -1)
 
@@ -2012,7 +2039,9 @@ class LiveEngine:
 
         bundle.model.eval()
         with torch.inference_mode():
-            return bundle.model(x)
+            probs = bundle.model(x)
+        self._last_inference_latency_ms = (_time.perf_counter() - _start) * 1000.0
+        return probs
 
     def _record_shadow_decision(
         self,
@@ -2319,6 +2348,44 @@ class LiveEngine:
 
         if account:
             self._last_balance = float(account.balance)
+
+    def _update_runtime_mode(self) -> None:
+        """Derives the REAL runtime execution mode from connection + config.
+
+        Task section 8: dashboard MODE must be authoritative. Possible:
+        PAPER / SHADOW / LIVE / REPLAY / STOPPED / DEGRADED. When config says
+        LIVE but MT5 is not connected, the mode reports DEGRADED (the UI shows
+        LIVE_CONFIGURED / MT5_DISCONNECTED - never LIVE_READY).
+        """
+        mode = ""
+        try:
+            mode = str(self.config.execution.mode.value or "").upper()
+        except Exception:
+            mode = ""
+        try:
+            connected = bool(self.adapter.is_connected())
+        except Exception:
+            connected = False
+
+        if mode == "LIVE":
+            if connected:
+                snap = self._account_snapshot
+                allowed = True
+                try:
+                    allowed = bool(getattr(snap, "trade_allowed", True))
+                except Exception:
+                    allowed = True
+                if allowed is False:
+                    self._runtime_mode = "LIVE / TRADE_BLOCKED"
+                else:
+                    self._runtime_mode = "LIVE"
+            else:
+                self._runtime_mode = "LIVE_CONFIGURED / MT5_DISCONNECTED"
+        elif not mode:
+            self._runtime_mode = "STOPPED"
+        else:
+            self._runtime_mode = mode
+        logger.info("[MODE] runtime_mode=%s configured_mode=%s", self._runtime_mode, mode)
 
     def _notify_startup(self, account: AccountInfo | None) -> None:
         if not account:

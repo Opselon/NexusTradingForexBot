@@ -1,0 +1,5 @@
+non-protection rows for 152487000000+: 0
+
+=== ALL 'Generated candidate' rows ===
+id=1262 ts=2026-08-17 03:19:50 ticket=67890 order_id=req-limit price=2000.0 vol=2.0 mode=STANDARD
+id=1611 ts=2026-08-17 04:07:28 ticket=67890 order_id=req-limit price=2000.0 vol=2.0 mode=STANDARD

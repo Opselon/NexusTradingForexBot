@@ -22,6 +22,33 @@ import sys
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Optional
 
+from nexus_scalp.adapters.mt5.diagnostics import (
+    MT5CallDiagnostic,
+    MT5ConnectionState,
+    run_mt5_call,
+)
+from nexus_scalp.adapters.mt5.providers import (
+    AccountSnapshot,
+    BrokerCalcSnapshot,
+    BrokerTickSnapshot,
+    DealSnapshot,
+    HistoryOrderSnapshot,
+    OrderSnapshot,
+    PositionSnapshot,
+    RateBarSnapshot,
+    SymbolSnapshot,
+    TickHistorySnapshot,
+    build_account_snapshot,
+    build_deal_snapshot,
+    build_history_order_snapshot,
+    build_order_snapshot,
+    build_position_snapshot,
+    build_rate_bar_snapshot,
+    build_symbol_snapshot,
+    build_tick_history_snapshot,
+    normalize_utc,
+    validate_ohlc_bars,
+)
 from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
@@ -71,18 +98,45 @@ class DirectMT5Adapter(IMT5Port):
         self._path = path
         self._timeout = timeout
         self._connected = False
+        #: Real runtime connection state (never derived from config).
+        self._conn_state = MT5ConnectionState()
+        #: Most recent structured diagnostics per operation (bounded dict).
+        self._last_calls: dict[str, MT5CallDiagnostic] = {}
+        self._last_call_ring: list[MT5CallDiagnostic] = []
+        self._call_ring_max = 50
 
         if not HAS_NATIVE_MT5 and sys.platform == "win32":
             logger.warning(
                 "Windows system detected but 'MetaTrader5' package is missing from Python environment."
             )
 
+    # ------------------------------------------------------------------
+    # Diagnostics helpers
+    # ------------------------------------------------------------------
+    def _record_call(self, diag: MT5CallDiagnostic) -> None:
+        self._last_calls[diag.operation] = diag
+        self._last_call_ring.append(diag)
+        if len(self._last_call_ring) > self._call_ring_max:
+            self._last_call_ring = self._last_call_ring[-self._call_ring_max :]
+
+    def diagnostics_summary(self) -> dict[str, Any]:
+        """Structured diagnostics for /api/debug/health + IPC telemetry."""
+        return {
+            "connection": self._conn_state.to_dict(),
+            "last_calls": {k: v.to_dict() for k, v in self._last_calls.items()},
+            "recent_calls": [d.to_dict() for d in self._last_call_ring[-20:]],
+        }
+
     def connect(self) -> bool:
         if not HAS_NATIVE_MT5 or mt5 is None:
             logger.error("Native MetaTrader5 C++ IPC driver unavailable.")
             self._connected = False
+            self._conn_state.set_state(
+                MT5ConnectionState.TERMINAL_ERROR, "MetaTrader5 package unavailable"
+            )
             return False
 
+        self._conn_state.set_state(MT5ConnectionState.CONNECTING, "initialize()")
         init_kwargs: dict[str, object] = {"timeout": self._timeout}
         if self._path:
             init_kwargs["path"] = self._path
@@ -93,7 +147,31 @@ class DirectMT5Adapter(IMT5Port):
                 "Failed to initialize connection to MT5 terminal process. Retcode: %s", err_code
             )
             self._connected = False
+            self._conn_state.set_state(
+                MT5ConnectionState.TERMINAL_ERROR, f"initialize failed: {err_code}"
+            )
             return False
+
+        # Record terminal/package versions + terminal_info on every connect.
+        try:
+            pkg_ver = None
+            term_ver = None
+            try:
+                vers = mt5.version()
+                if vers:
+                    pkg_ver = f"{vers[0]}.{vers[1]}.{vers[2]}" if len(vers) >= 3 else str(vers[0])
+            except Exception:
+                pass
+            try:
+                term_info = mt5.terminal_info()
+                self._conn_state.set_terminal(term_info)
+                if term_info is not None:
+                    term_ver = str(getattr(term_info, "name", "") or "")
+            except Exception:
+                pass
+            self._conn_state.set_versions(pkg_ver, term_ver)
+        except Exception:
+            pass
 
         if self._account and self._password and self._server:
             login_ok = mt5.login(login=self._account, password=self._password, server=self._server)
@@ -106,9 +184,13 @@ class DirectMT5Adapter(IMT5Port):
                 )
                 mt5.shutdown()
                 self._connected = False
+                self._conn_state.set_state(
+                    MT5ConnectionState.AUTHENTICATION_ERROR, f"login failed: {err_code}"
+                )
                 return False
 
         self._connected = True
+        self._conn_state.set_state(MT5ConnectionState.CONNECTED, "connected")
         logger.info("Successfully connected to MT5 Terminal process.")
         return True
 
@@ -117,80 +199,347 @@ class DirectMT5Adapter(IMT5Port):
             mt5.shutdown()
             logger.info("MetaTrader 5 IPC connection closed.")
         self._connected = False
+        self._conn_state.set_state(MT5ConnectionState.DISCONNECTED, "disconnected")
 
     def is_connected(self) -> bool:
         if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
             return False
         terminal_info = mt5.terminal_info()
-        return terminal_info is not None and terminal_info.connected
+        is_conn = terminal_info is not None and terminal_info.connected
+        if is_conn:
+            self._conn_state.record_success("terminal_info")
+        else:
+            self._conn_state.record_failure("terminal_info", "terminal reports disconnected")
+        return is_conn
 
     def get_account_info(self) -> AccountInfo:
-        self._assert_connected()
-        assert mt5 is not None
-        raw = mt5.account_info()
-        if raw is None:
-            raise RuntimeError(f"Failed to fetch account info from MT5. Error: {mt5.last_error()}")
-
+        """Legacy contract read (raises on failure, never returns fake data)."""
+        snap = self.get_account_snapshot()
+        if not snap.available or snap.balance is None or snap.equity is None:
+            raise RuntimeError(
+                f"Failed to fetch account info from MT5. Error: {snap.error_state or 'unavailable'}"
+            )
         return AccountInfo(
-            login=raw.login,
-            trade_mode=raw.trade_mode,
-            leverage=raw.leverage,
-            balance=raw.balance,
-            equity=raw.equity,
-            margin=raw.margin,
-            margin_free=raw.margin_free,
-            currency=raw.currency,
+            login=snap.login or 0,
+            trade_mode=snap.trade_mode or 0,
+            leverage=snap.leverage or 100,
+            balance=snap.balance,
+            equity=snap.equity,
+            margin=snap.margin or 0.0,
+            margin_free=snap.margin_free or 0.0,
+            currency=snap.currency or "USD",
         )
 
     def get_symbol_info(self, symbol: str) -> SymbolInfo:
-        self._assert_connected()
-        assert mt5 is not None
-
-        if not mt5.symbol_select(symbol, True):
-            raise RuntimeError(f"Failed to select symbol '{symbol}' in Market Watch.")
-
-        raw = mt5.symbol_info(symbol)
-        if raw is None:
-            raise RuntimeError(f"Symbol info for '{symbol}' not found. Error: {mt5.last_error()}")
-
+        """Legacy contract read (raises on failure, never returns fake data)."""
+        snap = self.get_symbol_snapshot(symbol)
+        spec = snap.spec
+        if not snap.available or not spec or spec.get("digits") is None:
+            raise RuntimeError(
+                f"Symbol info for '{symbol}' not found. Error: {snap.error_state or 'unavailable'}"
+            )
         return SymbolInfo(
-            symbol=raw.name,
-            digits=raw.digits,
-            point=raw.point,
-            tick_size=raw.trade_tick_size,
-            tick_value=raw.trade_tick_value,
-            volume_min=raw.volume_min,
-            volume_max=raw.volume_max,
-            volume_step=raw.volume_step,
-            stops_level=raw.trade_stops_level,
-            freeze_level=raw.trade_freeze_level,
-            trade_contract_size=raw.trade_contract_size,
+            symbol=str(spec.get("name") or symbol),
+            digits=int(float(spec["digits"])),
+            point=float(spec.get("point") or 0.00001),
+            tick_size=float(spec.get("trade_tick_size") or spec.get("point") or 0.00001),
+            tick_value=float(spec.get("trade_tick_value") or 0.0),
+            volume_min=float(spec.get("volume_min") or 0.01),
+            volume_max=float(spec.get("volume_max") or 100.0),
+            volume_step=float(spec.get("volume_step") or 0.01),
+            stops_level=int(float(spec.get("trade_stops_level") or 0.0)),
+            freeze_level=int(float(spec.get("trade_freeze_level") or 0.0)),
+            trade_contract_size=float(spec.get("trade_contract_size") or 100.0),
         )
 
     def get_last_tick(self, symbol: str) -> TickData:
-        self._assert_connected()
-        assert mt5 is not None
-
-        raw_tick = mt5.symbol_info_tick(symbol)
-        if raw_tick is None:
-            raise RuntimeError(f"Failed to fetch tick for '{symbol}'. Error: {mt5.last_error()}")
-
+        """Legacy contract read (raises on failure, never returns fake data)."""
+        snap = self.get_broker_tick(symbol)
+        if not snap.available or snap.bid is None or snap.ask is None:
+            raise RuntimeError(
+                f"Failed to fetch tick for '{symbol}'. Error: {snap.error_state or 'unavailable'}"
+            )
         return TickData(
             symbol=symbol,
-            timestamp=datetime.fromtimestamp(raw_tick.time, tz=UTC),
-            bid=raw_tick.bid,
-            ask=raw_tick.ask,
-            last=raw_tick.last,
-            volume=float(raw_tick.volume),
-            flags=raw_tick.flags,
+            timestamp=snap.time_utc or datetime.now(UTC),
+            bid=snap.bid,
+            ask=snap.ask,
+            last=snap.last or 0.0,
+            volume=float(snap.volume or 0.0),
+            flags=snap.flags or 0,
         )
 
-    def get_historical_bars(
-        self, symbol: str, timeframe: str = "M1", count: int = 100
-    ) -> list[BarData]:
-        self._assert_connected()
-        assert mt5 is not None
+    # =========================================================================
+    # BROKER-AWARE PROVIDERS (Phase 14 MT5 forensic architecture)
+    # -------------------------------------------------------------------------
+    # Every call is wrapped by run_mt5_call() -> structured [MT5_CALL]
+    # diagnostics (operation/status/duration_ms/error_code/error_message).
+    # Failure is NEVER silent: snapshots carry error_state and the ring log.
+    # =========================================================================
 
+    def connection_state(self) -> MT5ConnectionState:
+        """Real MT5 connection state (never derived from config)."""
+        return self._conn_state
+
+    def get_account_snapshot(self) -> AccountSnapshot:
+        if not HAS_NATIVE_MT5 or mt5 is None:
+            return AccountSnapshot().as_error("account_info", None, "native driver unavailable")
+        if not self._connected:
+            return AccountSnapshot().as_error("account_info", None, "adapter not connected")
+        raw, diag = run_mt5_call("account_info", mt5.account_info, mt5_module=mt5)
+        self._record_call(diag)
+        snap = build_account_snapshot(raw)
+        if not snap.available:
+            snap.as_error("account_info", diag.mt5_error_code, diag.mt5_error_message)
+        else:
+            self._conn_state.record_success("account_info")
+            self._conn_state.set_account(raw)
+        return snap
+
+    def get_terminal_state(self) -> dict[str, Any]:
+        if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
+            return {
+                "available": False,
+                "reason": "adapter not connected",
+                "connection": self._conn_state.to_dict(),
+            }
+        raw, diag = run_mt5_call("terminal_info", mt5.terminal_info, mt5_module=mt5)
+        self._record_call(diag)
+        if raw is None:
+            return {
+                "available": False,
+                "reason": "terminal_info failed",
+                "error": {"code": diag.mt5_error_code, "message": diag.mt5_error_message},
+                "connection": self._conn_state.to_dict(),
+            }
+        self._conn_state.set_terminal(raw)
+        info: dict[str, Any] = {}
+        for name in (
+            "name",
+            "company",
+            "account",
+            "connected",
+            "trade_allowed",
+            "trade_expert",
+            "dlls_allowed",
+            "path",
+            "data_path",
+            "maxbars",
+        ):
+            val = getattr(raw, name, None)
+            if val is not None:
+                info[name] = val
+        info["available"] = True
+        info["connection"] = self._conn_state.to_dict()
+        return info
+
+    def get_symbol_snapshot(self, symbol: str) -> SymbolSnapshot:
+        if not HAS_NATIVE_MT5 or mt5 is None:
+            return SymbolSnapshot().as_error("symbol_info", None, "native driver unavailable")
+        if not self._connected:
+            return SymbolSnapshot().as_error("symbol_info", None, "adapter not connected")
+
+        raw_info, diag_info = run_mt5_call(
+            "symbol_info",
+            lambda: mt5.symbol_info(symbol),
+            mt5_module=mt5,
+            context={"symbol": symbol},
+        )
+        self._record_call(diag_info)
+        raw_tick, diag_tick = run_mt5_call(
+            "symbol_info_tick",
+            lambda: mt5.symbol_info_tick(symbol),
+            mt5_module=mt5,
+            context={"symbol": symbol},
+        )
+        self._record_call(diag_tick)
+
+        snap = build_symbol_snapshot(raw_info, raw_tick)
+        if not snap.available:
+            snap.as_error(
+                "symbol_info_tick",
+                diag_tick.mt5_error_code or diag_info.mt5_error_code,
+                diag_tick.mt5_error_message or diag_info.mt5_error_message,
+            )
+            return snap
+        # Stale tick detection (task section 11): last tick older than 30s.
+        if snap.tick_freshness_ms is not None:
+            snap.tick_stale = (snap.tick_freshness_ms / 1000.0) > 30.0
+        return snap
+
+    def get_broker_tick(self, symbol: str) -> BrokerTickSnapshot:
+        if not HAS_NATIVE_MT5 or mt5 is None:
+            return BrokerTickSnapshot().as_error(
+                "symbol_info_tick", None, "native driver unavailable"
+            )
+        if not self._connected:
+            return BrokerTickSnapshot().as_error("symbol_info_tick", None, "adapter not connected")
+
+        raw_tick, diag = run_mt5_call(
+            "symbol_info_tick",
+            lambda: mt5.symbol_info_tick(symbol),
+            mt5_module=mt5,
+            context={"symbol": symbol},
+        )
+        self._record_call(diag)
+        snap = BrokerTickSnapshot()
+        if raw_tick is None:
+            snap.as_error("symbol_info_tick", diag.mt5_error_code, diag.mt5_error_message)
+            snap.symbol = symbol
+            return snap
+        snap.available = True
+        snap.source = "BROKER_NATIVE"
+        snap.symbol = symbol
+        snap.bid = float(getattr(raw_tick, "bid", 0.0) or 0.0)
+        snap.ask = float(getattr(raw_tick, "ask", 0.0) or 0.0)
+        snap.last = float(getattr(raw_tick, "last", 0.0) or 0.0)
+        snap.last_volume = float(getattr(raw_tick, "volume", 0.0) or 0.0)
+        snap.volume = float(getattr(raw_tick, "volume", 0.0) or 0.0)
+        snap.flags = int(getattr(raw_tick, "flags", 0) or 0)
+        snap.time = int(getattr(raw_tick, "time", 0) or 0)
+        snap.time_msc = int(getattr(raw_tick, "time_msc", 0) or 0)
+        try:
+            snap.time_utc = datetime.fromtimestamp(float(snap.time), tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            snap.time_utc = None
+        if snap.time_utc is not None:
+            snap.freshness_ms = max(
+                0.0, (datetime.now(UTC) - snap.time_utc).total_seconds() * 1000.0
+            )
+            snap.stale = snap.freshness_ms > 30_000.0
+        if snap.bid > 0 and snap.ask > 0:
+            snap.spread_points = round(float(snap.ask - snap.bid), 8)
+        return snap
+
+    def get_all_positions(self, symbol: str | None = None) -> list[PositionSnapshot]:
+        """ALL account positions (never restricted to bot symbol/magic).
+
+        This is the dashboard/accounting view. The classic get_positions()
+        keeps its XAUUSD/magic filter for the bot's own position-management
+        path (task section 22: separate ALL / BOT / SYMBOL / MAGIC views).
+        """
+        if not HAS_NATIVE_MT5 or mt5 is None:
+            return []
+        if not self._connected:
+            return []
+        raw, diag = run_mt5_call(
+            "positions_get",
+            lambda: mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get(),
+            mt5_module=mt5,
+            context={"symbol": symbol} if symbol else None,
+        )
+        self._record_call(diag)
+        if raw is None:
+            self._conn_state.record_failure("positions_get", diag.mt5_error_message)
+            return []
+        self._conn_state.record_success("positions_get")
+        return [build_position_snapshot(p) for p in raw]
+
+    def get_pending_orders_snapshot(self, symbol: str | None = None) -> list[OrderSnapshot]:
+        """Active pending orders via mt5.orders_get() (ALL magics)."""
+        if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
+            return []
+        raw, diag = run_mt5_call(
+            "orders_get",
+            lambda: mt5.orders_get(symbol=symbol) if symbol else mt5.orders_get(),
+            mt5_module=mt5,
+            context={"symbol": symbol} if symbol else None,
+        )
+        self._record_call(diag)
+        if raw is None:
+            self._conn_state.record_failure("orders_get", diag.mt5_error_message)
+            return []
+        self._conn_state.record_success("orders_get")
+        return [build_order_snapshot(o) for o in raw]
+
+    def get_history_orders(
+        self, from_utc: Any = None, to_utc: Any = None, symbol: str | None = None
+    ) -> list[HistoryOrderSnapshot]:
+        """Historical orders via mt5.history_orders_get() (UTC boundaries)."""
+        if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
+            return []
+        from_dt = (
+            normalize_utc(from_utc)
+            if from_utc is not None
+            else (datetime.now(UTC) - timedelta(days=1))
+        )
+        to_dt = normalize_utc(to_utc) if to_utc is not None else datetime.now(UTC)
+        if to_dt < from_dt:
+            return []
+        raw, diag = run_mt5_call(
+            "history_orders_get",
+            lambda: (
+                mt5.history_orders_get(from_dt, to_dt, group=symbol)
+                if symbol
+                else mt5.history_orders_get(from_dt, to_dt)
+            ),
+            mt5_module=mt5,
+            context={
+                "symbol": symbol or "*",
+                "date_range": f"{from_dt.isoformat()}..{to_dt.isoformat()}",
+            },
+        )
+        self._record_call(diag)
+        if raw is None:
+            self._conn_state.record_failure("history_orders_get", diag.mt5_error_message)
+            return []
+        self._conn_state.record_success("history_orders_get")
+        return [build_history_order_snapshot(o) for o in raw]
+
+    def get_history_deals(
+        self, from_utc: Any = None, to_utc: Any = None, symbol: str | None = None
+    ) -> list[DealSnapshot]:
+        """Historical deals via mt5.history_deals_get() (UTC boundaries).
+
+        NOTE: `symbol` is passed via group= (MT5 symbol group filter), same
+        semantics as the legacy get_closed_deals_history.
+        """
+        if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
+            return []
+        from_dt = (
+            normalize_utc(from_utc)
+            if from_utc is not None
+            else (datetime.now(UTC) - timedelta(days=1))
+        )
+        to_dt = normalize_utc(to_utc) if to_utc is not None else datetime.now(UTC)
+        if to_dt < from_dt:
+            return []
+        raw, diag = run_mt5_call(
+            "history_deals_get",
+            lambda: (
+                mt5.history_deals_get(from_dt, to_dt, group=symbol)
+                if symbol
+                else mt5.history_deals_get(from_dt, to_dt)
+            ),
+            mt5_module=mt5,
+            context={
+                "symbol": symbol or "*",
+                "date_range": f"{from_dt.isoformat()}..{to_dt.isoformat()}",
+            },
+        )
+        self._record_call(diag)
+        if raw is None:
+            self._conn_state.record_failure("history_deals_get", diag.mt5_error_message)
+            return []
+        self._conn_state.record_success("history_deals_get")
+        return [build_deal_snapshot(d) for d in raw]
+
+    def get_rate_history(
+        self,
+        symbol: str,
+        timeframe: str = "M1",
+        count: int = 500,
+        from_utc: Any = None,
+    ) -> list[RateBarSnapshot]:
+        """Official MT5 rate history via copy_rates_* (UTC-normalized).
+
+        from_utc given  -> copy_rates_range(symbol, tf, from, now)
+        else            -> copy_rates_from_pos(symbol, tf, 0, count)
+        """
+        if not HAS_NATIVE_MT5 or mt5 is None:
+            return []
+        if not self._connected:
+            return []
         tf_map = {
             "M1": mt5.TIMEFRAME_M1,
             "M5": mt5.TIMEFRAME_M5,
@@ -198,33 +547,221 @@ class DirectMT5Adapter(IMT5Port):
             "M30": mt5.TIMEFRAME_M30,
             "H1": mt5.TIMEFRAME_H1,
             "H4": mt5.TIMEFRAME_H4,
+            "D1": mt5.TIMEFRAME_D1,
         }
         mt5_tf = tf_map.get(timeframe.upper(), mt5.TIMEFRAME_M1)
-        rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
+        req_count = max(1, min(int(count), 100_000))
 
-        if rates is None or len(rates) == 0:
-            logger.warning("No historical bars returned from MT5 for %s", symbol)
+        if from_utc is not None:
+            from_dt = normalize_utc(from_utc)
+            if from_dt is None:
+                return []
+            raw, diag = run_mt5_call(
+                "copy_rates_range",
+                lambda: mt5.copy_rates_range(symbol, mt5_tf, from_dt, datetime.now(UTC)),
+                mt5_module=mt5,
+                context={
+                    "symbol": symbol,
+                    "timeframe": str(timeframe).upper(),
+                    "requested_bars": req_count,
+                },
+            )
+        else:
+            raw, diag = run_mt5_call(
+                "copy_rates_from_pos",
+                lambda: mt5.copy_rates_from_pos(symbol, mt5_tf, 0, req_count),
+                mt5_module=mt5,
+                context={
+                    "symbol": symbol,
+                    "timeframe": str(timeframe).upper(),
+                    "requested_bars": req_count,
+                },
+            )
+        self._record_call(diag)
+        if raw is None:
+            self._conn_state.record_failure("copy_rates", diag.mt5_error_message)
             return []
+        self._conn_state.record_success("copy_rates")
+        bars = [build_rate_bar_snapshot(r) for r in raw]
+        # Integrity validation (task section 39) - report anomalies, never fake.
+        report = validate_ohlc_bars(bars)
+        if report["invalid"] > 0:
+            logger.warning(
+                "[MT5_CHART] event=HISTORY_VALIDATION symbol=%s timeframe=%s requested=%s received=%s invalid=%s issues=%s",
+                symbol,
+                str(timeframe).upper(),
+                req_count,
+                len(bars),
+                report["invalid"],
+                report["issues"][:5],
+            )
+        return bars
 
+    def get_tick_history(
+        self,
+        symbol: str,
+        count: int = 500,
+        from_utc: Any = None,
+        to_utc: Any = None,
+    ) -> list[TickHistorySnapshot]:
+        """Tick history via copy_ticks_from / copy_ticks_range (UTC)."""
+        if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
+            return []
+        req_count = max(1, min(int(count), 100_000))
+        if from_utc is not None:
+            from_dt = normalize_utc(from_utc)
+            to_dt = normalize_utc(to_utc) if to_utc is not None else datetime.now(UTC)
+            if from_dt is None or to_dt < from_dt:
+                return []
+            raw, diag = run_mt5_call(
+                "copy_ticks_range",
+                lambda: mt5.copy_ticks_range(symbol, from_dt, to_dt, mt5.COPY_TICKS_ALL),
+                mt5_module=mt5,
+                context={"symbol": symbol, "requested": req_count},
+            )
+        else:
+            raw, diag = run_mt5_call(
+                "copy_ticks_from",
+                lambda: mt5.copy_ticks_from(
+                    symbol,
+                    datetime.now(UTC) - timedelta(hours=1),
+                    req_count,
+                    mt5.COPY_TICKS_ALL,
+                ),
+                mt5_module=mt5,
+                context={"symbol": symbol, "requested": req_count},
+            )
+        self._record_call(diag)
+        if raw is None:
+            self._conn_state.record_failure("copy_ticks", diag.mt5_error_message)
+            return []
+        self._conn_state.record_success("copy_ticks")
+        return [build_tick_history_snapshot(t) for t in raw]
+
+    def order_calc_profit_snapshot(
+        self,
+        symbol: str,
+        order_type: int,
+        volume: float,
+        price_open: float,
+        price_close: float,
+    ) -> BrokerCalcSnapshot:
+        """Broker-native profit calc via mt5.order_calc_profit()."""
+        snap = BrokerCalcSnapshot()
+        snap.operation = "order_calc_profit"
+        snap.symbol = symbol
+        snap.price_open = float(price_open)
+        snap.price_close = float(price_close)
+        snap.volume = float(volume)
+        if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
+            snap.available = False
+            snap.source = "UNAVAILABLE"
+            return snap
+        raw, diag = run_mt5_call(
+            "order_calc_profit",
+            lambda: mt5.order_calc_profit(
+                int(order_type),
+                symbol,
+                float(volume),
+                float(price_open),
+                float(price_close),
+            ),
+            mt5_module=mt5,
+            context={"symbol": symbol, "volume": float(volume)},
+        )
+        self._record_call(diag)
+        if raw is None:
+            snap.available = False
+            snap.source = "UNAVAILABLE"
+            snap.error_code = diag.mt5_error_code
+            snap.error_message = diag.mt5_error_message
+            return snap
+        snap.available = True
+        snap.value = float(raw)
+        snap.value_source = "BROKER_NATIVE"
+        return snap
+
+    def order_calc_margin_snapshot(
+        self,
+        symbol: str,
+        order_type: int,
+        volume: float,
+        price: float,
+    ) -> BrokerCalcSnapshot:
+        """Broker-native margin calc via mt5.order_calc_margin()."""
+        snap = BrokerCalcSnapshot()
+        snap.operation = "order_calc_margin"
+        snap.symbol = symbol
+        snap.price_open = float(price)
+        snap.volume = float(volume)
+        if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
+            snap.available = False
+            snap.source = "UNAVAILABLE"
+            return snap
+        raw, diag = run_mt5_call(
+            "order_calc_margin",
+            lambda: mt5.order_calc_margin(
+                int(order_type),
+                symbol,
+                float(volume),
+                float(price),
+            ),
+            mt5_module=mt5,
+            context={"symbol": symbol, "volume": float(volume)},
+        )
+        self._record_call(diag)
+        if raw is None:
+            snap.available = False
+            snap.source = "UNAVAILABLE"
+            snap.error_code = diag.mt5_error_code
+            snap.error_message = diag.mt5_error_message
+            return snap
+        snap.available = True
+        snap.value = float(raw)
+        snap.value_source = "BROKER_NATIVE"
+        return snap
+
+    def get_historical_bars(
+        self, symbol: str, timeframe: str = "M1", count: int = 100
+    ) -> list[BarData]:
+        """Legacy contract read: current-tick-consistent historical OHLC bars.
+
+        Delegates to the official get_rate_history() provider and maps onto
+        the internal BarData contract (UTC timestamps preserved).
+        """
+        rate_bars = self.get_rate_history(symbol=symbol, timeframe=timeframe, count=count)
         bars: list[BarData] = []
-        for r in rates:
-            dt = datetime.fromtimestamp(r["time"], tz=UTC)
+        for r in rate_bars:
+            if (
+                r.time_utc is None
+                or r.open is None
+                or r.high is None
+                or r.low is None
+                or r.close is None
+            ):
+                continue
             bars.append(
                 BarData(
                     symbol=symbol,
-                    timeframe=timeframe,
-                    timestamp=dt,
-                    open=float(r["open"]),
-                    high=float(r["high"]),
-                    low=float(r["low"]),
-                    close=float(r["close"]),
-                    tick_volume=int(r["tick_volume"]),
+                    timeframe=str(timeframe).upper(),
+                    timestamp=r.time_utc,
+                    open=float(r.open),
+                    high=float(r.high),
+                    low=float(r.low),
+                    close=float(r.close),
+                    tick_volume=int(r.tick_volume or 0),
                     is_complete=True,
                 )
             )
         return bars
 
     def get_positions(self, symbol: str | None = None) -> list[Position]:
+        """Legacy bot-management read: BOT positions only (symbol + magic 888101).
+
+        The dashboard/accounting ALL-account view uses get_all_positions()
+        which NEVER applies this filter (task section 22: separate
+        ALL ACCOUNT POSITIONS / BOT POSITIONS / SYMBOL POSITIONS views).
+        """
         self._assert_connected()
         assert mt5 is not None
 
@@ -255,7 +792,7 @@ class DirectMT5Adapter(IMT5Port):
     # PENDING ORDERS INVENTORY & CANCELLATION
     # ==========================================================================
     def get_pending_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
-        """Queries active pending orders (LIMIT / STOP)."""
+        """Queries active pending orders (LIMIT / STOP). BOT-filtered (XAUUSD+magic)."""
         self._assert_connected()
         assert mt5 is not None
 

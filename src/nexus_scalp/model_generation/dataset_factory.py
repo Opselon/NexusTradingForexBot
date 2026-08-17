@@ -36,11 +36,52 @@ def deterministic_dataset_id(
     label_schema_id: str,
     strategy_id: str,
     config_hash: str,
+    news_digest: dict[str, Any] | None = None,
 ) -> str:
+    news_part = ""
+    if news_digest is not None:
+        news_part = "|" + json.dumps(news_digest, sort_keys=True, default=str)
     payload = (
         f"{symbol}|{timeframe}|{feature_schema_id}|{label_schema_id}|{strategy_id}|{config_hash}"
+        f"{news_part}"
     )
     return "ds_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _news_digest(news_frame: pl.DataFrame | None) -> dict[str, Any] | None:
+    """Deterministic news provenance digest: None when no news frame, else
+    {version, rows, range, content_hash}.  Content hash over the normalized
+    12-field matrix + publication times so ANY news change re-identifies."""
+    if news_frame is None or news_frame.is_empty():
+        return None
+    try:
+        from nexus_scalp.model_generation.news_bridge import normalize_news_frame
+
+        norm = normalize_news_frame(news_frame)
+        if norm is None or norm.is_empty():
+            return None
+        rows = norm.height
+        try:
+            ts_col = norm["published_at"]
+            t_start = str(ts_col.min())
+            t_end = str(ts_col.max())
+        except Exception:
+            t_start = t_end = ""
+        content_hash = hashlib.sha256(
+            json.dumps(
+                norm.select([c for c in norm.columns]).to_dict(as_series=False),
+                sort_keys=True,
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()[:16]
+        return {
+            "version": "news_context_v1",
+            "rows": rows,
+            "range": {"start": t_start, "end": t_end},
+            "content_hash": content_hash,
+        }
+    except Exception:
+        return None
 
 
 def config_blob(config: dict[str, Any]) -> str:
@@ -107,6 +148,12 @@ class DatasetFactory:
         }
         c_hash = config_blob(cfg)
 
+        # News digest — provenance + deterministic identity contribution.
+        # A dataset built from REAL news is distinguishable from a no-news
+        # dataset (spec 17/18): the digest carries the row count, temporal
+        # range and a content hash, and feeds the dataset id.
+        news_digest = _news_digest(news_frame)
+
         real_id = dataset_id or deterministic_dataset_id(
             symbol,
             timeframe,
@@ -114,6 +161,7 @@ class DatasetFactory:
             cfg["label_schema_id"],
             strategy_id,
             c_hash,
+            news_digest=news_digest,  # news content changes the dataset identity
         )
 
         # counts per split
@@ -152,6 +200,10 @@ class DatasetFactory:
             },
             generation_version=generation_version,
             news_schema_id=cfg["news_schema_id"],
+            news_version=news_digest.get("version", "")
+            if (news_digest := _news_digest(news_frame)) is not None
+            else "",
+            news_data_range=news_digest.get("range", {}) if news_digest is not None else {},
             strategy_context_version=strategy_version,
         )
 

@@ -18,7 +18,22 @@ against this adapter.
 
 import random
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+from nexus_scalp.adapters.mt5.diagnostics import MT5ConnectionState
+from nexus_scalp.adapters.mt5.providers import (
+    AccountSnapshot,
+    BrokerCalcSnapshot,
+    BrokerTickSnapshot,
+    DealSnapshot,
+    HistoryOrderSnapshot,
+    OrderSnapshot,
+    PositionSnapshot,
+    RateBarSnapshot,
+    SymbolSnapshot,
+    TickHistorySnapshot,
+    build_position_snapshot,
+)
 from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
@@ -82,6 +97,208 @@ class PaperMT5Adapter(IMT5Port):
 
     def is_connected(self) -> bool:
         return self._connected
+
+    # ------------------------------------------------------------------
+    # Broker-aware providers (Phase 14 contract). The paper adapter reports
+    # SIMULATED values with explicit provenance - every snapshot is honest
+    # about being the in-memory simulation (source='PAPER_SIMULATION').
+    # ------------------------------------------------------------------
+
+    def connection_state(self) -> MT5ConnectionState:
+        state = MT5ConnectionState()
+        if self._connected:
+            state.set_state(MT5ConnectionState.CONNECTED, "paper simulation connected")
+        else:
+            state.set_state(MT5ConnectionState.DISCONNECTED, "paper simulation disconnected")
+        return state
+
+    def get_account_snapshot(self) -> AccountSnapshot:
+        snap = AccountSnapshot()
+        snap.available = True
+        snap.source = "PAPER_SIMULATION"
+        snap.login = 9990001
+        snap.server = "PAPER"
+        snap.company = "Nexus Paper Simulator"
+        snap.currency = "USD"
+        snap.currency_digits = 2
+        snap.trade_mode = 0  # Demo / Simulation
+        snap.leverage = 100
+        snap.trade_allowed = True
+        snap.trade_expert = True
+        snap.balance = float(self.balance)
+        snap.credit = 0.0
+        snap.profit = float(self.equity - self.balance)
+        snap.equity = float(self.equity)
+        snap.margin = 0.0
+        snap.margin_free = float(self.equity)
+        snap.margin_level = None if self.equity <= 0 else 100.0
+        snap.margin_level_source = "PAPER_SIMULATION"
+        snap.floating_pnl = float(self.equity - self.balance)
+        snap.net_pnl = snap.floating_pnl
+        snap.open_positions_count = len(self._positions)
+        snap.pending_orders_count = 0
+        return snap
+
+    def get_symbol_snapshot(self, symbol: str) -> SymbolSnapshot:
+        snap = SymbolSnapshot()
+        snap.available = True
+        snap.source = "PAPER_SIMULATION"
+        digits = self._quote_digits(symbol)
+        is_metal = self._symbol_is_metal(symbol)
+        snap.spec = {
+            "name": symbol,
+            "description": "Paper simulated symbol",
+            "digits": digits,
+            "point": 0.01 if is_metal else 0.00001,
+            "trade_tick_size": 0.01 if is_metal else 0.00001,
+            "trade_tick_value": 1.0,
+            "trade_contract_size": 100.0 if is_metal else 100000.0,
+            "volume_min": 0.01,
+            "volume_max": 100.0,
+            "volume_step": 0.01,
+            "trade_stops_level": 10,
+            "trade_freeze_level": 0,
+            "currency_base": "USD",
+            "currency_profit": "USD",
+            "currency_margin": "USD",
+        }
+        try:
+            tick = self.get_last_tick(symbol)
+        except Exception:
+            tick = None
+        if tick is not None:
+            snap.tick = {
+                "bid": tick.bid,
+                "ask": tick.ask,
+                "last": tick.last,
+                "volume": tick.volume,
+                "time": int(tick.timestamp.timestamp()),
+                "flags": tick.flags,
+                "time_utc": tick.timestamp.isoformat(),
+            }
+            snap.spread_points = round(tick.ask - tick.bid, 8)
+            snap.spread_points_source = "PAPER_SIMULATION"
+        return snap
+
+    def get_broker_tick(self, symbol: str) -> BrokerTickSnapshot:
+        try:
+            tick = self.get_last_tick(symbol)
+        except Exception:
+            snap = BrokerTickSnapshot()
+            snap.symbol = symbol
+            snap.available = False
+            snap.source = "UNAVAILABLE"
+            return snap
+        snap = BrokerTickSnapshot()
+        snap.available = True
+        snap.source = "PAPER_SIMULATION"
+        snap.symbol = symbol
+        snap.bid = tick.bid
+        snap.ask = tick.ask
+        snap.last = tick.last
+        snap.volume = tick.volume
+        snap.last_volume = tick.volume
+        snap.flags = tick.flags
+        snap.time = int(tick.timestamp.timestamp())
+        snap.time_utc = tick.timestamp
+        snap.freshness_ms = 0.0
+        snap.stale = False
+        snap.spread_points = round(tick.ask - tick.bid, 8)
+        return snap
+
+    def get_all_positions(self, symbol: str | None = None) -> list[PositionSnapshot]:
+        positions = self.get_positions(symbol=symbol)
+        return [build_position_snapshot(p) for p in positions]
+
+    def get_rate_history(
+        self,
+        symbol: str,
+        timeframe: str = "M1",
+        count: int = 500,
+        from_utc: Any = None,
+    ) -> list[RateBarSnapshot]:
+        bars = self.get_historical_bars(symbol=symbol, timeframe=timeframe, count=count)
+        out: list[RateBarSnapshot] = []
+        for b in bars:
+            r = RateBarSnapshot()
+            r.available = True
+            r.source = "PAPER_SIMULATION"
+            r.time = int(b.timestamp.timestamp())
+            r.time_utc = b.timestamp
+            r.open = b.open
+            r.high = b.high
+            r.low = b.low
+            r.close = b.close
+            r.tick_volume = b.tick_volume
+            out.append(r)
+        return out
+
+    def order_calc_margin_snapshot(
+        self,
+        symbol: str,
+        order_type: int,
+        volume: float,
+        price: float,
+    ) -> BrokerCalcSnapshot:
+        snap = BrokerCalcSnapshot()
+        snap.operation = "order_calc_margin"
+        snap.symbol = symbol
+        snap.price_open = float(price)
+        snap.volume = float(volume)
+        snap.available = True
+        snap.source = "FALLBACK_ESTIMATE"
+        is_metal = self._symbol_is_metal(symbol)
+        contract = 100.0 if is_metal else 100000.0
+        snap.value = round((contract * float(price) * float(volume)) / 100.0, 4)
+        snap.value_source = "FALLBACK_ESTIMATE"
+        return snap
+
+    def order_calc_profit_snapshot(
+        self,
+        symbol: str,
+        order_type: int,
+        volume: float,
+        price_open: float,
+        price_close: float,
+    ) -> BrokerCalcSnapshot:
+        snap = BrokerCalcSnapshot()
+        snap.operation = "order_calc_profit"
+        snap.symbol = symbol
+        snap.price_open = float(price_open)
+        snap.price_close = float(price_close)
+        snap.volume = float(volume)
+        snap.available = True
+        snap.source = "FALLBACK_ESTIMATE"
+        # Paper: BUY=0 (POSITION_TYPE_BUY). Simulated tick value per lot = 1.0.
+        direction = 1.0 if int(order_type) == 0 else -1.0
+        snap.value = round(
+            direction * (float(price_close) - float(price_open)) * float(volume) * 100.0, 4
+        )
+        snap.value_source = "FALLBACK_ESTIMATE"
+        return snap
+
+    def get_history_deals(
+        self, from_utc: Any = None, to_utc: Any = None, symbol: str | None = None
+    ) -> list[DealSnapshot]:
+        # Paper keeps no deal archive; honest empty result.
+        return []
+
+    def get_history_orders(
+        self, from_utc: Any = None, to_utc: Any = None, symbol: str | None = None
+    ) -> list[HistoryOrderSnapshot]:
+        return []
+
+    def get_pending_orders_snapshot(self, symbol: str | None = None) -> list[OrderSnapshot]:
+        return []
+
+    def get_tick_history(
+        self,
+        symbol: str,
+        count: int = 500,
+        from_utc: Any = None,
+        to_utc: Any = None,
+    ) -> list[TickHistorySnapshot]:
+        return []
 
     # ------------------------------------------------------------------
     # Account & instrument metadata

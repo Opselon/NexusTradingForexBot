@@ -99,9 +99,19 @@ class ModelFactory:
                 num_classes=num_classes,
             )
 
+        if architecture == ModelArchitecture.TCN_ATTENTION_V1.value:
+            # FIRST new-architecture benchmark candidate (Phase 13B): a
+            # dedicated causal TCN + attention model with a strict 3-logit
+            # head. Trained + validated through the SAME artifact pipeline
+            # as LEGACY_SCALPNET_V1 (fair benchmark).
+            from nexus_scalp.model_generation.architectures import (
+                build_tcn_attention_v1,
+            )
+
+            return build_tcn_attention_v1(input_dim, num_classes, params)
+
         if architecture in (
             ModelArchitecture.TCN_V2.value,
-            ModelArchitecture.TCN_ATTENTION_V1.value,
             ModelArchitecture.TRANSFORMER_V1.value,
         ):
             # Registered future architectures: construction is supported via

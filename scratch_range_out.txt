@@ -1,0 +1,107 @@
+total history orders (16h to now): 60
+orders in 1524865-1524890 range: 60
+  order=152486859966 type=2 vol=0.08 price=4376.94 state=4 setup=2026-08-17 01:11:01+00:00 done=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  order=152486859992 type=2 vol=0.08 price=4376.94 state=4 setup=2026-08-17 01:11:01+00:00 done=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  order=152486860004 type=2 vol=0.08 price=4377.04 state=4 setup=2026-08-17 01:11:02+00:00 done=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  order=152486860012 type=2 vol=0.08 price=4377.04 state=4 setup=2026-08-17 01:11:02+00:00 done=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  order=152486866214 type=1 vol=0.08 price=0.0 state=4 setup=2026-08-17 01:13:00+00:00 done=2026-08-17 01:13:00+00:00 comment=NSE_CLOSE
+  order=152486866412 type=1 vol=0.08 price=0.0 state=4 setup=2026-08-17 01:13:03+00:00 done=2026-08-17 01:13:03+00:00 comment=NSE_CLOSE
+  order=152486866449 type=1 vol=0.08 price=0.0 state=4 setup=2026-08-17 01:13:03+00:00 done=2026-08-17 01:13:03+00:00 comment=NSE_CLOSE
+  order=152486866520 type=1 vol=0.08 price=0.0 state=4 setup=2026-08-17 01:13:05+00:00 done=2026-08-17 01:13:05+00:00 comment=NSE_CLOSE
+  order=152486906832 type=1 vol=0.91 price=0.0 state=4 setup=2026-08-17 01:29:00+00:00 done=2026-08-17 01:29:00+00:00 comment=NSE_MARKET
+  order=152486908051 type=0 vol=0.91 price=0.0 state=4 setup=2026-08-17 01:29:39+00:00 done=2026-08-17 01:29:39+00:00 comment=NSE_CLOSE
+  order=152486910279 type=3 vol=0.48 price=4376.59 state=4 setup=2026-08-17 01:30:14+00:00 done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910300 type=3 vol=0.48 price=4376.59 state=4 setup=2026-08-17 01:30:15+00:00 done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910317 type=3 vol=0.48 price=4376.59 state=4 setup=2026-08-17 01:30:15+00:00 done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910332 type=3 vol=0.48 price=4376.59 state=4 setup=2026-08-17 01:30:15+00:00 done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910359 type=3 vol=0.48 price=4376.59 state=4 setup=2026-08-17 01:30:16+00:00 done=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  order=152486910376 type=3 vol=0.48 price=4376.59 state=4 setup=2026-08-17 01:30:16+00:00 done=2026-08-17 01:30:17+00:00 comment=NSE_PENDING
+  order=152486916729 type=0 vol=0.48 price=4376.34 state=4 setup=2026-08-17 01:32:05+00:00 done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916730 type=0 vol=0.48 price=4376.34 state=4 setup=2026-08-17 01:32:05+00:00 done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916731 type=0 vol=0.48 price=4376.34 state=4 setup=2026-08-17 01:32:05+00:00 done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916732 type=0 vol=0.48 price=4376.34 state=4 setup=2026-08-17 01:32:05+00:00 done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916733 type=0 vol=0.48 price=4376.34 state=4 setup=2026-08-17 01:32:05+00:00 done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486916734 type=0 vol=0.48 price=4376.34 state=4 setup=2026-08-17 01:32:05+00:00 done=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  order=152486919298 type=2 vol=0.65 price=4376.79 state=4 setup=2026-08-17 01:33:00+00:00 done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919320 type=2 vol=0.65 price=4376.79 state=4 setup=2026-08-17 01:33:01+00:00 done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919343 type=2 vol=0.65 price=4376.79 state=4 setup=2026-08-17 01:33:01+00:00 done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919365 type=2 vol=0.65 price=4376.79 state=4 setup=2026-08-17 01:33:01+00:00 done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919378 type=2 vol=0.65 price=4376.79 state=4 setup=2026-08-17 01:33:02+00:00 done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486919392 type=2 vol=0.65 price=4376.79 state=4 setup=2026-08-17 01:33:02+00:00 done=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  order=152486922805 type=1 vol=0.65 price=4377.22 state=4 setup=2026-08-17 01:34:11+00:00 done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922806 type=1 vol=0.65 price=4377.22 state=4 setup=2026-08-17 01:34:11+00:00 done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922807 type=1 vol=0.65 price=4377.22 state=4 setup=2026-08-17 01:34:11+00:00 done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922808 type=1 vol=0.65 price=4377.22 state=4 setup=2026-08-17 01:34:11+00:00 done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922809 type=1 vol=0.65 price=4377.22 state=4 setup=2026-08-17 01:34:11+00:00 done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152486922810 type=1 vol=0.65 price=4377.22 state=4 setup=2026-08-17 01:34:11+00:00 done=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  order=152487082680 type=3 vol=0.46 price=4376.3 state=2 setup=2026-08-17 02:30:15+00:00 done=2026-08-17 02:32:19+00:00 comment=NSE_PENDING
+  order=152487082723 type=3 vol=0.46 price=4376.3 state=2 setup=2026-08-17 02:30:16+00:00 done=2026-08-17 02:32:19+00:00 comment=NSE_PENDING
+  order=152487082732 type=3 vol=0.46 price=4376.3 state=2 setup=2026-08-17 02:30:16+00:00 done=2026-08-17 02:32:20+00:00 comment=NSE_PENDING
+  order=152487082741 type=3 vol=0.46 price=4376.3 state=2 setup=2026-08-17 02:30:16+00:00 done=2026-08-17 02:32:20+00:00 comment=NSE_PENDING
+  order=152487082748 type=3 vol=0.46 price=4376.3 state=2 setup=2026-08-17 02:30:17+00:00 done=2026-08-17 02:32:20+00:00 comment=NSE_PENDING
+  order=152487082775 type=3 vol=0.46 price=4376.3 state=2 setup=2026-08-17 02:30:17+00:00 done=2026-08-17 02:32:21+00:00 comment=NSE_PENDING
+  order=152487091374 type=3 vol=0.4 price=4372.61 state=4 setup=2026-08-17 02:33:01+00:00 done=2026-08-17 02:33:01+00:00 comment=NSE_PENDING
+  order=152487091385 type=3 vol=0.4 price=4372.61 state=4 setup=2026-08-17 02:33:01+00:00 done=2026-08-17 02:33:01+00:00 comment=NSE_PENDING
+  order=152487091414 type=3 vol=0.4 price=4372.61 state=4 setup=2026-08-17 02:33:01+00:00 done=2026-08-17 02:33:01+00:00 comment=NSE_PENDING
+  order=152487091510 type=3 vol=0.4 price=4372.72 state=4 setup=2026-08-17 02:33:02+00:00 done=2026-08-17 02:33:02+00:00 comment=NSE_PENDING
+  order=152487099417 type=0 vol=0.4 price=4372.03 state=4 setup=2026-08-17 02:35:01+00:00 done=2026-08-17 02:35:01+00:00 comment=[sl 4372.03]
+  order=152487099418 type=0 vol=0.4 price=4372.03 state=4 setup=2026-08-17 02:35:01+00:00 done=2026-08-17 02:35:01+00:00 comment=[sl 4372.03]
+  order=152487099419 type=0 vol=0.4 price=4372.03 state=4 setup=2026-08-17 02:35:01+00:00 done=2026-08-17 02:35:01+00:00 comment=[sl 4372.03]
+  order=152487099483 type=0 vol=0.4 price=0.0 state=4 setup=2026-08-17 02:35:02+00:00 done=2026-08-17 02:35:02+00:00 comment=NSE_CLOSE
+  order=152487589985 type=2 vol=0.32 price=4394.3 state=2 setup=2026-08-17 04:24:25+00:00 done=2026-08-17 04:24:57+00:00 comment=NSE_PENDING
+  order=152487590006 type=2 vol=0.32 price=4394.3 state=2 setup=2026-08-17 04:24:25+00:00 done=2026-08-17 04:24:57+00:00 comment=NSE_PENDING
+  order=152487590046 type=2 vol=0.32 price=4394.3 state=2 setup=2026-08-17 04:24:25+00:00 done=2026-08-17 04:24:57+00:00 comment=NSE_PENDING
+  order=152487590076 type=2 vol=0.32 price=4394.3 state=2 setup=2026-08-17 04:24:26+00:00 done=2026-08-17 04:24:57+00:00 comment=NSE_PENDING
+  order=152487590098 type=2 vol=0.32 price=4394.3 state=2 setup=2026-08-17 04:24:26+00:00 done=2026-08-17 04:24:58+00:00 comment=NSE_PENDING
+  order=152487590118 type=2 vol=0.32 price=4394.3 state=2 setup=2026-08-17 04:24:26+00:00 done=2026-08-17 04:24:58+00:00 comment=NSE_PENDING
+  order=152487596186 type=3 vol=0.18 price=4414.77 state=2 setup=2026-08-17 04:25:26+00:00 done=2026-08-17 04:27:28+00:00 comment=NSE_PENDING
+  order=152487596308 type=3 vol=0.18 price=4414.77 state=2 setup=2026-08-17 04:25:26+00:00 done=2026-08-17 04:27:28+00:00 comment=NSE_PENDING
+  order=152487596336 type=3 vol=0.18 price=4414.77 state=2 setup=2026-08-17 04:25:26+00:00 done=2026-08-17 04:27:28+00:00 comment=NSE_PENDING
+  order=152487596400 type=3 vol=0.18 price=4414.77 state=2 setup=2026-08-17 04:25:27+00:00 done=2026-08-17 04:27:29+00:00 comment=NSE_PENDING
+  order=152487596423 type=3 vol=0.18 price=4414.77 state=2 setup=2026-08-17 04:25:27+00:00 done=2026-08-17 04:27:29+00:00 comment=NSE_PENDING
+  order=152487596461 type=3 vol=0.18 price=4414.77 state=2 setup=2026-08-17 04:25:27+00:00 done=2026-08-17 04:27:29+00:00 comment=NSE_PENDING
+
+total deals: 42
+deals in range: 42
+  deal=152341241432 order=152486860004 pos=152486860004 entry=IN profit=0.0 time=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  deal=152341241433 order=152486860012 pos=152486860012 entry=IN profit=0.0 time=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  deal=152341241453 order=152486859966 pos=152486859966 entry=IN profit=0.0 time=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  deal=152341241454 order=152486859992 pos=152486859992 entry=IN profit=0.0 time=2026-08-17 01:12:37+00:00 comment=NSE_PENDING
+  deal=152341242828 order=152486866214 pos=152486859966 entry=OUT profit=-10.88 time=2026-08-17 01:13:00+00:00 comment=NSE_CLOSE
+  deal=152341243025 order=152486866412 pos=152486859992 entry=OUT profit=-7.92 time=2026-08-17 01:13:03+00:00 comment=NSE_CLOSE
+  deal=152341243061 order=152486866449 pos=152486860004 entry=OUT profit=-8.96 time=2026-08-17 01:13:03+00:00 comment=NSE_CLOSE
+  deal=152341243131 order=152486866520 pos=152486860012 entry=OUT profit=-11.6 time=2026-08-17 01:13:05+00:00 comment=NSE_CLOSE
+  deal=152341283324 order=152486906832 pos=152486906832 entry=IN profit=0.0 time=2026-08-17 01:29:00+00:00 comment=NSE_MARKET
+  deal=152341284551 order=152486908051 pos=152486906832 entry=OUT profit=-1.8199999999999998 time=2026-08-17 01:29:39+00:00 comment=NSE_CLOSE
+  deal=152341286804 order=152486910279 pos=152486910279 entry=IN profit=0.0 time=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  deal=152341286805 order=152486910300 pos=152486910300 entry=IN profit=0.0 time=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  deal=152341286806 order=152486910317 pos=152486910317 entry=IN profit=0.0 time=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  deal=152341286807 order=152486910332 pos=152486910332 entry=IN profit=0.0 time=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  deal=152341286829 order=152486910359 pos=152486910359 entry=IN profit=0.0 time=2026-08-17 01:30:16+00:00 comment=NSE_PENDING
+  deal=152341286845 order=152486910376 pos=152486910376 entry=IN profit=0.0 time=2026-08-17 01:30:17+00:00 comment=NSE_PENDING
+  deal=152341293260 order=152486916729 pos=152486910279 entry=OUT profit=12.0 time=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  deal=152341293262 order=152486916730 pos=152486910300 entry=OUT profit=12.0 time=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  deal=152341293263 order=152486916731 pos=152486910317 entry=OUT profit=12.0 time=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  deal=152341293264 order=152486916732 pos=152486910332 entry=OUT profit=12.0 time=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  deal=152341293266 order=152486916733 pos=152486910359 entry=OUT profit=12.0 time=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  deal=152341293267 order=152486916734 pos=152486910376 entry=OUT profit=12.0 time=2026-08-17 01:32:05+00:00 comment=[sl 4376.34]
+  deal=152341296213 order=152486919298 pos=152486919298 entry=IN profit=0.0 time=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  deal=152341296214 order=152486919320 pos=152486919320 entry=IN profit=0.0 time=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  deal=152341296215 order=152486919343 pos=152486919343 entry=IN profit=0.0 time=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  deal=152341296216 order=152486919365 pos=152486919365 entry=IN profit=0.0 time=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  deal=152341296217 order=152486919378 pos=152486919378 entry=IN profit=0.0 time=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  deal=152341296218 order=152486919392 pos=152486919392 entry=IN profit=0.0 time=2026-08-17 01:33:10+00:00 comment=NSE_PENDING
+  deal=152341299361 order=152486922805 pos=152486919298 entry=OUT profit=27.95 time=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  deal=152341299362 order=152486922806 pos=152486919320 entry=OUT profit=27.95 time=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  deal=152341299363 order=152486922807 pos=152486919343 entry=OUT profit=27.95 time=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  deal=152341299364 order=152486922808 pos=152486919365 entry=OUT profit=27.95 time=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  deal=152341299365 order=152486922809 pos=152486919378 entry=OUT profit=27.95 time=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  deal=152341299366 order=152486922810 pos=152486919392 entry=OUT profit=27.95 time=2026-08-17 01:34:11+00:00 comment=[sl 4377.22]
+  deal=152341465949 order=152487091374 pos=152487091374 entry=IN profit=0.0 time=2026-08-17 02:33:01+00:00 comment=NSE_PENDING
+  deal=152341465952 order=152487091385 pos=152487091385 entry=IN profit=0.0 time=2026-08-17 02:33:01+00:00 comment=NSE_PENDING
+  deal=152341465953 order=152487091414 pos=152487091414 entry=IN profit=0.0 time=2026-08-17 02:33:01+00:00 comment=NSE_PENDING
+  deal=152341466030 order=152487091510 pos=152487091510 entry=IN profit=0.0 time=2026-08-17 02:33:02+00:00 comment=NSE_PENDING
+  deal=152341473896 order=152487099417 pos=152487091374 entry=OUT profit=23.2 time=2026-08-17 02:35:01+00:00 comment=[sl 4372.03]
+  deal=152341473897 order=152487099418 pos=152487091385 entry=OUT profit=23.2 time=2026-08-17 02:35:01+00:00 comment=[sl 4372.03]
+  deal=152341473899 order=152487099419 pos=152487091414 entry=OUT profit=23.2 time=2026-08-17 02:35:01+00:00 comment=[sl 4372.03]
+  deal=152341473974 order=152487099483 pos=152487091510 entry=OUT profit=26.4 time=2026-08-17 02:35:02+00:00 comment=NSE_CLOSE

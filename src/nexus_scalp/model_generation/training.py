@@ -89,6 +89,12 @@ class CandidateTrainer:
             X_news = dataset_frame.select(news_cols).to_numpy().astype(np.float32)
             X_arr = np.hstack([X_arr, X_news])
 
+        # T29: NaN/Inf inputs would train a garbage model (NaN loss) that
+        # looks COMPLETED — reject them up front so the run is FAILED,
+        # never CHALLENGER.
+        if not np.isfinite(X_arr).all():
+            return {"status": "FAILED", "error": "non-finite feature values in dataset"}
+
         # split: train on non-test rows, validate on test rows
         split = dataset_frame.get_column("_split") if "_split" in dataset_frame.columns else None
         if split is None:

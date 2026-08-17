@@ -35,10 +35,16 @@ _MECHANISM_MAP: dict[str, ExitClassification] = {
     "TAKE_PROFIT_HIT": ExitClassification.TAKE_PROFIT,
     "HARD_SL_HIT": ExitClassification.INITIAL_STOP,
     "RISK_FREE_SL_HIT": ExitClassification.BREAKEVEN_STOP,
+    "BE_HIT": ExitClassification.BREAKEVEN_STOP,
+    "BREAK_EVEN_SL_HIT": ExitClassification.BREAKEVEN_STOP,
+    "TRAILING_STOP_HIT": ExitClassification.TRAILING_STOP,
     "AI_REVERSAL_EXIT": ExitClassification.STRATEGY_EXIT,
     "HOLD_SCORE_DECAY": ExitClassification.STRATEGY_EXIT,
     "MANUAL_CLOSE": ExitClassification.MANUAL_EXIT,
     "PROFIT_GIVEBACK_PROTECTION": ExitClassification.EMERGENCY_EXIT,
+    "SYSTEM_CLOSE": ExitClassification.STRATEGY_EXIT,
+    "RECONCILIATION_CLOSE": ExitClassification.STRATEGY_EXIT,
+    "BROKER_CLOSE": ExitClassification.STRATEGY_EXIT,
 }
 
 

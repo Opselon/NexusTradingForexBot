@@ -12,6 +12,7 @@ Enterprise Upgrades Incorporated:
     5. Context Manager & Graceful Shutdown (Flushes queue safely on exit).
 """
 
+import json
 import os
 import queue
 import sqlite3
@@ -1032,6 +1033,42 @@ class AuditRepository:
         except queue.Full:
             logger.error("Audit Ledger Queue full! Dropping ledger open log.")
 
+    def has_ledger_opened(self, ticket: int) -> bool:
+        """
+        True when an OPENED placeholder row exists for the ticket (its entry
+        context was captured by this engine). Used by the Phase 14
+        reconciliation close-loop to attribute broker-history closes.
+        """
+        if not self._is_sqlite:
+            return False
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                row = conn.execute(
+                    "SELECT 1 FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
+                    (int(ticket),),
+                ).fetchone()
+                return row is not None
+        except Exception:
+            return False
+
+    def get_ledger_opened(self, ticket: int) -> dict[str, Any] | None:
+        """
+        Returns the OPENED ledger row dict for a ticket (entry context) or None.
+        Used by the reconciliation close-loop to rebuild the autopsy context.
+        """
+        if not self._is_sqlite:
+            return None
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT * FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
+                    (int(ticket),),
+                ).fetchone()
+                return dict(row) if row is not None else None
+        except Exception:
+            return None
+
     def log_ledger_closed(
         self,
         ticket: int,
@@ -1278,6 +1315,47 @@ class AuditRepository:
                 "max_drawdown": 0.0,
                 "avg_duration": 0.0,
             }
+
+    def get_recent_predictions(self, limit: int = 50) -> list[dict[str, Any]]:
+        """
+        REAL prediction history from the immutable audit_signals ledger.
+
+        audit_signals is appended for every live trade proposal (one row per
+        M1 decision) and carries the actual softmax probabilities in its JSON
+        payload. This is the authoritative "AI Prediction vs Actual Movement"
+        source - NOT the fabricated simulated_outcomes list that previously
+        served as the predictions table.
+        """
+        if not self._is_sqlite:
+            return []
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    """
+                    SELECT request_id, symbol, action, confidence, proposed_entry,
+                           stop_loss, take_profit, regime, generated_at, payload,
+                           execution_mode, reason_code, decision_stage, blocked_by
+                    FROM audit_signals
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+                rows: list[dict[str, Any]] = []
+                for r in cursor.fetchall():
+                    row = dict(r)
+                    payload = row.get("payload") or "{}"
+                    try:
+                        parsed = json.loads(payload) if isinstance(payload, str) else payload
+                    except Exception:
+                        parsed = {}
+                    row["payload_parsed"] = parsed
+                    rows.append(row)
+                return rows
+        except Exception as e:
+            logger.error("Failed to retrieve recent predictions", error=str(e))
+            return []
 
     def get_ledger_trades(
         self,

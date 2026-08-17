@@ -37,6 +37,7 @@
 15d. [Controlled Model Training & Challenger Engine (PHASE 10)](#15d-controlled-model-training--challenger-engine-phase-10)
 15e. [Challenger Shadow Trading & Champion Evaluation (PHASE 11)](#15e-challenger-shadow-trading--champion-evaluation-phase-11)
 15f. [News Intelligence Engine (PHASE 12)](#15f-news-intelligence-engine-phase-12)
+15j. [Outcome Correlation, Broker Reconstruction & Break-Even Learning (PHASE 14)](#15j-outcome-correlation-broker-reconstruction--break-even-learning-phase-14)
 15. [Known Engineering Pitfalls & Invariants](#15-known-engineering-pitfalls--invariants)
 16. [Testing & CI/CD Pipeline Audit](#16-testing--cicd-pipeline-audit)
 17. [Documentation vs. Reality Audit Matrix](#17-documentation-vs-reality-audit-matrix)
@@ -1795,6 +1796,312 @@ tests (not source inspection). Active architecture:
   publish. ARM64 job reports UNSUPPORTED explicitly.
 
 ---
+
+## 15i. News ↔ Model Bridge + Real-News Benchmark Readiness (PHASE 13B CONTINUATION)
+
+> STATUS (2026-08-17): The Phase 13B News Forensic upgrade COMPLETED the
+> previously-missing connection between the News Intelligence subsystem
+> (Phase 12) and model generation (Phase 13). The original A/B/C/D benchmark
+> is retroactively classified **SYNTHETIC_NEWS_BENCHMARK** (its 10-row news
+> fixture made `NEWS_INCONCLUSIVE` meaningless). A real news benchmark is
+> BLOCKED until the readiness gate is GREEN.
+
+### Bridge (`src/nexus_scalp/model_generation/news_bridge.py`)
+- `normalize_news_frame()` — coerces engine/DB rows into the canonical
+  12-field `NewsContextSchema` numeric matrix; categorical encoding
+  (`news_state`: NORMAL=0…STALE=5; `novelty`: NEW=0…STALE=4); aliases
+  (`bullish_score`→`bullish_pressure`, `active_event_count`→
+  `active_high_impact_events`); NaN/Inf replaced with safe 0.0 (BUG-043);
+  unknown categoricals → explicit 0.0 (never NaN/random).
+- `news_context_at()` — causally-correct snapshot: only events published
+  **at or before T** enter; the LATEST prior event defines the vector
+  (sorted before `tail(1)` — duplicate timestamps deterministic);
+  `time_since_event_sec` computed per-sample (T − published_at);
+  `_safe_epoch_sec` Windows-safe (BUG-044: Polars scalar / numpy
+  datetime64 / ISO string / naive UTC).
+- `build_news_frame_from_db()` — exports `news_analysis` (+ impacts JSON,
+  article timestamps) into the normalized frame; invalid/missing values
+  degrade safely to 0.0; multiple sources preserved.
+- `news_quality_diagnostics()` + `news_benchmark_readiness()` — real
+  computed metrics (total/valid/invalid rows, XAUUSD-relevant, non-neutral,
+  distinct events, dead-zero fields, per-field stats) and the strict gate
+  (spec 20): real DB exists, analysis records > 0, non-neutral > 0,
+  XAUUSD > 0, ≥ 2 event timestamps, no-synthetic (≥ 2 distinct vectors),
+  schema valid (core fields not structurally dead).
+
+### Wiring
+- `SampleFactory.news_context_at` delegates to the bridge.
+- `DatasetFactory.build` records news provenance in the manifest
+  (`news_version`, `news_data_range`, content digest) and folds news content
+  into the deterministic dataset id — news changes ⇒ new dataset identity
+  (never overwrites the old synthetic artifact).
+- CLI `model-dataset-build --with-news --news-db <path>` exports the real
+  DB, runs the readiness gate, warns loudly on empty/no-data; never
+  silently fakes news.
+
+### Readiness gate artifacts
+- `scripts/news_readiness_report.py` → `artifacts/model_generation/
+  news_benchmark_readiness.{json,md}` — currently RED (no real news.db yet).
+  The A/B/C/D benchmark MUST NOT run while RED (spec 22).
+
+### Tests
+- `tests/unit/test_news_bridge_phase13b.py` (11) +
+  `tests/unit/test_news_bridge_contract_phase13b.py` (19) — schema
+  completeness, dead-zero detection, categorical encoding, causal
+  boundaries (T-1/T/T+1), duplicate-timestamp determinism, future-event
+  rejection, Windows timestamp safety, NaN/Inf, DB export
+  (valid/invalid/empty/missing/multi-source), quality diagnostics,
+  readiness gate green/red, provenance + dataset identity.
+
+### Synthetic benchmark retirement (spec 19)
+- `model_benchmark_report.{json,md}` + `dataset_manifest.json` now carry
+  `classification: SYNTHETIC_NEWS_BENCHMARK` with the dead-zero-field list —
+  never citable as evidence that "news has no value".
+
+---
+
+---
+
+## 15j. Outcome Correlation, Broker Reconstruction & Break-Even Learning (PHASE 14)
+
+> **STATUS (2026-08-17):** Forensic completion of the closed-trade → Experience →
+> Strategy-Intelligence path (BUG-045). A closed trade is DATA — WIN / LOSS /
+> BREAK_EVEN must ALL reach the ledger; zero PnL is an outcome class, never an
+> invalidation. Fully verified by `tests/unit/test_outcome_correlation_phase14.py`
+> (26 tests) and a runtime reproduction probe.
+
+### Outcome correlation provenance (`experience/outcome_recovery.py`)
+
+Every closed outcome carries a deterministic `correlation_source` (persisted in
+the outcome payload):
+
+- **ORIGINAL_REQUEST** — request_id present at close; key `exp_<request_id>`.
+- **POSITION_STATE** — request_id lost (restart/reconciliation); recovered from
+  the IMMUTABLE ledger via `ExperienceLedger.get_experiences_by_order_id`
+  (matches request_id/decision_id/execution_id/experience_id columns). The
+  ledger is the position-state authority for correlation.
+- **BROKER_TICKET_FALLBACK** — only the broker ticket exists; deterministic key
+  `exp_bt_<ticket>` with explicit provenance (never pretends to be the original
+  request id).
+- Ambiguity (multiple candidate experiences) → explicit
+  `[EXPERIENCE_OUTCOME] event=CORRELATION_FAILED` with diagnostics — never
+  silent reuse across tickets.
+
+`ExperienceIntelligenceEngine.record_trade_outcome` attempts recovery BEFORE
+declaring INVALID; `correlation_source`/`correlation_detail` survive into the
+persisted outcome payload.
+
+### Protective exit taxonomy (`classify_exit_reason`)
+
+Broker DEAL_REASON + SL/TP geometry + `was_sl_modified` + protective context
+map every close to exactly one mechanism:
+
+| Mechanism | Meaning |
+| :--- | :--- |
+| `BREAK_EVEN_SL_HIT` | Stop parked at/above entry (±BE buffer) after a protective move |
+| `TRAILING_STOP_HIT` | Protective stop strictly beyond entry (locked profit) / trailing comment |
+| `HARD_SL_HIT` | Stop below entry, no protective move |
+| `RISK_FREE_SL_HIT` | Stop at/above entry without in-process modification flag (legacy alias) |
+| `TAKE_PROFIT_HIT` | TP touched |
+| `MANUAL_CLOSE` | Genuine broker client close (DEAL_REASON_CLIENT) with no protective evidence |
+| `SYSTEM_CLOSE` / `RECONCILIATION_CLOSE` / `BROKER_CLOSE` / `UNKNOWN` | Non-protective fallbacks, never fabricated |
+
+A broker stop-out is NEVER labeled MANUAL_CLOSE merely because the internal
+state machine performed protection logic first. `accounting/normalize.py`
+`_MECHANISM_MAP` maps the new strings to the canonical `ExitClassification`
+(BREAKEVEN_STOP / TRAILING_STOP / STRATEGY_EXIT).
+
+### Broker outcome reconstruction (`reconstruct_broker_outcome`)
+
+Authoritative realized result comes from the broker DEAL path whenever
+available: **all** close deals for a position are aggregated (gross profit,
+commission, swap, volume, deal_ids) — partial closes merge into one outcome,
+never double-counted. Missing deal evidence is flagged
+`reconstruction_source=NONE` — never silently written as zero (zero and unknown
+are not equivalent). The typed `BrokerOutcome` (entry/exit, SL/TP timeline,
+reason code/comment, durations) is stored in the outcome payload so it survives
+position-state cleanup.
+
+### Break-even as a first-class outcome
+
+`OutcomeClass` (WIN/LOSS/BREAK_EVEN) with `BREAKEVEN_R_BAND=0.05` matching the
+evaluator's ±0.05 thresholds. A break-even outcome is recorded, decomposed
+(strategy/entry/execution/management/exit quality), attributed to the strategy
+and counted (`breakeven_count`) — it is NEVER skipped, NEVER INVALID, and never
+ignored by strategy memory. Evaluator minimum-sample protection unchanged.
+
+### SL modification timeline survives close
+
+`_entry_sls` is frozen at the OPEN value; broker-side SL advances in
+`_last_modify_sl` + `_sl_modified_flags`. Autopsy rows now carry a real
+timeline: `initial_sl_price` (at entry) vs `final_sl_price` (at close) —
+previously the modification detector overwrote the entry SL, making
+initial==final on every row.
+
+### Reconciliation close-loop (`OrderLifecycleManager.reconcile_missed_closes`)
+
+Discovers broker-closed positions missing from internal state (restart gap):
+broker history deals + ledger OPENED placeholder + no close + no tracking →
+restores the originating request_id from the OPENED row → emits the same
+autopsy + experience outcome path. Wired BEFORE the dead-ticket sweep in
+`manage_active_positions` (runs even with zero open positions) so the
+`_entry_timestamps` guard prevents an async-write race that would double-record
+closes. `_reconcile_seen` dedups; fully exception-isolated (learning never
+blocks protective execution).
+
+### Idempotency
+
+The `audit_experience_outcomes` UNIQUE `idempotency_key` constraint remains the
+authoritative dedup — duplicate close callbacks, reconnect replays and
+reconciliation replays collapse to exactly one outcome row. The in-engine
+`has_outcome` pre-check is best-effort (races the async queue); the DB is the
+source of truth.
+
+### Logging contract (no secrets)
+
+- `[EXPERIENCE_OUTCOME] event=CORRELATION_RECOVERY ticket=... fallback=... status=RECOVERED`
+- `[EXPERIENCE_OUTCOME] event=CORRELATION_FAILED ticket=... reason=NO_CORRELATABLE_EXPERIENCE identifiers_available=...`
+- `[EXPERIENCE_OUTCOME] event=RECORD_FAILED ticket=... reason=NO_DECISION_SNAPSHOT ...`
+- `[POSITION] STRATEGY_ATTRIBUTION strategy_id=... execution_id=... realized_r=...` (existing)
+- `[RECONCILIATION] missed close recorded ticket=... exit_mechanism=... pnl=...`
+
+---
+
+## 15j. MT5 Broker-Aware Runtime & Dashboard Repair (PHASE 14 COMPLETION)
+
+> STATUS (2026-08-17): The MT5 Account / Market Data / Accounting / Dashboard
+> repair is COMPLETE end-to-end. Verified against a REAL MetaQuotes-Demo
+> terminal (account 10011755849, live XAUUSD tick + 250 real M1 bars +
+> broker-native order_calc_*). Every value now carries SOURCE / TIMESTAMP /
+> STATE VERSION / FRESHNESS / PROVENANCE / ERROR STATE.
+
+### Architecture: broker-aware provider layer
+
+```
+MT5 TERMINAL
+  account_info / terminal_info / symbol_info / symbol_info_tick /
+  positions_get / orders_get / history_orders_get / history_deals_get /
+  copy_rates_* / copy_ticks_* / order_calc_profit / order_calc_margin
+        │
+        ▼
+src/nexus_scalp/adapters/mt5/diagnostics.py   MT5CallDiagnostic + run_mt5_call()
+                                              ([MT5_CALL] operation/status/
+                                              duration_ms/error_code/message)
+                                              MT5ConnectionState (CONNECTED/
+                                              CONNECTING/DISCONNECTED/DEGRADED/
+                                              AUTHENTICATION_ERROR/TERMINAL_ERROR/
+                                              UNKNOWN + last success/failure)
+        │
+        ▼
+src/nexus_scalp/adapters/mt5/providers.py     Typed snapshots with provenance:
+                                              AccountSnapshot (full account_info
+                                              surface: login/server/company/
+                                              currency/leverage/trade_mode/
+                                              trade_allowed/trade_expert/credit/
+                                              profit/margin_level/... ),
+                                              SymbolSnapshot (SPEC block vs
+                                              CURRENT TICK block, tick_stale,
+                                              tick_freshness_ms, spread),
+                                              BrokerTickSnapshot, PositionSnapshot,
+                                              OrderSnapshot, HistoryOrderSnapshot,
+                                              DealSnapshot (net_result =
+                                              profit-|comm|-|swap|-|fee|),
+                                              RateBarSnapshot, TickHistorySnapshot,
+                                              BrokerCalcSnapshot
+                                              normalize_utc() (datetime / numpy
+                                              datetime64 / Polars scalar / ISO /
+                                              naive-as-UTC — BUG-044 safe)
+                                              validate_ohlc_bars() (dup/descending
+                                              ts, finite OHLC, high/low bounds,
+                                              non-negative volume)
+        │
+        ▼
+src/nexus_scalp/ports/mt5_port.py             IMT5Port + 12 provider methods
+                                              (defaults are honest UNAVAILABLE;
+                                              adapters override with real calls)
+DirectMT5Adapter + PaperMT5Adapter            provider implementations
+        │
+        ▼
+LiveEngine                                   _account_snapshot cache (5s throttle)
+                                             _update_runtime_mode() -> runtime_mode
+                                             _last_inference_latency_ms
+        │
+        ▼
+web/server.py                                /api/mt5/status (full broker truth:
+                                             connection, account, symbol+tick,
+                                             all positions, pending orders,
+                                             history orders/deals + net results,
+                                             broker calc provenance, terminal)
+                                             /api/chart/history (authoritative
+                                             copy_rates_* + diagnostics)
+                                             /api/live/state mt5{} section
+                                             /api/status runtime_mode +
+                                             tick_stale + account identity
+        │
+        ▼
+LiveUiState.2 + Web/app.js + index.html      runtime-mode badge, STALE/LIVE
+                                             tick badge, account identity row,
+                                             inference time, real model metadata
+```
+
+### CIRUCIAL INVARIANTS (verified by tests)
+
+1. **Failure is NEVER silent**: every MT5 call reports through
+   `run_mt5_call()` → structured `[MT5_CALL]` log (operation/status/
+   duration_ms/error_code/error_message). Snapshots carry `error_state`.
+   No `except Exception: pass` without logging.
+2. **No fake values**: unavailable == None + provenance UNAVAILABLE. The
+   dashboard renders "WAITING FOR LIVE STATE"/"—", never fabricated numbers.
+3. **Mode honesty**: `runtime_mode` derives from connection + account
+   permissions; config `LIVE` + disconnected MT5 renders
+   `LIVE_CONFIGURED / MT5_DISCONNECTED` (never LIVE_READY).
+4. **Chart at the core**: `/api/chart/history` reads official MT5 rate
+   history (copy_rates_from_pos/range, UTC, OHLC-validated); engine bars
+   only as explicit `ENGINE_STATE` fallback; diagnostics + `[MT5_CHART]`
+   server log.
+5. **ALL-account views**: `get_all_positions()` never filters by symbol/
+   magic (dashboard + accounting); the classic `get_positions()` keeps the
+   bot filter for OrderLifecycleManager (separate ALL / BOT / SYMBOL views).
+6. **Off tick path**: account snapshot refresh 5s-throttled; history queries
+   are API-triggered and bounded; SSE keeps incremental updates.
+7. **Broker calc provenance**: `order_calc_*` results are BROKER_NATIVE;
+   mathematical estimates are FALLBACK_ESTIMATE, never claimed exact.
+8. **Frontend boot contract**: Web/api_client.js defines window.NX and MUST
+   load before app.js (server route `/api_client.js` required — BUG-046);
+   no CDN runtime deps (local compiled tailwind.css + vendored FontAwesome —
+   BUG-047); every getElementById target exists in index.html (DOM contract
+   test); no broken local asset refs.
+9. **SSE consumption**: endless-stream endpoints cannot be consumed by sync
+   TestClient/ASGITransport (they buffer until completion); tests use a real
+   uvicorn socket with bounded reads (BUG-051).
+
+### Real-MT5 smoke evidence (read-only, 2026-08-17)
+
+| Operation | Status | Evidence |
+| :--- | :--- | :--- |
+| account_info | SUCCESS | login 10011755849, MetaQuotes-Demo, USD, 41003.70 |
+| terminal_info | SUCCESS | MetaTrader 5, connected, trade_allowed |
+| symbol_info XAUUSD | SUCCESS | 2 digits, spread 0.27 |
+| symbol_info_tick | SUCCESS | 4390.51/4390.76, not stale |
+| positions_get / orders_get | SUCCESS | 0 / 0 |
+| history_orders_get | SUCCESS | 48 (1 day) |
+| history_deals_get | SUCCESS | 42 (1 day) |
+| copy_rates_from_pos | SUCCESS | 250 M1 bars, 02:10→06:19 UTC |
+| order_calc_profit | SUCCESS | BROKER_NATIVE 1.5 ($1.50 move, 0.01 lot) |
+| order_calc_margin | SUCCESS | BROKER_NATIVE 43.91 (0.01 @ ~4390) |
+
+### Tests
+
+- `tests/unit/test_mt5_providers_phase14.py` — 44 tests (UTC normalization,
+  account/symbol/position/deal mapping, bar validation, diagnostics wrapper,
+  connection state, risk broker provenance)
+- `tests/unit/test_frontend_assets_phase14.py` — 24 tests (NX contract,
+  Tailwind local build, local assets, DOM contract, chart contract)
+- `tests/unit/test_mt5_status_endpoint.py` — 11 tests (account snapshot,
+  live tick, chart source, runtime modes incl. LIVE+DISCONNECTED, state
+  version, safe errors, engine offline)
+- `tests/unit/test_live_state_contract.py` — 16 tests (updated to
+  LiveUiState.2 + provider contract)
 
 ## 16. Known Engineering Pitfalls & Invariants
 

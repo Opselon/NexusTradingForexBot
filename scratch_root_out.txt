@@ -1,0 +1,26 @@
+=== first experience payload (selected) ===
+  experience_id='exp_3e8bcc1b-77d'
+  request_id='3e8bcc1b-77d6-4e77-962c-0b28ea357832'
+  execution_id=''
+  decision_id='exp_dec_31bebf8e4b8c'
+  idempotency_key='exp_3e8bcc1b-77d6-4e77-962c-0b28ea357832'
+  symbol='XAUUSD'
+  timeframe='M1'
+  decision_timestamp='2026-08-17T05:10:00Z'
+  strategy_id='strat_7caa3b7486df'
+  strategy_version='1.0.0'
+  action='SELL_MARKET'
+  entry_reason='FAST_LIQUIDITY_SWEEP_REVERSAL_SELL (OFI: +0.01) | HTF:[H4=+1.0, H1_Mom=+7.1, M30_Str=+1.0, M15_Conf=+1.0] | S_Dist=6.98, R_Dist=0.32'
+  proposed_entry=4395.27
+  stop_loss=4400.11
+  take_profit=4373.41
+  model_probability=0.66
+  signal_confidence=0.66
+  min_rr_policy=0.0
+  record_version=2
+  context: {'session': 'TOKYO', 'regime': 'RANGING_MEAN_REVERSION', 'volatility_regime': 'HIGH', 'trend_state': 'BULLISH', 'setup_type': 'FAST_LIQUIDITY_SWEEP'}
+  feature_snapshot: schema= scalp_v1 dim= 50 n_values= 50
+  provenance: model_id= primary_scalp_scalp_v1_50d version= v1.0 role= PRIMARY_SCALP
+
+=== audit_signals rows for request 3e8bcc1b-77d6-4e77-962c-0b28ea357832 ===
+{'id': 863, 'generated_at': '2026-08-17T05:10:00+00:00', 'action': 'SELL_MARKET', 'confidence': 0.66, 'proposed_entry': 4395.27, 'stop_loss': 4400.11, 'take_profit': 4373.41, 'regime': 'RANGING_MEAN_REVERSION', 'execution_mode': 'STANDARD', 'reason_code': 'FAST_LIQUIDITY_SWEEP_REVERSAL_SELL (OFI: +0.01) | HTF:[H4=+1.0, H1_Mom=+7.1, M30_Str=+1.0, M15_Conf=+1.0] | S_Dist=6.98, R_Dist=0.32', 'blocked_by': None, 'confidence_before_filters': 0.66, 'confidence_after_filters': 0.66}

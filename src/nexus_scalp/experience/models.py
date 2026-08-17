@@ -129,6 +129,69 @@ class QualityVerdict(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class OutcomeClass(StrEnum):
+    """
+    First-class closed-trade outcome classification.
+
+    BREAK_EVEN is a REAL outcome class, not "no learning because PnL ~ 0".
+    A break-even trade still carries MFE/MAE, protection timing, hold
+    duration and strategy-context evidence (Phase 14 fix).
+
+    Classification rule (deterministic, applied in evaluator.py):
+        realized_r >  BREAKEVEN_R_BAND (0.05)  -> WIN
+        realized_r < -BREAKEVEN_R_BAND (0.05)  -> LOSS
+        otherwise                              -> BREAK_EVEN
+    """
+
+    WIN = "WIN"
+    LOSS = "LOSS"
+    BREAK_EVEN = "BREAK_EVEN"
+
+
+#: |R| band below which a closed trade is classified BREAK_EVEN (mirrors the
+#: evaluator's win/loss thresholds so counts and classes always agree).
+BREAKEVEN_R_BAND: float = 0.05
+
+
+class ExitReason(StrEnum):
+    """
+    Canonical broker-close taxonomy (Phase 14).
+
+    Every closed position must be mapped to exactly one of these exit
+    mechanisms. `MANUAL_CLOSE` is reserved for GENUINE manual closures
+    (broker DEAL_REASON_CLIENT, no protective context); stop-loss /
+    break-even / trailing exits are NEVER generic MANUAL_CLOSE.
+
+    Values are backwards-compatible with the legacy ExitMechanism strings
+    already persisted in `audit_ledger.exit_mechanism` (TAKE_PROFIT_HIT,
+    HARD_SL_HIT, RISK_FREE_SL_HIT) and add the two protective classes the
+    Phase 14 taxonomy requires (BREAK_EVEN_SL_HIT, TRAILING_STOP_HIT).
+    """
+
+    TAKE_PROFIT_HIT = "TAKE_PROFIT_HIT"
+    HARD_SL_HIT = "HARD_SL_HIT"
+    RISK_FREE_SL_HIT = "RISK_FREE_SL_HIT"
+    BREAK_EVEN_SL_HIT = "BREAK_EVEN_SL_HIT"
+    TRAILING_STOP_HIT = "TRAILING_STOP_HIT"
+    MANUAL_CLOSE = "MANUAL_CLOSE"
+    SYSTEM_CLOSE = "SYSTEM_CLOSE"
+    RECONCILIATION_CLOSE = "RECONCILIATION_CLOSE"
+    BROKER_CLOSE = "BROKER_CLOSE"
+    UNKNOWN = "UNKNOWN"
+
+
+class OutcomeCorrelationSource(StrEnum):
+    """
+    Provenance of the correlation identity used to attach a broker close to
+    its originating experience. Never pretends a fallback is the original
+    request id.
+    """
+
+    ORIGINAL_REQUEST = "ORIGINAL_REQUEST"
+    POSITION_STATE = "POSITION_STATE"
+    BROKER_TICKET_FALLBACK = "BROKER_TICKET_FALLBACK"
+
+
 class FeatureSnapshot(BaseModel):
     """
     Schema-versioned feature snapshot.
@@ -306,11 +369,58 @@ class ExperienceOutcome(BaseModel):
     execution: ExecutionContext = Field(default_factory=ExecutionContext)
     decomposition: OutcomeDecomposition = Field(default_factory=OutcomeDecomposition)
     behavioral_flags: list[BehavioralFlag] = Field(default_factory=list)
+    #: Phase 14: deterministic identity correlation provenance. When the
+    #: originating request_id was unavailable at close time, this records which
+    #: fallback recovered the experience (or that correlation failed).
+    correlation_source: str = Field(default="", description="OutcomeCorrelationSource value")
+    correlation_detail: str = Field(
+        default="", description="Diagnostic detail of the correlation recovery"
+    )
+    #: Phase 14: authoritative broker reconstruction evidence (exit price,
+    #: gross profit, commission, swap, SL/TP timeline). Stored in the outcome
+    #: payload so the reconstructed close survives position-state cleanup.
+    broker_outcome: BrokerOutcome | None = Field(default=None)
 
     @field_validator("outcome_timestamp")
     @classmethod
     def validate_utc(cls, v: datetime) -> datetime:
         return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)
+
+
+class BrokerOutcome(BaseModel):
+    """
+    Authoritative broker-reported closure evidence for one closed position
+    (Phase 14). Reconstructed from the broker deal/history path whenever
+    available; aggregated correctly across multiple close deals.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    ticket: str = Field(default="", description="Broker position ticket (string form)")
+    order_id: str = Field(default="", description="Broker order ticket")
+    symbol: str = Field(default="")
+    direction: str = Field(default="")
+    entry_price: float = Field(default=0.0, ge=0.0)
+    exit_price: float = Field(default=0.0, ge=0.0)
+    volume: float = Field(default=0.0, ge=0.0)
+    gross_profit: float = Field(default=0.0)
+    commission: float = Field(default=0.0)
+    swap: float = Field(default=0.0)
+    fee: float = Field(default=0.0)
+    net_pnl_usd: float = Field(default=0.0)
+    open_time: str = Field(default="")
+    close_time: str = Field(default="")
+    duration_sec: float = Field(default=0.0, ge=0.0)
+    broker_reason_code: int = Field(default=0)
+    broker_comment: str = Field(default="")
+    deal_ids: list[str] = Field(default_factory=list, description="Aggregated close deal tickets")
+    entry_sl: float = Field(default=0.0, ge=0.0, description="SL at entry")
+    final_sl: float = Field(default=0.0, ge=0.0, description="SL at close")
+    entry_tp: float = Field(default=0.0, ge=0.0)
+    partial_closes: int = Field(default=0, ge=0)
+    reconstruction_source: str = Field(
+        default="", description="BROKER_DEALS / BROKER_DEALS_AGGREGATED / POSITION_SNAPSHOT / NONE"
+    )
 
 
 class ExperienceCorrection(BaseModel):

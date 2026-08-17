@@ -245,3 +245,71 @@ def compare_news_ablation(
         "news_improves": n_acc > b_acc,
         "note": "comparison on identical split/labels/friction",
     }
+
+
+# =============================================================================
+# PER-CLASS METRICS + HEAD-TO-HEAD COMPARISON (PHASE 13B benchmark)
+# =============================================================================
+
+
+def confusion_and_class_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    num_classes: int = 3,
+) -> dict[str, Any]:
+    """Per-class precision / recall / F1 + confusion matrix + support.
+
+    Detects class collapse beyond a single accuracy number (spec 12): a
+    model predicting NO_TRADE 97% of the time has terrible recall on
+    BUY/SELL even if accuracy is high.
+    """
+    n = len(y_true)
+    if n == 0:
+        return {"error": "empty"}
+    cm = np.zeros((num_classes, num_classes), dtype=np.int64)
+    for t, p in zip(y_true, y_pred, strict=False):
+        if 0 <= t < num_classes and 0 <= p < num_classes:
+            cm[t, p] += 1
+    per_class: dict[str, Any] = {}
+    for cidx in range(num_classes):
+        tp = int(cm[cidx, cidx])
+        fp = int(cm[:, cidx].sum()) - tp
+        fn = int(cm[cidx, :].sum()) - tp
+        prec = tp / (tp + fp) if (tp + fp) else 0.0
+        rec = tp / (tp + fn) if (tp + fn) else 0.0
+        f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
+        per_class[str(cidx)] = {
+            "support": int(cm[cidx, :].sum()),
+            "precision": round(prec, 4),
+            "recall": round(rec, 4),
+            "f1": round(f1, 4),
+        }
+    # macro F1 (class-balanced, resists NO_TRADE domination)
+    macro_f1 = float(np.mean([v["f1"] for v in per_class.values()])) if per_class else 0.0
+    return {
+        "confusion_matrix": cm.tolist(),
+        "per_class": per_class,
+        "macro_f1": round(macro_f1, 4),
+        "accuracy": round(float(np.mean(y_true == y_pred)), 4),
+        "n": n,
+    }
+
+
+def head_to_head(
+    legacy_results: dict[str, Any],
+    new_results: dict[str, Any],
+) -> dict[str, Any]:
+    """Direct legacy-vs-new comparison table (spec 24)."""
+    keys = sorted(
+        set(legacy_results) | set(new_results),
+        key=lambda k: list(legacy_results).index(k) if k in legacy_results else 999,
+    )
+    rows: list[dict[str, Any]] = []
+    for k in keys:
+        lv = legacy_results.get(k)
+        nv = new_results.get(k)
+        delta = None
+        if isinstance(lv, (int, float)) and isinstance(nv, (int, float)):
+            delta = round(nv - lv, 4)
+        rows.append({"metric": k, "legacy": lv, "new": nv, "delta": delta})
+    return {"rows": rows}

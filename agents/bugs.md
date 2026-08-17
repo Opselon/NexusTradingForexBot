@@ -1922,3 +1922,350 @@ no sanitized error path.
 tests/integration/test_intelligence_api.py tests/integration/test_research_api.py
 tests/integration/test_model_lifecycle_api.py tests/integration/test_news_api.py`
 all pass. `str(e)` count in server.py returns: 0.
+---
+
+## BUG-042 — Benchmark Used Synthetic 10-Row News Fixture, Not Real News (Phase 13B Forensic)
+
+- **Status**: FIXED (bridge + readiness gate implemented; real benchmark blocked until gate GREEN)
+- **Severity**: HIGH
+- **Confidence**: HIGH (proven by artifact inspection 2026-08-17)
+- **Discovered**: Phase 13B News Forensic Audit
+- **Verified**: `tests/unit/test_news_bridge_phase13b.py`, `tests/unit/test_news_bridge_contract_phase13b.py`
+
+### Problem
+The 2026-08-16 A/B/C/D benchmark (`model_benchmark_report.json`, dataset
+`ds_cb30f87520e9e6a4`) was driven by a **synthetic 10-row news fixture**
+(`rows_news=10`): 770/800 dataset samples were repetitions of only **4
+synthetic events**; **7 of 12 NewsContext fields were permanently zero**
+(active_high_impact_events, conflict_score, novelty, freshness,
+source_consensus, news_state, time_since_event_sec), and the nonzero fields
+were highly redundant (xau~usd 0.925, xau~bearish 0.953, xau~confidence
+0.913). Result: `NEWS_INCONCLUSIVE` was an artifact of NO REAL NEWS DATA,
+not of news being useless.
+
+### Root Cause
+1. `BenchmarkRunner` accepted a caller-supplied `news_frame`; nothing in the
+   repository ever exported the News subsystem DB into that shape.
+2. `artifacts/news.db` does not exist — no real collection ever ran.
+3. The legacy `SampleFactory.news_context_at` copied a single prior row
+   verbatim into all 12 fields (leaving 7 dead) and could mis-select with
+   duplicate timestamps.
+
+### Fix
+- New `src/nexus_scalp/model_generation/news_bridge.py`: causal 12-field
+  bridge (`normalize_news_frame`, `news_context_at`, `build_news_frame_from_db`),
+  categorical encoding (news_state 0-5, novelty 0-4), NaN/Inf sanitization,
+  Windows-safe epoch extraction, quality diagnostics + readiness gate.
+- `SampleFactory.news_context_at` delegates to the bridge.
+- `DatasetFactory.build` records news provenance (`news_version`,
+  `news_data_range`, content digest) in the manifest and folds news content
+  into the deterministic dataset id (news changes ⇒ new dataset).
+- CLI `model-dataset-build --with-news --news-db <path>` exports the real DB,
+  runs the readiness gate, and warns loudly on empty/no-data (never silently
+  fakes news). Spec-16 CLI contract verified.
+
+### Regression Guards
+- `test_readiness_gate_red_on_synthetic_shape` (old fixture shape FAILS gate),
+  `test_readiness_gate_green_on_real_shape`, `test_causal_boundaries_exact`,
+  `test_identical_timestamp_deterministic`, `test_future_event_strictly_invisible`,
+  dataset-id-changes-with-news check.
+
+### Verification
+30 bridge tests + 181 Phase 12/13/13B tests green. `scripts/news_readiness_report.py`
+writes `artifacts/model_generation/news_benchmark_readiness.{json,md}` — gate RED
+until real news exists. Old benchmark report + manifest explicitly marked
+`SYNTHETIC_NEWS_BENCHMARK` (spec 19).
+
+---
+
+## BUG-043 — NaN/Inf Passed Through News Normalization Into the Neural Vector
+
+- **Status**: FIXED
+- **Severity**: HIGH
+- **Confidence**: HIGH (proven by adversarial test)
+- **Discovered**: Phase 13B bridge contract tests (2026-08-17)
+- **Verified**: `tests/unit/test_news_bridge_contract_phase13b.py::TestCategoricalSafety::test_nan_inf_never_enters_vector`
+
+### Problem
+`normalize_news_frame` left `float("nan")` / `float("inf")` values in float64
+columns untouched — a NaN/Inf news feature would reach the training matrix
+(BUG-041-class defect for the NewsContext vector).
+
+### Root Cause
+`_coerce_field` skipped columns already dtype f64/Float64 without checking
+finiteness.
+
+### Fix
+`_coerce_field` now replaces non-finite float64 values with the safe default
+0.0 (`pl.when(pl.col(col).is_finite())...otherwise(default)`).
+
+### Regression Guards
+- NaN/Inf in xauusd_relevance/bullish_pressure never enter the vector; all
+  12 context values finite.
+
+---
+
+## BUG-044 — Windows float(numpy.datetime64)/Polars Scalar OSError in Epoch Extraction
+
+- **Status**: FIXED
+- **Severity**: MEDIUM (Windows-only crash)
+- **Confidence**: HIGH (proven by repro)
+- **Discovered**: Phase 13B bridge implementation (2026-08-17)
+- **Verified**: `tests/unit/test_news_bridge_contract_phase13b.py::TestWindowsTimestampSafety`
+
+### Problem
+`float(value.timestamp())` on a Polars `datetime[us, UTC]` scalar (or numpy
+datetime64) raised `OSError: [Errno 22] Invalid argument` on Windows during
+`news_context_at` — crashing the entire benchmark dataset build.
+
+### Root Cause
+Polars scalars satisfy `hasattr(value, "timestamp")` but their `.timestamp()`
+is not a usable Python-float API on Windows; numpy datetime64 the same.
+
+### Fix
+`_safe_epoch_sec` now calls `.timestamp()` ONLY on real `datetime.datetime`;
+all other types (Polars scalar, numpy datetime64, ISO strings) are normalized
+via their ISO string form → `datetime.fromisoformat` (naive treated as UTC).
+
+### Regression Guards
+- Polars scalar / numpy datetime64 / naive datetime / ISO string / None / NaT /
+  garbage covered in 4 dedicated timestamp-safety tests.
+
+---
+
+## BUG-045 — Closed-Trade Outcomes Lost After Restart (request_id gap) + Protective Exits Mislabeled MANUAL_CLOSE + Zero-PnL Fallback Masking Missing Broker Outcome
+
+- **Status**: FIXED (2026-08-17, Phase 14 forensic completion)
+- **Severity**: CRITICAL (trading memory / learning path silently dropped closed trades)
+- **Confidence**: HIGH (live artifacts/audit.db evidence + deterministic repro)
+- **Discovered**: Phase 14 incident tickets 152487871408/152487871455/152487871322/152487871342/152487871361/152487871382
+- **Verified**: `tests/unit/test_outcome_correlation_phase14.py` (26 tests) + runtime reproduction probe
+
+### Symptom
+1. `[EXPERIENCE] INVALID skipped outcome without request_id` for broker-closed tickets; the trade outcome never reached Strategy Intelligence.
+2. `exit_mechanism=MANUAL_CLOSE` on rows where `was_sl_modified=True` and the state machine had reached PROFIT_TRAILING / risk-free territory.
+3. `net_pnl=$0.00` (and `pnl=0.0, commission=0.0, swap=0.0`) on every closed row in `artifacts/audit.db` even though live floating PnL was +$9..+$13.
+4. `initial_sl_price == final_sl_price` on every autopsy row — the SL modification timeline was destroyed.
+5. Only 6 of 15 decision experiences ever received an outcome; tickets with empty `order_id` produced NO outcomes at all.
+
+### Root Cause
+1. **request_id lived only in the in-memory ticket map** `_entry_order_ids` (populated at dispatch). After a restart / reconciliation the map is empty; `_record_experience_outcome` read it, found nothing, logged INVALID and returned without recording — the outcome was silently discarded. There was no deterministic correlation fallback.
+2. **MANUAL_CLOSE was a garbage-default**: the exit-mechanism resolution chain fell through to `ExitMechanism.MANUAL_CLOSE` for any close not forced/TP/SL-detected, including protective stops with deal_reason==3 + SL geometry.
+3. **Zero-PnL fallback**: the close sweep used `matched_deal = next(deal for deal in history_deals if ...)` with `hours_back=1`. When no deal matched (restart, delayed sweep) `profit_usd` defaulted to `0.0` and the autopsy wrote zeros — a silent "unknown == zero" masquerade.
+4. **SL timeline destroyed**: the in-loop modification detector overwrote `_entry_sls[ticket] = pos.sl` on every broker-side SL change, so the "SL at entry" was replaced by the current SL; the autopsy compared `initial == final` and concluded no modification.
+5. **No missed-close self-heal**: close detection was purely "ticket disappeared from live positions"; a position closed while the engine was down was never discovered.
+
+### Fix
+1. **Deterministic outcome correlation** (`experience/outcome_recovery.py::resolve_outcome_correlation`):
+   - ORIGINAL_REQUEST (request_id present) → key `exp_<request_id>`.
+   - POSITION_STATE (request_id lost; immutable ledger holds the decision under the request/ticket identifiers) → recovered via `ExperienceLedger.get_experiences_by_order_id`.
+   - BROKER_TICKET_FALLBACK (only the broker ticket exists) → deterministic `exp_bt_<ticket>` with explicit provenance.
+   - Ambiguity → explicit CORRELATION_FAILED diagnostics, never silent reuse. `record_trade_outcome` now attempts recovery BEFORE declaring INVALID, and records `correlation_source`/`correlation_detail` in the outcome payload.
+2. **Protective exit taxonomy** (`classify_exit_reason`): uses broker DEAL_REASON + SL/TP geometry + `was_sl_modified` + protective context → BREAK_EVEN_SL_HIT / TRAILING_STOP_HIT / HARD_SL_HIT / RISK_FREE_SL_HIT / TAKE_PROFIT_HIT / genuine MANUAL_CLOSE. A stop-out is never MANUAL_CLOSE merely because protection logic ran first. `accounting/normalize._MECHANISM_MAP` extended (BREAK_EVEN_STOP / TRAILING_STOP / STRATEGY_EXIT).
+3. **Broker outcome reconstruction** (`reconstruct_broker_outcome`): aggregates ALL close deals per position (gross/commission/swap/volume/deal_ids; partial closes never double-counted); authoritative result comes from the deal path; missing deals are flagged `reconstruction_source=NONE` — never silently written as zero.
+4. **SL timeline preserved**: `_entry_sls` stays frozen at the OPEN value; broker-side SL advances in `_last_modify_sl` + `_sl_modified_flags`. `final_sl_price` (broker-side at close) and `initial_sl_price` (at entry) now differ correctly.
+5. **Reconciliation close-loop** (`OrderLifecycleManager.reconcile_missed_closes`): queries broker history, discovers closed tickets with an OPENED ledger placeholder but no close and no internal tracking (restart gap), restores the originating request_id from the OPENED row, and emits the same autopsy + experience outcome path. Wired before the dead-ticket sweep in `manage_active_positions` (runs even with zero open positions); `_reconcile_seen` dedups; fully exception-isolated.
+6. **BREAK_EVEN is a first-class outcome** (`OutcomeClass` + `BREAKEVEN_R_BAND=0.05` matching the evaluator's threshold): zero/near-zero PnL outcomes are recorded, decomposed, attributed and counted (`breakeven_count`), never INVALID.
+
+### Regression Tests (tests/unit/test_outcome_correlation_phase14.py, 26 tests)
+- Break-even first-class classification + zero-pnl outcome recorded + strategy statistics (`breakeven_count`).
+- Correlation recovery: ORIGINAL_REQUEST / POSITION_STATE / BROKER_TICKET_FALLBACK distinct provenance; ambiguity → None; missing request_id recovers and records.
+- Exit taxonomy: BREAK_EVEN_SL_HIT / TRAILING_STOP_HIT / HARD_SL_HIT / TAKE_PROFIT_HIT / genuine MANUAL_CLOSE / forced override.
+- Broker reconstruction: deal path provides realized PnL; multi-deal aggregation (no double count); no-deal → NONE source; BrokerOutcome round-trip.
+- Idempotency: duplicate close callbacks → exactly one persisted outcome (DB UNIQUE authoritative).
+- Multi-ticket independence: 5 tickets → 5 distinct experiences/outcomes.
+- SL timeline: `_entry_sls` frozen at open, `_last_modify_sl` advances.
+- Failure isolation: ledger failure returns False, never raises.
+- Reconciliation: missed close recovered from broker history with request_id restored; second pass no duplicate.
+
+### Verification
+- 162 focused tests green (Phase-14 + experience + accounting + order lifecycle + adaptive + log-autopsy).
+- Full unit suite green except pre-existing user-WIP `test_news_bridge_phase13b::TestBuildFrameFromDb::test_export_roundtrip` (untracked WIP, untouched by this fix).
+- Runtime reproduction probe: OPEN → PROFIT → protective SL close → ledger CLOSED (TRAILING_STOP_HIT, real pnl/commission) → outcome (correlation_source=ORIGINAL_REQUEST, broker=BROKER_DEALS_AGGREGATED) → strategy stats updated — full chain without manual intervention.
+- ruff check + ruff format --check clean on all changed files; mypy clean on all changed files (4 pre-existing mypy src errors are user-WIP: live_engine.py x2, server.py, news_bridge.py).
+
+### Architectural Lessons / Regression Guards
+- A closed trade is data: WIN / LOSS / BREAK_EVEN must ALL reach the experience ledger; zero PnL is an outcome class, not an invalidation.
+- Correlation identity must survive restart: never rely solely on an in-memory ticket→request map; the immutable ledger is the position-state authority for recovery.
+- Missing data (no broker deal) must be flagged unknown (`reconstruction_source=NONE`), never silently written as zero.
+- Protective exits must be classified from broker evidence + SL geometry, never defaulted to MANUAL_CLOSE.
+- Reconciliation must run BEFORE the dead-ticket sweep so the `_entry_timestamps` guard prevents the async-write race that double-records closes.
+
+## BUG-046 — GET /api_client.js 404 → `Uncaught ReferenceError: NX is not defined` at app.js:402
+
+- **Status**: FIXED (2026-08-17, Phase 14 completion)
+- **Severity**: HIGH (frontend boot failure — dashboard rendered static HTML only)
+- **Confidence**: HIGH (reproduced in browser console + TestClient 404)
+- **Verified**: `tests/unit/test_frontend_assets_phase14.py` (NX namespace contract)
+
+### Symptom
+Browser console: `GET /api_client.js 404 (Not Found)` then `Uncaught ReferenceError: NX is not defined at initApp (app.js:402)`. Chart bootstrap and every `NX.api.get(...)` call after it died; the dashboard never rendered live state.
+
+### Root Cause
+`Web/api_client.js` defines `window.NX` (the central API client with request correlation + safe error parsing introduced in BUG-040) and `index.html:1483` loads it before `app.js` — but `server.py`'s static-route list (`/`, `/styles.css`, `/app.js`) omitted `/api_client.js`. The browser received a 404 HTML body as the script, so `window.NX` was never defined when `app.js` executed. The frontend module existed and was required (23 `NX.` call sites in app.js); it was simply not served.
+
+### Fix
+Added `@app.get("/api_client.js")` → `FileResponse(WEB_DIR / "api_client.js")`. No fake `const NX = {}` shim was introduced (guard test asserts the real client is served, not a stub).
+
+### Regression Guards
+- `test_api_client_served` — route returns 200
+- `test_api_client_defines_window_nx` — file defines `window.NX`
+- `test_index_script_order_nx_before_app` — api_client.js loads before app.js
+- `test_no_fake_nx_namespace_in_app_js` — no fake namespace in app.js
+
+### Verification
+`pytest tests/unit/test_frontend_assets_phase14.py` → 24 passed. Browser smoke: all 5 local assets + 8 webfonts serve 200; 137/137 DOM ids resolve.
+
+---
+
+## BUG-047 — Tailwind Play CDN Runtime Dependency (`cdn.tailwindcss.com`)
+
+- **Status**: FIXED (2026-08-17, Phase 14 completion)
+- **Severity**: MEDIUM (external network dependency for basic UI rendering + production warning)
+- **Confidence**: HIGH
+- **Verified**: `tests/unit/test_frontend_assets_phase14.py::TestTailwindLocalBuild`
+
+### Symptom
+`index.html` loaded `https://cdn.tailwindcss.com` (JIT Play CDN) + inline `tailwind.config`. Browser warned "cdn.tailwindcss.com should not be used in production"; dashboard styling broke offline.
+
+### Root Cause
+The CDN script was the only Tailwind source; no compiled artifact existed in the repo.
+
+### Fix
+- `tailwind.config.js` — theme colors preserved, `content: ["./Web/index.html", "./Web/*.js"]`
+- `Web/tailwind_input.css` — `@tailwind base/components/utilities`
+- Compiled locally: `npx tailwindcss -c tailwind.config.js -i Web/tailwind_input.css -o Web/tailwind.css --minify` (29,494 bytes), served at `/tailwind.css`
+- FontAwesome 6.4.0 also localized under `Web/vendor/fontawesome/` + `Web/vendor/webfonts/` (2 new server routes); **zero CDN refs remain** in index.html
+
+### Regression Guards
+- `test_no_tailwind_cdn` — no cdn.tailwindcss.com / https://cdn. in index.html
+- `test_compiled_tailwind_css_exists` + `test_compiled_tailwind_served` — artifact exists + served
+- `test_tailwind_css_contains_used_colors` — compiled CSS carries the theme palette
+- `test_index_has_no_broken_local_refs` — every local ref serves 200
+
+---
+
+## BUG-048 — Chart History Served In-Memory Aggregator Instead of Authoritative MT5 History
+
+- **Status**: FIXED (2026-08-17, Phase 14 completion)
+- **Severity**: HIGH (chart could not render before ticks flowed; no real broker candles)
+- **Confidence**: HIGH (proven with real MT5 `copy_rates_from_pos` on live terminal)
+- **Verified**: `tests/unit/test_mt5_status_endpoint.py::test_chart_history_paper_source`, `test_frontend_assets_phase14.py::TestChartHistoryContract`; real-terminal pipeline probe
+
+### Symptom
+`/api/chart/history` returned the engine's in-memory aggregator bars (empty until live ticks processed); there was no path to official broker rate history, so the chart stayed blank after cold start.
+
+### Root Cause
+The endpoint wrapped `get_system_state().bars` (aggregator) and had no `copy_rates_*` provider wiring.
+
+### Fix
+`/api/chart/history` now calls `engine.adapter.get_rate_history()` (official `copy_rates_from_pos`/`copy_rates_range`, UTC-normalized, OHLC-validated) as the authoritative source; engine bars only as explicit `ENGINE_STATE` fallback. Response carries diagnostics: `source/symbol/timeframe/requested/returned/first_timestamp/last_timestamp/generated_at/error`; bars carry `time/open/high/low/close/tick_volume/spread/real_volume/is_complete`. Server logs `[MT5_CHART] event=HISTORY_LOADED`.
+
+### Real-MT5 verification (2026-08-17)
+`source=MT5 bars=250 requested=250 returned=250 first=2026-08-17T02:10:00+00:00 last=2026-08-17T06:19:00+00:00` — real gold M1 candles.
+
+---
+
+## BUG-049 — MT5 order_calc_profit/order_calc_margin Called With Keyword Arguments (TypeError)
+
+- **Status**: FIXED (2026-08-17, Phase 14 completion)
+- **Severity**: HIGH (broker-native calculation APIs completely broken)
+- **Confidence**: HIGH (reproduced on real terminal: `order_calc_profit() takes no keyword arguments`)
+- **Verified**: `tests/unit/test_mt5_providers_phase14.py::TestRiskBrokerProvenance`; real-terminal calc smoke
+
+### Root Cause
+The MetaTrader5 Python binding exposes `order_calc_profit`/`order_calc_margin` as positional-only builtins. The adapter called them with kwargs, raising `TypeError` on every invocation; the real-account smoke showed `order_calc_profit: FAILED: TypeError`.
+
+### Fix
+Calls converted to positional args; result is `BROKER_NATIVE` value (real: profit(0.01 lot +$1.50)=1.5, margin(0.01@2000)=20.0, margin(0.01@~4390)=43.91 on the demo account).
+
+### Regression Guards
+- All `TestRiskBrokerProvenance` tests assert BROKER_NATIVE/FALLBACK_ESTIMATE provenance.
+- The `/api/mt5/status` `calculations` block returns `source=BROKER_NATIVE` from the live terminal.
+
+---
+
+## BUG-050 — Circular Import: ports.mt5_port ↔ adapters.mt5 (Collection Errors Across Unit Suite)
+
+- **Status**: FIXED (2026-08-17, Phase 14 completion)
+- **Severity**: HIGH (5 test modules failed collection; engine import chain broken)
+- **Confidence**: HIGH
+- **Verified**: full `pytest tests/unit` collection now proceeds (no ImportError)
+
+### Symptom
+`ImportError: cannot import name 'IMT5Port' from partially initialized module 'nexus_scalp.ports.mt5_port' (circular import)` — broke collection of `test_adaptive_position_management.py`, `test_execution_architecture.py`, `test_hardened_protocol.py`, `test_htf_warmup_gate.py`, `test_log_autopsy_fixes.py`, and any module importing `order_manager`.
+
+### Root Cause
+`ports/mt5_port.py` gained runtime imports from `nexus_scalp.adapters.mt5.providers` + `.diagnostics`; importing the submodule executes `adapters/mt5/__init__.py`, which eagerly re-exported `IMT5Port` from the still-initializing port module → cycle.
+
+### Fix
+`adapters/mt5/__init__.py` now performs NO eager port re-export (docstring documents the contract). No code imported the package-level symbols, so nothing else changed.
+
+### Regression Guards
+- `python -c "from nexus_scalp.execution.order_manager import OrderLifecycleManager"` imports clean
+- Full unit suite collects without ImportError
+
+---
+
+## BUG-051 — SSE Endpoint Unsable by Sync TestClient/ASGITransport (endless-stream harness hang)
+
+- **Status**: FIXED (2026-08-17, Phase 14 completion) — test-harness defect, not a server defect
+- **Severity**: MEDIUM (test suite hung; browser EventSource unaffected)
+- **Confidence**: HIGH (sync + async harness both blocked at `client.stream`)
+- **Verified**: `tests/unit/test_web_security.py::test_07_sse_payload_has_no_traceback` now passes in ~1.3s
+
+### Symptom
+`test_07_sse_payload_has_no_traceback` hung indefinitely: httpx sync TestClient and ASGITransport both block until response completion, which never happens for an endless SSE generator.
+
+### Root Cause
+Test-harness/toolchain limitation (httpx 0.28 + starlette 1.3 mid-transition; sync `client.stream()` never returns for streaming responses). The SSE endpoint itself is correct for browsers (EventSource).
+
+### Fix
+Test rewritten to drive a real uvicorn server on an ephemeral port (`port=0`) and read the first SSE frame via a bounded raw socket read with a 15s deadline — verifying status 200, no traceback/RuntimeError/file:// in the frame body, and `engine_running` in the JSON payload.
+
+### Regression Guards
+- The test now completes in seconds (was indefinite hang)
+- Bounded socket read ensures the suite can never block forever on SSE again
+- WebSocket/SSE server behavior unchanged (still endless stream for EventSource)
+
+### Also fixed in the same pass
+- `test_08` legacy-pattern regex over-broad: `detail\s*=\s*f?['"][^'"]*\{?e\}?[^'"]*['"]` matched ANY literal string containing the letter `e` (e.g. `detail = "no engine"`). Tightened to the actual f-string exception-interpolation shape (`detail=f"...{*err*}"`) — security intent preserved, false positives removed.
+
+---
+
+## BUG-052 — Runtime Mode Displayed From Config Only (LIVE shown while MT5 disconnected)
+
+- **Status**: FIXED (2026-08-17, Phase 14 completion)
+- **Severity**: MEDIUM (dashboard could lie about LIVE state)
+- **Confidence**: HIGH
+- **Verified**: `tests/unit/test_mt5_status_endpoint.py::test_live_configured_but_mt5_disconnected`
+
+### Symptom
+Header MODE selector showed `LIVE TRADING` whenever config said LIVE, regardless of MT5 connection.
+
+### Fix
+- `LiveEngine._update_runtime_mode()` derives the REAL mode from connection state + account `trade_allowed`: `LIVE` / `LIVE / TRADE_BLOCKED` / `LIVE_CONFIGURED / MT5_DISCONNECTED` / PAPER / SHADOW / STOPPED; refreshed on connect + 5s throttle.
+- `/api/status` exposes `runtime_mode`; the UI renders a colored badge next to the selector (green only when truly connected, red on degraded).
+
+### Regression Guards
+- Forced-disconnect adapter (config LIVE, adapter disconnected) → `runtime_mode` contains `DISCONNECTED`, bid/account None (no fake data)
+- Connected paper adapter → `runtime_mode == "PAPER"`
+
+---
+
+## BUG-053 — Account Position View Restricted to Bot Filter (XAUUSD + magic 888101)
+
+- **Status**: FIXED (2026-08-17, Phase 14 completion)
+- **Severity**: MEDIUM (account-wide views silently dropped non-bot positions)
+- **Confidence**: HIGH
+- **Verified**: adapter `get_all_positions()` + `/api/mt5/status` positions block + accounting `live_state`
+
+### Root Cause
+`DirectMT5Adapter.get_positions()` hard-filters `pos.symbol == "XAUUSD" and pos.magic == 888101` — correct for the bot's own management path, wrong for account-wide views.
+
+### Fix
+Added `get_all_positions()` (no filter) consumed by the dashboard positions list and `/api/mt5/status`; the classic `get_positions()` keeps the bot filter for `OrderLifecycleManager` position management (task §22: separate ALL / BOT / SYMBOL views).
+
+### Regression Guards
+- `/api/mt5/status` `positions` reflects all account positions
+- `AccountingCore.live_state()` open-position count unaffected (uses adapter get_positions)

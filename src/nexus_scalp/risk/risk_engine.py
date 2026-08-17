@@ -572,3 +572,127 @@ class RiskEngine:
             return OrderType.SELL_STOP
         else:
             return OrderType.BUY if "BUY" in action.value else OrderType.SELL
+
+    # ------------------------------------------------------------------
+    # BROKER-AWARE CALCULATION PROVENANCE (Phase 14)
+    # ------------------------------------------------------------------
+    # mt5.order_calc_margin() / mt5.order_calc_profit() are broker-native and
+    # depend on the CURRENT trading environment (leverage, contract, tick
+    # value, currency conversion). These helpers use them when the adapter
+    # supports the snapshot API, and fall back to the mathematical estimate
+    # with EXPLICIT provenance - never claiming broker-exactness (task 24).
+    # They are OPTIONAL (never on the safety-critical path) and failure-
+    # isolated: a broker-calc failure degrades to FALLBACK_ESTIMATE.
+    # ------------------------------------------------------------------
+
+    def verify_margin_with_broker(
+        self,
+        *,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+        adapter: Any = None,
+        fallback_estimate: float | None = None,
+    ) -> dict[str, Any]:
+        """Broker-native margin verification via mt5.order_calc_margin().
+
+        Returns:
+            {
+                "margin_required": float | None,
+                "source": "BROKER_NATIVE" | "FALLBACK_ESTIMATE" | "UNAVAILABLE",
+                "available": bool,
+                "error": {...} | None,
+            }
+        """
+        result: dict[str, Any] = {
+            "margin_required": fallback_estimate,
+            "source": "FALLBACK_ESTIMATE" if fallback_estimate is not None else "UNAVAILABLE",
+            "available": fallback_estimate is not None,
+            "error": None,
+        }
+        if adapter is None or not hasattr(adapter, "order_calc_margin_snapshot"):
+            return result
+        try:
+            # OrderType has BUY/SELL/LIMIT/STOP members only (no *_MARKET).
+            mt5_type = 0 if "BUY" in str(getattr(order_type, "value", order_type)).upper() else 1
+            snap = adapter.order_calc_margin_snapshot(
+                symbol=symbol, order_type=mt5_type, volume=float(volume), price=float(price)
+            )
+            if snap.available and snap.value is not None:
+                result = {
+                    "margin_required": float(snap.value),
+                    "source": "BROKER_NATIVE",
+                    "available": True,
+                    "error": None,
+                }
+            elif snap.error_code is not None:
+                result["source"] = "UNAVAILABLE"
+                result["available"] = False
+                result["error"] = {"code": snap.error_code, "message": snap.error_message}
+        except Exception as exc:
+            logger.warning(
+                "[RISK] broker margin calc failed (fallback estimate kept)",
+                error=str(exc),
+                symbol=symbol,
+            )
+            result["source"] = (
+                "FALLBACK_ESTIMATE" if fallback_estimate is not None else "UNAVAILABLE"
+            )
+            result["error"] = {"code": "EXCEPTION", "message": type(exc).__name__}
+        return result
+
+    def verify_profit_with_broker(
+        self,
+        *,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price_open: float,
+        price_close: float,
+        adapter: Any = None,
+        fallback_estimate: float | None = None,
+    ) -> dict[str, Any]:
+        """Broker-native profit verification via mt5.order_calc_profit().
+
+        Returns the same provenance contract as verify_margin_with_broker.
+        """
+        result: dict[str, Any] = {
+            "profit": fallback_estimate,
+            "source": "FALLBACK_ESTIMATE" if fallback_estimate is not None else "UNAVAILABLE",
+            "available": fallback_estimate is not None,
+            "error": None,
+        }
+        if adapter is None or not hasattr(adapter, "order_calc_profit_snapshot"):
+            return result
+        try:
+            mt5_type = 0 if "BUY" in str(getattr(order_type, "value", order_type)).upper() else 1
+            snap = adapter.order_calc_profit_snapshot(
+                symbol=symbol,
+                order_type=mt5_type,
+                volume=float(volume),
+                price_open=float(price_open),
+                price_close=float(price_close),
+            )
+            if snap.available and snap.value is not None:
+                result = {
+                    "profit": float(snap.value),
+                    "source": "BROKER_NATIVE",
+                    "available": True,
+                    "error": None,
+                }
+            elif snap.error_code is not None:
+                result["source"] = "UNAVAILABLE"
+                result["available"] = False
+                result["error"] = {"code": snap.error_code, "message": snap.error_message}
+        except Exception as exc:
+            logger.warning(
+                "[RISK] broker profit calc failed (fallback estimate kept)",
+                error=str(exc),
+                symbol=symbol,
+            )
+            result["source"] = (
+                "FALLBACK_ESTIMATE" if fallback_estimate is not None else "UNAVAILABLE"
+            )
+            result["error"] = {"code": "EXCEPTION", "message": type(exc).__name__}
+        return result
