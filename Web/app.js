@@ -3167,6 +3167,155 @@ function stateColor(state) {
     return colors[state] || colors.NORMAL;
 }
 
+// =============================================================================
+// NEWS IMPACT TIMELINE CHART (canvas line chart: bullish/bearish/neutral)
+// =============================================================================
+let __newsTfSec = 900; // default 15m buckets
+let __newsTfHours = 48;
+
+function setNewsTimeframe(bucketSec) {
+    __newsTfSec = bucketSec;
+    // widen the lookback window as buckets grow so the chart stays useful
+    __newsTfHours = bucketSec >= 86400 ? 168 : bucketSec >= 14400 ? 72 : 48;
+    document.querySelectorAll('[id^="news-tf-"]').forEach(b => {
+        const active = (b.id === 'news-tf-15m' && bucketSec === 900) ||
+                       (b.id === 'news-tf-1h' && bucketSec === 3600) ||
+                       (b.id === 'news-tf-4h' && bucketSec === 14400) ||
+                       (b.id === 'news-tf-1d' && bucketSec === 86400);
+        b.className = active
+            ? 'px-2 py-0.5 rounded bg-accentCyan/20 border border-accentCyan/60 text-accentCyan transition'
+            : 'px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition';
+    });
+    loadNewsTimeline();
+}
+
+async function loadNewsTimeline() {
+    try {
+        const res = await fetch('/api/news/timeline?bucket_sec=' + __newsTfSec + '&hours_back=' + __newsTfHours);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const body = await res.json();
+        if (!body.available) return;
+        drawNewsImpactChart(body.buckets || []);
+    } catch (e) {
+        console.warn('news timeline failed', e);
+    }
+}
+
+function drawNewsImpactChart(buckets) {
+    const canvas = document.getElementById('newsImpactChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = rect.width, h = rect.height;
+    ctx.fillStyle = '#090d16';
+    ctx.fillRect(0, 0, w, h);
+
+    if (!buckets || buckets.length < 1) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No news impact data in this window', w / 2, h / 2);
+        return;
+    }
+
+    const padL = 34, padR = 8, padT = 12, padB = 18;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+
+    // zero-centered y-scale across bullish(+)/bearish(-)/neutral magnitudes
+    let maxAbs = 0.05;
+    buckets.forEach(b => {
+        maxAbs = Math.max(maxAbs, Math.abs(b.bullish || 0), Math.abs(b.bearish || 0), Math.abs(b.neutral || 0));
+    });
+    const midY = padT + plotH / 2;
+    const scale = (plotH / 2 - 6) / maxAbs; // px per unit
+
+    // grid
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, midY); ctx.lineTo(w - padR, midY); // zero line
+    ctx.stroke();
+    ctx.fillStyle = '#475569';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('0', padL - 4, midY + 3);
+    ctx.fillText('+' + maxAbs.toFixed(2), padL - 4, padT + 6);
+    ctx.fillText('-' + maxAbs.toFixed(2), padL - 4, h - padB + 6);
+
+    const n = buckets.length;
+    const step = plotW / Math.max(n - 1, 1);
+
+    // helper: draw a polyline + area
+    const line = (key, color, signed) => {
+        ctx.beginPath();
+        buckets.forEach((b, i) => {
+            const x = padL + i * step;
+            const y = midY - (signed ? (b[key] || 0) * scale : (b[key] || 0) * scale);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+    };
+    const fill = (key, color, signed) => {
+        ctx.beginPath();
+        buckets.forEach((b, i) => {
+            const x = padL + i * step;
+            const y = midY - (b[key] || 0) * scale;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.lineTo(padL + (n - 1) * step, midY);
+        ctx.lineTo(padL, midY);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.18;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+    };
+    // neutral area (light), then bearish (below zero, red), bullish (above zero, green)
+    fill('neutral', '#94a3b8');
+    fill('bearish', '#ef4444');
+    fill('bullish', '#22c55e');
+    line('neutral', '#94a3b8');
+    line('bearish', '#ef4444');
+    line('bullish', '#22c55e');
+
+    // bucket markers + time labels
+    ctx.textAlign = 'center';
+    ctx.font = '9px monospace';
+    buckets.forEach((b, i) => {
+        const x = padL + i * step;
+        // point marker
+        ctx.beginPath();
+        ctx.arc(x, midY - (b.bullish || 0) * scale, 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#22c55e'; ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, midY - (b.bearish || 0) * scale, 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#ef4444'; ctx.fill();
+        // x labels: every ~4th bucket
+        if (n <= 24 || i % Math.ceil(n / 12) === 0) {
+            const t = new Date(b.bucket_start);
+            ctx.fillStyle = '#475569';
+            const lbl = __newsTfSec >= 86400 ? t.toLocaleDateString(undefined, {month:'short', day:'numeric'})
+                : t.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+            ctx.fillText(lbl, x, h - 4);
+        }
+    });
+
+    // top headline annotation of the max-impact bucket
+    let top = buckets.reduce((a, b) => (Math.abs(b.bullish) + Math.abs(b.bearish) > Math.abs(a.bullish) + Math.abs(a.bearish) ? b : a), buckets[0]);
+    if (top && (top.top_title || top.article_count)) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText((top.top_title || ('N events')).slice(0, 62), padL + 2, padT + 10);
+    }
+}
+
 async function loadNewsFeed() {
     try {
         const res = await fetch('/api/news?limit=20');
@@ -3182,20 +3331,24 @@ async function loadNewsFeed() {
             const dirColor = dir === 'BULLISH' ? 'text-accentGreen' : dir === 'BEARISH' ? 'text-accentRed' : 'text-slate-400';
             const imp = Math.round((a.importance_score || 0) * 100);
             const rel = a.analysis ? Math.round((a.analysis.relevance_to_xauusd || 0) * 100) + '%' : '--';
+            const mech = a.analysis && a.analysis.market_mechanism ? a.analysis.market_mechanism : '';
+            const impColor = imp >= 70 ? 'bg-rose-500/20 text-rose-300' : imp >= 50 ? 'bg-orange-500/20 text-orange-300' : imp >= 30 ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-500/20 text-slate-400';
             return '<div class="bg-darkBg/40 border border-borderClr/40 rounded p-2.5">' +
                 '<div class="flex justify-between items-center gap-2">' +
-                '<span class="font-bold text-white truncate">' + esc(a.title) + '</span>' +
-                '<span class="text-[9px] ' + dirColor + ' font-black shrink-0">' + esc(dir) + '</span></div>' +
+                '<span class="font-bold text-white truncate" title="' + esc(a.title) + '">' + esc(a.title) + '</span>' +
+                '<span class="text-[9px] ' + dirColor + ' font-black shrink-0 border ' + (dir === 'BULLISH' ? 'border-accentGreen/30' : dir === 'BEARISH' ? 'border-accentRed/30' : 'border-slate-500/30') + ' rounded px-1.5 py-0.5">' + esc(dir) + '</span></div>' +
                 '<div class="flex items-center gap-3 mt-1 text-[10px] text-textMuted">' +
                 '<span>' + esc(a.source_name || a.source_id || '') + '</span>' +
-                '<span>imp ' + imp + '</span>' +
-                '<span>XAU ' + rel + '</span>' +
+                '<span class="' + impColor + ' rounded px-1 py-0.5">imp ' + imp + '</span>' +
+                '<span class="text-amber-400/80">XAU ' + rel + '</span>' +
                 '<span>' + esc(String(a.published_at || '').slice(0, 16)) + '</span></div>' +
+                (mech ? '<div class="text-[9px] text-slate-500 mt-0.5 truncate">' + esc(mech) + '</div>' : '') +
                 '<div class="flex gap-2 mt-1">' +
                 '<button onclick="analyzeNewsWithAI(\'' + a.article_id + '\')" class="text-[9px] bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-2 py-0.5 hover:bg-accentCyan/20">Analyze with AI</button>' +
                 '</div></div>';
         }).join('');
         setNewsStatus('feed: ' + body.articles.length + ' articles');
+        loadNewsTimeline();
     } catch (e) {
         console.warn('news feed failed', e);
         setNewsStatus('news feed failed: ' + e.message, true);
@@ -3217,10 +3370,19 @@ async function triggerNewsRefresh() {
     try {
         const res = await NX.api.post('/api/news/refresh', {}, { component: 'News', action: 'REFRESH' });
         const body = res.ok ? res.body : { available: false, error: res.error };
-        alert(body && body.available ? 'News fetch complete: ' + JSON.stringify(body.ingested || {}) : 'News engine unavailable');
+        if (!body || !body.available) {
+            setNewsStatus('news refresh failed', true);
+            alert('News engine unavailable');
+        } else if (body.cooldown) {
+            // bandwidth guard: server rejected the re-fetch, show remaining wait
+            setNewsStatus('refresh cooldown: ' + body.cooldown + 's (bandwidth guard)');
+        } else {
+            setNewsStatus('fetch complete: ' + (body.ingested ? body.ingested.new : 0) + ' new items');
+        }
         loadNewsState();
     } catch (e) {
         console.warn('news refresh failed', e);
+        setNewsStatus('news refresh failed: ' + e.message, true);
     }
 }
 

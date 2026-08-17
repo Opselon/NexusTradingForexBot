@@ -1072,3 +1072,97 @@ class TestLiveIntegration:
         assert ctx.available is True
         assert 0.0 <= ctx.freshness <= 1.0
         assert ctx.freshness > 0.0  # fresh articles kept in the average
+
+    def test_68_driver_only_headlines_get_xauusd_relevance(self):
+        """Calibration: USD/yields/CPI/oil/geopolitics headlines WITHOUT the
+        literal word 'gold' must still score XAUUSD relevance > 0 (they move
+        gold). Before the upgrade ~93% of driver articles scored 0.0.
+        """
+        from nexus_scalp.news.analysis.local import LocalNewsAnalyzer
+
+        an = LocalNewsAnalyzer()
+        cases = [
+            ("US 30-year yields rise to the highest since 2007", 0.2),
+            ("Canada July CPI 3.0% y/y vs +2.9% expected", 0.2),
+            ("Crude oil futures settle at $84.50 after Iran seizure report", 0.2),
+            ("Fed signals another rate hike as inflation persists", 0.2),
+            ("US stock indices closed lower on the day", 0.0),  # no gold driver
+        ]
+        for title, min_rel in cases:
+            art = NewsArticle(
+                article_id=f"cal_{hash(title) & 0xFFFF}",
+                article_hash="h",
+                title=title,
+                summary="",
+                body="",
+                source_id="forexlive",
+                source_name="ForexLive",
+                published_at=datetime.now(UTC),
+            )
+            ents = an.extract_entities(art)
+            tops = an.classify_topics(art, ents)
+            rel = an.xauusd_relevance(art, ents, tops)
+            assert rel >= min_rel, f"{title!r}: rel={rel} < {min_rel}"
+
+    def test_69_impact_timeline_aggregates_buckets(self, seeded_db):
+        """impact_timeline groups impacts into time buckets with direction sums."""
+        from nexus_scalp.news.analysis.pipeline import NewsAnalysisPipeline
+        from nexus_scalp.news.ingest import NewsIngestor
+        from nexus_scalp.news.models import NewsDirection
+        from nexus_scalp.news.sources import SourceFetchResult
+
+        now = datetime.now(UTC)
+        # two articles with BULLISH and BEARISH XAUUSD impacts, 1h apart
+        items = [
+            {
+                "title": "Fed signals rate cut, dollar weakens, gold jumps",
+                "url": "https://x/1",
+                "summary": "dovish central bank",
+                "published_at": now.isoformat(),
+            },
+            {
+                "title": "Yields surge to highs, dollar rallies, gold slides",
+                "url": "https://x/2",
+                "summary": "hawkish repricing",
+                "published_at": (now - timedelta(hours=1)).isoformat(),
+            },
+        ]
+        ng = NewsIngestor(seeded_db)
+        for it in items:
+            ng.ingest_source_items(
+                {
+                    "source_id": "fed",
+                    "source_name": "Federal Reserve",
+                    "kind": "OFFICIAL",
+                    "priority": 0.9,
+                },
+                SourceFetchResult(ok=True, items=[it]),
+            )
+        pipe = NewsAnalysisPipeline(db=seeded_db, config=NewsConfig())
+        from nexus_scalp.news.models import NewsArticle
+
+        for art in seeded_db.list_articles(limit=10):
+            raw_dt = art.get("published_at")
+            try:
+                pub = datetime.fromisoformat(str(raw_dt).replace("Z", "+00:00"))
+            except Exception:
+                pub = datetime.now(UTC)
+            a = NewsArticle(
+                article_id=art["article_id"],
+                article_hash=art["article_hash"],
+                canonical_url=art.get("canonical_url") or "",
+                title=art["title"],
+                summary=art.get("summary") or "",
+                body=art.get("body") or "",
+                source_id=art["source_id"],
+                source_name=art["source_name"],
+                published_at=normalize_datetime(pub),
+            )
+            pipe.analyze_article(a)
+
+        tl = seeded_db.impact_timeline(bucket_sec=3600, hours_back=6)
+        assert isinstance(tl, list)
+        if tl:
+            b = tl[0]
+            assert "bucket_start" in b and "bullish" in b and "bearish" in b
+            assert b["article_count"] >= 1

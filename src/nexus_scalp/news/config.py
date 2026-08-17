@@ -17,8 +17,8 @@ from nexus_scalp.news.models import NewsState
 class NewsPollingConfig(BaseModel):
     """Per-source-class polling intervals (seconds)."""
 
-    fast_interval_sec: int = Field(default=180, ge=30)  # breaking feeds
-    medium_interval_sec: int = Field(default=600, ge=60)  # official releases
+    fast_interval_sec: int = Field(default=300, ge=60)  # breaking feeds (bandwidth-conscious)
+    medium_interval_sec: int = Field(default=900, ge=120)  # official releases
     slow_interval_sec: int = Field(default=3600, ge=300)  # calendars / COT
 
 

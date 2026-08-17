@@ -1023,6 +1023,24 @@
                                     </div>
                                 </div>
 
+                                <!-- NEWS IMPACT TIMELINE CHART -->
+                                <div class="mb-4">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <div class="text-[10px] uppercase tracking-widest text-textMuted">XAUUSD News Impact Timeline</div>
+                                        <div class="flex items-center space-x-1 text-[10px] font-mono">
+                                            <span class="px-2 py-0.5 rounded bg-accentGreen/10 text-accentGreen border border-accentGreen/30">▲ bullish</span>
+                                            <span class="px-2 py-0.5 rounded bg-accentRed/10 text-accentRed border border-accentRed/30">▼ bearish</span>
+                                            <span class="px-2 py-0.5 rounded bg-slate-500/10 text-slate-400 border border-slate-500/30">● neutral</span>
+                                            <span class="ml-2 text-textMuted">timeframe</span>
+                                            <button id="news-tf-15m" onclick="setNewsTimeframe(900)" class="px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition">15m</button>
+                                            <button id="news-tf-1h" onclick="setNewsTimeframe(3600)" class="px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition">1h</button>
+                                            <button id="news-tf-4h" onclick="setNewsTimeframe(14400)" class="px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition">4h</button>
+                                            <button id="news-tf-1d" onclick="setNewsTimeframe(86400)" class="px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition">1d</button>
+                                        </div>
+                                    </div>
+                                    <canvas id="newsImpactChart" class="w-full rounded-lg border border-borderClr/40" style="height:180px; background:#090d16;"></canvas>
+                                </div>
+
                                 <div class="text-[10px] uppercase tracking-widest text-textMuted mb-2">Live News</div>
                                 <div id="news-status-line" class="text-[9px] font-mono text-slate-500 mb-1 hidden"></div>
                                 <div id="news-feed" class="max-h-96 overflow-y-auto space-y-2 text-[11px] font-mono text-gray-300">

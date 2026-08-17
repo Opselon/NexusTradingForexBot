@@ -84,6 +84,10 @@ class NewsEngine:
                 stats["sources_polled"] += 1
                 continue
             stats["sources_polled"] += 1
+            # 304 = conditional GET, feed unchanged: nothing to ingest (and no
+            # body was transferred at all). Avoids dedup work + DB writes.
+            if result.status == 304:
+                continue
             ingested = self.ingestor.ingest_source_items(src, result)
             stats["new"] += ingested.get("new", 0)
             stats["duplicate"] += ingested.get("duplicate", 0)

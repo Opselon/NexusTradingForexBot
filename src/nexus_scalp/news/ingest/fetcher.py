@@ -93,11 +93,25 @@ class NewsFetcher:
         if self._backed_off(health, now):
             return SourceFetchResult(ok=False, error="backoff active", status=None)
 
+        # Restore conditional-GET validators persisted from the last success so
+        # the feed body is NOT redownloaded when it is unchanged (bandwidth).
+        if health.get("last_modified"):
+            source_config["last_modified"] = health["last_modified"]
+        if health.get("etag"):
+            source_config["etag"] = health["etag"]
+
         # jitter: +/- 10% delay before hitting a source (rate-limit etiquette)
         time.sleep(random.uniform(0.0, 1.0))
 
         adapter: NewsSourceAdapter = build_adapter(source_config)
         result = adapter.fetch(limit=self.config.max_articles_per_fetch)
+
+        # Persist validator headers from the adapter (it stores them on
+        # source_config after a 200) so the NEXT poll sends them.
+        if source_config.get("last_modified"):
+            health["last_modified"] = source_config["last_modified"]
+        if source_config.get("etag"):
+            health["etag"] = source_config["etag"]
 
         if result.rate_limited:
             health.update(
@@ -154,11 +168,19 @@ class NewsFetcher:
             healthy=True,
         )
         self._save_health(source_id, health)
-        logger.info(
-            "[NEWS_FETCH] source=%s status=SUCCESS items=%d",
-            source_id,
-            len(result.items),
-        )
+        if result.status == 304:
+            # Conditional GET: feed unchanged — zero body downloaded, nothing
+            # to ingest. Log at debug so a quiet feed doesn't spam.
+            logger.debug(
+                "[NEWS_FETCH] source=%s status=NOT_MODIFIED (no body downloaded)",
+                source_id,
+            )
+        else:
+            logger.info(
+                "[NEWS_FETCH] source=%s status=SUCCESS items=%d",
+                source_id,
+                len(result.items),
+            )
         return result
 
 

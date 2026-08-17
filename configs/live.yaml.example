@@ -33,8 +33,8 @@ news:
   db_path: "artifacts/news.db"
   worker_interval_sec: 60
   polling:
-    fast_interval_sec: 180
-    medium_interval_sec: 600
+    fast_interval_sec: 300
+    medium_interval_sec: 900
     slow_interval_sec: 3600
   analysis:
     mode: "HYBRID"

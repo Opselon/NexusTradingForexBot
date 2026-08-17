@@ -209,6 +209,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     app.state.versioner = StateVersioner()
     # Bounded per-stream event ring for reconnect resynchronization.
     app.state.stream_history = deque(maxlen=200)  # type: ignore[assignment]
+    # News refresh cooldown (bandwidth guard): monotonic timestamp of the last
+    # forced fetch so repeated "Fetch News" clicks cannot hammer RSS feeds.
+    import threading
+
+    app.state.news_refresh_lock = threading.Lock()
+    app.state.news_refresh_ts = 0.0
 
     # DASHBOARD HARDENING: correlation + sanitized 500s for every HTTP route.
     from nexus_scalp.web.errors import attach_request_id_middleware
@@ -4161,8 +4167,29 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return {"available": False}
         try:
             rows = news.db.list_recent_impacts(asset=asset, limit=limit)
-            return {"available": True, "asset": asset, "impacts": rows}
+            return {"available": True, "impacts": rows}
         except Exception:
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/news/timeline")
+    def get_news_timeline(
+        bucket_sec: int = 900, hours_back: int = 24, asset: str = "XAUUSD"
+    ) -> dict[str, Any]:
+        """Impact timeline aggregated into time buckets for the chart.
+
+        bucket_sec map: 900 = 15m, 3600 = 1h, 14400 = 4h, 86400 = 1d.
+        Returns buckets with bullish/bearish/neutral impact sums per bucket.
+        """
+        news = _news()
+        if news is None:
+            return {"available": False}
+        try:
+            buckets = news.db.impact_timeline(
+                bucket_sec=bucket_sec, hours_back=hours_back, asset=asset
+            )
+            return {"available": True, "asset": asset, "buckets": buckets}
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "News timeline failed"})
             return _err("INTERNAL_ERROR")
 
     @app.get("/api/news/state")
@@ -4273,17 +4300,38 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     @app.post("/api/news/refresh")
     def post_news_refresh() -> dict[str, Any]:
-        """Trigger one ingestion + analysis pass (bounded)."""
+        """Trigger one ingestion + analysis pass (bounded).
+
+        BANDWIDTH GUARD (2026-08-18): rapid clicks on "Fetch News" used to
+        trigger a full multi-source re-fetch EVERY time (the fetcher has no
+        shared cooldown). A per-server minimum interval is enforced here so
+        repeated clicks within 60s return the cached result instead of
+        hammering the RSS endpoints.
+        """
         news = _news()
         if news is None:
             return {"available": False}
         try:
+            now = time.monotonic()
+            with app.state.news_refresh_lock:
+                last = app.state.news_refresh_ts
+                if now - last < 60.0:
+                    remaining = int(60.0 - (now - last))
+                    return {
+                        "available": True,
+                        "cooldown": remaining,
+                        "ingested": {"sources_polled": 0, "new": 0, "duplicate": 0, "merged": 0},
+                        "analyzed_count": 0,
+                        "skipped": f"refresh cooldown active ({remaining}s)",
+                    }
+                app.state.news_refresh_ts = now
             ingest = news.ingest_cycle(max_sources=8)
             analyzed = news.analysis_cycle(limit=10)
             return {
                 "available": True,
                 "ingested": ingest,
                 "analyzed_count": len(analyzed),
+                "cooldown": 0,
             }
         except Exception:
             return _err("INTERNAL_ERROR")

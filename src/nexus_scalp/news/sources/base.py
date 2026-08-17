@@ -90,26 +90,60 @@ class RSSNewsSourceAdapter(NewsSourceAdapter):
         try:
             import httpx
 
-            resp = httpx.get(
-                self.feed_url,
-                timeout=self.timeout_sec,
-                follow_redirects=True,
-                headers={"User-Agent": "NexusScalpEngine/1.0 (news intelligence)"},
-            )
-            if resp.status_code == 429:
-                retry_after = float(resp.headers.get("Retry-After", "60") or 60)
-                return SourceFetchResult(
-                    ok=False,
-                    status=429,
-                    rate_limited=True,
-                    retry_after_sec=retry_after,
-                    error="rate limited",
-                )
-            if resp.status_code >= 400:
-                return SourceFetchResult(
-                    ok=False, status=resp.status_code, error=f"HTTP {resp.status_code}"
-                )
-            return self._parse_feed(resp.content, limit=limit, status=resp.status_code)
+            # BANDWIDTH BUDGET (2026-08-18): RSS feeds are 200KB-2MB raw XML;
+            # the old plain GET downloaded the FULL body on every poll with no
+            # compression, no conditional request and no size cap — heavy on
+            # metered connections. Now:
+            #   * Accept-Encoding gzip/deflate (httpx decompresses transparently;
+            #     ~70-85% smaller bodies),
+            #   * If-Modified-Since / If-None-Match conditional GET — a 304
+            #     response means ZERO body download and the parse is skipped,
+            #   * 2MB Content-Length cap — a runaway feed is truncated quickly.
+            headers = {
+                "User-Agent": "NexusScalpEngine/1.0 (news intelligence)",
+                "Accept-Encoding": "gzip, deflate",
+            }
+            last_modified = self.source_config.get("last_modified", "")
+            etag = self.source_config.get("etag", "")
+            if last_modified:
+                headers["If-Modified-Since"] = last_modified
+            if etag:
+                headers["If-None-Match"] = etag
+
+            with httpx.Client(timeout=self.timeout_sec, follow_redirects=True) as client:
+                resp = client.get(self.feed_url, headers=headers)
+                if resp.status_code == 304:
+                    # Feed unchanged since last poll — no body download at all.
+                    return SourceFetchResult(ok=True, items=[], status=304, error="not modified")
+                if resp.status_code == 429:
+                    retry_after = float(resp.headers.get("Retry-After", "60") or 60)
+                    return SourceFetchResult(
+                        ok=False,
+                        status=429,
+                        rate_limited=True,
+                        retry_after_sec=retry_after,
+                        error="rate limited",
+                    )
+                if resp.status_code >= 400:
+                    return SourceFetchResult(
+                        ok=False, status=resp.status_code, error=f"HTTP {resp.status_code}"
+                    )
+
+                # Persist validator headers for the next conditional GET (the
+                # caller mirrors them back into source_config for reuse).
+                if resp.headers.get("Last-Modified"):
+                    self.source_config["last_modified"] = resp.headers["Last-Modified"]
+                if resp.headers.get("ETag"):
+                    self.source_config["etag"] = resp.headers["ETag"]
+
+                cl = resp.headers.get("Content-Length")
+                if cl and cl.isdigit() and int(cl) > 2 * 1024 * 1024:
+                    return SourceFetchResult(
+                        ok=False,
+                        status=resp.status_code,
+                        error=f"feed too large (>{2 * 1024 * 1024 / 1e6:.0f}MB)",
+                    )
+                return self._parse_feed(resp.content, limit=limit, status=resp.status_code)
         except Exception as e:
             return SourceFetchResult(ok=False, error=f"fetch error: {e}")
 

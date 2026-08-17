@@ -669,6 +669,78 @@ class NewsDatabase:
                 ).fetchall()
             ]
 
+    def impact_timeline(
+        self,
+        bucket_sec: int = 900,
+        hours_back: int = 24,
+        asset: str = "XAUUSD",
+    ) -> list[dict[str, Any]]:
+        """Aggregates impact strength into time buckets for charting.
+
+        Each bucket: bucket_start (ISO), bucket_ts (epoch), bullish (signed
+        sum of bullish strength*relevance), bearish (signed sum of bearish),
+        neutral (unsigned sum), article_count, top_title (highest-relevance
+        article title in the bucket).
+        """
+        bucket_sec = max(60, min(int(bucket_sec), 86400))
+        hours_back = max(1, min(int(hours_back), 24 * 7))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT i.evaluated_at, i.direction, i.strength, i.relevance, a.title
+                FROM news_impacts i
+                LEFT JOIN news_articles a ON a.article_id = i.article_id
+                WHERE i.asset = ?
+                  AND i.evaluated_at IS NOT NULL AND i.evaluated_at != ''
+                  AND i.evaluated_at >= datetime('now', ?)
+                ORDER BY i.evaluated_at ASC;
+                """,
+                (asset, f"-{hours_back} hours"),
+            ).fetchall()
+
+        buckets: dict[int, dict[str, Any]] = {}
+        for evaluated_at, direction, strength, relevance, title in rows:
+            try:
+                ts = datetime.fromisoformat(str(evaluated_at).replace("Z", "+00:00")).timestamp()
+            except Exception:
+                continue
+            bucket = int(ts // bucket_sec) * bucket_sec
+            b = buckets.setdefault(
+                bucket,
+                {
+                    "bucket_start": "",
+                    "bucket_ts": bucket,
+                    "bullish": 0.0,
+                    "bearish": 0.0,
+                    "neutral": 0.0,
+                    "article_count": 0,
+                    "top_title": "",
+                    "top_relevance": 0.0,
+                },
+            )
+            s = float(strength or 0.0) * float(relevance or 0.0)
+            d = str(direction or "NEUTRAL").upper()
+            if d == "BULLISH":
+                b["bullish"] += s
+            elif d == "BEARISH":
+                b["bearish"] += s
+            else:
+                b["neutral"] += s
+            b["article_count"] += 1
+            rel = float(relevance or 0.0)
+            if rel > b["top_relevance"]:
+                b["top_relevance"] = rel
+                b["top_title"] = str(title or "")
+
+        out: list[dict[str, Any]] = []
+        for bucket, b in sorted(buckets.items()):
+            b["bucket_start"] = datetime.fromtimestamp(bucket, tz=UTC).isoformat()
+            b["bullish"] = round(b["bullish"], 4)
+            b["bearish"] = round(b["bearish"], 4)
+            b["neutral"] = round(b["neutral"], 4)
+            out.append(b)
+        return out
+
     def upsert_consensus(self, row: dict[str, Any]) -> None:
         with self._connect() as conn:
             conn.execute(
