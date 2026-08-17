@@ -181,12 +181,27 @@ _BULLISH_XAUUSD: list[str] = [
     "dollar fell",
     "dollar slides",
     "weaker dollar",
+    "weak dollar",
+    "dollar on the defensive",
+    "dollar lower",
+    "dollar holds lower",
     "real yields fall",
     "yields drop",
     "yields fall",
+    "yields lower",
     "risk aversion",
     "recession fears",
     "easing cycle",
+    "gold rose",
+    "gold surges",
+    "gold jumps",
+    "gold climbs",
+    "gold gains",
+    "gold higher",
+    "gold buyers",
+    "gold break",
+    "break above",
+    "buyers taking control",
 ]
 
 _BEARISH_XAUUSD: list[str] = [
@@ -199,9 +214,13 @@ _BEARISH_XAUUSD: list[str] = [
     "dollar rises",
     "dollar rallies",
     "stronger dollar",
+    "strong dollar",
     "real yields rise",
     "yields surge",
     "yields jump",
+    "yields rise",
+    "yields higher",
+    "yields at highest",
     "risk appetite",
     "risk-on",
     "optimism",
@@ -210,6 +229,10 @@ _BEARISH_XAUUSD: list[str] = [
     "gold falls",
     "gold slides",
     "gold drops",
+    "gold lower",
+    "gold sellers",
+    "gold break below",
+    "break below",
 ]
 
 _BULLISH_FX_ASSET: dict[str, list[str]] = {
@@ -404,6 +427,23 @@ class LocalNewsAnalyzer:
             "RECESSION",
         ]
         kw_hits = sum(1 for kw in driver_kws if _count_occurrences(text, kw) > 0)
+        # Entity-driven driver credit: a USD/EUR/GBP currency entity or a
+        # FED/ECB institution is itself a gold driver even without the literal
+        # keyword (e.g. "USD/JPY rises to the highest level this month").
+        for ent_name in (
+            "USD",
+            "EUR",
+            "GBP",
+            "JPY",
+            "CHF",
+            "FED",
+            "ECB",
+            "BOE",
+            "BOJ",
+            "SNB",
+        ):
+            if ent_name in entity_names:
+                kw_hits += 1
         score += min(0.25, kw_hits * 0.05)
 
         # price-action verbs make a gold mention directly market-relevant
