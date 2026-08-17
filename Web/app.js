@@ -3118,14 +3118,24 @@ document.addEventListener('DOMContentLoaded', () => {
 // PHASE 12: NEWS INTELLIGENCE (live feed / state / fetch / analyze)
 // =============================================================================
 
+function setNewsStatus(msg, isError) {
+    const el = document.getElementById('news-status-line');
+    if (!el) return;
+    if (!msg) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.textContent = (isError ? '⚠ ' : '') + msg + ' — ' + new Date().toLocaleTimeString();
+    el.style.color = isError ? '#f87171' : '#64748b';
+}
+
 async function loadNewsState() {
     try {
         const res = await fetch('/api/news/state');
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const body = await res.json();
         if (!body.available) {
             document.getElementById('news-state-value').textContent = 'OFF';
             document.getElementById('news-state-badge').textContent = 'OFF';
+            setNewsStatus('news engine unavailable (available=false)', true);
             return;
         }
         const state = body.state || 'NORMAL';
@@ -3137,9 +3147,11 @@ async function loadNewsState() {
         document.getElementById('news-bull').textContent = (body.bullish_score * 100).toFixed(0) + '%';
         document.getElementById('news-bear').textContent = (body.bearish_score * 100).toFixed(0) + '%';
         document.getElementById('news-events').textContent = body.active_event_count ?? 0;
+        setNewsStatus('state=' + state + ' events=' + (body.active_event_count ?? 0));
         loadNewsFeed();
     } catch (e) {
         console.warn('news state failed', e);
+        setNewsStatus('news state failed: ' + e.message, true);
     }
 }
 
@@ -3158,7 +3170,7 @@ function stateColor(state) {
 async function loadNewsFeed() {
     try {
         const res = await fetch('/api/news?limit=20');
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const body = await res.json();
         const feed = document.getElementById('news-feed');
         if (!body.available || !body.articles || body.articles.length === 0) {
@@ -3183,8 +3195,10 @@ async function loadNewsFeed() {
                 '<button onclick="analyzeNewsWithAI(\'' + a.article_id + '\')" class="text-[9px] bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-2 py-0.5 hover:bg-accentCyan/20">Analyze with AI</button>' +
                 '</div></div>';
         }).join('');
+        setNewsStatus('feed: ' + body.articles.length + ' articles');
     } catch (e) {
         console.warn('news feed failed', e);
+        setNewsStatus('news feed failed: ' + e.message, true);
     }
 }
 
@@ -3210,12 +3224,24 @@ async function triggerNewsRefresh() {
     }
 }
 
-// auto-load news state on tab open
+// auto-load news state on tab open + keep it fresh (auto-reconnect semantics:
+// the panel re-polls every 60s so a worker restart / engine start is picked up
+// without manual refresh, and silent failures become visible via the status line)
+let __newsRefreshTimer = null;
+function startNewsAutoRefresh() {
+    if (__newsRefreshTimer) return;
+    __newsRefreshTimer = setInterval(() => {
+        if (document.getElementById('tab-news') && !document.getElementById('tab-news').classList.contains('hidden')) {
+            loadNewsState();
+        }
+    }, 60000);
+}
 const __newsTabObserver = new MutationObserver(() => {
     const tab = document.getElementById('tab-news');
     if (tab && !tab.classList.contains('hidden') && !window.__newsIntelLoaded) {
         window.__newsIntelLoaded = true;
         loadNewsState();
+        startNewsAutoRefresh();
     }
 });
 __newsTabObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });

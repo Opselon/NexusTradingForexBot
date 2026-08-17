@@ -33,6 +33,11 @@ import torch
 
 from nexus_scalp.accounting import AccountingCore, AccountingWorker
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.candle_intelligence import (
+    CandleIntelligenceConfig,
+    CandleIntelligenceEngine,
+    RegimeState,
+)
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import (
@@ -206,6 +211,15 @@ class LiveEngine:
             admin_id=admin_id,
             enabled=config.telegram.enabled,
         )
+
+        # BUG-061: local candle-intelligence subsystem (candle-close gate).
+        # Isolated DB (candle_intel.db); feeds decisions for entry/hold/fast-exit.
+        try:
+            self.candle_intel = CandleIntelligenceEngine(CandleIntelligenceConfig(enabled=True))
+        except Exception as ci_err:
+            self.candle_intel = None
+            logger.error("[CANDLE_INTEL] init failed (isolated)", error=str(ci_err))
+        self._last_candle_decision: Any = None
 
         # Module 1: Rule Matrix Engine
         self.rule_matrix = RuleMatrixEngine(audit_repo=self.audit)
@@ -919,6 +933,13 @@ class LiveEngine:
 
         try:
             self.audit.close()
+        except Exception:
+            pass
+
+        try:
+            ci = getattr(self, "candle_intel", None)
+            if ci is not None:
+                ci.store.close()
         except Exception:
             pass
 
@@ -2256,6 +2277,39 @@ class LiveEngine:
                             pass
 
     def _on_new_bar(self, tick: TickData, fv, last_bar) -> None:
+        # BUG-061: candle-close gate — feed the completed bar into the local
+        # candle-intelligence subsystem and capture its decision (entry/hold/
+        # fast-exit bias). Failure is isolated; never disturbs the tick path.
+        ci = getattr(self, "candle_intel", None)
+        if ci is not None:
+            try:
+                regime_name = getattr(self._last_regime_state, "regime_type", None)
+                regime_name = getattr(regime_name, "value", "UNKNOWN") if regime_name else "UNKNOWN"
+                regime_state = RegimeState(
+                    symbol=tick.symbol,
+                    timeframe="M1",
+                    timestamp=last_bar.timestamp,
+                    regime=str(regime_name),
+                    atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
+                    spread=float(max(0.0, tick.ask - tick.bid)),
+                )
+                out = ci.ingest_bar(
+                    symbol=tick.symbol,
+                    timeframe="M1",
+                    timestamp=last_bar.timestamp,
+                    open_=float(last_bar.open),
+                    high=float(last_bar.high),
+                    low=float(last_bar.low),
+                    close=float(last_bar.close),
+                    volume=float(getattr(last_bar, "tick_volume", 0.0) or 0.0),
+                    is_complete=True,
+                    regime_state=regime_state,
+                    holding_position=bool(self.order_manager._position_states),
+                )
+                self._last_candle_decision = out.to_dict() if out else None
+            except Exception as ci_err:
+                logger.error("[CANDLE_INTEL] bar feed failed (isolated)", error=str(ci_err))
+
         x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
         rec = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
         rec.update(

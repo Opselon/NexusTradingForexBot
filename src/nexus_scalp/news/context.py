@@ -93,8 +93,10 @@ class NewsContextCache:
         try:
             analyses = self.db.list_analysis(limit=100)
             if not analyses:
+                logger.info("[NEWS] context build: no analyses in DB (available=False)")
                 return CurrentNewsContext(available=False, timestamp=now)
-        except Exception:
+        except Exception as e:
+            logger.error("[NEWS] context build: list_analysis failed", error=str(e))
             return CurrentNewsContext(
                 available=False, timestamp=now, state=NewsState.STALE, stale=True
             )
@@ -110,6 +112,7 @@ class NewsContextCache:
         consensus_sum = 0.0
         active_high: list[str] = []
         weights = 0.0
+        count = 0
         max_importance = 0.0
         any_breaking = False
         any_conflict = False
@@ -148,6 +151,7 @@ class NewsContextCache:
                 fresh_sum += freshness
                 consensus_sum += w
                 weights += w
+                count += 1
 
                 if horizon == NewsImpactHorizon.BREAKING and freshness > 0.3:
                     any_breaking = True
@@ -188,6 +192,15 @@ class NewsContextCache:
             state = NewsState.STALE
 
         n = max(1, weights)
+        logger.info(
+            "[NEWS] context built",
+            available=True,
+            state=state.value,
+            active_events=len(active_high),
+            analyses=len(analyses),
+            count=count,
+            freshness=round(min(1.0, fresh_sum / max(count, 1)), 4),
+        )
         return CurrentNewsContext(
             available=True,
             timestamp=now,
@@ -199,7 +212,14 @@ class NewsContextCache:
             bearish_score=round(min(1.0, bear / n), 4),
             confidence=round(min(1.0, conf_sum / n), 4),
             conflict_score=round(min(1.0, conflict_sum / n), 4),
-            freshness=round(fresh_sum / n, 4),
+            # freshness must stay in [0,1] (Pydantic le=1.0). The raw average of
+            # per-article decay freshness can exceed 1.0 when weights < 1 (the
+            # weighted denominator shrinks while fresh_sum stays ~count-sized);
+            # a value > 1.0 raised a validation error that made the WHOLE news
+            # context unavailable (UI news panel stuck/empty). Clamp like every
+            # other score below, and normalize by the article count, which is
+            # the semantically correct average of the freshness values.
+            freshness=round(min(1.0, fresh_sum / max(count, 1)), 4),
             source_consensus=round(min(1.0, consensus_sum / n), 4),
             stale=stale,
             active_high_impact=active_high[:10],

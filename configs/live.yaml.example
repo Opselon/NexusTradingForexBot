@@ -27,3 +27,21 @@ model:
   confidence_threshold: 0.35      # آستانه اطمینان مدل هوش مصنوعی پایتورچ
   feature_schema_version: "v1.0"  # نسخه ویژگی‌ها
   model_artifact_path: "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
+
+news:
+  enabled: true
+  db_path: "artifacts/news.db"
+  worker_interval_sec: 60
+  polling:
+    fast_interval_sec: 180
+    medium_interval_sec: 600
+    slow_interval_sec: 3600
+  analysis:
+    mode: "HYBRID"
+    provider: ""
+    api_base_url: ""
+    model: ""
+    max_api_per_cycle: 5
+    api_importance_floor: 0.55
+    request_timeout_sec: 20.0
+    enabled: true

@@ -12,6 +12,7 @@ import yaml
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from nexus_scalp.candle_intelligence.config import CandleIntelligenceConfig
 from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.news.config import NewsConfig
 
@@ -107,6 +108,8 @@ class AppConfig(BaseSettings):
     algo: AlgoConfig = AlgoConfig()
     # PHASE 12: NEWS INTELLIGENCE (optional; disabled by default via NewsConfig.enabled)
     news: NewsConfig | None = None
+    # BUG-061: CANDLE INTELLIGENCE (local candle-close gate; isolated DB)
+    candle_intel: CandleIntelligenceConfig | None = None
 
     @classmethod
     def load_from_yaml(cls, yaml_path: Path) -> "AppConfig":

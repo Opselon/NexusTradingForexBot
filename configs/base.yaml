@@ -28,3 +28,28 @@ algo:
   ai_zone_confidence_threshold: 0.60
   fvg_mitigation_sensitivity: 0.5
   order_block_lookback_bars: 30
+
+candle_intel:
+  enabled: true
+  entry_min_confidence: 0.62
+  strong_body_ratio: 0.60
+  weak_close_blocks_entry: true
+  db_path: "artifacts/candle_intel.db"
+
+news:
+  enabled: true
+  db_path: "artifacts/news.db"
+  worker_interval_sec: 60
+  polling:
+    fast_interval_sec: 180
+    medium_interval_sec: 600
+    slow_interval_sec: 3600
+  analysis:
+    mode: "HYBRID"
+    provider: ""
+    api_base_url: ""
+    model: ""
+    max_api_per_cycle: 5
+    api_importance_floor: 0.55
+    request_timeout_sec: 20.0
+    enabled: true

@@ -1020,3 +1020,55 @@ class TestLiveIntegration:
         engine = NewsEngine(config=NewsConfig(db_path=bad_path))
         ctx = engine.current_context()
         assert ctx.available is False  # safe defaults
+
+    def test_67_context_freshness_clamped_when_weights_below_one(self, seeded_db):
+        """Regression: context freshness must stay in [0,1] (BUG: UI news panel
+        stuck/empty). With low-confidence/relevance analyses the weighted
+        denominator (weights) is < 1 while fresh_sum stays ~count-sized, so
+        fresh_sum/weights exceeded 1.0, failed Pydantic le=1.0 validation and
+        made the WHOLE news context unavailable (available=False -> UI shows
+        OFF/empty). Fix: normalize by article count + clamp like other scores.
+        """
+        from nexus_scalp.news.context import NewsContextCache
+        from nexus_scalp.news.models import NewsDirection, NewsImpactHorizon
+
+        now = datetime.now(UTC)
+        cache = NewsContextCache(db=seeded_db, config=NewsConfig())
+        # 8 fresh, low-confidence, low-relevance analyses -> weights ~ 8 * (0.9 * 0.1 * 0.5) < 1
+        for i in range(8):
+            aid = f"news_lowconf_{i}"
+            seeded_db.insert_article(
+                {
+                    "article_id": aid,
+                    "article_hash": f"hash_{i}",
+                    "title": f"Low confidence headline {i}",
+                    "summary": "test",
+                    "body": "",
+                    "source_id": "fed",
+                    "source_name": "Federal Reserve",
+                    "published_at": now.isoformat(),
+                    "is_duplicate": 0,
+                }
+            )
+            seeded_db.insert_analysis(
+                {
+                    "analysis_id": f"an_{i}",
+                    "article_id": aid,
+                    "run_id": "r1",
+                    "status": "COMPLETE",
+                    "local_only": 1,
+                    "summary": "s",
+                    "direction": NewsDirection.NEUTRAL.value,
+                    "impact_strength": 0.1,
+                    "confidence": 0.1,
+                    "horizon": NewsImpactHorizon.MACRO.value,
+                    "importance_score": 0.1,
+                    "relevance_to_xauusd": 0.0,
+                    "relevance_to_usd": 0.0,
+                    "analyzed_at": now.isoformat(),
+                }
+            )
+        ctx = cache.build()
+        assert ctx.available is True
+        assert 0.0 <= ctx.freshness <= 1.0
+        assert ctx.freshness > 0.0  # fresh articles kept in the average

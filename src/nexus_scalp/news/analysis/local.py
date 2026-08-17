@@ -349,42 +349,62 @@ class LocalNewsAnalyzer:
             # market drivers are present does relevance become meaningful.
             # ("Gold medal" ≠ an XAUUSD event.)
             score += 0.20
-        else:
-            return 0.0  # no gold mention, no XAUUSD relevance without drivers
+        # Calibration upgrade (2026-08-17): XAUUSD drivers WITHOUT a literal
+        # gold token still move gold (USD, real yields, CPI, Fed, geopolitics,
+        # oil, risk-off). Previously `else: return 0.0` zeroed every such
+        # headline, so ~93% of driver articles scored 0 (measured on live DB).
+        # Driver-only articles now earn a scaled baseline when the driver is
+        # strong, capped below the direct-gold tier:
+        #   strong single driver -> 0.45, two+ drivers -> up to 0.75.
 
         driver_topics = {
-            NewsTopic.USD: 0.20,
+            NewsTopic.USD: 0.18,
             NewsTopic.BOND_YIELDS: 0.20,
             NewsTopic.INFLATION: 0.20,
-            NewsTopic.GEOPOLITICS: 0.15,
-            NewsTopic.SAFE_HAVEN: 0.15,
-            NewsTopic.INTEREST_RATES: 0.15,
-            NewsTopic.CENTRAL_BANK: 0.12,
-            NewsTopic.RISK_OFF: 0.12,
-            NewsTopic.ENERGY: 0.10,
+            NewsTopic.GEOPOLITICS: 0.16,
+            NewsTopic.SAFE_HAVEN: 0.18,
+            NewsTopic.INTEREST_RATES: 0.16,
+            NewsTopic.CENTRAL_BANK: 0.14,
+            NewsTopic.RISK_OFF: 0.14,
+            NewsTopic.ENERGY: 0.12,
             NewsTopic.LIQUIDITY: 0.10,
-            NewsTopic.MONETARY_POLICY: 0.12,
+            NewsTopic.MONETARY_POLICY: 0.14,
+            NewsTopic.EMPLOYMENT: 0.10,
+            NewsTopic.GROWTH: 0.06,
         }
+        topic_hits = 0
         for topic in topics:
             score += driver_topics.get(topic, 0.0)
+            if topic in driver_topics:
+                topic_hits += 1
 
         # strong driver keywords
-        for kw in [
+        driver_kws = [
             "FED",
             "FOMC",
             "CPI",
             "PCE",
             "NFP",
             "YIELD",
+            "TREASURY",
             "DOLLAR",
+            "DXY",
             "INFLATION",
-            "RATE",
+            "RATE HIKE",
+            "RATE CUT",
             "HAVEN",
             "GEOPOLITICAL",
             "WAR",
-        ]:
-            if _count_occurrences(text, kw) > 0:
-                score += 0.05
+            "IRAN",
+            "SANCTIONS",
+            "OIL",
+            "CRUDE",
+            "RISK OFF",
+            "RISK-OFF",
+            "RECESSION",
+        ]
+        kw_hits = sum(1 for kw in driver_kws if _count_occurrences(text, kw) > 0)
+        score += min(0.25, kw_hits * 0.05)
 
         # price-action verbs make a gold mention directly market-relevant
         for kw in [
@@ -396,9 +416,22 @@ class LocalNewsAnalyzer:
             "GOLD JUMPED",
             "GOLD PLUNGED",
             "SPOT GOLD",
+            "GOLD BREAK",
+            "GOLD BUYERS",
+            "GOLD SELLERS",
         ]:
             if kw in text:
                 score += 0.15
+
+        # Driver-only baseline: no gold token but meaningful driver mass.
+        if not has_gold:
+            driver_mass = topic_hits + kw_hits
+            if driver_mass >= 3:
+                score = max(score, 0.55)  # multi-driver macro headline
+            elif driver_mass == 2:
+                score = max(score, 0.40)
+            elif driver_mass == 1:
+                score = max(score, 0.25)
 
         return round(min(1.0, score), 4)
 
