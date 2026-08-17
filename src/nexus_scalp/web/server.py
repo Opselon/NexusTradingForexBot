@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from nexus_scalp.accounting import PeriodKind
+from nexus_scalp.accounting.aggregation import compute_advanced_metrics
 from nexus_scalp.accounting.worker import format_worker_status
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ActionType, ExecutionMode, OrderType
@@ -3130,6 +3131,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             losses = sum(1 for t in closed if t.outcome.value == "LOSS")
             decided = wins + losses
             realized_pnl = sum(t.net_pnl for t in closed)
+            equity_pts = core.equity_curve(lookback_days=None)
+            advanced = compute_advanced_metrics(trades, equity_points=equity_pts)
             return serialize_enums(
                 {
                     "available": True,
@@ -3144,6 +3147,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "win_rate": round(wins / decided * 100.0, 2) if decided else None,
                         "realized_pnl": round(realized_pnl, 2),
                     },
+                    "advanced": advanced,
                     "fetched_at": datetime.now(UTC).isoformat(),
                 }
             )

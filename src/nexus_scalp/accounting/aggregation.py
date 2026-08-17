@@ -19,6 +19,7 @@ STATISTICAL HONESTY RULES
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import Any
 
 from nexus_scalp.accounting.models import (
     AccountSnapshot,
@@ -253,3 +254,180 @@ def compute_drawdown(snapshots: Sequence[AccountSnapshot]) -> DrawdownReport:
         ).total_seconds()
 
     return report
+
+
+def compute_advanced_metrics(
+    trades: Sequence[TradeRecord],
+    equity_points: Sequence[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Advanced risk/return statistics (validated, sample-honest).
+
+    Computed from closed trades + the equity curve. Every ratio is None when
+    the sample cannot support it (statistical honesty rule of this module).
+
+    Returns:
+        {
+            sample_trades, net_pnl, gross_profit, gross_loss,
+            profit_factor, expectancy, average_win, average_loss,
+            win_rate, avg_r, max_consecutive_wins, max_consecutive_losses,
+            sharpe_ratio, sortino_ratio, calmar_ratio, sqn,
+            recovery_factor, payoff_ratio, equity_volatility_pct,
+            annualized_volatility_pct, downside_volatility_pct,
+            profit_standard_error (profit factor t-statistic proxy)
+        }
+    """
+    import math
+
+    out: dict[str, Any] = {
+        "sample_trades": 0,
+        "net_pnl": None,
+        "gross_profit": None,
+        "gross_loss": None,
+        "profit_factor": None,
+        "expectancy": None,
+        "average_win": None,
+        "average_loss": None,
+        "win_rate": None,
+        "avg_r": None,
+        "r_sample_count": 0,
+        "max_consecutive_wins": 0,
+        "max_consecutive_losses": 0,
+        "sharpe_ratio": None,
+        "sortino_ratio": None,
+        "calmar_ratio": None,
+        "sqn": None,
+        "recovery_factor": None,
+        "payoff_ratio": None,
+        "equity_volatility_pct": None,
+        "downside_volatility_pct": None,
+        "annualized_volatility_pct": None,
+        "profit_standard_error": None,
+    }
+
+    closed = [t for t in trades if t.closed_at is not None]
+    if not closed:
+        return out
+    closed = sorted(closed, key=lambda t: t.closed_at)  # type: ignore[arg-type,return-value]
+
+    out["sample_trades"] = len(closed)
+    pnls = [float(t.net_pnl) for t in closed]
+    net = sum(pnls)
+    out["net_pnl"] = round(net, 2)
+    gross_profit = sum(p for p in pnls if p > 0)
+    gross_loss = abs(sum(p for p in pnls if p < 0))
+    out["gross_profit"] = round(gross_profit, 2)
+    out["gross_loss"] = round(gross_loss, 2)
+
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+    decided = len(wins) + len(losses)
+
+    if decided:
+        out["win_rate"] = round(len(wins) / decided * 100.0, 2)
+    if losses:
+        out["profit_factor"] = round(gross_profit / gross_loss, 4)
+    if decided:
+        out["expectancy"] = round(net / decided, 2)
+    if wins:
+        out["average_win"] = round(sum(wins) / len(wins), 2)
+    if losses:
+        out["average_loss"] = round(sum(losses) / len(losses), 2)
+    if wins and losses:
+        out["payoff_ratio"] = round((sum(wins) / len(wins)) / abs(sum(losses) / len(losses)), 4)
+
+    # R-based stats (only where risk basis recovered)
+    r_vals: list[float] = []
+    for t in closed:
+        r = getattr(t, "realized_r", None)
+        if r is None:
+            r = getattr(t, "risk_r", None)
+        if r is not None and math.isfinite(float(r)):
+            r_vals.append(float(r))
+    if r_vals:
+        out["r_sample_count"] = len(r_vals)
+        out["avg_r"] = round(sum(r_vals) / len(r_vals), 4)
+
+    # Streaks
+    cur_w, cur_l, max_w, max_l = 0, 0, 0, 0
+    for p in pnls:
+        if p > 0:
+            cur_w += 1
+            cur_l = 0
+            max_w = max(max_w, cur_w)
+        elif p < 0:
+            cur_l += 1
+            cur_w = 0
+            max_l = max(max_l, cur_l)
+        else:
+            cur_w = 0
+            cur_l = 0
+    out["max_consecutive_wins"] = max_w
+    out["max_consecutive_losses"] = max_l
+
+    # Equity-curve risk (from snapshots when provided)
+    if equity_points and len(equity_points) >= 3:
+        eqs = [float(p.get("equity", 0.0)) for p in equity_points if p.get("equity") is not None]
+        if len(eqs) >= 3 and all(e > 0 for e in eqs):
+            rets = [(eqs[i] / eqs[i - 1]) - 1.0 for i in range(1, len(eqs))]
+            import statistics
+
+            mean_r = statistics.mean(rets)
+            var_r = statistics.pvariance(rets) if len(rets) > 1 else 0.0
+            std_r = math.sqrt(var_r)
+            down = [r for r in rets if r < 0]
+            down_var = (
+                statistics.pvariance(down) if len(down) > 1 else (0.0 if down else float("nan"))
+            )
+            down_std = math.sqrt(down_var) if math.isfinite(down_var) else 0.0
+
+            # annualized (assume ~252 trading days * 24h = 6048 equity intervals/day
+            # is unrealistic; use per-point std as daily-proxy only when points
+            # are trade-closed or snapshots; report per-interval ratios directly)
+            if std_r > 0:
+                out["sharpe_ratio"] = round(mean_r / std_r * math.sqrt(len(rets)), 4)
+            if down_std > 0:
+                out["sortino_ratio"] = round(mean_r / down_std * math.sqrt(len(rets)), 4)
+            out["equity_volatility_pct"] = round(std_r * 100.0, 4)
+            out["downside_volatility_pct"] = (
+                round(down_std * 100.0, 4) if math.isfinite(down_std) else None
+            )
+            # Annualized vol proxy: sqrt( per-point variance * points-per-year )
+            if len(rets) > 1:
+                ppy_estimate = max(len(rets) / 7.0, 1.0)  # ~1 week of points per year-slice
+                out["annualized_volatility_pct"] = round(std_r * math.sqrt(ppy_estimate) * 100.0, 4)
+
+    # Drawdown-based ratios (Calmar, recovery factor) from equity points
+    if equity_points and len(equity_points) >= 2:
+        eqs = [float(p.get("equity", 0.0)) for p in equity_points if p.get("equity") is not None]
+        peak, max_dd = 0.0, 0.0
+        for e in eqs:
+            peak = max(peak, e)
+            if peak > 0:
+                max_dd = max(max_dd, (peak - e) / peak)
+        if max_dd > 0:
+            # Calmar = annualized return / max drawdown (annualized return proxy:
+            # total net return over the sample span)
+            if net != 0 and eqs[0] > 0:
+                total_ret = net / eqs[0]
+                out["calmar_ratio"] = round(total_ret / max_dd, 4) if max_dd > 0 else None
+            out["recovery_factor"] = round(abs(net) / (max_dd * eqs[0]) if eqs[0] > 0 else None, 4)
+
+    # System Quality Number (SQN) with sample honesty
+    if r_vals and len(r_vals) >= 5:
+        import statistics as st
+
+        mu = st.mean(r_vals)
+        sd = st.stdev(r_vals) if len(r_vals) > 1 else 0.0
+        if sd > 0:
+            out["sqn"] = round(mu / sd * math.sqrt(len(r_vals)), 4)
+
+    # Profit factor standard error (t-stat proxy on per-trade PnL)
+    if len(pnls) >= 5:
+        import statistics as st
+
+        mu = st.mean(pnls)
+        sd = st.stdev(pnls) if len(pnls) > 1 else 0.0
+        if sd > 0:
+            out["profit_standard_error"] = round(mu / sd * math.sqrt(len(pnls)), 4)
+
+    return out

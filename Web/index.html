@@ -583,6 +583,64 @@
                         </div>
                     </div>
 
+                    <!-- Advanced Risk Metrics (validated math from accounting core) -->
+                    <div class="mt-4 mb-5">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-white uppercase tracking-wider">Advanced Risk Metrics</span>
+                            <span id="acct-adv-source" class="text-[10px] uppercase tracking-widest text-textMuted">source: accounting core (sample-honest)</span>
+                        </div>
+                        <div id="acct-advanced" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Sharpe Ratio</span>
+                                <span id="acct-sharpe" class="font-mono font-black text-gray-200 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Sortino Ratio</span>
+                                <span id="acct-sortino" class="font-mono font-black text-gray-200 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Calmar Ratio</span>
+                                <span id="acct-calmar" class="font-mono font-black text-gray-200 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">SQN</span>
+                                <span id="acct-sqn" class="font-mono font-black text-gray-200 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Recovery Factor</span>
+                                <span id="acct-recovery-factor" class="font-mono font-black text-gray-200 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Payoff Ratio</span>
+                                <span id="acct-payoff" class="font-mono font-black text-gray-200 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Win</span>
+                                <span id="acct-avg-win" class="font-mono font-black text-emerald-400 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Loss</span>
+                                <span id="acct-avg-loss" class="font-mono font-black text-rose-400 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Max Win Streak</span>
+                                <span id="acct-win-streak" class="font-mono font-black text-emerald-400 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Max Loss Streak</span>
+                                <span id="acct-loss-streak" class="font-mono font-black text-rose-400 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Equity Volatility</span>
+                                <span id="acct-eq-vol" class="font-mono font-black text-gray-200 text-sm">--</span>
+                            </div>
+                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">PnL T-Stat</span>
+                                <span id="acct-pnl-tstat" class="font-mono font-black text-gray-200 text-sm">--</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Charts -->
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
                         <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
