@@ -3,7 +3,7 @@ import os
 import sqlite3
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import torch
@@ -100,7 +100,17 @@ def test_database_execution_audit_pipeline():
         htf_h4_atr_ratio=1.0,
     )
 
-    policy = SignalPolicy()
+    from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
+
+    # Wire a REAL rule matrix so the spread-squeeze filter can reject the
+    # wide-spread probe tick (a bare SignalPolicy() has rule_matrix=None
+    # and would classify every tick by model probabilities alone).
+    rule_matrix = RuleMatrixEngine(audit_repo=audit_repo)
+    # Enable the spread-squeeze filter in the DB so the wide-spread probe
+    # tick is genuinely rejected (fresh test DB defaults to disabled).
+    audit_repo.toggle_trading_rule("RULE_SPREAD_SQUEEZE_ONLY", True)
+    rule_matrix.refresh_cache(force=True)
+    policy = SignalPolicy(rule_matrix=rule_matrix)
     policy.confidence_threshold = 0.10
     policy.algo_config.min_risk_reward_ratio = 0.10
 
@@ -131,9 +141,18 @@ def test_database_execution_audit_pipeline():
     )
     audit_repo.log_execution(order, "FILLED")
 
-    # 3. Simulate a Rejected Signal Scenario (due to high spread)
+    # 3. Simulate a Rejected Signal Scenario (due to high spread).
+    # IMPORTANT: advance the timestamp a full minute so the proposal lands
+    # in a NEW M1 candle. A same-second tick is classified as
+    # TICK_DUPLICATE_SUPPRESSED (a guard-telemetry counter, never an
+    # audit_signals row - BUG-054), which would silently drop the
+    # rejected-signal row this test verifies.
     tick_rejected = TickData(
-        symbol="XAUUSD", timestamp=datetime.now(UTC), bid=2000.0, ask=2005.0, volume=1.0
+        symbol="XAUUSD",
+        timestamp=datetime.now(UTC) + timedelta(minutes=1),
+        bid=2000.0,
+        ask=2005.0,
+        volume=1.0,
     )  # High spread
     proposal_rejected = policy.evaluate_probabilities(
         probabilities=probabilities,
@@ -186,15 +205,13 @@ def test_database_execution_audit_pipeline():
 
     required_fields = [
         "model_action",
-        "buy_probability",
-        "sell_probability",
-        "no_trade_probability",
-        "regime",
+        "ai_buy_probability",
+        "ai_sell_probability",
+        "ai_no_trade_probability",
         "regime_confidence",
         "risk_allowed",
         "guardian_status",
         "rejection_reason",
-        "final_action",
     ]
     for field in required_fields:
         assert field in approved_payload, (

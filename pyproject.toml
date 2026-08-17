@@ -124,3 +124,7 @@ minversion = "8.0"
 addopts = "-ra -q --strict-markers"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Ensure the repo root is importable so `from tests.helpers.mt5_fixtures
+# import ...` resolves identically on CI (GitHub Actions) and locally,
+# independent of pytest's rootdir detection / pip install mode.
+pythonpath = ["."]

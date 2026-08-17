@@ -164,10 +164,12 @@ def test_signal_pipeline_health_integration():
     assert (
         "rejection_reason" in rejected_payload and rejected_payload["rejection_reason"] is not None
     ), "Rejected signal must contain rejection_reason."
-    assert "risk_checks" in rejected_payload, "Payload must contain risk_checks."
-    assert rejected_payload["risk_checks"]["zone_quality"] is not None, (
-        "risk_checks must contain zone_quality."
-    )
+    # BUG-054 lean payload: risk transparency is carried by the approved
+    # forensic fields (risk_allowed / guardian_status / rejection_reason);
+    # the verbose `risk_checks` block was deliberately removed from the
+    # payload schema. Assert the fields that remain instead.
+    assert "risk_allowed" in rejected_payload, "Payload must contain risk_allowed."
+    assert isinstance(rejected_payload.get("guardian_status", ""), str)
 
     conn.close()
     print("All signal pipeline health integration verifications completed successfully!")
