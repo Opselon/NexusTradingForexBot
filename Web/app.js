@@ -571,6 +571,17 @@ function switchTab(tabId, element) {
     if (tabId === 'tab-monitoring') {
         drawChart();
     }
+    if (tabId === 'tab-account') {
+        // Charts need a visible canvas (getBoundingClientRect must be > 0).
+        // Refresh accounting panel + charts now that the tab is shown.
+        setTimeout(() => {
+            loadAccountPerformance();
+            loadAdvancedMetrics();
+            loadAccountCharts();
+            loadClosedTrades();
+            loadAccountPeriod(window.__currentPeriodKind || 'DAY', document.querySelector('.acct-period-btn'));
+        }, 80);
+    }
     if (tabId === 'tab-rules') {
         loadRules();
     }
@@ -2509,6 +2520,12 @@ function acctLineChart(canvasId, emptyId, labels, series, color, fmt) {
     const canvas = document.getElementById(canvasId);
     const empty = document.getElementById(emptyId);
     if (!canvas) return;
+    // Hidden-tab guard: canvases inside a hidden tab report 0 size and draw
+    // nothing. Fall back to the attribute height so the chart still renders;
+    // the tab-switch path re-runs the loaders once visible anyway.
+    if (canvas.getBoundingClientRect().height === 0) {
+        canvas.style.height = (canvas.getAttribute('height') || 180) + 'px';
+    }
     if (!labels || labels.length === 0 || !series || series.every(v => v == null)) {
         if (empty) empty.classList.remove('hidden');
         canvas.style.display = 'none';
@@ -2652,6 +2669,7 @@ async function loadAdvancedMetrics() {
 }
 
 async function loadAccountPeriod(kind, btn) {
+    window.__currentPeriodKind = kind;
     try {
         const res = await fetch('/api/account/performance/' + kind);
         if (!res.ok) return;
