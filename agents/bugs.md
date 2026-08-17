@@ -2495,3 +2495,171 @@ The test now calls `configure_logging(log_to_file=False)` first (rebuilds the st
 - Test passes in isolation (fresh pytest, no prior configure_logging)
 - Test passes after other suites that DO configure logging (order-independent)
 - Original assertions preserved: SECRET_INTERNAL_MARKER_PATH, RuntimeError, WEB_ERROR all present in captured log output
+
+## BUG-061 — Local Candle Intelligence Module (Candle-Close Gate) Added
+
+- **Status**: FIXED (2026-08-17, new isolated subsystem)
+- **Severity**: N/A (new capability)
+- **Confidence**: HIGH (21 unit tests green; full suite green)
+- **Verified**: `tests/unit/test_candle_intel_classifier_patterns.py` + `tests/unit/test_candle_intel_decision_store.py`
+
+### What was added
+Fully local, isolated, database-backed candlestick analysis + trade-decision
+module at `src/nexus_scalp/candle_intelligence/`:
+- **classifier.py** — CandleCloseClassifier: close-quality GATE. Computes body
+  / upper-wick / lower-wick ratios, close-position-in-range, close strength,
+  rejection / continuation / reversal / indecision / momentum-decay scores;
+  classifies BULLISH/BEARISH continuation, reversal, INDECISION, TRAPPED_BREAKOUT,
+  EXHAUSTION, FALSE_BREAKOUT, WEAK_CLOSE, INVALID. NaN/Inf/non-positive range
+  -> INVALID (recorded, never crashes).
+- **patterns.py** — PatternEngine: all 29 required patterns (hammer family,
+  engulfing, stars, doji family, soldiers/crows, harami, cloud cover/piercing,
+  three methods, double top/bottom, H&S, flag/pennant/wedge/triangle, gap) with
+  raw shape fidelity + multi-factor context weighting (trend, volatility,
+  structure, sweep proximity, spread/ATR) -> confidence [0,1].
+- **decision.py** — CandleDecisionEngine: rule hierarchy (1 hard safety veto,
+  2 regime filter, 3 candle-close validation, 4 pattern confirmation, 5 risk
+  sizing, 6 execution). Outputs entry_allowed / hold_allowed / fast_exit /
+  exit / modify / cancel with reason codes; weak/contradictory closes block
+  entry and accelerate exit.
+- **store.py + store_writes.py** — isolated SQLite (artifacts/candle_intel.db):
+  12 tables (candles, candle_closures, candle_patterns, market_regimes,
+  feature_vectors, trade_proposals, trade_decisions, open_positions,
+  exit_signals, risk_evaluations, rule_vetoes, audit_log), every record with
+  ts/symbol/timeframe/regime/pattern_name/pattern_score/
+  candle_close_classification/decision_type/risk_state/reason_codes/
+  raw_payload/computed_payload. Bounded reads, integrity check, deterministic
+  JSON serialization. NO network, NO cloud, NO remote telemetry.
+- **engine.py** — CandleIntelligenceEngine orchestrator: ingest_bar /
+  process_candle_close; produces the spec §11 output contract; failure-isolated.
+- **Config** — `candle_intel:` section in base.yaml (optional, defaults
+  conservative: weak close blocks entry, entry gate 0.62).
+- **Live wiring** — live_engine constructs the engine (failure-isolated) and
+  feeds every completed M1 bar via `_on_new_bar`; decision exposed as
+  `_last_candle_decision`.
+
+### Safety
+- Holds no adapter / order manager / risk engine; can never place/modify/close.
+- Deterministic for identical input states; all intermediate+final results
+  persisted locally; every veto/entry/hold/exit decision explainable via
+  reason codes stored in rule_vetoes + trade_decisions.
+
+### Performance follow-up (2026-08-17, same session)
+The original store wrote synchronously to SQLite on every record_* call — a
+latency risk on the tick path. Reworked to a RAM-first design:
+- All `record_*` methods now enqueue onto an in-memory ring buffer + a bounded
+  write queue (O(1), ~15 µs/op, NO disk I/O on the caller's thread).
+- A dedicated background worker thread (`candle_intel_writer`) drains the queue
+  into SQLite in batched transactions (WAL, `max_batch_size` rows/commit,
+  0.3s flush interval).
+- `query_recent` serves from RAM first (measured 0.03 ms), falling back to
+  SQLite only for history/restart.
+- Verified: `tests/unit/test_candle_intel_perf.py` (200 enqueues = 3 ms;
+  persisted rows = 10 after flush; RAM read = 0.03 ms).
+
+---
+
+## BUG-062 — Duplicate Orders from Blind Adapter Retries (order_send sent twice + non-idempotent close/pending retry)
+
+- **Status**: FIXED (2026-08-17, idempotency audit)
+- **Severity**: HIGH (real duplicate pending orders / double closes on ambiguous retcodes)
+- **Confidence**: HIGH (code-verified; user-reported "5-6 orders" symptom)
+- **Verified**: `src/nexus_scalp/adapters/mt5/mt5_adapter.py` — `place_pending_order` L1073-74 contained
+  `result = mt5.order_send(request)` **twice in a row** (same request, guaranteed double-send risk).
+
+### Root Cause
+1. `place_pending_order`: literal **duplicate `order_send` call** — the same pending-order
+   request dispatched twice; either call can succeed → duplicate LIMIT/STOP orders.
+2. `close_position`: 3-attempt retry re-sent the close **blindly after any non-DONE retcode**.
+   If the broker accepted the first close but the response was ambiguous (network), the retry
+   issued a SECOND close on the same ticket (duplicate/oversized close) or a close on an
+   already-closed position.
+3. `execute_market_order`: no retry (safe), but an ambiguous retcode was reported as failure —
+   the manager layer then treats it as failed and may retry the entry on the next decision
+   cycle, producing a duplicate position.
+
+### Fix (standard idempotency pattern)
+- Removed the duplicate `order_send` in `place_pending_order`.
+- Added `_find_equivalent_pending(symbol, order_type, volume, price)` — before ANY retry of a
+  pending order, scan `orders_get()` for an equivalent live order (same symbol/type/volume/
+  price, magic 888101) and treat it as SUCCESS returning its ticket (never create a duplicate).
+- `close_position` retry now re-checks `positions_get(ticket)` before re-sending: if the
+  position is gone after an ambiguous retcode → the close succeeded, return True.
+- `execute_market_order`: ambiguous-fill recovery — after a non-DONE retcode, verify a live
+  position with (symbol, magic) appeared; if so return its ticket as success.
+
+### Regression Guards
+- `tests/unit/test_mt5_adapter.py`, `tests/unit/test_order_manager.py`,
+  `tests/unit/test_order_lifecycle.py` — all pass post-fix.
+- `ruff check` + `ruff format --check` clean.
+- Manual verification pending live-broker smoke (read-only probe on MetaQuotes-Demo).
+
+## BUG-063 — News Subsystem Disabled at Runtime (No news: Section in Any Config YAML)
+
+- **Status**: FIXED (2026-08-17, news-UI forensics)
+- **Severity**: HIGH (UI news panel permanently OFF / "News engine unavailable" despite a populated news.db)
+- **Confidence**: HIGH (reproduced: `AppConfig.load_from_yaml` on every config file yields `news=None`; fixed config yields `news_enabled=True` end-to-end)
+- **Verified**: full-stack probe — real `LiveEngine` + `TestClient`: `/api/news/state` 200 available=True state=STALE events=3; `/api/news` 200 with 5 real articles; `/api/news/health` 200 available=True; `/api/live/state` health.news=READY
+
+### Root Cause
+`AppConfig.news: NewsConfig | None = None` (configuration/config.py:110) with **no `news:` block present in `configs/base.yaml`, `configs/live.yaml`, or `configs/live.yaml.example`**. `load_from_yaml` does `cls(**raw_data)`, so the missing key leaves `news=None` → `live_engine.py:402` `_news_enabled = bool(config.news and config.news.enabled)` = **False** → `news_engine`/`news_worker` never constructed → every `/api/news*` route returns `{"available": False}` → UI badge OFF + "News engine unavailable" on Fetch. The DB (145 articles) was populated during an earlier session when news was enabled by other means; the subsystem was silently dead at runtime.
+
+### Fix
+Added a `news:` block (enabled: true, default safe params matching `NewsConfig`) to all three config files: `configs/base.yaml`, `configs/live.yaml`, `configs/live.yaml.example`.
+
+### Regression Guards
+- `AppConfig.load_from_yaml("configs/live.yaml").news is not None and .enabled is True`
+- Real LiveEngine + TestClient: `/api/news/state` available=True; `/api/news` returns articles; health.news=READY
+- Related fix (same session): `news/context.py` freshness clamp (see BUG-064)
+
+## BUG-064 — News Context Validation Error Kills Whole Panel (freshness > 1.0)
+
+- **Status**: FIXED (2026-08-17, news-UI forensics)
+- **Severity**: HIGH (news context became unavailable → panel OFF/empty even when subsystem enabled)
+- **Confidence**: HIGH (reproduced with real DB: fresh_sum=2.99 / weights=1.02 = 2.93 > 1.0 → Pydantic ValidationError)
+- **Verified**: `tests/unit/test_news_phase12.py::TestLiveIntegration::test_67_context_freshness_clamped_when_weights_below_one` — fails with the exact ValidationError on the old formula, passes on the fix
+
+### Root Cause
+`news/context.py` computed `freshness = fresh_sum / weights` where `weights = Σ freshness×confidence×(0.5+relevance×0.5)` is typically < 1 with low-confidence analyses, while `fresh_sum` stays ~count-sized → ratio exceeded 1.0. `CurrentNewsContext.freshness` has Pydantic `le=1.0` (`news/models.py:358`) → every build raised → `engine.current_context()` caught and returned `available=False` safe defaults → `/api/news/state` → available=False → UI OFF + silent console.warn.
+
+### Fix
+`news/context.py`: `freshness = min(1.0, fresh_sum / article_count)` — correct average of per-article decay values, clamped like every other score in the dict. Added `count` accumulator.
+
+### Regression Guards
+- test_67: 8 low-confidence analyses (weights < 1) → context available=True, 0 ≤ freshness ≤ 1
+- Real DB `current_context(force=True)` → available=True state=STALE freshness=0.085 (was available=False)
+
+---
+
+## BUG-065 — Seedable Built-in Strategy Engines (Ichimoku / Ichimili) Added (PHASE 15C)
+
+- **Status**: FIXED (2026-08-17, PHASE 15C strategy seeding)
+- **Severity**: FEATURE (new capability, not a defect)
+- **Confidence**: HIGH (16 new unit tests: indicator math matches Pine reference, signal conditions, alternation/gap rules, deterministic candidates, idempotent seeder)
+- **Verified**: `tests/unit/test_strategies_ichimili_phase15c.py` (12) + `tests/unit/test_strategies_seeder_phase15c.py` (4); ruff + mypy clean
+
+### Motivation
+The operator wanted the two Pine Script `Ichimili` strategies (the "Final Version" and the spaced-signal version) added as FIRST-CLASS strategies in the project: testable, seedable into the research pipeline, and ready for future AI-strategy alignment.
+
+### What Was Added
+1. **`src/nexus_scalp/strategies/base.py`** — pure `Strategy` protocol (no I/O, no order authority), `StrategySignal` dataclass, `donchian_mid()` helper, `make_candidate()` (deterministic content-addressed `StrategyCandidate`), `register_strategy()` / `builtin_candidates()`.
+2. **`src/nexus_scalp/strategies/ichimoku.py`** — two engines translated line-by-line from the Pine reference:
+   - `IchimiliFinalStrategy` (`STRAT-ICHIMILI-FINAL`): displaced-visible-Kumo body break + rising/falling future cloud + **alternating one-in-a-row** signal rule (Pine `lastSignalType`).
+   - `IchimiliSpacedStrategy` (`STRAT-ICHIMILI-SPACED`): current-Kumo close break + span A/B momentum + **min-candles-between-signals** gap rule (Pine `lastSignalBar`).
+   - Both expose `context_definition()`, `entry_logic()`, `exit_logic()`, `risk_assumptions()` for candidate seeding; import-time registration via `register_strategy`.
+3. **`src/nexus_scalp/strategies/seeder.py`** — `seed_builtin_candidates()`: idempotent upserts into `strategy_registry` that PRESERVE existing backtest/walkforward/OOS/robustness/score results (registry immutability contract).
+4. **`src/nexus_scalp/research/worker.py`** — `_refresh_once` now runs a `seed` step BEFORE dataset/discovery so the built-in candidates exist as registry entries every cycle (isolated, restart-safe, idempotent).
+
+### Pine → Python Fidelity Notes
+- Ichimoku math: `conversion = donchian(9)`, `base = donchian(26)`, `spanA = (conv+base)/2`, `spanB = donchian(52)`.
+- Final variant evaluates the DISPLACED cloud (`leadLine1[displacement-1]`) exactly like the Pine signal block; the alternation emits BUY only when the last signal was not BUY (and vice versa).
+- Spaced variant uses the current Kumo and enforces `bar_index - lastSignalBar >= minCandlesBetweenSignals`.
+
+### Regression Guards
+- `test_ichimoku_lines_match_pine` — donchian/tenkan/kijun/spanA/spanB values match hand-computed windows
+- `test_final_variant_emits_buy_in_uptrend` + alternation assertion (no two identical directions consecutively)
+- `test_spaced_variant_enforces_min_gap` — every consecutive signal ≥ min gap
+- `test_candidates_deterministic_and_content_addressed` — version == canonical_version, lifecycle DISCOVERED
+- `test_seed_is_idempotent_and_preserves_validation` — re-seeding never clobbers existing backtest results
+- `test_worker_seeds_on_first_cycle` — ResearchWorker seed step persists both candidates
+- Future strategies: implement the `Strategy` protocol, call `register_strategy()` at import, add tests → automatically discoverable via `builtin_candidates()` and seeded by the worker.

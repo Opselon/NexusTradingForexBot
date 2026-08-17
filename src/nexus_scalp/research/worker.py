@@ -187,10 +187,28 @@ class ResearchWorker:
     # ------------------------------------------------------------------
 
     def _refresh_once(self) -> None:
+        self._run("seed", self._refresh_seed)
         self._run("dataset", self._refresh_dataset)
         self._run("discovery", self._refresh_discovery)
         self._run("validation", self._refresh_validation)
         logger.debug("[RESEARCH_WORKER] event=UPDATE", cycle=self.cycle_count)
+
+    def _refresh_seed(self) -> None:
+        """Seeds built-in strategies into the registry (PHASE 15C, idempotent).
+
+        Runs before dataset/discovery so the seeded candidates exist as
+        registry entries and can participate in validation flows. Safe to run
+        every cycle: `seed_builtin_candidates` upserts with no-op preservation
+        of existing validation results.
+        """
+        from nexus_scalp.strategies.seeder import seed_builtin_candidates
+
+        entries = seed_builtin_candidates(self.audit_repo)
+        if entries:
+            logger.info(
+                "[STRATEGY_RESEARCH] event=SEEDED_BUILTIN",
+                count=len(entries),
+            )
 
     def _run(self, name: str, fn: Any) -> None:
         try:

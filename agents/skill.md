@@ -840,6 +840,9 @@ To prevent SSE stream JSON serialization crashes when returning domain objects, 
 #### 📡 Telegram Reporting (BUG-059)
 `TelegramNotifier` (observability/telegram_notifier.py) sends HTML-formatted, thread-pool-backed alerts. Templates: startup/stop, order open/close (profit/loss), break-even, trailing-stop, risk/survival/kill-switch, error, market summary, plus (BUG-059): `notify_test_message`, `notify_engine_stopped`, `notify_engine_error` (CRITICAL), `notify_audit_purge`, `notify_warmup` (one-shot on READY transition), `notify_daily_summary` (from AccountingCore PeriodKind.DAY, never synthetic). Wired in live_engine: purge result → per 6h run; warmup → on transition; daily summary → per 24h. Web UI: `POST /api/telegram/test` + "Send Test Message" button; config-save error now distinguishes server-unreachable from backend errors. Token never logged/leaked (`_redact_secrets`). 🟢 VERIFIED
 
+#### 🕯️ Candle Intelligence (BUG-061)
+Local, isolated, database-backed candle-close analysis + trade-decision module at `src/nexus_scalp/candle_intelligence/`. The candle close is a GATE: close-quality classification (body/wick ratios, close-position, strength, rejection/continuation/reversal/indecision/momentum-decay) decides bullish/bearish continuation, reversal, indecision, trapped/false breakout, exhaustion — weak/contradictory closes block entry and accelerate exit. 29-pattern engine (hammer/engulfing/star/doji/soldiers/harami/cloud/methods/double-top-bottom/H&S/flag/pennant/wedge/triangle/gap) with multi-factor context weights. Rule hierarchy: hard veto → regime → close validation → pattern → risk → execution. Isolated SQLite `artifacts/candle_intel.db` (12 tables, full audit columns, deterministic serialization, no network). Wired into live_engine `_on_new_bar` (each completed M1 bar). Holds no adapter/order manager; advisory only. Config: `candle_intel:` section. 🟢 VERIFIED
+
 ---
 
 ## 13. Configuration Architecture & Dynamic Propagation
@@ -1163,6 +1166,7 @@ EXPERIENCE -> RESEARCH -> CANDIDATE -> BACKTEST -> WALK-FORWARD
 | `pipeline.py` | `ResearchPipeline` — orchestrates dataset → discovery → gates → score → registry. |
 | `worker.py` | `ResearchWorker` — isolated, restart-safe, idempotent background research loop. |
 | `store.py` | Bounded read facade for the research tables. |
+| `strategies/` (PHASE 15C) | Seedable built-in bar-based strategy engines: `base.py` (Strategy protocol + `StrategySignal` + content-addressed candidates), `ichimoku.py` (Ichimili "Final" + "Spaced" variants translated from Pine, pure signal generators, NO order authority), `seeder.py` (`seed_builtin_candidates()` — idempotent registry upserts that preserve existing validation results). Registered automatically; `builtin_candidates()` produces deterministic `StrategyCandidate`s for backtest/walk-forward/OOS like any discovered candidate. Worker step `seed` runs before dataset/discovery each cycle. |
 
 ### 🔒 Safety Contract (PHASE 09B)
 
