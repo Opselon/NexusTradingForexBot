@@ -997,10 +997,78 @@ class DirectMT5Adapter(IMT5Port):
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             retcode = result.retcode if result else mt5.last_error()
+            # AMBIGUOUS-FILL RECOVERY: a non-DONE retcode does NOT prove the
+            # order was rejected — the broker may have accepted it and the
+            # response was lost. Never blind-retry a market order (that is the
+            # classic duplicate-position bug); instead verify whether a live
+            # position with our (symbol, magic) actually appeared. If it did,
+            # the fill succeeded — return its ticket.
+            live = mt5.positions_get(symbol=symbol)
+            if live:
+                matched = [p for p in live if p.magic == 888101]
+                if matched:
+                    logger.warning(
+                        "execute_market_order: retcode %s but live position found "
+                        "(ticket=%s) — ambiguous fill treated as success.",
+                        retcode,
+                        matched[0].ticket,
+                    )
+                    return int(matched[0].ticket)
             logger.error("execute_market_order failed. Retcode: %s", retcode)
             return 0
 
         return result.order
+
+    def _find_equivalent_pending(
+        self,
+        symbol: str,
+        order_type: OrderType,
+        volume: float,
+        price: float,
+    ) -> int | None:
+        """Returns the ticket of an existing pending order matching the given
+        fingerprint (symbol + type + volume + price), else None.
+
+        Idempotency guard for ``place_pending_order`` retries: the broker may
+        have accepted the previous send despite an ambiguous retcode; this
+        finds that order so the retry does not create a duplicate.
+        """
+        if mt5 is None:
+            return None
+        try:
+            raw = mt5.orders_get(symbol=symbol)
+        except Exception:
+            return None
+        if raw is None:
+            return None
+        mt5_type = self._order_type_to_mt5(order_type)
+        price_tol = 0.02  # 2 cents tolerance for gold (~1 point on some feeds)
+        for o in raw:
+            if (
+                o.symbol == symbol
+                and o.magic == 888101
+                and o.type == mt5_type
+                and abs(float(o.volume_current) - float(volume)) < 1e-9
+                and abs(float(o.price_open) - float(price)) <= price_tol
+            ):
+                return int(o.ticket)
+        return None
+
+    def _order_type_to_mt5(self, order_type: OrderType) -> int:
+        assert mt5 is not None
+        if order_type == OrderType.BUY_LIMIT:
+            return mt5.ORDER_TYPE_BUY_LIMIT
+        if order_type == OrderType.SELL_LIMIT:
+            return mt5.ORDER_TYPE_SELL_LIMIT
+        if order_type == OrderType.BUY_STOP:
+            return mt5.ORDER_TYPE_BUY_STOP
+        if order_type == OrderType.SELL_STOP:
+            return mt5.ORDER_TYPE_SELL_STOP
+        if order_type == OrderType.BUY:
+            return mt5.ORDER_TYPE_BUY
+        if order_type == OrderType.SELL:
+            return mt5.ORDER_TYPE_SELL
+        return -1
 
     def place_pending_order(
         self,
@@ -1071,7 +1139,6 @@ class DirectMT5Adapter(IMT5Port):
             }
 
             result = mt5.order_send(request)
-            result = mt5.order_send(request)
             if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
                 logger.info(
                     "Fast-Act Pending Order Placed Successfully on attempt %s! Ticket: %s",
@@ -1082,6 +1149,27 @@ class DirectMT5Adapter(IMT5Port):
 
             last_retcode = result.retcode if result else mt5.last_error()
             last_err = self._translate_retcode(last_retcode)
+
+            # IDEMPOTENCY GUARD: before retrying, verify whether an equivalent
+            # pending order already exists on the broker. The previous send may
+            # have been accepted server-side despite a non-DONE/ambiguous
+            # retcode; re-sending blindly would create a DUPLICATE order.
+            # Match on (symbol, type, volume, price) — the fingerprint the
+            # engine itself would produce on a retry.
+            if attempt < max_retries:
+                existing = self._find_equivalent_pending(
+                    symbol=symbol,
+                    order_type=order_type,
+                    volume=volume,
+                    price=price,
+                )
+                if existing is not None:
+                    logger.info(
+                        "Fast-Act Pending Order already exists on broker (ticket=%s) — treating "
+                        "retry as success, no duplicate sent.",
+                        existing,
+                    )
+                    return existing
 
             # Auto-Reconnect Circuit Breaker for Retcode 10031 (NO_CONNECTION)
             if last_retcode == 10031:
@@ -1218,6 +1306,19 @@ class DirectMT5Adapter(IMT5Port):
             last_err = self._translate_retcode(last_retcode)
 
             if attempt < max_retries:
+                # IDEMPOTENCY GUARD: the close may have been accepted server-side
+                # despite a non-DONE/ambiguous retcode. Re-check whether the
+                # position is STILL open; if it is gone, the close succeeded —
+                # report success rather than re-sending a duplicate close.
+                still_open = mt5.positions_get(ticket=ticket)
+                if not still_open:
+                    logger.info(
+                        "close_position: ticket #%s no longer open after ambiguous retcode %s "
+                        "— treating as already closed (no duplicate close sent).",
+                        ticket,
+                        last_retcode,
+                    )
+                    return True
                 time.sleep(0.025)
 
         logger.error(
