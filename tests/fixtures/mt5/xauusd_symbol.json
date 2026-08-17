@@ -1,0 +1,613 @@
+{
+  "operation": "symbol_info",
+  "symbol": "XAUUSD",
+  "captured_at": "2026-08-17T05:41:13.436980+00:00",
+  "object": {
+    "ask": {
+      "type": "float",
+      "value": 4395.34,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "askhigh": {
+      "type": "float",
+      "value": 4416.72,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "asklow": {
+      "type": "float",
+      "value": 4367.44,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "bank": {
+      "type": "str",
+      "value": "",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "basis": {
+      "type": "str",
+      "value": "",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "bid": {
+      "type": "float",
+      "value": 4394.91,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "bidhigh": {
+      "type": "float",
+      "value": 4416.33,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "bidlow": {
+      "type": "float",
+      "value": 4276.43,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "category": {
+      "type": "str",
+      "value": "",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "chart_mode": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "count": {
+      "type": "builtin_function_or_method",
+      "value": "<built-in method count of SymbolInfo object at 0x0000008001FE8400>",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "currency_base": {
+      "type": "str",
+      "value": "XAU",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "currency_margin": {
+      "type": "str",
+      "value": "USD",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "currency_profit": {
+      "type": "str",
+      "value": "USD",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "custom": {
+      "type": "bool",
+      "value": false,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "description": {
+      "type": "str",
+      "value": "Gold vs US Dollar",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "digits": {
+      "type": "int",
+      "value": 2,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "exchange": {
+      "type": "str",
+      "value": "XCCY",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "expiration_mode": {
+      "type": "int",
+      "value": 15,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "expiration_time": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "filling_mode": {
+      "type": "int",
+      "value": 3,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "formula": {
+      "type": "str",
+      "value": "",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "index": {
+      "type": "builtin_function_or_method",
+      "value": "<built-in method index of SymbolInfo object at 0x0000008001FE8400>",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "isin": {
+      "type": "str",
+      "value": "",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "last": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "lasthigh": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "lastlow": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_hedged": {
+      "type": "float",
+      "value": 100.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_hedged_use_leg": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_initial": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_maintenance": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_fields": {
+      "type": "int",
+      "value": 96,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_sequence_fields": {
+      "type": "int",
+      "value": 96,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_unnamed_fields": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "name": {
+      "type": "str",
+      "value": "XAUUSD",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "option_mode": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "option_right": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "option_strike": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "order_gtc_mode": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "order_mode": {
+      "type": "int",
+      "value": 127,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "page": {
+      "type": "str",
+      "value": "https://www.mql5.com/en/quotes/metals/xauusd",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "path": {
+      "type": "str",
+      "value": "Metals\\XAUUSD",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "point": {
+      "type": "float",
+      "value": 0.01,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_change": {
+      "type": "float",
+      "value": 1.0561,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_greeks_delta": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_greeks_gamma": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_greeks_omega": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_greeks_rho": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_greeks_theta": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_greeks_vega": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_sensitivity": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_theoretical": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "price_volatility": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "select": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_aw": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_buy_orders": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_buy_orders_volume": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_close": {
+      "type": "float",
+      "value": 4348.98,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_deals": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_interest": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_open": {
+      "type": "float",
+      "value": 4353.09,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_price_limit_max": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_price_limit_min": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_price_settlement": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_sell_orders": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_sell_orders_volume": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_turnover": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "session_volume": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "spread": {
+      "type": "int",
+      "value": 43,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "spread_float": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "start_time": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "swap_long": {
+      "type": "float",
+      "value": -12.6,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "swap_mode": {
+      "type": "int",
+      "value": 1,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "swap_rollover3days": {
+      "type": "int",
+      "value": 3,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "swap_short": {
+      "type": "float",
+      "value": -4.6,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "ticks_bookdepth": {
+      "type": "int",
+      "value": 32,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "time": {
+      "type": "int",
+      "value": 1786956073,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_accrued_interest": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_calc_mode": {
+      "type": "int",
+      "value": 4,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_contract_size": {
+      "type": "float",
+      "value": 100.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_exemode": {
+      "type": "int",
+      "value": 2,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_face_value": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_freeze_level": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_liquidity_rate": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_mode": {
+      "type": "int",
+      "value": 4,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_stops_level": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_tick_size": {
+      "type": "float",
+      "value": 0.01,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_tick_value": {
+      "type": "float",
+      "value": 0.1,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_tick_value_loss": {
+      "type": "float",
+      "value": 0.1,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_tick_value_profit": {
+      "type": "float",
+      "value": 0.1,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "visible": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volume": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volume_limit": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volume_max": {
+      "type": "float",
+      "value": 100.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volume_min": {
+      "type": "float",
+      "value": 0.01,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volume_real": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volume_step": {
+      "type": "float",
+      "value": 0.01,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volumehigh": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volumehigh_real": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volumelow": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "volumelow_real": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    }
+  }
+}

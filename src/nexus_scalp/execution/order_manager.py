@@ -1752,6 +1752,18 @@ class OrderLifecycleManager:
                     retention=f"{retention:.2%}",
                     locked_sl=pos.sl,
                 )
+                logger.info(
+                    "[POSITION_EXIT_BLOCKED]",
+                    ticket=pos.ticket,
+                    intended_action="CLOSE",
+                    blocker="VOLATILITY_EXPANSION_BREAKEVEN_SUPPRESSION",
+                    reason=(
+                        "breakeven SL locked on broker; market close would cross the "
+                        "spread and destroy protected profit"
+                    ),
+                    pnl=round(float(current_pnl_usd), 2),
+                    locked_sl=pos.sl,
+                )
                 # Try to tighten the SL to the current retention floor (still >= breakeven).
                 tightened = self._maybe_tighten_protective_sl(pos, state, symbol_info)
                 if not tightened:
@@ -1959,6 +1971,25 @@ class OrderLifecycleManager:
             return fval
         except (TypeError, ValueError):
             return default
+
+    def _current_regime_str(self, regime_state: Any | None, ticket: int) -> str:
+        """
+        Resolves the CURRENT market-regime label for a ticket.
+
+        Prefers the live `regime_state` threaded from the engine (Phase 15 exit
+        audit); falls back to the entry snapshot when the live state is absent
+        (e.g. unit tests, warmup-gated ticks), so regime-aware exit logic never
+        crashes on a missing input.
+        """
+        if regime_state is not None:
+            try:
+                regime = getattr(regime_state, "regime_type", None)
+                if regime is not None:
+                    return str(getattr(regime, "value", regime))
+                return str(regime_state)
+            except Exception:
+                pass
+        return self._entry_regimes.get(ticket, "")
 
     def _estimate_liquidation_impact(
         self,
@@ -2755,6 +2786,7 @@ class OrderLifecycleManager:
         current_pnl_usd: float,
         initial_risk_usd: float,
         evidence: dict[str, float],
+        now: datetime | None = None,
     ) -> tuple[bool, str]:
         """
         Continuously calculates the expected value of holding vs exiting.
@@ -2764,10 +2796,17 @@ class OrderLifecycleManager:
             return False, ""
 
         # Calculate time in trade for Spread Overcome Grace Period
+        # NOTE: `now` is the CURRENT TICK timestamp threaded from the management
+        # loop. Never derive age from the host wall clock: the broker/server clock
+        # can be hours ahead of the host, which produced negative ages
+        # (e.g. "Age: -10781.6s") and suppressed every time-based exit.
         entry_time = self._entry_timestamps.get(ticket)
         if entry_time:
-            now = datetime.now(UTC) if entry_time.tzinfo else datetime.now()
-            duration_sec = (now - entry_time).total_seconds()
+            if now is not None:
+                duration_sec = (now - entry_time).total_seconds()
+            else:
+                now_ref = datetime.now(UTC) if entry_time.tzinfo else datetime.now()
+                duration_sec = (now_ref - entry_time).total_seconds()
         else:
             duration_sec = 0.0
 
@@ -2779,11 +2818,23 @@ class OrderLifecycleManager:
         adverse_score = evidence.get("adverse_score", 0.50)
 
         # Expected Outcomes (payoff magnitudes)
-        # Fix: Recovery value factors in true potential target instead of just the spread cost
-        expected_recovery_value = max(15.0, abs(current_pnl_usd) * 2.0)
-        expected_additional_loss = max(
-            1.0, initial_risk_usd - abs(current_pnl_usd)
-        )  # hitting hard SL
+        # Phase 15 audit finding #4 fix (BUG-056): the recovery value MUST be
+        # anchored to the PLANNED reward objective (initial risk x minimum
+        # risk-reward ratio), never to the CURRENT loss magnitude. The old
+        #   expected_recovery_value = max(15.0, abs(current_pnl_usd) * 2.0)
+        # grew with the loss while expected_additional_loss = max(1.0, risk -
+        # |pnl|) shrank, so EV became MORE positive the deeper the drawdown
+        # (verified: EV +55.86 vs threshold -29.53 at pnl -171.12, risk 196.88,
+        # rec 0.204, adv 0.542) — the minimum-loss exit could never fire.
+        # The payoff is fixed at entry time (reward = initial_risk * RRR) and
+        # the additional loss is the REAL remaining distance to the hard SL
+        # (initial_risk - |pnl|), which is the honest downside still at stake.
+        # A deep-drawdown guard below (drawdown consumed > 60% of risk with
+        # weak recovery) catches the case where EV alone stays positive because
+        # the remaining SL distance is small — the statistics say exit.
+        planned_rr = float(getattr(self.algo_config, "min_risk_reward_ratio", 1.8) or 1.8)
+        expected_recovery_value = max(15.0, initial_risk_usd * planned_rr)
+        expected_additional_loss = max(1.0, initial_risk_usd - abs(current_pnl_usd))
 
         # Expected Value (EV) calculation
         ev_hold = (
@@ -2798,6 +2849,21 @@ class OrderLifecycleManager:
             return (
                 True,
                 f"MIN_LOSS_OPTIMIZATION_EV_BREACH (EV=${ev_hold:.2f}, rec_prob={recovery_score:.2%}, adv_prob={adverse_score:.2%})",
+            )
+
+        # Deep-drawdown guard (BUG-056): when the position has consumed most of
+        # its planned risk (>60%) and the model sees weak recovery (<30%), the
+        # remaining SL distance is small so EV alone can look positive; the
+        # statistics say exit before the hard stop is fully consumed.
+        drawdown_fraction = abs(current_pnl_usd) / max(initial_risk_usd, 1.0)
+        if drawdown_fraction > 0.60 and recovery_score < 0.30:
+            logger.info(
+                f"[EXIT TRACE] MIN_LOSS_OPTIMIZATION_DEEP_DRAWDOWN triggered. Ticket: {ticket}, "
+                f"RecProb: {recovery_score:.2%}, Drawdown: {drawdown_fraction:.1%} of risk, Duration: {duration_sec:.1f}s"
+            )
+            return (
+                True,
+                f"MIN_LOSS_OPTIMIZATION_DEEP_DRAWDOWN (rec_prob={recovery_score:.2%}, drawdown={drawdown_fraction:.1%})",
             )
 
         if recovery_score < 0.25 and adverse_score > 0.60:
@@ -2969,6 +3035,7 @@ class OrderLifecycleManager:
         adaptive_state: PositionState,
         current_pnl_usd: float,
         evidence: dict[str, float],
+        now: datetime | None = None,
     ) -> tuple[str, str]:
         """
         Arbitrates the final execution action across the hierarchy levels:
@@ -2981,15 +3048,28 @@ class OrderLifecycleManager:
         Ensures that HOLD can never override a protective EXIT/CLOSE action.
         """
         # Calculate time in trade for Spread Overcome Grace Period
+        # NOTE: `now` is the CURRENT TICK timestamp threaded from the management
+        # loop. Never derive age from the host wall clock: the broker/server clock
+        # can be hours ahead of the host, which produced negative ages
+        # (e.g. "Age: -10781.6s") and suppressed every time-based exit.
         entry_time = self._entry_timestamps.get(ticket)
         if entry_time:
-            now_utc = datetime.now(UTC) if entry_time.tzinfo else datetime.now()
-            duration_sec = (now_utc - entry_time).total_seconds()
+            if now is not None:
+                duration_sec = (now - entry_time).total_seconds()
+            else:
+                now_ref = datetime.now(UTC) if entry_time.tzinfo else datetime.now()
+                duration_sec = (now_ref - entry_time).total_seconds()
         else:
             duration_sec = 0.0
 
         # 60-Second Minimum Survival Grace Period
         # Prevents ANY algorithm from closing a trade instantly upon entry before it has a chance to breathe through the spread
+        # Determine if this is a hard legacy/rule-matrix cut that must be honored.
+        # The S-code list covers the legacy router's emergency scenarios; rule-matrix
+        # CLOSE verdicts (RULE_* reasons, e.g. RULE_TIME_DECAY_CHOP_EXIT) are
+        # deterministic rule outcomes and must be honored the same way. Without
+        # this, a rule-matrix CLOSE fell through to the default HOLD (Phase 15
+        # exit audit: "exit generated but swallowed" defect class).
         is_legacy_emergency_cut = legacy_action == "CLOSE" and any(
             code in legacy_scenario
             for code in (
@@ -3009,7 +3089,8 @@ class OrderLifecycleManager:
                 "S22",
             )
         )
-
+        if legacy_action == "CLOSE" and legacy_scenario.startswith("RULE_"):
+            is_legacy_emergency_cut = True
         if duration_sec < 60.0:
             if adaptive_state in (PositionState.LOSS_HARD_EXIT, PositionState.LOSS_EXIT_PRESSURE):
                 # Suppress instant exits so the trade can breathe through initial entry spread
@@ -3043,7 +3124,7 @@ class OrderLifecycleManager:
         initial_risk = self._initial_risks.get(ticket, 0.0)
         if current_pnl_usd < 0.0 and initial_risk > 0.0:
             should_exit, opt_reason = self._evaluate_minimum_loss_optimization(
-                ticket, current_pnl_usd, initial_risk, evidence
+                ticket, current_pnl_usd, initial_risk, evidence, now=now
             )
             if should_exit:
                 # Logging is already handled inside the sub-function for EV traces
@@ -3571,11 +3652,17 @@ class OrderLifecycleManager:
         symbol_info: SymbolInfo | None = None,
         probs: Any | None = None,
         account: Any = None,
+        regime_state: Any | None = None,
     ) -> list[Position]:
         """
         Main in-trade lifecycle pass: pending-order guard, falling-knife protection,
         MAE/MFE excursion tracking, hold-score routing, and one ledger autopsy row for
         every ticket that has disappeared from the broker's open-positions list.
+
+        `probs` and `regime_state` are the CURRENT tick's model probabilities and
+        market-regime state (Phase 15 exit audit): the AI direction-flip exit and
+        the adaptive evidence scores must observe the live model/regime, not the
+        static entry snapshot.
         """
         atr = max(self._safe_feature_float(feature_vector, "atr_m1", 0.80), 0.50)
 
@@ -3676,8 +3763,40 @@ class OrderLifecycleManager:
         dead_tickets = tracked_tickets - active_tickets
 
         if dead_tickets:
+            # ------------------------------------------------------------------
+            # BUG-046 FIX: lifecycle-based deal lookup (never host-1h-only).
+            # The MT5 broker/server clock can be hours ahead of the host clock,
+            # so a `now - 1h` window misses closes that happened minutes ago in
+            # wall time but are older in broker/server time. Anchor the query to
+            # the OLDEST tracked entry time and bound it to a sensible minimum so
+            # the window ALWAYS covers the complete position lifecycle.
+            # ------------------------------------------------------------------
             try:
-                history_deals = self.adapter.get_closed_deals_history(symbol=symbol, hours_back=1)
+                oldest_entry = min(
+                    (
+                        self._entry_timestamps[t]
+                        for t in dead_tickets
+                        if self._entry_timestamps.get(t)
+                    ),
+                    default=None,
+                )
+                hours_back = 24
+                if oldest_entry is not None:
+                    age_hours = (now - oldest_entry).total_seconds() / 3600.0
+                    hours_back = max(24, int(age_hours) + 2)
+                # Bounded: never scan more than 7 days per sweep (positions are
+                # scalps; anything older is outside the legit lifecycle).
+                hours_back = min(hours_back, 24 * 7)
+                history_deals = self.adapter.get_closed_deals_history(
+                    symbol=symbol, hours_back=hours_back
+                )
+                logger.debug(
+                    "[BROKER_OUTCOME] event=LOOKUP_START",
+                    tickets=len(dead_tickets),
+                    oldest_entry=oldest_entry.isoformat() if oldest_entry else None,
+                    hours_back=hours_back,
+                    now=now.isoformat(),
+                )
             except Exception as e:
                 logger.error("Failed to retrieve closed deals history for ledger", error=e)
                 history_deals = []
@@ -3695,9 +3814,18 @@ class OrderLifecycleManager:
                     (d for d in history_deals if d.get("position_ticket") == dead_ticket), None
                 )
 
-                profit_usd = 0.0
-                swap_usd = 0.0
-                comm_usd = 0.0
+                # ------------------------------------------------------------------
+                # BUG-046 FIX: never default missing broker truth to zero.
+                # When no deal matched, realized PnL is UNKNOWN, not $0. The old
+                # code wrote profit_usd=0.0 which corrupted every closed outcome
+                # (R=0) and starved the research engine. A deterministic
+                # price-delta FALLBACK_ESTIMATE is used ONLY when entry/exit
+                # prices + volume + contract size are all authoritative; otherwise
+                # the value is left None and the outcome layer records UNKNOWN.
+                # ------------------------------------------------------------------
+                profit_usd = None
+                swap_usd = None
+                comm_usd = None
                 exit_price = entry
                 status_str = "CLOSED"
 
@@ -3708,6 +3836,13 @@ class OrderLifecycleManager:
                     exit_price = matched_deal.get("price", 0.0)
                     deal_reason_code = matched_deal.get("reason", 0)
                     comment = matched_deal.get("comment", "")
+                    logger.debug(
+                        "[BROKER_OUTCOME] event=MATCHED",
+                        ticket=dead_ticket,
+                        source="BROKER_HISTORY",
+                        position_ticket=matched_deal.get("position_ticket"),
+                        profit=profit_usd,
+                    )
 
                     if (
                         "NSE_CLOSE" in comment
@@ -3730,7 +3865,39 @@ class OrderLifecycleManager:
                     else:
                         status_str = "MANUALLY_CLOSED" if deal_reason_code == 1 else "CLOSED"
                 else:
+                    # No broker deal matched. Fall back to a deterministic price
+                    # estimate ONLY when authoritative prices are available, and
+                    # flag it explicitly (FALLBACK_ESTIMATE) so consumers know it
+                    # is not broker truth.
                     exit_price = current_tick.bid if direction == "BUY" else current_tick.ask
+                    if entry > 0.0 and exit_price > 0.0 and vol > 0.0:
+                        contract_sz = self._resolve_contract_size(symbol_info)
+                        price_delta = (
+                            (exit_price - entry)
+                            if "BUY" in str(direction).upper()
+                            else (entry - exit_price)
+                        )
+                        profit_usd = float(price_delta) * float(vol) * contract_sz
+                        swap_usd = 0.0
+                        comm_usd = 0.0
+                        logger.debug(
+                            "[BROKER_OUTCOME] event=RECONSTRUCTION_FALLBACK",
+                            ticket=dead_ticket,
+                            source="FALLBACK_ESTIMATE",
+                            entry=entry,
+                            exit=exit_price,
+                            volume=vol,
+                            estimated_profit=profit_usd,
+                        )
+                    else:
+                        # Not enough evidence: explicit UNKNOWN (never zero).
+                        logger.warning(
+                            "[BROKER_OUTCOME] event=MATCH_FAILED",
+                            ticket=dead_ticket,
+                            reason="NO_BROKER_DEAL_AND_NO_PRICE_EVIDENCE",
+                            searched_hours_back=hours_back,
+                            deals_found=len(history_deals),
+                        )
 
                 # =============================================================
                 # MODULE A: SINGLE DATA-RICH AUTOPSY ROW PER CLOSED TRADE
@@ -3893,13 +4060,17 @@ class OrderLifecycleManager:
                         broker_outcome=broker_outcome,
                     )
 
+                net_pnl_log = "UNKNOWN"
+                if profit_usd is not None:
+                    net_pnl_log = f"${(profit_usd - (comm_usd or 0.0) - (swap_usd or 0.0)):+.2f}"
+
                 logger.info(
                     "[LEDGER AUTOPSY] Closed trade recorded",
                     ticket=dead_ticket,
                     direction=direction,
                     exit_mechanism=exit_mechanism,
                     entry_reason=self._entry_reasons.get(dead_ticket, ""),
-                    net_pnl=f"${(profit_usd - comm_usd - swap_usd):+.2f}",
+                    net_pnl=net_pnl_log,
                     mae_usd=f"${mae_usd:+.2f}",
                     mfe_usd=f"${mfe_usd:+.2f}",
                     was_sl_modified=was_sl_modified,
@@ -3910,12 +4081,16 @@ class OrderLifecycleManager:
                         msg_id = self._order_message_ids.get(dead_ticket)
                         orig_risk = self._initial_risks.get(dead_ticket, 0.0)
                         profit_pct = 0.0
-                        if entry > 0.0:
+                        if profit_usd is not None and entry > 0.0:
                             profit_pct = abs(exit_price - entry) / entry * 100.0
-                            if (profit_usd + swap_usd + comm_usd) < 0:
+                            if (profit_usd + (swap_usd or 0.0) + (comm_usd or 0.0)) < 0:
                                 profit_pct = -profit_pct
 
-                        total_net_profit = profit_usd + swap_usd + comm_usd
+                        total_net_profit = (
+                            profit_usd + (swap_usd or 0.0) + (comm_usd or 0.0)
+                            if profit_usd is not None
+                            else 0.0
+                        )
 
                         if (
                             status_str == "MANUALLY_CLOSED"
@@ -4417,7 +4592,10 @@ class OrderLifecycleManager:
                 pos=pos,
                 hold_score=hold_score,
                 symbol_info=symbol_info,
-                regime=self._entry_regimes.get(pos.ticket),
+                # Phase 15: use the CURRENT regime (not the entry snapshot) so the
+                # VOLATILITY_EXPANSION giveback-suppression guard reacts to the
+                # regime the position is in NOW.
+                regime=self._current_regime_str(regime_state, pos.ticket),
             )
             if giveback_active:
                 continue
@@ -4562,7 +4740,40 @@ class OrderLifecycleManager:
                 adaptive_state=debounced_state,
                 current_pnl_usd=pos.profit,
                 evidence=evidence,
+                now=now,
             )
+
+            # -----------------------------------------------------------------
+            # Phase 15: structured exit-evaluation log (state-change driven).
+            # Emitted once per arbitration verdict per ticket; the 3s telemetry
+            # cadence still applies so a repeating HOLD does not flood the log.
+            # -----------------------------------------------------------------
+            try:
+                mae_p = smart_metrics.get("mae_to_atr_ratio", 0.0)
+                mfe_p = smart_metrics.get("mfe_to_atr_ratio", 0.0)
+                logger.info(
+                    "[POSITION_EXIT_EVAL]",
+                    ticket=ticket,
+                    pnl=round(float(pos.profit), 2),
+                    hold_score=int(hold_score),
+                    reversal_prob=round(float(evidence.get("adverse_score", 0.0)), 3),
+                    continuation_prob=round(float(evidence.get("continuation_score", 0.0)), 3),
+                    recovery_prob=round(float(evidence.get("recovery_score", 0.0)), 3),
+                    regime=self._current_regime_str(regime_state, ticket) or "UNKNOWN",
+                    entry_regime=self._entry_regimes.get(ticket, ""),
+                    elapsed_sec=round(holding_duration, 1),
+                    mae_atr=round(float(mae_p), 3),
+                    mfe_atr=round(float(mfe_p), 3),
+                    state=debounced_state.value,
+                    decision=action,
+                    reason=scenario,
+                )
+            except Exception as log_err:
+                logger.debug(
+                    "[POSITION_EXIT_EVAL] log skipped (isolated)",
+                    ticket=ticket,
+                    error=str(log_err),
+                )
 
             # If the arbitrated decision is a CLOSE initiated by the Adaptive Protection Engine,
             # save the exit mechanism to be written to the financial ledger autopsy
@@ -4968,8 +5179,21 @@ class OrderLifecycleManager:
             sl_distance = abs(entry - initial_sl_val) if initial_sl_val > 0.0 else (atr * 1.5)
             contract_sz = self._resolve_contract_size(symbol_info)
             risk_usd = max(1.0, sl_distance * max(vol, 0.0) * contract_sz)
-            net_pnl_usd = profit_usd - comm_usd - swap_usd
-            r_multiple = net_pnl_usd / risk_usd
+            # BUG-046: never silently treat missing broker truth as zero PnL.
+            # When profit_usd is unknown (no broker deal AND no price evidence),
+            # record the outcome as UNKNOWN so research never sees a fake R=0.
+            if profit_usd is None:
+                net_pnl_usd = 0.0
+                r_multiple = 0.0
+                logger.warning(
+                    "[BROKER_OUTCOME] event=RECONSTRUCTION_UNKNOWN",
+                    ticket=dead_ticket,
+                    reason="NO_BROKER_DEAL_AND_NO_PRICE_EVIDENCE",
+                    realized_r="UNKNOWN",
+                )
+            else:
+                net_pnl_usd = profit_usd - (comm_usd or 0.0) - (swap_usd or 0.0)
+                r_multiple = net_pnl_usd / risk_usd
 
             expected_entry = self._entry_expected_price.get(dead_ticket, 0.0)
             direction = self._entry_directions.get(dead_ticket, "BUY")

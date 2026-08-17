@@ -190,12 +190,12 @@ Headless DOM/asset verification (Playwright not installed — pre-existing limit
 | Gate | Result | Detail |
 | :--- | :--- | :--- |
 | Focused Phase-14 tests | ✅ 101 passed | frontend_assets(24) + mt5_status_endpoint(11) + mt5_providers(44) + live_state_contract(16) + web_security(9) + risk_engine(8) + mt5_adapter(1) |
-| Full unit suite | ⏳ final run in progress | earlier run: 782 passed / 2 fails = WIP `test_news_bridge_phase13b` + flaky `test_06` log-capture (passes standalone+combo) |
+| Full unit suite | ✅ 745 passed / 1 flaky | 746 tests ran (excl. user-WIP `test_news_bridge_phase13b`); the 1 failure = `test_06` structlog fd-capture flake that passes standalone AND in suite combinations (capture-order dependent, not a regression; security invariant verified by test_01) |
 | Integration suite | ✅ 65 passed, exit 0 | `--ignore=test_playwright_e2e.py` (playwright not installed, pre-existing) |
 | Ruff (my files) | ✅ All checks passed | adapters/mt5/, paper, ports, risk, live_engine, server, 5 test files |
 | Ruff (whole repo) | ⚠️ 2 errors in UNTRACKED user WIP | `scratch_other_logs.py` E402, `news_bridge.py` F821 — neither tracked nor mine |
 | Ruff format --check (my files) | ✅ 12 files already formatted | after formatting 3 adapter/port files |
-| Ruff format (whole repo) | ⚠️ 1 untracked user file | `scratch_clock_probe.py` |
+| Ruff format (whole repo) | ⚠️ 1 untracked user file | `scratch/scratch_clock_probe.py` (since moved into `scratch/`) |
 | Mypy (my 7 core files) | ✅ Success: no issues found | diagnostics/providers/adapter/paper/port/risk/domain |
 | Mypy (src) | ⚠️ 2 pre-existing/WIP errors | `news_bridge.py:386` (WIP), `server.py:211` (pre-existing app.state annotation) |
 | beforePush.sh | ❌ fails at step 1 | ONLY on the 2 untracked WIP ruff errors; all my files pass |

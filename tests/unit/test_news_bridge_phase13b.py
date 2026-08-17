@@ -227,7 +227,7 @@ class TestBuildFrameFromDb:
         row = frame.row(0, named=True)
         assert row["xauusd_relevance"] == 0.9
         assert row["bullish_pressure"] == 0.6  # derived from impacts
-        assert row["news_state"] == 0.0  # NORMAL default
+        assert row["news_state"] == 2.0  # HIGH_IMPACT (real derivation)
         assert row["novelty"] == 0.0  # NEW
 
     def test_export_bounds(self, tmp_path):

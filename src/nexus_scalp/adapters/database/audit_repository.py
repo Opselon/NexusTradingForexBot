@@ -20,10 +20,23 @@ import threading
 import time
 from typing import Any
 
+from nexus_scalp.adapters.database.broker_history import (
+    create_history_tables,
+    last_sync_window,
+    sync_broker_history,
+)
 from nexus_scalp.domain.models import AccountInfo, TradeOrder, TradeProposal
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.adapters.audit_db")
+
+
+def normalize_history_dt(value: Any) -> Any:
+    """Best-effort UTC datetime from arbitrary timestamp inputs."""
+
+    from nexus_scalp.adapters.mt5.providers import normalize_utc
+
+    return normalize_utc(value)
 
 
 class AuditRepository:
@@ -35,6 +48,10 @@ class AuditRepository:
         self,
         db_url: str = "sqlite:///artifacts/audit.db",
         flush_interval_sec: float = 1.0,
+        signal_retention_days: float = 7.0,
+        moving_retention_days: float = 3.0,
+        telemetry_retention_days: float = 13.0,
+        purge_batch_size: int = 500,
     ) -> None:
         self._db_url = db_url
         self._is_sqlite = db_url.startswith("sqlite")
@@ -44,6 +61,14 @@ class AuditRepository:
         self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
         self._running = False
         self._worker_thread: threading.Thread | None = None
+
+        # Retention policy (BUG-054). TEST env defaults: disposable signal
+        # rows 7 days, POSITION_MOVING 3 days, guard telemetry 13 days.
+        # Accounting/experience/research tables are NEVER purged here.
+        self._signal_retention_days = float(signal_retention_days)
+        self._moving_retention_days = float(moving_retention_days)
+        self._telemetry_retention_days = float(telemetry_retention_days)
+        self._purge_batch_size = max(1, int(purge_batch_size))
 
         # Snapshots throttling state to prevent high-frequency DB bloat
         self._last_snapshot_time = 0.0
@@ -131,6 +156,38 @@ class AuditRepository:
                 conn.execute(f"ALTER TABLE audit_signals ADD COLUMN {col_def[0]} {col_def[1]};")
             except Exception:
                 pass
+
+        # Persistent signal deduplication identity (BUG-054). A deterministic
+        # key derived from the canonical decision fields, stable across restart.
+        # Database-enforced: UNIQUE index + ON CONFLICT DO NOTHING means the
+        # background worker can never double-insert the same decision even if
+        # two processes/producers race.
+        try:
+            conn.execute("ALTER TABLE audit_signals ADD COLUMN signal_dedup_key TEXT;")
+        except Exception:
+            pass
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_signals_dedup "
+            "ON audit_signals(signal_dedup_key);"
+        )
+
+        # Lightweight guard/telemetry counters (BUG-054): high-frequency
+        # rejections (TICK_DUPLICATE_SUPPRESSED, ORDER_FREQUENCY_THROTTLED, ...)
+        # must NOT create heavy audit_signals rows. They aggregate here instead:
+        # one row per (generated_minute, symbol, reason_code) with a running
+        # count, so "how often / when / for which symbol / why" stays answerable
+        # at a few bytes per event instead of ~1.2KB.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_guard_telemetry (
+                window_start TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                reason_code TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (window_start, symbol, reason_code)
+            );
+            """
+        )
 
         # Track detailed pending orders & executions
         conn.execute(
@@ -275,6 +332,132 @@ class AuditRepository:
             );
             """
         )
+
+        # Broker-history normalized copy: audit_broker_orders / _deals / _trades
+        # + sync watermark (created idempotently; identity = broker tickets).
+        create_history_tables(conn)
+
+    # ---------------------------------------------------------------------
+    # Broker history sync (MT5 = broker truth, DB = durable normalized copy)
+    # ---------------------------------------------------------------------
+    def sync_broker_history(
+        self,
+        orders: list[dict[str, Any]],
+        deals: list[dict[str, Any]],
+        symbol: str | None = None,
+        sync_from: Any = None,
+        sync_to: Any = None,
+    ) -> dict[str, Any]:
+        """Upserts the normalized broker order/deal/trade copy (idempotent).
+
+        Exact broker-ticket deduplication: re-ingesting identical history is a
+        no-op (UNIQUE(ticket) / UNIQUE(position_id) insert-or-ignore).
+        """
+        if not self._is_sqlite:
+            return {
+                "orders_total": len(orders or []),
+                "orders_inserted": 0,
+                "orders_duplicates": len(orders or []),
+                "deals_total": len(deals or []),
+                "deals_inserted": 0,
+                "deals_duplicates": len(deals or []),
+                "trades_total": 0,
+                "trades_inserted": 0,
+                "trades_duplicates": 0,
+                "duration_ms": 0.0,
+            }
+        from datetime import UTC as _UTC
+        from datetime import datetime as _dt
+
+        symbol = symbol or ""
+        sync_from_dt = (
+            sync_from.astimezone(_UTC)
+            if isinstance(sync_from, _dt)
+            else normalize_history_dt(sync_from)
+        )
+        sync_to_dt = (
+            sync_to.astimezone(_UTC) if isinstance(sync_to, _dt) else normalize_history_dt(sync_to)
+        )
+        with sqlite3.connect(self._db_path, timeout=15.0) as conn:
+            return sync_broker_history(
+                conn,
+                orders=orders or [],
+                deals=deals or [],
+                symbol=symbol,
+                sync_from=sync_from_dt,
+                sync_to=sync_to_dt,
+            )
+
+    def get_broker_history_meta(self, symbol: str | None = None) -> dict[str, Any] | None:
+        """Returns the persisted sync watermark (None before the first sync)."""
+        if not self._is_sqlite:
+            return None
+        with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            return last_sync_window(conn, symbol or "")
+
+    def get_broker_trades(
+        self,
+        limit: int = 500,
+        offset: int = 0,
+        symbol: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Reconstructed logical trades, newest exit first."""
+        if not self._is_sqlite:
+            return []
+        clauses: list[str] = []
+        args: list[Any] = []
+        if symbol:
+            clauses.append("symbol = ?")
+            args.append(symbol)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = (
+            "SELECT * FROM audit_broker_trades "
+            f"{where} ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC "
+            "LIMIT ? OFFSET ?"
+        )
+        args += [int(limit), int(offset)]
+        with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            conn.row_factory = sqlite3.Row
+            return [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
+
+    def get_broker_deals(
+        self,
+        position_id: int | None = None,
+        limit: int = 2000,
+    ) -> list[dict[str, Any]]:
+        """Normalized broker deals (optionally for one position lifecycle)."""
+        if not self._is_sqlite:
+            return []
+        if position_id is not None:
+            sql = "SELECT * FROM audit_broker_deals WHERE position_id = ? ORDER BY time ASC LIMIT ?"
+            args: tuple[Any, ...] = (int(position_id), int(limit))
+        else:
+            sql = "SELECT * FROM audit_broker_deals ORDER BY time DESC LIMIT ?"
+            args = (int(limit),)
+        with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            conn.row_factory = sqlite3.Row
+            return [dict(r) for r in conn.execute(sql, args).fetchall()]
+
+    def get_broker_orders(
+        self,
+        position_id: int | None = None,
+        limit: int = 2000,
+    ) -> list[dict[str, Any]]:
+        """Normalized broker orders (optionally for one position lifecycle)."""
+        if not self._is_sqlite:
+            return []
+        if position_id is not None:
+            sql = (
+                "SELECT * FROM audit_broker_orders WHERE position_id = ? "
+                "ORDER BY time_setup ASC LIMIT ?"
+            )
+            args: tuple[Any, ...] = (int(position_id), int(limit))
+        else:
+            sql = "SELECT * FROM audit_broker_orders ORDER BY time_setup DESC LIMIT ?"
+            args = (int(limit),)
+        with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            conn.row_factory = sqlite3.Row
+            return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
     def _create_experience_tables(self, conn: sqlite3.Connection) -> None:
         """
@@ -728,13 +911,14 @@ class AuditRepository:
             return
 
         conn = sqlite3.connect(self._db_path, timeout=10.0)
+        q = self._queue  # local ref: never GC'd while the loop runs (BUG-058)
 
-        while self._running or not self._queue.empty():
+        while self._running or not q.empty():
             batch: list[tuple[str, tuple]] = []
             try:
                 # Wait for records, batch them up to 500 per transaction
                 while len(batch) < 500:
-                    query_tuple = self._queue.get(timeout=self._flush_interval)
+                    query_tuple = q.get(timeout=self._flush_interval)
                     batch.append(query_tuple)
             except queue.Empty:
                 pass
@@ -745,7 +929,7 @@ class AuditRepository:
                         for query, args in batch:
                             conn.execute(query, args)
                     for _ in batch:
-                        self._queue.task_done()
+                        q.task_done()
                 except Exception as e:
                     logger.error("Audit Background Worker failed to insert batch", error=str(e))
                     # Never leave the queue items un-accounted: a persistent
@@ -754,95 +938,103 @@ class AuditRepository:
                     # dropped (data loss is logged above) but task_done() is
                     # still called so queue.join() can always return.
                     for _ in batch:
-                        self._queue.task_done()
+                        q.task_done()
                     time.sleep(1.0)  # Backoff on error
 
         conn.close()
 
+    #: reason codes that are guard/rejection events, NOT genuine signals.
+    #: They are aggregated into lightweight telemetry instead of heavy rows.
+    _GUARD_TELEMETRY_CODES = frozenset(
+        {
+            "TICK_DUPLICATE_SUPPRESSED",
+            "ORDER_FREQUENCY_THROTTLED",
+        }
+    )
+
+    #: Payload schema for audit_signals (BUG-054). Deliberately minimal: the
+    #: structured columns already carry request_id/symbol/action/confidence/
+    #: prices/regime/reason. Only genuinely extra forensic info lives here.
+    _SIGNAL_PAYLOAD_FIELDS = (
+        "model_action",
+        "ai_buy_probability",
+        "ai_sell_probability",
+        "ai_no_trade_probability",
+        "regime_confidence",
+        "risk_allowed",
+        "guardian_status",
+        "rejection_reason",
+    )
+
+    def _signal_dedup_key(self, proposal: TradeProposal) -> str:
+        """Deterministic, collision-resistant signal identity (BUG-054).
+
+        A genuine decision is identified by what the engine evaluated, not by
+        the wall-clock instant: symbol + M1 candle + model action + decision
+        stage + the reason it reached (plus execution mode so a concurrent
+        STANDARD vs PREDICTIVE_LIMIT evaluation is never conflated). Stable
+        across restart, independent of request_id (UUIDs differ every call).
+        """
+        import hashlib
+
+        candle = proposal.generated_at.replace(second=0, microsecond=0).isoformat()
+        model_action = str(getattr(proposal, "model_action", "") or proposal.action.value)
+        stage = str(getattr(proposal, "decision_stage", "") or "STANDARD_EVAL")
+        mode = str(getattr(proposal, "execution_mode", "") or "STANDARD")
+        reason = str(proposal.reason_code or "MODEL_SIGNAL")
+        raw = "|".join([proposal.symbol, candle, model_action, stage, mode, reason])
+        return f"sig_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:24]}"
+
     def log_signal(self, proposal: TradeProposal) -> None:
-        """Zero-latency async logging of generated trade signals."""
+        """Zero-latency async logging of generated trade signals.
+
+        Persistent idempotency (BUG-054):
+        * guard/rejection codes (TICK_DUPLICATE_SUPPRESSED, ...) are aggregated
+          into `audit_guard_telemetry` — one small counter row per minute per
+          symbol per code — instead of a ~1.2KB signal row per event;
+        * genuine signals carry a deterministic `signal_dedup_key` enforced by a
+          UNIQUE index with ON CONFLICT DO NOTHING, so the background worker can
+          never create duplicate decision rows across restart/races — no
+          synchronous SELECT in the hot path, no in-memory state to lose.
+        """
         import json
 
         if not self._is_sqlite:
             return
 
-        # Deduplication check to prevent DB bloat (same symbol, timeframe, candle, action, zone)
-        candle_time = proposal.generated_at.replace(second=0, microsecond=0)
-        timeframe = "M1"
-        model_action = getattr(proposal, "model_action", proposal.action.value)
-        entry_zone = getattr(proposal, "reason_code", "UNKNOWN")
-        dedup_key = (proposal.symbol, timeframe, candle_time, model_action, entry_zone)
-
-        if not hasattr(self, "_last_logged_signal_key"):
-            self._last_logged_signal_key = None
-
-        if self._last_logged_signal_key == dedup_key:
-            return  # Ignore duplicate audit
-
-        self._last_logged_signal_key = dedup_key
-
-        query = """
-            INSERT INTO audit_signals
-            (request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload,
-             execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
+        reason_code = str(proposal.reason_code or "MODEL_SIGNAL")
+        if reason_code in self._GUARD_TELEMETRY_CODES:
+            self._log_guard_telemetry(proposal, reason_code)
+            return
 
         # Determine Regime
         regime_str = "UNKNOWN"
         if hasattr(proposal, "regime") and proposal.regime:
             regime_str = proposal.regime
-        elif "REGIME_" in proposal.reason_code:
-            regime_str = proposal.reason_code.split("REGIME_")[-1]
+        elif "REGIME_" in reason_code:
+            regime_str = reason_code.partition("REGIME_")[2]
 
-        # Extract diagnostic fields
-        model_action = getattr(proposal, "model_action", proposal.action.value)
-        buy_prob = getattr(proposal, "buy_probability", 0.0)
-        sell_prob = getattr(proposal, "sell_probability", 0.0)
-        no_trade_prob = getattr(proposal, "no_trade_probability", 0.0)
-        regime_conf = getattr(proposal, "regime_confidence", 0.0)
-        risk_allowed = getattr(proposal, "risk_allowed", True)
-        guardian_status = getattr(proposal, "guardian_status", "IDLE")
-        rejection_reason = getattr(proposal, "rejection_reason", proposal.reason_code)
+        model_action = str(getattr(proposal, "model_action", "") or proposal.action.value)
+        buy_prob = float(getattr(proposal, "buy_probability", 0.0) or 0.0)
+        sell_prob = float(getattr(proposal, "sell_probability", 0.0) or 0.0)
+        no_trade_prob = float(getattr(proposal, "no_trade_probability", 0.0) or 0.0)
 
-        # Construct customized payload dictionary to match exact specifications
-        payload_dict = {
-            "model_action": model_action,
-            "model_buy_probability": buy_prob,
-            "model_sell_probability": sell_prob,
-            "ai_buy_probability": buy_prob,
-            "ai_sell_probability": sell_prob,
-            "ai_no_trade_probability": no_trade_prob,
-            "buy_probability": buy_prob,
-            "sell_probability": sell_prob,
-            "no_trade_probability": no_trade_prob,
-            "regime": regime_str,
-            "regime_confidence": regime_conf,
-            "risk_allowed": risk_allowed,
-            "guardian_status": guardian_status,
-            "rejection_reason": rejection_reason,
-            "final_action": proposal.action.value,
-        }
-
-        # Merge with other fields in proposal dump
-        try:
-            proposal_dict = json.loads(proposal.model_dump_json())
-        except Exception:
-            proposal_dict = {}
-        proposal_dict.update(payload_dict)
-
-        # Extract and update risk checks
-        risk_checks = getattr(proposal, "risk_checks", None)
-        if risk_checks is None:
-            risk_checks = {
-                "zone_quality": proposal.confidence,
-                "min_zone_quality": 0.60,
-                "rr": proposal.risk_reward_ratio,
-                "min_rr": 1.5,
+        # Minimal forensic payload (BUG-054): no full proposal dump, no
+        # duplicate fields already present as structured columns.
+        payload_json = json.dumps(
+            {
+                "model_action": model_action,
+                "ai_buy_probability": buy_prob,
+                "ai_sell_probability": sell_prob,
+                "ai_no_trade_probability": no_trade_prob,
+                "regime_confidence": float(getattr(proposal, "regime_confidence", 0.0) or 0.0),
+                "risk_allowed": bool(getattr(proposal, "risk_allowed", True)),
+                "guardian_status": str(getattr(proposal, "guardian_status", "") or "IDLE"),
+                "rejection_reason": str(
+                    getattr(proposal, "rejection_reason", "") or proposal.reason_code
+                ),
             }
-        proposal_dict["risk_checks"] = risk_checks
-
-        payload_json = json.dumps(proposal_dict)
+        )
 
         # Task 4 Check for UNKNOWN regime
         if regime_str == "UNKNOWN" or not regime_str:
@@ -856,6 +1048,14 @@ class AuditRepository:
             # Standard console log of the json string representation for stdout audit parsing
             print(json.dumps(unknown_log))
 
+        query = """
+            INSERT INTO audit_signals
+            (request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload,
+             execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters,
+             signal_dedup_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(signal_dedup_key) DO NOTHING
+        """
         args = (
             proposal.request_id,
             proposal.symbol,
@@ -875,12 +1075,33 @@ class AuditRepository:
             getattr(proposal, "smc_score", 0.0),
             getattr(proposal, "confidence_before_filters", 0.0),
             getattr(proposal, "confidence_after_filters", 0.0),
+            self._signal_dedup_key(proposal),
         )
 
         try:
             self._queue.put_nowait((query, args))
         except queue.Full:
             logger.error("Audit Signal Queue is full! Dropping telemetry.")
+
+    def _log_guard_telemetry(self, proposal: TradeProposal, reason_code: str) -> None:
+        """Aggregates a guard/rejection event into a counter row (BUG-054).
+
+        One row per (minute, symbol, reason_code); the UPSERT increments count.
+        ~40 bytes per event instead of the ~1.2KB full signal row. The minute
+        window keeps "how often / when / for which symbol / why" answerable.
+        """
+        window = proposal.generated_at.replace(second=0, microsecond=0).isoformat()
+        query = """
+            INSERT INTO audit_guard_telemetry (window_start, symbol, reason_code, count)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(window_start, symbol, reason_code)
+            DO UPDATE SET count = count + 1
+        """
+        args = (window, proposal.symbol, reason_code)
+        try:
+            self._queue.put_nowait((query, args))
+        except queue.Full:
+            logger.error("Audit Guard Telemetry Queue is full! Dropping counter.")
 
     def log_order(
         self,
@@ -1133,10 +1354,20 @@ class AuditRepository:
         #   - the spread term is accepted as an optional kwarg and subtracted exactly
         #     once when provided, reserving room for a future column migration.
         # ---------------------------------------------------------------------
-        gross_pnl_usd = float(pnl)
-        commission_usd = abs(float(commission))
-        swap_usd = float(swap)  # swaps can be negative (credited) or positive (debited)
-        net_pnl_usd = gross_pnl_usd - commission_usd - swap_usd
+        # ---------------------------------------------------------------------
+        # BUG-046: `pnl` may be None (no broker deal AND no price evidence =
+        # UNKNOWN). Never silently coerce missing broker truth to 0.0.
+        # ---------------------------------------------------------------------
+        if pnl is None:
+            gross_pnl_usd = 0.0
+            commission_usd = 0.0
+            swap_usd = 0.0
+            net_pnl_usd = 0.0
+        else:
+            gross_pnl_usd = float(pnl)
+            commission_usd = abs(float(commission or 0.0))
+            swap_usd = float(swap or 0.0)  # swaps can be negative (credited) or positive (debited)
+            net_pnl_usd = gross_pnl_usd - commission_usd - swap_usd
 
         query = """
             INSERT INTO audit_ledger
@@ -1189,9 +1420,9 @@ class AuditRepository:
             entry_price,
             exit_price,
             status,
-            pnl,
-            commission,
-            swap,
+            pnl if pnl is not None else 0.0,
+            commission if commission is not None else 0.0,
+            swap if swap is not None else 0.0,
             duration_sec,
             timestamp_str,
             mae,
@@ -1673,6 +1904,111 @@ class AuditRepository:
             logger.error("Failed to toggle/update trading rule", rule_name=rule_name, error=str(e))
             return False
 
+    def purge_old_audit_data(
+        self,
+        signal_retention_days: float | None = None,
+        moving_retention_days: float | None = None,
+        telemetry_retention_days: float | None = None,
+        batch_size: int | None = None,
+    ) -> dict[str, Any]:
+        """Bounded, transaction-safe retention purge (BUG-054).
+
+        Deletes ONLY disposable telemetry in small batches (never one giant
+        unbounded DELETE against a large table):
+          * audit_signals older than `signal_retention_days` (default 7)
+          * position_lifecycle_events POSITION_MOVING older than
+            `moving_retention_days` (default 3)
+          * audit_guard_telemetry older than `telemetry_retention_days`
+            (default 13)
+        Accounting truth (audit_ledger), experience history, autopsies,
+        strategy/research lineage are NEVER touched. Runs on its own short
+        connection (outside the worker/hot path); safe to call while the
+        engine is live (WAL allows concurrent readers/writers, batches keep
+        each transaction short).
+        """
+        from datetime import UTC, datetime, timedelta
+
+        if not self._is_sqlite:
+            return {"error": "not sqlite"}
+
+        sig_days = float(
+            signal_retention_days
+            if signal_retention_days is not None
+            else self._signal_retention_days
+        )
+        mov_days = float(
+            moving_retention_days
+            if moving_retention_days is not None
+            else self._moving_retention_days
+        )
+        tel_days = float(
+            telemetry_retention_days
+            if telemetry_retention_days is not None
+            else self._telemetry_retention_days
+        )
+        bsize = int(batch_size if batch_size is not None else self._purge_batch_size)
+
+        now = datetime.now(UTC)
+        sig_cutoff = (now - timedelta(days=sig_days)).isoformat()
+        mov_cutoff = (now - timedelta(days=mov_days)).isoformat()
+        tel_cutoff = (now - timedelta(days=tel_days)).isoformat()
+
+        results: dict[str, Any] = {
+            "started_at": now.isoformat(),
+            "signal_retention_days": sig_days,
+            "moving_retention_days": mov_days,
+            "telemetry_retention_days": tel_days,
+            "deleted": {},
+        }
+        start = time.monotonic()
+        conn = sqlite3.connect(self._db_path, timeout=30.0)
+        try:
+            # Bounded batched deletes: each batch is its own transaction so a
+            # long table never blocks writers for more than a few rows.
+            def _batch_delete(sql: str, args: tuple[Any, ...]) -> int:
+                """Bounded delete via rowid subquery (DELETE LIMIT unsupported).
+
+                Each batch is a single short transaction; the rowid anchor keeps
+                the scan bounded regardless of table size.
+                """
+                total = 0
+                while True:
+                    with conn:
+                        cur = conn.execute(sql, (*args, bsize))
+                        total += cur.rowcount
+                    if cur.rowcount < bsize:
+                        break
+                return total
+
+            results["deleted"]["audit_signals"] = _batch_delete(
+                "DELETE FROM audit_signals WHERE id IN "
+                "(SELECT id FROM audit_signals WHERE generated_at < ? ORDER BY id LIMIT ?)",
+                (sig_cutoff,),
+            )
+            results["deleted"]["position_moving"] = _batch_delete(
+                "DELETE FROM position_lifecycle_events WHERE id IN "
+                "(SELECT id FROM position_lifecycle_events "
+                "WHERE event_type = 'POSITION_MOVING' AND event_timestamp < ? ORDER BY id LIMIT ?)",
+                (mov_cutoff,),
+            )
+            results["deleted"]["guard_telemetry"] = _batch_delete(
+                "DELETE FROM audit_guard_telemetry WHERE rowid IN "
+                "(SELECT rowid FROM audit_guard_telemetry WHERE window_start < ? ORDER BY rowid LIMIT ?)",
+                (tel_cutoff,),
+            )
+        except Exception as e:
+            results["error"] = str(e)
+            logger.error("Audit retention purge failed", error=str(e))
+        finally:
+            conn.close()
+        results["duration_ms"] = round((time.monotonic() - start) * 1000.0, 1)
+        logger.info(
+            "Audit retention purge complete",
+            deleted=results["deleted"],
+            duration_ms=results["duration_ms"],
+        )
+        return results
+
     def close(self) -> None:
         """Gracefully shuts down background worker and flushes pending records."""
         logger.info("Initiating graceful shutdown of Audit Database. Flushing queues...")
@@ -1680,4 +2016,7 @@ class AuditRepository:
         if self._worker_thread and self._worker_thread.is_alive():
             self._queue.join()  # Wait for all pending inserts to complete
             self._worker_thread.join(timeout=5.0)
+            self._worker_thread = None
+        else:
+            self._worker_thread = None
         logger.info("Audit Database safely closed.")

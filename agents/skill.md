@@ -686,6 +686,48 @@ $$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\
   states (`LOSS_HARD_EXIT` / `PROFIT_GIVEBACK_CRITICAL`) are honored even on the
   FIRST observation of a ticket (see BUG-018).
 
+### 🔧 Phase 15 Exit-Behavior Audit & Repair (2026-08-17)
+
+Forensic audit of "why losing / reversed positions don't exit correctly" — full
+evidence package (DB census, flagship reconstructions, log excerpts, code sites)
+lives in the `position-exit-forensics` skill. Root causes found and repaired:
+
+1. **Model/regime blindness (BUG-054)** — `probs` and `regime_state` now thread
+   from `live_engine` into `manage_active_positions`; the AI direction-flip exit
+   is live again; giveback logic uses the CURRENT regime; `[POSITION_EXIT_EVAL]`
+   structured logs record every evaluation verdict.
+2. **LOSS_HARD_EXIT arbitration gap (BUG-055)** — Level-2 arbitration now emits
+   `[EXIT TRACE] LOSS_HARD_EXIT triggered` and dispatches a real broker close
+   past the 60s grace.
+3. **Clock/age bug** — all durations derive from the CURRENT TICK timestamp
+   threaded through the management loop, never the host wall clock (which was
+   hours ahead of the broker and produced negative ages that suppressed every
+   time-based exit).
+4. **Min-loss EV inversion (BUG-056)** — the recovery payoff was growing with
+   the loss (`max(15, |pnl|*2)`) while expected remaining loss shrank, so EV
+   became MORE positive the deeper the drawdown and the min-loss exit could
+   never fire. Now anchored at entry: `expected_recovery = initial_risk * RRR`
+   (RRR from `algo_config.min_risk_reward_ratio`, default 1.8), expected
+   additional loss = full planned risk. EV decreases monotonically with
+   drawdown depth.
+5. **Giveback close suppression** — the VOLATILITY_EXPANSION + breakeven-locked
+   guard only suppresses a market close when `was_sl_modified` AND the broker SL
+   is at/beyond the locked breakeven level; without a locked protective SL the
+   giveback close ALWAYS dispatches.
+
+Regression suite: `tests/unit/test_exit_behavior_forensic.py` — 8 behavioral
+scenarios (D1..D8: strong reversal, long drawdown, AI flip, regime invalidation,
+fast MFE→giveback, early BE→full stop, healthy continuation, isolated sweep) +
+4 execution-integrity regressions (R1: hold_score<30 dispatches close; R2:
+giveback close not suppressed without locked SL; R3: time-in-trade decay; R4/R4b:
+EV breach fires / doesn't fire).
+
+Known limits carried forward: TIME_IN_LOSS_DECAY only fires when >70% of holding
+time was in drawdown (conservative by design); `is_winning_trade` profit-shield
+can still mask a loser on the legacy S-scenario path (the adaptive path closes
+regardless); broker-side 10014/10025 rejection retry semantics unchanged (see
+`mt5-broker-integration` skill).
+
 ---
 
 ## 10. Hot-Path Latency & Event-Loop Forensics
@@ -754,7 +796,7 @@ $$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\
 | `/api/config` | `GET` | Retrieve active system config | None | `AppConfig` serialized JSON | 🟢 VERIFIED |
 | `/api/config` | `POST` | Update active system config | `AlgoConfigRequest` | Success status & updated config | 🟢 VERIFIED |
 | `/api/algo/config` | `GET`/`PUT` | Get/Set dynamic quantitative parameters | `AlgoConfigRequest` | Hot-swapped `AlgoConfig` JSON | 🟢 VERIFIED |
-| `/api/chart/history` | `GET` | Bootstrap 150+ bar visualizer chart | Query params | OHLC bar array + candidate zones | 🟢 VERIFIED |
+| `/api/chart/history` | `GET` | Bootstrap 900-bar visualizer chart (+ engine resync after downtime, BUG-058) | Query `count` (default 900, bounded 1..5000) | OHLC bar array + candidate zones + resync provenance | 🟢 VERIFIED |
 | `/api/positions/modify` | `POST` | Manual SL/TP position update | `ModifyPositionRequest` | Execution result | 🟢 VERIFIED |
 | `/api/positions/close` | `POST` | Manual market close position | `ClosePositionRequest` | Execution result | 🟢 VERIFIED |
 | `/api/simulation/tick` | `POST` | Direct tick injection (Paper mode) | `SimulationTickRequest` | Processed tick telemetry | 🟢 VERIFIED |
@@ -785,11 +827,18 @@ To prevent SSE stream JSON serialization crashes when returning domain objects, 
 * **Asynchronous Queue:** DB writes are placed on an internal thread-safe queue (`_db_queue`) and written sequentially by a background worker thread (`_worker_thread`), preventing I/O lag on the live event loop.
 
 #### 📊 Core Database Tables:
-1. `audit_signals`: Records all generated trade proposals, model probabilities, regime metrics, and rule evaluation payloads. Features multi-key deduplication on `(symbol, timeframe, candle_time, model_action, entry_zone)` to prevent DB bloat. 🟢 VERIFIED
-2. `audit_orders`: Tracks order lifecycle state transitions (`SUBMITTED`, `OPEN`, `MODIFY_SL_TP`, `CLOSED`). 🟢 VERIFIED
-3. `audit_account_snapshots`: High-frequency account balance/equity snapshots (throttled to write only on balance change or >= 60s interval). 🟢 VERIFIED
-4. `trading_rules_config`: Stores dynamic enablement states and JSON parameters for 30+ scalping rules. 🟢 VERIFIED
-5. `financial_ledger`: Autopsy table recording completed trade performance metrics (MAE, MFE, slippage, SL shift tracking, gross PnL) exactly once upon trade closure. 🟢 VERIFIED
+1. `audit_signals`: Records all generated trade proposals, model probabilities, regime metrics, and rule evaluation payloads. **BUG-054:** persistent, database-enforced dedup via deterministic `signal_dedup_key` (sha256 of symbol|M1-candle|model_action|decision_stage|execution_mode|reason_code) + UNIQUE index + `ON CONFLICT DO NOTHING` — restart/race-safe, no SELECT-then-INSERT on the hot path. Payload is a minimal 8-field forensic JSON (~250B, not the full proposal dump). 🟢 VERIFIED
+2. `audit_guard_telemetry`: Lightweight counter table (window_start, symbol, reason_code, count; UPSERT per minute) for high-frequency guard rejections (`TICK_DUPLICATE_SUPPRESSED`, `ORDER_FREQUENCY_THROTTLED`) — answers "how often / when / which symbol / why" at ~40B/event instead of a heavy signal row. 🟢 VERIFIED
+3. `audit_orders`: Tracks order lifecycle state transitions (`SUBMITTED`, `OPEN`, `MODIFY_SL_TP`, `CLOSED`). 🟢 VERIFIED
+4. `audit_account_snapshots`: High-frequency account balance/equity snapshots (throttled to write only on balance change or >= 60s interval). 🟢 VERIFIED
+5. `trading_rules_config`: Stores dynamic enablement states and JSON parameters for 30+ scalping rules. 🟢 VERIFIED
+6. `financial_ledger`: Autopsy table recording completed trade performance metrics (MAE, MFE, slippage, SL shift tracking, gross PnL) exactly once upon trade closure. 🟢 VERIFIED
+
+#### 🧹 Retention (BUG-054)
+`AuditRepository.purge_old_audit_data()` runs bounded (500-row) batched deletes: signals >7d, POSITION_MOVING >3d, guard telemetry >13d. NEVER touches ledger/experiences/autopsies/research. Manual: `nse audit-purge`. Position lifecycle MOVING events are time+event throttled (≥60s, SL/TP changed, or ≥15% risk drift). 🟢 VERIFIED
+
+#### 📡 Telegram Reporting (BUG-059)
+`TelegramNotifier` (observability/telegram_notifier.py) sends HTML-formatted, thread-pool-backed alerts. Templates: startup/stop, order open/close (profit/loss), break-even, trailing-stop, risk/survival/kill-switch, error, market summary, plus (BUG-059): `notify_test_message`, `notify_engine_stopped`, `notify_engine_error` (CRITICAL), `notify_audit_purge`, `notify_warmup` (one-shot on READY transition), `notify_daily_summary` (from AccountingCore PeriodKind.DAY, never synthetic). Wired in live_engine: purge result → per 6h run; warmup → on transition; daily summary → per 24h. Web UI: `POST /api/telegram/test` + "Send Test Message" button; config-save error now distinguishes server-unreachable from backend errors. Token never logged/leaked (`_redact_secrets`). 🟢 VERIFIED
 
 ---
 

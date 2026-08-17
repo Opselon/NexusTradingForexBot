@@ -225,6 +225,26 @@ NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture*
 | `artifacts/logs/` | Structured JSON logs |
 | `artifacts/models/` | Model bundles: live Champion + `candidate/<run_id>/` staging (Champion never overwritten) |
 
+### 🔬 `scratch/` — One-Off Diagnostic Probes
+
+| Path | Contents |
+| :--- | :--- |
+| `scratch/` | Disposable forensic/diagnostic scripts from past investigations (see below) |
+
+> **These are NOT part of the application.** They are one-off probe scripts written
+> during forensic audits (DB queries against `artifacts/audit.db` in read-only mode,
+> log greps, dry-run validations) to work around the inline-`python -c` restriction
+> on Windows hosts. Nothing in `src/`, `tests/`, the build, or the CI references
+> them; they can be deleted at any time without affecting the project. Their
+> findings are preserved in the durable records: `agents/bugs.md`, `agents/skill.md`,
+> and the Hermes skills (`position-exit-forensics`, `mt5-broker-integration`).
+
+Naming conventions you may find here:
+- `scratch_*.py` / `_scratch_*.py` — Python probes (audit DB reads, log analysis, dry-runs)
+- `scratch_*_out.txt` — captured probe output
+- `data_gate_*.py` — MT5 data-gate diagnostics (Phase 14/15)
+- `capture_mt5_contract.py`, `check_js_tmp.js` — one-off contract/JS verification helpers
+
 ---
 
 ## 📊 50-Dimensional Feature Matrix

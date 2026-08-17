@@ -32,6 +32,7 @@ from typing import Any
 import polars as pl
 
 from nexus_scalp.model_generation.models import NewsContextSchema, default_news_context_schema
+from nexus_scalp.news.models import NewsImpactHorizon
 
 #: NewsContextSchema field names (canonical order, from the model contract).
 _SCHEMA_FIELDS: tuple[str, ...] = (

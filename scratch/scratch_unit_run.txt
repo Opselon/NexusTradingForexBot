@@ -1,0 +1,778 @@
+........................................................................ [  9%]
+........................................................................ [ 19%]
+........................................................................ [ 29%]
+........................................................................ [ 39%]
+................................................................FFFFFF.. [ 49%]
+.......................................................s................ [ 59%]
+........................................................................ [ 68%]
+........................................................................ [ 78%]
+........................................................................ [ 88%]
+........................................................................ [ 98%]
+........F...                                                             [100%]
+================================== FAILURES ===================================
+____ TestAccountingFromBrokerHistory.test_total_trades_from_broker_history ____
+
+self = <tests.unit.test_mt5_accounting_from_history.TestAccountingFromBrokerHistory object at 0x00000274EC9CE490>
+audit = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000274F20FE490>
+core = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F221C590>
+
+    def test_total_trades_from_broker_history(self, audit, core) -> None:
+        _seed_history(audit)
+>       trades = core.load_trades()
+                 ^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_mt5_accounting_from_history.py:49: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\accounting\core.py:266: in load_trades
+    return self.load_broker_trades(limit=limit)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F221C590>
+limit = 20000
+
+    def load_broker_trades(self, limit: int = 20000) -> list[TradeRecord]:
+        """
+        Loads the reconstructed logical trades from the authorized broker-history
+        normalized copy (`audit_broker_trades`). Each row is ONE position
+        lifecycle with real broker-aggregated PnL (gross - |comm| - swap - fee).
+    
+        Source hierarchy (documented in agents/skill.md): when broker history
+        exists it IS the authoritative realized-PnL source for closed trades.
+        `audit_ledger` remains the engine's own execution autopsy; `None` rows
+        here are impossible - every row carries real values or is skipped.
+        """
+        if not self._enabled:
+            return []
+        sql = (
+            "SELECT trade_id, position_id, symbol, direction, entry_time, exit_time, "
+            "entry_price, exit_price, volume, gross_pnl, commission, swap, fee, "
+            "net_pnl, master_order_id, magic, exit_reason, exit_comment, duration_sec "
+            "FROM audit_broker_trades "
+            "ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC LIMIT ?"
+        )
+        try:
+            with self._connect() as conn:
+                rows = [dict(r) for r in conn.execute(sql, (int(limit),)).fetchall()]
+        except Exception as err:
+            logger.error("[ACCOUNTING] broker trade load failed", error=str(err))
+            return []
+    
+        out: list[TradeRecord] = []
+        for row in rows:
+            opened = parse_sql_timestamp(row.get("entry_time") or "")
+            closed = parse_sql_timestamp(row.get("exit_time") or "")
+            if closed is None:
+                continue  # no fabricated close time
+            gross = float(row.get("gross_pnl") or 0.0)
+            commission = abs(float(row.get("commission") or 0.0))
+            swap = float(row.get("swap") or 0.0)
+            fee = abs(float(row.get("fee") or 0.0))
+            net = float(row.get("net_pnl") or 0.0)
+            duration = float(row.get("duration_sec") or 0.0)
+            if duration <= 0.0 and opened is not None:
+                duration = max(0.0, (closed - opened).total_seconds())
+            direction = str(row.get("direction") or "UNKNOWN")
+            out.append(
+                TradeRecord(
+                    ticket=int(row.get("position_id") or int(row.get("trade_id") or 0)),
+                    symbol=str(row.get("symbol") or ""),
+                    direction=direction,
+                    volume=float(row.get("volume") or 0.0),
+                    entry_price=float(row.get("entry_price") or 0.0),
+                    exit_price=float(row.get("exit_price") or 0.0),
+                    gross_pnl=gross,
+                    commission=commission,
+                    swap=swap,
+                    net_pnl=net,
+                    opened_at=opened,
+                    closed_at=closed,
+                    duration_sec=duration,
+                    exit_mechanism_raw="BROKER_DEALS",
+                    exit_classification=ExitClassification.OTHER_EXIT,
+>                   outcome=classify_outcome(net),
+                            ^^^^^^^^^^^^^^^^
+                    risk_free_state=False,
+                    was_sl_modified=False,
+                    initial_sl=0.0,
+                    final_sl=0.0,
+                    mae_points=0.0,
+                    mfe_points=0.0,
+                    mae_usd=0.0,
+                    mfe_usd=0.0,
+                    status="CLOSED",
+                    order_id=str(row.get("master_order_id") or ""),
+                    realized_r=None,
+                    risk_usd=None,
+                )
+            )
+E           NameError: name 'classify_outcome' is not defined
+
+src\nexus_scalp\accounting\core.py:329: NameError
+---------------------------- Captured stdout setup ----------------------------
+2026-08-17 09:40:38 [info     ] Initialized High-Performance SQLite WAL storage [nexus_scalp.adapters.audit_db] db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-557\test_total_trades_from_broker_0\acc.db
+----------------------------- Captured log setup ------------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:89 {'db_path': 'C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-557\\test_total_trades_from_broker_0\\acc.db', 'event': 'Initialized High-Performance SQLite WAL storage', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:38'}
+---------------------------- Captured stdout call -----------------------------
+2026-08-17 09:40:38 [info     ] [ACCOUNT_HISTORY] event=SYNC_COMPLETE [nexus_scalp.adapters.broker_history] deals=88 duplicates=0 duration_ms=10.6 inserted=224 orders=136 trades=44
+------------------------------ Captured log call ------------------------------
+INFO     nexus_scalp.adapters.broker_history:broker_history.py:568 {'orders': 136, 'deals': 88, 'trades': 44, 'inserted': 224, 'duplicates': 0, 'duration_ms': 10.6, 'event': '[ACCOUNT_HISTORY] event=SYNC_COMPLETE', 'logger': 'nexus_scalp.adapters.broker_history', 'level': 'info', 'timestamp': '2026-08-17 09:40:38'}
+-------------------------- Captured stdout teardown ---------------------------
+2026-08-17 09:40:38 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues... [nexus_scalp.adapters.audit_db]
+2026-08-17 09:40:38 [info     ] Audit Database safely closed. [nexus_scalp.adapters.audit_db]
+---------------------------- Captured log teardown ----------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1833 {'event': 'Initiating graceful shutdown of Audit Database. Flushing queues...', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:38'}
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1838 {'event': 'Audit Database safely closed.', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:38'}
+______ TestAccountingFromBrokerHistory.test_net_pnl_from_broker_history _______
+
+self = <tests.unit.test_mt5_accounting_from_history.TestAccountingFromBrokerHistory object at 0x00000274EC9CE7D0>
+audit = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000274F1FF5410>
+core = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F21C85D0>
+
+    def test_net_pnl_from_broker_history(self, audit, core) -> None:
+        _seed_history(audit)
+>       closed = [t for t in core.load_trades() if t.closed_at is not None]
+                             ^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_mt5_accounting_from_history.py:54: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\accounting\core.py:266: in load_trades
+    return self.load_broker_trades(limit=limit)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F21C85D0>
+limit = 20000
+
+    def load_broker_trades(self, limit: int = 20000) -> list[TradeRecord]:
+        """
+        Loads the reconstructed logical trades from the authorized broker-history
+        normalized copy (`audit_broker_trades`). Each row is ONE position
+        lifecycle with real broker-aggregated PnL (gross - |comm| - swap - fee).
+    
+        Source hierarchy (documented in agents/skill.md): when broker history
+        exists it IS the authoritative realized-PnL source for closed trades.
+        `audit_ledger` remains the engine's own execution autopsy; `None` rows
+        here are impossible - every row carries real values or is skipped.
+        """
+        if not self._enabled:
+            return []
+        sql = (
+            "SELECT trade_id, position_id, symbol, direction, entry_time, exit_time, "
+            "entry_price, exit_price, volume, gross_pnl, commission, swap, fee, "
+            "net_pnl, master_order_id, magic, exit_reason, exit_comment, duration_sec "
+            "FROM audit_broker_trades "
+            "ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC LIMIT ?"
+        )
+        try:
+            with self._connect() as conn:
+                rows = [dict(r) for r in conn.execute(sql, (int(limit),)).fetchall()]
+        except Exception as err:
+            logger.error("[ACCOUNTING] broker trade load failed", error=str(err))
+            return []
+    
+        out: list[TradeRecord] = []
+        for row in rows:
+            opened = parse_sql_timestamp(row.get("entry_time") or "")
+            closed = parse_sql_timestamp(row.get("exit_time") or "")
+            if closed is None:
+                continue  # no fabricated close time
+            gross = float(row.get("gross_pnl") or 0.0)
+            commission = abs(float(row.get("commission") or 0.0))
+            swap = float(row.get("swap") or 0.0)
+            fee = abs(float(row.get("fee") or 0.0))
+            net = float(row.get("net_pnl") or 0.0)
+            duration = float(row.get("duration_sec") or 0.0)
+            if duration <= 0.0 and opened is not None:
+                duration = max(0.0, (closed - opened).total_seconds())
+            direction = str(row.get("direction") or "UNKNOWN")
+            out.append(
+                TradeRecord(
+                    ticket=int(row.get("position_id") or int(row.get("trade_id") or 0)),
+                    symbol=str(row.get("symbol") or ""),
+                    direction=direction,
+                    volume=float(row.get("volume") or 0.0),
+                    entry_price=float(row.get("entry_price") or 0.0),
+                    exit_price=float(row.get("exit_price") or 0.0),
+                    gross_pnl=gross,
+                    commission=commission,
+                    swap=swap,
+                    net_pnl=net,
+                    opened_at=opened,
+                    closed_at=closed,
+                    duration_sec=duration,
+                    exit_mechanism_raw="BROKER_DEALS",
+                    exit_classification=ExitClassification.OTHER_EXIT,
+>                   outcome=classify_outcome(net),
+                            ^^^^^^^^^^^^^^^^
+                    risk_free_state=False,
+                    was_sl_modified=False,
+                    initial_sl=0.0,
+                    final_sl=0.0,
+                    mae_points=0.0,
+                    mfe_points=0.0,
+                    mae_usd=0.0,
+                    mfe_usd=0.0,
+                    status="CLOSED",
+                    order_id=str(row.get("master_order_id") or ""),
+                    realized_r=None,
+                    risk_usd=None,
+                )
+            )
+E           NameError: name 'classify_outcome' is not defined
+
+src\nexus_scalp\accounting\core.py:329: NameError
+---------------------------- Captured stdout setup ----------------------------
+2026-08-17 09:40:38 [info     ] Initialized High-Performance SQLite WAL storage [nexus_scalp.adapters.audit_db] db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-557\test_net_pnl_from_broker_histo0\acc.db
+----------------------------- Captured log setup ------------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:89 {'db_path': 'C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-557\\test_net_pnl_from_broker_histo0\\acc.db', 'event': 'Initialized High-Performance SQLite WAL storage', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:38'}
+---------------------------- Captured stdout call -----------------------------
+2026-08-17 09:40:38 [info     ] [ACCOUNT_HISTORY] event=SYNC_COMPLETE [nexus_scalp.adapters.broker_history] deals=88 duplicates=0 duration_ms=6.6 inserted=224 orders=136 trades=44
+------------------------------ Captured log call ------------------------------
+INFO     nexus_scalp.adapters.broker_history:broker_history.py:568 {'orders': 136, 'deals': 88, 'trades': 44, 'inserted': 224, 'duplicates': 0, 'duration_ms': 6.6, 'event': '[ACCOUNT_HISTORY] event=SYNC_COMPLETE', 'logger': 'nexus_scalp.adapters.broker_history', 'level': 'info', 'timestamp': '2026-08-17 09:40:38'}
+-------------------------- Captured stdout teardown ---------------------------
+2026-08-17 09:40:38 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues... [nexus_scalp.adapters.audit_db]
+2026-08-17 09:40:38 [info     ] Audit Database safely closed. [nexus_scalp.adapters.audit_db]
+---------------------------- Captured log teardown ----------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1833 {'event': 'Initiating graceful shutdown of Audit Database. Flushing queues...', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:38'}
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1838 {'event': 'Audit Database safely closed.', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:38'}
+______ TestAccountingFromBrokerHistory.test_win_rate_from_broker_history ______
+
+self = <tests.unit.test_mt5_accounting_from_history.TestAccountingFromBrokerHistory object at 0x00000274EC9CEB90>
+audit = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000274F22951D0>
+core = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F2296C50>
+
+    def test_win_rate_from_broker_history(self, audit, core) -> None:
+        _seed_history(audit)
+>       closed = [t for t in core.load_trades() if t.closed_at is not None]
+                             ^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_mt5_accounting_from_history.py:60: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\accounting\core.py:266: in load_trades
+    return self.load_broker_trades(limit=limit)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F2296C50>
+limit = 20000
+
+    def load_broker_trades(self, limit: int = 20000) -> list[TradeRecord]:
+        """
+        Loads the reconstructed logical trades from the authorized broker-history
+        normalized copy (`audit_broker_trades`). Each row is ONE position
+        lifecycle with real broker-aggregated PnL (gross - |comm| - swap - fee).
+    
+        Source hierarchy (documented in agents/skill.md): when broker history
+        exists it IS the authoritative realized-PnL source for closed trades.
+        `audit_ledger` remains the engine's own execution autopsy; `None` rows
+        here are impossible - every row carries real values or is skipped.
+        """
+        if not self._enabled:
+            return []
+        sql = (
+            "SELECT trade_id, position_id, symbol, direction, entry_time, exit_time, "
+            "entry_price, exit_price, volume, gross_pnl, commission, swap, fee, "
+            "net_pnl, master_order_id, magic, exit_reason, exit_comment, duration_sec "
+            "FROM audit_broker_trades "
+            "ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC LIMIT ?"
+        )
+        try:
+            with self._connect() as conn:
+                rows = [dict(r) for r in conn.execute(sql, (int(limit),)).fetchall()]
+        except Exception as err:
+            logger.error("[ACCOUNTING] broker trade load failed", error=str(err))
+            return []
+    
+        out: list[TradeRecord] = []
+        for row in rows:
+            opened = parse_sql_timestamp(row.get("entry_time") or "")
+            closed = parse_sql_timestamp(row.get("exit_time") or "")
+            if closed is None:
+                continue  # no fabricated close time
+            gross = float(row.get("gross_pnl") or 0.0)
+            commission = abs(float(row.get("commission") or 0.0))
+            swap = float(row.get("swap") or 0.0)
+            fee = abs(float(row.get("fee") or 0.0))
+            net = float(row.get("net_pnl") or 0.0)
+            duration = float(row.get("duration_sec") or 0.0)
+            if duration <= 0.0 and opened is not None:
+                duration = max(0.0, (closed - opened).total_seconds())
+            direction = str(row.get("direction") or "UNKNOWN")
+            out.append(
+                TradeRecord(
+                    ticket=int(row.get("position_id") or int(row.get("trade_id") or 0)),
+                    symbol=str(row.get("symbol") or ""),
+                    direction=direction,
+                    volume=float(row.get("volume") or 0.0),
+                    entry_price=float(row.get("entry_price") or 0.0),
+                    exit_price=float(row.get("exit_price") or 0.0),
+                    gross_pnl=gross,
+                    commission=commission,
+                    swap=swap,
+                    net_pnl=net,
+                    opened_at=opened,
+                    closed_at=closed,
+                    duration_sec=duration,
+                    exit_mechanism_raw="BROKER_DEALS",
+                    exit_classification=ExitClassification.OTHER_EXIT,
+>                   outcome=classify_outcome(net),
+                            ^^^^^^^^^^^^^^^^
+                    risk_free_state=False,
+                    was_sl_modified=False,
+                    initial_sl=0.0,
+                    final_sl=0.0,
+                    mae_points=0.0,
+                    mfe_points=0.0,
+                    mae_usd=0.0,
+                    mfe_usd=0.0,
+                    status="CLOSED",
+                    order_id=str(row.get("master_order_id") or ""),
+                    realized_r=None,
+                    risk_usd=None,
+                )
+            )
+E           NameError: name 'classify_outcome' is not defined
+
+src\nexus_scalp\accounting\core.py:329: NameError
+---------------------------- Captured stdout setup ----------------------------
+2026-08-17 09:40:39 [info     ] Initialized High-Performance SQLite WAL storage [nexus_scalp.adapters.audit_db] db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-557\test_win_rate_from_broker_hist0\acc.db
+----------------------------- Captured log setup ------------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:89 {'db_path': 'C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-557\\test_win_rate_from_broker_hist0\\acc.db', 'event': 'Initialized High-Performance SQLite WAL storage', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+---------------------------- Captured stdout call -----------------------------
+2026-08-17 09:40:39 [info     ] [ACCOUNT_HISTORY] event=SYNC_COMPLETE [nexus_scalp.adapters.broker_history] deals=88 duplicates=0 duration_ms=6.4 inserted=224 orders=136 trades=44
+------------------------------ Captured log call ------------------------------
+INFO     nexus_scalp.adapters.broker_history:broker_history.py:568 {'orders': 136, 'deals': 88, 'trades': 44, 'inserted': 224, 'duplicates': 0, 'duration_ms': 6.4, 'event': '[ACCOUNT_HISTORY] event=SYNC_COMPLETE', 'logger': 'nexus_scalp.adapters.broker_history', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+-------------------------- Captured stdout teardown ---------------------------
+2026-08-17 09:40:39 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues... [nexus_scalp.adapters.audit_db]
+2026-08-17 09:40:39 [info     ] Audit Database safely closed. [nexus_scalp.adapters.audit_db]
+---------------------------- Captured log teardown ----------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1833 {'event': 'Initiating graceful shutdown of Audit Database. Flushing queues...', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1838 {'event': 'Audit Database safely closed.', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+_____ TestAccountingFromBrokerHistory.test_period_report_financials_real ______
+
+self = <tests.unit.test_mt5_accounting_from_history.TestAccountingFromBrokerHistory object at 0x00000274EC9CEF90>
+audit = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000274F20C6250>
+core = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F2141310>
+
+    def test_period_report_financials_real(self, audit, core) -> None:
+        _seed_history(audit)
+>       report = core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 17, 12, 0, tzinfo=UTC))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_mt5_accounting_from_history.py:70: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\accounting\core.py:435: in period_report
+    report = self._compute_period(bounds)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\nexus_scalp\accounting\core.py:440: in _compute_period
+    trades = self.load_trades(since=bounds.start, until=bounds.end)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\nexus_scalp\accounting\core.py:266: in load_trades
+    return self.load_broker_trades(limit=limit)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F2141310>
+limit = 20000
+
+    def load_broker_trades(self, limit: int = 20000) -> list[TradeRecord]:
+        """
+        Loads the reconstructed logical trades from the authorized broker-history
+        normalized copy (`audit_broker_trades`). Each row is ONE position
+        lifecycle with real broker-aggregated PnL (gross - |comm| - swap - fee).
+    
+        Source hierarchy (documented in agents/skill.md): when broker history
+        exists it IS the authoritative realized-PnL source for closed trades.
+        `audit_ledger` remains the engine's own execution autopsy; `None` rows
+        here are impossible - every row carries real values or is skipped.
+        """
+        if not self._enabled:
+            return []
+        sql = (
+            "SELECT trade_id, position_id, symbol, direction, entry_time, exit_time, "
+            "entry_price, exit_price, volume, gross_pnl, commission, swap, fee, "
+            "net_pnl, master_order_id, magic, exit_reason, exit_comment, duration_sec "
+            "FROM audit_broker_trades "
+            "ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC LIMIT ?"
+        )
+        try:
+            with self._connect() as conn:
+                rows = [dict(r) for r in conn.execute(sql, (int(limit),)).fetchall()]
+        except Exception as err:
+            logger.error("[ACCOUNTING] broker trade load failed", error=str(err))
+            return []
+    
+        out: list[TradeRecord] = []
+        for row in rows:
+            opened = parse_sql_timestamp(row.get("entry_time") or "")
+            closed = parse_sql_timestamp(row.get("exit_time") or "")
+            if closed is None:
+                continue  # no fabricated close time
+            gross = float(row.get("gross_pnl") or 0.0)
+            commission = abs(float(row.get("commission") or 0.0))
+            swap = float(row.get("swap") or 0.0)
+            fee = abs(float(row.get("fee") or 0.0))
+            net = float(row.get("net_pnl") or 0.0)
+            duration = float(row.get("duration_sec") or 0.0)
+            if duration <= 0.0 and opened is not None:
+                duration = max(0.0, (closed - opened).total_seconds())
+            direction = str(row.get("direction") or "UNKNOWN")
+            out.append(
+                TradeRecord(
+                    ticket=int(row.get("position_id") or int(row.get("trade_id") or 0)),
+                    symbol=str(row.get("symbol") or ""),
+                    direction=direction,
+                    volume=float(row.get("volume") or 0.0),
+                    entry_price=float(row.get("entry_price") or 0.0),
+                    exit_price=float(row.get("exit_price") or 0.0),
+                    gross_pnl=gross,
+                    commission=commission,
+                    swap=swap,
+                    net_pnl=net,
+                    opened_at=opened,
+                    closed_at=closed,
+                    duration_sec=duration,
+                    exit_mechanism_raw="BROKER_DEALS",
+                    exit_classification=ExitClassification.OTHER_EXIT,
+>                   outcome=classify_outcome(net),
+                            ^^^^^^^^^^^^^^^^
+                    risk_free_state=False,
+                    was_sl_modified=False,
+                    initial_sl=0.0,
+                    final_sl=0.0,
+                    mae_points=0.0,
+                    mfe_points=0.0,
+                    mae_usd=0.0,
+                    mfe_usd=0.0,
+                    status="CLOSED",
+                    order_id=str(row.get("master_order_id") or ""),
+                    realized_r=None,
+                    risk_usd=None,
+                )
+            )
+E           NameError: name 'classify_outcome' is not defined
+
+src\nexus_scalp\accounting\core.py:329: NameError
+---------------------------- Captured stdout setup ----------------------------
+2026-08-17 09:40:39 [info     ] Initialized High-Performance SQLite WAL storage [nexus_scalp.adapters.audit_db] db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-557\test_period_report_financials_0\acc.db
+----------------------------- Captured log setup ------------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:89 {'db_path': 'C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-557\\test_period_report_financials_0\\acc.db', 'event': 'Initialized High-Performance SQLite WAL storage', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+---------------------------- Captured stdout call -----------------------------
+2026-08-17 09:40:39 [info     ] [ACCOUNT_HISTORY] event=SYNC_COMPLETE [nexus_scalp.adapters.broker_history] deals=88 duplicates=0 duration_ms=9.2 inserted=224 orders=136 trades=44
+------------------------------ Captured log call ------------------------------
+INFO     nexus_scalp.adapters.broker_history:broker_history.py:568 {'orders': 136, 'deals': 88, 'trades': 44, 'inserted': 224, 'duplicates': 0, 'duration_ms': 9.2, 'event': '[ACCOUNT_HISTORY] event=SYNC_COMPLETE', 'logger': 'nexus_scalp.adapters.broker_history', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+-------------------------- Captured stdout teardown ---------------------------
+2026-08-17 09:40:39 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues... [nexus_scalp.adapters.audit_db]
+2026-08-17 09:40:39 [info     ] Audit Database safely closed. [nexus_scalp.adapters.audit_db]
+---------------------------- Captured log teardown ----------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1833 {'event': 'Initiating graceful shutdown of Audit Database. Flushing queues...', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1838 {'event': 'Audit Database safely closed.', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+___ TestAccountingFromBrokerHistory.test_break_even_is_counted_not_skipped ____
+
+self = <tests.unit.test_mt5_accounting_from_history.TestAccountingFromBrokerHistory object at 0x00000274EC9CF350>
+audit = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000274F2208B50>
+core = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F220AA10>
+
+    def test_break_even_is_counted_not_skipped(self, audit, core) -> None:
+        _seed_history(audit)
+>       report = core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 17, 12, 0, tzinfo=UTC))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_mt5_accounting_from_history.py:86: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\accounting\core.py:435: in period_report
+    report = self._compute_period(bounds)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\nexus_scalp\accounting\core.py:440: in _compute_period
+    trades = self.load_trades(since=bounds.start, until=bounds.end)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\nexus_scalp\accounting\core.py:266: in load_trades
+    return self.load_broker_trades(limit=limit)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F220AA10>
+limit = 20000
+
+    def load_broker_trades(self, limit: int = 20000) -> list[TradeRecord]:
+        """
+        Loads the reconstructed logical trades from the authorized broker-history
+        normalized copy (`audit_broker_trades`). Each row is ONE position
+        lifecycle with real broker-aggregated PnL (gross - |comm| - swap - fee).
+    
+        Source hierarchy (documented in agents/skill.md): when broker history
+        exists it IS the authoritative realized-PnL source for closed trades.
+        `audit_ledger` remains the engine's own execution autopsy; `None` rows
+        here are impossible - every row carries real values or is skipped.
+        """
+        if not self._enabled:
+            return []
+        sql = (
+            "SELECT trade_id, position_id, symbol, direction, entry_time, exit_time, "
+            "entry_price, exit_price, volume, gross_pnl, commission, swap, fee, "
+            "net_pnl, master_order_id, magic, exit_reason, exit_comment, duration_sec "
+            "FROM audit_broker_trades "
+            "ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC LIMIT ?"
+        )
+        try:
+            with self._connect() as conn:
+                rows = [dict(r) for r in conn.execute(sql, (int(limit),)).fetchall()]
+        except Exception as err:
+            logger.error("[ACCOUNTING] broker trade load failed", error=str(err))
+            return []
+    
+        out: list[TradeRecord] = []
+        for row in rows:
+            opened = parse_sql_timestamp(row.get("entry_time") or "")
+            closed = parse_sql_timestamp(row.get("exit_time") or "")
+            if closed is None:
+                continue  # no fabricated close time
+            gross = float(row.get("gross_pnl") or 0.0)
+            commission = abs(float(row.get("commission") or 0.0))
+            swap = float(row.get("swap") or 0.0)
+            fee = abs(float(row.get("fee") or 0.0))
+            net = float(row.get("net_pnl") or 0.0)
+            duration = float(row.get("duration_sec") or 0.0)
+            if duration <= 0.0 and opened is not None:
+                duration = max(0.0, (closed - opened).total_seconds())
+            direction = str(row.get("direction") or "UNKNOWN")
+            out.append(
+                TradeRecord(
+                    ticket=int(row.get("position_id") or int(row.get("trade_id") or 0)),
+                    symbol=str(row.get("symbol") or ""),
+                    direction=direction,
+                    volume=float(row.get("volume") or 0.0),
+                    entry_price=float(row.get("entry_price") or 0.0),
+                    exit_price=float(row.get("exit_price") or 0.0),
+                    gross_pnl=gross,
+                    commission=commission,
+                    swap=swap,
+                    net_pnl=net,
+                    opened_at=opened,
+                    closed_at=closed,
+                    duration_sec=duration,
+                    exit_mechanism_raw="BROKER_DEALS",
+                    exit_classification=ExitClassification.OTHER_EXIT,
+>                   outcome=classify_outcome(net),
+                            ^^^^^^^^^^^^^^^^
+                    risk_free_state=False,
+                    was_sl_modified=False,
+                    initial_sl=0.0,
+                    final_sl=0.0,
+                    mae_points=0.0,
+                    mfe_points=0.0,
+                    mae_usd=0.0,
+                    mfe_usd=0.0,
+                    status="CLOSED",
+                    order_id=str(row.get("master_order_id") or ""),
+                    realized_r=None,
+                    risk_usd=None,
+                )
+            )
+E           NameError: name 'classify_outcome' is not defined
+
+src\nexus_scalp\accounting\core.py:329: NameError
+---------------------------- Captured stdout setup ----------------------------
+2026-08-17 09:40:39 [info     ] Initialized High-Performance SQLite WAL storage [nexus_scalp.adapters.audit_db] db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-557\test_break_even_is_counted_not0\acc.db
+----------------------------- Captured log setup ------------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:89 {'db_path': 'C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-557\\test_break_even_is_counted_not0\\acc.db', 'event': 'Initialized High-Performance SQLite WAL storage', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+---------------------------- Captured stdout call -----------------------------
+2026-08-17 09:40:39 [info     ] [ACCOUNT_HISTORY] event=SYNC_COMPLETE [nexus_scalp.adapters.broker_history] deals=88 duplicates=0 duration_ms=7.8 inserted=224 orders=136 trades=44
+------------------------------ Captured log call ------------------------------
+INFO     nexus_scalp.adapters.broker_history:broker_history.py:568 {'orders': 136, 'deals': 88, 'trades': 44, 'inserted': 224, 'duplicates': 0, 'duration_ms': 7.8, 'event': '[ACCOUNT_HISTORY] event=SYNC_COMPLETE', 'logger': 'nexus_scalp.adapters.broker_history', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+-------------------------- Captured stdout teardown ---------------------------
+2026-08-17 09:40:39 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues... [nexus_scalp.adapters.audit_db]
+2026-08-17 09:40:39 [info     ] Audit Database safely closed. [nexus_scalp.adapters.audit_db]
+---------------------------- Captured log teardown ----------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1833 {'event': 'Initiating graceful shutdown of Audit Database. Flushing queues...', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1838 {'event': 'Audit Database safely closed.', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+____ TestAccountingFromBrokerHistory.test_cumulative_pnl_curve_real_points ____
+
+self = <tests.unit.test_mt5_accounting_from_history.TestAccountingFromBrokerHistory object at 0x00000274EC9CF710>
+audit = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000274F20B8890>
+core = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F20BBB10>
+
+    def test_cumulative_pnl_curve_real_points(self, audit, core) -> None:
+        _seed_history(audit)
+>       curve = core.cumulative_pnl_curve(limit=500)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_mt5_accounting_from_history.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\nexus_scalp\accounting\core.py:516: in cumulative_pnl_curve
+    trades = [t for t in self.load_trades(limit=limit) if t.closed_at is not None]
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\nexus_scalp\accounting\core.py:266: in load_trades
+    return self.load_broker_trades(limit=limit)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.accounting.core.AccountingCore object at 0x00000274F20BBB10>
+limit = 500
+
+    def load_broker_trades(self, limit: int = 20000) -> list[TradeRecord]:
+        """
+        Loads the reconstructed logical trades from the authorized broker-history
+        normalized copy (`audit_broker_trades`). Each row is ONE position
+        lifecycle with real broker-aggregated PnL (gross - |comm| - swap - fee).
+    
+        Source hierarchy (documented in agents/skill.md): when broker history
+        exists it IS the authoritative realized-PnL source for closed trades.
+        `audit_ledger` remains the engine's own execution autopsy; `None` rows
+        here are impossible - every row carries real values or is skipped.
+        """
+        if not self._enabled:
+            return []
+        sql = (
+            "SELECT trade_id, position_id, symbol, direction, entry_time, exit_time, "
+            "entry_price, exit_price, volume, gross_pnl, commission, swap, fee, "
+            "net_pnl, master_order_id, magic, exit_reason, exit_comment, duration_sec "
+            "FROM audit_broker_trades "
+            "ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC LIMIT ?"
+        )
+        try:
+            with self._connect() as conn:
+                rows = [dict(r) for r in conn.execute(sql, (int(limit),)).fetchall()]
+        except Exception as err:
+            logger.error("[ACCOUNTING] broker trade load failed", error=str(err))
+            return []
+    
+        out: list[TradeRecord] = []
+        for row in rows:
+            opened = parse_sql_timestamp(row.get("entry_time") or "")
+            closed = parse_sql_timestamp(row.get("exit_time") or "")
+            if closed is None:
+                continue  # no fabricated close time
+            gross = float(row.get("gross_pnl") or 0.0)
+            commission = abs(float(row.get("commission") or 0.0))
+            swap = float(row.get("swap") or 0.0)
+            fee = abs(float(row.get("fee") or 0.0))
+            net = float(row.get("net_pnl") or 0.0)
+            duration = float(row.get("duration_sec") or 0.0)
+            if duration <= 0.0 and opened is not None:
+                duration = max(0.0, (closed - opened).total_seconds())
+            direction = str(row.get("direction") or "UNKNOWN")
+            out.append(
+                TradeRecord(
+                    ticket=int(row.get("position_id") or int(row.get("trade_id") or 0)),
+                    symbol=str(row.get("symbol") or ""),
+                    direction=direction,
+                    volume=float(row.get("volume") or 0.0),
+                    entry_price=float(row.get("entry_price") or 0.0),
+                    exit_price=float(row.get("exit_price") or 0.0),
+                    gross_pnl=gross,
+                    commission=commission,
+                    swap=swap,
+                    net_pnl=net,
+                    opened_at=opened,
+                    closed_at=closed,
+                    duration_sec=duration,
+                    exit_mechanism_raw="BROKER_DEALS",
+                    exit_classification=ExitClassification.OTHER_EXIT,
+>                   outcome=classify_outcome(net),
+                            ^^^^^^^^^^^^^^^^
+                    risk_free_state=False,
+                    was_sl_modified=False,
+                    initial_sl=0.0,
+                    final_sl=0.0,
+                    mae_points=0.0,
+                    mfe_points=0.0,
+                    mae_usd=0.0,
+                    mfe_usd=0.0,
+                    status="CLOSED",
+                    order_id=str(row.get("master_order_id") or ""),
+                    realized_r=None,
+                    risk_usd=None,
+                )
+            )
+E           NameError: name 'classify_outcome' is not defined
+
+src\nexus_scalp\accounting\core.py:329: NameError
+---------------------------- Captured stdout setup ----------------------------
+2026-08-17 09:40:39 [info     ] Initialized High-Performance SQLite WAL storage [nexus_scalp.adapters.audit_db] db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-557\test_cumulative_pnl_curve_real0\acc.db
+----------------------------- Captured log setup ------------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:89 {'db_path': 'C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-557\\test_cumulative_pnl_curve_real0\\acc.db', 'event': 'Initialized High-Performance SQLite WAL storage', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+---------------------------- Captured stdout call -----------------------------
+2026-08-17 09:40:39 [info     ] [ACCOUNT_HISTORY] event=SYNC_COMPLETE [nexus_scalp.adapters.broker_history] deals=88 duplicates=0 duration_ms=8.3 inserted=224 orders=136 trades=44
+------------------------------ Captured log call ------------------------------
+INFO     nexus_scalp.adapters.broker_history:broker_history.py:568 {'orders': 136, 'deals': 88, 'trades': 44, 'inserted': 224, 'duplicates': 0, 'duration_ms': 8.3, 'event': '[ACCOUNT_HISTORY] event=SYNC_COMPLETE', 'logger': 'nexus_scalp.adapters.broker_history', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+-------------------------- Captured stdout teardown ---------------------------
+2026-08-17 09:40:39 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues... [nexus_scalp.adapters.audit_db]
+2026-08-17 09:40:39 [info     ] Audit Database safely closed. [nexus_scalp.adapters.audit_db]
+---------------------------- Captured log teardown ----------------------------
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1833 {'event': 'Initiating graceful shutdown of Audit Database. Flushing queues...', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+INFO     nexus_scalp.adapters.audit_db:audit_repository.py:1838 {'event': 'Audit Database safely closed.', 'logger': 'nexus_scalp.adapters.audit_db', 'level': 'info', 'timestamp': '2026-08-17 09:40:39'}
+____ TestSanitizedResponses.test_06_server_log_contains_detailed_exception ____
+
+self = <tests.unit.test_web_security.TestSanitizedResponses object at 0x00000274ECD27450>
+
+    def test_06_server_log_contains_detailed_exception(self) -> None:
+        # The repo's structlog BoundLogger renders the traceback + exception
+        # text (via rich) to stdout/stderr. Capture both streams to prove the
+        # DETAILED exception (with the secret marker) is logged - while the
+        # public payload never includes it (test_01).
+        import contextlib
+    
+        from nexus_scalp.observability.logging import get_logger as get_structlog
+    
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            slog = get_structlog("nexus_scalp.web.server.test")
+            try:
+                raise RuntimeError("SECRET_INTERNAL_MARKER_PATH: C:/Users/secret/app.py")
+            except RuntimeError:
+                slog.exception(
+                    "WEB_ERROR",
+                    endpoint="/boom",
+                    request_id="req_zz",
+                    exception_type="RuntimeError",
+                )
+        captured = buf.getvalue()
+>       assert "SECRET_INTERNAL_MARKER_PATH" in captured
+E       AssertionError: assert 'SECRET_INTERNAL_MARKER_PATH' in ''
+
+tests\unit\test_web_security.py:223: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-08-17 09:44:19 [error    ] WEB_ERROR                    [nexus_scalp.web.server.test] endpoint=/boom exception_type=RuntimeError request_id=req_zz
+┌─────────────────────────────── Traceback (most recent call last) ────────────────────────────────┐
+│ C:\Users\Capsizer\source\repos\NexusTradingForexBot\tests\unit\test_web_security.py:214 in       │
+│ test_06_server_log_contains_detailed_exception                                                   │
+│                                                                                                  │
+│   211 │   │   with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):             │
+│   212 │   │   │   slog = get_structlog("nexus_scalp.web.server.test")                            │
+│   213 │   │   │   try:                                                                           │
+│ > 214 │   │   │   │   raise RuntimeError("SECRET_INTERNAL_MARKER_PATH: C:/Users/secret/app.py"   │
+│   215 │   │   │   except RuntimeError:                                                           │
+│   216 │   │   │   │   slog.exception(                                                            │
+│   217 │   │   │   │   │   "WEB_ERROR",                                                           │
+│                                                                                                  │
+│ ┌─────────────────────────────────────────── locals ───────────────────────────────────────────┐ │
+│ │        buf = <_io.StringIO object at 0x00000274FCA5B880>                                     │ │
+│ │ contextlib = <module 'contextlib' from                                                       │ │
+│ │              'C:\\Users\\Capsizer\\AppData\\Roaming\\uv\\python\\cpython-3.11-windows-x86_6… │ │
+│ │       self = <tests.unit.test_web_security.TestSanitizedResponses object at                  │ │
+│ │              0x00000274ECD27450>                                                             │ │
+│ │       slog = <BoundLoggerLazyProxy(logger=None, wrapper_class=None, processors=None,         │ │
+│ │              context_class=None, initial_values={},                                          │ │
+│ │              logger_factory_args=('nexus_scalp.web.server.test',))>                          │ │
+│ └──────────────────────────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+RuntimeError: SECRET_INTERNAL_MARKER_PATH: C:/Users/secret/app.py
+
+------------------------------ Captured log call ------------------------------
+ERROR    nexus_scalp.web.server.test:test_web_security.py:216 {'endpoint': '/boom', 'request_id': 'req_zz', 'exception_type': 'RuntimeError', 'exc_info': True, 'event': 'WEB_ERROR', 'logger': 'nexus_scalp.web.server.test', 'level': 'error', 'timestamp': '2026-08-17 09:44:19'}
+Traceback (most recent call last):
+  File "C:\Users\Capsizer\source\repos\NexusTradingForexBot\tests\unit\test_web_security.py", line 214, in test_06_server_log_contains_detailed_exception
+    raise RuntimeError("SECRET_INTERNAL_MARKER_PATH: C:/Users/secret/app.py")
+RuntimeError: SECRET_INTERNAL_MARKER_PATH: C:/Users/secret/app.py
+=========================== short test summary info ===========================
+SKIPPED [1] tests\unit\test_mt5_raw_fixtures.py:132: no open positions in fixture
+FAILED tests/unit/test_mt5_accounting_from_history.py::TestAccountingFromBrokerHistory::test_total_trades_from_broker_history
+FAILED tests/unit/test_mt5_accounting_from_history.py::TestAccountingFromBrokerHistory::test_net_pnl_from_broker_history
+FAILED tests/unit/test_mt5_accounting_from_history.py::TestAccountingFromBrokerHistory::test_win_rate_from_broker_history
+FAILED tests/unit/test_mt5_accounting_from_history.py::TestAccountingFromBrokerHistory::test_period_report_financials_real
+FAILED tests/unit/test_mt5_accounting_from_history.py::TestAccountingFromBrokerHistory::test_break_even_is_counted_not_skipped
+FAILED tests/unit/test_mt5_accounting_from_history.py::TestAccountingFromBrokerHistory::test_cumulative_pnl_curve_real_points
+FAILED tests/unit/test_web_security.py::TestSanitizedResponses::test_06_server_log_contains_detailed_exception
+UNIT_RC=1

@@ -113,6 +113,67 @@ class BarAggregator:
         """Returns copy of all historical completed bars in memory."""
         return list(self._completed_bars)
 
+    def reseed(self, completed_bars: list[BarData]) -> BarData | None:
+        """Atomically replace history with broker-authoritative completed bars.
+
+        Used after downtime / cold start so the aggregator and the live tick
+        stream can never diverge from the real broker candles:
+
+        * Drops any in-memory history (they may be stale / duplicate the
+          still-forming broker minute).
+        * Keeps only strictly-ascending, unique, completed bars.
+        * Aligns the forming bar to the LATEST historical bar so the first
+          live tick of the same minute continues the broker bar instead of
+          minting a duplicate (same timestamp) bar.
+        * Returns the last seeded bar (used by the warmup / reseed paths to
+          rebuild feature records) or None when nothing was seeded.
+
+        This is a bounded rebuild: the caller passes at most a few thousand
+        bars and the replacing assignment is O(1).
+        """
+        if not completed_bars:
+            self._completed_bars = []
+            self._current_bar_time = None
+            return None
+
+        # Deterministic dedupe + ascending order (never trust caller order).
+        seen: set[datetime] = set()
+        deduped: list[BarData] = []
+        for b in sorted(completed_bars, key=lambda x: x.timestamp):
+            if b.timestamp in seen:
+                continue
+            seen.add(b.timestamp)
+            deduped.append(b)
+
+        # Only completed bars are allowed into the historical series.
+        deduped = [b for b in deduped if b.is_complete]
+        if not deduped:
+            self._completed_bars = []
+            self._current_bar_time = None
+            return None
+
+        last_bar = deduped[-1]
+        self._completed_bars = deduped
+
+        # Seed the forming bar from the last broker bar so the current minute
+        # continues instead of being double-counted (open/high/low/volume).
+        self._current_bar_time = last_bar.timestamp
+        self._open = last_bar.open
+        self._high = last_bar.high
+        self._low = last_bar.low
+        self._close = last_bar.close
+        self._volume = last_bar.tick_volume
+
+        logger.info(
+            "BarAggregator reseeded",
+            symbol=self.symbol,
+            timeframe=self.timeframe_str,
+            bars=len(deduped),
+            first=deduped[0].timestamp.isoformat(),
+            last=last_bar.timestamp.isoformat(),
+        )
+        return last_bar
+
     def get_current_forming_bar(self) -> BarData | None:
         """
         Returns the currently active forming (uncompleted) bar as a BarData object.

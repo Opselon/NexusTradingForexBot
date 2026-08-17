@@ -1,0 +1,168 @@
+{
+  "operation": "terminal_info",
+  "captured_at": "2026-08-17T05:41:13.436980+00:00",
+  "object": {
+    "build": {
+      "type": "int",
+      "value": 6116,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "codepage": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "commondata_path": {
+      "type": "str",
+      "value": "C:\\Users\\Capsizer\\AppData\\Roaming\\MetaQuotes\\Terminal\\Common",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "community_account": {
+      "type": "bool",
+      "value": false,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "community_balance": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "community_connection": {
+      "type": "bool",
+      "value": false,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "company": {
+      "type": "str",
+      "value": "MetaQuotes Ltd.",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "connected": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "count": {
+      "type": "builtin_function_or_method",
+      "value": "<built-in method count of TerminalInfo object at 0x000001953D47F840>",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "data_path": {
+      "type": "str",
+      "value": "C:\\Users\\Capsizer\\AppData\\Roaming\\MetaQuotes\\Terminal\\D0E8209F77C8CF37AD8BF550E51FF075",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "dlls_allowed": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "email_enabled": {
+      "type": "bool",
+      "value": false,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "ftp_enabled": {
+      "type": "bool",
+      "value": false,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "index": {
+      "type": "builtin_function_or_method",
+      "value": "<built-in method index of TerminalInfo object at 0x000001953D47F840>",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "language": {
+      "type": "str",
+      "value": "English",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "maxbars": {
+      "type": "int",
+      "value": 100000,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "mqid": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_fields": {
+      "type": "int",
+      "value": 22,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_sequence_fields": {
+      "type": "int",
+      "value": 22,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_unnamed_fields": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "name": {
+      "type": "str",
+      "value": "MetaTrader 5",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "notifications_enabled": {
+      "type": "bool",
+      "value": false,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "path": {
+      "type": "str",
+      "value": "C:\\Program Files\\MetaTrader 5",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "ping_last": {
+      "type": "int",
+      "value": 120126,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "retransmission": {
+      "type": "float",
+      "value": 0.0004732854052979568,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_allowed": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "tradeapi_disabled": {
+      "type": "bool",
+      "value": false,
+      "nullable": false,
+      "source": "MT5"
+    }
+  }
+}

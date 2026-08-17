@@ -147,6 +147,15 @@ class LiveEngine:
         self.audit = audit_repo or AuditRepository()
         self.force_fresh_model = bool(force_fresh_model)
 
+        # Audit retention purge (BUG-054): throttled to once per 6h, kicked via
+        # asyncio.to_thread from the run loop, fully failure-isolated. Runs
+        # bounded batched deletes OUTSIDE the tick path.
+        self._audit_purge_interval_sec: float = 6 * 3600.0
+        self._last_audit_purge_time: float = 0.0
+        # Daily Telegram performance summary (BUG-057): once per 24h.
+        self._daily_summary_interval_sec: float = 24 * 3600.0
+        self._last_daily_summary_time: float = 0.0
+
         self._running: bool = False
         self.server_state: Any = None
 
@@ -242,6 +251,29 @@ class LiveEngine:
         )
         self._accounting_task: asyncio.Task | None = None
         self._accounting_worker_started: bool = False
+
+        # =====================================================================
+        # ACCOUNT HISTORY: BROKER-AUTHORITATIVE HISTORY SYNC
+        # ---------------------------------------------------------------------
+        # Durable normalized copy of MT5 order/deal history with exact
+        # deduplication (broker tickets). The sync worker is bounded,
+        # throttled, watermark-based, failure-isolated and NEVER on the tick
+        # path (kicked via asyncio.to_thread from the run loop).
+        # =====================================================================
+        from nexus_scalp.adapters.database.broker_history_sync import (
+            BrokerHistorySyncWorker,
+        )
+
+        symbol_h = str(
+            getattr(getattr(self.config, "execution", None), "symbol", "XAUUSD") or "XAUUSD"
+        )
+        self.history_sync_worker = BrokerHistorySyncWorker(
+            audit=self.audit,
+            adapter=adapter,
+            symbol=symbol_h,
+            interval_sec=300.0,
+        )
+        self._history_sync_started: bool = False
 
         # =====================================================================
         # PHASE 09: TRADE INTELLIGENCE BRAIN
@@ -600,6 +632,10 @@ class LiveEngine:
         # schedules `to_thread` refreshes.
         self._start_accounting_worker()
 
+        # ACCOUNT HISTORY: start the bounded broker-history sync worker
+        # (watermark + overlap, idempotent, kicked via to_thread).
+        self._start_history_sync_worker()
+
         # PHASE 09: start the background intelligence worker. Fully isolated:
         # a failure inside it can never stop trading.
         self._start_intelligence_worker()
@@ -648,6 +684,19 @@ class LiveEngine:
                             self.adapter.disconnect()
                             await asyncio.sleep(1.0)
                             self.adapter.connect()
+                            # RESYNC (BUG-054): after a reconnect the broker may
+                            # have advanced 5-6h; reseed the aggregator from
+                            # broker history so the chart/features/regime all
+                            # rebuild from real candles instead of the stale
+                            # pre-disconnect series.
+                            try:
+                                await self._resync_from_broker(symbol)
+                            except Exception as resync_err:
+                                logger.error(
+                                    "Watchdog reconnect resync failed",
+                                    error=str(resync_err),
+                                    exc_info=True,
+                                )
                         except Exception as conn_err:
                             logger.error(
                                 "Error during auto-reconnect in watchdog",
@@ -688,6 +737,57 @@ class LiveEngine:
                         await asyncio.to_thread(self.accounting_worker.tick)
                     except Exception:
                         # Worker failure is fully isolated; never disturb ticks.
+                        pass
+
+                # BUG-054: audit retention purge (throttled ~6h, bounded batched
+                # deletes, NEVER on the tick path). Failure is isolated: a purge
+                # error must never disturb trading.
+                now_t = time.time()
+                if now_t - self._last_audit_purge_time >= self._audit_purge_interval_sec:
+                    self._last_audit_purge_time = now_t
+                    try:
+                        await asyncio.to_thread(self.audit.purge_old_audit_data)
+                    except Exception:
+                        logger.error("Audit retention purge failed (isolated)")
+
+                # Daily Telegram performance summary (BUG-057): throttled to
+                # once per 24h; built from the canonical accounting core (never
+                # synthetic numbers). Failure is isolated.
+                if now_t - self._last_daily_summary_time >= self._daily_summary_interval_sec:
+                    self._last_daily_summary_time = now_t
+                    try:
+                        from nexus_scalp.accounting import PeriodKind
+
+                        report = self.accounting_core.period_report(PeriodKind.DAY)
+                        stats = {
+                            "date": report.period_start.strftime("%Y-%m-%d"),
+                            "trades": report.total_trades,
+                            "wins": report.win_count,
+                            "losses": report.loss_count,
+                            "win_rate": (
+                                f"{report.win_count / report.total_trades * 100:.1f}%"
+                                if report.total_trades > 0
+                                else "n/a"
+                            ),
+                            "net_pnl": f"${report.net_pnl:,.2f}",
+                            "max_drawdown": (
+                                f"{report.pnl_pct:.2f}%" if report.pnl_pct is not None else "n/a"
+                            ),
+                        }
+                        try:
+                            if self.notifier.enabled:
+                                self.notifier.notify_daily_summary(stats)
+                        except Exception:
+                            pass  # Telegram failure is isolated
+                    except Exception as summary_err:
+                        logger.error("Daily summary failed (isolated)", error=str(summary_err))
+
+                # ACCOUNT HISTORY: bounded background broker-history sync
+                # (watermark + overlap, idempotent). Never on the tick path.
+                if self._history_sync_started:
+                    try:
+                        await asyncio.to_thread(self.history_sync_worker.tick)
+                    except Exception:
                         pass
 
                 # PHASE 09: intelligence worker kick (throttled internally). It
@@ -741,10 +841,35 @@ class LiveEngine:
 
         await self._shutdown_async()
 
+    def _start_history_sync_worker(self) -> None:
+        """Starts the broker-history sync worker (idempotent, isolated)."""
+        if self._history_sync_started:
+            return
+        self._history_sync_started = True
+        try:
+            self.history_sync_worker.start()
+        except Exception as err:
+            logger.error("[ACCOUNT_HISTORY] event=SYNC_START status=FAILED", error=str(err))
+            self._history_sync_started = False
+
+    async def _stop_history_sync_worker(self) -> None:
+        """Stops the broker-history sync worker (idempotent)."""
+        self._history_sync_started = False
+        try:
+            self.history_sync_worker.stop()
+        except Exception as err:
+            logger.error("[ACCOUNT_HISTORY] event=SYNC_STOP status=FAILED", error=str(err))
+
     async def _shutdown_async(self) -> None:
         # Stop the accounting worker first (derived refresh, not financial truth).
         try:
             await self._stop_accounting_worker()
+        except Exception:
+            pass
+
+        # ACCOUNT HISTORY: stop the broker-history sync worker.
+        try:
+            await self._stop_history_sync_worker()
         except Exception:
             pass
 
@@ -1247,8 +1372,11 @@ class LiveEngine:
             await asyncio.to_thread(self.adapter.get_historical_bars, symbol, "M1", 3500) or []
         )
 
-        for b in hist_m1_bars:
-            self.aggregator._completed_bars.append(b)
+        # RESYNC (BUG-054): reseed the aggregator with the broker-authoritative
+        # M1 history instead of blind-appending. After 5-6h downtime the first
+        # live tick must CONTINUE the broker's current minute, not mint a
+        # duplicate stale bar with the same timestamp.
+        last_seeded = self.aggregator.reseed(hist_m1_bars)
 
         completed = self.aggregator.get_completed_bars()
         if len(completed) >= 55:
@@ -1291,7 +1419,7 @@ class LiveEngine:
                 completed_bars=completed_bars, atr_val=raw_atr
             )
             bars_list = []
-            for b in completed_bars[-250:]:
+            for b in completed_bars[-900:]:
                 bars_list.append(
                     {
                         "time": b.timestamp.isoformat()
@@ -1306,7 +1434,115 @@ class LiveEngine:
                     }
                 )
             self.server_state.update_live_visuals(bars_list, real_overlays)
-            logger.info("Cold-start SMC visual overlays successfully bridged to server state!")
+            logger.info(
+                "Cold-start SMC visual overlays successfully bridged to server state!",
+                bars=len(bars_list),
+                last_seeded=last_seeded.timestamp.isoformat() if last_seeded else None,
+            )
+
+    async def _resync_from_broker(self, symbol: str) -> None:
+        """Broker-authoritative reseed after downtime / reconnect (BUG-054).
+
+        * Re-fetches 3500 M1 bars (or the engine's configured chart window).
+        * Reseeds the aggregator (duplicate/stale minutes are dropped and the
+          forming bar continues the broker's latest minute).
+        * Recomputes the feature window so models/regime see a continuous
+          series instead of a gap.
+        * Pushes a fresh 900-bar snapshot + SMC overlays to ServerState so the
+          UI immediately paints real broker candles.
+        """
+        chart_count = 3500
+        hist_m1 = (
+            await asyncio.to_thread(self.adapter.get_historical_bars, symbol, "M1", chart_count)
+            or []
+        )
+        last_seeded = self.aggregator.reseed(hist_m1)
+        if last_seeded is None:
+            logger.warning("[RESYNC] SKIPPED reason=NO_BROKER_BARS")
+            return
+
+        completed = self.aggregator.get_completed_bars()
+        if completed:
+            # Rebuild a bounded rolling feature window (causal, no lookahead).
+            window = completed[-900:]
+            last = window[-1]
+            synthetic_tick = TickData(
+                symbol=symbol,
+                timestamp=last.timestamp,
+                bid=last.close,
+                ask=last.close + 0.20,
+                volume=last.tick_volume,
+            )
+            fv = self.feature_engine.compute_from_bars(window, synthetic_tick)
+            x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="broker_resync")
+            record = {f"feat_{idx}": float(x50[idx]) for idx in range(self.FEATURE_DIM)}
+            record.update(
+                close=last.close,
+                high=last.high,
+                low=last.low,
+                open=last.open,
+                spread=0.20,
+                atr_m1=fv.atr_m1,
+            )
+            self._rolling_feature_records.append(record)
+
+        self.sync_chart_state()
+        logger.info(
+            "[RESYNC] COMPLETE",
+            symbol=symbol,
+            bars=len(completed),
+            last=last_seeded.timestamp.isoformat(),
+        )
+        self.evaluate_warmup_readiness(
+            symbol,
+            (
+                await asyncio.to_thread(
+                    self.adapter.get_historical_bars, symbol, "H1", self.H1_REQUIRED_BARS
+                )
+                or []
+            ),
+            (
+                await asyncio.to_thread(
+                    self.adapter.get_historical_bars, symbol, "H4", self.H4_REQUIRED_BARS
+                )
+                or []
+            ),
+        )
+
+    def sync_chart_state(self) -> None:
+        """Push the current aggregator series + SMC overlays to ServerState.
+
+        Used after a reseed / reconnect so the UI chart (which prefers
+        ServerState) always renders the synchronized broker candles, and by the
+        REST layer as a lazy refresh before serving snapshots.
+        """
+        if self.server_state is None:
+            return
+        completed = self.aggregator.get_completed_bars()
+        if not completed:
+            return
+        raw_atr = (
+            self._rolling_feature_records[-1]["atr_m1"] if self._rolling_feature_records else 1.5
+        )
+        real_overlays = self.signal_policy.extract_live_chart_overlays(
+            completed_bars=completed, atr_val=raw_atr
+        )
+        bars_list = []
+        for b in completed[-900:]:
+            bars_list.append(
+                {
+                    "time": b.timestamp.isoformat()
+                    if hasattr(b.timestamp, "isoformat")
+                    else str(b.timestamp),
+                    "open": b.open,
+                    "high": b.high,
+                    "low": b.low,
+                    "close": b.close,
+                    "volume": b.tick_volume,
+                    "is_complete": True,
+                }
+            )
+        self.server_state.update_live_visuals(bars_list, real_overlays)
 
     async def _bootstrap_train_if_ready(self) -> None:
         if len(self._rolling_feature_records) < 300:
@@ -1393,12 +1629,31 @@ class LiveEngine:
             )
 
             # Manage open positions
+            # NOTE (Phase 15 exit audit): `probs` and `regime_state` are threaded
+            # into position management so the in-trade exit evaluation sees the
+            # CURRENT model state and CURRENT regime. Previously the call omitted
+            # both, which (a) disabled the AI direction-flip exit and (b) degraded
+            # the adaptive evidence scores to static heuristics on the live path.
+            # When inference is blocked by the warmup gate we still manage
+            # positions (protective stops must never pause) but with probs=None.
+            probs_for_mgmt = None
+            if self._inference_enabled and self.warmup_state == "READY":
+                try:
+                    probs_for_mgmt = self._infer_probabilities(fv=fv)
+                except Exception as infer_err:
+                    logger.error(
+                        "[INFERENCE] in-trade inference failed (isolated, positions still managed)",
+                        error=str(infer_err),
+                    )
+                    probs_for_mgmt = None
             active_positions = self.order_manager.manage_active_positions(
                 symbol=tick.symbol,
                 current_tick=tick,
                 feature_vector=fv,
                 symbol_info=self._symbol_info,
                 account=account,
+                probs=probs_for_mgmt,
+                regime_state=regime_state,
             )
             current_pos_count = len(active_positions)
 
@@ -1457,8 +1712,12 @@ class LiveEngine:
                     self._last_proposal = proposal
                     return
 
-            # Inference
-            probs = self._infer_probabilities(fv=fv)
+            # Inference (already computed for position management above; reuse it so the
+            # model runs once per tick)
+            if probs_for_mgmt is None and self._inference_enabled and self.warmup_state == "READY":
+                probs = self._infer_probabilities(fv=fv)
+            else:
+                probs = probs_for_mgmt
 
             # Heartbeat radar logging: On EVERY M1 Bar completion or every 10 seconds of active ticks, force log.
             import time
@@ -1586,7 +1845,7 @@ class LiveEngine:
             )
             if hasattr(self, "server_state") and self.server_state is not None:
                 bars_list = []
-                for b in completed_bars[-250:]:
+                for b in completed_bars[-900:]:
                     bars_list.append(
                         {
                             "time": b.timestamp.isoformat(),

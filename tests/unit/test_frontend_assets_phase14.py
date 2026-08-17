@@ -213,3 +213,28 @@ class TestChartHistoryContract:
         text = r.text
         assert "Traceback" not in text
         assert 'File "' not in text
+
+
+# ---------------------------------------------------------------------------
+# 6. Chart resync (BUG-054) frontend contract
+# ---------------------------------------------------------------------------
+
+
+class TestChartResyncContract:
+    def test_resync_button_present(self) -> None:
+        """The chart toolbar must expose a Resync action (BUG-054)."""
+        index_html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        assert "resyncChart()" in index_html
+        assert 'id="btn-resync-chart"' in index_html
+
+    def test_resync_function_defined(self) -> None:
+        """app.js must define resyncChart() and call /api/chart/history?count=900."""
+        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+        assert "async function resyncChart()" in app_js
+        assert "/api/chart/history?count=900" in app_js
+
+    def test_resync_wired_to_reconnect(self) -> None:
+        """SSE reconnect + stale watchdog must trigger a chart resync."""
+        app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+        assert "resyncChart();" in app_js
+        assert "lastChartResyncAt" in app_js

@@ -18,7 +18,6 @@ from typing import Any
 import numpy as np
 import polars as pl
 import torch
-from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
@@ -29,6 +28,10 @@ from nexus_scalp.model_generation.models import (
     default_label_schema,
 )
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.training.walk_forward_trainer import (
+    FocalLossWithSmoothing,
+    _balance_oversample_dataset,
+)
 
 logger = get_logger("nexus_scalp.model_generation.training")
 
@@ -142,10 +145,51 @@ class CandidateTrainer:
             torch.from_numpy(X_scaled[train_idx]),
             torch.from_numpy(labels[train_idx]),
         )
-        loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        criterion = nn.CrossEntropyLoss()
+
+        # ------------------------------------------------------------------
+        # Class imbalance recipe (mirrors WalkForwardTrainer production path):
+        #   1. Oversample BUY/SELL toward 85% of majority so the minority
+        #      classes are actually present in every batch.
+        #   2. FocalLossWithSmoothing (gamma=2.0, smoothing=0.08) + class
+        #      weights: focal factor (1-p_t)^2 down-weights easy NO_TRADE,
+        #      smoothing prevents degenerate overconfidence.
+        # Plain CE on the 88%-NO_TRADE set trains an always-NO_TRADE model
+        # (88% acc, 0 recall on BUY/SELL, macro-F1 ~0.31) — REJECTED by the
+        # validation gate. (data-gate finding)
+        # ------------------------------------------------------------------
+        X_train = X_scaled[train_idx]
+        y_train = labels[train_idx]
+
+        # oversample active classes (deterministic seed for reproducibility)
+        np.random.seed(seed)
+        X_bal, y_bal = _balance_oversample_dataset(X_train, y_train, active_boost_ratio=0.85)
+
+        class_counts = np.bincount(y_train, minlength=3)[:3]
+        beta = 0.99
+        effective_num = 1.0 - np.power(beta, class_counts.astype(np.float64))
+        effective_num = np.maximum(effective_num, 1e-5)
+        cb_weights = (1.0 - beta) / effective_num
+        for idx in (1, 2):  # BUY / SELL boost
+            cb_weights[idx] *= 3.0
+        cb_weights = cb_weights / cb_weights.mean()
+        # head may be 4-wide (ScalpNet NO_TRADE/BUY/SELL/WAIT) — WAIT never
+        # appears in labels, gets unit weight
+        model_num_classes = int(getattr(model, "num_classes", None) or experiment.class_count or 4)
+        if model_num_classes > 3:
+            cb_weights = np.concatenate([cb_weights, np.ones(model_num_classes - 3)])
+        alpha_t = torch.tensor(cb_weights, dtype=torch.float32)
+        criterion = FocalLossWithSmoothing(alpha=alpha_t, gamma=2.0, label_smoothing=0.08)
+
+        # re-seed after oversampling (np.random consumed by balancing)
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        train_ds = TensorDataset(
+            torch.from_numpy(X_bal),
+            torch.from_numpy(y_bal),
+        )
+        loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
 
         model.train()
         for _ in range(epochs_n):

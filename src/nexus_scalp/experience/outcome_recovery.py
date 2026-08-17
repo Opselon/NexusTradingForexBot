@@ -51,7 +51,7 @@ def classify_exit_reason(
     *,
     deal_reason_code: int,
     comment: str,
-    profit_usd: float,
+    profit_usd: float | None,
     exit_price: float,
     tp_price: float,
     sl_price: float,
@@ -70,6 +70,10 @@ def classify_exit_reason(
     NEVER labels a broker stop-out (SL / break-even / trailing) as
     MANUAL_CLOSE merely because the internal state machine performed
     protection logic before the broker close event.
+
+    `profit_usd` may be None (no broker deal matched). When it is None it is
+    treated as 0.0 for the *classification heuristic only* — the caller is
+    responsible for distinguishing UNKNOWN PnL from genuinely-zero PnL.
     """
     if forced_mechanism:
         return forced_mechanism
@@ -79,6 +83,7 @@ def classify_exit_reason(
     is_buy = "BUY" in str(direction).upper()
     near_sl = sl_price > 0.0 and abs(exit_price - sl_price) < 0.15
     near_tp = tp_price > 0.0 and abs(exit_price - tp_price) < 0.10
+    profit = float(profit_usd or 0.0)  # classification heuristic only
 
     if near_tp or reason == 4 or "tp" in comment_l:
         return ExitReason.TAKE_PROFIT_HIT
@@ -114,9 +119,9 @@ def classify_exit_reason(
         # Real MT5 client manual close, no protective evidence.
         return ExitReason.MANUAL_CLOSE
 
-    if profit_usd > 0.0:
+    if profit > 0.0:
         return ExitReason.TP_HIT if near_tp else ExitReason.SYSTEM_CLOSE
-    if profit_usd < 0.0:
+    if profit < 0.0:
         return ExitReason.SL_HIT if near_sl else ExitReason.SYSTEM_CLOSE
 
     if was_sl_modified and final_sl > 0.0 and entry_price > 0.0:
@@ -201,7 +206,7 @@ def reconstruct_broker_outcome(
             commission=float(comm),
             swap=float(swap),
             fee=0.0,
-            net_pnl_usd=float(gross - abs(comm) - swap),
+            net_pnl_usd=float(gross - abs(comm) - abs(swap)),
             open_time=open_time_str,
             close_time=_iso(close_time),
             duration_sec=duration,

@@ -134,6 +134,72 @@ def registry_summary(repo: AuditRepository) -> dict[str, Any]:
     return out
 
 
+def outcome_quality_summary(repo: AuditRepository) -> dict[str, Any]:
+    """
+    BUG-046 diagnostics: R-distribution and reconstruction-source census of
+    the closed outcomes feeding the research dataset. Lets the dashboard and
+    API explain WHY discovery is empty (zero-R corruption vs genuinely no
+    evidence) instead of showing a bare zero.
+    """
+    out: dict[str, Any] = {"available": False}
+    if not repo._is_sqlite:
+        return out
+    try:
+        conn = sqlite3.connect(repo._db_path, timeout=5.0)
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM audit_experience_outcomes;").fetchone()
+            total = int(row[0]) if row else 0
+            out["total_outcomes"] = total
+            out["closed_outcomes"] = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM audit_experience_outcomes WHERE is_closed = 1;"
+                ).fetchone()[0]
+            )
+            zero_r = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM audit_experience_outcomes "
+                    "WHERE ABS(realized_r_multiple) < 1e-12 AND ABS(realized_pnl_usd) < 1e-9;"
+                ).fetchone()[0]
+            )
+            nonzero = total - zero_r
+            out["zero_r_outcomes"] = zero_r
+            out["nonzero_r_outcomes"] = max(0, nonzero)
+            out["positive_r_outcomes"] = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM audit_experience_outcomes WHERE realized_r_multiple > 1e-12;"
+                ).fetchone()[0]
+            )
+            out["negative_r_outcomes"] = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM audit_experience_outcomes WHERE realized_r_multiple < -1e-12;"
+                ).fetchone()[0]
+            )
+            # reconstruction source census from payloads (bounded scan)
+            srcs: dict[str, int] = {}
+            for r in conn.execute(
+                "SELECT payload FROM audit_experience_outcomes WHERE is_closed = 1 "
+                "ORDER BY outcome_timestamp DESC LIMIT 2000;"
+            ).fetchall():
+                try:
+                    import json
+
+                    payload = json.loads(r[0] or "{}")
+                    bo = payload.get("broker_outcome") or {}
+                    src = bo.get("reconstruction_source", "") if isinstance(bo, dict) else ""
+                except Exception:
+                    src = ""
+                if not src:
+                    src = "NONE_OR_MISSING"
+                srcs[src] = srcs.get(src, 0) + 1
+            out["reconstruction_sources"] = srcs
+            out["available"] = True
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error("[STRATEGY_RESEARCH] outcome quality summary failed", error=str(e))
+    return out
+
+
 def self_heal_research(repo: AuditRepository, registry) -> int:
     """
     Rebuilds derived research state from the immutable ledger when corrupted.

@@ -100,8 +100,10 @@ class PositionLifecycleTracker:
         self._ticket_meta: dict[str, dict[str, Any]] = {}
         #: Monotonic sequence per ticket (restart-safe: keyed ctor/emit counters).
         self._sequence: dict[str, int] = {}
-        #: Fast "already emitted this exact observation" guard.
-        self._last_emitted: dict[str, tuple[PositionEventType, float]] = {}
+        #: Fast "already emitted this exact observation" guard. Tuple layout:
+        #: (event_type, last_price, last_ts, last_sl, last_tp); legacy 2-tuples
+        #: from before BUG-054 are tolerated at read time.
+        self._last_emitted: dict[str, tuple[PositionEventType, float, float, float, float]] = {}
 
         self.event_count: int = 0
 
@@ -171,7 +173,13 @@ class PositionLifecycleTracker:
                     at=now,
                     detail=f"filled at {snapshot.entry_price:.5f}",
                 )
-            self._last_emitted[ticket_key] = (PositionEventType.POSITION_CREATED, 0.0)
+            self._last_emitted[ticket_key] = (
+                PositionEventType.POSITION_CREATED,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            )
             return
 
         self._update_high_water(ticket_key, snapshot)
@@ -265,28 +273,66 @@ class PositionLifecycleTracker:
             )
 
         # Routine movement / modification - throttled to avoid per-tick spam.
-        last_type, last_val = self._last_emitted.get(ticket_key, (None, 0.0))
+        # BUG-054: persist POSITION_MOVING only when meaningful:
+        #   1. >= 60s since the last persisted MOVING event, OR
+        #   2. stop-loss changed, OR
+        #   3. take-profit changed, OR
+        #   4. risk/lifecycle-relevant state changed (event-type or sequence
+        #      boundary, e.g. MFE/MAE threshold crossed -> state changed)
+        #   5. position is closing/closed (handled by finalize_exit)
+        # The drift guard is kept as a cheap first filter but the 60s window
+        # and SL/TP deltas are what actually bound storage.
+        last_entry = self._last_emitted.get(ticket_key)
+        if last_entry is None:
+            last_type, last_val, last_ts = None, 0.0, 0.0
+            last_sl, last_tp = 0.0, 0.0
+        elif len(last_entry) < 3:
+            # Backward-compatible unpack for older in-memory tuples.
+            last_type, last_val = last_entry
+            last_ts = 0.0
+            last_sl, last_tp = 0.0, 0.0
+        elif len(last_entry) == 3:
+            last_type, last_val, last_ts = last_entry
+            last_sl, last_tp = 0.0, 0.0
+        else:
+            last_type, last_val, last_ts, last_sl, last_tp = last_entry
+        _ = last_type  # event-type boundary check is implicit in emit()
+        now_ts = now.timestamp()
+        time_since_last = now_ts - (last_ts if last_ts else 0.0)
+        sl_changed = bool(
+            snapshot.stop_loss and abs(snapshot.stop_loss - (last_sl if last_sl else 0.0)) > 1e-9
+        )
+        tp_changed = bool(
+            snapshot.take_profit
+            and abs(snapshot.take_profit - (last_tp if last_tp else 0.0)) > 1e-9
+        )
         price_drift = abs(snapshot.current_price - last_val)
-        if last_type == PositionEventType.POSITION_MOVING and price_drift < 0.15 * (
-            planned_risk or 1.0
-        ):
+        meaningful = (
+            time_since_last >= 60.0
+            or sl_changed
+            or tp_changed
+            or price_drift >= 0.15 * (planned_risk or 1.0)
+        )
+        if not meaningful:
             return
-        # Only emit MOVING at most every ~15 ticks of the price; cheap guard.
-        if price_drift >= 0.15 * (planned_risk or 1.0):
-            self._last_emitted[ticket_key] = (
-                PositionEventType.POSITION_MOVING,
-                snapshot.current_price,
-            )
-            self.emit(
-                PositionEventType.POSITION_MOVING,
-                ticket=ticket_key,
-                snapshot=snapshot,
-                performance=perf,
-                market=mctx,
-                decision=dctx,
-                at=now,
-                detail=f"price moved to {snapshot.current_price:.5f}",
-            )
+        # Remember what we persisted so the next check can compare SL/TP too.
+        self._last_emitted[ticket_key] = (
+            PositionEventType.POSITION_MOVING,
+            snapshot.current_price,
+            now_ts,
+            snapshot.stop_loss or 0.0,
+            snapshot.take_profit or 0.0,
+        )
+        self.emit(
+            PositionEventType.POSITION_MOVING,
+            ticket=ticket_key,
+            snapshot=snapshot,
+            performance=perf,
+            market=mctx,
+            decision=dctx,
+            at=now,
+            detail=f"price moved to {snapshot.current_price:.5f}",
+        )
 
     def emit(
         self,

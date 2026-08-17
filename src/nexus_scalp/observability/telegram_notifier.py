@@ -320,6 +320,107 @@ class TelegramNotifier:
         )
         return self.send(msg, callback=callback, severity="INFO")
 
+    def notify_test_message(
+        self,
+        callback: Optional[Any] = None,
+    ) -> Optional[int]:
+        """Test-connectivity alert — validates bot token + admin chat ID."""
+        msg = (
+            f"✅ <b>TELEGRAM CONNECTION OK</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🧪 <b>Test message delivered.</b>\n"
+            f"🕒 {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n"
+            f"<i>Your bot token and admin chat ID are correctly configured.</i>"
+        )
+        return self.send(msg, callback=callback, severity="INFO")
+
+    def notify_engine_stopped(
+        self,
+        reason: str = "manual",
+        callback: Optional[Any] = None,
+    ) -> Optional[int]:
+        """Engine shutdown banner."""
+        msg = (
+            f"🛑 <b>NEXUS SCALP ENGINE STOPPED</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📋 <b>Reason:</b> <code>{self._escape(reason)}</code>\n"
+            f"🕒 {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}"
+        )
+        return self.send(msg, callback=callback, severity="WARNING")
+
+    def notify_engine_error(
+        self,
+        error: str,
+        context: str = "",
+        callback: Optional[Any] = None,
+    ) -> Optional[int]:
+        """Engine failure alert (CRITICAL)."""
+        msg = (
+            f"🚨 <b>ENGINE ERROR</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ <b>Context:</b> <code>{self._escape(context or 'engine')}</code>\n"
+            f"❌ <b>Error:</b> <code>{self._escape(error)[:1500]}</code>\n"
+            f"🕒 {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}"
+        )
+        return self.send(msg, callback=callback, severity="CRITICAL")
+
+    def notify_audit_purge(
+        self,
+        deleted: dict[str, Any],
+        duration_ms: float,
+        callback: Optional[Any] = None,
+    ) -> Optional[int]:
+        """Audit retention purge summary."""
+        parts = " | ".join(f"{k}: {v}" for k, v in (deleted or {}).items()) or "nothing deleted"
+        msg = (
+            f"🧹 <b>AUDIT RETENTION PURGE</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🗑 <b>Deleted:</b> <code>{self._escape(parts)}</code>\n"
+            f"⏱ <b>Duration:</b> <code>{duration_ms:.0f} ms</code>"
+        )
+        return self.send(msg, callback=callback, severity="INFO")
+
+    def notify_warmup(
+        self,
+        state: str,
+        symbol: str,
+        detail: str = "",
+        callback: Optional[Any] = None,
+    ) -> Optional[int]:
+        """Warmup readiness transition alert."""
+        emoji = "✅" if state.upper() == "READY" else "⏳"
+        msg = (
+            f"{emoji} <b>WARMUP STATE: {self._escape(state.upper())}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 <b>Symbol:</b> <code>{self._escape(symbol)}</code>\n"
+            f"📋 <b>Detail:</b> {self._escape(detail or '—')}"
+        )
+        return self.send(msg, callback=callback, severity="INFO")
+
+    def notify_daily_summary(
+        self,
+        stats: dict[str, Any],
+        callback: Optional[Any] = None,
+    ) -> Optional[int]:
+        """Daily performance summary (trades, PnL, win rate, drawdown)."""
+
+        def _fmt(k: str, dflt: Any = "—") -> str:
+            v = stats.get(k, dflt)
+            return "—" if v is None or v == "" else str(v)
+
+        msg = (
+            f"📊 <b>DAILY PERFORMANCE SUMMARY</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 <b>Date:</b> <code>{_fmt('date')}</code>\n"
+            f"💼 <b>Trades:</b> <code>{_fmt('trades')}</code>\n"
+            f"✅ <b>Wins:</b> <code>{_fmt('wins')}</code> | ❌ <b>Losses:</b> <code>{_fmt('losses')}</code>\n"
+            f"🎯 <b>Win Rate:</b> <code>{_fmt('win_rate')}</code>\n"
+            f"💰 <b>Net PnL:</b> <code>{_fmt('net_pnl')}</code>\n"
+            f"📉 <b>Max Drawdown:</b> <code>{_fmt('max_drawdown')}</code>\n"
+            f"🕒 {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}"
+        )
+        return self.send(msg, callback=callback, severity="INFO")
+
     def notify_order_opened(
         self,
         order: TradeOrder,

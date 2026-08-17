@@ -44,7 +44,7 @@ from nexus_scalp.accounting.models import (
     TradeOutcome,
     TradeRecord,
 )
-from nexus_scalp.accounting.normalize import normalize_trade_row
+from nexus_scalp.accounting.normalize import classify_outcome, normalize_trade_row
 from nexus_scalp.accounting.periods import (
     PeriodBounds,
     PeriodKind,
@@ -259,8 +259,90 @@ class AccountingCore:
             logger.error("[ACCOUNTING] trade load failed", error=str(err))
             return []
 
+        if not rows:
+            # No engine-autopsy rows: fall back to the AUTHORITATIVE broker
+            # history copy (reconstructed logical trades with real PnL). This is
+            # the source-of-truth path when the engine never wrote the ledger.
+            return self.load_broker_trades(limit=limit)
         records = [normalize_trade_row(row) for row in rows]
         return self._attach_identity(records)
+
+    def load_broker_trades(self, limit: int = 20000) -> list[TradeRecord]:
+        """
+        Loads the reconstructed logical trades from the authorized broker-history
+        normalized copy (`audit_broker_trades`). Each row is ONE position
+        lifecycle with real broker-aggregated PnL (gross - |comm| - swap - fee).
+
+        Source hierarchy (documented in agents/skill.md): when broker history
+        exists it IS the authoritative realized-PnL source for closed trades.
+        `audit_ledger` remains the engine's own execution autopsy; `None` rows
+        here are impossible - every row carries real values or is skipped.
+        """
+        if not self._enabled:
+            return []
+        sql = (
+            "SELECT trade_id, position_id, symbol, direction, entry_time, exit_time, "
+            "entry_price, exit_price, volume, gross_pnl, commission, swap, fee, "
+            "net_pnl, master_order_id, magic, exit_reason, exit_comment, duration_sec "
+            "FROM audit_broker_trades "
+            "ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC LIMIT ?"
+        )
+        try:
+            with self._connect() as conn:
+                rows = [dict(r) for r in conn.execute(sql, (int(limit),)).fetchall()]
+        except Exception as err:
+            logger.error("[ACCOUNTING] broker trade load failed", error=str(err))
+            return []
+
+        out: list[TradeRecord] = []
+        for row in rows:
+            opened = parse_sql_timestamp(row.get("entry_time") or "")
+            closed = parse_sql_timestamp(row.get("exit_time") or "")
+            if closed is None:
+                continue  # no fabricated close time
+            gross = float(row.get("gross_pnl") or 0.0)
+            commission = abs(float(row.get("commission") or 0.0))
+            swap = float(row.get("swap") or 0.0)
+            abs(float(row.get("fee") or 0.0))
+            net = float(row.get("net_pnl") or 0.0)
+            duration = float(row.get("duration_sec") or 0.0)
+            if duration <= 0.0 and opened is not None:
+                duration = max(0.0, (closed - opened).total_seconds())
+            direction = str(row.get("direction") or "UNKNOWN")
+            out.append(
+                TradeRecord(
+                    ticket=int(row.get("position_id") or int(row.get("trade_id") or 0)),
+                    symbol=str(row.get("symbol") or ""),
+                    direction=direction,
+                    volume=float(row.get("volume") or 0.0),
+                    entry_price=float(row.get("entry_price") or 0.0),
+                    exit_price=float(row.get("exit_price") or 0.0),
+                    gross_pnl=gross,
+                    commission=commission,
+                    swap=swap,
+                    net_pnl=net,
+                    opened_at=opened,
+                    closed_at=closed,
+                    duration_sec=duration,
+                    exit_mechanism_raw="BROKER_DEALS",
+                    exit_classification=ExitClassification.OTHER_EXIT,
+                    outcome=classify_outcome(net),
+                    risk_free_state=False,
+                    was_sl_modified=False,
+                    initial_sl=0.0,
+                    final_sl=0.0,
+                    mae_points=0.0,
+                    mfe_points=0.0,
+                    mae_usd=0.0,
+                    mfe_usd=0.0,
+                    status="CLOSED",
+                    order_id=str(row.get("master_order_id") or ""),
+                    realized_r=None,
+                    risk_usd=None,
+                    entry_reason="BROKER_HISTORY",
+                )
+            )
+        return out
 
     def _attach_identity(self, records: list[TradeRecord]) -> list[TradeRecord]:
         """

@@ -503,8 +503,9 @@ class TestBrokerReconstruction:
         assert bo.reconstruction_source == "BROKER_DEALS"
         assert bo.gross_profit == 12.34
         assert bo.commission == -2.0  # raw signed broker value (cost negative)
-        # swap is RAW SIGNED (-0.4 = credit): net = gross - |comm| - swap.
-        assert bo.net_pnl_usd == pytest.approx(12.34 - abs(-2.0) - (-0.4))
+        # BUG-046: costs are subtracted in magnitude: net = gross - |comm| - |swap|.
+        # swap=-0.4 is a COST (negative in MT5), so net = 12.34 - 2.0 - 0.4 = 9.94.
+        assert bo.net_pnl_usd == pytest.approx(12.34 - abs(-2.0) - abs(-0.4))
         assert bo.exit_price == 2002.0
         assert bo.duration_sec == pytest.approx(300.0)
 

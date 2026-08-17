@@ -13,7 +13,6 @@ Behavioral tests verifying the DASHBOARD HARDENING contract:
 
 from __future__ import annotations
 
-import io
 import logging
 import re
 import sqlite3
@@ -200,15 +199,53 @@ class TestSanitizedResponses:
 
     def test_06_server_log_contains_detailed_exception(self) -> None:
         # The repo's structlog BoundLogger renders the traceback + exception
-        # text (via rich) to stdout/stderr. Capture both streams to prove the
-        # DETAILED exception (with the secret marker) is logged - while the
-        # public payload never includes it (test_01).
-        import contextlib
+        # text (via rich) to stdout/stderr. This test MUST NOT depend on
+        # contextlib.redirect_stdout: configure_logging() binds a
+        # StreamHandler(sys.stdout) once (capturing the stdout OBJECT at
+        # creation), and structlog caches loggers on first use - so when this
+        # test runs after any other test that already initialized logging, the
+        # handler writes to the ORIGINAL sys.stdout and redirect_stdout misses
+        # it (order-dependent flake). Instead we attach a temporary capture
+        # handler directly to the root logger and read the formatted record.
+        import logging
 
+        from nexus_scalp.observability.logging import configure_logging
         from nexus_scalp.observability.logging import get_logger as get_structlog
 
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        # CRITICAL (order-dependent flake): structlog's DEFAULT logger factory
+        # is PrintLoggerFactory - logs go straight to stdout and NEVER reach
+        # stdlib logging handlers. A fresh pytest session has no conftest that
+        # calls configure_logging(), so without this the capture handler below
+        # records nothing. configure_logging() rebuilds the stdlib pipeline
+        # (idempotent: clears + re-adds root handlers).
+        root = logging.getLogger()
+        original_level = root.level
+        original_handlers = list(root.handlers)
+        configure_logging(log_to_file=False)
+        # The dev rich ConsoleRenderer re-raises the active exception while
+        # formatting exc_info records when logging.raiseExceptions is True
+        # (default). That would propagate the probe exception out of this
+        # test. Suppress it for the duration and restore afterwards.
+        original_raise_exceptions = logging.raiseExceptions
+        logging.raiseExceptions = False
+
+        class _CaptureHandler(logging.Handler):
+            def __init__(self) -> None:
+                super().__init__(level=logging.DEBUG)
+                self.records: list[logging.LogRecord] = []
+
+            def emit(self, record: logging.LogRecord) -> None:
+                # format() populates record.exc_text (the traceback string)
+                # and record.message, exactly like a normal handler.
+                self.format(record)
+                self.records.append(record)
+
+        capture = _CaptureHandler()
+        try:
+            root.setLevel(logging.DEBUG)
+            root.addHandler(capture)
+            named = logging.getLogger("nexus_scalp.web.server.test")
+            named.addHandler(capture)
             slog = get_structlog("nexus_scalp.web.server.test")
             try:
                 raise RuntimeError("SECRET_INTERNAL_MARKER_PATH: C:/Users/secret/app.py")
@@ -219,7 +256,20 @@ class TestSanitizedResponses:
                     request_id="req_zz",
                     exception_type="RuntimeError",
                 )
-        captured = buf.getvalue()
+        finally:
+            root.removeHandler(capture)
+            named.removeHandler(capture)
+            root.setLevel(original_level)
+            # Restore the pre-test handler set (configure_logging may have
+            # replaced pytest's capture handlers - the next test must see the
+            # same root logger state it would have had).
+            root.handlers[:] = original_handlers
+            logging.raiseExceptions = original_raise_exceptions
+
+        assert capture.records, "no log record captured"
+        text = "".join(format(r.getMessage()) for r in capture.records)
+        exc_text = "\n".join("".join(r.exc_text or "") for r in capture.records if r.exc_text)
+        captured = text + exc_text
         assert "SECRET_INTERNAL_MARKER_PATH" in captured
         assert "RuntimeError" in captured
         assert "WEB_ERROR" in captured

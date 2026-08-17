@@ -208,7 +208,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # reconnects; the UI rejects out-of-order versions).
     app.state.versioner = StateVersioner()
     # Bounded per-stream event ring for reconnect resynchronization.
-    app.state.stream_history: deque[dict[str, Any]] = deque(maxlen=200)
+    app.state.stream_history = deque(maxlen=200)  # type: ignore[assignment]
 
     # DASHBOARD HARDENING: correlation + sanitized 500s for every HTTP route.
     from nexus_scalp.web.errors import attach_request_id_middleware
@@ -704,13 +704,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             except Exception:
                 pass
 
-            # Fetch bars (synchronized completed history) - Expand to 250 completed bars for 150+ visible bars support
-            if real_bars:
+            # Fetch bars (synchronized completed history) - Expand to 900 completed bars
+            # for 900+ visible bars support (BUG-054 resync: after 5-6h downtime the
+            # broker history must fully repaint, never a truncated 250-bar window).
+            if real_bars and len(real_bars) >= 100:
                 bars_list = real_bars
             else:
                 try:
                     completed_bars = engine.aggregator.get_completed_bars()
-                    for b in completed_bars[-250:]:
+                    for b in completed_bars[-900:]:
                         bars_list.append(
                             {
                                 "time": b.timestamp.isoformat(),
@@ -1708,10 +1710,22 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def get_account_trades(
         limit: int = 100, offset: int = 0, status: str | None = None
     ) -> list[dict[str, Any]]:
+        """Closed-trade history: reconstructed broker trades (authoritative),
+        falling back to the engine's own ledger rows when broker history has
+        not been synchronized yet. Never invents rows."""
         engine = app.state.engine
         if not engine:
             return []
-        return engine.audit.get_ledger_trades(limit=limit, offset=offset, status_filter=status)
+        audit = getattr(engine, "audit", None)
+        if audit is None:
+            return []
+        try:
+            broker_rows = audit.get_broker_trades(limit=limit, offset=offset)
+        except Exception:
+            broker_rows = []
+        if broker_rows:
+            return broker_rows
+        return audit.get_ledger_trades(limit=limit, offset=offset, status_filter=status)
 
     # REST APIs: Account growth data for visualizer chart
     @app.get("/api/account/growth")
@@ -1787,9 +1801,41 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
             return _err("OPERATION_FAILED")
 
+    # POST /api/telegram/test — sends a connectivity test message through the
+    # configured notifier. Returns ok only if the bot token + admin chat ID are
+    # valid and the message was actually accepted for delivery.
+    @app.post("/api/telegram/test")
+    def telegram_test() -> dict[str, Any]:
+        engine = app.state.engine
+        notifier = getattr(engine, "notifier", None) if engine else None
+        if notifier is None:
+            return _err(
+                "NOTIFIER_UNAVAILABLE",
+                message="Engine notifier is not available (engine not running).",
+            )
+        if not notifier.enabled:
+            return _err(
+                "NOTIFIER_DISABLED",
+                message="Telegram is disabled or bot_token/admin_id are missing. "
+                "Save them first, then retry.",
+            )
+        try:
+            # send() returns the message_id synchronously within its short wait.
+            msg_id = notifier.notify_test_message()
+            if msg_id:
+                return {"success": True, "message_id": msg_id}
+            return _err(
+                "SEND_FAILED",
+                message="Message accepted but not confirmed (check token/chat id "
+                "and that the bot can message this chat).",
+            )
+        except Exception as e:
+            log_web_error(logger, "/api/telegram/test", None, e, context={"msg": "telegram test"})
+            return _err("SEND_FAILED", message=f"Telegram test failed: {e}")
+
     # GET /api/chart/history - authoritative MT5 rate history (chart at the core)
     @app.get("/api/chart/history")
-    def get_chart_history() -> dict[str, Any]:
+    def get_chart_history(count: int = 900) -> dict[str, Any]:
         """Bounded broker history via the official copy_rates_* provider.
 
         The chart data source is the MT5 rate provider (BROKER_NATIVE) with
@@ -1797,6 +1843,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         when the broker is unavailable - provenance is ALWAYS explicit.
         Diagnostics: source, symbol, timeframe, requested/returned bars,
         first/last timestamps, generated_at, freshness.
+
+        RESYNC (BUG-054): after a 5-6h downtime the frontend reloads the full
+        session; the default window is 900 bars and a successful broker fetch
+        also reseeds the engine aggregator + ServerState so chart, features,
+        regime and overlays all converge on real broker candles.
 
         NEVER synthetic bars.
         """
@@ -1806,7 +1857,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         source = "UNAVAILABLE"
         symbol: str | None = None
         timeframe = "M1"
-        requested = 250
+        requested = max(1, min(int(count), 5000))
         returned = 0
         first_ts: str | None = None
         last_ts: str | None = None
@@ -1857,6 +1908,47 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         returned,
                         last_ts,
                     )
+
+                    # RESYNC (BUG-054): mirror the fetched broker bars into the
+                    # engine aggregator + ServerState so every UI surface
+                    # (snapshot, SSE, overlays) converges instantly instead of
+                    # waiting for the next live tick.
+                    try:
+                        rate_bars_dt = [
+                            r
+                            for r in rate_bars
+                            if r.time_utc is not None
+                            and r.open is not None
+                            and r.high is not None
+                            and r.low is not None
+                            and r.close is not None
+                        ]
+                        if rate_bars_dt and hasattr(engine, "aggregator"):
+                            from nexus_scalp.market_data.bar_aggregator import BarData
+
+                            seeded = [
+                                BarData(
+                                    symbol=symbol,
+                                    timeframe=str(timeframe).upper(),
+                                    timestamp=r.time_utc,
+                                    open=float(r.open),
+                                    high=float(r.high),
+                                    low=float(r.low),
+                                    close=float(r.close),
+                                    tick_volume=int(r.tick_volume or 0),
+                                    is_complete=True,
+                                )
+                                for r in rate_bars_dt
+                            ]
+                            engine.aggregator.reseed(seeded)
+                            if hasattr(engine, "sync_chart_state"):
+                                engine.sync_chart_state()
+                    except Exception as reseed_err:
+                        _log_err(
+                            reseed_err,
+                            "Chart history: engine reseed failed (non-fatal)",
+                            endpoint="/api/chart/history",
+                        )
             except Exception as e:
                 _log_err(
                     e,
@@ -3396,9 +3488,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         if engine is None:
             return {"available": False}
         try:
-            from nexus_scalp.research.store import registry_summary
+            from nexus_scalp.research.store import outcome_quality_summary, registry_summary
 
             summary = registry_summary(engine.audit)
+            summary["outcome_quality"] = outcome_quality_summary(engine.audit)
             worker = getattr(engine, "research_worker", None)
             if worker is not None:
                 from nexus_scalp.research.worker import format_research_worker_status
@@ -3529,6 +3622,33 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return {"available": True, "repaired": int(repaired)}
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Research self-heal failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/research/repair-outcomes")
+    def trigger_outcome_repair() -> dict[str, Any]:
+        """
+        BUG-046: repairs historical zero-R closed outcomes from broker deal
+        history. Bounded, idempotent, observable. Never touches the immutable
+        decision rows; only the derived outcome layer is corrected.
+        """
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.experience.outcome_repair import OutcomeRepairJob
+
+            ledger = engine.experience_ledger
+            adapter = engine.adapter
+            job = OutcomeRepairJob(
+                ledger=ledger,
+                broker_deals_fn=lambda ticket, hours_back: adapter.get_closed_deals_history(
+                    symbol="XAUUSD", hours_back=hours_back
+                ),
+            )
+            result = job.run()
+            return {"available": True, "result": result.to_dict()}
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Outcome repair failed"})
             return _err("INTERNAL_ERROR")
 
     # =========================================================================

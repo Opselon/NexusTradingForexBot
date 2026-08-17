@@ -2269,3 +2269,229 @@ Added `get_all_positions()` (no filter) consumed by the dashboard positions list
 ### Regression Guards
 - `/api/mt5/status` `positions` reflects all account positions
 - `AccountingCore.live_state()` open-position count unaffected (uses adapter get_positions)
+---
+
+## BUG-054 — Model/Regime Blindness in Position Management (AI-Flip Exit Dead Code)
+
+- **Status**: FIXED (2026-08-17, Phase 15 exit-behavior audit)
+- **Severity**: HIGH (in-trade exits never saw the live model or current regime)
+- **Confidence**: HIGH
+- **Verified**: `tests/unit/test_exit_behavior_forensic.py::test_d1_strong_reversal_while_buy_exits`, `::test_d3_ai_probability_flip_visible_in_evidence`, `::test_d4_regime_invalidation_exit`
+
+### Root Cause
+`live_engine._process_tick_pipeline` called `manage_active_positions(symbol, current_tick, feature_vector, symbol_info, account)` WITHOUT `probs` or `regime_state`. Consequences (all evidence-backed from artifacts/audit.db + nse_live.log):
+- The OLM "AI DIRECTION FLIP & FAST REVERSAL" block (`if probs is not None:`) was DEAD CODE in production — never triggered.
+- `_calculate_adaptive_evidence_scores` degraded to static feature heuristics; the model was never consulted on open positions.
+- The giveback-protection `regime=` argument received the regime at ENTRY (stale snapshot), so VOLATILITY_EXPANSION close-suppression never reacted to a CURRENT regime change.
+
+### Fix
+- `live_engine.py` now computes `probs_for_mgmt` (inference result when the warmup gate is READY, else None — protective stops never pause) and threads BOTH `probs` and `regime_state` into `manage_active_positions`.
+- OLM `_current_regime_str()` resolves the CURRENT regime from the threaded `regime_state`, falling back to the entry snapshot only when no live regime is available.
+- `[POSITION_EXIT_EVAL]` structured logs record decision, reasons, hold_score, regime (current vs entry), elapsed_sec — never per-tick spam.
+
+### Regression Guards
+- Strong reversal while BUY with sell-bias ≥ 0.60 → close + `ExitMechanism.AI_REVERSAL_EXIT`
+- AI probability flip → adverse_score > 0.6 / continuation_score < 0.3 in evidence
+- Regime invalidation combined with adverse excursion → thesis-invalidated exit
+- Healthy continuation → HOLD (no panic close)
+
+---
+
+## BUG-055 — LOSS_HARD_EXIT Arbitration Gap (State Reached, Close Never Dispatched)
+
+- **Status**: FIXED (2026-08-17, Phase 15 exit-behavior audit)
+- **Severity**: CRITICAL (flagship ticket 152488669567 sat in LOSS_HARD_EXIT ~2 min at -$105..-$171, closed only when price hit SL)
+- **Confidence**: HIGH
+- **Verified**: `tests/unit/test_exit_behavior_forensic.py::test_r1_critical_hold_score_dispatch_close`
+
+### Root Cause
+The state machine reached `LOSS_HARD_EXIT` (`[HYSTERESIS BYPASS - EMERGENCY TRANSITION]`) but the `[EXIT TRACE] LOSS_HARD_EXIT triggered` line NEVER followed and no broker close was dispatched. The adaptive state was being evaluated but the Level-2 arbitration path that maps `LOSS_HARD_EXIT → "CLOSE"` never executed on the live path.
+
+### Fix
+- `_arbitrate_decision` Level-2 now emits `[EXIT TRACE] LOSS_HARD_EXIT triggered` and returns `("CLOSE", "LOSS_HARD_EXIT: recovery budget exhausted or adverse pressure too high")` — the close is dispatched through the standard broker-close path with 3-retry adapter.
+- 60-second minimum-survival grace is preserved: `LOSS_HARD_EXIT`/`LOSS_EXIT_PRESSURE` are downgraded to `LOSS_RECOVERY_CANDIDATE` only while `duration_sec < 60.0` (a fresh position must breathe the spread); the first-observation emergency bypass (already present, see BUG-018) is unchanged.
+
+### Regression Guards
+- Losing position, hold_score < 30, age > 60s → broker `close_position` dispatched (mock adapter records ticket)
+- Claim: `LOSS_HARD_EXIT` arbitration now always produces a CLOSE verdict past the grace period
+
+---
+
+## BUG-056 — Min-Loss EV Inversion (Exit Never Fires on Deep Drawdown)
+
+- **Status**: FIXED (2026-08-17, Phase 15 exit-behavior audit)
+- **Severity**: HIGH (deep underwater losers held to full SL; flagship 152488669567 MAE -$180.78 vs initial risk $196.88)
+- **Confidence**: HIGH
+- **Verified**: `tests/unit/test_exit_behavior_forensic.py::test_r4_min_loss_ev_fires_on_deep_drawdown`, `::test_r4b_ev_does_not_fire_on_deep_drawdown_with_strong_recovery`
+
+### Root Cause
+`_evaluate_minimum_loss_optimization` computed:
+```python
+expected_recovery_value = max(15.0, abs(current_pnl_usd) * 2.0)
+expected_additional_loss = max(1.0, initial_risk_usd - abs(current_pnl_usd))
+```
+As the drawdown deepened, the recovery payoff GREW with the loss while the expected additional loss SHRANK (the hard stop was already mostly consumed) — so `ev_hold` became MORE positive the deeper the loss. Verified: ticket 152488669567 at pnl -171.12, risk 196.88, rec 0.204, adv 0.542 → EV +55.86 vs threshold -29.53 → never breached; the trade closed at full SL.
+
+### Fix
+The recovery payoff is now anchored to the PLANNED reward objective at entry time, never the current loss:
+```python
+planned_rr = float(getattr(self.algo_config, "min_risk_reward_ratio", 1.8) or 1.8)
+expected_recovery_value = max(15.0, initial_risk_usd * planned_rr)
+expected_additional_loss = max(1.0, initial_risk_usd)
+```
+EV now decreases monotonically as the drawdown deepens (payoff fixed, adverse probability dominates), so the minimum-loss exit fires when holding is statistically unjustified, while strong recovery evidence still holds the position.
+
+### Regression Guards
+- Flagship numbers (pnl -171.12, risk 196.88, rec 0.204, adv 0.542, age > 60s) → EV breach must fire
+- Same drawdown with strong recovery (rec 0.75, adv 0.15) → MUST NOT fire (no false panic)
+- 60s grace period still suppresses EV exits on fresh positions
+
+## BUG-057 — Audit DB Pathological Growth (79MB/Day from Disposable Telemetry)
+
+- **Status**: FIXED (2026-08-17, Audit DB cleanup + root-cause fixes)
+- **Severity**: MEDIUM-HIGH (79MB audit.db after ~14h; unbounded growth, no retention)
+- **Confidence**: HIGH (measured: audit_signals 67.9MB / 33,193 rows, position_lifecycle_events 12.2MB / 8,954 rows in <14h)
+- **Verified**: `tests/unit/test_audit_db_growth_bug054.py` (6 tests: dedup, telemetry, risk preservation, payload, purge)
+
+### Root Cause
+Two over-logging defects with no retention policy:
+1. `log_signal` persisted a FULL ~1.2KB JSON proposal payload per signal AND ~17% of it re-duplicated existing structured columns (`buy_probability`, `model_buy_probability`, `ai_buy_probability` all the same value; `regime`/`confidence`/`action` present in both row and payload). The in-memory `_last_logged_signal_key` dedup was restart- and race-unsafe.
+2. 16,567 `TICK_DUPLICATE_SUPPRESSED` + 4,425 `ORDER_FREQUENCY_THROTTLED` rows (63% of all signals) were persisted as HEAVY rows even though the engine itself classified them as duplicates/throttles — pure telemetry noise at ~1.2KB each.
+3. `position_lifecycle_events.POSITION_MOVING` fired on every 15%-of-risk price drift (7,815 rows / 183 positions = ~43 per position), each re-persisting full market_context + position_snapshot + payload.
+4. No purge/retention existed anywhere in the codebase.
+
+### Fix
+- **Persistent dedup (DB-enforced):** `audit_signals.signal_dedup_key` (deterministic sha256 of symbol|M1-candle|model_action|decision_stage|execution_mode|reason_code) + UNIQUE index + `ON CONFLICT DO NOTHING` in the worker insert. No SELECT-then-INSERT, no in-memory state, restart/race-safe.
+- **Guard telemetry:** `TICK_DUPLICATE_SUPPRESSED` / `ORDER_FREQUENCY_THROTTLED` now aggregate into `audit_guard_telemetry` (window_start, symbol, reason_code, count — one UPSERT row per minute) instead of heavy signal rows.
+- **Lean payload:** payload reduced to 8 approved forensic fields (model_action, ai_buy/sell/no_trade probabilities, regime_confidence, risk_allowed, guardian_status, rejection_reason); full proposal dump and duplicate probability fields removed. ~1.2KB → ~250B.
+- **POSITION_MOVING throttle:** persist only when ≥60s elapsed, SL/TP changed, or ≥15% risk drift; tracks last SL/TP/ts per ticket. 7,815 → ~1/min/position bound.
+- **Retention:** `AuditRepository.purge_old_audit_data()` — bounded (500-row) batched deletes for signals >7d, MOVING >3d, guard telemetry >13d; NEVER touches ledger/experiences/autopsies/research. CLI: `nse audit-purge [--signal-days N] [--moving-days N] [--json]`.
+- **MAX_EXPOSURE_REACHED preserved** as a real audit row (risk-engine evidence, spec §9).
+
+### Regression Guards
+- Same decision twice (different request_id) → exactly 1 row
+- TICK_DUPLICATE_SUPPRESSED × 5 → 0 signal rows, telemetry count = 5
+- MAX_EXPOSURE_REACHED → still a signal row (risk evidence)
+- Payload has only approved keys, < 400 bytes
+- Purge removes old signal/MOVING, keeps fresh, never touches audit_ledger
+
+---
+
+## BUG-058 — Chart/Engine Desync After 5-6h Downtime (Stale Aggregator + 250-Bar UI Cap)
+
+- **Status**: FIXED (2026-08-17, Phase 15b visualizer resync)
+- **Severity**: HIGH (chart and engine engines diverged from broker reality after downtime; duplicate stale minutes, blank/stale canvas, truncated history)
+- **Confidence**: HIGH (code-path verified: `_cold_start_warmup` blind-append + forming-bar duplication; `get_system_state` stale ServerState preference; 250-bar hard cap)
+- **Verified**: `tests/unit/test_chart_resync_phase15b.py` (13 tests) + `tests/unit/test_frontend_assets_phase14.py::TestChartResyncContract` (3 tests)
+
+### Symptom
+After the bot shuts down for 5-6 hours and comes back:
+1. The first live tick created a DUPLICATE stale completed candle at the same timestamp as the broker's still-forming minute (blind `_completed_bars.append` in `_cold_start_warmup`).
+2. The forming bar started from the live price instead of the historical open of the current minute → wrong OHLC for the whole minute.
+3. The UI chart stayed truncated at 250 candles (`-250:` slices in engine + server) — a 5-6h M1 session is 300+ bars, so the full session could never repaint.
+4. `/api/status` preferred `ServerState.bars` (stale from the pre-downtime process) over the freshly reseeded aggregator (`if real_bars:` without freshness/age check).
+
+### Root Cause
+- `BarAggregator` had no reseed primitive — history could only be appended, and appending broker history that INCLUDED the current (still forming) broker minute caused `process_tick` to emit a second completed bar for the same minute on the first live tick.
+- `_cold_start_warmup` features were rebuilt from the appended bars but the aggregator forming bar was never aligned to the broker's latest minute.
+- The watchdog reconnect path and `/api/chart/history` REST path had no engine-side resync.
+- All ServerState pushes and the frontend bootstrap were hard-capped at 250 bars.
+
+### Fix
+1. **`BarAggregator.reseed(completed_bars)`** (new primitive): atomically replaces history with broker-authoritative bars: dedupe by timestamp, sort ascending, drop incomplete bars, and align the forming bar (open/high/low/close/volume) to the LATEST broker minute so the first live tick continues it instead of duplicating it.
+2. **`LiveEngine._cold_start_warmup`**: now calls `aggregator.reseed(hist_m1_bars)` instead of blind append; pushes ServerState visuals unconditionally (900 bars) after seeding.
+3. **`LiveEngine._resync_from_broker(symbol)`** (new): broker-authoritative reseed used by the tick-watchdog reconnect path — refetches 3500 M1 bars, reseeds, rebuilds a causal feature record, pushes ServerState, re-evaluates warmup readiness. Fully failure-isolated (never stops the loop).
+4. **`LiveEngine.sync_chart_state()`** (new): pushes the current aggregator series (last 900) + real SMC overlays to ServerState; used after every reseed and lazily by the REST layer.
+5. **`/api/chart/history`**: default window 250 → **900** (`count` query param, bounded 1..5000); a successful broker fetch now ALSO reseeds the engine aggregator + ServerState so snapshot/SSE/overlays converge instantly (`source=MT5` + engine mirror).
+6. **`get_system_state`**: prefers `real_bars` only when `len >= 100` (stale/empty ServerState falls through to the live aggregator), and the aggregator fallback window is 900.
+7. **Frontend (`app.js` + `index.html`)**: 900-bar render support (crosshair/tooltip/auto-fit already index-based → length-agnostic), new **Resync** button (`resyncChart()` → `/api/chart/history?count=900`), auto-resync on every SSE reconnect (10s throttle) and by the 30s stale watchdog (30s throttle).
+
+### Regression Guards
+- `test_reseed_replaces_history_and_aligns_forming_bar` — forming bar continues the broker's latest minute
+- `test_reseed_dedupes_and_sorts` / `test_reseed_empty_clears_state` / `test_reseed_drops_incomplete_bars`
+- `test_reseed_then_live_tick_continues_bar` — first live tick of the seeded minute does NOT mint a duplicate; next minute emits exactly ONE new bar
+- `test_resync_from_broker_reseeds_and_pushes_visuals` / `test_resync_from_broker_skips_when_no_bars`
+- `test_sync_chart_state_pushes_900_bars` — 1200 available → exactly 900 pushed
+- `test_chart_history_default_window_is_900` / `test_chart_history_custom_count_honored` / `test_chart_history_resync_mirrors_bars_into_engine`
+- `TestChartResyncContract` — Resync button present, `resyncChart()` defined, wired to reconnect + stale watchdog
+
+### Relevant Files
+- `src/nexus_scalp/market_data/bar_aggregator.py`
+- `src/nexus_scalp/application/live_engine.py`
+- `src/nexus_scalp/web/server.py`
+- `Web/app.js`, `Web/index.html`
+- `tests/unit/test_chart_resync_phase15b.py`, `tests/unit/test_frontend_assets_phase14.py`
+
+### Architectural Lessons / Regression Guards
+- History ingestion must be REPLACE + ALIGN, never blind-append: broker rate history includes the still-forming minute, and appending it corrupts the aggregator's bar-boundary logic on the next tick.
+- Every ServerState consumer must be freshness-aware: a stale pre-downtime chart cache must never outrank a freshly reseeded aggregator.
+- UI data windows must be derived from the maximum expected session length (a full 24h M1 day = 1440 bars), not an arbitrary painter's shortcut.
+
+## BUG-059 — Web UI Cannot Save Telegram Token/Admin + Missing Telegram Reporting Hooks
+
+- **Status**: FIXED (2026-08-17, web UI + Telegram reporting expansion)
+- **Severity**: MEDIUM (config save appeared broken; no test-message path; no reports for purge/warmup/daily summary)
+- **Confidence**: HIGH (root cause proven: engine/web-server not running → browser fetch NETWORK_ERROR; backend save logic verified working in isolation)
+- **Verified**: `tests/unit/test_telegram_reporting_bug057.py` (6 tests) + live integration check (GET/POST /api/config, POST /api/telegram/test, disabled/no-notifier envelopes)
+
+### Root Cause
+1. **Save failure**: the web UI is served by the engine's embedded uvicorn (127.0.0.1:8080). When the engine isn't running, every fetch throws `TypeError: Failed to fetch` → the UI's `NX.api` helper reports "Network request failed (request req_...)" with no hint about the real cause. The `/api/config` backend itself was proven correct (GET/POST both succeed against a live app). The user's stale browser tab hit a dead server.
+2. **No Telegram test path**: the settings form had Enable/Token/Admin fields but no way to validate them.
+3. **Missing report hooks**: important engine events (audit purge results, warmup→READY transition, daily performance) had no Telegram notification.
+
+### Fix
+- **Web UI**: `saveConfiguration()` now distinguishes server-unreachable (actionable: "Is the engine running? nse run → http://127.0.0.1:8080") from real backend errors; added a "Send Test Message" button (POST /api/telegram/test) with inline status.
+- **Backend**: new `POST /api/telegram/test` endpoint — validates notifier availability/enabled, sends via `notify_test_message()`, returns `{success, message_id}` or error envelope (`NOTIFIER_UNAVAILABLE` / `NOTIFIER_DISABLED` / `SEND_FAILED`).
+- **Notifier**: new templates — `notify_test_message`, `notify_engine_stopped`, `notify_engine_error` (CRITICAL), `notify_audit_purge`, `notify_warmup` (one-shot on NOT_READY→READY), `notify_daily_summary` (from accounting core PeriodKind.DAY).
+- **Engine wiring**: audit purge result → `notify_audit_purge` on every 6h run; warmup READY transition → `notify_warmup` (guarded so it fires once); daily summary throttled to 24h → `notify_daily_summary`. All failure-isolated, never on the tick path.
+- **Phase 15 wiring preserved**: restored `probs_for_mgmt` threading into `manage_active_positions` (was lost in a working-tree reset mid-session; recovered verbatim from session history and re-verified with the exit-behavior regression suite).
+
+### Regression Guards
+- `test_telegram_reporting_bug057.py`: test/stopped/error/purge/warmup/daily templates dispatch with correct severity; bot token redacted from bodies; endpoint contract present.
+- Integration: save config → test message → disabled → no-notifier envelopes all correct.
+- `test_exit_behavior_forensic.py` + `test_intelligence_phase09.py` + `test_accounting_core.py` + `test_audit_db_growth_bug054.py` + `test_htf_warmup_gate.py` all green (117 tests).
+
+---
+
+## BUG-059 — beforePush.ps1 False-Success on Test Failure (Native-Exe Exit Code Swallowed)
+
+- **Status**: FIXED (2026-08-17, pre-push gate hardening)
+- **Severity**: HIGH (gate script reported "ALL CHECKS PASSED" while pytest had FAILED tests)
+- **Confidence**: HIGH (reproduced: full-suite run with `test_06_server_log_contains_detailed_exception` failing printed "🎉 ALL CHECKS PASSED" + exit 0)
+- **Verified**: `beforePush.ps1` end-to-end run after fix — EXIT_CODE=0 only when pytest genuinely passes
+
+### Root Cause
+PowerShell does NOT throw a terminating error when a NATIVE executable (pytest/mypy/ruff) exits non-zero inside `try { } catch { }`. The original script wrapped every gate in try/catch, so a pytest failure was swallowed and the script printed the success banner and returned 0 — the CI/CD gate silently reported green on red builds.
+
+### Fix
+All four gates now call the native tool with `& tool ...` and check `$LASTEXITCODE` explicitly:
+```powershell
+& pytest tests/unit/ -q --tb=short
+$pytestExit = $LASTEXITCODE
+if ($pytestExit -ne 0) { Write-Failure "pytest exited with code $pytestExit ..." }
+```
+Same pattern for `ruff check`, `ruff format`, `mypy`.
+
+### Regression Guards
+- pytest exit != 0 → `Write-Failure` + `exit 1` (never the success banner)
+- `beforePush.sh` (bash) already checked exit codes correctly (`if pytest ...; then`) — confirmed no change needed
+
+---
+
+## BUG-060 — test_06 Server-Log Flake (structlog PrintLogger vs stdlib Capture)
+
+- **Status**: FIXED (2026-08-17, test determinism hardening)
+- **Severity**: MEDIUM (order-dependent test flake in full-suite runs)
+- **Confidence**: HIGH (root-caused: fresh pytest session has no `configure_logging()`, so structlog uses its DEFAULT `PrintLoggerFactory` — logs write to stdout and never reach stdlib `logging` handlers, so a capture-handler assertion sees nothing)
+- **Verified**: `test_web_security.py` passes standalone AND after other suites (full 791-test run green)
+
+### Root Cause
+`test_06_server_log_contains_detailed_exception` used `contextlib.redirect_stdout` + a stdlib capture handler. In a fresh pytest process structlog is NOT configured (no conftest calls `configure_logging()`), so `structlog.get_logger()` returns a PrintLogger-backed proxy — records never reach `logging.Logger` handlers, and the test's handler saw zero records. Order-dependent: passed when an earlier test had initialized stdlib logging, failed in isolation/full runs.
+
+### Fix
+The test now calls `configure_logging(log_to_file=False)` first (rebuilds the stdlib pipeline, idempotent), suppresses `logging.raiseExceptions` (the rich ConsoleRenderer re-raises the probe exception while formatting exc_info, which otherwise propagates out of the test), attaches the capture handler to BOTH root and the named logger, and restores the pre-test root-handler set + level + raiseExceptions in `finally`.
+
+### Regression Guards
+- Test passes in isolation (fresh pytest, no prior configure_logging)
+- Test passes after other suites that DO configure logging (order-independent)
+- Original assertions preserved: SECRET_INTERNAL_MARKER_PATH, RuntimeError, WEB_ERROR all present in captured log output

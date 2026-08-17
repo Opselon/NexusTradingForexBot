@@ -450,6 +450,58 @@ function setChartStatus(state) {
     }
 }
 
+// RESYNC (BUG-054): re-fetch the full broker candle history and swap it into
+// the chart. Called manually via the Resync button, after every SSE reconnect,
+// and by the stale watchdog. The server mirrors the broker bars into the
+// engine aggregator + ServerState, so the whole dashboard converges.
+let chartResyncInFlight = false;
+let lastChartResyncAt = 0;
+
+async function resyncChart() {
+    if (chartResyncInFlight) return;
+    chartResyncInFlight = true;
+    const btn = document.getElementById('btn-resync-chart');
+    if (btn) {
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Resyncing…';
+        btn.disabled = true;
+    }
+    try {
+        const res = await fetch('/api/chart/history?count=900', {
+            headers: { 'X-Request-ID': 'resync_' + Date.now().toString(36) }
+        });
+        if (!res.ok) {
+            console.warn('[UI_ERROR] component=Chart action=RESYNC status=' + res.status);
+            setChartStatus('error');
+            return;
+        }
+        const body = await res.json();
+        if (body.bars && body.bars.length > 0) {
+            candleData = body.bars;
+            setChartStatus('ok');
+            if (body.visual_overlays) visualOverlays = body.visual_overlays;
+            if (body.source) {
+                const srcBadge = document.getElementById('chart-source-badge');
+                if (srcBadge) srcBadge.textContent = 'sync ' + body.source + ' ✓';
+            }
+            autoFitChart();
+            drawChart();
+        } else {
+            setChartStatus('empty');
+            drawChart();
+        }
+        lastChartResyncAt = Date.now();
+    } catch (err) {
+        console.warn('[UI_ERROR] component=Chart action=RESYNC status=network', err);
+        setChartStatus('error');
+    } finally {
+        chartResyncInFlight = false;
+        if (btn) {
+            btn.innerHTML = '<i class="fa-solid fa-rotate mr-1"></i> Resync';
+            btn.disabled = false;
+        }
+    }
+}
+
 function toggleLiveMode() {
     liveMode = !liveMode;
     updateLiveToggleUI();
@@ -980,6 +1032,12 @@ function sseStaleCheck() {
             badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold';
         }
         setChartStatus('stale');
+        // RESYNC (BUG-054): a stale live stream after a reconnect/downtime
+        // must re-fetch the full broker candle history (throttled to once
+        // per 30s so a dead stream can't hammer the server).
+        if (Date.now() - lastChartResyncAt > 30000) {
+            resyncChart();
+        }
     }
     updateObsStrip();
 }
@@ -1021,6 +1079,11 @@ function startSSE() {
         // converges to live state even if SSE events were missed while down.
         console.log('[UI_STREAM] event=RESYNC reason=RECONNECT');
         fetchSystemSnapshot();
+        // RESYNC (BUG-054): after downtime the chart must also re-fetch the
+        // full broker candle history (throttled to once per 10s).
+        if (Date.now() - lastChartResyncAt > 10000) {
+            resyncChart();
+        }
     };
 
     eventSource.onmessage = (event) => {
@@ -2158,12 +2221,67 @@ async function saveConfiguration() {
         if (result.ok && result.body.success) {
             alert("Configuration successfully saved and dynamically hot-reloaded into engine!");
         } else {
-            alert('Failed to save: ' + NX.api.msg(result, 'Unknown error'));
+            // Clearer failure UX: distinguish "server unreachable" from a real
+            // backend rejection so the operator knows what to do.
+            if (result.status === 0 || (result.error && result.error.code === 'NETWORK_ERROR')) {
+                alert('Failed to save: the web server is not reachable (network request failed).\n\nIs the engine running? Start it with:  nse run  (web UI on http://127.0.0.1:8080)\n\nRequest ID: ' + (result.error && result.error.request_id || '-'));
+            } else {
+                alert('Failed to save: ' + NX.api.msg(result, 'Unknown error'));
+            }
         }
     } catch (err) {
         console.error("Failed to save config", err);
     }
 }
+
+// Telegram connectivity test: sends a test message through the engine notifier.
+async function testTelegram() {
+    const statusEl = document.getElementById('telegram-test-status');
+    if (statusEl) statusEl.textContent = 'Sending...';
+    // Save the current token/admin first so the live notifier picks them up.
+    try {
+        const updated = {
+            execution: selectedConfig.execution,
+            risk: selectedConfig.risk,
+            model: selectedConfig.model,
+            telegram: {
+                enabled: document.getElementById('cfg-telegram-enabled').checked,
+                bot_token: document.getElementById('cfg-telegram-token').value,
+                admin_id: document.getElementById('cfg-telegram-admin').value
+            },
+            mt5: selectedConfig.mt5
+        };
+        const save = await NX.api.post('/api/config', updated, { component: 'Config', action: 'SAVE_TELEGRAM' });
+        if (!save.ok) {
+            if (save.status === 0 || (save.error && save.error.code === 'NETWORK_ERROR')) {
+                if (statusEl) statusEl.textContent = '\u274c Server unreachable \u2014 engine not running?';
+                return;
+            }
+            if (statusEl) statusEl.textContent = '\u274c Save failed: ' + NX.api.msg(save, 'error');
+            return;
+        }
+        const result = await NX.api.post('/api/telegram/test', {}, { component: 'Telegram', action: 'TEST' });
+        if (result.ok && result.body.success) {
+            if (statusEl) statusEl.textContent = '\u2705 Test message sent!';
+        } else if (result.status === 0 || (result.error && result.error.code === 'NETWORK_ERROR')) {
+            if (statusEl) statusEl.textContent = '\u274c Server unreachable \u2014 engine not running?';
+        } else {
+            if (statusEl) statusEl.textContent = '\u274c ' + NX.api.msg(result, 'send failed');
+        }
+    } catch (err) {
+        console.error("Telegram test failed", err);
+        if (statusEl) statusEl.textContent = '\u274c Error: ' + (err && err.message || err);
+    }
+}
+
+// Bind telegram test button on DOMContentLoaded (idempotent).
+document.addEventListener('DOMContentLoaded', function bindTelegramTest() {
+    const btn = document.getElementById('btn-telegram-test');
+    if (btn && !btn.dataset.bound) {
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', testTelegram);
+    }
+});
 
 // Control switch: start/stop bot thread
 async function toggleEngineRunning() {
@@ -2594,7 +2712,49 @@ function initAccountIntelligence() {
     loadAccountPeriod('DAY', document.querySelector('.acct-period-btn'));
     loadAccountCharts();
     loadAccountStrategies();
+    loadClosedTrades();
     loadRiskPlan();
+}
+
+// Closed Trading History: authoritative rows from /api/account/trades.
+async function loadClosedTrades() {
+    const tbody = document.getElementById('trade-history-table');
+    if (!tbody) return;
+    try {
+        const res = await fetch('/api/account/trades?limit=50');
+        if (!res.ok) {
+            tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-textMuted italic font-sans text-xs">Closed history unavailable (' + res.status + ')</td></tr>';
+            return;
+        }
+        const rows = await res.json();
+        const list = Array.isArray(rows) ? rows : (rows.trades || rows.rows || []);
+        if (!list || list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-textMuted italic font-sans text-xs">No historical trades found yet — broker history sync pending.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = list.map(t => {
+            const dir = String(t.direction || '--').toUpperCase();
+            const dirCls = dir.startsWith('BUY') ? 'text-emerald-400' : (dir.startsWith('SELL') ? 'text-rose-400' : 'text-textMuted');
+            const net = (t.net_pnl != null) ? Number(t.net_pnl) : (t.pnl != null ? Number(t.pnl) : null);
+            const netCls = net == null ? 'text-textMuted' : (net >= 0 ? 'text-emerald-400' : 'text-rose-400');
+            const vol = (t.volume != null) ? Number(t.volume) : null;
+            const exitT = t.exit_time || t.close_time || t.closed_at || '';
+            const timeStr = exitT ? new Date(exitT).toLocaleString('en-GB', { hour12: false }) : '--';
+            const id = t.ticket != null ? t.ticket : (t.position_id != null ? t.position_id : (t.trade_id || '--'));
+            return '<tr>' +
+                '<td class="py-2 pl-2 font-mono text-accentCyan">' + id + '</td>' +
+                '<td class="py-2">' + (t.symbol || '--') + '</td>' +
+                '<td class="py-2 ' + dirCls + '">' + dir + '</td>' +
+                '<td class="py-2">' + (vol != null ? Number(vol).toFixed(2) : '--') + '</td>' +
+                '<td class="py-2 font-mono">' + (t.entry_price != null ? Number(t.entry_price).toFixed(2) + ' → ' : '') + (t.exit_price != null ? Number(t.exit_price).toFixed(2) : '--') + '</td>' +
+                '<td class="py-2 font-mono ' + netCls + '">' + (net != null ? acctFmtMoney(net) : '--') + '</td>' +
+                '<td class="py-2 pr-2 text-right font-mono text-textMuted">' + timeStr + '</td>' +
+                '</tr>';
+        }).join('');
+    } catch (err) {
+        console.error('Closed trades load failed', err);
+        tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-textMuted italic font-sans text-xs">Closed history load failed.</td></tr>';
+    }
 }
 
 // Risk Plan: authoritative numbers from /api/live/accounting (single source
@@ -2644,9 +2804,58 @@ async function loadResearchSummary() {
         const w = s.worker || {};
         document.getElementById('research-worker-status').textContent =
             (w.status || '--') + ' · ' + (w.cycle_count || 0) + 'cyc';
+        renderResearchOutcomeQuality(s.outcome_quality);
         loadResearchRegistry();
     } catch (e) {
         console.warn('research summary failed', e);
+    }
+}
+
+function renderResearchOutcomeQuality(q) {
+    const box = document.getElementById('research-outcome-quality');
+    if (!box) return;
+    if (!q || !q.available) {
+        box.innerHTML = '<div class="text-textMuted italic">Outcome quality unavailable.</div>';
+        return;
+    }
+    const srcs = q.reconstruction_sources || {};
+    const srcDesc = Object.entries(srcs).map(([k, v]) => esc(k) + ': ' + v).join(' · ');
+    const zeroCls = q.zero_r_outcomes > 0 ? 'text-accentRed' : 'text-accentGreen';
+    box.innerHTML =
+        '<div class="grid grid-cols-2 lg:grid-cols-5 gap-2">' +
+        '<div><span class="text-textMuted">closed</span> <b class="text-white">' + (q.closed_outcomes ?? '--') + '</b></div>' +
+        '<div><span class="text-textMuted">nonzero R</span> <b class="text-accentGreen">' + (q.nonzero_r_outcomes ?? '--') + '</b></div>' +
+        '<div><span class="text-textMuted">zero R</span> <b class="' + zeroCls + '">' + (q.zero_r_outcomes ?? '--') + '</b></div>' +
+        '<div><span class="text-textMuted">+R</span> <b class="text-accentGreen">' + (q.positive_r_outcomes ?? '--') + '</b></div>' +
+        '<div><span class="text-textMuted">-R</span> <b class="text-accentRed">' + (q.negative_r_outcomes ?? '--') + '</b></div>' +
+        '</div>' +
+        '<div class="mt-1 text-textMuted">sources: ' + srcDesc + '</div>';
+}
+
+async function repairResearchOutcomes() {
+    const box = document.getElementById('research-repair-result');
+    box.innerHTML = '<div class="text-textMuted italic">Repairing zero-R outcomes from broker history (bounded, idempotent)…</div>';
+    try {
+        const res = await NX.api.post('/api/research/repair-outcomes', {}, { component: 'Research', action: 'REPAIR_OUTCOMES' });
+        const body = res.ok ? res.body : { available: false, error: res.error };
+        if (!body.available) {
+            box.innerHTML = '<div class="text-accentRed italic">Repair unavailable: ' + esc(body.error || '') + '</div>';
+            return;
+        }
+        const r = body.result || {};
+        box.innerHTML = '<div class="text-accentGreen">Repair pass complete.</div>' +
+            '<div class="mt-1">candidates: ' + (r.candidates ?? 0) +
+            ' · repaired: <b class="text-accentGreen">' + (r.repaired ?? 0) + '</b>' +
+            ' · unrepaired: ' + (r.unrepaired ?? 0) +
+            ' · skipped_no_broker: ' + (r.skipped_no_broker ?? 0) + '</div>' +
+            (r.repaired_rows || []).slice(0, 12).map(row =>
+                '<div class="text-[10px]">ticket ' + esc(String(row.ticket)) +
+                ' · R ' + row.old_r + ' → <b class="text-accentGreen">' + row.new_r + '</b>' +
+                ' · pnl ' + row.new_pnl + ' · ' + esc(row.source) + '</div>').join('');
+        loadResearchSummary();
+    } catch (e) {
+        console.warn('research repair failed', e);
+        box.innerHTML = '<div class="text-accentRed italic">Repair failed.</div>';
     }
 }
 
@@ -2884,6 +3093,13 @@ async function scanIntelligenceEvolution() {
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initAccountIntelligence, 1200);
     setTimeout(loadIntelligenceSummary, 1500);
+    // Periodically refresh account intelligence (broker history sync fills in
+    // real values after engine start; charts need fresh points to render).
+    setInterval(() => {
+        loadAccountPerformance();
+        loadAccountCharts();
+        loadClosedTrades();
+    }, 30000);
     const observer = new MutationObserver(() => {
         const tab = document.getElementById('tab-account');
         if (tab && !tab.classList.contains('hidden') && !window.__acctIntelLoaded) {

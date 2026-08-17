@@ -1,0 +1,204 @@
+{
+  "operation": "account_info",
+  "captured_at": "2026-08-17T05:41:13.436980+00:00",
+  "object": {
+    "assets": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "balance": {
+      "type": "float",
+      "value": 37717.91,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "commission_blocked": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "company": {
+      "type": "str",
+      "value": "MetaQuotes Ltd.",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "count": {
+      "type": "builtin_function_or_method",
+      "value": "<built-in method count of AccountInfo object at 0x000001952D7D0040>",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "credit": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "currency": {
+      "type": "str",
+      "value": "USD",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "currency_digits": {
+      "type": "int",
+      "value": 2,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "equity": {
+      "type": "float",
+      "value": 37717.91,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "fifo_close": {
+      "type": "bool",
+      "value": false,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "index": {
+      "type": "builtin_function_or_method",
+      "value": "<built-in method index of AccountInfo object at 0x000001952D7D0040>",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "leverage": {
+      "type": "int",
+      "value": 100,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "liabilities": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "limit_orders": {
+      "type": "int",
+      "value": 200,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "login": {
+      "type": "int",
+      "value": 10011755849,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_free": {
+      "type": "float",
+      "value": 37717.91,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_initial": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_level": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_maintenance": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_mode": {
+      "type": "int",
+      "value": 2,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_so_call": {
+      "type": "float",
+      "value": 50.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_so_mode": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "margin_so_so": {
+      "type": "float",
+      "value": 30.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_fields": {
+      "type": "int",
+      "value": 28,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_sequence_fields": {
+      "type": "int",
+      "value": 28,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "n_unnamed_fields": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "name": {
+      "type": "str",
+      "value": "Amit Bdr",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "profit": {
+      "type": "float",
+      "value": 0.0,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "server": {
+      "type": "str",
+      "value": "MetaQuotes-Demo",
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_allowed": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_expert": {
+      "type": "bool",
+      "value": true,
+      "nullable": false,
+      "source": "MT5"
+    },
+    "trade_mode": {
+      "type": "int",
+      "value": 0,
+      "nullable": false,
+      "source": "MT5"
+    }
+  }
+}

@@ -394,6 +394,51 @@ def repair_cmd(
     raise typer.Exit(1 if failed else 0)
 
 
+@app.command("audit-purge")
+def audit_purge_cmd(
+    signal_days: float = typer.Option(
+        7.0, "--signal-days", help="Retention for audit_signals rows (days)."
+    ),
+    moving_days: float = typer.Option(
+        3.0, "--moving-days", help="Retention for POSITION_MOVING events (days)."
+    ),
+    telemetry_days: float = typer.Option(
+        13.0, "--telemetry-days", help="Retention for guard telemetry (days)."
+    ),
+    batch_size: int = typer.Option(500, "--batch", help="Rows per bounded delete transaction."),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """Purge disposable audit telemetry older than the retention window (BUG-054).
+
+    Deletes ONLY: old audit_signals rows, old POSITION_MOVING events and old
+    guard telemetry. NEVER touches audit_ledger / experiences / autopsies /
+    strategy / research tables. Safe to run while the engine is live (bounded
+    batches, WAL). For scheduled use, pair with a cron/systemd timer.
+    """
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
+    repo = AuditRepository(flush_interval_sec=0.05)
+    try:
+        res = repo.purge_old_audit_data(
+            signal_retention_days=signal_days,
+            moving_retention_days=moving_days,
+            telemetry_retention_days=telemetry_days,
+            batch_size=batch_size,
+        )
+    finally:
+        repo.close()
+    if json_mode:
+        _emit(res, True)
+        return
+    console.print("[green]Audit retention purge complete[/green]")
+    for table, count in (res.get("deleted") or {}).items():
+        console.print(f"  {table:22} {count} rows deleted")
+    if res.get("error"):
+        console.print(f"[red]error: {res['error']}[/red]")
+        raise typer.Exit(1)
+    console.print(f"  duration: {res.get('duration_ms', 0)} ms")
+
+
 # ---------------------------------------------------------------------------
 # diagnostics
 # ---------------------------------------------------------------------------
