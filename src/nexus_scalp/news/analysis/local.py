@@ -472,13 +472,30 @@ class LocalNewsAnalyzer:
         bull_hits = sum(1 for kw in _BULLISH_XAUUSD if kw.upper() in text)
         bear_hits = sum(1 for kw in _BEARISH_XAUUSD if kw.upper() in text)
         relevance = self.xauusd_relevance(article, entities, topics)
-        if relevance >= 0.3:
+        # Calibration (2026-08-17): driver-only articles (no gold token) from
+        # the relevance upgrade must also produce an XAUUSD impact hypothesis —
+        # their direction comes from the driver (e.g. "yields rise" = bearish,
+        # "Fed cut" = bullish), not a gold keyword. Threshold lowered to 0.25.
+        if relevance >= 0.25:
             if bull_hits > bear_hits:
                 xauusd_dir = NewsDirection.BULLISH
             elif bear_hits > bull_hits:
                 xauusd_dir = NewsDirection.BEARISH
             elif bull_hits and bear_hits:
                 xauusd_dir = NewsDirection.MIXED
+            elif not (bull_hits or bear_hits):
+                # Driver-only directional inference for XAUUSD.
+                for kw in _BULLISH_XAUUSD:
+                    if kw.upper() in text:
+                        xauusd_dir = NewsDirection.BULLISH
+                        bull_hits = 1
+                        break
+                if xauusd_dir == NewsDirection.NEUTRAL:
+                    for kw in _BEARISH_XAUUSD:
+                        if kw.upper() in text:
+                            xauusd_dir = NewsDirection.BEARISH
+                            bear_hits = 1
+                            break
             strength = min(1.0, (abs(bull_hits - bear_hits) * 0.2) + 0.2 + relevance * 0.3)
             impacts.append(
                 NewsImpact(
