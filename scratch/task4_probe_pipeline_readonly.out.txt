@@ -1,0 +1,62 @@
+=== 0. RAW COUNTS ===
+experiences: 229
+outcomes: 74
+ledger CLOSED: 263
+registry: 2
+research_runs: 0
+
+=== 1. ZERO-SUBSTITUTION CENSUS (all outcomes) ===
+total=74 r==0: 32 pnl==0: 32 executed=74 closed=74
+reconstruction_source distribution: {'NO_BROKER_OUTCOME': 10, 'NONE': 63, 'BROKER_DEALS': 1}
+zero-R by reconstruction_source: {'NO_BROKER_OUTCOME': 10, 'NONE': 22}
+
+=== 2. OUTCOME R DISTRIBUTION (non-zero) ===
+non-zero-R outcomes: 42
+   exp_a4e5e5bd-1f4d-49a0-b2ca-fc R= 0.1522 pnl= 32.12 SYSTEM_CLOSE 2026-08-17T10:15:13
+   exp_4693dfea-d427-4f5e-8610-5a R= -1.0177 pnl= -189.42 HARD_SL_HIT 2026-08-17T10:28:44
+   exp_1dce3505-a09c-48e8-8176-c8 R= -0.993 pnl= -187.0 HARD_SL_HIT 2026-08-17T10:37:45
+   exp_446897e8-18bc-4255-b222-39 R= -1.0255 pnl= -186.12 HARD_SL_HIT 2026-08-17T10:51:50
+   exp_8ff645ea-ad73-4bcd-b6e9-cc R= -0.0413 pnl= -7.14 SYSTEM_CLOSE 2026-08-17T10:55:34
+   exp_4b3f5a8a-9995-4e3c-80e6-f5 R= 0.0865 pnl= 15.25 SYSTEM_CLOSE 2026-08-17T11:36:48
+   exp_03562694-73c7-4236-8c56-b1 R= 1.0979 pnl= 2.13 SYSTEM_CLOSE 2026-08-17T11:38:16
+   exp_f36be2c3-16ac-4d1e-8ada-0d R= -1.0 pnl= -176.41 HARD_SL_HIT 2026-08-17T11:40:37
+   exp_fe651b13-af9a-4748-a97e-99 R= -1.0 pnl= -170.64 RISK_FREE_SL_HIT 2026-08-17T11:43:17
+   exp_15c0abda-70bb-41a9-bcae-53 R= 0.0125 pnl= 1.96 SYSTEM_CLOSE 2026-08-17T18:00:33
+   exp_5cfdd0da-e564-4872-bc9b-c2 R= 0.024 pnl= 4.03 SYSTEM_CLOSE 2026-08-17T18:07:22
+   exp_fd875fb7-ba29-43c4-97a8-e1 R= -0.2258 pnl= -40.32 SYSTEM_CLOSE 2026-08-17T18:22:06
+
+=== 3. RESEARCH DATASET PATH (read-only) ===
+2026-08-18 21:36:35 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/audit.db
+dataset_id=ds_32e60efb5215ad66 samples=74
+schema_ids: ['scalp_v1']
+samples with realized_r==0.0: 32 / 74
+samples with realized_pnl_usd==0.0: 32
+
+distinct families: 22
+family-size distribution: [20, 12, 5, 4, 4, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+largest=20 median=2 smallest=1
+families >= MIN_FAMILY_SAMPLES(20): 1
+  n= 20 exp_r=-0.0861 XAUUSD|M1|LONDON|RANGING_MEAN_REVERSION|NORMAL|BULLISH
+  n= 12 exp_r=-0.0140 XAUUSD|M1|TOKYO|RANGING_MEAN_REVERSION|NORMAL|BULLISH
+  n=  5 exp_r=-0.4037 XAUUSD|M1|LONDON|TRENDING_MOMENTUM|HIGH|BULLISH
+  n=  4 exp_r=-0.0640 XAUUSD|M1|TOKYO|TRENDING_MOMENTUM|NORMAL|BULLISH
+  n=  4 exp_r=+0.0292 XAUUSD|M1|TOKYO|TRENDING_MOMENTUM|HIGH|BULLISH
+  n=  4 exp_r=+0.1493 XAUUSD|M1|NY|TRENDING_MOMENTUM|NORMAL|BULLISH
+  n=  4 exp_r=+0.0007 XAUUSD|M1|NY|TRENDING_MOMENTUM|EXTREME|BEARISH
+  n=  3 exp_r=-0.4309 XAUUSD|M1|OFF_SESSION|RANGING_MEAN_REVERSION|NORMAL|BULLISH
+
+candidates discovered: 0
+rejection reason counts (family level): {'INSUFFICIENT_FAMILY_SAMPLES': 21, 'LOW_EXPECTANCY': 1}
+
+=== 4. REGISTRY (read-only) ===
+registry count: 2
+   STRAT-ICHIMILI-FINAL v836171aa38de DISCOVERED 0
+   STRAT-ICHIMILI-SPACED vc34040dcde69 DISCOVERED 0
+
+=== 5. DEDUP CHECK: duplicate idempotency keys in experiences ===
+distinct idempotency_keys: 229
+rows: 229
+
+=== 6. SAMPLE-COUNT SEMANTICS CHECK ===
+outcome rows sharing an execution_id (split fills?): 1
+   152494870397 2

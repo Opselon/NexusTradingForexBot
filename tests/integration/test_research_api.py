@@ -197,6 +197,30 @@ class TestResearchAPI:
         assert not hasattr(nexus_scalp.research, "OrderManager")
         assert not hasattr(nexus_scalp.research, "OrderLifecycleManager")
 
+    def test_research_health_endpoint(self, wired_engine):
+        """TASK-4: /api/research/health explains WHY the registry is empty."""
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/research/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        health = body["health"]
+        for key in (
+            "source_experiences",
+            "canonical_outcomes",
+            "eligible_samples",
+            "rejected_samples",
+            "rejection_reasons",
+            "families",
+            "candidates_discovered",
+            "registry_count",
+        ):
+            assert key in health, f"missing health key {key}"
+        assert isinstance(health["rejection_reasons"], dict)
+        assert isinstance(health["eligible_samples"], int)
+
     def test_self_heal_endpoint(self, wired_engine):
         repo, engine = wired_engine
         app = create_app(engine)

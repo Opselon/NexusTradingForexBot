@@ -214,7 +214,11 @@ candidate ids; no promotion path exists; LiveEngine continues to load
 
 ## 25. COMMITS
 
-- (single coherent commit; see git log)
+- `b4c5104` Hermes-ModelIntelligence: TASK-5 60D challenger path + hardened
+  validation gates + fair 8-cell matrix (pushed to origin/main 2026-08-18;
+  remote HEAD verified `b4c510449511e43edb88367aa6f1f79c178d9ecd`).
+- (Earlier same-day baseline commits by parallel agents: eb3fb05/3704b62/
+  527d4c0 Hermes-TASK1 — registry rows co-exist additively.)
 
 ## 26. HANDOFF TO TASK-6 (Live Model Governance / Shadow Runtime)
 

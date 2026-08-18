@@ -1,0 +1,335 @@
+============================================================
+TASK-5 CONTROLLED 50D-vs-60D HISTORICAL EXPERIMENT
+============================================================
+[NEWS] exported 500 news rows; readiness=True ({'real_news_db_exists': True, 'contains_analysis_records': True, 'non_neutral_news_gt_0': True, 'xauusd_relevant_gt_0': True, 'multiple_event_timestamps': True, 'no_synthetic_fixture': True, 'schema_valid': True})
+2026-08-18 22:16:53 [info     ] [SCHEMA_V2] computed 20000 rows (of ~100000)
+2026-08-18 22:17:12 [info     ] [SCHEMA_V2] computed 40000 rows (of ~100000)
+2026-08-18 22:17:31 [info     ] [SCHEMA_V2] computed 60000 rows (of ~100000)
+2026-08-18 22:17:51 [info     ] [SCHEMA_V2] computed 80000 rows (of ~100000)
+[60D] computed 99946 rows of 60D features
+[FEATURES] 60D=99946 rows, 50D=99946 rows, computed in 98s
+2026-08-18 22:18:11 [info     ] Purged Triple-Barrier 3-Class Labeling Complete buy_labels=5930 embargo_bars=3 evaluated_samples=20897 friction_usd=$0.35 no_trade_labels=88202 sell_labels=5814 skipped_invalid_atr=15 total_samples=99946
+2026-08-18 22:18:24 [info     ] [DATASET] event=BUILT dataset_id=ds_cb30f87520e9e6a4 rows=99946
+[DATASET] schema=scalp_v1 news=N id=ds_cb30f87520e9e6a4 rows=99946
+2026-08-18 22:18:24 [info     ] Purged Triple-Barrier 3-Class Labeling Complete buy_labels=5930 embargo_bars=3 evaluated_samples=20897 friction_usd=$0.35 no_trade_labels=88202 sell_labels=5814 skipped_invalid_atr=15 total_samples=99946
+2026-08-18 22:19:38 [info     ] [DATASET] event=BUILT dataset_id=ds_af362f55e86a15ca rows=99946
+[DATASET] schema=scalp_v1 news=Y id=ds_af362f55e86a15ca rows=99946
+2026-08-18 22:19:38 [info     ] Purged Triple-Barrier 3-Class Labeling Complete buy_labels=5930 embargo_bars=3 evaluated_samples=20897 friction_usd=$0.35 no_trade_labels=88202 sell_labels=5814 skipped_invalid_atr=15 total_samples=99946
+2026-08-18 22:19:53 [info     ] [DATASET] event=BUILT dataset_id=ds_b64513f79687824a rows=99946
+[DATASET] schema=scalp_v2 news=N id=ds_b64513f79687824a rows=99946
+2026-08-18 22:19:53 [info     ] Purged Triple-Barrier 3-Class Labeling Complete buy_labels=5930 embargo_bars=3 evaluated_samples=20897 friction_usd=$0.35 no_trade_labels=88202 sell_labels=5814 skipped_invalid_atr=15 total_samples=99946
+2026-08-18 22:21:06 [info     ] [DATASET] event=BUILT dataset_id=ds_f9a06027a76588ff rows=99946
+[DATASET] schema=scalp_v2 news=Y id=ds_f9a06027a76588ff rows=99946
+2026-08-18 22:21:06 [info     ] [EXPERIMENT] event=CREATED experiment_id=task5_A_baseline_scalpnet_v1 template=baseline_scalpnet_v1
+2026-08-18 22:21:36 [info     ] [TRAIN] event=CANDIDATE_READY model_id=task5_a_v1 val_acc=0.1311
+2026-08-18 22:21:36 [info     ] [MODEL] event=LOADED model_id=task5_a_v1 device=cpu
+2026-08-18 22:21:36 [info     ] [TASK5] cell=A status=COMPLETED verdict=REJECTED acc=0.1822 mf1=0.1814 ece=0.1368
+2026-08-18 22:21:36 [info     ] [EXPERIMENT] event=CREATED experiment_id=task5_B_baseline_scalpnet_v1_news template=baseline_scalpnet_v1_news
+2026-08-18 22:22:04 [info     ] [TRAIN] event=CANDIDATE_READY model_id=task5_b_v1 val_acc=0.1262
+2026-08-18 22:22:04 [info     ] [MODEL] event=LOADED model_id=task5_b_v1 device=cpu
+2026-08-18 22:22:04 [info     ] [TASK5] cell=B status=COMPLETED verdict=REJECTED acc=0.1693 mf1=0.1718 ece=0.1491
+2026-08-18 22:22:04 [info     ] [EXPERIMENT] event=CREATED experiment_id=task5_C_baseline_scalpnet_v1 template=baseline_scalpnet_v1
+2026-08-18 22:22:31 [info     ] [TRAIN] event=CANDIDATE_READY model_id=task5_c_v1 val_acc=0.1650
+2026-08-18 22:22:31 [info     ] [MODEL] event=LOADED model_id=task5_c_v1 device=cpu
+2026-08-18 22:22:31 [info     ] [TASK5] cell=C status=COMPLETED verdict=REJECTED acc=0.2189 mf1=0.209 ece=0.1033
+2026-08-18 22:22:31 [info     ] [EXPERIMENT] event=CREATED experiment_id=task5_D_baseline_scalpnet_v1_news template=baseline_scalpnet_v1_news
+2026-08-18 22:23:00 [info     ] [TRAIN] event=CANDIDATE_READY model_id=task5_d_v1 val_acc=0.1926
+2026-08-18 22:23:00 [info     ] [MODEL] event=LOADED model_id=task5_d_v1 device=cpu
+2026-08-18 22:23:01 [info     ] [TASK5] cell=D status=COMPLETED verdict=REJECTED acc=0.2301 mf1=0.2154 ece=0.0928
+{
+  "experiment": "task5_60d_challenger",
+  "generated_at": "2026-08-18T18:53:01.253551+00:00",
+  "dataset_50d": "ds_cb30f87520e9e6a4",
+  "dataset_60d": "ds_b64513f79687824a",
+  "rows_50d": 99946,
+  "rows_60d": 99946,
+  "epochs": 6,
+  "seed": 42,
+  "news_available": true,
+  "cells": {
+    "A": {
+      "kind": "A",
+      "status": "COMPLETED",
+      "model_id": "task5_a_v1",
+      "architecture": "LEGACY_SCALPNET_V1",
+      "feature_dimension": 50,
+      "news_enabled": false,
+      "dataset_id": "ds_cb30f87520e9e6a4",
+      "val_accuracy": 0.1822,
+      "macro_f1": 0.1814,
+      "balanced_accuracy": 0.5565,
+      "ece": 0.1368,
+      "validation_verdict": "REJECTED",
+      "gates": [
+        {
+          "label_integrity": true
+        },
+        {
+          "class_collapse": true
+        },
+        {
+          "regime_coverage": true
+        },
+        {
+          "calibration": true
+        },
+        {
+          "calibration_floor": true
+        },
+        {
+          "oos_accuracy": false
+        },
+        {
+          "oos_macro_f1_floor": false
+        },
+        {
+          "oos_balanced_accuracy_floor": true
+        }
+      ],
+      "class_distribution": {
+        "0": 88202,
+        "1": 5930,
+        "2": 5814
+      },
+      "class_collapse": false,
+      "per_class": {
+        "0": {
+          "support": 88202,
+          "precision": 0.9855,
+          "recall": 0.1022,
+          "f1": 0.1851
+        },
+        "1": {
+          "support": 5930,
+          "precision": 0.0988,
+          "recall": 0.7683,
+          "f1": 0.1751
+        },
+        "2": {
+          "support": 5814,
+          "precision": 0.1039,
+          "recall": 0.7991,
+          "f1": 0.1839
+        }
+      },
+      "duration_ms": 29213.5,
+      "val_rows": 99946
+    },
+    "B": {
+      "kind": "B",
+      "status": "COMPLETED",
+      "model_id": "task5_b_v1",
+      "architecture": "LEGACY_SCALPNET_V1",
+      "feature_dimension": 50,
+      "news_enabled": true,
+      "dataset_id": "ds_af362f55e86a15ca",
+      "val_accuracy": 0.1693,
+      "macro_f1": 0.1718,
+      "balanced_accuracy": 0.5503,
+      "ece": 0.1491,
+      "validation_verdict": "REJECTED",
+      "gates": [
+        {
+          "label_integrity": true
+        },
+        {
+          "class_collapse": true
+        },
+        {
+          "regime_coverage": true
+        },
+        {
+          "calibration": true
+        },
+        {
+          "calibration_floor": true
+        },
+        {
+          "oos_accuracy": false
+        },
+        {
+          "oos_macro_f1_floor": false
+        },
+        {
+          "oos_balanced_accuracy_floor": true
+        }
+      ],
+      "class_distribution": {
+        "0": 88202,
+        "1": 5930,
+        "2": 5814
+      },
+      "class_collapse": false,
+      "per_class": {
+        "0": {
+          "support": 88202,
+          "precision": 0.984,
+          "recall": 0.0877,
+          "f1": 0.161
+        },
+        "1": {
+          "support": 5930,
+          "precision": 0.0971,
+          "recall": 0.8302,
+          "f1": 0.1738
+        },
+        "2": {
+          "support": 5814,
+          "precision": 0.103,
+          "recall": 0.7329,
+          "f1": 0.1806
+        }
+      },
+      "duration_ms": 27409.8,
+      "val_rows": 99946
+    },
+    "C": {
+      "kind": "C",
+      "status": "COMPLETED",
+      "model_id": "task5_c_v1",
+      "architecture": "LEGACY_SCALPNET_V1",
+      "feature_dimension": 60,
+      "news_enabled": false,
+      "dataset_id": "ds_b64513f79687824a",
+      "val_accuracy": 0.2189,
+      "macro_f1": 0.209,
+      "balanced_accuracy": 0.5807,
+      "ece": 0.1033,
+      "validation_verdict": "REJECTED",
+      "gates": [
+        {
+          "label_integrity": true
+        },
+        {
+          "class_collapse": true
+        },
+        {
+          "regime_coverage": true
+        },
+        {
+          "calibration": true
+        },
+        {
+          "calibration_floor": true
+        },
+        {
+          "oos_accuracy": false
+        },
+        {
+          "oos_macro_f1_floor": false
+        },
+        {
+          "oos_balanced_accuracy_floor": true
+        }
+      ],
+      "class_distribution": {
+        "0": 88202,
+        "1": 5930,
+        "2": 5814
+      },
+      "class_collapse": false,
+      "per_class": {
+        "0": {
+          "support": 88202,
+          "precision": 0.9855,
+          "recall": 0.1414,
+          "f1": 0.2474
+        },
+        "1": {
+          "support": 5930,
+          "precision": 0.1083,
+          "recall": 0.801,
+          "f1": 0.1908
+        },
+        "2": {
+          "support": 5814,
+          "precision": 0.1071,
+          "recall": 0.7998,
+          "f1": 0.1889
+        }
+      },
+      "duration_ms": 26840.1,
+      "val_rows": 99946
+    },
+    "D": {
+      "kind": "D",
+      "status": "COMPLETED",
+      "model_id": "task5_d_v1",
+      "architecture": "LEGACY_SCALPNET_V1",
+      "feature_dimension": 60,
+      "news_enabled": true,
+      "dataset_id": "ds_f9a06027a76588ff",
+      "val_accuracy": 0.2301,
+      "macro_f1": 0.2154,
+      "balanced_accuracy": 0.572,
+      "ece": 0.0928,
+      "validation_verdict": "REJECTED",
+      "gates": [
+        {
+          "label_integrity": true
+        },
+        {
+          "class_collapse": true
+        },
+        {
+          "regime_coverage": true
+        },
+        {
+          "calibration": true
+        },
+        {
+          "calibration_floor": true
+        },
+        {
+          "oos_accuracy": false
+        },
+        {
+          "oos_macro_f1_floor": false
+        },
+        {
+          "oos_balanced_accuracy_floor": true
+        }
+      ],
+      "class_distribution": {
+        "0": 88202,
+        "1": 5930,
+        "2": 5814
+      },
+      "class_collapse": false,
+      "per_class": {
+        "0": {
+          "support": 88202,
+          "precision": 0.9834,
+          "recall": 0.1569,
+          "f1": 0.2707
+        },
+        "1": {
+          "support": 5930,
+          "precision": 0.1035,
+          "recall": 0.7838,
+          "f1": 0.1829
+        },
+        "2": {
+          "support": 5814,
+          "precision": 0.11,
+          "recall": 0.7752,
+          "f1": 0.1927
+        }
+      },
+      "duration_ms": 29477.4,
+      "val_rows": 99946
+    }
+  },
+  "conclusion": {
+    "60d_vs_50d_news_off": "BETTER",
+    "60d_vs_50d_news_on": "BETTER",
+    "news_effect_50d": "INCONCLUSIVE",
+    "news_effect_60d": "INCONCLUSIVE",
+    "note": "Point estimates on one historical M5 dataset. No statistical significance claimed. No candidate is promoted. The Champion remains the control group."
+  },
+  "champion_safety": {
+    "champion_path": "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt",
+    "touched": false,
+    "note": "CandidateTrainer writes candidate ids only; no promotion path exists."
+  }
+}

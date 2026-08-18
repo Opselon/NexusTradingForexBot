@@ -23,7 +23,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-REQUIRED_TOP_LEVEL = ("Web", "configs", "docs", "licenses", "README.txt")  # unused marker kept for docs
+REQUIRED_TOP_LEVEL = (
+    "Web",
+    "configs",
+    "docs",
+    "licenses",
+    "README.txt",
+)  # unused marker kept for docs
 
 
 @dataclass

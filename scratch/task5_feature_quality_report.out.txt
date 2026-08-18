@@ -1,0 +1,17 @@
+2026-08-18 22:24:03 [info     ] [SCHEMA_V2] computed 20000 rows (of ~100000)
+2026-08-18 22:24:23 [info     ] [SCHEMA_V2] computed 40000 rows (of ~100000)
+2026-08-18 22:24:45 [info     ] [SCHEMA_V2] computed 60000 rows (of ~100000)
+2026-08-18 22:25:06 [info     ] [SCHEMA_V2] computed 80000 rows (of ~100000)
+[Q] computed 99946 rows of 60D features
+report written: docs\task5_feature_quality_report.md
+json written: artifacts\model_generation\task5_feature_quality.json
+  feat_50 regime_compression: unique=69015 var=0.039293 flags=['OUTLIER_DOMINATED']
+  feat_51 momentum_5_atr: unique=95448 var=1.87627 flags=[]
+  feat_52 wick_imbalance_5: unique=99920 var=0.023075 flags=[]
+  feat_53 volume_z_5: unique=96447 var=1.648819 flags=[]
+  feat_54 range_z_5: unique=97882 var=0.855491 flags=['OUTLIER_DOMINATED']
+  feat_55 clv_avg_5: unique=99889 var=0.070359 flags=[]
+  feat_56 session_phase_enc: unique=5 var=0.381211 flags=[]
+  feat_57 price_acceleration: unique=98038 var=1.516039 flags=[]
+  feat_58 atr_trend_ratio: unique=99854 var=0.034997 flags=['OUTLIER_DOMINATED']
+  feat_59 direction_bias_8: unique=17 var=0.116168 flags=[]
