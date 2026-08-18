@@ -4042,3 +4042,84 @@ package-relative. Deduplicated via `resolve()` set.
 Regression guard: exercised by the REAL v9.1.0 PyInstaller rebuild in
 `release/` (see TASK-9 handoff); unit coverage in
 `test_release_update_phase17.py` version-truth assertions.
+
+## BUG-093 — build-info.json Written With UTF-8 BOM Breaks Release Version Truth (2026-08-18 TASK-9)
+
+Category: RELEASE / PACKAGING / CLI
+
+Evidence: PowerShell 5.1 `Set-Content -Encoding utf8` writes a UTF-8 BOM.
+`build_release.ps1` step 4 and `.github/workflows/release.yml` step
+"Write build-info.json" both used it. `metadata.read_build_info()`
+`json.loads()` on the BOM-prefixed file raised JSONDecodeError, so the
+packaged EXE silently fell back to `get_version()` (dist metadata / pyproject
+/ "0.0.0"). In the real v9.1.0 rebuild the EXE reported `version 9.0.0`
+despite its embedded build-info being stamped 9.1.0: version truth broken
+for every release produced by the pipeline. `verify-release` identity
+check failed on the same JSON read.
+
+Impact: any released EXE could report a stale/wrong version; update health
+gates and release verification would fail on version truth.
+
+Fix: build_release.ps1 + release.yml now write build-info.json via
+`[IO.File]::WriteAllText(..., (New-Object System.Text.UTF8Encoding($false)))`
+(BOM-free). Also fixed `[System.IO.Path]::GetRelativePath` (missing in .NET
+Framework / Windows PowerShell 5.1) with a try/catch fallback — the
+checksums step could never run under 5.1.
+
+Verified: rebuilt v9.1.0 EXE reports 9.1.0 (see TASK-9 handoff); ps1 parses
+under pwsh 7; release.yml YAML-valid (13 steps).
+
+## BUG-094 — Behavioral & Anomaly Intelligence Pipeline Disconnected: behavior_detections Never Written, Report Emits n/a (2026-08-18 TASK-2)
+
+### Status: FIXED
+
+### Symptom
+The Performance Intelligence report always showed:
+```text
+ BEHAVIORAL
+n/a (no behavioral flags recorded)
+
+ ANOMALIES
+none detected
+```
+even though the canonical data pool contained 266 closed ledger trades (262 with MAE/MFE, 58 with confidence, 82 with regime), 34 experience outcomes with Phase-08 behavioral flags, and 11,875 lifecycle events.
+
+### Root cause
+The PHASE 09 `BehaviorDetectionEngine` was constructed in `LiveEngine.__init__` and passed to `IntelligenceWorker`, but **its `analyze()` was never invoked anywhere in the codebase**. `IntelligenceWorker._refresh_once()` only ran autopsies + evolution scans — there was no behavioral-analysis step at all:
+
+```text
+detector (exists) -> NOT INVOKED -> no records -> report reads empty behavior_detections -> n/a
+```
+
+In addition:
+1. `PerformanceReportEngine._stage_behavioral` read ONLY the `behavior_detections` table (0 rows), ignoring the Phase-08 flags already persisted in `audit_experience_outcomes.behavioral_flags` (34 rows).
+2. The report could not distinguish "no analysis ran" (NO_DATA) from "analyzed, nothing found" (CLEAR) — both rendered as `n/a` / `none detected`.
+3. The anomaly section (`compute_anomalies` + formatter) had no persistent evidence store and displayed `none detected` by silence.
+
+### Evidence
+- `behavior_detections` row count = 0 while `audit_ledger` = 266 and `audit_experience_outcomes` = 74 (probe: `scratch/probe_behavior_lineage_gap.py`).
+- `grep -rn ".analyze(|intelligence_behavior" src/` — the engine's `analyze` had zero call sites in production code.
+- `IntelligenceWorker._refresh_once` listed only `autopsy` and `evolution` steps.
+
+### Fix (TASK-2)
+1. `src/nexus_scalp/intelligence/behavior.py` — upgraded `BehaviorDetectionEngine` with evidence-gated detectors (OVERHOLD_LOSER, PROFIT_GIVEBACK, MISSED_BREAKEVEN, PREMATURE_BREAKEVEN, MODEL_REVERSAL_IGNORED, REGIME_CHANGE_IGNORED, LIQUIDITY_REVERSAL_IGNORED, RISK_DEVIATION, EXIT_CLASSIFICATION_ANOMALY, STRATEGY_CONTEXT_LOSS, DUPLICATE_ECONOMIC_OUTCOME); centralized thresholds; versions `behavior-v1`/`anomaly-v1`; deterministic idempotent persistence.
+2. `src/nexus_scalp/intelligence/worker.py` — added `_refresh_behavior()` step to `_refresh_once()` (off hot path, bounded to 200 trades, idempotent).
+3. `src/nexus_scalp/adapters/database/audit_repository.py` — new `behavior_analysis` + `anomaly_events` tables (versioned, keyed, indexed).
+4. `src/nexus_scalp/reporting/{engine,models,telegram_format}.py` — truthful states (NO_DATA/CLEAR/FLAGS_FOUND/ANOMALIES_FOUND), evidence coverage, engine versions; formatter never emits `n/a`/`none detected` when analysis has not run.
+5. `src/nexus_scalp/web/server.py` — `/api/account/performance/intelligence` gains compact `intelligence` contract; new `/api/intelligence/anomalies` endpoint.
+6. Historical backfill driver `BehaviorAnalysisBackfiller` — 264 trades analyzed, 225 flags, 22 anomalies, 99.5% evidence coverage in 0.1s; idempotent on re-run (0 duplicates).
+
+### Affected files
+- src/nexus_scalp/intelligence/behavior.py (rewrite)
+- src/nexus_scalp/intelligence/models.py, worker.py, store.py, __init__.py
+- src/nexus_scalp/adapters/database/audit_repository.py (schema)
+- src/nexus_scalp/reporting/engine.py, models.py, telegram_format.py, __init__.py
+- src/nexus_scalp/web/server.py, Web/app.js, Web/index.html
+- tests/unit/test_behavior_anomaly_intelligence_phase16.py (new, 26 tests)
+- tests/integration/test_accounting_api.py, test_intelligence_api.py (extended)
+
+### Regression tests
+- TEST-BHV-01..20 in `tests/unit/test_behavior_anomaly_intelligence_phase16.py` (26 cases): historical analysis, truth states, all detectors, evidence gating, version persistence, Telegram/API contract, idempotent backfill, bounded execution.
+
+### Runtime verification
+- `scratch/probe_trade_lifecycle_behavior.py`: one ticket (700001) survived ledger -> behavior analysis (3 evidence-gated flags) -> report (FLAGS_FOUND/ANOMALIES_FOUND) -> Telegram -> API.

@@ -3351,7 +3351,26 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
             engine = PerformanceReportEngine(core=core, kind=enum_kind)
             container = engine.generate()
-            return serialize_enums({"available": True, "report": container.to_dict()})
+            report = container.to_dict()
+            # TASK-2 §23 compact contract: truthful top-level intelligence state.
+            b = report.get("behavioral", {})
+            a = report.get("anomaly_state", {})
+            payload = {
+                "available": True,
+                "report": report,
+                "intelligence": {
+                    "status": a.get("state", "NO_DATA"),
+                    "behavior_state": b.get("state", "NO_DATA"),
+                    "analysis_version": b.get("analysis_version", ""),
+                    "anomaly_version": a.get("anomaly_version", ""),
+                    "trades_analyzed": b.get("analyzed", 0),
+                    "evidence_coverage": b.get("evidence_coverage"),
+                    "behavioral_flags": b.get("flag_counts", {}),
+                    "anomalies": a.get("counts", {}),
+                    "estimated_impact": {},
+                },
+            }
+            return serialize_enums(payload)
         except Exception as e:
             log_web_error(
                 logger,
@@ -3660,6 +3679,22 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             log_web_error(logger, "/api", None, e, context={"msg": "Behavior list failed"})
             return _err("INTERNAL_ERROR")
 
+    @app.get("/api/intelligence/anomalies")
+    def get_intelligence_anomalies(ticket: int | None = None, limit: int = 100) -> dict[str, Any]:
+        """Evidence-based anomaly events (TASK-2)."""
+        pair = _intelligence()
+        if pair is None:
+            return {"available": False}
+        engine, _ = pair
+        try:
+            from nexus_scalp.intelligence.store import list_anomaly_events
+
+            rows = list_anomaly_events(engine.audit, ticket=ticket, limit=limit)
+            return serialize_enums({"available": True, "anomalies": rows})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Anomaly list failed"})
+            return _err("INTERNAL_ERROR")
+
     @app.get("/api/intelligence/evolution")
     def get_intelligence_evolution(status: str | None = None, limit: int = 100) -> dict[str, Any]:
         """Discovered-but-unvalidated strategy evolution candidates."""
@@ -3813,6 +3848,36 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return serialize_enums({"available": True, "runs": rows})
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Research runs failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/health")
+    def get_research_health() -> dict[str, Any]:
+        """RESEARCH DATA HEALTH diagnostics (TASK-4).
+
+        Explains WHY the registry is empty / populated with structured
+        evidence: source trades, eligible/rejected samples, rejection reasons,
+        family distribution, candidates, validation attempts, OOS/robustness
+        failures, registry count, worker cycle state. Never fabricates rows.
+        """
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.store import research_health_summary
+
+            health = research_health_summary(
+                engine.audit,
+                dataset_builder=getattr(engine, "research_dataset_builder", None),
+                registry=getattr(engine, "strategy_registry", None),
+            )
+            worker = getattr(engine, "research_worker", None)
+            if worker is not None:
+                from nexus_scalp.research.worker import format_research_worker_status
+
+                health["worker"] = format_research_worker_status(worker)
+            return serialize_enums({"available": True, "health": health})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research health failed"})
             return _err("INTERNAL_ERROR")
 
     @app.post("/api/research/discover")

@@ -263,3 +263,73 @@ class EvolutionCandidate(BaseModel):
     @classmethod
     def validate_utc(cls, v: datetime) -> datetime:
         return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)
+
+
+class BehaviorAnalysisStatus(StrEnum):
+    """Truthful analysis lifecycle state (never 'silent nothing')."""
+
+    NOT_ANALYZED = "NOT_ANALYZED"
+    ANALYZING = "ANALYZING"
+    ANALYSIS_FAILED = "ANALYSIS_FAILED"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+    CLEAR = "CLEAR"
+    FLAGS_FOUND = "FLAGS_FOUND"
+    ANOMALIES_FOUND = "ANOMALIES_FOUND"
+
+
+class BehaviorAnalysis(BaseModel):
+    """
+    One derived analysis record for ONE canonical closed trade.
+
+    Idempotency identity (the canonical key)::
+
+        (ticket, behavior_version, anomaly_version)
+
+    Re-running the same versions against identical source data MUST produce
+    the same derived record — never a duplicate. Derived records never
+    rewrite historical raw events (task §11).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    ticket: str = Field(...)
+    symbol: str = Field(default="")
+    strategy_id: str = Field(default="")
+    behavior_version: str = Field(...)
+    anomaly_version: str = Field(...)
+    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    evidence_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
+    complete_context: int = Field(default=0, ge=0)
+    partial_context: int = Field(default=0, ge=0)
+    flags: list[dict[str, Any]] = Field(default_factory=list)
+    anomalies: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("analyzed_at")
+    @classmethod
+    def validate_utc(cls, v: datetime) -> datetime:
+        return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)
+
+
+class AnomalyEvent(BaseModel):
+    """
+    One objective inconsistency derived from canonical data.
+
+    Never 'something unusual happened' — always a specific contradiction with
+    measurable evidence (category, severity, expected/actual, explanation).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    anomaly_id: str = Field(...)
+    ticket: str = Field(default="")
+    anomaly_type: str = Field(...)
+    category: str = Field(default="DATA")
+    severity: str = Field(default="LOW")
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    detected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @field_validator("detected_at")
+    @classmethod
+    def validate_utc(cls, v: datetime) -> datetime:
+        return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)

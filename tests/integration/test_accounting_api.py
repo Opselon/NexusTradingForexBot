@@ -307,6 +307,16 @@ class TestAccountingApi:
         assert rep["performance"]["wins"] == 1
         assert rep["performance"]["losses"] == 1
         assert 0 <= rep["health_score"]["total"] <= 100
+        # TASK-2 truth-state contract: NO_DATA when nothing has been analyzed.
+        assert rep["behavioral"]["state"] == "NO_DATA"
+        assert rep["anomaly_state"]["state"] == "NO_DATA"
+        # Compact top-level intelligence contract (§23).
+        intel = data["intelligence"]
+        assert intel["status"] == "NO_DATA"
+        assert intel["behavior_state"] == "NO_DATA"
+        assert intel["trades_analyzed"] == 0
+        assert "analysis_version" in intel
+        assert "behavioral_flags" in intel
 
     def test_equity_curve_real_data(self, wired_app) -> None:
         _, _, app = wired_app

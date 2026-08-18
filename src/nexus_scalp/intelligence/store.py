@@ -185,6 +185,43 @@ def list_behavior_detections(
     return out
 
 
+def list_anomaly_events(
+    repo: AuditRepository,
+    ticket: int | str | None = None,
+    anomaly_type: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Bounded listing of evidence-based anomaly events (TASK-2)."""
+    if not repo._is_sqlite:
+        return []
+    bounded = max(1, min(int(limit), 500))
+    sql = "SELECT * FROM anomaly_events"
+    clauses: list[str] = []
+    args: list[Any] = []
+    if ticket is not None:
+        clauses.append("ticket = ?")
+        args.append(str(ticket))
+    if anomaly_type:
+        clauses.append("anomaly_type = ?")
+        args.append(str(anomaly_type))
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY detected_at DESC LIMIT ?;"
+    out: list[dict[str, Any]] = []
+    try:
+        conn = sqlite3.connect(repo._db_path, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(sql, (*args, bounded)).fetchall()
+        finally:
+            conn.close()
+        for r in rows:
+            out.append(dict(r))
+    except Exception as e:
+        logger.error("[BEHAVIOR] anomaly list failed", error=str(e))
+    return out
+
+
 def load_evolution_candidates(
     repo: AuditRepository,
     status: str | None = None,
@@ -211,7 +248,7 @@ def load_evolution_candidates(
         for r in rows:
             out.append(dict(r))
     except Exception as e:
-        logger.error("[EVOLUTION] list failed", error=str(e))
+        logger.error("[STRATEGY] evolution list failed", error=str(e))
     return out
 
 

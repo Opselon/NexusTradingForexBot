@@ -206,6 +206,7 @@ class IntelligenceWorker:
         guarded so a failure in one cannot abort the whole cycle.
         """
         self._run("autopsy", self._refresh_autopsies)
+        self._run("behavior", self._refresh_behavior)
         self._run("evolution", self._refresh_evolution)
         logger.debug("[INTELLIGENCE_WORKER] event=UPDATE", cycle=self.cycle_count)
 
@@ -277,6 +278,38 @@ class IntelligenceWorker:
             logger.info(
                 "[STRATEGY] EVOLUTION_SCAN",
                 discovered=len(candidates),
+            )
+
+    def _refresh_behavior(self) -> None:
+        """Runs the bounded canonical behavioral/anomaly analysis pass.
+
+        Off hot path (the worker tick itself is invoked via asyncio.to_thread),
+        bounded to the most recent trades, and idempotent: tickets already
+        analyzed under the same (behavior_version, anomaly_version) are skipped.
+        """
+        if self.behavior is None or not self.audit_repo._is_sqlite:
+            return
+        from nexus_scalp.intelligence.behavior import (
+            ANOMALY_ALGORITHM_VERSION,
+            BEHAVIOR_ALGORITHM_VERSION,
+            analyze_canonical_trades,
+        )
+
+        result = analyze_canonical_trades(
+            audit_repo=self.audit_repo,
+            engine=self.behavior,
+            behavior_version=BEHAVIOR_ALGORITHM_VERSION,
+            anomaly_version=ANOMALY_ALGORITHM_VERSION,
+            max_trades=200,
+        )
+        if result["analyzed"]:
+            logger.info(
+                "[BEHAVIOR_ANALYSIS] event=BATCH",
+                analyzed=result["analyzed"],
+                skipped=result["skipped"],
+                flags=result["flags"],
+                anomalies=result["anomalies"],
+                coverage=result["coverage"],
             )
 
 

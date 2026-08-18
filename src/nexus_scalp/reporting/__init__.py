@@ -51,6 +51,7 @@ from nexus_scalp.reporting.insights import (
 )
 from nexus_scalp.reporting.models import (
     AnomalyItem,
+    AnomalyStateSection,
     BehavioralSection,
     DistributionSection,
     DrawdownSection,
@@ -81,6 +82,7 @@ from nexus_scalp.reporting.telegram_format import (
 
 __all__ = [
     "AnomalyItem",
+    "AnomalyStateSection",
     "BehavioralSection",
     "DistributionSection",
     "DrawdownSection",

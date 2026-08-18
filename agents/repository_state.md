@@ -71,3 +71,11 @@ Update this file additively after substantial work (new modules, model changes, 
   news verdict NEWS_INCONCLUSIVE_NO_OVERLAP (news DB postdates dataset).
 - Bug ledger: BUG-083 appended (60D had no producer). INV-015/016 added.
 - Active bugs at snapshot: BUG-060 (Data Gate), BUG-081 follow-ups.
+
+## Snapshot 2026-08-18 (TASK-2 — behavioral/anomaly intelligence landed)
+
+- TASK-2 (Hermes-Behavior) VERIFIED: BehaviorDetectionEngine now wired into IntelligenceWorker (`_refresh_behavior`, off hot path, bounded 200 trades). New evidence-gated detectors (OVERHOLD_LOSER, PROFIT_GIVEBACK, MISSED_BREAKEVEN, PREMATURE_BREAKEVEN, MODEL_REVERSAL_IGNORED, REGIME_CHANGE_IGNORED, LIQUIDITY_REVERSAL_IGNORED, RISK_DEVIATION, EXIT_CLASSIFICATION_ANOMALY, STRATEGY_CONTEXT_LOSS, DUPLICATE_ECONOMIC_OUTCOME). Versions `behavior-v1`/`anomaly-v1`.
+- New DB tables: `behavior_analysis` (versioned idempotent derived records), `anomaly_events` (deterministic-id evidence store). Backfilled artifacts/audit.db: 264 trades, 225 flags, 22 anomalies, 99.46% coverage, 0.1s, idempotent.
+- Reporting: BehavioralSection + AnomalyStateSection carry truth states (NO_DATA/CLEAR/FLAGS_FOUND/ANOMALIES_FOUND), evidence coverage, engine versions. Telegram/API consume them; `n/a (no behavioral flags recorded)` and `none detected` eliminated.
+- API: `/api/account/performance/intelligence` gains compact `intelligence` block; new `/api/intelligence/anomalies`.
+- BUG-094 (behavior pipeline disconnected) FIXED. Handoff: `docs/agent_handoffs/2026-08-18_TASK-2-behavior-anomaly-intelligence.md`.

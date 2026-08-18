@@ -1176,6 +1176,43 @@ Telegram daily report and the `/api/account/performance/intelligence` endpoint.
   execution/news/session/insights) +
   `tests/integration/test_accounting_api.py::test_performance_intelligence_endpoint`.
 
+### 🧠 Behavioral & Anomaly Intelligence (TASK-2, 2026-08-18)
+
+Evidence-driven behavioral/anomaly layer, wired end-to-end (BUG-094 FIXED).
+
+- **Detector engine**: `nexus_scalp/intelligence/behavior.py` —
+  `BehaviorDetectionEngine.analyze()` now invoked by `IntelligenceWorker._refresh_behavior()`
+  (off hot path, bounded 200 trades/cycle, idempotent). Evidence-gated detectors:
+  OVERHOLD_LOSER, EXCESSIVE_HOLD_TIME, PROFIT_GIVEBACK, MISSED_BREAKEVEN,
+  PREMATURE_BREAKEVEN, MODEL_REVERSAL_IGNORED, REGIME_CHANGE_IGNORED,
+  LIQUIDITY_REVERSAL_IGNORED, RISK_DEVIATION, EXIT_CLASSIFICATION_ANOMALY,
+  STRATEGY_CONTEXT_LOSS, DUPLICATE_ECONOMIC_OUTCOME (+ legacy EARLY/LATE_EXIT).
+  Every flag carries evidence with `threshold`/`actual`/`expected`/`explanation`
+  + severity + confidence. NO generic labels (no ACTIVE_TRADER etc.).
+- **Thresholds centralized** at module top (`OVERHOLD_MIN_SECONDS`,
+  `GIVEBACK_PCT_MIN`, `MISSED_BE_MIN_MFE_R`, `PREMATURE_BE_MAX_MFE_R`,
+  `RISK_DEVIATION_TOLERANCE`, ...). Versions `behavior-v1` / `anomaly-v1`;
+  bump when semantics change (old analysis stays reproducible).
+- **Persistence** (audit_repository): `behavior_analysis` (analysis_key =
+  ticket|behavior_version|anomaly_version — idempotent) and `anomaly_events`
+  (deterministic anomaly_id for duplicates). Batch driver
+  `analyze_canonical_trades()` + `BehaviorAnalysisBackfiller` (bounded,
+  offline, drain-queue join at end).
+- **Report truth states** (`reporting/`): `behavioral.state` and
+  `anomaly_state.state` ∈ NO_DATA (analysis never ran) / CLEAR (analyzed,
+  zero flags) / FLAGS_FOUND / ANOMALIES_FOUND / ANALYSIS_FAILED /
+  INSUFFICIENT_EVIDENCE. Evidence coverage (complete/partial context) and
+  engine versions surface in every report + Telegram. NEVER `n/a (no
+  behavioral flags recorded)` / `none detected` by silence.
+- **API**: `/api/account/performance/intelligence` returns compact
+  `intelligence` block (§23 shape); `/api/intelligence/anomalies` lists
+  evidence events.
+- **Tests**: `tests/unit/test_behavior_anomaly_intelligence_phase16.py`
+  (TEST-BHV-01..20, 26 cases) + integration contracts in
+  `test_accounting_api.py` / `test_intelligence_api.py`.
+- Hot path invariant: analysis runs ONLY in the 30s intelligence worker
+  via asyncio.to_thread — zero DB scans in `_process_tick_pipeline`.
+
 ### 🖥️ Dashboard (Web/)
 
 The Account tab contains the **Account Performance & Intelligence** panel:

@@ -1,0 +1,27 @@
+== BEHAVIORAL / ANOMALY LINEAGE PROBE (TASK-2) ==
+DB: C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\audit.db
+
+1. behavior_detections rows            : 0  (PHASE 09 engine sink)
+2. outcomes WITH behavioral_flags      : 34  (PHASE 08 flags exist!)
+3. ledger closed rows                  : 266
+   with mae+mfe pts  : 262
+   with confidence   : 58
+   with regime       : 82
+   with sl_modified  : 155
+4. trade_autopsies rows               : 73
+   autopsies WITH behavioral_flags     : 33
+5. lifecycle events                   : 11875
+   POSITION_EXITED events              : 0
+
+6. PHASE 08 flag distribution (only populated source):
+   'PREMATURE_ENTRY'                                            21
+   'RISK_DEVIATION'                                             8
+   'PREMATURE_ENTRY,THESIS_INVALIDATION_IGNORED'                2
+   'PREMATURE_ENTRY,RISK_DEVIATION'                             1
+   'ENTRY_CHASE,RISK_DEVIATION'                                 1
+   'ENTRY_CHASE'                                                1
+
+7. EXIT_CLASSIFICATION_ANOMALY candidate rows (RISK_FREE_SL_HIT w/o was_sl_modified): 3
+8. duplicate-outcome execution_id groups: 1
+   152494870397: 2 outcomes
+9. ledger rows missing entry_reason    : 0

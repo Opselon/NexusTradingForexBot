@@ -3798,6 +3798,7 @@ async function loadIntelligenceAutopsies() {
             '</div>'
         ).join('');
         loadIntelligenceBehavior();
+        loadIntelligenceAnomalies();
     } catch (e) {
         console.warn('autopsies load failed', e);
     }
@@ -3821,7 +3822,7 @@ async function loadIntelligenceBehavior() {
         if (box) {
             box.innerHTML = detections.map(b =>
                 '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
-                    '<div class="flex justify-between"><span class="text-accentCyan font-bold">' + esc(b.behavior_type || b.behavior || 'UNKNOWN') +
+                    '<div class="flex justify-between"><span class="text-accentCyan font-bold">' + esc(b.pattern || b.behavior_type || b.behavior || 'UNKNOWN') +
                     '</span><span class="text-textMuted">' + esc(b.symbol || '') + ' · ' + esc(String(b.detected_at || '').substring(0, 16)) + '</span></div>' +
                     '<div class="text-textMuted">' + esc(b.summary || b.detail || '') + '</div>' +
                 '</div>'
@@ -3829,6 +3830,31 @@ async function loadIntelligenceBehavior() {
         }
     } catch (e) {
         console.warn('behavior load failed', e);
+    }
+}
+
+// Anomaly events: evidence-based inconsistencies from /api/intelligence/anomalies.
+async function loadIntelligenceAnomalies() {
+    try {
+        const res = await fetch('/api/intelligence/anomalies?limit=8');
+        const body = await res.json();
+        const box = document.getElementById('intel-anomalies');
+        const anomalies = body.anomalies || [];
+        if (!body.available || anomalies.length === 0) {
+            if (box) box.innerHTML = '<div class="text-textMuted italic text-[11px]">NO DATA — no anomaly events recorded.</div>';
+            return;
+        }
+        if (box) {
+            box.innerHTML = anomalies.map(a =>
+                '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+                    '<div class="flex justify-between"><span class="text-amber-400 font-bold">' + esc(a.anomaly_type || a.category || 'UNKNOWN') +
+                    '</span><span class="text-textMuted">' + esc(String(a.severity || '')) + ' · ' + esc(String(a.detected_at || '').substring(0, 16)) + '</span></div>' +
+                    '<div class="text-textMuted">' + esc((a.evidence && a.evidence.explanation) ? a.evidence.explanation : JSON.stringify(a.evidence || '')) + '</div>' +
+                '</div>'
+            ).join('');
+        }
+    } catch (e) {
+        console.warn('anomalies load failed', e);
     }
 }
 

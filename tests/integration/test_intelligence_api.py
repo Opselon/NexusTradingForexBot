@@ -218,6 +218,35 @@ class TestIntelligenceAPI:
         worker.stop()
         assert worker.running is False
 
+    def test_anomaly_events_endpoint(self, wired_engine):
+        """Evidence-based anomaly events are exposed over the API (TASK-2)."""
+        repo, engine = wired_engine
+        # Persist one anomaly event directly through the audit queue.
+        from nexus_scalp.intelligence.behavior import (
+            ANOMALY_ALGORITHM_VERSION,
+            _persist_anomaly,
+        )
+        from nexus_scalp.intelligence.models import AnomalyEvent
+
+        anomaly = AnomalyEvent(
+            anomaly_id="ano_api_test_0001",
+            ticket="501",
+            anomaly_type="EXIT_CLASSIFICATION_ANOMALY",
+            category="EXECUTION",
+            severity="MEDIUM",
+            confidence=0.9,
+            evidence={"explanation": "api test"},
+        )
+        assert _persist_anomaly(repo, anomaly, ANOMALY_ALGORITHM_VERSION) is True
+        _flush(repo)
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/intelligence/anomalies")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        assert any(a["anomaly_type"] == "EXIT_CLASSIFICATION_ANOMALY" for a in body["anomalies"])
+
     def test_gate_rejects_degraded_before_any_dispatch(self, wired_engine):
         """The pre-trade gate converts a degraded-proposal to NO_TRADE."""
         repo, engine = wired_engine

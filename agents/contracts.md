@@ -24,6 +24,8 @@
 | RESEARCH_RESULT | v1 | ACTIVE | research/ | registry, web |
 | UPDATE_SYSTEM | v1 | ACTIVE | release/updater.py, cli/main.py | installed users, release CI |
 | UI_STATE | v1 (900-bar standard) | ACTIVE | web/ | dashboard |
+| BEHAVIOR_ANALYSIS | v1 (behavior-v1) | ACTIVE | intelligence/behavior.py | reporting, web, telegram |
+| ANOMALY_EVENT | v1 (anomaly-v1) | ACTIVE | intelligence/behavior.py | reporting, web, telegram |
 
 ## Contract detail template
 

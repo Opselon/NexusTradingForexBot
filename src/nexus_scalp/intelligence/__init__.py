@@ -24,7 +24,10 @@ from nexus_scalp.intelligence.evolution import StrategyEvolutionEngine
 from nexus_scalp.intelligence.gate import PreTradeIntelligenceGate, SuitabilityTier
 from nexus_scalp.intelligence.lifecycle import PositionLifecycleTracker
 from nexus_scalp.intelligence.models import (
+    AnomalyEvent,
     AutopsyVerdict,
+    BehaviorAnalysis,
+    BehaviorAnalysisStatus,
     BehaviorDetection,
     BehaviorSeverity,
     DecisionContext,
@@ -40,7 +43,10 @@ from nexus_scalp.intelligence.models import (
 from nexus_scalp.intelligence.worker import IntelligenceWorker, format_intelligence_worker_status
 
 __all__ = [
+    "AnomalyEvent",
     "AutopsyVerdict",
+    "BehaviorAnalysis",
+    "BehaviorAnalysisStatus",
     "BehaviorDetection",
     "BehaviorDetectionEngine",
     "BehaviorSeverity",
