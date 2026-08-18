@@ -28,6 +28,7 @@ import polars as pl
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
 from nexus_scalp.model_generation.dataset_factory import DatasetFactory
 from nexus_scalp.model_generation.experiment_factory import ExperimentFactory
+from nexus_scalp.model_generation.sample_factory import SampleFactory
 from nexus_scalp.model_generation.sequence_training import SequenceCandidateTrainer
 from nexus_scalp.model_generation.training import CandidateTrainer
 from nexus_scalp.model_generation.validation import (
@@ -40,10 +41,52 @@ logger = get_logger("nexus_scalp.model_generation.benchmark")
 
 #: Matrix: (template, seq_arch, news) -> experiment kind
 MATRIX: list[dict[str, Any]] = [
-    {"kind": "A", "template": "baseline_scalpnet_v1", "seq": False, "news": False},
-    {"kind": "B", "template": "baseline_scalpnet_v1_news", "seq": False, "news": True},
-    {"kind": "C", "template": "tcn_attention_v1", "seq": True, "news": False},
-    {"kind": "D", "template": "tcn_attention_v1_news", "seq": True, "news": True},
+    # TASK-5 controlled matrix: same dataset/split/labels/purge/embargo/friction,
+    # ONLY the schema dimension (50D vs 60D) and news input differ (spec 12).
+    {
+        "kind": "A",
+        "template": "baseline_scalpnet_v1",
+        "seq": False,
+        "news": False,
+        "schema": "scalp_v1",
+    },
+    {
+        "kind": "B",
+        "template": "baseline_scalpnet_v1_news",
+        "seq": False,
+        "news": True,
+        "schema": "scalp_v1",
+    },
+    {
+        "kind": "C",
+        "template": "baseline_scalpnet_v1",
+        "seq": False,
+        "news": False,
+        "schema": "scalp_v2",
+    },
+    {
+        "kind": "D",
+        "template": "baseline_scalpnet_v1_news",
+        "seq": False,
+        "news": True,
+        "schema": "scalp_v2",
+    },
+    {"kind": "E", "template": "tcn_attention_v1", "seq": True, "news": False, "schema": "scalp_v1"},
+    {
+        "kind": "F",
+        "template": "tcn_attention_v1_news",
+        "seq": True,
+        "news": True,
+        "schema": "scalp_v1",
+    },
+    {"kind": "G", "template": "tcn_attention_v1", "seq": True, "news": False, "schema": "scalp_v2"},
+    {
+        "kind": "H",
+        "template": "tcn_attention_v1_news",
+        "seq": True,
+        "news": True,
+        "schema": "scalp_v2",
+    },
 ]
 
 
@@ -92,23 +135,59 @@ class BenchmarkRunner:
                     "BenchmarkRunner: news readiness gate FAILED — refusing a "
                     f"synthetic/no-data news benchmark. Checks: {gate['checks']}"
                 )
-        # ---- ONE shared dataset (same splits/labels/purge/embargo/friction) ----
-        dh = DatasetFactory(store=self.store).build(
-            df,
-            symbol=symbol,
-            timeframe=timeframe,
-            news_frame=news_frame,
-            strategy_id=strategy_id,
-            strategy_version=strategy_version,
-        )
-        dataset_id = dh["dataset_id"]
-        frame = self.store.read_dataset(dataset_id)
-        logger.info("[BENCH] dataset=%s rows=%d", dataset_id, frame.height)
+        # ---- datasets per schema (same bars/splits/labels/purge/embargo/friction).
+        # 50D cells share one scalp_v1 dataset; 60D cells share one scalp_v2
+        # dataset, built from the SAME raw bars + the causal 10D augmenter
+        # (schema_v2.compute_60d_frame). The comparison is therefore fair:
+        # only the schema dimension (and the intentional news input) differ.
+        base_samples = SampleFactory(feature_schema_id="scalp_v1")
+        schema_datasets: dict[str, str] = {}
+        schema_frames: dict[str, Any] = {}
+        for cell in MATRIX:
+            sid = cell["schema"]
+            if sid in schema_datasets:
+                continue
+            if sid == "scalp_v2":
+                from nexus_scalp.model_generation.schema_v2 import compute_60d_frame
+
+                feat_frame = compute_60d_frame(df)
+                if feat_frame.is_empty():
+                    raise ValueError("BenchmarkRunner: 60D frame empty")
+                dh = DatasetFactory(
+                    store=self.store,
+                    sample_factory=SampleFactory(feature_schema_id="scalp_v2"),
+                ).build(
+                    feat_frame,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    news_frame=news_frame,
+                    strategy_id=strategy_id,
+                    strategy_version=strategy_version,
+                )
+            else:
+                dh = DatasetFactory(store=self.store, sample_factory=base_samples).build(
+                    df,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    news_frame=news_frame,
+                    strategy_id=strategy_id,
+                    strategy_version=strategy_version,
+                )
+            schema_datasets[sid] = dh["dataset_id"]
+            schema_frames[sid] = self.store.read_dataset(dh["dataset_id"])
+            logger.info(
+                "[BENCH] schema=%s dataset=%s rows=%d",
+                sid,
+                dh["dataset_id"],
+                dh.get("counts", {}).get("total", 0),
+            )
 
         results: dict[str, Any] = {}
         for cell in MATRIX:
             kind = cell["kind"]
             template = cell["template"]
+            dataset_id = schema_datasets[cell["schema"]]
+            frame = schema_frames[cell["schema"]]
             exp = ExperimentFactory(store=self.store).create(
                 dataset_id,
                 template=template,
@@ -181,10 +260,14 @@ class BenchmarkRunner:
     ) -> dict[str, Any]:
         manifest = self.store.read_dataset_manifest(dataset_id) or {}
         pairs = {
-            "legacy": results.get("A", {}),
-            "legacy_news": results.get("B", {}),
-            "new": results.get("C", {}),
-            "new_news": results.get("D", {}),
+            "legacy_50d": results.get("A", {}),
+            "legacy_50d_news": results.get("B", {}),
+            "legacy_60d": results.get("C", {}),
+            "legacy_60d_news": results.get("D", {}),
+            "tcn_50d": results.get("E", {}),
+            "tcn_50d_news": results.get("F", {}),
+            "tcn_60d": results.get("G", {}),
+            "tcn_60d_news": results.get("H", {}),
         }
         conclusion = _conclude(pairs)
         return {
@@ -263,10 +346,10 @@ def _conclude(pairs: dict[str, Any]) -> dict[str, Any]:
     def acc(p: dict[str, Any]) -> float | None:
         return p.get("val_accuracy") if p.get("status") == "COMPLETED" else None
 
-    a = acc(pairs.get("legacy", {}))
-    b = acc(pairs.get("legacy_news", {}))
-    c = acc(pairs.get("new", {}))
-    d = acc(pairs.get("new_news", {}))
+    a = acc(pairs.get("legacy_50d", {}))
+    b = acc(pairs.get("legacy_50d_news", {}))
+    c = acc(pairs.get("legacy_60d", {}))
+    d = acc(pairs.get("legacy_60d_news", {}))
 
     def verdict(new_val: float | None, old_val: float | None) -> str:
         if new_val is None or old_val is None:
@@ -307,10 +390,14 @@ def _render_md(report: dict[str, Any]) -> str:
         "|------|------|------|--------|---------|-----|----------|---------|",
     ]
     kind_info = {
-        "A": ("LEGACY_SCALPNET_V1", "Off"),
-        "B": ("LEGACY_SCALPNET_V1", "On"),
-        "C": ("TCN_ATTENTION_V1", "Off"),
-        "D": ("TCN_ATTENTION_V1", "On"),
+        "A": ("LEGACY_SCALPNET_V1 50D", "Off"),
+        "B": ("LEGACY_SCALPNET_V1 50D", "On"),
+        "C": ("LEGACY_SCALPNET_V1 60D", "Off"),
+        "D": ("LEGACY_SCALPNET_V1 60D", "On"),
+        "E": ("TCN_ATTENTION_V1 50D", "Off"),
+        "F": ("TCN_ATTENTION_V1 50D", "On"),
+        "G": ("TCN_ATTENTION_V1 60D", "Off"),
+        "H": ("TCN_ATTENTION_V1 60D", "On"),
     }
     for kind, (arch, news) in kind_info.items():
         r = report["results"].get(kind, {})

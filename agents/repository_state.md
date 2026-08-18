@@ -47,3 +47,27 @@ Write path: AuditRepository queues writes to a background worker thread (no sync
 
 ## Refresh rule
 Update this file additively after substantial work (new modules, model changes, DB changes, major bug fixes). Never delete historical state notes — append a new snapshot section.
+
+## Refresh (2026-08-18, TASK-9)
+- NEW `src/nexus_scalp/release/updater.py` (full update engine + orchestrator).
+- `nexus update` now exposes check/status/history/rollback/doctor.
+- release-manifest.json is embedded in the portable tree (CI + build script).
+- EXIT_UPDATE=5 added (additive).
+- REAL Windows experiment performed: v9.0.0 -> v9.1.0 over a local GitHub
+  stub; user data fully preserved; app-tree data dirs preserved across swap.
+
+## Snapshot 2026-08-18 (TASK-5 model intelligence)
+- Feature schema: `scalp_v1` (50D) remains ACTIVE. `scalp_v2` (60D) is now
+  PRODUCIBLE (features/schema_augment.py + model_generation/schema_v2.py) but
+  candidate-only — no live switch.
+- Model lifecycle: VALIDATION gates hardened (OOS macro-F1 floor 0.34,
+  balanced-accuracy floor 0.34, ECE floor 0.15, min-evidence 100 rows).
+  Benchmark matrix now 8 cells (50D/60D × news off/on × LEGACY/TCN).
+- Training worker status truthful: DISABLED when auto_train_enabled=False.
+- Champion frozen: `artifacts/models/scalp/XAUUSD/v1.0.0` (hash
+  f0f70efb…) — untouched; snapshot `docs/task5_champion_baseline.json`.
+- Controlled experiment (real M5, 99,946 rows): A/B/C/D all REJECTED;
+  60D improved acc/ECE directionally but no candidate cleared the gates;
+  news verdict NEWS_INCONCLUSIVE_NO_OVERLAP (news DB postdates dataset).
+- Bug ledger: BUG-083 appended (60D had no producer). INV-015/016 added.
+- Active bugs at snapshot: BUG-060 (Data Gate), BUG-081 follow-ups.

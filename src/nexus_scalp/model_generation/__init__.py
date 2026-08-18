@@ -48,6 +48,13 @@ from nexus_scalp.model_generation.sample_maker import (
     attach_hunter_metadata,
     quality_tier,
 )
+from nexus_scalp.model_generation.schema_v2 import (
+    SCHEMA_V2_ID,
+    augment_existing_dataset_to_60d,
+    build_60d_dataset,
+    compute_60d_frame,
+    verify_60d_artifact,
+)
 from nexus_scalp.model_generation.sequence import SequenceBuilder
 from nexus_scalp.model_generation.sequence_training import SequenceCandidateTrainer
 from nexus_scalp.model_generation.setup_detector import (
@@ -67,7 +74,11 @@ from nexus_scalp.model_generation.strategy_factory import (
     best_strategy_for,
     get_strategy,
 )
-from nexus_scalp.model_generation.training import CandidateTrainer
+from nexus_scalp.model_generation.training import (
+    MAX_GRAD_NORM,
+    CandidateTrainer,
+    deterministic_candidate_id,
+)
 from nexus_scalp.model_generation.validation import (
     ValidationFactory,
     compare_news_ablation,
@@ -82,6 +93,8 @@ __all__ = [
     "HUNTER_MIN_QUALITY",
     "HUNTER_STRATEGIES",
     "HUNTER_VERSION",
+    "MAX_GRAD_NORM",
+    "SCHEMA_V2_ID",
     "SETUP_TYPES",
     "TIER_A_MIN",
     "TIER_B_MIN",
@@ -117,8 +130,11 @@ __all__ = [
     "ValidationFactory",
     "ValidationResults",
     "attach_hunter_metadata",
+    "augment_existing_dataset_to_60d",
     "best_strategy_for",
+    "build_60d_dataset",
     "compare_news_ablation",
+    "compute_60d_frame",
     "compute_calibration",
     "default_artifact_root",
     "default_label_schema",
@@ -126,8 +142,10 @@ __all__ = [
     "detect_class_collapse",
     "detect_feature_drift",
     "detect_prediction_drift",
+    "deterministic_candidate_id",
     "deterministic_sample_id",
     "get_strategy",
     "quality_tier",
     "validate_setup_type",
+    "verify_60d_artifact",
 ]

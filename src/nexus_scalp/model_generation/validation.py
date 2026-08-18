@@ -30,6 +30,12 @@ logger = get_logger("nexus_scalp.model_generation.validation")
 COLLAPSE_THRESHOLD: float = 0.95
 #: Minimum per-class evidence before a class "counts"
 MIN_CLASS_SAMPLES: int = 10
+#: Minimum TOTAL samples for a validation verdict (spec 18: tiny samples are
+#: never evidence of superiority — the verdict stays REJECTED/INCONCLUSIVE).
+MIN_EVIDENCE_SAMPLES: int = 100
+#: Maximum acceptable Expected Calibration Error (spec 14). A model whose
+#: confidence has no empirical meaning cannot become CHALLENGER.
+ECE_FLOOR: float = 0.15
 
 
 def detect_class_collapse(
@@ -54,6 +60,19 @@ def detect_class_collapse(
         "fractions": {str(k): round(v, 4) for k, v in frac.items()},
         "dominant_class": int(dominant),
     }
+
+
+def _balanced_accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Macro-averaged per-class recall (balanced accuracy) — collapses to
+    0.5 for a random 2-class model, ~0.333 for a 3-class no-info model."""
+    n_classes = max(int(y_true.max()) + 1, int(y_pred.max()) + 1, 2)
+    recalls = []
+    for c in range(n_classes):
+        mask = y_true == c
+        if mask.sum() == 0:
+            continue
+        recalls.append(float((y_pred[mask] == c).mean()))
+    return float(np.mean(recalls)) if recalls else 0.0
 
 
 def compute_calibration(
@@ -170,7 +189,7 @@ class ValidationFactory:
                 },
             )
 
-        # 2. class collapse
+        # 2. class collapse + minimum evidence
         collapse = detect_class_collapse(labels)
         n = len(labels)
         gates.append(
@@ -181,6 +200,24 @@ class ValidationFactory:
                 f"frac={collapse['fractions']} n={n}",
             }
         )
+        # MIN_EVIDENCE: a validation verdict on 5 samples is not evidence.
+        if n < MIN_EVIDENCE_SAMPLES:
+            return ValidationResults(
+                model_id=model_id,
+                experiment_id=experiment_id,
+                gates=[
+                    *gates,
+                    {
+                        "gate": "min_evidence",
+                        "passed": False,
+                        "reason": f"n={n} < {MIN_EVIDENCE_SAMPLES}",
+                    },
+                ],
+                verdict="REJECTED",
+                passed=False,
+                class_distribution={str(k): int(v) for k, v in collapse["distribution"].items()},
+                overall={"n": n, "oos_accuracy": 0.0, "reason": "INSUFFICIENT_EVIDENCE"},
+            )
 
         # 3. OOS / regime results (always computed when regime col present)
         regime_results = evaluate_regime_performance(dataset_frame)
@@ -197,16 +234,48 @@ class ValidationFactory:
                     "reason": f"ece={calibration.get('ece')}",
                 }
             )
+            ece_value = calibration.get("ece", 1.0)
+            ece_val = float(ece_value) if isinstance(ece_value, (int, float)) else float("inf")
+            gates.append(
+                {
+                    "gate": "calibration_floor",
+                    "passed": ece_val <= ECE_FLOOR or force,
+                    "reason": f"ece={ece_val:.4f} floor={ECE_FLOOR}",
+                }
+            )
 
-        # 5. OOS accuracy floor (real behavior, not dummy)
+        # 5. OOS accuracy + macro-F1 floors (real behavior, not dummy).
+        #    A 3-class no-information baseline is 1/3 macro-F1; the gates must
+        #    demand evidence ABOVE it or the candidate is REJECTED (a
+        #    NO_TRADE-dominated model gets high accuracy with ~0.33 macro-F1).
         oos_acc = 0.0
+        oos_macro_f1 = 0.0
+        oos_balanced_acc = 0.0
         if probabilities is not None and len(probabilities) == len(labels):
-            oos_acc = float(np.mean(np.argmax(probabilities, axis=1) == labels))
+            preds = np.argmax(probabilities, axis=1)
+            oos_acc = float(np.mean(preds == labels))
+            cm = confusion_and_class_metrics(labels, preds)
+            oos_macro_f1 = float(cm.get("macro_f1", 0.0))
+            oos_balanced_acc = _balanced_accuracy(labels, preds)
         gates.append(
             {
                 "gate": "oos_accuracy",
                 "passed": oos_acc >= 0.30 or force,
                 "reason": f"oos_acc={oos_acc:.4f} n={n}",
+            }
+        )
+        gates.append(
+            {
+                "gate": "oos_macro_f1_floor",
+                "passed": oos_macro_f1 > 0.34 or force,
+                "reason": f"oos_macro_f1={oos_macro_f1:.4f} (no-info baseline 0.333)",
+            }
+        )
+        gates.append(
+            {
+                "gate": "oos_balanced_accuracy_floor",
+                "passed": oos_balanced_acc > 0.34 or force,
+                "reason": f"oos_balanced_acc={oos_balanced_acc:.4f}",
             }
         )
 
@@ -221,7 +290,12 @@ class ValidationFactory:
             calibration=calibration,
             class_distribution=dist,
             class_collapse_detected=collapse["collapsed"],
-            overall={"n": n, "oos_accuracy": round(oos_acc, 4)},
+            overall={
+                "n": n,
+                "oos_accuracy": round(oos_acc, 4),
+                "oos_macro_f1": round(oos_macro_f1, 4),
+                "oos_balanced_accuracy": round(oos_balanced_acc, 4),
+            },
             verdict=verdict,
             passed=passed,
         )

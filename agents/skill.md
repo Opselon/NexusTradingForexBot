@@ -2255,6 +2255,55 @@ source of truth.
 
 ---
 
+
+## 15k. Canonical Trade Lifecycle / Exit Evidence / Learning Lineage (TASK-3, 2026-08-18)
+
+> **STATUS:** BUG-088 (MT5 DEAL_REASON inversion + broker-outcome double-count)
+> and BUG-089 (lifecycle finalize + reversal capture) FIXED. Regression suite
+> `tests/unit/test_trade_lifecycle_task3.py` (28 tests). Read-only lineage
+> reconstruction: `artifacts/scripts/task3_trade_lineage_forensic.py`.
+
+### Canonical trade identity (reused, NOT duplicated)
+- decision/request id = `request_id` (policy) → staged in
+  `_pending_context_registry` → every fill sibling binds the SAME order_id
+  (BUG-081 family registry) → ledger `order_id` → experience
+  `idempotency_key = exp_<order_id>` → outcome `execution_id`.
+- Split-fill siblings are NOT separate economic trades: they share the
+  parent order/request id and inherit strategy/confidence/regime/setup/
+  model schema metadata (BUG-081 fix, verified 2026-08-18).
+
+### Exit classification contract (EXIT_CLASSIFICATION v3)
+- `classify_exit_with_evidence()` returns (reason, evidence_source,
+  evidence_detail, confidence). Persisted on the closing autopsy row:
+  `exit_reason_source`, `exit_evidence`, `exit_reason_confidence`.
+- MT5 DEAL_REASON codes (authoritative): CLIENT=0/1/2, EXPERT=3, SL=4, TP=5,
+  SO=6, ROLLOVER=7, VMARGIN=8, SPLIT=9. **reason 4 is SL — never TP**
+  (BUG-088; the old mapping was inverted).
+- BE/trailing labels require `was_sl_modified` proof (BUG-081 rule stays).
+- `reconstruct_broker_outcome` dedupes the matched deal by ticket
+  (BUG-088) — a deal inside `history_deals` is never summed twice.
+
+### Position lifecycle timeline (BUG-089)
+- `OrderLifecycleManager(lifecycle_tracker=...)` — the closing dead-ticket
+  sweep calls `finalize_exit(ticket, realized_pnl, realized_r,
+  exit_mechanism)` → POSITION_EXITED event with canonical realized values.
+- `_observe_positions` propagates (decision_context, trade_id, experience_id)
+  into every event; each event carries the originating order id.
+- `_capture_reversal_state` snapshots entry probabilities + regime baseline
+  and records MODEL_REVERSAL / REGIME_REVERSAL / LIQUIDITY_REVERSAL events
+  (bounded 12/ticket), persisted as `reversal_events_json` on the autopsy row
+  — "model/regime reversed while open" is reconstructable, never guessed.
+
+### Telegram / accounting / experience consistency
+- Telegram close notifications consume the canonical `exit_reason` +
+  evidence source string from the classifier result (never re-infer).
+- `realized_r` sent to Telegram = net_pnl / initial_risk (bug fixed:
+  previously sent risk/price — not a multiple).
+- Accounting `normalize.py` computes net PnL once (gross − costs) and
+  classifies stops from SL geometry + modification flags (unchanged).
+
+---
+
 ## 15j. MT5 Broker-Aware Runtime & Dashboard Repair (PHASE 14 COMPLETION)
 
 > STATUS (2026-08-17): The MT5 Account / Market Data / Accounting / Dashboard
@@ -2390,6 +2439,41 @@ LiveUiState.2 + Web/app.js + index.html      runtime-mode badge, STALE/LIVE
   version, safe errors, engine offline)
 - `tests/unit/test_live_state_contract.py` — 16 tests (updated to
   LiveUiState.2 + provider contract)
+
+## 15k. Adaptive Model Intelligence — 60D Challenger Path & Continuous Learning Forensics (TASK-5, 2026-08-18)
+
+- **Champion freeze**: `artifacts/models/scalp/XAUUSD/v1.0.0` is the control
+  group (50D scalp_v1, 4-logit). Hash snapshot: `docs/task5_champion_baseline.json`.
+  Candidate training NEVER writes to that path; no promotion path exists.
+- **60D schema** (`scalp_v2`, candidate-only): 50D + 10 causal features
+  (`features/schema_augment.py::compute_60d_extras`): regime_compression,
+  momentum_5_atr, wick_imbalance_5, volume_z_5, range_z_5, clv_avg_5,
+  session_phase_enc, price_acceleration, atr_trend_ratio, direction_bias_8.
+  All: completed-bars + decision-tick only, deterministic, finite,
+  live=replay=training (INV-015). News is OPTIONAL (news_enabled), never
+  forced. Dataset producer: `model_generation/schema_v2.py` (compute_60d_frame,
+  build_60d_dataset, verify_60d_artifact).
+- **Validation gates hardened** (`model_generation/validation.py`): OOS
+  accuracy ≥0.30, macro-F1 >0.34 (no-info baseline 0.333), balanced-accuracy
+  >0.34, ECE ≤0.15, min-evidence 100 rows. Class collapse / regime-collapse
+  / robustness failure → REJECTED, never CHALLENGER.
+- **Training safety** (`model_generation/training.py`): non-finite loss or
+  exploding gradients (norm > 5.0) → FAILED; deterministic candidate id from
+  (experiment, dataset hash, seed); input NaN/Inf → FAILED; invalid labels
+  → FAILED.
+- **Fair matrix** (`model_generation/benchmark.py` MATRIX): 8 cells
+  (50D/60D × news off/on × LEGACY_SCALPNET_V1/TCN_ATTENTION_V1) on identical
+  splits/labels/purge/embargo/friction.
+- **Worker truthfulness**: `TrainingWorker` status DISABLED/IDLE/RUNNING/
+  TRAINING; LiveEngine default auto_train_enabled=False → DISABLED (INV-016).
+- **News honesty**: `news_context_at` uses events at-or-before the sample
+  only; news that postdates the dataset yields zero vectors and the verdict
+  is NEWS_INCONCLUSIVE_NO_OVERLAP — never a fabricated signal.
+- **Real-data result (2026-08-18)**: 60D dataset built from 99,946 M5 gold
+  bars (~98s); A/B/C/D all REJECTED; 60D acc +0.037..+0.061 and ECE
+  −0.034..−0.056 vs 50D (directional, NOT statistically significant);
+  no challenger promoted; Champion hash unchanged.
+
 
 ## 16. Known Engineering Pitfalls & Invariants
 

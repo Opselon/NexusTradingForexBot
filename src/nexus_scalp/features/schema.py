@@ -178,7 +178,14 @@ FEATURE_SCHEMAS.register(
     FeatureSchema(
         schema_id="scalp_v2",
         dimension=60,
-        description="scalp_v1 + 10 reserved slots for order-flow/liquidity depth features.",
+        description=(
+            "scalp_v1 + 10 TASK-5 causal augmentation features "
+            "(regime_compression, momentum_5_atr, wick_imbalance_5, volume_z_5, "
+            "range_z_5, clv_avg_5, session_phase_enc, price_acceleration, "
+            "atr_trend_ratio, direction_bias_8) — produced by "
+            "features/schema_augment.compute_60d_extras. Candidate-only; the "
+            "ACTIVE live contract remains scalp_v1."
+        ),
         supersedes="scalp_v1",
     )
 )

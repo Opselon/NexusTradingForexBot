@@ -18,9 +18,11 @@
 | NEWS_CONTEXT | v1 | ACTIVE | news/ | live_engine, signals |
 | STRATEGY_CANDIDATE | v1 (content-addressed) | ACTIVE | strategies/ | research worker |
 | MODEL_MANIFEST | v1 | ACTIVE | model_lifecycle/ | training, runtime |
+| FEATURE_SCHEMA_60D | v1 (scalp_v2, candidate-only) | ACTIVE | features/schema_augment.py, model_generation/schema_v2.py | model_generation training/benchmark, TASK-6 governance |
 | ACCOUNTING_SNAPSHOT | v1 | ACTIVE | accounting/ | web, telegram |
-| EXIT_CLASSIFICATION | v2 (evidence precedence) | ACTIVE | execution/ | accounting, experience |
+| EXIT_CLASSIFICATION | v3 (evidence provenance) | ACTIVE | experience/outcome_recovery.py | ledger, accounting, telegram |
 | RESEARCH_RESULT | v1 | ACTIVE | research/ | registry, web |
+| UPDATE_SYSTEM | v1 | ACTIVE | release/updater.py, cli/main.py | installed users, release CI |
 | UI_STATE | v1 (900-bar standard) | ACTIVE | web/ | dashboard |
 
 ## Contract detail template
@@ -35,6 +37,25 @@ Every contract entry in this registry should document:
 - consumers
 - compatibility rules
 - invariants
+
+## EXIT_CLASSIFICATION v3 — evidence-provenance contract (TASK-3 / BUG-088)
+
+- Purpose: every `exit_mechanism` value must be traceable to the evidence
+  that produced it — never presented as broker-proven when it was inferred.
+- Producer: `experience/outcome_recovery.py::classify_exit_with_evidence`
+  (returns reason, evidence_source, evidence_detail, confidence).
+- Consumers: `order_manager` (ledger + telegram), `accounting/normalize.py`
+  (`_classify_stop` geometry remains the accounting-side re-check).
+- Evidence sources: ENGINE_FORCED / BROKER_DEAL_REASON /
+  BROKER_DEAL_COMMENT / SL_GEOMETRY / TP_GEOMETRY / FALLBACK_HEURISTIC.
+- MT5 reason codes (authoritative): DEAL_REASON_CLIENT=0/1/2,
+  DEAL_REASON_EXPERT=3, DEAL_REASON_SL=4, DEAL_REASON_TP=5, DEAL_REASON_SO=6,
+  ROLLOVER=7, VMARGIN=8, SPLIT=9. reason 4 is SL, never TP (BUG-083 fix).
+- Persisted on the closing autopsy row: `exit_reason_source`,
+  `exit_evidence`, `exit_reason_confidence`.
+- Immutable fields: exit_mechanism, exit_reason_source, exit_evidence.
+- Invariant: UNKNOWN evidence stays UNKNOWN (INV-012) — reason 0 without
+  corroboration is UNKNOWN, never promoted to MANUAL.
 
 ## Notes / To-Do
 - Expand each row above into a full entry (required fields, immutable/derived, compatibility, invariants) as contracts are touched.

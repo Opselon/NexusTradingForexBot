@@ -12,7 +12,7 @@ ChallengerTrainer / WalkForwardTrainer (same candidate-staging boundary).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import math
 from typing import Any
 
 import numpy as np
@@ -45,6 +45,56 @@ def _split_columns(frame: pl.DataFrame, news_enabled: bool) -> tuple[list[str], 
     if not news_enabled:
         news_cols = []
     return feat_cols, news_cols
+
+
+def dataset_hash_value(dataset_frame: pl.DataFrame) -> str:
+    """Deterministic content hash of the dataset frame (features + labels only)
+    used for candidate identity — a candidate is reproducible from
+    (dataset, experiment config, seed)."""
+    import hashlib
+    import json
+
+    cols = [c for c in dataset_frame.columns if c.startswith("feat_") or c in ("label", "_split")]
+    payload = dataset_frame.select(cols).to_dict(as_series=False)
+    canonical = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def deterministic_candidate_id(
+    experiment: ExperimentConfig, dataset_frame: pl.DataFrame, dataset_hash: str = ""
+) -> str:
+    """Candidate identity is DETERMINISTIC (spec 12): same dataset + same
+    experiment config + same seed -> same candidate id. Never wall-clock."""
+    cfg = {
+        "experiment_id": experiment.experiment_id,
+        "architecture": experiment.architecture,
+        "news_enabled": experiment.news_enabled,
+        "seed": experiment.seed,
+        "strategy": experiment.strategy_id,
+        "dataset_hash": dataset_hash,
+    }
+    import hashlib
+    import json
+
+    canonical = json.dumps(cfg, sort_keys=True, default=str)
+    return "cand_" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+#: Gradient norm cap: a norm above this is treated as EXPLODING (failed run,
+#: never a silently-trained artifact).
+MAX_GRAD_NORM: float = 5.0
+
+
+def _grad_norm(model: torch.nn.Module) -> float | None:
+    total = 0.0
+    count = 0
+    for p_ in model.parameters():
+        if p_.grad is not None:
+            total += float(p_.grad.detach().float().pow(2).sum())
+            count += 1
+    if count == 0:
+        return None
+    return float(math.sqrt(total))
 
 
 class CandidateTrainer:
@@ -197,7 +247,19 @@ class CandidateTrainer:
                 optimizer.zero_grad()
                 out = model(xb)
                 loss = criterion(out, yb)
+                if not torch.isfinite(loss):
+                    return {
+                        "status": "FAILED",
+                        "error": f"non-finite loss at epoch {_}: {float(loss)}",
+                    }
                 loss.backward()
+                grad_norm = _grad_norm(model)
+                if grad_norm is None or not math.isfinite(grad_norm) or grad_norm > MAX_GRAD_NORM:
+                    return {
+                        "status": "FAILED",
+                        "error": f"invalid/exploding gradient norm {grad_norm} at epoch {_}",
+                    }
+                torch.nn.utils.clip_grad_norm_(model.parameters(), MAX_GRAD_NORM)
                 optimizer.step()
 
         # eval on validation (SCALED with the train-fitted transform)
@@ -207,9 +269,8 @@ class CandidateTrainer:
             val_preds = val_logits.argmax(dim=1).numpy()
         val_acc = float(np.mean(val_preds == labels[val_idx])) if len(val_idx) else 0.0
 
-        mid = (
-            model_id
-            or f"candidate_{experiment.experiment_id}_{datetime.now(UTC).strftime('%H%M%S')}"
+        mid = model_id or deterministic_candidate_id(
+            experiment, dataset_frame, dataset_hash=dataset_hash_value(dataset_frame)
         )
         manifest = ModelManifest(
             model_id=mid,

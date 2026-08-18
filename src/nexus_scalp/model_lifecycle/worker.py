@@ -215,12 +215,25 @@ class TrainingWorker:
 
 
 def format_training_worker_status(worker: TrainingWorker) -> dict[str, Any]:
-    """JSON-serializable worker telemetry for the REST layer."""
+    """JSON-serializable worker telemetry for the REST layer.
+
+    TRUTHFUL STATE (spec 37): the status string must never claim RUNNING
+    when auto-training is disabled. DISABLED = worker loop alive but no
+    training can ever start; IDLE = loop alive and eligible to train.
+    """
+    if not worker.running:
+        status = "IDLE"
+    elif not worker.auto_train_enabled:
+        status = "DISABLED"
+    elif worker.inflight:
+        status = "TRAINING"
+    else:
+        status = "RUNNING"
     return {
         "running": worker.running,
         "cycle_count": worker.cycle_count,
         "interval_sec": worker.interval_sec,
-        "status": "RUNNING" if worker.running else "IDLE",
+        "status": status,
         "inflight": worker.inflight,
         "last_run_id": worker.last_run_id,
         "last_error": worker.last_error or "",
