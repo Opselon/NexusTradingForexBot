@@ -330,6 +330,15 @@ class AuditRepository:
             # (HTF/SMC/ICT structure, displacement, sessions, guardian) for
             # post-hoc setup/strategy attribution of every closed trade.
             ("entry_setup_snapshot", "TEXT DEFAULT '{}'"),
+            # TASK-3 (BUG-083): exit classification evidence provenance —
+            # which evidence source produced the canonical exit mechanism and
+            # how confident the classification is (1.0 = broker-proven).
+            ("exit_reason_source", "TEXT DEFAULT ''"),
+            ("exit_evidence", "TEXT DEFAULT ''"),
+            ("exit_reason_confidence", "REAL DEFAULT 0.0"),
+            # TASK-3: reversal/regime snapshots observed while the position
+            # was open (model flip, regime change) — bounded JSON, null-safe.
+            ("reversal_events_json", "TEXT DEFAULT '[]'"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE audit_ledger ADD COLUMN {col_def[0]} {col_def[1]};")
@@ -800,6 +809,64 @@ class AuditRepository:
         ]:
             try:
                 conn.execute(f"ALTER TABLE behavior_detections ADD COLUMN {col_name} {col_type};")
+            except Exception:
+                pass
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS behavior_analysis (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                analysis_key TEXT UNIQUE NOT NULL,
+                ticket TEXT NOT NULL,
+                symbol TEXT DEFAULT '',
+                strategy_id TEXT DEFAULT '',
+                behavior_version TEXT NOT NULL,
+                anomaly_version TEXT NOT NULL,
+                analyzed_at TEXT NOT NULL,
+                evidence_coverage REAL DEFAULT 0.0,
+                complete_context INTEGER DEFAULT 0,
+                partial_context INTEGER DEFAULT 0,
+                flags TEXT DEFAULT '[]',
+                anomalies TEXT DEFAULT '[]'
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS anomaly_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                anomaly_id TEXT UNIQUE NOT NULL,
+                ticket TEXT DEFAULT '',
+                anomaly_type TEXT NOT NULL,
+                category TEXT DEFAULT 'DATA',
+                severity TEXT DEFAULT 'LOW',
+                confidence REAL DEFAULT 0.0,
+                evidence TEXT DEFAULT '{}',
+                detected_at TEXT NOT NULL,
+                algorithm_version TEXT NOT NULL
+            );
+            """
+        )
+        for col_name, col_type in [
+            ("behavior_version", "TEXT DEFAULT ''"),
+            ("anomaly_version", "TEXT DEFAULT ''"),
+            ("evidence_coverage", "REAL DEFAULT 0.0"),
+            ("complete_context", "INTEGER DEFAULT 0"),
+            ("partial_context", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE behavior_analysis ADD COLUMN {col_name} {col_type};")
+            except Exception:
+                pass
+        for index_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_behavior_analysis_ticket ON behavior_analysis(ticket);",
+            "CREATE INDEX IF NOT EXISTS idx_behavior_analysis_version "
+            "ON behavior_analysis(behavior_version, anomaly_version);",
+            "CREATE INDEX IF NOT EXISTS idx_anomaly_events_ticket ON anomaly_events(ticket);",
+            "CREATE INDEX IF NOT EXISTS idx_anomaly_events_type ON anomaly_events(anomaly_type);",
+        ):
+            try:
+                conn.execute(index_sql)
             except Exception:
                 pass
 
@@ -1310,6 +1377,72 @@ class AuditRepository:
         except Exception:
             return False
 
+    def count_ledger_opened_unclosed(self) -> int:
+        """
+        TASK-7 (BUG-090): cheap pre-check for the reconciliation close-loop.
+        Returns the number of OPENED ledger rows that have no CLOSED outcome yet
+        (identified by exit_price still 0 / status OPENED). The caller uses this to
+        skip the expensive broker-history fetch entirely when there is nothing to
+        reconcile. Never raises; returns -1 when the check is unavailable so the
+        caller falls through to the broker fetch.
+        """
+        if not self._is_sqlite:
+            return -1
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM audit_ledger WHERE status = 'OPENED' "
+                    "AND COALESCE(exit_price, 0) = 0;"
+                ).fetchone()
+                return int(row[0]) if row else 0
+        except Exception:
+            return -1
+
+    def get_broker_deals_for_position(self, position_id: int) -> list[dict[str, Any]]:
+        """
+        TASK-7 (BUG-088/089): reads the DURABLE broker-deal capture for a position.
+        The live deal window (get_closed_deals_history) can miss a close after a
+        restart or when the position outlived the window; the durable
+        audit_broker_deals table holds the authoritative deal rows (position_id
+        join). Returns normalized dicts (same keys the live adapter emits:
+        position_ticket, profit, commission, swap, price, reason, comment, volume),
+        or [] when nothing is captured.
+        """
+        if not self._is_sqlite:
+            return []
+        try:
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    'SELECT ticket, "order", position_id, symbol, type, entry, '
+                    "magic, time, reason, volume, price, profit, fee, swap, "
+                    "commission, net_result, comment, external_id "
+                    "FROM audit_broker_deals WHERE position_id = ? "
+                    "ORDER BY time ASC;",
+                    (int(position_id),),
+                ).fetchall()
+        except Exception:
+            return []
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            out.append(
+                {
+                    "ticket": r["ticket"],
+                    "order_ticket": r["order"],
+                    "position_ticket": r["position_id"],
+                    "symbol": r["symbol"],
+                    "price": r["price"],
+                    "volume": r["volume"],
+                    "profit": r["profit"],
+                    "commission": r["commission"],
+                    "swap": r["swap"],
+                    "comment": r["comment"],
+                    "closed_at": r["time"],
+                    "reason": r["reason"],
+                }
+            )
+        return out
+
     def get_ledger_opened(self, ticket: int) -> dict[str, Any] | None:
         """
         Returns the OPENED ledger row dict for a ticket (entry context) or None.
@@ -1361,6 +1494,10 @@ class AuditRepository:
         account_equity_after: float = 0.0,
         drawdown_percent_after: float = 0.0,
         entry_setup_snapshot: str = "{}",
+        exit_reason_source: str = "",
+        exit_evidence: str = "",
+        exit_reason_confidence: float = 0.0,
+        reversal_events_json: str = "[]",
     ) -> None:
         """
         Writes EXACTLY ONE data-rich autopsy row per closed trade.
@@ -1417,9 +1554,11 @@ class AuditRepository:
              gross_pnl_usd, net_pnl_usd, entry_reason, ai_confidence_at_open,
              market_regime_at_open, was_sl_modified, MAE_usd, MFE_usd,
              account_balance_after, account_equity_after, drawdown_percent_after,
-             entry_setup_snapshot)
+             entry_setup_snapshot, exit_reason_source, exit_evidence,
+             exit_reason_confidence, reversal_events_json)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?)
             ON CONFLICT(ticket) DO UPDATE SET
                 exit_price=excluded.exit_price,
                 status=excluded.status,
@@ -1451,7 +1590,11 @@ class AuditRepository:
                 account_balance_after=excluded.account_balance_after,
                 account_equity_after=excluded.account_equity_after,
                 drawdown_percent_after=excluded.drawdown_percent_after,
-                entry_setup_snapshot=CASE WHEN excluded.entry_setup_snapshot != '{}' THEN excluded.entry_setup_snapshot ELSE audit_ledger.entry_setup_snapshot END
+                entry_setup_snapshot=CASE WHEN excluded.entry_setup_snapshot != '{}' THEN excluded.entry_setup_snapshot ELSE audit_ledger.entry_setup_snapshot END,
+                exit_reason_source=CASE WHEN excluded.exit_reason_source != '' THEN excluded.exit_reason_source ELSE audit_ledger.exit_reason_source END,
+                exit_evidence=CASE WHEN excluded.exit_evidence != '' THEN excluded.exit_evidence ELSE audit_ledger.exit_evidence END,
+                exit_reason_confidence=excluded.exit_reason_confidence,
+                reversal_events_json=CASE WHEN excluded.reversal_events_json != '[]' THEN excluded.reversal_events_json ELSE audit_ledger.reversal_events_json END
         """
         args = (
             ticket,
@@ -1490,6 +1633,10 @@ class AuditRepository:
             float(account_equity_after),
             float(drawdown_percent_after),
             entry_setup_snapshot,
+            exit_reason_source,
+            exit_evidence,
+            float(exit_reason_confidence or 0.0),
+            reversal_events_json or "[]",
         )
         try:
             self._queue.put_nowait((query, args))

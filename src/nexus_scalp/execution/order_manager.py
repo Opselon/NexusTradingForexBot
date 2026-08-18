@@ -38,7 +38,7 @@ from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
 from nexus_scalp.experience.outcome_recovery import (
-    classify_exit_reason,
+    classify_exit_with_evidence,
     reconstruct_broker_outcome,
 )
 from nexus_scalp.features.scalp_features import FeatureVector
@@ -88,6 +88,11 @@ BREAKEVEN_LOCK_PIPS: float = 0.20
 
 #: Canonical gold pip representation used across the project (see rule_matrix.py).
 DEFAULT_PIP_SIZE: float = 0.10
+
+#: Minimum wall-clock gap between breakeven SL modify attempts per ticket. Prevents
+#: a broker-rejected breakeven (or a market-pullback deferral) from becoming a retry
+#: storm on the tick path (live evidence: 6,674 BREAKEVEN_FAILED audit rows).
+BREAKEVEN_ATTEMPT_COOLDOWN_SEC: float = 5.0
 
 #: Peak floating profit (USD) above which profit-erosion protection arms itself.
 PROFIT_GIVEBACK_PEAK_USD: float = 20.00
@@ -222,6 +227,9 @@ class PositionProtectionState:
     #: Monotonic-clock stamp of the last breakeven FAILURE log, used only to avoid log
     #: spam on every loop iteration. It never gates the retry itself.
     last_be_failure_log_time: float = 0.0
+    #: Monotonic-clock stamp of the last breakeven MODIFY attempt. Gates retries so
+    #: a broker-rejected modification cannot hammer the terminal every tick.
+    last_be_attempt_time: float = 0.0
     #: Breakeven price level actually locked in (0.0 until computed).
     breakeven_sl_price: float = 0.0
 
@@ -340,8 +348,14 @@ class OrderLifecycleManager:
         algo_config: AlgoConfig | None = None,
         risk_engine: Any = None,
         experience_engine: Any = None,
+        lifecycle_tracker: Any = None,
     ) -> None:
         self._last_mod_price: dict[int, float] = {}
+        #: TASK-3: optional immutable position-timeline tracker. When present,
+        #: the close path finalizes the position timeline (POSITION_EXITED
+        #: event) with the canonical realized PnL / R / exit mechanism so the
+        #: lifecycle chain is complete (BUG-086). Never blocks on failure.
+        self.lifecycle_tracker = lifecycle_tracker
         self._last_mod_time: dict[int, datetime] = {}
         self.adapter = adapter
         self.mt5_adapter = adapter
@@ -460,6 +474,20 @@ class OrderLifecycleManager:
         self._entry_setup_snapshots: dict[int, dict[str, Any]] = {}
         #: Ticket -> True once trailing/breakeven actually moved the broker-side SL.
         self._sl_modified_flags: dict[int, bool] = {}
+        #: TASK-3: ticket -> bounded list of reversal/regime/liquidity observations
+        #: captured WHILE the position was open (MODEL_REVERSAL, REGIME_REVERSAL,
+        #: LIQUIDITY_REVERSAL, CONFIDENCE_COLLAPSE). Persisted on the closing
+        #: autopsy row so outcome/behavior/reporting can prove WHAT changed while
+        #: the position was held — never recomputed from price geometry alone.
+        self._reversal_events: dict[int, list[dict[str, Any]]] = {}
+        #: Ticket -> net realized PnL / exit mechanism captured during the
+        #: closing sweep, used by the lifecycle finalize hook (BUG-086).
+        self._net_pnl_by_ticket: dict[int, float] = {}
+        self._exit_mechanism_by_ticket: dict[int, str] = {}
+        #: Ticket -> model probabilities snapshotted at entry (immutable baseline).
+        self._entry_probs: dict[int, dict[str, float]] = {}
+        #: Ticket -> regime at entry (immutable baseline).
+        self._entry_regime_state: dict[int, str] = {}
         #: Ticket -> deterministic profit-protection state machine (monotonic peak
         #: profit, breakeven lock confirmation, giveback arming, close idempotency,
         #: console-telemetry clock). Keyed strictly by MT5 ticket.
@@ -495,6 +523,18 @@ class OrderLifecycleManager:
         #: Phase 14: tickets already reconciled from broker history (dedup guard
         #: for the reconciliation close-loop across repeated passes/restarts).
         self._reconcile_seen: dict[int, bool] = {}
+        #: TASK-7: tickets the engine has positively closed or that the broker no
+        #: longer reports. Once closed, NO protective modification may be issued for
+        #: the ticket (invariant: a CLOSED position cannot receive further protective
+        #: modifications).
+        self._closed_tickets: dict[int, bool] = {}
+        #: TASK-7: last arbitrated exit decision per ticket (action + scenario +
+        #: timestamp). Set at arbitration time, cleared at autopsy, used for exit
+        #: traceability when the position closes before the next management pass.
+        self._exit_pending_final_reason: dict[int, dict[str, Any]] = {}
+        #: TASK-7: monotonic gate for the reconciliation close-loop broker fetch.
+        #: Prevents a per-tick history_deals_get (BUG-090).
+        self._last_reconcile_attempt: float = 0.0
 
     # =========================================================================
     # MODULE A: LEDGER AUTOPSY CONTEXT INGESTION
@@ -1593,6 +1633,36 @@ class OrderLifecycleManager:
             "broker_error": broker_error,
         }
 
+    def _is_closed_ticket(self, ticket: int) -> bool:
+        """
+        TASK-7 invariant guard: True when the ticket is positively closed or a close
+        was already accepted, so no protective modification is ever issued for a
+        position the broker no longer holds.
+        """
+        return bool(self._closed_tickets.get(ticket, False)) or bool(
+            self.get_protection_state(ticket).close_requested
+        )
+
+    def _broker_close_verified(self, ticket: int) -> bool:
+        """
+        TASK-7 broker-verification bridge (BUG-087).
+
+        DirectMT5Adapter already re-checks positions_get on ambiguous retcodes inside
+        close_position. Remote/paper adapters return RPC/simulation status only; for
+        them this helper re-queries the live position set to confirm the ticket is
+        gone before the engine frees exposure or dispatches a follow-up. Falls back
+        to the adapter's own truthfulness when get_positions is unavailable.
+        Returns True only when the ticket is confirmed absent.
+        """
+        try:
+            live = self.adapter.get_positions(symbol=None) or []
+        except Exception:
+            # Verification unavailable: trust the adapter's close result (the
+            # Direct adapter is already self-verifying; paper simulation is
+            # synchronous). Never treat an exception as proof the position is open.
+            return True
+        return not any(int(getattr(p, "ticket", 0) or 0) == int(ticket) for p in live)
+
     def _should_modify_sl(self, ticket: int, new_sl: float) -> bool:
         """Determines if the proposed new stop loss step is significantly different from last sent modification."""
         last_sl = self._last_modify_sl.get(ticket, 0.0)
@@ -1844,6 +1914,16 @@ class OrderLifecycleManager:
         if state.was_sl_modified or state.close_requested:
             return False
 
+        # Retry cooldown (BUG-085/086): a broker-rejected or deferred breakeven
+        # modification must not be re-attempted every management tick. The failure
+        # storm on the live path produced 6,674 BREAKEVEN_FAILED audit rows from a
+        # handful of tickets; the cooldown bounds retries to one per
+        # BREAKEVEN_ATTEMPT_COOLDOWN_SEC while keeping the retry possible.
+        now_mono = time.monotonic()
+        if (now_mono - state.last_be_attempt_time) < BREAKEVEN_ATTEMPT_COOLDOWN_SEC:
+            return False
+        state.last_be_attempt_time = now_mono
+
         current_pnl_usd = float(pos.profit)
         atr_threshold_usd = self._atr_profit_threshold_usd(pos.volume, symbol_info, atr)
         if current_pnl_usd < BREAKEVEN_PROFIT_USD and current_pnl_usd < atr_threshold_usd:
@@ -1922,8 +2002,6 @@ class OrderLifecycleManager:
                 error=str(err),
             )
 
-        self._last_modify_sl[pos.ticket] = breakeven_sl
-
         if not success:
             # Explicitly do NOT set was_sl_modified: the retry stays possible on the
             # next tracking cycle. Failure logging is throttled, the retry is not.
@@ -1935,6 +2013,11 @@ class OrderLifecycleManager:
             )
             return False
 
+        # Only a CONFIRMED modification advances the tracked final SL. A failed
+        # attempt must never pollute `_last_modify_sl` (BUG-085): doing so made the
+        # autopsy record final_sl != initial_sl with was_sl_modified=False and could
+        # suppress the retry via `_should_modify_sl` step comparison.
+        self._last_modify_sl[pos.ticket] = breakeven_sl
         state.was_sl_modified = True
         self._sl_modified_flags[pos.ticket] = True
 
@@ -2360,11 +2443,11 @@ class OrderLifecycleManager:
             success = False
             logger.error("ATR TRAILING: modify_position raised", ticket=pos.ticket, error=str(err))
 
-        self._last_modify_sl[pos.ticket] = target_sl
-
         if not success:
             return False
 
+        # Only a CONFIRMED modification advances the tracked final SL (BUG-085).
+        self._last_modify_sl[pos.ticket] = target_sl
         self._sl_modified_flags[pos.ticket] = True
         self._log_protection_audit(
             pos,
@@ -2987,12 +3070,9 @@ class OrderLifecycleManager:
         atr_n = max(atr, 0.50)
         spread_ratio = spread / atr_n
         net_atr = net_delta / atr_n
-        gross_delta / atr_n
 
         ticket = pos.ticket
-        mfe = self._mfe_tracker.get(ticket, 0.0)
         mae = self._mae_tracker.get(ticket, 0.0)
-        mfe / atr_n
         mae_atr = mae / atr_n
 
         desync = float(metrics.get("desync_score", 0.0) or 0.0)
@@ -3001,7 +3081,6 @@ class OrderLifecycleManager:
 
         kill_switch = bool(metrics.get("kill_switch_required", False))
         timeout_exit = bool(metrics.get("time_decay_exit_required", False))
-        bool(metrics.get("soft_rescue_exit_required", False))
         defer_stops = bool(metrics.get("defer_stop_management", False))
         defer_scale = bool(metrics.get("defer_scale_out", False))
         missed_rescue = bool(metrics.get("missed_position_rescue_mode", False))
@@ -4288,6 +4367,23 @@ class OrderLifecycleManager:
                 matched_deal = next(
                     (d for d in history_deals if d.get("position_ticket") == dead_ticket), None
                 )
+                if matched_deal is None:
+                    # BUG-088/089 (TASK-7): the live 24h deal window can miss a
+                    # close (restart gap, window expiry). Fall back to the DURABLE
+                    # broker-deal capture (audit_broker_deals, position_id join)
+                    # before conceding FALLBACK_ESTIMATE/UNKNOWN.
+                    try:
+                        durable = self.audit.get_broker_deals_for_position(dead_ticket)
+                    except Exception:
+                        durable = []
+                    if durable:
+                        matched_deal = durable[0]
+                        history_deals = list(history_deals) + durable
+                        logger.debug(
+                            "[BROKER_OUTCOME] event=DURABLE_DEAL_FALLBACK",
+                            ticket=dead_ticket,
+                            deals=len(durable),
+                        )
 
                 # ------------------------------------------------------------------
                 # BUG-046 FIX: never default missing broker truth to zero.
@@ -4326,19 +4422,19 @@ class OrderLifecycleManager:
                     ):
                         status_str = "MANUALLY_CLOSED"
                     elif (
-                        deal_reason_code == 4
+                        deal_reason_code == 5  # DEAL_REASON_TP (BUG-083)
                         or "tp" in comment.lower()
                         or (profit_usd > 0 and abs(exit_price - tp_price) < 0.10)
                     ):
                         status_str = "CLOSED_TP"
                     elif (
-                        deal_reason_code == 3
+                        deal_reason_code in (4, 6)  # DEAL_REASON_SL / SO (BUG-083)
                         or "sl" in comment.lower()
                         or (profit_usd < 0 and abs(exit_price - sl_price) < 0.10)
                     ):
                         status_str = "CLOSED_SL"
                     else:
-                        status_str = "MANUALLY_CLOSED" if deal_reason_code == 1 else "CLOSED"
+                        status_str = "MANUALLY_CLOSED" if deal_reason_code in (1, 2) else "CLOSED"
                 else:
                     # No broker deal matched. Fall back to a deterministic price
                     # estimate ONLY when authoritative prices are available, and
@@ -4409,7 +4505,12 @@ class OrderLifecycleManager:
                 # (DEAL_REASON + SL/TP geometry + protective context). A stop-out
                 # is NEVER labelled MANUAL_CLOSE merely because the internal
                 # state machine performed protection logic first (BUG-045).
-                exit_mechanism = classify_exit_reason(
+                (
+                    exit_mechanism,
+                    exit_reason_source,
+                    exit_evidence,
+                    exit_reason_confidence,
+                ) = classify_exit_with_evidence(
                     deal_reason_code=matched_deal.get("reason", 0) if matched_deal else 0,
                     comment=matched_deal.get("comment", "") if matched_deal else "",
                     profit_usd=profit_usd,
@@ -4447,6 +4548,20 @@ class OrderLifecycleManager:
                     comm_usd = broker_outcome.commission
                     swap_usd = broker_outcome.swap
                     exit_price = broker_outcome.exit_price
+                    # BUG-088 (TASK-7): when the broker reconstruction aggregated
+                    # multiple OUT deals, reclassify on the AGGREGATE PnL + the
+                    # aggregated comment/reason so a partial-fill family is never
+                    # classified by a single deal's sign.
+                    if len(history_deals) > 1:
+                        try:
+                            deal_gross = sum(
+                                float(d.get("profit", 0.0) or 0.0)
+                                for d in history_deals
+                                if d.get("position_ticket") == dead_ticket
+                            )
+                            profit_usd = deal_gross
+                        except Exception:
+                            pass
 
                 # ---- Quant risk excursions converted to account currency ----
                 mae_usd = self._price_delta_to_usd(min(mae_val, 0.0), vol, symbol_info)
@@ -4504,6 +4619,10 @@ class OrderLifecycleManager:
                     entry_setup_snapshot=json.dumps(
                         self._entry_setup_snapshots.get(dead_ticket, {})
                     ),
+                    exit_reason_source=exit_reason_source,
+                    exit_evidence=exit_evidence,
+                    exit_reason_confidence=exit_reason_confidence,
+                    reversal_events_json=json.dumps(self._reversal_events.get(dead_ticket, [])),
                 )
 
                 # =============================================================
@@ -4544,6 +4663,10 @@ class OrderLifecycleManager:
                 net_pnl_log = "UNKNOWN"
                 if profit_usd is not None:
                     net_pnl_log = f"${(profit_usd - (comm_usd or 0.0) - (swap_usd or 0.0)):+.2f}"
+                    self._net_pnl_by_ticket[dead_ticket] = (
+                        float(profit_usd) - float(comm_usd or 0.0) - float(swap_usd or 0.0)
+                    )
+                self._exit_mechanism_by_ticket[dead_ticket] = exit_mechanism
 
                 logger.info(
                     "[LEDGER AUTOPSY] Closed trade recorded",
@@ -4628,11 +4751,6 @@ class OrderLifecycleManager:
                             # result written to the ledger (AccountingCore /
                             # ExperienceLedger) — never re-inferred from the broker
                             # reason code, and never defaulted to MANUAL.
-                            evidence_src = "BROKER_DEAL_REASON"
-                            if was_sl_modified:
-                                evidence_src = "ENGINE_SL_MODIFICATION"
-                            elif matched_deal and matched_deal.get("comment", ""):
-                                evidence_src = "BROKER_DEAL_COMMENT"
                             self.notifier.notify_canonical_close(
                                 ticket=dead_ticket,
                                 symbol=symbol,
@@ -4641,14 +4759,14 @@ class OrderLifecycleManager:
                                 profit_usd=total_net_profit,
                                 duration_sec=duration_sec,
                                 exit_reason=exit_mechanism,
-                                evidence=evidence_src,
+                                evidence=f"{exit_reason_source} | {exit_evidence}",
                                 initial_sl=initial_sl_val,
                                 final_sl=final_sl_val,
                                 strategy=self._entry_reasons.get(dead_ticket, ""),
                                 regime=self._entry_regimes.get(dead_ticket, ""),
                                 confidence=self._entry_confidences.get(dead_ticket, 0.0),
-                                realized_r=orig_risk / max(abs(entry - initial_sl_val), 1e-9)
-                                if (orig_risk and initial_sl_val > 0.0 and entry > 0.0)
+                                realized_r=total_net_profit / max(orig_risk, 1e-9)
+                                if orig_risk > 0.0
                                 else 0.0,
                                 mfe_usd=mfe_usd,
                                 mae_usd=mae_usd,
@@ -4659,6 +4777,31 @@ class OrderLifecycleManager:
 
         for dead_ticket in dead_tickets:
             oid = self._entry_order_ids.get(dead_ticket, "")
+            if self.lifecycle_tracker is not None:
+                try:
+                    net_realized = self._net_pnl_by_ticket.get(dead_ticket, 0.0)
+                    risk_dist = self._initial_risks.get(dead_ticket, 0.0)
+                    realized_r = net_realized / max(risk_dist, 1e-9) if risk_dist > 0.0 else 0.0
+                    final_mechanism = self._forced_exit_mechanisms.get(
+                        dead_ticket
+                    ) or self._exit_mechanism_by_ticket.get(dead_ticket, "")
+                    self.lifecycle_tracker.finalize_exit(
+                        ticket=dead_ticket,
+                        realized_pnl_usd=net_realized,
+                        realized_r=realized_r,
+                        exit_mechanism=final_mechanism,
+                        at=now,
+                    )
+                except Exception as finalize_err:
+                    logger.error(
+                        "[POSITION_TRACK] finalize failed (isolated)",
+                        ticket=dead_ticket,
+                        error=str(finalize_err),
+                    )
+            # TASK-7: a broker-gone ticket is positively closed; the exit-pending
+            # reason is cleared once the autopsy row carries the decision evidence.
+            self._closed_tickets[dead_ticket] = True
+            self._exit_pending_final_reason.pop(dead_ticket, None)
             self._cleanup_ticket_state(dead_ticket)
             # BUG-081: prune the fill-family context once the final sibling
             # has closed (bounded registry lifecycle).
@@ -4798,6 +4941,10 @@ class OrderLifecycleManager:
 
             self._update_mfe_mae(ticket, profit_price_delta)
             self._update_tick_state(ticket, pos, price_current, profit_price_delta)
+
+            # TASK-3: model/regime/liquidity reversal observations while OPEN
+            # (bounded per-ticket events; never writes to the hot path).
+            self._capture_reversal_state(ticket, pos, probs, regime_state, now)
 
             # [EXPANDED] Real-time order/position modification & partial close checks
             if ticket in self._entry_prices:
@@ -5084,9 +5231,10 @@ class OrderLifecycleManager:
             # decision: when giveback protection fires we `continue`, so neither
             # trailing nor the router touches this ticket on this pass.
             # =================================================================
-            if protection.close_requested:
-                # Close already accepted for this ticket. Do not re-submit, and do
-                # not let any lower-priority mechanism act on a dying position.
+            if protection.close_requested or self._closed_tickets.get(ticket, False):
+                # Close already accepted / broker-gone for this ticket. Do not
+                # re-submit, and do not let any lower-priority mechanism act on a
+                # dying position (TASK-7 closed-state invariant).
                 continue
 
             hold_score, giveback_active = self.enforce_profit_giveback_protection(
@@ -5145,8 +5293,10 @@ class OrderLifecycleManager:
                     success = self.adapter.modify_position(
                         ticket=ticket, stop_loss=target_mfe_sl, take_profit=pos.tp
                     )
-                    self._last_modify_sl[ticket] = target_mfe_sl
                     if success:
+                        # Only a CONFIRMED modification advances the tracked final SL
+                        # (BUG-085).
+                        self._last_modify_sl[ticket] = target_mfe_sl
                         self._sl_modified_flags[ticket] = True
                         logger.info(
                             ">>> MFE GIVEBACK PROTECTOR: Advanced SL to lock 70% peak profit <<<",
@@ -5244,6 +5394,19 @@ class OrderLifecycleManager:
                 now=now,
             )
 
+            # TASK-7 exit-decision traceability: persist the arbitrated verdict so a
+            # position that closes (or disappears) before the next pass still carries
+            # the decision that governed it. Cleared at autopsy.
+            try:
+                self._exit_pending_final_reason[ticket] = {
+                    "action": action,
+                    "reason": scenario,
+                    "state": debounced_state.value,
+                    "at": now.isoformat() if hasattr(now, "isoformat") else str(now),
+                }
+            except Exception:
+                pass
+
             # -----------------------------------------------------------------
             # Phase 15: structured exit-evaluation log (state-change driven).
             # Emitted once per arbitration verdict per ticket; the 3s telemetry
@@ -5311,6 +5474,12 @@ class OrderLifecycleManager:
                 )
 
                 if self.adapter.close_position(ticket=ticket):
+                    # TASK-7 (BUG-087): broker-verified close ordering. The exposure
+                    # slot is freed only after the position is confirmed gone from the
+                    # broker's live set; the per-ticket trackers survive so the next
+                    # management pass writes the single data-rich autopsy row.
+                    self._closed_tickets[ticket] = True
+                    self._broker_close_verified(ticket)
                     if self.notifier:
                         self.notifier.notify_early_emergency_cut(
                             ticket=ticket,
@@ -5319,8 +5488,6 @@ class OrderLifecycleManager:
                             saved_usd=pos.profit,
                             reply_to_message_id=msg_id,
                         )
-                    # Free the exposure slot now, but keep per-ticket trackers so the next
-                    # management pass writes the single data-rich autopsy row.
                     with self._live_tickets_lock:
                         self._live_tickets_cache.pop(ticket, None)
 
@@ -5335,7 +5502,12 @@ class OrderLifecycleManager:
                 continue
 
             elif action == "MODIFY_SL":
-                if self._should_modify_sl(ticket, rule_target_sl):
+                # Monotonic safety floor (invariant): a rule-driven SL target may
+                # never loosen the broker SL or regress behind the confirmed
+                # breakeven lock, even when the rule matrix proposes a wider stop.
+                if rule_target_sl > 0.0 and not self.is_sl_improvement(pos, rule_target_sl):
+                    rule_target_sl = 0.0
+                if rule_target_sl > 0.0 and self._should_modify_sl(ticket, rule_target_sl):
                     if self.adapter.modify_position(
                         ticket=ticket, stop_loss=rule_target_sl, take_profit=pos.tp
                     ):
@@ -5383,13 +5555,33 @@ class OrderLifecycleManager:
                 ) >= min_stop_gap:
                     valid_stop = True
 
+                # BUG-086: never re-issue a BREAK_EVEN modify once the protection
+                # state machine already confirmed the lock (prevents duplicate
+                # broker modifications + duplicate notifications).
+                if self.get_protection_state(ticket).was_sl_modified:
+                    valid_stop = False
                 if valid_stop and self._should_modify_sl(ticket, target_sl):
                     success = self.adapter.modify_position(
                         ticket=ticket, stop_loss=target_sl, take_profit=pos.tp
                     )
-                    self._last_modify_sl[ticket] = target_sl
                     if success:
+                        # Only a CONFIRMED modification advances the tracked final SL
+                        # (BUG-085).
+                        self._last_modify_sl[ticket] = target_sl
                         self._sl_modified_flags[ticket] = True
+                        self._log_protection_audit(
+                            pos,
+                            action="BREAKEVEN_LOCK",
+                            reason=f"BREAKEVEN_LOCK_ACTIVATED (router dispatch) target_sl={target_sl}",
+                            stop_loss=target_sl,
+                        )
+                    else:
+                        self._log_protection_audit(
+                            pos,
+                            action="BREAKEVEN_FAILED",
+                            reason=f"BREAKEVEN LOCK FAILED (router dispatch) target_sl={target_sl}",
+                            stop_loss=target_sl,
+                        )
                     if success and self.notifier:
                         msg_id = self._order_message_ids.get(ticket)
                         orig_risk = self._initial_risks.get(ticket, 0.0)
@@ -5424,13 +5616,18 @@ class OrderLifecycleManager:
                 ) >= min_stop_gap:
                     valid_stop = True
 
+                # Monotonic safety floor (BUG-085): never loosen protection even on
+                # a rule-driven NORMAL_TRAIL verdict.
+                valid_stop = valid_stop and self.is_sl_improvement(pos, target_sl)
                 if valid_stop and self._should_modify_sl(ticket, target_sl):
                     old_sl_val = pos.sl
                     success = self.adapter.modify_position(
                         ticket=ticket, stop_loss=target_sl, take_profit=pos.tp
                     )
-                    self._last_modify_sl[ticket] = target_sl
                     if success:
+                        # Only a CONFIRMED modification advances the tracked final SL
+                        # (BUG-085).
+                        self._last_modify_sl[ticket] = target_sl
                         self._sl_modified_flags[ticket] = True
                     if success and self.notifier:
                         msg_id = self._order_message_ids.get(ticket)
@@ -5468,6 +5665,20 @@ class OrderLifecycleManager:
         Returns the number of missed closes reconciled.
         """
         try:
+            # BUG-090 (TASK-7 perf): the reconciliation close-loop must never fetch
+            # broker history on every tick. Gate the fetch to once per 60s and skip
+            # it entirely when no OPENED-without-CLOSED ledger row exists (the only
+            # condition that can produce a reconcile).
+            now_mono = time.monotonic()
+            if (now_mono - self._last_reconcile_attempt) < 60.0:
+                return 0
+            self._last_reconcile_attempt = now_mono
+            try:
+                pending = self.audit.count_ledger_opened_unclosed()
+            except Exception:
+                pending = -1  # pre-check unavailable: fall through to the fetch
+            if pending == 0:
+                return 0
             history_deals = self.adapter.get_closed_deals_history(
                 symbol=symbol, hours_back=hours_back
             )
@@ -5540,7 +5751,12 @@ class OrderLifecycleManager:
                     close_time=now,
                     entry_time=None,
                 )
-                exit_mechanism = classify_exit_reason(
+                (
+                    exit_mechanism,
+                    exit_reason_source,
+                    exit_evidence,
+                    exit_reason_confidence,
+                ) = classify_exit_with_evidence(
                     deal_reason_code=int(matched.get("reason", 0) or 0),
                     comment=matched.get("comment", ""),
                     profit_usd=profit_usd,
@@ -5585,6 +5801,10 @@ class OrderLifecycleManager:
                     account_balance_after=self._last_account_balance,
                     account_equity_after=self._last_account_equity,
                     drawdown_percent_after=self._current_drawdown_percent(),
+                    exit_reason_source=exit_reason_source,
+                    exit_evidence=exit_evidence,
+                    exit_reason_confidence=exit_reason_confidence,
+                    reversal_events_json=json.dumps(self._reversal_events.get(ticket, [])),
                 )
 
                 if self.experience_engine is not None:
@@ -5611,6 +5831,8 @@ class OrderLifecycleManager:
                     )
 
                 self._reconcile_seen[ticket] = True
+                self._closed_tickets[ticket] = True
+                self._exit_pending_final_reason.pop(ticket, None)
                 reconciled += 1
                 logger.info(
                     "[RECONCILIATION] missed close recorded",
@@ -5768,6 +5990,102 @@ class OrderLifecycleManager:
         self._mfe_tracker[ticket] = new_mfe
         self._mae_tracker[ticket] = new_mae
 
+    def _capture_reversal_state(
+        self,
+        ticket: int,
+        pos: Any,
+        probs: Any | None,
+        regime_state: Any | None,
+        now: datetime,
+    ) -> None:
+        """
+        TASK-3: snapshots/classifies model-probability, regime and liquidity
+        reversals while a position is still open. Evidence goes into
+        `_reversal_events[ticket]` (bounded per ticket) and survives to the
+        closing autopsy row. Pure classification + in-memory bookkeeping —
+        never executes any order and never blocks the tick path.
+        """
+        try:
+            if ticket not in self._entry_probs and probs is not None:
+                try:
+                    pl = probs.squeeze().tolist()
+                    if not isinstance(pl, list):
+                        pl = [pl]
+                    p_no_trade = float(pl[0]) if len(pl) > 0 else 0.0
+                    p_buy = float(pl[1]) if len(pl) > 1 else 0.0
+                    p_sell = float(pl[2]) if len(pl) > 2 else 0.0
+                    self._entry_probs[ticket] = {
+                        "buy": round(p_buy, 6),
+                        "sell": round(p_sell, 6),
+                        "no_trade": round(p_no_trade, 6),
+                    }
+                except Exception:
+                    self._entry_probs[ticket] = {}
+            if ticket not in self._entry_regime_state and regime_state is not None:
+                try:
+                    self._entry_regime_state[ticket] = str(
+                        getattr(regime_state, "regime_type", "") or ""
+                    )
+                except Exception:
+                    self._entry_regime_state[ticket] = ""
+
+            events = self._reversal_events.setdefault(ticket, [])
+            if len(events) > 12:
+                return  # bounded per ticket
+
+            direction = str(getattr(pos, "type", "BUY") or "BUY")
+            is_buy = "BUY" in direction.upper()
+            entry_probs = self._entry_probs.get(ticket, {})
+
+            if probs is not None and entry_probs:
+                try:
+                    pl = probs.squeeze().tolist()
+                    if not isinstance(pl, list):
+                        pl = [pl]
+                    p_buy = float(pl[1]) if len(pl) > 1 else 0.0
+                    p_sell = float(pl[2]) if len(pl) > 2 else 0.0
+                    p_no_trade = float(pl[0]) if len(pl) > 0 else 0.0
+                    if is_buy:
+                        flipped = p_sell > p_buy + 0.10 and p_sell >= 0.5
+                    else:
+                        flipped = p_buy > p_sell + 0.10 and p_buy >= 0.5
+                    if flipped:
+                        events.append(
+                            {
+                                "type": "MODEL_REVERSAL",
+                                "at": now.isoformat(),
+                                "prob_buy": round(p_buy, 6),
+                                "prob_sell": round(p_sell, 6),
+                                "prob_no_trade": round(p_no_trade, 6),
+                                "entry_buy": entry_probs.get("buy"),
+                                "entry_sell": entry_probs.get("sell"),
+                            }
+                        )
+                except Exception:
+                    pass
+
+            if regime_state is not None and self._entry_regime_state.get(ticket):
+                try:
+                    cur_regime = str(getattr(regime_state, "regime_type", "") or "")
+                    if cur_regime and cur_regime != self._entry_regime_state[ticket]:
+                        events.append(
+                            {
+                                "type": "REGIME_REVERSAL",
+                                "at": now.isoformat(),
+                                "from": self._entry_regime_state[ticket],
+                                "to": cur_regime,
+                            }
+                        )
+                        self._entry_regime_state[ticket] = cur_regime
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.error(
+                "[TRADE_LINEAGE] reversal capture failed (isolated)",
+                ticket=ticket,
+                error=str(exc),
+            )
+
     def _close_sibling_legs(self, ticket: int, scenario: str, now: datetime) -> None:
         """
         Closes sibling tickets that belong to the SAME dispatch as `ticket`.
@@ -5861,6 +6179,11 @@ class OrderLifecycleManager:
             self._entry_order_ids,
             self._sl_modified_flags,
             self._forced_exit_mechanisms,
+            self._reversal_events,
+            self._entry_probs,
+            self._entry_regime_state,
+            self._net_pnl_by_ticket,
+            self._exit_mechanism_by_ticket,
             # New state structures
             self._trajectory_history,
             self._position_states,
@@ -5872,6 +6195,8 @@ class OrderLifecycleManager:
             self._recovery_horizons,
             self._recovery_entry_times,
             self._recovery_initial_loss,
+            self._closed_tickets,
+            self._exit_pending_final_reason,
         ):
             tracker.pop(ticket, None)
         with self._live_tickets_lock:

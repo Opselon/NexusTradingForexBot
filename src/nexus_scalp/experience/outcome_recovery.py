@@ -47,6 +47,194 @@ def is_protective_exit(exit_reason: str) -> bool:
     return False
 
 
+def classify_exit_with_evidence(
+    *,
+    deal_reason_code: int,
+    comment: str,
+    profit_usd: float | None,
+    exit_price: float,
+    tp_price: float,
+    sl_price: float,
+    final_sl: float,
+    entry_price: float,
+    was_sl_modified: bool,
+    direction: str,
+    forced_mechanism: str | None = None,
+) -> tuple[str, str, str, float]:
+    """
+    Evidence-aware exit classification (TASK-3 / BUG-083/085).
+
+    Returns (exit_reason, evidence_source, evidence_detail, confidence):
+
+      evidence_source  one of ENGINE_FORCED / BROKER_DEAL_REASON /
+                       BROKER_DEAL_COMMENT / SL_GEOMETRY / TP_GEOMETRY /
+                       STATE_MACHINE / FALLBACK_HEURISTIC
+      evidence_detail  machine-readable detail string
+      confidence       [0,1] — 1.0 when the broker reason code or comment
+                       alone proves the mechanism; lower for geometry/
+                       heuristic inference.
+
+    The taxonomy contract (ExitReason) is unchanged; consumers (ledger,
+    telegram, accounting) now receive the provenance of the label so an
+    exit is never presented as broker-proven when it was inferred.
+    """
+    if forced_mechanism:
+        return (
+            forced_mechanism,
+            "ENGINE_FORCED",
+            f"engine state machine forced exit ({forced_mechanism})",
+            1.0,
+        )
+
+    reason = int(deal_reason_code or 0)
+    comment_l = (comment or "").lower()
+    is_buy = "BUY" in str(direction).upper()
+    near_sl = sl_price > 0.0 and abs(exit_price - sl_price) < 0.15
+    near_tp = tp_price > 0.0 and abs(exit_price - tp_price) < 0.10
+    profit = float(profit_usd or 0.0)
+
+    # 1. Broker reason codes (authoritative when present and unambiguous).
+    if reason == 5 and (near_tp or "tp" in comment_l):
+        return ExitReason.TAKE_PROFIT_HIT, "BROKER_DEAL_REASON", "reason=5 DEAL_REASON_TP", 1.0
+    if reason == 4 and (near_sl or "sl" in comment_l):
+        return _classify_sl_geometry(
+            is_buy=is_buy,
+            entry_price=entry_price,
+            final_sl=final_sl,
+            was_sl_modified=was_sl_modified,
+            source="BROKER_DEAL_REASON",
+            detail="reason=4 DEAL_REASON_SL",
+        )
+    if reason == 6 and (near_sl or "sl" in comment_l):
+        return _classify_sl_geometry(
+            is_buy=is_buy,
+            entry_price=entry_price,
+            final_sl=final_sl,
+            was_sl_modified=was_sl_modified,
+            source="BROKER_DEAL_REASON",
+            detail="reason=6 DEAL_REASON_SO",
+        )
+    if reason in (1, 2):
+        # Real MT5 client manual close (MOBILE/DESKTOP), no protective evidence.
+        return (
+            ExitReason.MANUAL_CLOSE,
+            "BROKER_DEAL_REASON",
+            f"reason={reason} DEAL_REASON_CLIENT",
+            1.0,
+        )
+    if reason == 0:
+        # DEAL_REASON_CLIENT is also 0, but a bare 0 with NO comment/geometry/
+        # PnL evidence is ambiguous — stay UNKNOWN rather than assume manual
+        # (INV-012: UNKNOWN evidence must never be silently promoted).
+        if comment_l or near_sl or near_tp or profit != 0.0:
+            return ExitReason.MANUAL_CLOSE, "BROKER_DEAL_REASON", "reason=0 DEAL_REASON_CLIENT", 0.8
+        return (
+            ExitReason.UNKNOWN,
+            "FALLBACK_HEURISTIC",
+            "reason=0 with no corroborating evidence",
+            0.2,
+        )
+    if reason == 3:
+        # EA/Expert close (NSE engine closes carry this code). Never assume
+        # MANUAL (INV-012). The engine's own trailing/BE comments + SL
+        # geometry decide the protective class (BUG-081 rule: BE/trailing
+        # labels require `was_sl_modified` proof).
+        if "sl" in comment_l or "trail" in comment_l:
+            return _classify_sl_geometry(
+                is_buy=is_buy,
+                entry_price=entry_price,
+                final_sl=final_sl,
+                was_sl_modified=was_sl_modified,
+                source="BROKER_DEAL_COMMENT",
+                detail=f"reason=3 DEAL_REASON_EXPERT comment={comment}",
+            )
+        if "tp" in comment_l:
+            return (
+                ExitReason.TAKE_PROFIT_HIT,
+                "BROKER_DEAL_COMMENT",
+                "reason=3 DEAL_REASON_EXPERT comment=tp",
+                1.0,
+            )
+        return ExitReason.SYSTEM_CLOSE, "BROKER_DEAL_REASON", "reason=3 DEAL_REASON_EXPERT", 0.9
+
+    # 2. Comment evidence (NSE-generated + broker formats).
+    if comment_l.startswith(("nse_close", "nse_trail", "nse_be", "nse_emergency", "nse_cut")):
+        return _classify_sl_geometry(
+            is_buy=is_buy,
+            entry_price=entry_price,
+            final_sl=final_sl,
+            was_sl_modified=was_sl_modified,
+            source="BROKER_DEAL_COMMENT",
+            detail=f"comment={comment}",
+        )
+
+    # 3. Slope geometry fallback (always a lower-confidence inference).
+    if (near_sl or "sl" in comment_l) and final_sl > 0.0 and entry_price > 0.0:
+        return _classify_sl_geometry(
+            is_buy=is_buy,
+            entry_price=entry_price,
+            final_sl=final_sl,
+            was_sl_modified=was_sl_modified,
+            source="SL_GEOMETRY",
+            detail="exit near current SL level",
+        )
+    if near_tp or "tp" in comment_l:
+        return ExitReason.TAKE_PROFIT_HIT, "TP_GEOMETRY", "exit near TP level", 0.8
+
+    # 4. PnL-sign heuristic (weakest).
+    if profit > 0.0:
+        return (
+            ExitReason.SYSTEM_CLOSE,
+            "FALLBACK_HEURISTIC",
+            "positive PnL, no protective evidence",
+            0.4,
+        )
+    if profit < 0.0:
+        return (
+            ExitReason.SYSTEM_CLOSE,
+            "FALLBACK_HEURISTIC",
+            "negative PnL, no protective evidence",
+            0.4,
+        )
+
+    if was_sl_modified and final_sl > 0.0 and entry_price > 0.0:
+        if (is_buy and final_sl >= entry_price) or (not is_buy and final_sl <= entry_price):
+            return (
+                ExitReason.BREAK_EVEN_SL_HIT,
+                "SL_GEOMETRY",
+                "SL at entry with modification flag",
+                0.9,
+            )
+
+    return ExitReason.UNKNOWN, "FALLBACK_HEURISTIC", "no evidence", 0.0
+
+
+def _classify_sl_geometry(
+    *,
+    is_buy: bool,
+    entry_price: float,
+    final_sl: float,
+    was_sl_modified: bool,
+    source: str,
+    detail: str,
+) -> tuple[str, str, str, float]:
+    """
+    Classifies an SL-type exit by final-SL geometry vs entry, requiring
+    modification proof for break-even/trailing labels (BUG-081 rule).
+    """
+    if final_sl <= 0.0 or entry_price <= 0.0:
+        return ExitReason.HARD_SL_HIT, source, detail, 0.7
+    be_tolerance = max(0.5, (entry_price * 0.0005) if entry_price > 0.0 else 0.5)
+    within_be = entry_price - be_tolerance <= final_sl <= entry_price + be_tolerance
+    if within_be:
+        if was_sl_modified:
+            return ExitReason.BREAK_EVEN_SL_HIT, source, f"{detail} | SL moved to BE", 1.0
+        return ExitReason.HARD_SL_HIT, source, f"{detail} | SL at entry, never modified", 0.9
+    if (is_buy and final_sl > entry_price) or (not is_buy and final_sl < entry_price):
+        return ExitReason.TRAILING_STOP_HIT, source, f"{detail} | SL trailed beyond entry", 1.0
+    return ExitReason.HARD_SL_HIT, source, detail, 0.9
+
+
 def classify_exit_reason(
     *,
     deal_reason_code: int,
@@ -75,68 +263,20 @@ def classify_exit_reason(
     treated as 0.0 for the *classification heuristic only* — the caller is
     responsible for distinguishing UNKNOWN PnL from genuinely-zero PnL.
     """
-    if forced_mechanism:
-        return forced_mechanism
-
-    reason = int(deal_reason_code or 0)
-    comment_l = (comment or "").lower()
-    is_buy = "BUY" in str(direction).upper()
-    near_sl = sl_price > 0.0 and abs(exit_price - sl_price) < 0.15
-    near_tp = tp_price > 0.0 and abs(exit_price - tp_price) < 0.10
-    profit = float(profit_usd or 0.0)  # classification heuristic only
-
-    if near_tp or reason == 4 or "tp" in comment_l:
-        return ExitReason.TAKE_PROFIT_HIT
-
-    # Engine protective force exits are authoritative.
-
-    # BE geometry wins over trailing comments: a stop parked at/above entry
-    # (within the BE lock buffer) is a break-even lock, no matter what the
-    # engine's trailing comment says ("SL hit NSE_TRAIL" at entry = BE).
-    # A stop strictly beyond entry + BE_TOLERANCE is a genuine trailing lock.
-    be_tolerance = max(0.5, (entry_price * 0.0005) if entry_price > 0.0 else 0.5)
-    if (near_sl or "sl" in comment_l) and final_sl > 0.0 and entry_price > 0.0:
-        within_be = entry_price - be_tolerance <= final_sl <= entry_price + be_tolerance
-        if within_be:
-            # BUG-081: a stop AT entry is only a protective risk-free / break-even
-            # exit when the system can PROVE the stop was actually moved there.
-            # `was_sl_modified` is the engine's authoritative SL-modification flag
-            # (set when trailing/breakeven logic moved the broker-side SL); when it
-            # is false the stop sat at its ORIGINAL level and the exit is a plain
-            # hard stop at entry — never a fake "risk-free" label.
-            if was_sl_modified:
-                return ExitReason.BREAK_EVEN_SL_HIT
-            # Geometry-only corroboration: the SL level differs from the initial SL
-            # (broker-truth modification evidence) also proves the move.
-            return ExitReason.HARD_SL_HIT
-        # Strictly beyond entry: trailing lock.
-        if (is_buy and final_sl > entry_price) or (not is_buy and final_sl < entry_price):
-            return ExitReason.TRAILING_STOP_HIT
-
-    # Genuine trailing: protective stop strictly beyond entry (locked profit).
-    if "trail" in comment_l or comment_l.startswith("nse_trail"):
-        if final_sl > 0.0 and entry_price > 0.0:
-            if (is_buy and final_sl > entry_price) or (not is_buy and final_sl < entry_price):
-                return ExitReason.TRAILING_STOP_HIT
-        return ExitReason.TRAILING_STOP_HIT
-
-    if near_sl or reason == 3 or "sl" in comment_l:
-        return ExitReason.HARD_SL_HIT
-
-    if reason == 1:
-        # Real MT5 client manual close, no protective evidence.
-        return ExitReason.MANUAL_CLOSE
-
-    if profit > 0.0:
-        return ExitReason.TP_HIT if near_tp else ExitReason.SYSTEM_CLOSE
-    if profit < 0.0:
-        return ExitReason.SL_HIT if near_sl else ExitReason.SYSTEM_CLOSE
-
-    if was_sl_modified and final_sl > 0.0 and entry_price > 0.0:
-        if (is_buy and final_sl >= entry_price) or (not is_buy and final_sl <= entry_price):
-            return ExitReason.BREAK_EVEN_SL_HIT
-
-    return ExitReason.UNKNOWN
+    reason, _source, _evidence, _conf = classify_exit_with_evidence(
+        deal_reason_code=deal_reason_code,
+        comment=comment,
+        profit_usd=profit_usd,
+        exit_price=exit_price,
+        tp_price=tp_price,
+        sl_price=sl_price,
+        final_sl=final_sl,
+        entry_price=entry_price,
+        was_sl_modified=was_sl_modified,
+        direction=direction,
+        forced_mechanism=forced_mechanism,
+    )
+    return reason
 
 
 def reconstruct_broker_outcome(
@@ -170,7 +310,15 @@ def reconstruct_broker_outcome(
     """
     deal_rows = [d for d in (deals or []) if d.get("position_ticket") == ticket]
     if matched_deal is not None:
-        deal_rows.append(matched_deal)
+        # BUG-084: the caller usually passes `history_deals` which ALREADY
+        # contains the matched deal — appending it again double-counted the
+        # same physical close (gross profit, volume, deal ids). Dedupe by
+        # deal ticket; a duplicate physical deal must never be summed twice.
+        matched_ticket = matched_deal.get("ticket")
+        if matched_ticket is None or not any(
+            str(d.get("ticket", "")) == str(matched_ticket) for d in deal_rows
+        ):
+            deal_rows.append(matched_deal)
 
     if deal_rows:
         gross = 0.0

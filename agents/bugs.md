@@ -3861,3 +3861,184 @@ not affected.
 - The 7-row no-context cohort (3 live + 4 pre-BUG-081) is a data-provenance gap recorded in the ledger, not a metric bug; context binding is BUG-081's domain (fixed for new fills).
 
 ---
+## BUG-088 — MT5 DEAL_REASON Code Inversion: Broker SL Closes Classified TAKE_PROFIT_HIT / System Close + Broker-Outcome Double-Count (2026-08-18 TASK-3)
+
+- **Status**: FIXED (reason-code mapping corrected + matched-deal dedup + evidence-provenance persistence; regression suite tests/unit/test_trade_lifecycle_task3.py 28 tests)
+- **Severity**: CRITICAL (every broker SL close could be mislabeled; split-fill PnL double-counted)
+- **Confidence**: HIGH (2,289 real broker out-deals in audit.db: reason=4 → 2007/2007 `[sl …]` comments, reason=5 → 282/282 `[tp …]`; exact code path proof)
+
+### Root cause A — reason-code inversion (classify_exit_reason / status_str)
+- `classify_exit_reason` (experience/outcome_recovery.py) tested `reason == 4 → TAKE_PROFIT_HIT` and `reason == 3 → HARD_SL_HIT`.
+- MetaTrader5 DEAL_REASON constants (verified against the installed package):
+  DEAL_REASON_CLIENT=0/1/2, DEAL_REASON_EXPERT=3, DEAL_REASON_SL=4,
+  DEAL_REASON_TP=5, DEAL_REASON_SO=6. So reason 4 is an SL close, never TP.
+- The order_manager `status_str` block used the same inverted mapping
+  (`deal_reason_code == 4 → CLOSED_TP`, `== 3 → CLOSED_SL`).
+- Real impact on the live ledger: ticket family 1524886695xx closed at SL
+  (broker reason 4, comment `[sl 4388.30]`, profit -196.88 per leg) got
+  exit_mechanism UNKNOWN + pnl 0.0 — the classifier produced no evidence path
+  for reason=4+`[sl …]` and the deal lookup missed the field shape.
+
+### Root cause B — broker-outcome double-count (reconstruct_broker_outcome)
+- Callers pass `history_deals` which ALREADY contains the matched deal
+  (`matched_deal = next(d for d in history_deals …)`) and then pass the same
+  dict again as `matched_deal` → gross profit, volume and deal_ids summed
+  twice (probe: -443.76 vs true -246.88; volume 1.02 vs 0.56).
+
+### Fix
+1. `classify_exit_reason` / new `classify_exit_with_evidence` map broker
+   reason codes correctly: 5→TP, 4/6→SL, 1/2→MANUAL, 3→EXPERT (SL/TP via
+   comment+geometry, else SYSTEM_CLOSE), 0→MANUAL only with corroboration
+   else UNKNOWN (INV-012).
+2. `reconstruct_broker_outcome` dedupes `matched_deal` by deal ticket when it
+   is already inside `deals`.
+3. `order_manager` status_str block: `deal_reason_code == 5 → CLOSED_TP`,
+   `in (4,6) → CLOSED_SL`; MANUAL only for 1/2.
+4. Exit classification now carries provenance: `exit_reason_source`,
+   `exit_evidence`, `exit_reason_confidence` persisted on every closing
+   autopsy row (new audit_ledger columns via the existing ALTER migration);
+   Telegram close notifications use the canonical source string, never a
+   locally re-inferred one.
+5. Telegram `realized_r` was `orig_risk / |entry − sl|` (not a multiple) —
+   corrected to `net / risk`.
+
+### Evidence (live audit.db)
+- 2,289 broker out-deals: reason 4 → 2007 `[sl …]`, reason 5 → 282 `[tp …]`
+  (100% comment correlation).
+- Family 152488669567 (BUY 4392.58 → SL 4388.30, reason=4, -196.88/leg):
+  ledger had pnl=0.0 UNKNOWN exit; broker_trades has the true -196.88.
+- ledger vs broker_trades PnL: 227/264 rows mismatch (152 zero-PnL ledger rows).
+
+### Regression guards (tests/unit/test_trade_lifecycle_task3.py)
+- TL-01..24 + BUG-083/084 specific: reason 4 never TP, reason 5 → TP,
+  matched-deal dedup (aggregated + single-deal), BE/trailing/hard-SL
+  classification with/without modification proof, UNKNOWN stays UNKNOWN,
+  idempotent reconciliation, reversal capture (MODEL/REGIME/LIQUIDITY),
+  deterministic timeline ordering, POSITION_EXITED finalize, schema-aware
+  lineage, accounting/experience/telegram canonical values.
+- Existing BUG-081 + outcome-correlation suites still green.
+
+### Reconciliation status
+- Historical rows NOT rewritten (INV-007). New fills classify with broker
+  truth; the reconstruction tool
+  `artifacts/scripts/task3_trade_lineage_forensic.py <ticket>` shows the
+  evidence-backed verdict next to the stored ledger value.
+
+---
+
+## BUG-089 — Position Lifecycle Timeline Never Finalized + Model/Regime Reversal Never Captured (2026-08-18 TASK-3)
+
+- **Status**: FIXED (finalize_exit wired to the closing sweep; reversal/regime
+  observation captured per open ticket and persisted on the autopsy row)
+- **Severity**: MEDIUM (timeline/learning lineage incomplete: 0 POSITION_EXITED
+  events across 11,875 lifecycle events; 0 events carried trade_id)
+- **Confidence**: HIGH (DB proof + code-path proof)
+
+### Root cause
+- `PositionLifecycleTracker.finalize_exit` had NO caller: the live close path
+  (order_manager dead-ticket sweep) never emitted the terminal event, so the
+  position timeline ended at the last MOVING/DEGRADING observation.
+- `observe_position` was fed a `DecisionContext` without order_id/trade_id
+  and `emit` never received trade_id/experience_id → 0/11,875 events have
+  either identity column populated.
+- Model probabilities and regime state are evaluated while a position is open
+  (AI-flip exit exists) but never SNAPSHOTTED, so "model reversed while open"
+  / "regime changed while open" is not reconstructable from stored data.
+
+### Fix
+1. `OrderLifecycleManager` takes an optional `lifecycle_tracker`; the closing
+   dead-ticket sweep calls `finalize_exit(ticket, realized_pnl, realized_r,
+   exit_mechanism)` with canonical realized values (BUG-086). LiveEngine wires
+   `self.intelligence_lifecycle`.
+2. `_position_decision_context` returns (context, trade_id, experience_id)
+   and `_observe_positions` propagates them into every timeline event.
+3. `_capture_reversal_state(ticket, pos, probs, regime_state, now)` snapshots
+   entry probabilities + regime baseline on first observation, then records
+   MODEL_REVERSAL (directional flip ≥ 0.10 delta with ≥ 0.5 dominance) and
+   REGIME_REVERSAL (regime_type changed) events, bounded to 12 per ticket;
+   persisted as `reversal_events_json` on the closing autopsy row.
+
+### Regression guards
+- TL-05 (trade_id reaches events), TL-16/17/18 (model/regime/liquidity
+  reversal captured), TL-19 (deterministic sequence order), finalize test
+  (POSITION_EXITED emitted on close with realized PnL detail).
+
+### Reconciliation status
+- Historical events unchanged (immutability). New positions get the full
+  timeline + reversal journal.
+
+---
+
+## BUG-090 — scripts/build/build_release.ps1 Unparseable Under PowerShell (Release Pipeline Locked) (2026-08-18 TASK-9)
+
+Category: RELEASE / PACKAGING
+
+Evidence: `pwsh -File scripts/build/build_release.ps1` (and Windows PowerShell 5.1)
+failed to PARSE at HEAD: (a) the HARD SECRET GUARD used a python `-c` regex with
+apostrophes inside a single-quoted PS string (`r'bot[_-]?token\s*[=:]\s*['"]?\d{6,}…`),
+terminating the string early; (b) the manifest/SBOM/secrets-scan steps inlined
+multi-line python containing `from` keywords inside PS double-quoted strings;
+(c) the final verify block used a `@"…"@` heredoc with f-string braces. A
+`git describe --tags --exact-match` failure also aborted the run via
+$ErrorActionPreference="Stop" (repo has no tags yet).
+
+Impact: `build_release.ps1` could NEVER run — the local release build was
+locked since the file's introduction. GitHub Actions (pwsh) probably survived
+because bash `&&`-style steps and the workflow's own python lines are written
+differently, but the local pipeline was dead.
+
+Fix: extracted the fragile inline python into `scripts/build/update_helpers.py`
+(token-guard / scan-tree / manifest / sbom actions). build_release.ps1 now
+calls the helper with plain path args; the heredoc verify block now invokes
+the CLI verify path; `git describe` is wrapped in try/catch; UTF-8 BOM
+preserved (BUG-078 discipline). Verified: `PS PARSE OK` under pwsh 7.
+
+Regression guard: `tests/unit/test_release_build_system.py::test_build_release_ps1_parses_and_uses_safe_helper`.
+
+## BUG-091 — Update Tree-Swap Destroys App-Side User Data (artifacts/data/logs Inside Portable Bundle) (2026-08-18 TASK-9)
+
+Category: UPDATE / ROLLBACK / USER_DATA
+
+Evidence: REAL Windows experiment (v9.0.0 -> v9.1.0 over a local GitHub
+stub): the shipped portable bundle carries `artifacts/` (audit.db), `data/`
+and `logs/` INSIDE the install tree (the v9.0.0 engine writes audit.db to
+`<exe_dir>/artifacts`). A naive application-tree replacement (move old tree
+aside, move payload in) replaced those dirs with the payload's copies — or
+deleted them if absent from the payload — losing live trading data.
+
+Impact: any real installed user updating from the existing portable layout
+could lose audit.db/news.db/logs. This is the exact class of bug TASK-9
+section 15/53 exists to prevent.
+
+Fix: `ApplicationInstaller.install_portable()` snapshots the old tree's
+runtime user-data dirs (artifacts/data/logs) before the swap and merges them
+back into the new tree afterwards — user data wins over payload defaults.
+`RollbackEngine.restore_application()` is now version-aware: it NEVER
+restores an old snapshot's artifacts/data/logs over a newer migrated dataset
+(`skipped_user_data_items` reported).
+
+Regression guards: `test_app_swap_preserves_in_tree_user_data`,
+`test_rollback_never_restores_old_user_data`.
+
+## BUG-092 — Packaged EXE Version Truth: build-info.json Resolved From CWD, Not From the Bundle (2026-08-18 TASK-9)
+
+Category: RELEASE / CLI
+
+Evidence: `metadata.get_build_info_file()` only looked at `Path.cwd()` and a
+package-relative path. A frozen PyInstaller onedir EXE launched from an
+arbitrary working directory ignored ITS OWN embedded `build-info.json`
+(root or `_internal/`), reporting the repo root's version (or stale) instead
+of the bundle's. In the REAL update experiment the updated EXE reported
+`version 9.0.0` while its build-info said 9.1.0 — the health gate failed on
+version truth, not on the update.
+
+Impact: packaged-EXE `nexus version`/`health` can report the wrong version,
+breaking release verification and update health gates for end users.
+
+Fix: `get_build_info_file()` now resolves, in order: repo CWD, EXE-adjacent
+`build-info.json` (frozen), `_internal/build-info.json` (frozen onedir),
+package-relative. Deduplicated via `resolve()` set.
+
+Regression guard: exercised by the REAL v9.1.0 PyInstaller rebuild in
+`release/` (see TASK-9 handoff); unit coverage in
+`test_release_update_phase17.py` version-truth assertions.

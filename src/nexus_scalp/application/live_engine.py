@@ -59,6 +59,11 @@ from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.features.schema import active_columns, active_dimension, active_schema
+from nexus_scalp.governance import (
+    GovernanceShadowRuntime,
+    GovernanceStore,
+    ModelGovernanceEngine,
+)
 from nexus_scalp.intelligence import (
     BehaviorDetectionEngine,
     DecisionContext,
@@ -470,6 +475,29 @@ class LiveEngine:
         self._shadow_worker_started: bool = False
         self._shadow_challenger: ChallengerRuntime | None = None
 
+        # =================================================================
+        # TASK-6: LIVE MODEL GOVERNANCE (CHG-0003)
+        # -----------------------------------------------------------------
+        # Truthful registry reconciliation, the deterministic 10-gate model
+        # load gate, the audited promotion/rollback lifecycle, gold-hash
+        # health, and the governance shadow runtime (same-input alignment +
+        # feature/news parity + latency + failure isolation). Governance is
+        # observability-only: it imports no adapter / order manager / risk
+        # engine and can never place, modify or close an order (INV-002/003).
+        # =================================================================
+        self.governance_store = GovernanceStore(audit_repo=self.audit)
+        self.governance_engine = ModelGovernanceEngine(
+            store=self.governance_store,
+            dependency_map={
+                "activate": self._activate_promoted_model,
+                "rollback_activate": self._activate_rollback_model,
+            },
+        )
+        self._governance_shadow: GovernanceShadowRuntime | None = None
+        self._governance_reference_vector: list[float] | None = None
+        self._governance_health_last_save: float = 0.0
+        self._governance_health_save_interval_sec: float = 300.0
+
         # =====================================================================
         # PHASE 12: NEWS INTELLIGENCE ENGINE (isolated, optional)
         # ---------------------------------------------------------------------
@@ -527,6 +555,10 @@ class LiveEngine:
             algo_config=config.algo,
             risk_engine=self.risk_engine,
             experience_engine=self.experience_engine,
+            # TASK-3 (BUG-086): the close path finalizes the immutable
+            # position timeline (POSITION_EXITED) with canonical realized
+            # PnL / R / exit mechanism.
+            lifecycle_tracker=self.intelligence_lifecycle,
         )
 
         # Online training toolchain
@@ -672,6 +704,18 @@ class LiveEngine:
                     loop.close()
             except Exception:
                 pass
+
+    def _activate_promoted_model(self, *args: object, **kwargs: object) -> object:
+        """TASK-6 placeholder: promotion activation is not implemented yet.
+
+        Governance actions must never silently no-op: this raises explicitly so
+        a promotion attempt is a visible failure, not a silent skip.
+        """
+        raise NotImplementedError("model promotion activation not implemented (TASK-6 WIP)")
+
+    def _activate_rollback_model(self, *args: object, **kwargs: object) -> object:
+        """TASK-6 placeholder: rollback activation is not implemented yet."""
+        raise NotImplementedError("model rollback activation not implemented (TASK-6 WIP)")
 
     async def stop(self) -> None:
         self._running = False
@@ -2266,12 +2310,17 @@ class LiveEngine:
                 )
                 # Risk-normalised excursions from the order manager trackers.
                 perf = self._position_performance(pos.ticket)
+                decision_ctx, trade_id, experience_id = self._position_decision_context(
+                    pos.ticket, pos.symbol
+                )
                 self.intelligence_lifecycle.observe_position(
                     ticket=pos.ticket,
                     snapshot=snapshot,
                     performance=perf,
                     market=market,
-                    decision=self._position_decision_context(pos.ticket, pos.symbol),
+                    decision=decision_ctx,
+                    trade_id=trade_id,
+                    experience_id=experience_id,
                     at=tick.timestamp,
                 )
         except Exception as obs_err:
@@ -2307,13 +2356,22 @@ class LiveEngine:
         except Exception:
             return PositionPerformance()
 
-    def _position_decision_context(self, ticket: int, symbol: str) -> DecisionContext:
-        """Resolves the decision identity that produced this position, if known."""
+    def _position_decision_context(
+        self, ticket: int, symbol: str
+    ) -> tuple[DecisionContext, str, str]:
+        """Resolves the decision identity that produced this position, if known.
+
+        Returns (decision_context, trade_id, experience_id). The order id
+        (when bound) IS the canonical trade/execution identity: it is
+        propagated into the immutable lifecycle timeline so every event can
+        be correlated back to its decision (TASK-3 / BUG-086).
+        """
         try:
             om = self.order_manager
             strategy_id = om._entry_reasons.get(ticket, "")
+            order_id = om._entry_order_ids.get(ticket, "")
             feature_schema = self.FEATURE_SCHEMA_ID
-            return DecisionContext(
+            ctx = DecisionContext(
                 strategy_id=strategy_id or f"unknown_{symbol}",
                 strategy_version="1.0.0",
                 feature_schema_id=feature_schema,
@@ -2321,8 +2379,11 @@ class LiveEngine:
                 confidence=float(om._entry_confidences.get(ticket, 0.0)),
                 probability=float(om._entry_confidences.get(ticket, 0.0)),
             )
+            trade_id = order_id or ""
+            experience_id = ""  # resolved by the outcome layer, not known at open
+            return ctx, trade_id, experience_id
         except Exception:
-            return DecisionContext()
+            return DecisionContext(), "", ""
 
     def _evaluate_hedging_policy(
         self,
