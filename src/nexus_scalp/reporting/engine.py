@@ -940,7 +940,7 @@ class PerformanceReportEngine:
         if not self.core._enabled:
             return ExecutionSection()
         sql = (
-            "SELECT latency, reason, execution_mode FROM audit_orders "
+            "SELECT latency, reason, execution_mode, action FROM audit_orders "
             "WHERE timestamp >= ? AND timestamp < ?"
         )
         try:
