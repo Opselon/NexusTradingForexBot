@@ -60,11 +60,19 @@ class SampleFactory:
         label_schema: LabelSchema | None = None,
         news_schema: NewsContextSchema | None = None,
         feature_schema_id: str = "scalp_v1",
+        hunter_enabled: bool = True,
     ) -> None:
         self.labeler = labeler or TripleBarrierLabeler()
         self.label_schema = label_schema or default_label_schema()
         self.news_schema = news_schema or default_news_context_schema()
         self.feature_schema = FEATURE_SCHEMAS.resolve(feature_schema_id)
+        self.hunter_enabled = hunter_enabled
+        if hunter_enabled:
+            from nexus_scalp.model_generation.sample_maker import HunterSampleMaker
+
+            self.hunter = HunterSampleMaker()
+        else:
+            self.hunter = None
 
     # ------------------------------------------------------------------
     # News historical context (spec 11 / 12 / 28)
@@ -196,6 +204,15 @@ class SampleFactory:
             setup = self.detect_setup(row, prior_rows)
             prior_rows.append(row)
 
+            # Hunter layer: attach setup/strategy metadata to the sample so the
+            # model conditions on WHY this bar qualifies (accuracy driver).
+            hunter_meta: dict[str, Any] = {}
+            if self.hunter is not None:
+                hunter = self.hunter.analyze_row(row, timestamp)
+                from nexus_scalp.model_generation.sample_maker import attach_hunter_metadata
+
+                hunter_meta = attach_hunter_metadata({"metadata": {}}, hunter)
+
             sample_id = deterministic_sample_id(
                 symbol,
                 timeframe,
@@ -216,6 +233,17 @@ class SampleFactory:
                         "close": float(row.get("close", 0.0)),
                         "atr": float(row.get("atr_m1") or row.get("atr", 0.0) or 0.0),
                         "spread": float(row.get("spread", 0.0) or 0.0),
+                        "setup_quality": float(hunter_meta.get("setup_quality", 0.0) or 0.0),
+                        "stop_distance": (
+                            float(hunter_meta["stop_distance"])
+                            if hunter_meta.get("stop_distance") is not None
+                            else 0.0
+                        ),
+                        "tp_distance": (
+                            float(hunter_meta["tp_distance"])
+                            if hunter_meta.get("tp_distance") is not None
+                            else 0.0
+                        ),
                     },
                     regime=str(row.get("regime", "UNKNOWN")),
                     news_context=news_ctx,
@@ -229,6 +257,7 @@ class SampleFactory:
                         "strategy_version": strategy_version,
                         "is_eval_sample": bool(row.get("is_eval_sample", False)),
                         "is_purged": bool(row.get("is_purged", False)),
+                        **hunter_meta,
                     },
                 )
             )
@@ -257,7 +286,12 @@ def samples_to_frame(samples: list[SampleContract]) -> pl.DataFrame:
             "feature_schema_id": s.feature_schema_id,
             "regime": s.regime,
             "setup_id": s.metadata.get("setup_id", ""),
+            "setup_type": s.metadata.get("setup_type", ""),
+            "setup_quality": s.metadata.get("setup_quality", 0.0),
+            "setup_tier": s.metadata.get("setup_tier", "NO_TRADE"),
             "strategy_id": s.metadata.get("strategy_id", ""),
+            "hunter_strategy_id": s.metadata.get("hunter_strategy_id", ""),
+            "entry_decision": s.metadata.get("entry_decision", "NO_GO"),
             "strategy_version": s.metadata.get("strategy_version", ""),
             "label": s.metadata.get("label", 0),
             "label_str": s.metadata.get("label_str", "NO_TRADE"),

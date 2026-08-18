@@ -145,4 +145,12 @@ class TestPositionAndRateMapping:
     def test_rate_bar_time_is_utc_epoch(self) -> None:
         raw = _Raw(fixture_objects("xauusd_m1_rates")[0])
         snap = build_rate_bar_snapshot(raw)
-        assert snap.time_utc == datetime.datetime.fromtimestamp(int(raw["time"]), tz=datetime.UTC)
+        # Broker epochs are server-local (GMT+3 on this terminal); the adapter
+        # subtracts the verified offset to produce real UTC (Phase 14).
+        from nexus_scalp.adapters.mt5.providers import broker_epoch_to_utc
+
+        assert snap.time_utc == broker_epoch_to_utc(int(raw["time"]))
+        assert snap.time_utc is not None
+        # and the produced UTC must NOT be the raw server-local epoch interpreted
+        # as UTC (the old 3h-shifted bug).
+        assert snap.time_utc != datetime.datetime.fromtimestamp(int(raw["time"]), tz=datetime.UTC)

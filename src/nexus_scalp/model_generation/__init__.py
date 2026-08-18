@@ -40,8 +40,33 @@ from nexus_scalp.model_generation.replay import (
 )
 from nexus_scalp.model_generation.runtime import LocalModelRuntime, ManifestValidationError
 from nexus_scalp.model_generation.sample_factory import SampleFactory, deterministic_sample_id
+from nexus_scalp.model_generation.sample_maker import (
+    TIER_A_MIN,
+    TIER_B_MIN,
+    TIER_C_MIN,
+    HunterSampleMaker,
+    attach_hunter_metadata,
+    quality_tier,
+)
 from nexus_scalp.model_generation.sequence import SequenceBuilder
 from nexus_scalp.model_generation.sequence_training import SequenceCandidateTrainer
+from nexus_scalp.model_generation.setup_detector import (
+    HUNTER_MIN_QUALITY,
+    SETUP_TYPES,
+    SetupDetection,
+    SetupDetector,
+    validate_setup_type,
+)
+from nexus_scalp.model_generation.strategy_factory import (
+    DEFAULT_HUNTER_STRATEGY,
+    HUNTER_STRATEGIES,
+    HUNTER_VERSION,
+    EntryDecision,
+    HunterStrategy,
+    StrategyFactory,
+    best_strategy_for,
+    get_strategy,
+)
 from nexus_scalp.model_generation.training import CandidateTrainer
 from nexus_scalp.model_generation.validation import (
     ValidationFactory,
@@ -52,13 +77,24 @@ from nexus_scalp.model_generation.validation import (
 
 __all__ = [
     "ARCHITECTURE_VERSION",
+    "DEFAULT_HUNTER_STRATEGY",
     "EXPERIMENT_SPACE",
+    "HUNTER_MIN_QUALITY",
+    "HUNTER_STRATEGIES",
+    "HUNTER_VERSION",
+    "SETUP_TYPES",
+    "TIER_A_MIN",
+    "TIER_B_MIN",
+    "TIER_C_MIN",
     "ArtifactStore",
     "CandidateTrainer",
     "DatasetFactory",
     "DatasetManifest",
+    "EntryDecision",
     "ExperimentConfig",
     "ExperimentFactory",
+    "HunterSampleMaker",
+    "HunterStrategy",
     "LabelSchema",
     "LocalModelRuntime",
     "ManifestValidationError",
@@ -73,10 +109,15 @@ __all__ = [
     "SequenceBuilder",
     "SequenceCandidateTrainer",
     "SetupContract",
+    "SetupDetection",
+    "SetupDetector",
     "StrategyContract",
+    "StrategyFactory",
     "TCNAttentionV1",
     "ValidationFactory",
     "ValidationResults",
+    "attach_hunter_metadata",
+    "best_strategy_for",
     "compare_news_ablation",
     "compute_calibration",
     "default_artifact_root",
@@ -86,4 +127,7 @@ __all__ = [
     "detect_feature_drift",
     "detect_prediction_drift",
     "deterministic_sample_id",
+    "get_strategy",
+    "quality_tier",
+    "validate_setup_type",
 ]
