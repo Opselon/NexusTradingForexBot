@@ -162,15 +162,17 @@ NOT committed: all production code / tests / docs / scratch owned by TASK-01/02/
 
 ## COMMIT
 
-Committed as `AGENT-13: Commit + synchronize swarm registry state and TASK-13 surveillance baseline`
-(see `git show` for full body). SHA: see final handoff / git log.
+Committed as `db1164b` — `AGENT-13: TASK-13 git-surveillance final report, handoff, TEST-GIT-01..25 suite, repository_state snapshot`.
+Full body in git log. NOTE: registry rows (CHG-0014, BUG-102, TASK-13 row) were absorbed by
+TASK-4 commit `6bbd8e7` (pushed first, 2026-08-19) — verified present on origin/main; this
+commit carries repository_state snapshot + docs + tests.
 
 ## PUSH
 
-- Pre-push: fetch --prune; branch main; local ahead verified; remote not ahead; no divergence;
-  normal push (no force).
-- Post-push: `git rev-parse HEAD` == `git rev-parse origin/main`; GitHub verified.
-  Pushed SHA: see handoff.
+- Pre-push: fetch --prune; branch main; linear history on 6bbd8e7; 0 behind; normal push (no force).
+- Post-push: `git rev-parse HEAD` == `git rev-parse origin/main` == `db1164bf0249bfb5205b117d833318b19314068a`;
+  `git ls-remote origin refs/heads/main` == db1164b; GitHub API commit fetch verified (sha + message).
+  Pushed SHA: `db1164b`.
 
 ## CI
 
