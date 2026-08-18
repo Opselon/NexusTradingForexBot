@@ -129,3 +129,26 @@ Update this file additively after substantial work (new modules, model changes, 
   no research run performed, no production code touched (contract: research over a moving
   implementation is forbidden). Next action belongs to the 70D series owner (TASK-01..06
   must land + freeze an algorithm version, then this task can bootstrap).
+
+## Snapshot 2026-08-19 (TASK-13 git surveillance)
+
+- HEAD: c56d3340814a763b9b1aa79b370ec63f9ad73ae8 (origin/main in sync) at surveillance
+  start. Working tree: 55 entries (23 modified + 32 untracked) — 70D swarm mid-flight:
+  TASK-01 liquidity foundation (liquidity_engine.py + scalp_liquidity_v1 + schema_v2
+  builder + config switch + 3 test files), TASK-02 integration (LiquidityGovernor +
+  scalp_v4 70D schema + Web UI + /api/liquidity/*), TASK-04 model validation
+  (test_70d_model_validation_task4.py, BLOCKED on TASK-03 parity), TASK-05 shadow70
+  (runtime/health/drift/store/worker + test_shadow70_runtime.py + Web API), TASK-08
+  promotion governance (AUDIT-0005 migration 4->5, emergency controls, transaction/
+  lock/verify, 17 governance endpoints), TASK-11 forensics monitor (forensics/ package
+  + POST_70D docs), TASK-12 incidents (incidents/ package + cli incident_commands).
+- Liquidity test state CORRECTED: 5 FAILING (liq11 far-apart-highs, liq16 confluence,
+  liq21 sweep-then-reclaim, liq25 future-htf, liq45 dataset-shape) — the earlier
+  snapshot's claim (3 failing: liq03/05/11) is STALE; owner TASK-01.
+- Registry state synced additively by TASK-13: CHG-0014, TASK-13 row, BUG-102, INV-018
+  (already landed by TASK-05), BUG-100 (TASK-05), BUG-101 (TASK-05/08 RNG seeding —
+  parallel agent, NOT this task).
+- Known failures: beforePush gate stays RED until TASK-01 fixes its 5 liquidity tests;
+  no CI workflow runs on push-main (release.yml targets tags).
+- Next milestone: TASK-01 coherent commit (fix 5 tests -> commit foundation alone),
+  then TASK-02/03/04 chain; TASK-07 research still BLOCKED_ON_FROZEN_LIQUIDITY_VERSION.
