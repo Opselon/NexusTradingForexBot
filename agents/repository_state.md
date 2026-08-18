@@ -105,3 +105,27 @@ Update this file additively after substantial work (new modules, model changes, 
 - Tests: tests/unit/test_database_migrations_phase18.py (TEST-DBM-01..40) +
   test_cli_db_phase18.py; large-DB probe (100k orders/50k ledger → 0.24s,
   idx_orders_ticket 4.32ms→0.02ms, integrity ok, idempotent).
+
+## Snapshot 2026-08-19 (TASK-07-70D-LIQUIDITY-RESEARCH — BLOCKED registration)
+
+- HEAD: 4001e4c (origin/main in sync). NEW 70D task series (TASK-01..06 as
+  defined by the 70D workflow) has NOT landed. No docs/70D_*.md, no
+  docs/MODEL_BENCHMARK_70D_LIQUIDITY.md, no docs/LIQUIDITY_70D_OPTIMIZATION_REPORT.md,
+  no agent_handoffs for the 70D series (TASK-01..06 handoff files belong to
+  the OLD Phase 13-16 series).
+- Working tree (UNCOMMITTED, parallel-agent WIP — DO NOT touch/commit):
+  - NEW src/nexus_scalp/features/liquidity_engine.py (TASK-01-60D-LIQUIDITY engine).
+  - features/schema.py: registered scalp_liquidity_v1 (60D, feat_50..59) — candidate-only.
+  - model_generation/schema_v2.py: +182 lines compute_liquidity_frame (scalp_liquidity_v1 builder).
+  - configuration/config.py + configs/base.yaml: liquidity_features_enabled=false (explicit switch).
+  - tests/helpers/liquidity_fixtures.py + tests/unit/test_liquidity_engine_contract.py.
+  - docs/LIQUIDITY_60D_FORENSIC_BASELINE.md + docs/LIQUIDITY_60D_50D_CONTRACT_SNAPSHOT.json.
+- TASK-01 contract test status: 3/13 FAIL (test_liq03_vector_is_exactly_60,
+  test_liq05_all_values_clipped_minus3_plus3, test_liq11_far_apart_highs_not_a_cluster).
+- No 70D datasets/models: artifacts/model_generation/datasets/ has 4 older ds_* dirs
+  (Aug 18); models/ has bench_*/cand_data_gate_* (Aug 17-18). audit.db shadow tables:
+  only model_shadow_comparisons (old governance), no liquidity tables.
+- TASK-07-70D-LIQUIDITY-RESEARCH registered BLOCKED (BLOCKED_ON_FROZEN_LIQUIDITY_VERSION);
+  no research run performed, no production code touched (contract: research over a moving
+  implementation is forbidden). Next action belongs to the 70D series owner (TASK-01..06
+  must land + freeze an algorithm version, then this task can bootstrap).
