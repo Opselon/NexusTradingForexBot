@@ -498,6 +498,38 @@ class ExperienceLedger:
             limit,
         )
 
+    def owner_of_execution(self, execution_id: str, exclude_key: str = "") -> str:
+        """Returns the idempotency_key of the FIRST closed outcome owning a
+        broker ticket (execution_id), or "" when none exists.
+
+        ANOMALY-VERIFY-01 economic-identity guard: one broker ticket must map
+        to exactly one economic outcome. Split-fill / sibling-ticket context
+        leaks (BUG-081) can attach a second outcome row to the same ticket;
+        this reveals the existing owner so the caller can reject the
+        duplicate instead of double-counting the same position.
+        """
+        if not execution_id or not self.audit_repo._is_sqlite:
+            return ""
+        try:
+            conn = self._connect()
+            try:
+                sql = (
+                    "SELECT idempotency_key FROM audit_experience_outcomes "
+                    "WHERE execution_id = ? AND is_closed = 1 "
+                )
+                args: list[Any] = [str(execution_id)]
+                if exclude_key:
+                    sql += "AND idempotency_key != ? "
+                    args.append(exclude_key)
+                sql += "ORDER BY outcome_timestamp ASC LIMIT 1;"
+                row = conn.execute(sql, tuple(args)).fetchone()
+                return str(row[0]) if row else ""
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("[EXPERIENCE] execution-owner lookup failed", error=str(e))
+            return ""
+
     def has_outcome(self, idempotency_key: str) -> bool:
         """True when an outcome event already exists for this experience."""
         if not self.audit_repo._is_sqlite:

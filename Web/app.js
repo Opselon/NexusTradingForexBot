@@ -3973,13 +3973,17 @@ async function loadIntelligenceAnomalies() {
             return;
         }
         if (box) {
-            box.innerHTML = anomalies.map(a =>
-                '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
-                    '<div class="flex justify-between"><span class="text-amber-400 font-bold">' + esc(a.anomaly_type || a.category || 'UNKNOWN') +
-                    '</span><span class="text-textMuted">' + esc(String(a.severity || '')) + ' · ' + esc(String(a.detected_at || '').substring(0, 16)) + '</span></div>' +
+            box.innerHTML = anomalies.map(a => {
+                const obs = (a.observation_count > 1) ? ' <span class="text-textMuted">(x' + esc(String(a.observation_count)) + ')</span>' : '';
+                const range = (a.first_seen && a.last_seen && a.first_seen !== a.last_seen)
+                    ? ' <span class="text-textMuted">' + esc(String(a.first_seen).substring(0, 16) + '..' + String(a.last_seen).substring(0, 16)) + '</span>'
+                    : '';
+                return '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+                    '<div class="flex justify-between"><span class="text-amber-400 font-bold">' + esc(a.anomaly_type || a.category || 'UNKNOWN') + obs +
+                    '</span><span class="text-textMuted">' + esc(String(a.severity || '')) + ' · ' + esc(String(a.detected_at || '').substring(0, 16)) + range + '</span></div>' +
                     '<div class="text-textMuted">' + esc((a.evidence && a.evidence.explanation) ? a.evidence.explanation : JSON.stringify(a.evidence || '')) + '</div>' +
-                '</div>'
-            ).join('');
+                '</div>';
+            }).join('');
         }
     } catch (e) {
         console.warn('anomalies load failed', e);

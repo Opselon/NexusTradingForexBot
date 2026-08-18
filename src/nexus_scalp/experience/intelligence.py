@@ -720,6 +720,28 @@ class ExperienceIntelligenceEngine:
                 logger.info("[EXPERIENCE] DUPLICATE outcome ignored", idempotency_key=key)
                 return False
 
+            # ANOMALY-VERIFY-01: one broker ticket == one ECONOMIC trade.
+            # A second closed outcome carrying the SAME execution_id (broker
+            # ticket) but a DIFFERENT idempotency_key is a duplicate of the
+            # same economic position (split-fill / sibling-ticket context
+            # leak, BUG-081 pattern) — it must NOT create a second outcome.
+            # The broker ticket is the economic identity; the first outcome
+            # row for it is the canonical one.
+            if execution_id and str(execution_id).strip():
+                existing_ticket_owner = self.ledger.owner_of_execution(
+                    str(execution_id), exclude_key=key
+                )
+                if existing_ticket_owner:
+                    self.ledger.duplicate_count += 1
+                    logger.warning(
+                        "[EXPERIENCE_OUTCOME] event=ECONOMIC_DUPLICATE_REJECTED",
+                        ticket=execution_id,
+                        idempotency_key=key,
+                        existing_key=existing_ticket_owner,
+                        reason="one economic trade must have exactly one outcome",
+                    )
+                    return False
+
             planned_risk = record.planned_risk_distance
             behavior = compute_behavior_metrics(
                 mae_points=mae_points,

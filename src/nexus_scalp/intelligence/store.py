@@ -190,8 +190,17 @@ def list_anomaly_events(
     ticket: int | str | None = None,
     anomaly_type: str | None = None,
     limit: int = 100,
+    grouped: bool = True,
 ) -> list[dict[str, Any]]:
-    """Bounded listing of evidence-based anomaly events (TASK-2)."""
+    """Bounded listing of evidence-based anomaly events (TASK-2).
+
+    ANOMALY-VERIFY-01 (grouped=True default): rows sharing the same incident
+    identity (anomaly_type + ticket + algorithm_version) are collapsed into
+    ONE incident with an `observation_count`. The dashboard must answer
+    "how many unique incidents exist?" — not "how many DB rows exist?".
+    Historical repeated observations are never deleted: grouping is a pure
+    read-side projection (TEST-ANOM-16/17/19).
+    """
     if not repo._is_sqlite:
         return []
     bounded = max(1, min(int(limit), 500))
@@ -207,19 +216,44 @@ def list_anomaly_events(
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY detected_at DESC LIMIT ?;"
-    out: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     try:
         conn = sqlite3.connect(repo._db_path, timeout=5.0)
         conn.row_factory = sqlite3.Row
         try:
-            rows = conn.execute(sql, (*args, bounded)).fetchall()
+            for r in conn.execute(sql, (*args, bounded)).fetchall():
+                rows.append(dict(r))
         finally:
             conn.close()
-        for r in rows:
-            out.append(dict(r))
     except Exception as e:
         logger.error("[BEHAVIOR] anomaly list failed", error=str(e))
-    return out
+        return []
+
+    if not grouped:
+        return rows
+    incidents: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for r in rows:
+        key = (
+            str(r.get("ticket", "")),
+            str(r.get("anomaly_type", "")),
+            str(r.get("algorithm_version", "")),
+        )
+        inc = incidents.get(key)
+        if inc is None:
+            inc = dict(r)
+            inc["observation_count"] = 1
+            first = r.get("detected_at", "")
+            last = r.get("detected_at", "")
+            inc["first_seen"] = first
+            inc["last_seen"] = last
+            incidents[key] = inc
+        else:
+            inc["observation_count"] += 1
+            if str(r.get("detected_at", "")) > str(inc.get("last_seen", "")):
+                inc["last_seen"] = r.get("detected_at", "")
+            if str(r.get("detected_at", "")) < str(inc.get("first_seen", "")):
+                inc["first_seen"] = r.get("detected_at", "")
+    return list(incidents.values())
 
 
 def load_evolution_candidates(

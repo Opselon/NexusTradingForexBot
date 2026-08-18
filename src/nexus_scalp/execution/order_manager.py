@@ -2579,10 +2579,16 @@ class OrderLifecycleManager:
 
         self._last_seen_ts[ticket] = now
 
+        # ANOMALY-VERIFY-01: MFE/MAE trackers MUST seed at ZERO, never at the
+        # first observed price delta. Seeding at the first delta is signed by
+        # direction: an immediately-adverse SELL (price above entry) seeds a
+        # NEGATIVE MFE which max() can never lift above 0 -> a trade that
+        # never went favorable is stored with negative MFE (IMPOSSIBLE
+        # EXCURSION false-flagged). Contract: MFE >= 0, MAE <= 0.
         if ticket not in self._mfe_tracker:
-            self._mfe_tracker[ticket] = profit_price_delta
+            self._mfe_tracker[ticket] = 0.0
         if ticket not in self._mae_tracker:
-            self._mae_tracker[ticket] = profit_price_delta
+            self._mae_tracker[ticket] = 0.0
 
         if ticket not in self._time_in_profit_sec:
             self._time_in_profit_sec[ticket] = 0.0
@@ -5974,8 +5980,8 @@ class OrderLifecycleManager:
         behaviour record can distinguish "ran to target immediately" from
         "spent an hour underwater first".
         """
-        prev_mfe = self._mfe_tracker.get(ticket, profit_price_delta)
-        prev_mae = self._mae_tracker.get(ticket, profit_price_delta)
+        prev_mfe = self._mfe_tracker.get(ticket, 0.0)
+        prev_mae = self._mae_tracker.get(ticket, 0.0)
         new_mfe = max(prev_mfe, profit_price_delta)
         new_mae = min(prev_mae, profit_price_delta)
 

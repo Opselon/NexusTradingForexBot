@@ -4160,3 +4160,128 @@ In addition:
 
 ### Notes
 - The parallel TASK-3 commit (0434ef6) committed the shared working-tree state including these fixes; the working-tree delta for order_manager.py/audit_repository.py is now empty. TASK-7 contributes the regression suite, this ledger entry, and TASK-7 handoff.
+
+## BUG-096 — MFE Tracker Seeded With the First Signed Price Delta (Negative MFE for Immediately-Adverse SELL; IMPOSSIBLE_EXCURSION False-Data Storm) (2026-08-19 ANOMALY-VERIFY-01)
+
+- **Status**: FIXED (ANOMALY-VERIFY-01; `execution/order_manager.py` `_ensure_ticket_bootstrap` + `_update_mfe_mae` seed at 0.0)
+- **Severity**: HIGH (data-integrity: 18 stored SELL MFE values were negative, flagging 18 IMPOSSIBLE_EXCURSION incidents; metrics downstream (giveback, capture, research) consumed wrong excursion values)
+- **Confidence**: HIGH (18/18 affected ledger rows replay-verified; lifecycle timeline price path proves the trades never went favorable)
+- **Discovered**: 2026-08-19 ANOMALY-VERIFY-01 forensics
+
+### Symptom
+`anomaly_events` held 18 `IMPOSSIBLE_EXCURSION` rows (severity LOW, all created in one 19:02 scan): "SELL trade records negative MFE". Example ticket 152495069002: SELL entry 4413.54, price immediately 4414.43+ (never favorable), stored `mfe_points=-0.60` while `mfe_usd=0.0`.
+
+### Root cause
+`_ensure_ticket_bootstrap` seeded `_mfe_tracker[ticket] = profit_price_delta` (the FIRST observed delta) and `_update_mfe_mae` used `.get(ticket, profit_price_delta)`. `profit_price_delta` for a SELL is `entry - price` (positive only when price falls). An immediately-adverse SELL seeds a NEGATIVE value; the max() update can never lift it to 0 → a trade that never went favorable is stored with negative MFE. The USD branch already clamps (`max(mfe_val, 0.0)`) → mfe_usd=0 with mfe_points<0 asymmetry.
+
+### Fix
+Trackers seed at 0.0 (favorable-only max / adverse-only min); `.get` defaults 0.0. MFE>=0, MAE<=0 contract restored for both directions.
+
+### Evidence
+- Ledger rows 152495069002/152495508127/152495463437/152495463446/152494757623 (SELL, price rose for the whole hold): mfe negative, mfe_usd 0.
+- Independent replay from lifecycle timeline: best excursion = price never below entry → correct MFE 0.0.
+- 18 anomaly rows = 18 distinct tickets (no row duplication).
+
+### Regression tests
+- `tests/unit/test_anomaly_verify01_mfe.py` (TEST-ANOM-06..09, 12, 14, 15, 20, 23, 26, 28)
+
+### Runtime verification
+- Full unit suite EXIT=0; focused suites pass; ruff/mypy clean.
+
+---
+
+## BUG-097 — Split-Fill Sibling Tickets Attach Two Economic Outcomes to One Broker Ticket (DUPLICATE_ECONOMIC_OUTCOME Real) (2026-08-19 ANOMALY-VERIFY-01)
+
+- **Status**: FIXED (ANOMALY-VERIFY-01; economic-identity guard `owner_of_execution` in `experience/ledger.py` + refusal in `experience/intelligence.py::record_trade_outcome`)
+- **Severity**: CRITICAL (accounting truth: one broker position reflected as two outcomes with different PnL; research/intelligence double-counts the position)
+- **Confidence**: HIGH (broker trade history + outcome rows + ledger row all traced; pnl delta 13.23 reproduced exactly)
+- **Discovered**: 2026-08-19 ANOMALY-VERIFY-01 forensics
+
+### Symptom
+`anomaly_events` held 1 `DUPLICATE_ECONOMIC_OUTCOME` (CRITICAL): outcome_count=2, pnl_delta=13.23 for execution_id 152494870397.
+
+### Evidence
+- Broker truth: position 152494870397 (BUY 4416.61, PnL **-18.27**), one of ~10 siblings spawned at 22:40:26 (split fill family).
+- Outcome A (exp_87f47ca2, ORIGINAL_REQUEST) = **-18.27** = broker truth.
+- Outcome B (exp_d9952f5a, ORIGINAL_REQUEST) = **-31.50** = ledger aggregate, NO matching broker position.
+- Ledger row 152494870397 PnL -31.50 (matches outcome B).
+- Both outcomes carry `broker_outcome.reconstruction_source=NONE` (recorded before Phase 14 deal reconstruction) yet the realized fields differ.
+
+### Root cause
+Two proposals (BUY_LIMIT 4416.61, same second) → the broker filled a split-fill family; the dead-ticket sweep correlated BOTH requests' closes to ticket 152494870397 (BUG-081 split-fill context inheritance pattern). Outcome recording keyed idempotency per-request only, so the same execution_id received two rows.
+
+### Fix
+`ExperienceLedger.owner_of_execution(execution_id)` returns the first closed outcome owner of a broker ticket; `record_trade_outcome` refuses a second outcome sharing the same execution_id under a different idempotency_key (logs `[EXPERIENCE_OUTCOME] event=ECONOMIC_DUPLICATE_REJECTED`). One broker ticket == one economic outcome.
+
+### Regression tests
+- `tests/unit/test_anomaly_verify01_duplicates.py` (TEST-ANOM-01..05)
+
+### Runtime verification
+- Focused suites pass; full unit suite green; ruff/mypy clean.
+
+---
+
+## BUG-098 — Per-Trade Anomaly IDs Were Random (uuid4) Instead of Deterministic Incident Identity (2026-08-19 ANOMALY-VERIFY-01)
+
+- **Status**: FIXED (ANOMALY-VERIFY-01; `_trade_data_anomalies` now uses `_duplicate_anomaly_id(ticket, type, version)`)
+- **Severity**: MEDIUM (idempotency/identity: the same incident could generate new rows under repeated scans without a deterministic key to dedupe)
+- **Confidence**: HIGH (code trace)
+
+### Symptom
+Per-trade anomalies (STRATEGY_CONTEXT_LOSS, EXIT_CLASSIFICATION_ANOMALY, IMPOSSIBLE_EXCURSION, IMPOSSIBLE_TIMESTAMP) used `anomaly_id=f"ano_{uuid.uuid4().hex[:12]}"` — nondeterministic. The batch DUPLICATE_ECONOMIC_OUTCOME already used a deterministic `(ticket, type, version)` key. Without determinism, incident identity cannot be relied on across scans.
+
+### Fix
+All per-trade anomaly ids now derive from `_duplicate_anomaly_id(ticket, anomaly_type, algorithm_version)` — same scheme as the batch detector. TEST-ANOM-14/15 assert determinism and reproducibility.
+
+### Regression tests
+- `tests/unit/test_anomaly_verify01_mfe.py::test_anom14_deterministic_anomaly_id` + `test_anom15_deterministic_ids_used_for_per_trade_anomalies`
+
+---
+## BUG-099 — Database Growth Without Retention Governance: Candle-Intel Derived Store Unbounded + No Hygiene Pipeline Existed (2026-08-18 TASK-11)
+
+- **Status**: FIXED (DatabaseHygieneWorker introduced; policy-driven retention; bounded executor; archive-before-delete; all documented in docs/DATABASE_HYGIENE.md)
+- **Severity**: MEDIUM (derived/telemetry tables grow unboundedly; no single safe cleanup path for non-audit DBs)
+- **Confidence**: HIGH (live inventory measured 2026-08-18: audit.db 50.9 MB / 35 tables; news.db 6.4 MB; candle_intel.db 1.0 MB + 4.2 MB WAL; 11,875 lifecycle rows, 15,142 signals, 7,516 broker deals)
+
+### Root cause
+- Only audit.db had a bounded purge (BUG-054 signals/moving/guard). The
+  candle-intel derived store (candles/closures/patterns/regimes/
+  risk_evaluations/trade_decisions/rule_vetoes) and news health/worker-state
+  tables had NO retention policy; no duplicate/orphan detector existed; no
+  archive/verify machinery existed anywhere.
+
+### Fix (TASK-11)
+1. `src/nexus_scalp/hygiene/` — new package:
+   - `retention.py` RetentionEngine: per-table policies, default KEEP for
+     unknown tables (spec §73), verified retention windows (BUG-054 evidence).
+   - `detectors.py` DuplicateDetector (canonical identities; split-fill
+     families PROTECTED — never duplicates) + OrphanDetector (report-only).
+   - `archive.py` ArchiveManager (checksummed JSONL, verified re-hash) +
+     CleanupJournal (per-run append-only).
+   - `worker.py` HygienePlanner (read-only) + CleanupExecutor (bounded,
+     journaled, archive-before-delete, verify-after-batch) + VerificationEngine
+     (integrity_check / foreign_key_check / financial aggregates) +
+     SAFE_RETENTION_DELETES.
+   - `state.py` HygieneStateStore (worker state + run history; crash recovery
+     marks IN_PROGRESS → INTERRUPTED, never blind resume).
+   - `worker_runner.py` DatabaseHygieneWorker (AUDIT_ONLY default; SAFE_CLEAN
+     opt-in; LIVE conservative; BUSY → DEFER; to_thread off hot path).
+2. CLI: `nexus db hygiene status|plan|run|pause|resume|history` (+ --json).
+3. API: `GET /api/db/hygiene` — real sizes/state/plans, never fake.
+4. live_engine: 6h-throttled hygiene cycle via asyncio.to_thread (AUDIT_ONLY
+   first run; SAFE_CLEAN only operator-configured and non-LIVE).
+5. Docs: docs/DATABASE_HYGIENE_MATRIX.md (per-table tier/retention/owner) +
+   docs/DATABASE_HYGIENE.md (policy), handoff TASK-11.
+
+### Regression guards (tests/unit/test_database_hygiene_task11.py, 37 tests)
+- TEST-HYG-01..36 + real-DB copy test: dry-run zero mutation, exact-duplicate
+  detection, split-fill NOT duplicate, financial/migration/research/model
+  rows never auto-deleted, expired cache + stale temp cleanup, archive
+  checksum verify, journal, aggregate invariants, WAL/busy/budget/hot-path,
+  idempotency, crash recovery, CLI/worker parity, real copied-DB plan-only.
+
+### Reconciliation status
+- Historical rows untouched (INV-007). The 3,372 broker-trade orphans
+  (pre-BUG-045 ledger gap) are EXPECTED_ORPHAN — reported, never deleted.
+
+---

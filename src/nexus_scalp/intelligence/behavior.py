@@ -900,14 +900,23 @@ def _strategy_hold_baseline(
 
 
 def _trade_data_anomalies(trade: Any, ticket: str, anomaly_version: str) -> list[AnomalyEvent]:
-    """Objective data-inconsistency anomalies for one canonical trade."""
+    """Objective data-inconsistency anomalies for one canonical trade.
+
+    ANOMALY-VERIFY-01: every anomaly id is DETERMINISTIC
+    (ticket | type | algorithm_version), matching the batch duplicate detector.
+    The same underlying incident on the same trade under the same detector
+    version can never produce an unlimited number of rows (TEST-ANOM-14/15).
+    """
     out: list[AnomalyEvent] = []
+
+    def _aid(anomaly_type: str) -> str:
+        return _duplicate_anomaly_id(ticket, anomaly_type, anomaly_version)
 
     # STRATEGY_CONTEXT_LOSS — closed trade without strategy attribution.
     if not (trade.strategy_id or trade.entry_reason):
         out.append(
             AnomalyEvent(
-                anomaly_id=f"ano_{uuid.uuid4().hex[:12]}",
+                anomaly_id=_aid("STRATEGY_CONTEXT_LOSS"),
                 ticket=ticket,
                 anomaly_type="STRATEGY_CONTEXT_LOSS",
                 category="DATA",
@@ -928,7 +937,7 @@ def _trade_data_anomalies(trade: Any, ticket: str, anomaly_version: str) -> list
     if mech in ("RISK_FREE_SL_HIT", "BREAK_EVEN_SL_HIT") and not trade.was_sl_modified:
         out.append(
             AnomalyEvent(
-                anomaly_id=f"ano_{uuid.uuid4().hex[:12]}",
+                anomaly_id=_aid("EXIT_CLASSIFICATION_ANOMALY"),
                 ticket=ticket,
                 anomaly_type="EXIT_CLASSIFICATION_ANOMALY",
                 category="EXECUTION",
@@ -952,7 +961,7 @@ def _trade_data_anomalies(trade: Any, ticket: str, anomaly_version: str) -> list
     if direction == "BUY" and mae > 0.0:
         out.append(
             AnomalyEvent(
-                anomaly_id=f"ano_{uuid.uuid4().hex[:12]}",
+                anomaly_id=_aid("IMPOSSIBLE_EXCURSION"),
                 ticket=ticket,
                 anomaly_type="IMPOSSIBLE_EXCURSION",
                 category="DATA",
@@ -970,7 +979,7 @@ def _trade_data_anomalies(trade: Any, ticket: str, anomaly_version: str) -> list
     if direction == "SELL" and mfe < 0.0:
         out.append(
             AnomalyEvent(
-                anomaly_id=f"ano_{uuid.uuid4().hex[:12]}",
+                anomaly_id=_aid("IMPOSSIBLE_EXCURSION"),
                 ticket=ticket,
                 anomaly_type="IMPOSSIBLE_EXCURSION",
                 category="DATA",
@@ -994,7 +1003,7 @@ def _trade_data_anomalies(trade: Any, ticket: str, anomaly_version: str) -> list
     ):
         out.append(
             AnomalyEvent(
-                anomaly_id=f"ano_{uuid.uuid4().hex[:12]}",
+                anomaly_id=_aid("IMPOSSIBLE_TIMESTAMP"),
                 ticket=ticket,
                 anomaly_type="IMPOSSIBLE_TIMESTAMP",
                 category="DATA",
