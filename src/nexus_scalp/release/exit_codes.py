@@ -20,6 +20,9 @@ EXIT_RUNTIME = 1
 EXIT_USAGE = 2
 EXIT_ENVIRONMENT = 3
 EXIT_RELEASE = 4
+#: TASK-9 extension: update not applicable / failed / needs user action.
+#: Additive — codes 0-4 keep their documented meanings.
+EXIT_UPDATE = 5
 
 #: Human-readable names for --json consumers.
 EXIT_NAMES = {
@@ -28,4 +31,5 @@ EXIT_NAMES = {
     EXIT_USAGE: "invalid_usage",
     EXIT_ENVIRONMENT: "environment_blocked",
     EXIT_RELEASE: "release_verification_failure",
+    EXIT_UPDATE: "update_not_applicable_or_failed",
 }

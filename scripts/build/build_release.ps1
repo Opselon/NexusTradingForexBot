@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Nexus Scalp Engine — Release Build Orchestrator (Windows PowerShell)
 # =============================================================================
 # Usage:
@@ -64,14 +64,14 @@ Pass "Canonical version: $Version (channel: $Channel)"
 Write-Step "2/10 Repository audit (git state + secret guard)"
 $GitCommit = (& git rev-parse --short HEAD).Trim()
 $Dirty = (& git status --porcelain) -ne $null -and (& git status --porcelain | Measure-Object).Count -gt 0
-$Tag = (& git describe --tags --exact-match 2>$null)
+$Tag = try { (& git describe --tags --exact-match 2>$null) } catch { $null }
 if ($Dirty) {
     Write-Host "[RELEASE] WARNING: working tree is dirty (build still proceeds with dirty marker)." -ForegroundColor Yellow
 }
 Pass "commit=$GitCommit dirty=$Dirty tag=$Tag"
 
 # HARD SECRET GUARD: refuse to build from a config carrying a real token.
-$TokenGuard = (& $Py -c "import re,pathlib; t=pathlib.Path('configs/live.yaml').read_text(encoding='utf-8'); import sys; sys.exit(0 if re.search(r'bot[_-]?token\s*[=:]\s*['\"]?\d{6,}:[A-Za-z0-9_\-]{25,}', t) is None else 1)")
+$TokenGuard = & $Py (Join-Path $PSScriptRoot "update_helpers.py") token-guard (Join-Path $Root ".")
 if ($LASTEXITCODE -ne 0) {
     Fail "configs/live.yaml contains a real bot token — mask it before building a release."
 }
@@ -104,7 +104,7 @@ $BuildDir = Join-Path $Root "release\build\windows-x64"
 if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 
-# Stale-EXE lock guard (WinError 32 hardening): if a previous build's EXE is
+# Stale-EXE lock guard (WinError 32 hardening): if a previous build EXE is
 # still running it locks the onedir and --clean fails. Terminate ONLY the
 # process whose image path is inside this build's output tree — never a
 # user-launched engine elsewhere.
@@ -143,7 +143,7 @@ $buildInfo = @{
     web_api_client_hash = $webApiClientHash
     web_styles_hash = $webStylesHash
 } | ConvertTo-Json
-Set-Content -Path (Join-Path $Root "build-info.json") -Value $buildInfo -Encoding utf8
+[System.IO.File]::WriteAllText((Join-Path $Root "build-info.json"), $buildInfo, (New-Object System.Text.UTF8Encoding($false)))
 
 & $PyInstaller --noconfirm --clean `
     --onedir --name "NexusScalpEngine" `
@@ -317,26 +317,38 @@ $Artifacts += $PortableZip
 $SHA256Sums = Join-Path $ChecksumsDir "SHA256SUMS.txt"
 # Paths in the sums file are relative to the RELEASE ROOT (OutDir), matching
 # the release layout (portable/…, cli/…, *.zip, *-setup.exe).
-$OutRootRel = [System.IO.Path]::GetRelativePath($OutDir, $OutDir)
+Try { $OutRootRel = [System.IO.Path]::GetRelativePath($OutDir, $OutDir) } Catch { $OutRootRel = "" }
 $shaLines = foreach ($a in $Artifacts) {
     $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
-    $rel = [System.IO.Path]::GetRelativePath($OutDir, $a)
+Try { $rel = [System.IO.Path]::GetRelativePath($OutDir, $a) } Catch { $rel = $a.Substring($OutDir.Length).TrimStart("\\") }
     "$h  $rel"
 }
 Set-Content -Path $SHA256Sums -Value $shaLines -Encoding ascii
+New-Item -ItemType Directory -Force -Path (Join-Path $OutDir "manifests") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $OutDir "sbom") | Out-Null
 Pass "SHA256SUMS.txt written for $($Artifacts.Count) artifacts"
 
 # Manifest via python helper (build stamped)
-& $Py -c "import sys; sys.path.insert(0, 'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root = Path(r'$OutDir'); artifacts = list(root.glob('portable/*.exe')) + list(root.glob('cli/*.exe')) + list(root.glob('*.zip')) + list(root.glob('*-setup.exe')); p.generate_manifest(artifacts, root / 'manifests' / 'release-manifest.json', channel='$Channel', base_dir=root); print('manifest artifacts:', len(artifacts))"
+# Manifest via shared helper (build stamped + embedded in portable tree)
+& $Py (Join-Path $PSScriptRoot "update_helpers.py") manifest $OutDir
 if ($LASTEXITCODE -ne 0) { Fail "manifest generation failed" }
 
 # SBOM
-& $Py -c "import sys; sys.path.insert(0, 'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; p.generate_sbom(out=Path(r'$OutDir') / 'sbom' / 'sbom.spdx.json'); print('SBOM written')"
+# SBOM
+& $Py (Join-Path $PSScriptRoot "update_helpers.py") sbom $OutDir
 if ($LASTEXITCODE -ne 0) { Fail "SBOM generation failed" }
 
 # Secrets scan (python helper — scans the staged tree)
-& $Py -c "import sys; sys.path.insert(0, 'src'); from pathlib import Path; from nexus_scalp.release import verify as v; res = v.verify_release(Path(r'$Stage'), include_launch=False); sec = next((c for c in res['checks'] if c['check'] == 'Secrets scan'), None); print('secrets scan:', sec['status'] if sec else 'n/a'); sys.exit(1 if (sec and sec['status'] == 'FAIL') else 0)"
+# Secrets scan (shared helper — scans the staged tree)
+& $Py (Join-Path $PSScriptRoot "update_helpers.py") scan-tree $Stage
 if ($LASTEXITCODE -ne 0) { Fail "secrets scan failed" }
+# Embed the release manifest inside the portable tree so `nexus update`
+# can verify release-manifest.json from inside the payload zip (TASK-9 §64).
+$ManifestSrc = Join-Path $OutDir "manifests\release-manifest.json"
+if (Test-Path $ManifestSrc) {
+    Copy-Item $ManifestSrc (Join-Path $Stage "release-manifest.json") -Force
+    Pass "release-manifest.json embedded in portable tree"
+}
 Pass "checksums + manifest + SBOM + secrets scan complete"
 
 # ---------------------------------------------------------------------------
@@ -344,17 +356,7 @@ Pass "checksums + manifest + SBOM + secrets scan complete"
 # ---------------------------------------------------------------------------
 Write-Step "10/10 Release verification"
 if (-not $SkipSmoke) {
-    & (Join-Path $Root ".venv\Scripts\python.exe") -c @"
-import sys
-sys.path.insert(0, 'src')
-from pathlib import Path
-from nexus_scalp.release import verify as v
-res = v.verify_release(Path(r'$Stage'))
-print('OVERALL:', res['overall'])
-for c in res['checks']:
-    print(f\"{c['status']:5} {c['check']}\")
-sys.exit(0 if res['valid'] else 1)
-"@
+    & (Join-Path $Root ".venv\Scripts\python.exe") (Join-Path $PSScriptRoot "update_helpers.py") verify $Stage
     if ($LASTEXITCODE -ne 0) { Fail "release verification failed" }
 } else { Write-Host "[RELEASE] verification skipped (-SkipSmoke)" -ForegroundColor Yellow }
 

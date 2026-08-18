@@ -93,7 +93,7 @@ nexus config [--validate path] [--show] [--json]
 nexus repair [--recreate-config] [--news-db]
 nexus diagnostics | export-diagnostics
 nexus verify-release [--root dir]
-nexus update [--manifest file.json]
+nexus update [check|status|history|rollback|doctor] [--channel ...] [--dry-run]
 nexus setup | install
 nexus uninstall [--keep-data|--no-keep-data]
 nexus start [--mode paper|shadow|live] [--gateway] [--daemon]
@@ -143,12 +143,41 @@ READY / DEGRADED / NOT READY with exact reasons and suggested fixes.
 `nexus export-diagnostics` creates a sanitized ZIP (no passwords/tokens/
 credentials/database contents).
 
-## 8. Update / Rollback
+## 8. Update / Rollback (TASK-9 end-user update path)
 
-`nexus update` compares versions, verifies architecture, requires a SHA-256
-digest before any download, preserves user config/databases/models, and
-refuses pre-releases on the stable channel. Rollback restores the previous
-application files; it never destroys databases.
+`nexus update` is the FULL installed-user update system:
+
+```
+nexus update check      # discovery only (never fabricates latest)
+nexus update            # check -> download -> verify -> backup -> migrate
+                        #   -> install -> health -> COMPLETED
+nexus update --dry-run  # full plan, zero mutation
+nexus update --channel beta|nightly
+nexus update status     # observable state machine + crash recovery
+nexus update history    # persisted update log (jsonl, never credentials)
+nexus update rollback   # restore prior application (user data intact)
+nexus update doctor     # github/disk/mode/db/config/process/lock checks
+nexus update --yes      # skip prompts (never bypasses security checks)
+```
+
+* Update source = GitHub Releases API (never main.zip / source archives).
+* Version comparison is SEMANTIC (9.10.0 > 9.9.0); downgrades blocked.
+* Every artifact must carry a SHA-256 digest; the embedded release manifest
+  is verified inside the payload; unverified artifacts are discarded.
+* User data (config/logs/databases/models/secret store) lives OUTSIDE the
+  replaceable payload in %LOCALAPPDATA%\NexusScalpEngine and is backed up
+  atomically before any migration. App-tree runtime dirs (artifacts/data/
+  logs, legacy portable layout) are preserved across the swap (BUG-091).
+* Telegram credentials stay in the DPAPI secure store (secrets.enc) + the
+  isolated app_settings.db — an update NEVER moves them to plaintext.
+* LIVE engines BLOCK the update (UPDATE_BLOCKED_WHILE_LIVE) unless the user
+  explicitly invokes the documented --force maintenance quiesce flow.
+* Rollback restores the prior application ONLY; database/config rollback is
+  version-aware (old artifacts/data/logs never restored over migrated data).
+* Crash mid-update is persisted; `nexus update status` reports
+  ROLLBACK_REQUIRED — a half-installed state is never reported healthy.
+* Single-instance lock (UPDATE_IN_PROGRESS); exit code 5 = update not
+  applicable/failed (additive contract).
 
 ## 9. Reproducibility & security
 

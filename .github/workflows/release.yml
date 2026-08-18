@@ -131,7 +131,7 @@ jobs:
             python = $env:PYTHON_VERSION; channel = "stable"; build_mode = "Release"
             feature_schema = "scalp_v1"; installer_version = "1.0.0"
           } | ConvertTo-Json
-          Set-Content build-info.json $info -Encoding utf8
+          [System.IO.File]::WriteAllText((Join-Path $PWD "build-info.json"), $info, (New-Object System.Text.UTF8Encoding($false)))
       - name: PyInstaller onedir
         shell: pwsh
         run: |
@@ -211,6 +211,14 @@ jobs:
                     }
                     Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
           python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip'))+list(root.glob('*-setup.exe')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); p.generate_sbom(out=root/'sbom'/'sbom.spdx.json'); print('manifest+sbom ok')"
+
+      - name: Embed release manifest in portable bundle
+        shell: pwsh
+        run: |
+          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = \"([^\"]+)\"', '$1'
+          $Out = "release\v$V\windows\x64"
+          Copy-Item "$Out\manifests\release-manifest.json" "$Out\portable\release-manifest.json" -Force
+          Write-Host "manifest embedded in portable tree"
       - name: verify-release (full self-check incl. secrets)
         shell: pwsh
         run: |

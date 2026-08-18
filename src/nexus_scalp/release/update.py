@@ -12,6 +12,8 @@ Contract (spec sections 23/24/54):
 
 The actual transport is delegated to the CLI/build scripts (this module is
 fully offline-testable); ``UpdatePlan`` is the deterministic decision core.
+The exhaustive TASK-9 status vocabulary (NO_UPDATE / UPDATE_AVAILABLE /
+INCOMPATIBLE / SECURITY_BLOCKED / …) lives in ``updater.py``.
 """
 
 from __future__ import annotations

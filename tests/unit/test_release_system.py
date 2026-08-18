@@ -276,7 +276,12 @@ def test_cli_version_and_help() -> None:
     runner = CliRunner()
     res = runner.invoke(app, ["version", "--plain"])
     assert res.exit_code == 0
-    assert get_version() in res.stdout
+    # the CLI reports the STAMPED build identity (build-info.json) which can
+    # differ from the pyproject source version when a release build ran;
+    # canonical check is get_version_info()["version"] (BUG-092/093 discipline).
+    from nexus_scalp.release.metadata import get_version_info as _gvi
+
+    assert _gvi()["version"] in res.stdout
     res = runner.invoke(app, ["--help"])
     assert res.exit_code == 0
     for cmd in (

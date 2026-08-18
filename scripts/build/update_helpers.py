@@ -4,7 +4,7 @@ The PowerShell build scripts previously inlined multi-line python with heavy
 single/double-quote nesting, which PowerShell parses as a syntax error
 (pre-existing: `build_release.ps1` failed to parse under both Windows
 PowerShell 5.1 and pwsh 7 — the token-guard regex and the `-c` heredocs
-contained apostrophes/`from` keywords inside PS string literals).
+contained apostrophes/`from` keywords inside PS string literals, BUG-090).
 
 This module gives the build script ONE stable entrypoint:
 
@@ -13,8 +13,11 @@ This module gives the build script ONE stable entrypoint:
 actions:
     token-guard            exit 1 if configs/live.yaml carries a real token
     scan-tree              exit 1 if the staged tree contains secret shapes
-    manifest               generate release-manifest.json (+ embed copy)
+    manifest               generate release-manifest.json (+ portable-rooted
+                           embedded copy for the payload zip)
     sbom                   generate sbom.spdx.json
+    verify                 full release-tree self-check (EXE launch, assets,
+                           checksums, secrets, identity)
 
 All actions take plain path arguments — no quoting, no reserved keywords.
 """
@@ -63,17 +66,7 @@ def action_scan_tree(args: list[str]) -> int:
     for p in root.rglob("*"):
         if not p.is_file():
             continue
-        if p.suffix.lower() in (
-            ".pyc",
-            ".dll",
-            ".exe",
-            ".pyd",
-            ".pt",
-            ".bin",
-            ".db",
-            ".zip",
-            ".7z",
-        ):
+        if p.suffix.lower() in (".pyc", ".dll", ".exe", ".pyd", ".pt", ".bin", ".db", ".zip", ".7z"):
             continue
         if p.stat().st_size > 2 * 1024 * 1024:
             continue
@@ -97,10 +90,10 @@ def action_scan_tree(args: list[str]) -> int:
 
 
 def action_manifest(args: list[str]) -> int:
-    """Generate release-manifest.json and embed it into the portable tree."""
+    """Generate release-manifest.json + embedded (portable-rooted) copy."""
     out_dir = Path(args[0])
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-    from nexus_scalp.release import packaging as p
+    from nexus_scalp.release import packaging as p  # noqa: PLC0415
 
     artifacts = (
         list(out_dir.glob("portable/*.exe"))
@@ -114,12 +107,14 @@ def action_manifest(args: list[str]) -> int:
     # The EMBEDDED copy (inside the portable zip) is rooted at the PORTABLE
     # root and lists ONLY the files actually shipped in the payload — the
     # release-root manifest references cli/*.exe and *.zip that live OUTSIDE
-    # the portable tree (real contract bug found in payload verification).
+    # the portable tree (real contract bug found during payload verification).
     portable_root = out_dir / "portable"
     portable_manifest = portable_root / "release-manifest.json"
     base_meta = json.loads(manifest.read_text(encoding="utf-8"))
     payload_files = sorted(
-        f for f in portable_root.rglob("*") if f.is_file() and f.name != "release-manifest.json"
+        f
+        for f in portable_root.rglob("*")
+        if f.is_file() and f.name != "release-manifest.json"
     )
     embedded_arts = [
         {
@@ -148,8 +143,20 @@ def action_manifest(args: list[str]) -> int:
     }
     portable_manifest.write_text(json.dumps(embedded, indent=2), encoding="utf-8")
     print(
-        f"manifest: {len(artifacts)} artifacts -> {manifest} (embedded: {portable_manifest.name})"
+        f"manifest: {len(artifacts)} artifacts -> {manifest} "
+        f"(embedded: {len(payload_files)} files)"
     )
+    return 0
+
+
+def action_sbom(args: list[str]) -> int:
+    out_dir = Path(args[0])
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+    from nexus_scalp.release import packaging as p  # noqa: PLC0415
+
+    (out_dir / "sbom").mkdir(parents=True, exist_ok=True)
+    p.generate_sbom(out=out_dir / "sbom" / "sbom.spdx.json")
+    print("sbom written")
     return 0
 
 
@@ -157,24 +164,13 @@ def action_verify(args: list[str]) -> int:
     """Full release-tree self-check (EXE launch + assets + checksums + secrets)."""
     root = Path(args[0])
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-    from nexus_scalp.release import verify as v
+    from nexus_scalp.release import verify as v  # noqa: PLC0415
 
     res = v.verify_release(root)
     print("OVERALL:", res["overall"])
     for c in res["checks"]:
         print(f"{c['status']:5} {c['check']} — {c['detail'][:90]}")
     return 0 if res["valid"] else 1
-
-
-def action_sbom(args: list[str]) -> int:
-    out_dir = Path(args[0])
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-    from nexus_scalp.release import packaging as p
-
-    (out_dir / "sbom").mkdir(parents=True, exist_ok=True)
-    p.generate_sbom(out=out_dir / "sbom" / "sbom.spdx.json")
-    print("sbom written")
-    return 0
 
 
 ACTIONS = {

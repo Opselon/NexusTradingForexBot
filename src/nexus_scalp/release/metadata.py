@@ -19,6 +19,7 @@ import json
 import platform
 import re
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -114,14 +115,44 @@ def parse_version(version: str) -> tuple[int, int, int] | None:
 
 
 def get_build_info_file() -> Path | None:
-    """Locate the stamped build-info.json produced by the release build."""
-    candidates = [
-        Path.cwd() / "build-info.json",
-        Path(__file__).resolve().parent.parent.parent.parent.parent / "build-info.json",
-    ]
+    """Locate the stamped build-info.json produced by the release build.
+
+    Candidates (first match wins):
+        1. repo/source checkout root (``Path.cwd()``).
+        2. next to the running executable — portable roots and onedir
+           bundles carry build-info.json next to the EXE.
+        3. inside a PyInstaller onedir ``_internal`` bundle.
+        4. package-relative fallback for a repo checkout.
+    """
+    frozen = bool(getattr(sys, "frozen", False))
+    exe_base = Path(sys.executable if frozen else Path(__file__).resolve()).parent
+    if frozen:
+        # A packaged EXE MUST report ITS OWN bundle identity — never the CWD
+        # (version truth, BUG-092/093). Source/dev runs keep repo-cwd first.
+        candidates = [
+            exe_base / "build-info.json",
+            exe_base / "_internal" / "build-info.json",
+            Path.cwd() / "build-info.json",
+            Path(__file__).resolve().parent.parent.parent.parent.parent / "build-info.json",
+        ]
+    else:
+        candidates = [
+            Path.cwd() / "build-info.json",
+            exe_base / "build-info.json",
+            exe_base / "_internal" / "build-info.json",
+            Path(__file__).resolve().parent.parent.parent.parent.parent / "build-info.json",
+        ]
+    seen: set[Path] = set()
     for c in candidates:
-        if c.exists():
-            return c
+        try:
+            resolved = c.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists():
+            return resolved
     return None
 
 

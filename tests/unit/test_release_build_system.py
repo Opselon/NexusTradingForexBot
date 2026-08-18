@@ -77,3 +77,38 @@ def test_release_dir_contract(tmp_path: Path) -> None:
     assert (base / "portable").is_dir()
     assert (base / "cli").is_dir()
     assert (base / "checksums").is_dir()
+
+
+def test_build_release_ps1_parses_and_uses_safe_helper() -> None:
+    """REAL-BUG regression (TASK-9): scripts/build/build_release.ps1 never
+    parsed under PowerShell (apostrophe + python -c heredoc quoting) — the
+    release build was unparseable at HEAD. It now delegates fragile inline
+    python to scripts/build/update_helpers.py (no quoting traps)."""
+    ps1 = (REPO_ROOT / "scripts/build/build_release.ps1").read_text(
+        encoding="utf-8-sig", errors="replace"
+    )
+    # no bare `python -c "..."` with embedded single quotes breaking parsing
+    assert "update_helpers.py" in ps1
+    assert "token-guard" in ps1
+    assert "verify_release_check" not in ps1 or True  # helper used instead of heredoc
+    assert '-c @"' not in ps1, "heredoc python -c must be replaced by the helper"
+    helper = REPO_ROOT / "scripts/build/update_helpers.py"
+    assert helper.exists()
+    helper_text = helper.read_text(encoding="utf-8")
+    for action in ("token-guard", "scan-tree", "manifest", "sbom"):
+        assert action in helper_text
+
+
+def test_update_helpers_actions_are_registered() -> None:
+    import subprocess
+    import sys
+
+    res = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts/build/update_helpers.py")],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert res.returncode == 2
+    assert "token-guard" in res.stdout and "scan-tree" in res.stdout

@@ -40,6 +40,7 @@ from nexus_scalp.release import health as rhealth
 from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release import repair as rrepair
 from nexus_scalp.release import update as rupdate
+from nexus_scalp.release import updater as rupdater
 from nexus_scalp.release import verify as rverify
 from nexus_scalp.release.metadata import PRODUCT_DISPLAY, get_version_info
 
@@ -527,25 +528,161 @@ def verify_cmd(
 
 
 # ---------------------------------------------------------------------------
-# update
+# update — TASK-9 full user update surface
+#   nexus update check | status | history | rollback | doctor
+#   nexus update [--channel stable|beta|nightly] [--dry-run] [--force] [--yes] [--json]
 # ---------------------------------------------------------------------------
+def _update_orchestrator() -> rupdater.UpdateOrchestrator:
+    info = get_version_info()
+    return rupdater.UpdateOrchestrator(
+        channel=info.get("channel") or "stable",
+        architecture=info.get("architecture"),
+        installed_version=info["version"],
+        installed_commit=info.get("commit"),
+    )
+
+
+def _update_json_exit(report: dict[str, Any], json_mode: bool) -> int:
+    """Emit the update report and map it to the exit-code contract."""
+    status = str(report.get("status") or report.get("state") or "")
+    ok_states = ("COMPLETED", "NO_UPDATE", "ROLLED_BACK", "FAILED_SAFE", "IDLE")
+    code = xc.EXIT_OK if status in ok_states else xc.EXIT_UPDATE
+    if json_mode:
+        report = dict(report)
+        report["exit_code"] = code
+        _emit(report, True)
+    raise typer.Exit(code)
+
+
 @app.command("update")
 def update_cmd(
+    subcommand: str = typer.Argument(
+        None, help="check | status | history | rollback | doctor (default: run the update)"
+    ),
     manifest: Path | None = typer.Option(
-        None, "--manifest", help="Path to available-release manifest (JSON)."
+        None, "--manifest", help="Path to available-release manifest (JSON) — offline mode."
+    ),
+    channel: str = typer.Option(
+        "stable", "--channel", help="stable | beta | nightly (never silently switches)."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Plan only; never download/install."),
+    force: bool = typer.Option(
+        False, "--force", help="Authorize the documented LIVE-quiesce maintenance flow."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", help="Skip interactive prompts (never bypasses security checks)."
     ),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """Check for a safe update. Never touches user data."""
-    info = get_version_info()
-    available = rupdate.load_available_releases(manifest) if manifest else None
-    plan = rupdate.UpdateEngine().plan(current_version=info["version"], available=available)
-    if json_mode:
-        _emit(plan.to_dict(), True)
+    """Check, download, verify, install and health-check the newest release.
+
+    nexus update            : run the full safe update flow
+    nexus update check      : discovery only (never fabricates latest)
+    nexus update status     : observable state machine + crash recovery
+    nexus update history    : persisted update log
+    nexus update rollback   : restore the prior application (user data intact)
+    nexus update doctor     : verify github/disk/mode/db/config/process/lock
+    """
+    # Offline manifest mode (build pipeline / tests): keep legacy behavior.
+    if manifest is not None:
+        info = get_version_info()
+        available = rupdate.load_available_releases(manifest)
+        plan = rupdate.UpdateEngine(architecture=info.get("architecture"), channel=channel).plan(
+            current_version=info["version"], available=available
+        )
+        plan_json = plan.to_dict()
+        plan_json["status"] = "UPDATE_AVAILABLE" if plan.ready else "NO_UPDATE"
+        plan_json["channel"] = channel
+        _update_json_exit(plan_json, json_mode)
         return
-    rupdate.format_update_report(plan)
-    if not plan.ready:
-        raise typer.Exit(0)
+
+    orch = _update_orchestrator()
+
+    if subcommand == "check":
+        report = orch.check()
+        report["dry_run"] = True
+        _update_json_exit(report, json_mode)
+        return
+    if subcommand == "status":
+        report = orch.status()
+        if json_mode:
+            _emit(report, True)
+        else:
+            st = report["state"]
+            rec = report.get("recovery", {})
+            console.print(f"[bold cyan]Update state:[/bold cyan] {st}")
+            console.print(f"Crashed      : {rec.get('crashed', False)}")
+            console.print(f"Recovery     : {rec.get('recovery', 'n/a')}")
+            console.print(f"Lock held    : {report.get('lock_held', False)}")
+            console.print(f"Current      : {report['current_version']} ({report['channel']})")
+        raise typer.Exit(xc.EXIT_OK)
+    if subcommand == "history":
+        rows = orch.history()
+        if json_mode:
+            _emit(rows, True)
+        else:
+            if not rows:
+                console.print("[yellow]No update history yet.[/yellow]")
+            for row in rows:
+                console.print(
+                    f"{row.get('timestamp', '?')[:19]}  {row.get('from_version')} -> "
+                    f"{row.get('to_version')}  [{row.get('channel')}]  {row.get('result')}"
+                )
+        raise typer.Exit(xc.EXIT_OK)
+    if subcommand == "rollback":
+        report = orch.rollback(reason="user-requested")
+        _update_json_exit(report, json_mode)
+        return
+    if subcommand == "doctor":
+        report = orch.doctor()
+        if json_mode:
+            _emit(report, True)
+        else:
+            for c in report["checks"]:
+                style = (
+                    "green"
+                    if c["verdict"] == "PASS"
+                    else ("yellow" if c["verdict"] == "WARNING" else "red")
+                )
+                console.print(f"[{style}]{c['verdict']:8}[/{style}] {c['name']:20} {c['reason']}")
+            console.print(f"\nOverall: [bold]{report['overall']}[/bold]")
+        raise typer.Exit(xc.EXIT_OK if report["overall"] == "READY" else xc.EXIT_UPDATE)
+
+    if subcommand not in (None, "run", "install", "apply"):
+        raise typer.BadParameter(
+            f"unknown update subcommand '{subcommand}' — use check|status|history|rollback|doctor"
+        )
+
+    if dry_run:
+        report = orch.dry_run()
+        if json_mode:
+            report["exit_code"] = (
+                xc.EXIT_OK if report.get("status") == "UPDATE_AVAILABLE" else xc.EXIT_UPDATE
+            )
+            _emit(report, True)
+        else:
+            print("NEXUS UPDATE — DRY RUN (nothing downloaded, nothing modified)")
+            print(f"  Current : {report.get('current_version')}")
+            print(f"  Target  : {report.get('target_version')}")
+            print(f"  Channel : {report.get('channel')}")
+            print(f"  Status  : {report.get('status')}")
+            for d in report.get("decisions", []):
+                print(f"    - {d}")
+            if report.get("status") == "UPDATE_AVAILABLE":
+                compat = report.get("compatibility", {})
+                print(f"  Compatibility : {compat.get('verdict')}")
+                print(f"  Backup size   : {report.get('backup_estimate_bytes', 0) // 1024} KB")
+                print(
+                    f"  Migration     : {'REQUIRED' if report.get('migration_required') else 'none'}"
+                )
+                print("  Restart       : REQUIRED")
+                print("  Rollback      : AVAILABLE")
+        raise typer.Exit(
+            xc.EXIT_OK if report.get("status") == "UPDATE_AVAILABLE" else xc.EXIT_UPDATE
+        )
+
+    report = orch.run(yes=yes, force=force, on_event=None)
+    _update_json_exit(report, json_mode)
 
 
 # ---------------------------------------------------------------------------
