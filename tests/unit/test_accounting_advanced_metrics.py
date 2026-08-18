@@ -70,11 +70,23 @@ class TestAdvancedMetrics:
         assert m["sample_trades"] == 4
         assert m["net_pnl"] == 100.0
         assert m["win_rate"] == 66.67  # 2 wins / 3 decided
-        assert m["profit_factor"] == 3.0  # 150 / 50
+        assert m["loss_rate_decided"] == 33.33  # 1 loss / 3 decided
+        assert m["loss_rate_all"] == 25.0  # 1 loss / 4 all
+        assert m["win_rate_all"] == 50.0  # 2 wins / 4 all
+        assert m["win_rate_denominator"] == "DECIDED"
+        assert m["pnl_weighted_win_rate"] == 75.0  # 150 / (150+50)
         assert m["expectancy"] == 33.33  # 100 / 3
+        assert m["expectancy_breakeven_incl"] == 25.0  # 100 / 4
+        assert m["profit_factor"] == 3.0  # 150 / 50
         assert m["average_win"] == 75.0
         assert m["average_loss"] == -50.0
         assert m["payoff_ratio"] == 1.5
+        assert m["cost_drag_pct"] == 0.0  # zero commission/swap in fixtures
+        assert m["total_costs"] == 0.0
+        assert m["stop_loss_share"] == 0.0  # TAKE_PROFIT is not a stop exit
+        assert m["avg_hold_sec"] == 3600.0
+        assert m["volume_total"] == 0.4
+        assert m["r_coverage_ratio"] == 0.75  # 3 of 4 closed trades have R
         assert m["avg_r"] == 0.3333  # (1.0 - 0.5 + 0.5) / 3
         assert m["max_consecutive_wins"] == 1
         assert m["max_consecutive_losses"] == 1
@@ -130,3 +142,17 @@ class TestAdvancedMetrics:
         m = compute_advanced_metrics([_trade(1, 10.0)])
         assert m["sample_trades"] == 1
         assert m["net_pnl"] == 10.0
+
+    def test_loss_rate_derived_from_pnl(self):
+        """Loss rate in the advanced core is derived from realized PnL (same
+        evidence as win rate), so the two always sum to <= 100 on decided trades."""
+        trades = [
+            _trade(1, 10.0),
+            _trade(2, -10.0),
+            _trade(3, 0.0),  # breakeven excluded from decided
+        ]
+        m = compute_advanced_metrics(trades)
+        assert m["win_rate"] == 50.0
+        assert m["loss_rate_decided"] == 50.0
+        assert m["win_rate"] + m["loss_rate_decided"] == 100.0
+        assert m["loss_rate_all"] == 33.33

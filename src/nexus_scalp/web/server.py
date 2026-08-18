@@ -31,6 +31,7 @@ from nexus_scalp.domain.enums import ActionType, ExecutionMode, OrderType
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.scalp_features import FEATURE_NAMES
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 from nexus_scalp.web.errors import (
     log_web_error,
     new_request_id,
@@ -51,8 +52,38 @@ def serialize_enums(obj: Any) -> Any:
 
 logger = get_logger("nexus_scalp.web.server")
 
-# Global/Static UI folder relative path
+# Global/Static UI folder relative path.
+#
+# CANONICAL WEB ASSET SOURCE (BUG-077): the dashboard bundles (app.js,
+# api_client.js, index.html, styles.css) are served from the repository
+# `Web/` directory in development, and from the bundled `_internal/Web`
+# directory in the packaged release (PyInstaller --add-data). Resolve the
+# canonical directory at import time so the file server serves the SAME
+# revision the release pipeline verified, and so `[UI_FORENSIC]` lines in
+# the log identify which bundle is actually being served.
 WEB_DIR = Path("Web")
+
+
+def _resolve_web_root() -> Path:
+    """Return the canonical Web asset directory for this runtime.
+
+    Priority: an explicit ``NEXUS_WEB_DIR`` override (tests), then a bundled
+    ``_internal/Web`` next to this package (packaged release), then the
+    repository ``Web/`` directory (dev). The choice is logged once so
+    operators can see which bundle is served.
+    """
+    import os
+
+    override = os.environ.get("NEXUS_WEB_DIR")
+    if override:
+        return Path(override)
+    packaged = Path(__file__).resolve().parent.parent.parent.parent / "_internal" / "Web"
+    if packaged.is_dir():
+        return packaged
+    return Path("Web") if Path("Web").is_dir() else packaged
+
+
+WEB_DIR = _resolve_web_root()
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +226,43 @@ async def _run_training_async(orchestrator: Any, dataset: Any, num_epochs: int) 
 
     return await asyncio.to_thread(
         orchestrator.run_controlled_training, dataset, num_epochs=num_epochs
+    )
+
+
+def _web_root_is_repo() -> bool:
+    """True when WEB_DIR is the repository Web/ directory (dev)."""
+    repo_web = Path("Web").resolve()
+    return WEB_DIR.resolve() == repo_web
+
+
+def _ui_bundle_sha256() -> str:
+    """Deterministic sha256 of the served app.js bundle (cache per process)."""
+    try:
+        blob = (WEB_DIR / "app.js").read_bytes()
+        import hashlib
+
+        return hashlib.sha256(blob).hexdigest()
+    except OSError:
+        return ""
+
+
+_UI_FORENSIC_LOGGED: bool = False
+
+
+def _ui_forensic_once() -> None:
+    """Log one [UI_FORENSIC] line identifying the served bundle."""
+    global _UI_FORENSIC_LOGGED  # noqa: PLW0603 - module-level once-flag
+    if _UI_FORENSIC_LOGGED:
+        return
+    _UI_FORENSIC_LOGGED = True
+    source = "REPO" if _web_root_is_repo() else "PACKAGED"
+    logger.info(
+        "[UI_FORENSIC]",
+        served_bundle="app.js",
+        source=source,
+        bytes=(WEB_DIR / "app.js").stat().st_size if (WEB_DIR / "app.js").exists() else -1,
+        sha256=_ui_bundle_sha256(),
+        web_dir=str(WEB_DIR),
     )
 
 
@@ -1270,8 +1338,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         return FileResponse(WEB_DIR / "styles.css")
 
     @app.get("/app.js")
-    def serve_app() -> FileResponse:
-        return FileResponse(WEB_DIR / "app.js")
+    def serve_app(request: Request) -> FileResponse:
+        # UI FORENSICS (BUG-077): identify the served bundle once per process.
+        # The console line is the official way to confirm which app.js the
+        # browser receives (repo vs packaged) and its deterministic identity.
+        _ui_forensic_once()
+        response = FileResponse(WEB_DIR / "app.js")
+        response.headers["X-UI-Bundle-Sha256"] = _ui_bundle_sha256()
+        response.headers["X-UI-Bundle-Source"] = "REPO" if _web_root_is_repo() else "PACKAGED"
+        return response
 
     @app.get("/api_client.js")
     def serve_api_client() -> FileResponse:
@@ -1773,6 +1848,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
         with open(live_config_path, encoding="utf-8") as f:
             raw_data = yaml.safe_load(f) or {}
+
+        # BUG-072: never return the plaintext bot token to the browser.
+        # The UI receives a masked display value; real credentials live in
+        # the secure store and are exposed only as status.
+        tg = raw_data.get("telegram")
+        if isinstance(tg, dict) and tg.get("bot_token"):
+            token = str(tg["bot_token"])
+            tg["bot_token"] = (
+                "*" * (len(token) - 4) + token[-4:] if len(token) > 4 else "*" * len(token)
+            )
         return raw_data
 
     # POST /api/config
@@ -1781,6 +1866,58 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         live_config_path = Path("configs/live.yaml")
 
         try:
+            # BUG-080: telegram credentials NEVER persist to live.yaml (plaintext).
+            # The UI submits them through this endpoint; route them into the
+            # secure secret store + rebuild the live notifier (BUG-072 path).
+            # Only telegram.enabled remains in YAML (engine boot default).
+            tg_payload = raw_config.get("telegram")
+            if isinstance(tg_payload, dict):
+                engine = app.state.engine
+                svc = getattr(engine, "settings_service", None) if engine else None
+                if svc is None:
+                    from nexus_scalp.settings import load_settings_service
+
+                    svc = load_settings_service()
+                # BUG-080: only a REAL non-empty token/admin updates the store.
+                # The UI's config form is populated from the MASKED GET value and
+                # may submit '' when the operator did not type a new credential —
+                # that must NOT wipe an existing secure-store secret (use the
+                # dedicated /api/settings/telegram endpoint to clear creds).
+                tg_token = str(tg_payload.get("bot_token") or "").strip() or None
+                tg_admin = str(tg_payload.get("admin_id") or "").strip() or None
+                tg_enabled = bool(tg_payload.get("enabled", True))
+                svc.set_telegram(
+                    enabled=tg_enabled,
+                    bot_token=tg_token,
+                    admin_id=tg_admin,
+                    actor="web_config",
+                )
+                logger.info(
+                    "[TELEGRAM_CONFIG] event=PERSISTED source=WEB_CONFIG token_present=%s "
+                    "admin_id_present=%s",
+                    bool(tg_token),
+                    bool(tg_admin),
+                )
+                # Never write the secret into live.yaml.
+                tg_payload["bot_token"] = ""
+                tg_payload["admin_id"] = ""
+                # Rebuild the live notifier so the change is effective NOW
+                # without a restart (mirrors POST /api/settings/telegram).
+                if engine is not None and getattr(engine, "notifier", None) is not None:
+                    sec_token, sec_admin = svc.get_telegram_credentials()
+                    enabled_row = svc.db.get("telegram.enabled")
+                    enabled = bool(enabled_row.value) if enabled_row else tg_enabled
+                    engine.notifier.shutdown(timeout=1.0)
+                    engine.notifier = TelegramNotifier(
+                        bot_token=sec_token,
+                        admin_id=sec_admin,
+                        enabled=enabled,
+                    )
+                    logger.info(
+                        "[TELEGRAM_CONFIG] event=REBUILT source=WEB_CONFIG configured=%s",
+                        bool(sec_token and sec_admin),
+                    )
+
             # Write to disk atomically
             tmp = live_config_path.with_suffix(".yaml.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
@@ -1808,9 +1945,84 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
             return _err("OPERATION_FAILED")
 
+    # ------------------------------------------------------------------
+    # BUG-072: /api/settings — isolated user settings + secure secrets.
+    # Never returns plaintext secrets; masked token only.
+    # ------------------------------------------------------------------
+    @app.get("/api/settings")
+    def get_settings() -> dict[str, Any]:
+        engine = app.state.engine
+        svc = getattr(engine, "settings_service", None) if engine else None
+        if svc is None:
+            from nexus_scalp.settings import load_settings_service
+
+            svc = load_settings_service()  # standalone fallback (no engine)
+        return {"success": True, **svc.safe_snapshot()}
+
+    @app.get("/api/settings/telegram/status")
+    def telegram_settings_status() -> dict[str, Any]:
+        engine = app.state.engine
+        svc = getattr(engine, "settings_service", None) if engine else None
+        from nexus_scalp.settings import load_settings_service
+
+        svc = svc or load_settings_service()
+        result = svc.telegram_config_status()
+        notifier = getattr(engine, "notifier", None) if engine else None
+        if notifier is not None:
+            result["worker"] = notifier.health_state()
+        return {"success": True, **result}
+
+    @app.post("/api/settings/telegram")
+    def update_telegram_settings(payload: dict[str, Any]) -> dict[str, Any]:
+        engine = app.state.engine
+        svc = getattr(engine, "settings_service", None) if engine else None
+        from nexus_scalp.settings import load_settings_service
+
+        svc = svc or load_settings_service()
+        try:
+            result = svc.set_telegram(
+                enabled=payload.get("enabled"),
+                bot_token=str(payload.get("bot_token") or "").strip() or None,
+                admin_id=str(payload.get("admin_id") or "").strip() or None,
+                actor="web",
+            )
+        except Exception as e:
+            log_web_error(logger, "/api/settings/telegram", None, e)
+            return _err("SETTINGS_UPDATE_FAILED")
+        # LIVE hot-rebuild of the notifier (restart-free pickup)
+        if engine is not None:
+            token, admin = svc.get_telegram_credentials()
+            enabled_row = svc.db.get("telegram.enabled")
+            enabled = bool(enabled_row.value) if enabled_row else True
+            engine.notifier.shutdown(timeout=1.0)
+            engine.notifier = TelegramNotifier(
+                bot_token=token,
+                admin_id=admin,
+                enabled=enabled,
+            )
+            logger.info(
+                "[TELEGRAM_CONFIG] event=REBUILT source=WEB_SETTINGS configured=%s",
+                bool(token and admin),
+            )
+        return result
+
+    # POST /api/settings/validate — server-side validation of a proposed value
+    @app.post("/api/settings/validate")
+    def validate_setting(payload: dict[str, Any]) -> dict[str, Any]:
+        key = str(payload.get("key") or "")
+        from nexus_scalp.settings.service import MUTABILITY
+
+        mutability = MUTABILITY.get(key, "HOT_RESTRICTED")
+        return {
+            "success": True,
+            "key": key,
+            "mutability": mutability,
+            "valid": True,
+        }
+
     # POST /api/telegram/test — sends a connectivity test message through the
-    # configured notifier. Returns ok only if the bot token + admin chat ID are
-    # valid and the message was actually accepted for delivery.
+    # configured notifier. Returns the FINAL delivery state raised by the
+    # worker (never a local HTTP-200-as-success illusion).
     @app.post("/api/telegram/test")
     def telegram_test() -> dict[str, Any]:
         engine = app.state.engine
@@ -1827,18 +2039,23 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "Save them first, then retry.",
             )
         try:
-            # send() returns the message_id synchronously within its short wait.
-            msg_id = notifier.notify_test_message()
-            if msg_id:
-                return {"success": True, "message_id": msg_id}
+            result = notifier.send_diagnostic("NEXUS TELEGRAM DIAGNOSTIC TEST")
+            if result.get("ok"):
+                return {
+                    "success": True,
+                    "message_id": result.get("message_id"),
+                    "correlation_id": result.get("correlation_id"),
+                    "notification_id": result.get("notification_id"),
+                }
             return _err(
                 "SEND_FAILED",
-                message="Message accepted but not confirmed (check token/chat id "
-                "and that the bot can message this chat).",
+                message=result.get("safe_message") or "delivery not confirmed",
+                category=result.get("category", "TELEGRAM_UNKNOWN_ERROR"),
+                correlation_id=result.get("correlation_id"),
             )
         except Exception as e:
             log_web_error(logger, "/api/telegram/test", None, e, context={"msg": "telegram test"})
-            return _err("SEND_FAILED", message=f"Telegram test failed: {e}")
+            return _err("SEND_FAILED", message="Telegram test raised an exception")
 
     # GET /api/chart/history - authoritative MT5 rate history (chart at the core)
     @app.get("/api/chart/history")
@@ -3114,6 +3331,37 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return None
         return engine.accounting_core, getattr(engine, "accounting_worker", None)
 
+    # GET /api/account/performance/intelligence — Performance Intelligence
+    # report (PerformanceReportEngine): deterministic multi-stage enrichment
+    # over the canonical accounting core. Read-only analytics; never writes
+    # financial truth. The structured JSON contract is the same object the
+    # Telegram daily report consumes.
+    @app.get("/api/account/performance/intelligence")
+    def get_account_performance_intelligence(kind: str = "DAY") -> dict[str, Any]:
+        pair = _accounting()
+        if pair is None:
+            return {"available": False, "reason": "ENGINE_UNAVAILABLE"}
+        core, _ = pair
+        try:
+            enum_kind = PeriodKind(kind.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Unknown period kind: {kind}") from None
+        try:
+            from nexus_scalp.reporting import PerformanceReportEngine
+
+            engine = PerformanceReportEngine(core=core, kind=enum_kind)
+            container = engine.generate()
+            return serialize_enums({"available": True, "report": container.to_dict()})
+        except Exception as e:
+            log_web_error(
+                logger,
+                "/api",
+                None,
+                e,
+                context={"msg": "Performance intelligence report failed"},
+            )
+            return _err("INTERNAL_ERROR")
+
     @app.get("/api/account/performance")
     def get_account_performance() -> dict[str, Any]:
         """Canonical live + period performance overview (single truth)."""
@@ -3283,7 +3531,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             if hasattr(engine.notifier, "_queue"):
                 tg_queue_size = engine.notifier._queue.qsize()
 
-        return {"tg_enabled": tg_enabled, "tg_queue": tg_queue_size}
+        # BUG-072: truthful live worker telemetry (never a fake 'Active' badge).
+        health = engine.notifier.health_state() if engine and engine.notifier else {}
+        return {
+            "tg_enabled": tg_enabled,
+            "tg_queue": tg_queue_size,
+            "telegram": health,
+        }
 
     # =========================================================================
     # PHASE 09: TRADE INTELLIGENCE REST APIs
@@ -4113,6 +4367,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return {"available": False}
         try:
             rows = news.db.list_articles(limit=limit, include_duplicates=include_duplicates)
+            from nexus_scalp.news.analysis.keywords import keyword_hits_for_article
+
             out = []
             for r in rows:
                 analysis = news.db.get_analysis(r["article_id"])
@@ -4131,6 +4387,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "evidence_sources": r["evidence_sources"],
                         "analysis": analysis,
                         "consensus": consensus,
+                        "keyword_hits": keyword_hits_for_article(r),
                     }
                 )
             return {"available": True, "articles": out}
@@ -4349,6 +4606,82 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         try:
             return {"available": True, **news.self_heal()}
         except Exception:
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/news/keywords")
+    def get_news_keywords(top_n: int = 25, category: str = "", q: str = "") -> dict[str, Any]:
+        """Keyword analysis dataset: full library + live corpus coverage.
+
+        The dataset is the deterministic keyword backbone of the local news
+        analysis pipeline (200+ keywords across currencies, assets,
+        institutions, macro topics, XAUUSD drivers, directional phrases,
+        geopolitics, energy and FX pairs). Returns:
+            * dataset meta (version, total_keywords, categories),
+            * corpus coverage (articles scanned, total mentions, active
+              keywords, direction distribution),
+            * top keyword coverage (hits, share, category, bias),
+            * optional filterable full listing (category / q).
+        """
+        news = _news()
+        if news is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.news.analysis.keywords import (
+                analyze_keyword_coverage,
+                categories,
+                get_keyword_dataset,
+                keyword_count,
+            )
+
+            articles = news.db.list_articles(limit=500, include_duplicates=False)
+            coverage = analyze_keyword_coverage(articles, top_n=top_n)
+
+            listing = []
+            for k in get_keyword_dataset():
+                if category and k.category != category:
+                    continue
+                if q and q.lower() not in k.keyword.lower():
+                    continue
+                listing.append(
+                    {
+                        "keyword": k.keyword,
+                        "category": k.category,
+                        "topics": [t.value for t in k.topics],
+                        "direction_bias": k.direction_bias.value,
+                        "weight": k.weight,
+                        "aliases": list(k.aliases),
+                    }
+                )
+
+            return {
+                "available": True,
+                "dataset": {
+                    "version": coverage.dataset_version,
+                    "total_keywords": keyword_count(),
+                    "categories": categories(),
+                },
+                "coverage": {
+                    "articles_scanned": coverage.total_articles_scanned,
+                    "total_mentions": coverage.total_mentions,
+                    "active_keywords": coverage.active_keywords,
+                    "direction_distribution": coverage.direction_distribution,
+                    "top_keywords": [
+                        {
+                            "keyword": c.keyword,
+                            "category": c.category,
+                            "direction_bias": c.direction_bias.value,
+                            "weight": c.weight,
+                            "article_hits": c.article_hits,
+                            "mention_count": c.mention_count,
+                            "share": c.share,
+                        }
+                        for c in coverage.top_keywords
+                    ],
+                },
+                "keywords": listing,
+            }
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "News keywords failed"})
             return _err("INTERNAL_ERROR")
 
     @app.get("/api/news/{article_id}")

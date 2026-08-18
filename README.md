@@ -17,7 +17,7 @@
 [![Status](https://img.shields.io/badge/Status-Production_Hardened-success.svg?style=for-the-badge)]()
 [![Phase](https://img.shields.io/badge/Phases-08_09_09B_10_11_12-6f42c1.svg?style=for-the-badge)]()
 <p align="center">
-  <img src="docs/web.png" alt="Nexus Trading Dashboard" width="100%">
+  <img src="pics/web.png" alt="Nexus Trading Dashboard" width="100%">
 </p>
 
 > **Nexus Scalp Engine (NSE)** is an enterprise-class, event-driven quantitative trading runtime engineered for sub-second scalping on **XAUUSD (Gold)** and major currency pairs. NSE unifies deep learning inference, real-time market microstructure analysis, and high-frequency execution into a single, self-healing framework.
@@ -168,7 +168,7 @@ NSE follows a strict **Hexagonal (Ports-and-Adapters) Event-Driven Architecture*
 | | [`configs/live.yaml.example`](configs/live.yaml.example) | Example live runtime configuration |
 | **Container** | [`docker/entrypoint.sh`](docker/entrypoint.sh) · [`docker/healthcheck.sh`](docker/healthcheck.sh) | Container entrypoint & health check |
 | | [`Dockerfile`](Dockerfile) · [`docker-compose.yml`](docker-compose.yml) | Multi-stage build + orchestration |
-| **Assets** | [`docs/web.png`](docs/web.png) | Dashboard screenshot (README banner) |
+| **Assets** | [`pics/`](pics) | Screenshots — dashboard banner (`pics/web.png`) + Control Center gallery (responsive `_shot_final_*`, edge-case `_case_*`, deep-state) |
 | **Frontend** | [`Web/index.html`](Web/index.html) | Control Center UI (dark glassmorphism, all 8 tabs) |
 | | [`Web/app.js`](Web/app.js) | Canvas chart renderer, live tuner, news panel logic |
 | | [`Web/styles.css`](Web/styles.css) | Premium dark styling |
@@ -455,6 +455,23 @@ Omitting the block leaves the subsystem disabled with graceful degradation (API 
 - Live 150+ bar chart with green/red Order Blocks, yellow sweep tags, entry/SL/TP lines with risk tooltips.
 - Control Center tabs: Overview · Strategy Research · **News Intelligence** · Scalping Rules · Account (Performance & Intelligence) · Debug Hub.
 - Algorithm Live Tuner (Bot Settings) hot-swaps parameters without restart.
+### 🖼️ Control Center Screenshots
+
+Responsive **Account Center** panel (performance & intelligence UX), captured headlessly with Playwright:
+
+| Viewport | 1920px | 1366px | 1024px | 768px | 390px |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Final layout** | ![1920](pics/_shot_final_1920.png) | ![1366](pics/_shot_final_1366.png) | ![1024](pics/_shot_final_1024.png) | ![768](pics/_shot_final_768.png) | ![390](pics/_shot_final_390.png) |
+
+**Edge cases & validation captures:**
+
+| Case | Screenshot | Case | Screenshot |
+| :--- | :--- | :--- | :--- |
+| Deep state (expanded intelligence) | ![deep-state](pics/_shot_deep_state.png) | Final 1366px (tall-card check) | ![final-1366](pics/_FINAL_1366.png) |
+| Full dataset | ![full](pics/_case_full.png) | Empty dataset | ![empty](pics/_case_empty.png) |
+| Long labels | ![longlabels](pics/_case_longlabels.png) | Many metrics | ![many](pics/_case_many.png) |
+
+
 
 ---
 

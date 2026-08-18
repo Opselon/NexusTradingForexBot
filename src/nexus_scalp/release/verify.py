@@ -14,6 +14,7 @@ Verifies, for an artifact tree:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -107,7 +108,14 @@ class ReleaseVerifier:
             return VerifyResult("CLI health", "FAIL", "health did not emit JSON")
 
     def _asset_web(self) -> VerifyResult:
-        """Verify the web control panel assets really exist inside the bundle."""
+        """Verify the web control panel assets really exist inside the bundle.
+
+        Also enforces WEB-ASSET FRESHNESS (BUG-075): when build-info.json
+        records ``web_asset_hash`` / ``web_index_hash`` (fingerprints of the
+        source ``Web/app.js`` / ``Web/index.html`` at build time), the packaged
+        files MUST match. A stale bundle (old app.js shipped in a new release)
+        fails release verification instead of silently serving an outdated UI.
+        """
         missing: list[str] = []
         for rel in (
             "Web/index.html",
@@ -120,7 +128,62 @@ class ReleaseVerifier:
                 missing.append(rel)
         if missing:
             return VerifyResult("Web/assets", "FAIL", f"missing: {', '.join(missing)}")
-        return VerifyResult("Web/assets", "PASS", "web panel + config + build-info present")
+
+        build_info = self.root / "build-info.json"
+        if not build_info.exists():
+            build_info = self.root / "_internal" / "build-info.json"
+        try:
+            info = json.loads(build_info.read_text(encoding="utf-8"))
+        except Exception:
+            return VerifyResult("Web/assets", "FAIL", "build-info.json unreadable")
+
+        stale: list[str] = []
+        # Fallback source comparison: when this verifier runs from a repo
+        # checkout (dev/CI), compare packaged files against the repository
+        # Web/ directory even if the build-info predates the hash fields.
+        import os as _os
+
+        repo_web = next(
+            (
+                Path(c)
+                for c in (_os.environ.get("NEXUS_REPO_WEB_DIR"), str(Path("Web").resolve()))
+                if c and (Path(c) / "app.js").exists()
+            ),
+            None,
+        )
+        asset_keys = [
+            ("Web/app.js", "web_asset_hash"),
+            ("Web/index.html", "web_index_hash"),
+            ("Web/api_client.js", "web_api_client_hash"),
+            ("Web/styles.css", "web_styles_hash"),
+        ]
+        for rel, key in asset_keys:
+            expected = info.get(key)
+            if not expected and repo_web is not None:
+                src_file = repo_web / Path(rel).name
+                if src_file.exists():
+                    expected = hashlib.sha256(src_file.read_bytes()).hexdigest()
+            if not expected:
+                continue
+            path = self.root / rel
+            if not path.exists():
+                path = self.root / "_internal" / rel
+            if not path.exists():
+                stale.append(f"{rel} missing")
+                continue
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            if actual != str(expected).lower():
+                stale.append(f"{rel} (packaged {actual[:12]} != source {str(expected)[:12]})")
+
+        if stale:
+            return VerifyResult(
+                "Web/assets",
+                "FAIL",
+                "STALE WEB BUNDLE — " + "; ".join(stale) + " (rebuild required)",
+            )
+        return VerifyResult(
+            "Web/assets", "PASS", "web panel + config + build-info present; asset hashes match"
+        )
 
     def _identity_check(self) -> VerifyResult:
         """Version/architecture/channel consistency between the packaged

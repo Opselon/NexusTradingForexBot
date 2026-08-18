@@ -232,8 +232,23 @@ class StrategyRegistry:
                 raw = row[column]
                 if not raw:
                     return None
-                data = json.loads(raw)
-                return model(**data) if isinstance(data, dict) else None
+                text = str(raw).strip()
+                if text.lower() in ("", "null", "none"):
+                    return None
+                try:
+                    data = json.loads(text)
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "[STRATEGY_REGISTRY] column decode failed",
+                        column=column,
+                        strategy_id=row["strategy_id"],
+                    )
+                    return None
+                # `{}` is the canonical empty-object form (BUG-075 _json());
+                # it must decode to None, not explode a required-field model.
+                if isinstance(data, dict) and data:
+                    return model(**data)
+                return None
 
             bt = _load("backtest", BacktestResult)
             wf = _load("walkforward", WalkForwardResult)
@@ -276,8 +291,20 @@ class StrategyRegistry:
 
 
 def _json(value: Any) -> str:
+    """Serializes a research value into its canonical JSON text form.
+
+    None (absent result/score) MUST round-trip to the schema's empty-object
+    default (``'{}'``), never the JSON literal ``"null"``: rows persisted as
+    ``"null"`` crashed the research registry UI (see BUG-075). Empty-string
+    and empty-dict values stay canonical empty objects as well.
+    """
+    if value is None:
+        return "{}"
     try:
-        return json.dumps(value, default=str)
+        encoded = json.dumps(value, default=str)
+        if encoded == "null":
+            return "{}"
+        return encoded
     except Exception:
         return "{}"
 

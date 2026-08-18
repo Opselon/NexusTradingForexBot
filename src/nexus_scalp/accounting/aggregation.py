@@ -113,6 +113,63 @@ def aggregate_period(
             report.win_rate = report.win_count / decided * 100.0
         report.expectancy = report.net_pnl / report.total_trades
 
+        # --- PRO WIN-RATE RECONCILIATION (debug/audit contract) -------------------
+        # Win rate can be reported against three denominators and all three must be
+        # visible so a "9% win rate" can never be misread as an algorithm error:
+        #   decided          = wins / (wins + losses)          (classic, denominator
+        #                      excludes scratches)             -> win_rate field
+        #   all_trades       = wins / total_trades             (includes breakevens)
+        #   pnl_weighted     = gross_profit / (gross_profit + gross_loss)  share of
+        #                      realized money captured as profit
+        # Each is computed strictly from the same `in_period` trade list that fed
+        # the report — one loop, one evidence source, no consumer-side re-derivation.
+        dealt = [t for t in in_period if t.outcome is not TradeOutcome.BREAKEVEN]
+        all_n = report.total_trades
+        report.loss_rate_decided = (
+            report.loss_count / len(dealt) * 100.0 if len(dealt) > 0 else None
+        )
+        report.loss_rate_all = report.loss_count / all_n * 100.0 if all_n > 0 else None
+        report.win_rate_all = report.win_count / all_n * 100.0 if all_n > 0 else None
+        numerator = report.gross_profit + report.gross_loss
+        report.pnl_weighted_win_rate = (
+            report.gross_profit / numerator * 100.0 if numerator > 0.0 else None
+        )
+        report.win_rate_denominator = (
+            "DECIDED" if decided > 0 else ("ALL_TRADES" if all_n > 0 else "NONE")
+        )
+
+        # Breakeven-incl. expectancy; matches win-rate-all denominator so the pair
+        # reconciles (wins + losses + breakevens = total trades).
+        if all_n > 0:
+            report.expectancy_breakeven_incl = report.net_pnl / all_n
+        if len(dealt) > 0:
+            report.avg_pnl_per_decided = report.net_pnl / len(dealt)
+
+        # Cost drag in currency AND as a share of gross profit (uses gross_profit as
+        # the denominator so negative-return samples stay meaningful).
+        report.total_costs = report.commission_total + report.swap_total
+        cost_denom = report.gross_profit + report.total_costs
+        report.cost_drag_pct = report.total_costs / cost_denom * 100.0 if cost_denom > 0.0 else None
+
+        # Loss persistence: share of losses exited by a protective stop, and the
+        # E[r] on losers only (how much of planned risk each loser actually burned).
+        if report.loss_count > 0:
+            stop_losses = sum(
+                1
+                for t in in_period
+                if t.outcome is TradeOutcome.LOSS
+                and t.exit_classification is not None
+                and t.exit_classification.is_stop_exit
+            )
+            report.stop_loss_share = stop_losses / report.loss_count
+            loser_r = [
+                t.realized_r
+                for t in in_period
+                if t.outcome is TradeOutcome.LOSS and t.realized_r is not None
+            ]
+            if loser_r:
+                report.avg_loss_r = sum(loser_r) / len(loser_r)
+
     if wins:
         report.average_win = sum(wins) / len(wins)
     if losses:
@@ -273,7 +330,14 @@ def compute_advanced_metrics(
             sharpe_ratio, sortino_ratio, calmar_ratio, sqn,
             recovery_factor, payoff_ratio, equity_volatility_pct,
             annualized_volatility_pct, downside_volatility_pct,
-            profit_standard_error (profit factor t-statistic proxy)
+            profit_standard_error (profit factor t-statistic proxy),
+            loss_rate_decided, loss_rate_all, win_rate_all,
+            pnl_weighted_win_rate, win_rate_denominator,
+            expectancy_breakeven_incl, avg_pnl_per_decided,
+            total_costs, cost_drag_pct, stop_loss_share, avg_loss_r,
+            avg_mae_r, avg_mfe_r, win_mae_capture_pct, loss_efficiency_pct,
+            profit_skew, loss_skew, avg_hold_sec, volume_total, commission_total,
+            swap_total, avg_risk_usd, r_coverage_ratio
         }
     """
     import math
@@ -289,6 +353,7 @@ def compute_advanced_metrics(
         "average_loss": None,
         "win_rate": None,
         "avg_r": None,
+        "avg_r_multiple": None,
         "r_sample_count": 0,
         "max_consecutive_wins": 0,
         "max_consecutive_losses": 0,
@@ -302,6 +367,29 @@ def compute_advanced_metrics(
         "downside_volatility_pct": None,
         "annualized_volatility_pct": None,
         "profit_standard_error": None,
+        "loss_rate_decided": None,
+        "loss_rate_all": None,
+        "win_rate_all": None,
+        "pnl_weighted_win_rate": None,
+        "win_rate_denominator": "NONE",
+        "expectancy_breakeven_incl": None,
+        "avg_pnl_per_decided": None,
+        "total_costs": None,
+        "cost_drag_pct": None,
+        "stop_loss_share": None,
+        "avg_loss_r": None,
+        "avg_mae_r": None,
+        "avg_mfe_r": None,
+        "win_mae_capture_pct": None,
+        "loss_efficiency_pct": None,
+        "profit_skew": None,
+        "loss_skew": None,
+        "avg_hold_sec": None,
+        "volume_total": None,
+        "commission_total": None,
+        "swap_total": None,
+        "avg_risk_usd": None,
+        "r_coverage_ratio": None,
     }
 
     closed = [t for t in trades if t.closed_at is not None]
@@ -363,6 +451,93 @@ def compute_advanced_metrics(
             cur_l = 0
     out["max_consecutive_wins"] = max_w
     out["max_consecutive_losses"] = max_l
+
+    # PRO WIN-RATE / LOSS-RATE RECONCILIATION (Phase 16)
+    # Mirrors the PeriodReport contract so the advanced panel and the period
+    # panel can never disagree: same denominators, same evidence (signed PnL
+    # on closed trades), and an explicit denominator label.
+    decided_n = len(wins) + len(losses)
+    all_n = len(closed)
+    out["win_rate_denominator"] = (
+        "DECIDED" if decided_n > 0 else ("ALL_TRADES" if all_n > 0 else "NONE")
+    )
+    if decided_n > 0:
+        out["win_rate"] = round(len(wins) / decided_n * 100.0, 2)
+        out["loss_rate_decided"] = round(len(losses) / decided_n * 100.0, 2)
+        out["expectancy"] = round(net / decided_n, 2)
+        out["avg_pnl_per_decided"] = round(net / decided_n, 2)
+    if all_n > 0:
+        out["win_rate_all"] = round(len(wins) / all_n * 100.0, 2)
+        out["loss_rate_all"] = round(len(losses) / all_n * 100.0, 2)
+        out["expectancy_breakeven_incl"] = round(net / all_n, 2)
+    denom = gross_profit + gross_loss
+    if denom > 0.0:
+        out["pnl_weighted_win_rate"] = round(gross_profit / denom * 100.0, 2)
+
+    # Cost drag (currency + share of gross profit)
+    total_costs = sum(float(t.commission) + float(t.swap) for t in closed)
+    out["total_costs"] = round(total_costs, 2)
+    out["commission_total"] = round(sum(float(t.commission) for t in closed), 2)
+    out["swap_total"] = round(sum(float(t.swap) for t in closed), 2)
+    cost_denom = gross_profit + total_costs
+    if cost_denom > 0.0:
+        out["cost_drag_pct"] = round(total_costs / cost_denom * 100.0, 2)
+
+    # Loss persistence + per-trade quality
+    if losses:
+        stop_losses = sum(
+            1
+            for t in closed
+            if t.net_pnl < 0
+            and t.exit_classification is not None
+            and t.exit_classification.is_stop_exit
+        )
+        out["stop_loss_share"] = round(stop_losses / len(losses), 4)
+        loss_r = [float(t.realized_r) for t in closed if t.net_pnl < 0 and t.realized_r is not None]
+        if loss_r:
+            out["avg_loss_r"] = round(sum(loss_r) / len(loss_r), 4)
+    if wins:
+        win_r = [float(t.realized_r) for t in closed if t.net_pnl > 0 and t.realized_r is not None]
+        if win_r:
+            out["avg_r_multiple"] = round(sum(win_r) / len(win_r), 4)
+    hold = [float(t.duration_sec) for t in closed if t.duration_sec > 0.0]
+    if hold:
+        out["avg_hold_sec"] = round(sum(hold) / len(hold), 1)
+    out["volume_total"] = round(sum(float(t.volume) for t in closed), 2)
+    risk_vals = [float(t.risk_usd) for t in closed if t.risk_usd is not None]
+    if risk_vals:
+        out["avg_risk_usd"] = round(sum(risk_vals) / len(risk_vals), 2)
+    if r_vals:
+        out["r_coverage_ratio"] = round(len(r_vals) / len(closed), 4)
+    # MAE/MFE excursion factors (how much of the move each side captures)
+    mae_vals = [float(t.mae_r) for t in closed if t.mae_r is not None]
+    if mae_vals:
+        out["avg_mae_r"] = round(sum(mae_vals) / len(mae_vals), 4)
+    mfe_vals = [float(t.mfe_r) for t in closed if t.mfe_r is not None]
+    if mfe_vals:
+        out["avg_mfe_r"] = round(sum(mfe_vals) / len(mfe_vals), 4)
+    if wins:
+        win_mae = [float(t.mae_usd) for t in closed if t.net_pnl > 0]
+        if win_mae:
+            # What fraction of a winner's adverse excursion was given back
+            # before it closed green. 100% = perfect stop discipline.
+            out["win_mae_capture_pct"] = round(100.0 / (1.0 + abs(sum(win_mae) / sum(wins))), 4)
+    if losses:
+        loss_mfe = [float(t.mfe_usd) for t in closed if t.net_pnl < 0]
+        if loss_mfe:
+            # What fraction of a loser's favourable excursion was left on the
+            # table before it closed red. 0% = ideal (never gave back).
+            out["loss_efficiency_pct"] = round(abs(sum(loss_mfe) / sum(losses)) * 100.0, 4)
+
+    # Skewness of the profit / loss distributions (raw third moment, scaled).
+    if len(wins) >= 2:
+        wm = sum(wins) / len(wins)
+        wsd = math.sqrt(sum((w - wm) ** 2 for w in wins) / len(wins)) or 1.0
+        out["profit_skew"] = round(sum(((w - wm) / wsd) ** 3 for w in wins) / len(wins), 4)
+    if len(losses) >= 2:
+        lm = sum(losses) / len(losses)
+        lsd = math.sqrt(sum((l - lm) ** 2 for l in losses) / len(losses)) or 1.0
+        out["loss_skew"] = round(sum(((l - lm) / lsd) ** 3 for l in losses) / len(losses), 4)
 
     # Equity-curve risk (from snapshots when provided)
     if equity_points and len(equity_points) >= 3:

@@ -121,6 +121,10 @@ $PyInstaller = Join-Path $Root ".venv\Scripts\pyinstaller.exe"
 if (-not (Test-Path $PyInstaller)) { Fail "pyinstaller not found — install with: .venv\Scripts\python -m pip install pyinstaller" }
 
 $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+$webAssetHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\app.js")).Hash.ToLower()
+$webIndexHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\index.html")).Hash.ToLower()
+$webApiClientHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\api_client.js")).Hash.ToLower()
+$webStylesHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\styles.css")).Hash.ToLower()
 $buildInfo = @{
     product         = "NexusScalpEngine"
     version         = $Version
@@ -134,6 +138,10 @@ $buildInfo = @{
     build_mode      = "Release"
     feature_schema  = "scalp_v1"
     installer_version = "1.0.0"
+    web_asset_hash  = $webAssetHash
+    web_index_hash  = $webIndexHash
+    web_api_client_hash = $webApiClientHash
+    web_styles_hash = $webStylesHash
 } | ConvertTo-Json
 Set-Content -Path (Join-Path $Root "build-info.json") -Value $buildInfo -Encoding utf8
 

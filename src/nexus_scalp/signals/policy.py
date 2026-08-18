@@ -356,7 +356,10 @@ class SignalPolicy:
                     regime_conf=regime_conf,
                 )
 
-            # If we hold 1 active open position, block entries
+            # If we hold 1 active open position, block entries.
+            # blocked_by=EXECUTION_STATE_BLOCK: an execution-state block, NOT
+            # a model rejection — the learning engine must not learn "the
+            # model chose not to trade" from an unavailable execution slot.
             if active_positions_count >= 1:
                 return self._build_no_trade(
                     tick=current_tick,
@@ -364,6 +367,8 @@ class SignalPolicy:
                     reason="MAX_EXPOSURE_REACHED",
                     regime_str=regime_str,
                     regime_conf=regime_conf,
+                    blocked_by="EXECUTION_STATE_BLOCK",
+                    decision_stage="EXPOSURE_GATE",
                 )
 
             # If we hold 1 active pending order, check lock & price drift hysteresis
@@ -391,12 +396,15 @@ class SignalPolicy:
                 # it has been resting for more than 30s AND price has drifted >= 1.0 x ATR.
                 if time_delta <= PENDING_ORDER_LOCK_SECONDS or price_drift < (1.0 * atr):
                     # Maintain the existing live limit order and return ActionType.NO_TRADE
+                    # (execution-state block, not model rejection).
                     return self._build_no_trade(
                         tick=current_tick,
                         confidence=0.0,
                         reason="PENDING_ORDER_LOCKED",
                         regime_str=regime_str,
                         regime_conf=regime_conf,
+                        blocked_by="EXECUTION_STATE_BLOCK",
+                        decision_stage="EXPOSURE_GATE",
                     )
 
         tenkan = self._sanitize_float(feature_vector.tenkan_sen, current_tick.ask)
@@ -518,7 +526,15 @@ class SignalPolicy:
             if is_stat_arb:
                 cand_confidence = max(cand_ai_prob, z_score_confidence)
             else:
-                cand_confidence = max(cand_ai_prob, min(0.85, round(0.55 + cand_ai_prob * 0.35, 2)))
+                # TRADE QUALITY FIX (2026-08-18, perf forensics): the old
+                # `max(prob, 0.55 + prob*0.35)` floor inflated EVERY candidate
+                # to >= 0.61, so the confidence gate never rejected weak
+                # signals - the ledger shows 192/233 trades entered at
+                # conf 0.0-0.4 and the bulk of the >$4.7k loss. Confidence is
+                # now the REAL directional model probability (the honest
+                # signal), so a 0.30 signal is rejected by the 0.35 gate and
+                # only genuinely strong probabilities reach execution.
+                cand_confidence = cand_ai_prob
 
         confidence = cand_confidence
         confidence_before_filters = confidence
@@ -757,29 +773,86 @@ class SignalPolicy:
                 direction = "SELL"
 
             # Check OFI flips and velocity reverses
+
             ofi_flip = ofi > 0 if direction == "BUY" else ofi < 0
+
             velocity_reverses = tick_velocity > 5.0
 
-            if price_pierced_liq and reversal_detected and ofi_flip and velocity_reverses:
+            # TRADE QUALITY GATE (2026-08-18, perf forensics): tick-level
+
+            # sweeps used to fire with ZERO model confidence - `confidence`
+
+            # is still 0.0 at this point (cand_confidence is computed later)
+
+            # and this path returned before the confidence gate ever ran.
+
+            # The audit ledger shows conf=0.00 entries losing -$189/-$190
+
+            # (1.5-ATR SL with no probability support). The sweep now
+
+            # requires the raw directional probability to clear the model
+
+            # confidence threshold (default 0.35) - still fast, but never
+
+            # at random-probability.
+
+            sweep_direction_prob = (
+                raw_prob_buy
+                if direction == "BUY"
+                else raw_prob_sell
+                if direction == "SELL"
+                else 0.0
+            )
+
+            sweep_conf_thresh = self.confidence_threshold + (
+                self.range_confidence_penalty if is_range_market else 0.0
+            )
+
+            sweep_has_confidence = sweep_direction_prob >= sweep_conf_thresh
+
+            if (
+                price_pierced_liq
+                and reversal_detected
+                and ofi_flip
+                and velocity_reverses
+                and sweep_has_confidence
+            ):
                 execution_mode = "TICK_SWEEP"
+
                 proposed_action = (
                     ActionType.BUY_MARKET if direction == "BUY" else ActionType.SELL_MARKET
                 )
+
                 target_entry_price = current_tick.ask if direction == "BUY" else current_tick.bid
+
                 reason_code = f"TICK_LEVEL_LIQUIDITY_SWEEP_{direction}"
-                logger.info(f"TICK LEVEL SWEEP DETECTED: Emitting instant {proposed_action.value}!")
+
+                # Carry the REAL directional probability as the entry
+
+                # confidence (previously 0.0 - the ledger recorded conf=0.00
+
+                # entries with -$189/-$190 outcomes).
+
+                sweep_conf = float(sweep_direction_prob)
+
+                logger.info(
+                    f"TICK LEVEL SWEEP DETECTED: Emitting instant {proposed_action.value}! (prob={sweep_conf:.2f})"
+                )
 
                 # Build TradeProposal immediately
+
                 stop_loss = (
                     target_entry_price - atr * 1.5
                     if direction == "BUY"
                     else target_entry_price + atr * 1.5
                 )
+
                 take_profit = (
                     target_entry_price + atr * 3.0
                     if direction == "BUY"
                     else target_entry_price - atr * 3.0
                 )
+
                 actual_rr = round(
                     abs(take_profit - target_entry_price)
                     / max(abs(target_entry_price - stop_loss), 1e-5),
@@ -791,7 +864,7 @@ class SignalPolicy:
                     symbol=current_tick.symbol,
                     generated_at=now,
                     action=proposed_action,
-                    confidence=float(confidence),
+                    confidence=sweep_conf,
                     proposed_entry=float(target_entry_price),
                     stop_loss=float(stop_loss),
                     take_profit=float(take_profit),
@@ -803,9 +876,9 @@ class SignalPolicy:
                     override_reason="TICK_VELOCITY_TRIGGERED",
                     decision_stage="TICK_SWEEP_EXECUTION",
                     htf_score=float(trend_strength),
-                    smc_score=float(confidence),
-                    confidence_before_filters=float(confidence_before_filters),
-                    confidence_after_filters=float(confidence),
+                    smc_score=sweep_conf,
+                    confidence_before_filters=sweep_conf,
+                    confidence_after_filters=sweep_conf,
                 )
 
         # Update last tick trackers
@@ -820,7 +893,12 @@ class SignalPolicy:
         # ======================================================================
         # PART 2: PREDICTIVE LIMIT EXECUTION
         # ======================================================================
-        if valid_ob and not smc_god_mode_active:
+        # Exposure re-check: this path runs AFTER the strict exposure gate;
+        # a pending order placed by an earlier signal in the same bar must
+        # not let a SECOND limit slip through (observed 2026-08-18: second
+        # BUY_LIMIT dispatched ~96s after the previous one while the
+        # exposure gate had already seen the resting pending).
+        if valid_ob and not smc_god_mode_active and total_exposure < MAX_TOTAL_EXPOSURE:
             # We don't wait for candle close; place limit order immediately on OB validation
             execution_mode = "PREDICTIVE_LIMIT"
             proposed_action = (
@@ -1522,6 +1600,8 @@ class SignalPolicy:
         take_profit: float | None = None,
         risk_reward_ratio: float | None = None,
         risk_checks: dict[str, Any] | None = None,
+        blocked_by: str | None = None,
+        decision_stage: str | None = None,
     ) -> TradeProposal:
         return TradeProposal(
             request_id=str(uuid.uuid4()),
@@ -1548,8 +1628,8 @@ class SignalPolicy:
             risk_checks=risk_checks,
             execution_mode="STANDARD",
             override_reason=None,
-            decision_stage="NO_TRADE_BUILDER",
-            blocked_by=None,
+            decision_stage=decision_stage or "NO_TRADE_BUILDER",
+            blocked_by=blocked_by,
             htf_score=0.0,
             smc_score=float(confidence),
             confidence_before_filters=float(confidence),

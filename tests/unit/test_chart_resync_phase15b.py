@@ -4,8 +4,10 @@ Unit Tests - Chart Resync & 900-Bar Downtime Recovery (BUG-054)
 Verifies the cold-start / reconnect resynchronization contract:
 
 1. `BarAggregator.reseed()` atomically replaces history with broker bars,
-   dedupes by timestamp, aligns the forming bar to the latest broker minute,
-   and never leaves duplicate/stale bars behind.
+   dedupes by timestamp, seeds the forming bar at the minute AFTER the
+   latest completed broker bar (so the first live tick can never re-mint a
+   duplicate completed bar at a sealed timestamp), and never leaves
+   duplicate/stale bars behind.
 2. `LiveEngine._resync_from_broker()` reseeds the aggregator, rebuilds a
    rolling feature record, pushes ServerState visuals, and re-evaluates
    warmup readiness.
@@ -69,14 +71,16 @@ def test_reseed_replaces_history_and_aligns_forming_bar() -> None:
     assert last is not None
     assert last.timestamp == bars[-1].timestamp
     assert len(agg.get_completed_bars()) == 360
-    # The forming bar must CONTINUE the last broker minute (same timestamp),
-    # so the first live tick of that minute updates it instead of minting a
-    # duplicate completed bar.
+    # The forming bar must be the NEXT minute AFTER the last completed
+    # broker bar: completed bars are sealed, so aligning the forming bar
+    # to the same minute re-mints a duplicate completed bar at an already
+    # sealed timestamp when the first live tick arrives (observed in
+    # nse_live.log: "Bar completed 01:46" right after a 01:46 reseed).
     forming = agg.get_current_forming_bar()
     assert forming is not None
-    assert forming.timestamp == bars[-1].timestamp
+    assert forming.timestamp == bars[-1].timestamp + timedelta(minutes=1)
     assert forming.is_complete is False
-    assert forming.open == last.open
+    assert forming.open == last.close
     assert forming.close == last.close
 
 
@@ -145,16 +149,17 @@ def test_reseed_then_live_tick_continues_bar() -> None:
 
     tick = TickData(
         symbol="XAUUSD",
-        timestamp=bars[-1].timestamp + timedelta(seconds=30),  # same minute
+        timestamp=bars[-1].timestamp + timedelta(seconds=30),
         bid=100.55,
         ask=100.57,
     )
     completed_bar = agg.process_tick(tick)
-    # Same minute -> no boundary crossed -> no new completed bar.
+    # First live tick stays inside the seeded forming minute (last+1min)
+    # -> no boundary crossed -> no new completed bar.
     assert completed_bar is None
     assert len(agg.get_completed_bars()) == 360
 
-    # Next minute -> exactly ONE new completed bar (the seeded minute).
+    # A tick during the seeded forming minute (last+1min) still updates it.
     tick2 = TickData(
         symbol="XAUUSD",
         timestamp=bars[-1].timestamp + timedelta(minutes=1, seconds=5),
@@ -162,8 +167,19 @@ def test_reseed_then_live_tick_continues_bar() -> None:
         ask=101.02,
     )
     completed_bar2 = agg.process_tick(tick2)
-    assert completed_bar2 is not None
-    assert completed_bar2.timestamp == bars[-1].timestamp
+    assert completed_bar2 is None
+    assert len(agg.get_completed_bars()) == 360
+
+    # First tick of the NEXT minute completes the forming bar exactly once.
+    tick3 = TickData(
+        symbol="XAUUSD",
+        timestamp=bars[-1].timestamp + timedelta(minutes=2, seconds=5),
+        bid=101.5,
+        ask=101.52,
+    )
+    completed_bar3 = agg.process_tick(tick3)
+    assert completed_bar3 is not None
+    assert completed_bar3.timestamp == bars[-1].timestamp + timedelta(minutes=1)
     assert len(agg.get_completed_bars()) == 361
 
 
@@ -294,10 +310,10 @@ async def test_resync_from_broker_reseeds_and_pushes_visuals(resync_engine):
 
     completed = engine.aggregator.get_completed_bars()
     assert len(completed) > 30  # broker history replaces the stale series
-    # Forming bar continues the newest broker minute.
+    # Forming bar is the minute AFTER the newest completed broker bar.
     forming = engine.aggregator.get_current_forming_bar()
     assert forming is not None
-    assert forming.timestamp == completed[-1].timestamp
+    assert forming.timestamp == completed[-1].timestamp + timedelta(minutes=1)
     # A rolling feature record was appended (>=1).
     assert len(engine._rolling_feature_records) >= 1
     # ServerState received a fresh push.

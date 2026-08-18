@@ -762,12 +762,12 @@
                                     <span id="acct-adv-avg-hold" class="font-mono font-black text-gray-200 text-sm">--</span>
                                 </div>
                             </div>
-                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mt-2">
-                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40 lg:col-span-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-2 mt-2">
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40 sm:col-span-2 lg:col-span-4">
                                     <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Risk / Trade</span>
                                     <span id="acct-avg-risk-usd" class="font-mono font-black text-gray-200 text-sm">--</span>
                                 </div>
-                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40 lg:col-span-2">
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40 sm:col-span-1 lg:col-span-2">
                                     <span class="text-[10px] uppercase tracking-wider text-textMuted block">R Coverage <span class="text-textMuted/60">(evidence)</span></span>
                                     <span id="acct-r-coverage" class="font-mono font-black text-gray-200 text-sm">--</span>
                                 </div>
@@ -1529,6 +1529,9 @@
                                             <i class="fa-solid fa-paper-plane mr-1"></i> Send Test Message
                                         </button>
                                         <span id="telegram-test-status" class="text-xs text-textMuted"></span>
+                                    </div>
+                                    <div id="telegram-live-status" class="text-xs text-textMuted/70 border-t border-borderClr/40 pt-2 hidden">
+                                        <span id="tg-status-worker"></span>
                                     </div>
                                 </div>
                             </div>

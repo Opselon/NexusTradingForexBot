@@ -5,7 +5,7 @@ Aggregates tick streams into complete OHLC candle bars across timeframes.
 Guarantees explicit separation between Completed Bars and Forming Bars.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict
 
@@ -155,14 +155,20 @@ class BarAggregator:
         last_bar = deduped[-1]
         self._completed_bars = deduped
 
-        # Seed the forming bar from the last broker bar so the current minute
-        # continues instead of being double-counted (open/high/low/volume).
-        self._current_bar_time = last_bar.timestamp
-        self._open = last_bar.open
-        self._high = last_bar.high
-        self._low = last_bar.low
+        # Seed the forming bar at the NEXT minute boundary after the last
+        # COMPLETED broker bar. The history bars are all complete, so the
+        # current forming minute is the one AFTER the last completed bar —
+        # seeding at last_bar.timestamp itself makes the first live tick of
+        # that same minute mint a DUPLICATE complete bar at an already-sealed
+        # timestamp (observed: "Bar completed 01:46" right after a 01:46
+        # reseed on a 02:16 restart). +1min keeps the broker series exact.
+        next_minute = last_bar.timestamp + timedelta(minutes=self.timeframe_minutes)
+        self._current_bar_time = next_minute
+        self._open = last_bar.close
+        self._high = last_bar.close
+        self._low = last_bar.close
         self._close = last_bar.close
-        self._volume = last_bar.tick_volume
+        self._volume = 0
 
         logger.info(
             "BarAggregator reseeded",

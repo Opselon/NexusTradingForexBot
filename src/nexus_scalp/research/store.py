@@ -22,6 +22,47 @@ logger = get_logger("nexus_scalp.research.store")
 MAX_READ_LIMIT = 2000
 
 
+def _json_text_safe(value: Any) -> str:
+    """Normalizes a JSON-text column read from a registry row.
+
+    Historical rows may carry the JSON literals ``"null"`` / ``null`` (BUG-075
+    writer defect: ``json.dumps(None)``). Every consumer (API, UI) must treat
+    those exactly like the canonical empty object ``'{}'`` — never let a
+    literal ``"null"`` reach a frontend ``JSON.parse``.
+    """
+    if value is None:
+        return "{}"
+    text = str(value).strip()
+    if text == "" or text.lower() == "null":
+        return "{}"
+    return text
+
+
+def _registry_row_safe(row: dict[str, Any]) -> dict[str, Any]:
+    """Backward-compatible row normalization for ``strategy_registry`` reads.
+
+    All JSON-text columns that may contain the historical ``"null"`` literal
+    are normalized to the canonical empty object so downstream decoders
+    (``StrategyRegistry._from_row`` and the UI) never crash on
+    ``JSON.parse("null")`` (see BUG-075).
+    """
+    out = dict(row)
+    for col in (
+        "context_definition",
+        "parent_strategy_ids",
+        "backtest",
+        "walkforward",
+        "oos",
+        "robustness",
+        "score",
+        "validation_lineage",
+        "retirement_reason",
+    ):
+        if col in out:
+            out[col] = _json_text_safe(out[col])
+    return out
+
+
 def list_registry(
     repo: AuditRepository,
     lifecycle: str | None = None,
@@ -46,7 +87,7 @@ def list_registry(
         finally:
             conn.close()
         for r in rows:
-            out.append(dict(r))
+            out.append(_registry_row_safe(dict(r)))
     except Exception as e:
         logger.error("[STRATEGY_REGISTRY] list failed", error=str(e))
     return out
@@ -73,7 +114,7 @@ def get_registry_entry(
                     "ORDER BY updated_at DESC LIMIT 1;",
                     (strategy_id,),
                 ).fetchone()
-            return dict(row) if row else None
+            return _registry_row_safe(dict(row)) if row else None
         finally:
             conn.close()
     except Exception as e:

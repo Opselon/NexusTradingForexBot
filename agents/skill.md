@@ -8,6 +8,33 @@
 
 ---
 
+## ⚠️ MULTI-AGENT COMPLIANCE (MANDATORY — READ FIRST)
+
+> This compliance gate is part of the MASTER MULTI-AGENT CONTRACT (v2).
+> Full contract: `agents/multi-agent-git-contract.md`. Registries: `agents/contracts.md`,
+> `agents/runtime_invariants.md`, `agents/change_control.md`, `agents/taskboard.md`,
+> `agents/repository_state.md`, `agents/locks.yaml`, `agents/decisions/`.
+
+### Before coding
+
+- Read `multi-agent-git-contract.md`
+- Read `contracts.md`
+- Read `runtime_invariants.md`
+- Read `change_control.md`
+- Read `taskboard.md`
+- Read `repository_state.md`
+- Inspect git status/log
+- Preserve unrelated WIP
+
+### Before completion
+
+- Update required registries
+- Add/update regression tests
+- Create handoff
+- Make coherent agent-labelled commit
+- Report exact verification state
+- Report unresolved risks
+
 ## 📑 Table of Contents
 
 1. [AI Agent Knowledge Map: Read This First](#1-ai-agent-knowledge-map-read-this-first)
@@ -419,42 +446,67 @@ This design guarantees that PyTorch loss computation and tensor dimensions remai
 
 ### 5.5 Feature Engineering (50D Master Contract)
 
-The 50D feature vector (`src/nexus_scalp/features/scalp_features.py`) is computed on every tick from M1 completed bars and incoming tick price action.
+The 50D feature vector (`src/nexus_scalp/features/scalp_features.py`) is computed on every tick from M1 completed bars and incoming tick price action. The canonical contract is the **executable `FEATURE_NAMES` tuple** (line 147) — the table below is the VERIFIED contract as of 2026-08-18 (forensic audit, BUG-082; see `tests/unit/test_scalp_features_forensic_bug082.py`).
 
 | Index | Feature Name | Source | Lookback / Formula | Normalization / Bounds |
 | :---: | :--- | :--- | :--- | :--- |
-| `0` | `returns` | M1 Close | `(Close_t - Close_{t-1}) / Close_{t-1}` | Z-Score clipped `[-3.0, +3.0]` |
-| `1` | `log_returns` | M1 Close | `ln(Close_t / Close_{t-1})` | Z-Score clipped `[-3.0, +3.0]` |
-| `2` | `volatility_atr` | M1 Bar | 14-period ATR / Close | Scaled float |
-| `3` | `rsi_14` | M1 Close | 14-period RSI | Scaled `(RSI - 50)/25` |
-| `4` | `macd_line` | M1 Close | 12/26 EMA Difference | Scaled float |
-| `5` | `macd_signal` | MACD Line | 9-period EMA of MACD | Scaled float |
-| `6` | `macd_hist` | MACD Diff | `MACD_line - MACD_signal` | Scaled float |
-| `7` | `bb_upper` | M1 Close | 20-period BB Upper | Price relative |
-| `8` | `bb_middle` | M1 Close | 20-period SMA | Price relative |
-| `9` | `bb_lower` | M1 Close | 20-period BB Lower | Price relative |
-| `10` | `bb_width` | BB Bands | `(Upper - Lower) / Middle` | Scaled float |
-| `11` | `bb_pband` | M1 Close | `(Close - Lower) / (Upper - Lower)` | Scaled `[0.0, 1.0]` |
-| `12` | `adx_14` | M1 Bar | 14-period ADX | Scaled `ADX / 50.0` |
-| `13` | `plus_di` | M1 Bar | 14-period +DI | Scaled float |
-| `14` | `minus_di` | M1 Bar | 14-period -DI | Scaled float |
-| `15` | `stoch_k` | M1 Bar | 14-period Stochastic %K | Scaled `(%K - 50)/25` |
-| `16` | `stoch_d` | Stoch %K | 3-period SMA of %K | Scaled `(%D - 50)/25` |
-| `17` | `obv` | M1 Volume | On-Balance Volume | Normalized slope |
-| `18` | `vwap` | M1 Bar | Volume-Weighted Average Price | Price relative |
-| `19` | `spread_norm` | Tick Spread | `Spread / ATR` | Scaled float |
-| `20-25` | `wick_anatomy` | M1 Bar | Upper/Lower Wicks, Body Ratios | Ratio `[0.0, 1.0]` |
-| `26-31` | `ofi_microstructure` | Ticks | Order Flow Imbalance, Tick Velocity | Scaled float |
-| `32-39` | `multi_tf_momentum` | M15/M30/H1/H4 | Trend & Momentum Alignment | Scaled `[-1.0, +1.0]` |
-| `40-45` | `sr_clustering` | Support/Res | Dynamic S/R Proximity & Density | Scaled float |
-| `46` | `smc_bos` | Structure | Break of Structure Flag | Binary `-1.0, 0.0, +1.0` |
-| `47` | `smc_equilibrium` | Impulse Leg | 50% Impulse Zone Distance | Distance Z-Score |
-| `48` | `smc_liquidity_sweep` | Wicks | Liquidity Pool Piercing | Binary `-1.0, 0.0, +1.0` |
-| `49` | `smc_ote_align` | Secondary Leg | 50%-61.8% OTE Zone Alignment | Scaled `[0.0, 1.0]` |
+| `0` | `upper_wick_ratio` | M1 Bar | `(High - body_top) / range`, `body_top = max(Open, Close)`, `range = max(High-Low, 0.01)` | `[0,1]` then clip `[-3,+3]` |
+| `1` | `lower_wick_ratio` | M1 Bar | `(body_bottom - Low) / range` | `[0,1]` then clip `[-3,+3]` |
+| `2` | `body_to_range_ratio` | M1 Bar | `|Open - Close| / range` | `[0,1]` then clip `[-3,+3]` |
+| `3` | `is_doji` | M1 Bar | `1.0 if body_ratio <= 0.12 else 0.0` | `{0,1}` |
+| `4` | `pinbar_sig` | M1 Bar | hammer `min(2, lw*2)`, shooting star `max(-2, -uw*2)` | `[-2,+2]` |
+| `5` | `engulfing_sig` | M1 Bar | bullish `min(2, 1+body_ratio)`, bearish `max(-2, -(1+body_ratio))` | `[-2,+2]` |
+| `6` | `close_location_value` | M1 Bar | `((C-L)-(H-C))/range` | `[-1,+1]` |
+| `7` | `consecutive_momentum_count` | M1 Bar | `clip((consecutive_count * dir)/5, -1, 1)` over last 10 bars | `[-1,+1]` |
+| `8` | `norm_displacement` | Tick+Bar | `(mid - last_close)/max(ATR14, 0.20)` | Z-score-like, clip `[-3,+3]` |
+| `9` | `rapid_reversal_spike_val` | Tick+Bar | `1.0 if |disp| > 0.6*ATR and disp*logret < 0 else 0.0` | `{0,1}` |
+| `10` | `dist_to_swing_high_20` | M1 Bar | `(max(H[-20:-1]) - mid)/ATR` | clip `[-3,+3]` |
+| `11` | `dist_to_swing_low_20` | M1 Bar | `(mid - min(L[-20:-1]))/ATR` | clip `[-3,+3]` |
+| `12` | `price_compression_flag_ratio` | M1 Bar | `clip(range5/range20, 0, 2)`, +1e-8 floors | `[0,2]` |
+| `13` | `extreme_sig` | M1 Bar | `+1 if range_pos>=0.95, -1 if <=0.05`, 50-bar range | `{-1,0,1}` |
+| `14` | `stop_hunt_depth` | M1 Bar | penetration depth of liquidity sweep / ATR | clip `[-3,+3]` |
+| `15` | `liquidity_sweep_signal` | M1 Bar | `+1` low-sweep reclaim, `-1` high-sweep reject | `{-1,0,1}` |
+| `16` | `session_tokyo` | Tick UTC hour | `0 <= hour < 8` | `{0,1}` |
+| `17` | `session_london` | Tick UTC hour | `7 <= hour < 15` | `{0,1}` |
+| `18` | `session_ny` | Tick UTC hour | `13 <= hour < 21` | `{0,1}` |
+| `19` | `session_overlap_london_ny` | Tick UTC hour | `13 <= hour < 15` | `{0,1}` |
+| `20` | `lag_1_log_return` | M1 Close | `ln(C[-2]/C[-3]) * 100` | clip `[-3,+3]` |
+| `21` | `lag_2_log_return` | M1 Close | `ln(C[-3]/C[-4]) * 100` | clip `[-3,+3]` |
+| `22` | `lag_3_log_return` | M1 Close | `ln(C[-4]/C[-5]) * 100` | clip `[-3,+3]` |
+| `23` | `lag_1_atr_ratio` | M1 Bar | `TR_lag1 / ATR`, `TR_lag1 = max(H-L, |H-C_prev|, |L-C_prev|)` | clip `[-3,+3]` |
+| `24` | `lag_1_volume_z` | M1 Volume | `(V[-2] - mean(V[-21:-1])) / std(V[-21:-1])` (+1e-8 floors) | clip `[-3,+3]` |
+| `25` | `lag_1_clv` | M1 Bar | CLV of previous bar `[-1,+1]` | `[-1,+1]` |
+| `26` | `fvg_sig` | M1 Bar | `(L[-1]-H[-3])/ATR` bullish, `-(L[-3]-H[-1])/ATR` bearish, threshold `0.20*ATR` | clip `[-3,+3]` |
+| `27` | `order_block_type` | M1 Bar | `+1/-1/0` OB classification (× volume/vol_mean = strength) | clip `[-3,+3]` |
+| `28` | `choch_sig` | M1 Bar | `+1` CHoCH bull, `-1` CHoCH bear (EMA20/50 + 20-bar swing) | `{-1,0,1}` |
+| `29` | `breakout_sig` | Tick+Bar | `+1` mid>H[-1], `-1` mid<L[-1] | `{-1,0,1}` |
+| `30` | `norm_tk_diff` | M1 Bar | `(Tenkan - Kijun)/ATR` | clip `[-3,+3]` |
+| `31` | `tk_cross_signal` | M1 Bar | Tenkan/Kijun cross: `+1` bull, `-1` bear | `{-1,0,1}` |
+| `32` | `kumo_sig` | M1 Bar | `+1` above Kumo, `-1` below, else 0 | `{-1,0,1}` |
+| `33` | `norm_kumo_width` | M1 Bar | `(SpanA - SpanB)/ATR` | clip `[-3,+3]` |
+| `34` | `norm_rsi` | M1 Close | `(RSI14 - 50)/16.66` — **NOTE: divisor is 16.66 in code, docs previously said /25 (see BUG-082)** | clip `[-3,+3]` |
+| `35` | `dist_to_ema_21` | Tick+Bar | `(mid - EMA21)/ATR` (EMA seed=first, alpha=2/(n+1)) | clip `[-3,+3]` |
+| `36` | `dist_to_ema_50` | Tick+Bar | `(mid - EMA50)/ATR` | clip `[-3,+3]` |
+| `37` | `cross_asset_z_score` | Tick+Bar | rolling 20-bar z-score with current tick appended | clip `[-3,+3]` |
+| `38` | `norm_dist_to_tenkan` | M1 Bar | `(Tenkan - Kijun)/(2*ATR)` — exact negation of feat_39 | clip `[-3,+3]` |
+| `39` | `norm_dist_to_kijun` | M1 Bar | `(Kijun - Tenkan)/(2*ATR)` | clip `[-3,+3]` |
+| `40` | `htf_h4_trend` | H4 agg | EMA3 of H4 closes, `+1`/`-1` | `{-1,1}` |
+| `41` | `htf_h1_momentum` | H1 agg | `(H1_close[-1] - H1_close[-2])/ATR` | clip `[-3,+3]` |
+| `42` | `htf_m30_structure` | M30 agg | EMA5 of M30 closes, `+1`/`-1` | `{-1,1}` |
+| `43` | `htf_m15_confirmation` | M15 agg | engulfing + close-vs-open on last two M15 bars | `{-1,1}` |
+| `44` | `support_zone_dist` | S/R fractal | `(mid - nearest_support)/ATR`, fractal window 3, 50-bar | `>= 0`, clip `[-3,+3]` |
+| `45` | `resistance_zone_dist` | S/R fractal | `(nearest_resistance - mid)/ATR` | `>= 0`, clip `[-3,+3]` |
+| `46` | `feat_ob_valid_bos` | SMC | `1.0` OB BOS, `0.5` CHoCH/break, else 0 | `{0, 0.5, 1}` |
+| `47` | `feat_ob_equilibrium_ratio` | SMC | `(ob_price - last_sl)/(last_sh - last_sl)`, clip `[0,1]` | `[0,1]` |
+| `48` | `feat_ob_liquidity_swept` | SMC | `1.0` sweep confirmed else 0 | `{0,1}` |
+| `49` | `feat_ob_fib_50_60_alignment` | SMC | `clip(1 - |eq_ratio - 0.55|/0.35, 0, 1)` | `[0,1]` |
+
+> **Forensic note (2026-08-18):** the executable contract (above) is the ONLY truth. The historical §5.5 table (returns/log_returns/MACD/Bollinger/ADX/Stoch/OBV/VWAP/spread_norm) never matched the code — no MACD/BB/ADX/OBV/VWAP exist in the 50D at all. `norm_rsi` divisor is 16.66 (not 25), and `feat_38`/`feat_39` are exact negations (corr -1.0 over 215 stored experiences). All 50 dims independently verified: 7 fixtures × 50 = 350/350 PASS, determinism ×100 PASS, causality T-1 PASS, dataset/live replay parity PASS, float32 model-input roundtrip err ≤ 8.6e-8.
 
 #### 🛡️ Feature Safety & Fallback Invariants:
 * All 50 calculated features pass through `validate_and_fallback()`.
 * If any feature contains `NaN`, `Inf`, or violates bounds, a `FeaturePipelineFrozenError` is logged and deterministic fallback values are applied gracefully. 🟢 VERIFIED
+* Runtime `_validate_50d_tensor()` additionally clips to `[-3,+3]` and zero-fills non-finite values before inference (live_engine.py:2932). 🟢 VERIFIED
 
 ---
 
@@ -685,6 +737,38 @@ $$\text{Hold Score} = 100 - (\text{Drawdown Penalty}) - (\text{Time Decay}) - (\
   sharing the same originating order_id (`_close_sibling_legs`), and emergency
   states (`LOSS_HARD_EXIT` / `PROFIT_GIVEBACK_CRITICAL`) are honored even on the
   FIRST observation of a ticket (see BUG-018).
+* **Split-Fill Context Inheritance (BUG-081, 2026-08-18):** entry context is
+  staged in a BOUNDED registry keyed by order/request id
+  (`_pending_context_registry` + TTL 3600s + capacity 64) instead of a single
+  slot, so EVERY sibling ticket of a broker split-fill resolves the SAME
+  immutable context (order_id, reason, confidence, regime, setup snapshot).
+  Provenance gaps (`NO_STAGED_CONTEXT`) are logged via `[TRADE_LINEAGE]` and
+  recorded in `_unbound_ticket_contexts` — never silently confidence 0.0.
+  Family contexts prune on final-sibling close (`_prune_bound_context`).
+  Regression: `tests/unit/test_bug081_forensics.py`.
+* **Broker-Truth Exit Classification (BUG-081):** a stop at entry is
+  `RISK_FREE_SL_HIT` / `BREAK_EVEN_SL_HIT` ONLY when the engine proves the SL
+  moved (`was_sl_modified=True`); never-moved stops are `HARD_SL_HIT`. Mirrors
+  accounting/normalize.py `_classify_stop`. Regression: classifier CASE A-D
+  tests in test_bug081_forensics.py.
+* **Retention Analytics (BUG-081):** `accounting/retention.py` provides
+  `mfe_capture_ratio` / `giveback` / `giveback_ratio` / `cohort_capture_report`
+  (MFE<=0 → None, never synthetic 0.0); the reporting insights layer emits an
+  MFE-capture insight. Offline R-reach analysis:
+  `artifacts/scripts/retention_analysis.py` (measured: +1.0R reach → 97%
+  scratch on the Aug-18 cohort — the BE lock squeezes winners).
+* **Telegram Consumes the Canonical Outcome (BUG-081):** close notifications
+  use `TelegramNotifier.notify_canonical_close(...)` — built from the SAME
+  `exit_mechanism` the classifier writes to the ledger (evidence:
+  ENGINE_SL_MODIFICATION / BROKER_DEAL_REASON / BROKER_DEAL_COMMENT), never
+  re-inferred from the broker reason code, never defaulted to MANUAL.
+  `_exit_label()` maps the canonical ExitReason taxonomy to human labels.
+  All 3 close-notification call sites in order_manager.py use it; the legacy
+  `notify_manual_close` def remains but has NO callers. Regression:
+  `tests/unit/test_bug081_telegram_canonical.py`. Live incident that proved
+  the gap: ticket 152500222827 (SELL 4358.48, SL 4368.11→4358.15, exit
+  4358.17, +$5.27, 44s) — Telegram said "MANUAL POSITION CLOSE DETECTED /
+  MT5 Closing Reason Code Unknown"; the broker truth was BREAK_EVEN_SL_HIT.
 
 ### 🔧 Phase 15 Exit-Behavior Audit & Repair (2026-08-17)
 
@@ -837,8 +921,49 @@ To prevent SSE stream JSON serialization crashes when returning domain objects, 
 #### 🧹 Retention (BUG-054)
 `AuditRepository.purge_old_audit_data()` runs bounded (500-row) batched deletes: signals >7d, POSITION_MOVING >3d, guard telemetry >13d. NEVER touches ledger/experiences/autopsies/research. Manual: `nse audit-purge`. Position lifecycle MOVING events are time+event throttled (≥60s, SL/TP changed, or ≥15% risk drift). 🟢 VERIFIED
 
-#### 📡 Telegram Reporting (BUG-059)
-`TelegramNotifier` (observability/telegram_notifier.py) sends HTML-formatted, thread-pool-backed alerts. Templates: startup/stop, order open/close (profit/loss), break-even, trailing-stop, risk/survival/kill-switch, error, market summary, plus (BUG-059): `notify_test_message`, `notify_engine_stopped`, `notify_engine_error` (CRITICAL), `notify_audit_purge`, `notify_warmup` (one-shot on READY transition), `notify_daily_summary` (from AccountingCore PeriodKind.DAY, never synthetic). Wired in live_engine: purge result → per 6h run; warmup → on transition; daily summary → per 24h. Web UI: `POST /api/telegram/test` + "Send Test Message" button; config-save error now distinguishes server-unreachable from backend errors. Token never logged/leaked (`_redact_secrets`). 🟢 VERIFIED
+#### 📡 Telegram Reporting (BUG-059 → BUG-076: full lifecycle)
+`TelegramNotifier` (observability/telegram_notifier.py) sends HTML-formatted,
+QUEUE + WORKER-backed alerts with a full observable lifecycle. Every
+notification carries `notification_id`/`correlation_id`/`event_type`/`priority`/
+`target_class` and logs ENQUEUED → SEND_START → SEND_RESULT/SEND_FAILED →
+DELIVERED | FAILED_FINAL (never silent). HTTP 200 is VERIFIED against the JSON
+`ok` field (200+ok=false = failure); 429/5xx bounded-retry; 400-class never
+retried; explicit error taxonomy (AUTH/TARGET/NETWORK/TIMEOUT/RATE_LIMIT/
+SERVER/HTTP/API/SERIALIZATION/QUEUE/WORKER/UNKNOWN) each with retryable+severity+
+safe_message. Worker heartbeats every 5s; `health_state()` → READY/DEGRADED/
+STOPPED + queue/sent/failed/last_success/last_failure/failure_category.
+`get_me()` probe + `send_diagnostic()` labeled test. Templates: startup/stop,
+order open/close (profit/loss), break-even, trailing-stop, risk/survival/
+kill-switch, error, market summary, test, engine_stopped, engine_error
+(CRITICAL), audit_purge, warmup (one-shot), daily_summary (from AccountingCore
+PeriodKind.DAY, never synthetic). Wired in live_engine: purge → 6h; warmup →
+READY; daily → 24h. Web: `POST /api/telegram/test` returns the REAL worker
+verdict (delivered message_id OR category); `GET /api/settings/telegram/status`
++ `/api/observability/stats` expose truthful worker health. Network I/O only in
+the worker — Telegram can never block the tick path. Token never logged/leaked
+(`_redact_secrets`). 🟢 VERIFIED
+
+#### ⚙️ Isolated Settings Architecture (BUG-077)
+`src/nexus_scalp/settings/` is the canonical user/installation settings
+subsystem — Telegram credentials NEVER come from live.yaml at runtime.
+- `secret_store.py` — `SecureSecretStore`: Windows DPAPI (CryptProtectData via
+  ctypes), ciphertext anchored to the OS user; no plaintext, no XOR/base64-key.
+- `service.py` — `SettingsDatabase` (isolated `app_settings.db` under
+  `%LOCALAPPDATA%\NexusScalpEngine\databases\`, tables `application_settings`/
+  `configuration_metadata`/`settings_audit`) + `SettingsService` (precedence:
+  SYSTEM DEFAULT < INSTALLATION SETTINGS < SAFE ENV OVERRIDES < RUNTIME HOT).
+  Mutability classes: HOT_SAFE / HOT_RESTRICTED / RESTART_REQUIRED /
+  INSTALLATION_ONLY / SECRET. Explicit degraded states (SETTINGS_DB_CORRUPT,
+  SECRET_UNAVAILABLE, MIGRATION_REQUIRED, ...) — never fake READY.
+- Legacy migration: live.yaml telegram.bot_token/admin_id → secure store,
+  verified write-back → blanked from YAML; idempotent, restart-safe, failure-safe.
+- Web: `GET /api/settings` (masked token), `GET /api/settings/telegram/status`,
+  `POST /api/settings/telegram` (persists + hot-rebuilds the notifier),
+  `POST /api/settings/validate`; `GET /api/config` masks bot_token.
+- CLI: `nexus settings` (masked status + provenance). Doctor: TELEGRAM check.
+- LiveEngine: `self.settings_service`; `[TELEGRAM_CONFIG]` startup log with
+  enabled/configured/token_present/source; env override (NEXUS_TELEGRAM_*) remains
+  the diagnosis escape hatch. 🟢 VERIFIED
 
 #### 🕯️ Candle Intelligence (BUG-061)
 Local, isolated, database-backed candle-close analysis + trade-decision module at `src/nexus_scalp/candle_intelligence/`. The candle close is a GATE: close-quality classification (body/wick ratios, close-position, strength, rejection/continuation/reversal/indecision/momentum-decay) decides bullish/bearish continuation, reversal, indecision, trapped/false breakout, exhaustion — weak/contradictory closes block entry and accelerate exit. 29-pattern engine (hammer/engulfing/star/doji/soldiers/harami/cloud/methods/double-top-bottom/H&S/flag/pennant/wedge/triangle/gap) with multi-factor context weights. Rule hierarchy: hard veto → regime → close validation → pattern → risk → execution. Isolated SQLite `artifacts/candle_intel.db` (12 tables, full audit columns, deterministic serialization, no network). Wired into live_engine `_on_new_bar` (each completed M1 bar). Holds no adapter/order manager; advisory only. Config: `candle_intel:` section. 🟢 VERIFIED
@@ -963,6 +1088,34 @@ BUG-021 in `agents/bugs.md`).
 - Logs: `[ACCOUNTING_WORKER] event=START/UPDATE/FAILURE/RECOVERY` with cycle
   counts, durations, and updated periods.
 
+
+### 📊 Phase 16 — Pro Win/Loss-Rate Reconciliation & Loss-Persistence Intelligence
+
+Account Performance & Intelligence panel now audits the win/loss story from
+THREE reconciled angles, all derived in the accounting core (never in JS):
+
+| Metric | Definition | Why it matters |
+|--------|------------|----------------|
+| `win_rate` | wins / (wins + losses), decided only | classic; the 9.4% BUG-067 headline |
+| `loss_rate_decided` | losses / (wins + losses) | complement; always 100 - win_rate |
+| `win_rate_all` | wins / ALL trades incl. breakevens | scratches can hide the loss rate |
+| `loss_rate_all` | losses / ALL trades | breakeven-heavy samples surface the bleed |
+| `pnl_weighted_win_rate` | gross_profit / (gross_profit + gross_loss) | dollar-weighted counterpart |
+| `win_rate_denominator` | DECIDED | ALL_TRADES | NONE | explicit source of truth |
+
+Also added: `expectancy_breakeven_incl`, `avg_pnl_per_decided`, `total_costs`
+(comm + swap), `cost_drag_pct`, `stop_loss_share` (fraction of losses closed
+at a protective stop), `avg_loss_r`, `avg_r_multiple`, `avg_mae_r`,
+`avg_mfe_r`, `win_mae_capture_pct`, `loss_efficiency_pct`, `profit_skew`,
+`loss_skew`, `avg_hold_sec`, `volume_total`, `commission_total`, `swap_total`,
+`avg_risk_usd`, `r_coverage_ratio`.
+
+Both `PeriodReport.to_dict()` and `compute_advanced_metrics()` carry the
+same denominators; the dashboard renders an explicit `denominator:` badge
+under the classic Win Rate card and a Performance Intelligence info-text
+block (win/loss reconciliation, cost drag, stop discipline, excursion
+quality, breakeven-inclusive expectancy verdict).
+
 ### 🌐 Accounting REST API (in `web/server.py`)
 
 | Route | Method | Purpose |
@@ -974,10 +1127,54 @@ BUG-021 in `agents/bugs.md`).
 | `/api/account/drawdown` | GET | Canonical drawdown state |
 | `/api/account/trades/{trade_id}` | GET | Forensic reconstruction (ledger+orders+experience) |
 | `/api/account/strategies` | GET | Per-strategy contribution joined to Intelligence |
+| `/api/account/performance/intelligence` | GET | Deterministic Performance Intelligence report (structured JSON contract consumed by the Telegram daily report) |
 
 Every endpoint returns REAL data from authoritative tables. When no data
 exists the response carries `available`/`has_data` flags and the dashboard
 renders an explicit empty state.
+
+### 📊 Performance Intelligence Reporting (`reporting/` package)
+
+The **`nexus_scalp/reporting/`** package is a READ-ONLY enrichment layer over
+the canonical AccountingCore — it never writes financial truth, never opens/
+closes trades, never modifies risk/model/news gates. It powers the upgraded
+Telegram daily report and the `/api/account/performance/intelligence` endpoint.
+
+- `reporting/models.py` — frozen dataclass JSON contract: `ReportContainer`
+  with sections (account, performance, distribution, r, excursion, holding,
+  exits, streaks, risk, drawdown, strategies, regimes, sessions, model,
+  execution, news, behavioral, loss_drivers, profit_drivers, period_compare,
+  anomalies, health_score, insights, trend, evidence). `None` = cannot derive
+  (honesty rule), never 0.0-as-placeholder.
+- `reporting/engine.py` — `PerformanceReportEngine` deterministic multi-stage
+  generator (SNAPSHOT -> OUTCOMES -> PROFIT_DECOMPOSITION -> DISTRIBUTION ->
+  R_MULTIPLE -> EXCURSION -> HOLDING/EXIT -> STREAK -> RISK -> DRAWDOWN ->
+  STRATEGY -> REGIME -> SESSION -> MODEL -> EXECUTION -> NEWS -> BEHAVIORAL ->
+  LOSS/PROFIT DRIVERS -> PERIOD_COMPARE -> ANOMALY -> HEALTH -> INSIGHTS).
+  Logs `[TELEGRAM_REPORT] event=START/COMPLETE/FAILURE`.
+- `reporting/insights.py` — sample-size policy (DO_NOT_RANK <5 / LOW_EVIDENCE
+  5-19 / USABLE 20-49 / STRONGER_EVIDENCE 50+), multi-metric trend
+  classification (IMPROVING/STABLE/DETERIORATING — never single-metric),
+  robust anomaly detection (loss-streak / large-loss share / expectancy
+  degradation / latency / concentration), deterministic 0-100 account health
+  score (profitability/risk/consistency/execution/strategy_stability, each
+  /25, report-only), 13 deterministic insight sentences, session
+  classification (ASIAN_TOKYO/LONDON/LONDON_NY_OVERLAP/NEW_YORK/OFF_HOURS).
+- `reporting/telegram_format.py` — `format_telegram_daily` (compact MESSAGE 1)
+  and `format_deep_report` (deep MESSAGE 2/3) consume the contract; numbers
+  are NEVER re-derived in string code. Oversized deep reports split
+  deterministically on paragraph boundaries (`_split_telegram_report` in
+  live_engine, max 3500 chars, lossless rejoin).
+- Wired in `live_engine.py` daily tick: replaces the thin BUG-057 summary
+  with compact + deep (split) delivery. Canonical period numbers (trades,
+  wins, losses, net PnL, win rate, drawdown) come EXACTLY from
+  `AccountingCore.period_report` — the upgrade enriches, never changes truth.
+- Tests: `tests/unit/test_performance_report_intelligence.py` (29 tests:
+  basic/zero/only-wins/only-losses/mixed/breakeven/MAE-MFE-missing/
+  strategy/regime/exit attribution/sample-size/period-compare/anomaly/
+  health/deterministic-id/telegram-format/split/json-contract/model-funnel/
+  execution/news/session/insights) +
+  `tests/integration/test_accounting_api.py::test_performance_intelligence_endpoint`.
 
 ### 🖥️ Dashboard (Web/)
 
@@ -1507,19 +1704,52 @@ timing/persistence with regime context (evidence only — never trains the
 production model). link_trade() connects trade_id/experience_id/news_event_id/
 strategy_id/model_version for Experience Intelligence.
 
-### API (14 routes)
+### API (15 routes)
 GET /api/news, /api/news/latest, /api/news/{id}, /api/news/impact,
 /api/news/state, /api/news/sources, /api/news/health,
-/api/news/analysis/{id}, /api/news/trades/{trade_id};
+/api/news/keywords, /api/news/analysis/{id}, /api/news/trades/{trade_id};
 POST /api/news/analyze/{id} (async job), /api/news/refresh,
 /api/news/self-heal. Disabled subsystem returns available=False (honest, no
 synthetic data).
+
+### Keyword analysis dataset (2026-08-18 expansion)
+- `src/nexus_scalp/news/analysis/keywords.py`: deterministic dataset of 189
+  keywords across 8 categories (currency/asset/institution/macro/geopolitics/
+  energy/directional/fx_pair). Each keyword carries topics, XAUUSD direction
+  bias, weight, aliases, negatives ("GOLD MEDAL" != gold). Pure functions,
+  no I/O.
+- Coverage analytics: `analyze_keyword_coverage()` returns per-keyword
+  article hits / mentions / share / direction distribution over dict rows OR
+  NewsArticle models.
+- Feed rows carry `keyword_hits` (per-article explainability); the News tab
+  has a Keyword Analysis Dataset panel (stats + search/filter table).
 
 ### Web UI
 News Intelligence tab (#tab-news): live feed, state badge
 (NORMAL/ELEVATED/HIGH_IMPACT/CONFLICTED/BREAKING/STALE), XAUUSD relevance,
 bullish/bearish scores, active-event count, "Analyze with AI" button
-(async, LOCAL/API/COMBINED status), Fetch News trigger.
+(async, LOCAL/API/COMBINED status), Fetch News trigger, Keyword Analysis
+Dataset panel (dataset size, articles scanned, total mentions, active
+keywords, bull/bear/neutral distribution, searchable keyword table).
+
+### UI error contract + canonical served bundle (BUG-079, 2026-08-18)
+- ONE canonical web source: `Web/` at repo root. The runtime serves it via
+  `FileResponse` (per-request file read), so frontend edits are live without
+  an engine restart; the packaged release must reproduce it byte-identical.
+- Served-bundle identity: `GET /app.js` carries `X-UI-Bundle-Sha256` +
+  `X-UI-Bundle-Source` (REPO|PACKAGED) once per process (UI forensics).
+- Frontend never swallows API failures: every loader emits
+  `[UI_API] endpoint=... event=REQUEST/SUCCESS` and
+  `[UI_ERROR] component=... status=...` on failure, with a visible DOM error
+  state (never a silent `--`/empty panel).
+- Research registry score decoding is defensive (`safeScoreObj`/`safeScore`):
+  absent, literal `"null"`, `{}`, valid, or malformed score JSON can never
+  crash the panel (BUG-075/079).
+- News feed marks unanalyzed articles `PENDING` (honest); only analyzed rows
+  show direction/importance/relevance.
+- Release freshness: `build_release.ps1` stamps `web_asset_hash`/
+  `web_index_hash` (SHA-256 of source Web/app.js + index.html) into
+  build-info.json; `verify.py::_asset_web` FAILS a stale bundle.
 
 ### Safety invariants (tested)
 - News can never force BUY/SELL (action unchanged by gate)
@@ -1530,13 +1760,18 @@ bullish/bearish scores, active-event count, "Analyze with AI" button
 - Self-healing rebuilds derived state from authoritative raw records only
 
 ### Tests
-- tests/unit/test_news_phase12.py — 63 tests: ingestion, dedup, decay,
+- tests/unit/test_news_phase12.py — 66 tests: ingestion, dedup, decay,
   local analysis, external-AI fallback, gate safety, memory, worker, DB
   idempotency, self-heal, engine, regressions.
-- tests/integration/test_news_api.py — 14 tests: real API data, state,
+- tests/unit/test_news_keywords_dataset.py — 17 tests: dataset size >= 150,
+  determinism, categories, direction bias sets, aliases + negatives
+  suppression, dict-row support, coverage math, per-article hits,
+  local-analyzer alignment.
+- tests/integration/test_news_api.py — 26 tests: real API data, state,
   health (no synthetic), detail, async analyze, refresh, self-heal,
-  sources, disabled availability, worker isolation, DB independence,
-  analysis persistence, trade links.
+  sources, keywords endpoint + filters, feed keyword_hits, disabled
+  availability, worker isolation, DB independence, analysis persistence,
+  trade links.
 
 ---
 
@@ -2185,6 +2420,30 @@ If you are an AI coding agent making changes to this repository in the future, *
 * **Symptom:** Freezes live tick processing loop, causes tick stagnation watchdog warnings and order slippage.
 * **Rule:** All heavy or blocking work MUST be offloaded using `asyncio.to_thread()`, background worker threads, or async HTTP clients (`httpx`).
 
+### 🚨 6b. Pending-Order Cancellation Is NOT Complete Until Broker State Confirms Removal (BUG-072/073/074)
+* **Invariant:** "I asked MT5 to cancel the pending order" ≠ "MT5 confirmed the pending order no longer exists."
+* **Rule:** Pending-order cancellation is not considered complete until broker state
+  confirms order removal; exposure slots remain occupied while cancellation state is
+  unresolved (ACTIVE/UNKNOWN keeps the lock; only GONE with a DONE send, or a
+  positive terminal history state, releases it).
+* **Implementation:** `OrderLifecycleManager.cancel_pending_order_verified()`
+  (send → `_pending_broker_state()` tri-state → refresh cache on confirm),
+  `cancel_pending_order_with_retry()` (bounded ≤3, idempotent),
+  `reconcile_pending_state()` (periodic + startup; broker wins; internal view
+  repaired on mismatch), `refresh_live_tickets_cache()`.
+* **retcode 0 semantics:** 0 is NOT a trade-server retcode (DONE=10009,
+  PLACED=10008). It marks a request that never reached the server — the
+  exposure slot must stay occupied until broker truth is queried.
+* **Function-local `import time` is forbidden** anywhere in `live_engine.py`
+  hot paths: it shadows the module attribute and raises UnboundLocalError,
+  crashing `_process_tick_pipeline` and freezing the exposure cache (BUG-074).
+* **Learning hygiene:** MAX_EXPOSURE_REACHED / PENDING_ORDER_LOCKED NO_TRADE
+  rows carry `blocked_by=EXECUTION_STATE_BLOCK`; audit payload includes
+  `blocked_by`/`decision_stage` so execution-state blocks are never learned as
+  "the model chose not to trade".
+* **Regression guard:** `tests/unit/test_pending_cancel_reconciliation.py`
+  (17 tests covering verified release, ambiguous lock, idempotency, mismatch
+  repair, bounded retry, crash isolation, phantom-ticket non-reuse).
 ### 🚨 6. Web Error Hygiene — Never Return Exception Text to Clients (BUG-040)
 * **Pitfall:** `except Exception as e: return {"error": str(e)}` anywhere in `web/server.py` leaks internal paths/SQL/exception classes (CodeQL py/stack-trace-exposure).
 * **Rule:** All routes use the centralized helpers in `src/nexus_scalp/web/errors.py`:

@@ -2162,7 +2162,18 @@ async function loadConfiguration() {
 
         if (selectedConfig.telegram) {
             document.getElementById('cfg-telegram-enabled').checked = selectedConfig.telegram.enabled || false;
-            document.getElementById('cfg-telegram-token').value = selectedConfig.telegram.bot_token || '';
+            const rawToken = selectedConfig.telegram.bot_token || '';
+            const tokenField = document.getElementById('cfg-telegram-token');
+            // BUG-072: server returns a MASKED token; the field must not be
+            // submitted back as a real credential. Placeholder holds the mask.
+            if (rawToken.indexOf('*') >= 0) {
+                tokenField.value = '';
+                tokenField.placeholder = rawToken;
+                tokenField.dataset.masked = '1';
+            } else {
+                tokenField.value = rawToken;
+                tokenField.dataset.masked = '';
+            }
             document.getElementById('cfg-telegram-admin').value = selectedConfig.telegram.admin_id || '';
         } else {
             document.getElementById('cfg-telegram-enabled').checked = false;
@@ -2243,7 +2254,7 @@ async function saveConfiguration() {
         },
         telegram: {
             enabled: document.getElementById('cfg-telegram-enabled').checked,
-            bot_token: document.getElementById('cfg-telegram-token').value,
+            bot_token: resolveTelegramTokenField(),
             admin_id: document.getElementById('cfg-telegram-admin').value
         },
         mt5: selectedConfig.mt5
@@ -2267,6 +2278,16 @@ async function saveConfiguration() {
     }
 }
 
+// BUG-072: the server never returns the real token. When the field holds a
+// masked placeholder, submitting must NOT overwrite the stored secret.
+function resolveTelegramTokenField() {
+    const field = document.getElementById('cfg-telegram-token');
+    if (field && field.dataset && field.dataset.masked === '1') {
+        return '';  // keep the existing secure-store secret untouched
+    }
+    return field ? field.value : '';
+}
+
 // Telegram connectivity test: sends a test message through the engine notifier.
 async function testTelegram() {
     const statusEl = document.getElementById('telegram-test-status');
@@ -2279,7 +2300,7 @@ async function testTelegram() {
             model: selectedConfig.model,
             telegram: {
                 enabled: document.getElementById('cfg-telegram-enabled').checked,
-                bot_token: document.getElementById('cfg-telegram-token').value,
+                bot_token: resolveTelegramTokenField(),
                 admin_id: document.getElementById('cfg-telegram-admin').value
             },
             mt5: selectedConfig.mt5
@@ -2295,11 +2316,14 @@ async function testTelegram() {
         }
         const result = await NX.api.post('/api/telegram/test', {}, { component: 'Telegram', action: 'TEST' });
         if (result.ok && result.body.success) {
-            if (statusEl) statusEl.textContent = '\u2705 Test message sent!';
+            const mid = result.body.message_id ? ' (message_id=' + result.body.message_id + ')' : '';
+            if (statusEl) statusEl.textContent = '\u2705 Test message delivered!' + mid;
         } else if (result.status === 0 || (result.error && result.error.code === 'NETWORK_ERROR')) {
             if (statusEl) statusEl.textContent = '\u274c Server unreachable \u2014 engine not running?';
         } else {
-            if (statusEl) statusEl.textContent = '\u274c ' + NX.api.msg(result, 'send failed');
+            const errBody = result.body && result.body.error;
+            const category = errBody && errBody.category ? ' [' + errBody.category + ']' : '';
+            if (statusEl) statusEl.textContent = '\u274c ' + NX.api.msg(result, 'send failed') + category;
         }
     } catch (err) {
         console.error("Telegram test failed", err);
@@ -2340,14 +2364,33 @@ async function updateHeartbeats() {
         document.getElementById('tg-queue').textContent = `${data.tg_queue} pending`;
         document.getElementById('tg-channel').textContent = data.tg_enabled ? 'Active' : 'Disabled';
         document.getElementById('tg-status-badge').className = `w-2 h-2 rounded-full ${data.tg_enabled ? 'bg-emerald-400' : 'bg-gray-400'}`;
+        // BUG-072: truthful worker state (READY/DEGRADED/STOPPED + counters)
+        const tg = data.telegram;
+        const liveStatus = document.getElementById('telegram-live-status');
+        const workerEl = document.getElementById('tg-status-worker');
+        if (tg && liveStatus && workerEl) {
+            const st = tg.status || 'STOPPED';
+            const color = st === 'READY' ? 'text-emerald-400' : (st === 'DEGRADED' ? 'text-amber-400' : 'text-rose-400');
+            workerEl.innerHTML = `<span class="${color} font-bold">${st}</span> &middot; sent=${tg.sent_count} failed=${tg.failed_count} retries=${tg.retry_count}` +
+                (tg.failure_category ? ` &middot; last_failure=<span class="text-rose-400">${tg.failure_category}</span>` : '') +
+                (tg.last_success && tg.last_success !== '-' ? ` &middot; last_success=${tg.last_success}` : '');
+            liveStatus.classList.remove('hidden');
+        }
     } catch (err) {}
 }
 
 // Fetch all rules from database and render the UI panel dynamically
 async function loadRules() {
+    const t0 = performance.now();
+    console.log('[UI_API] endpoint=/api/rules event=REQUEST');
     try {
         const res = await fetch('/api/rules');
+        if (!res.ok) {
+            console.error('[UI_ERROR] component=RuleMatrix endpoint=/api/rules status=' + res.status + ' error_code=HTTP_' + res.status);
+            throw new Error('HTTP ' + res.status);
+        }
         const rules = await res.json();
+        console.log('[UI_API] endpoint=/api/rules event=SUCCESS status=200 latency_ms=' + Math.round(performance.now() - t0) + ' rules=' + (Array.isArray(rules) ? rules.length : 'n/a'));
 
         // Categorize rules
         const categorized = {};
@@ -2376,7 +2419,11 @@ async function loadRules() {
             `;
         }).join('');
     } catch (err) {
-        console.error("Failed to load rules", err);
+        console.error('[UI_ERROR] component=RuleMatrix endpoint=/api/rules action=LOAD message=' + (err && err.message));
+        const container = document.getElementById('rules-categories-container');
+        if (container && !container.innerHTML.trim()) {
+            container.innerHTML = '<div class="text-accentRed italic p-4 border border-accentRed/30 rounded">Failed to load rules: ' + esc(err && err.message ? String(err.message) : 'unknown error') + '</div>';
+        }
     }
 }
 
@@ -3570,12 +3617,40 @@ async function repairResearchOutcomes() {
     }
 }
 
+// BUG-075: registry `score` may be absent, the literal "null" (historical
+// writer defect), '{}', valid JSON, or malformed. Never let any of them crash
+// the research panel: decode defensively and emit a visible [UI_ERROR].
+function safeScoreObj(v) {
+    if (v == null) return null;
+    if (typeof v === 'object') return v;
+    try {
+        const parsed = JSON.parse(v);
+        return (parsed && typeof parsed === 'object') ? parsed : null;
+    } catch (e) {
+        console.error('[UI_ERROR] component=ResearchRegistry action=SCORE_DECODE value=' + String(v).slice(0, 60));
+        return null;
+    }
+}
+function safeScore(v) {
+    const o = safeScoreObj(v);
+    const fs = o && o.final_score;
+    return (typeof fs === 'number' && isFinite(fs)) ? fs : '--';
+}
+
 async function loadResearchRegistry() {
     try {
-        const res = await fetch('/api/research/registry?limit=20');
-        if (!res.ok) return;
-        const body = await res.json();
-        if (!body.available) return;
+        const res = await NX.api.get('/api/research/registry?limit=20', { component: 'ResearchRegistry', action: 'LOAD' });
+        if (!res.ok) {
+            const box = document.getElementById('research-registry');
+            if (box) box.innerHTML = '<div class="text-accentRed italic">Research registry request failed: ' + esc(NX.api.msg(res, 'Registry unavailable')) + '</div>';
+            return;
+        }
+        const body = res.body || {};
+        if (!body.available) {
+            const box = document.getElementById('research-registry');
+            if (box) box.innerHTML = '<div class="text-textMuted italic">Research registry unavailable (available=false).</div>';
+            return;
+        }
         const box = document.getElementById('research-registry');
         const rows = body.registry || [];
         if (!rows.length) {
@@ -3583,7 +3658,7 @@ async function loadResearchRegistry() {
             return;
         }
         box.innerHTML = rows.map(r => {
-            const sc = r.score ? (JSON.parse(r.score).final_score ?? '--') : '--';
+            const sc = safeScore(r.score);
             const lc = esc(r.lifecycle || '--');
             return '<div class="flex items-center justify-between bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
                 '<span class="text-accentCyan font-bold">' + esc(r.strategy_id) + '</span>' +
@@ -3639,7 +3714,7 @@ async function validateResearchCandidate() {
             '<div>expectancy_r: ' + esc(r.backtest?.expectancy_r ?? '--') + '</div>' +
             '<div>oos_expectancy_r: ' + esc(r.oos?.oos_expectancy_r ?? '--') + ' · oos_status: ' + esc(r.oos?.status ?? '--') + '</div>' +
             '<div>robustness: ' + esc(r.robustness?.status ?? '--') + '</div>' +
-            '<div>score: ' + esc(r.score?.final_score ?? '--') + ' · verdict: ' + esc(r.score?.verdict ?? '--') + '</div>';
+            '<div>score: ' + esc(safeScore(r.score)) + ' · verdict: ' + esc((safeScoreObj(r.score) || {}).verdict ?? '--') + '</div>';
         loadResearchSummary();
     } catch (e) {
         console.warn('research validate failed', e);
@@ -3842,7 +3917,10 @@ function setNewsStatus(msg, isError) {
 async function loadNewsState() {
     try {
         const res = await fetch('/api/news/state');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) {
+            console.error('[UI_ERROR] component=News endpoint=/api/news/state status=' + res.status);
+            throw new Error('HTTP ' + res.status);
+        }
         const body = await res.json();
         if (!body.available) {
             document.getElementById('news-state-value').textContent = 'OFF';
@@ -3863,8 +3941,10 @@ async function loadNewsState() {
         loadNewsFeed();
         loadNewsKeywords();
     } catch (e) {
-        console.warn('news state failed', e);
-        setNewsStatus('news state failed: ' + e.message, true);
+        console.error('[UI_ERROR] component=News endpoint=/api/news/state action=LOAD message=' + (e && e.message));
+        setNewsStatus('news state failed: ' + (e && e.message), true);
+        const val = document.getElementById('news-state-value');
+        if (val && (val.textContent === '--' || val.textContent === 'OFF')) val.textContent = 'ERR';
     }
 }
 
@@ -4044,7 +4124,10 @@ function drawNewsImpactChart(buckets) {
 async function loadNewsFeed() {
     try {
         const res = await fetch('/api/news?limit=20');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) {
+            console.error('[UI_ERROR] component=News endpoint=/api/news status=' + res.status);
+            throw new Error('HTTP ' + res.status);
+        }
         const body = await res.json();
         const feed = document.getElementById('news-feed');
         if (!body.available || !body.articles || body.articles.length === 0) {
@@ -4052,12 +4135,13 @@ async function loadNewsFeed() {
             return;
         }
         feed.innerHTML = body.articles.map(a => {
-            const dir = a.analysis ? (a.analysis.direction || 'NEUTRAL') : 'NEUTRAL';
-            const dirColor = dir === 'BULLISH' ? 'text-accentGreen' : dir === 'BEARISH' ? 'text-accentRed' : 'text-slate-400';
-            const imp = Math.round((a.importance_score || 0) * 100);
-            const rel = a.analysis ? Math.round((a.analysis.relevance_to_xauusd || 0) * 100) + '%' : '--';
-            const mech = a.analysis && a.analysis.market_mechanism ? a.analysis.market_mechanism : '';
-            const impColor = imp >= 70 ? 'bg-rose-500/20 text-rose-300' : imp >= 50 ? 'bg-orange-500/20 text-orange-300' : imp >= 30 ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-500/20 text-slate-400';
+            const hasAna = !!(a.analysis && (a.analysis.direction || a.analysis.relevance_to_xauusd));
+            const dir = hasAna ? (a.analysis.direction || 'NEUTRAL') : 'PENDING';
+            const dirColor = dir === 'BULLISH' ? 'text-accentGreen' : dir === 'BEARISH' ? 'text-accentRed' : dir === 'PENDING' ? 'text-slate-500' : 'text-slate-400';
+            const imp = hasAna ? Math.round((a.importance_score || 0) * 100) : null;
+            const rel = hasAna ? Math.round((a.analysis.relevance_to_xauusd || 0) * 100) + '%' : '--';
+            const mech = hasAna && a.analysis.market_mechanism ? a.analysis.market_mechanism : '';
+            const impColor = imp == null ? 'bg-slate-600/20 text-slate-400' : imp >= 70 ? 'bg-rose-500/20 text-rose-300' : imp >= 50 ? 'bg-orange-500/20 text-orange-300' : imp >= 30 ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-500/20 text-slate-400';
             return '<div class="bg-darkBg/40 border border-borderClr/40 rounded p-2.5">' +
                 '<div class="flex justify-between items-center gap-2">' +
                 '<span class="font-bold text-white truncate" title="' + esc(a.title) + '">' + esc(a.title) + '</span>' +
@@ -4075,8 +4159,8 @@ async function loadNewsFeed() {
         setNewsStatus('feed: ' + body.articles.length + ' articles');
         loadNewsTimeline();
     } catch (e) {
-        console.warn('news feed failed', e);
-        setNewsStatus('news feed failed: ' + e.message, true);
+        console.error('[UI_ERROR] component=News endpoint=/api/news action=LOAD message=' + (e && e.message));
+        setNewsStatus('news feed failed: ' + (e && e.message), true);
     }
 }
 
@@ -4130,9 +4214,10 @@ async function loadNewsKeywords() {
             (kws.length > tops.length ? '<tr><td colspan="6" class="p-1.5 text-[9px] text-textMuted italic">' + (kws.length - tops.length) + ' more dataset keywords (filter to browse)…</td></tr>' : '') +
             '</tbody></table>';
     } catch (e) {
-        console.warn('news keywords failed', e);
+        console.error('[UI_ERROR] component=News endpoint=/api/news/keywords action=LOAD message=' + (e && e.message));
         const tbl = document.getElementById('news-kw-table');
-        if (tbl) tbl.innerHTML = '<div class="text-textMuted italic p-2">keyword load failed: ' + esc(e.message) + '</div>';
+        if (tbl) tbl.innerHTML = '<div class="text-accentRed italic p-2">keyword load failed: ' + esc(e && e.message ? String(e.message) : 'unknown') + '</div>';
+        setNewsStatus('keyword dataset failed: ' + (e && e.message), true);
     }
 }
 
@@ -4167,6 +4252,7 @@ async function triggerNewsRefresh() {
         const res = await NX.api.post('/api/news/refresh', {}, { component: 'News', action: 'REFRESH' });
         const body = res.ok ? res.body : { available: false, error: res.error };
         if (!body || !body.available) {
+            console.error('[UI_ERROR] component=News endpoint=/api/news/refresh action=REFRESH available=false');
             setNewsStatus('news refresh failed', true);
             alert('News engine unavailable');
         } else if (body.cooldown) {

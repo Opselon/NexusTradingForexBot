@@ -171,6 +171,54 @@ class TestNewsApiEndpoints:
         tiers = {s["tier"] for s in body["sources"]}
         assert "TIER_1" in tiers  # official sources present
 
+    def test_api_news_keywords_endpoint(self, news_engine):
+        _insert_sample_article(
+            news_engine, "Fed cuts rates, gold surges on safe haven demand", "news_kw1"
+        )
+        _, client = self._app_with_news(news_engine)
+        resp = client.get("/api/news/keywords")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        # big dataset contract: >= 150 keywords
+        assert body["dataset"]["total_keywords"] >= 150
+        assert "categories" in body["dataset"]
+        assert body["coverage"]["articles_scanned"] >= 1
+        assert body["coverage"]["active_keywords"] >= 1
+        # the sample article mentions gold/Fed -> top keywords non-empty
+        assert len(body["coverage"]["top_keywords"]) >= 1
+        top = body["coverage"]["top_keywords"][0]
+        assert top["keyword"]
+        assert top["article_hits"] >= 1
+        assert 0.0 <= top["share"] <= 1.0
+        # filterable listing works
+        resp_q = client.get("/api/news/keywords?q=GOLD")
+        assert resp_q.status_code == 200
+        q_body = resp_q.json()
+        assert all("GOLD" in k["keyword"] for k in q_body["keywords"])
+        # category filter
+        resp_cat = client.get("/api/news/keywords?category=macro")
+        assert resp_cat.status_code == 200
+        cat_body = resp_cat.json()
+        assert (
+            all(k["category"] == "macro" for k in cat_body["keywords"])
+            if cat_body["keywords"]
+            else True
+        )
+
+    def test_api_news_feed_has_keyword_hits(self, news_engine):
+        _insert_sample_article(
+            news_engine, "Bank of England hawkish, yields jump, gold falls", "news_kw2"
+        )
+        _, client = self._app_with_news(news_engine)
+        resp = client.get("/api/news?limit=10")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        hits = body["articles"][0].get("keyword_hits", [])
+        assert isinstance(hits, list)
+        assert len(hits) >= 1
+
     def test_api_news_disabled_returns_available_false(self, tmp_path: Path):
         from fastapi.testclient import TestClient
 

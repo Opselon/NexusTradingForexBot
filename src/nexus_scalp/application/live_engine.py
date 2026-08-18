@@ -20,6 +20,7 @@ import math
 import os
 import signal
 import threading
+import time
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -85,6 +86,9 @@ from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.worker import ResearchWorker
 from nexus_scalp.risk.risk_engine import RiskEngine
+from nexus_scalp.settings import (
+    load_settings_service,
+)
 from nexus_scalp.shadow.challenger import ChallengerRuntime
 from nexus_scalp.shadow.comparison import ShadowComparer
 from nexus_scalp.shadow.engine import ShadowEngine
@@ -95,6 +99,25 @@ from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
 logger = get_logger("nexus_scalp.application.live_engine")
+
+
+def _split_telegram_report(text: str, max_len: int = 3500) -> list[str]:
+    """Deterministic paragraph-boundary splitter for oversized Telegram
+    reports. Splits on blank-line groups so section headers stay intact;
+    rejoining the chunks reproduces the original text exactly."""
+    paragraphs = text.split("\n\n")
+    chunks: list[str] = []
+    current = ""
+    for para in paragraphs:
+        candidate = (current + "\n\n" + para) if current else para
+        if len(candidate) > max_len and current:
+            chunks.append(current)
+            current = para
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 # -----------------------------
@@ -202,15 +225,71 @@ class LiveEngine:
         # Module 1: Market Regime Engine (init hardening)
         self.regime_classifier = self._init_regime_classifier(symbol=symbol)
 
-        # Telegram (do NOT trust logged token; allow env override)
-        bot_token = os.getenv("NEXUS_TELEGRAM_BOT_TOKEN", config.telegram.bot_token)
-        admin_id = os.getenv("NEXUS_TELEGRAM_ADMIN_ID", config.telegram.admin_id)
+        # =================================================================
+        # BUG-072: isolated user-settings architecture.
+        # Telegram credentials come from the SECURE secret store (DPAPI) /
+        # app_settings.db, NEVER from live.yaml (legacy values are migrated
+        # then blanked). Env overrides remain the diagnosis escape hatch.
+        # =================================================================
+        self.settings_service = load_settings_service()
+        try:
+            legacy: dict[str, Any] = {}
+            legacy_path = Path("configs/live.yaml")
+            if legacy_path.exists():
+                import yaml as _yaml
+
+                with open(legacy_path, encoding="utf-8") as _f:
+                    legacy = _yaml.safe_load(_f) or {}
+        except Exception as _leg_err:
+            logger.warning("[SETTINGS] legacy scan failed (non-fatal): %s", _leg_err)
+            legacy = {}
+
+        migration = self.settings_service.migrate_legacy_yaml(legacy)
+        if migration.get("migrated"):
+            logger.info(
+                "[SETTINGS] legacy telegram secrets migrated to secure store (correlation_id=%s)",
+                migration.get("correlation_id", "-"),
+            )
+            self.settings_service.blank_legacy_secrets(legacy_path)
+
+        # Env override wins for diagnosis; otherwise the secure store is
+        # authoritative (never live.yaml).
+        env_token = os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")
+        env_admin = os.getenv("NEXUS_TELEGRAM_ADMIN_ID")
+        sec_token, sec_admin = self.settings_service.get_telegram_credentials()
+        bot_token = env_token or sec_token or ""
+        admin_id = env_admin or sec_admin or ""
+        self._telegram_credential_source = "ENV" if (env_token or env_admin) else "SECURE_SETTINGS"
+
+        # telegram.enabled default: config value until user settings override it
+        cfg_enabled_row = self.settings_service.db.get("telegram.enabled")
+        tg_enabled = (
+            bool(cfg_enabled_row.value)
+            if cfg_enabled_row and cfg_enabled_row.value is not None
+            else bool(config.telegram.enabled)
+        )
 
         self.notifier = TelegramNotifier(
             bot_token=bot_token,
             admin_id=admin_id,
-            enabled=config.telegram.enabled,
+            enabled=tg_enabled,
         )
+        logger.info(
+            "[TELEGRAM_CONFIG] enabled=%s configured=%s token_present=%s "
+            "admin_id_present=%s source=%s",
+            self.notifier.enabled,
+            bool(bot_token and admin_id),
+            bool(bot_token),
+            bool(admin_id),
+            self._telegram_credential_source,
+        )
+        if config.telegram.enabled and not bot_token:
+            logger.warning(
+                "[TELEGRAM_CONFIG_ERROR] reason=BOT_TOKEN_MISSING "
+                "(set via settings UI or NEXUS_TELEGRAM_BOT_TOKEN env)"
+            )
+        if config.telegram.enabled and bot_token and not admin_id:
+            logger.warning("[TELEGRAM_CONFIG_ERROR] reason=ADMIN_CHAT_ID_MISSING")
 
         # BUG-061: local candle-intelligence subsystem (candle-close gate).
         # Isolated DB (candle_intel.db); feeds decisions for entry/hold/fast-exit.
@@ -629,6 +708,28 @@ class LiveEngine:
         self._restore_peak_equity(account)
         self._notify_startup(account)
 
+        # BUG-072/073 restart safety: reconcile internal pending/position
+        # state against broker truth at startup. The broker wins — a stale
+        # internal pending (or a broker order the engine never tracked) is
+        # repaired before any new entry can be considered. Isolated.
+        try:
+            rep = self.order_manager.reconcile_pending_state(
+                symbol=symbol, current_tick=self.adapter.get_last_tick(symbol)
+            )
+            logger.info(
+                "[EXECUTION_RECONCILIATION] event=STARTUP "
+                "pending_internal=%s pending_broker=%s mismatch=%s repaired=%s",
+                rep["pending_internal"],
+                rep["pending_broker"],
+                rep["mismatch"],
+                rep["repaired"],
+            )
+        except Exception as startup_rec_err:
+            logger.error(
+                "[EXECUTION_RECONCILIATION] event=STARTUP_FAILED (isolated)",
+                error=str(startup_rec_err),
+            )
+
         await self._cold_start_warmup(symbol)
 
         await self._bootstrap_train_if_ready()
@@ -679,8 +780,6 @@ class LiveEngine:
             digits=self._symbol_info.digits if self._symbol_info else 2,
             model_path=str(self.config.model.model_artifact_path),
         )
-
-        import time
 
         self._last_tick_processed_time = time.time()
 
@@ -770,39 +869,49 @@ class LiveEngine:
                 if now_t - self._last_daily_summary_time >= self._daily_summary_interval_sec:
                     self._last_daily_summary_time = now_t
                     try:
+                        # Performance Intelligence upgrade: deterministic
+                        # multi-stage report generator (reporting package)
+                        # consumes the canonical AccountingCore read-only and
+                        # produces the structured JSON contract + Telegram text.
                         from nexus_scalp.accounting import PeriodKind
+                        from nexus_scalp.reporting import (
+                            PerformanceReportEngine,
+                            format_deep_report,
+                            format_telegram_daily,
+                        )
 
-                        report = self.accounting_core.period_report(PeriodKind.DAY)
-                        stats = {
-                            "date": report.period_start.strftime("%Y-%m-%d"),
-                            "trades": report.total_trades,
-                            "wins": report.win_count,
-                            "losses": report.loss_count,
-                            "win_rate": (
-                                f"{report.win_count / report.total_trades * 100:.1f}%"
-                                if report.total_trades > 0
-                                else "n/a"
-                            ),
-                            "net_pnl": f"${report.net_pnl:,.2f}",
-                            "max_drawdown": (
-                                f"{report.pnl_pct:.2f}%" if report.pnl_pct is not None else "n/a"
-                            ),
-                        }
+                        engine = PerformanceReportEngine(
+                            core=self.accounting_core, kind=PeriodKind.DAY
+                        )
+                        container = engine.generate()
+                        compact = format_telegram_daily(container)
+                        deep = format_deep_report(container)
                         try:
                             if self.notifier.enabled:
-                                self.notifier.notify_daily_summary(stats)
+                                # MESSAGE 1 = compact summary; MESSAGE 2/3 =
+                                # deep intelligence (deterministic split when
+                                # the deep text exceeds one message).
+                                self.notifier.send(compact, severity="INFO")
+                                if len(deep) > 3500:
+                                    for chunk in _split_telegram_report(deep):
+                                        self.notifier.send(chunk, severity="INFO")
+                                else:
+                                    self.notifier.send(deep, severity="INFO")
                         except Exception:
                             pass  # Telegram failure is isolated
                     except Exception as summary_err:
-                        logger.error("Daily summary failed (isolated)", error=str(summary_err))
+                        logger.error(
+                            "[TELEGRAM_REPORT] event=FAILURE error_type=GENERATION error=%s",
+                            summary_err,
+                        )
 
                 # ACCOUNT HISTORY: bounded background broker-history sync
                 # (watermark + overlap, idempotent). Never on the tick path.
                 if self._history_sync_started:
                     try:
                         await asyncio.to_thread(self.history_sync_worker.tick)
-                    except Exception:
-                        pass
+                    except Exception as wkr_err:
+                        logger.warning("[HISTORY_SYNC_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
                 # PHASE 09: intelligence worker kick (throttled internally). It
                 # runs in a worker thread and is fully failure-isolated; a
@@ -810,8 +919,8 @@ class LiveEngine:
                 if self._intelligence_worker_started:
                     try:
                         await asyncio.to_thread(self.intelligence_worker.tick)
-                    except Exception:
-                        pass
+                    except Exception as wkr_err:
+                        logger.warning("[INTELLIGENCE_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
                 # PHASE 09B: research worker kick (throttled internally, runs in
                 # a worker thread). Research NEVER runs inside the tick
@@ -819,30 +928,30 @@ class LiveEngine:
                 if self._research_worker_started:
                     try:
                         await asyncio.to_thread(self.research_worker.tick)
-                    except Exception:
-                        pass
+                    except Exception as wkr_err:
+                        logger.warning("[RESEARCH_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
                 # PHASE 10: controlled training worker kick (heavy CPU work is
                 # bounded to worker threads; training can NEVER block ticks).
                 if self._training_worker_started:
                     try:
                         await asyncio.to_thread(self.training_worker.tick)
-                    except Exception:
-                        pass
+                    except Exception as wkr_err:
+                        logger.warning("[TRAINING_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
                 # PHASE 11: shadow-aggregation worker kick (bounded, isolated).
                 if self._shadow_worker_started:
                     try:
                         await asyncio.to_thread(self.shadow_worker.tick)
-                    except Exception:
-                        pass
+                    except Exception as wkr_err:
+                        logger.warning("[SHADOW_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
                 # PHASE 12: news intelligence worker kick (bounded, isolated).
                 if self._news_enabled and self._news_worker_started:
                     try:
                         await asyncio.to_thread(self.news_worker.tick)
-                    except Exception:
-                        pass
+                    except Exception as wkr_err:
+                        logger.warning("[NEWS_WORKER] event=KICK_FAILED error=%s", wkr_err)
                 await asyncio.sleep(0.05)
 
             except Exception as e:
@@ -1690,8 +1799,6 @@ class LiveEngine:
 
             # Check Warmup Readiness Gate before Inference
             if not self._inference_enabled or self.warmup_state != "READY":
-                import time
-
                 curr_t = time.time()
 
                 # On new bar or every 15 seconds, attempt to re-evaluate warmup readiness
@@ -1741,8 +1848,6 @@ class LiveEngine:
                 probs = probs_for_mgmt
 
             # Heartbeat radar logging: On EVERY M1 Bar completion or every 10 seconds of active ticks, force log.
-            import time
-
             current_time = time.time()
             force_log = False
             if is_new_bar or (current_time - self._last_radar_log_time) >= 10.0:
@@ -1954,7 +2059,89 @@ class LiveEngine:
                             account=account,
                             symbol_info=self._symbol_info,
                         )
-                        success = self.order_manager.dispatch_order(policy_decision, dynamic_volume)
+                        # SETUP SNAPSHOT (2026-08-18): capture the full chart-state
+                        # fingerprint the AI saw at dispatch (HTF/SMC/ICT structure,
+                        # displacement, sessions, guardian) and attach it to the
+                        # entry context so the closed-trade autopsy can attribute
+                        # every trade to its exact setup.
+                        setup_snapshot: dict = {}
+                        try:
+                            fv_snap = fv
+                            session = (
+                                "".join(
+                                    seg
+                                    for seg, flag in (
+                                        ("tokyo", bool(getattr(fv_snap, "session_tokyo", False))),
+                                        ("london", bool(getattr(fv_snap, "session_london", False))),
+                                        ("ny", bool(getattr(fv_snap, "session_ny", False))),
+                                        (
+                                            "ov",
+                                            bool(
+                                                getattr(fv_snap, "session_overlap_london_ny", False)
+                                            ),
+                                        ),
+                                    )
+                                    if flag
+                                )
+                                or "?"
+                            )
+                            setup_snapshot = {
+                                "execution_mode": str(
+                                    getattr(policy_decision, "execution_mode", "")
+                                ),
+                                "model_action": str(getattr(policy_decision, "model_action", "")),
+                                "htf_score": float(
+                                    getattr(policy_decision, "htf_score", 0.0) or 0.0
+                                ),
+                                "smc_score": float(
+                                    getattr(policy_decision, "smc_score", 0.0) or 0.0
+                                ),
+                                "conf_before": float(
+                                    getattr(policy_decision, "confidence_before_filters", 0.0)
+                                    or 0.0
+                                ),
+                                "conf_after": float(
+                                    getattr(policy_decision, "confidence_after_filters", 0.0) or 0.0
+                                ),
+                                "buy_prob": float(
+                                    getattr(policy_decision, "buy_probability", None) or 0.0
+                                ),
+                                "sell_prob": float(
+                                    getattr(policy_decision, "sell_probability", None) or 0.0
+                                ),
+                                "disp": float(
+                                    getattr(fv_snap, "live_tick_displacement", 0.0) or 0.0
+                                ),
+                                "atr": float(getattr(fv_snap, "atr_m1", 0.0) or 0.0),
+                                "trend": float(getattr(fv_snap, "trend_strength", 0.0) or 0.0),
+                                "sweep_sig": int(
+                                    getattr(fv_snap, "liquidity_sweep_signal", 0) or 0
+                                ),
+                                "ob_type": int(getattr(fv_snap, "order_block_type", 0) or 0),
+                                "fvg_bull": bool(getattr(fv_snap, "fvg_bullish_active", False)),
+                                "fvg_bear": bool(getattr(fv_snap, "fvg_bearish_active", False)),
+                                "choch_bull": bool(getattr(fv_snap, "choch_bullish", False)),
+                                "choch_bear": bool(getattr(fv_snap, "choch_bearish", False)),
+                                "broke_high": bool(getattr(fv_snap, "broke_previous_high", False)),
+                                "broke_low": bool(getattr(fv_snap, "broke_previous_low", False)),
+                                "z_score": float(
+                                    getattr(fv_snap, "cross_asset_z_score", 0.0) or 0.0
+                                ),
+                                "h4": float(getattr(fv_snap, "htf_h4_trend", 0.0) or 0.0),
+                                "h1": float(getattr(fv_snap, "htf_h1_momentum", 0.0) or 0.0),
+                                "m30": float(getattr(fv_snap, "htf_m30_structure", 0.0) or 0.0),
+                                "m15": float(getattr(fv_snap, "htf_m15_confirmation", 0.0) or 0.0),
+                                "session": session,
+                                "guardian": str(getattr(policy_decision, "guardian_status", "")),
+                                "rr": float(
+                                    getattr(policy_decision, "risk_reward_ratio", 0.0) or 0.0
+                                ),
+                            }
+                        except Exception as snap_err:
+                            logger.warning("[ENTRY] setup snapshot failed", error=str(snap_err))
+                        success = self.order_manager.dispatch_order(
+                            policy_decision, dynamic_volume, setup_snapshot=setup_snapshot
+                        )
                         logger.info(
                             f"[info] DISPATCH ORDER action={policy_decision.action.value} price={policy_decision.proposed_entry} volume={dynamic_volume}"
                         )
@@ -2149,8 +2336,6 @@ class LiveEngine:
         """
         Intelligent Hedging / Counter-Position Policy (PyTorch & Regime-Driven).
         """
-        import time
-
         from nexus_scalp.domain.enums import ActionType, OrderType
         from nexus_scalp.domain.models import TradeProposal
         from nexus_scalp.features.regime_classifier import RegimeType

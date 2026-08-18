@@ -56,6 +56,16 @@ class AuditRepository:
         self._db_url = db_url
         self._is_sqlite = db_url.startswith("sqlite")
         self._db_path = self._db_url.replace("sqlite:///", "") if self._is_sqlite else ""
+        # sqlite:///:memory: opens a PRIVATE empty DB per connection; the
+        # background worker would never see the schema created here. Use a
+        # shared named in-memory DB (file::memory:?cache=shared) so worker
+        # and setup share one schema (2026-08-18 full-suite fix).
+        if self._db_path == ":memory:":
+            self._db_path = "file::memory:?cache=shared"
+        # Hold ONE persistent connection for the shared in-memory DB; the
+        # shared cache is dropped when the last connection closes, so the
+        # worker must reuse THIS connection (2026-08-18 full-suite fix).
+        self._shared_conn: sqlite3.Connection | None = None
 
         self._flush_interval = flush_interval_sec
         self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
@@ -86,17 +96,25 @@ class AuditRepository:
             # NOTE: `with sqlite3.connect(...)` only wraps a transaction, it does NOT
             # close the connection. Leaking it keeps the .db/-wal/-shm files locked on
             # Windows, which breaks temp-directory cleanup in tests and log rotation.
-            conn = sqlite3.connect(self._db_path, timeout=10.0)
+            conn = sqlite3.connect(
+                self._db_path, timeout=10.0, uri=self._db_path.startswith("file::")
+            )
             try:
                 # Enable Write-Ahead Logging for high concurrency without locks
-                conn.execute("PRAGMA journal_mode = WAL;")
+                if self._db_path.startswith("file::"):
+                    conn.execute("PRAGMA journal_mode = MEMORY;")
+                else:
+                    conn.execute("PRAGMA journal_mode = WAL;")
                 conn.execute("PRAGMA synchronous = NORMAL;")
                 conn.execute("PRAGMA temp_store = MEMORY;")
 
                 self._create_sqlite_tables(conn)
                 conn.commit()
             finally:
-                conn.close()
+                if self._db_path.startswith("file::"):
+                    self._shared_conn = conn  # keep alive: shared cache needs it
+                else:
+                    conn.close()
             logger.info("Initialized High-Performance SQLite WAL storage", db_path=self._db_path)
 
     def _create_sqlite_tables(self, conn: sqlite3.Connection) -> None:
@@ -209,6 +227,16 @@ class AuditRepository:
             );
             """
         )
+        # Trade-forensics index: the audit_orders ticket/order_id lookup is a
+        # per-ticket scan without this (EXPLAIN: SCAN audit_orders). ticket is
+        # the broker ticket of the lifecycle; order_id is the engine request id.
+        # Idempotent, migration-safe on existing + fresh databases.
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_orders_ticket
+            ON audit_orders (ticket, order_id)
+            """
+        )
 
         # =====================================================================
         # INSTITUTIONAL FINANCIAL ACCOUNTING LEDGER (One autopsy row per trade)
@@ -298,6 +326,10 @@ class AuditRepository:
             ("account_balance_after", "REAL DEFAULT 0.0"),
             ("account_equity_after", "REAL DEFAULT 0.0"),
             ("drawdown_percent_after", "REAL DEFAULT 0.0"),
+            # DEBUG-AUDIT (2026-08-18): full chart-state fingerprint at dispatch
+            # (HTF/SMC/ICT structure, displacement, sessions, guardian) for
+            # post-hoc setup/strategy attribution of every closed trade.
+            ("entry_setup_snapshot", "TEXT DEFAULT '{}'"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE audit_ledger ADD COLUMN {col_def[0]} {col_def[1]};")
@@ -910,7 +942,7 @@ class AuditRepository:
         if not self._is_sqlite:
             return
 
-        conn = sqlite3.connect(self._db_path, timeout=10.0)
+        conn = sqlite3.connect(self._db_path, timeout=10.0, uri=self._db_path.startswith("file::"))
         q = self._queue  # local ref: never GC'd while the loop runs (BUG-058)
 
         while self._running or not q.empty():
@@ -1033,6 +1065,12 @@ class AuditRepository:
                 "rejection_reason": str(
                     getattr(proposal, "rejection_reason", "") or proposal.reason_code
                 ),
+                # BUG-072/073: execution-state blocks (exposure/pending-state)
+                # are distinguished from model rejections so learning never
+                # mistakes an unavailable execution slot for "the model chose
+                # not to trade".
+                "blocked_by": str(getattr(proposal, "blocked_by", "") or ""),
+                "decision_stage": str(getattr(proposal, "decision_stage", "") or ""),
             }
         )
 
@@ -1322,6 +1360,7 @@ class AuditRepository:
         account_balance_after: float = 0.0,
         account_equity_after: float = 0.0,
         drawdown_percent_after: float = 0.0,
+        entry_setup_snapshot: str = "{}",
     ) -> None:
         """
         Writes EXACTLY ONE data-rich autopsy row per closed trade.
@@ -1377,9 +1416,10 @@ class AuditRepository:
              order_id, open_time, close_time, duration_seconds, open_price, close_price,
              gross_pnl_usd, net_pnl_usd, entry_reason, ai_confidence_at_open,
              market_regime_at_open, was_sl_modified, MAE_usd, MFE_usd,
-             account_balance_after, account_equity_after, drawdown_percent_after)
+             account_balance_after, account_equity_after, drawdown_percent_after,
+             entry_setup_snapshot)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticket) DO UPDATE SET
                 exit_price=excluded.exit_price,
                 status=excluded.status,
@@ -1410,7 +1450,8 @@ class AuditRepository:
                 MFE_usd=excluded.MFE_usd,
                 account_balance_after=excluded.account_balance_after,
                 account_equity_after=excluded.account_equity_after,
-                drawdown_percent_after=excluded.drawdown_percent_after
+                drawdown_percent_after=excluded.drawdown_percent_after,
+                entry_setup_snapshot=CASE WHEN excluded.entry_setup_snapshot != '{}' THEN excluded.entry_setup_snapshot ELSE audit_ledger.entry_setup_snapshot END
         """
         args = (
             ticket,
@@ -1448,6 +1489,7 @@ class AuditRepository:
             float(account_balance_after),
             float(account_equity_after),
             float(drawdown_percent_after),
+            entry_setup_snapshot,
         )
         try:
             self._queue.put_nowait((query, args))
@@ -2019,4 +2061,10 @@ class AuditRepository:
             self._worker_thread = None
         else:
             self._worker_thread = None
+        if self._shared_conn is not None:
+            try:
+                self._shared_conn.close()
+            except Exception:
+                pass
+            self._shared_conn = None
         logger.info("Audit Database safely closed.")

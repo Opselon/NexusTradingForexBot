@@ -24,6 +24,7 @@ Invariants:
     - Full Traceability: Every modification, partial close, or cancellation is audited.
 """
 
+import json
 import math
 import time
 from collections import deque
@@ -453,6 +454,10 @@ class OrderLifecycleManager:
         self._entry_confidences: dict[int, float] = {}
         self._entry_regimes: dict[int, str] = {}
         self._entry_order_ids: dict[int, str] = {}
+        # SETUP SNAPSHOT (2026-08-18): ticket -> full chart-state fingerprint at
+        # dispatch (HTF/SMC/ICT structure, displacement, sessions, guardian).
+        # Carried to the closed-trade autopsy for setup/strategy attribution.
+        self._entry_setup_snapshots: dict[int, dict[str, Any]] = {}
         #: Ticket -> True once trailing/breakeven actually moved the broker-side SL.
         self._sl_modified_flags: dict[int, bool] = {}
         #: Ticket -> deterministic profit-protection state machine (monotonic peak
@@ -470,8 +475,23 @@ class OrderLifecycleManager:
         self._last_account_balance: float = 0.0
         self._last_account_equity: float = 0.0
         self._peak_equity: float = 0.0
-        #: Entry context staged by the policy/engine before the ticket exists.
-        self._pending_entry_context: dict[str, Any] | None = None
+        #: Entry context staged by the policy/engine before the ticket exists
+        #: (BUG-081). Bounded registry keyed by the originating order/request id
+        #: so EVERY sibling ticket of a broker split-fill resolves the SAME
+        #: immutable entry context (order_id, reason, confidence, regime,
+        #: expected entry, dispatch clock, setup snapshot). Entries are removed
+        #: once the fill family has been bound (idempotent) or after a stale TTL.
+        self._pending_context_registry: dict[str, dict[str, Any]] = {}
+        #: monotonic dispatch clock per order_id -> fractional-hours age used by
+        #: the stale-entry sweep (bounded memory).
+        self._pending_context_ts: dict[str, float] = {}
+        #: order_id -> set of tickets already bound (idempotent family tracking).
+        self._context_bound_tickets: dict[str, set[int]] = {}
+        #: tickets with NO staging context ever registered (provenance gap,
+        #: BUG-081 error-path observability; entries are distinct from legit 0.0).
+        self._unbound_ticket_contexts: dict[int, str] = {}
+        self._PENDING_CONTEXT_TTL_SEC: float = 3600.0
+        self._PENDING_CONTEXT_MAX_ENTRIES: int = 64
         #: Phase 14: tickets already reconciled from broker history (dedup guard
         #: for the reconciliation close-loop across repeated passes/restarts).
         self._reconcile_seen: dict[int, bool] = {}
@@ -488,25 +508,64 @@ class OrderLifecycleManager:
         market_regime: str = "",
         expected_entry: float = 0.0,
         dispatch_monotonic: float = 0.0,
+        setup_snapshot: dict[str, Any] | None = None,
     ) -> None:
         """
         Stages the entry context of the order that is about to be dispatched.
 
-        The broker ticket does not exist yet at dispatch time, so the context is held
-        here and bound to the ticket on the first management pass that observes it.
+        (BUG-081) The context is held in a BOUNDED registry keyed by the
+        originating order/request id so that EVERY sibling ticket of a broker
+        split-fill resolves the SAME immutable context -- not just the first
+        ticket. A later `register_entry_context` for a NEW order id naturally
+        replaces the previous entry (one dispatch at a time), but a multi-ticket
+        fill family keeps its context until the family has been fully bound or
+        the stale TTL expires.
 
         `expected_entry` and `dispatch_monotonic` are Phase 08 execution-quality
         evidence: they let the closing autopsy compute real slippage and fill
         latency instead of guessing.
         """
-        self._pending_entry_context = {
+        ctx = {
             "order_id": order_id,
             "entry_reason": entry_reason,
             "ai_confidence": float(ai_confidence or 0.0),
             "market_regime": market_regime,
             "expected_entry": float(expected_entry or 0.0),
             "dispatch_monotonic": float(dispatch_monotonic or 0.0),
+            "setup_snapshot": dict(setup_snapshot or {}),
         }
+        key = order_id or ""
+        self._pending_context_registry[key] = ctx
+        self._pending_context_ts[key] = time.monotonic()
+        self._sweep_stale_pending_contexts()
+
+    def _sweep_stale_pending_contexts(self) -> None:
+        """Evicts stale / over-capacity pending-context registry entries.
+
+        Bounded memory guard: entries older than `_PENDING_CONTEXT_TTL_SEC`
+        or beyond `_PENDING_CONTEXT_MAX_ENTRIES` (oldest first) are dropped.
+        A dropped context is an explicit provenance gap for tickets that
+        arrive after the TTL -- handled by the caller's error path, never
+        silently as legitimate zero confidence.
+        """
+        now = time.monotonic()
+        stale = [
+            k
+            for k, ts in self._pending_context_ts.items()
+            if now - ts > self._PENDING_CONTEXT_TTL_SEC
+        ]
+        for k in stale:
+            self._pending_context_registry.pop(k, None)
+            self._pending_context_ts.pop(k, None)
+            self._context_bound_tickets.pop(k, None)
+        if len(self._pending_context_registry) > self._PENDING_CONTEXT_MAX_ENTRIES:
+            oldest = sorted(self._pending_context_ts.items(), key=lambda kv: kv[1])[
+                : len(self._pending_context_registry) - self._PENDING_CONTEXT_MAX_ENTRIES
+            ]
+            for k, _ in oldest:
+                self._pending_context_registry.pop(k, None)
+                self._pending_context_ts.pop(k, None)
+                self._context_bound_tickets.pop(k, None)
 
     def update_account_snapshot(self, account: Any, peak_equity: float | None = None) -> None:
         """
@@ -731,12 +790,19 @@ class OrderLifecycleManager:
             )
         return round(clamped, 2)
 
-    def dispatch_order(self, decision: Any, volume: float) -> bool:
+    def dispatch_order(
+        self, decision: Any, volume: float, setup_snapshot: dict[str, Any] | None = None
+    ) -> bool:
         """
         Unified dispatch router for new entry signals (BUY, SELL, BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP).
 
         Enforces, in order: MAX_TOTAL_EXPOSURE, the HARD_MAX_LOTS clamp via the risk
         engine, and entry-context capture for the ledger autopsy.
+
+        `setup_snapshot` (2026-08-18): the full chart-state fingerprint (HTF/SMC/ICT
+        structure, displacement, sessions, guardian) captured at dispatch by the
+        caller, attached to the entry context and persisted in the closed-trade
+        autopsy row for post-hoc strategy/setup attribution.
         """
         action = decision.action
         symbol = decision.symbol
@@ -747,12 +813,16 @@ class OrderLifecycleManager:
         # --- MAX EXPOSURE ENFORCEMENT (1 position OR 1 pending, engine-wide) ---
         if not self._is_exposure_available(symbol=symbol):
             positions, pendings = self.count_total_exposure(symbol=symbol)
+            # BUG-072/073: the internal view is broker-reconciled every tick
+            # (manage_active_positions + reconcile_pending_state) and after
+            # every verified cancel, so this block reflects real broker state.
             logger.warning(
-                "MAX_TOTAL_EXPOSURE_BLOCKED: dispatch rejected",
+                "[ENTRY_BLOCKED] layer=EXPOSURE reason=MAX_EXPOSURE_REACHED "
+                "open_positions=%s pending_internal=%s max_total_exposure=%s stale_state=false",
+                positions,
+                pendings,
+                MAX_TOTAL_EXPOSURE,
                 action=getattr(action, "value", str(action)),
-                active_positions=positions,
-                active_pendings=pendings,
-                max_total_exposure=MAX_TOTAL_EXPOSURE,
             )
             return False
 
@@ -775,6 +845,7 @@ class OrderLifecycleManager:
             market_regime=str(getattr(decision, "regime", "") or ""),
             expected_entry=float(getattr(decision, "proposed_entry", 0.0) or 0.0),
             dispatch_monotonic=time.monotonic(),
+            setup_snapshot=setup_snapshot,
         )
 
         logger.info(
@@ -882,25 +953,113 @@ class OrderLifecycleManager:
         return "PURE_AI"
 
     def _bind_pending_entry_context(self, ticket: int, decision_order_id: str = "") -> None:
-        """Binds the most recently staged entry context to a freshly observed ticket."""
-        ctx = self._pending_entry_context
+        """Binds the staged entry context to a freshly observed ticket.
+
+        (BUG-081) Resolves the context from the bounded registry keyed by the
+        originating order/request id. Every ticket of a broker split-fill
+        resolves the SAME immutable context (order_id, reason, confidence,
+        regime, expected entry, dispatch clock, setup snapshot). The registry
+        entry is removed only when the WHOLE fill family has been bound
+        (idempotent family tracking via `_context_bound_tickets`), so a
+        delayed sibling ticket never loses its provenance.
+
+        When NO context was ever staged for the order, the ticket is marked in
+        `_unbound_ticket_contexts` (distinct from a legitimate 0.0 confidence)
+        with the reason -- never silently treated as a zero-confidence entry.
+        """
+        bound = False
+        reason_gap = ""
+        # Resolve the staging context, in order:
+        #   1. explicit decision_order_id (caller-provided parent link)
+        #   2. the "" legacy slot (order without an explicit id)
+        #   3. the SINGLE most recent not-fully-bound dispatch family (the
+        #      current in-flight order; broker tickets arrive without a parent
+        #      id at bind time, BUG-081). This is the split-fill fix: every
+        #      sibling of the same fill still resolves the same context.
+        ctx = None
+        if decision_order_id:
+            ctx = self._pending_context_registry.get(decision_order_id)
         if ctx is None:
+            ctx = self._pending_context_registry.get("")
+        if ctx is None:
+            for oid in sorted(
+                self._pending_context_ts, key=self._pending_context_ts.get, reverse=True
+            ):
+                family = self._context_bound_tickets.get(oid, set())
+                # A family still open (tickets live) is the current dispatch.
+                if any(t in self._live_tickets_cache for t in family):
+                    ctx = self._pending_context_registry.get(oid)
+                    if ctx is not None:
+                        break
+            # Fallback: the newest registered context (front-of-line dispatch).
+            if ctx is None and self._pending_context_ts:
+                newest = max(self._pending_context_ts, key=self._pending_context_ts.get)
+                ctx = self._pending_context_registry.get(newest)
+        if ctx is None:
+            reason_gap = "NO_STAGED_CONTEXT"
+        else:
+            self._entry_reasons[ticket] = ctx.get("entry_reason", "PURE_AI") or "PURE_AI"
+            self._entry_confidences[ticket] = float(ctx.get("ai_confidence", 0.0) or 0.0)
+            self._entry_regimes[ticket] = str(ctx.get("market_regime", "") or "")
+            self._entry_order_ids[ticket] = str(ctx.get("order_id", "") or decision_order_id)
+            # PHASE 08 execution-quality evidence.
+            self._entry_expected_price[ticket] = float(ctx.get("expected_entry", 0.0) or 0.0)
+            # SETUP SNAPSHOT (2026-08-18): full chart-state fingerprint captured at
+            # dispatch, carried to the closed-trade autopsy for setup attribution.
+            self._entry_setup_snapshots[ticket] = dict(ctx.get("setup_snapshot", {}) or {})
+            dispatch_mono = float(ctx.get("dispatch_monotonic", 0.0) or 0.0)
+            if dispatch_mono > 0.0:
+                self._entry_fill_latency_ms[ticket] = max(
+                    0.0, (time.monotonic() - dispatch_mono) * 1000.0
+                )
+            bound = True
+            # Idempotent family tracking: keep the context until EVERY ticket of
+            # the fill family has been bound. The family is defined by the set of
+            # tickets that ever resolved this order id; when this ticket is the
+            # first of the family it stays registered so delayed siblings bind.
+            oid = self._entry_order_ids.get(ticket) or decision_order_id or ""
+            family = self._context_bound_tickets.setdefault(oid, set())
+            family.add(ticket)
+            logger.info(
+                "[TRADE_LINEAGE] context_bound=true",
+                parent_execution_id=oid,
+                child_ticket=ticket,
+                family_size=len(family),
+            )
+        if not bound:
+            # Provenance gap: never silence missing context as legitimate 0.0.
+            self._unbound_ticket_contexts[ticket] = reason_gap
             self._entry_reasons.setdefault(ticket, "PURE_AI")
             self._entry_order_ids.setdefault(ticket, decision_order_id)
-            return
-
-        self._entry_reasons[ticket] = ctx.get("entry_reason", "PURE_AI") or "PURE_AI"
-        self._entry_confidences[ticket] = float(ctx.get("ai_confidence", 0.0) or 0.0)
-        self._entry_regimes[ticket] = str(ctx.get("market_regime", "") or "")
-        self._entry_order_ids[ticket] = str(ctx.get("order_id", "") or decision_order_id)
-        # PHASE 08 execution-quality evidence.
-        self._entry_expected_price[ticket] = float(ctx.get("expected_entry", 0.0) or 0.0)
-        dispatch_mono = float(ctx.get("dispatch_monotonic", 0.0) or 0.0)
-        if dispatch_mono > 0.0:
-            self._entry_fill_latency_ms[ticket] = max(
-                0.0, (time.monotonic() - dispatch_mono) * 1000.0
+            logger.warning(
+                "[TRADE_LINEAGE] context_bound=false",
+                child_ticket=ticket,
+                reason=reason_gap,
+                decision_order_id=decision_order_id,
             )
-        self._pending_entry_context = None
+
+    def _prune_bound_context(self, order_id: str) -> None:
+        """Removes a fully-bound context family from the registry.
+
+        Called from the close path after the FINAL sibling of the fill family
+        has closed, so the registry cannot grow without bound. Idempotent.
+        """
+        if not order_id:
+            return
+        family = self._context_bound_tickets.get(order_id, set())
+        if not family:
+            return
+        # Only prune when every bound ticket has been cleaned up (closed).
+        if any(t in self._live_tickets_cache for t in family):
+            return
+        self._pending_context_registry.pop(order_id, None)
+        self._pending_context_ts.pop(order_id, None)
+        self._context_bound_tickets.pop(order_id, None)
+        logger.info(
+            "[TRADE_LINEAGE] context_pruned",
+            parent_execution_id=order_id,
+            family_size=len(family),
+        )
 
     # =========================================================================
     # MODULE B: AI POSITION REVERSAL PROTOCOL
@@ -973,7 +1132,7 @@ class OrderLifecycleManager:
                 )
                 if self.notifier:
                     try:
-                        self.notifier.notify_manual_close(
+                        self.notifier.notify_canonical_close(
                             ticket=pos.ticket,
                             symbol=pos.symbol,
                             entry=pos.price_open,
@@ -984,7 +1143,8 @@ class OrderLifecycleManager:
                             ),
                             profit_usd=pos.profit,
                             duration_sec=0.0,
-                            reason=f"AI_REVERSAL_EXIT -> {getattr(new_action, 'value', new_action)}",
+                            exit_reason=ExitMechanism.AI_REVERSAL_EXIT,
+                            evidence=f"AI_REVERSAL -> {getattr(new_action, 'value', new_action)}",
                             reply_to_message_id=self._order_message_ids.get(pos.ticket),
                         )
                     except Exception:
@@ -1119,7 +1279,9 @@ class OrderLifecycleManager:
             return success
 
         elif action == ActionType.CANCEL_ORDER:
-            success = self.mt5_adapter.cancel_pending_order(ticket=ticket)
+            # BUG-072/073: broker-verified cancellation — never release the
+            # exposure slot on a send-result alone.
+            success = self.cancel_pending_order_verified(ticket=ticket)
             logger.info(
                 f"*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER *** Ticket: {ticket} | Action: {action.value} | Lots: 0.0"
             )
@@ -1140,6 +1302,296 @@ class OrderLifecycleManager:
             return success
 
         return False
+
+    # =========================================================================
+    # BROKER-VERIFIED PENDING CANCELLATION (BUG-072/073)
+    # -------------------------------------------------------------------------
+    # A pending order is considered CANCELED only when broker state confirms
+    # it. `cancel_pending_order()` returning False (e.g. retcode 0 = request
+    # never reached the server) must NEVER release the exposure slot. The
+    # helper below sends the cancel, then verifies with orders_get() and
+    # history_orders_get() before declaring success.
+    # =========================================================================
+    def _pending_broker_state(self, ticket: int, symbol: str | None = None) -> str:
+        """Returns broker truth for a pending ticket.
+
+        ACTIVE  - the ticket is still listed as an active pending order.
+        GONE    - the ticket is provably gone: absent from the active list AND
+                  the send already succeeded, OR history shows a terminal state.
+        UNKNOWN - neither can be positively established (query error, failed
+                  send with empty/ambiguous active list, no history record).
+        """
+        query_error = False
+        active_result: str | None = None  # None = query unavailable
+        try:
+            get_pending_fn = getattr(self.adapter, "get_pending_orders", None)
+            if get_pending_fn:
+                pendings = get_pending_fn(symbol=symbol)
+                if pendings is None:
+                    query_error = True
+                else:
+                    active_result = "ACTIVE"
+                    for p in pendings:
+                        if int(self._pending_field(p, "ticket", "order_id") or 0) == int(ticket):
+                            return "ACTIVE"
+                    active_result = "GONE"
+        except Exception as verify_err:
+            query_error = True
+            logger.warning(
+                "[PENDING_ORDER] event=CANCEL_VERIFY error=orders_get_failed context=fallback_to_history",
+                ticket=ticket,
+                error=str(verify_err),
+            )
+        # Active-order query unavailable/errored: check history_orders_get for a
+        # terminal state (CANCELED=2, PARTIAL=3, FILLED=4, REJECTED=5, EXPIRED=6)
+        # which positively proves the order is done.
+        hist_terminal = None  # None = no history evidence, True/False = terminal/active
+        try:
+            hist_fn = getattr(self.adapter, "get_history_orders", None)
+            if hist_fn:
+                from datetime import UTC as _UTC
+                from datetime import datetime as _dt
+                from datetime import timedelta as _td
+
+                now = _dt.now(_UTC)
+                hist = hist_fn(now - _td(hours=1), now, symbol=symbol)
+                for h in hist or []:
+                    if int(getattr(h, "ticket", 0) or 0) == int(ticket):
+                        st = int(getattr(h, "state", 0) or 0)
+                        if st in (0, 1, 7, 8, 9):  # STARTED/PLACED/REQUEST_*
+                            hist_terminal = False
+                        else:
+                            hist_terminal = True  # canceled/filled/rejected/expired
+                        break
+        except Exception as hist_err:
+            query_error = True
+            logger.warning(
+                "[PENDING_ORDER] event=CANCEL_VERIFY error=history_query_failed",
+                ticket=ticket,
+                error=str(hist_err),
+            )
+        if active_result == "ACTIVE" or hist_terminal is False:
+            return "ACTIVE"
+        if active_result == "GONE" or hist_terminal is True:
+            return "GONE"
+        if query_error:
+            return "UNKNOWN"
+        return "UNKNOWN"
+
+    def cancel_pending_order_verified(self, ticket: int, symbol: str | None = None) -> bool:
+        """Sends the cancel request, THEN verifies broker state.
+
+        Returns True ONLY when broker truth confirms the order is no longer
+        active (ACTIVE->GONE, or a DONE send followed by an absent active
+        listing). Returns False while the order is still active OR the state
+        is UNKNOWN — the exposure slot stays occupied. On confirmation the
+        internal live-tickets cache is refreshed from the broker view so a
+        stale internal pending can never hold the slot.
+        """
+        cancel_fn = getattr(self.adapter, "cancel_pending_order", None)
+        if cancel_fn is None:
+            logger.warning(
+                "[PENDING_ORDER] event=CANCEL_REQUEST error=no_cancel_api ticket=%s",
+                ticket,
+            )
+            return False
+        logger.info("[PENDING_ORDER] event=CANCEL_REQUEST ticket=%s", ticket)
+        try:
+            sent = bool(cancel_fn(ticket=ticket))
+        except Exception as cancel_err:
+            logger.error(
+                "[PENDING_ORDER] event=CANCEL_REQUEST error=cancel_raised ticket=%s",
+                ticket,
+                error=str(cancel_err),
+            )
+            sent = False
+
+        # Broker truth decides, not the send result.
+        state = self._pending_broker_state(ticket=ticket, symbol=symbol)
+        if state == "ACTIVE":
+            logger.warning(
+                "[PENDING_ORDER] event=CANCEL_FAILED ticket=%s broker_state=STILL_ACTIVE send_result=%s",
+                ticket,
+                sent,
+            )
+            return False
+        if state == "GONE":
+            logger.info(
+                "[PENDING_ORDER] event=CANCEL_CONFIRMED ticket=%s send_result=%s",
+                ticket,
+                sent,
+            )
+            self._pending_orders_setup_time.pop(ticket, None)
+            try:
+                self.refresh_live_tickets_cache(symbol=symbol)
+            except Exception as refresh_err:
+                logger.error(
+                    "[PENDING_ORDER] event=CANCEL_CONFIRMED error=cache_refresh_failed",
+                    ticket=ticket,
+                    error=str(refresh_err),
+                )
+            return True
+        # UNKNOWN: a DONE send with a (possibly stale) empty active list is
+        # still broker-positive enough to confirm; anything else keeps the lock.
+        if sent and state == "UNKNOWN":
+            logger.info(
+                "[PENDING_ORDER] event=CANCEL_CONFIRMED ticket=%s state=UNKNOWN_but_done_send",
+                ticket,
+            )
+            self._pending_orders_setup_time.pop(ticket, None)
+            try:
+                self.refresh_live_tickets_cache(symbol=symbol)
+            except Exception as refresh_err:
+                logger.error(
+                    "[PENDING_ORDER] event=CANCEL_CONFIRMED error=cache_refresh_failed",
+                    ticket=ticket,
+                    error=str(refresh_err),
+                )
+            return True
+        logger.warning(
+            "[PENDING_ORDER] event=CANCEL_UNRESOLVED ticket=%s state=%s send_result=%s "
+            "-> exposure slot remains occupied",
+            ticket,
+            state,
+            sent,
+        )
+        return False
+
+    def cancel_pending_order_with_retry(
+        self, ticket: int, symbol: str | None = None, max_attempts: int = 3
+    ) -> int:
+        """Bounded, idempotent cancellation retry.
+
+        Returns the number of cancel attempts used (0 <= n <= max_attempts).
+        Each attempt sends the cancel request and verifies broker state;
+        stops as soon as the broker confirms the order is gone. Never creates
+        a cancellation storm and never releases the exposure slot early.
+        """
+        attempts = 0
+        for _ in range(max(1, int(max_attempts))):
+            attempts += 1
+            if self.cancel_pending_order_verified(ticket=ticket, symbol=symbol):
+                break
+            time.sleep(0.05)  # tiny backoff between bounded retries
+        return attempts
+
+    def refresh_live_tickets_cache(
+        self, symbol: str | None = None, current_tick: TickData | None = None
+    ) -> None:
+        """Rebuilds the internal live-tickets cache from the BROKER view.
+
+        Broker truth wins: pendings present on the broker are added, pendings
+        absent are dropped. Used after every cancellation and by the periodic
+        reconciliation loop so a stale internal pending can never hold the
+        exposure slot after the broker already removed the order.
+        """
+        positions: list[Position] = []
+        try:
+            positions = self.adapter.get_positions(symbol=symbol) or []
+        except Exception as pos_err:
+            logger.error("[RECONCILE] positions query failed (isolated)", error=str(pos_err))
+        with self._live_tickets_lock:
+            new_cache: dict[int, dict[str, Any]] = {}
+            for pos in positions:
+                new_cache[pos.ticket] = {
+                    "ticket": pos.ticket,
+                    "symbol": pos.symbol,
+                    "price": pos.price_open,
+                    "magic": getattr(pos, "magic", 888101),
+                    "type": "POSITION",
+                    "direction": pos.type.value,
+                    "volume": pos.volume,
+                    "sl": pos.sl,
+                    "tp": pos.tp,
+                    "profit": pos.profit,
+                }
+            try:
+                get_pending_fn = getattr(self.adapter, "get_pending_orders", None)
+                if get_pending_fn:
+                    pendings = get_pending_fn(symbol=symbol)
+                    if pendings:
+                        for pending in pendings:
+                            ticket = self._pending_field(pending, "ticket", "order_id")
+                            if not ticket:
+                                continue
+                            pending_type = self._pending_field(pending, "type", "order_type")
+                            pending_dir = (
+                                "BUY"
+                                if "BUY"
+                                in str(getattr(pending_type, "value", pending_type)).upper()
+                                else "SELL"
+                            )
+                            new_cache[int(ticket)] = {
+                                "ticket": int(ticket),
+                                "symbol": self._pending_field(
+                                    pending, "symbol", default=symbol or ""
+                                ),
+                                "price": self._pending_field(
+                                    pending, "price_open", "price", default=0.0
+                                ),
+                                "magic": self._pending_field(
+                                    pending, "magic", "magic_number", default=888101
+                                ),
+                                "type": "PENDING",
+                                "direction": pending_dir,
+                                "volume": self._pending_field(pending, "volume", default=0.0),
+                            }
+            except Exception as pending_err:
+                logger.error(
+                    "[RECONCILE] pending query failed (isolated)",
+                    error=str(pending_err),
+                )
+            self._live_tickets_cache = new_cache
+
+    def reconcile_pending_state(
+        self, symbol: str | None = None, current_tick: TickData | None = None
+    ) -> dict[str, Any]:
+        """Compares internal vs broker pending state and repairs the internal
+        view so it reflects broker truth (broker wins).
+
+        Returns a structured report:
+          {"pending_internal": n, "pending_broker": m, "mismatch": bool,
+           "repaired": bool, "broker_error": bool}
+        """
+        internal_pendings = 0
+        with self._live_tickets_lock:
+            for info in self._live_tickets_cache.values():
+                if info.get("type") == "PENDING":
+                    internal_pendings += 1
+        broker_pendings = 0
+        broker_error = False
+        try:
+            get_pending_fn = getattr(self.adapter, "get_pending_orders", None)
+            if get_pending_fn:
+                pendings = get_pending_fn(symbol=symbol)
+                if pendings is None:
+                    broker_error = True
+                else:
+                    broker_pendings = len(pendings)
+        except Exception as rec_err:
+            broker_error = True
+            logger.error(
+                "[EXECUTION_RECONCILIATION] event=MISMATCH error=broker_query_failed",
+                error=str(rec_err),
+            )
+        mismatch = not broker_error and internal_pendings != broker_pendings
+        repaired = False
+        if mismatch:
+            logger.warning(
+                "[EXECUTION_RECONCILIATION] event=MISMATCH "
+                "pending_internal=%s pending_broker=%s -> repairing internal view",
+                internal_pendings,
+                broker_pendings,
+            )
+            self.refresh_live_tickets_cache(symbol=symbol, current_tick=current_tick)
+            repaired = True
+        return {
+            "pending_internal": internal_pendings,
+            "pending_broker": broker_pendings,
+            "mismatch": bool(mismatch),
+            "repaired": repaired,
+            "broker_error": broker_error,
+        }
 
     def _should_modify_sl(self, ticket: int, new_sl: float) -> bool:
         """Determines if the proposed new stop loss step is significantly different from last sent modification."""
@@ -3531,9 +3983,10 @@ class OrderLifecycleManager:
                     cancel_reason = f"AGE_EXPIRATION ({age:.1f}s > 120.0s)"
 
                 if should_cancel:
-                    cancel_fn = getattr(self.adapter, "cancel_pending_order", None)
-                    if cancel_fn and cancel_fn(ticket=ticket):
-                        self._pending_orders_setup_time.pop(ticket, None)
+                    # BUG-072/073: broker-verified cancellation — the slot is
+                    # released only after broker state confirms the removal.
+                    cancelled_ok = self.cancel_pending_order_verified(ticket=ticket, symbol=symbol)
+                    if cancelled_ok:
                         logger.info(
                             f"[CANCEL TRACE] PENDING ORDER CANCELLED: Ticket {ticket}. Reason: {cancel_reason}. Max Allowed Dist: ${max_allowed_dist:.2f}"
                         )
@@ -3608,7 +4061,10 @@ class OrderLifecycleManager:
                             should_cancel = True
 
                         if should_cancel and pending_ticket:
-                            if cancel_fn(ticket=pending_ticket):
+                            # BUG-072/073: broker-verified cancellation.
+                            if self.cancel_pending_order_verified(
+                                ticket=pending_ticket, symbol=symbol
+                            ):
                                 self._pending_orders_setup_time.pop(pending_ticket, None)
                                 logger.info(
                                     f"FALLING_KNIFE_PROTECTION: Cancelled counter pending order {pending_ticket} due to strong opposite momentum."
@@ -3737,6 +4193,25 @@ class OrderLifecycleManager:
                 logger.error("Failed to query pending orders for cache", error=e)
 
             self._live_tickets_cache = new_cache
+
+        # BUG-072/073: periodic broker-truth reconciliation of the internal
+        # pending/position view. Broker wins; mismatch is repaired. Bounded
+        # and isolated - never disturbs the tick path on failure.
+        try:
+            rep = self.reconcile_pending_state(symbol=symbol, current_tick=current_tick)
+            if rep["mismatch"]:
+                logger.warning(
+                    "[EXECUTION_RECONCILIATION] event=MISMATCH "
+                    "pending_internal=%s pending_broker=%s repaired=%s",
+                    rep["pending_internal"],
+                    rep["pending_broker"],
+                    rep["repaired"],
+                )
+        except Exception as reconcile_err2:
+            logger.error(
+                "[EXECUTION_RECONCILIATION] event=FAILED (isolated)",
+                error=str(reconcile_err2),
+            )
 
         now = current_tick.timestamp
 
@@ -4023,6 +4498,12 @@ class OrderLifecycleManager:
                     account_balance_after=self._last_account_balance,
                     account_equity_after=self._last_account_equity,
                     drawdown_percent_after=self._current_drawdown_percent(),
+                    # DEBUG-AUDIT (2026-08-18): full chart-state fingerprint at
+                    # dispatch persisted to the ledger for post-hoc setup/strategy
+                    # attribution of every closed trade.
+                    entry_setup_snapshot=json.dumps(
+                        self._entry_setup_snapshots.get(dead_ticket, {})
+                    ),
                 )
 
                 # =============================================================
@@ -4142,28 +4623,47 @@ class OrderLifecycleManager:
                                 reply_to_message_id=msg_id,
                             )
                         else:
-                            reason_str = (
-                                "Manual Close via Terminal"
-                                if (matched_deal and matched_deal.get("reason", 0) == 1)
-                                else f"MT5 Reason Code {matched_deal.get('reason', 0) if matched_deal else 'Unknown'}"
-                            )
-                            if matched_deal and matched_deal.get("comment", ""):
-                                reason_str += f" ({matched_deal.get('comment', '')})"
-                            self.notifier.notify_manual_close(
+                            # BUG-081: Telegram consumes the CANONICAL outcome.
+                            # The exit label/evidence come from the same classifier
+                            # result written to the ledger (AccountingCore /
+                            # ExperienceLedger) — never re-inferred from the broker
+                            # reason code, and never defaulted to MANUAL.
+                            evidence_src = "BROKER_DEAL_REASON"
+                            if was_sl_modified:
+                                evidence_src = "ENGINE_SL_MODIFICATION"
+                            elif matched_deal and matched_deal.get("comment", ""):
+                                evidence_src = "BROKER_DEAL_COMMENT"
+                            self.notifier.notify_canonical_close(
                                 ticket=dead_ticket,
                                 symbol=symbol,
                                 entry=entry,
                                 exit_price=exit_price,
                                 profit_usd=total_net_profit,
                                 duration_sec=duration_sec,
-                                reason=reason_str,
+                                exit_reason=exit_mechanism,
+                                evidence=evidence_src,
+                                initial_sl=initial_sl_val,
+                                final_sl=final_sl_val,
+                                strategy=self._entry_reasons.get(dead_ticket, ""),
+                                regime=self._entry_regimes.get(dead_ticket, ""),
+                                confidence=self._entry_confidences.get(dead_ticket, 0.0),
+                                realized_r=orig_risk / max(abs(entry - initial_sl_val), 1e-9)
+                                if (orig_risk and initial_sl_val > 0.0 and entry > 0.0)
+                                else 0.0,
+                                mfe_usd=mfe_usd,
+                                mae_usd=mae_usd,
                                 reply_to_message_id=msg_id,
                             )
                     except Exception as e:
                         logger.error("Failed to notify closed trade", error=e)
 
         for dead_ticket in dead_tickets:
+            oid = self._entry_order_ids.get(dead_ticket, "")
             self._cleanup_ticket_state(dead_ticket)
+            # BUG-081: prune the fill-family context once the final sibling
+            # has closed (bounded registry lifecycle).
+            if oid:
+                self._prune_bound_context(oid)
 
         if not positions:
             return []
@@ -4512,14 +5012,15 @@ class OrderLifecycleManager:
 
                 if self.adapter.close_position(ticket=ticket):
                     if self.notifier:
-                        self.notifier.notify_manual_close(
+                        self.notifier.notify_canonical_close(
                             ticket=ticket,
                             symbol=pos.symbol,
                             entry=pos.price_open,
                             exit_price=price_current,
                             profit_usd=pos.profit,
                             duration_sec=holding_duration,
-                            reason=f"AI_REVERSAL_EXIT ({ai_flip_action.value})",
+                            exit_reason=ExitMechanism.AI_REVERSAL_EXIT,
+                            evidence=f"AI_REVERSAL ({ai_flip_action.value})",
                             reply_to_message_id=msg_id,
                         )
 

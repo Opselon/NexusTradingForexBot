@@ -47,6 +47,7 @@ ALL_CATEGORIES = [
     "TRAINING",
     "SHADOW",
     "ACCOUNTING",
+    "TELEGRAM",
 ]
 
 # Subsystems that count toward the READY verdict.
@@ -459,6 +460,52 @@ class HealthEngine:
         needs = {"audit_ledger", "audit_account_snapshots"}
         return self._check_phase("ACCOUNTING", tables, needs, "Accounting")
 
+    def check_telegram(self) -> HealthEntry:
+        """TELEGRAM health: settings DB + secret store + worker state.
+
+        Never displays the token. Never makes network calls from the doctor
+        (the diagnostic send is an explicit separate action).
+        """
+        try:
+            from nexus_scalp.settings import load_settings_service
+
+            svc = load_settings_service()
+            status = svc.telegram_config_status()
+        except Exception as exc:  # failure isolation
+            return HealthEntry(
+                "TELEGRAM",
+                "FAIL",
+                f"settings unavailable: {exc}",
+                "Run `nexus doctor --verbose` and inspect the log.",
+            )
+        if not status["configured"]:
+            missing = []
+            if not status["token_present"]:
+                missing.append("BOT_TOKEN_MISSING")
+            if not status["admin_id_present"]:
+                missing.append("ADMIN_CHAT_ID_MISSING")
+            return HealthEntry(
+                "TELEGRAM",
+                "WARNING",
+                f"NOT_CONFIGURED ({', '.join(missing) or 'unknown'})",
+                "Configure via the Web UI (Settings -> Telegram) or "
+                "NEXUS_TELEGRAM_BOT_TOKEN / NEXUS_TELEGRAM_ADMIN_ID env.",
+            )
+        if not status["enabled"]:
+            return HealthEntry(
+                "TELEGRAM",
+                "WARNING",
+                "configured but DISABLED",
+                "Enable Telegram in Settings to activate notifications.",
+            )
+        return HealthEntry(
+            "TELEGRAM",
+            "PASS",
+            f"configured (source={status['source']}, token_len={status['token_length']}, "
+            f"admin_shape_valid={status['admin_id_shape_valid']})",
+            "",
+        )
+
     # ------------------------------------------------------------------
     # Orchestration
     # ------------------------------------------------------------------
@@ -488,6 +535,7 @@ class HealthEngine:
             ("TRAINING", self.check_training),
             ("SHADOW", self.check_shadow),
             ("ACCOUNTING", self.check_accounting),
+            ("TELEGRAM", self.check_telegram),
         ]
         entries: list[HealthEntry] = []
         for _category, fn in checks:

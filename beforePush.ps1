@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Nexus Scalp Engine (NSE) - Pre-Push Quality & CI Verification Script
 .DESCRIPTION
@@ -152,19 +152,26 @@ $PyTestLog = Join-Path $RunDir "pytest.log"
 
 Write-Step "2/4+3/4: Mypy (src) || Pytest (-n $Cores, worksteal) — running in parallel"
 
+# Start-Job spawns a FRESH PowerShell process whose working directory is NOT
+# inherited reliably (observed: System32). Set-Location to the repo root inside
+# each job so `mypy src` / `pytest tests/unit/` resolve (BUG-073 follow-up).
+$RunRoot = (Get-Location).Path
+
 $mypyJob = Start-Job -ScriptBlock {
-    param($log, $venvPy)
+    param($log, $venvPy, $runRoot)
+    Set-Location -Path $runRoot
     & $venvPy -m mypy src *> $log
     $script:code = $LASTEXITCODE
     Set-Content -Path "$log.exit" -Value $script:code
-} -ArgumentList $MyPyLog, $VenvPy
+} -ArgumentList $MyPyLog, $VenvPy, $RunRoot
 
 $pytestJob = Start-Job -ScriptBlock {
-    param($log, $cores, $venvPy)
+    param($log, $cores, $venvPy, $runRoot)
+    Set-Location -Path $runRoot
     & $venvPy -m pytest tests/unit/ -n $cores --dist worksteal -q --tb=short *> $log
     $script:code = $LASTEXITCODE
     Set-Content -Path "$log.exit" -Value $script:code
-} -ArgumentList $PyTestLog, $Cores, $VenvPy
+} -ArgumentList $PyTestLog, $Cores, $VenvPy, $RunRoot
 
 # Wait for both
 Wait-Job $mypyJob, $pytestJob | Out-Null

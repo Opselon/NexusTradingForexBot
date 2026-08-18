@@ -258,6 +258,56 @@ class TestAccountingApi:
         keys = [p["key"] for p in data["periods"]]
         assert keys == sorted(keys)
 
+    def test_performance_intelligence_endpoint(self, wired_app) -> None:
+        """Performance Intelligence report endpoint: structured JSON contract
+        with the same money truth as the canonical period report (trades and
+        net PnL must match exactly)."""
+        _, _, app = wired_app
+        with TestClient(app) as client:
+            res = client.get("/api/account/performance/intelligence")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["available"] is True
+        rep = data["report"]
+        # Full contract shape
+        for key in (
+            "report_id",
+            "snapshot_id",
+            "generated_at",
+            "period_kind",
+            "performance",
+            "distribution",
+            "r",
+            "excursion",
+            "holding",
+            "exits",
+            "streaks",
+            "risk",
+            "drawdown",
+            "strategies",
+            "regimes",
+            "sessions",
+            "model",
+            "execution",
+            "news",
+            "behavioral",
+            "loss_drivers",
+            "profit_drivers",
+            "period_compare",
+            "anomalies",
+            "health_score",
+            "insights",
+            "trend",
+            "evidence",
+        ):
+            assert key in rep, f"missing {key}"
+        # Canonical truth preserved: 2 seeded trades, net +100
+        assert rep["performance"]["trades"] == 2
+        assert rep["performance"]["net_pnl"] == pytest.approx(100.0)
+        assert rep["performance"]["wins"] == 1
+        assert rep["performance"]["losses"] == 1
+        assert 0 <= rep["health_score"]["total"] <= 100
+
     def test_equity_curve_real_data(self, wired_app) -> None:
         _, _, app = wired_app
         with TestClient(app) as client:

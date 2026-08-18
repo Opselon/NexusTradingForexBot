@@ -137,6 +137,8 @@ def test_payload_is_minimal_and_approved_only(repo: AuditRepository) -> None:
             "SELECT payload FROM audit_signals WHERE reason_code='MAX_EXPOSURE_REACHED'"
         ).fetchone()
     payload = json.loads(row[0])
+    # BUG-072/073: blocked_by + decision_stage added to distinguish
+    # execution-state blocks from model rejections (additive to BUG-054's 8).
     assert set(payload.keys()) == {
         "model_action",
         "ai_buy_probability",
@@ -146,6 +148,8 @@ def test_payload_is_minimal_and_approved_only(repo: AuditRepository) -> None:
         "risk_allowed",
         "guardian_status",
         "rejection_reason",
+        "blocked_by",
+        "decision_stage",
     }
     assert "risk_checks" not in payload
     assert "buy_probability" not in payload

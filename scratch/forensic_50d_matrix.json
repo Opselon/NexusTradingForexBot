@@ -1,0 +1,3572 @@
+{
+ "trend": {
+  "label": "trend",
+  "n_bars": 60,
+  "runtime_raw": [
+   0.533333333333303,
+   0.466666666666697,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   -0.06666666666660603,
+   0.0,
+   0.0,
+   0.0,
+   0.4666666666665454,
+   1.7333333333334242,
+   0.5588235307093543,
+   0.0,
+   0.06666666666675762,
+   -1.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.004985666210677385,
+   0.0049859147917624795,
+   0.004986163397603695,
+   1.0,
+   -0.9999993721976352,
+   -0.06666666666660603,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.566666666666606,
+   0.0,
+   1.0,
+   1.1499999999999393,
+   3.0,
+   0.5675709146510902,
+   1.4033247103710285,
+   1.503300307591097,
+   0.283333333333303,
+   -0.283333333333303,
+   -1.0,
+   0.0,
+   0.0,
+   1.0,
+   3.0,
+   0.533333333333303,
+   0.0,
+   0.876811592932139,
+   1.0,
+   0.06625259162246022
+  ],
+  "rows": [
+   {
+    "index": 0,
+    "name": "upper_wick_ratio",
+    "runtime": 0.533333333333303,
+    "expected": 0.533333333333303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 1,
+    "name": "lower_wick_ratio",
+    "runtime": 0.466666666666697,
+    "expected": 0.466666666666697,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 2,
+    "name": "body_to_range_ratio",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 3,
+    "name": "is_doji",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 4,
+    "name": "pinbar_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 5,
+    "name": "engulfing_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 6,
+    "name": "close_location_value",
+    "runtime": -0.06666666666660603,
+    "expected": -0.06666666666660603,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 7,
+    "name": "consecutive_momentum_count",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 8,
+    "name": "norm_displacement",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 9,
+    "name": "rapid_reversal_spike_val",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 10,
+    "name": "dist_to_swing_high_20",
+    "runtime": 0.4666666666665454,
+    "expected": 0.4666666666665454,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 11,
+    "name": "dist_to_swing_low_20",
+    "runtime": 1.7333333333334242,
+    "expected": 1.7333333333334242,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 12,
+    "name": "price_compression_flag_ratio",
+    "runtime": 0.5588235307093543,
+    "expected": 0.5588235307093543,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 13,
+    "name": "extreme_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 14,
+    "name": "stop_hunt_depth",
+    "runtime": 0.06666666666675762,
+    "expected": 0.06666666666675762,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 15,
+    "name": "liquidity_sweep_signal",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 16,
+    "name": "session_tokyo",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 17,
+    "name": "session_london",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 18,
+    "name": "session_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 19,
+    "name": "session_overlap_london_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 20,
+    "name": "lag_1_log_return",
+    "runtime": 0.004985666210677385,
+    "expected": 0.004985666210677385,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 21,
+    "name": "lag_2_log_return",
+    "runtime": 0.0049859147917624795,
+    "expected": 0.0049859147917624795,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 22,
+    "name": "lag_3_log_return",
+    "runtime": 0.004986163397603695,
+    "expected": 0.004986163397603695,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 23,
+    "name": "lag_1_atr_ratio",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 24,
+    "name": "lag_1_volume_z",
+    "runtime": -0.9999993721976352,
+    "expected": -0.9999993721976352,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 25,
+    "name": "lag_1_clv",
+    "runtime": -0.06666666666660603,
+    "expected": -0.06666666666660603,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 26,
+    "name": "fvg_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 27,
+    "name": "order_block_type",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 28,
+    "name": "choch_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 29,
+    "name": "breakout_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 30,
+    "name": "norm_tk_diff",
+    "runtime": 0.566666666666606,
+    "expected": 0.566666666666606,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 31,
+    "name": "tk_cross_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 32,
+    "name": "kumo_sig",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 33,
+    "name": "norm_kumo_width",
+    "runtime": 1.1499999999999393,
+    "expected": 1.1499999999999393,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 34,
+    "name": "norm_rsi",
+    "runtime": 3.0,
+    "expected": 3.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 35,
+    "name": "dist_to_ema_21",
+    "runtime": 0.5675709146510902,
+    "expected": 0.5675709146510902,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 36,
+    "name": "dist_to_ema_50",
+    "runtime": 1.4033247103710285,
+    "expected": 1.4033247103710285,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 37,
+    "name": "cross_asset_z_score",
+    "runtime": 1.503300307591097,
+    "expected": 1.503300307591097,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 38,
+    "name": "norm_dist_to_tenkan",
+    "runtime": 0.283333333333303,
+    "expected": 0.283333333333303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 39,
+    "name": "norm_dist_to_kijun",
+    "runtime": -0.283333333333303,
+    "expected": -0.283333333333303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 40,
+    "name": "htf_h4_trend",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 41,
+    "name": "htf_h1_momentum",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 42,
+    "name": "htf_m30_structure",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 43,
+    "name": "htf_m15_confirmation",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 44,
+    "name": "support_zone_dist",
+    "runtime": 3.0,
+    "expected": 3.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 45,
+    "name": "resistance_zone_dist",
+    "runtime": 0.533333333333303,
+    "expected": 0.533333333333303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 46,
+    "name": "feat_ob_valid_bos",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 47,
+    "name": "feat_ob_equilibrium_ratio",
+    "runtime": 0.876811592932139,
+    "expected": 0.876811592932139,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 48,
+    "name": "feat_ob_liquidity_swept",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 49,
+    "name": "feat_ob_fib_50_60_alignment",
+    "runtime": 0.06625259162246022,
+    "expected": 0.06625259162246022,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   }
+  ],
+  "n_fail": 0,
+  "failures": []
+ },
+ "flat": {
+  "label": "flat",
+  "n_bars": 60,
+  "runtime_raw": [
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   -1.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   -0.9999993721976352,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.1368683772161603e-12,
+   -1.1368683772161603e-12,
+   0.0,
+   0.0,
+   0.0,
+   -1.0,
+   0.0,
+   0.0,
+   -1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "rows": [
+   {
+    "index": 0,
+    "name": "upper_wick_ratio",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 1,
+    "name": "lower_wick_ratio",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 2,
+    "name": "body_to_range_ratio",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 3,
+    "name": "is_doji",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 4,
+    "name": "pinbar_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 5,
+    "name": "engulfing_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 6,
+    "name": "close_location_value",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 7,
+    "name": "consecutive_momentum_count",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 8,
+    "name": "norm_displacement",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 9,
+    "name": "rapid_reversal_spike_val",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 10,
+    "name": "dist_to_swing_high_20",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 11,
+    "name": "dist_to_swing_low_20",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 12,
+    "name": "price_compression_flag_ratio",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 13,
+    "name": "extreme_sig",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 14,
+    "name": "stop_hunt_depth",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 15,
+    "name": "liquidity_sweep_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 16,
+    "name": "session_tokyo",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 17,
+    "name": "session_london",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 18,
+    "name": "session_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 19,
+    "name": "session_overlap_london_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 20,
+    "name": "lag_1_log_return",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 21,
+    "name": "lag_2_log_return",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 22,
+    "name": "lag_3_log_return",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 23,
+    "name": "lag_1_atr_ratio",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 24,
+    "name": "lag_1_volume_z",
+    "runtime": -0.9999993721976352,
+    "expected": -0.9999993721976352,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 25,
+    "name": "lag_1_clv",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 26,
+    "name": "fvg_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 27,
+    "name": "order_block_type",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 28,
+    "name": "choch_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 29,
+    "name": "breakout_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 30,
+    "name": "norm_tk_diff",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 31,
+    "name": "tk_cross_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 32,
+    "name": "kumo_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 33,
+    "name": "norm_kumo_width",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 34,
+    "name": "norm_rsi",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 35,
+    "name": "dist_to_ema_21",
+    "runtime": 1.1368683772161603e-12,
+    "expected": 1.1368683772161603e-12,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 36,
+    "name": "dist_to_ema_50",
+    "runtime": -1.1368683772161603e-12,
+    "expected": -1.1368683772161603e-12,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 37,
+    "name": "cross_asset_z_score",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 38,
+    "name": "norm_dist_to_tenkan",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 39,
+    "name": "norm_dist_to_kijun",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 40,
+    "name": "htf_h4_trend",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 41,
+    "name": "htf_h1_momentum",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 42,
+    "name": "htf_m30_structure",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 43,
+    "name": "htf_m15_confirmation",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 44,
+    "name": "support_zone_dist",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 45,
+    "name": "resistance_zone_dist",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 46,
+    "name": "feat_ob_valid_bos",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 47,
+    "name": "feat_ob_equilibrium_ratio",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 48,
+    "name": "feat_ob_liquidity_swept",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 49,
+    "name": "feat_ob_fib_50_60_alignment",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   }
+  ],
+  "n_fail": 0,
+  "failures": []
+ },
+ "doji": {
+  "label": "doji",
+  "n_bars": 60,
+  "runtime_raw": [
+   0.7,
+   0.3,
+   0.0,
+   1.0,
+   -1.4,
+   0.0,
+   -0.4,
+   0.0,
+   0.0,
+   0.0,
+   0.3499999999996817,
+   0.14999999999986358,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.49999999999954525,
+   -0.9999993721976352,
+   -0.4,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   -1.0,
+   0.0,
+   0.0,
+   1.1368683772161603e-12,
+   -1.1368683772161603e-12,
+   -6.820745005938583e-05,
+   0.0,
+   0.0,
+   -1.0,
+   0.0,
+   0.0,
+   -1.0,
+   0.14999999999986358,
+   0.3499999999996817,
+   0.0,
+   0.499999950000005,
+   0.0,
+   0.8571427142857285
+  ],
+  "rows": [
+   {
+    "index": 0,
+    "name": "upper_wick_ratio",
+    "runtime": 0.7,
+    "expected": 0.7,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 1,
+    "name": "lower_wick_ratio",
+    "runtime": 0.3,
+    "expected": 0.3,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 2,
+    "name": "body_to_range_ratio",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 3,
+    "name": "is_doji",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 4,
+    "name": "pinbar_sig",
+    "runtime": -1.4,
+    "expected": -1.4,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 5,
+    "name": "engulfing_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 6,
+    "name": "close_location_value",
+    "runtime": -0.4,
+    "expected": -0.4,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 7,
+    "name": "consecutive_momentum_count",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 8,
+    "name": "norm_displacement",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 9,
+    "name": "rapid_reversal_spike_val",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 10,
+    "name": "dist_to_swing_high_20",
+    "runtime": 0.3499999999996817,
+    "expected": 0.3499999999996817,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 11,
+    "name": "dist_to_swing_low_20",
+    "runtime": 0.14999999999986358,
+    "expected": 0.14999999999986358,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 12,
+    "name": "price_compression_flag_ratio",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 13,
+    "name": "extreme_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 14,
+    "name": "stop_hunt_depth",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 15,
+    "name": "liquidity_sweep_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 16,
+    "name": "session_tokyo",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 17,
+    "name": "session_london",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 18,
+    "name": "session_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 19,
+    "name": "session_overlap_london_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 20,
+    "name": "lag_1_log_return",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 21,
+    "name": "lag_2_log_return",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 22,
+    "name": "lag_3_log_return",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 23,
+    "name": "lag_1_atr_ratio",
+    "runtime": 0.49999999999954525,
+    "expected": 0.49999999999954525,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 24,
+    "name": "lag_1_volume_z",
+    "runtime": -0.9999993721976352,
+    "expected": -0.9999993721976352,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 25,
+    "name": "lag_1_clv",
+    "runtime": -0.4,
+    "expected": -0.4,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 26,
+    "name": "fvg_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 27,
+    "name": "order_block_type",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 28,
+    "name": "choch_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 29,
+    "name": "breakout_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 30,
+    "name": "norm_tk_diff",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 31,
+    "name": "tk_cross_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 32,
+    "name": "kumo_sig",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 33,
+    "name": "norm_kumo_width",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 34,
+    "name": "norm_rsi",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 35,
+    "name": "dist_to_ema_21",
+    "runtime": 1.1368683772161603e-12,
+    "expected": 1.1368683772161603e-12,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 36,
+    "name": "dist_to_ema_50",
+    "runtime": -1.1368683772161603e-12,
+    "expected": -1.1368683772161603e-12,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 37,
+    "name": "cross_asset_z_score",
+    "runtime": -6.820745005938583e-05,
+    "expected": -6.820745005938583e-05,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 38,
+    "name": "norm_dist_to_tenkan",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 39,
+    "name": "norm_dist_to_kijun",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 40,
+    "name": "htf_h4_trend",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 41,
+    "name": "htf_h1_momentum",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 42,
+    "name": "htf_m30_structure",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 43,
+    "name": "htf_m15_confirmation",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 44,
+    "name": "support_zone_dist",
+    "runtime": 0.14999999999986358,
+    "expected": 0.14999999999986358,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 45,
+    "name": "resistance_zone_dist",
+    "runtime": 0.3499999999996817,
+    "expected": 0.3499999999996817,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 46,
+    "name": "feat_ob_valid_bos",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 47,
+    "name": "feat_ob_equilibrium_ratio",
+    "runtime": 0.499999950000005,
+    "expected": 0.499999950000005,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 48,
+    "name": "feat_ob_liquidity_swept",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 49,
+    "name": "feat_ob_fib_50_60_alignment",
+    "runtime": 0.8571427142857285,
+    "expected": 0.8571427142857285,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   }
+  ],
+  "n_fail": 0,
+  "failures": []
+ },
+ "wick_dominant": {
+  "label": "wick_dominant",
+  "n_bars": 60,
+  "runtime_raw": [
+   0.9285714285714904,
+   0.04761904761900637,
+   0.023809523809503186,
+   1.0,
+   -1.8571428571429809,
+   0.0,
+   -0.8571428571429809,
+   1.0,
+   0.0,
+   0.0,
+   0.9285714285714904,
+   0.07142857142850956,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   -0.9999993721976352,
+   -0.8571428571429809,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   -1.0,
+   0.0,
+   0.0,
+   1.0827317878249615e-13,
+   -1.0827317878249615e-13,
+   -4.54726672311503e-05,
+   0.0,
+   0.0,
+   -1.0,
+   0.0,
+   0.0,
+   1.0,
+   0.07142857142850956,
+   0.9285714285714904,
+   0.0,
+   0.4999999976190476,
+   0.0,
+   0.8571428503401359
+  ],
+  "rows": [
+   {
+    "index": 0,
+    "name": "upper_wick_ratio",
+    "runtime": 0.9285714285714904,
+    "expected": 0.9285714285714904,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 1,
+    "name": "lower_wick_ratio",
+    "runtime": 0.04761904761900637,
+    "expected": 0.04761904761900637,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 2,
+    "name": "body_to_range_ratio",
+    "runtime": 0.023809523809503186,
+    "expected": 0.023809523809503186,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 3,
+    "name": "is_doji",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 4,
+    "name": "pinbar_sig",
+    "runtime": -1.8571428571429809,
+    "expected": -1.8571428571429809,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 5,
+    "name": "engulfing_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 6,
+    "name": "close_location_value",
+    "runtime": -0.8571428571429809,
+    "expected": -0.8571428571429809,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 7,
+    "name": "consecutive_momentum_count",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 8,
+    "name": "norm_displacement",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 9,
+    "name": "rapid_reversal_spike_val",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 10,
+    "name": "dist_to_swing_high_20",
+    "runtime": 0.9285714285714904,
+    "expected": 0.9285714285714904,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 11,
+    "name": "dist_to_swing_low_20",
+    "runtime": 0.07142857142850956,
+    "expected": 0.07142857142850956,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 12,
+    "name": "price_compression_flag_ratio",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 13,
+    "name": "extreme_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 14,
+    "name": "stop_hunt_depth",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 15,
+    "name": "liquidity_sweep_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 16,
+    "name": "session_tokyo",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 17,
+    "name": "session_london",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 18,
+    "name": "session_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 19,
+    "name": "session_overlap_london_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 20,
+    "name": "lag_1_log_return",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 21,
+    "name": "lag_2_log_return",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 22,
+    "name": "lag_3_log_return",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 23,
+    "name": "lag_1_atr_ratio",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 24,
+    "name": "lag_1_volume_z",
+    "runtime": -0.9999993721976352,
+    "expected": -0.9999993721976352,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 25,
+    "name": "lag_1_clv",
+    "runtime": -0.8571428571429809,
+    "expected": -0.8571428571429809,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 26,
+    "name": "fvg_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 27,
+    "name": "order_block_type",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 28,
+    "name": "choch_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 29,
+    "name": "breakout_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 30,
+    "name": "norm_tk_diff",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 31,
+    "name": "tk_cross_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 32,
+    "name": "kumo_sig",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 33,
+    "name": "norm_kumo_width",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 34,
+    "name": "norm_rsi",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 35,
+    "name": "dist_to_ema_21",
+    "runtime": 1.0827317878249615e-13,
+    "expected": 1.0827317878249615e-13,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 36,
+    "name": "dist_to_ema_50",
+    "runtime": -1.0827317878249615e-13,
+    "expected": -1.0827317878249615e-13,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 37,
+    "name": "cross_asset_z_score",
+    "runtime": -4.54726672311503e-05,
+    "expected": -4.54726672311503e-05,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 38,
+    "name": "norm_dist_to_tenkan",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 39,
+    "name": "norm_dist_to_kijun",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 40,
+    "name": "htf_h4_trend",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 41,
+    "name": "htf_h1_momentum",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 42,
+    "name": "htf_m30_structure",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 43,
+    "name": "htf_m15_confirmation",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 44,
+    "name": "support_zone_dist",
+    "runtime": 0.07142857142850956,
+    "expected": 0.07142857142850956,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 45,
+    "name": "resistance_zone_dist",
+    "runtime": 0.9285714285714904,
+    "expected": 0.9285714285714904,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 46,
+    "name": "feat_ob_valid_bos",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 47,
+    "name": "feat_ob_equilibrium_ratio",
+    "runtime": 0.4999999976190476,
+    "expected": 0.4999999976190476,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 48,
+    "name": "feat_ob_liquidity_swept",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 49,
+    "name": "feat_ob_fib_50_60_alignment",
+    "runtime": 0.8571428503401359,
+    "expected": 0.8571428503401359,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   }
+  ],
+  "n_fail": 0,
+  "failures": []
+ },
+ "volume_spike": {
+  "label": "volume_spike",
+  "n_bars": 60,
+  "runtime_raw": [
+   0.533333333333303,
+   0.466666666666697,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   -0.06666666666660603,
+   0.0,
+   0.0,
+   0.0,
+   0.4666666666665454,
+   1.7333333333334242,
+   0.5588235307093543,
+   0.0,
+   0.06666666666675762,
+   -1.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.004985666210677385,
+   0.0049859147917624795,
+   0.004986163397603695,
+   1.0,
+   3.0,
+   -0.06666666666660603,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.566666666666606,
+   0.0,
+   1.0,
+   1.1499999999999393,
+   3.0,
+   0.5675709146510902,
+   1.4033247103710285,
+   1.503300307591097,
+   0.283333333333303,
+   -0.283333333333303,
+   -1.0,
+   0.0,
+   0.0,
+   1.0,
+   3.0,
+   0.533333333333303,
+   0.0,
+   0.876811592932139,
+   1.0,
+   0.06625259162246022
+  ],
+  "rows": [
+   {
+    "index": 0,
+    "name": "upper_wick_ratio",
+    "runtime": 0.533333333333303,
+    "expected": 0.533333333333303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 1,
+    "name": "lower_wick_ratio",
+    "runtime": 0.466666666666697,
+    "expected": 0.466666666666697,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 2,
+    "name": "body_to_range_ratio",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 3,
+    "name": "is_doji",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 4,
+    "name": "pinbar_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 5,
+    "name": "engulfing_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 6,
+    "name": "close_location_value",
+    "runtime": -0.06666666666660603,
+    "expected": -0.06666666666660603,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 7,
+    "name": "consecutive_momentum_count",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 8,
+    "name": "norm_displacement",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 9,
+    "name": "rapid_reversal_spike_val",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 10,
+    "name": "dist_to_swing_high_20",
+    "runtime": 0.4666666666665454,
+    "expected": 0.4666666666665454,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 11,
+    "name": "dist_to_swing_low_20",
+    "runtime": 1.7333333333334242,
+    "expected": 1.7333333333334242,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 12,
+    "name": "price_compression_flag_ratio",
+    "runtime": 0.5588235307093543,
+    "expected": 0.5588235307093543,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 13,
+    "name": "extreme_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 14,
+    "name": "stop_hunt_depth",
+    "runtime": 0.06666666666675762,
+    "expected": 0.06666666666675762,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 15,
+    "name": "liquidity_sweep_signal",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 16,
+    "name": "session_tokyo",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 17,
+    "name": "session_london",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 18,
+    "name": "session_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 19,
+    "name": "session_overlap_london_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 20,
+    "name": "lag_1_log_return",
+    "runtime": 0.004985666210677385,
+    "expected": 0.004985666210677385,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 21,
+    "name": "lag_2_log_return",
+    "runtime": 0.0049859147917624795,
+    "expected": 0.0049859147917624795,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 22,
+    "name": "lag_3_log_return",
+    "runtime": 0.004986163397603695,
+    "expected": 0.004986163397603695,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 23,
+    "name": "lag_1_atr_ratio",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 24,
+    "name": "lag_1_volume_z",
+    "runtime": 3.0,
+    "expected": 3.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 25,
+    "name": "lag_1_clv",
+    "runtime": -0.06666666666660603,
+    "expected": -0.06666666666660603,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 26,
+    "name": "fvg_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 27,
+    "name": "order_block_type",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 28,
+    "name": "choch_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 29,
+    "name": "breakout_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 30,
+    "name": "norm_tk_diff",
+    "runtime": 0.566666666666606,
+    "expected": 0.566666666666606,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 31,
+    "name": "tk_cross_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 32,
+    "name": "kumo_sig",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 33,
+    "name": "norm_kumo_width",
+    "runtime": 1.1499999999999393,
+    "expected": 1.1499999999999393,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 34,
+    "name": "norm_rsi",
+    "runtime": 3.0,
+    "expected": 3.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 35,
+    "name": "dist_to_ema_21",
+    "runtime": 0.5675709146510902,
+    "expected": 0.5675709146510902,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 36,
+    "name": "dist_to_ema_50",
+    "runtime": 1.4033247103710285,
+    "expected": 1.4033247103710285,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 37,
+    "name": "cross_asset_z_score",
+    "runtime": 1.503300307591097,
+    "expected": 1.503300307591097,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 38,
+    "name": "norm_dist_to_tenkan",
+    "runtime": 0.283333333333303,
+    "expected": 0.283333333333303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 39,
+    "name": "norm_dist_to_kijun",
+    "runtime": -0.283333333333303,
+    "expected": -0.283333333333303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 40,
+    "name": "htf_h4_trend",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 41,
+    "name": "htf_h1_momentum",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 42,
+    "name": "htf_m30_structure",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 43,
+    "name": "htf_m15_confirmation",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 44,
+    "name": "support_zone_dist",
+    "runtime": 3.0,
+    "expected": 3.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 45,
+    "name": "resistance_zone_dist",
+    "runtime": 0.533333333333303,
+    "expected": 0.533333333333303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 46,
+    "name": "feat_ob_valid_bos",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 47,
+    "name": "feat_ob_equilibrium_ratio",
+    "runtime": 0.876811592932139,
+    "expected": 0.876811592932139,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 48,
+    "name": "feat_ob_liquidity_swept",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 49,
+    "name": "feat_ob_fib_50_60_alignment",
+    "runtime": 0.06625259162246022,
+    "expected": 0.06625259162246022,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   }
+  ],
+  "n_fail": 0,
+  "failures": []
+ },
+ "reversal": {
+  "label": "reversal",
+  "n_bars": 60,
+  "runtime_raw": [
+   0.533333333333303,
+   0.466666666666697,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   -0.06666666666660603,
+   0.0,
+   0.0,
+   0.0,
+   3.0,
+   0.3000000000000303,
+   0.40000000096,
+   0.0,
+   0.16666666666666666,
+   1.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   -0.012502344205816689,
+   -0.012500781315114446,
+   -0.012499218815095222,
+   1.0,
+   -0.9999993721976352,
+   -0.06666666666660603,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   -0.9166666666666666,
+   0.0,
+   -1.0,
+   -0.4583333333333333,
+   -3.0,
+   -1.3842437734204698,
+   -1.6401198471601977,
+   -1.5033003234501667,
+   -0.4583333333333333,
+   0.4583333333333333,
+   -1.0,
+   0.0,
+   0.0,
+   -1.0,
+   0.466666666666697,
+   3.0,
+   0.0,
+   0.159999999744,
+   1.0,
+   0.0
+  ],
+  "rows": [
+   {
+    "index": 0,
+    "name": "upper_wick_ratio",
+    "runtime": 0.533333333333303,
+    "expected": 0.533333333333303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 1,
+    "name": "lower_wick_ratio",
+    "runtime": 0.466666666666697,
+    "expected": 0.466666666666697,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 2,
+    "name": "body_to_range_ratio",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 3,
+    "name": "is_doji",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 4,
+    "name": "pinbar_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 5,
+    "name": "engulfing_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 6,
+    "name": "close_location_value",
+    "runtime": -0.06666666666660603,
+    "expected": -0.06666666666660603,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 7,
+    "name": "consecutive_momentum_count",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 8,
+    "name": "norm_displacement",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 9,
+    "name": "rapid_reversal_spike_val",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 10,
+    "name": "dist_to_swing_high_20",
+    "runtime": 3.0,
+    "expected": 3.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 11,
+    "name": "dist_to_swing_low_20",
+    "runtime": 0.3000000000000303,
+    "expected": 0.3000000000000303,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 12,
+    "name": "price_compression_flag_ratio",
+    "runtime": 0.40000000096,
+    "expected": 0.40000000096,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 13,
+    "name": "extreme_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 14,
+    "name": "stop_hunt_depth",
+    "runtime": 0.16666666666666666,
+    "expected": 0.16666666666666666,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 15,
+    "name": "liquidity_sweep_signal",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 16,
+    "name": "session_tokyo",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 17,
+    "name": "session_london",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 18,
+    "name": "session_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 19,
+    "name": "session_overlap_london_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 20,
+    "name": "lag_1_log_return",
+    "runtime": -0.012502344205816689,
+    "expected": -0.012502344205816689,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 21,
+    "name": "lag_2_log_return",
+    "runtime": -0.012500781315114446,
+    "expected": -0.012500781315114446,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 22,
+    "name": "lag_3_log_return",
+    "runtime": -0.012499218815095222,
+    "expected": -0.012499218815095222,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 23,
+    "name": "lag_1_atr_ratio",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 24,
+    "name": "lag_1_volume_z",
+    "runtime": -0.9999993721976352,
+    "expected": -0.9999993721976352,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 25,
+    "name": "lag_1_clv",
+    "runtime": -0.06666666666660603,
+    "expected": -0.06666666666660603,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 26,
+    "name": "fvg_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 27,
+    "name": "order_block_type",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 28,
+    "name": "choch_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 29,
+    "name": "breakout_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 30,
+    "name": "norm_tk_diff",
+    "runtime": -0.9166666666666666,
+    "expected": -0.9166666666666666,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 31,
+    "name": "tk_cross_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 32,
+    "name": "kumo_sig",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 33,
+    "name": "norm_kumo_width",
+    "runtime": -0.4583333333333333,
+    "expected": -0.4583333333333333,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 34,
+    "name": "norm_rsi",
+    "runtime": -3.0,
+    "expected": -3.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 35,
+    "name": "dist_to_ema_21",
+    "runtime": -1.3842437734204698,
+    "expected": -1.3842437734204698,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 36,
+    "name": "dist_to_ema_50",
+    "runtime": -1.6401198471601977,
+    "expected": -1.6401198471601977,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 37,
+    "name": "cross_asset_z_score",
+    "runtime": -1.5033003234501667,
+    "expected": -1.5033003234501667,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 38,
+    "name": "norm_dist_to_tenkan",
+    "runtime": -0.4583333333333333,
+    "expected": -0.4583333333333333,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 39,
+    "name": "norm_dist_to_kijun",
+    "runtime": 0.4583333333333333,
+    "expected": 0.4583333333333333,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 40,
+    "name": "htf_h4_trend",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 41,
+    "name": "htf_h1_momentum",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 42,
+    "name": "htf_m30_structure",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 43,
+    "name": "htf_m15_confirmation",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 44,
+    "name": "support_zone_dist",
+    "runtime": 0.466666666666697,
+    "expected": 0.466666666666697,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 45,
+    "name": "resistance_zone_dist",
+    "runtime": 3.0,
+    "expected": 3.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 46,
+    "name": "feat_ob_valid_bos",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 47,
+    "name": "feat_ob_equilibrium_ratio",
+    "runtime": 0.159999999744,
+    "expected": 0.159999999744,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 48,
+    "name": "feat_ob_liquidity_swept",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 49,
+    "name": "feat_ob_fib_50_60_alignment",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   }
+  ],
+  "n_fail": 0,
+  "failures": []
+ },
+ "high_vol": {
+  "label": "high_vol",
+  "n_bars": 60,
+  "runtime_raw": [
+   0.13277979920356253,
+   -0.00916682989085175,
+   0.8763870306872892,
+   0.0,
+   0.0,
+   0.0,
+   0.7344404015928749,
+   1.0,
+   0.0,
+   0.0,
+   1.7853678057207352,
+   1.4659972939989614,
+   0.6845490592364173,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.1490370309210251,
+   -0.02744678003504971,
+   -0.06370213853436946,
+   1.2932937681893184,
+   -0.9999993721976352,
+   -0.054175648753370706,
+   0.0,
+   -0.9999999999000001,
+   0.0,
+   0.0,
+   0.18144036166660638,
+   0.0,
+   0.0,
+   1.328146301272349,
+   0.15831019939275598,
+   -0.052264521342484056,
+   0.8375914008212918,
+   -0.4404125898335701,
+   0.09072018083330319,
+   -0.09072018083330319,
+   -1.0,
+   0.0,
+   0.0,
+   1.0,
+   1.2982592766098482,
+   0.10672436031819793,
+   0.0,
+   0.6124429196290714,
+   0.0,
+   0.8215916582026533
+  ],
+  "rows": [
+   {
+    "index": 0,
+    "name": "upper_wick_ratio",
+    "runtime": 0.13277979920356253,
+    "expected": 0.13277979920356253,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 1,
+    "name": "lower_wick_ratio",
+    "runtime": -0.00916682989085175,
+    "expected": -0.00916682989085175,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 2,
+    "name": "body_to_range_ratio",
+    "runtime": 0.8763870306872892,
+    "expected": 0.8763870306872892,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 3,
+    "name": "is_doji",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 4,
+    "name": "pinbar_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 5,
+    "name": "engulfing_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 6,
+    "name": "close_location_value",
+    "runtime": 0.7344404015928749,
+    "expected": 0.7344404015928749,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 7,
+    "name": "consecutive_momentum_count",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 8,
+    "name": "norm_displacement",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 9,
+    "name": "rapid_reversal_spike_val",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 10,
+    "name": "dist_to_swing_high_20",
+    "runtime": 1.7853678057207352,
+    "expected": 1.7853678057207352,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 11,
+    "name": "dist_to_swing_low_20",
+    "runtime": 1.4659972939989614,
+    "expected": 1.4659972939989614,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 12,
+    "name": "price_compression_flag_ratio",
+    "runtime": 0.6845490592364173,
+    "expected": 0.6845490592364173,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 13,
+    "name": "extreme_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 14,
+    "name": "stop_hunt_depth",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 15,
+    "name": "liquidity_sweep_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 16,
+    "name": "session_tokyo",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 17,
+    "name": "session_london",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 18,
+    "name": "session_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 19,
+    "name": "session_overlap_london_ny",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 20,
+    "name": "lag_1_log_return",
+    "runtime": 0.1490370309210251,
+    "expected": 0.1490370309210251,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 21,
+    "name": "lag_2_log_return",
+    "runtime": -0.02744678003504971,
+    "expected": -0.02744678003504971,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 22,
+    "name": "lag_3_log_return",
+    "runtime": -0.06370213853436946,
+    "expected": -0.06370213853436946,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 23,
+    "name": "lag_1_atr_ratio",
+    "runtime": 1.2932937681893184,
+    "expected": 1.2932937681893184,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 24,
+    "name": "lag_1_volume_z",
+    "runtime": -0.9999993721976352,
+    "expected": -0.9999993721976352,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 25,
+    "name": "lag_1_clv",
+    "runtime": -0.054175648753370706,
+    "expected": -0.054175648753370706,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 26,
+    "name": "fvg_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 27,
+    "name": "order_block_type",
+    "runtime": -0.9999999999000001,
+    "expected": -0.9999999999000001,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 28,
+    "name": "choch_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 29,
+    "name": "breakout_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 30,
+    "name": "norm_tk_diff",
+    "runtime": 0.18144036166660638,
+    "expected": 0.18144036166660638,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 31,
+    "name": "tk_cross_signal",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 32,
+    "name": "kumo_sig",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 33,
+    "name": "norm_kumo_width",
+    "runtime": 1.328146301272349,
+    "expected": 1.328146301272349,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 34,
+    "name": "norm_rsi",
+    "runtime": 0.15831019939275598,
+    "expected": 0.15831019939275598,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 35,
+    "name": "dist_to_ema_21",
+    "runtime": -0.052264521342484056,
+    "expected": -0.052264521342484056,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 36,
+    "name": "dist_to_ema_50",
+    "runtime": 0.8375914008212918,
+    "expected": 0.8375914008212918,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 37,
+    "name": "cross_asset_z_score",
+    "runtime": -0.4404125898335701,
+    "expected": -0.4404125898335701,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 38,
+    "name": "norm_dist_to_tenkan",
+    "runtime": 0.09072018083330319,
+    "expected": 0.09072018083330319,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 39,
+    "name": "norm_dist_to_kijun",
+    "runtime": -0.09072018083330319,
+    "expected": -0.09072018083330319,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 40,
+    "name": "htf_h4_trend",
+    "runtime": -1.0,
+    "expected": -1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 41,
+    "name": "htf_h1_momentum",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 42,
+    "name": "htf_m30_structure",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 43,
+    "name": "htf_m15_confirmation",
+    "runtime": 1.0,
+    "expected": 1.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 44,
+    "name": "support_zone_dist",
+    "runtime": 1.2982592766098482,
+    "expected": 1.2982592766098482,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 45,
+    "name": "resistance_zone_dist",
+    "runtime": 0.10672436031819793,
+    "expected": 0.10672436031819793,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 46,
+    "name": "feat_ob_valid_bos",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 47,
+    "name": "feat_ob_equilibrium_ratio",
+    "runtime": 0.6124429196290714,
+    "expected": 0.6124429196290714,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 48,
+    "name": "feat_ob_liquidity_swept",
+    "runtime": 0.0,
+    "expected": 0.0,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   },
+   {
+    "index": 49,
+    "name": "feat_ob_fib_50_60_alignment",
+    "runtime": 0.8215916582026533,
+    "expected": 0.8215916582026533,
+    "abs_err": 0.0,
+    "rel_err": 0.0,
+    "status": "PASS"
+   }
+  ],
+  "n_fail": 0,
+  "failures": []
+ }
+}

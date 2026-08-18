@@ -29,6 +29,44 @@ from datetime import UTC, datetime
 from typing import Any
 
 # ---------------------------------------------------------------------------
+# Broker timebase contract (verified live 2026-08-18)
+# ---------------------------------------------------------------------------
+# MT5 terminals report tick/bar epochs on the SERVER timezone (this broker's
+# terminal is on GMT+3 -> tick.time was 01:55:02 while real UTC was 22:55:02,
+# delta exactly +10800s). Treating those epochs as UTC shifts every chart,
+# staleness window and news comparison by 3 hours. All broker-epoch -> UTC
+# conversions MUST subtract this offset; the engine's own `now` is real UTC.
+# A MT5 connection does not expose the server offset via the public API, so it
+# is configurable and defaults to the verified +3h (180 min) of this broker.
+BROKER_SERVER_UTC_OFFSET_MINUTES: int = 180
+
+
+def broker_epoch_to_utc(epoch: float | int | None) -> datetime | None:
+    """Broker terminal epoch (server-local seconds) -> real UTC datetime.
+
+    MT5 timestamps are seconds since the UNIX epoch in the SERVER timezone.
+    Converting them straight as UTC is the single biggest timestamp bug on
+    this stack (charts 3h in the future, staleness detection permanently
+    blind, news windows skewed). Subtract the configured server offset before
+    stamping as UTC. Returns None for None / garbage.
+    """
+    if epoch is None:
+        return None
+    try:
+        epoch = float(epoch)
+    except (TypeError, ValueError):
+        return None
+    import math
+
+    if math.isnan(epoch) or math.isinf(epoch):
+        return None
+    try:
+        return datetime.fromtimestamp(epoch - BROKER_SERVER_UTC_OFFSET_MINUTES * 60, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Provenance constants
 # ---------------------------------------------------------------------------
 BROKER_NATIVE = "BROKER_NATIVE"
@@ -519,11 +557,7 @@ def build_symbol_snapshot(
         snap.tick = tick
         t_raw = tick.get("time") or tick.get("time_msc")
         if t_raw is not None and isinstance(t_raw, (int, float)):
-            tick_utc: datetime | None = None
-            try:
-                tick_utc = datetime.fromtimestamp(float(t_raw), tz=UTC)
-            except (OverflowError, OSError, ValueError):
-                pass
+            tick_utc: datetime | None = broker_epoch_to_utc(float(t_raw))
             if tick_utc is not None:
                 snap.tick["time_utc"] = tick_utc.isoformat()
                 try:
@@ -701,7 +735,7 @@ def build_rate_bar_snapshot(row: Any) -> RateBarSnapshot:
     snap.source = BROKER_NATIVE
     try:
         snap.time = int(row["time"])
-        snap.time_utc = datetime.fromtimestamp(float(row["time"]), tz=UTC)
+        snap.time_utc = broker_epoch_to_utc(float(row["time"]))
     except (KeyError, TypeError, ValueError, OverflowError, OSError):
         pass
     for name in ("open", "high", "low", "close"):
@@ -725,7 +759,7 @@ def build_tick_history_snapshot(row: Any) -> TickHistorySnapshot:
     snap.source = BROKER_NATIVE
     try:
         snap.time = int(row["time"])
-        snap.time_utc = datetime.fromtimestamp(float(row["time"]), tz=UTC)
+        snap.time_utc = broker_epoch_to_utc(float(row["time"]))
     except (KeyError, TypeError, ValueError, OverflowError, OSError):
         pass
     for name in ("time_msc", "flags"):

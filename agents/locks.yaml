@@ -1,0 +1,22 @@
+# AGENT LOCKS - Nexus Scalp Engine (NSE)
+# Maintained per the MASTER MULTI-AGENT CONTRACT s17 (see agents/multi-agent-git-contract.md).
+# If a path is locked exclusive: true, another agent is actively working it:
+# inspect scope, coordinate semantically, do NOT blindly modify the same path.
+# Release locks when done (remove entry or mark released).
+
+exclusive_locks: []
+
+# Locked-by-convention paths (from bugs.md / skill.md activity):
+# - src/nexus_scalp/application/live_engine.py  (hot path; INV-001/INV-008 review required)
+# - src/nexus_scalp/execution/order_manager.py  (BUG-081 forensics in progress, snapshot 2026-08-18)
+# - src/nexus_scalp/signals/policy.py           (BUG-054 payload contract; stale test trap)
+# - src/nexus_scalp/settings/                   (BUG-077/080/072: Telegram credentials MUST route via settings_service, INV-010)
+# - adapters/mt5/ and feature schema            (INV-009/INV-011/INV-012 discipline)
+
+# Lock registration template:
+# exclusive_locks:
+#   - path: src/nexus_scalp/execution/order_manager.py
+#     owner: Hermes-Execution
+#     exclusive: true
+#     scope: split-fill lineage fix
+#     since: 2026-08-18

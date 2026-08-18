@@ -80,6 +80,7 @@ def safe_error_payload(
     available: bool = False,
     success: bool = False,
     extra: dict[str, Any] | None = None,
+    **kw: Any,
 ) -> dict[str, Any]:
     """Builds the stable public error envelope.
 
@@ -101,6 +102,9 @@ def safe_error_payload(
         for k, v in extra.items():
             if k not in body:
                 body[k] = v
+    for k, v in kw.items():
+        if k not in body:
+            body[k] = v
     return body
 
 

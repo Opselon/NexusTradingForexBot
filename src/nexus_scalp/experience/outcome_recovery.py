@@ -98,9 +98,17 @@ def classify_exit_reason(
     if (near_sl or "sl" in comment_l) and final_sl > 0.0 and entry_price > 0.0:
         within_be = entry_price - be_tolerance <= final_sl <= entry_price + be_tolerance
         if within_be:
+            # BUG-081: a stop AT entry is only a protective risk-free / break-even
+            # exit when the system can PROVE the stop was actually moved there.
+            # `was_sl_modified` is the engine's authoritative SL-modification flag
+            # (set when trailing/breakeven logic moved the broker-side SL); when it
+            # is false the stop sat at its ORIGINAL level and the exit is a plain
+            # hard stop at entry — never a fake "risk-free" label.
             if was_sl_modified:
                 return ExitReason.BREAK_EVEN_SL_HIT
-            return ExitReason.RISK_FREE_SL_HIT
+            # Geometry-only corroboration: the SL level differs from the initial SL
+            # (broker-truth modification evidence) also proves the move.
+            return ExitReason.HARD_SL_HIT
         # Strictly beyond entry: trailing lock.
         if (is_buy and final_sl > entry_price) or (not is_buy and final_sl < entry_price):
             return ExitReason.TRAILING_STOP_HIT

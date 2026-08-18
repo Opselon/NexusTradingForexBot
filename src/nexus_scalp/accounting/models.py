@@ -233,6 +233,40 @@ class PeriodReport:
     average_r: float | None = None
     r_sample_count: int = 0
 
+    # --- PRO WIN-RATE / LOSS-RATE RECONCILIATION (Phase 16) --------------
+    # The UI shows win rate with an explicit denominator and loss rate as its
+    # paired complement, so a low classic win rate can be audited at a glance:
+    #   win_rate              = wins / (wins + losses)        [classic]
+    #   loss_rate_decided     = losses / (wins + losses)     [complement]
+    #   win_rate_all          = wins / total_trades          [incl. breakevens]
+    #   loss_rate_all         = losses / total_trades
+    #   pnl_weighted_win_rate = gross_profit / (gross_profit + gross_loss)
+    #   win_rate_denominator  = "DECIDED" | "ALL_TRADES"     [source of truth]
+    loss_rate_decided: float | None = None
+    loss_rate_all: float | None = None
+    win_rate_all: float | None = None
+    pnl_weighted_win_rate: float | None = None
+    win_rate_denominator: str = "NONE"
+
+    # --- EXPECTANCY & COST INTELLIGENCE (Phase 16) -------------------------
+    # Breakeven-inclusive expectancy and per-decided-trade PnL share the SAME
+    # denominators as win_rate_all / win_rate so every pair reconciles:
+    # wins + losses + breakevens == total_trades.
+    expectancy_breakeven_incl: float | None = None
+    avg_pnl_per_decided: float | None = None
+    total_costs: float = 0.0
+    cost_drag_pct: float | None = None
+
+    # --- LOSS PERSISTENCE INTELLIGENCE (Phase 16) --------------------------
+    # stop_loss_share: fraction of ALL losses that ended at a protective stop
+    # (initial/breakeven/trailing) - high values mean the stop system is doing
+    # the closing; low values mean losers bled out via manual/emergency/strategy
+    # exits. avg_loss_r: average realized R on losers only (how much of planned
+    # risk a typical loser actually burns; derived from the SAME realized_r
+    # evidence as average_r - none is ever fabricated).
+    stop_loss_share: float | None = None
+    avg_loss_r: float | None = None
+
     max_drawdown_pct: float | None = None
     max_drawdown_usd: float | None = None
     best_trade: float | None = None
@@ -283,6 +317,17 @@ class PeriodReport:
             "average_holding_sec": _round_opt(self.average_holding_sec, 1),
             "total_risk_deployed": _round_opt(self.total_risk_deployed),
             "total_volume": round(self.total_volume, 2),
+            "loss_rate_decided": _round_opt(self.loss_rate_decided, 2),
+            "loss_rate_all": _round_opt(self.loss_rate_all, 2),
+            "win_rate_all": _round_opt(self.win_rate_all, 2),
+            "pnl_weighted_win_rate": _round_opt(self.pnl_weighted_win_rate, 2),
+            "win_rate_denominator": self.win_rate_denominator,
+            "expectancy_breakeven_incl": _round_opt(self.expectancy_breakeven_incl),
+            "avg_pnl_per_decided": _round_opt(self.avg_pnl_per_decided),
+            "total_costs": round(self.total_costs, 2),
+            "cost_drag_pct": _round_opt(self.cost_drag_pct, 2),
+            "stop_loss_share": _round_opt(self.stop_loss_share, 4),
+            "avg_loss_r": _round_opt(self.avg_loss_r, 4),
             "exit_breakdown": dict(self.exit_breakdown),
         }
 

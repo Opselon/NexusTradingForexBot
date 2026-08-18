@@ -210,6 +210,18 @@ def _raw_tick(now_epoch: int, bid: float = 4392.46, ask: float = 4392.73) -> Sim
 
 
 class TestSymbolSnapshotMapping:
+    def test_broker_epoch_offset_applied(self) -> None:
+        """Broker epochs are server-local (+3h on this broker); the
+        snapshot must map them to REAL UTC, not treat them as UTC."""
+        now = datetime.now(UTC)
+        broker_epoch = int(now.timestamp()) + 3 * 3600  # terminal 3h ahead
+        snap = build_symbol_snapshot(_raw_symbol_info(), _raw_tick(broker_epoch))
+        tick_utc = datetime.fromisoformat(snap.tick["time_utc"])
+        assert abs((now - tick_utc).total_seconds()) < 2.0
+        # freshness must be ~0 (not 3h -> not stale)
+        assert snap.tick_freshness_ms is not None
+        assert snap.tick_freshness_ms < 2_000.0
+
     def test_spec_and_tick_separated(self) -> None:
         now = datetime.now(UTC)
         snap = build_symbol_snapshot(_raw_symbol_info(), _raw_tick(int(now.timestamp())))

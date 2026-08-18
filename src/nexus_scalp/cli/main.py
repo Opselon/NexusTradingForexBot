@@ -370,6 +370,44 @@ def config_cmd(
 
 
 # ---------------------------------------------------------------------------
+# settings
+# ---------------------------------------------------------------------------
+@app.command("settings")
+def settings_cmd(
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """Inspect the isolated user-settings store (never exposes secrets)."""
+    from nexus_scalp.settings import SettingsService
+
+    svc = SettingsService()
+    try:
+        status = svc.telegram_config_status()
+        if json_mode:
+            _emit(
+                {
+                    "state": svc.state.state,
+                    "db_path": str(svc.db.db_path),
+                    "telegram": status,
+                    "settings": svc.provenance(),
+                },
+                True,
+            )
+            return
+        console.print("[bold cyan]NEXUS USER SETTINGS[/bold cyan]")
+        console.print(f"State    : {svc.state.state}  ({svc.db.db_path})")
+        console.print("Telegram :")
+        console.print(f"  configured      : {'YES' if status['configured'] else 'NO'}")
+        console.print(f"  enabled         : {status['enabled']}")
+        console.print(f"  token_present   : {status['token_present']}")
+        console.print(f"  masked_token    : {status['masked_token'] or '(none)'}")
+        console.print(f"  admin_id_present: {status['admin_id_present']}")
+        console.print(f"  admin_shape_ok  : {status['admin_id_shape_valid']}")
+        console.print(f"  source          : {status['source']}")
+    finally:
+        svc.close()
+
+
+# ---------------------------------------------------------------------------
 # repair
 # ---------------------------------------------------------------------------
 @app.command("repair")

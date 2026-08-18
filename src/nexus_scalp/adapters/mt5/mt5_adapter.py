@@ -28,6 +28,7 @@ from nexus_scalp.adapters.mt5.diagnostics import (
     run_mt5_call,
 )
 from nexus_scalp.adapters.mt5.providers import (
+    BROKER_SERVER_UTC_OFFSET_MINUTES,
     AccountSnapshot,
     BrokerCalcSnapshot,
     BrokerTickSnapshot,
@@ -38,6 +39,7 @@ from nexus_scalp.adapters.mt5.providers import (
     RateBarSnapshot,
     SymbolSnapshot,
     TickHistorySnapshot,
+    broker_epoch_to_utc,
     build_account_snapshot,
     build_deal_snapshot,
     build_history_order_snapshot,
@@ -398,10 +400,7 @@ class DirectMT5Adapter(IMT5Port):
         snap.flags = int(getattr(raw_tick, "flags", 0) or 0)
         snap.time = int(getattr(raw_tick, "time", 0) or 0)
         snap.time_msc = int(getattr(raw_tick, "time_msc", 0) or 0)
-        try:
-            snap.time_utc = datetime.fromtimestamp(float(snap.time), tz=UTC)
-        except (OverflowError, OSError, ValueError):
-            snap.time_utc = None
+        snap.time_utc = broker_epoch_to_utc(float(snap.time)) if snap.time else None
         if snap.time_utc is not None:
             snap.freshness_ms = max(
                 0.0, (datetime.now(UTC) - snap.time_utc).total_seconds() * 1000.0
@@ -461,9 +460,17 @@ class DirectMT5Adapter(IMT5Port):
         from_dt = (
             normalize_utc(from_utc)
             if from_utc is not None
-            else (datetime.now(UTC) - timedelta(days=1))
+            else (
+                datetime.now(UTC)
+                + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+                - timedelta(days=1)
+            )
         )
-        to_dt = normalize_utc(to_utc) if to_utc is not None else datetime.now(UTC)
+        to_dt = (
+            normalize_utc(to_utc)
+            if to_utc is not None
+            else datetime.now(UTC) + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+        )
         if to_dt < from_dt:
             return []
         raw, diag = run_mt5_call(
@@ -499,9 +506,17 @@ class DirectMT5Adapter(IMT5Port):
         from_dt = (
             normalize_utc(from_utc)
             if from_utc is not None
-            else (datetime.now(UTC) - timedelta(days=1))
+            else (
+                datetime.now(UTC)
+                + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+                - timedelta(days=1)
+            )
         )
-        to_dt = normalize_utc(to_utc) if to_utc is not None else datetime.now(UTC)
+        to_dt = (
+            normalize_utc(to_utc)
+            if to_utc is not None
+            else datetime.now(UTC) + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+        )
         if to_dt < from_dt:
             return []
         raw, diag = run_mt5_call(
@@ -829,11 +844,30 @@ class DirectMT5Adapter(IMT5Port):
 
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-            retcode = result.retcode if result else mt5.last_error()
-            logger.error("Failed to cancel pending order #%s. Retcode: %s", ticket, retcode)
+            retcode = result.retcode if result else None
+            last_err = mt5.last_error() if retcode is None else None
+            # retcode 0 is NOT a valid trade-server retcode (DONE=10009). It is
+            # the package's marker for a request that never reached the server
+            # (structural validation failure / lost IPC). The caller must verify
+            # broker state before releasing any exposure slot (BUG-072/073).
+            logger.error(
+                "[PENDING_ORDER] event=CANCEL_RESPONSE ticket=%s retcode=%s comment=%s "
+                "request_id=%s last_error=%s -> broker state unverified, slot stays occupied",
+                ticket,
+                retcode,
+                getattr(result, "comment", "") or "",
+                getattr(result, "request_id", 0) or 0,
+                last_err,
+            )
             return False
 
-        logger.info("Successfully cancelled pending order #%s from broker chart.", ticket)
+        logger.info(
+            "[PENDING_ORDER] event=CANCEL_RESPONSE ticket=%s retcode=%s (DONE) comment=%s request_id=%s",
+            ticket,
+            result.retcode,
+            getattr(result, "comment", "") or "",
+            getattr(result, "request_id", 0) or 0,
+        )
         return True
 
     def cancel_all_pending_orders(self, symbol: str) -> int:
@@ -1083,6 +1117,12 @@ class DirectMT5Adapter(IMT5Port):
         if mt5 is None:
             return 0
 
+        # Idempotency-reuse flag: set True ONLY when the guard finds an
+        # equivalent order already resting on the broker and returns its
+        # ticket without sending anything. Lets the caller log the truth
+        # (REUSED vs REAL EXECUTED) and keep audit rows accurate.
+        self._last_pending_reused = False
+
         self.cancel_all_pending_orders(symbol)
 
         if order_type == OrderType.BUY_LIMIT:
@@ -1169,6 +1209,7 @@ class DirectMT5Adapter(IMT5Port):
                         "retry as success, no duplicate sent.",
                         existing,
                     )
+                    self._last_pending_reused = True
                     return existing
 
             # Auto-Reconnect Circuit Breaker for Retcode 10031 (NO_CONNECTION)

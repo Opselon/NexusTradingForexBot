@@ -2689,3 +2689,978 @@ Two compounding issues:
 - Strategy with trades + NO registry row → `lifecycle_state == "DISCOVERED"`, confidence 0.0
 - Strategy with a registered RETIRED score → `lifecycle_state == "RETIRED"`, confidence from score (existing test still green)
 - `test_accounting_core.py` (67) + `test_accounting_api.py` + `test_frontend_assets_phase14.py` all pass
+
+## BUG-067 — Performance Collapse: Zero-Confidence Entries + Overtrading + Winner Giveback (2026-08-18 forensics)
+
+- **Status**: FIXED (entry/exit-side repairs) — further calibration ongoing
+- **Severity**: CRITICAL (232 trades, -$4,748, win rate 9.4% real, profit factor 0.035)
+- **Confidence**: HIGH (full ledger decomposition, code-path proof, live DB)
+
+### Evidence (audit_ledger, status=CLOSED/FLAT, 233 rows)
+- wins=22 (+$168.64) / losses=59 (-$4,932.73) / **breakeven=152 (65%)**
+- **HARD_SL_HIT 37 trades = -$3,503** (74% of losses, avg -$94.67, worst -$190.74)
+- **42/59 losers were IN PROFIT at some point** (positive MFE) then closed negative:
+  - ticket 152489737423: MFE +$78.12 → closed -$7.14 (was_sl_mod=1 = SL moved to BE)
+  - ticket 152493553167: MFE +$131.35 → closed +$3.76 (97% giveback)
+- **192/233 trades entered at ai_confidence_at_open 0.0-0.4** — including conf=0.00 entries losing -$189/-$190
+- Hold 90-180s bucket = -$3,488; regime NULL (176 trades, -$3,419) = no regime filter
+- Best winner captured only 3-32% of MFE (cut at BE/trailing)
+
+### Root Causes (3 provable defects)
+1. **TICK_LEVEL_LIQUIDITY_SWEEP fires with ZERO model confidence** — `signals/policy.py` PART-3 returns the sweep proposal BEFORE `cand_confidence` is computed; `confidence` is 0.0 at that point → `ai_confidence_at_open=0.00` for those entries (1.5-ATR SL, no probability support). FIXED: sweep now requires raw directional prob >= confidence_threshold (+range penalty), and the proposal carries the real prob as confidence.
+2. **Synthetic confidence floor** — `cand_confidence = max(prob, 0.55 + prob*0.35)` inflated EVERY candidate >= 0.61, so the 0.35 gate never rejected weak signals (192/233 trades at conf<0.4). FIXED: confidence = raw directional model probability (honest signal; 0.30 stays 0.30 and gets gated).
+3. **BE lock too eager** — flat `BREAKEVEN_PROFIT_USD=$15` on ~$100+ risk positions: +$15 profit yanked SL to entry → normal pullback = full giveback (152 scratches + 42 giveback losers). FIXED: `apply_breakeven_lock` now requires 0.35R of initial risk (R-scaled, $15 absolute floor) so winners breathe before protective SL moves.
+
+### Files Changed
+- `src/nexus_scalp/signals/policy.py` — tick-sweep confidence gate + real prob in proposal; raw-prob confidence (floor removed)
+- `src/nexus_scalp/execution/order_manager.py` — R-scaled BE trigger in `apply_breakeven_lock`
+
+### Regression Guards
+- `tests/unit/test_policy.py::test_tick_sweep_requires_model_confidence` (low prob rejected, high prob carries real confidence)
+- `tests/unit/test_policy.py::test_candidate_confidence_is_raw_probability_not_floor` (0.42 prob not inflated past gate)
+- Full suites green: test_policy (5), test_order_lifecycle, test_exit_behavior_forensic (15), test_rule_matrix, test_accounting_core — all pass
+- ruff check/format + mypy clean
+
+
+## BUG-068 — Web UI Layout Collapse: Premature `</div>` Detached All Post-Research Panels (News/Rules/Config/Debug Fell to Page Bottom)
+
+- **Status**: FIXED
+- **Severity**: MEDIUM (UI unusability — News/Rules/Config/Debug tabs and "Validate a Candidate" rendered at the bottom of the page instead of in place)
+- **Confidence**: HIGH (HTMLParser stack trace proved the extra close)
+
+### Problem
+In the PHASE 09B research tab (`Web/index.html`), the "Registry stats" grid
+was mis-nested: the `lg:grid-cols-3` grid's 4 stat cards were closed with a
+wrong close count, leaving TWO stray `</div>` closes at the end of the
+`tab-research` section. The FIRST stray close popped the main workspace
+wrapper (`<div class="flex flex-1 flex-col lg:flex-row overflow-hidden">`,
+opened line 71) — so every subsequent panel ("Validate a Candidate", the
+entire News Intelligence tab, Scalping Rules, Config, Debug Hub) escaped
+the flex layout and rendered at the bottom of the page.
+
+### Root Cause
+The research tab was edited incrementally (BUG-046 data-quality panel +
+Validate panel added as siblings) without re-balancing the grid's divs.
+The registry-stats column (4 inner cards) closed with 3 closes instead of 4
+(one missing), and the region then carried 2 surplus `</div>` after the
+data-quality panel. Net effect: -1 balance, main wrapper closed at line
+1019 instead of after `</main>`.
+
+### Evidence
+- `HTMLParser` stack trace: `</div>` at line 1019 MISMATCHED-close popped
+  "flex flex-1 flex-col lg:flex-row overflow-hidden" (opened line 71).
+- Extra closes cascaded at lines 1039 / 1524 / 1525.
+- Full strict parse now reports ZERO mismatches and ZERO unclosed divs.
+
+### Fix
+Rewrote the `tab-research` section (lines 954-1039) with correct nesting:
+- registry-stats column: 4 cards each closed properly + inner grid + column,
+- grid closed exactly once after the registry-listing column,
+- BUG-046 data-quality panel + Validate panel are clean siblings,
+- every `section` closes inside `<main>`; `<main>` closes once at the end.
+
+### Regression Guards
+- `HTMLParser` strict stack check: no MISMATCHED-close, no EXTRA-close,
+  no unclosed divs at EOF (verified after fix).
+- All 7 tab sections (`tab-monitoring` … `tab-debug`) open/close inside
+  `<main>`; `<main>` closes once after the last tab.
+- `tests/unit/test_frontend_assets_phase14.py` (27 tests) green.
+
+### Files Changed
+- `Web/index.html` — research tab div re-balance (only structural edit; no
+  handler/id/class changed)
+
+## BUG-069 — News Keyword Analysis Dataset (PHASE 12 expansion: 189 keywords + live corpus coverage)
+
+- **Status**: VERIFIED
+- **Severity**: LOW (feature addition — analytic depth for the News Intelligence Engine)
+- **Confidence**: HIGH (unit + integration + end-to-end TestClient verified)
+
+### Feature
+A deterministic keyword analysis dataset for the News subsystem:
+- **189 keywords** across 8 categories (currency / asset / institution /
+  macro / geopolitics / energy / directional / fx_pair), each with topic
+  mapping, XAUUSD directional bias (BULLISH/BEARISH/NEUTRAL), weight and
+  optional aliases + negative-context suppression ("GOLD MEDAL" != gold).
+- **Corpus coverage analytics**: per-keyword article hits, mention counts,
+  share, direction distribution, active-keyword count, category counts.
+- **Per-article keyword hits** surfaced on the live feed for explainability.
+- **UI panel** in the News tab: dataset stats (keywords / articles scanned /
+  mentions / active / bull-bear-neutral) + searchable/filterable keyword
+  table with live hit counts.
+- **API**: `GET /api/news/keywords` (dataset meta + coverage + filterable
+  listing by category/q); `keyword_hits` added to `GET /api/news` rows.
+
+### Files Changed
+- `src/nexus_scalp/news/analysis/keywords.py` — new dataset module (NEW)
+- `src/nexus_scalp/news/analysis/__init__.py` — exports
+- `src/nexus_scalp/web/server.py` — `/api/news/keywords` + feed keyword_hits
+- `Web/index.html` — Keyword Analysis Dataset panel (news tab)
+- `Web/app.js` — loadNewsKeywords / kwRow / search-as-you-type wiring
+
+### Regression Guards
+- `tests/unit/test_news_keywords_dataset.py` (17 tests): dataset size >= 150,
+  determinism, category coverage, bias sets, dict-row support, negatives
+  suppression, coverage math, per-article hits, local-analyzer alignment.
+- `tests/integration/test_news_api.py` (+2): keywords endpoint shape/filters,
+  feed keyword_hits.
+- Full news suite green: test_news_phase12 (66) + test_news_keywords_dataset
+  (17) + test_news_bridge_* (3) + test_news_api (26) = 112 news tests.
+- ruff check/format + mypy clean on all changed files.
+
+## BUG-070 — Broker Timebase Skew: MT5 Server Epochs Treated as UTC (+3h) + Live-Log Truthfulness Defects (2026-08-18 live-log audit)
+
+- **Status**: FIXED (2026-08-18, live-log audit + MT5 probe)
+- **Severity**: HIGH (timebase) / MEDIUM (log truthfulness)
+- **Confidence**: HIGH (live terminal probe: tick.time=01:55:02 vs real UTC 22:55:02, delta exactly +10800s; code-path proof)
+
+### Symptom (nse_live.log 2026-08-18 session + probe)
+1. Broker epochs (ticks/bars/history) were stamped as UTC although the MT5
+   terminal reports SERVER-local time on GMT+3: every chart bar, freshness
+   (staleness) calculation and news window sat 3h in the future. A tick 5
+   minutes old never looked stale.
+2. `Bar completed` re-minted a duplicate completed bar at an already-sealed
+   timestamp (01:46) right after a 01:46 reseed on the same minute — forking
+   the chart series and feature window.
+3. `*** REAL ORDER/EXECUTION EXECUTED ON BROKER SERVER ***` was logged when
+   NO new order was sent: the adapter's idempotency guard (BUG-062) returned
+   the EXISTING pending ticket ("Fast-Act Pending Order already exists"), and
+   the CLOSE/PARTIAL_CLOSE/MODIFY branches logged the phrase unconditionally
+   regardless of broker success.
+4. Log flood: `[MODE]` logged every 5s (~12 identical lines/min) and
+   `[POSITION_EXIT_EVAL]` once per tick burst (~10 identical verdicts/sec).
+5. Warmup summary contradiction: `[FEATURE_STATUS] fallback=16` then
+   `[WARMUP] COMPLETE fallback_features=0`.
+6. Predictive-limit path re-generated a second BUY_LIMIT (02:18:59) while a
+   resting pending from ~96s earlier was still on the broker (exposure gate
+   already saw it — PATH ran after the gate without a re-check).
+
+### Fix
+1. `providers.py`: new `BROKER_SERVER_UTC_OFFSET_MINUTES=180` + dedicated
+   `broker_epoch_to_utc()` (epoch - offset, then tz=UTC). Applied at ALL
+   broker-epoch → snapshot sites: tick snapshot, rate-bar snapshot, tick
+   history snapshot, and the tick mapping in `mt5_adapter.py`.
+   `normalize_utc()` (input normalization contract) intentionally unchanged.
+   History fetch boundaries (`history_orders_get`/`history_deals_get`/
+   `copy_rates_range` defaults) now request `now + offset` so the broker
+   resolves its own server-local window.
+2. `bar_aggregator.reseed()`: forming bar seeded at `last_bar.timestamp +
+   1min` (the NEXT minute after the last COMPLETED bar) instead of the sealed
+   last minute — first live tick can no longer mint a duplicate completed bar.
+3. Honest order logs (`order_manager.py`): CLOSE/PARTIAL_CLOSE/MODIFY_SL_TP
+   only log `REAL ORDER/EXECUTION EXECUTED` on `success`; pending dispatch
+   distinguishes genuine new sends from idempotent reuse via a new
+   `_last_pending_reused` flag set by the adapter guard (reuse logs
+   `PENDING ORDER REUSED (already on broker)`).
+4. `_update_runtime_mode` logs only on actual mode transitions (was every 5s);
+   `[POSITION_EXIT_EVAL]` throttled to one line per ticket per 3s (sentinel
+   `_ExitEvalLogSkipped` swallowed by the existing isolated catch).
+5. Warmup COMPLETE reports the real `fallback_count` + `htf_fallbacks`.
+6. Predictive-limit path re-checks `total_exposure < MAX_TOTAL_EXPOSURE`
+   before generating a new pending (runs after the exposure gate).
+
+### Verified
+- MT5 read-only probe (no orders): offset confirmed; mapping now yields
+  real-UTC timestamps; freshness ~0 for a "now" broker epoch.
+- `tests/unit/test_mt5_providers_phase14.py` (+1 broker-offset regression),
+  `test_chart_resync_phase15b.py` (reseed +1min contract updated),
+  `test_bar_aggregator.py`, `test_mt5_adapter.py`, `test_order_manager.py`,
+  `test_policy.py`, `test_execution_architecture.py`,
+  `test_adaptive_position_management.py`, `test_exit_behavior_forensic.py`
+  all green; ruff check/format + mypy clean on all changed files.
+
+## BUG-071 - Account Performance & Intelligence panel: pro win/loss-rate reconciliation + loss-persistence and cost intelligence (Phase 16 UI)
+
+- **Status**: DONE (2026-08-18, accounting core + dashboard)
+- **Severity**: LOW-MEDIUM (diagnostic depth; no engine behavior change)
+- **Confidence**: HIGH (all accounting unit tests + frontend asset tests green)
+
+### What changed
+1. **Backend (accounting core)**
+   - `PeriodReport` + `aggregate_period()`: added `loss_rate_decided` (losses / (wins+losses)), `loss_rate_all` (losses / all trades incl. breakevens), `win_rate_all`, `pnl_weighted_win_rate` (gross_profit / (gross_profit+gross_loss)), `win_rate_denominator`, `expectancy_breakeven_incl`, `avg_pnl_per_decided`, `total_costs` (comm+swap), `cost_drag_pct`, `stop_loss_share` (losses closed at a protective stop / all losses) and `avg_loss_r`. All derived from the SAME in-period trade list as the classic win_rate, one loop, no consumer-side re-derivation.
+   - `compute_advanced_metrics()`: mirrors the reconciliation (`win_rate_denominator`, `loss_rate_decided/all`, `win_rate_all`, `pnl_weighted_win_rate`, `expectancy_breakeven_incl`, `avg_pnl_per_decided`, `total_costs`, `cost_drag_pct`, `stop_loss_share`, `avg_loss_r`, `avg_r_multiple`) plus per-trade quality: `avg_mae_r`, `avg_mfe_r`, `win_mae_capture_pct`, `loss_efficiency_pct`, `profit_skew`, `loss_skew`, `avg_hold_sec`, `volume_total`, `commission_total`, `swap_total`, `avg_risk_usd`, `r_coverage_ratio`.
+   - No fabricated numbers: every ratio stays None until evidence exists (statistical honesty rule preserved).
+2. **Dashboard (Web/index.html + Web/app.js)**
+   - Period grid: 6 new cards (Loss Rate decided/all, Win Rate all, Win Rate PnL-weighted, Avg PnL/Decided, Cost Drag) + a 'denominator' micro-badge under the classic Win Rate card.
+   - Advanced grid: 7 new cards (Stop-Loss Exit Share, Avg Loss R, Avg Win R, Avg MAE R, Avg MFE R, Avg Hold, Avg Risk/Trade).
+   - New 'Performance Intelligence' info-text block under Advanced Risk Metrics: human audit lines generated from real values (win/loss reconciliation, PnL-weighted rate, cost drag, stop-loss discipline with threshold coloring, excursion quality, breakeven-inclusive expectancy verdict).
+
+### Verified
+- `tests/unit/test_accounting_advanced_metrics.py` extended (basic-stats now assert loss-rate/multi-denominator reconciliation; new `test_loss_rate_derived_from_pnl`).
+- `tests/unit/test_accounting_core.py` (full), `test_accounting_hedging.py`, `test_mt5_accounting_from_history.py`, `test_frontend_assets_phase14.py`, `test_web_security.py` all green.
+- ruff check/format + mypy (src/nexus_scalp/accounting) clean.
+
+### Regression Guards
+- win_rate (decided) unchanged: still wins/(wins+losses); losses can be recomputed as 100 - win_rate on decided trades.
+- Period and advanced panels reconcile to the same denominators (both label `win_rate_denominator`).
+- Breakeven-heavy samples no longer hide the loss rate (the 09.4% BUG-067 case is now visible as loss_rate_all + PnL-weighted + cost drag).
+
+## BUG-071 — AuditRepository sqlite:///:memory: Worker Writes to Empty Private DB (full-suite collapse)
+
+- **Status**: FIXED (2026-08-18, exposed by BUG-070 audit-path write)
+- **Severity**: HIGH for tests / latent for any in-memory usage
+- **Confidence**: HIGH (reproduced: worker flush on `:memory:` repo -> "no such table: audit_ledger")
+
+### Symptom
+Full unit suite collapsed with 23 failures across accounting/order-lifecycle/
+outcome-correlation while every failing file passed in isolation. Background
+log: `Audit Background Worker failed to insert batch error=no such table:
+audit_ledger` (file-backed repos showed `no column named entry_setup_snapshot`
+when a stale-schema file DB was hit).
+
+### Root Cause
+`AuditRepository(db_url="sqlite:///:memory:")` opens a PRIVATE empty database
+per connection. The schema is created on the setup connection, but the
+background worker thread opens its own connection — so every ledger/signal
+insert executed against an empty DB. Tests that write ledger rows through the
+worker only failed in full-suite orderings where those rows were actually
+produced.
+
+### Fix
+In-memory URL is translated to a shared named cache
+(`file::memory:?cache=shared`) with the setup connection kept open to hold the
+cache alive; the worker opens a thread-local connection to the same shared DB
+(SQLite connections are thread-bound). `close()` releases the held connection.
+
+### Verified
+Repro script: worker flush on `:memory:` repo -> 1 ledger row readable from a
+fresh shared-cache connection. Full unit suite green (EXIT=0, 0 failures).
+
+## BUG-072 — Restart-BREAKS_Broker-Supplied Pending Order Exposure Gate: MAX_EXPOSURE Blocker Uses In-Memory Session Cache That Survives Broker-Only Changes (2026-08-18 trade-availability forensics)
+
+- **Status**: DISCOVERED (read-only forensics; no fix implemented)
+- **Severity**: HIGH (blocks valid execution; directly explains the 3,720-engine-MAX_EXPOSURE / 0-broker-exposure split)
+- **Confidence**: MEDIUM-HIGH (DB + log cross-evidence; cannot introspect the live memory space read-only)
+
+### Symptom (24h window 2026-08-17T02:49Z -> 2026-08-18T02:49Z)
+1. `audit_signals` recorded 3,720 `MAX_EXPOSURE_REACHED` NO_TRADE rows (25% of all signals) whose payload carries `ticket: 0` and whose model probabilities are ZERO (`ai_buy=0, ai_sell=0`) — i.e. the strict pre-inference exposure gate in `SignalPolicy.evaluate()` fired from internal state, not from a model decision.
+2. Cross-referencing broker truth at the exact same timestamps (sample 300 + 500 +
+   30 rows): ZERO of the MAX_EXPOSURE moments had any broker-active pending
+   (`audit_broker_orders.comment='NSE_PENDING', state IN (1,3)`) or open position
+   (`exit_time IS NULL` in `audit_broker_trades`). 300/300 samples had neither.
+   -> The engine believed exposure >= 1 while the broker had none.
+3. Broker history shows heavy pending churn: 387 NSE_PENDING created, 163 canceled
+   (mean rest 275s; 6 rested >300s; max 4,976s), 224 filled in 24h. A portion of
+   these pendings is EXECUTED (state 4) while the engine-internal pending tracker
+   (`OrderLifecycleManager._live_tickets_cache`) is rebuilt only from
+   `positions_get` + `get_pending_orders` at the tick-manage cadence (line ~3757).
+   Between broker-side fills and the next cache rebuild, the engine's cached
+   "pending" continues to occupy the MAX_TOTAL_EXPOSURE=1 slot.
+4. Three broker-cancel failures logged: `Failed to cancel pending order #152495362150.
+   Retcode: 0` (04:13:01), `#152495090247` (02:21:05), `#152495564091` (05:18:46).
+   `retcode 0` masks the failure (no error context); the order-manager cancel path
+   holds a 30s lock + >=1.0 ATR drift requirement before replacing a pending, so a
+   pending that SHOULD have been re-created can instead be retained in internal
+   state while the broker-side order was already gone.
+5. `audit_orders` for ticket 152495362150 shows a single `Generated candidate /
+   dispatch_order pending SELL_LIMIT` row at 00:41:53 with no broker-orders row, no
+   deal, and no ledger row -> the engine believed a pending existed; the broker
+   never saw it (or it was canceled). Experience `exp_f927a01f-871` exists with
+   model_probability=0.0.
+
+### Root Cause (hypothesis, code-verified: needs live-memory confirmation)
+`SignalPolicy.evaluate()` reads exposure via `OrderLifecycleManager.get_active_live_tickets()` -> in-memory `_live_tickets_cache`, which is refreshed by the order-manager sync from broker `positions_get`/`orders_get` at its own cadence. Any of (a) broker-side fill of a pending before the next sync, (b) a failed/never-arrived pending whose ticket was registered in the engine's `_entry_timestamps`/cache, or (c) stale cache surviving a restart gap, leaves `total_exposure >= MAX_TOTAL_EXPOSURE` while the broker has nothing. Every subsequent valid proposal then returns `MAX_EXPOSURE_REACHED` with ticket=0 until the next successful sync. The gate also short-circuits BEFORE model inference (zero probs), so blocked-by-stale-state rows are also classified as pure NO_TRADE with no forensic ticket.
+
+### Evidence
+- `audit_signals` reason_code='MAX_EXPOSURE_REACHED' n=3,720, all payload.ticket=0.
+- 300/300 + 500/500 sampled blocker instants had zero broker-active pending/position.
+- `audit_broker_orders` 24h: 700 rows, 387 pendings, 163 cancels (6 with rest >300s,
+  max 4,976s), 224 fills; some pendings fill ~<10s (119) — fast fills vs slow sync.
+- 3 cancel-failure logs with Retcode: 0 (no error context).
+- `Signals` with candidate passed (action != NO_TRADE) and reason MAX_EXPOSURE: 0 —
+  ALL exposure rejects pre-empt candidates (confirms gate placement before inference).
+- policy.py lines 333-400: strict gate `total_exposure >= 1 -> MAX_EXPOSURE_REACHED`
+  evaluated from `live_tickets` cache; `_build_no_trade` defaults probs to 0.0.
+
+### Impact
+Even with perfect model gating (0 candidate-passed exposure rejects), the exposure
+gate is the #1 NO_TRADE reason (25% of all signals) and blocks the single valid
+candidate slot whenever internal state is stale. Combined with 387 pending
+creates / 163 cancels / 224 fills of broker churn per 24h, the engine may be
+locking itself out of entries for minutes at a time. Contribution to low trade
+count: HIGH (but below the model-confidence contribution, which is separate).
+
+### Reproduction Path (future agent)
+1. Run live or paper-forced MT5: place a pending limit, let the broker FILL it,
+   and BEFORE the next order-manager sync poll, evaluate a valid proposal ->
+   observe MAX_EXPOSURE_REACHED while `orders_get()` shows no pending.
+2. Or: register pending ticket in cache, force cancel-failure path (retcode 0),
+   observe slot retained beyond broker truth.
+3. Confirm with an instrumented probe comparing `get_active_live_tickets()` vs
+   `orders_get()`/`positions_get()` every second.
+
+### Recommended future fix (NOT implemented here)
+- Reconcile `_live_tickets_cache` against broker truth synchronously inside
+  `get_active_live_tickets()` or bound the exposure gate to a broker-verified
+  snapshot with an age bound (e.g. >=2s stale -> re-query before blocking).
+- On cancel-failure with `retcode 0`, re-query the broker for the ticket before
+  declaring the slot locked; log the actual MT5 error.
+- Emit the blocking ticket in the MAX_EXPOSURE payload (currently 0).
+
+### Regression test recommendation
+- Unit: policy with an order-manager stub whose cache holds a ticket that the
+  broker `orders_get()` no longer returns -> exposure gate must NOT block.
+- Integration: pending fill followed by immediate candidate -> no MAX_EXPOSURE.
+### FIXED (2026-08-18, broker-verified cancellation + reconciliation)
+- **Status**: DISCOVERED -> FIXED
+- `OrderLifecycleManager` now exposes `cancel_pending_order_verified()`,
+  `cancel_pending_order_with_retry()` (bounded, idempotent),
+  `_pending_broker_state()` (ACTIVE/GONE/UNKNOWN tri-state),
+  `refresh_live_tickets_cache()` (rebuild internal view from broker truth)
+  and `reconcile_pending_state()` (periodic mismatch repair; broker wins).
+- A pending order is considered canceled ONLY when broker state confirms it:
+  `orders_get()` absence + DONE send, or a positive terminal state in
+  `history_orders_get()`. retcode=0 (request never reached the server) keeps
+  the exposure slot occupied (UNKNOWN stays locked).
+- `manage_active_positions()` now runs `reconcile_pending_state()` every tick
+  after the cache rebuild; `run_loop()` startup also reconciles (restart
+  safety). Internal cache can never outlive broker truth.
+- All cancel call sites (manager `CANCEL_ORDER`, `manage_pending_orders`,
+  `evaluate_falling_knife_protection`) route through the verified path.
+- `mt5_adapter.cancel_pending_order` now logs retcode/comment/request_id and
+  explicitly documents retcode 0 semantics.
+- Policy MAX_EXPOSURE_REACHED/PENDING_ORDER_LOCKED NO_TRADE rows now carry
+  `blocked_by=EXECUTION_STATE_BLOCK` + `decision_stage=EXPOSURE_GATE`, and the
+  audit payload adds `blocked_by`/`decision_stage` (additive to BUG-054's 8)
+  so learning can distinguish execution-state blocks from model rejection.
+- Regression: `tests/unit/test_pending_cancel_reconciliation.py` (17 tests:
+  broker-verified cancel release/lock, ambiguous handling, idempotency,
+  mismatch detection/repair, bounded retry, crash isolation, phantom reuse).
+- Verified: read-only MT5 probe (orders_get=0, positions_get=0 at 02:51Z;
+  tickets 152495362150/152495369729/152495564091 absent from 12h history —
+  they never existed server-side; last real broker event 152495190924).
+
+## BUG-073 — Experience-Outcome Learning Pipeline Loses 65%% of Executed Trades (186 experiences -> 65 outcomes; 121 never resolved) (2026-08-18 trade-availability forensics)
+
+- **Status**: DISCOVERED (read-only forensics; no fix implemented)
+- **Severity**: HIGH (learning-data contamination/gap: research + training datasets
+  are built from experiences/outcomes; the missing 2/3 masks real signal quality)
+- **Confidence**: HIGH (DB joins; 65 outcomes of 186 experiences = 35% realized)
+
+### Symptom
+1. 24h window: `audit_experiences` = 186 rows (154 limit proposals, 32 market);
+   `audit_experience_outcomes` = 65 (ALL `is_executed=1, is_closed=1`).
+   -> 121 experiences (65%) never received an outcome.
+2. Closed ledger rows 24h = 251 rows but only 65 outcomes; 187 closed ledger rows
+   have NO matching outcome row (`execution_id` empty in `audit_experience_outcomes`
+   for the vast majority; ledger `order_id` empty for 181 of 254 rows).
+3. Broker truth (position-level, `audit_broker_trades`) shows 242 position rows in
+   24h — the ledger is inflated by split-leg duplicates (order_id groups: many rows
+   per group; e.g. 152494870538 had ~10 sibling rows at identical timestamps) —
+   but even deduplicated, executed trades outnumber outcomes ~3.7:1 (242 vs 65).
+4. Outcome quality for the 65 that exist: avg realized_r = -0.075, avg pnl = -$19.4,
+   avg hold 125s, exit_reason mostly SYSTEM_CLOSE (21) / BREAK_EVEN_SL_HIT (15) /
+   MANUAL_CLOSE (10), with 6 UNKNOWN. Strategy/entry/exit quality scores are all
+   strongly negative; strategy_intelligence_registry shows dozens of experiments
+   stuck at DISCOVERED with sample_count 0-4.
+
+### Root Cause (code-path traced)
+Outcomes are written by the order-manager close/reconciliation path keyed by
+`idempotency_key` = `exp_<request_id>` and `execution_id` = broker ticket
+(skill.md BUG-008/021: `audit_experiences.execution_id` is EMPTY by design; the
+join goes through `audit_experience_outcomes`). The 65% gap means the
+ticket->experience bridge fails for the majority of trades: either the outcome
+recorder only handles tickets it tracked in `_entry_timestamps` (which the
+24h 700-row broker history + restart gaps can break), or the experience writer
+deduplicates by request_id against a different request_id than the one the order
+manager used at dispatch, or broker-side fills (pending fills 224) lack the
+original experience request_id entirely (pending placed at T-0, filled at T-N;
+the fill callback may carry no request link).
+
+### Evidence
+- `audit_experiences` 186 / `audit_experience_outcomes` 65 (join on idempotency_key).
+- 187 of 254 ledger rows closed in 24h without an outcome; 121 experiences without outcome.
+- Broker trades 242 in-window vs 65 outcomes; fills 224 (fast <10s: 119).
+- skill.md §14: experience->outcome bridge is THE strategy-identity chain.
+- Avg outcome R = -0.075 with negative quality scores -> even the resolved
+  minority shows the model is currently losing.
+
+### Impact
+1. Strategy research (research_runs EMPTY!), Discovery (dozens of experiments at
+   DISCOVERED with sample_count=0), and the Phase 10 training dataset builder
+   receive only ~35% of real outcomes -> statistics are built on a biased,
+   missing-at-random subset (~worse on fast fills, which are the best trades).
+2. The EXPERIENCE_INTELLIGENCE_GATE (66 rejects in 24h, reason PREDICTIVE_OB_*_LIMIT_EQUILIBRIUM)
+   scores strategies on this incomplete + negative sample -> reinforces rejection.
+3. No training can improve because the training dataset never accumulates a
+   representative resolved sample (training_runs = 0).
+
+### Reproduction Path
+1. Run live, observe closed trades; compare count in audit_broker_trades (or
+   audit_ledger dedup by order_id) vs audit_experience_outcomes for the same window.
+2. Pick a closed ledger ticket without an outcome row; trace the request_id from
+   audit_orders -> audit_experiences; confirm the outcome writer never saw it.
+
+### Recommended future fix (NOT implemented here)
+- Make outcome recording broker-truth-driven: after close/reconciliation, write an
+  outcome row for EVERY closed broker position, linking the original experience via
+  the stored order request_id/comment (include request_id in the pending comment or
+  tie via assessor fields).
+- Fix ledger dedup: one canonical row per master order_id; split legs referenced,
+  not duplicated.
+- Backfill: deduplicate broker_trades by master_order_id and synthesize outcome
+  rows for all un-outcomed closed positions.
+
+### Regression test recommendation
+- Integration: closed broker position (paper adapter) with a real filled pending ->
+  assert exactly one outcome row exists and joins to the experience by request_id.
+- Unit: ledger with split legs -> dedup determinism.
+
+## BUG-074 — UnboundLocalError('time') in LiveEngine Tick Pipeline Freezes Exposure Cache (2026-08-18 live-log forensics)
+
+- **Status**: FIXED (2026-08-18)
+- **Severity**: HIGH (execution-availability; directly explains the 3,720 MAX_EXPOSURE_REACHED+
+  0-broker-exposure split alongside BUG-072)
+- **Confidence**: HIGH (55+ consecutive identical tracebacks in nse_live.log at 03:24:32+)
+
+### Symptom
+From 03:24:32 the live loop logged `Silent recovery: exception caught in hot-path tick
+processing pipeline error=cannot access local variable 'time' where it is not associated
+with a value` every ~2s (55+ times). The traceback shows the exception raised inside
+`_process_tick_pipeline` at the `manage_active_positions` call — the very call that
+rebuilds the broker-truth exposure cache. While the pipeline crashed every tick, the
+internal `_live_tickets_cache` froze with the last observed PENDING, and the policy
+exposure gate read that stale cache -> MAX_EXPOSURE_REACHED with zero broker exposure.
+
+### Root Cause
+`live_engine.py` imported `time` INSIDE function bodies (`_process_tick_pipeline` at the
+radar/heartbeat site and `_evaluate_hedging_policy`). A function-level `import time`
+after any earlier use of a local named `time` makes the name function-local for the
+WHOLE function; any code path reaching `time.time()` before the import statement runs
+raises UnboundLocalError. (The import after the watchdog+hedging sites shadowed the
+module attribute.)
+
+### Fix
+- Single module-level `import time` in `live_engine.py`; removed the three
+  function-local imports (kept the aliased `import time as _time` in
+  `_infer_probabilities`, which never shadows).
+
+### Regression guard
+- `tests/unit/test_pending_cancel_reconciliation.py::test_tick_pipeline_crash_does_not_freeze_exposure_cache`
+  (crash isolation: a pipeline exception must not leave the exposure cache frozen; the
+  next broker-truth rebuild restores it).
+- ruff check/format + mypy clean on live_engine.py.
+
+### Verified
+- Module compiles + imports; full unit suite green.
+
+
+---
+
+## BUG-076 — Telegram Silent Delivery Failure: Empty live.yaml Token Disables Notifier with Zero Console Trace (2026-08-18 forensics)
+
+- **Status**: FIXED (2026-08-18, forensic trace + queue/worker rebuild)
+- **Severity**: CRITICAL (live trading system: notifications silently disappear)
+- **Confidence**: HIGH (full runtime path traced; regression tests reproduce; real API delivery verified)
+
+### Symptom
+"Telegram message is not delivered + no meaningful console error + no explicit failure state."
+The UI "Send Test Message" reported generic failure; no console/log line anywhere
+explained WHY the message vanished.
+
+### Root Cause (exact delivery-path failure point)
+1. `configs/live.yaml` had `telegram.bot_token: ''` (empty). `TelegramNotifier.__init__`
+   computes `self.enabled = enabled and bool(bot_token) and bool(admin_id)` = **False**.
+2. `send()` (and every `notify_*` template) does `if not self.enabled: return None`
+   with **zero logging** — the notification simply disappears.
+3. When enabled and a real failure occurred, `_send_msg_sync` swallowed everything:
+   - HTTP 200 + `ok=false` (Telegram API rejection) was treated as success;
+   - non-200 responses were blind-retried 3x regardless of class (400 auth/target
+     errors are permanently non-retryable);
+   - every failure returned bare `None` with only a generic `logger.error(...)` line;
+   - NO correlation ID, NO queue, NO worker lifecycle, NO health state existed.
+
+### Forensic Evidence
+- `live.yaml:24` `bot_token: ''`; `TelegramNotifier.__init__` (constructor) computes
+  enabled=False; `send()` returns None before any logging.
+- `_send_msg_sync`: HTTP 200 checked only `res_json.get("ok")`, falling through on
+  ok=false to `break` and `return None`; `except Exception` around urlopen retried
+  and ultimately logged the raw exception then `return None`.
+- Web `/api/telegram/test` returned `SEND_FAILED` with a generic message — no category.
+
+### Fix
+- **Full lifecycle observability** (`observability/telegram_notifier.py` rewritten):
+  - Dedicated queue (`queue.Queue`) + worker thread (`telegram_queue_worker`) with
+    START / RUNNING / HEARTBEAT (5s) / CRASH / RECOVERED / STOP events.
+  - Every notification carries `notification_id`, `correlation_id`, `event_type`,
+    `priority`, `target_class`, `created_at`; logs `ENQUEUED -> SEND_START ->
+    SEND_RESULT/SEND_FAILED -> DELIVERED | FAILED_FINAL` (never silent).
+  - HTTP response **verified**: 200+ok=true -> DELIVERED; 200+ok=false -> FAILURE;
+    429 -> RATE_LIMIT retry; 5xx -> bounded retry; 400-class -> NO retry.
+  - Error taxonomy with `retryable`/`severity`/`safe_message` (AUTH/TARGET/NETWORK/
+    TIMEOUT/RATE_LIMIT/SERVER/HTTP/API/SERIALIZATION/QUEUE/WORKER/UNKNOWN).
+  - `health_state()` -> status READY/DEGRADED/STOPPED + queue/sent/failed/retries/
+    last_success/last_failure/failure_category (never fake).
+  - `get_me()` connectivity probe + `send_diagnostic()` labeled test with real result.
+  - Disabled/misconfigured notifier logs `[TELEGRAM] event=BLOCKED_NOT_CONFIGURED`
+    and increments failure counters (explicit state, not silence).
+- **Web API**: `/api/telegram/test` now returns the real worker verdict incl.
+  `category` + `correlation_id`; `/api/observability/stats` includes full worker
+  health; UI shows final delivery state (checked: delivered message_id / category).
+- **Hot-path safety preserved**: enqueue-only on caller thread; network I/O strictly
+  in the worker; Telegram failure can never block/stop trading.
+
+### Regression Guards
+- `tests/unit/test_telegram_forensics_bug072.py` (12 tests): HTTP-200-ok=false is an
+  observable FAILURE with category TELEGRAM_TARGET_ERROR and exactly 1 attempt;
+  disabled notifier emits NOT_CONFIGURED state; worker observable; health_state
+  contract; classification matrix (401/400/429/500/503); secrets never leak.
+- `tests/unit/test_telegram_notifier.py` + `test_telegram_reporting_bug057.py` all green.
+- Real API verification (this host): getMe HTTP 200 (bot adsmanage2bot),
+  diagnostic message_id=1741 delivered through queue+worker, health READY.
+
+---
+
+## BUG-077 — Isolated Secure Settings Architecture: Telegram Credentials Coupled to live.yaml Plaintext (2026-08-18)
+
+- **Status**: FIXED (2026-08-18, new subsystem)
+- **Severity**: HIGH (credentials must not live in editable YAML; config must be
+  installable/persistent/isolated/secure)
+- **Confidence**: HIGH (unit + API tests; real DB + DPAPI round-trip on this host)
+
+### Root Cause
+`TelegramConfig.bot_token/admin_id` lived in `configs/live.yaml` (plaintext), and
+the web UI GET `/api/config` returned the raw YAML incl. the plaintext token to the
+browser; the engine read credentials only from YAML or env.
+
+### Fix
+- **`src/nexus_scalp/settings/`** new subsystem:
+  - `secret_store.py` — `SecureSecretStore` using **Windows DPAPI**
+    (CryptProtectData/CryptUnprotectData via ctypes; ciphertext anchored to the OS
+    user, never plaintext, never XOR/base64/hardcoded key).
+  - `service.py` — `SettingsDatabase` (isolated `app_settings.db` under
+    `%LOCALAPPDATA%\NexusScalpEngine\databases\`) + `SettingsService`
+    (canonical provider + precedence SYSTEM DEFAULT < INSTALLATION < ENV < RUNTIME).
+    Tables: `application_settings` (key/value/type/version/mutability/source/updated_at),
+    `configuration_metadata`, `settings_audit` (every mutation audited w/ old/new safe
+    values, source, actor, correlation_id). Mutability classes: HOT_SAFE /
+    HOT_RESTRICTED / RESTART_REQUIRED / INSTALLATION_ONLY / SECRET.
+  - Explicit degraded states: SETTINGS_DB_UNAVAILABLE / SETTINGS_DB_CORRUPT /
+    SECRET_UNAVAILABLE / CONFIG_INVALID / MIGRATION_REQUIRED — never fake READY.
+- **Legacy migration** (`configs/live.yaml` -> secure store): idempotent,
+  restart-safe, failure-safe (legacy YAML blanked ONLY after write-back verification);
+  token never logged; new installs require no legacy fields.
+- **Web API**: `GET /api/settings` (safe snapshot, masked token), `GET/POST
+  /api/settings/telegram*`, `POST /api/settings/validate`; `GET /api/config` now
+  masks `telegram.bot_token` (never plaintext); `POST /api/settings/telegram`
+  rebuilds the live notifier (restart-free pickup).
+- **CLI**: `nexus settings` (masked status + provenance). **Doctor**: TELEGRAM
+  health check (PASS/WARNING/FAIL, never token).
+- **LiveEngine**: constructs SettingsService; credentials from secure store
+  (env override remains the diagnosis escape hatch); logs
+  `[TELEGRAM_CONFIG] enabled/configured/token_present/source`.
+
+### Regression Guards
+- `tests/unit/test_settings_subsystem_bug072.py` (16) — DB first-run/persist/typed/
+  version/corrupt/audit/mutability; DPAPI never plaintext on disk + roundtrip;
+  telegram config status; restart reload; legacy migration success/failure/idempotent.
+- `tests/unit/test_settings_api_bug072.py` (6) — no plaintext token anywhere in
+  snapshots; truthful status; provenance w/ source+version; mutation audit;
+  notifier rebuild; clearing token disables.
+- Real run: `nexus settings` -> State OK, configured NO (no token yet),
+  admin_id_present YES; `%LOCALAPPDATA%\NexusScalpEngine\databases\app_settings.db`
+  + `secrets.enc` created.
+
+---
+
+## BUG-078 — beforePush.ps1 Unparseable on Windows PowerShell 5.1 (UTF-8 no-BOM) + Start-Job Lose Repo CWD (2026-08-18)
+
+- **Status**: FIXED (2026-08-18, gate hardening)
+- **Severity**: HIGH (quality gate could not run at all)
+- **Confidence**: HIGH (parse test + full gate re-run after fix)
+
+### Root Cause
+1. `beforePush.ps1` committed as UTF-8 **without BOM**; Windows PowerShell 5.1
+   `-File` reads BOM-less files as ANSI -> smart quotes/em-dashes corrupt the token
+   stream -> "Missing closing '}'" parser errors; gate unusable.
+2. `Start-Job` script blocks run in a fresh process that does NOT inherit the
+   caller's working directory (observed System32) -> `mypy src` / `pytest
+   tests/unit/` could not resolve paths ("Cannot read file 'src'" / "no tests ran").
+
+### Fix
+- Prepend UTF-8 BOM to `beforePush.ps1` (PS 5.1-safe).
+- Pass `(Get-Location).Path` into each Start-Job block and `Set-Location` inside.
+
+### Regression Guards
+- Parser check (`[System.Management.Automation.Language.Parser]::ParseFile`) -> OK.
+- Full `beforePush.ps1` run green after fix.
+
+### Other fixes in this session
+- `src/nexus_scalp/news/analysis/keywords.py` — PLW0603 global-scope mutation of
+  `_PATTERN_CACHE_KEY` replaced with `_cache_meta` dict (ruff gate clean).
+- `src/nexus_scalp/research/registry.py::_load` — `{}` empty-object JSON (BUG-075
+  serialization form) must decode to None, not explode required-field models
+  (fixes `test_strategies_seeder_phase15c`).
+
+## BUG-079 — News/Rules/Research UI Forensic Fix: Registry null-Score Crash + Silent Frontend API Failures + Stale Web Bundle (2026-08-18)
+
+- **Status**: FIXED (2026-08-18, frontend + backend + release verifier)
+- **Severity**: HIGH (UI crash + silent empty panels) / MEDIUM (release drift)
+- **Confidence**: HIGH (live API probes + in-process smoke + 10 new regression tests)
+
+### Symptom
+1. Research Registry crashed the whole panel: `Cannot read properties of null
+   (reading 'final_score')` at `loadResearchRegistry` (JSON.parse(r.score)).
+2. News Intelligence tab stayed on static "News engine idle" / "Loading keyword
+   dataset" while the backend had REAL data (news.db: 1,530+ articles, 745+
+   analyses, state=HIGH_IMPACT, 16 active events at runtime probe).
+3. Scalping Rules tab empty despite `trading_rules_config` having 30 seeded
+   rules.
+4. The packaged release (`release/v9.0.0/.../portable/_internal/Web/app.js`,
+   2,470 lines) was a STALE web bundle vs the repo source (4,233 lines) —
+   missing loadNewsKeywords, tab auto-load hooks, error handling.
+
+### Root Cause
+1. `StrategyRegistry._json(None)` produced the JSON literal `"null"`; the
+   seeder wrote `score = 'null'` into `strategy_registry` for unvalidated
+   candidates. Frontend `JSON.parse("null")` -> `null` -> `.final_score`
+   throws.
+2. Frontend news/rules loaders swallowed fetch/HTTP/JSON errors silently
+   (console.warn at most); failures left the static placeholders visible.
+3. Release pipeline stamped no web-asset fingerprint into build-info.json, so
+   a stale bundle shipped unnoticed (verified: packaged app.js lacks
+   `loadNewsKeywords`).
+
+### Fix
+- `src/nexus_scalp/research/registry.py::_json`: None -> `'{}'` (canonical
+  empty object), never `'null'`.
+- `src/nexus_scalp/research/store.py`: `_json_text_safe` + `_registry_row_safe`
+  normalize historical `'null'`/null/''/malformed JSON columns to `'{}'` at
+  read time — every consumer (API/UI) is safe without DB migration.
+- `Web/app.js`: `safeScoreObj`/`safeScore` decode registry scores
+  defensively (absent/`"null"`/`{}`/valid/malformed -> '--' + [UI_ERROR]);
+  news feed renders unanalyzed articles as `PENDING` (never fake direction);
+  `loadRules`/`loadNewsState`/`loadNewsFeed`/`loadNewsKeywords`/
+  `triggerNewsRefresh` emit `[UI_API] event=REQUEST/SUCCESS` and
+  `[UI_ERROR] component=...` on failure with visible DOM error state.
+- `scripts/build/build_release.ps1`: stamps `web_asset_hash`/`web_index_hash`
+  (SHA-256 of source Web/app.js + index.html) into build-info.json.
+- `src/nexus_scalp/release/verify.py::_asset_web`: FAILs release verification
+  on stale web bundle (packaged hash != recorded source hash).
+
+### Verified
+- Live API at 127.0.0.1:8080: /api/news/state available=true state=HIGH_IMPACT
+  xauusd_relevance=1.0 active_event_count=16; /api/rules 30 rows; /api/news/
+  keywords 189 keywords/118 active/5235 mentions; served app.js hash == repo
+  Web/app.js hash (runtime serves current source; FileResponse reads per
+  request — frontend fixes live without restart).
+- In-process smoke on real audit.db: registry rows now expose `score: '{}'`
+  (0 literal nulls) after the fix; before: `'null'`.
+- 10 new tests in `tests/unit/test_research_registry_null_score_bug075.py`
+  (writer, reader, historical-row decode, release verifier pass/fail, build
+  script fingerprints, repo bundle current). All green; existing news/rule/
+  release suites green (141 targeted tests, EXIT=0).
+- NOTE: the running LIVE engine process (PID 3640, started before the backend
+  edits) still serves the old in-memory `store.list_registry` until restart;
+  frontend bundle changes are already live (per-request file read).
+
+### Regression Guards
+- Writer never emits `'null'`; reader normalizes historical rows; verifier
+  fails stale bundles; frontend decodes defensively.
+
+### Relevant Files
+- src/nexus_scalp/research/registry.py
+- src/nexus_scalp/research/store.py
+- Web/app.js
+- scripts/build/build_release.ps1
+- src/nexus_scalp/release/verify.py
+- tests/unit/test_research_registry_null_score_bug075.py
+
+---
+
+## BUG-080 — UI Telegram Save Bypasses Secure Store: POST /api/config Writes Plaintext to live.yaml Only, Notifier Stays UNCONFIGURED → TELEGRAM_CONFIG_ERROR (2026-08-18 live incident)
+
+- **Status**: FIXED (2026-08-18; verified live end-to-end + 3 regression tests)
+- **Severity**: HIGH (all Telegram telemetry silently lost; every send failed)
+- **Confidence**: HIGH (live API probes + in-process test client + real delivery)
+
+### Symptom
+Web UI "Telemetry & Notifications" showed `STOPPED sent=0 failed=50 retries=0
+last_failure=TELEGRAM_CONFIG_ERROR` after saving a valid bot token + admin chat
+ID. `/api/settings/telegram/status` (live): `configured=false`,
+`token_present=false`, `source=NOT_CONFIGURED`, worker `STOPPED`, failure
+category `TELEGRAM_CONFIG_ERROR`.
+
+### Root Cause
+The settings UI's save/test flows call `POST /api/config`, whose
+`save_config()` handler dumped the whole payload (INCLUDING the plaintext
+bot token) into `configs/live.yaml` and hot-reloaded `AppConfig` — it NEVER
+called `settings_service.set_telegram()`, so the credential never entered the
+DPAPI secure secret store. The engine's `TelegramNotifier` reads credentials
+only from `NEXUS_TELEGRAM_*` env → secure store → (never live.yaml — BUG-072
+invariant). Result: `notifier.enabled = enabled and bool(bot_token) and
+bool(admin_id)` = False at boot and after every UI save; every periodic
+`send()` hit the `BLOCKED_NOT_CONFIGURED` gate → `TELEGRAM_CONFIG_ERROR`,
+`failed=50`.
+
+The BUG-072 dedicated endpoints (`POST /api/settings/telegram`,
+`/api/telegram/test`) existed and worked, but the UI never used them —
+it used only the legacy `/api/config` route.
+
+### Evidence
+- Live `/api/settings/telegram/status` before fix: `configured=false`,
+  `token_present=false`, `failure_category=TELEGRAM_CONFIG_ERROR`,
+  `failed_count=55`.
+- `configs/live.yaml` contained `bot_token: '7233738325:...'` (plaintext)
+  while `SecureSecretStore` returned `token_present=false` — proof the UI
+  save wrote YAML but never touched the store.
+- `curl getMe` with the UI token: HTTP 200 `{"ok":true,...}` — token and
+  network were always valid; the failure was purely config routing.
+
+### Fix
+`src/nexus_scalp/web/server.py::save_config()` now intercepts the `telegram`
+sub-dict BEFORE the YAML write:
+- Persists credentials via `settings_service.set_telegram(...)` (secure
+  store, actor="web_config") — real token/admin only (empty string never
+  wipes an existing secret; use `/api/settings/telegram` with empty to
+  clear).
+- Blanks `bot_token`/`admin_id` in the YAML payload (only `enabled` remains
+  in live.yaml as the boot default) — plaintext never on disk.
+- Rebuilds the live notifier (shutdown + new `TelegramNotifier` with
+  store-resolved credentials) exactly like `POST /api/settings/telegram`.
+
+No Web/app.js change required: both `saveConfiguration()` and
+`testTelegram()` already POST `/api/config`, which now persists securely and
+rebuilds the notifier; `/api/telegram/test` returns the REAL delivery state.
+
+### Verified (live, 127.0.0.1:8080)
+- `POST /api/settings/telegram` (same persistence path): `configured=true`,
+  `token_present=true`, `source=SECURE_SECRET_STORE`.
+- `POST /api/telegram/test`: `{"success":true,"message_id":1762,...}` —
+  REAL Telegram message delivered to chat 5094837833.
+- `/api/settings/telegram/status` after: worker `READY`, `sent_count=1`,
+  `failed_count=0`, `last_success` set, `failure_category=""`.
+- Fresh `load_settings_service()` in a NEW process: token (46 chars) +
+  admin read back from the secure store → survives restart.
+- 3 new regression tests in `tests/unit/test_settings_api_bug072.py`
+  (`TestSaveConfigTelegramPersistence`): token persisted to store + not in
+  YAML; empty-token save does NOT wipe store; live notifier rebuilt +
+  enabled. All green; full telegram/settings/frontend cluster (81 tests)
+  green; ruff + mypy clean.
+
+### Regression Guards
+- `/api/config` (UI save path) must NEVER write telegram secrets to
+  live.yaml — route to the secure store + rebuild the notifier.
+- Empty telegram fields from the masked-UI save must never delete an
+  existing secure-store secret.
+- After any UI telegram save, `/api/observability/stats` shows worker
+  READY with real counters (observable, never silent).
+
+### Relevant Files
+- src/nexus_scalp/web/server.py (`save_config()`)
+- src/nexus_scalp/settings/service.py (`set_telegram` semantics reused)
+- tests/unit/test_settings_api_bug072.py
+- agents/bugs.md (this entry)
+
+
+## BUG-081 — Ledger Loses Money Twice: Split-Fill Context Leak + No-Order-ID Duplicates + Exit-Classifier Falsehoods (2026-08-18 performance forensics)
+
+- **Status**: FIXED (registry-based split-fill context inheritance + broker-truth
+  exit classification + retention analytics added 2026-08-18; historical rows
+  intentionally not rewritten)
+- **Severity**: CRITICAL (ledger misstates every loss: -$5,086 on 255 rows vs real
+  account bleed -$6,277; 88% of loss rows are un-attributable or duplicated)
+- **Confidence**: HIGH (full ledger decomposition, code-path proof, account-balance
+  reconciliation)
+
+### Evidence (audit_ledger, status=CLOSED/FLAT, 255 rows Aug 17 05:10 → Aug 18 15:01)
+
+**Accounting truth check (the asymmetry the skill hunts):**
+- account balance delta (audit_account_snapshots): $39,898.75 → $33,622.16 =
+  **-$6,276.59 REAL bleed**
+- ledger net sum only -$5,086.17 → **-$1,206.95 of the real bleed is UNRECORDED
+  (17% of losses invisible in the ledger)**; peak-equity drawdown reached 21%
+  ($41,826 → $33,026)
+
+**Defect 1 — Split-fill entry-context leak (180 rows, -$3,441.88, 68% of losses):**
+- 180/255 rows have `order_id=''` AND `ai_confidence_at_open=0.0` AND
+  `market_regime_at_open=''` AND `entry_setup_snapshot='{}'` — the ENTIRE
+  forex/accounting batch cohort
+- They cluster in same-fill batches: same `(open_time, close_time, volume,
+  direction)` → 51/53 clusters have IDENTICAL PnL per leg (pure dupe signature),
+  avg 3.4 rows/fill (up to 6)
+- `order_manager._bind_pending_entry_context()` (line 903) binds the SINGLE-slot
+  `_pending_entry_context` (line 479) to the FIRST ticket of a broker split-fill
+  and sets it to None; sibling tickets hit the `ctx is None` branch →
+  order_id="", conf=0.0. Proof: ticket 152489530613 has order_id
+  4693dfea…+conf 0.65+RANGING_MEAN_REVERSION; its 5 siblings (152489530662…845,
+  same fill 10:26:18, same volume 0.66, same SL 4400.8) carry NO context and
+  the same -$189/-$190 PnL
+- PnL is real per virtual fill but the SAME physical loss is counted up to 6x
+  across rows → trade-level win-rate/avg-loss analytics are garbage
+
+**Defect 2 — Exit classifier falsehoods (audit_ledger.exit_mechanism lies):**
+- 3x `RISK_FREE_SL_HIT` rows (siblings of real-order tickets) lost -$170.64/
+  -$157.08/-$132.86 with `was_sl_modified=0`, `is_risk_free_hit=0`,
+  `initial_sl_price == final_sl_price` — never risk-free, SL never moved (the
+  engine's `is_risk_free_hit` truth is 0; the classifier at order_manager:5385
+  maps "SL hit, final_sl within BE band" → RISK_FREE_SL_HIT even though the SL
+  was never modified; a hard stop AT entry is mislabeled "risk-free")
+- 18/37 `HARD_SL_HIT` rows are actually BE scratches (net_pnl_usd=0, SL at
+  entry, 131s+ sessions) — real hard-stop losses are only 19, -$3,084
+
+**Defect 3 — Winner giveback (exit capture still broken post-BUG-067):**
+- 31 wins +$409 total (+$13 avg) vs 72 losses -$5,495 (-$76 avg); win capture
+  of MFE: best winners kept only 1.2-13% (e.g. +$185 MFE → +$2.13, 99%
+  giveback); all 29/31 winners had `was_sl_modified=1` (BE/trailing-lock
+  squeeze) — the tiered retention floors are NOT armed on live wins
+- 152/255 rows (60%) are $0 BE scratches; 78 BREAK_EVEN_SL_HIT ($0), 39
+  MANUAL_CLOSE ($0 — engine closed at exactly entry; "manual" = engine
+  protective closure), 18 HARD_SL_HIT@0 (BE via hard stop)
+
+**Entry-quality cohort:** 201/255 rows conf=0.0; only 7 rows conf 0.4-0.6 and 35
+0.6-0.8 (BUG-067 fixed the gate, but the sibling-context leak keeps writing 0.0);
+19 FAST_LIQUIDITY_SWEEP entries (4 wins / -$516) vs 237 PURE_AI (-$4,561); 176
+trades with NO regime.
+
+### Root Cause
+Lifecycle split-fill handling records sibling tickets without the staged entry
+context; the exit classifier derives truth from geometry/comment instead of the
+engine's authoritative flags; exit protection locks winners at ~0.3R.
+
+### Fix Implemented (2026-08-18)
+
+**1. Split-fill context inheritance (root fix):**
+- Replaced the SINGLE-slot `_pending_entry_context` with a BOUNDED registry
+  keyed by the originating order/request id:
+  `_pending_context_registry` + `_pending_context_ts` + `_context_bound_tickets`
+  (+ `_unbound_ticket_contexts` provenance-gap marker, TTL 3600s, capacity 64).
+- `_bind_pending_entry_context` resolves the SAME immutable context for EVERY
+  sibling ticket of a fill (explicit order-id → "" legacy slot → live-family →
+  newest dispatch), and keeps the family registered until the final sibling
+  closes (`_prune_bound_context` on the close path). Logs
+  `[TRADE_LINEAGE] context_bound=true/false` at every bind.
+- Missing staging is an explicit provenance gap (`NO_STAGED_CONTEXT`),
+  NEVER silent confidence 0.0 (distinct from a legitimate 0.0 model output).
+
+**2. Broker-truth exit classification (outcome_recovery.py::classify_exit_reason):**
+- A stop AT entry is classified `RISK_FREE_SL_HIT`/`BREAK_EVEN_SL_HIT` ONLY
+  when the engine proves the SL was actually moved (`was_sl_modified=True`).
+  Never-moved stops at entry → `HARD_SL_HIT`. Consistency with
+  accounting/normalize.py `_classify_stop` (same `was_sl_modified`-first rule).
+
+**3. Retention analytics (accounting/retention.py — NEW module):**
+- `mfe_capture_ratio` / `giveback` / `giveback_ratio` / `cohort_capture_report`
+  — MFE<=0 handled explicitly (None, never synthetic 0.0).
+- Reporting insights now emit an MFE-capture insight (low/high/moderate) or an
+  evidence fallback when the aggregate cannot compute capture.
+- Offline analysis (`artifacts/scripts/retention_analysis.py`): trades reaching
+  +0.5R → 78% scratch; +1.0R → 97% scratch (avg +$0.05); winner MFE capture
+  median 10.5% → the BE lock squeezes essentially every winner. This is the
+  measured evidence for the NEXT retention-tier decision (no live parameters
+  were changed in this task).
+
+**4. Incidental repairs (pre-existing gate failures, non-BUG-081):**
+- reporting/insights.py: RUF046 (int(round())) + mypy scope-var reuse; the
+  `payoff_ratio` was hardcoded None in `_stage_performance` — now computed.
+- tests/unit/test_performance_report_intelligence.py: `regime_at_open` →
+  `market_regime_at_open` kwarg.
+
+### Regression Guards (added — tests/unit/test_bug081_forensics.py, 11 tests)
+- `test_split_fill_all_siblings_inherit_same_parent_context` — 6-fill split:
+  every sibling gets order_id/conf/regime/setup; family tracked (6 tickets).
+- `test_split_fill_delayed_sibling_still_resolves_context` — delayed callback.
+- `test_missing_staged_context_is_provenance_gap_not_zero_confidence` — no
+  staged context ⇒ ledger row carries NO fake confidence; gap recorded.
+- `test_context_registry_is_bounded` — >capacity registration stays ≤ 64.
+- Classifier CASE A-D: never-moved SL → HARD_SL; moved-to-BE →
+  BREAK_EVEN_SL_HIT; trailed-beyond-entry → TRAILING_STOP_HIT; unknown →
+  UNKNOWN. Plus geometry-proof fallback stays conservative HARD_SL.
+- `test_split_fill_ledger_rows_carry_context_not_zeros` — DB rows carry the
+  parent order id + confidence + regime (no 0.0/empty rows).
+- `test_retention_metrics_handle_zero_mfe` — MFE<=0 → None; capture
+  math + cohort report verified.
+
+### Before / After (live audit.db — bot still trading, rows grew during task)
+
+| Metric | Before (Aug 17-18 15:01) | Re-run (Aug 18 ~19:30) |
+|---|---|---|
+| Ledger rows | 255 | 262 |
+| Ledger total | -$5,086.17 | -$5,165.59 |
+| Account delta | -$6,276.59 | -$6,368.26 |
+| Unexplained | -$1,206.95 | -$1,202.67 (17.7%) |
+| No-context rows | 180 | 182 (fixed for NEW fills; historical rows not rewritten — see Status) |
+| False RISK_FREE | 3 | 3 (historical; classifier fixed for NEW closes) |
+| Logical fills (dedup) | 76 orders / 53 clusters | 102 |
+| Winner capture avg | 20.9% | 19.6% |
+
+Historical rows are NOT rewritten (immutability rule): the fix applies to NEW
+closes; a safe reproducible backfill path (reconstruction_source tagging) is
+documented but intentionally NOT executed in this task.
+
+### Reconciliation status
+Account delta - ledger sum ≈ -$1,202 (17.7%) remains UNEXPLAINED by fixed
+ledger rows. Known contributors: the bot is still live (new trades land
+between snapshots), commissions/spread on unrecorded sim-side legs, and the
+180-row historical batch cohort. Tracking query for the NEXT 50 trades:
+`artifacts/scripts/bug081_rerun.py` (re-run to measure the fixed cohort).
+
+### Relevant Files
+- src/nexus_scalp/execution/order_manager.py (registry at ~479;
+  register_entry_context ~503; _bind_pending_entry_context ~955;
+  _prune_bound_context; close-path prune at ~4627)
+- src/nexus_scalp/experience/outcome_recovery.py (classify_exit_reason)
+- src/nexus_scalp/accounting/retention.py (NEW)
+- src/nexus_scalp/reporting/insights.py + engine.py (payoff + MFE insight)
+- tests/unit/test_bug081_forensics.py (NEW, 11 tests)
+- tests/unit/test_bug081_telegram_canonical.py (NEW, 3 tests)
+- artifacts/scripts/bug081_rerun.py + retention_analysis.py (NEW)
+- agents/bugs.md (this entry)
+
+### Telegram canonical-outcome propagation (added 2026-08-18, incident 152500222827)
+
+The LIVE production incident — SELL entry 4358.48, SL 4368.11 → 4358.15,
+exit 4358.17, +$5.27, 44s — produced "MANUAL POSITION CLOSE DETECTED / MT5
+Closing Reason Code Unknown" on Telegram. Root cause: the close-notification
+else-branch in `manage_active_positions` (order_manager.py:4624) hardcoded
+`notify_manual_close` and IGNORED the canonical `exit_mechanism` computed by
+`classify_exit_reason` for the ledger. The real broker truth for that ticket
+is BREAK_EVEN_SL_HIT (SL was modified by the engine to 4358.15; exit 4358.17
+closed at the protective stop — NOT a manual close).
+
+Fix (Telegram now consumes the canonical outcome, spec §19-20):
+- `TelegramNotifier.notify_canonical_close(...)` — new POSITION CLOSED
+  message built from the canonical outcome: exit_reason + evidence
+  (ENGINE_SL_MODIFICATION / BROKER_DEAL_REASON / BROKER_DEAL_COMMENT),
+  initial→final SL, R, MFE/MAE, strategy/regime/confidence. NEVER re-infers
+  the exit class from the broker reason code.
+- `TelegramNotifier._exit_label(...)` — deterministic label map for the
+  canonical ExitReason taxonomy (BREAK_EVEN_SL_HIT → "BREAK-EVEN STOP" etc.).
+- All 3 close-notification call sites in order_manager.py (auto-close
+  else-branch + 2 AI-reversal paths) now call `notify_canonical_close` with
+  the canonical reason; the legacy `notify_manual_close` remains only as a
+  def (no callers).
+- Regression: tests/unit/test_bug081_telegram_canonical.py (3 tests) —
+  protective close never says MANUAL; UNKNOWN stays UNKNOWN; label map.
+
+## BUG-082 — 50D Feature Contract Docs Diverged From Executable Code + Web Layer Marks Forming M1 Minute is_complete=True (2026-08-18 forensic 50D audit)
+
+- **Status**: DOCUMENTED + REGRESSION-GUARDED (contract table in skill.md §5.5 rewritten from the executable `FEATURE_NAMES`; test file `tests/unit/test_scalp_features_forensic_bug082.py` + `tests/unit/test_web_chart_forming_bar_bug082.py` added 2026-08-18). The web-layer forming-minute leak is a REAL display defect: `/api/chart/history` (MT5 broker path) hardcodes `is_complete=True` for every bar, including the still-forming current minute (server.py:2119); `/api/live/state` mirrors the same data.
+- **Severity**: MEDIUM (feature contract divergence: doc/UI consumers see wrong semantic table; no production-engine miscalculation — the engine computes on completed bars only and `reseed()` drops incomplete bars per BUG-058)
+- **Confidence**: HIGH (forensic comparison of skill.md §5.5 vs `FEATURE_NAMES` at scalp_features.py:147; live API diff at T1/T2/T3 snapshots; tick math proof that the engine's `_last_fv` used the 16:12 close while chart served the 16:13 forming bar as complete)
+
+### Canonical contract resolution (index 1)
+
+The prompt's assumed "index 1 = CONTRACT GAP" is resolved by the executable code: `FEATURE_NAMES[1] = lower_wick_ratio` = `(body_bottom - Low) / max(High-Low, 0.01)` on the last completed M1 bar. NOT `log_returns` (prompt guess) and NOT `log_returns` (old skill.md). Both docs diverged.
+
+### Defect A — skill.md §5.5 table never matched the executable 50D
+
+- Old §5.5 listed `returns`, `log_returns`, `volatility_atr`, `rsi_14`, `macd_line/signal/hist`, `bb_upper/mid/lower/width/pband`, `adx_14`, `plus_di`, `minus_di`, `stoch_k/d`, `obv`, `vwap`, `spread_norm`, `ofi_microstructure` — **NONE of these exist in FEATURE_NAMES** (grep of features/ + models/ for macd|bollinger|stochastic|obv|vwap|spread_norm|adx returns zero matches). The 50D has always been: wick anatomy, sessions, lags, ICT (FVG/OB/CHoCH), Ichimoku, EMA distances, MTF (M15/M30/H1/H4), dynamic S/R, SMC OB features.
+- Real divergences found inside the code vs its own doc:
+  - `norm_rsi` divisor is **16.66** in `to_tensor_input()` (scalp_features.py:358); skill.md said `/25`. RSI maps: 50→0, 75→+1.50, 25→−1.50 (not ±1.00 as the /25 formula would give).
+  - `feat_38`/`feat_39` (`norm_dist_to_tenkan`/`norm_dist_to_kijun`) are EXACT negations — correlation −1.0 over 215 stored experiences; redundant by construction (documented, no code change: model weights decide).
+- All 50 dims independently verified (numpy-only recompute, no repo helpers): 7 fixtures × 50 = **350/350 PASS**; determinism ×100 PASS; causality T−1 (deep-history mutation) PASS; dataset/live replay parity PASS (0/50 mismatch); float32 model-input roundtrip max err 8.6e-8.
+
+### Defect B — web layer serves the forming minute as a completed bar
+
+- Evidence: at 2026-08-18 16:13:44 the engine's `_last_fv` math implies last completed close = 4369.51 (16:12 bar; solve `feat_8 = (mid−close)/ATR` → close 4369.51), while `/api/chart/history` and `/api/live/state` both served bar `16:13:00` with `is_complete=True` (that minute only completes at 16:14:00). Same at T2/T3 (16:22:27 snapshot; 16:22 bar marked complete).
+- Root cause: server.py:2119 (`"is_complete": True` for every `copy_rates_*` row — broker rate history INCLUDES the still-forming minute, exactly the BUG-058 pattern for the aggregator; the web layer repeats it). The ENGINE_STATE fallback branch (server.py:2202) handles forming bars correctly (`is_complete=False`), so only the broker path leaks.
+- Impact: any external consumer that reconstructs features from `/api/chart/history` bars (UI overlays, parity harnesses, clients) sees a phantom completed bar; bar-sensitive dims 0–15/20–25/30–39 shift. Engine inference itself unaffected.
+- Regression guards: `test_web_chart_forming_bar_bug082.py` (2 tests: ENGINE_STATE path marks forming bar `is_complete=False`; forming bar never appears in the completed tail).
+
+### Distribution & health stats (215 stored experiences, 2026-08-18)
+
+- All dims 100% finite; 0/50 dead-zero; 3 saturated dims at clip (idx 11: 43.7%, idx 36: 42.3%, idx 33: 26.0% at ±3).
+- Low-cardinality (by design): binary session/flag dims (3,9,13,15,16–19,28,29,31,32,40,42,43,46,48) — unique ∈ {2,3}.
+- Exact duplicate pair: (38, 39) negated (corr −1.0); near-dupes |corr|>0.96: (30,38), (30,39).
+- `norm_rsi` observed range [−2.40, +2.69] — no saturation, active distribution.
