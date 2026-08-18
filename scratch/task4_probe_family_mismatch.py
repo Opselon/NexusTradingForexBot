@@ -83,7 +83,12 @@ print("\n=== REGISTRY UPSERT OVERWRITE CHECK (in-memory test DB) ===")
 import os  # noqa: E402
 import tempfile  # noqa: E402
 
-tmp = tempfile.mktemp(suffix=".db")
+# CodeQL py/insecure-temporary-file (#65): tempfile.mktemp is deprecated and
+# racy (CWE-377). NamedTemporaryFile creates the file atomically with
+# exclusive access; delete=False keeps it alive for the DB handle.
+_tmp_f = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+_tmp_f.close()
+tmp = _tmp_f.name
 trepo = AuditRepository(db_url=f"sqlite:///{tmp}")
 treg = StrategyRegistry(trepo)
 entry1 = StrategyRegistryEntry(
