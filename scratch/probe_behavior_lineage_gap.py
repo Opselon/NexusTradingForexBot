@@ -12,6 +12,7 @@ Proves where the behavioral/anomaly intelligence disappears:
 
 No writes. Evidence for BUG-083 / design-gap classification.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -25,7 +26,7 @@ DB = REPO / "artifacts" / "audit.db"
 def q(cur: sqlite3.Cursor, sql: str, *args) -> list:
     try:
         return [r for r in cur.execute(sql, args).fetchall()]
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return [("ERROR", str(e))]
 
 
@@ -53,8 +54,14 @@ def main() -> int:
     print(f"3. ledger closed rows                  : {n[0][0]}")
     for label, sql in [
         ("   with mae+mfe pts  ", "SELECT COUNT(*) FROM audit_ledger WHERE mae != 0 AND mfe != 0"),
-        ("   with confidence   ", "SELECT COUNT(*) FROM audit_ledger WHERE ai_confidence_at_open NOT IN ('', 0)"),
-        ("   with regime       ", "SELECT COUNT(*) FROM audit_ledger WHERE market_regime_at_open NOT IN ('', 0)"),
+        (
+            "   with confidence   ",
+            "SELECT COUNT(*) FROM audit_ledger WHERE ai_confidence_at_open NOT IN ('', 0)",
+        ),
+        (
+            "   with regime       ",
+            "SELECT COUNT(*) FROM audit_ledger WHERE market_regime_at_open NOT IN ('', 0)",
+        ),
         ("   with sl_modified  ", "SELECT COUNT(*) FROM audit_ledger WHERE was_sl_modified != 0"),
     ]:
         r = q(cur, sql)
@@ -93,8 +100,10 @@ def main() -> int:
         "SELECT COUNT(*) FROM audit_ledger "
         "WHERE exit_mechanism = 'RISK_FREE_SL_HIT' AND was_sl_modified = 0",
     )
-    print(f"\n7. EXIT_CLASSIFICATION_ANOMALY candidate rows "
-          f"(RISK_FREE_SL_HIT w/o was_sl_modified): {r[0][0]}")
+    print(
+        f"\n7. EXIT_CLASSIFICATION_ANOMALY candidate rows "
+        f"(RISK_FREE_SL_HIT w/o was_sl_modified): {r[0][0]}"
+    )
 
     # duplicate economic outcome: same execution_id twice in outcomes
     r = q(

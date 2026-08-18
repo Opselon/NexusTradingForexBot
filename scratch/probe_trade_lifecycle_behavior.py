@@ -10,6 +10,7 @@ Uses a COPY of the real audit.db (never touches the live artifact). Reads the
 real persisted behavior_analysis + behavior_detections + anomaly_events rows
 produced by the backfill and walks the same ticket through the report stages.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -26,11 +27,11 @@ sys.path.insert(0, str(REPO / "tests"))
 
 
 def main() -> int:
+    from nexus_scalp.accounting import AccountingCore, PeriodKind
     from nexus_scalp.adapters.database.audit_repository import AuditRepository
     from nexus_scalp.experience import ExperienceLedger
-    from nexus_scalp.accounting import AccountingCore, PeriodKind
-    from nexus_scalp.reporting import PerformanceReportEngine, format_deep_report
     from nexus_scalp.intelligence.behavior import BehaviorAnalysisBackfiller
+    from nexus_scalp.reporting import PerformanceReportEngine, format_deep_report
 
     # 1. Work on a scratch COPY of the real DB.
     tmp = Path(tempfile.mkdtemp()) / "replay.db"
@@ -109,9 +110,7 @@ def main() -> int:
     assert len(anas) == 1
 
     # 5. Walk the SAME ticket through the performance report stages.
-    report = PerformanceReportEngine(core=core, kind=PeriodKind.DAY).generate(
-        at=datetime.now(UTC)
-    )
+    report = PerformanceReportEngine(core=core, kind=PeriodKind.DAY).generate(at=datetime.now(UTC))
     b = report.behavioral
     a = report.anomaly_state
     print(
@@ -119,10 +118,7 @@ def main() -> int:
         f"coverage={b.evidence_coverage} flags={b.total_flags} "
         f"version={b.analysis_version}"
     )
-    print(
-        f"[6] report.anomaly_state: state={a.state} total={a.total} "
-        f"version={a.anomaly_version}"
-    )
+    print(f"[6] report.anomaly_state: state={a.state} total={a.total} version={a.anomaly_version}")
     assert b.state in ("CLEAR", "FLAGS_FOUND")
     assert b.analyzed >= 1
     assert a.has_data
@@ -140,8 +136,13 @@ def main() -> int:
     payload = report.to_dict()
     assert payload["behavioral"]["state"] == b.state
     assert payload["anomaly_state"]["state"] == a.state
-    print("[8] API payload contract OK:", payload["behavioral"]["state"], "/",
-          payload["anomaly_state"]["state"], f"trades={b.analyzed}")
+    print(
+        "[8] API payload contract OK:",
+        payload["behavioral"]["state"],
+        "/",
+        payload["anomaly_state"]["state"],
+        f"trades={b.analyzed}",
+    )
 
     conn.close()
     audit.close()

@@ -173,6 +173,64 @@ class TestModelLifecycleAPI:
         assert champ.artifact_path is not None
 
 
+class TestGovernanceAPI:
+    def test_governance_health_endpoint(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/governance/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        assert "champion" in body["health"]
+        assert "shadow" in body["health"]
+
+    def test_governance_registry_endpoint(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/governance/registry")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        cats = body["registry"]["categories"]
+        assert "CURRENT_CHAMPION" in cats
+
+    def test_governance_events_endpoint(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/governance/events")
+        assert resp.status_code == 200
+        assert resp.json()["available"] is True
+
+    def test_registry_reconcile_endpoint(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.post("/api/models/registry/reconcile")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+
+    def test_promotion_requires_actor(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.post("/api/models/promotion/approve", json={})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
+
+    def test_shadow_outcomes_endpoint_safe(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.post("/api/models/shadow/outcomes", json={"run_id": ""})
+        assert resp.status_code == 200
+        assert resp.json()["available"] is True
+
+
 class TestModelLifecycleSafety:
     def test_research_never_exposes_mt5_or_risk(self):
         import nexus_scalp.model_lifecycle

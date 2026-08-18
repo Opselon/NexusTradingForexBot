@@ -23,6 +23,7 @@ Every test proves REAL behavior (per spec 43 — no dummy assertions):
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -30,6 +31,16 @@ import numpy as np
 import polars as pl
 import pytest
 
+from nexus_scalp.features.schema import FEATURE_SCHEMAS
+from nexus_scalp.features.schema_augment import (
+    FEATURE_NAMES_60D_EXTRA,
+    NUM_EXTRA_60D,
+    augment_50d_to_60d,
+    compute_60d_extras,
+    feature_quality_report,
+    session_phase_encoding,
+    validate_60d_vector,
+)
 from nexus_scalp.model_generation import (
     ArtifactStore,
     CandidateTrainer,
@@ -51,6 +62,17 @@ from nexus_scalp.model_generation.models import (
     ModelManifest,
     NeuralLabel,
     default_news_context_schema,
+)
+from nexus_scalp.model_generation.schema_v2 import (
+    SCHEMA_V2_ID,
+    build_60d_dataset,
+    compute_60d_frame,
+    verify_60d_artifact,
+)
+from nexus_scalp.model_generation.validation import (
+    ECE_FLOOR,
+    MIN_EVIDENCE_SAMPLES,
+    _balanced_accuracy,
 )
 from nexus_scalp.models.scalp_net import ScalpNet
 
@@ -862,30 +884,6 @@ class TestTrainingInputValidation:
 # TEST-FIRST requirements from the TASK-5 contract. Every test proves REAL
 # behavior — no dummy assertions. See docs/agent_handoffs/TASK-5-model-intelligence.md.
 
-import math
-
-from nexus_scalp.features.schema import FEATURE_SCHEMAS
-from nexus_scalp.features.schema_augment import (
-    FEATURE_NAMES_60D_EXTRA,
-    NUM_EXTRA_60D,
-    augment_50d_to_60d,
-    compute_60d_extras,
-    feature_quality_report,
-    session_phase_encoding,
-    validate_60d_vector,
-)
-from nexus_scalp.model_generation.schema_v2 import (
-    SCHEMA_V2_ID,
-    build_60d_dataset,
-    compute_60d_frame,
-    verify_60d_artifact,
-)
-from nexus_scalp.model_generation.validation import (
-    ECE_FLOOR,
-    MIN_EVIDENCE_SAMPLES,
-    _balanced_accuracy,
-)
-
 
 def make_60d_bars(n: int = 300, seed: int = 11) -> pl.DataFrame:
     """Raw bars frame (M5-shaped) for 60D dataset building — the same real
@@ -946,12 +944,16 @@ class TestTask5Schema60D:
         # build a 60D frame + train a candidate, then verify predict() rejects 50D
         bars = make_60d_bars(n=220)
         feat = compute_60d_frame(bars, min_bars=55)
-        dh = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5"
-        )
+        dh = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5")
         frame = store.read_dataset(dh["dataset_id"])
-        exp = ExperimentFactory(store=store).create(dh["dataset_id"], template="baseline_scalpnet_v1")
-        res = CandidateTrainer(store=store).train_candidate(exp, frame, model_id="mg04_cand", epochs=1)
+        exp = ExperimentFactory(store=store).create(
+            dh["dataset_id"], template="baseline_scalpnet_v1"
+        )
+        res = CandidateTrainer(store=store).train_candidate(
+            exp, frame, model_id="mg04_cand", epochs=1
+        )
         assert res["status"] == "COMPLETED"
         rt = LocalModelRuntime(store=store).load("mg04_cand")
         mm = store.read_model_manifest("mg04_cand")
@@ -1012,9 +1014,9 @@ class TestTask5Dataset60D:
         store = ArtifactStore(tmp_path / "a")
         bars = make_60d_bars(n=220)
         feat = compute_60d_frame(bars, min_bars=55)
-        dh = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5"
-        )
+        dh = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5")
         man = store.read_dataset_manifest(dh["dataset_id"])
         assert man["feature_schema_id"] == "scalp_v2"
         assert man["label_schema_id"] == "triple_barrier_3class_v1"
@@ -1025,7 +1027,6 @@ class TestTask5Dataset60D:
     def test_mg10b_60d_artifact_verifier(self, tmp_path: Path):
         store = ArtifactStore(tmp_path / "b")
         bars = make_60d_bars(n=220)
-        feat = compute_60d_frame(bars, min_bars=55)
         dh = build_60d_dataset(bars, store=store, seed=42)
         v = verify_60d_artifact(dh["dataset_id"], store=store)
         assert v["ok"] is True
@@ -1041,16 +1042,18 @@ class TestTask5Dataset60D:
         assert d1["dataset_id"] == d2["dataset_id"]
 
     def test_mg13b_candidate_identity_deterministic(self, store: ArtifactStore):
-        from nexus_scalp.model_generation.training import deterministic_candidate_id
         from nexus_scalp.model_generation.models import ExperimentConfig
+        from nexus_scalp.model_generation.training import deterministic_candidate_id
 
         bars = make_60d_bars(n=220)
         feat = compute_60d_frame(bars, min_bars=55)
-        dh = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5"
-        )
+        dh = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5")
         frame = store.read_dataset(dh["dataset_id"])
-        exp = ExperimentFactory(store=store).create(dh["dataset_id"], template="baseline_scalpnet_v1")
+        exp = ExperimentFactory(store=store).create(
+            dh["dataset_id"], template="baseline_scalpnet_v1"
+        )
         e1 = deterministic_candidate_id(exp, frame)
         e2 = deterministic_candidate_id(exp, frame)
         assert e1 == e2 and e1.startswith("cand_")
@@ -1062,12 +1065,12 @@ class TestTask5Dataset60D:
         bars = make_60d_bars(n=260)
         feat = compute_60d_frame(bars, min_bars=55)
         news = make_news(n_events=3)
-        d_off = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5", news_frame=None
-        )
-        d_on = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5", news_frame=news
-        )
+        d_off = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5", news_frame=None)
+        d_on = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5", news_frame=news)
         # same temporal split boundaries: first/last timestamps identical
         f_off = store.read_dataset(d_off["dataset_id"])
         f_on = store.read_dataset(d_on["dataset_id"])
@@ -1082,7 +1085,9 @@ class TestTask5TrainingSafety:
     def test_mg07_nonfinite_feature_training_fails(self, store: ArtifactStore):
         from nexus_scalp.model_generation.models import ExperimentConfig
 
-        bad = pl.DataFrame({"label": [0, 1, 2], "feat_0": [float("nan"), 1.0, 2.0], "feat_1": [1.0, 2.0, 3.0]})
+        bad = pl.DataFrame(
+            {"label": [0, 1, 2], "feat_0": [float("nan"), 1.0, 2.0], "feat_1": [1.0, 2.0, 3.0]}
+        )
         exp = ExperimentConfig(experiment_id="exp_nan", dataset_id="ds_x", training={"epochs": 2})
         res = CandidateTrainer(store=store).train_candidate(exp, bad)
         assert res["status"] == "FAILED"
@@ -1091,7 +1096,9 @@ class TestTask5TrainingSafety:
     def test_mg08_invalid_labels_fail(self, store: ArtifactStore):
         from nexus_scalp.model_generation.models import ExperimentConfig
 
-        bad = pl.DataFrame({"label": [0, 1, 9], "feat_0": [0.0, 1.0, 2.0], "feat_1": [1.0, 2.0, 3.0]})
+        bad = pl.DataFrame(
+            {"label": [0, 1, 9], "feat_0": [0.0, 1.0, 2.0], "feat_1": [1.0, 2.0, 3.0]}
+        )
         exp = ExperimentConfig(experiment_id="exp_lbl", dataset_id="ds_x")
         res = CandidateTrainer(store=store).train_candidate(exp, bad)
         assert res["status"] == "FAILED"
@@ -1132,12 +1139,16 @@ class TestTask5TrainingSafety:
 
         bars = make_60d_bars(n=220)
         feat = compute_60d_frame(bars, min_bars=55)
-        dh = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5"
-        )
+        dh = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5")
         frame = store.read_dataset(dh["dataset_id"])
-        exp = ExperimentFactory(store=store).create(dh["dataset_id"], template="baseline_scalpnet_v1")
-        res = CandidateTrainer(store=store).train_candidate(exp, frame, model_id="mg20_cand", epochs=1)
+        exp = ExperimentFactory(store=store).create(
+            dh["dataset_id"], template="baseline_scalpnet_v1"
+        )
+        res = CandidateTrainer(store=store).train_candidate(
+            exp, frame, model_id="mg20_cand", epochs=1
+        )
         assert res["status"] == "COMPLETED"
         # tamper: flip a byte in model.pt
         wp = store.model_weights_path("mg20_cand")
@@ -1212,12 +1223,16 @@ class TestTask5RuntimeParity:
 
         bars = make_60d_bars(n=220)
         feat = compute_60d_frame(bars, min_bars=55)
-        dh = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5"
-        )
+        dh = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5")
         frame = store.read_dataset(dh["dataset_id"])
-        exp = ExperimentFactory(store=store).create(dh["dataset_id"], template="baseline_scalpnet_v1")
-        res = CandidateTrainer(store=store).train_candidate(exp, frame, model_id="mg21_cand", epochs=1)
+        exp = ExperimentFactory(store=store).create(
+            dh["dataset_id"], template="baseline_scalpnet_v1"
+        )
+        res = CandidateTrainer(store=store).train_candidate(
+            exp, frame, model_id="mg21_cand", epochs=1
+        )
         assert res["status"] == "COMPLETED"
         rt = LocalModelRuntime(store=store).load("mg21_cand")
         vec = [0.0] * 50 + [0.0] * 10
@@ -1228,12 +1243,14 @@ class TestTask5RuntimeParity:
         # replay uses the SAME scaler transform as runtime.predict (parity)
         bars = make_60d_bars(n=220)
         feat = compute_60d_frame(bars, min_bars=55)
-        dh = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5"
-        )
+        dh = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5")
         frame = store.read_dataset(dh["dataset_id"])
-        exp = ExperimentFactory(store=store).create(dh["dataset_id"], template="baseline_scalpnet_v1")
-        res = CandidateTrainer(store=store).train_candidate(exp, frame, model_id="mg22_cand", epochs=1)
+        exp = ExperimentFactory(store=store).create(
+            dh["dataset_id"], template="baseline_scalpnet_v1"
+        )
+        CandidateTrainer(store=store).train_candidate(exp, frame, model_id="mg22_cand", epochs=1)
         rt = LocalModelRuntime(store=store).load("mg22_cand")
         # pick the first sample row
         row = frame.row(0, named=True)
@@ -1296,12 +1313,12 @@ class TestTask5DriftAndWorker:
         bars = make_60d_bars(n=240)
         feat = compute_60d_frame(bars, min_bars=55)
         news = make_news(n_events=3)
-        d0 = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5", news_frame=None
-        )
-        d1 = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5", news_frame=news
-        )
+        d0 = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5", news_frame=None)
+        d1 = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5", news_frame=news)
         assert d0["dataset_id"] != d1["dataset_id"]
 
     def test_mg27_unchanged_dataset_wont_retrain(self, tmp_path: Path):
@@ -1334,12 +1351,16 @@ class TestTask5ChampionSafety:
         marker.write_bytes(b"CHAMPION_BYTES_UNTOUCHED")
         bars = make_60d_bars(n=220)
         feat = compute_60d_frame(bars, min_bars=55)
-        dh = DatasetFactory(store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)).build(
-            feat, symbol="XAUUSD", timeframe="M5"
-        )
+        dh = DatasetFactory(
+            store=store, sample_factory=SampleFactory(feature_schema_id=SCHEMA_V2_ID)
+        ).build(feat, symbol="XAUUSD", timeframe="M5")
         frame = store.read_dataset(dh["dataset_id"])
-        exp = ExperimentFactory(store=store).create(dh["dataset_id"], template="baseline_scalpnet_v1")
-        res = CandidateTrainer(store=store).train_candidate(exp, frame, model_id="mg16_cand", epochs=1)
+        exp = ExperimentFactory(store=store).create(
+            dh["dataset_id"], template="baseline_scalpnet_v1"
+        )
+        res = CandidateTrainer(store=store).train_candidate(
+            exp, frame, model_id="mg16_cand", epochs=1
+        )
         assert res["status"] == "COMPLETED"
         assert marker.read_bytes() == b"CHAMPION_BYTES_UNTOUCHED"
         # candidate artifacts live under the store models dir, never the champion path
@@ -1362,4 +1383,3 @@ class TestTask5ChampionSafety:
         mgr = ChampionManager(artifact_path="does/not/exist/model.pt")
         champ = mgr.champion_or_none()
         assert champ is None
-
