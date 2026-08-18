@@ -4123,3 +4123,40 @@ In addition:
 
 ### Runtime verification
 - `scratch/probe_trade_lifecycle_behavior.py`: one ticket (700001) survived ledger -> behavior analysis (3 evidence-gated flags) -> report (FLAGS_FOUND/ANOMALIES_FOUND) -> Telegram -> API.
+
+
+## BUG-095 — Protective-Mod Truthfulness + Broker-Verified Close Ordering + Zero-PnL Exit Mislabel (2026-08-18 TASK-7 exit-intelligence forensics)
+
+### Status: FIXED (ﬁxes converged with the parallel TASK-3 commit 0434ef6 on the shared working tree; regression suite committed by TASK-7)
+
+### Symptom
+1. The ledger recorded `BREAK_EVEN_SL_HIT` exits with `net_pnl_usd = 0.0` while the broker deals showed real profit: 15/15 BE-labeled rows in `audit_ledger` had zero PnL, and 151 ledger rows total had `net=0` while `audit_broker_trades.gross_pnl != 0` (hidden gross ≈ −$2,180.84 aggregate; 112 profitable, 39 losing).
+2. `audit_orders` recorded 6,674 `BREAKEVEN_FAILED` rows (retry storm: one ticket family 377 attempts over 12 minutes) and ZERO `BREAKEVEN_LOCK` success rows, while 155 ledger rows show `was_sl_modified=1` — protection success was never audited.
+3. Failed breakeven/trailing modifications polluted `_last_modify_sl` (final-SL truth) even when the broker rejected them, so the autopsy reported a protective SL that never existed.
+
+### Root cause
+- `apply_breakeven_lock`, `apply_atr_trailing_stop`, the MFE-giveback protector, and the router `BREAK_EVEN`/`NORMAL_TRAIL` dispatch all wrote `_last_modify_sl[ticket] = target` BEFORE checking `success` — a rejected modification appeared applied in the autopsy (`final_sl != initial_sl` with `was_sl_modified=False`) and suppressed the retry via `_should_modify_sl` step comparison.
+- The BE attempt had no cooldown: a market-pullback deferral or broker rejection re-fired every management tick → the audit flood + repeated broker `modify_position` calls.
+- The autopsy matched deals ONLY from the live 24h window (`get_closed_deals_history`); when the window missed (restart / long position), the result fell to the `FALLBACK_ESTIMATE`/zero path and the DURABLE `audit_broker_deals` table (position_id join) was never consulted → real broker PnL lost (BUG-088/089 class).
+- Exit classification then used the polluted final-SL geometry inside `be_tolerance` to label a plain `SYSTEM_CLOSE` as `BREAK_EVEN_SL_HIT`.
+- `reconcile_missed_closes` fetched the full 24h broker deal window EVERY tick on the live path (BUG-090 perf).
+
+### Evidence
+- `scratch/task7_forensic_evidence_probe.out.txt` (read-only probe of `artifacts/audit.db`): BE-mislabel rows, 151 ledger-zero rows with real broker gross, protection audit counts.
+- Position 152488384880: closed by TWO `NSE_CLOSE` deals at +81.84 + +85.56 = +167.40; ledger row shows `net=0.0 / BREAK_EVEN_SL_HIT`.
+
+### Fix
+1. Success-scoped `_last_modify_sl` writes at all five protective-modification sites (BE lock, ATR trailing, MFE protector, router BREAK_EVEN, router NORMAL_TRAIL) — final-SL truth only advances on CONFIRMED broker modification.
+2. Per-ticket BE attempt cooldown (`BREAKEVEN_ATTEMPT_COOLDOWN_SEC = 5.0` via `PositionProtectionState.last_be_attempt_time`) — retry storm bounded, audit flood eliminated.
+3. Router BREAK_EVEN dispatch guarded by `protection_state.was_sl_modified` (no duplicate modify/notify) + symmetric `BREAKEVEN_LOCK`/`BREAKEVEN_FAILED` audit rows.
+4. `is_sl_improvement` monotonic floor added to the router `MODIFY_SL` and `NORMAL_TRAIL` dispatch paths (invariant: SL only moves in the protective direction).
+5. `AuditRepository.get_broker_deals_for_position(position_id)` + autopsy fallback when the live window misses — aggregate real broker PnL (BUG-088/089).
+6. `AuditRepository.count_ledger_opened_unclosed()` pre-check + 60s cadence gate on `reconcile_missed_closes` (BUG-090).
+7. Broker-verified close ordering: `_closed_tickets` marker + `_broker_close_verified()` re-query before exposure is freed; closed tickets can never receive further protective modifications.
+8. Exit-decision traceability: `_exit_pending_final_reason` records the arbitrated verdict per ticket, cleared at autopsy.
+
+### Regression tests
+- `tests/unit/test_order_manager_exit_bugs.py` (11 cases): failed-mod truthfulness, retry cooldown, monotonic floor, closed-ticket guard, durable-deal fallback, reconcile cadence.
+
+### Notes
+- The parallel TASK-3 commit (0434ef6) committed the shared working-tree state including these fixes; the working-tree delta for order_manager.py/audit_repository.py is now empty. TASK-7 contributes the regression suite, this ledger entry, and TASK-7 handoff.

@@ -1,0 +1,15 @@
+=== TASK-7 FORENSIC EVIDENCE (read-only) ===
+BE-mislabel t=152488104827 ledgerPnL=0.0 brokerGross=33.5 brokerReason=3 comment=NSE_CLOSE was_mod=1 final_sl=4393.48
+BE-mislabel t=152488104848 ledgerPnL=0.0 brokerGross=32.5 brokerReason=3 comment=NSE_CLOSE was_mod=1 final_sl=4393.48
+BE-mislabel t=152488104866 ledgerPnL=0.0 brokerGross=33.5 brokerReason=3 comment=NSE_CLOSE was_mod=1 final_sl=4393.48
+BE-mislabel t=152488104933 ledgerPnL=0.0 brokerGross=38.0 brokerReason=3 comment=NSE_CLOSE was_mod=1 final_sl=4393.6
+BE-mislabel t=152488104954 ledgerPnL=0.0 brokerGross=38.5 brokerReason=3 comment=NSE_CLOSE was_mod=1 final_sl=4393.6
+BE-mislabel t=152488118287 ledgerPnL=0.0 brokerGross=55.08 brokerReason=3 comment=NSE_CLOSE was_mod=1 final_sl=4391.44
+BE-mislabel t=152488118301 ledgerPnL=0.0 brokerGross=54.57 brokerReason=3 comment=NSE_CLOSE was_mod=1 final_sl=4391.44
+BE-mislabel t=152488118312 ledgerPnL=0.0 brokerGross=47.43 brokerReason=3 comment=NSE_CLOSE was_mod=1 final_sl=4391.44
+BE-mislabel t=152488118316 ledgerPnL=0.0 brokerGross=46.41 brokerReason=4 comment=[sl 4391.44] was_mod=1 final_sl=4391.44
+BE-mislabel t=152488118319 ledgerPnL=0.0 brokerGross=46.41 brokerReason=4 comment=[sl 4391.44] was_mod=1 final_sl=4391.44
+ledger-zero-with-real-broker-gross total: 151
+protection-audit BREAKEVEN_FAILED: 6674
+protection-audit PROFIT_GIVEBACK_PROTECTION: 38
+protection-audit PROFIT_GIVEBACK_CLOSE_FAILED: 37
