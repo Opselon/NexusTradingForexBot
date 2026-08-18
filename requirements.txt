@@ -27,7 +27,7 @@ torch>=2.2.0,<3.0.0                # PyTorch deep learning library for model inf
 # ------------------------------------------------------------------------------
 # Observability, Logging & Terminal Interface
 # ------------------------------------------------------------------------------
-structlog>=24.1.0,<25.0.0          # Non-blocking structured JSON logging pipeline
+structlog>=24.1.0,<27.0.0          # Non-blocking structured JSON logging pipeline
 typer>=0.9.0,<1.0.0                # Ergonomic CLI framework
 rich>=13.7.0,<14.0.0               # Colored terminal presentation and status tables
 
