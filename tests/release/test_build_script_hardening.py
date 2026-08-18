@@ -34,7 +34,7 @@ def test_build_uses_native_windows_paths_for_pyinstaller() -> None:
 def test_build_has_stale_exe_lock_guard() -> None:
     text = _build_script()
     assert "Stale-EXE lock guard" in text
-    assert "Get-Process -Name \"NexusScalpEngine\"" in text
+    assert 'Get-Process -Name "NexusScalpEngine"' in text
     assert "Stop-Process" in text
 
 
@@ -92,14 +92,13 @@ def test_spaces_in_path_handling_documented() -> None:
     text = _build_script()
     # Every PyInstaller/ISCC invocation path is derived from $Root/$BuildDir.
     assert "$Root\\Web;Web" in text
-    assert '$Iscc $Iss' in text or '& $Iscc' in text
+    assert "$Iscc $Iss" in text or "& $Iscc" in text
+
 
 def test_cli_help_strings_are_ascii_safe() -> None:
     """Typer help= option strings must be ASCII-only: the frozen onefile
     console encodes in the active code page and non-ASCII (em dash, arrow)
     aborts --help with UnicodeEncodeError (BUG-037)."""
-    import re
-
     src = (REPO_ROOT / "src/nexus_scalp/cli/main.py").read_text(encoding="utf-8")
     bad = [m.group(1) for m in re.finditer(r'help="([^"]*)"', src) if not m.group(1).isascii()]
     assert not bad, f"non-ASCII help= strings: {bad}"

@@ -56,8 +56,9 @@ def test_checksums_verify_from_portable_dir(tmp_path: Path) -> None:
         root / "portable" / "NexusScalpEngine.exe",
         root / "cli" / "NexusScalpEngine-CLI.exe",
     ]
-    pkg.generate_manifest(rel_artifacts, root / "manifests" / "release-manifest.json",
-                          base_dir=root)
+    pkg.generate_manifest(
+        rel_artifacts, root / "manifests" / "release-manifest.json", base_dir=root
+    )
     pkg.checksums_file(rel_artifacts, root / "checksums" / "SHA256SUMS.txt", base_dir=root)
     result = ver.verify_release(root / "portable", include_launch=False)
     checksums = next(c for c in result["checks"] if c["check"] == "Checksums/manifest")
@@ -124,9 +125,7 @@ def test_architecture_support_matrix_is_explicit() -> None:
         ("ARM64", "BLOCKED"),
         ("aarch64", "BLOCKED"),
     ):
-        fake = renv.EnvironmentInfo(
-            os_name="Windows", architecture=arch, process_architecture=arch
-        )
+        fake = renv.EnvironmentInfo(os_name="Windows", architecture=arch, process_architecture=arch)
         res = reval.evaluate_requirements(fake)
         arch_res = next(r for r in res if r.name == "Architecture")
         assert arch_res.verdict == expected, f"{arch} -> {arch_res.verdict}"
@@ -237,8 +236,12 @@ def _make_release_fixture(base: Path) -> Path:
     (root / "portable" / "README.txt").write_text("README", encoding="utf-8")
     (root / "portable" / "build-info.json").write_text(
         json.dumps(
-            {"version": "9.0.0", "architecture": "x64",
-             "channel": "stable", "git_commit": "abc1234"}
+            {
+                "version": "9.0.0",
+                "architecture": "x64",
+                "channel": "stable",
+                "git_commit": "abc1234",
+            }
         ),
         encoding="utf-8",
     )
@@ -247,8 +250,9 @@ def _make_release_fixture(base: Path) -> Path:
         root / "portable" / "NexusScalpEngine.exe",
         root / "cli" / "NexusScalpEngine-CLI.exe",
     ]
-    pkg.generate_manifest(artifacts, root / "manifests" / "release-manifest.json",
-                          base_dir=root, channel="stable")
+    pkg.generate_manifest(
+        artifacts, root / "manifests" / "release-manifest.json", base_dir=root, channel="stable"
+    )
     pkg.checksums_file(artifacts, root / "checksums" / "SHA256SUMS.txt", base_dir=root)
     return root
 
