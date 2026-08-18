@@ -310,6 +310,8 @@ class DrawdownSection:
     drawdown_duration_sec: float | None = None
     recovery_duration_sec: float | None = None
     in_drawdown: bool = False
+    period_drawdown_pct: float | None = None
+    drawdown_window: str = ""
     has_data: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -324,6 +326,8 @@ class DrawdownSection:
             "drawdown_duration_sec": _r(self.drawdown_duration_sec, 1),
             "recovery_duration_sec": _r(self.recovery_duration_sec, 1),
             "in_drawdown": self.in_drawdown,
+            "period_drawdown_pct": _r(self.period_drawdown_pct, 3),
+            "drawdown_window": self.drawdown_window,
             "has_data": self.has_data,
         }
 
@@ -430,6 +434,9 @@ class ModelSection:
     avg_no_trade_probability: float | None = None
     avg_confidence: float | None = None
     prediction_to_execution_rate: float | None = None
+    #: executed / ALL predictions (TASK-1); complements
+    #: prediction_to_execution_rate which is executed / execution intents.
+    prediction_to_trade_rate: float | None = None
     prediction_to_win_rate: float | None = None
     executed_count: int = 0
     model_rejected: int = 0
@@ -448,6 +455,7 @@ class ModelSection:
             "avg_no_trade_probability": _r(self.avg_no_trade_probability, 4),
             "avg_confidence": _r(self.avg_confidence, 4),
             "prediction_to_execution_rate": _r(self.prediction_to_execution_rate, 3),
+            "prediction_to_trade_rate": _r(self.prediction_to_trade_rate, 3),
             "prediction_to_win_rate": _r(self.prediction_to_win_rate, 3),
             "executed_count": self.executed_count,
             "model_rejected": self.model_rejected,
@@ -514,18 +522,65 @@ class NewsSection:
 
 @dataclass(frozen=True)
 class BehavioralSection:
-    """Behavioral flag census (task §8; only flags actually present in repo)."""
+    """Behavioral flag census with a truthful analysis state (§14/§15).
 
+    `state` distinguishes: NOT_ANALYZED / ANALYZING / ANALYSIS_FAILED /
+    INSUFFICIENT_EVIDENCE / CLEAR / FLAGS_FOUND. `has_data` remains True as
+    soon as ANY analysis ran — a CLEAR zero-flag result is real data.
+    """
+
+    state: str = "NOT_ANALYZED"
     flag_counts: dict[str, int] = field(default_factory=dict)
     total_flags: int = 0
     flagged_trades: int = 0
+    analyzed: int = 0
+    complete_context: int = 0
+    partial_context: int = 0
+    evidence_coverage: float | None = None
+    analysis_version: str = ""
+    anomaly_version: str = ""
     has_data: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "state": self.state,
             "flag_counts": dict(self.flag_counts),
             "total_flags": self.total_flags,
             "flagged_trades": self.flagged_trades,
+            "analyzed": self.analyzed,
+            "complete_context": self.complete_context,
+            "partial_context": self.partial_context,
+            "evidence_coverage": self.evidence_coverage,
+            "analysis_version": self.analysis_version,
+            "anomaly_version": self.anomaly_version,
+            "has_data": self.has_data,
+        }
+
+
+@dataclass(frozen=True)
+class AnomalyStateSection:
+    """Anomaly census with a truthful state (never 'none detected' by silence).
+
+    `state`: NOT_ANALYZED / ANALYZING / ANALYSIS_FAILED / INSUFFICIENT_EVIDENCE
+    / CLEAR / ANOMALIES_FOUND.
+    """
+
+    state: str = "NOT_ANALYZED"
+    counts: dict[str, int] = field(default_factory=dict)
+    total: int = 0
+    analyzed: int = 0
+    evidence_coverage: float | None = None
+    anomaly_version: str = ""
+    has_data: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "state": self.state,
+            "counts": dict(self.counts),
+            "total": self.total,
+            "analyzed": self.analyzed,
+            "evidence_coverage": self.evidence_coverage,
+            "anomaly_version": self.anomaly_version,
             "has_data": self.has_data,
         }
 
@@ -688,6 +743,7 @@ class ReportContainer:
     execution: ExecutionSection = field(default_factory=ExecutionSection)
     news: NewsSection = field(default_factory=NewsSection)
     behavioral: BehavioralSection = field(default_factory=BehavioralSection)
+    anomaly_state: AnomalyStateSection = field(default_factory=AnomalyStateSection)
     loss_drivers: LossDriversSection = field(default_factory=LossDriversSection)
     profit_drivers: ProfitDriversSection = field(default_factory=ProfitDriversSection)
     period_compare: PeriodCompareSection = field(default_factory=PeriodCompareSection)
@@ -722,6 +778,7 @@ class ReportContainer:
             "execution": self.execution.to_dict(),
             "news": self.news.to_dict(),
             "behavioral": self.behavioral.to_dict(),
+            "anomaly_state": self.anomaly_state.to_dict(),
             "loss_drivers": self.loss_drivers.to_dict(),
             "profit_drivers": self.profit_drivers.to_dict(),
             "period_compare": self.period_compare.to_dict(),

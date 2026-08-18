@@ -3664,3 +3664,200 @@ The prompt's assumed "index 1 = CONTRACT GAP" is resolved by the executable code
 - Low-cardinality (by design): binary session/flag dims (3,9,13,15,16–19,28,29,31,32,40,42,43,46,48) — unique ∈ {2,3}.
 - Exact duplicate pair: (38, 39) negated (corr −1.0); near-dupes |corr|>0.96: (30,38), (30,39).
 - `norm_rsi` observed range [−2.40, +2.69] — no saturation, active distribution.
+
+---
+
+## BUG-083 — 60D (scalp_v2) Schema Had No Producer: Declared-but-Unbuildable Forward Path (2026-08-18 TASK-5)
+
+- **Status**: FIXED (by TASK-5: `features/schema_augment.py` + `model_generation/schema_v2.py`; regression-guarded by `TestTask5*` in `tests/unit/test_model_generation_phase13.py`)
+- **Severity**: MEDIUM (architectural gap: no LIVE defect — `scalp_v2` was never active; but any future 60D training/replay would have been impossible)
+- **Confidence**: HIGH (forensic grep: `FEATURE_SCHEMAS.resolve("scalp_v2")` returned dim=60 yet no code anywhere produced a 60D vector; `ScalpFeatureEngine.to_tensor_input()` hard-asserts exactly 50)
+- **Discovered**: TASK-5 bootstrap (2026-08-18)
+
+### Problem
+The feature schema registry forward-declared `scalp_v2` (60D) and `scalp_v3`
+(350D) with NO producer. Nothing in the repo could build a real 60D feature
+vector, so the documented 50D→60D migration path was fiction: a future
+trainer or runtime "switching" to scalp_v2 would crash with a 50D contract
+violation or silently train on a wrong geometry.
+
+### Evidence
+- `features/schema.py`: `FEATURE_SCHEMAS.register(FeatureSchema(schema_id="scalp_v2", dimension=60, ...))`.
+- `features/scalp_features.py::to_tensor_input` raises `RuntimeError` unless
+  the vector is exactly 50 wide; `FEATURE_NAMES` length assertion ties the
+  module to `active_dimension()` (50).
+- grep across `features/`, `models/`, `training/`, `model_generation/`: zero
+  producers of feat_50..feat_59.
+
+### Root cause
+The registry was additive-by-design (INV-009) but the ADDITIVE PRODUCER was
+never built; "future-dimension infrastructure" stopped at schema metadata.
+
+### Impact
+Any agent that tried to honor the roadmap (60D → 350D) would have either
+hard-crashed or silently mislabeled artifacts. The Champion (scalp_v1) was
+not affected.
+
+### Fix (TASK-5)
+- `features/schema_augment.py` — pure, causal 10-feature augmenter
+  (`compute_60d_extras`, feat_50..feat_59) with documented semantics,
+  formulas, missing-data defaults, leakage analysis and the finite
+  guarantee. Deterministic; live = replay = training.
+- `model_generation/schema_v2.py` — dataset builder (`compute_60d_frame`,
+  `build_60d_dataset`, `verify_60d_artifact`) that produces a REAL scalp_v2
+  dataset artifact from the same raw bars the 50D path uses.
+- `features/schema.py` — scalp_v2 description now names the 10 features.
+- `model_generation/benchmark.py` — 8-cell matrix (50D/60D × news off/on ×
+  LEGACY/TCN) on identical splits.
+
+### Regression tests
+- `TestTask5Schema60D` (TEST-MG-02/03/03b/04/06/02b)
+- `TestTask5Dataset60D` (TEST-MG-10/10b/13/13b/14/15)
+- `TestTask5FeatureQuality` (spec 5 detectors)
+- `TestTask5TrainingSafety`, `TestTask5ValidationGates`,
+  `TestTask5RuntimeParity`, `TestTask5DriftAndWorker`, `TestTask5ChampionSafety`
+
+### Verification
+- 60D frame: 99,946 rows from the real M5 parquet in ~98s, all finite,
+  feat count exactly 60.
+- Real-data experiment (A/B/C/D): 50D datasets rebuilt to the SAME
+  deterministic id `ds_cb30f87520e9e6a4`; 60D dataset id `ds_f9a06027a76588ff`
+  (news-aware 60D). All cells REJECTED by the hardened gates — honest
+  negative result, no promoted challenger.
+
+---
+
+## BUG-084 — Research Validation Evaluated Candidates on the WHOLE Dataset, Not Their Own Context Family (2026-08-18 TASK-4)
+
+- **Status**: FIXED (TASK-4: family-select validation in `research/pipeline.py` via `discovery_evidence.sample_ids`)
+- **Severity**: HIGH (research-integrity: per-family OOS/expectancy/robustness claims were computed on heterogeneous evidence)
+- **Confidence**: HIGH (probe on production data + code trace)
+
+### Symptom
+`ResearchPipeline.validate_candidate` ran every gate (backtest, walk-forward, OOS, robustness, score) over `dataset.samples` — the FULL dataset of 19–22 context families — instead of the candidate's own family. A candidate discovered from `XAUUSD|M1|LONDON|RANGING_MEAN_REVERSION|NORMAL|BULLISH` was validated on trades from TOKYO/NY/OFF_SESSION + TRENDING/EXTREME contexts mixed together. Its OOS and expectancy were therefore NOT family-specific evidence.
+
+### Evidence
+- Probe: for the largest family (n=20, exp −0.086R), whole-dataset backtest expectancy −0.0758 vs family-only −0.0861; OOS on whole dataset −0.0145 vs family-only −0.2039 (probe output differs by family); a TOKYO family of 12 showed OOS PASS (+0.0255) on family-only but FAIL (−0.0145) on the whole dataset — proves whole-dataset gates can mis-validate.
+- Code: `pipeline.py` used `dataset.samples` unfiltered for all gates; `discovery_evidence` carried only aggregate counts.
+
+### Fix
+- `discovery.py` records the exact economic observations (`sample_ids`) + `tier` per candidate.
+- `pipeline.py::_select_family` restricts every gate to the candidate's own family (falls back to the full dataset only when a candidate has no family ids).
+- Log: `[STRATEGY_VALIDATION] event=FAMILY_SELECT_VALIDATION family_samples=... dataset_samples=...`.
+
+### Regression tests
+- `tests/unit/test_research_task4_validation.py::test_rs24_family_select_validation`
+- `test_rs15_negative_oos_always_rejects` (gate semantics unchanged)
+
+### Runtime verification
+- Synthetic 26-sample family: validation sample_count = 21 (family in-sample split), not the whole dataset.
+- Full unit + integration research suites green.
+
+---
+
+## BUG-085 — Research Scoring Could VALIDATE Below the Evidence Floor and Crash on Unbounded Degradation Score (2026-08-18 TASK-4)
+
+- **Status**: FIXED (TASK-4: `research/scoring.py` hard small-sample gate + degradation clamp + INCONCLUSIVE lifecycle)
+- **Severity**: HIGH (validation-integrity: tiny samples could be marked VALIDATED; production validation crashed on a valid walk-forward improvement)
+- **Confidence**: HIGH (probe reproduced both)
+
+### Symptom
+1. `degradation_score = max(0.0, 1.0 - walkforward.degradation)` could exceed 1.0 when `degradation` was negative (OOS better than validation) → `StrategyScore.degradation_score` (le=1.0) raised a pydantic ValidationError inside `[RESEARCH_WORKER] _refresh_validation` → every validation of a genuinely improving candidate crashed (observed: 1.0455).
+2. The verdict gate only required `n >= 8` (SMALL_SAMPLE_FLOOR); a 21-sample family with sample_confidence 0.088 and passing gates could be marked VALIDATED despite the MIN_EVIDENCE_SAMPLES=20 contract.
+
+### Evidence
+- Probe: candidate STRAT-B37B42FF21 (n=26, 21 in-sample) → `degradation_score=1.0455 > 1.0` → ValidationError at `scoring.py:199`; verdict would have been VALIDATED at n=21 in the synthetic run.
+- Code trace: `scoring.py` lacked a hard `n >= MIN_EVIDENCE_SAMPLES` gate in the verdict chain (only `n < 8`).
+
+### Fix
+- `degradation_score` clamped to [0,1].
+- Verdict chain adds `elif n < MIN_EVIDENCE_SAMPLES: verdict = INCONCLUSIVE`.
+- `pipeline.py` maps INCONCLUSIVE to lifecycle DISCOVERED (insufficient evidence is NOT a rejection; the candidate keeps accumulating).
+
+### Regression tests
+- `test_rs15_negative_oos_always_rejects` (OOS hard gate intact)
+- `test_no_automatic_active` (INCONCLUSIVE never becomes ACTIVE)
+
+### Runtime verification
+- Synthetic validation now completes with verdict VALIDATED only when all gates + evidence floor pass; INCONCLUSIVE persists as DISCOVERED.
+
+---
+
+## BUG-086 — Research Worker Rebuilt the Dataset Every Cycle and Registry Allowed Silent Definition Overwrites (2026-08-18 TASK-4)
+
+- **Status**: FIXED (TASK-4: dataset rebuild guard in `research/worker.py`; registry immutability in `research/registry.py`)
+- **Severity**: MEDIUM (wasted cycles + registry identity integrity)
+- **Confidence**: HIGH (probe)
+
+### Symptom
+1. `ResearchWorker._refresh_dataset` rebuilt the dataset every cycle with no change guard; with the builtin seeder re-running constantly, `last_work_done` was always True even with zero new experience — "working" with no real work.
+2. `StrategyRegistry.upsert` silently overwrote an existing `(strategy_id, strategy_version)` row's context_definition + results, so a definition change under the SAME version could rewrite validation truth (identity corruption).
+
+### Fix
+- Worker: content-addressed `dataset_id` guard → `event=DATASET_UNCHANGED` skips discovery/validation; seeding counts as work only when the registry actually changed (first cycle).
+- Registry: `upsert()` refuses definition mutation under the same version; `forbid_lifecycle_regression=True` refuses downgrading established states (VALIDATED→DISCOVERED) for seeder/re-validation paths.
+
+### Regression tests
+- `test_rs22_worker_real_work_when_new_experience`
+- `test_rs23_worker_noop_when_dataset_unchanged`
+- `test_rs20_registry_immutable`
+
+### Runtime verification
+- Cycle 2 with unchanged data: `last_work_done=False`, same dataset_id, no discovery run.
+- Registry: definition-change upsert refused; VALIDATED→DISCOVERED regression refused.
+
+---
+
+## BUG-087 — Performance Intelligence Report: Fill Rate 0% (Never Computed), Executed-Signal-Ratio Denominator False, MAE/MFE Sign Convention Mixed, Timestamp Cutoff Lexicographic 'T' Bug, TAKE_PROFIT-Hit False Positive on SL Deal (2026-08-18 TASK-1 forensic metric-truth audit)
+
+- **Status**: FIXED (reporting engine + accounting normalization; TASK-1 2026-08-18)
+- **Severity**: HIGH (report misled: Fill Rate 0% while real ~78%; "Executed signal ratio 100%" hid 647 rejections; TAKE_PROFIT loser mislabelled; per-period trade count off by one on sub-day cutoffs)
+- **Confidence**: HIGH (independent recomputation from artifacts/audit.db + broker_deals evidence)
+
+### Defect A — Fill Rate "0%" (ExecutionSection.fill_ratio was hardcoded None)
+- **Observed**: Daily report Execution → Fill Rate 0%, Avg Latency 12ms, Rejections 15, n=322.
+- **Root cause**: `reporting/engine.py::_stage_execution` computed latencies/rejections but left `fill_ratio=None` → Telegram formatter rendered `(e.fill_ratio or 0.0)` → 0%.
+- **Evidence**: audit_orders day rows: 179 "Executed order" / 231 dispatch attempts → real fill ratio 0.775. The 15 "rejections" were BREAKEVEN LOCK FAILED modify events (not order fills), so the old count conflated management rejects with fill rejects.
+- **Fix**: fill_ratio = accepted / (accepted + generated candidates); rejection counts now include "breakeven lock failed" explicitly as management rejects (they are real broker rejections of SL modifications, but MUST NOT be counted as order-fill failures). Telegram now shows "Fill Rate: 78%".
+
+### Defect B — "Executed signal ratio 100%" (ModelSection.prediction_to_execution_rate denominator)
+- **Observed**: Model → Executed signal ratio 100% (32 executed / 32), model_rejected=0, policy_rejected=0, risk_rejected=0, exposure=0, exec_fail=0 — while audit_signals in the same day had 310 CONFIDENCE_FAIL, 72 ASYMMETRIC_RR_LIMIT, 94 ZONE_QUALITY_FAIL, 32 REGIME_GUARDIAN, 17 EXECUTION_STATE_BLOCK, etc.
+- **Root cause**: `_stage_model` only tabulated rejection buckets for rows whose `action` was an executable signal (BUY_MARKET/SELL_MARKET/BUY_LIMIT/SELL_LIMIT), but the audit_signals stream records EVERY rejected signal as `action=NO_TRADE` with `blocked_by=<reason>`. Executable-action rows are only the never-blocked dispatches, so the denominator was executed/executed = 100% and all rejection buckets stayed 0.
+- **Evidence**: action x blocked_by crosstab on the live DB: 915 rows, 882 NO_TRADE, 33 executable; blocked reasons on NO_TRADE rows: CONFIDENCE_FAIL 310, ZONE_QUALITY_FAIL 94, ASYMMETRIC_RR_LIMIT 72, REGIME_GUARDIAN 32, SR_RESISTANCE 37, SR_SUPPORT 23, SUITABILITY_GATE 15, EXPERIENCE_DEGRADED 29, HTF_TREND_CONFL 9, EXECUTION_STATE_BLOCK 17, SAME_LEVEL_REENTRY 2, EXPERIENCE_RETIRED 7.
+- **Fix**: funnel re-tabulation includes NO_TRADE+blocked_by rows as rejected intents. Result: 680 intents = 33 executed + 413 model_rejected + 217 policy_rejected + 17 execution_failed. `prediction_to_execution_rate` = executed/intents (now ~4.9%); NEW `prediction_to_trade_rate` = executed/all predictions (~3.6%) — the two denominators are now explicit and distinct.
+
+### Defect C — MAE/MFE sign convention mixed + average mismatch
+- **Observed**: report Avg MAE -45.25 / Avg MFE 32.32 vs independent price-derived values -48.17 / 48.49. MFE_usd raw sum 1066.71 vs the report's implied 32.32*33.
+- **Root cause**: raw ledger `mae`/`mfe` POINTS columns are stored SIGNED (adverse negative for mae, favorable positive for mfe) while `MAE_usd`/`MFE_usd` are stored in a MIXED convention (MAE_usd negative, MFE_usd positive in the modern writer); `_stage_excursion` read `t.mae_usd`/`t.mfe_usd` directly and `normalize_trade_row` passes raw values, so a stored MFE_usd==0.0 with a positive mfe points column (e.g. the tick-observed pattern) was reported as zero. The giveback math `mfe_usd - net_pnl` then produced wrong per-trade givebacks.
+- **Fix**: canonical normalization `accounting/aggregation.py` `_mae_value`/`_mfe_value` (MAE <= 0, MFE >= 0 always; missing/zero handled as real zero, never None); `_stage_excursion` uses them. Avg MAE/MFE now match price-derived values.
+- **Note**: MFE capture -69% was mathematically CORRECT as a portfolio-level ratio (Σ net PnL / Σ MFE = -741.21/1066.71). The label is now explicit: portfolio capture, not per-winner capture.
+
+### Defect D — Timestamp lexicographic cutoff ('T' vs space)
+- **Observed**: report counted 33 trades; at 16:24:52 cutoff the DB holds 32 closed rows inside the day + 1 row at 16:59:53 (the 33rd was 17:05, outside). The old query `COALESCE(NULLIF(close_time,''), timestamp) < ?` compared ISO 'T'-separated live rows against space-separated cutoff strings → 'T'(0x54) > ' '(0x20) → EVERY sub-day cutoff excluded all ISO rows. Only day-boundary comparison accidentally worked.
+- **Fix**: `accounting/core.py::load_trades` normalizes both sides (REPLACE 'T'->' ', strip '+00:00') before comparison. Verified: fixed query returns exactly 32 rows for the gen-time cutoff and 34 for the full day; old query returned 0 for any sub-day cutoff.
+
+### Defect E — TAKE_PROFIT_HIT false positive (broker DEAL_REASON=4 is SL)
+- **Observed**: ticket 152495211104 SELL at 4423.33, exit 4425.98 (SL), profit -166.95, deal reason=4 comment "[sl 4425.98]" — reported as TAKE_PROFIT (count 1, PnL -166.95) in EXITS.
+- **Root cause**: `classify_exit_reason` treated `reason == 4 OR near_tp OR "tp" in comment` as TAKE_PROFIT. MT5 DEAL_REASON 4 is DEAL_REASON_SL. TASK-3 (BUG-083/085) has now replaced the classifier with `classify_exit_with_evidence` returning (reason, source, detail, confidence) where reason==4+SL comment → _classify_sl_geometry (HARD_SL/BE/TRAILING). The accounting-side labeling is thereby broker-truth; this ledger row is HISTORICAL and left immutable (INV-007).
+- **Fix**: no change needed in TASK-1 code beyond documenting; the classifier fix lands upstream via TASK-3. Regression guard added: test_reason4_sl_is_not_tp.
+
+### Defect F — Drawdown concept ambiguity (period vs 90D vs all-time)
+- **Observed**: SnapshotBlock drawdown_pct=0.497% (intra-day), Max DD 21.041% (90-day peak-to-trough), current drawdown 19.835%. Three different concepts under one label.
+- **Fix**: DrawdownSection now carries `period_drawdown_pct` (1-day window) + `drawdown_window="90D"` explicitly; SnapshotBlock drawdown_pct is the period window; telegram shows "Max DD (90D)" vs "Period DD".
+
+### Files
+- src/nexus_scalp/accounting/aggregation.py (_mae_value/_mfe_value/_usd_per_point)
+- src/nexus_scalp/accounting/core.py (load_trades normalized timestamp filter)
+- src/nexus_scalp/reporting/engine.py (_stage_excursion, _stage_model funnel, _stage_execution fill_ratio, _stage_snapshot/_stage_drawdown window labels)
+- src/nexus_scalp/reporting/models.py (prediction_to_trade_rate, period_drawdown_pct, drawdown_window)
+- src/nexus_scalp/reporting/telegram_format.py (funnel lines, drawdown label)
+- tests/unit/test_performance_metric_truth.py (33 tests, TEST-1..24)
+
+### Regression tests
+- test_fill_ratio_semantics, test_prediction_to_trade_rate_denominator, test_funnel_buckets_partition_executed_plus_rejected, test_mae_negative_mfe_positive, test_mfe_capture_is_portfolio_ratio, test_reason4_sl_is_not_tp, test_win_loss_be_sum_reconciles, test_r_aggregates_exclude_unknown, test_aggregate_deterministic, test_drawdown_from_equity_series, test_split_fill_is_one_economic_trade, test_balance_delta_equals_trade_pnl_plus_friction
+
+### Handoff notes
+- Historical rows NOT rewritten (INV-007 immutability); fixes apply to new report generations.
+- The 7-row no-context cohort (3 live + 4 pre-BUG-081) is a data-provenance gap recorded in the ledger, not a metric bug; context binding is BUG-081's domain (fixed for new fills).
+
+---

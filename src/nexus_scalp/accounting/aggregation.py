@@ -31,6 +31,52 @@ from nexus_scalp.accounting.models import (
 from nexus_scalp.accounting.periods import PeriodBounds
 
 
+#: Sign convention for excursion statistics (TASK-1 forensic audit 2026-08-18).
+#: MAE is adverse excursion and MUST be reported as a NEGATIVE money value;
+#: MFE is favourable excursion and MUST be NON-NEGATIVE. The raw ledger columns
+#: historically stored mixed conventions (some writers stored adverse as
+#: positive points, some stored the USD pair with adverse negative). The
+#: aggregation layer therefore NORMALIZES by construction: a stored MFE_usd
+#: that is negative is a sign-convention violation and is treated as zero
+#: (no favourable excursion), never as a negative "anti-excursion".
+def _mae_value(trade: TradeRecord) -> float:
+    """Normalized adverse excursion in USD (<= 0)."""
+    if trade.mae_usd is not None and trade.mae_usd < 0.0:
+        return trade.mae_usd
+    # Stored as positive (or absent) -> derive from points when possible.
+    pts = trade.mae_points if trade.mae_points is not None else 0.0
+    if pts <= 0.0:
+        return 0.0
+    per_point = _usd_per_point(trade)
+    if per_point is None:
+        return 0.0
+    return -abs(pts) * per_point
+
+
+def _mfe_value(trade: TradeRecord) -> float:
+    """Normalized favourable excursion in USD (>= 0)."""
+    if trade.mfe_usd is not None and trade.mfe_usd > 0.0:
+        return trade.mfe_usd
+    pts = trade.mfe_points if trade.mfe_points is not None else 0.0
+    if pts <= 0.0:
+        return 0.0
+    per_point = _usd_per_point(trade)
+    if per_point is None:
+        return 0.0
+    return abs(pts) * per_point
+
+
+def _usd_per_point(trade: TradeRecord) -> float | None:
+    """Derives USD per price point from the stored excursion pair."""
+    if trade.mae_usd is not None and trade.mae_points is not None:
+        if abs(trade.mae_points) > 1e-9 and abs(trade.mae_usd) > 1e-9:
+            return abs(trade.mae_usd) / abs(trade.mae_points)
+    if trade.mfe_usd is not None and trade.mfe_points is not None:
+        if abs(trade.mfe_points) > 1e-9 and abs(trade.mfe_usd) > 1e-9:
+            return abs(trade.mfe_usd) / abs(trade.mfe_points)
+    return None
+
+
 def aggregate_period(
     bounds: PeriodBounds,
     trades: Iterable[TradeRecord],
@@ -112,7 +158,6 @@ def aggregate_period(
         if decided > 0:
             report.win_rate = report.win_count / decided * 100.0
         report.expectancy = report.net_pnl / report.total_trades
-
         # --- PRO WIN-RATE RECONCILIATION (debug/audit contract) -------------------
         # Win rate can be reported against three denominators and all three must be
         # visible so a "9% win rate" can never be misread as an algorithm error:

@@ -113,7 +113,8 @@ def format_telegram_daily(report: ReportContainer) -> str:
         f"Avg MAE: <code>{_fmt_usd(report.excursion.avg_mae_usd)}</code> | "
         f"Avg MFE: <code>{_fmt_usd(report.excursion.avg_mfe_usd)}</code>",
         f"MFE Capture: <code>{_fmt_pct(report.excursion.mfe_capture_ratio * 100.0, 0) if report.excursion.mfe_capture_ratio is not None else 'n/a'}</code>",
-        f"Max DD: <code>{_fmt_pct(dd.max_drawdown_pct, 3)}</code> | "
+        f"Max DD ({_esc(dd.drawdown_window or '90D')}): <code>{_fmt_pct(dd.max_drawdown_pct, 3)}</code> | "
+        f"Period DD: <code>{_fmt_pct(dd.period_drawdown_pct, 3)}</code> | "
         f"Recovery: <code>{_fmt_pct(dd.recovery_pct, 0)}</code>",
         "",
         "⏱️ <b>HOLD / EXIT</b>",
@@ -288,12 +289,22 @@ def _model_lines(report: ReportContainer) -> list[str]:
     m = report.model
     if not m.has_data or m.prediction_count == 0:
         return ["n/a (no prediction data in period)"]
+    intent_total = (
+        (m.executed_count or 0)
+        + (m.model_rejected or 0)
+        + (m.policy_rejected or 0)
+        + (m.risk_rejected or 0)
+        + (m.exposure_blocked or 0)
+        + (m.execution_failed or 0)
+    )
     lines = [
         f"Avg BUY: <code>{_fmt_pct((m.avg_buy_probability or 0.0) * 100.0, 1)}</code> | "
         f"Avg SELL: <code>{_fmt_pct((m.avg_sell_probability or 0.0) * 100.0, 1)}</code> | "
         f"Avg NO_TRADE: <code>{_fmt_pct((m.avg_no_trade_probability or 0.0) * 100.0, 1)}</code>",
-        f"Executed signal ratio: <code>{_fmt_pct((m.prediction_to_execution_rate or 0.0) * 100.0, 1)}</code> "
-        f"({m.executed_count} executed / {m.prediction_count} predictions)",
+        f"Exec/Intent: <code>{_fmt_pct((m.prediction_to_execution_rate or 0.0) * 100.0, 1)}</code> "
+        f"({m.executed_count}/{intent_total}) | "
+        f"Exec/All: <code>{_fmt_pct((m.prediction_to_trade_rate or 0.0) * 100.0, 1)}</code> "
+        f"({m.executed_count}/{m.prediction_count} predictions)",
         f"Decisions: 🤖 model_rej={m.model_rejected} | 🧾 policy_rej={m.policy_rejected} | "
         f"🛡️ risk_rej={m.risk_rejected} | ⛔ exposure={m.exposure_blocked} | "
         f"💥 exec_fail={m.execution_failed} | ✅ executed={m.trade_executed}",
@@ -439,22 +450,43 @@ def _session_lines(report: ReportContainer) -> list[str]:
 
 def _behavioral_lines(report: ReportContainer) -> list[str]:
     b = report.behavioral
+    if b.state in ("NO_DATA", "NOT_ANALYZED", "ANALYZING", "ANALYSIS_FAILED"):
+        return [
+            f"<code>{_esc(b.state)}</code> — no canonical behavioral analysis "
+            f"exists for this period"
+        ]
     if not b.has_data:
-        return ["n/a (no behavioral flags recorded)"]
-    out = [f"Total flags: {b.total_flags} across {b.flagged_trades} trade(s)"]
-    for key, count in sorted(b.flag_counts.items(), key=lambda kv: -kv[1])[:8]:
-        out.append(f"• <code>{_esc(key)}</code>: {count}")
-    return out
+        return [
+            "<code>INSUFFICIENT_EVIDENCE</code> — analysis ran without usable behavioral context"
+        ]
+    lines = [f"<b>{_esc(b.state)}</b> — analyzed {b.analyzed} trade(s)"]
+    if b.flag_counts:
+        for key, count in sorted(b.flag_counts.items(), key=lambda kv: -kv[1])[:8]:
+            lines.append(f"• <code>{_esc(key)}</code>: {count}")
+    else:
+        lines.append("Flags: 0")
+    lines.append(
+        f"Coverage: <code>{_fmt_pct((b.evidence_coverage or 0.0) * 100.0, 0)}</code> "
+        f"({b.complete_context} complete / {b.partial_context} partial) | "
+        f"Engine: <code>{_esc(b.analysis_version)}</code>"
+    )
+    return lines
 
 
 def _anomaly_lines(report: ReportContainer) -> list[str]:
-    if not report.anomalies:
-        return ["none detected"]
-    out = []
-    for a in report.anomalies:
-        sev = {"WARNING": "⚠️", "INFO": "📌"}.get(a.severity, "📌")
-        out.append(f"{sev} <code>{_esc(a.anomaly_type)}</code>: {_esc(a.detail)}")
-    return out
+    a = report.anomaly_state
+    if a.state in ("NO_DATA", "NOT_ANALYZED", "ANALYZING", "ANALYSIS_FAILED"):
+        return [f"<code>{_esc(a.state)}</code> — no anomaly analysis has run for this period"]
+    if not a.has_data:
+        return ["<code>INSUFFICIENT_EVIDENCE</code> — anomaly analysis ran without usable evidence"]
+    lines = [f"<b>{_esc(a.state)}</b> — analyzed {a.analyzed} trade(s)"]
+    if a.counts:
+        for key, count in sorted(a.counts.items(), key=lambda kv: -kv[1])[:8]:
+            lines.append(f"• <code>{_esc(key)}</code>: {count}")
+    else:
+        lines.append("Anomalies: 0")
+    lines.append(f"Engine: <code>{_esc(a.anomaly_version)}</code>")
+    return lines
 
 
 def _compare_lines(report: ReportContainer) -> list[str]:

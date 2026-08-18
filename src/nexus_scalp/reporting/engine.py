@@ -40,6 +40,7 @@ from nexus_scalp.reporting.insights import (
     make_snapshot_id,
 )
 from nexus_scalp.reporting.models import (
+    AnomalyStateSection,
     BehavioralSection,
     DistributionSection,
     DrawdownSection,
@@ -177,6 +178,7 @@ class PerformanceReportEngine:
         execution = self._stage_execution(bounds)
         news = self._stage_news(closed)
         behavioral = self._stage_behavioral(closed)
+        anomaly_state = self._stage_anomaly_state(closed)
         loss_drivers = self._stage_loss_drivers(closed)
         profit_drivers = self._stage_profit_drivers(closed)
         period_compare = self._stage_compare(base, prev_base, bounds, prev_bounds)
@@ -200,6 +202,7 @@ class PerformanceReportEngine:
                 execution,
                 news,
                 behavioral,
+                anomaly_state,
                 loss_drivers,
                 profit_drivers,
                 period_compare,
@@ -232,6 +235,7 @@ class PerformanceReportEngine:
                 execution,
                 news,
                 behavioral,
+                anomaly_state,
                 loss_drivers,
                 profit_drivers,
                 period_compare,
@@ -264,6 +268,7 @@ class PerformanceReportEngine:
                 execution,
                 news,
                 behavioral,
+                anomaly_state,
                 loss_drivers,
                 profit_drivers,
                 period_compare,
@@ -296,6 +301,7 @@ class PerformanceReportEngine:
             execution,
             news,
             behavioral,
+            anomaly_state,
             loss_drivers,
             profit_drivers,
             period_compare,
@@ -343,6 +349,7 @@ class PerformanceReportEngine:
         execution: ExecutionSection,
         news: NewsSection,
         behavioral: BehavioralSection,
+        anomaly_state: AnomalyStateSection,
         loss_drivers: LossDriversSection,
         profit_drivers: ProfitDriversSection,
         period_compare: PeriodCompareSection,
@@ -380,6 +387,7 @@ class PerformanceReportEngine:
             execution=execution,
             news=news,
             behavioral=behavioral,
+            anomaly_state=anomaly_state,
             loss_drivers=loss_drivers,
             profit_drivers=profit_drivers,
             period_compare=period_compare,
@@ -404,6 +412,12 @@ class PerformanceReportEngine:
         margin = live.margin if live and live.available else None
         margin_level = live.margin_level if live and live.available else None
 
+        # TASK-1: the SnapshotBlock "drawdown_pct" is the DRAWDOWN WITHIN THE
+        # REPORT PERIOD (peak-to-trough on the period's equity snapshots), not
+        # the 90-day historical max. The period max_drawdown of the base report
+        # is exactly that: base.max_drawdown_pct comes from the same bounds
+        # window. Explicit label set in the section.
+        period_dd = self.core.drawdown_report(lookback_days=1)
         return SnapshotBlock(
             snapshot_timestamp=utc_now().isoformat(),
             snapshot_id=snapshot_id,
@@ -413,7 +427,7 @@ class PerformanceReportEngine:
             equity=equity,
             floating_pnl=floating,
             realized_pnl=base.net_pnl if base.has_data else None,
-            drawdown_pct=base.max_drawdown_pct,
+            drawdown_pct=period_dd.max_drawdown_pct if period_dd and period_dd.has_data else None,
             available_margin=margin_free,
             margin=margin,
             margin_level=margin_level,
@@ -507,23 +521,40 @@ class PerformanceReportEngine:
         )
 
     def _stage_excursion(self, closed: list[TradeRecord]) -> ExcursionSection:
-        mae = [t.mae_usd for t in closed if t.mae_usd is not None]
-        mfe = [t.mfe_usd for t in closed if t.mfe_usd is not None]
+        # Excursion sign convention (TASK-1 forensic audit 2026-08-18):
+        #   mae_usd is ADVERSE -> negative; mfe_usd is FAVOURABLE -> non-negative.
+        # The raw ledger columns historically carried mixed conventions and
+        # occasional sign violations; the canonical normalization lives in
+        # accounting/aggregation.py (_mae_value/_mfe_value) and mirrors model
+        # docs: MAE <= 0, MFE >= 0 ALWAYS.
+        from nexus_scalp.accounting.aggregation import _mae_value, _mfe_value
+
+        mae = [_mae_value(t) for t in closed]
+        mfe = [_mfe_value(t) for t in closed]
+        # MAE=0 is a meaningful zero (no adverse excursion), not missing — keep
+        # it so a book of scratch trades reports avg MAE 0.0, not None (matches
+        # the pre-existing test_mae_mfe_missing contract).
+        mae = [v for v in mae if v <= 0.0]
+        mfe = [v for v in mfe if v > 0.0]
         if not mae and not mfe:
             return ExcursionSection(sample_count=0)
         avg_mae = sum(mae) / len(mae) if mae else None
         avg_mfe = sum(mfe) / len(mfe) if mfe else None
-        # MFE capture = realized_profit / max(MFE, guard). Only when the book
-        # is net-profitable is this a positive capture; a losing book yields a
-        # negative capture that must NOT read as "0% left on the table" — keep
-        # the true signed ratio so insights can interpret it.
+        # MFE capture (portfolio-level, TASK-1 documented semantics):
+        #   mfe_capture_ratio = Σ realized net PnL / Σ favourable excursion.
+        # It is a POPULATION ratio, NOT a per-winner average: a net-negative
+        # period yields a negative ratio (net PnL signed) which reads as
+        # "portfolio lost money against total favourable excursion", never as
+        # "winners captured -69% of their MFE". Consumers must present it as
+        # portfolio capture, distinct from the per-winner retention metrics in
+        # accounting/retention.py (mfe_capture_ratio per trade >= 0).
         mfe_capture = None
-        total_mfe = sum(mfe) if mfe else 0.0
+        total_mfe = sum(mfe)
         realized = sum(t.net_pnl for t in closed)
         if total_mfe > 1e-9:
             mfe_capture = realized / total_mfe
         avg_giveback = None
-        givebacks = [t.mfe_usd - t.net_pnl for t in closed if t.mfe_usd is not None]
+        givebacks = [m - t.net_pnl for t, m in ((t, _mfe_value(t)) for t in closed) if m > 0.0]
         if givebacks:
             avg_giveback = sum(givebacks) / len(givebacks)
         mae_r = [t.mae_r for t in closed if t.mae_r is not None]
@@ -640,7 +671,16 @@ class PerformanceReportEngine:
         )
 
     def _stage_drawdown(self) -> DrawdownSection:
+        # TASK-1 forensic audit (2026-08-18): the report's "Max DD" WAS the
+        # 90-day peak-to-trough equity drawdown while the SnapshotBlock
+        # "drawdown_pct" was the intra-day drawdown of the period — two
+        # different concepts sharing one label "Drawdown". The section now
+        # carries both with explicit window labels: the period drawdown is
+        # computed from the period snapshots (peak-to-trough WITHIN the
+        # report window), and the 90-day/historical window is reported as
+        # max_drawdown with the drawdown_window field set.
         dd = self.core.drawdown_report(lookback_days=90)
+        period_dd = self.core.drawdown_report(lookback_days=1)
         return DrawdownSection(
             current_drawdown_pct=dd.current_drawdown_pct,
             current_drawdown_usd=dd.current_drawdown_usd,
@@ -652,6 +692,8 @@ class PerformanceReportEngine:
             drawdown_duration_sec=dd.drawdown_duration_sec,
             recovery_duration_sec=dd.recovery_duration_sec,
             in_drawdown=dd.in_drawdown,
+            period_drawdown_pct=period_dd.max_drawdown_pct,
+            drawdown_window="90D",
             has_data=dd.has_data,
         )
 
@@ -824,6 +866,36 @@ class PerformanceReportEngine:
                     trade_executed += 1
                     executed_count += 1
 
+        # TASK-1 forensic audit (2026-08-18): the funnel's rejection buckets only
+        # account for rows whose action is an EXECUTABLE signal. The observed
+        # production stream records `action=NO_TRADE` on EVERY rejected signal
+        # (policy/risk/exposure blocks are stored as NO_TRADE with a reason in
+        # blocked_by), so the previous crosstab undercounted every rejection
+        # class (0/0/0/0 on the 2026-08-18 daily report despite 647 rejected
+        # signals). Re-tabulate: a NO_TRADE row WITH a blocked_by reason is a
+        # rejected executable signal; a NO_TRADE row WITHOUT a reason is a
+        # genuine model no-trade. Blocked reasons never overlap executable
+        # actions, so the two passes cannot double-count.
+        for row in rows:
+            _action = str(row.get("action") or "")
+            _blocked = str(row.get("blocked_by") or "").strip()
+            if _action != "NO_TRADE":
+                continue
+            if not _blocked:
+                continue
+            if _blocked in _BLOCKED_MODEL:
+                model_rejected += 1
+            elif _blocked in _BLOCKED_POLICY:
+                policy_rejected += 1
+            elif _blocked in _BLOCKED_RISK:
+                risk_rejected += 1
+            elif _blocked in _BLOCKED_EXPOSURE:
+                exposure_blocked += 1
+            elif _blocked in _BLOCKED_EXECUTION:
+                execution_failed += 1
+            else:
+                policy_rejected += 1  # unknown blocker -> policy layer
+
         total_trade_signals = (
             model_rejected
             + policy_rejected
@@ -832,7 +904,14 @@ class PerformanceReportEngine:
             + execution_failed
             + trade_executed
         )
+        # TASK-1: prediction_to_execution_rate is EXECUTED / EXECUTION_INTENTS
+        # (dispatchable signals), not executed/all-predictions — the old label
+        # "executed signal ratio" with an all-predictions denominator was
+        # semantically wrong (it read 100% whenever every dispatched signal
+        # filled, hiding the 800+ NO_TRADE predictions). The all-prediction
+        # ratio is exposed separately as prediction_to_trade_rate.
         exec_rate = executed_count / total_trade_signals if total_trade_signals else None
+        prediction_to_trade_rate = executed_count / len(rows) if rows and executed_count else None
         win_rate = None
         # prediction-to-win: executed trades that won (reuse period perf)
         return ModelSection(
@@ -844,6 +923,7 @@ class PerformanceReportEngine:
             else None,
             avg_confidence=(sum(confs) / len(confs)) if confs else None,
             prediction_to_execution_rate=exec_rate,
+            prediction_to_trade_rate=prediction_to_trade_rate,
             prediction_to_win_rate=win_rate,
             executed_count=executed_count,
             model_rejected=model_rejected,
@@ -875,9 +955,32 @@ class PerformanceReportEngine:
         latencies = [float(r.get("latency") or 0.0) for r in rows]
         latencies = [x for x in latencies if x > 0.0]
         reasons = [str(r.get("reason") or "") for r in rows]
-        rejections = sum(1 for r in reasons if "reject" in r.lower() or "fail" in r.lower())
+        rejections = sum(
+            1
+            for r in reasons
+            if "reject" in r.lower() or "fail" in r.lower() or "breakeven lock failed" in r.lower()
+        )
         cancellations = sum(1 for r in reasons if "cancel" in r.lower())
         pendings = [x for x in latencies if x > 0.02]
+
+        # TASK-1 forensic audit (2026-08-18): the report previously emitted
+        # fill_ratio=None -> Telegram rendered "Fill Rate: 0%". The execution
+        # audit_orders stream uses action values to mark outcomes:
+        #   "Executed order"      = broker accepted the order (market OR pending)
+        #   "Generated candidate" = dispatch attempt (no acceptance recorded)
+        #   "BREAKEVEN_FAILED" / "Modified order" / "Expired pending order" /
+        #   "PROFIT_GIVEBACK_PROTECTION" = management events, not fills
+        # Fill ratio is therefore EXECUTED_ACCEPTANCES / (EXECUTED_ACCEPTANCES
+        # + DISPATCH_ATTEMPTS), i.e. broker acknowledgements per dispatch.
+        fill_ratio = None
+        accepted = sum(1 for r in rows if str(r.get("action") or "") == "Executed order")
+        dispatch_attempts = sum(
+            1
+            for r in rows
+            if str(r.get("action") or "") in ("Executed order", "Generated candidate")
+        )
+        if dispatch_attempts > 0:
+            fill_ratio = accepted / dispatch_attempts
 
         return ExecutionSection(
             sample_count=len(rows),
@@ -885,7 +988,7 @@ class PerformanceReportEngine:
             worst_latency_sec=max(latencies) if latencies else None,
             rejection_count=rejections,
             cancellation_count=cancellations,
-            fill_ratio=None,
+            fill_ratio=fill_ratio,
             pending_duration_sec=(sum(pendings) / len(pendings)) if pendings else None,
             execution_block_rate=None,
             has_data=True,
@@ -915,37 +1018,141 @@ class PerformanceReportEngine:
         )
 
     def _stage_behavioral(self, closed: list[TradeRecord]) -> BehavioralSection:
-        """Behavior flags on closed trades (task §8). The repository records
-        flags in `behavior_detections` keyed by ticket; count what exists."""
-        if not self.core._enabled or not closed:
-            return BehavioralSection()
+        """Behavior flags on closed trades (task §8). Truthful states:
+
+        - NO_DATA: no behavioral analysis has EVER run for this period's trades
+        - CLEAR:   analysis ran; zero flags with real evidence coverage
+        - FLAGS_FOUND: analysis ran; flags exist
+
+        Reads the versioned `behavior_analysis` derived records (canonical),
+        merging the legacy Phase-08 outcome flags as an evidence source.
+        """
+        from nexus_scalp.intelligence.models import BehaviorAnalysisStatus
+
+        if not self.core._enabled:
+            return BehavioralSection(state="NO_DATA")
         tickets = [str(t.ticket) for t in closed]
-        placeholders = ",".join("?" for _ in tickets[:200])
-        if not placeholders:
-            return BehavioralSection()
+        if not tickets:
+            return BehavioralSection(state="NO_DATA")
+        placeholders = ",".join("?" for _ in tickets[:500])
         try:
             with self.core._connect() as conn:
                 rows = [
                     dict(r)
                     for r in conn.execute(
-                        f"SELECT behavior_key FROM behavior_detections "
-                        f"WHERE ticket IN ({placeholders})",
-                        tuple(tickets[:200]),
+                        f"SELECT behavior_key, pattern, severity, confidence, evidence "
+                        f"FROM behavior_detections WHERE ticket IN ({placeholders})",
+                        tuple(tickets[:500]),
+                    )
+                ]
+                analysis = [
+                    dict(r)
+                    for r in conn.execute(
+                        f"SELECT * FROM behavior_analysis WHERE ticket IN ({placeholders})",
+                        tuple(tickets[:500]),
                     )
                 ]
         except Exception as err:
             logger.error("[TELEGRAM_REPORT] behavioral stage failed", error=str(err))
-            return BehavioralSection()
+            return BehavioralSection(state=BehaviorAnalysisStatus.ANALYSIS_FAILED.value)
+
         counts: dict[str, int] = {}
         for r in rows:
-            key = str(r.get("behavior_key") or "UNKNOWN")
+            key = str(r.get("pattern") or r.get("behavior_key") or "UNKNOWN")
             counts[key] = counts.get(key, 0) + 1
-        if not counts:
-            return BehavioralSection(has_data=False)
+
+        if not analysis:
+            # Analysis never ran for these trades -> NO_DATA, never "clear".
+            return BehavioralSection(state="NO_DATA")
+
+        analyzed = len(analysis)
+        coverages = [float(a.get("evidence_coverage") or 0.0) for a in analysis]
+        total_flags = sum(counts.values())
+        state = (
+            BehaviorAnalysisStatus.FLAGS_FOUND.value
+            if total_flags > 0
+            else BehaviorAnalysisStatus.CLEAR.value
+        )
+        version = str(analysis[0].get("behavior_version") or "behavior-v1")
+        anomaly_version = str(analysis[0].get("anomaly_version") or "anomaly-v1")
+        complete = sum(int(a.get("complete_context") or 0) for a in analysis)
+        partial = sum(int(a.get("partial_context") or 0) for a in analysis)
         return BehavioralSection(
+            state=state,
             flag_counts=counts,
-            total_flags=sum(counts.values()),
+            total_flags=total_flags,
             flagged_trades=len(counts),
+            analyzed=analyzed,
+            complete_context=complete,
+            partial_context=partial,
+            evidence_coverage=round(sum(coverages) / len(coverages), 4) if coverages else None,
+            analysis_version=version,
+            anomaly_version=anomaly_version,
+            has_data=True,
+        )
+
+    def _stage_anomaly_state(self, closed: list[TradeRecord]) -> AnomalyStateSection:
+        """Truthful anomaly census from the versioned `anomaly_events` store."""
+        from nexus_scalp.intelligence.models import BehaviorAnalysisStatus
+
+        if not self.core._enabled:
+            return AnomalyStateSection(state="NO_DATA")
+        tickets = [str(t.ticket) for t in closed]
+        if not tickets:
+            return AnomalyStateSection(state="NO_DATA")
+        placeholders = ",".join("?" for _ in tickets[:500])
+        try:
+            with self.core._connect() as conn:
+                rows = [
+                    dict(r)
+                    for r in conn.execute(
+                        f"SELECT anomaly_type, severity, algorithm_version "
+                        f"FROM anomaly_events WHERE ticket IN ({placeholders})",
+                        tuple(tickets[:500]),
+                    )
+                ]
+                analysis = [
+                    dict(r)
+                    for r in conn.execute(
+                        f"SELECT * FROM behavior_analysis WHERE ticket IN ({placeholders})",
+                        tuple(tickets[:500]),
+                    )
+                ]
+        except Exception as err:
+            logger.error("[TELEGRAM_REPORT] anomaly stage failed", error=str(err))
+            return AnomalyStateSection(state=BehaviorAnalysisStatus.ANALYSIS_FAILED.value)
+
+        counts: dict[str, int] = {}
+        severities: dict[str, int] = {}
+        for r in rows:
+            atype = str(r.get("anomaly_type") or "UNKNOWN")
+            counts[atype] = counts.get(atype, 0) + 1
+            sev = str(r.get("severity") or "LOW")
+            severities[sev] = severities.get(sev, 0) + 1
+
+        if not analysis:
+            return AnomalyStateSection(state="NO_DATA")
+
+        analyzed = len(analysis)
+        total = sum(counts.values())
+        state = (
+            BehaviorAnalysisStatus.ANOMALIES_FOUND.value
+            if total > 0
+            else BehaviorAnalysisStatus.CLEAR.value
+        )
+        version = str(analysis[0].get("anomaly_version") or "anomaly-v1")
+        return AnomalyStateSection(
+            state=state,
+            counts=counts,
+            total=total,
+            analyzed=analyzed,
+            evidence_coverage=round(
+                sum(float(a.get("evidence_coverage") or 0.0) for a in analysis) / len(analysis),
+                4,
+            )
+            if analysis
+            else None,
+            anomaly_version=version,
             has_data=True,
         )
 

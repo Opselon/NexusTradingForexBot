@@ -239,16 +239,27 @@ class AccountingCore:
 
         clauses = ["status != 'OPENED'"]
         args: list[Any] = []
+        # TASK-1 forensic audit (2026-08-18): ledger timestamps are stored in
+        # TWO formats — legacy "YYYY-MM-DD HH:MM:SS" and live "YYYY-MM-DDTHH:MM:SS+00:00".
+        # A raw lexicographic comparison treats 'T' (0x54) > ' ' (0x20), so a
+        # sub-day cutoff such as 16:24:52 compared against an ISO row at 16:59
+        # evaluates 'T' > ' ' and EXCLUDES rows that are inside the window —
+        # the observed "+1 phantom trade" on the 2026-08-18 daily report. The
+        # fix normalizes both sides to a comparable form: replace 'T' with ' '
+        # and strip any trailing tz offset before the string comparison.
+        ts_expr = (
+            "REPLACE(REPLACE(COALESCE(NULLIF(close_time,''), timestamp), 'T', ' '), '+00:00', '')"
+        )
         if since is not None:
-            clauses.append("COALESCE(NULLIF(close_time,''), timestamp) >= ?")
+            clauses.append(f"{ts_expr} >= ?")
             args.append(ensure_utc(since).strftime("%Y-%m-%d %H:%M:%S"))
         if until is not None:
-            clauses.append("COALESCE(NULLIF(close_time,''), timestamp) < ?")
+            clauses.append(f"{ts_expr} < ?")
             args.append(ensure_utc(until).strftime("%Y-%m-%d %H:%M:%S"))
 
         sql = (
             f"SELECT * FROM audit_ledger WHERE {' AND '.join(clauses)} "
-            "ORDER BY COALESCE(NULLIF(close_time,''), timestamp) DESC LIMIT ?"
+            f"ORDER BY {ts_expr} DESC LIMIT ?"
         )
         args.append(int(limit))
 
