@@ -174,6 +174,15 @@ class CandidateTrainer:
         feat_std = np.where(feat_std < 1e-8, 1.0, feat_std)  # constant cols -> identity
         X_scaled = (X_arr - feat_mean) / feat_std
 
+        # TASK-04-70D-MODEL-VALIDATION (BUG-101): seed BEFORE model
+        # construction. Building the model first then seeding leaves weight
+        # init at the ambient (unseeded) RNG state -> two runs of the same
+        # experiment produce different results (reproducibility broken,
+        # brief 39). WalkForwardTrainer already seeds before constructing.
+        seed = int(experiment.seed or 42)
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+
         model = self.model_factory.build(
             architecture=experiment.architecture,
             num_classes=int(experiment.class_count or 3),
@@ -182,10 +191,6 @@ class CandidateTrainer:
                 **(experiment.architecture_parameters or {}),
             },
         )
-
-        seed = int(experiment.seed or 42)
-        torch.manual_seed(seed)
-        np.random.seed(seed)
 
         epochs_n = epochs or int((experiment.training or {}).get("epochs", 10))
         lr = float((experiment.training or {}).get("learning_rate", 0.001))

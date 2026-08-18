@@ -86,6 +86,19 @@ approval token. Rollback restores the previous Champion and preserves
 evidence about the failed model. No automatic promotion exists.
 Status: VERIFIED (TEST-LG-21..24).
 
+## INV-019 — Liquidity features are causally confirmed and schema-gated (TASK-01-60D-LIQUIDITY)
+The 10 liquidity dimensions (scalp_liquidity_v1, indices 50..59) are computed
+ONLY from bars closed at/before the decision timestamp; a swing pool is usable
+only from its confirmed_at (candidate bar + SWING_CONFIRM_BARS=5); HTF
+evidence uses only completed buckets (the forming H1/H4/D1 candle is
+EXCLUDED); sweep state requires penetration + rejection/reclaim evidence in a
+later closed bar (breakout is never a sweep); every value is finite, clipped
+[-3,+3] via one central clip, deterministic (same input -> same output), and
+pure (no DB/network). The flag `model.liquidity_features_enabled` (default
+false) switches the layer without silently altering schema expectations.
+Status: 🟢 VERIFIED (2026-08-19 TASK-01-60D-LIQUIDITY: 60 focused tests incl.
+TEST-LIQ-23..28 anti-leakage, TEST-60D-BASE-01 first-50 unchanged).
+
 ## Registry notes
 - `agents/bugs.md` BUG-NNN entries provide the forensic evidence for each invariant.
 - New invariants: append with INV-NNN and reference the evidence.
@@ -138,3 +151,26 @@ Never add DDL directly to bootstrap SQL outside migration control. Migrations
 are additive-first, idempotent, WAL-safe-backup-backed; destructive changes
 require operator review; downgrades are blocked; the engine never deletes a
 database file and never rewrites raw financial/news/research/model truth.
+
+## INV-018 — 70D shadow observations are observability-only (TASK-05-70D-SHADOW)
+The 70D shadow runtime (shadow/shadow70) MAY read live market state, build the
+70D vector (50D canonical + 10 news + 10 liquidity when the producer exists),
+infer with the shadow candidate and persist observations/research rows. It
+MUST NOT influence execution, policy, RiskEngine, OrderManager, broker
+interactions, live confidence thresholds or the Champion. Shadow observations
+are SIMULATED research telemetry, never accounting outcomes (no experience
+ledger writes, no hypothetical PnL in accounting). A shadow fault is isolated:
+it never crashes or blocks the tick path (INV-001 intact). Persistence is
+queued/batched — no synchronous DB on the tick path. Only a validated
+candidate (VALIDATED_CANDIDATE status + verified manifest/hash/schema/
+dimension/scaler) may enter Shadow; otherwise the runtime reports
+NO_VALIDATED_CANDIDATE and stays idle.
+
+
+## INV-019 — Model-generation training must be reproducible from seed (TASK-4, BUG-101)
+Candidate/benchmark training seeds torch+NumPy RNG BEFORE constructing the
+model (weight init must be deterministic across fresh processes). Any trainer
+that builds the model before seeding violates the fair-benchmark/reproducibility
+contract (TASK-4 brief §39). WalkForwardTrainer and CandidateTrainer comply
+post-BUG-101.
+Status: 🟢 VERIFIED (2026-08-19 TASK-04: fresh-process smoke identical 0.3 == 0.3).

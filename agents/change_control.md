@@ -7,6 +7,105 @@
 ## Open / recent changes
 
 ```text
+CHANGE-ID: CHG-0014
+Agent: Hermes-ModelValidation-04
+Role: 70D Model Generation / Fair Benchmark / Challenger Validation
+Task: TASK-04-70D-MODEL-VALIDATION
+Scope: Fair scientific A/B/C benchmark protocol (50D Base / 60D Base+News /
+       70D Base+News+Liquidity) with identical datasets-labels-splits-purge-
+       embargo-budgets-seeds; dataset fairness + liquidity feature audit +
+       walk-forward/OOS/robustness/calibration gates; BUG-101 reproducibility
+       fix in CandidateTrainer (seed BEFORE model construction); TEST-70D-
+       MODEL-01..25 contract suite. Benchmark EXECUTION remains BLOCKED until
+       TASK-03-70D-PARITY lands (feature contract not trustworthy). No model
+       was trained, no threshold changed, no auto-promotion, Champion untouched.
+Affected files: src/nexus_scalp/model_generation/training.py (minimal seed-order
+       fix), tests/unit/test_70d_model_validation_task4.py (new), docs/
+       MODEL_BENCHMARK_70D_LIQUIDITY.md (new), docs/agent_handoffs/TASK-04-70D-
+       MODEL-VALIDATION.md (new), agents/* registries
+Affected functions/classes: CandidateTrainer.train_candidate (seed order only)
+Contracts touched: MODEL_MANIFEST v1 (unchanged), FEATURE_SCHEMA v1
+       (scalp_v4 70D registered by TASK-02 — consumed, not created)
+Runtime paths touched: none (model-generation only; invariant INV-001..015 intact)
+Owners affected: Hermes-70D series agents 1..3 (protocol consumer),
+       Hermes-ModelGovernance (validation gates)
+Risk: LOW (isolated to candidate training reproducibility; no live path)
+Dependencies: TASK-03-70D-PARITY (blocking), TASK-01/02 (liquidity engine WIP)
+Required tests: TEST-70D-MODEL-01..25 (18 passed / 8 skip-till-task3)
+Status: VERIFIED (deliverables) — benchmark execution BLOCKED by TASK-03
+```
+
+```text
+```text
+CHANGE-ID: CHG-0014
+Agent: Hermes-GitSurveillance
+Role: Multi-Agent Change Surveillance / Commit / Push / Handoff Engineer
+Task: TASK-13-GIT-SURVEILLANCE
+Scope: Continuous multi-agent change surveillance + commit/push governance: full
+       forensic snapshot of the 70D swarm working tree (55 changed files across
+       TASK-01/02/04/05/08/11/12), ownership/classification of every path,
+       secret scan (PASS), shared-API alerts (schema registry, load_gate, live_engine
+       hooks, AUDIT-0005), duplicate-source-of-truth scan (none), pre-existing
+       failure classification (5 liquidity test failures, owner TASK-01), registry
+       state synchronization, surveillance FINAL report + handoff.
+Affected files: agents/bugs.md, agents/change_control.md, agents/contracts.md,
+       agents/runtime_invariants.md, agents/taskboard.md, agents/repository_state.md,
+       docs/TASK_13_GIT_SURVEILLANCE_FINAL.md (new),
+       docs/agent_handoffs/TASK-13-git-surveillance.md (new)
+Affected functions/classes: none (no production code in this change)
+Contracts touched: none (registry rows only; contract state surveyed and reported)
+Runtime paths touched: none
+Owners affected: all 70D swarm owners (TASK-01..12) — notified via handoff
+Risk: LOW (additive registry rows + docs; no code/DB/migration)
+Dependencies: none (surveillance is read-only over the swarm WIP)
+Required tests: TEST-GIT-01..25 (verification matrix in the FINAL report)
+Status: VERIFIED (committed + pushed)
+```
+
+
+CHANGE-ID: CHG-0013
+Agent: Hermes-Shadow70D
+Role: 70D Shadow Runtime / Drift / Champion-Safe Deployment Engineer
+Task: TASK-05-70D-SHADOW
+Scope: 70D Liquidity Shadow runtime (TASK-5/10 brief): validated-candidate gate
+       (registry: NO_VALIDATED_CANDIDATE — 70D lineage mid-flight in parallel
+       TASK-01..04, so Shadow infra is implemented + verified against a
+       deterministic VALIDATED-status fixture, production runtime untouched),
+       shadow model contract + load validation (manifest/artifact-hash/schema/
+       dimension/scaler), strict isolation boundary (no policy/risk/order
+       dependency), 70D live feature build (50D canonical + 10 news + 10
+       liquidity when producer present; schema-controlled), feature validation
+       (finite/range/schema/freshness/provenance), deterministic idempotent
+       observations, disagreement taxonomy (8 classes), feature health + drift
+       (NORMAL/WATCH/WARNING/CRITICAL), bounded queue + backpressure + async
+       persistence (no sync DB on tick path), Claude-style structured
+       [SHADOW70] events, web API (summary/recent/health/drift/disagreements),
+       replay parity + live read-only smoke + Champion/broker zero-impact proof
+Affected files: src/nexus_scalp/shadow/shadow70/{models,runtime,health,drift,
+       store,worker}.py (new), web/server.py, application/live_engine.py
+       (observability hook guarded by shadow_enabled flag), Web/ panel optional,
+       tests/unit/test_shadow70_runtime.py, tests/unit/test_shadow70_safety.py,
+       tests/unit/test_shadow70_health_drift.py, docs/70D_SHADOW_RUNTIME.md,
+       docs/agent_handoffs/TASK-05-70D-SHADOW.md, agents/* registries
+Affected functions/classes: Shadow70Runtime, Shadow70LoadValidator,
+       Shadow70Observation, Shadow70Classification, Shadow70FeatureHealth,
+       Shadow70DriftMonitor, Shadow70Store, Shadow70Worker (new)
+Contracts touched: SHADOW_70D v1 (new), SHADOW_LOAD_GATE v1 (new),
+       SHADOW_FEATURE_HEALTH v1 (new), SHADOW_DRIFT v1 (new)
+Runtime paths touched: live_engine tick path — observability ONLY, wrapped in
+       shadow70_enabled flag (default false), bounded, failure-isolated
+       (INV-001/002/003/004/009 intact)
+Owners affected: Hermes-ModelGovernance (TASK-6 shadow reuse),
+       Hermes-LiquidityFoundation (70D series), Hermes-UI (shadow panel)
+Risk: LOW (observability only; no execution/risk/policy path)
+Dependencies: TASK-6 governance (3cca598), model_lifecycle integrity,
+       AuditRepository queued writer; 70D producer series (parallel WIP)
+Required tests: TEST-SHADOW-01..35
+Status: IMPLEMENTING
+```
+
+
+```text
 CHANGE-ID: CHG-0012
 Agent: Hermes-Research
 Role: Forensic Verification of Duplicate Outcome + Excursion Anomalies

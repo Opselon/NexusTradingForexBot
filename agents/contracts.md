@@ -23,10 +23,16 @@
 | PROMOTION_STATE_MACHINE | v1 | ACTIVE | governance/engine.py | web, telegram (TASK-6) |
 | MODEL_MANIFEST | v1 | ACTIVE | model_lifecycle/ | training, runtime |
 | FEATURE_SCHEMA_60D | v1 (scalp_v2, candidate-only) | ACTIVE | features/schema_augment.py, model_generation/schema_v2.py | model_generation training/benchmark, TASK-6 governance |
+| LIQUIDITY_60D | v1 (scalp_liquidity_v1, candidate-only) | ACTIVE | features/liquidity_engine.py, schema.py, model_generation/schema_v2.py | 70D series (TASK-02..07), model_generation, research (TASK-01-60D-LIQUIDITY) |
+| FEATURE_SCHEMA_70D | v1 (scalp_v4, candidate-only) | ACTIVE | features/schema.py (registered by TASK-02-70D-INTEGRATION; consumed by TASK-04 benchmark protocol) | model_generation training/benchmark, TASK-4+ governance/validation |
 | ACCOUNTING_SNAPSHOT | v1 | ACTIVE | accounting/ | web, telegram |
 | EXIT_CLASSIFICATION | v3 (evidence provenance) | ACTIVE | experience/outcome_recovery.py | ledger, accounting, telegram |
 | RESEARCH_RESULT | v1 | ACTIVE | research/ | registry, web |
 | UPDATE_SYSTEM | v1 | ACTIVE | release/updater.py, cli/main.py | installed users, release CI |
+| SHADOW_70D | v1 | ACTIVE | shadow/shadow70/ (TASK-05-70D-SHADOW) | web, research, drift | 
+| SHADOW_LOAD_GATE | v1 | ACTIVE | shadow/shadow70/runtime.py (manifest/hash/schema/dimension/scaler) | shadow70 loader |
+| SHADOW_FEATURE_HEALTH | v1 | ACTIVE | shadow/shadow70/health.py | web, drift monitor |
+| SHADOW_DRIFT | v1 | ACTIVE | shadow/shadow70/drift.py | web, alerting |
 | UI_STATE | v1 (900-bar standard) | ACTIVE | web/ | dashboard |
 | DATABASE_HYGIENE | v1 | ACTIVE | hygiene/worker_runner.py | CLI, API, live_engine |
 | RETENTION_POLICY | v1 | ACTIVE | hygiene/retention.py | hygiene worker, DB owners |

@@ -4285,3 +4285,105 @@ All per-trade anomaly ids now derive from `_duplicate_anomaly_id(ticket, anomaly
   (pre-BUG-045 ledger gap) are EXPECTED_ORPHAN — reported, never deleted.
 
 ---
+
+
+## BUG-100 — 70D Shadow Runtime Did Not Exist; No Validated 70D Candidate In Registry (TASK-05-70D-SHADOW, 2026-08-19)
+
+### Root cause
+The repo had NO runtime able to observe a 70D candidate against the live
+Champion: existing shadow infra (governance/, shadow/) handles 50D->60D/72D
+challengers only and hard-codes ALLOWED_SCHEMA_IDS/scalp_v2 widths; the 70D
+lineage (Liquidity foundation -> integration -> parity -> validation) is
+mid-flight in parallel TASK-01..04 with an uncommitted liquidity engine whose
+own contract tests fail. The model registry holds only 2 rows (both the 50D
+Champion); no 70D candidate has ever been registered or validated.
+
+### Evidence
+- artifacts/audit.db experience_model_registry: 2 rows, both
+  primary_scalp_scalp_v1_50d (scalp_v1/50D, hash f0f70efb...).
+- governance/alignment.py ALLOWED_SCHEMA_IDS=("scalp_v1","scalp_v2",
+  "scalp_v3"); challenger_input_for implements only scalp_v2 widths
+  (60/72); 70D has no compatibility path (a 70D challenger -> alignment
+  raises ValueError -> SHADOW never runs).
+- 12/50 parallel liquidity engine tests failing (as_vector vs
+  validate_60d_liquidity_vector contract mismatch) at bootstrap.
+
+### Fix (this task)
+- New observability-only runtime shadow/shadow70/: validates a candidate
+  contract (manifest / artifact hash / schema / dimension / scaler), builds
+  the 70D vector as 50D canonical + 10 news + 10 liquidity (schema-
+  controlled; the liquidity producer is injected when present, so the
+  runtime is correct BEFORE and AFTER the parallel series lands), infers,
+  classifies Champion-vs-Shadow disagreement, monitors per-feature health
+  and drift, and persists idempotently through the AuditRepository queued
+  writer. Registered in agents registries (TASK-05-70D-SHADOW / CHG-0013 /
+  INV-018). No execution/policy/risk/broker dependency (INV-018).
+
+### Test
+- tests/unit/test_shadow70_runtime.py (TEST-SHADOW-01..17, 19-21, 23-25,
+  30-35), test_shadow70_safety.py (08-12, 26-29, 36-47), test_shadow70_
+  health_drift.py (18, 20, 22, 48-51). Status: FIXED (infrastructure)
+  — candidate availability remains a First-Gate registry question
+  (NO_VALIDATED_CANDIDATE until the 70D series registers one).
+
+
+## BUG-101 — CandidateTrainer Built the Model Before Seeding RNG → Non-Reproducible Training (TASK-04-70D-MODEL-VALIDATION, 2026-08-19)
+
+### Root cause
+`model_generation/training.py::CandidateTrainer.train_candidate` constructed
+the model (`self.model_factory.build(...)`) BEFORE calling
+`torch.manual_seed(seed)` / `np.random.seed(seed)`. Model weight init therefore
+consumed the ambient (unseeded) RNG state of the process. Two runs of the
+IDENTICAL experiment in fresh processes produced different results:
+val_accuracy 0.3375 vs 0.375 (same dataset, same seed, same code). The
+`WalkForwardTrainer` path seeds in `__init__` before building — only the
+CandidateTrainer (benchmark/dataset-gate path) had the wrong order. This
+breaks the reproducibility contract (TASK-4 brief §39) and makes the
+benchmark matrix cells non-comparable across runs.
+
+### Evidence
+- fresh-process probe: `python -c <train_candidate>` twice → 0.3375 then 0.375.
+- torch init probe: `torch.initial_seed()` differs per process BEFORE seeding;
+  first Linear weight differs (-0.3935 vs -0.2617).
+- Reproduced deterministically after fix: 0.3 == 0.3 across two fresh runs.
+
+### Fix
+Minimal, isolated: hoist `seed = int(experiment.seed or 42);
+torch.manual_seed(seed); np.random.seed(seed)` ABOVE `model_factory.build(...)`.
+No other behavior changed (seeding was already applied before data
+oversampling/loader creation; order of those untouched).
+
+### Regression test
+`tests/unit/test_70d_model_validation_task4.py::test_70d_model_12_deterministic_training_smoke`
+— spawns two fresh subprocesses with the same seed policy and asserts
+IDENTICAL val_accuracy (previously differing). Full suite: 18 passed / 8
+skipped (skips are 70D-schema/artifact-dependent, TASK-3 pending).
+
+### Verification
+VERIFIED: ruff check/format clean, mypy clean on training.py, 18 passed.
+
+---
+
+
+## BUG-102 — Parallel 70D Swarm Working-Tree Churn Without Commits: 55 Changed Files Across 7 Tasks Un-Snapshotted (2026-08-19 TASK-13 surveillance)
+
+### Root cause
+The 70D series (TASK-01/02/04/05/08/11/12) works on one shared working tree with NO
+commit since c56d334; 55 files (23 modified + 32 untracked) accumulated, including
+shared files (features/schema.py, governance/load_gate.py, live_engine.py, web/server.py,
+database/registry.py) changed by MULTIPLE agents simultaneously. Risk: lost work,
+mixed-task commits, silent contract drift (repository_state.md snapshot claimed 3/13
+liquidity failures while the tree actually has 5 — stale registry).
+
+### Evidence
+- git status at 2026-08-19 02:40: 55 entries, 0 staged, 0 conflicts, HEAD==origin.
+- 5 failing liquidity tests (liq11/16/21/25/45) vs repo_state claim of 3 (liq03/05/11).
+- settings/service.py showed a transient DUPLICATE MUTABILITY key during surveillance
+  (self-corrected by the swarm agent before snapshot #2).
+
+### Fix (this task)
+- TASK-13 surveillance snapshots + full ownership/classification manifest (FINAL report).
+- Registry state synchronized additively; handoff documents chain + DO-NOT-TOUCH list.
+- Recommendation for the 70D series owner: land TASK-01 as ONE coherent commit after
+  fixing its 5 test failures (gate will stay red until then); never absorb another
+  task's WIP into a later commit.
