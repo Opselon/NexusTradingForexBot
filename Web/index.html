@@ -107,6 +107,11 @@
                 <span>Debug &amp; Diagnostics</span>
                 <span id="debug-nav-badge" class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">--</span>
             </button>
+            <button onclick="switchTab('tab-governance', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                <i class="fa-solid fa-scale-balanced text-lg w-5 text-accentGold"></i>
+                <span>Model Governance</span>
+                <span id="gov-nav-state" class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">--</span>
+            </button>
 
             <div class="pt-6 border-t border-borderClr mt-auto space-y-4">
                 <div class="bg-darkBg/60 p-3 rounded-lg border border-borderClr">
@@ -1735,6 +1740,78 @@
                     </div>
                     <div id="debug-ipc-console" class="bg-black/60 border border-borderClr/60 rounded-lg p-3 font-mono text-[11px] leading-relaxed h-[280px] overflow-y-auto space-y-0.5">
                         <div class="text-textMuted italic font-sans">No IPC events recorded yet.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 9: MODEL GOVERNANCE PANEL (TASK-6) -->
+            <section id="tab-governance" class="tab-content hidden space-y-6">
+                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                    <div class="flex flex-wrap justify-between items-center border-b border-borderClr pb-4 mb-6 gap-3">
+                        <div>
+                            <h3 class="text-md font-bold text-white flex items-center">
+                                <i class="fa-solid fa-scale-balanced mr-2 text-accentGold"></i>
+                                Model Governance &amp; Champion/Challenger
+                            </h3>
+                            <p class="text-xs text-textMuted mt-1">
+                                Truthful registry state, load gate, shadow runtime, feature/news parity, latency, promotion lifecycle.
+                            </p>
+                        </div>
+                        <button onclick="loadGovernancePanel()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentGold px-3 py-1.5 rounded text-xs font-bold transition flex items-center space-x-1">
+                            <i class="fa-solid fa-arrows-rotate"></i> <span>Refresh</span>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div class="bg-darkBg/40 border border-borderClr/60 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="text-sm font-black text-white uppercase tracking-wide"><i class="fa-solid fa-crown mr-1.5 text-accentGold"></i> Champion</h4>
+                                <span id="gov-champ-health" class="text-[10px] font-black px-2 py-1 rounded uppercase">--</span>
+                            </div>
+                            <div id="gov-champ-body" class="space-y-1.5 text-xs font-mono text-gray-300">
+                                <div class="text-textMuted italic">No data</div>
+                            </div>
+                        </div>
+                        <div class="bg-darkBg/40 border border-borderClr/60 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h4 class="text-sm font-black text-white uppercase tracking-wide"><i class="fa-solid fa-hand-fist mr-1.5 text-accentCyan"></i> Challenger</h4>
+                                <span id="gov-chal-state" class="text-[10px] font-black px-2 py-1 rounded uppercase">--</span>
+                            </div>
+                            <div id="gov-chal-body" class="space-y-1.5 text-xs font-mono text-gray-300">
+                                <div class="text-textMuted italic">No data</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+                        <div class="bg-darkBg/40 border border-borderClr/60 rounded-lg p-4">
+                            <h4 class="text-xs font-black text-white uppercase tracking-wide mb-2"><i class="fa-solid fa-magnifying-glass-chart mr-1 text-accentCyan"></i> Shadow Runtime</h4>
+                            <div id="gov-shadow-body" class="space-y-1.5 text-xs font-mono text-gray-300">
+                                <div class="text-textMuted italic">No data</div>
+                            </div>
+                        </div>
+                        <div class="bg-darkBg/40 border border-borderClr/60 rounded-lg p-4">
+                            <h4 class="text-xs font-black text-white uppercase tracking-wide mb-2"><i class="fa-solid fa-gauge-high mr-1 text-emerald-400"></i> Latency (ms)</h4>
+                            <div id="gov-latency-body" class="space-y-1.5 text-xs font-mono text-gray-300">
+                                <div class="text-textMuted italic">No data</div>
+                            </div>
+                        </div>
+                        <div class="bg-darkBg/40 border border-borderClr/60 rounded-lg p-4">
+                            <h4 class="text-xs font-black text-white uppercase tracking-wide mb-2"><i class="fa-solid fa-flag mr-1 text-accentGold"></i> Promotion State</h4>
+                            <div id="gov-promo-body" class="space-y-1.5 text-xs font-mono text-gray-300">
+                                <div class="text-textMuted italic">No data</div>
+                            </div>
+                            <button onclick="reconcileRegistry()" class="mt-3 w-full bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-3 py-1.5 rounded text-[10px] font-bold transition">
+                                <i class="fa-solid fa-clipboard-check mr-1"></i> Reconcile Registry
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 bg-darkBg/40 border border-borderClr/60 rounded-lg p-4">
+                        <h4 class="text-xs font-black text-white uppercase tracking-wide mb-2"><i class="fa-solid fa-table-list mr-1 text-accentCyan"></i> Recent Governance Events</h4>
+                        <div id="gov-events-body" class="font-mono text-[11px] text-gray-400 max-h-64 overflow-y-auto space-y-1">
+                            <div class="text-textMuted italic">No data</div>
+                        </div>
                     </div>
                 </div>
             </section>

@@ -1,0 +1,6 @@
+{
+ "alignment": "NEWS_EXTENDED",
+ "input_dimension_news_off": 60,
+ "input_dimension_news_on": 72,
+ "extras_first_named": "regime_compression"
+}

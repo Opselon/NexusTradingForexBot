@@ -2652,6 +2652,134 @@ function acctFmtNum(v, digits) {
     return Number(v).toFixed(digits == null ? 2 : digits);
 }
 
+// =============================================================================
+// MODEL GOVERNANCE PANEL (TASK-6) — canonical governance API consumer
+// =============================================================================
+async function loadGovernancePanel() {
+    const results = await Promise.allSettled([
+        NX.api.get('/api/models/governance/health', { component: 'Governance', action: 'LOAD_HEALTH' }),
+        NX.api.get('/api/models/governance/registry', { component: 'Governance', action: 'LOAD_REGISTRY' }),
+        NX.api.get('/api/models/governance/events', { component: 'Governance', action: 'LOAD_EVENTS' })
+    ]);
+    let health = null, registry = null, events = [];
+    if (results[0].status === 'fulfilled' && results[0].value.ok) health = results[0].value.body.health;
+    if (results[1].status === 'fulfilled' && results[1].value.ok) registry = results[1].value.body.registry;
+    if (results[2].status === 'fulfilled' && results[2].value.ok) {
+        const body = results[2].value.body;
+        events = Array.isArray(body.events) ? body.events.slice(0, 20) : [];
+    }
+    renderGovernanceHealth(health);
+    renderGovernanceRegistry(registry);
+    renderGovernanceEvents(events);
+    if (health) {
+        const st = document.getElementById('gov-nav-state');
+        if (st) {
+            const sh = health.shadow || {};
+            st.textContent = sh.running ? 'ON' : 'OFF';
+            st.className = 'ml-auto text-[9px] font-black px-1.5 py-0.5 rounded border ' + (sh.running ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-slate-500/20 text-slate-300 border-slate-500/30');
+        }
+    }
+}
+
+function renderGovernanceHealth(health) {
+    const champ = document.getElementById('gov-champ-health');
+    const chalState = document.getElementById('gov-chal-state');
+    if (!health) {
+        if (champ) champ.textContent = 'NO DATA';
+        if (chalState) chalState.textContent = '--';
+        return;
+    }
+    const c = health.champion || {};
+    const k = health.challenger || {};
+    const s = health.shadow || {};
+    if (champ) {
+        champ.textContent = c.healthy ? 'HEALTHY' : 'DEGRADED';
+        champ.className = 'text-[10px] font-black px-2 py-1 rounded uppercase ' + (c.healthy ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30');
+    }
+    if (chalState) chalState.textContent = k.state || 'NONE';
+}
+
+function renderGovernanceRegistry(registry) {
+    const champBody = document.getElementById('gov-champ-body');
+    const chalBody = document.getElementById('gov-chal-body');
+    const shadowBody = document.getElementById('gov-shadow-body');
+    const latencyBody = document.getElementById('gov-latency-body');
+    const promoBody = document.getElementById('gov-promo-body');
+    if (!registry) {
+        ['gov-champ-body', 'gov-chal-body', 'gov-shadow-body', 'gov-latency-body', 'gov-promo-body'].forEach(function (id) {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = '<div class=\'text-textMuted italic\'>No data</div>';
+        });
+        return;
+    }
+    const cats = registry.categories || {};
+    const champ = cats.CURRENT_CHAMPION || {};
+    const chal = cats.CURRENT_CHALLENGER || {};
+    const verify = registry.champion_verification || {};
+    const gate = (verify.load_gate || {});
+    if (champBody) {
+        champBody.innerHTML = (
+            '<div><span class=\'text-textMuted\'>ID   </span>' + escHtml(champ.model_id || '?') + ' @ ' + escHtml(champ.version || '?') + '</div>' +
+            '<div><span class=\'text-textMuted\'>Schema</span> ' + escHtml(champ.schema_id || '?') + ' / ' + (champ.input_dimension || 0) + 'D</div>' +
+            '<div><span class=\'text-textMuted\'>Hash  </span>' + escHtml((verify.hash || champ.artifact_hash || '?').slice(0, 16)) + '</div>' +
+            '<div><span class=\'text-textMuted\'>Life  </span>' + escHtml(champ.lifecycle_state || '?') + '  (gate: ' + (gate.passed ? 'PASS' : 'FAIL/' + escHtml((gate.failing_gate || '?'))) + ')</div>'
+        );
+    }
+    if (chalBody) {
+        if (chal && chal.model_id) {
+            chalBody.innerHTML = (
+                '<div><span class=\'text-textMuted\'>ID   </span>' + escHtml(chal.model_id) + ' @ ' + escHtml(chal.version || '?') + '</div>' +
+                '<div><span class=\'text-textMuted\'>Schema</span> ' + escHtml(chal.schema_id || '?') + ' / ' + (chal.input_dimension || 0) + 'D</div>' +
+                '<div><span class=\'text-textMuted\'>Life  </span>' + escHtml(chal.lifecycle_state || '?') + '</div>'
+            );
+        } else {
+            chalBody.innerHTML = '<div class=\'text-textMuted italic\'>No validated challenger attached</div>';
+        }
+    }
+    const sh = registry.shadow || {};
+    if (shadowBody) {
+        shadowBody.innerHTML = (
+            '<div>comparisons ' + (sh.comparisons != null ? sh.comparisons : '--') + '</div>' +
+            '<div>errors      ' + (sh.errors != null ? sh.errors : '--') + '</div>' +
+            '<div>dropped     ' + (sh.dropped != null ? sh.dropped : '--') + '</div>'
+        );
+    }
+    if (latencyBody) {
+        latencyBody.innerHTML = (
+            '<div>avg ' + (sh.avg_latency_ms != null ? sh.avg_latency_ms : '--') + ' ms</div>' +
+            '<div>p95 ' + (sh.p95_latency_ms != null ? sh.p95_latency_ms : '--') + ' ms</div>'
+        );
+    }
+    if (promoBody) {
+        promoBody.innerHTML = '<div class=\'text-accentGold font-bold\'>' + escHtml((cats.SHADOW && cats.SHADOW.lifecycle_state) || 'SHADOW') + '</div><div class=\'text-textMuted\'>NO AUTO PROMOTION</div>';
+    }
+}
+
+function renderGovernanceEvents(events) {
+    const body = document.getElementById('gov-events-body');
+    if (!body) return;
+    if (!events || !events.length) {
+        body.innerHTML = '<div class=\'text-textMuted italic\'>No governance events yet</div>';
+        return;
+    }
+    body.innerHTML = events.map(function (e) {
+        return '<div class=\'flex justify-between gap-2\'><span class=\'text-accentCyan\'>' + escHtml(e.event || '') + '</span><span>' + escHtml(String(e.model_id || '').slice(0, 24)) + '</span><span class=\'text-textMuted\'>' + escHtml((e.timestamp || '').slice(0, 19)) + '</span></div>';
+    }).join('');
+}
+
+async function reconcileRegistry() {
+    const result = await NX.api.post('/api/models/registry/reconcile', {}, { component: 'Governance', action: 'RECONCILE' });
+    if (!result.ok) {
+        console.warn('[UI_ERROR] component=Governance action=RECONCILE ' + NX.api.msg(result, 'Reconcile failed'));
+        return;
+    }
+    renderGovernanceRegistry(result.body.registry);
+}
+
+function escHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 async function loadAccountPerformance() {
     try {
         const res = await fetch('/api/account/performance');

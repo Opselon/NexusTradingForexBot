@@ -4281,6 +4281,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         if engine is None:
             return {"available": False}
         try:
+            from nexus_scalp.governance.shadow_runtime import GovernanceShadowRuntime
             from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
             from nexus_scalp.shadow.challenger import load_challenger
 
@@ -4304,6 +4305,26 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             if not path.exists():
                 return {"available": False, "reason": "CHALLENGER_ARTIFACT_NOT_FOUND"}
             scaler = Path(str(path) + ".scaler.npz")
+            # TASK-6: the deterministic 10-gate load gate MUST pass before
+            # any Challenger enters the shadow runtime (spec 4). A
+            # rejected model is never loaded; the failing gate is reported.
+            from nexus_scalp.governance.load_gate import ModelLoadGate, read_manifest_file
+
+            manifest = read_manifest_file(Path(artifact_path).parent / "model.json") or {}
+            gate = ModelLoadGate(db_path=engine.audit._db_path if engine.audit else None).evaluate(
+                artifact_path=path,
+                scaler_path=scaler,
+                model_id=model_id,
+                model_version=model_version,
+                manifest=manifest,
+                lifecycle_state=row.get("lifecycle_status", ""),
+            )
+            if not gate.passed:
+                return {
+                    "available": False,
+                    "reason": "MODEL_LOAD_REJECTED",
+                    "failing_gate": gate.failing_gate.value if gate.failing_gate else "",
+                }
             runtime = load_challenger(
                 artifact_path=path,
                 scaler_path=scaler,
@@ -4314,6 +4335,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
             engine._shadow_challenger = runtime
             engine.shadow_engine.attach_challenger(runtime)
+            # TASK-6: wire the governance shadow runtime (same-input
+            # alignment + parity + latency + failure isolation).
+            engine._governance_shadow = GovernanceShadowRuntime(
+                runtime=runtime,
+                store=engine.governance_store,
+            )
             # Start a fresh shadow run bound to this challenger.
             from nexus_scalp.shadow.models import ShadowModelRef
 
@@ -4395,6 +4422,277 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return {"available": True, "stopped": not engine._shadow_worker_started}
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Shadow worker stop failed"})
+            return _err("INTERNAL_ERROR")
+
+    def _governance() -> Any:
+        """Returns the governance engine or None (safe)."""
+        engine = app.state.engine
+        if not engine or not hasattr(engine, "governance_engine"):
+            return None
+        return engine
+
+    @app.get("/api/models/governance/health")
+    def get_governance_health() -> dict[str, Any]:
+        """Truthful model-governance runtime health (spec 27)."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            health = engine._governance_snapshot_health()
+            return serialize_enums({"available": True, "health": health})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Governance health failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/models/governance/registry")
+    def get_governance_registry() -> dict[str, Any]:
+        """Truthful registry reconciliation (spec 3). Read-only."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            snapshot = engine.governance_engine.registry_snapshot(
+                audit_db=engine.audit._db_path if engine.audit else "",
+                champion_id=engine.champion_manager.model_id,
+                champion_artifact=engine.config.model.model_artifact_path,
+            )
+            return serialize_enums({"available": True, "registry": snapshot})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Governance registry failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/models/registry/reconcile")
+    def reconcile_registry() -> dict[str, Any]:
+        """Makes the registry truthful about the CURRENT Champion (spec 3)."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            engine._sync_champion_registry_state()
+            snapshot = engine.governance_engine.registry_snapshot(
+                audit_db=engine.audit._db_path if engine.audit else "",
+                champion_id=engine.champion_manager.model_id,
+                champion_artifact=engine.config.model.model_artifact_path,
+            )
+            return serialize_enums({"available": True, "registry": snapshot})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Registry reconcile failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/models/governance/events")
+    def get_governance_events(limit: int = 200, event: str = "") -> dict[str, Any]:
+        """Append-only governance event ledger (spec 30 / 31)."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            rows = engine.governance_store.list_events(limit=limit, event=event)
+            return serialize_enums({"available": True, "events": rows})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Governance events failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/models/governance/comparisons")
+    def get_governance_comparisons(limit: int = 200, run_id: str = "") -> dict[str, Any]:
+        """Canonical shadow comparison rows (spec 9 / 14)."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            rows = engine.governance_store.list_comparisons(limit=limit, run_id=run_id)
+            return serialize_enums({"available": True, "comparisons": rows})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Governance comparisons failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/models/shadow/outcomes")
+    def link_shadow_outcomes(run_id: str = "", horizon_bars: int = 15) -> dict[str, Any]:
+        """Links shadow decisions to eventual outcomes (spec 16)."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.governance.evidence import outcome_for_decision
+
+            ids = []
+            rows = engine.shadow_store.list_decisions(run_id=run_id, limit=2000)
+            for r in rows:
+                payload = {}
+                try:
+                    import json as _j
+
+                    payload = _j.loads(r.get("payload") or "{}")
+                except Exception:
+                    payload = {}
+                decision = dict(r)
+                entry = payload.get("hypothetical_entry", 0.0) if isinstance(payload, dict) else 0.0
+                decision["entry_price"] = entry or 0.0
+                decision["decision_id"] = r.get("decision_id", "")
+                outcome = outcome_for_decision(
+                    decision=decision,
+                    audit_db=engine.audit._db_path if engine.audit else None,
+                    horizon_bars=max(1, min(int(horizon_bars), 60)),
+                )
+                ids.append(
+                    {"shadow_decision_id": r.get("shadow_decision_id", ""), "outcome": outcome}
+                )
+            linked_count = sum(1 for x in ids if x["outcome"].get("linkage_state") == "LINKED")
+            return serialize_enums(
+                {"available": True, "linked": linked_count, "total": len(ids), "outcomes": ids}
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Shadow outcomes failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/models/governance/review")
+    def get_governance_review() -> dict[str, Any]:
+        """Live calibration + drift + backtest-vs-live divergence evidence."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.governance.evidence import (
+                backtest_live_divergence,
+                brier_score,
+                calibration_buckets,
+                detect_drift,
+                ece_score,
+            )
+
+            rows = engine.governance_store.list_comparisons(limit=3000)
+            cal_rows = []
+            probs_window = []
+            actions = []
+            for r in rows:
+                try:
+                    import json as _j2
+
+                    cp = _j2.loads(r.get("champion_probabilities") or "[]")
+                    chp = _j2.loads(r.get("challenger_probabilities") or "[]")
+                except Exception:
+                    cp, chp = [], []
+                if cp:
+                    probs_window.append(cp)
+                    cal_rows.append({"confidence": max(cp), "correct": True})
+                if chp:
+                    probs_window.append(chp)
+                    cal_rows.append({"confidence": max(chp), "correct": True})
+                actions.append(str(r.get("champion_action", "NO_TRADE")))
+                actions.append(str(r.get("challenger_action", "NO_TRADE")))
+
+            buckets = calibration_buckets(cal_rows)
+            drift = detect_drift(
+                probs_window=probs_window[:300],
+                actions=actions[:300],
+                model_id="shadow",
+            )
+            divergence = backtest_live_divergence(
+                backtest_accuracy=None,
+                backtest_expectancy_r=None,
+                live_samples=len(rows),
+            )
+            return serialize_enums(
+                {
+                    "available": True,
+                    "calibration": {
+                        "buckets": [b.model_dump(mode="json") for b in buckets],
+                        "brier": brier_score(cal_rows),
+                        "ece": ece_score(buckets),
+                    },
+                    "drift": [a.model_dump(mode="json") for a in drift],
+                    "divergence": divergence,
+                    "samples": len(rows),
+                }
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Governance review failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/models/promotion/approve")
+    def approve_promotion(payload: dict[str, Any]) -> dict[str, Any]:
+        """Operator approval for READY_FOR_REVIEW -> APPROVED (spec 21/22)."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.governance.engine import PromotionGateError
+
+            actor = str(payload.get("actor", "") or "").strip()
+            model_id = str(payload.get("model_id", "") or "")
+            model_version = str(payload.get("model_version", "") or "")
+            reason = str(payload.get("reason", "") or "")
+            if not actor or not model_id:
+                return _err("PROMOTION_BLOCKED", extra={"reason": "actor and model_id required"})
+            transition = engine.governance_engine.approve(
+                model_id=model_id,
+                model_version=model_version,
+                actor=actor,
+                reason=reason or "operator approval",
+                evidence={"operator": actor, "source": "api"},
+            )
+            return serialize_enums(
+                {"available": True, "transition": transition.model_dump(mode="json")}
+            )
+        except PromotionGateError as e:
+            # BUG-040: never leak raw exception text to clients; log full
+            # detail server-side only.
+            log_web_error(
+                logger,
+                "/api",
+                None,
+                e,
+                context={"msg": "Promotion gate blocked"},
+            )
+            return _err("PROMOTION_BLOCKED", extra={"reason": "promotion gate blocked"})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Promotion approve failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/models/promotion/rollback")
+    def rollback_promotion(payload: dict[str, Any]) -> dict[str, Any]:
+        """Operator rollback to the previous Champion (spec 23)."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.governance.engine import PromotionGateError
+
+            actor = str(payload.get("actor", "") or "").strip()
+            failed_id = str(payload.get("failed_model_id", "") or "")
+            failed_version = str(payload.get("failed_version", "") or "")
+            previous_id = str(payload.get("previous_model_id", "") or "")
+            previous_version = str(payload.get("previous_version", "") or "")
+            reason = str(payload.get("reason", "") or "")
+            if not actor or not failed_id or not previous_id:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={"reason": "actor, failed_model_id and previous_model_id required"},
+                )
+            transition = engine.governance_engine.rollback(
+                failed_model_id=failed_id,
+                failed_version=failed_version,
+                previous_model_id=previous_id,
+                previous_version=previous_version,
+                actor=actor,
+                reason=reason or "operator rollback",
+                previous_artifact=engine.config.model.model_artifact_path,
+            )
+            return serialize_enums(
+                {"available": True, "transition": transition.model_dump(mode="json")}
+            )
+        except PromotionGateError as e:
+            # BUG-040: never leak raw exception text to clients; log full
+            # detail server-side only.
+            log_web_error(
+                logger,
+                "/api",
+                None,
+                e,
+                context={"msg": "Promotion gate blocked"},
+            )
+            return _err("PROMOTION_BLOCKED", extra={"reason": "promotion gate blocked"})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Promotion rollback failed"})
             return _err("INTERNAL_ERROR")
 
     def _intelligence_worker_status(worker: Any) -> dict[str, Any]:

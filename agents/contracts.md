@@ -17,6 +17,10 @@
 | MT5_BROKER_SNAPSHOT | v1 | ACTIVE | adapters/mt5/ | live_engine, accounting |
 | NEWS_CONTEXT | v1 | ACTIVE | news/ | live_engine, signals |
 | STRATEGY_CANDIDATE | v1 (content-addressed) | ACTIVE | strategies/ | research worker |
+| MODEL_GOVERNANCE | v1 | ACTIVE | governance/ | live_engine, web, telegram (TASK-6/CHG-0003) |
+| MODEL_LOAD_GATE | v1 | ACTIVE | governance/load_gate.py | shadow attach, registry (TASK-6) |
+| SHADOW_PARITY | v1 | ACTIVE | governance/alignment.py | shadow runtime (TASK-6) |
+| PROMOTION_STATE_MACHINE | v1 | ACTIVE | governance/engine.py | web, telegram (TASK-6) |
 | MODEL_MANIFEST | v1 | ACTIVE | model_lifecycle/ | training, runtime |
 | FEATURE_SCHEMA_60D | v1 (scalp_v2, candidate-only) | ACTIVE | features/schema_augment.py, model_generation/schema_v2.py | model_generation training/benchmark, TASK-6 governance |
 | ACCOUNTING_SNAPSHOT | v1 | ACTIVE | accounting/ | web, telegram |

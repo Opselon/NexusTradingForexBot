@@ -1552,6 +1552,51 @@ with `auto_train_enabled=False` by default (operator-triggered training).
 
 ---
 
+## 15e1. Live Model Governance & Shadow Runtime (TASK-6 / CHG-0003)
+
+> TASK-6 owns the boundary between a validated model and LIVE execution.
+> The `governance/` package (new) is observability-only: it imports NO
+> order manager / risk engine / adapter and can never place, modify or
+> close an order (INV-002/003/014).
+
+### Key modules
+- `governance/load_gate.py` — deterministic 10-gate model load gate
+  (ARTIFACT_EXISTS..LIFECYCLE_ALLOWS_SHADOW..LOAD); exact failing gate
+  reported, never silent fallback (spec 4).
+- `governance/alignment.py` — same-input 50D→60D/72D alignment with the
+  REAL 10 scalp_v2 extras from `features/schema_augment.py` (TASK-5);
+  zero-fill of extras is REJECTED; NEWS_CONTEXT_HASH canonical identity.
+- `governance/shadow_runtime.py` — bounded, failure-isolated parallel
+  comparison: same feature vector, latency budget, parity telemetry,
+  drop/timeout counters (spec 10/11/12/13/36).
+- `governance/engine.py` — truthful registry reconciliation + promotion
+  state machine (RESEARCH..CHAMPION, operator-approved, SHADOW→CHAMPION
+  illegal) + rollback (evidence preserved).
+- `governance/evidence.py` — eventual outcome linkage, live calibration
+  buckets (Brier/ECE), drift alerts, backtest-vs-live divergence.
+- `governance/store.py` — append-only model_governance_events / _state /
+  _shadow_comparisons / _runtime_health in canonical audit.db.
+- `governance/reporting.py` — canonical Telegram MODEL SHADOW UPDATE
+  (never claims ready unless READY_FOR_REVIEW).
+
+### Wiring
+- LiveEngine: `governance_store` + `governance_engine` +
+  `_governance_shadow`; startup registry truthfulness sync; periodic
+  health snapshot (~5 min, off hot path); `_record_shadow_decision`
+  runs the governance comparison on the SAME 50D vector (spec 8).
+- Attach endpoint runs the load gate BEFORE loading a Challenger;
+  MODEL_LOAD_REJECTED with failing_gate is returned.
+- Golden fixtures: `tests/golden/golden_50d.json`, golden_60d_extras,
+  golden_alignment; generator `scripts/gen_governance_golden.py`.
+
+### Tests
+- `tests/unit/test_model_governance_phase16.py` — 29 tests
+  (TEST-LG-01..30). `tests/integration/test_model_lifecycle_api.py`
+  TestGovernanceAPI — 6 API tests. Golden fixtures protect against
+  preprocessing/runtime drift (TEST-LG-16/25/26).
+
+---
+
 ## 15e. Challenger Shadow Trading & Champion Evaluation (PHASE 11)
 
 > **NOTE (2026-08-16 Forensic Audit):** This section was ADDED by the Phase

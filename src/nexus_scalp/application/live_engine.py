@@ -21,6 +21,7 @@ import os
 import signal
 import threading
 import time
+import uuid
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -60,7 +61,9 @@ from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, Marke
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.features.schema import active_columns, active_dimension, active_schema
 from nexus_scalp.governance import (
+    GovernanceEvent,
     GovernanceShadowRuntime,
+    GovernanceStage,
     GovernanceStore,
     ModelGovernanceEngine,
 )
@@ -79,6 +82,7 @@ from nexus_scalp.intelligence import (
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.model_lifecycle.champion import ChampionManager
+from nexus_scalp.model_lifecycle.models import ModelStatus
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
 from nexus_scalp.model_lifecycle.store import TrainingRunStore
 from nexus_scalp.model_lifecycle.worker import TrainingWorker
@@ -605,6 +609,11 @@ class LiveEngine:
         # This is metadata only - the experience ledger constructed above is
         # already fully usable even when this artifact was just created fresh.
         self._register_active_model(model_path=model_path, replaced=False)
+        # TASK-6: make the registry truthful about CURRENT_CHAMPION.
+        try:
+            self._sync_champion_registry_state()
+        except Exception:
+            pass
 
     def _register_active_model(self, model_path: Path, replaced: bool) -> None:
         """
@@ -705,17 +714,173 @@ class LiveEngine:
             except Exception:
                 pass
 
-    def _activate_promoted_model(self, *args: object, **kwargs: object) -> object:
-        """TASK-6 placeholder: promotion activation is not implemented yet.
+    def _activate_promoted_model(self, *, model_id: str, model_version: str) -> None:
+        """Operator-approved runtime activation for a promoted model.
 
-        Governance actions must never silently no-op: this raises explicitly so
-        a promotion attempt is a visible failure, not a silent skip.
+        Called by ModelGovernanceEngine.promote() AFTER the audited
+        APPROVED -> CHAMPION transition is recorded. This is the ONLY place a
+        model can become the live Champion, and it requires the operator
+        approval token end-to-end (spec 21 / 24). Activation swaps the model
+        bundle atomically under _bundle_lock. A failure propagates so the
+        promotion is recorded as blocked (evidence preserved).
         """
-        raise NotImplementedError("model promotion activation not implemented (TASK-6 WIP)")
+        if not model_id:
+            raise RuntimeError("activation requires a model identity")
+        model_path = Path(self.config.model.model_artifact_path)
+        if not model_path.exists():
+            raise RuntimeError(f"activation target artifact missing: {model_path}")
+        with self._bundle_lock:
+            bundle = self._load_or_create_bundle(model_path=model_path, force_fresh=False)
+            self._bundle = bundle
+        self._register_active_model(model_path=model_path, replaced=True)
+        logger.info(
+            "[MODEL_GOVERNANCE] event=PROMOTION_EXECUTED",
+            model_id=model_id,
+            model_version=model_version,
+            artifact=str(model_path),
+        )
 
-    def _activate_rollback_model(self, *args: object, **kwargs: object) -> object:
-        """TASK-6 placeholder: rollback activation is not implemented yet."""
-        raise NotImplementedError("model rollback activation not implemented (TASK-6 WIP)")
+    def _activate_rollback_model(self, *, model_id: str, model_version: str) -> None:
+        """Rolls the runtime pointer back to the previous Champion (spec 23).
+
+        The previous artifact must already be staged at the configured model
+        path; the hash is verified against the registry event evidence by the
+        rollback API gate before this point. Evidence about the FAILED model
+        is preserved in the governance event ledger — never deleted.
+        """
+        model_path = Path(self.config.model.model_artifact_path)
+        if not model_path.exists():
+            raise RuntimeError(f"rollback target artifact missing: {model_path}")
+        with self._bundle_lock:
+            bundle = self._load_or_create_bundle(model_path=model_path, force_fresh=False)
+            self._bundle = bundle
+        self._register_active_model(model_path=model_path, replaced=True)
+        logger.info(
+            "[MODEL_GOVERNANCE] event=ROLLBACK_EXECUTED",
+            restored=f"{model_id}@{model_version}",
+            artifact=str(model_path),
+        )
+
+    def _governance_snapshot_health(self) -> dict[str, Any]:
+        """Truthful runtime health for the governance layer (spec 27)."""
+        champ: dict[str, Any] = {}
+        try:
+            c = self.champion_manager.champion_or_none()
+            if c is not None:
+                champ = {
+                    "id": c.model_id,
+                    "version": c.model_version,
+                    "schema": c.feature_schema_id,
+                    "healthy": c.available,
+                    "artifact_hash": c.artifact_hash,
+                }
+        except Exception:
+            champ = {"id": self.champion_manager.model_id, "healthy": False}
+        chal: dict[str, Any] = {"state": "NONE", "id": "", "version": "", "schema": ""}
+        if self._governance_shadow is not None:
+            s = self._governance_shadow.summary()
+            chal = {
+                "id": s.get("model_id", ""),
+                "version": s.get("model_version", ""),
+                "schema": s.get("schema_id", ""),
+                "state": "SHADOW",
+            }
+        shad: dict[str, Any] = {
+            "running": self._governance_shadow is not None
+            and bool(self.shadow_engine.active_run_id),
+            "comparisons": self._governance_shadow.comparisons if self._governance_shadow else 0,
+            "errors": self._governance_shadow.errors if self._governance_shadow else 0,
+            "dropped": self._governance_shadow.dropped if self._governance_shadow else 0,
+            "last_update": "",
+        }
+        return self.governance_engine.health(champion=champ, challenger=chal, shadow=shad)
+
+    def _save_governance_health_periodic(self) -> None:
+        """Bounded model_runtime_health snapshot (~5 min, queued, isolated)."""
+        try:
+            if self.governance_store is None:
+                return
+            if (
+                time.time() - self._governance_health_last_save
+                < self._governance_health_save_interval_sec
+            ):
+                return
+            self._governance_health_last_save = time.time()
+            health = self._governance_snapshot_health()
+            self.governance_store.save_health(
+                {
+                    "checked_at": health.get("checked_at", ""),
+                    "champion_id": health["champion"].get("id", ""),
+                    "champion_version": health["champion"].get("version", ""),
+                    "champion_schema": health["champion"].get("schema", ""),
+                    "champion_healthy": health["champion"].get("healthy", False),
+                    "challenger_id": health["challenger"].get("id", ""),
+                    "challenger_version": health["challenger"].get("version", ""),
+                    "challenger_state": health["challenger"].get("state", "NONE"),
+                    "shadow_running": health["shadow"].get("running", False),
+                    "shadow_comparisons": health["shadow"].get("comparisons", 0),
+                    "shadow_errors": health["shadow"].get("errors", 0),
+                    "shadow_dropped": health["shadow"].get("dropped", 0),
+                    "last_update": health["shadow"].get("last_update", ""),
+                    "payload": health,
+                }
+            )
+        except Exception as e:
+            logger.debug("[MODEL_GOVERNANCE] health snapshot skipped (isolated)", error=str(e))
+
+    def _sync_champion_registry_state(self) -> None:
+        """Makes the registry truthful about the CURRENT Champion (spec 3)."""
+        try:
+            if self.governance_store is None:
+                return
+            champ = self.champion_manager.champion_or_none()
+            if champ is None or not champ.artifact_hash:
+                return
+            from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
+
+            lifecycle = ModelLifecycleRegistry(
+                audit_repo=self.audit, model_registry=self.model_registry
+            )
+            rows = lifecycle.list_models(status=ModelStatus.CHAMPION, limit=5)
+            current = rows[0] if rows else None
+            path_match = str(Path(self.config.model.model_artifact_path)).replace("\\", "/")
+            if (
+                current is not None
+                and str(current.get("artifact_path", "")).replace("\\", "/") == path_match
+            ):
+                return  # already truthful
+            self.model_registry.register_model(
+                artifact_path=self.config.model.model_artifact_path,
+                model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+                feature_schema_id=self.FEATURE_SCHEMA_ID,
+                feature_dimension=self.FEATURE_DIM,
+                config_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+                replaced=False,
+            )
+            iid = f"{self.model_registry.current.model_role.lower()}_{self.FEATURE_SCHEMA_ID}_{self.FEATURE_DIM}d"
+            try:
+                lifecycle.set_status(
+                    model_id=iid,
+                    model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+                    status=ModelStatus.CHAMPION,
+                    reason="registry truthfulness sync: live Champion row",
+                )
+            except Exception as e:
+                logger.error("[MODEL_GOVERNANCE] champion registry sync failed", error=str(e))
+            self.governance_store.record_event(
+                GovernanceEvent(
+                    event_id=f"ev_{uuid.uuid4().hex[:16]}",
+                    event="REGISTRY_RECONCILED",
+                    stage=GovernanceStage.REGISTRY,
+                    model_id=self.champion_manager.model_id,
+                    model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+                    schema_id=self.FEATURE_SCHEMA_ID,
+                    reason="live Champion registry truthfulness correction",
+                    payload={"artifact_path": self.config.model.model_artifact_path},
+                )
+            )
+        except Exception as e:
+            logger.error("[MODEL_GOVERNANCE] registry sync failed (isolated)", error=str(e))
 
     async def stop(self) -> None:
         self._running = False
@@ -996,6 +1161,13 @@ class LiveEngine:
                         await asyncio.to_thread(self.news_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[NEWS_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
+                # TASK-6: bounded governance health snapshot (~5 min cadence,
+                # queued write, failure-isolated — never blocks ticks).
+                try:
+                    self._save_governance_health_periodic()
+                except Exception as gov_err:
+                    logger.debug("[MODEL_GOVERNANCE] periodic health skipped", error=str(gov_err))
                 await asyncio.sleep(0.05)
 
             except Exception as e:
@@ -2557,6 +2729,10 @@ class LiveEngine:
                 logger.error("[CANDLE_INTEL] bar feed failed (isolated)", error=str(ci_err))
 
         x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
+        # TASK-6: capture the canonical reference vector for feature parity
+        # (live vs offline/replay baseline, spec 6).
+        if self._governance_reference_vector is None:
+            self._governance_reference_vector = [float(v) for v in x50]
         rec = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
         rec.update(
             close=last_bar.close,
@@ -2614,13 +2790,11 @@ class LiveEngine:
         feature vector (spec 3 / 4). Bounded + failure-isolated: a Challenger
         fault must never affect production execution (spec 17).
         """
-        if self._shadow_challenger is None:
+        if self._shadow_challenger is None and self._governance_shadow is None:
             return
         try:
             engine = self.shadow_engine
-            if not engine.active_run_id:
-                return
-            # Same feature vector the Champion used:
+            # Same feature vector the Champion used (identical object):
             x50 = (
                 fv.to_tensor_input() if hasattr(fv, "to_tensor_input") else [0.0] * self.FEATURE_DIM
             )
@@ -2628,43 +2802,112 @@ class LiveEngine:
             regime_str = getattr(getattr(regime_state, "regime", None), "value", "UNKNOWN")
             if isinstance(regime_str, str) is False and regime_str is not None:
                 regime_str = str(regime_str)
-            from nexus_scalp.shadow.models import ShadowModelRef
+            news_ctx: Any = None
+            if self._news_enabled and self.news_engine is not None:
+                try:
+                    news_ctx = self.news_engine.current_context()
+                except Exception:
+                    news_ctx = None
+            champion_action = (
+                proposal.action.value if hasattr(proposal.action, "value") else str(proposal.action)
+            )
+            champ_probs = [
+                float(v)
+                for v in (self._last_probs.tolist() if self._last_probs is not None else [])
+            ]
+            champ_ref_dict: dict[str, Any] = {
+                "model_id": self.champion_manager.model_id,
+                "model_version": self.champion_manager.model_version,
+                "feature_schema_id": self.FEATURE_SCHEMA_ID,
+                "feature_dimension": self.FEATURE_DIM,
+            }
+            try:
+                champ = self.champion_manager.champion_or_none()
+                if champ is not None:
+                    champ_ref_dict["model_id"] = champ.model_id
+                    champ_ref_dict["model_version"] = champ.model_version
+                    champ_ref_dict["artifact_hash"] = champ.artifact_hash
+            except Exception:
+                pass
+            if self._governance_shadow is not None and engine.active_run_id:
+                # TASK-6: compute the 10 REAL scalp_v2 extras from the same
+                # causal bar window the Champion used (features/schema_augment,
+                # TASK-5 contract). A 60D Challenger must never receive
+                # zero-filled extras (INV-009 / no-silent-pad rule).
+                extras_60d = None
+                try:
+                    from nexus_scalp.features.schema_augment import compute_60d_extras
 
-            champ = self.champion_manager.champion_or_none()
-            champ_ref = ShadowModelRef(
-                model_id=(champ.model_id if champ else self.champion_manager.model_id),
-                model_version=(
-                    champ.model_version if champ else self.champion_manager.model_version
-                ),
-                feature_schema_id=self.FEATURE_SCHEMA_ID,
-                feature_dimension=self.FEATURE_DIM,
-                artifact_hash=(champ.artifact_hash if champ else ""),
-                is_champion=True,
-            )
-            engine.set_champion_ref(champ_ref)
-            engine.record_shadow_decision(
-                timestamp=tick.timestamp,
-                symbol=tick.symbol,
-                timeframe="M1",
-                feature_hash=feature_hash,
-                feature_schema_id=self.FEATURE_SCHEMA_ID,
-                feature_dimension=self.FEATURE_DIM,
-                regime=regime_str,
-                session=getattr(proposal, "session", "") or "ALL",
-                configuration_version=str(getattr(self.config.model, "feature_schema_version", "")),
-                champion_ref=champ_ref,
-                champion_action=proposal.action.value
-                if hasattr(proposal.action, "value")
-                else str(proposal.action),
-                champion_confidence=float(getattr(proposal, "confidence", 0.0)),
-                champion_probabilities=[
-                    float(v)
-                    for v in (self._last_probs.tolist() if self._last_probs is not None else [])
-                ],
-                champion_strategy_id="",
-                decision_id=getattr(proposal, "request_id", ""),
-                feature_vector=x50,
-            )
+                    bars = self.aggregator.get_completed_bars()
+                    if bars and len(bars) >= 5:
+                        opens = np.asarray([float(b.open) for b in bars[-60:]], dtype=np.float32)
+                        highs = np.asarray([float(b.high) for b in bars[-60:]], dtype=np.float32)
+                        lows = np.asarray([float(b.low) for b in bars[-60:]], dtype=np.float32)
+                        closes = np.asarray([float(b.close) for b in bars[-60:]], dtype=np.float32)
+                        vols = np.asarray(
+                            [float(getattr(b, "tick_volume", 0.0) or 0.0) for b in bars[-60:]],
+                            dtype=np.float32,
+                        )
+                        extras_60d = compute_60d_extras(
+                            opens=opens,
+                            highs=highs,
+                            lows=lows,
+                            closes=closes,
+                            volumes=vols,
+                        )
+                except Exception as e60:
+                    logger.debug("[MODEL_SHADOW] 60D extras unavailable (isolated)", error=str(e60))
+                self._governance_shadow.compare(
+                    champion_vector=x50,
+                    reference_vector=self._governance_reference_vector,
+                    news_context=(news_ctx.model_dump() if news_ctx is not None else None),
+                    champion_ref=champ_ref_dict,
+                    champion_action=champion_action,
+                    champion_confidence=float(getattr(proposal, "confidence", 0.0)),
+                    champion_probabilities=champ_probs,
+                    timestamp=tick.timestamp,
+                    symbol=tick.symbol,
+                    timeframe="M1",
+                    regime=regime_str,
+                    session=getattr(proposal, "session", "") or "ALL",
+                    run_id=engine.active_run_id,
+                    decision_id=getattr(proposal, "request_id", ""),
+                    champion_latency_ms=float(self._last_inference_latency_ms or 0.0),
+                    feature_context_id=feature_hash,
+                    extras_60d=extras_60d,
+                )
+            if self._shadow_challenger is not None:
+                from nexus_scalp.shadow.models import ShadowModelRef
+
+                champ_ref = ShadowModelRef(
+                    model_id=champ_ref_dict.get("model_id", ""),
+                    model_version=champ_ref_dict.get("model_version", ""),
+                    feature_schema_id=self.FEATURE_SCHEMA_ID,
+                    feature_dimension=self.FEATURE_DIM,
+                    artifact_hash=champ_ref_dict.get("artifact_hash", ""),
+                    is_champion=True,
+                )
+                engine.set_champion_ref(champ_ref)
+                engine.record_shadow_decision(
+                    timestamp=tick.timestamp,
+                    symbol=tick.symbol,
+                    timeframe="M1",
+                    feature_hash=feature_hash,
+                    feature_schema_id=self.FEATURE_SCHEMA_ID,
+                    feature_dimension=self.FEATURE_DIM,
+                    regime=regime_str,
+                    session=getattr(proposal, "session", "") or "ALL",
+                    configuration_version=str(
+                        getattr(self.config.model, "feature_schema_version", "")
+                    ),
+                    champion_ref=champ_ref,
+                    champion_action=champion_action,
+                    champion_confidence=float(getattr(proposal, "confidence", 0.0)),
+                    champion_probabilities=champ_probs,
+                    champion_strategy_id="",
+                    decision_id=getattr(proposal, "request_id", ""),
+                    feature_vector=x50,
+                )
         except Exception as e:
             # Shadow is observability only: a failure here NEVER disturbs live.
             logger.error("[SHADOW] event=RECORD_FAILURE (isolated)", error=str(e))

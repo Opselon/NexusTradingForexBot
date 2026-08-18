@@ -67,6 +67,25 @@ carry the decision identity (trade_id/order_id) on every event (BUG-089).
 UNKNOWN broker exit reasons stay UNKNOWN instead of assuming MANUAL_CLOSE or
 another confident classification (DEC-0021 pattern, BUG-081).
 
+## INV-013 — Model loadability requires the deterministic load gate (TASK-6)
+No model is loaded into shadow merely because its file exists: the 10-gate
+load gate (artifact/hash/manifest/schema/dimension/scaler/label/validation/
+lifecycle) must pass; the exact failing gate is reported (MODEL_LOAD_REJECTED).
+Status: VERIFIED (tests/unit/test_model_governance_phase16.py).
+
+## INV-014 — Shadow can never mutate execution state (TASK-6)
+The shadow comparison path imports no order manager / risk engine / adapter.
+Challenger failure, timeout or invalid probability is FAILURE_ISOLATED and
+the Champion prediction path continues unaffected.
+Status: VERIFIED (TEST-LG-10/11/12).
+
+## INV-015 — Promotion requires explicit operator approval (TASK-6)
+SHADOW -> CHAMPION is an illegal transition; the only legal path is
+READY_FOR_REVIEW -> APPROVED -> CHAMPION with an operator actor and
+approval token. Rollback restores the previous Champion and preserves
+evidence about the failed model. No automatic promotion exists.
+Status: VERIFIED (TEST-LG-21..24).
+
 ## Registry notes
 - `agents/bugs.md` BUG-NNN entries provide the forensic evidence for each invariant.
 - New invariants: append with INV-NNN and reference the evidence.
