@@ -514,195 +514,366 @@
                 </div>
 
                 <!-- ============================================================ -->
-                <!-- PHASE 08: ACCOUNT PERFORMANCE & INTELLIGENCE PANEL           -->
+                <!-- PHASE 08: ACCOUNT PERFORMANCE & INTELLIGENCE PANEL (UX v2)   -->
                 <!-- ============================================================ -->
-                <div class="bg-panelBg border border-borderClr rounded-xl p-5 shadow-xl">
-                    <h3 class="text-md font-bold text-white flex items-center mb-2 border-b border-borderClr pb-3">
-                        <i class="fa-solid fa-chart-line mr-2 text-accentCyan"></i>
-                        Account Performance &amp; Intelligence
-                        <span id="acct-intel-source" class="ml-3 text-[10px] uppercase tracking-widest text-textMuted font-sans">source: accounting core</span>
-                    </h3>
-
-                    <!-- Period tabs -->
-                    <div class="flex flex-wrap gap-2 my-3">
-                        <button onclick="loadAccountPeriod('DAY', this)" class="acct-period-btn px-4 py-1.5 rounded-lg text-xs font-bold bg-accentCyan/15 text-accentCyan border border-accentCyan/30">DAY</button>
-                        <button onclick="loadAccountPeriod('WEEK', this)" class="acct-period-btn px-4 py-1.5 rounded-lg text-xs font-bold bg-darkBg text-textMuted border border-borderClr">WEEK</button>
-                        <button onclick="loadAccountPeriod('MONTH', this)" class="acct-period-btn px-4 py-1.5 rounded-lg text-xs font-bold bg-darkBg text-textMuted border border-borderClr">MONTH</button>
-                        <button onclick="loadAccountPeriod('YEAR', this)" class="acct-period-btn px-4 py-1.5 rounded-lg text-xs font-bold bg-darkBg text-textMuted border border-borderClr">YEAR</button>
-                    </div>
-
-                    <!-- Period report -->
-                    <div id="acct-period-report" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Net PnL</span>
-                            <span id="acct-net-pnl" class="font-mono font-black text-gray-200 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">PnL %</span>
-                            <span id="acct-pnl-pct" class="font-mono font-black text-gray-200 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Trades</span>
-                            <span id="acct-trades" class="font-mono font-black text-gray-200 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Win Rate</span>
-                            <span id="acct-winrate-period" class="font-mono font-black text-gray-200 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Expectancy</span>
-                            <span id="acct-expectancy" class="font-mono font-black text-gray-200 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Profit Factor</span>
-                            <span id="acct-profit-factor" class="font-mono font-black text-gray-200 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg R</span>
-                            <span id="acct-avg-r" class="font-mono font-black text-gray-200 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Max DD</span>
-                            <span id="acct-max-dd" class="font-mono font-black text-rose-400 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Best Trade</span>
-                            <span id="acct-best-trade" class="font-mono font-black text-emerald-400 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Worst Trade</span>
-                            <span id="acct-worst-trade" class="font-mono font-black text-rose-400 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Hold</span>
-                            <span id="acct-avg-hold" class="font-mono font-black text-gray-200 text-sm">--</span>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-[10px] uppercase tracking-wider text-textMuted block">Risk Deployed</span>
-                            <span id="acct-risk-deployed" class="font-mono font-black text-gray-200 text-sm">--</span>
+                <div class="bg-panelBg border border-borderClr rounded-2xl shadow-xl overflow-hidden">
+                    <!-- Panel header -->
+                    <div class="flex flex-wrap items-center justify-between gap-2 px-5 pt-5 pb-3 border-b border-borderClr/60 bg-darkBg/30">
+                        <h3 class="text-md font-bold text-white flex items-center gap-2">
+                            <span class="w-8 h-8 rounded-lg bg-accentCyan/15 text-accentCyan flex items-center justify-center"><i class="fa-solid fa-chart-line"></i></span>
+                            Account Performance &amp; Intelligence
+                        </h3>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-emerald-400 border border-emerald-400/20 bg-emerald-400/5 rounded-full px-2 py-0.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>live</span>
+                            <span id="acct-intel-source" class="text-[10px] uppercase tracking-widest text-textMuted font-sans border border-borderClr/60 rounded-full px-2 py-0.5">source: accounting core</span>
+                            <span id="acct-period-denom-chip" class="hidden text-[10px] uppercase tracking-widest font-mono rounded-full px-2 py-0.5 border border-accentCyan/30 text-accentCyan bg-accentCyan/10">denominator: --</span>
                         </div>
                     </div>
 
-                    <!-- Advanced Risk Metrics (validated math from accounting core) -->
-                    <div class="mt-4 mb-5">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="text-xs font-bold text-white uppercase tracking-wider">Advanced Risk Metrics</span>
-                            <span id="acct-adv-source" class="text-[10px] uppercase tracking-widest text-textMuted">source: accounting core (sample-honest)</span>
+                    <div class="p-5 space-y-5">
+                        <!-- Period selector: segmented control -->
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div class="inline-flex rounded-lg border border-borderClr bg-darkBg/60 p-1 gap-1">
+                                <button onclick="loadAccountPeriod('DAY', this)" class="acct-period-btn px-4 py-1.5 rounded-md text-xs font-bold bg-accentCyan/15 text-accentCyan">DAY</button>
+                                <button onclick="loadAccountPeriod('WEEK', this)" class="acct-period-btn px-4 py-1.5 rounded-md text-xs font-bold text-textMuted">WEEK</button>
+                                <button onclick="loadAccountPeriod('MONTH', this)" class="acct-period-btn px-4 py-1.5 rounded-md text-xs font-bold text-textMuted">MONTH</button>
+                                <button onclick="loadAccountPeriod('YEAR', this)" class="acct-period-btn px-4 py-1.5 rounded-md text-xs font-bold text-textMuted">YEAR</button>
+                            </div>
+                            <span class="text-[10px] text-textMuted uppercase tracking-widest">period report · accounting core</span>
                         </div>
-                        <div id="acct-advanced" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Sharpe Ratio</span>
-                                <span id="acct-sharpe" class="font-mono font-black text-gray-200 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Sortino Ratio</span>
-                                <span id="acct-sortino" class="font-mono font-black text-gray-200 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Calmar Ratio</span>
-                                <span id="acct-calmar" class="font-mono font-black text-gray-200 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">SQN</span>
-                                <span id="acct-sqn" class="font-mono font-black text-gray-200 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Recovery Factor</span>
-                                <span id="acct-recovery-factor" class="font-mono font-black text-gray-200 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Payoff Ratio</span>
-                                <span id="acct-payoff" class="font-mono font-black text-gray-200 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Win</span>
-                                <span id="acct-avg-win" class="font-mono font-black text-emerald-400 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Loss</span>
-                                <span id="acct-avg-loss" class="font-mono font-black text-rose-400 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Max Win Streak</span>
-                                <span id="acct-win-streak" class="font-mono font-black text-emerald-400 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Max Loss Streak</span>
-                                <span id="acct-loss-streak" class="font-mono font-black text-rose-400 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">Equity Volatility</span>
-                                <span id="acct-eq-vol" class="font-mono font-black text-gray-200 text-sm">--</span>
-                            </div>
-                            <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                                <span class="text-[10px] uppercase tracking-wider text-textMuted block">PnL T-Stat</span>
-                                <span id="acct-pnl-tstat" class="font-mono font-black text-gray-200 text-sm">--</span>
-                            </div>
-                        </div>
-                    </div>
 
-                    <!-- Charts -->
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-xs font-bold text-white uppercase tracking-wider">Balance &amp; Equity Growth</span>
-                            <canvas id="acct-equity-chart" class="w-full mt-2" height="180"></canvas>
-                            <div id="acct-equity-empty" class="hidden py-8 text-center text-textMuted italic text-xs">NO ACCOUNT HISTORY AVAILABLE</div>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-xs font-bold text-white uppercase tracking-wider">Drawdown</span>
-                            <canvas id="acct-drawdown-chart" class="w-full mt-2" height="180"></canvas>
-                            <div id="acct-drawdown-empty" class="hidden py-8 text-center text-textMuted italic text-xs">NO DRAWDOWN HISTORY AVAILABLE</div>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-xs font-bold text-white uppercase tracking-wider">Cumulative PnL</span>
-                            <canvas id="acct-cumulative-chart" class="w-full mt-2" height="180"></canvas>
-                            <div id="acct-cumulative-empty" class="hidden py-8 text-center text-textMuted italic text-xs">NO CLOSED TRADE HISTORY AVAILABLE</div>
-                        </div>
-                        <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
-                            <span class="text-xs font-bold text-white uppercase tracking-wider">Period Performance</span>
-                            <canvas id="acct-period-chart" class="w-full mt-2" height="180"></canvas>
-                            <div id="acct-period-chart-empty" class="hidden py-8 text-center text-textMuted italic text-xs">NO PERIOD HISTORY AVAILABLE</div>
-                        </div>
-                    </div>
+                        <!-- HERO ROW -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <!-- Net PnL -->
+                            <div class="rounded-xl border border-borderClr/60 bg-gradient-to-br from-darkBg/80 to-darkBg/20 p-4 relative overflow-hidden">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] uppercase tracking-widest text-textMuted font-bold">Net PnL</span>
+                                    <span class="text-[9px] uppercase tracking-widest text-textMuted/70">period</span>
+                                </div>
+                                <div class="flex items-end gap-2 mt-1 flex-wrap">
+                                    <span id="acct-net-pnl" class="font-mono font-black text-2xl text-gray-200">--</span>
+                                    <span id="acct-pnl-pct" class="font-mono font-bold text-sm text-gray-400 mb-1">--</span>
+                                </div>
+                                <div class="flex items-center gap-2 mt-3 text-[10px] font-mono">
+                                    <span class="text-emerald-400"><i class="fa-solid fa-caret-up mr-0.5"></i>gross <span id="acct-gross-profit">--</span></span>
+                                    <span class="text-textMuted/40">|</span>
+                                    <span class="text-rose-400"><i class="fa-solid fa-caret-down mr-0.5"></i>gross <span id="acct-gross-loss">--</span></span>
+                                </div>
+                                <div id="acct-hero-split" class="mt-2 h-1.5 rounded-full overflow-hidden flex bg-darkBg"></div>
+                                <span class="absolute -right-4 -bottom-6 text-accentCyan/5 text-[7rem] leading-none select-none pointer-events-none"><i class="fa-solid fa-chart-line"></i></span>
+                            </div>
 
-                    <!-- Strategy contributions -->
-                    <div class="mt-4">
-                        <span class="text-xs font-bold text-white uppercase tracking-wider">Strategy Attribution</span>
-                        <div class="overflow-x-auto max-h-[260px] mt-2">
-                            <table class="w-full text-left border-collapse">
-                                <thead>
-                                    <tr class="text-xs text-textMuted border-b border-borderClr/60">
-                                        <th class="pb-2 pl-2 font-semibold">STRATEGY</th>
-                                        <th class="pb-2 font-semibold">TRADES</th>
-                                        <th class="pb-2 font-semibold">NET PnL</th>
-                                        <th class="pb-2 font-semibold">WIN RATE</th>
-                                        <th class="pb-2 font-semibold">PROFIT FACTOR</th>
-                                        <th class="pb-2 font-semibold">AVG R</th>
-                                        <th class="pb-2 font-semibold">LIFECYCLE</th>
-                                        <th class="pb-2 pr-2 text-right font-semibold">CONFIDENCE</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="acct-strategy-table" class="text-xs font-mono divide-y divide-borderClr/30">
-                                    <tr>
-                                        <td colspan="8" class="py-4 text-center text-textMuted italic font-sans">NO STRATEGY EVIDENCE AVAILABLE</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                            <!-- Expectancy -->
+                            <div class="rounded-xl border border-borderClr/60 bg-gradient-to-br from-darkBg/80 to-darkBg/20 p-4">
+                                <span class="text-[10px] uppercase tracking-widest text-textMuted font-bold">Expectancy</span>
+                                <div class="mt-1">
+                                    <span id="acct-expectancy" class="font-mono font-black text-2xl text-gray-200">--</span>
+                                </div>
+                                <div class="mt-3 text-[10px] font-mono text-textMuted">
+                                    <span>incl. breakevens: </span><span id="acct-expectancy-incl" class="text-gray-300">--</span>
+                                </div>
+                                <div class="mt-1 text-[10px] font-mono text-textMuted">
+                                    <span>the $-edge per trade over the whole sample (breakevens dilute it)</span>
+                                </div>
+                            </div>
 
-                    <!-- Trade forensics -->
-                    <div class="mt-5 border-t border-borderClr/40 pt-4">
-                        <span class="text-xs font-bold text-white uppercase tracking-wider">Trade Forensics</span>
-                        <div class="flex flex-wrap gap-2 mt-2 items-center">
-                            <input id="acct-forensic-ticket" type="number" placeholder="Ticket e.g. 1002"
-                                   class="bg-darkBg border border-borderClr rounded-lg px-3 py-1.5 text-xs font-mono text-gray-200 w-40">
-                            <button onclick="loadTradeForensics()"
-                                    class="px-3 py-1.5 rounded-lg text-xs font-bold bg-accentCyan/15 text-accentCyan border border-accentCyan/30 hover:bg-accentCyan/25">
-                                Inspect
-                            </button>
+                            <!-- Period profile -->
+                            <div class="rounded-xl border border-borderClr/60 bg-gradient-to-br from-darkBg/80 to-darkBg/20 p-4 sm:col-span-2 lg:col-span-1">
+                                <span class="text-[10px] uppercase tracking-widest text-textMuted font-bold">Period Profile</span>
+                                <div class="grid grid-cols-3 gap-2 mt-2">
+                                    <div>
+                                        <span class="text-[9px] uppercase text-textMuted block">Trades</span>
+                                        <span id="acct-trades" class="font-mono font-black text-xl text-gray-200">--</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-[9px] uppercase text-textMuted block">Win Rate</span>
+                                        <span id="acct-winrate-period" class="font-mono font-black text-xl text-emerald-400">--</span>
+                                        <span id="acct-win-denom" class="block text-[8px] uppercase tracking-widest text-textMuted/70 mt-0.5">denominator: --</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-[9px] uppercase text-textMuted block">Profit Fact</span>
+                                        <span id="acct-profit-factor" class="font-mono font-black text-xl text-gray-200">--</span>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-[10px] font-mono text-textMuted">max DD <span id="acct-max-dd" class="text-rose-400">--</span></div>
+                            </div>
                         </div>
-                        <pre id="acct-forensic-output" class="mt-3 bg-darkBg/60 border border-borderClr/40 rounded-lg p-3 text-[10px] font-mono text-gray-300 max-h-[320px] overflow-auto hidden">--</pre>
+
+                        <!-- Outcomes & labour -->
+                        <div>
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="w-5 h-5 rounded-md bg-accentCyan/10 text-accentCyan text-[9px] flex items-center justify-center"><i class="fa-solid fa-chart-column"></i></span>
+                                <span class="text-xs font-bold text-white uppercase tracking-wider">Outcomes &amp; Labour</span>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Best Trade</span>
+                                    <span id="acct-best-trade" class="font-mono font-black text-emerald-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Worst Trade</span>
+                                    <span id="acct-worst-trade" class="font-mono font-black text-rose-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Hold</span>
+                                    <span id="acct-avg-hold" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Risk Deployed</span>
+                                    <span id="acct-risk-deployed" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg PnL / Decided</span>
+                                    <span id="acct-avg-pnl-decided" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Cost Drag</span>
+                                    <span id="acct-cost-drag" class="font-mono font-black text-amber-400 text-sm">--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Rate mathematics -->
+                        <div>
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="w-5 h-5 rounded-md bg-accentCyan/10 text-accentCyan text-[9px] flex items-center justify-center"><i class="fa-solid fa-percent"></i></span>
+                                <span class="text-xs font-bold text-white uppercase tracking-wider">Rate Mathematics</span>
+                                <span class="text-[9px] uppercase tracking-widest text-textMuted">every rate quotes its denominator</span>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Loss Rate <span class="text-textMuted/60">(decided)</span></span>
+                                    <span id="acct-loss-rate-decided" class="font-mono font-black text-rose-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Loss Rate <span class="text-textMuted/60">(all)</span></span>
+                                    <span id="acct-loss-rate-all" class="font-mono font-black text-rose-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Win Rate <span class="text-textMuted/60">(all)</span></span>
+                                    <span id="acct-winrate-all" class="font-mono font-black text-emerald-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Win Rate <span class="text-textMuted/60">(PnL-weighted)</span></span>
+                                    <span id="acct-winrate-pnlw" class="font-mono font-black text-accentCyan text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg R</span>
+                                    <span id="acct-avg-r" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Breakevens <span class="text-textMuted/60">(scratch)</span></span>
+                                    <span id="acct-breakevens" class="font-mono font-black text-amber-400 text-sm">--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Advanced Risk Metrics -->
+                        <div class="border-t border-borderClr/40 pt-4">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-5 h-5 rounded-md bg-accentCyan/10 text-accentCyan text-[9px] flex items-center justify-center"><i class="fa-solid fa-shield-halved"></i></span>
+                                    <span class="text-xs font-bold text-white uppercase tracking-wider">Advanced Risk Metrics</span>
+                                    <span id="acct-adv-source" class="text-[9px] uppercase tracking-widest text-textMuted">source: accounting core (sample-honest)</span>
+                                </div>
+                                <span class="text-[9px] uppercase tracking-widest text-textMuted">ratios are null until the sample supports them</span>
+                            </div>
+
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted/80 mb-2">Performance Ratios</div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Sharpe Ratio</span>
+                                    <span id="acct-sharpe" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Sortino Ratio</span>
+                                    <span id="acct-sortino" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Calmar Ratio</span>
+                                    <span id="acct-calmar" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">SQN</span>
+                                    <span id="acct-sqn" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Recovery Factor</span>
+                                    <span id="acct-recovery-factor" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Payoff Ratio</span>
+                                    <span id="acct-payoff" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                            </div>
+
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted/80 mt-3 mb-2">Distribution &amp; Persistence</div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Win</span>
+                                    <span id="acct-avg-win" class="font-mono font-black text-emerald-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Loss</span>
+                                    <span id="acct-avg-loss" class="font-mono font-black text-rose-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Max Win Streak</span>
+                                    <span id="acct-win-streak" class="font-mono font-black text-emerald-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Max Loss Streak</span>
+                                    <span id="acct-loss-streak" class="font-mono font-black text-rose-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Equity Volatility</span>
+                                    <span id="acct-eq-vol" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">PnL T-Stat</span>
+                                    <span id="acct-pnl-tstat" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                            </div>
+
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted/80 mt-3 mb-2">Risk &amp; Excursion</div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Stop-Loss Exit Share</span>
+                                    <span id="acct-stop-share" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Loss R</span>
+                                    <span id="acct-avg-loss-r" class="font-mono font-black text-rose-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Win R</span>
+                                    <span id="acct-avg-win-r" class="font-mono font-black text-emerald-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg MAE <span class="text-textMuted/60">(R)</span></span>
+                                    <span id="acct-avg-mae-r" class="font-mono font-black text-rose-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg MFE <span class="text-textMuted/60">(R)</span></span>
+                                    <span id="acct-avg-mfe-r" class="font-mono font-black text-emerald-400 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Hold</span>
+                                    <span id="acct-adv-avg-hold" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mt-2">
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40 lg:col-span-4">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">Avg Risk / Trade</span>
+                                    <span id="acct-avg-risk-usd" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40 lg:col-span-2">
+                                    <span class="text-[10px] uppercase tracking-wider text-textMuted block">R Coverage <span class="text-textMuted/60">(evidence)</span></span>
+                                    <span id="acct-r-coverage" class="font-mono font-black text-gray-200 text-sm">--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PERFORMANCE INTELLIGENCE (summary + deep analysis) -->
+                        <div class="border-t border-borderClr/40 pt-4">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-5 h-5 rounded-md bg-accentCyan/10 text-accentCyan text-[9px] flex items-center justify-center"><i class="fa-solid fa-brain"></i></span>
+                                    <span class="text-xs font-bold text-white uppercase tracking-wider">Performance Intelligence</span>
+                                    <span class="text-[9px] uppercase tracking-widest text-textMuted">win-rate &amp; loss audit · source: accounting core</span>
+                                </div>
+                                <button onclick="toggleAccountIntelMode(this)" id="acct-intel-mode-btn"
+                                        class="px-3 py-1 rounded-lg text-[10px] font-bold border border-accentCyan/30 bg-accentCyan/10 text-accentCyan hover:bg-accentCyan/20 transition">
+                                    <i class="fa-solid fa-microscope mr-1"></i>Deep Analysis
+                                </button>
+                            </div>
+                            <div id="acct-intel-texts" class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3 text-[11px] leading-relaxed font-sans space-y-1">
+                                <div class="flex items-start gap-2"><span class="text-accentCyan mt-0.5">▸</span><span class="text-textMuted">Loading performance intelligence&hellip;</span></div>
+                            </div>
+
+                            <div id="acct-intel-deep" class="hidden mt-4 space-y-5">
+                                <!-- filled by renderAccountDeepAnalysis() -->
+                                <div class="text-textMuted italic text-xs">Deep analysis builds from real aggregates&hellip;</div>
+                            </div>
+                        </div>
+
+                        <!-- Charts -->
+                        <div class="border-t border-borderClr/40 pt-4">
+                            <div class="flex items-center gap-2 mb-3">
+                                <span class="w-5 h-5 rounded-md bg-accentCyan/10 text-accentCyan text-[9px] flex items-center justify-center"><i class="fa-solid fa-chart-line"></i></span>
+                                <span class="text-xs font-bold text-white uppercase tracking-wider">Curves &amp; Series</span>
+                            </div>
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-xs font-bold text-white uppercase tracking-wider">Balance &amp; Equity Growth</span>
+                                    <canvas id="acct-equity-chart" class="w-full mt-2" height="180"></canvas>
+                                    <div id="acct-equity-empty" class="hidden py-8 text-center text-textMuted italic text-xs">NO ACCOUNT HISTORY AVAILABLE</div>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-xs font-bold text-white uppercase tracking-wider">Drawdown</span>
+                                    <canvas id="acct-drawdown-chart" class="w-full mt-2" height="180"></canvas>
+                                    <div id="acct-drawdown-empty" class="hidden py-8 text-center text-textMuted italic text-xs">NO DRAWDOWN HISTORY AVAILABLE</div>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-xs font-bold text-white uppercase tracking-wider">Cumulative PnL</span>
+                                    <canvas id="acct-cumulative-chart" class="w-full mt-2" height="180"></canvas>
+                                    <div id="acct-cumulative-empty" class="hidden py-8 text-center text-textMuted italic text-xs">NO CLOSED TRADE HISTORY AVAILABLE</div>
+                                </div>
+                                <div class="bg-darkBg/50 rounded-lg p-3 border border-borderClr/40">
+                                    <span class="text-xs font-bold text-white uppercase tracking-wider">Period Performance</span>
+                                    <canvas id="acct-period-chart" class="w-full mt-2" height="180"></canvas>
+                                    <div id="acct-period-chart-empty" class="hidden py-8 text-center text-textMuted italic text-xs">NO PERIOD HISTORY AVAILABLE</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Strategy contributions -->
+                        <div class="border-t border-borderClr/40 pt-4">
+                            <div class="flex items-center gap-2 mb-3">
+                                <span class="w-5 h-5 rounded-md bg-accentCyan/10 text-accentCyan text-[9px] flex items-center justify-center"><i class="fa-solid fa-ranking-star"></i></span>
+                                <span class="text-xs font-bold text-white uppercase tracking-wider">Strategy Attribution</span>
+                                <span class="text-[9px] uppercase tracking-widest text-textMuted">evidence per family</span>
+                            </div>
+                            <div class="overflow-x-auto max-h-[260px] border border-borderClr/40 rounded-lg">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="text-xs text-textMuted border-b border-borderClr/60 bg-darkBg/40">
+                                            <th class="py-2 pl-3 font-semibold">STRATEGY</th>
+                                            <th class="py-2 font-semibold">TRADES</th>
+                                            <th class="py-2 font-semibold">NET PnL</th>
+                                            <th class="py-2 font-semibold">WIN RATE</th>
+                                            <th class="py-2 font-semibold">PROFIT FACTOR</th>
+                                            <th class="py-2 font-semibold">AVG R</th>
+                                            <th class="py-2 font-semibold">LIFECYCLE</th>
+                                            <th class="py-2 pr-3 text-right font-semibold">CONFIDENCE</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="acct-strategy-table" class="text-xs font-mono divide-y divide-borderClr/30">
+                                        <tr>
+                                            <td colspan="8" class="py-4 text-center text-textMuted italic font-sans">NO STRATEGY EVIDENCE AVAILABLE</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Trade forensics -->
+                        <div class="border-t border-borderClr/40 pt-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="w-5 h-5 rounded-md bg-accentCyan/10 text-accentCyan text-[9px] flex items-center justify-center"><i class="fa-solid fa-magnifying-glass-chart"></i></span>
+                                <span class="text-xs font-bold text-white uppercase tracking-wider">Trade Forensics</span>
+                                <span class="text-[9px] uppercase tracking-widest text-textMuted">per-ticket deep dive /api/account/trades/:id</span>
+                            </div>
+                            <div class="flex flex-wrap gap-2 mt-2 items-center">
+                                <input id="acct-forensic-ticket" type="number" placeholder="Ticket e.g. 1002"
+                                       class="bg-darkBg border border-borderClr rounded-lg px-3 py-1.5 text-xs font-mono text-gray-200 w-40">
+                                <button onclick="loadTradeForensics()"
+                                        class="px-3 py-1.5 rounded-lg text-xs font-bold bg-accentCyan/15 text-accentCyan border border-accentCyan/30 hover:bg-accentCyan/25 transition">
+                                    Inspect
+                                </button>
+                            </div>
+                            <pre id="acct-forensic-output" class="mt-3 bg-darkBg/60 border border-borderClr/40 rounded-lg p-3 text-[10px] font-mono text-gray-300 max-h-[320px] overflow-auto hidden">--</pre>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -980,29 +1151,29 @@
                             <div class="text-xs text-textMuted">Total</div>
                             <div id="research-registry-total" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
                         </div>
-                    <div>
-                        <div class="text-xs text-textMuted">Validated</div>
-                        <div id="research-validated-count" class="text-2xl font-black font-mono text-accentGreen mt-1">--</div>
+                        <div>
+                            <div class="text-xs text-textMuted">Validated</div>
+                            <div id="research-validated-count" class="text-2xl font-black font-mono text-accentGreen mt-1">--</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-textMuted">Rejected</div>
+                            <div id="research-rejected-count" class="text-2xl font-black font-mono text-accentRed mt-1">--</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-textMuted">Worker</div>
+                            <div id="research-worker-status" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
+                        </div>
                     </div>
-                <div>
-                    <div class="text-xs text-textMuted">Rejected</div>
-                    <div id="research-rejected-count" class="text-2xl font-black font-mono text-accentRed mt-1">--</div>
                 </div>
-            <div>
-                <div class="text-xs text-textMuted">Worker</div>
-                <div id="research-worker-status" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
-            </div>
-            </div>
-            </div>
 
-            <!-- Registry listing -->
-                        <div class="lg:col-span-2 bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
-                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-2">Validated Strategy Registry</div>
-                            <div id="research-registry" class="max-h-72 overflow-y-auto space-y-2 text-[11px] font-mono text-gray-300">
-                                <div class="text-textMuted italic">Run discovery to populate the strategy registry.</div>
-                            </div>
-                        </div>
-                        </div>
+                <!-- Registry listing -->
+                <div class="lg:col-span-2 bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
+                    <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-2">Validated Strategy Registry</div>
+                    <div id="research-registry" class="max-h-72 overflow-y-auto space-y-2 text-[11px] font-mono text-gray-300">
+                        <div class="text-textMuted italic">Run discovery to populate the strategy registry.</div>
+                    </div>
+                </div>
+            </div>
 
                         <!-- BUG-046: outcome data-quality diagnostics -->
                         <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
@@ -1014,7 +1185,6 @@
                                 <div class="text-textMuted italic">Loading outcome quality…</div>
                             </div>
                             <div id="research-repair-result" class="mt-2 text-xs font-mono text-gray-300"></div>
-                        </div>
                         </div>
             </div>
 
@@ -1100,12 +1270,53 @@
                                 </div>
 
                                 <div class="text-[10px] uppercase tracking-widest text-textMuted mb-2">Live News</div>
-                                <div id="news-status-line" class="text-[9px] font-mono text-slate-500 mb-1 hidden"></div>
-                                <div id="news-feed" class="max-h-96 overflow-y-auto space-y-2 text-[11px] font-mono text-gray-300">
-                                    <div class="text-textMuted italic">News engine idle. Click "Fetch News" or wait for the worker cycle.</div>
-                                </div>
-                            </div>
-                        </section>
+                                                                <div id="news-status-line" class="text-[9px] font-mono text-slate-500 mb-1 hidden"></div>
+                                                                <div id="news-feed" class="max-h-96 overflow-y-auto space-y-2 text-[11px] font-mono text-gray-300">
+                                                                    <div class="text-textMuted italic">News engine idle. Click "Fetch News" or wait for the worker cycle.</div>
+                                                                </div>
+
+                                                                <!-- NEWS KEYWORD ANALYSIS DATASET (PHASE 12 - dataset expansion) -->
+                                                                <div class="mt-6 border-t border-borderClr/40 pt-4">
+                                                                    <div class="flex justify-between items-center mb-3">
+                                                                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Keyword Analysis Dataset</div>
+                                                                        <div class="flex items-center space-x-1.5">
+                                                                            <input id="news-kw-search" type="text" placeholder="filter keywords…"
+                                                                                   class="bg-darkBg/60 border border-borderClr rounded px-2 py-1 text-[10px] font-mono text-gray-200 outline-none focus:border-accentCyan/50 w-36"/>
+                                                                            <select id="news-kw-category" onchange="loadNewsKeywords()"
+                                                                                    class="bg-darkBg/60 border border-borderClr rounded px-2 py-1 text-[10px] font-mono text-gray-200 outline-none focus:border-accentCyan/50">
+                                                                                <option value="">all categories</option>
+                                                                            </select>
+                                                                            <button onclick="loadNewsKeywords()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-2.5 py-1 text-[10px] font-bold hover:bg-accentCyan/20 transition">Scan</button>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3 text-[10px] font-mono">
+                                                                        <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                                                            <div class="text-textMuted uppercase tracking-widest text-[9px]">Keywords</div>
+                                                                            <div id="news-kw-total" class="text-lg font-black text-accentCyan">--</div>
+                                                                        </div>
+                                                                        <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                                                            <div class="text-textMuted uppercase tracking-widest text-[9px]">Articles Scanned</div>
+                                                                            <div id="news-kw-articles" class="text-lg font-black text-accentCyan">--</div>
+                                                                        </div>
+                                                                        <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                                                            <div class="text-textMuted uppercase tracking-widest text-[9px]">Total Mentions</div>
+                                                                            <div id="news-kw-mentions" class="text-lg font-black text-accentCyan">--</div>
+                                                                        </div>
+                                                                        <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                                                            <div class="text-textMuted uppercase tracking-widest text-[9px]">Active Keywords</div>
+                                                                            <div id="news-kw-active" class="text-lg font-black text-accentGreen">--</div>
+                                                                        </div>
+                                                                        <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                                                            <div class="text-textMuted uppercase tracking-widest text-[9px]">Bull / Bear / Neut</div>
+                                                                            <div id="news-kw-dir" class="text-lg font-black"><span class="text-accentGreen">--</span> / <span class="text-accentRed">--</span> / <span class="text-slate-400">--</span></div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div id="news-kw-table" class="max-h-64 overflow-y-auto rounded-lg border border-borderClr/40 text-[10px] font-mono text-gray-300">
+                                                                        <div class="text-textMuted italic p-2">Loading keyword dataset…</div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </section>
 
                         <!-- TAB 6: SCALPING RULES PANEL -->
             <section id="tab-rules" class="tab-content hidden space-y-6">

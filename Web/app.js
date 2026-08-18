@@ -2634,6 +2634,586 @@ async function loadAccountPerformance() {
 }
 
 // Advanced risk metrics (Sharpe/Sortino/Calmar/SQN/... from accounting core).
+// =============================================================================
+// PHASE 16b (UX v2): PERFORMANCE INTELLIGENCE ENGINE
+// Verve-coded summary lines + deep scenario analysis. Every claim derives from
+// real aggregates (a = data.advanced from the accounting core); missing stats
+// produce a neutral hint, never a fabricated claim. Numbers are real; the
+// prose is the audit trail made readable.
+// =============================================================================
+
+function acctNum(v, d) {
+    return v == null ? '--' : Number(v).toFixed(d == null ? 2 : d);
+}
+function acctR(v) {
+    return v == null ? '--' : Number(v).toFixed(3) + 'R';
+}
+function acctPctV(v, d) {
+    return v == null ? '--' : Number(v).toFixed(d == null ? 2 : d) + '%';
+}
+function acctPct1(v) {
+    return v == null ? '--' : (Number(v) * 100).toFixed(1) + '%';
+}
+function acctTone(v) {
+    return v == null ? 'text-gray-400' : (v >= 0 ? 'text-emerald-400' : 'text-rose-400');
+}
+function acctChip(txt, cls) {
+    return '<span class="inline-block text-[9px] uppercase tracking-widest font-bold rounded px-1.5 py-0.5 ' + (cls || 'bg-accentCyan/10 text-accentCyan') + '">' + txt + '</span>';
+}
+function acctBarRow(label, pct, cls, valStr) {
+    const w = Math.max(2, Math.min(100, Number(pct) || 0));
+    return '<div class="flex items-center gap-2 text-[10px] font-mono py-0.5">' +
+        '<span class="w-40 truncate text-textMuted shrink-0">' + label + '</span>' +
+        '<div class="flex-1 h-1.5 rounded-full bg-darkBg overflow-hidden">' +
+        '<div class="h-full rounded-full ' + cls + '" style="width:' + w + '%"></div></div>' +
+        '<span class="w-28 text-right shrink-0 text-gray-300">' + (valStr || '') + '</span></div>';
+}
+
+function toggleAccountIntelMode(btn) {
+    const deep = document.getElementById('acct-intel-deep');
+    if (!deep) return;
+    const showing = !deep.classList.contains('hidden');
+    deep.classList.toggle('hidden');
+    window.__acctIntelDeepVisible = deep.classList.contains('hidden') ? false : true;
+    if (btn) {
+        btn.innerHTML = showing
+            ? '<i class="fa-solid fa-microscope mr-1"></i>Deep Analysis'
+            : '<i class="fa-solid fa-compress mr-1"></i>Hide Analysis';
+    }
+}
+
+function renderAccountIntelTexts(a, data) {
+    const box = document.getElementById('acct-intel-texts');
+    if (!box) return;
+    const lines = [];
+    const add = (txt, cls) => lines.push(
+        '<div class="flex items-start gap-2 py-0.5">' +
+        '<span class="text-accentCyan mt-0.5 text-[10px] w-3 text-center shrink-0">&#9656;</span>' +
+        '<span class="' + (cls || 'text-textMuted') + '">' + txt + '</span></div>');
+    const denom = (a.win_rate_denominator || 'NONE').toLowerCase();
+
+    // 1. Win-rate & loss-rate reconciliation (the core debug tool).
+    if (a.win_rate != null && a.loss_rate_decided != null) {
+        const wr = Number(a.win_rate);
+        const verdict = wr >= 50 ? 'count edge confirmed'
+            : (wr >= 40 ? 'counts are marginal' : 'counts are bleeding');
+        const cls = wr >= 50 ? 'text-emerald-400' : (wr >= 40 ? 'text-amber-400' : 'text-rose-400');
+        add('Win rate <b class="' + cls + '">' + acctPctV(a.win_rate) + '</b> vs loss rate <b class="text-rose-400">' +
+            acctPctV(a.loss_rate_decided) + '</b> (decided, denominator "' + denom + '") &mdash; ' + verdict + '. ' +
+            'Scratches included: win-rate-all <b>' + acctPctV(a.win_rate_all) + '</b>, loss-rate-all <b class="text-rose-400">' +
+            acctPctV(a.loss_rate_all) + '</b>.', 'text-textMuted');
+    }
+    if (a.pnl_weighted_win_rate != null) {
+        const pw = Number(a.pnl_weighted_win_rate);
+        add('PnL-weighted win rate <b class="' + (pw >= 50 ? 'text-emerald-400' : 'text-rose-400') + '">' + acctPctV(pw) + '</b> &mdash; ' +
+            'the dollar-weighted counterpart of the trade-count win rate' +
+            (a.win_rate != null ? ' (' + (pw > a.win_rate ? 'profits concentrate in winners' : 'wins are small, losses heavy') + ').' : '.'), 'text-textMuted');
+    }
+    if (a.total_costs != null && a.net_pnl != null) {
+        add('Cost drag ' + acctFmtMoney(a.total_costs) + ' (comm + swap) = ' +
+            (a.cost_drag_pct != null ? acctPctV(a.cost_drag_pct) : 'n/a') + ' of gross profit; net ' +
+            acctFmtMoney(a.net_pnl) + '.', Number(a.total_costs) > 0 ? 'text-amber-400' : 'text-textMuted');
+    }
+    if (a.stop_loss_share != null) {
+        const pct = (a.stop_loss_share * 100).toFixed(1);
+        if (a.stop_loss_share >= 0.7) {
+            add(pct + '% of losses exited at a protective stop &mdash; stop discipline is doing the closing (' +
+                (a.avg_loss_r != null ? 'avg loss ' + acctNum(a.avg_loss_r, 3) + 'R' : 'avg loss R n/a') + ').', 'text-emerald-400');
+        } else {
+            add('Only ' + pct + '% of losses exited at a stop &mdash; losers may be bleeding out via manual/emergency/strategy exits (' +
+                (a.avg_loss_r != null ? 'avg loss <b>' + acctNum(a.avg_loss_r, 3) + 'R</b>' : 'avg loss R n/a') + ').', 'text-amber-400');
+        }
+    }
+    if (a.avg_mae_r != null && a.avg_mfe_r != null) {
+        add('Avg adverse excursion ' + acctR(a.avg_mae_r) + ' vs avg favourable excursion ' + acctR(a.avg_mfe_r) + ' &mdash; ' +
+            (a.avg_mae_r > a.avg_mfe_r ? 'the book fights the market before it works.' : 'the book generally works before it fights.'), 'text-textMuted');
+    }
+    if (a.loss_efficiency_pct != null) {
+        add('Losers gave back ~' + acctNum(a.loss_efficiency_pct, 1) + '% of their peak favourable excursion before closing red.', 'text-textMuted');
+    }
+    if (a.expectancy_breakeven_incl != null) {
+        const e = Number(a.expectancy_breakeven_incl);
+        add('Expectancy incl. breakevens <b class="' + (e >= 0 ? 'text-emerald-400' : 'text-rose-400') + '">' + acctFmtMoney(e) +
+            '</b> per trade (' + a.sample_trades + ' closed). ' +
+            (e >= 0 ? 'Positive on raw money.' : 'Negative on raw money &mdash; costs + giveback exceed edge.'),
+            e >= 0 ? 'text-emerald-400' : 'text-rose-400');
+    }
+    if (lines.length === 0) {
+        add('Not enough closed trades for performance intelligence yet.', 'text-textMuted');
+    }
+    box.innerHTML = lines.join('');
+}
+
+// ============================ DEEP ANALYSIS ================================
+// renderAccountDeepAnalysis(a, data) — builds the "Deep Analysis" block.
+// Every section derives from real aggregates; thresholds are honest heuristics.
+// ============================ SECTION A: VERDICT ============================
+
+function acctVerdict(a) {
+    // Overall tone from the two most load-bearing facts: expectancy sign
+    // (decided denominator) and stop-loss discipline share.
+    if (a.expectancy == null && a.net_pnl == null) {
+        return { label: 'NEUTRAL', text: 'Not enough evidence for a verdict yet.', cls: 'text-gray-400', bar: 'bg-gray-500' };
+    }
+    const exp = a.expectancy != null ? Number(a.expectancy) : (Number(a.net_pnl) / Math.max(1, a.sample_trades));
+    const stop = a.stop_loss_share != null ? Number(a.stop_loss_share) : null;
+    const wr = a.win_rate != null ? Number(a.win_rate) : 0;
+    const lose = exp < 0;
+    const undisciplined = stop != null && stop < 0.7;
+    if (lose && undisciplined) {
+        return { label: 'BLEEDING', text: 'Negative expectancy AND weak stop discipline — the two compounding problems are both live.',
+            cls: 'text-rose-400', bar: 'bg-rose-500' };
+    }
+    if (lose) {
+        return { label: 'LOSING EDGE', text: 'Negative expectancy: every decided trade erodes equity on average (costs + giveback included).',
+            cls: 'text-rose-400', bar: 'bg-rose-500' };
+    }
+    if (undisciplined) {
+        return { label: 'FRAGILE', text: 'Positive expectancy but losers rarely end at a stop — the edge depends on manual mercy, not the risk system.',
+            cls: 'text-amber-400', bar: 'bg-amber-500' };
+    }
+    if (wr >= 50 && exp > 0) {
+        return { label: 'CONFIRMED', text: 'Positive expectancy with a count edge — the classic profile of a system that works as designed.',
+            cls: 'text-emerald-400', bar: 'bg-emerald-500' };
+    }
+    return { label: 'GRINDING', text: 'Positive expectancy despite a low win rate — the payoff profile carries the book.', cls: 'text-sky-400', bar: 'bg-sky-500' };
+}
+
+// ==================== SECTION B: EDGE REALITY (builders) ====================
+
+function acctSecEdge(a) {
+    const wins = a.win_rate != null ? Number(a.win_rate) : null;
+    const loss = a.loss_rate_decided != null ? Number(a.loss_rate_decided) : null;
+    const wrAll = a.win_rate_all != null ? Number(a.win_rate_all) : null;
+    const lossAll = a.loss_rate_all != null ? Number(a.loss_rate_all) : null;
+    const pnlw = a.pnl_weighted_win_rate != null ? Number(a.pnl_weighted_win_rate) : null;
+    const rows = [];
+    if (wins != null && loss != null) {
+        rows.push(acctBarRow('wins (decided)', wins, 'bg-emerald-500', acctPctV(wins)));
+        rows.push(acctBarRow('losses (decided)', loss, 'bg-rose-500', acctPctV(loss)));
+    }
+    if (wrAll != null && lossAll != null) {
+        rows.push(acctBarRow('wins (all incl. scratches)', wrAll, 'bg-emerald-500/60', acctPctV(wrAll)));
+        rows.push(acctBarRow('losses (all)', lossAll, 'bg-rose-500/60', acctPctV(lossAll)));
+    }
+    if (pnlw != null) {
+        rows.push(acctBarRow('PnL-share from winners', pnlw, 'bg-accentCyan', acctPctV(pnlw)));
+    }
+    if (!rows.length) {
+        return '<div class="text-textMuted italic text-xs">No closed-trade sample for rate mathematics yet.</div>';
+    }
+
+    // Expectancy waterfall as bar segments: gross profit vs gross loss vs costs.
+    let waterfall = '';
+    if (a.gross_profit != null && a.gross_loss != null) {
+        const gp = Math.max(0, Number(a.gross_profit));
+        const gl = Math.max(0, Number(a.gross_loss));
+        const costs = a.total_costs != null ? Math.max(0, Number(a.total_costs)) : 0;
+        const tot = (gp + gl + costs) || 1;
+        const wGp = Math.round(gp / tot * 100), wGl = Math.round(gl / tot * 100), wC = Math.max(0, 100 - wGp - wGl);
+        waterfall = '<div class="mt-2">' +
+            '<div class="flex h-2.5 rounded-full overflow-hidden bg-darkBg">' +
+            '<div class="bg-emerald-500" style="width:' + wGp + '%" title="gross profit"></div>' +
+            '<div class="bg-rose-500" style="width:' + wGl + '%" title="gross loss"></div>' +
+            '<div class="bg-amber-400" style="width:' + wC + '%" title="costs"></div></div>' +
+            '<div class="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-[10px] font-mono text-textMuted">' +
+            '<span><span class="text-emerald-400">&#9632;</span> gross profit ' + acctFmtMoney(gp) + '</span>' +
+            '<span><span class="text-rose-400">&#9632;</span> gross loss ' + acctFmtMoney(gl) + '</span>' +
+            '<span><span class="text-amber-400">&#9632;</span> costs ' + acctFmtMoney(costs) + '</span></div></div>';
+    }
+
+    // R-based edge column.
+    const rCells = [
+        ['Avg R', acctR(a.avg_r), acctTone(a.avg_r)],
+        ['Avg Win R (realized)', a.avg_r_multiple != null ? acctNum(a.avg_r_multiple, 3) + 'R' : '--', a.avg_r_multiple != null && a.avg_r_multiple > 0 ? 'text-emerald-400' : 'text-gray-400'],
+        ['Avg Loss R (realized)', a.avg_loss_r != null ? acctNum(a.avg_loss_r, 3) + 'R' : '--', a.avg_loss_r != null && a.avg_loss_r < 0 ? 'text-rose-400' : 'text-gray-400'],
+        ['R sample coverage', a.r_coverage_ratio != null ? acctPct1(a.r_coverage_ratio) : '--', 'text-gray-300'],
+        ['Payoff ratio', acctNum(a.payoff_ratio, 2), acctTone(a.payoff_ratio != null ? Number(a.payoff_ratio) - 1 : null)],
+    ];
+    const rHtml = '<div class="grid grid-cols-2 gap-2">' +
+        rCells.map(c => '<div class="bg-darkBg/50 rounded-md px-2 py-1.5 border border-borderClr/40">' +
+            '<span class="text-[9px] uppercase tracking-wider text-textMuted block">' + c[0] + '</span>' +
+            '<span class="font-mono font-bold text-xs ' + c[2] + '">' + c[1] + '</span></div>').join('') + '</div>';
+
+    return '<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">' +
+        '<div class="space-y-1">' + rows.join('') + waterfall + '</div>' +
+        '<div>' + rHtml + '</div></div>';
+}
+// ============== SECTION C: EXIT DISCIPLINE & LOSS PERSISTENCE ==============
+
+function acctSecExit(a) {
+    const stop = a.stop_loss_share;
+    const lossR = a.avg_loss_r != null ? Math.abs(Number(a.avg_loss_r)) : null;
+    const hold = a.avg_hold_sec;
+    const rows = [];
+
+    if (stop != null) {
+        const pct = (stop * 100).toFixed(1);
+        const ok = stop >= 0.7;
+        rows.push('<div class="flex items-center gap-3 text-sm">' +
+            '<span class="w-36 shrink-0 text-[10px] uppercase tracking-wider text-textMuted">stop-loss exits</span>' +
+            '<div class="flex-1 h-2 rounded-full bg-darkBg overflow-hidden">' +
+            '<div class="h-full rounded-full ' + (ok ? 'bg-emerald-500' : 'bg-amber-500') + '" style="width:' + pct + '%"></div></div>' +
+            '<span class="font-mono font-black text-xs w-14 text-right ' + (ok ? 'text-emerald-400' : 'text-amber-400') + '">' + pct + '%</span></div>');
+        rows.push('<div class="text-[10px] text-textMuted leading-relaxed">' +
+            (ok ? 'Stop system is doing the closing. Discipline is structural, not incidental.'
+                : 'Two-thirds or more of losers did NOT end at a stop. Losers are bleeding out via manual / emergency / strategy exits.') + '</div>');
+        if (lossR != null) {
+            const cls = lossR <= 1.0 ? 'text-emerald-400' : (lossR <= 1.5 ? 'text-amber-400' : 'text-rose-400');
+            rows.push('<div class="text-xs font-mono ' + cls + '">avg loss <b>' + acctNum(a.avg_loss_r, 3) + 'R</b>' +
+                (lossR > 1.0 ? ' &mdash; losses exceed the planned risk unit; the risk plan is not the binding constraint.' : ' &mdash; losses stay inside the planned risk unit.') + '</div>');
+        }
+    } else {
+        rows.push('<div class="text-textMuted italic text-xs">No exit-classification evidence yet.</div>');
+    }
+    if (hold != null) {
+        const h = Math.round(Number(hold));
+        rows.push('<div class="text-xs text-textMuted">avg hold <b class="text-gray-200">' + h + 's</b> per trade' +
+            (h <= 90 ? ' &mdash; scalper timing profile.' : (h <= 600 ? ' &mdash; intraday swing-leaning.' : ' &mdash; persistent book; watch overnight gaps.')) + '</div>');
+    }
+    rows.push('<div class="text-xs text-textMuted">avg MAE ' + acctR(a.avg_mae_r) + ' vs avg MFE ' + acctR(a.avg_mfe_r) +
+        (a.avg_mae_r != null && a.avg_mfe_r != null ? ' &mdash; ' +
+            (Number(a.avg_mae_r) > Number(a.avg_mfe_r) ? 'adverse excursion dominates: entries fight the move.' : 'favourable excursion dominates: entries enjoy follow-through.') : '') + '</div>');
+    if (a.loss_efficiency_pct != null) {
+        rows.push('<div class="text-xs text-textMuted">losers gave back ~<b class="text-amber-400">' + acctNum(a.loss_efficiency_pct, 1) + '%</b> of peak favourable excursion before closing red' +
+            (Number(a.loss_efficiency_pct) > 50 ? ' &mdash; exits are late on the winner side of losers.' : '.') + '</div>');
+    }
+    if (a.win_mae_capture_pct != null) {
+        rows.push('<div class="text-xs text-textMuted">winners kept only ~<b class="text-gray-200">' + acctNum(a.win_mae_capture_pct, 1) + '%</b> of adverse excursion before closing green (100% = perfect stop discipline).</div>');
+    }
+    return '<div class="space-y-2">' + rows.join('') + '</div>';
+}
+
+// ================= SECTION D: PROFIT / LOSS DISTRIBUTION ===================
+
+function acctSecDistribution(a) {
+    const winN = a.max_consecutive_wins;
+    const lossN = a.max_consecutive_losses;
+    const avgWin = a.average_win != null ? Number(a.average_win) : null;
+    const avgLoss = a.average_loss != null ? Number(a.average_loss) : null;
+    const payoff = a.payoff_ratio != null ? Number(a.payoff_ratio) : null;
+    const skew = a.profit_skew;
+    const cells = [];
+    cells.push(['Avg Win', avgWin != null ? acctFmtMoney(avgWin) : '--', avgWin != null ? 'text-emerald-400' : 'text-gray-400']);
+    cells.push(['Avg Loss', avgLoss != null ? acctFmtMoney(avgLoss) : '--', avgLoss != null ? 'text-rose-400' : 'text-gray-400']);
+    cells.push(['Payoff Ratio', payoff != null ? acctNum(payoff, 2) : '--', payoff != null && payoff >= 1 ? 'text-emerald-400' : (payoff != null ? 'text-rose-400' : 'text-gray-400')]);
+    cells.push(['Best Trade', a.best_trade != null ? acctFmtMoney(a.best_trade) : '--', 'text-emerald-400']);
+    cells.push(['Worst Trade', a.worst_trade != null ? acctFmtMoney(a.worst_trade) : '--', 'text-rose-400']);
+    cells.push(['Profit Skew', skew != null ? acctNum(skew, 2) : '--', skew != null && skew > 0 ? 'text-emerald-400' : 'text-gray-400']);
+    cells.push(['Loss Skew', a.loss_skew != null ? acctNum(a.loss_skew, 2) : '--', a.loss_skew != null && a.loss_skew < 0 ? 'text-rose-400' : 'text-gray-400']);
+    cells.push(['Max Win Streak', winN != null ? String(winN) : '--', 'text-emerald-400']);
+    cells.push(['Max Loss Streak', lossN != null ? String(lossN) : '--', 'text-rose-400']);
+
+    // pairwise verdict
+    let verdict = '';
+    if (avgWin != null && avgLoss != null) {
+        const ratio = avgWin / Math.abs(avgLoss);
+        const met = payoff != null ? ratio / payoff : ratio;
+        if (met < 1) {
+            verdict = 'The win:loss size ratio is <b class="text-rose-400">below breakeven for this win rate</b> &mdash; winners do not pay for losers at the current hit rate.';
+        } else if (met < 1.25) {
+            verdict = 'Win:loss size ratio just about pays the hit rate &mdash; but only just; costs can flip it.';
+        } else {
+            verdict = 'The win:loss size ratio <b class="text-emerald-400">exceeds the breakeven ratio</b> &mdash; payoff structure supports the win rate.';
+        }
+        if (winN != null && lossN != null && lossN > 4 && lossN > winN * 2) {
+            verdict += ' Max loss streak ' + lossN + ' vs win streak ' + winN + ' &mdash; drawdowns cluster harder than recoveries.';
+        }
+    }
+    return '<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">' +
+        cells.map(c => '<div class="bg-darkBg/50 rounded-md px-2 py-1.5 border border-borderClr/40">' +
+            '<span class="text-[9px] uppercase tracking-wider text-textMuted block">' + c[0] + '</span>' +
+            '<span class="font-mono font-bold text-xs ' + c[2] + '">' + c[1] + '</span></div>').join('') +
+        '</div>' + (verdict ? '<div class="mt-2 text-xs text-textMuted">' + verdict + '</div>' : '');
+}
+// =============== SECTION E: SCENARIO ANALYSIS (5 core + bonus) ==============
+// acctScenario*() returns {title, icon, tone, body} or null when the sample
+// cannot support the scenario. Never fabricates.
+
+function acctScenarioStopDiscipline(a) {
+    if (a.stop_loss_share == null || a.avg_loss_r == null) return null;
+    const stop = Number(a.stop_loss_share);
+    const lossR = Math.abs(Number(a.avg_loss_r));
+    const title = stop >= 0.7 ? 'Stop discipline is doing the closing' : 'Losers are bleeding out';
+    const icon = stop >= 0.7 ? 'fa-shield-halved' : 'fa-truck-medical';
+    const tone = stop >= 0.7 ? 'emerald' : 'amber';
+    let body;
+    if (stop >= 0.7) {
+        body = '<p>On this sample, <b>' + (stop * 100).toFixed(1) + '% of losses ended at a protective stop</b> and the average loser burns ' +
+            acctNum(a.avg_loss_r, 3) + 'R. The exit engine is the binding constraint on losses &mdash; the risk plan is enforced in practice, not just on paper.</p>' +
+            '<p class="mt-1">A healthy stop-loss share means the loss distribution is truncated at the planned risk unit; the remaining bleed (if any) comes from strategy/manual exits, not from stops blowing through.</p>' +
+            (lossR > 1.0 ? '<p class="mt-1 text-rose-400">Caveat: avg loss of ' + acctNum(a.avg_loss_r, 3) + 'R still exceeds the 1R plan &mdash; slippage, gaps or mid-bar stops are leaking beyond the unit.</p>' : '');
+    } else {
+        body = '<p>Only <b>' + (stop * 100).toFixed(1) + '% of losers closed at a stop</b>. The other ' + (100 - stop * 100).toFixed(1) +
+            '% exited via manual, emergency or strategy paths &mdash; and the average loser still costs ' + acctNum(a.avg_loss_r, 3) + 'R.</p>' +
+            '<p class="mt-1">When the stop system closes fewer than ~70% of losers, the tail of the loss distribution is controlled by human reaction time. Fixing exit classification first will show whether the bleed is strategy exits (by design) or mercy exits (by hesitation).</p>';
+    }
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+function acctScenarioExcursion(a) {
+    if (a.avg_mae_r == null || a.avg_mfe_r == null) return null;
+    const mae = Number(a.avg_mae_r), mfe = Number(a.avg_mfe_r);
+    const adverse = mae > mfe;
+    const title = adverse ? 'The book fights the market before it works' : 'The book works before it fights';
+    const icon = adverse ? 'fa-person-falling' : 'fa-person-running';
+    const tone = adverse ? 'rose' : 'emerald';
+    let body;
+    if (adverse) {
+        body = '<p>Avg adverse excursion <b>' + acctNum(mae, 3) + 'R</b> vs avg favourable excursion <b>' + acctNum(mfe, 3) + 'R</b>.' +
+            ' Trades go underwater by more than they ever go green before the close &mdash; entries are early, counter-trend, or both.</p>' +
+            '<p class="mt-1">Every trade that must survive an adverse excursion before it can pay is a trade paying the market for patience. The fix is entry-side: better timing (later entries), or wider stops that let favourable excursion develop without being stopped first.</p>';
+    } else {
+        body = '<p>Avg favourable excursion <b>' + acctNum(mfe, 3) + 'R</b> exceeds avg adverse excursion <b>' + acctNum(mae, 3) + 'R</b>.' +
+            ' Positions generally move toward profit before they move against &mdash; the entry timing is directionally sound.</p>' +
+            '<p class="mt-1">When MFE dominates MAE but the book still loses, the loss is not in entry, it is in exit: winners are given back or cut early. Focus the audit on the exit side.</p>';
+    }
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+function acctScenarioGiveback(a) {
+    if (a.loss_efficiency_pct == null) return null;
+    const gb = Number(a.loss_efficiency_pct);
+    const title = gb > 50 ? 'Losers give back their peak' : 'Losers cut their winners early';
+    const icon = gb > 50 ? 'fa-rotate-left' : 'fa-scissors';
+    const tone = gb > 50 ? 'amber' : 'emerald';
+    let body;
+    if (gb > 50) {
+        body = '<p>Losers gave back ~<b>' + acctNum(gb, 1) + '%</b> of their peak favourable excursion before closing red.' +
+            ' A loser that was once +2R and closed -0.5R is not a bad entry, it is a bad exit.</p>' +
+            '<p class="mt-1">Giveback this large is the signature of trailing stops that are too wide, take-profit levels that are too far, or manual patience that turns winners into losers. Every giveback point is edge that existed and was then surrendered.</p>';
+    } else {
+        body = '<p>Losers gave back only ~<b>' + acctNum(gb, 1) + '%</b> of their peak favourable excursion.' +
+            ' When a loser does go green, the exit system cuts it before it can round-trip.</p>' +
+            '<p class="mt-1">This is the healthy pattern: the book takes its losers quickly even when the market briefly agreed with the entry. The remaining problem, if any, is on the winner side (win MAE capture).</p>';
+    }
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+function acctScenarioCostDrag(a) {
+    if (a.total_costs == null) return null;
+    const costs = Number(a.total_costs);
+    const drag = a.cost_drag_pct != null ? Number(a.cost_drag_pct) : null;
+    const net = a.net_pnl != null ? Number(a.net_pnl) : null;
+    if (costs === 0 && drag == null && net == null) return null;
+    const title = costs > 0 ? 'Costs are a tax on every trade' : 'Cost drag is flat';
+    const icon = costs > 0 ? 'fa-receipt' : 'fa-circle-check';
+    const tone = costs > 0 ? 'amber' : 'emerald';
+    let body;
+    if (costs > 0) {
+        body = '<p>Total costs (commission + swap) = <b>' + acctFmtMoney(costs) + '</b>' +
+            (drag != null ? ', <b>' + acctPctV(drag) + '</b> of gross profit' : '') + '. Net PnL ' + acctFmtMoney(net) + '.</p>' +
+            '<p class="mt-1">Costs are only neutral when the gross edge covers them. With ' + a.sample_trades + ' closed trades the per-trade cost is ' +
+            (a.sample_trades ? acctFmtMoney(costs / a.sample_trades) : '--') + ' &mdash; every trade starts that far behind. If the edge per trade is smaller than the cost per trade, no win-rate tuning fixes it: only fewer, better trades do.</p>';
+    } else {
+        body = '<p>Cost drag is <b>flat</b> &mdash; the broker\u2019s commission/swap stack is not eating the book.</p>' +
+            '<p class="mt-1">With costs neutral, any remaining net loss is 100% execution/edge problem, not overhead. That simplifies the diagnosis: it is not the broker, it is the system.</p>';
+    }
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+function acctScenarioStreaks(a) {
+    if (a.max_consecutive_losses == null) return null;
+    const l = Number(a.max_consecutive_losses);
+    const w = a.max_consecutive_wins != null ? Number(a.max_consecutive_wins) : 0;
+    const title = l > 4 ? 'Loss streaks cluster harder than recoveries' : 'Streak profile is balanced';
+    const icon = l > 4 ? 'fa-wave-square' : 'fa-scale-balanced';
+    const tone = l > 4 ? 'rose' : 'emerald';
+    let body;
+    if (l > 4) {
+        body = '<p>Max loss streak <b>' + l + '</b> vs max win streak <b>' + w + '</b>.' +
+            ' When the market regime turns, the book loses ' + l + ' in a row before a single recovery &mdash; that is the shape of a drawdown.</p>' +
+            '<p class="mt-1">A ' + l + '-streak at the current risk per trade is the true tail of the equity curve. If the risk plan sizes for the average loss but the streak sizes for the maximum, the account is under-capitalized for its own regime risk.</p>';
+    } else {
+        body = '<p>Max loss streak <b>' + l + '</b> vs max win streak <b>' + w + '</b>.' +
+            ' Neither side clusters pathologically &mdash; the book alternates, which is what a mean-reversion-ish scalp profile should do.</p>' +
+            '<p class="mt-1">Balanced streaks mean variance is not the primary enemy; expectancy per trade is. Fix the edge, not the streaks.</p>';
+    }
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+// =========== SECTION E (cont.): BONUS SCENARIOS + COMPOSER =================
+
+function acctScenarioExpectancy(a) {
+    if (a.expectancy_breakeven_incl == null) return null;
+    const e = Number(a.expectancy_breakeven_incl);
+    const decided = a.expectancy != null ? Number(a.expectancy) : null;
+    const title = e >= 0 ? 'Breakeven-inclusive expectancy is positive' : 'Breakeven-inclusive expectancy is negative';
+    const icon = e >= 0 ? 'fa-seedling' : 'fa-triangle-exclamation';
+    const tone = e >= 0 ? 'emerald' : 'rose';
+    let body;
+    if (e >= 0) {
+        body = '<p>Expectancy incl. breakevens is <b>' + acctFmtMoney(e) + '</b> per trade over ' + a.sample_trades + ' closed trades.' +
+            (decided != null ? ' The decided-only version is ' + acctFmtMoney(decided) + ' &mdash; scratches dilute it to ' + acctFmtMoney(e) + '.' : '') + '</p>' +
+            '<p class="mt-1">Positive raw-money expectancy is the single most load-bearing number in this panel: it means the system currently prices in all costs and still pays. Protect it &mdash; the next step is scaling it without breaking the denominators.</p>';
+    } else {
+        body = '<p>Every closed trade (including breakevens) costs <b>' + acctFmtMoney(Math.abs(e)) + '</b> on average &mdash; ' +
+            a.sample_trades + ' trades × that drag = ' + acctFmtMoney(a.net_pnl || (e * a.sample_trades)) + ' of bleed.</p>' +
+            '<p class="mt-1">Negative expectancy with a positive gross profile means the hole is in exit quality (giveback), cost control, or both. Fixing either flips the number; fixing both is the whole game.</p>';
+    }
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+function acctScenarioWinnerMae(a) {
+    if (a.win_mae_capture_pct == null) return null;
+    const cap = Number(a.win_mae_capture_pct);
+    const title = cap >= 70 ? 'Winners keep their adverse excursion' : 'Winners bleed adverse excursion before closing green';
+    const icon = cap >= 70 ? 'fa-angles-up' : 'fa-arrow-trend-down';
+    const tone = cap >= 70 ? 'emerald' : 'rose';
+    let body;
+    if (cap >= 70) {
+        body = '<p>Winner MAE capture is <b>' + acctNum(cap, 1) + '%</b> &mdash; winners held ~' + acctNum(cap, 1) +
+            '% of their adverse excursion back before closing green. Entry timing on winners is clean.</p>' +
+            '<p class="mt-1">High capture means the entry-to-profit path is short. If the book still loses, the pressure is on the loser side of the distribution, not the winner side.</p>';
+    } else {
+        body = '<p>Winners took on <b>' + acctNum(cap, 1) + '%</b> of their adverse excursion before green &mdash; even the winners fight the market before they pay.</p>' +
+            '<p class="mt-1">Low capture + negative expectancy is the classic early-entry signature: the model enters before confirmation and pays the market for patience on both sides.</p>';
+    }
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+function acctScenarioRiskPerTrade(a) {
+    if (a.avg_risk_usd == null) return null;
+    const r = Number(a.avg_risk_usd);
+    const title = r > 0 ? 'Risk per trade is the unit the whole book is measured in' : 'Risk per trade is flat';
+    const icon = 'fa-coins';
+    const tone = 'sky';
+    let body;
+    if (r > 0) {
+        body = '<p>Avg risk deployed per trade is <b>' + acctFmtMoney(r) + '</b>. Every R-denominated stat in this panel (avg R, avg MAE/MFE, avg loss R) is a multiple of this unit.</p>' +
+            '<p class="mt-1">With risk per trade this size, a ' + (a.max_consecutive_losses || '?') + '-loss streak is a ' +
+            acctFmtMoney(r * Math.max(1, Number(a.max_consecutive_losses) || 1)) + ' drawdown before recoveries. The risk plan is what converts a bad streak into an account problem &mdash; size it for the streak, not the average.</p>';
+    } else {
+        body = '<p>No risk basis recovered for R-denominated stats yet (r_sample_count ' + (a.r_sample_count || 0) + ').</p>';
+    }
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+function acctScenarioRatios(a) {
+    if (a.sharpe_ratio == null && a.sortino_ratio == null && a.calmar_ratio == null && a.sqn == null) return null;
+    const sh = a.sharpe_ratio != null ? Number(a.sharpe_ratio) : null;
+    const so = a.sortino_ratio != null ? Number(a.sortino_ratio) : null;
+    const ca = a.calmar_ratio != null ? Number(a.calmar_ratio) : null;
+    const sq = a.sqn != null ? Number(a.sqn) : null;
+    const negCount = [sh, so, ca, sq].filter(v => v != null && v < 0).length;
+    const title = negCount >= 2 ? 'Risk-adjusted ratios confirm the bleed' : 'Risk-adjusted ratios are mixed';
+    const icon = negCount >= 2 ? 'fa-heart-crack' : 'fa-scale-unbalanced';
+    const tone = negCount >= 2 ? 'rose' : 'amber';
+    const fmtCol = v => v != null ? '<b class="' + (v >= 0 ? 'text-emerald-400' : 'text-rose-400') + '">' + acctNum(v, 2) + '</b>' : '--';
+    let body = '<p>Sharpe ' + fmtCol(sh) + ' · Sortino ' + fmtCol(so) + ' · Calmar ' + fmtCol(ca) + ' · SQN ' + fmtCol(sq) + '.</p>';
+    if (negCount >= 2) {
+        body += '<p class="mt-1">When the risk-adjusted core is negative across multiple lenses, the drawdown is not a blip &mdash; it is the statistical expectation. The equity curve is a fair price for this process as-is.</p>' +
+            '<p class="mt-1">No single ratio need be textbook-good; but they all being negative together is the strongest signal in the panel that the current process, at the current size, should not be scaled yet.</p>';
+    } else {
+        body += '<p class="mt-1">Mixed ratios: some lenses negative, some not &mdash; the risk profile is not uniformly broken, which means targeted fixes (exit discipline, giveback) can land on the negative side without rebuilding the whole book.</p>';
+    }
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+function acctScenarioHoldTime(a) {
+    if (a.avg_hold_sec == null) return null;
+    const h = Math.round(Number(a.avg_hold_sec));
+    const vwap = a.net_pnl != null ? Number(a.net_pnl) : null;
+    const title = h <= 90 ? 'Scalper timing profile' : (h <= 600 ? 'Intraday swing-leaning profile' : 'Persistent book, watch the overnight');
+    const icon = h <= 90 ? 'fa-bolt' : (h <= 600 ? 'fa-hourglass-half' : 'fa-moon');
+    const tone = h <= 90 ? 'accent' : (h <= 600 ? 'sky' : 'amber');
+    const body = '<p>Avg hold is <b>' + h + 's</b> per trade.' +
+        (h <= 90 ? ' A pure scalp profile: ' + (vwap != null && vwap < 0 ? 'the book bleeds on spread-heavy quick exits &mdash; cost per trade matters more than win rate.' : 'timing dominates and costs matter most.') :
+            (h <= 600 ? ' Positions ride minutes, not seconds &mdash; giveback management and MFE capture matter more than raw speed.' :
+                ' Holds that long at FX scale carry overnight/rollover risk into every prayer &mdash; swap drag (see cost drag) is a permanent headwind.')) + '</p>';
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+function acctScenarioSkewness(a) {
+    if (a.profit_skew == null && a.loss_skew == null) return null;
+    const ps = a.profit_skew != null ? Number(a.profit_skew) : null;
+    const ls = a.loss_skew != null ? Number(a.loss_skew) : null;
+    const good = (ps != null && ps > 0) && (ls != null && ls < 0);
+    const title = good ? 'Distribution shape favours the book' : 'Distribution shape fights the book';
+    const icon = good ? 'fa-chart-simple' : 'fa-chart-pie';
+    const tone = good ? 'emerald' : 'rose';
+    const body = '<p>Profit skew <b>' + (ps != null ? acctNum(ps, 2) : '--') + '</b>' +
+        ' &middot; Loss skew <b>' + (ls != null ? acctNum(ls, 2) : '--') + '</b>. ' +
+        (good
+            ? 'Positive profit skew (occasional large winners) + negative loss skew (many small losers) is the textbook winning shape.'
+            : 'The shape here means wins cluster small and losses come in chunks &mdash; the tail is on the wrong side.') + '</p>';
+    return { title: title, icon: icon, tone: tone, body: body };
+}
+
+// ---- composer -------------------------------------------------------------
+
+function acctScenarioCard(s) {
+    if (!s) return '';
+    const toneCls = {
+        emerald: ['border-emerald-400/30', 'text-emerald-400'],
+        rose: ['border-rose-400/30', 'text-rose-400'],
+        amber: ['border-amber-400/30', 'text-amber-400'],
+        sky: ['border-sky-400/30', 'text-sky-400'],
+        accent: ['border-accentCyan/30', 'text-accentCyan'],
+    }[s.tone] || ['border-borderClr/50', 'text-accentCyan'];
+    return '<div class="rounded-lg border ' + toneCls[0] + ' bg-darkBg/40 p-3">' +
+        '<div class="flex items-center gap-2 mb-1.5">' +
+        '<i class="fa-solid ' + s.icon + ' ' + toneCls[1] + '"></i>' +
+        '<span class="text-xs font-bold text-gray-100">' + s.title + '</span></div>' +
+        '<div class="text-[11px] leading-relaxed text-textMuted">' + s.body + '</div></div>';
+}
+
+function renderAccountDeepAnalysis(a, data) {
+    const wrap = document.getElementById('acct-intel-deep');
+    if (!wrap) return;
+    const verdict = acctVerdict(a);
+    let html = '';
+
+    // Verdict banner
+    html += '<div class="rounded-lg border border-borderClr/60 bg-darkBg/40 p-3 flex items-center gap-3">' +
+        '<span class="text-2xl ' + verdict.cls + '"><i class="fa-solid fa-gauge-high"></i></span>' +
+        '<div><div class="flex items-center gap-2"><span class="uppercase tracking-widest text-[9px] text-textMuted">verdict</span>' +
+        '<span class="text-xs font-black ' + verdict.cls + '">' + verdict.label + '</span></div>' +
+        '<div class="text-[11px] text-textMuted">' + verdict.text + '</div></div></div>';
+
+    // Section B: Edge reality
+    html += '<div><div class="flex items-center gap-2 mb-2">' +
+        '<span class="text-[10px] uppercase tracking-widest text-textMuted/80 font-bold">Edge Reality</span>' +
+        '<span class="text-[9px] text-textMuted/50">counts · dollar-weight · R-unit</span></div>' + acctSecEdge(a) + '</div>';
+
+    // Section C: Exit discipline
+    html += '<div><div class="flex items-center gap-2 mb-2">' +
+        '<span class="text-[10px] uppercase tracking-widest text-textMuted/80 font-bold">Exit Discipline &amp; Loss Persistence</span>' +
+        '<span class="text-[9px] text-textMuted/50">stop share · loss R · excursion</span></div>' + acctSecExit(a) + '</div>';
+
+    // Section D: Distribution
+    html += '<div><div class="flex items-center gap-2 mb-2">' +
+        '<span class="text-[10px] uppercase tracking-widest text-textMuted/80 font-bold">Profit &amp; Loss Distribution</span>' +
+        '<span class="text-[9px] text-textMuted/50">sizes · skew · streaks</span></div>' + acctSecDistribution(a) + '</div>';
+
+    // Section E: Scenario cards
+    const scenarios = [
+        acctScenarioStopDiscipline(a),
+        acctScenarioExcursion(a),
+        acctScenarioGiveback(a),
+        acctScenarioCostDrag(a),
+        acctScenarioStreaks(a),
+        acctScenarioExpectancy(a),
+        acctScenarioWinnerMae(a),
+        acctScenarioRiskPerTrade(a),
+        acctScenarioRatios(a),
+        acctScenarioHoldTime(a),
+        acctScenarioSkewness(a),
+    ].filter(Boolean);
+    if (scenarios.length) {
+        html += '<div><div class="flex items-center gap-2 mb-2">' +
+            '<span class="text-[10px] uppercase tracking-widest text-textMuted/80 font-bold">Scenario Analysis</span>' +
+            '<span class="text-[9px] text-textMuted/50">' + scenarios.length + ' live scenarios · each falsifiable</span></div>' +
+            '<div class="grid grid-cols-1 xl:grid-cols-2 gap-2">' + scenarios.map(acctScenarioCard).join('') + '</div></div>';
+    }
+    wrap.innerHTML = html;
+    // Deep Analysis stays collapsed by default (the toggle button reveals it).
+    // Re-renders (period switch / auto-refresh) must not force it open.
+    if (!window.__acctIntelDeepVisible) {
+        wrap.classList.add('hidden');
+    }
+}
+// ===== WIRING: loadAdvancedMetrics v2 + period extras + refresh hook =======
+
 async function loadAdvancedMetrics() {
     try {
         const res = await fetch('/api/account/performance');
@@ -2661,10 +3241,51 @@ async function loadAdvancedMetrics() {
         setText('acct-loss-streak', String(a.max_consecutive_losses ?? 'n/a'), 'text-rose-400');
         setText('acct-eq-vol', a.equity_volatility_pct == null ? 'n/a' : fmt(a.equity_volatility_pct) + '%');
         setText('acct-pnl-tstat', fmt(a.profit_standard_error), color(a.profit_standard_error));
+        setText('acct-stop-share', a.stop_loss_share == null ? 'n/a' : fmt(a.stop_loss_share * 100, 1) + '%', 'text-gray-200');
+        setText('acct-avg-loss-r', fmt(a.avg_loss_r, 3), 'text-rose-400');
+        setText('acct-avg-win-r', fmt(a.avg_r_multiple, 3), 'text-emerald-400');
+        setText('acct-avg-mae-r', fmt(a.avg_mae_r, 3), 'text-rose-400');
+        setText('acct-avg-mfe-r', fmt(a.avg_mfe_r, 3), 'text-emerald-400');
+        setText('acct-adv-avg-hold', a.avg_hold_sec == null ? 'n/a' : Math.round(a.avg_hold_sec) + 's', 'text-gray-200');
+        setText('acct-avg-risk-usd', a.avg_risk_usd == null ? 'n/a' : acctFmtMoney(a.avg_risk_usd), 'text-gray-200');
+        setText('acct-r-coverage', a.r_coverage_ratio == null ? 'n/a' : (a.r_coverage_ratio * 100).toFixed(1) + '%', 'text-gray-200');
+        // Period-level extras live in the period payload, not advanced; guard.
         const src = document.getElementById('acct-adv-source');
         if (src) src.textContent = 'source: accounting core · ' + a.sample_trades + ' closed trades';
+        renderAccountIntelTexts(a, data);
+        renderAccountDeepAnalysis(a, data);
     } catch (err) {
         console.error('Advanced metrics load failed', err);
+    }
+}
+
+function acctSetIfId(id, txt) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+}
+
+// New period fields: gross split bar + expectancy incl. breakevens + breakevens count.
+function renderAccountPeriodExtras(p) {
+    const gp = p.gross_profit != null ? Math.max(0, Number(p.gross_profit)) : 0;
+    const gl = p.gross_loss != null ? Math.max(0, Number(p.gross_loss)) : 0;
+    const tot = (gp + gl) || 1;
+    acctSetIfId('acct-gross-profit', acctFmtMoney(gp));
+    acctSetIfId('acct-gross-loss', acctFmtMoney(gl));
+    const split = document.getElementById('acct-hero-split');
+    if (split) {
+        const wGp = Math.round(gp / tot * 100);
+        split.innerHTML = '<div class="bg-emerald-500" style="width:' + wGp + '%"></div>' +
+            '<div class="bg-rose-500" style="width:' + (100 - wGp) + '%"></div>';
+    }
+    acctSetIfId('acct-expectancy-incl', p.expectancy_breakeven_incl != null ? acctFmtMoney(p.expectancy_breakeven_incl) : 'n/a');
+    acctSetIfId('acct-breakevens', p.breakeven_count != null ? String(p.breakeven_count) : '--');
+    if (p.win_rate_denominator) {
+        acctSetIfId('acct-win-denom', 'denominator: ' + p.win_rate_denominator);
+        const chip = document.getElementById('acct-period-denom-chip');
+        if (chip) {
+            chip.textContent = 'denominator: ' + p.win_rate_denominator;
+            chip.classList.remove('hidden');
+        }
     }
 }
 
@@ -2689,6 +3310,16 @@ async function loadAccountPeriod(kind, btn) {
         document.getElementById('acct-worst-trade').textContent = acctFmtMoney(p.worst_trade);
         document.getElementById('acct-avg-hold').textContent = p.average_holding_sec != null ? Math.round(p.average_holding_sec) + 's' : '--';
         document.getElementById('acct-risk-deployed').textContent = acctFmtMoney(p.total_risk_deployed);
+        document.getElementById('acct-loss-rate-decided').textContent = acctFmtPct(p.loss_rate_decided);
+        document.getElementById('acct-loss-rate-all').textContent = acctFmtPct(p.loss_rate_all);
+        document.getElementById('acct-winrate-all').textContent = acctFmtPct(p.win_rate_all);
+        document.getElementById('acct-winrate-pnlw').textContent = acctFmtPct(p.pnl_weighted_win_rate);
+        document.getElementById('acct-avg-pnl-decided').textContent = acctFmtMoney(p.avg_pnl_per_decided);
+        document.getElementById('acct-cost-drag').textContent = (p.cost_drag_pct != null ? acctFmtNum(p.cost_drag_pct, 2) + '%' : '--');
+        renderAccountPeriodExtras(p);
+        const wrDeno = p.win_rate_denominator || 'NONE';
+        const wrDenoEl = document.getElementById('acct-win-denom');
+        if (wrDenoEl) wrDenoEl.textContent = 'denominator: ' + wrDeno;
 
         document.querySelectorAll('.acct-period-btn').forEach(b => {
             b.className = 'acct-period-btn px-4 py-1.5 rounded-lg text-xs font-bold bg-darkBg text-textMuted border border-borderClr';
@@ -3230,10 +3861,23 @@ async function loadNewsState() {
         document.getElementById('news-events').textContent = body.active_event_count ?? 0;
         setNewsStatus('state=' + state + ' events=' + (body.active_event_count ?? 0));
         loadNewsFeed();
+        loadNewsKeywords();
     } catch (e) {
         console.warn('news state failed', e);
         setNewsStatus('news state failed: ' + e.message, true);
     }
+}
+
+// search-as-you-type for the keyword dataset filter
+let __newsKwSearchTimer = null;
+function bindNewsKeywordSearch() {
+    const input = document.getElementById('news-kw-search');
+    if (!input || input.dataset.bound) return;
+    input.dataset.bound = '1';
+    input.addEventListener('input', () => {
+        clearTimeout(__newsKwSearchTimer);
+        __newsKwSearchTimer = setTimeout(loadNewsKeywords, 300);
+    });
 }
 
 function stateColor(state) {
@@ -3436,6 +4080,77 @@ async function loadNewsFeed() {
     }
 }
 
+async function loadNewsKeywords() {
+    try {
+        const q = (document.getElementById('news-kw-search')?.value || '').trim();
+        const cat = document.getElementById('news-kw-category')?.value || '';
+        const res = await fetch('/api/news/keywords?top_n=25&category=' + encodeURIComponent(cat) + '&q=' + encodeURIComponent(q));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const body = await res.json();
+        if (!body.available) {
+            const tbl = document.getElementById('news-kw-table');
+            if (tbl) tbl.innerHTML = '<div class="text-textMuted italic p-2">Keyword dataset unavailable.</div>';
+            return;
+        }
+        // dataset meta
+        const set = body.dataset || {};
+        const cov = body.coverage || {};
+        document.getElementById('news-kw-total').textContent = set.total_keywords ?? '--';
+        document.getElementById('news-kw-articles').textContent = cov.articles_scanned ?? '--';
+        document.getElementById('news-kw-mentions').textContent = cov.total_mentions ?? '--';
+        document.getElementById('news-kw-active').textContent = cov.active_keywords ?? '--';
+        const dir = cov.direction_distribution || {};
+        document.getElementById('news-kw-dir').innerHTML =
+            '<span class="text-accentGreen">' + (dir.BULLISH ?? 0) + '</span> / ' +
+            '<span class="text-accentRed">' + (dir.BEARISH ?? 0) + '</span> / ' +
+            '<span class="text-slate-400">' + (dir.NEUTRAL ?? 0) + '</span>';
+        // populate category select once
+        const sel = document.getElementById('news-kw-category');
+        if (sel && sel.options.length <= 1 && set.categories) {
+            Object.keys(set.categories).sort().forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c + ' (' + set.categories[c] + ')';
+                sel.appendChild(opt);
+            });
+        }
+        // top keywords table
+        const tbl = document.getElementById('news-kw-table');
+        const tops = cov.top_keywords || [];
+        const kws = body.keywords || [];
+        if (top_none(tops)) {
+            tbl.innerHTML = '<div class="text-textMuted italic p-2">No keyword hits in the scanned corpus yet. Fetch news to populate.</div>';
+            return;
+        }
+        tbl.innerHTML = '<table class="w-full text-left">' +
+            '<thead><tr class="text-textMuted uppercase text-[9px] border-b border-borderClr/40">' +
+            '<th class="p-1.5">Keyword</th><th class="p-1.5">Category</th><th class="p-1.5">Bias</th>' +
+            '<th class="p-1.5 text-right">Hits</th><th class="p-1.5 text-right">Mentions</th><th class="p-1.5 text-right">Share</th></tr></thead><tbody>' +
+            tops.map(k => kwRow(k)).join('') +
+            (kws.length > tops.length ? '<tr><td colspan="6" class="p-1.5 text-[9px] text-textMuted italic">' + (kws.length - tops.length) + ' more dataset keywords (filter to browse)…</td></tr>' : '') +
+            '</tbody></table>';
+    } catch (e) {
+        console.warn('news keywords failed', e);
+        const tbl = document.getElementById('news-kw-table');
+        if (tbl) tbl.innerHTML = '<div class="text-textMuted italic p-2">keyword load failed: ' + esc(e.message) + '</div>';
+    }
+}
+
+function top_none(tops) {
+    return !tops || tops.length === 0;
+}
+
+function kwRow(k) {
+    const biasColor = k.direction_bias === 'BULLISH' ? 'text-accentGreen' : k.direction_bias === 'BEARISH' ? 'text-accentRed' : 'text-slate-400';
+    return '<tr class="border-b border-borderClr/20 hover:bg-darkBg/30">' +
+        '<td class="p-1.5 font-bold text-white">' + esc(k.keyword) + '</td>' +
+        '<td class="p-1.5 text-textMuted">' + esc(k.category) + '</td>' +
+        '<td class="p-1.5 ' + biasColor + '">' + esc(k.direction_bias || 'NEUTRAL') + '</td>' +
+        '<td class="p-1.5 text-right text-accentCyan">' + k.article_hits + '</td>' +
+        '<td class="p-1.5 text-right">' + k.mention_count + '</td>' +
+        '<td class="p-1.5 text-right">' + Math.round((k.share || 0) * 100) + '%</td></tr>';
+}
+
 async function analyzeNewsWithAI(articleId) {
     try {
         const res = await NX.api.post('/api/news/analyze/' + articleId, {}, { component: 'News', action: 'ANALYZE' });
@@ -3483,8 +4198,12 @@ const __newsTabObserver = new MutationObserver(() => {
     const tab = document.getElementById('tab-news');
     if (tab && !tab.classList.contains('hidden') && !window.__newsIntelLoaded) {
         window.__newsIntelLoaded = true;
+        bindNewsKeywordSearch();
         loadNewsState();
         startNewsAutoRefresh();
     }
 });
 __newsTabObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+// (stale Phase-16 duplicate renderer removed in UX v2)
+// Renders human audit lines with real values only; missing stats produce a
+// neutral hint, never a fabricated claim.
