@@ -12,11 +12,28 @@ Guarantees (spec 5 / 6 / 7):
   * Only EXECUTED + CLOSED experiences enter research.
   * Leakage guard: `build(as_of=...)` never includes samples whose DECISION
     happened at or after `as_of` (future outcomes can never be used).
+
+TASK-4 (data-integrity forensics) additions:
+  * Explicit sample eligibility audit: every closed outcome is classified
+    ELIGIBLE or REJECTED with an exact rejection reason (never a blanket
+    LOW_EVIDENCE). The rejection taxonomy covers missing outcome, zero
+    substitution (UNKNOWN-R), invalid PnL, invalid risk, missing context,
+    future leakage, invalid timestamp, schema mismatch and malformed data.
+  * UNKNOWN is not ZERO: outcome rows whose broker result is missing
+    (reconstruction_source NONE / no broker outcome) are REJECTED as
+    zero-substituted evidence rather than silently entering research as
+    realized_r == 0.0 (BUG-046 / BUG-045 pattern). A genuinely recorded zero
+    (authoritative broker reconstruction of a break-even) stays eligible.
+  * `audit()` exposes a per-trade_id rejection ledger so the API and
+    dashboard can explain WHY the registry is empty.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import math
+import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
@@ -27,10 +44,53 @@ from nexus_scalp.research.models import ResearchDataset, ResearchSample
 
 logger = get_logger("nexus_scalp.research.dataset")
 
+# ---------------------------------------------------------------------------
+# Rejection taxonomy (TASK-4). Each reason maps to a deterministic check.
+# ---------------------------------------------------------------------------
+REASON_MISSING_OUTCOME = "MISSING_OUTCOME"
+REASON_OUTCOME_PRECEDES_DECISION = "OUTCOME_PRECEDES_DECISION"
+REASON_MISSING_REALIZED_R = "MISSING_REALIZED_R"  # UNKNOWN R recorded as zero
+REASON_MISSING_REALIZED_PNL = "MISSING_REALIZED_PNL"  # UNKNOWN PnL recorded as zero
+REASON_INVALID_PNL = "INVALID_PNL"  # non-finite PnL
+REASON_INVALID_R = "INVALID_R"  # non-finite R
+REASON_INVALID_INITIAL_RISK = "INVALID_INITIAL_RISK"  # stop distance unusable
+REASON_MISSING_CONTEXT = "MISSING_CONTEXT"  # no strategy context snapshot
+REASON_MISSING_FEATURE_SCHEMA = "MISSING_FEATURE_SCHEMA"
+REASON_INVALID_TIMESTAMP = "INVALID_TIMESTAMP"
+REASON_FUTURE_LEAKAGE = "FUTURE_LEAKAGE"
+REASON_SCHEMA_MISMATCH = "SCHEMA_MISMATCH"
+REASON_MALFORMED_PROVENANCE = "MALFORMED_PROVENANCE"
+REASON_NON_FINITE_SAMPLE = "NON_FINITE_SAMPLE"
+
+#: Outcome reconstruction sources that carry authoritative broker truth.
+#: Any other source (or none) means "no broker result captured" and the
+#: realized fields are not trustworthy (they may be zero-substituted).
+_AUTHORITATIVE_RECONSTRUCTION_SOURCES = frozenset(
+    {"BROKER_DEALS", "BROKER_DEALS_AGGREGATED", "BROKER_NATIVE"}
+)
+
+#: Zero-R outcomes are treated as missing only when the broker result is also
+#: missing. A genuinely recorded zero (authoritative reconstruction with a
+#: real break-even result) is a legitimate sample.
+_ZERO_R_TOL = 1e-9
+_ZERO_PNL_TOL = 1e-6
+
+_RECOVERABLE_REASONS = frozenset(
+    {
+        REASON_MISSING_OUTCOME,
+        REASON_MISSING_REALIZED_R,
+        REASON_MISSING_REALIZED_PNL,
+    }
+)
+
 
 def _sample_id(rec: ExperienceRecord) -> str:
     key = rec.idempotency_key or rec.experience_id
     return f"rs_{hashlib.sha256(key.encode()).hexdigest()[:16]}"
+
+
+def _is_finite(value: float) -> bool:
+    return isinstance(value, (int, float)) and math.isfinite(float(value))
 
 
 class ResearchDatasetBuilder:
@@ -38,6 +98,121 @@ class ResearchDatasetBuilder:
 
     def __init__(self, ledger: ExperienceLedger) -> None:
         self.ledger = ledger
+        #: idempotency_key -> reconstruction_source (loaded once per audit/build)
+        self._source_cache: dict[str, str] = {}
+
+    # ------------------------------------------------------------------
+    # Provenance loading (bounded, one query per audit/build)
+    # ------------------------------------------------------------------
+
+    def _load_reconstruction_sources(self) -> dict[str, str]:
+        """Loads broker reconstruction sources for all outcome rows.
+
+        The typed merged record does not carry `broker_outcome` (Phase 14
+        stores it in the persisted outcome payload), so the authoritative
+        source is read directly from the outcome table. Bounded single query;
+        called at most once per build/audit.
+        """
+        repo = self.ledger.audit_repo
+        if not repo._is_sqlite:
+            return {}
+        out: dict[str, str] = {}
+        try:
+            conn = sqlite3.connect(repo._db_path, timeout=10.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    "SELECT idempotency_key, payload FROM audit_experience_outcomes "
+                    "WHERE is_closed = 1 LIMIT 100000;"
+                ).fetchall()
+            finally:
+                conn.close()
+            for r in rows:
+                try:
+                    payload = json.loads(r["payload"] or "{}")
+                    bo = payload.get("broker_outcome") or {}
+                    src = bo.get("reconstruction_source", "") if isinstance(bo, dict) else ""
+                except Exception:
+                    src = ""
+                out[str(r["idempotency_key"])] = str(src or "")
+        except Exception as e:
+            logger.warning("[STRATEGY_RESEARCH] reconstruction source load failed", error=str(e))
+        return out
+
+    def _reconstruction_source(self, rec: ExperienceRecord) -> str:
+        if not self._source_cache:
+            self._source_cache = self._load_reconstruction_sources()
+        return self._source_cache.get(rec.idempotency_key, "")
+
+    # ------------------------------------------------------------------
+    # Sample conversion + eligibility
+    # ------------------------------------------------------------------
+
+    def evaluate_sample(self, rec: ExperienceRecord) -> tuple[bool, str, str]:
+        """Deterministic eligibility audit for one closed experience.
+
+        Returns (eligible, rejection_reason, detail). Never raises.
+        """
+        # 1. Outcome presence.
+        if not rec.is_executed or not rec.is_closed:
+            return False, REASON_MISSING_OUTCOME, "no recorded outcome"
+
+        # 2. Causality.
+        if rec.outcome_timestamp is None or rec.outcome_timestamp < rec.decision_timestamp:
+            return False, REASON_OUTCOME_PRECEDES_DECISION, "outcome precedes decision"
+
+        # 3. Non-finite guard (NaN/Inf never enter research).
+        if not _is_finite(rec.realized_pnl_usd):
+            return False, REASON_INVALID_PNL, f"pnl={rec.realized_pnl_usd!r}"
+        if not _is_finite(rec.realized_r_multiple):
+            return False, REASON_INVALID_R, f"r={rec.realized_r_multiple!r}"
+
+        # 4. Zero-substitution audit: UNKNOWN broker result must NOT look like
+        #    a real break-even zero. A zero R/PnL pair with no authoritative
+        #    reconstruction source is a corrupted (missing) result.
+        src = self._reconstruction_source(rec)
+        authoritative = src in _AUTHORITATIVE_RECONSTRUCTION_SOURCES
+        is_zero_r = abs(float(rec.realized_r_multiple)) < _ZERO_R_TOL
+        is_zero_pnl = abs(float(rec.realized_pnl_usd)) < _ZERO_PNL_TOL
+        if not authoritative and is_zero_r and is_zero_pnl:
+            return (
+                False,
+                REASON_MISSING_REALIZED_R,
+                f"zero-substituted outcome (reconstruction_source={src or 'NONE'})",
+            )
+        if not authoritative and is_zero_r and not is_zero_pnl:
+            return (
+                False,
+                REASON_MISSING_REALIZED_R,
+                f"R=0 with non-authoritative source {src or 'NONE'}",
+            )
+        if not authoritative and is_zero_pnl and not is_zero_r:
+            return (
+                False,
+                REASON_MISSING_REALIZED_PNL,
+                f"PnL=0 with non-authoritative source {src or 'NONE'}",
+            )
+
+        # 5. Initial risk sanity (planned stop distance).
+        risk = rec.planned_risk_distance
+        if not (_is_finite(risk) and risk > 1e-9):
+            return False, REASON_INVALID_INITIAL_RISK, f"risk_distance={risk!r}"
+
+        # 6. Context presence.
+        if rec.context is None:
+            return False, REASON_MISSING_CONTEXT, "no strategy context"
+        if not (rec.context.symbol and rec.context.regime):
+            return False, REASON_MISSING_CONTEXT, "incomplete context tokens"
+
+        # 7. Feature schema provenance.
+        if not rec.feature_schema_id or rec.feature_dimension <= 0:
+            return False, REASON_MISSING_FEATURE_SCHEMA, "schema id/dimension missing"
+
+        # 8. Timestamps.
+        if rec.decision_timestamp is None or rec.outcome_timestamp is None:
+            return False, REASON_INVALID_TIMESTAMP, "null timestamp"
+
+        return True, "", ""
 
     def _to_sample(self, rec: ExperienceRecord) -> ResearchSample:
         ctx = rec.context
@@ -72,22 +247,97 @@ class ResearchDatasetBuilder:
             exit_reason=rec.exit_reason,
         )
 
-    def build(self, dataset_id: str | None = None) -> ResearchDataset:
-        """
-        Builds the full research dataset from all closed experiences, causally
-        ordered by decision_timestamp.
-        """
-        samples: list[ResearchSample] = []
-        strategy_ids = self.ledger.list_strategy_ids()
+    # ------------------------------------------------------------------
+    # Build paths
+    # ------------------------------------------------------------------
+
+    def _iter_records(self) -> list[ExperienceRecord]:
+        """All ledger records (bounded) with duplicate keys collapsed."""
+        records: list[ExperienceRecord] = []
         seen: set[str] = set()
-        for sid in strategy_ids:
+        for sid in self.ledger.list_strategy_ids():
             for rec in self.ledger.get_experiences_for_strategy(sid, limit=10000):
-                if not (rec.is_executed and rec.is_closed):
-                    continue
                 if rec.idempotency_key in seen:
                     continue
                 seen.add(rec.idempotency_key)
-                samples.append(self._to_sample(rec))
+                records.append(rec)
+        return records
+
+    def audit(self, records: list[ExperienceRecord] | None = None) -> dict[str, Any]:
+        """Full eligibility audit with structured rejection reasons."""
+        self._source_cache = {}
+        records = records if records is not None else self._iter_records()
+        eligible: list[ExperienceRecord] = []
+        rejected: list[dict[str, Any]] = []
+        for rec in records:
+            if not (rec.is_executed and rec.is_closed):
+                rejected.append(
+                    {
+                        "trade_id": rec.experience_id,
+                        "idempotency_key": rec.idempotency_key,
+                        "strategy_id": rec.strategy_id,
+                        "rejection_reason": REASON_MISSING_OUTCOME,
+                        "rejection_stage": "dataset",
+                        "detail": "not executed/closed",
+                        "recoverable": True,
+                        "source": "ledger",
+                    }
+                )
+                continue
+            ok, reason, detail = self.evaluate_sample(rec)
+            if ok:
+                eligible.append(rec)
+            else:
+                rejected.append(
+                    {
+                        "trade_id": rec.experience_id,
+                        "idempotency_key": rec.idempotency_key,
+                        "strategy_id": rec.strategy_id,
+                        "rejection_reason": reason,
+                        "rejection_stage": "dataset",
+                        "detail": detail,
+                        "recoverable": reason in _RECOVERABLE_REASONS,
+                        "source": "ledger",
+                    }
+                )
+        top: dict[str, int] = {}
+        for r in rejected:
+            top[r["rejection_reason"]] = top.get(r["rejection_reason"], 0) + 1
+        return {
+            "total_records": len(records),
+            "eligible": len(eligible),
+            "rejected": len(rejected),
+            "zero_substituted": top.get(REASON_MISSING_REALIZED_R, 0)
+            + top.get(REASON_MISSING_REALIZED_PNL, 0),
+            "rejection_reasons": top,
+            "rejections": rejected,
+        }
+
+    def build(self, dataset_id: str | None = None) -> ResearchDataset:
+        """
+        Builds the full research dataset from all closed experiences, causally
+        ordered by decision_timestamp. Records failing the eligibility audit
+        are excluded with structured rejection logs.
+        """
+        self._source_cache = {}
+        samples: list[ResearchSample] = []
+        seen: set[str] = set()
+        for rec in self._iter_records():
+            ok, reason, detail = self.evaluate_sample(rec)
+            if not ok:
+                logger.info(
+                    "[STRATEGY_RESEARCH] event=DATASET_REJECTED",
+                    stage="dataset",
+                    trade_id=rec.experience_id,
+                    reason=reason,
+                    detail=detail[:120],
+                    recoverable=reason in _RECOVERABLE_REASONS,
+                )
+                continue
+            if rec.idempotency_key in seen:
+                continue
+            seen.add(rec.idempotency_key)
+            samples.append(self._to_sample(rec))
         samples.sort(key=lambda s: s.decision_timestamp)
         return self._dataset(dataset_id, samples)
 
@@ -105,10 +355,12 @@ class ResearchDatasetBuilder:
         walk-forward / OOS pipeline construct train / validation splits that can
         never peek into the future.
         """
+        self._source_cache = {}
         records = self.ledger.get_experiences_for_strategy(strategy_id, limit=10000)
         samples: list[ResearchSample] = []
         for rec in records:
-            if not (rec.is_executed and rec.is_closed):
+            ok, _, _ = self.evaluate_sample(rec)
+            if not ok:
                 continue
             if as_of is not None and rec.decision_timestamp >= as_of:
                 continue
@@ -144,7 +396,7 @@ def _dataset_id(samples: list[ResearchSample]) -> str:
 
 
 def dataset_provenance(dataset: ResearchDataset) -> dict[str, Any]:
-    """Ligible lineage summary for a dataset (spec 26: research data versioning)."""
+    """Eligible lineage summary for a dataset (spec 26: research data versioning)."""
     schemas: dict[str, int] = {}
     for s in dataset.samples:
         schemas[s.feature_schema_id] = schemas.get(s.feature_schema_id, 0) + 1

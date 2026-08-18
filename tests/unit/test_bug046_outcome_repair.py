@@ -433,21 +433,25 @@ def test_repair_idempotent(ledger, temp_audit_repo):
 
 
 def test_repaired_outcome_reaches_research_dataset_and_discovery(ledger, temp_audit_repo):
-    """TEST 9+10: after repair, ResearchDatasetBuilder sees the corrected R and
-    discovery operates on real financial outcomes (not zeros)."""
+    """TEST 9+10 (TASK-4 contract): UNKNOWN (zero-substituted) outcomes are
+    REJECTED from research; after broker repair they become eligible with real R.
+
+    The old assertion "22 zero-R samples enter the dataset" encoded exactly the
+    defect TASK-4 fixes (UNKNOWN != 0). The corrected contract: 0 samples
+    before repair, >=11 repaired samples after.
+    """
     # Seed 22 closed outcomes with the SAME context family, all zero-R.
     for i in range(22):
         rid = f"rid_fam{i:02d}"
         ticket = str(152487900000 + i)
-        ledge = ledger
-        ledge.record_experience(make_record(rid))
-        ledge.record_outcome(make_outcome(f"exp_{rid}", ticket))
+        ledger.record_experience(make_record(rid))
+        ledger.record_outcome(make_outcome(f"exp_{rid}", ticket))
     ledger.audit_repo._queue.join()
 
-    # All are zero-R -> dataset has 22 samples, all R=0.
+    # TASK-4: all are zero-substituted (no broker truth) -> REJECTED, not
+    # silently admitted as fake zero-R evidence.
     ds0 = ResearchDatasetBuilder(ledger).build()
-    assert len(ds0.samples) == 22
-    assert all(abs(s.realized_r) < 1e-12 for s in ds0.samples)
+    assert len(ds0.samples) == 0, "zero-substituted outcomes must not enter research"
 
     # Repair half of them with a +0.15R outcome each.
     def deals(t, hours_back):

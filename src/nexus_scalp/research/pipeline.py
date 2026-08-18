@@ -9,6 +9,18 @@ PHASE 09B end-to-end pipeline:
 A candidate NEVER becomes live automatically. Promotion is operator-gated on
 the production side. Research is OFFLINE / BACKGROUND and never blocks the
 LiveEngine tick path (spec 31 / 32 / 42).
+
+TASK-4 (family-select validation):
+  * Every validation gate (backtest / walk-forward / OOS / robustness) now runs
+    on the candidate's OWN context family (the `sample_ids` recorded at
+    discovery) instead of the whole heterogeneous dataset. Previously a
+    "LONDON RANGING" candidate was evaluated on trades from 22 different
+    context families, so its OOS/expectancy/robustness were not family-specific
+    evidence (TASK-4 gap).
+  * When a candidate carries no family sample ids (e.g. a registry revalidate),
+    gates fall back to the full dataset exactly as before.
+  * The OOS gate is authoritative: a candidate whose OOS is negative is scored
+    REJECTED regardless of in-sample performance.
 """
 
 from __future__ import annotations
@@ -33,6 +45,30 @@ from nexus_scalp.research.scoring import compute_strategy_score
 from nexus_scalp.research.walkforward import WalkForwardEngine
 
 logger = get_logger("nexus_scalp.research.pipeline")
+
+
+def _select_family(dataset: ResearchDataset, candidate: StrategyCandidate) -> ResearchDataset:
+    """Returns a dataset restricted to the candidate's own discovery family.
+
+    Uses `discovery_evidence.sample_ids` (recorded at discovery, TASK-4). When
+    absent, returns the full dataset (legacy behavior for registry revalidates).
+    """
+    evidence = candidate.discovery_evidence or {}
+    sample_ids = evidence.get("sample_ids") or []
+    if not sample_ids:
+        return dataset
+    wanted = set(sample_ids)
+    family = [s for s in dataset.samples if s.idempotency_key in wanted]
+    if not family:
+        return dataset
+    return ResearchDataset(
+        dataset_id=dataset.dataset_id,
+        source=dataset.source,
+        created_at=dataset.created_at,
+        samples=family,
+        source_range=dataset.source_range,
+        schema_ids=dataset.schema_ids,
+    )
 
 
 class ResearchPipeline:
@@ -97,14 +133,26 @@ class ResearchPipeline:
         Pipeline: BACKTESTING -> VALIDATING (walk-forward) -> OOS_TESTING ->
         ROBUSTNESS_TESTING -> VALIDATED/REJECTED (via score verdict).
 
+        TASK-4: every gate runs on the candidate's OWN context family when the
+        candidate records one.
+
         NEVER promotes to ACTIVE automatically.
         """
         sid = candidate.strategy_id
         version = candidate.strategy_version
 
+        family_ds = _select_family(dataset, candidate)
+        if len(family_ds.samples) < len(dataset.samples):
+            logger.info(
+                "[STRATEGY_VALIDATION] event=FAMILY_SELECT_VALIDATION",
+                strategy_id=sid,
+                family_samples=len(family_ds.samples),
+                dataset_samples=len(dataset.samples),
+            )
+
         # 1. BACKTEST (in-sample only; never OOS)
         bt = self.backtest.run(
-            dataset,
+            family_ds,
             strategy_id=sid,
             strategy_version=version,
             use_split=True,
@@ -112,12 +160,12 @@ class ResearchPipeline:
         if bt.total_trades == 0:
             logger.warning("[STRATEGY_VALIDATION] event=ABORTED empty dataset", strategy_id=sid)
             return self._register(
-                candidate, dataset, lifecycle=CandidateLifecycle.REJECTED, backtest=bt
+                candidate, family_ds, lifecycle=CandidateLifecycle.REJECTED, backtest=bt
             )
 
         # 2. WALK-FORWARD (VALIDATING)
         wf = self.walkforward.validate(
-            dataset,
+            family_ds,
             strategy_id=sid,
             strategy_version=version,
             n_splits=n_folds,
@@ -125,9 +173,9 @@ class ResearchPipeline:
             embargo_seconds=embargo_seconds,
         )
 
-        # 3. OOS GATE (OOS_TESTING)
+        # 3. OOS GATE (OOS_TESTING) — hard gate on the candidate's family.
         oos = self.oos_gate.evaluate(
-            dataset,
+            family_ds,
             strategy_id=sid,
             strategy_version=version,
             purge_seconds=purge_seconds,
@@ -135,21 +183,24 @@ class ResearchPipeline:
         )
 
         # 4. ROBUSTNESS (ROBUSTNESS_TESTING)
-        rob = self.robustness.evaluate(dataset, strategy_id=sid, strategy_version=version)
+        rob = self.robustness.evaluate(family_ds, strategy_id=sid, strategy_version=version)
 
         # 5. SCORE + VERDICT
         score = compute_strategy_score(
-            dataset, backtest=bt, walkforward=wf, oos=oos, robustness=rob
+            family_ds, backtest=bt, walkforward=wf, oos=oos, robustness=rob
         )
-        final_lifecycle = (
-            CandidateLifecycle.VALIDATED
-            if score.verdict == "VALIDATED"
-            else CandidateLifecycle.REJECTED
-        )
+        if score.verdict == "VALIDATED":
+            final_lifecycle = CandidateLifecycle.VALIDATED
+        elif score.verdict == "REJECTED":
+            final_lifecycle = CandidateLifecycle.REJECTED
+        else:
+            # INCONCLUSIVE (insufficient evidence) is NOT a validation failure:
+            # the candidate stays DISCOVERED until enough evidence accumulates.
+            final_lifecycle = CandidateLifecycle.DISCOVERED
 
         result = self._register(
             candidate,
-            dataset,
+            family_ds,
             lifecycle=final_lifecycle,
             backtest=bt,
             walkforward=wf,
@@ -160,7 +211,7 @@ class ResearchPipeline:
         self._record_run(
             run_id=run_id,
             candidate=candidate,
-            dataset=dataset,
+            dataset=family_ds,
             summary={
                 "lifecycle": final_lifecycle.value,
                 "expectancy_r": bt.expectancy_r,
@@ -169,6 +220,7 @@ class ResearchPipeline:
                 "robustness_status": rob.status,
                 "score": score.final_score if score else 0.0,
                 "verdict": score.verdict if score else "INCONCLUSIVE",
+                "family_samples": len(family_ds.samples),
             },
         )
         logger.info(

@@ -22,6 +22,14 @@ CONTRACT
 4. IDEMPOTENT. Re-running a cycle with no new data is a no-op.
 5. NEVER executes, modifies or closes an order. No adapter, no order manager,
    no risk engine.
+
+TASK-4 (dataset rebuild guard, spec 23):
+    A cycle only rebuilds the dataset when the underlying source data changed.
+    The dataset identity is content-addressed (dataset_id derives from the
+    samples), so an unchanged ledger produces the SAME dataset_id and the
+    worker records event=DATASET_UNCHANGED and skips discovery/validation
+    (no forced rebuilds merely for activity). The cycle telemetry still shows
+    the cycle ran (real work vs no-op is explicit: `work_done` flag).
 """
 
 from __future__ import annotations
@@ -51,6 +59,8 @@ class ResearchWorker:
         pipeline: the ResearchPipeline it drives.
         cycle_count / last_cycle_duration / last_error: observability.
         running: start/stop state machine.
+        last_work_done: whether the last cycle performed real work
+            (dataset rebuilt / candidates validated) or was a no-op.
     """
 
     def __init__(
@@ -72,8 +82,13 @@ class ResearchWorker:
         self.last_cycle_start: datetime | None = None
         self.last_cycle_duration: float = 0.0
         self.last_error: str = ""
+        self.last_work_done: bool = False
         self._last_run_ts: float = 0.0
         self._validated_count = 0
+        self._dataset: Any = None
+        self._seeded_once: bool = False
+        self._candidates: list[Any] = []
+        self._last_dataset_id: str = ""
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -162,18 +177,20 @@ class ResearchWorker:
         self.last_cycle_start = datetime.now(UTC)
         started = time.perf_counter()
         try:
-            self._refresh_once()
+            self.last_work_done = self._refresh_once()
             self.last_cycle_duration = time.perf_counter() - started
             self.last_error = ""
             logger.info(
                 "[RESEARCH_WORKER] event=UPDATE",
                 cycle=self.cycle_count,
                 duration_ms=round(self.last_cycle_duration * 1000.0, 1),
+                work_done=self.last_work_done,
             )
             return True
         except Exception as err:
             self.last_cycle_duration = time.perf_counter() - started
             self.last_error = str(err)
+            self.last_work_done = False
             logger.error(
                 "[RESEARCH_WORKER] event=FAILURE",
                 cycle=self.cycle_count,
@@ -186,14 +203,31 @@ class ResearchWorker:
     # Cycle internals (each step isolated)
     # ------------------------------------------------------------------
 
-    def _refresh_once(self) -> None:
-        self._run("seed", self._refresh_seed)
-        self._run("dataset", self._refresh_dataset)
-        self._run("discovery", self._refresh_discovery)
-        self._run("validation", self._refresh_validation)
-        logger.debug("[RESEARCH_WORKER] event=UPDATE", cycle=self.cycle_count)
+    def _refresh_once(self) -> bool:
+        """Runs the cycle steps; returns True when real work happened."""
+        work = False
+        work |= self._run("seed", self._refresh_seed)
+        work |= self._run("dataset", self._refresh_dataset)
+        if self._dataset_changed:
+            work |= self._run("discovery", self._refresh_discovery)
+            work |= self._run("validation", self._refresh_validation)
+        else:
+            logger.info(
+                "[STRATEGY_RESEARCH] event=DATASET_UNCHANGED",
+                cycle=self.cycle_count,
+                dataset_id=self._last_dataset_id,
+            )
+        logger.debug("[RESEARCH_WORKER] event=UPDATE", cycle=self.cycle_count, work_done=work)
+        return bool(work)
 
-    def _refresh_seed(self) -> None:
+    @property
+    def _dataset_changed(self) -> bool:
+        ds = getattr(self, "_dataset", None)
+        if ds is None:
+            return True
+        return getattr(ds, "dataset_id", "") != self._last_dataset_id
+
+    def _refresh_seed(self) -> bool:
         """Seeds built-in strategies into the registry (PHASE 15C, idempotent).
 
         Runs before dataset/discovery so the seeded candidates exist as
@@ -209,10 +243,17 @@ class ResearchWorker:
                 "[STRATEGY_RESEARCH] event=SEEDED_BUILTIN",
                 count=len(entries),
             )
+            # Seeding only counts as real work when the registry actually
+            # changed (first cycle). Re-seeding existing rows is a no-op.
+            if self._seeded_once:
+                return False
+            self._seeded_once = True
+            return True
+        return False
 
-    def _run(self, name: str, fn: Any) -> None:
+    def _run(self, name: str, fn: Any) -> bool:
         try:
-            fn()
+            return bool(fn())
         except Exception as e:
             logger.error(
                 "[RESEARCH_WORKER] event=FAILURE",
@@ -220,18 +261,27 @@ class ResearchWorker:
                 error=str(e),
                 exc_info=True,
             )
+            return False
 
-    def _refresh_dataset(self) -> None:
-        """Rebuilds the research dataset from the immutable ledger (derived state)."""
+    def _refresh_dataset(self) -> bool:
+        """Rebuilds the research dataset from the immutable ledger (derived state).
+
+        Content-addressed: an unchanged ledger produces the same dataset_id,
+        which the caller uses to skip discovery/validation (rebuild guard).
+        """
         dataset = self.pipeline.dataset_builder.build()
+        changed = getattr(dataset, "dataset_id", "") != self._last_dataset_id
         self._dataset = dataset
-        logger.info(
-            "[STRATEGY_RESEARCH] event=DATASET_REBUILT",
-            dataset_id=dataset.dataset_id,
-            samples=len(dataset.samples),
-        )
+        if changed:
+            self._last_dataset_id = dataset.dataset_id
+            logger.info(
+                "[STRATEGY_RESEARCH] event=DATASET_REBUILT",
+                dataset_id=dataset.dataset_id,
+                samples=len(dataset.samples),
+            )
+        return changed
 
-    def _refresh_discovery(self) -> None:
+    def _refresh_discovery(self) -> bool:
         """Runs bounded discovery; candidates never touch live trading."""
         dataset = getattr(self, "_dataset", None)
         if dataset is None:
@@ -244,15 +294,18 @@ class ResearchWorker:
                 "[STRATEGY_RESEARCH] event=CANDIDATE_DISCOVERED",
                 count=len(candidates),
             )
+            return True
+        return False
 
-    def _refresh_validation(self) -> None:
+    def _refresh_validation(self) -> bool:
         """
         Validates newly-discovered candidates through the full gate chain,
         bounded per cycle. Registered results never become LIVE automatically.
         """
         candidates = getattr(self, "_candidates", []) or []
         if not candidates:
-            return
+            return False
+        validated = 0
         for candidate in candidates[: self.max_validations_per_cycle]:
             try:
                 self.pipeline.validate_candidate(
@@ -260,6 +313,7 @@ class ResearchWorker:
                     getattr(self, "_dataset", self.pipeline.dataset_builder.build()),
                 )
                 self._validated_count += 1
+                validated += 1
             except Exception as e:
                 logger.error(
                     "[STRATEGY_VALIDATION] event=FAILURE",
@@ -268,6 +322,7 @@ class ResearchWorker:
                     exc_info=True,
                 )
         self._candidates = []
+        return validated > 0
 
 
 def format_research_worker_status(worker: ResearchWorker) -> dict[str, Any]:
@@ -284,6 +339,7 @@ def format_research_worker_status(worker: ResearchWorker) -> dict[str, Any]:
         else None,
         "last_error": worker.last_error or "",
         "status": "RUNNING" if worker.running else "IDLE",
+        "work_done": getattr(worker, "last_work_done", False),
         "validated_count": getattr(worker, "_validated_count", 0),
         "dataset_id": getattr(worker, "_dataset", None)
         and getattr(getattr(worker, "_dataset", None), "dataset_id", ""),

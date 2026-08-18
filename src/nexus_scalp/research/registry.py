@@ -77,9 +77,44 @@ class StrategyRegistry:
     # Persistence
     # ------------------------------------------------------------------
 
-    def upsert(self, entry: StrategyRegistryEntry) -> bool:
+    def upsert(
+        self, entry: StrategyRegistryEntry, forbid_lifecycle_regression: bool = False
+    ) -> bool:
+        """
+        Persists a registry entry.
+
+        TASK-4 immutability contract (spec 28):
+        * The historical validation truth of a version is never rewritten with
+          a DIFFERENT definition: when an existing (strategy_id, strategy_version)
+          row carries a context_definition that differs from the new entry's,
+          the upsert is REFUSED (returns False) instead of silently replacing
+          the definition under the same version.
+        * `forbid_lifecycle_regression=True` additionally refuses replacing a
+          terminal/advanced lifecycle (VALIDATED / SHADOW / ACTIVE / REJECTED /
+          DEGRADED / RETIRED) with a weaker one (DISCOVERED etc.) — seeding and
+          re-validation must never downgrade established validation truth.
+        """
         if not self.audit_repo._is_sqlite:
             return False
+        existing = self.get(entry.strategy_id, entry.strategy_version)
+        if existing is not None:
+            old_def = existing.context_definition or {}
+            new_def = entry.context_definition or {}
+            if old_def and new_def and old_def != new_def:
+                logger.warning(
+                    "[STRATEGY_REGISTRY] definition mutation refused",
+                    strategy_id=entry.strategy_id,
+                    strategy_version=entry.strategy_version,
+                )
+                return False
+            if forbid_lifecycle_regression and _is_stronger(existing.lifecycle, entry.lifecycle):
+                logger.warning(
+                    "[STRATEGY_REGISTRY] lifecycle regression refused",
+                    strategy_id=entry.strategy_id,
+                    from_state=existing.lifecycle.value,
+                    to_state=entry.lifecycle.value,
+                )
+                return False
         args = (
             entry.strategy_id,
             entry.strategy_version,
@@ -288,6 +323,29 @@ class StrategyRegistry:
         except Exception as e:
             logger.error("[STRATEGY_REGISTRY] row decode failed", error=str(e))
             return None
+
+
+def _is_stronger(current: CandidateLifecycle, proposed: CandidateLifecycle) -> bool:
+    """True when `proposed` is a weaker lifecycle than the existing `current`.
+
+    Stronger (more validation truth established) states must never be silently
+    downgraded: VALIDATED/SHADOW/ACTIVE/REJECTED/DEGRADED/RETIRED outrank
+    DISCOVERED/BACKTESTING/VALIDATING/OOS_TESTING/ROBUSTNESS_TESTING.
+    """
+    _strength = {
+        CandidateLifecycle.DISCOVERED: 1,
+        CandidateLifecycle.BACKTESTING: 1,
+        CandidateLifecycle.VALIDATING: 1,
+        CandidateLifecycle.OOS_TESTING: 1,
+        CandidateLifecycle.ROBUSTNESS_TESTING: 1,
+        CandidateLifecycle.VALIDATED: 2,
+        CandidateLifecycle.SHADOW: 3,
+        CandidateLifecycle.ACTIVE: 4,
+        CandidateLifecycle.DEGRADED: 2,
+        CandidateLifecycle.REJECTED: 2,
+        CandidateLifecycle.RETIRED: 2,
+    }
+    return _strength.get(current, 0) > _strength.get(proposed, 0)
 
 
 def _json(value: Any) -> str:

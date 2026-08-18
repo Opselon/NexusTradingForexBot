@@ -9,15 +9,26 @@ All functions are pure and deterministic: given the same list of R-multiples
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 
 import numpy as np
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.models import BacktestResult, ExecutionAssumptions, ResearchSample
+
+logger = get_logger("nexus_scalp.research.metrics")
 
 
 def _r_array(samples: Sequence[ResearchSample]) -> np.ndarray:
-    return np.asarray([float(s.realized_r) for s in samples], dtype=float)
+    vals = [float(s.realized_r) for s in samples]
+    finite = [v for v in vals if math.isfinite(v)]
+    if len(finite) != len(vals):
+        logger.warning(
+            "[STRATEGY_RESEARCH] event=NON_FINITE_R_EXCLUDED",
+            count=len(vals) - len(finite),
+        )
+    return np.asarray(finite, dtype=float)
 
 
 def _usd_array(samples: Sequence[ResearchSample]) -> np.ndarray:
@@ -143,6 +154,16 @@ def compute_backtest(
         dur_list.append(s.holding_duration_sec)
 
     r_arr = np.asarray(adj_r, dtype=float)
+    if len(r_arr) == 0 or not np.all(np.isfinite(r_arr)):
+        # TASK-4: never let NaN/Inf reach statistics; an all-non-finite
+        # dataset yields an empty (zero-trade) backtest, not NaN metrics.
+        return BacktestResult(
+            strategy_id=strategy_id,
+            strategy_version=strategy_version,
+            dataset_id=dataset_id,
+            assumptions=assumptions,
+            total_trades=0,
+        )
     expectancy_r = float(np.mean(r_arr)) if n else 0.0
     expectancy_usd = float(np.mean(adj_usd)) if n else 0.0
     net_pnl = float(np.sum(adj_usd))

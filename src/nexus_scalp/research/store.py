@@ -241,6 +241,140 @@ def outcome_quality_summary(repo: AuditRepository) -> dict[str, Any]:
     return out
 
 
+def research_health_summary(
+    repo: AuditRepository,
+    dataset_builder: Any = None,
+    registry: Any = None,
+) -> dict[str, Any]:
+    """
+    TASK-4 RESEARCH DATA HEALTH diagnostics (spec 29 / 21).
+
+    Answers "why is the registry empty?" with structured evidence instead of a
+    bare total=0:
+        source trades / canonical trades / eligible samples / rejected samples
+        / rejection reasons / families / family distribution / candidates /
+        validation attempts / OOS failures / robustness failures / registry
+        count / last successful cycle / last error.
+
+    Uses the existing architecture: the eligibility audit from the dataset
+    builder, the family distribution from discovery, the worker telemetry and
+    the registry summary. Never fabricates rows.
+    """
+    out: dict[str, Any] = {"available": False}
+    if not repo._is_sqlite:
+        return out
+    try:
+        out["available"] = True
+        # 1. Source / canonical trades.
+        conn = sqlite3.connect(repo._db_path, timeout=5.0)
+        try:
+            out["source_experiences"] = int(
+                conn.execute("SELECT COUNT(*) FROM audit_experiences;").fetchone()[0]
+            )
+            out["canonical_outcomes"] = int(
+                conn.execute("SELECT COUNT(*) FROM audit_experience_outcomes;").fetchone()[0]
+            )
+            out["closed_ledger_rows"] = int(
+                conn.execute("SELECT COUNT(*) FROM audit_ledger WHERE status='CLOSED';").fetchone()[
+                    0
+                ]
+            )
+            out["registry_count"] = int(
+                conn.execute("SELECT COUNT(*) FROM strategy_registry;").fetchone()[0]
+            )
+            out["research_runs"] = int(
+                conn.execute("SELECT COUNT(*) FROM research_runs;").fetchone()[0]
+            )
+        finally:
+            conn.close()
+
+        # 2. Eligibility audit + family distribution (derived, read-only).
+        audit: dict[str, Any] = {}
+        families: dict[str, Any] = {}
+        candidates_discovered = 0
+        if dataset_builder is not None:
+            try:
+                audit = dataset_builder.audit()
+                ds = dataset_builder.build()
+                from nexus_scalp.research.discovery import family_distribution
+
+                families = family_distribution(ds.samples)
+                from nexus_scalp.research.discovery import discover_candidates
+
+                candidates_discovered = len(discover_candidates(ds.samples))
+            except Exception as e:
+                audit = {"error": str(e)}
+        out["eligible_samples"] = audit.get("eligible", 0)
+        out["rejected_samples"] = audit.get("rejected", 0)
+        out["zero_substituted"] = audit.get("zero_substituted", 0)
+        out["rejection_reasons"] = audit.get("rejection_reasons", {})
+        out["families"] = families.get("families", 0)
+        out["family_distribution"] = {
+            "family_sizes": families.get("family_sizes", []),
+            "largest": families.get("largest", 0),
+            "median": families.get("median", 0),
+            "smallest": families.get("smallest", 0),
+            "families_above_floor": families.get("families_above_floor", 0),
+            "families_below_floor": families.get("families_below_floor", 0),
+        }
+        out["candidates_discovered"] = candidates_discovered
+
+        # 3. Validation attempt census (research_runs).
+        conn = sqlite3.connect(repo._db_path, timeout=5.0)
+        try:
+            rows = conn.execute(
+                "SELECT result_summary FROM research_runs ORDER BY executed_at DESC LIMIT 500;"
+            ).fetchall()
+        finally:
+            conn.close()
+        attempts = len(rows)
+        oos_fail = oos_pass = rob_fail = validated = rejected = 0
+        for (rs,) in rows:
+            try:
+                import json as _json
+
+                s = _json.loads(rs or "{}")
+            except Exception:
+                s = {}
+            if s.get("oos_status") == "FAIL":
+                oos_fail += 1
+            elif s.get("oos_status") == "PASS":
+                oos_pass += 1
+            if s.get("robustness_status") == "FAIL":
+                rob_fail += 1
+            if s.get("lifecycle") == "VALIDATED":
+                validated += 1
+            elif s.get("lifecycle") == "REJECTED":
+                rejected += 1
+        out["validation_attempts"] = attempts
+        out["oos_pass"] = oos_pass
+        out["oos_fail"] = oos_fail
+        out["robustness_fail"] = rob_fail
+        out["validated_count"] = validated
+        out["rejected_count"] = rejected
+
+        # 4. Worker telemetry.
+        if registry is not None and hasattr(registry, "audit_repo"):
+            try:
+                conn = sqlite3.connect(repo._db_path, timeout=5.0)
+                try:
+                    row = conn.execute(
+                        "SELECT cycle_count, last_cycle_at, last_error FROM research_worker_state "
+                        "WHERE scope='research' LIMIT 1;"
+                    ).fetchone()
+                finally:
+                    conn.close()
+                if row is not None:
+                    out["last_cycle_at"] = row[0] if len(row) > 1 else ""
+                    out["last_error_worker"] = row[2] if len(row) > 2 else ""
+            except Exception:
+                pass
+        return out
+    except Exception as e:
+        logger.error("[STRATEGY_RESEARCH] health summary failed", error=str(e))
+        return {"available": False, "error": str(e)}
+
+
 def self_heal_research(repo: AuditRepository, registry) -> int:
     """
     Rebuilds derived research state from the immutable ledger when corrupted.

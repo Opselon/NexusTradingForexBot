@@ -1,18 +1,34 @@
 """
 Candidate Discovery from Experience
-===================================
+====================================
 PHASE 09B bounded, evidence-based discovery (spec 10 / 11).
 
 Discovery groups closed experiences into MEANINGFUL context families using
 coarse normalized ranges and a context fingerprint, so it produces pattern
 families rather than one strategy per tiny numerical combination. It never
 creates a candidate with fewer than a minimum support count.
+
+TASK-4 (data-integrity forensics):
+  * Family construction stays coarse and deterministic (symbol | timeframe |
+    session | regime | volatility_regime | trend_state) — never strategy_id,
+    never exact 50D equality.
+  * `family_distribution()` reports family sizes (largest / median / smallest,
+    floor rejections) so fragmentation is measurable, not assumed.
+  * A candidate discovered from a family carries the family's sample ids
+    (`discovery_evidence.sample_ids`): validation can then restrict every gate
+    to the candidate's OWN family instead of the whole heterogeneous dataset
+    (family-select validation, TASK-4).
+  * One economic trade = one economic observation: the dataset builder already
+    collapses duplicate idempotency keys and only executed+closed outcomes
+    enter; discovery never re-counts fills.
 """
 
 from __future__ import annotations
 
 import hashlib
+import math
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 
 from nexus_scalp.research.candidates import StrategyCandidate
 from nexus_scalp.research.models import ResearchSample
@@ -21,6 +37,9 @@ from nexus_scalp.research.models import ResearchSample
 MIN_FAMILY_SAMPLES: int = 20
 #: Minimum discovery expectancy (R) to propose a candidate.
 MIN_DISCOVERY_EXPECTANCY_R: float = 0.10
+#: Absolute floor below which a family is never a candidate even at
+#: SMALL_SAMPLE tier (mirrors models.SMALL_SAMPLE_FLOOR).
+SMALL_SAMPLE_FLOOR: int = 8
 
 
 def _context_fingerprint(s: ResearchSample) -> str:
@@ -34,6 +53,40 @@ def _context_fingerprint(s: ResearchSample) -> str:
         s.trend_state,
     ]
     return "|".join(parts)
+
+
+def family_distribution(
+    samples: Sequence[ResearchSample],
+    min_family_samples: int = MIN_FAMILY_SAMPLES,
+) -> dict[str, object]:
+    """
+    Deterministic family census: sizes, largest/median/smallest, and how many
+    families fall under the sample floor (with the exact count).
+
+    Returns a JSON-safe dict:
+        families, family_sizes (desc), largest, median, smallest,
+        families_above_floor, families_below_floor,
+        samples_in_below_floor_families, total_samples.
+    """
+    groups: dict[str, list[ResearchSample]] = defaultdict(list)
+    for s in samples:
+        groups[_context_fingerprint(s)].append(s)
+    sizes = sorted((len(v) for v in groups.values()), reverse=True)
+    above = sum(1 for v in groups.values() if len(v) >= min_family_samples)
+    below = len(groups) - above
+    below_samples = sum(len(v) for v in groups.values() if len(v) < min_family_samples)
+    median = sizes[len(sizes) // 2] if sizes else 0
+    return {
+        "families": len(groups),
+        "family_sizes": sizes,
+        "largest": sizes[0] if sizes else 0,
+        "median": median,
+        "smallest": sizes[-1] if sizes else 0,
+        "families_above_floor": above,
+        "families_below_floor": below,
+        "samples_in_below_floor_families": below_samples,
+        "total_samples": len(samples),
+    }
 
 
 def discover_candidates(
@@ -55,10 +108,10 @@ def discover_candidates(
 
     candidates: list[StrategyCandidate] = []
     for fingerprint, fam in groups.items():
-        if len(fam) < min_family_samples:
-            continue
-        expectancy = sum(x.realized_r for x in fam) / len(fam)
-        if expectancy < min_expectancy_r:
+        if len(fam) < SMALL_SAMPLE_FLOOR:
+            continue  # below the absolute discovery floor
+        expectancy = _safe_mean([s.realized_r for s in fam])
+        if not expectancy or expectancy < min_expectancy_r:
             continue
         symbol = fam[0].symbol
         context = {
@@ -80,6 +133,13 @@ def discover_candidates(
             "min_expectancy_r": min_expectancy_r,
             "sample_floor": min_family_samples,
         }
+        # TASK-4 two-tier discovery: families at/above the small-sample floor
+        # but below the standard floor are still DISCOVERED (tier SMALL_SAMPLE);
+        # validation gates independently require the evidence floor, so no
+        # threshold weakening is introduced here.
+        tier = "STANDARD"
+        if len(fam) < min_family_samples:
+            tier = "SMALL_SAMPLE"
 
         strategy_id = f"STRAT-{_id(fingerprint)}"
         candidate = StrategyCandidate(
@@ -101,12 +161,23 @@ def discover_candidates(
                 "expectancy_r": round(float(expectancy), 6),
                 "win_rate": round(float(sum(1 for x in fam if x.realized_r > 0)) / len(fam), 4),
                 "fingerprint": fingerprint,
+                "tier": tier,
+                # TASK-4: the exact economic observations behind this candidate.
+                # Validation MUST restrict its gates to these samples.
+                "sample_ids": sorted(s.idempotency_key for s in fam),
             },
         )
         # Assign the content-derived immutable version.
         candidate = candidate.model_copy(update={"strategy_version": candidate.canonical_version()})
         candidates.append(candidate)
     return candidates
+
+
+def _safe_mean(values: Iterable[float]) -> float | None:
+    """Mean of finite values; None when no finite values exist."""
+    acc = [float(v) for v in values if isinstance(v, (int, float))]
+    acc = [v for v in acc if math.isfinite(v)]
+    return (sum(acc) / len(acc)) if acc else None
 
 
 def _id(fingerprint: str) -> str:

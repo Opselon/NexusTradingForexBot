@@ -16,6 +16,7 @@ from __future__ import annotations
 import math
 
 from nexus_scalp.research.models import (
+    MIN_EVIDENCE_SAMPLES,
     BacktestResult,
     OOSResult,
     ResearchDataset,
@@ -142,7 +143,7 @@ def compute_strategy_score(
 
     # --- DEGRADATION ------------------------------------------------------------
     if walkforward is not None:
-        degr = max(0.0, 1.0 - walkforward.degradation)
+        degr = max(0.0, min(1.0, 1.0 - walkforward.degradation))
     else:
         degr = 0.0
         reasons.append("No walk-forward evaluation performed")
@@ -189,6 +190,11 @@ def compute_strategy_score(
         or robustness.status != "PASS"
     ):
         verdict = "REJECTED" if (oos is not None and oos.status != "PASS") else "INCONCLUSIVE"
+    elif n < MIN_EVIDENCE_SAMPLES:
+        # TASK-4 hard small-sample gate: never claim VALIDATED below the
+        # evidence floor regardless of other gates.
+        verdict = "INCONCLUSIVE"
+        reasons.append(f"Sample count {n} below evidence floor {MIN_EVIDENCE_SAMPLES}")
     elif walkforward is not None and not walkforward.passed:
         verdict = "INCONCLUSIVE"
         reasons.append("Walk-forward did not pass")
