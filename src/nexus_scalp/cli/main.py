@@ -49,6 +49,15 @@ app = typer.Typer(
     help=f"{PRODUCT_DISPLAY} - operational & release console",
     add_completion=False,
 )
+
+# ---------------------------------------------------------------------------
+# DB migration & schema management (TASK-10) — same canonical engine as startup
+# ---------------------------------------------------------------------------
+from nexus_scalp.cli.db_commands import db_app
+
+# TASK-10 `db` group; TASK-11 hygiene registers as a SUBCOMMAND of `db`
+# so the spec surface is `nexus db hygiene status|plan|run|pause|resume|history`.
+app.add_typer(db_app, name="db", help="Database schema migration & management (TASK-10).")
 console = Console()
 
 MODE_ALIASES = {
@@ -914,6 +923,22 @@ def _spawn_daemon(cmd: list[str]) -> None:
 
 
 def _run_engine(cfg: AppConfig, *, gateway: bool, port: int) -> None:
+    # TASK-10 startup migration gate: apply safe pending schema migrations
+    # BEFORE the engine enters READY (§6/§7). Same canonical engine as `nexus db`.
+    from nexus_scalp.database.gate import run_startup_migration_gate
+
+    gate = run_startup_migration_gate(
+        workspace=Path.cwd(),
+        application_version=str(get_version_info().get("version", "")),
+    )
+    if not gate.get("ready", False):
+        console.print(
+            "[red]DATABASE MIGRATION GATE BLOCKED[/red] — refusing to start. "
+            "Run `nexus db status` and `nexus db migrate` for details."
+        )
+        raise typer.Exit(1)
+    if gate.get("state") == "DB_MIGRATION_SUCCEEDED":
+        console.print("[green]Database migrations applied successfully.[/green]")
     # Heavy engine imports are local so the slim onefile CLI (which excludes
     # torch/polars/MetaTrader5) never pays for them unless actually starting.
     from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter

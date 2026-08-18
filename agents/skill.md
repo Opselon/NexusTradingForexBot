@@ -1176,6 +1176,37 @@ Telegram daily report and the `/api/account/performance/intelligence` endpoint.
   execution/news/session/insights) +
   `tests/integration/test_accounting_api.py::test_performance_intelligence_endpoint`.
 
+### 🗄️ Database Migration System (TASK-10, 2026-08-19)
+
+Automatic, deterministic, idempotent schema evolution for every persistent
+domain (audit/news/candle_intel). No DB deletion, no manual SQL, no data loss.
+
+- **Engine**: `src/nexus_scalp/database/` — models/manifest/registry/engine/
+  gate. Per-domain independent schema versions (§2); application version ≠
+  DB version (§19).
+- **Migrations**: versioned + checksummed in `database/registry.py`
+  (AUDIT/NEWS/CANDLE-xxxx). Additive-first; indexes via
+  `CREATE INDEX IF NOT EXISTS`; columns via guarded `ALTER TABLE ADD COLUMN`;
+  destructive changes require operator review (§26/§34).
+- **Baseline detection** (§5): legacy DBs without schema_meta are inspected
+  and baseline-recorded — never recreated.
+- **Startup gate** (§6/§7): `cli/main.py::_run_engine` runs
+  `run_startup_migration_gate()` before READY; failure → BLOCKED, engine
+  refuses to start. Cheap version check when current (§28).
+- **WAL-safe backup** (§29/§30): SQLite streaming backup API captures
+  uncheckpointed WAL; backups in `<db>/backups/`.
+- **Lock** (§18): OS-level `<db>.migrate.lock` prevents concurrent migration.
+- **CLI**: `nexus db status|plan|migrate|verify|migrations|history|repair`
+  (+ `--json`), same engine as startup (§24/§25/§53/§54).
+- **Update integration** (§21): TASK-9 updater runs the same engine post-install.
+- **Health/API** (§38/§39): DATABASE health includes migration state;
+  `/api/db/status` exposes per-domain schema/migration/integrity.
+- **Developer rule** (§51): NEVER add DDL to bootstrap SQL outside migration
+  control — SCHEMA CHANGE → CHANGE-ID → MIGRATION → TEST → MANIFEST → GATE.
+- Tests: `tests/unit/test_database_migrations_phase18.py` (TEST-DBM-01..40),
+  `tests/unit/test_cli_db_phase18.py`; large-DB probe in
+  `scratch/probe_db_migration_scale.py` (100k rows → 0.24s, index 240× faster).
+
 ### 🧠 Behavioral & Anomaly Intelligence (TASK-2, 2026-08-18)
 
 Evidence-driven behavioral/anomaly layer, wired end-to-end (BUG-094 FIXED).
@@ -2385,6 +2416,41 @@ source of truth.
   classifies stops from SL geometry + modification flags (unchanged).
 
 ---
+
+
+## 15l. Database Hygiene / Retention / Legacy Pruning (TASK-11, 2026-08-18)
+
+> **STATUS:** DatabaseHygieneWorker shipped (BUG-099 FIXED). Non-destructive
+> by default: AUDIT_ONLY first run; SAFE_CLEAN operator opt-in; AGGRESSIVE
+> requires explicit activation. 37 regression tests
+> (tests/unit/test_database_hygiene_task11.py). Policy:
+> docs/DATABASE_HYGIENE.md; per-table matrix:
+> docs/DATABASE_HYGIENE_MATRIX.md.
+
+- Pipeline: OBSERVE → CLASSIFY → PLAN → VALIDATE → CLEAN → VERIFY.
+- Tiers TIER-0..8; TIER-0/1 (broker truth, canonical audit) NEVER
+  auto-deleted; unknown tables default KEEP (spec §73).
+- Duplicate detection uses canonical identities only (idempotency_key,
+  article_hash+verified duplicate_of, trade_id, article_id+run_id).
+  Split-fill families (same order_id) are PROTECTED, never duplicates.
+- Orphan detection reports EXPECTED_ORPHAN/RECOVERABLE/REBUILDABLE/
+  CORRUPTION/UNKNOWN; never auto-deletes (3,372 pre-BUG-045 broker-trade
+  ledger-gap rows are EXPECTED orphans, preserved).
+- Retention: BUG-054 evidence windows (signals 7d, MOVING 3d, guard 13d) +
+  candle derived 30d + cache 7d + active-state 1d + news health 90d +
+  worker state 30d. Archive-before-delete at
+  artifacts/archive/<db>/<table>/<archive_id>.jsonl with sha256 verify.
+- Budgets: 200k rows scanned / 2k deleted / 5k archived / 30s / 2s lock —
+  global across tables; exceeded → STOP/DEFER.
+- CLI: `nexus db hygiene status|plan|run|pause|resume|history` (--json);
+  destructive requires `--mode SAFE_CLEAN|AGGRESSIVE_CLEAN --apply`.
+- API: `GET /api/db/hygiene` — real sizes/state/plans.
+- live_engine calls the worker via asyncio.to_thread at a 6h throttle;
+  LIVE execution mode stays conservative; BUSY → DEFER (never force).
+- Crash recovery: IN_PROGRESS runs marked INTERRUPTED at startup; a
+  destructive batch is never resumed blindly (spec §66).
+- Schema DESTRUCTIVE operations (DROP TABLE/COLUMN, index changes) go
+  through TASK-10 migrations — the hygiene worker never drops schema.
 
 ## 15j. MT5 Broker-Aware Runtime & Dashboard Repair (PHASE 14 COMPLETION)
 

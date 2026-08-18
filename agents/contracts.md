@@ -28,8 +28,12 @@
 | RESEARCH_RESULT | v1 | ACTIVE | research/ | registry, web |
 | UPDATE_SYSTEM | v1 | ACTIVE | release/updater.py, cli/main.py | installed users, release CI |
 | UI_STATE | v1 (900-bar standard) | ACTIVE | web/ | dashboard |
+| DATABASE_HYGIENE | v1 | ACTIVE | hygiene/worker_runner.py | CLI, API, live_engine |
+| RETENTION_POLICY | v1 | ACTIVE | hygiene/retention.py | hygiene worker, DB owners |
 | BEHAVIOR_ANALYSIS | v1 (behavior-v1) | ACTIVE | intelligence/behavior.py | reporting, web, telegram |
 | ANOMALY_EVENT | v1 (anomaly-v1) | ACTIVE | intelligence/behavior.py | reporting, web, telegram |
+| DB_MIGRATION | v1 | ACTIVE | database/engine.py | startup, cli, updater, health, web |
+| SCHEMA_MANIFEST | v1 | ACTIVE | database/manifest.py | database/engine.py, cli, health |
 
 ## Contract detail template
 

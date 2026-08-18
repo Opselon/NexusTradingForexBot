@@ -1394,6 +1394,32 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def get_status() -> dict[str, Any]:
         return get_system_state()
 
+    # TASK-11: Database health / hygiene state (real backend data — never fake).
+    @app.get("/api/db/hygiene")
+    def get_db_hygiene() -> dict[str, Any]:
+        try:
+            from nexus_scalp.hygiene import WorkerMode
+            from nexus_scalp.hygiene.worker_runner import DatabaseHygieneWorker
+
+            base_dir = Path.cwd()
+            if engine_state := getattr(app.state, "engine", None):
+                cfg = getattr(engine_state, "config", None)
+                if cfg is not None and hasattr(cfg, "base_dir"):
+                    base_dir = Path(cfg.base_dir)
+            worker = DatabaseHygieneWorker(
+                repo_root=base_dir, mode=WorkerMode.AUDIT_ONLY, apply_deletes=False
+            )
+            st = worker.status()
+            plans = {}
+            for db in ("audit", "news", "candle_intel"):
+                plans[db] = worker.plan_database(db)
+            return {"status": st, "plans": plans}
+        except Exception as e:
+            return {
+                "status": {"state": "DEGRADED", "error_state": str(e)},
+                "plans": {},
+            }
+
     # REST APIs: Trading Rules
     @app.get("/api/rules")
     def get_trading_rules() -> list[dict[str, Any]]:
@@ -3889,6 +3915,44 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Research health failed"})
             return _err("INTERNAL_ERROR")
+
+    @app.get("/api/db/status")
+    def get_db_migration_status() -> dict[str, Any]:
+        """TASK-10: per-domain database schema + migration state (§38).
+
+        Reports schema version, expected version, migration state, pending
+        count, integrity and last migration for every persistent domain.
+        Read-only; never runs migrations from the API (§31).
+        """
+        from pathlib import Path as _Path
+
+        from nexus_scalp.database.engine import DatabaseMigrationEngine, db_path_for_domain
+        from nexus_scalp.database.models import DatabaseDomain
+
+        base = _Path.cwd()
+        out: dict[str, Any] = {}
+        for dom in DatabaseDomain:
+            path = db_path_for_domain(dom.value, base)
+            eng = DatabaseMigrationEngine(db_path=path, domain=dom)
+            try:
+                st = eng.status()
+                out[dom.value] = {
+                    "schema_version": st["current_version"],
+                    "expected_version": st["expected_version"],
+                    "migration_state": st["migration_state"],
+                    "pending_count": st["pending_count"],
+                    "integrity": st.get("integrity", ""),
+                    "last_migration": st.get("last_migration", {}),
+                    "tamper_detected": st.get("tamper_detected", False),
+                }
+            except Exception as exc:
+                out[dom.value] = {
+                    "schema_version": 0,
+                    "expected_version": eng.expected_version(),
+                    "migration_state": "DB_MIGRATION_FAILED",
+                    "error": str(exc),
+                }
+        return serialize_enums({"available": True, "databases": out})
 
     @app.post("/api/research/discover")
     def trigger_research_discovery() -> dict[str, Any]:

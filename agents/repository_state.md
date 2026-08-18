@@ -79,3 +79,29 @@ Update this file additively after substantial work (new modules, model changes, 
 - Reporting: BehavioralSection + AnomalyStateSection carry truth states (NO_DATA/CLEAR/FLAGS_FOUND/ANOMALIES_FOUND), evidence coverage, engine versions. Telegram/API consume them; `n/a (no behavioral flags recorded)` and `none detected` eliminated.
 - API: `/api/account/performance/intelligence` gains compact `intelligence` block; new `/api/intelligence/anomalies`.
 - BUG-094 (behavior pipeline disconnected) FIXED. Handoff: `docs/agent_handoffs/2026-08-18_TASK-2-behavior-anomaly-intelligence.md`.
+
+## Snapshot — TASK-11 (Database Hygiene, 2026-08-18)
+
+- NEW: `src/nexus_scalp/hygiene/` (retention, detectors, archive, worker,
+  state, worker_runner) — non-destructive DatabaseHygieneWorker.
+- NEW: CLI `nexus db hygiene status|plan|run|pause|resume|history` (+--json);
+  API `GET /api/db/hygiene`; live_engine 6h hygiene hook (AUDIT_ONLY first run).
+- Docs: docs/DATABASE_HYGIENE_MATRIX.md (per-table tiers/retention/owners),
+  docs/DATABASE_HYGIENE.md (policy), handoff TASK-11-database-hygiene.md.
+- Registries: BUG-099, INV-017, CHG-0006 VERIFIED, contracts DATABASE_HYGIENE
+  v1 + RETENTION_POLICY v1, skill.md §15l, taskboard TASK-11 VERIFIED.
+
+## Snapshot 2026-08-19 (TASK-10 — database migration system landed)
+
+- TASK-10 (Hermes-DBMigrate) VERIFIED: canonical `src/nexus_scalp/database/`
+  migration engine — per-domain schema versions, checksummed migration
+  registry, baseline detection, WAL-safe backups, OS-lock concurrency control,
+  drift detection, downgrade block, startup gate, `nexus db` CLI (same
+  engine), TASK-9 updater integration, health/doctor + `/api/db/status`.
+- Schema versions: audit=4, news=2, candle_intel=2 (all migrated in place on
+  artifacts/*.db; financial/news/research invariants verified unchanged).
+- New docs: `docs/DATABASE_MIGRATIONS.md`, RELEASE.md §11, skill.md section,
+  contracts DB_MIGRATION v1 + SCHEMA_MANIFEST v1, INV-013.
+- Tests: tests/unit/test_database_migrations_phase18.py (TEST-DBM-01..40) +
+  test_cli_db_phase18.py; large-DB probe (100k orders/50k ledger → 0.24s,
+  idx_orders_ticket 4.32ms→0.02ms, integrity ok, idempotent).

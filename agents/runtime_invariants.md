@@ -113,9 +113,28 @@ Status: 🟢 VERIFIED (2026-08-18 TASK-5: compute_60d_extras + dataset build on
 real M5; news postdating the dataset produced zero vectors, recorded as
 NEWS_INCONCLUSIVE_NO_OVERLAP — never a fabricated signal).
 
+## INV-017 — Database hygiene is non-destructive by default
+The hygiene worker defaults to AUDIT_ONLY; only operator-explicit
+SAFE_CLEAN may apply pre-approved safe classes with confidence 1.0;
+AGGRESSIVE_CLEAN requires separate activation. Financial/broker truth,
+migration history, model provenance, research evidence are NEVER
+auto-deleted. Every destructive batch is archived-before-delete,
+journaled, budget-bounded, and verified after each batch
+(DATABASE_HYGIENE v1, BUG-099). Never runs on the tick hot path;
+BUSY databases are DEFER-ed, never forced.
+
 ## INV-016 — Candidate training can never promote or touch the Champion
 Model training writes candidate ids only; FAILED/non-finite/exploding runs
 are terminal FAILED states; no automatic promotion path exists; the live
 engine loads the Champion from the operator-owned artifact path.
 Status: 🟢 VERIFIED (2026-08-18 TASK-5 experiment: 4 candidate cells,
 all REJECTED, Champion hash unchanged).
+
+## INV-013 — Database evolution is migration-controlled (TASK-10)
+Schema changes (tables/columns/indexes) MUST be declared as versioned,
+checksummed migrations in `src/nexus_scalp/database/registry.py` and applied
+only through `DatabaseMigrationEngine` (startup gate, `nexus db`, updater).
+Never add DDL directly to bootstrap SQL outside migration control. Migrations
+are additive-first, idempotent, WAL-safe-backup-backed; destructive changes
+require operator review; downgrades are blocked; the engine never deletes a
+database file and never rewrites raw financial/news/research/model truth.

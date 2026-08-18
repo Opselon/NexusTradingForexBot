@@ -192,6 +192,14 @@ class LiveEngine:
         # Daily Telegram performance summary (BUG-057): once per 24h.
         self._daily_summary_interval_sec: float = 24 * 3600.0
         self._last_daily_summary_time: float = 0.0
+        # TASK-11: database hygiene worker cycle (low frequency, off hot path).
+        # First-run posture is AUDIT_ONLY (never deletes on debut); an operator
+        # opts into SAFE_CLEAN --apply via the CLI. Idle scan ~6h, deep cycle
+        # ~24h — never every 60s.
+        self._hygiene_interval_sec: float = 6 * 3600.0
+        self._last_hygiene_time: float = 0.0
+        self._hygiene_worker = None  # lazy: DatabaseHygieneWorker (AUDIT_ONLY)
+        self._hygiene_mode = "AUDIT_ONLY"
 
         self._running: bool = False
         self.server_state: Any = None
@@ -1071,6 +1079,44 @@ class LiveEngine:
                         await asyncio.to_thread(self.audit.purge_old_audit_data)
                     except Exception:
                         logger.error("Audit retention purge failed (isolated)")
+
+                # TASK-11: database hygiene cycle (throttled ~6h, AUDIT_ONLY
+                # first run, off the tick path via to_thread; never deletes
+                # unless the operator explicitly enabled SAFE_CLEAN).
+                if now_t - self._last_hygiene_time >= self._hygiene_interval_sec:
+                    self._last_hygiene_time = now_t
+                    try:
+                        if self._hygiene_worker is None:
+                            from nexus_scalp.hygiene import WorkerMode
+                            from nexus_scalp.hygiene.worker_runner import (
+                                DatabaseHygieneWorker,
+                            )
+
+                            exec_mode = str(
+                                getattr(self.config, "execution_mode", "PAPER") or "PAPER"
+                            ).upper()
+                            apply_deletes = bool(
+                                getattr(self.config, "hygiene_apply_deletes", False)
+                            ) and exec_mode != "LIVE"
+                            self._hygiene_worker = DatabaseHygieneWorker(
+                                repo_root=self.config.base_dir
+                                if hasattr(self.config, "base_dir")
+                                else Path.cwd(),
+                                mode=WorkerMode.AUDIT_ONLY
+                                if not apply_deletes
+                                else WorkerMode.SAFE_CLEAN,
+                                execution_mode=exec_mode,
+                                apply_deletes=apply_deletes,
+                            )
+                        await asyncio.to_thread(
+                            self._hygiene_worker.run_cycle,
+                            ["audit", "news", "candle_intel"],
+                        )
+                    except Exception as hyg_err:
+                        logger.warning(
+                            "[DB_HYGIENE] event=CYCLE_FAILED (isolated)",
+                            error=str(hyg_err),
+                        )
 
                 # Daily Telegram performance summary (BUG-057): throttled to
                 # once per 24h; built from the canonical accounting core (never
