@@ -197,3 +197,24 @@ nexus update --yes      # skip prompts (never bypasses security checks)
 Read `agents/skill.md` first when touching the engine; this release system is
 additive and never modifies trading logic except where startup compatibility
 requires it.
+
+## 11. Database migration release rule (TASK-10)
+
+Every release that changes persistence schema MUST ship:
+
+1. **Migration metadata** — versioned, checksummed migrations registered in
+   `src/nexus_scalp/database/registry.py` (per domain, additive-first).
+2. **Migration tests** — TEST-DBM-xx coverage for the new migrations
+   (see `docs/DATABASE_MIGRATIONS.md` §15).
+3. **Expected schema versions** — the release manifest declares the schema
+   versions it supports (audit/news/candle_intel), enforced by the startup
+   migration gate and `nexus db verify`.
+4. **Migration notes + rollback/recovery strategy** — documented in the
+   release body and `docs/DATABASE_MIGRATIONS.md`.
+5. **Compatibility declaration** — DB schema ↔ minimum app version mapping so
+   an old app never runs against a newer schema (downgrade blocked).
+
+The release build fails if the application expects schema N but the migration
+package does not contain a path to N (§49). The updater (`nexus update`)
+invokes the canonical migration engine for all three domains after the staged
+install; a failed migration aborts the update transaction.

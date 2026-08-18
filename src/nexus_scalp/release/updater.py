@@ -1945,11 +1945,42 @@ class UpdateOrchestrator:
             cm = ConfigMigrator(cfg)
             cres = cm.migrate_if_needed()
             results["steps"].append({"kind": "config", **cres})
-        db = self.user_root / "artifacts" / "audit.db"
-        if db.exists():
-            dm = DatabaseMigrator(db)
-            dres = dm.migrate(target_version="1")
-            results["steps"].append({"kind": "database", **dres})
+        # TASK-10: canonical per-domain migration engine (same as `nexus db`).
+        for domain_name, db_name in (
+            ("audit", "audit.db"),
+            ("news", "news.db"),
+            ("candle_intel", "candle_intel.db"),
+        ):
+            db = self.user_root / "artifacts" / db_name
+            if not db.exists():
+                continue
+            try:
+                from nexus_scalp.database.engine import DatabaseMigrationEngine
+                from nexus_scalp.database.models import DatabaseDomain
+
+                eng = DatabaseMigrationEngine(
+                    db_path=db,
+                    domain=DatabaseDomain(domain_name),
+                    application_version=str(plan.get("target_version", "")),
+                )
+                dres = eng.migrate()
+                results["steps"].append({
+                    "kind": "database", "domain": domain_name, **dres
+                })
+                if dres["state"] in (
+                    "DB_MIGRATION_FAILED",
+                    "DB_BLOCKED",
+                    "DB_DOWNGRADE_BLOCKED",
+                ):
+                    raise MigrationError(
+                        f"database migration failed for {domain_name}: {dres.get('error')}"
+                    )
+            except Exception as e:
+                if isinstance(e, MigrationError):
+                    raise
+                raise MigrationError(
+                    f"database migration failed for {domain_name}: {e}"
+                ) from e
         if any(s.get("applied") or s.get("migrated") for s in results["steps"]):
             results["result"] = "MIGRATED"
         return results

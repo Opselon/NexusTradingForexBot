@@ -208,10 +208,24 @@ class HealthEngine:
     def check_database(self) -> HealthEntry:
         verdict, reason = _db_health(self.db_path)
         entry = HealthEntry("DATABASE", verdict, f"audit.db: {reason}")
+        # TASK-10: migration state contributes to the health verdict (§39).
+        # A MISSING database file stays FAIL; only an existing-but-behind DB
+        # is DEGRADED/WARNING.
+        if self.db_path.exists():
+            mig_v, mig_reason = self._migration_state()
+            if mig_v == "DEGRADED":
+                entry.verdict = "WARNING"
+                entry.reason += f" · {mig_reason}"
+                entry.suggestion = "Run `nexus db migrate` to apply pending schema migrations."
+            elif mig_v == "BLOCKED":
+                entry.verdict = "FAIL"
+                entry.reason += f" · {mig_reason}"
+                entry.suggestion = "Run `nexus db status` / `nexus db repair` — migration blocked."
         if verdict != "PASS":
-            entry.suggestion = (
-                "Run `nexus repair --database` (non-destructive) — or restore from backup."
-            )
+            if not entry.suggestion:
+                entry.suggestion = (
+                    "Run `nexus repair --database` (non-destructive) — or restore from backup."
+                )
         else:
             # Phase tables presence check (informative, not gate-keeping).
             tables = _db_tables(self.db_path)
@@ -229,6 +243,26 @@ class HealthEngine:
                 entry.verdict = "WARNING"
                 entry.suggestion = "Run `nexus repair --database` to create missing phase tables."
         return entry
+
+    def _migration_state(self) -> tuple[str, str]:
+        """TASK-10 migration state: READY / DEGRADED (pending) / BLOCKED."""
+        try:
+            from nexus_scalp.database.engine import DatabaseMigrationEngine
+            from nexus_scalp.database.models import DatabaseDomain
+            from nexus_scalp.database.registry import expected_version_for_domain
+
+            eng = DatabaseMigrationEngine(db_path=self.db_path, domain=DatabaseDomain.AUDIT)
+            cur = eng.current_version()
+            exp = expected_version_for_domain(DatabaseDomain.AUDIT)
+            if cur == 0:
+                return "DEGRADED", f"database schema unversioned (expected {exp})"
+            if cur < exp:
+                return "DEGRADED", f"database schema {cur} behind expected {exp} ({exp - cur} pending)"
+            if cur > exp:
+                return "BLOCKED", f"database schema {cur} newer than app supports ({exp})"
+            return "READY", f"database schema {cur} current"
+        except Exception:
+            return "BLOCKED", "migration state unavailable"
 
     def check_model(self) -> HealthEntry:
         configured = None

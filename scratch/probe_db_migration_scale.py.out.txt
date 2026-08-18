@@ -1,0 +1,8 @@
+building large DB (100k orders / 50k ledger)...
+BEFORE idx: latency=4.316 ms/query  plan=216
+MIGRATION: DB_MIGRATION_SUCCEEDED cur=4 applied=3 in 0.24s
+AFTER idx : latency=0.018 ms/query  plan=62
+size before=4.8MB after=8.4MB
+SECOND RUN: DB_MIGRATION_NOT_REQUIRED (idempotent check)
+integrity: ok
+LARGE DB PROBE: PASS
