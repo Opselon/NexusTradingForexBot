@@ -66,7 +66,17 @@ def action_scan_tree(args: list[str]) -> int:
     for p in root.rglob("*"):
         if not p.is_file():
             continue
-        if p.suffix.lower() in (".pyc", ".dll", ".exe", ".pyd", ".pt", ".bin", ".db", ".zip", ".7z"):
+        if p.suffix.lower() in (
+            ".pyc",
+            ".dll",
+            ".exe",
+            ".pyd",
+            ".pt",
+            ".bin",
+            ".db",
+            ".zip",
+            ".7z",
+        ):
             continue
         if p.stat().st_size > 2 * 1024 * 1024:
             continue
@@ -93,7 +103,7 @@ def action_manifest(args: list[str]) -> int:
     """Generate release-manifest.json + embedded (portable-rooted) copy."""
     out_dir = Path(args[0])
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-    from nexus_scalp.release import packaging as p  # noqa: PLC0415
+    from nexus_scalp.release import packaging as p
 
     artifacts = (
         list(out_dir.glob("portable/*.exe"))
@@ -112,9 +122,7 @@ def action_manifest(args: list[str]) -> int:
     portable_manifest = portable_root / "release-manifest.json"
     base_meta = json.loads(manifest.read_text(encoding="utf-8"))
     payload_files = sorted(
-        f
-        for f in portable_root.rglob("*")
-        if f.is_file() and f.name != "release-manifest.json"
+        f for f in portable_root.rglob("*") if f.is_file() and f.name != "release-manifest.json"
     )
     embedded_arts = [
         {
@@ -143,8 +151,7 @@ def action_manifest(args: list[str]) -> int:
     }
     portable_manifest.write_text(json.dumps(embedded, indent=2), encoding="utf-8")
     print(
-        f"manifest: {len(artifacts)} artifacts -> {manifest} "
-        f"(embedded: {len(payload_files)} files)"
+        f"manifest: {len(artifacts)} artifacts -> {manifest} (embedded: {len(payload_files)} files)"
     )
     return 0
 
@@ -152,7 +159,7 @@ def action_manifest(args: list[str]) -> int:
 def action_sbom(args: list[str]) -> int:
     out_dir = Path(args[0])
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-    from nexus_scalp.release import packaging as p  # noqa: PLC0415
+    from nexus_scalp.release import packaging as p
 
     (out_dir / "sbom").mkdir(parents=True, exist_ok=True)
     p.generate_sbom(out=out_dir / "sbom" / "sbom.spdx.json")
@@ -164,7 +171,7 @@ def action_verify(args: list[str]) -> int:
     """Full release-tree self-check (EXE launch + assets + checksums + secrets)."""
     root = Path(args[0])
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-    from nexus_scalp.release import verify as v  # noqa: PLC0415
+    from nexus_scalp.release import verify as v
 
     res = v.verify_release(root)
     print("OVERALL:", res["overall"])

@@ -416,9 +416,9 @@ def test_post_update_health_check_uses_engine_health(app_root: Path) -> None:
     fake_exe.unlink(missing_ok=True)
     fake_exe.write_text(
         textwrap.dedent(
-            '''import json, sys
+            """import json, sys
         print(json.dumps({"overall": "READY", "checks": []}))
-        '''
+        """
         ),
         encoding="utf-8",
     )
