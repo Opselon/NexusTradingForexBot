@@ -17,6 +17,10 @@ permissions:
   security-events: write
   actions: read
 
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  USER_ID: ${{ secrets.USER_ID }}
+
 concurrency:
   group: security-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -62,3 +66,8 @@ jobs:
         if: always()
         with:
           sarif_file: "trivy-results.sarif"
+
+      - name: Telegram - security scan complete
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py security --scan Trivy --status "${{ job.status }}" || true

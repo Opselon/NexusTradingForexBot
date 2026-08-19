@@ -17,8 +17,18 @@ on:
 permissions:
   contents: write
 
+# Two releases must never race: a tag push cancels any in-flight release
+# of the SAME tag (replace) but NOT a different tag (two versions in
+# flight are allowed and must not cancel each other).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   PYTHON_VERSION: "3.11"
+  # Telegram release observability — values from secrets; NEVER printed.
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  USER_ID: ${{ secrets.USER_ID }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -46,6 +56,11 @@ jobs:
             echo "::error::Tag v$TAG does not match pyproject version $PYPROJ_VERSION — releasegate blocks."
             exit 1
           fi
+      - name: Telegram - release started
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" release-started --tag "${{ github.ref_name }}" || true
+
       - name: Scan for secrets in the tree
         shell: bash
         run: |
@@ -96,6 +111,11 @@ jobs:
       - name: Integration tests (no MT5, no browser)
         run: pytest tests/integration/ -q --tb=short \
              --ignore=tests/integration/test_playwright_e2e.py
+
+      - name: Telegram - release gates complete
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py test-summary || true
 
   # ---------------------------------------------------------------------------
   # C. BUILD — windows-x64 (the only supported architecture)
@@ -299,3 +319,47 @@ jobs:
           body_path: notes.md
           files: |
             release-assets/**/*
+
+      - name: Verify published release (post-release check)
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          # Re-fetch the release via the GitHub API and verify it exists.
+          # Best-effort: authenticated call with the built-in token.
+          RESP="$(curl -sS -o /tmp/release.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/${{ github.repository }}/releases/tags/$TAG")"
+          echo "release fetch http=$RESP"
+          if [ "$RESP" != "200" ]; then
+            echo "::error::Release verification FAILED: HTTP $RESP for tag $TAG"
+            exit 1
+          fi
+          python - <<PY
+          import json, os, sys
+          data = json.load(open("/tmp/release.json"))
+          expect = {"tag_name", "name"}
+          ok = True
+          if data.get("tag_name") != os.environ.get("RELEASE_TAG", ""):
+              print("TAG MISMATCH")
+              ok = False
+          assets = data.get("assets", [])
+          if not assets:
+              print("NO ASSETS UPLOADED")
+              ok = False
+          print(f"verified release: tag={data.get(\"tag_name\")} assets={len(assets)}")
+          for a in assets:
+              print(f"  asset: {a.get(\"name\")} {a.get(\"size\")} bytes")
+          print("VERIFIED" if ok else "VERIFICATION FAILED")
+          sys.exit(0 if ok else 1)
+          PY
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Telegram - release finished
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py release-success --tag "${{ github.ref_name }}" || true

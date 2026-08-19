@@ -621,3 +621,57 @@ Dependencies: TASK-CI-ISOLATION, TASK-CI-REPORTING
 Required tests: actionlint on all workflows, YAML parse, dry-run artifact flow
 Status: IN_PROGRESS
 ```
+
+```text
+CHANGE-ID: CHG-0026
+Agent: Hermes-CI-Telegram
+Role: CI/CD Observability & Notification Engineer
+Task: TASK-CI-TELEGRAM
+Scope: Enterprise Telegram CI/CD observability layer (spec: HTML-format,
+       split/HTML-safe, secret-redacted, file-uploading, isolated).
+       New src/ modules: observability/telegram_html.py (central HTML
+       renderer + esc() + split_html_message with tag-safe splitting,
+       Unicode/Persian-safe), observability/telegram_transport.py
+       (sendDocument upload + captions + redact_secrets for text/files),
+       observability/ci_telegram_reporter.py (orchestrator reading
+       ci-results/run-info, junit wrapper, coverage; chat-id resolution
+       TELEGRAM_CHAT_ID > NEXUS_TELEGRAM_ADMIN_ID). CLI
+       scripts/ci/telegram_notify.py (run-started/run-finished/
+       test-summary/artifacts/release-*/push/pr; ALWAYS exit 0 so CI
+       never fails on Telegram). ci.yml wired: Telegram - CI started/finished
+       steps (advisory, continue-on-error). docs/ci-telegram-operations.md
+       (config, chat-id how-to, retry/timeout/redaction policy),
+       docs/ci-secrets.md (+TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID rows).
+       Tests: tests/unit/test_telegram_html.py (36) +
+       test_ci_telegram_reporter.py (20) — HTML escaping, malformed
+       values, long-message splitting, Persian/Unicode, redaction,
+       file uploads, missing/oversized files, chat-id resolution
+       (incl. USER_ID), failure isolation.
+       Enterprise wiring: USER_ID accepted as Telegram destination
+       (fallback < TELEGRAM_CHAT_ID); release.yml concurrency guard
+       (per-tag, no cancel), Telegram release started/gates/finished
+       steps + POST-RELEASE VERIFICATION (API re-fetch: tag match +
+       assets present); docker.yml concurrency + 40m timeout;
+       security.yml Telegram security result step; CLI gains
+       'security' subcommand.
+Affected files: src/nexus_scalp/observability/{telegram_html,telegram_transport,
+       ci_telegram_reporter}.py (new), scripts/ci/telegram_notify.py (new),
+       .github/workflows/ci.yml (telegram env + 2 notify steps),
+       docs/{ci-telegram-operations,ci-secrets}.md,
+       tests/unit/{test_telegram_html,test_ci_telegram_reporter}.py,
+       agents/{change_control,taskboard}.md
+Contracts touched: TELEGRAM_OBSERVABILITY v1 (new; canonical HTML message
+       vocabulary + correlation id NEXUS-CI-<run>-<sha4>); CI_RESULTS v1
+       (consumed: run-info/*.json, junit.xml, coverage.xml)
+Runtime paths touched: NONE (src/ additions only; no trading/execution/ML
+       code modified; existing TelegramNotifier untouched)
+Owners affected: TASK-CI-READY (CHG-0025) — complementary: this is the
+       library+CLI+tests; CHG-0025 keeps workflow hardening
+Risk: LOW. All new modules; CI fails never on Telegram errors; messages
+       redacted before send; no secrets referenced in logs/artifacts
+Dependencies: TASK-CI-REPORTING (ci-results), CHG-0024 (secrets doc)
+Required tests: pytest tests/unit/test_telegram_html.py
+       tests/unit/test_ci_telegram_reporter.py (55 passed); ruff check +
+       format on all new files; actionlint on ci.yml
+Status: READY_FOR_REVIEW
+```

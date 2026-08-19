@@ -189,13 +189,17 @@ def cmd_manifest(args: argparse.Namespace) -> int:
     _write_json(run_info / "manifest.json", manifest)
 
     # Checksums cover every file EXCEPT SHA256SUMS.txt and manifest.json
-    # (self-referential hashes would be unstable).
+    # (self-referential hashes would be unstable). LF-only newlines so the
+    # file verifies on Linux runners with plain `sha256sum -c` (CRLF would
+    # stick a \r to every filename).
     lines: list[str] = []
     for entry in files:
         if entry["path"] in ("run-info/SHA256SUMS.txt", "run-info/manifest.json"):
             continue
         lines.append(f"{entry['sha256']}  {entry['path']}")
-    (run_info / "SHA256SUMS.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (run_info / "SHA256SUMS.txt").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8", newline="\n"
+    )
 
     print(f"MANIFEST {len(files)} files, {len(lines)} checksummed -> {run_info}")
     return 0
@@ -292,8 +296,19 @@ def cmd_summary(args: argparse.Namespace) -> int:
     ]
     heavy_rows = []
     for label, key in heavy:
-        data = _load_json(root / "run-info" / f"{key}.json")
-        if data is not None and data.get("status") in ("passed", "failed", "errored"):
+        # In merged aggregate runs, per-arm status files live under
+        # heavy/<suite>/run-info/<suite>.json; in direct runs they are at the
+        # top level. Try both so the summary always reflects real suite results.
+        candidates = (
+            root / "run-info" / f"{key}.json",
+            root / "heavy" / key / "run-info" / f"{key}.json",
+        )
+        data = None
+        for cand in candidates:
+            data = _load_json(cand)
+            if data is not None and data.get("status") in ("passed", "failed", "errored"):
+                break
+        if data is not None:
             heavy_rows.append((label, data))
 
     junit = _load_json(root / "run-info" / "pytest-extra.json") or {}

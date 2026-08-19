@@ -24,6 +24,9 @@ files or any other credential storage into this repository.
 |--------|---------|---------|----------|-------|
 | `CODECOV_TOKEN` | `.github/workflows/ci.yml` (codecov upload step) | Upload coverage.xml to Codecov; presence-checked (never printed) | No (upload skipped when absent; `fail_ci_if_error: false`) | Repository |
 | `GITHUB_TOKEN` | `.github/workflows/docker.yml` (GHCR login) | Authenticate to ghcr.io for image push | Yes for docker.yml push | Repository (auto-provided) |
+| `TELEGRAM_BOT_TOKEN` | `.github/workflows/ci.yml`, `release.yml` (Telegram CI/CD observability) | Bot token for the CI/release Telegram feed (`telegram_notify.py`); presence-checked, never printed | No for CI (notifications skip when absent) | Repository |
+| `TELEGRAM_CHAT_ID` | `.github/workflows/ci.yml`, `release.yml` (Telegram CI/CD observability) | Destination chat/group id for CI notifications; falls back to `USER_ID` | No for CI | Repository |
+| `USER_ID` | `.github/workflows/*.yml` (Telegram CI/CD observability) | Telegram destination chat id (numeric); used as fallback when `TELEGRAM_CHAT_ID` is absent | No for CI | Repository |
 | `NEXUS_TELEGRAM_BOT_TOKEN` | runtime / Telegram reports; presence-checked in CI | Telegram bot token for project notifications | No for CI (bounded report feature) | Repository (runtime env) |
 | `NEXUS_TELEGRAM_ADMIN_ID` | runtime / Telegram reports; presence-checked in CI | Admin chat id for Telegram reports | No for CI | Repository (runtime env) |
 

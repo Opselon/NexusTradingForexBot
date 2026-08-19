@@ -27,6 +27,11 @@ env:
   CI_RESULTS_DIR: ci-results
   # Retention for the single canonical CI results artifact (days).
   CI_ARTIFACT_RETENTION_DAYS: "30"
+  # Telegram CI/CD observability — presence-only wiring; values come from
+  # repo secrets and are NEVER printed or written into reports.
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  USER_ID: ${{ secrets.USER_ID }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -65,6 +70,12 @@ jobs:
         run: |
           python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
             --json "$CI_RESULTS_DIR/run-info/env-digest.json"
+
+      # -------- Telegram: workflow started (advisory; never fails CI) --------
+      - name: Telegram - CI started
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" run-started || true
 
       # -------- Ruff lint (own directory; JSON machine output + text log) --------
       - name: Ruff - Lint
@@ -235,6 +246,14 @@ jobs:
               fh.write(summary + "\n")
           PY
           exit 0
+
+      # -------- Telegram: run finished (advisory; never fails CI) --------
+      - name: Telegram - CI finished
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" run-finished || true
+          python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" artifacts || true
 
       # -------- One canonical artifact per run --------
       # On heavy runs (ci-tests / full dispatch) the aggregate job uploads the
