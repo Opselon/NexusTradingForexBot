@@ -710,3 +710,17 @@ Required tests: actionlint clean; merge layout simulated locally; live
        GitHub runs verified (quality artifact + per-arm artifacts + aggregate)
 Status: VERIFIED
 ```
+## CHG-0027 — Client CLI Update Engine v2: exact-release identity, checksum-asset digests, stage-differentiated commands (TASK-UPDATER-02, 2026-08-20)
+
+**Status:** IMPLEMENTING
+**Agent:** Hermes-UpdateCLI
+**Scope:** src/nexus_scalp/release/updater.py, src/nexus_scalp/cli/main.py, docs/RELEASE.md, tests/unit/test_release_update_phase17.py
+**Change:**
+- Release selection now locks an exact identity (release_id, tag, commit_sha, published_at) before download; draft releases and REVOKED markers are never eligible.
+- SHA-256 digests resolved from the release's own checksum assets (GitHub `gh-md5`-style algorithm=gzip uploads) with per-asset manifest/checksum-file cross-verification; a release without a resolvable digest is SECURITY_BLOCKED.
+- `--include-prerelease` / `--allow-downgrade` explicit opt-ins; `--force` remains LIVE-quiesce authorization.
+- Retry/backoff (429 Retry-After honored), resumable-download hash now computed over full bytes, ETag/If-None-Match metadata cache + `--force` refresh, offline -> NETWORK_UNAVAILABLE.
+- Installed-release local state written post-install; `nexus update check|latest|download|install|verify`, `nexus release info`, unified exit-code table.
+**Invariants touched:** UPDATE PROTOCOL v2 (additive; all prior UPDATE PROTOCOL v1 semantics retained).
+**Tests:** TEST-UP-36..60 in tests/unit/test_release_update_phase17.py.
+**Risk:** additive; no change to LIVE-safety, backup, migration or rollback contracts.

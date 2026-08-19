@@ -5232,3 +5232,32 @@ The Liquidity Intelligence panel displayed contradictory state after a live sess
   no secret shape reaches incident_json/export_zip_bundle output;
   analyzer limitation, not a leak). CodeQL final: 0 open, 1 dismissed,
   85 fixed.
+
+## BUG-122 — Client Update Engine: release digest gap + resume-hash defect (TASK-UPDATER-02, 2026-08-20)
+
+**Symptoms:**
+- A real published GitHub release would be reported SECURITY_BLOCKED even though its assets are
+  correct: GitHub asset metadata carries no sha256 and the release pipeline never attached a
+  checksum asset, so `UpdatePlanBuilder` could never resolve a digest.
+- `SafeDownloader` resume always failed: on a `.part` resume the SHA-256 was computed only over
+  the appended bytes (fresh hasher), guaranteeing a mismatch, deleting the partial file and
+  restarting the download from zero.
+- Draft releases were not filtered; a REVOKED marker in release notes was ignored.
+- `nexus update check` exit code 5 vs `--dry-run` exit code 0 for the SAME UPDATE_AVAILABLE state.
+- `nexus update` produced no human output (on_event never wired).
+
+**Root cause:** update protocol assembled before the first real GitHub release existed; digest
+transport was assumed to be part of asset metadata; resume hasher was initialized after the
+partial file was opened.
+
+**Fix (TASK-UPDATER-02 / CHG-0027):**
+- Checksum-asset resolver: per-release checksum assets (sha256sums/sha256.txt/.sha256) fetched
+  from `upload_url` (API), parsed, cross-checked; digest required before any download.
+- Resume hasher now computes over the FULL existing partial bytes before appending.
+- Draft excluded; `REVOKED`/`revoked` markers parsed from release body and honored even for
+  higher versions.
+- Unified exit-code mapping; human progress via on_event.
+
+**Verification:** TEST-UP-36..60 (checksum-asset resolution incl. GitHub `algo=gzip` uploads
+endpoint, resume-hash correctness, draft/revoked exclusion, flags, exit codes, JSON contract).
+**Files:** src/nexus_scalp/release/updater.py, src/nexus_scalp/cli/main.py.
