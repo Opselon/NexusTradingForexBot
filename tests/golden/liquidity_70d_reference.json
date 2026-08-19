@@ -1,0 +1,239 @@
+{
+  "algorithm_version": "scalp_liquidity_v1.0.0",
+  "schema_id": "scalp_liquidity_v1",
+  "dimension": 60,
+  "samples": {
+    "trending_up": {
+      "timestamp": "2026-05-13T12:54:00+00:00",
+      "input_context_hash": "74a1597390f640e5",
+      "liquidity_vector": [
+        1.41751,
+        1.1757,
+        0.650879,
+        0.009362,
+        -2.958575,
+        0.108398,
+        3.0,
+        3.0,
+        -1.0,
+        0.0
+      ],
+      "feature_names": [
+        "bsl_distance_atr",
+        "ssl_distance_atr",
+        "eqh_strength",
+        "eql_strength",
+        "htf_liquidity_score",
+        "internal_liquidity_distance",
+        "external_liquidity_distance",
+        "liquidity_confluence",
+        "liquidity_sweep_state",
+        "post_sweep_displacement"
+      ],
+      "pools": 38
+    },
+    "ranging": {
+      "timestamp": "2026-06-03T17:43:00+00:00",
+      "input_context_hash": "7d570f09347e16cb",
+      "liquidity_vector": [
+        0.55205,
+        0.6551,
+        0.643981,
+        0.098587,
+        -2.002771,
+        0.6551,
+        3.0,
+        3.0,
+        -1.0,
+        0.0
+      ],
+      "feature_names": [
+        "bsl_distance_atr",
+        "ssl_distance_atr",
+        "eqh_strength",
+        "eql_strength",
+        "htf_liquidity_score",
+        "internal_liquidity_distance",
+        "external_liquidity_distance",
+        "liquidity_confluence",
+        "liquidity_sweep_state",
+        "post_sweep_displacement"
+      ],
+      "pools": 40
+    },
+    "high_vol": {
+      "timestamp": "2026-06-25T02:03:00+00:00",
+      "input_context_hash": "b670f9d778b0df3f",
+      "liquidity_vector": [
+        3.0,
+        0.915167,
+        0.565565,
+        0.003063,
+        -2.050344,
+        0.915167,
+        3.0,
+        3.0,
+        2.0,
+        0.0
+      ],
+      "feature_names": [
+        "bsl_distance_atr",
+        "ssl_distance_atr",
+        "eqh_strength",
+        "eql_strength",
+        "htf_liquidity_score",
+        "internal_liquidity_distance",
+        "external_liquidity_distance",
+        "liquidity_confluence",
+        "liquidity_sweep_state",
+        "post_sweep_displacement"
+      ],
+      "pools": 38
+    },
+    "low_vol": {
+      "timestamp": "2026-07-10T13:02:00+00:00",
+      "input_context_hash": "51c6a87510810ba4",
+      "liquidity_vector": [
+        1.36869,
+        0.885623,
+        0.578148,
+        0.002755,
+        -0.478883,
+        0.885623,
+        3.0,
+        3.0,
+        -1.0,
+        0.0
+      ],
+      "feature_names": [
+        "bsl_distance_atr",
+        "ssl_distance_atr",
+        "eqh_strength",
+        "eql_strength",
+        "htf_liquidity_score",
+        "internal_liquidity_distance",
+        "external_liquidity_distance",
+        "liquidity_confluence",
+        "liquidity_sweep_state",
+        "post_sweep_displacement"
+      ],
+      "pools": 43
+    },
+    "swing_high_sweep": {
+      "timestamp": "2026-06-19T03:45:00+00:00",
+      "input_context_hash": "f0a0e44e6fde440e",
+      "liquidity_vector": [
+        1.217627,
+        0.703518,
+        0.69461,
+        0.157459,
+        -1.120365,
+        0.703518,
+        2.532663,
+        3.0,
+        -1.0,
+        0.0
+      ],
+      "feature_names": [
+        "bsl_distance_atr",
+        "ssl_distance_atr",
+        "eqh_strength",
+        "eql_strength",
+        "htf_liquidity_score",
+        "internal_liquidity_distance",
+        "external_liquidity_distance",
+        "liquidity_confluence",
+        "liquidity_sweep_state",
+        "post_sweep_displacement"
+      ],
+      "pools": 44
+    },
+    "eqh_cluster": {
+      "timestamp": "2026-06-30T19:23:00+00:00",
+      "input_context_hash": "23120396d92d39a0",
+      "liquidity_vector": [
+        1.104124,
+        0.974227,
+        0.748185,
+        0.011492,
+        -0.057507,
+        0.28866,
+        3.0,
+        3.0,
+        -1.0,
+        0.0
+      ],
+      "feature_names": [
+        "bsl_distance_atr",
+        "ssl_distance_atr",
+        "eqh_strength",
+        "eql_strength",
+        "htf_liquidity_score",
+        "internal_liquidity_distance",
+        "external_liquidity_distance",
+        "liquidity_confluence",
+        "liquidity_sweep_state",
+        "post_sweep_displacement"
+      ],
+      "pools": 32
+    },
+    "ssl_below": {
+      "timestamp": "2026-06-15T08:25:00+00:00",
+      "input_context_hash": "c9612b1d860683c8",
+      "liquidity_vector": [
+        0.323312,
+        1.95817,
+        0.479806,
+        0.179092,
+        2.860881,
+        0.902832,
+        3.0,
+        3.0,
+        -1.0,
+        0.0
+      ],
+      "feature_names": [
+        "bsl_distance_atr",
+        "ssl_distance_atr",
+        "eqh_strength",
+        "eql_strength",
+        "htf_liquidity_score",
+        "internal_liquidity_distance",
+        "external_liquidity_distance",
+        "liquidity_confluence",
+        "liquidity_sweep_state",
+        "post_sweep_displacement"
+      ],
+      "pools": 42
+    },
+    "htf_evidence": {
+      "timestamp": "2026-05-25T03:34:00+00:00",
+      "input_context_hash": "500689473abe5982",
+      "liquidity_vector": [
+        0.844009,
+        0.058026,
+        0.702386,
+        0.045841,
+        0.653046,
+        0.058026,
+        3.0,
+        3.0,
+        -1.0,
+        0.0
+      ],
+      "feature_names": [
+        "bsl_distance_atr",
+        "ssl_distance_atr",
+        "eqh_strength",
+        "eql_strength",
+        "htf_liquidity_score",
+        "internal_liquidity_distance",
+        "external_liquidity_distance",
+        "liquidity_confluence",
+        "liquidity_sweep_state",
+        "post_sweep_displacement"
+      ],
+      "pools": 41
+    }
+  }
+}

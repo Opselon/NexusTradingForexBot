@@ -404,3 +404,49 @@ def test_task02_11_runtime_vector_rejects_bad_base() -> None:
     gov.compute_from_engine(bars=bars, mid_price=3300.0, atr=1.2, decision_at=bars[-1].timestamp)
     with pytest.raises(ValueError):
         gov.build_runtime_60d_vector([0.0] * 49)  # no silent truncation
+
+
+# ---------------------------------------------------------------------------
+# TEST-TASK02-15 — golden snapshot parity (STEP 10)
+# ---------------------------------------------------------------------------
+
+
+def test_task02_15_golden_snapshot_parity(tmp_path) -> None:
+    """The tests/golden/liquidity_70d_reference.json samples must recompute
+    identically from their input context (determinism + permanent regression
+    reference)."""
+    import json
+    from datetime import datetime
+
+    import polars as pl
+
+    from nexus_scalp.features.liquidity_engine import compute_liquidity_features
+    from nexus_scalp.market_data.bar_aggregator import BarData
+
+    golden_path = Path(__file__).resolve().parents[2] / "tests" / "golden" / "liquidity_70d_reference.json"
+    if not golden_path.exists():
+        pytest.skip("golden liquidity reference not generated")
+    golden = json.loads(golden_path.read_text(encoding="utf-8"))
+    assert golden["algorithm_version"] == "scalp_liquidity_v1.0.0"
+    assert golden["schema_id"] == "scalp_liquidity_v1"
+    assert golden["dimension"] == 60
+
+    df = pl.read_parquet("data/raw/XAUUSD_M1.parquet").sort("time_utc")
+    bars = []
+    for row in df.iter_rows(named=True):
+        ts = row["time_utc"]
+        ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+        bars.append(
+            BarData(symbol="XAUUSD", timeframe="M1", timestamp=ts,
+                    open=float(row["open"]), high=float(row["high"]),
+                    low=float(row["low"]), close=float(row["close"]),
+                    tick_volume=int(row.get("tick_volume", 0) or 0), is_complete=True)
+        )
+    for name, sample in golden["samples"].items():
+        decision = datetime.fromisoformat(sample["timestamp"])
+        # find the window: match by timestamp in bars
+        idx = next(i for i, b in enumerate(bars) if b.timestamp == decision)
+        win = bars[idx - 299 : idx + 1]
+        f = compute_liquidity_features(win, decision_at=decision, mid_price=win[-1].close)
+        rec = [round(v, 6) for v in f.as_vector()]
+        assert rec == sample["liquidity_vector"], f"golden mismatch at {name}"
