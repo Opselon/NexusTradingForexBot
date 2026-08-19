@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import re
 from collections.abc import Iterator
@@ -43,6 +44,38 @@ _SECRET_RE = re.compile(
     r"api[_ -]?key|secret|credential|authorization)[\"']?\s*[:=]\s*"
     r"[\"']?[A-Za-z0-9_\-./+]{6,}[\"']?"
 )
+
+#: High-entropy catch-all: any run of mixed-case alnum + _-/ of >=24 chars
+#: (Shannon entropy over the run) is treated as a secret token of unknown
+#: vendor shape (arbitrary passwords, random tokens). Normal prose and
+#: identifiers score far lower and are left intact.
+_HIGH_ENTROPY_RUN_RE = re.compile(r"[A-Za-z0-9_\-]{24,}")
+
+
+def _shannon_entropy(s: str) -> float:
+    """Approximate Shannon entropy (bits/char) for a token."""
+    if not s:
+        return 0.0
+    from collections import Counter
+
+    counts = Counter(s)
+    n = len(s)
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
+def _scrub_high_entropy(value: str) -> str:
+    """Redact high-entropy runs that smell like secrets of unknown shape."""
+
+    def _maybe_redact(m: re.Match[str]) -> str:
+        tok = m.group(0)
+        # alnum-heavy (>75%) and high entropy => secret-shaped token
+        alnum = sum(1 for ch in tok if ch.isalnum())
+        if len(tok) >= 24 and alnum / len(tok) >= 0.75 and _shannon_entropy(tok) >= 3.2:
+            return "[REDACTED]" + tok[-1:]
+        return tok
+
+    return _HIGH_ENTROPY_RUN_RE.sub(_maybe_redact, value)
+
 
 #: Secret-shaped *values* (spec 47, CodeQL py/clear-text-storage #86): JWTs,
 #: Telegram bot tokens, sk/pk/GitHub/Slack/AWS/Google API keys, PEM private-key
@@ -80,8 +113,9 @@ def mask_secrets(value: Any) -> Any:
             # Whole values that ARE secrets (JWT/bot-token/PEM/API-key shapes)
             # are replaced outright; inline secret-shaped substrings inside
             # longer text (notes, excerpts) are masked per-match.
-            return _SECRET_VALUE_RE.sub("[REDACTED]", redacted)
-        return redacted
+            redacted = _SECRET_VALUE_RE.sub("[REDACTED]", redacted)
+        # Catch-all: long high-entropy alnum runs (unknown vendor shapes).
+        return _scrub_high_entropy(redacted)
     return value
 
 

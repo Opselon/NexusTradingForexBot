@@ -1144,6 +1144,20 @@ class TestSecretMasking:
         )
         assert "123456789:ABCDEFghijklmnopqrstuvwxyz123456789" not in json.dumps(m2)
 
+    def test_mask_secrets_high_entropy_catchall(self) -> None:
+        """CodeQL py/clear-text-storage (#86) regression: long high-entropy
+        alnum runs (unknown vendor secret shapes) are redacted even when no
+        sensitive key/known shape matches; normal prose and identifiers
+        pass through unchanged."""
+        secret = "Ab3xK9mPq2Rw7ZtY5NcF8vJd4LsH6"
+        m = mask_secrets({"detail": f"rotated token: {secret}"})
+        assert secret not in json.dumps(m)
+        assert "[REDACTED]" in json.dumps(m)
+        # Legitimate long text with structure is untouched.
+        legit = "XAUUSD trade lifecycle completed 42 orders with average latency 12ms on 2026-08-19"
+        m2 = mask_secrets({"detail": legit})
+        assert json.dumps(m2) == json.dumps({"detail": legit})
+
 
 # ---------------------------------------------------------------------------
 # TEST-INCIDENT-30 — Telegram throttling

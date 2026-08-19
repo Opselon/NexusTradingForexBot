@@ -599,3 +599,25 @@ Required tests: ruff check . (clean), ruff format --check (clean on
        (targeted suites), 153 tests in the 4 touched suites pass
 Status: VERIFIED
 ```
+
+```text
+CHANGE-ID: CHG-0025
+Agent: Hermes-CI-Ready
+Role: CI / GitHub Actions Pipeline Engineer
+Task: TASK-CI-READY
+Scope: Enterprise GitHub Actions modernization — workflows only, NO
+       application code. Records pre-existing CI reliability findings
+       (order-dependent flakiness, parallel-WIP interactions,
+       environment-dependent failures) as SEPARATE findings with CI-side
+       remedies (sharding, isolation, retries, timeouts) — never by
+       weakening tests. Deliverables: timeouts/retries/concurrency
+       hardening, artifact orchestration + verification (checksums/SBOM),
+       test result aggregation, GitHub API-safe behavior, summaries,
+       Telegram HTML observability.
+Affected files: .github/workflows/*.yml, scripts/ci/*, docs/CI_RELIABILITY_FINDINGS_2026-08-19.md, agents/registries
+Contracts touched: CI_RESULTS v1 (extended), CI_TRIGGER_POLICY v1 (extended)
+Risk: LOW (workflows/scripts only; no src/ runtime paths)
+Dependencies: TASK-CI-ISOLATION, TASK-CI-REPORTING
+Required tests: actionlint on all workflows, YAML parse, dry-run artifact flow
+Status: IN_PROGRESS
+```
