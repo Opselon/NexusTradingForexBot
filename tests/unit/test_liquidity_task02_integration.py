@@ -338,3 +338,69 @@ def test_task02_04_algorithm_version_present() -> None:
     gov = LiquidityGovernor(enabled=True)
     rep = gov.report()
     assert rep["algorithm_version"] == LIQUIDITY_ALGORITHM_VERSION
+
+
+# ---------------------------------------------------------------------------
+# TEST-TASK02-04/05/11/12 — hot reload + runtime 60D vector build (STEP 6-7)
+# ---------------------------------------------------------------------------
+
+
+def test_task02_05_hot_reload_off_on_off_no_restart(tmp_path) -> None:
+    """OFF -> ON -> OFF on the SAME governor instance: no restart semantics,
+    runtime flag changes live and persists each time."""
+    from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+    from nexus_scalp.settings.service import SettingsDatabase, SettingsService
+
+    svc = SettingsService(db=SettingsDatabase(db_path=tmp_path / "s.db"))
+    gov = LiquidityGovernor(enabled=False, settings_service=svc)
+    assert gov.enabled is False
+    gov.set_enabled(True, actor="web")
+    assert gov.enabled is True
+    assert svc.db.get("model.liquidity_features_enabled").value is True
+    gov.set_enabled(False, actor="web")
+    assert gov.enabled is False
+    assert svc.db.get("model.liquidity_features_enabled").value is False
+    # same object, no engine restart involved
+
+
+def test_task02_11_runtime_vector_build_60d(tmp_path) -> None:
+    from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+    gov = LiquidityGovernor(enabled=True)
+    bars = _bars(80)
+    gov.compute_from_engine(
+        bars=bars, mid_price=3300.0, atr=1.2, decision_at=bars[-1].timestamp
+    )
+    vec = gov.build_runtime_60d_vector([0.0] * 50)
+    assert len(vec) == 60
+    assert all(math.isfinite(v) for v in vec)
+    assert all(-3.0 <= v <= 3.0 for v in vec)
+    # liquidity block at 50..59 exactly
+    assert vec[50] == gov.last_snapshot.features[0]
+    assert vec[59] == gov.last_snapshot.features[9]
+
+
+def test_task02_11_runtime_vector_blocked_when_disabled() -> None:
+    from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+    gov = LiquidityGovernor(enabled=False)
+    with pytest.raises(RuntimeError):
+        gov.build_runtime_60d_vector([0.0] * 50)
+
+
+def test_task02_11_runtime_vector_blocked_without_snapshot() -> None:
+    from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+    gov = LiquidityGovernor(enabled=True)
+    with pytest.raises(RuntimeError):
+        gov.build_runtime_60d_vector([0.0] * 50)
+
+
+def test_task02_11_runtime_vector_rejects_bad_base() -> None:
+    from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+    gov = LiquidityGovernor(enabled=True)
+    bars = _bars(80)
+    gov.compute_from_engine(bars=bars, mid_price=3300.0, atr=1.2, decision_at=bars[-1].timestamp)
+    with pytest.raises(ValueError):
+        gov.build_runtime_60d_vector([0.0] * 49)  # no silent truncation

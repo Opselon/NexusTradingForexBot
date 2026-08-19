@@ -404,6 +404,32 @@ class LiquidityGovernor:
             )
             raise
 
+    def build_runtime_60d_vector(self, features50: list[float] | tuple[float, ...]) -> list[float]:
+        """Assembles the ACTIVE runtime vector: 50D base + the latest 10
+        liquidity values (TASK-01 build_60d_vector contract, indices
+        50..59). Raises when liquidity is disabled or no snapshot exists —
+        never silently pads or zero-fills (STEP 7 / INV-009).
+        """
+        from nexus_scalp.features.liquidity_engine import (
+            BASE_50D,
+            validate_60d_liquidity_vector,
+        )
+
+        if not self._enabled:
+            raise RuntimeError("build_runtime_60d_vector: liquidity disabled")
+        with self._lock:
+            snap = self._last_snapshot
+        if snap is None:
+            raise RuntimeError("build_runtime_60d_vector: no liquidity snapshot")
+        if len(features50) != BASE_50D:
+            raise ValueError(
+                f"build_runtime_60d_vector: base must be exactly {BASE_50D}D, "
+                f"got {len(features50)}"
+            )
+        vec = list(features50) + list(snap.features)
+        validate_60d_liquidity_vector(vec, context="runtime")
+        return vec
+
     # ---------------------------------------------------------------- status
 
     def status(self) -> str:
