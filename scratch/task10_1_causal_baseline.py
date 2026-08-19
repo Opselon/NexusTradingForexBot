@@ -17,7 +17,6 @@ No fake data; each section records PROVEN evidence.
 
 from __future__ import annotations
 
-import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -118,7 +117,7 @@ def main() -> int:
     print("   in [-3,3]:", all(-3.0 <= x <= 3.0 for x in v10))
     if hasattr(feats, "version"):
         print("   version:", feats.version)
-    for i, (nm, val) in enumerate(zip(LIQ_NAMES, v10)):
+    for i, (nm, val) in enumerate(zip(LIQ_NAMES, v10, strict=False)):
         print(f"     {60 + i} {nm} = {val:.4f}")
     if len(v10) != 10:
         findings.append(f"A: liquidity block is {len(v10)}D not 10D")
@@ -163,11 +162,11 @@ def main() -> int:
         "conflict", "novelty", "freshness", "confidence", "source_consensus",
         "state_enc", "time_since_event_sec",
     ]
-    for nm, val in zip(names12, nv12):
+    for nm, val in zip(names12, nv12, strict=False):
         print(f"     {nm} = {val:.3f}")
     # The EXACT live-engine shadow70 expression (live_engine.py line 3065):
     news10 = (nv12 + [0.0] * 10)[:10]
-    dropped = {nm: val for nm, val in zip(names12[10:], nv12[10:]) if val != 0.0}
+    dropped = {nm: val for nm, val in zip(names12[10:], nv12[10:], strict=False) if val != 0.0}
     print("   live-path news10:", [round(x, 3) for x in news10])
     print("   dropped by [:10]:", dropped)
     if nv12[10] != 0.0 and nv12[10] not in news10:
@@ -179,7 +178,10 @@ def main() -> int:
     # D. shadow70 contract slices vs the composite
     try:
         from nexus_scalp.shadow.shadow70.models import (
-            BASE_SLICE, LIQUIDITY_SLICE, NEWS_SLICE, SHADOW70_DIMENSION,
+            BASE_SLICE,
+            LIQUIDITY_SLICE,
+            NEWS_SLICE,
+            SHADOW70_DIMENSION,
         )
         print("D. shadow70 slices:", BASE_SLICE, NEWS_SLICE, LIQUIDITY_SLICE,
               "| dim:", SHADOW70_DIMENSION)
