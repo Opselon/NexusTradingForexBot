@@ -96,6 +96,10 @@ _SUPPORTED_LIQUIDITY_ALGORITHMS: dict[str, str] = {
     # registry + THIS map (release contract: a model whose feature schema
     # requires liquidity features is only loadable while the matching
     # producer is shipped).
+    # scalp_v3 = 70D parity contract (0..49 Base | 50..59 News |
+    # 60..69 Liquidity); scalp_v4 = 70D brief contract (0..49 Base |
+    # 50..59 Family | 60..69 Liquidity). Both require the liquidity block.
+    "scalp_v3": "1.0.0",
     "scalp_v4": "1.0.0",
     "scalp_liquidity_v1": "1.0.0",
 }
@@ -279,7 +283,7 @@ def liquidity_dependencies_for(schema_id: str) -> list[DependencyRequirement]:
     defines liquidity semantics at 50..59 under its own schema id.
     """
     deps: list[DependencyRequirement] = []
-    if schema_id == "scalp_v4":
+    if schema_id in ("scalp_v3", "scalp_v4"):
         deps.append(
             DependencyRequirement(
                 kind=DependencyKind.BASE_FEATURES,

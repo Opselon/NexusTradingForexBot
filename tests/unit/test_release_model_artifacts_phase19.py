@@ -171,6 +171,29 @@ def test_70d_blocked_without_liquidity(artifact_root: Path) -> None:
     assert any("liquidity" in f.lower() for f in res.failures)
 
 
+def test_70d_scalp_v3_requires_liquidity(artifact_root: Path) -> None:
+    """scalp_v3 (70D parity contract) also requires the liquidity producer."""
+    # Build a scalp_v3 artifact explicitly
+    d = artifact_root / "model_70d_v3"
+    d.mkdir()
+    (d / "model.pt").write_bytes(b"weights-v3")
+    (d / "scaler.npz").write_bytes(b"scaler-v3")
+    mf = {
+        "model_id": "model_70d_v3",
+        "model_version": "1.0.0",
+        "feature_schema_id": "scalp_v3",
+        "feature_dimension": 70,
+        "artifact_hash": rma.sha256_file(d / "model.pt"),
+        "scaler_hash": rma.sha256_file(d / "scaler.npz"),
+        "liquidity_algorithm_version": "1.0.0",
+    }
+    (d / "model.json").write_text(json.dumps(mf), encoding="utf-8")
+    ok = rma.check_runtime_compatibility(d, liquidity_producer_available=True)
+    assert ok.status == rma.CompatibilityStatus.COMPATIBLE, ok.reason
+    blocked = rma.check_runtime_compatibility(d, liquidity_producer_available=False)
+    assert any("liquidity" in f for f in blocked.failures)
+
+
 def test_60d_legacy_blocked_without_liquidity(artifact_root: Path) -> None:
     """scalp_liquidity_v1 also requires the liquidity producer; scalp_v2
     (momentum family) does NOT — dependency set is schema-specific."""
