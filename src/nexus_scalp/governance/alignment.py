@@ -93,7 +93,7 @@ def vectorize_news_context(context: dict[str, Any] | None) -> list[float]:
     vla = g("bullish_score", 0.0)
     vle = g("bearish_score", 0.0)
     # news_state / novelty encodings mirror the model_generation bridge.
-    state = str(g("state", "NORMAL")).upper()
+    state = str(g("news_state", g("state", "NORMAL"))).upper()
     state_enc = {
         "NORMAL": 0.0,
         "ELEVATED": 1.0,
@@ -110,7 +110,7 @@ def vectorize_news_context(context: dict[str, Any] | None) -> list[float]:
         "REPETITION": 3.0,
         "STALE": 4.0,
     }.get(novelty, 0.0)
-    active = float(g("active_event_count", 0))
+    active = float(g("active_event_count", g("active_high_impact_events", 0)))
     return [
         active,
         float(g("xauusd_relevance", 0.0)),

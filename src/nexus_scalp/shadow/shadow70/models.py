@@ -3,7 +3,7 @@
 Canonical, frozen contracts for the 70D shadow observation layer:
 
 * Shadow70CandidateContract — everything the runtime must verify before load
-  (model_id, model_version, schema_id=scalp_v3, dimension=70,
+  (model_id, model_version, schema_id=scalp_v4, dimension=70,
   feature_schema_hash, scaler_hash, training_dataset_id, validation_result,
   artifact_hash).
 * Shadow70Observation — one idempotent Champion-vs-Shadow comparison.
@@ -26,7 +26,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 #: Canonical 70D schema id for this runtime (POST_70D / 70D series contract).
-SHADOW70_SCHEMA_ID: str = "scalp_v3"
+SHADOW70_SCHEMA_ID: str = "scalp_v4"
 
 #: 50 Base + 10 News + 10 Liquidity (INV-70D-001..003 / INV-70D-004).
 SHADOW70_DIMENSION: int = 70
