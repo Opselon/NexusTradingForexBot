@@ -4614,3 +4614,35 @@ Category: SWEEP · CAUSALITY
 - Related: BUG-108 (AUDIT-0007 fresh-DB failure) fixed in the same
   TASK-9 session (manifest/baseline interaction); both closed the
   fresh-install + release-contract classes.
+
+
+## BUG-106 — compute_70d_frame O(n^2) Liquidity Recompute: Full-History Slice Per Row (TASK-04-70D-MODEL-VALIDATION, 2026-08-19)
+
+### Root cause
+`model_generation/schema_v2.py::compute_70d_frame` passes
+`all_bars[:i+1]` (the ENTIRE history so far) to
+`compute_liquidity_features` for every row i. The liquidity engine then
+recomputes swing detection / pool state / HTF buckets over that full slice
+per row -> O(n^2). Measured: ~190s per 2,000 rows on a 20K slice even with a
+bounded 3000-bar history; the unbounded TASK-3 builder ran >14 min for 20K
+rows (killed). A 100K-row dataset would take hours. The live governor keeps
+bounded state; only the dataset builder uses unbounded history.
+
+### Evidence
+- 20K-row bounded build probe: 378s at row 2,000/20,000 (~32 min projected).
+- Unbounded (TASK-3 builder): >14 min for 20K (killed).
+- Probebs: scratch/liq70d_frame_bounded.py + .out.txt.
+
+### Fix (recommended, NOT applied here — upstream TASK-3/optimization scope)
+Use a bounded causal tail (e.g. HISTORY_LIMIT=3000 M5 bars, enough for
+completed D1 buckets) so the builder is O(n * H). Must preserve
+training==live parity semantics (all bars <= ts, forming HTF bucket
+excluded). Alternatively maintain incremental pool state across rows.
+
+### Regression test
+None added (upstream builder change); the bounded probe + timing evidence
+is the guard.
+
+### Verification
+NOT APPLIED — recorded as an upstream finding for the 70D series owner
+(blocked the TASK-4 benchmark execution within this session).
