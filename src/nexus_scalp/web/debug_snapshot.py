@@ -562,6 +562,15 @@ def _model_section(engine: Any) -> dict[str, Any]:
             out["invalid_reason"] = (
                 f"probs width {len(probs_list)} != model classes {num_classes}"
             )
+        # CLASS-OF-BUG regression (actual_classes=128): even when the probs
+        # width matches the artifact's own head, a non-4-class live output is
+        # INVALID for the production contract (expected_classes=4) — the
+        # model section must surface it, never silently render (brief 38).
+        if probs_list is not None and num_classes is not None and num_classes != 4:
+            model_output_status = "MODEL_OUTPUT_INVALID"
+            out["invalid_reason"] = (
+                f"model classes {num_classes} != expected_classes 4 (width {len(probs_list)})"
+            )
 
         out = {
             "available": True,
@@ -1108,7 +1117,11 @@ def _positions_section(engine: Any) -> dict[str, Any]:
                 pos["mfe"] = mfe
                 pos["mae"] = mae
                 pos["peak_pnl"] = om._peak_profit_usd.get(ticket)
-                pos["peak_drawdown"] = om._peak_drawdown_usd.get(ticket)
+                pos["peak_drawdown"] = (
+                    om._peak_drawdown_usd.get(ticket)
+                    if hasattr(om, "_peak_drawdown_usd")
+                    else None
+                )
                 pos["hold_seconds"] = None
                 entry_ts = om._entry_timestamps.get(ticket)
                 if entry_ts is not None:
@@ -1140,7 +1153,11 @@ def _positions_section(engine: Any) -> dict[str, Any]:
                     )
                 except Exception:
                     pass
-                pos["entry_confidences"] = om._entry_confidences.get(ticket)
+                pos["entry_confidences"] = (
+                    om._entry_confidences.get(ticket)
+                    if hasattr(om, "_entry_confidences")
+                    else None
+                )
             out["positions"].append(pos)
     except Exception as exc:  # noqa: BLE001
         out["reason"] = f"POSITIONS_ERROR: {exc}"
@@ -1359,7 +1376,9 @@ def _workers_section(engine: Any) -> dict[str, Any]:
         if nw is not None:
             from nexus_scalp.news.worker import format_news_worker_status
 
-            workers["news"] = format_news_worker_status(nw)
+            st = format_news_worker_status(nw)
+            st["state"] = st.get("status", "UNAVAILABLE")
+            workers["news"] = st
         else:
             workers["news"] = {"state": "DISABLED"}
     except Exception:

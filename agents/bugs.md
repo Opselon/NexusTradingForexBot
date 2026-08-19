@@ -4660,3 +4660,32 @@ aggregator cap (live_engine.py `_completed_bars` trimmed to 4000 per tick,
   artifacts/benchmarks/bug106_engine_curve.json,
   docs/BUG-106-PERFORMANCE-FIX.md.
 
+
+---
+
+
+## BUG-110 — Dataset Manifest temporal_range Serialized as 1970-01-01 (Naive-Datetime Writer Artifact) (TASK-09-70D-CANDIDATE-VALIDATION, 2026-08-19)
+
+### Root cause
+The dataset manifest writer serializes naive datetimes with a default epoch
+fallback: ds_d3f35b12d63148da shows temporal_range start/end = 1970-01-01 while
+the actual parquet bars are real 2026 XAUUSD M5 data (verified by the parity
+probe: 25 timestamps checked, 0 mismatches, exact=True). The writer formats
+datetimes without timezone normalization; a zero/naive value serializes as epoch.
+
+### Evidence
+- artifacts/model_generation/datasets/ds_d3f35b12d63148da/dataset_manifest.json
+  temporal_range = 1970-01-01 00:29:46.449300 .. 00:29:46.994400.
+- artifacts/validation/70d_liquidity_parity.json real_data_probe: slice 1000 bars,
+  25 timestamps, mismatches=0, exact=True (real data timestamps verified).
+
+### Fix (recommended)
+Normalize datetimes to UTC in the manifest writer (tz-aware round-trip), so
+temporal_range reflects the real window. Do NOT alter the dataset itself.
+
+### Regression test
+None added in TASK-09 (writer belongs to dataset_factory, swarm WIP); the parity
+probe + this bug row are the guard.
+
+### Verification
+NOT APPLIED — documented as a writer defect; dataset content verified correct.

@@ -244,3 +244,18 @@ training_dataset_id.
   1 HIGH TIMEBASE_DIVERGENCE, 3 MEDIUM) from the read-only forensic scan;
   reports in artifacts/incidents/.
 - Absorbed into commit 066a7ba (parallel agent); attribution in taskboard.
+
+## Snapshot 2026-08-19 (TASK-09 70D candidate validation)
+
+- HEAD e7586f9 (origin/main in sync at verification): BUG-106 FIXED (bounded 4000-bar
+  liquidity history, O(n^2)->O(n x 4000); docs/BUG-106-PERFORMANCE-FIX.md; parity green).
+- 70D parity: GREEN (68 passed/3 skipped; real-data probe 0 mismatches exact).
+- Real 70D dataset: ds_d3f35b12d63148da (XAUUSD M5, 1146 rows, scalp_v3, hash aad73c8f..).
+- Champion: 9105cef7 (RESTORED_CANDIDATE per BUG-104; original f0f70efb unrecoverable;
+  operator decision pending per INV-015). Champion untouched by TASK-09.
+- Candidate chain: NO_CANDIDATE -> training/walk-forward/OOS/robustness/calibration/shadow
+  all NOT_RUN -> INSUFFICIENT_EVIDENCE -> NOT_ELIGIBLE. No promotion (INV-015).
+- BUG-108 fresh-DB regression green (38 passed). BUG-110 recorded (manifest temporal_range
+  1970-01-01 writer artifact; dataset content verified correct).
+- Parallel WIP in tree (model_lifecycle AI-Hub diagnostics, liquidity_runtime, schema_v2,
+  tests) untouched. See docs/TASK-09-70D-CANDIDATE-VALIDATION-FINAL.md.
