@@ -154,6 +154,232 @@ def _audit_0004_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# AUDIT-0005: TASK-08 governance audit tables (promotions + rollbacks)
+# ---------------------------------------------------------------------------
+# Additive, idempotent, migration-controlled (INV-013). These tables are the
+# durable home of the promotion transaction / rollback audit trail. The
+# governance event-ledger rows (model_governance_events) remain the append-only
+# narrative; these tables carry the STRUCTURED old/new champion pair,
+# approver identity, candidate hash, schema and rollback target.
+
+
+def _audit_0005_governance_audit_tables(conn: sqlite3.Connection, db_path: Path) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS model_promotion_audit (
+            promotion_id TEXT PRIMARY KEY,
+            old_champion_model_id TEXT NOT NULL DEFAULT '',
+            old_champion_version TEXT NOT NULL DEFAULT '',
+            old_champion_hash TEXT NOT NULL DEFAULT '',
+            old_champion_schema TEXT NOT NULL DEFAULT '',
+            new_champion_model_id TEXT NOT NULL DEFAULT '',
+            new_champion_version TEXT NOT NULL DEFAULT '',
+            new_champion_hash TEXT NOT NULL DEFAULT '',
+            new_champion_schema TEXT NOT NULL DEFAULT '',
+            candidate_hash TEXT NOT NULL DEFAULT '',
+            schema_id TEXT NOT NULL DEFAULT '',
+            approval_actor TEXT NOT NULL DEFAULT '',
+            approval_reason TEXT NOT NULL DEFAULT '',
+            approval_token TEXT NOT NULL DEFAULT '',
+            rollback_target TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'PROMOTION_RECORDED',
+            recorded_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS model_rollback_audit (
+            rollback_id TEXT PRIMARY KEY,
+            failed_model_id TEXT NOT NULL DEFAULT '',
+            failed_version TEXT NOT NULL DEFAULT '',
+            previous_model_id TEXT NOT NULL DEFAULT '',
+            previous_version TEXT NOT NULL DEFAULT '',
+            previous_artifact_hash TEXT NOT NULL DEFAULT '',
+            previous_manifest_hash TEXT NOT NULL DEFAULT '',
+            previous_schema_id TEXT NOT NULL DEFAULT '',
+            actor TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            rollback_kind TEXT NOT NULL DEFAULT 'MANUAL',
+            status TEXT NOT NULL DEFAULT 'ROLLBACK_RECORDED',
+            recorded_at TEXT NOT NULL
+        );
+        """
+    )
+
+
+def _audit_0005_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
+    return _table_exists(conn, "model_promotion_audit") and _table_exists(
+        conn, "model_rollback_audit"
+    )
+
+
+def _audit_0005_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
+    # Tables are additive; rollback drops them only when empty (no data loss).
+    for t in ("model_promotion_audit", "model_rollback_audit"):
+        if _table_exists(conn, t):
+            n = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            if n == 0:
+                conn.execute(f"DROP TABLE {t}")
+
+
+def _audit_0006_incident_tables(conn: sqlite3.Connection, db_path: Path) -> None:
+    """TASK-12: canonical incident response tables (additive, governed).
+
+    incident_id | detected_at | severity | category | status | first/last_seen |
+    component | operation | correlation_id | root_cause_status | root_cause |
+    evidence | impact | affected_* | recovery_status | recommended_action |
+    fingerprint (dedup) | repeated_count | BUG linkage | recovery plan |
+    tags/notes. Plus event timeline, value traces and non-destructive
+    quarantine marks. Additive only — creates NEW tables, never alters or
+    deletes existing financial/research/news truth (spec 30/45).
+    """
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS incidents (
+            incident_id TEXT PRIMARY KEY,
+            detected_at TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            category TEXT NOT NULL,
+            status TEXT NOT NULL,
+            first_seen_at TEXT,
+            last_seen_at TEXT,
+            component TEXT DEFAULT '',
+            operation TEXT DEFAULT '',
+            correlation_id TEXT DEFAULT '',
+            root_cause_status TEXT DEFAULT 'UNKNOWN',
+            root_cause TEXT DEFAULT '',
+            evidence_json TEXT DEFAULT '[]',
+            impact_json TEXT DEFAULT '{}',
+            affected_records_json TEXT DEFAULT '[]',
+            affected_models_json TEXT DEFAULT '[]',
+            affected_runtime_json TEXT DEFAULT '[]',
+            affected_users_json TEXT DEFAULT '[]',
+            recovery_status TEXT DEFAULT 'RECOMMENDED',
+            recommended_action TEXT DEFAULT '',
+            fingerprint TEXT DEFAULT '',
+            repeated_count INTEGER DEFAULT 1,
+            related_bug_id TEXT DEFAULT '',
+            fix_commit TEXT DEFAULT '',
+            regression_test TEXT DEFAULT '',
+            is_regression INTEGER DEFAULT 0,
+            previous_bug_id TEXT DEFAULT '',
+            resolved_without_evidence INTEGER DEFAULT 0,
+            recovery_plan_json TEXT DEFAULT '{}',
+            tags_json TEXT DEFAULT '[]',
+            notes_json TEXT DEFAULT '[]',
+            updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS incident_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            incident_id TEXT NOT NULL,
+            event_timestamp TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            payload_json TEXT DEFAULT '{}',
+            correlation_id TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS incident_value_traces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            incident_id TEXT NOT NULL,
+            field TEXT NOT NULL,
+            source TEXT NOT NULL,
+            source_timestamp TEXT,
+            hops_json TEXT DEFAULT '[]'
+        );
+        CREATE TABLE IF NOT EXISTS incident_quarantine (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            incident_id TEXT NOT NULL,
+            target_table TEXT NOT NULL,
+            record_key TEXT NOT NULL,
+            status TEXT NOT NULL,
+            reason TEXT DEFAULT '',
+            evidence TEXT DEFAULT '',
+            quarantined_at TEXT NOT NULL,
+            UNIQUE (incident_id, target_table, record_key)
+        );
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_severity ON incidents(severity);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_category ON incidents(category);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_fingerprint ON incidents(fingerprint);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_detected ON incidents(detected_at);")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_incident_events_incident ON incident_events(incident_id);"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_incident_quarantine_incident ON incident_quarantine(incident_id);"
+    )
+
+
+def _audit_0006_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
+    return _table_exists(conn, "incidents") and _table_exists(conn, "incident_events")
+
+
+def _audit_0006_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
+    # Additive tables: rollback drops ONLY the incident tables (never
+    # touches financial/news/research truth). Evidence preserved via
+    # artifacts/incidents archive before any operator-initiated rollback.
+    for t in ("incident_quarantine", "incident_value_traces", "incident_events", "incidents"):
+        if _table_exists(conn, t):
+            conn.execute(f"DROP TABLE {t}")
+
+
+def _audit_0007_release_metadata(conn: sqlite3.Connection, db_path: Path) -> None:
+    """TASK-9 (70D production release): versioned release/model metadata.
+
+    Key/value table recording INSTALLED release metadata independent of
+    the application code: per-domain schema version at install time, the
+    feature schema id consumed by the release (scalp_v1 today; scalp_v4/
+    70D tomorrow), and the web bundle version shipped with the release.
+    Read-only consumers: release health, UI status, upgrade diagnostics.
+    Additive + idempotent — never touches financial/news/research truth.
+
+    The migration engine's baseline builder may have created the table as
+    a minimal skeleton (`id INTEGER PRIMARY KEY` only). This apply is
+    column-repair-aware: it adds the canonical key/value/updated_at
+    columns when missing so the index is valid on fresh AND
+    baseline-created databases (guard against "no such column: key").
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS release_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(release_metadata)").fetchall()}
+    if "key" not in existing_cols:
+        conn.execute("ALTER TABLE release_metadata ADD COLUMN key TEXT PRIMARY KEY")
+    if "value" not in existing_cols:
+        conn.execute("ALTER TABLE release_metadata ADD COLUMN value TEXT NOT NULL DEFAULT ''")
+    if "updated_at" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE release_metadata ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
+        )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_release_metadata_key
+        ON release_metadata(key)
+        """
+    )
+
+
+def _audit_0007_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
+    return _table_exists(conn, "release_metadata")
+
+
+def _audit_0007_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
+    if _table_exists(conn, "release_metadata"):
+        n = conn.execute("SELECT COUNT(*) FROM release_metadata").fetchone()[0]
+        if n == 0:
+            conn.execute("DROP TABLE IF EXISTS release_metadata")
+
+
+# ---------------------------------------------------------------------------
 # NEWS migrations
 # ---------------------------------------------------------------------------
 
@@ -251,6 +477,45 @@ AUDIT_MIGRATIONS: tuple[Migration, ...] = (
         risk=MigrationRisk.LOW,
         transaction_kind=TransactionKind.NON_TRANSACTIONAL_WITH_SAFETY_PROTOCOL,
         rollback=_audit_0004_rollback,
+    ),
+    Migration(
+        migration_id="AUDIT-0005-governance-audit-tables",
+        domain=DatabaseDomain.AUDIT,
+        from_version=4,
+        to_version=5,
+        description=(
+            "TASK-08: model_promotion_audit + model_rollback_audit tables "
+            "(structured promotion/rollback audit trail)"
+        ),
+        apply=_audit_0005_governance_audit_tables,
+        verify=_audit_0005_verify,
+        risk=MigrationRisk.LOW,
+        transaction_kind=TransactionKind.TRANSACTIONAL,
+        rollback=_audit_0005_rollback,
+    ),
+    Migration(
+        migration_id="AUDIT-0006-incident-response-tables",
+        domain=DatabaseDomain.AUDIT,
+        from_version=5,
+        to_version=6,
+        description="TASK-12 canonical incident response tables (incidents/events/traces/quarantine) + indexes",
+        apply=_audit_0006_incident_tables,
+        verify=_audit_0006_verify,
+        risk=MigrationRisk.LOW,
+        transaction_kind=TransactionKind.TRANSACTIONAL,
+        rollback=_audit_0006_rollback,
+    ),
+    Migration(
+        migration_id="AUDIT-0007-release-metadata",
+        domain=DatabaseDomain.AUDIT,
+        from_version=6,
+        to_version=7,
+        description="add release_metadata key/value table (TASK-9 70D release layer)",
+        apply=_audit_0007_release_metadata,
+        verify=_audit_0007_verify,
+        risk=MigrationRisk.LOW,
+        transaction_kind=TransactionKind.TRANSACTIONAL,
+        rollback=_audit_0007_rollback,
     ),
 )
 

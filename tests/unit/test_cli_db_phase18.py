@@ -54,8 +54,8 @@ def test_db_plan_dry_run(db_dir: Path) -> None:
     data = _json_out(res)
     audit = data["audit"]
     assert audit["current_version"] == 1
-    assert audit["expected_version"] == 4
-    assert audit["pending_count"] == 3
+    assert audit["expected_version"] == 7
+    assert audit["pending_count"] == 6
     # No mutation happened.
     import sqlite3
 
@@ -83,7 +83,7 @@ def test_db_migrate_applies_and_verify_passes(db_dir: Path) -> None:
     data = _json_out(res)
     audit = data["audit"]
     assert audit["state"] == "DB_MIGRATION_SUCCEEDED"
-    assert audit["current_version"] == 4
+    assert audit["current_version"] == 7
     # Verify now passes.
     res2 = runner.invoke(app, ["db", "verify", "--json"])
     assert res2.exit_code == 0

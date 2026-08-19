@@ -29,7 +29,7 @@ from nexus_scalp.database.models import (
 # AUDIT domain (audit.db)
 # ---------------------------------------------------------------------------
 
-AUDIT_SCHEMA_VERSION: int = 1
+AUDIT_SCHEMA_VERSION: int = 7
 
 AUDIT_TABLES: tuple[SchemaTable, ...] = (
     SchemaTable(
