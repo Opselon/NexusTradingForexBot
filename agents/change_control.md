@@ -675,3 +675,38 @@ Required tests: pytest tests/unit/test_telegram_html.py
        format on all new files; actionlint on ci.yml
 Status: READY_FOR_REVIEW
 ```
+
+```text
+CHANGE-ID: CHG-0023
+Agent: Hermes-CI-Reporting
+Role: CI / GitHub Actions Pipeline Engineer
+Task: TASK-CI-REPORTING (follow-up)
+Scope: Live-verification fixes on the unified CI results system:
+       1. heavy-ci + aggregate jobs now use if: always() && (ci-tests ||
+          dispatch full=true) so a failing quality job no longer silently
+          skips the entire heavy matrix (verified live on run 32283621817:
+          all 4 heavy arms executed despite quality failure).
+       2. Aggregate job merge fixed: download-artifact extracts artifact
+          CONTENTS at artifacts/<name>/ (no ci-results/ wrapper); the loop
+          now copies each arm's contents into ci-results/heavy/<suite>/ and
+          quality(-CI) into the top level, then make_ci_results.py summary +
+          manifest regenerate over the merged tree (verified live on
+          run 32290418115: aggregate upload succeeds).
+       3. Artifact naming made collision-free: quality uploads as
+          ci-results-quality-..., arms as ci-results-<suite>-..., aggregate
+          as ci-results-<workflow>-...-aggregate (parallel agent's naming
+          adopted where present).
+Affected files: .github/workflows/ci.yml (job ifs + aggregate merge loop +
+       artifact names)
+Affected functions/classes: NONE in src/ — workflow YAML only
+Contracts touched: CI_RESULTS v1 (aggregate layout: quality top-level +
+       heavy/<suite>/), CI_TRIGGER_POLICY v1 (unchanged)
+Runtime paths touched: NONE
+Owners affected: none (actions SHA-pinning landed separately via
+       Hermes-SecurityAudit 4b01a3e/9fc0972)
+Risk: LOW (workflow-only; failure semantics preserved)
+Dependencies: CHG-0022 (unified results)
+Required tests: actionlint clean; merge layout simulated locally; live
+       GitHub runs verified (quality artifact + per-arm artifacts + aggregate)
+Status: VERIFIED
+```

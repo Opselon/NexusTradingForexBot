@@ -1231,6 +1231,7 @@ class TestWorker:
         # second call within interval -> throttled
         assert w.tick() is False
         assert w.cycle_count == 1
+
     def test_worker_failure_isolated(self, audit, core) -> None:
         """A failing adapter must produce event=FAILURE and never raise."""
         core.adapter.fail_account = True

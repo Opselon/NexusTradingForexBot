@@ -294,6 +294,8 @@ def test_task02_21_runtime_state_off_is_50d() -> None:
     # the canonical active schema (repo source of truth) is scalp_v1/50D
     assert FEATURE_SCHEMAS.active.schema_id == "scalp_v1"
     assert FEATURE_SCHEMAS.active.dimension == 50
+
+
 # ---------------------------------------------------------------------------
 # TEST-TASK02-03/04/05 — governor 60D API-state truthfulness (STEP 3)
 # ---------------------------------------------------------------------------

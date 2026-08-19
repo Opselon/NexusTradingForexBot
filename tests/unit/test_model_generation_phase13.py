@@ -658,6 +658,8 @@ class TestSafety:
             src = inspect.getsource(mod)
             assert "order_manager" not in src
             assert "risk_engine" not in src
+
+
 # =============================================================================
 # WORKER / FAILURE ISOLATION (spec 42: 45-47)
 # =============================================================================

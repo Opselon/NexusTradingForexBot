@@ -1,0 +1,6329 @@
+{
+ "test_model_generation_phase13.py": {
+  "tests": [
+   {
+    "name": "test_01_legacy_scalpnet_still_loads",
+    "line": 134,
+    "len": 192,
+    "hash": "b4c0403d6ac4b7b6a18ea2d716c59560",
+    "n_assert": 1
+   },
+   {
+    "name": "test_02_legacy_classified_as_baseline",
+    "line": 140,
+    "len": 355,
+    "hash": "acaaa5d05a16fab6462dd634ccb3813c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_03_legacy_inference_reproducible",
+    "line": 148,
+    "len": 297,
+    "hash": "bb2972d0bacc1b50f0272e37579c5977",
+    "n_assert": 1
+   },
+   {
+    "name": "test_04_model_manifest_creation",
+    "line": 176,
+    "len": 427,
+    "hash": "302ed089418fed31a9a41fb53e53630b",
+    "n_assert": 4
+   },
+   {
+    "name": "test_05_dataset_manifest_creation",
+    "line": 188,
+    "len": 215,
+    "hash": "71120cd929b95510b84dc4989f2b91b7",
+    "n_assert": 3
+   },
+   {
+    "name": "test_06_hash_verification",
+    "line": 194,
+    "len": 764,
+    "hash": "79a08cc2bcfbf4291c729ca83dc0525c",
+    "n_assert": 3
+   },
+   {
+    "name": "test_07_corrupted_artifact_rejected",
+    "line": 210,
+    "len": 787,
+    "hash": "7d51462fa0da2751e389eb16bd48950c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_08_schema_mismatch_rejected",
+    "line": 225,
+    "len": 619,
+    "hash": "218459592394248196d7c61863ef5bac",
+    "n_assert": 0
+   },
+   {
+    "name": "test_09_label_mismatch_rejected",
+    "line": 237,
+    "len": 240,
+    "hash": "c8d74111c84770d09601d0b774878952",
+    "n_assert": 0
+   },
+   {
+    "name": "test_10_deterministic_generation",
+    "line": 250,
+    "len": 397,
+    "hash": "37b95e1a021692fa8fc60e7678c581d8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_11_provenance_preserved",
+    "line": 258,
+    "len": 294,
+    "hash": "b1d1cea4a41e997fc787e206e66a7995",
+    "n_assert": 3
+   },
+   {
+    "name": "test_12_temporal_split_preserved",
+    "line": 265,
+    "len": 331,
+    "hash": "9ba1b58fd4dfa4f920787e9841b90160",
+    "n_assert": 1
+   },
+   {
+    "name": "test_13_purge_preserved",
+    "line": 272,
+    "len": 330,
+    "hash": "76e326babf6bc46ba83c361e1f756abb",
+    "n_assert": 1
+   },
+   {
+    "name": "test_14_embargo_preserved",
+    "line": 279,
+    "len": 210,
+    "hash": "3f0f8eb95e5a918eac92dde5df8a1f7f",
+    "n_assert": 1
+   },
+   {
+    "name": "test_15_historical_news_context_preserved",
+    "line": 285,
+    "len": 673,
+    "hash": "9611c6278b588baee7718e47a5c0bbf2",
+    "n_assert": 2
+   },
+   {
+    "name": "test_16_sample_identity_deterministic",
+    "line": 305,
+    "len": 453,
+    "hash": "0ddff107fb73461d3ec731824abcf2e7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_17_setup_identity_deterministic",
+    "line": 314,
+    "len": 231,
+    "hash": "54205bbd8920f0092ce9f52cb79dd873",
+    "n_assert": 1
+   },
+   {
+    "name": "test_18_strategy_identity_preserved",
+    "line": 320,
+    "len": 283,
+    "hash": "1ba1efcde2eedc2c31f722b0d6747220",
+    "n_assert": 2
+   },
+   {
+    "name": "test_19_news_provenance_preserved",
+    "line": 326,
+    "len": 296,
+    "hash": "119405416796220143d538328b852481",
+    "n_assert": 2
+   },
+   {
+    "name": "test_20_model_factory_builds_configured_arch",
+    "line": 339,
+    "len": 311,
+    "hash": "29c1e302565818e50126b79ed448d6f8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_21_architecture_parameters_persisted",
+    "line": 346,
+    "len": 617,
+    "hash": "22c428c34a07fa8b81616af6c73cc58e",
+    "n_assert": 3
+   },
+   {
+    "name": "test_22_3class_label_contract_enforced",
+    "line": 358,
+    "len": 353,
+    "hash": "267415a82fb07e705cd12914a7a55cde",
+    "n_assert": 3
+   },
+   {
+    "name": "test_23_class_collapse_detected",
+    "line": 367,
+    "len": 378,
+    "hash": "0565c39e03195e55f625012c853f9fdc",
+    "n_assert": 2
+   },
+   {
+    "name": "test_24_calibration_evaluated",
+    "line": 376,
+    "len": 840,
+    "hash": "006815d386e4236d3a997c8026644f14",
+    "n_assert": 3
+   },
+   {
+    "name": "test_25_train_with_news_disabled",
+    "line": 404,
+    "len": 618,
+    "hash": "c6431dd4fb2b9fea573f104fc648444f",
+    "n_assert": 2
+   },
+   {
+    "name": "test_26_train_with_news_enabled",
+    "line": 417,
+    "len": 679,
+    "hash": "e33f57b869959a6a1fcbc28e3ece87cf",
+    "n_assert": 3
+   },
+   {
+    "name": "test_27_news_schema_preserved",
+    "line": 431,
+    "len": 488,
+    "hash": "5b379c95d1190d80d944265748ed5d76",
+    "n_assert": 4
+   },
+   {
+    "name": "test_28_historical_news_cannot_use_future_events",
+    "line": 441,
+    "len": 497,
+    "hash": "d9b65862450b0fd4be6b05c946cc1583",
+    "n_assert": 1
+   },
+   {
+    "name": "test_29_oos_failure_rejects_model",
+    "line": 468,
+    "len": 524,
+    "hash": "a44a8b7c6e62999dfa00ff59179e057f",
+    "n_assert": 1
+   },
+   {
+    "name": "test_30_robustness_failure_detected",
+    "line": 477,
+    "len": 393,
+    "hash": "3ce031e4baf730ca9d24d127210a8cfa",
+    "n_assert": 1
+   },
+   {
+    "name": "test_31_regime_failure_detected",
+    "line": 485,
+    "len": 422,
+    "hash": "86b5f84681285a2204b3392f88e6de10",
+    "n_assert": 1
+   },
+   {
+    "name": "test_32_news_ablation_comparison",
+    "line": 493,
+    "len": 605,
+    "hash": "e6bf9106a3b1c50b6edd82fdd312e846",
+    "n_assert": 2
+   },
+   {
+    "name": "test_33_ablation_results_persisted",
+    "line": 507,
+    "len": 651,
+    "hash": "29acc6edc722d3d914895871da20eeab",
+    "n_assert": 2
+   },
+   {
+    "name": "test_34_loads_without_db",
+    "line": 527,
+    "len": 499,
+    "hash": "61324ddb098923f305d3522561efe8fe",
+    "n_assert": 1
+   },
+   {
+    "name": "test_35_prediction_works_without_db",
+    "line": 537,
+    "len": 661,
+    "hash": "8ad6c53dad2cc3fa70aefbcddfd9ffbc",
+    "n_assert": 3
+   },
+   {
+    "name": "test_36_schema_mismatch_blocks_loading",
+    "line": 550,
+    "len": 783,
+    "hash": "d9b6d1635052166509c4c0349353215c",
+    "n_assert": 0
+   },
+   {
+    "name": "test_37_corrupted_artifact_blocks_loading",
+    "line": 567,
+    "len": 612,
+    "hash": "626fcf82b8931906717b5203802bcd1d",
+    "n_assert": 0
+   },
+   {
+    "name": "test_38_atomic_swap_preserves_old",
+    "line": 579,
+    "len": 923,
+    "hash": "ed4596ad0b0c7068ec9d7bab1c6ebd49",
+    "n_assert": 2
+   },
+   {
+    "name": "test_39_replay_reproducible",
+    "line": 602,
+    "len": 549,
+    "hash": "d712eefeee0d7dcfc5e095cb186314e8",
+    "n_assert": 3
+   },
+   {
+    "name": "test_40_drift_detectable",
+    "line": 613,
+    "len": 318,
+    "hash": "61554bfc51e9af59bda6966ba828c491",
+    "n_assert": 2
+   },
+   {
+    "name": "test_41_training_cannot_overwrite_champion",
+    "line": 628,
+    "len": 907,
+    "hash": "be70caa32f643fc9167dd3b95ccece38",
+    "n_assert": 1
+   },
+   {
+    "name": "test_42_challenger_cannot_execute_mt5",
+    "line": 643,
+    "len": 224,
+    "hash": "fd53e239ef39ea773483a597b158dc69",
+    "n_assert": 1
+   },
+   {
+    "name": "test_43_model_failure_does_not_bypass_risk",
+    "line": 651,
+    "len": 394,
+    "hash": "c40671e1bb8ce8764bf97c48c775b6a4",
+    "n_assert": 2
+   },
+   {
+    "name": "test_44_news_cannot_bypass_policy",
+    "line": 662,
+    "len": 428,
+    "hash": "f86b1fdbcbb8471047028ac33c164c98",
+    "n_assert": 1
+   },
+   {
+    "name": "test_45_training_failure_isolated",
+    "line": 681,
+    "len": 541,
+    "hash": "47b03c53944e341774557224e5b180e9",
+    "n_assert": 2
+   },
+   {
+    "name": "test_46_cancellation_safe",
+    "line": 692,
+    "len": 776,
+    "hash": "a15ab04f66e3b8ac14ef9372207f3073",
+    "n_assert": 2
+   },
+   {
+    "name": "test_47_concurrent_experiment_limit_works",
+    "line": 707,
+    "len": 264,
+    "hash": "47a51981607d142a4228a79de5de3537",
+    "n_assert": 0
+   },
+   {
+    "name": "test_48_phase08_imports_intact",
+    "line": 720,
+    "len": 123,
+    "hash": "20adfc219b0274ab2043e2e3a6e888a7",
+    "n_assert": 1
+   },
+   {
+    "name": "test_49_phase09_imports_intact",
+    "line": 725,
+    "len": 112,
+    "hash": "91ded80d5d7a30631ac474bbf0d17f11",
+    "n_assert": 1
+   },
+   {
+    "name": "test_50_phase10_imports_intact",
+    "line": 730,
+    "len": 130,
+    "hash": "7e119e322218f1371f686c1fc2c9b252",
+    "n_assert": 1
+   },
+   {
+    "name": "test_51_phase11_imports_intact",
+    "line": 735,
+    "len": 108,
+    "hash": "f7cc316ed00e16b8c5888cb741ed585e",
+    "n_assert": 1
+   },
+   {
+    "name": "test_52_phase12_news_gate_intact",
+    "line": 740,
+    "len": 458,
+    "hash": "e0f2c724c479620d2ca15e7aeee336f2",
+    "n_assert": 1
+   },
+   {
+    "name": "test_board_path_traversal_rejected",
+    "line": 763,
+    "len": 470,
+    "hash": "44545f690c7e3c8d356815e45e0fda42",
+    "n_assert": 1
+   },
+   {
+    "name": "test_board_store_refuses_traversal_through_api",
+    "line": 773,
+    "len": 378,
+    "hash": "c2079c99ca7276f5e74d417ff54a9bdd",
+    "n_assert": 0
+   },
+   {
+    "name": "test_board_scaler_persisted_and_roundtrips",
+    "line": 782,
+    "len": 1089,
+    "hash": "03570e11ba1a14adab58e400cfdd57eb",
+    "n_assert": 3
+   },
+   {
+    "name": "test_board_missing_declared_scaler_blocks_load",
+    "line": 805,
+    "len": 792,
+    "hash": "88d2550567c9eefc86f4a2947b87eb4a",
+    "n_assert": 0
+   },
+   {
+    "name": "test_board_const_column_scaler_identity",
+    "line": 820,
+    "len": 405,
+    "hash": "4fd1c77bd4d248bb47e0995c89a81c95",
+    "n_assert": 2
+   },
+   {
+    "name": "test_board_nan_features_fail_training",
+    "line": 835,
+    "len": 634,
+    "hash": "566f44f9ecbee5f039cfc3e1d5281eaf",
+    "n_assert": 2
+   },
+   {
+    "name": "test_board_inf_features_fail_training",
+    "line": 851,
+    "len": 551,
+    "hash": "9f08dcbfb3f1babc5c36e5ddb565cc30",
+    "n_assert": 1
+   },
+   {
+    "name": "test_board_nan_labels_fail_training",
+    "line": 864,
+    "len": 655,
+    "hash": "17bc2b4bba7d09e1a5ad3b8593fe9582",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg02_60d_schema_registered",
+    "line": 910,
+    "len": 247,
+    "hash": "9490110c166631fcd006d5a0e55af92c",
+    "n_assert": 3
+   },
+   {
+    "name": "test_mg03_60d_feature_ordering_deterministic",
+    "line": 917,
+    "len": 578,
+    "hash": "05babbc51214c088df4f5d089fdd59b1",
+    "n_assert": 4
+   },
+   {
+    "name": "test_mg03b_60d_vector_validate",
+    "line": 931,
+    "len": 345,
+    "hash": "c2150b61c59740b800dd5b7b0ef1acdc",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg04_wrong_input_dimension_rejected",
+    "line": 940,
+    "len": 1256,
+    "hash": "42e980f0c0f7c0db8e2385577887911c",
+    "n_assert": 3
+   },
+   {
+    "name": "test_mg06_wrong_schema_rejected",
+    "line": 965,
+    "len": 217,
+    "hash": "a45c5251bc69db489f715ab86f35ce21",
+    "n_assert": 0
+   },
+   {
+    "name": "test_mg02b_scalp_v2_not_active",
+    "line": 970,
+    "len": 185,
+    "hash": "fe8bc6e8db744dd67456ef6fad17945a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_quality_report_flags",
+    "line": 978,
+    "len": 739,
+    "hash": "78fcd0e20e396d5e245a0303aeb8d372",
+    "n_assert": 5
+   },
+   {
+    "name": "test_quality_report_duplicates",
+    "line": 996,
+    "len": 312,
+    "hash": "96805b133da8837060210bf5dd18aa81",
+    "n_assert": 1
+   },
+   {
+    "name": "test_extras_all_finite_cold_start",
+    "line": 1003,
+    "len": 267,
+    "hash": "6cc88474d11df764e10b03eea3168717",
+    "n_assert": 2
+   },
+   {
+    "name": "test_mg10_dataset_provenance_complete",
+    "line": 1013,
+    "len": 714,
+    "hash": "d3818d39cbfba98c3e54fdd837927f15",
+    "n_assert": 5
+   },
+   {
+    "name": "test_mg10b_60d_artifact_verifier",
+    "line": 1027,
+    "len": 378,
+    "hash": "f3d97509c7fc8899a85329798d155dbc",
+    "n_assert": 3
+   },
+   {
+    "name": "test_mg13_same_dataset_reproducible",
+    "line": 1036,
+    "len": 358,
+    "hash": "55c07ac2a88b92450fa4f97acdb9ff45",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg13b_candidate_identity_deterministic",
+    "line": 1044,
+    "len": 826,
+    "hash": "4715918a424d40352a9bea82ea3b0388",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg14_15_news_ablation_identical_split",
+    "line": 1061,
+    "len": 1130,
+    "hash": "af169bc6c7dc222ea870dcbbc4308e58",
+    "n_assert": 3
+   },
+   {
+    "name": "test_mg07_nonfinite_feature_training_fails",
+    "line": 1085,
+    "len": 545,
+    "hash": "d2ec903ffebc319ba8d1de6e55ec391c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_mg08_invalid_labels_fail",
+    "line": 1096,
+    "len": 447,
+    "hash": "174221ca5393f8ca2080fc4bc085a033",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg17_failed_training_never_challenger",
+    "line": 1106,
+    "len": 533,
+    "hash": "046735a0cfc419f9799bbbc45b62de55",
+    "n_assert": 2
+   },
+   {
+    "name": "test_mg18_negative_oos_never_challenger",
+    "line": 1116,
+    "len": 419,
+    "hash": "e51137c4179eb47eb2accfa7f9a3331c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg19_robustness_failure_blocks",
+    "line": 1125,
+    "len": 517,
+    "hash": "8f30195ec404798242871a9c4328e6c5",
+    "n_assert": 2
+   },
+   {
+    "name": "test_mg20_artifact_tamper_blocks_load",
+    "line": 1137,
+    "len": 1102,
+    "hash": "46f4fbb4fb6945a760e0fe2dfb180842",
+    "n_assert": 2
+   },
+   {
+    "name": "test_mg17b_nonfinite_loss_fails",
+    "line": 1162,
+    "len": 904,
+    "hash": "db8dd3c144d05f9f3583c5118ac8741d",
+    "n_assert": 1
+   },
+   {
+    "name": "test_min_evidence_blocks",
+    "line": 1184,
+    "len": 327,
+    "hash": "de47f84ed9fd08835067837792cb97b7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_ece_floor_blocks",
+    "line": 1192,
+    "len": 680,
+    "hash": "ba2d7c5f09db201725003df2045b27fd",
+    "n_assert": 3
+   },
+   {
+    "name": "test_balanced_accuracy_helper",
+    "line": 1210,
+    "len": 202,
+    "hash": "882c58ff1ba3a7b3a4d6d9ab1bbaf8d7",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg21_db_unavailable_during_prediction",
+    "line": 1219,
+    "len": 1018,
+    "hash": "078666a9eab19826082d83c9e66a664b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_mg22_replay_prediction_equals_runtime_preprocessing",
+    "line": 1242,
+    "len": 1281,
+    "hash": "75bf7dfed1f4c1ff5b598757810c8ca9",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg23_feature_drift_detected",
+    "line": 1271,
+    "len": 397,
+    "hash": "ede3e17349157f8997b6e65f9939a7e5",
+    "n_assert": 2
+   },
+   {
+    "name": "test_mg24_prediction_drift_detected",
+    "line": 1281,
+    "len": 311,
+    "hash": "f7d7e59fe3f40486b3e8a6f260002c2a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg25_worker_disabled_state_explicit",
+    "line": 1289,
+    "len": 690,
+    "hash": "cd38c3ca726efda849aaed6b78472ca7",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg26_new_data_trigger_produces_work",
+    "line": 1310,
+    "len": 783,
+    "hash": "22c1ef921ebf437cf9153332fb469a2d",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg27_unchanged_dataset_wont_retrain",
+    "line": 1324,
+    "len": 409,
+    "hash": "85d2656ac1a832b35e9a3b48fce62e6b",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mg01_50d_champion_contract_untouched",
+    "line": 1337,
+    "len": 343,
+    "hash": "00b26e6df0aa03ceb3440c58fd5f35b0",
+    "n_assert": 3
+   },
+   {
+    "name": "test_mg16_champion_cannot_be_overwritten_by_candidate_trainer",
+    "line": 1345,
+    "len": 1235,
+    "hash": "3724eaa8acc10b7ceb2a6da7eeac6513",
+    "n_assert": 3
+   },
+   {
+    "name": "test_mg28_challenger_shadow_no_orders",
+    "line": 1369,
+    "len": 472,
+    "hash": "2ed95e61f9539d199dddf4d6d0c48ff4",
+    "n_assert": 2
+   },
+   {
+    "name": "test_mg29_champion_rollback_remains_available",
+    "line": 1378,
+    "len": 422,
+    "hash": "cf9587ba88ab094d2c6596c3cc22d5fe",
+    "n_assert": 1
+   }
+  ],
+  "n_tests": 95,
+  "classes": [
+   "TestLegacy",
+   "TestArtifact",
+   "TestDataset",
+   "TestSample",
+   "TestModel",
+   "TestNews",
+   "TestValidation",
+   "TestRuntime",
+   "TestReplay",
+   "TestSafety",
+   "TestFailureIsolation",
+   "TestRegression",
+   "TestArtifactAudit",
+   "TestTrainingInputValidation",
+   "TestTask5Schema60D",
+   "TestTask5FeatureQuality",
+   "TestTask5Dataset60D",
+   "TestTask5TrainingSafety",
+   "TestTask5ValidationGates",
+   "TestTask5RuntimeParity",
+   "TestTask5DriftAndWorker",
+   "TestTask5ChampionSafety",
+   "_W"
+  ],
+  "imports": [
+   "__future__",
+   "datetime",
+   "inspect",
+   "json",
+   "math",
+   "nexus_scalp.experience",
+   "nexus_scalp.features.scalp_features",
+   "nexus_scalp.features.schema",
+   "nexus_scalp.features.schema_augment",
+   "nexus_scalp.labeling.triple_barrier",
+   "nexus_scalp.model_generation",
+   "nexus_scalp.model_generation.artifact_store",
+   "nexus_scalp.model_generation.models",
+   "nexus_scalp.model_generation.replay",
+   "nexus_scalp.model_generation.runtime",
+   "nexus_scalp.model_generation.schema_v2",
+   "nexus_scalp.model_generation.training",
+   "nexus_scalp.model_generation.validation",
+   "nexus_scalp.model_lifecycle",
+   "nexus_scalp.model_lifecycle.champion",
+   "nexus_scalp.model_lifecycle.worker",
+   "nexus_scalp.models.scalp_net",
+   "nexus_scalp.news",
+   "nexus_scalp.news.models",
+   "nexus_scalp.research",
+   "nexus_scalp.shadow",
+   "nexus_scalp.shadow.engine",
+   "numpy",
+   "pathlib",
+   "polars",
+   "pytest",
+   "sqlite3",
+   "torch"
+  ]
+ },
+ "test_model_lifecycle_phase10.py": {
+  "tests": [
+   {
+    "name": "test_reproducibility",
+    "line": 261,
+    "len": 440,
+    "hash": "0e91d1d6f65230292d342df75226e70d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_provenance",
+    "line": 270,
+    "len": 464,
+    "hash": "d3696e8f6bc479d55464b12c5b20c6a5",
+    "n_assert": 5
+   },
+   {
+    "name": "test_temporal_ordering",
+    "line": 281,
+    "len": 318,
+    "hash": "c901abe5fbe8f67b4caf9319bda995aa",
+    "n_assert": 1
+   },
+   {
+    "name": "test_no_future_leakage",
+    "line": 288,
+    "len": 1303,
+    "hash": "5a906ceff2bcdaf0af404c0294bc3a9c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_schema_identity",
+    "line": 316,
+    "len": 437,
+    "hash": "9a6deccdb80789d908f466d1a47663e6",
+    "n_assert": 3
+   },
+   {
+    "name": "test_losses_included",
+    "line": 332,
+    "len": 414,
+    "hash": "4f35d4835e45dbcb88c4e127acf11677",
+    "n_assert": 2
+   },
+   {
+    "name": "test_wins_included",
+    "line": 340,
+    "len": 295,
+    "hash": "ec89ecbc41b46658b6832f2a672cb25a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_strategy_context_retained",
+    "line": 346,
+    "len": 357,
+    "hash": "a078fa8cb5ccb92b3381e933054105d0",
+    "n_assert": 2
+   },
+   {
+    "name": "test_model_provenance_retained",
+    "line": 353,
+    "len": 719,
+    "hash": "a4d434f6a9a43ee4a8d40323ba8ac06c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_50d_compatibility_via_schema",
+    "line": 377,
+    "len": 237,
+    "hash": "47d1c41e8bc2469c991b416b7a51a2d6",
+    "n_assert": 2
+   },
+   {
+    "name": "test_future_schema_boundary",
+    "line": 383,
+    "len": 679,
+    "hash": "b067244a4ba4e9251a61cf0645c6c833",
+    "n_assert": 2
+   },
+   {
+    "name": "test_dimension_mismatch_rejected",
+    "line": 396,
+    "len": 400,
+    "hash": "298ad3dcfe8bb095e2a4bb011b93a6a6",
+    "n_assert": 0
+   },
+   {
+    "name": "test_scaler_mismatch_rejected",
+    "line": 407,
+    "len": 376,
+    "hash": "e4ca89cc079cc45f00ff6229e146aec4",
+    "n_assert": 2
+   },
+   {
+    "name": "test_aihub_01_valid_50d_4class_artifact_passes",
+    "line": 431,
+    "len": 686,
+    "hash": "8c214d99a338086498c0bbf2a433f348",
+    "n_assert": 5
+   },
+   {
+    "name": "test_aihub_02_class_count_from_head_not_hidden_width",
+    "line": 448,
+    "len": 555,
+    "hash": "98f05c7ad42ddd28e00fbed673b674d0",
+    "n_assert": 2
+   },
+   {
+    "name": "test_aihub_03_70d_4class_artifact_loads",
+    "line": 462,
+    "len": 572,
+    "hash": "cc0c1cb823ad111d402d4b17917ca475",
+    "n_assert": 3
+   },
+   {
+    "name": "test_aihub_04_wrong_scaler_dimension_rejected",
+    "line": 477,
+    "len": 759,
+    "hash": "ddd766a9adccdc71add13b3a887a4f1d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_aihub_05_class_count_mismatch_rejected",
+    "line": 497,
+    "len": 592,
+    "hash": "503213b1d737b75f54cf85538c4bc81a",
+    "n_assert": 3
+   },
+   {
+    "name": "test_aihub_06_schema_hash_mismatch_rejected",
+    "line": 512,
+    "len": 589,
+    "hash": "049525b113b3a22d25f45e1daf9d1dd0",
+    "n_assert": 3
+   },
+   {
+    "name": "test_aihub_12_dry_run_inference_tensor_shape",
+    "line": 527,
+    "len": 699,
+    "hash": "8efc932d4b094adbbabaf42acdff5c07",
+    "n_assert": 2
+   },
+   {
+    "name": "test_aihub_13_invalid_tensor_shape_explicit_error",
+    "line": 544,
+    "len": 467,
+    "hash": "180b156605f3acdf0a17f2ce76835f39",
+    "n_assert": 1
+   },
+   {
+    "name": "test_bug118_champion_verified_logs_once_per_fingerprint",
+    "line": 581,
+    "len": 599,
+    "hash": "b7b910840174b602bfeec02a4801e26d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_bug118_artifact_rewrite_reverifies_once",
+    "line": 594,
+    "len": 1418,
+    "hash": "901f89b982aa8457d53c435d9625be25",
+    "n_assert": 5
+   },
+   {
+    "name": "test_bug118_cold_start_none_memoized",
+    "line": 630,
+    "len": 518,
+    "hash": "9bfd8b4214772b22d567c7a5f87e2408",
+    "n_assert": 3
+   },
+   {
+    "name": "test_bug118_force_reload_performs_fresh_verify",
+    "line": 641,
+    "len": 395,
+    "hash": "794946cf5e6cdc634cdd0bdb40e58543",
+    "n_assert": 3
+   },
+   {
+    "name": "test_gate_failure_rejects_candidate",
+    "line": 694,
+    "len": 289,
+    "hash": "0e1b7f1aedc785f3539560a4922553fc",
+    "n_assert": 2
+   },
+   {
+    "name": "test_oos_failure_rejects",
+    "line": 702,
+    "len": 130,
+    "hash": "b92863c60054f8dd2113c7229d0da02c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_robustness_failure_rejects",
+    "line": 706,
+    "len": 142,
+    "hash": "028da6ddc503dc63b4e87ba1bba5f7a1",
+    "n_assert": 1
+   },
+   {
+    "name": "test_drawdown_failure_rejects",
+    "line": 710,
+    "len": 146,
+    "hash": "1175aca6205eadc83f875a0741807870",
+    "n_assert": 1
+   },
+   {
+    "name": "test_model_collapse_rejected",
+    "line": 714,
+    "len": 149,
+    "hash": "7223d320d8e61b664a74075cb44c9842",
+    "n_assert": 1
+   },
+   {
+    "name": "test_calibration_gate_placeholder",
+    "line": 718,
+    "len": 307,
+    "hash": "ea5931e3bca7205792817a8eca628ad6",
+    "n_assert": 1
+   },
+   {
+    "name": "test_challenger_cannot_execute_production_orders",
+    "line": 731,
+    "len": 308,
+    "hash": "74d3b877bef8304601b26bca6f663d47",
+    "n_assert": 3
+   },
+   {
+    "name": "test_champion_unchanged_during_training",
+    "line": 738,
+    "len": 937,
+    "hash": "fa6f877f45ae17f75ae52a09d1243800",
+    "n_assert": 3
+   },
+   {
+    "name": "test_rejected_challenger_cannot_become_champion",
+    "line": 759,
+    "len": 597,
+    "hash": "b059cf941077d8dc0e9adb4a6291cefd",
+    "n_assert": 2
+   },
+   {
+    "name": "test_promotion_lineage_immutable",
+    "line": 771,
+    "len": 751,
+    "hash": "26167fb3e554c6294413277952836f2d",
+    "n_assert": 4
+   },
+   {
+    "name": "test_losses_wins_neutral_represented",
+    "line": 798,
+    "len": 555,
+    "hash": "45fde49f27ed5f2c150b2522fc0fae46",
+    "n_assert": 3
+   },
+   {
+    "name": "test_failure_isolated",
+    "line": 816,
+    "len": 935,
+    "hash": "4019d028d3129bf77a8e1e0a4faccce9",
+    "n_assert": 1
+   },
+   {
+    "name": "test_cancellation_safe",
+    "line": 843,
+    "len": 961,
+    "hash": "a97654a7202836ba4a403f59dca6a808",
+    "n_assert": 1
+   },
+   {
+    "name": "test_restart_safe",
+    "line": 870,
+    "len": 886,
+    "hash": "acd49c4b45dd451f78709d7b8e1dc287",
+    "n_assert": 1
+   },
+   {
+    "name": "test_no_live_engine_blocking",
+    "line": 893,
+    "len": 853,
+    "hash": "3f0536ecddb095dc605e9ea93409c7d9",
+    "n_assert": 1
+   },
+   {
+    "name": "test_phase08_experience_intact",
+    "line": 923,
+    "len": 346,
+    "hash": "bab032f257bd4ad9e5d9f9768cd021a9",
+    "n_assert": 2
+   },
+   {
+    "name": "test_phase09_research_intact",
+    "line": 930,
+    "len": 217,
+    "hash": "6ae57849af7de481f014ee8358aae938",
+    "n_assert": 1
+   },
+   {
+    "name": "test_accounting_intact",
+    "line": 936,
+    "len": 184,
+    "hash": "20cd80c056a97a25523c263b5488ed9a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_production_inference_contract_intact",
+    "line": 941,
+    "len": 245,
+    "hash": "00c772c1e2722ad6f160b85d99824a00",
+    "n_assert": 2
+   }
+  ],
+  "n_tests": 44,
+  "classes": [
+   "TestTrainingDataset",
+   "TestTraining",
+   "TestCompatibility",
+   "TestGates",
+   "TestChampionChallenger",
+   "TestExperienceRepresentation",
+   "TestWorker",
+   "TestRegression"
+  ],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.accounting.core",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.experience.ledger",
+   "nexus_scalp.experience.models",
+   "nexus_scalp.experience.provenance",
+   "nexus_scalp.features.schema",
+   "nexus_scalp.model_lifecycle",
+   "nexus_scalp.model_lifecycle.champion",
+   "nexus_scalp.model_lifecycle.comparison",
+   "nexus_scalp.model_lifecycle.dataset",
+   "nexus_scalp.model_lifecycle.gates",
+   "nexus_scalp.model_lifecycle.integrity",
+   "nexus_scalp.model_lifecycle.orchestrator",
+   "nexus_scalp.model_lifecycle.registry",
+   "nexus_scalp.model_lifecycle.store",
+   "nexus_scalp.model_lifecycle.trainer",
+   "nexus_scalp.model_lifecycle.worker",
+   "nexus_scalp.models.scalp_net",
+   "nexus_scalp.research.store",
+   "numpy",
+   "os",
+   "pathlib",
+   "pytest",
+   "time",
+   "torch"
+  ]
+ },
+ "test_model_governance_phase16.py": {
+  "tests": [
+   {
+    "name": "test_lg01_champion_artifact_loads_when_gate_passes",
+    "line": 92,
+    "len": 698,
+    "hash": "2d074878b29442012f6f2480e3064f53",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg02_champion_hash_verified",
+    "line": 110,
+    "len": 687,
+    "hash": "554a97687f6bd5a6290ff285ba684f43",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lg03_invalid_champion_blocked_with_exact_gate",
+    "line": 126,
+    "len": 437,
+    "hash": "99d870e19b1cf2b98112519c838fbf58",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg04_challenger_loads_only_if_validation_permits",
+    "line": 154,
+    "len": 485,
+    "hash": "f295f36e2297385f56e3fb404db2bb3c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg05_schema_mismatch_blocks_challenger",
+    "line": 165,
+    "len": 508,
+    "hash": "288dbc3af396085095e4a0aed3c8167c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg06_scaler_mismatch_blocks_challenger",
+    "line": 178,
+    "len": 653,
+    "hash": "ab9e7248bbd3d94a761037950ee98e8d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lg07_feature_dimension_mismatch_blocks_challenger",
+    "line": 193,
+    "len": 578,
+    "hash": "40e2d845d1ef039220d9bb7e4c3365a7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg08_champion_challenger_aligned_timestamp_context",
+    "line": 215,
+    "len": 873,
+    "hash": "d6995615e0c80c87b86e16b3b22f514a",
+    "n_assert": 4
+   },
+   {
+    "name": "test_lg09_news_context_identical",
+    "line": 234,
+    "len": 441,
+    "hash": "d6e5ed61178100e934de666ac191fb69",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lg15_same_input_deterministic_prediction",
+    "line": 244,
+    "len": 653,
+    "hash": "59c221cce7f563cd062a2c6ca39327b3",
+    "n_assert": 1
+   },
+   {
+    "name": "test_lg10_shadow_cannot_execute_orders",
+    "line": 270,
+    "len": 1053,
+    "hash": "37c76074c7be8113e4dd8f79f52af915",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lg11_shadow_exception_cannot_stop_champion",
+    "line": 292,
+    "len": 1482,
+    "hash": "734bb0e2e4e430a8bd30a86be7c6ee91",
+    "n_assert": 4
+   },
+   {
+    "name": "test_lg12_shadow_timeout_cannot_stop_champion",
+    "line": 333,
+    "len": 1413,
+    "hash": "c9966a068dfbfa84ea4bcb8ff1d63818",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lg13_bounded_queue_cannot_grow_unbounded",
+    "line": 373,
+    "len": 1423,
+    "hash": "168731b27f92f0e778e116275d3d1f68",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg14_dropped_shadow_samples_observable",
+    "line": 413,
+    "len": 1099,
+    "hash": "91639d090f3a87357b14e44567d199f2",
+    "n_assert": 1
+   },
+   {
+    "name": "test_lg30_shadow_adds_no_hot_path_blocking",
+    "line": 445,
+    "len": 1670,
+    "hash": "183fc25ef1dbfd78bbf9f6d04904464d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lg16_golden_prediction_parity",
+    "line": 496,
+    "len": 595,
+    "hash": "5c68875431f89fbb17a9334b1669ba66",
+    "n_assert": 5
+   },
+   {
+    "name": "test_lg25_model_state_survives_restart",
+    "line": 508,
+    "len": 628,
+    "hash": "6a88ac3962a4de9888807434158d4921",
+    "n_assert": 1
+   },
+   {
+    "name": "test_lg27_api_model_health_reflects_real_state",
+    "line": 520,
+    "len": 877,
+    "hash": "b9c0d1bff091e593e923af1babe1c152",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lg26_packaged_runtime_reports_correct_model_identity",
+    "line": 540,
+    "len": 672,
+    "hash": "11bf1e325a05ee84e71fa878c3ff74e4",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg29_no_stack_trace_exposed",
+    "line": 556,
+    "len": 347,
+    "hash": "8f524e371e9fdb7f6b50234c0d346155",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg17_eventual_outcome_links_correctly",
+    "line": 570,
+    "len": 685,
+    "hash": "8dc58125207bd692191ea175291c1d85",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lg19_live_calibration_buckets_deterministic",
+    "line": 585,
+    "len": 434,
+    "hash": "c04a9b7bff4fce6af15a10e4271b574e",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lg20_drift_detection_works",
+    "line": 596,
+    "len": 568,
+    "hash": "ed3a4283f42a041668a9efe44da1c47f",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg20b_feature_drift_uses_full_vector_width",
+    "line": 611,
+    "len": 1297,
+    "hash": "f42c410eaaf9d40592398a32fcc397dc",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg21_promotion_gate_blocks_invalid_candidate",
+    "line": 647,
+    "len": 563,
+    "hash": "de0572c176d65e1f88f0aa3e02dcc6d5",
+    "n_assert": 0
+   },
+   {
+    "name": "test_lg22_promotion_requires_explicit_approval",
+    "line": 660,
+    "len": 777,
+    "hash": "afb92b7d206bf806721c19fc332fd22e",
+    "n_assert": 0
+   },
+   {
+    "name": "test_lg23_rollback_restores_previous_champion",
+    "line": 708,
+    "len": 554,
+    "hash": "9fbcf64b4b628d0bb719190e130bae00",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lg24_failed_challenger_cannot_overwrite_champion",
+    "line": 723,
+    "len": 901,
+    "hash": "77ebd6ccaca188286a6fcc59e6587274",
+    "n_assert": 0
+   },
+   {
+    "name": "test_lg28_telegram_uses_canonical_governance_report",
+    "line": 745,
+    "len": 1086,
+    "hash": "c1d39b747835235b1dcd7c0d6f19938c",
+    "n_assert": 3
+   },
+   {
+    "name": "test_gov01_valid_candidate_lifecycle",
+    "line": 856,
+    "len": 1499,
+    "hash": "df1d2cfcb20448b7aad5f93dc261c915",
+    "n_assert": 1
+   },
+   {
+    "name": "test_gov02_invalid_candidate_rejected",
+    "line": 893,
+    "len": 1497,
+    "hash": "8b69354ea455e291aeef4185cc600602",
+    "n_assert": 1
+   },
+   {
+    "name": "test_gov03_schema_mismatch_blocks_promotion",
+    "line": 927,
+    "len": 692,
+    "hash": "8d28c5caa9d81f805b3494af06c4632a",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov04_artifact_mismatch_blocks_promotion",
+    "line": 946,
+    "len": 549,
+    "hash": "b3cd6344c5f80112af857dc77b669a8c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov05_scaler_mismatch_blocks_promotion",
+    "line": 961,
+    "len": 798,
+    "hash": "4156f0a8da761026cc316efceb6a9a2d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov06_oos_failure_blocks_promotion",
+    "line": 984,
+    "len": 1058,
+    "hash": "8cfe1ebb8c5199aab7c8f0c4ce39ac16",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov07_robustness_failure_blocks_promotion",
+    "line": 1012,
+    "len": 788,
+    "hash": "880de8e1d899b5b1fab9bbcd1d84b53b",
+    "n_assert": 1
+   },
+   {
+    "name": "test_gov08_shadow_failure_blocks_promotion",
+    "line": 1031,
+    "len": 775,
+    "hash": "619689c058659dd9824380fa3b93a067",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov09_critical_drift_blocks_promotion",
+    "line": 1053,
+    "len": 674,
+    "hash": "41d67ff6ac8273ec9a36e19912d2d408",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov10_insufficient_evidence_blocks_promotion",
+    "line": 1071,
+    "len": 659,
+    "hash": "887c707f274ce4001820da1c06d6823b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov11_human_approval_required",
+    "line": 1089,
+    "len": 1771,
+    "hash": "9fb11382ce3f633a92d736b8b6089083",
+    "n_assert": 1
+   },
+   {
+    "name": "test_gov12_promotion_audit_record",
+    "line": 1132,
+    "len": 2198,
+    "hash": "489de9cc3061caf0c85a7deed99b9c9f",
+    "n_assert": 5
+   },
+   {
+    "name": "test_gov13_atomic_promotion",
+    "line": 1190,
+    "len": 2444,
+    "hash": "cd6a44b5dd71428112d488a60ec4b285",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov14_rollback_restores_previous_champion",
+    "line": 1254,
+    "len": 476,
+    "hash": "fa62acb6a1af3c939ff99d3a22ad631b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov15_rollback_preserves_evidence",
+    "line": 1268,
+    "len": 515,
+    "hash": "65753957914d92cfb31c5a35e056bdf0",
+    "n_assert": 1
+   },
+   {
+    "name": "test_gov16_champion_unchanged_after_failed_promotion",
+    "line": 1282,
+    "len": 2130,
+    "hash": "736a73b3fe17f0ad956a9ddd630cb6f7",
+    "n_assert": 1
+   },
+   {
+    "name": "test_gov17_candidate_immutable",
+    "line": 1335,
+    "len": 1144,
+    "hash": "710cebe26a57c19c969d69a94737d0e5",
+    "n_assert": 3
+   },
+   {
+    "name": "test_gov18_research_result_immutable",
+    "line": 1361,
+    "len": 722,
+    "hash": "338552825a9fa9bde532bd8404149c0e",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov19_post_promotion_monitoring",
+    "line": 1374,
+    "len": 2102,
+    "hash": "5323c132537d4e9c11c58cffb85bd599",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov20_technical_failure_rollback",
+    "line": 1429,
+    "len": 2570,
+    "hash": "10ae6d8c694635a94ef9740a02f3097d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov21_small_performance_loss_no_instant_rollback",
+    "line": 1497,
+    "len": 606,
+    "hash": "7990e6472c393b66d6fadb48e4255aab",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov22_sample_floor_enforced",
+    "line": 1509,
+    "len": 928,
+    "hash": "720837f83e90bebd5222dbeddd255352",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov23_feature_drift_gate",
+    "line": 1535,
+    "len": 791,
+    "hash": "b4946776309139daa79d89d3585a6c98",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov24_news_liquidity_dependency_gate",
+    "line": 1555,
+    "len": 791,
+    "hash": "a14cb9f00a54771368a45e03de61a6fb",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov25_installed_runtime_compatibility",
+    "line": 1575,
+    "len": 335,
+    "hash": "fdebc1a001cc599a4cce256bf639bcc4",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov26_migration_compatibility",
+    "line": 1582,
+    "len": 914,
+    "hash": "d7c2df5b98614b7d5ffd9eded21dbc9a",
+    "n_assert": 3
+   },
+   {
+    "name": "test_gov27_ui_status_matches_backend",
+    "line": 1600,
+    "len": 633,
+    "hash": "829e8c672f6eb12bc867d946a596a5df",
+    "n_assert": 1
+   },
+   {
+    "name": "test_gov28_no_auto_promotion",
+    "line": 1616,
+    "len": 1153,
+    "hash": "34f6bfdd3577bf4a8c5b88505b87e1b3",
+    "n_assert": 2
+   },
+   {
+    "name": "test_gov29_concurrent_promotion_lock",
+    "line": 1640,
+    "len": 583,
+    "hash": "1b765cc243aae87b4d01811e85db6008",
+    "n_assert": 4
+   },
+   {
+    "name": "test_gov30_restart_safe_governance_state",
+    "line": 1655,
+    "len": 657,
+    "hash": "ddfb059ad5dfbc7fd87fd0ace038cfba",
+    "n_assert": 1
+   }
+  ],
+  "n_tests": 60,
+  "classes": [
+   "TestLoadGate",
+   "TestChallengerGates",
+   "TestSameState",
+   "TestShadowIsolation",
+   "TestGoldenAndHealth",
+   "TestEvidence",
+   "TestPromotionLifecycle",
+   "TestGovernance70",
+   "BoomRuntime",
+   "Slow",
+   "Fake",
+   "Bad",
+   "Fast"
+  ],
+  "imports": [
+   "__future__",
+   "datetime",
+   "inspect",
+   "json",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.database.engine",
+   "nexus_scalp.database.models",
+   "nexus_scalp.database.registry",
+   "nexus_scalp.governance",
+   "nexus_scalp.governance.alignment",
+   "nexus_scalp.governance.engine",
+   "nexus_scalp.governance.evidence",
+   "nexus_scalp.governance.load_gate",
+   "nexus_scalp.governance.lock",
+   "nexus_scalp.governance.models",
+   "nexus_scalp.governance.reporting",
+   "nexus_scalp.governance.shadow_runtime",
+   "nexus_scalp.governance.store",
+   "nexus_scalp.governance.transaction",
+   "nexus_scalp.governance.verify",
+   "nexus_scalp.shadow.challenger",
+   "numpy",
+   "pathlib",
+   "pytest",
+   "time",
+   "torch"
+  ]
+ },
+ "test_70d_model_validation_task4.py": {
+  "tests": [
+   {
+    "name": "test_70d_model_01_same_dataset_baseline_and_candidate",
+    "line": 156,
+    "len": 1034,
+    "hash": "fbb45e10f6cd36caf59e09404ce81143",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_model_02_same_labels",
+    "line": 177,
+    "len": 557,
+    "hash": "3f33ba7188cb84ddee87b08f42e604e7",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_model_17_baseline_candidate_same_sample_ids",
+    "line": 191,
+    "len": 1362,
+    "hash": "caf744555cfd9ae887642dd4259a3644",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_model_03_same_temporal_split",
+    "line": 226,
+    "len": 558,
+    "hash": "8be05fa16b15cec4a1340178ec713eba",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_04_same_purge_embargo",
+    "line": 239,
+    "len": 523,
+    "hash": "c797336b2d0e251a09c2c5d1bbc0a774",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_05_60d_scaler_dimension_correct",
+    "line": 256,
+    "len": 716,
+    "hash": "2ee4d9513e66117b2db1c28fdbc04cf3",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_model_06_70d_scaler_dimension_correct",
+    "line": 272,
+    "len": 636,
+    "hash": "85ba4d261990d5c7ae803ffbc3aa96c9",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_07_70d_model_forward_pass",
+    "line": 290,
+    "len": 685,
+    "hash": "c305a146fcb09c75d6abb5ae2c48247c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_08_60d_baseline_forward_pass",
+    "line": 307,
+    "len": 536,
+    "hash": "54d77ca0c5ee136757815c46be1d47b2",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_09_schema_mismatch_rejected",
+    "line": 328,
+    "len": 525,
+    "hash": "ebb128ff61830954c4a4803bc77ff95c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_70d_model_11_nonfinite_feature_training_rejected",
+    "line": 346,
+    "len": 603,
+    "hash": "e8f670ea0c658b2521d43a17714f58e8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_12_deterministic_training_smoke",
+    "line": 365,
+    "len": 1955,
+    "hash": "da25c4f3b08907ca8a47c53365557652",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_model_14_champion_unchanged",
+    "line": 412,
+    "len": 1364,
+    "hash": "76e3ee738545a9f72fa77866bfad9515",
+    "n_assert": 6
+   },
+   {
+    "name": "test_70d_model_16_candidate_failure_reason_recorded",
+    "line": 444,
+    "len": 765,
+    "hash": "4687594327b5cd61f5f1dc619bfbe1d8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_19_news_liquidity_family_separation",
+    "line": 470,
+    "len": 861,
+    "hash": "77acf2ef14ddfc6c2dc36da744c32820",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_model_20_oos_gate_cannot_use_training_data",
+    "line": 492,
+    "len": 1013,
+    "hash": "b6c351038d2e1712e4288e5a52904e14",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_model_22_calibration_metrics_valid",
+    "line": 518,
+    "len": 443,
+    "hash": "9c105aa7817040440471065d91d1cbca",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_model_25_candidate_never_auto_promotes",
+    "line": 536,
+    "len": 1267,
+    "hash": "fd3c0b15749724e12c320d2274b1378f",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_10_dataset_leakage_rejected",
+    "line": 567,
+    "len": 811,
+    "hash": "9b5db687fe07b1695abc57db95b7f825",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_model_13_manifest_correctness",
+    "line": 585,
+    "len": 909,
+    "hash": "85524e3b44f4b75111788437187a4432",
+    "n_assert": 6
+   },
+   {
+    "name": "test_70d_model_15_research_registry_updated",
+    "line": 606,
+    "len": 933,
+    "hash": "13e1adc9e2cbb2d75f511feb3f883cd3",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_model_18_liquidity_ablation_reproducible",
+    "line": 632,
+    "len": 1317,
+    "hash": "71e03d590e02e84d29a131c0f55896c8",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_model_21_robustness_gate_executes",
+    "line": 660,
+    "len": 683,
+    "hash": "831fafdf258761230873115b89a17253",
+    "n_assert": 1
+   },
+   {
+    "name": "test_70d_model_23_parameter_count_reported",
+    "line": 675,
+    "len": 779,
+    "hash": "cf38dedc1aee36953e49e9f4501b0b11",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_24_inference_latency_measured",
+    "line": 692,
+    "len": 1123,
+    "hash": "4e7bbc0aa9095d51f22f461587e4dc12",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_14b_active_schema_still_50d",
+    "line": 725,
+    "len": 226,
+    "hash": "fe234968354e94c651d3780269b86a5b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_26_liquidity_distribution_audit_smoke",
+    "line": 737,
+    "len": 655,
+    "hash": "93cecafdb37d3867d96b5ef4425b1d95",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_model_27_liquidity_redundancy_audit_smoke",
+    "line": 754,
+    "len": 880,
+    "hash": "ee8bf29990e52034049f77b52d5f9911",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_model_28_label_balance_reported",
+    "line": 779,
+    "len": 769,
+    "hash": "d214c7f247d905c373d0e2eef64e899d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_model_29_parameter_count_and_latency_reported",
+    "line": 794,
+    "len": 1382,
+    "hash": "b231f48c9aa99f70583b33069755486a",
+    "n_assert": 5
+   },
+   {
+    "name": "test_70d_model_30_regime_coverage_gate",
+    "line": 837,
+    "len": 1113,
+    "hash": "fe3bc3444ea4c9416b1f5aaaedd11da2",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_model_31_70d_walk_forward_trains_end_to_end",
+    "line": 865,
+    "len": 1466,
+    "hash": "2efad716e2c16e77afa3d0b7cfe7893a",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_32_default_save_path_not_live_champion",
+    "line": 908,
+    "len": 611,
+    "hash": "96469f9cd25e95d7004b921c2d664603",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_model_33_manifest_input_dimension_no_double_count",
+    "line": 928,
+    "len": 2506,
+    "hash": "237705f94bde7233fdd5d8d5f2a60645",
+    "n_assert": 5
+   }
+  ],
+  "n_tests": 34,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "hashlib",
+   "inspect",
+   "json",
+   "math",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.features.liquidity_engine",
+   "nexus_scalp.features.schema",
+   "nexus_scalp.governance.engine",
+   "nexus_scalp.governance.models",
+   "nexus_scalp.governance.store",
+   "nexus_scalp.model_generation.artifact_store",
+   "nexus_scalp.model_generation.experiment_factory",
+   "nexus_scalp.model_generation.model_factory",
+   "nexus_scalp.model_generation.models",
+   "nexus_scalp.model_generation.runtime",
+   "nexus_scalp.model_generation.schema_v2",
+   "nexus_scalp.model_generation.training",
+   "nexus_scalp.model_generation.validation",
+   "nexus_scalp.training.walk_forward_trainer",
+   "numpy",
+   "pathlib",
+   "polars",
+   "pytest",
+   "scratch.liq60d_distribution_audit",
+   "scratch.liq60d_redundancy_audit",
+   "subprocess",
+   "sys",
+   "time",
+   "torch"
+  ]
+ },
+ "test_70d_dataset_parity_task3.py": {
+  "tests": [
+   {
+    "name": "test_p06_70d_frame_columns_and_dimension",
+    "line": 88,
+    "len": 331,
+    "hash": "16c4685d31fcb578b2d6de048522d0db",
+    "n_assert": 4
+   },
+   {
+    "name": "test_p06_70d_frame_values_valid",
+    "line": 97,
+    "len": 428,
+    "hash": "f4c93c25282fb360e0607ebb0ab7d72c",
+    "n_assert": 4
+   },
+   {
+    "name": "test_p06_news_disabled_is_explicit",
+    "line": 110,
+    "len": 228,
+    "hash": "52a7353c853f792ea0989195f3f12009",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p06_news_enabled_populates_news_block",
+    "line": 116,
+    "len": 321,
+    "hash": "7121bc7fd74c27146a482669ed71202c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p06_liquidity_status_available",
+    "line": 125,
+    "len": 218,
+    "hash": "3301d9d70c417af5f999889e08bc3924",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p08_frame_matches_canonical_contract",
+    "line": 136,
+    "len": 384,
+    "hash": "ec434009d05c14f8e4fe3c58c86f27f2",
+    "n_assert": 0
+   },
+   {
+    "name": "test_p19_frame_reproducible",
+    "line": 150,
+    "len": 268,
+    "hash": "cf4e555b3f0b0b1f8fbc5a712c914e22",
+    "n_assert": 2
+   },
+   {
+    "name": "test_snapshot_immutable_and_valid",
+    "line": 163,
+    "len": 642,
+    "hash": "c48a16efdb52b83309a579e23f5dc492",
+    "n_assert": 7
+   },
+   {
+    "name": "test_snapshot_missing_liquidity_no_fake",
+    "line": 182,
+    "len": 275,
+    "hash": "9632f51f34c483caf0f9872f022c9c73",
+    "n_assert": 0
+   },
+   {
+    "name": "test_snapshot_news_10d_selection",
+    "line": 188,
+    "len": 868,
+    "hash": "da12c12f9e4a56f2b22ac3905621d734",
+    "n_assert": 4
+   },
+   {
+    "name": "test_verify_70d_artifact_on_missing",
+    "line": 217,
+    "len": 176,
+    "hash": "bf94521d51b786fb78250ebdd0501d9b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_verify_70d_artifact_rejects_epoch_zero_timestamps",
+    "line": 223,
+    "len": 1545,
+    "hash": "88ed21489b02d2c66339d7fdc599d877",
+    "n_assert": 3
+   }
+  ],
+  "n_tests": 12,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.features.features70",
+   "nexus_scalp.features.schema_contract",
+   "nexus_scalp.market_data.bar_aggregator",
+   "nexus_scalp.model_generation.artifact_store",
+   "nexus_scalp.model_generation.schema_v2",
+   "numpy",
+   "polars",
+   "pytest",
+   "tempfile",
+   "tests.helpers.liquidity_fixtures"
+  ]
+ },
+ "test_70d_contract_parity_task3.py": {
+  "tests": [
+   {
+    "name": "test_p01_dimension_is_exactly_70",
+    "line": 39,
+    "len": 146,
+    "hash": "edfecc20c02c2879547f785ac9e7032b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p01_registry_scalp_v3_is_70d",
+    "line": 45,
+    "len": 173,
+    "hash": "01cf47921832bfa552831d3d712d1521",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p02_schema_id_is_scalp_v3",
+    "line": 56,
+    "len": 151,
+    "hash": "04df1bfca1f6def6863b2de43ec18bd8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p02_names_are_index_ordered",
+    "line": 61,
+    "len": 458,
+    "hash": "6b60eddde66d36750e5b96ffb3055f7f",
+    "n_assert": 6
+   },
+   {
+    "name": "test_p03_hash_deterministic",
+    "line": 78,
+    "len": 149,
+    "hash": "65a9f1dbba287d5ab90cb6511a8be122",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p03_hash_covers_order_and_names",
+    "line": 85,
+    "len": 430,
+    "hash": "91401ef5f31e5ca056eafe8d441df4f7",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p03_hash_embedded_in_registry_json",
+    "line": 95,
+    "len": 337,
+    "hash": "66e16e15f628688965da2a707f3f533e",
+    "n_assert": 5
+   },
+   {
+    "name": "test_p04_family_boundaries",
+    "line": 110,
+    "len": 406,
+    "hash": "7c3ae75db776694a2eac75a59b74cbc2",
+    "n_assert": 6
+   },
+   {
+    "name": "test_p05_valid_vector_passes",
+    "line": 128,
+    "len": 163,
+    "hash": "ece0a7b00a04c675c21c645c7c4ce4e8",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p05_wrong_dimension_rejected",
+    "line": 134,
+    "len": 164,
+    "hash": "7717df7af0e87fc97f4562c4b81b924f",
+    "n_assert": 0
+   },
+   {
+    "name": "test_p05_nonfinite_rejected",
+    "line": 139,
+    "len": 206,
+    "hash": "9648f5439eae69c08ce100e8a15ca7fa",
+    "n_assert": 0
+   },
+   {
+    "name": "test_p05_out_of_range_rejected",
+    "line": 146,
+    "len": 192,
+    "hash": "9023906df721eeee56256ac463a77967",
+    "n_assert": 0
+   },
+   {
+    "name": "test_p05_liquidity_range_rejected",
+    "line": 153,
+    "len": 195,
+    "hash": "220ef721b754e6735d3840b9a0008a8b",
+    "n_assert": 0
+   },
+   {
+    "name": "test_p05_hash_mismatch_rejected",
+    "line": 160,
+    "len": 207,
+    "hash": "9a502d675bb5ca9d2d743315986d9953",
+    "n_assert": 0
+   }
+  ],
+  "n_tests": 14,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "hashlib",
+   "nexus_scalp.features.schema",
+   "nexus_scalp.features.schema_contract",
+   "pytest"
+  ]
+ },
+ "test_70d_inference_validator_task3.py": {
+  "tests": [
+   {
+    "name": "test_p13_60d_model_blocks_60d_runtime",
+    "line": 53,
+    "len": 259,
+    "hash": "5e8b1e90814a8b5a22690d0300927d9e",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p13_70d_model_blocks_70d_runtime_with_60d_model",
+    "line": 60,
+    "len": 228,
+    "hash": "f2b0b90a644aecfb9043ceb552f76a09",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p13_pass_when_schema_and_dimension_match",
+    "line": 66,
+    "len": 266,
+    "hash": "6f2d5c2e8451ac99098b908a0e014468",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p13_unknown_without_metadata",
+    "line": 73,
+    "len": 148,
+    "hash": "02941980f7178fd35c2c294a6a5b4621",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p12_validator_accepts_70d",
+    "line": 83,
+    "len": 161,
+    "hash": "b9cbd3c43221237a02d73069b5a7acb5",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p12_validator_rejects_60d_vector",
+    "line": 90,
+    "len": 199,
+    "hash": "6ce574abf70ab7eff745e8c180142a52",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p11_60d_validator_accepts_60d",
+    "line": 102,
+    "len": 242,
+    "hash": "3ab44fa13ca8580fc4afbacb89e2755a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p11_60d_validator_rejects_70d",
+    "line": 110,
+    "len": 295,
+    "hash": "1990c898508b7d42d918597d368eb1d3",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p21_nonfinite_blocked",
+    "line": 124,
+    "len": 254,
+    "hash": "1591941b481924f32cbcd6f96fc22f1e",
+    "n_assert": 3
+   },
+   {
+    "name": "test_p21_inf_blocked",
+    "line": 134,
+    "len": 195,
+    "hash": "9bcb9e05d941a55be595809a529b67ae",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p22_out_of_range_blocked",
+    "line": 147,
+    "len": 223,
+    "hash": "43e0bbffe37e49267b017db8ffc46363",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p22_negative_out_of_range_blocked",
+    "line": 156,
+    "len": 209,
+    "hash": "acfa8a2d59547a5ffd70e2d22167f3b2",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p23_schema_hash_mismatch_blocked",
+    "line": 169,
+    "len": 238,
+    "hash": "75d593a6bab92330f078ceee5df967a0",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p23_schema_id_mismatch_blocked",
+    "line": 176,
+    "len": 221,
+    "hash": "5c2dc6d20d23569388352e5405706e51",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p24_stale_blocked",
+    "line": 188,
+    "len": 276,
+    "hash": "5076025271a4d22b4d41114fefe0bade",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p24_fresh_passes",
+    "line": 196,
+    "len": 179,
+    "hash": "90893695a450bf661138990486431608",
+    "n_assert": 1
+   },
+   {
+    "name": "test_news_unavailable_blocks",
+    "line": 207,
+    "len": 218,
+    "hash": "ea0b4f131144fd29315a0e7958a3540d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_news_invalid_blocks",
+    "line": 214,
+    "len": 185,
+    "hash": "cb12d197da326b18d06a95a6d0b08250",
+    "n_assert": 1
+   },
+   {
+    "name": "test_liquidity_unavailable_blocks",
+    "line": 220,
+    "len": 233,
+    "hash": "daeffe19537fe636383163c65f83ebae",
+    "n_assert": 2
+   },
+   {
+    "name": "test_liquidity_disabled_allowed_for_validation",
+    "line": 227,
+    "len": 303,
+    "hash": "c68c155b503b0116095ce7c6032c5622",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p09_scaler_dimension_mismatch_blocked",
+    "line": 241,
+    "len": 262,
+    "hash": "8658c6bb2fe402b80fba91562704f0de",
+    "n_assert": 3
+   },
+   {
+    "name": "test_p09_scaler_dimension_match_passes",
+    "line": 249,
+    "len": 178,
+    "hash": "5e831d2d292611e67e598e80669b50f6",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p10_scaler_never_padded_or_truncated",
+    "line": 255,
+    "len": 323,
+    "hash": "7d1bb13e3c60a2264975ce906c05c25f",
+    "n_assert": 1
+   },
+   {
+    "name": "test_validator_result_shape",
+    "line": 263,
+    "len": 245,
+    "hash": "27fde8c26ec7a0dbb0038dfe67be4520",
+    "n_assert": 3
+   }
+  ],
+  "n_tests": 24,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.features.inference_validator",
+   "nexus_scalp.features.schema_contract",
+   "pytest"
+  ]
+ },
+ "test_70d_replay_parity_task3.py": {
+  "tests": [
+   {
+    "name": "test_p05_replay_dimension_and_schema",
+    "line": 35,
+    "len": 448,
+    "hash": "c073e8ad1823236ba6c300aee34c13f2",
+    "n_assert": 3
+   },
+   {
+    "name": "test_p08_dataset_row_equals_replay",
+    "line": 51,
+    "len": 689,
+    "hash": "f7547604b54743317a282ad908d48f69",
+    "n_assert": 3
+   },
+   {
+    "name": "test_p08_dataset_row_equals_replay_with_news",
+    "line": 71,
+    "len": 1213,
+    "hash": "d81200cd80288d7329a07dde6eea775a",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p18_future_bars_do_not_change_historical_vector",
+    "line": 107,
+    "len": 683,
+    "hash": "d5765e646d36d36f3177f3298e9231d5",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p18_future_news_does_not_change_historical_vector",
+    "line": 123,
+    "len": 1154,
+    "hash": "1633e57e8efae7edbedd443e21607e18",
+    "n_assert": 2
+   },
+   {
+    "name": "test_p30_corpus_all_70d_and_valid",
+    "line": 162,
+    "len": 316,
+    "hash": "f98caccf45637bdbe103bb0971ab571c",
+    "n_assert": 3
+   },
+   {
+    "name": "test_p30_corpus_covers_required_scenarios",
+    "line": 170,
+    "len": 439,
+    "hash": "dfc7ab2700c40acfdc685322e9b22990",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p30_corpus_deterministic",
+    "line": 188,
+    "len": 338,
+    "hash": "126dc7086a35364a7a689c69c5842a06",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p30_corpus_news_off_is_explicit",
+    "line": 200,
+    "len": 425,
+    "hash": "32986052111ea6fb59328ac067f50c73",
+    "n_assert": 3
+   },
+   {
+    "name": "test_p30_liquidity_slices_distinct_from_base",
+    "line": 209,
+    "len": 373,
+    "hash": "2b9c34c1a33fd97553f1fe35180dc4f2",
+    "n_assert": 2
+   }
+  ],
+  "n_tests": 10,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "datetime",
+   "importlib",
+   "nexus_scalp.features.schema_contract",
+   "nexus_scalp.model_generation.replay",
+   "nexus_scalp.model_generation.schema_v2",
+   "polars",
+   "pytest",
+   "tests.helpers",
+   "tests.helpers.golden70d",
+   "tests.helpers.liquidity_fixtures"
+  ]
+ },
+ "test_70d_parity_task3.py": {
+  "tests": [
+   {
+    "name": "test_03_01_dataset_live_exact_parity",
+    "line": 140,
+    "len": 486,
+    "hash": "7e23cd1ccce13ca1505b1ea60fe09509",
+    "n_assert": 2
+   },
+   {
+    "name": "test_03_01b_deep_history_parity_regression",
+    "line": 158,
+    "len": 1063,
+    "hash": "23acd2e03d156cdd77be1c92c7de9dd8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_03_02_03_dataset_replay_runtime_parity",
+    "line": 183,
+    "len": 430,
+    "hash": "d0f9a7e977eeffb6371d0be5c63892bc",
+    "n_assert": 2
+   },
+   {
+    "name": "test_03_04_70d_feature_ordering",
+    "line": 199,
+    "len": 575,
+    "hash": "88a4a81b6478ec9a8ccee811859a60f8",
+    "n_assert": 11
+   },
+   {
+    "name": "test_03_05_schema_hash_agreement",
+    "line": 219,
+    "len": 182,
+    "hash": "fd54463fc98ac372feb2dc563201a922",
+    "n_assert": 2
+   },
+   {
+    "name": "test_03_06_model_compatibility_reuses_matrix",
+    "line": 231,
+    "len": 508,
+    "hash": "9dd8e879e87447fb51a298f3f4905cc5",
+    "n_assert": 4
+   },
+   {
+    "name": "test_03_07_htf_completed_bar_parity",
+    "line": 245,
+    "len": 614,
+    "hash": "0edf7a7fd4b590205aca8db9a83cfcb8",
+    "n_assert": 1
+   },
+   {
+    "name": "test_03_08_swing_confirmation_parity",
+    "line": 263,
+    "len": 574,
+    "hash": "b579bedfd65e45d2d64394119b6e0dcf",
+    "n_assert": 4
+   },
+   {
+    "name": "test_03_09_10_11_12_feature_parity_all_dims",
+    "line": 283,
+    "len": 494,
+    "hash": "a1e936f76a159fa5609e36e8d201a069",
+    "n_assert": 1
+   },
+   {
+    "name": "test_03_13_missing_value_parity",
+    "line": 299,
+    "len": 1146,
+    "hash": "dea908d785a1eed353d283bcc7f0d109",
+    "n_assert": 2
+   },
+   {
+    "name": "test_03_14_clipping_parity",
+    "line": 337,
+    "len": 299,
+    "hash": "f54a9676472509c4b825a3d3d0506d11",
+    "n_assert": 1
+   },
+   {
+    "name": "test_03_15_50d_regression",
+    "line": 353,
+    "len": 386,
+    "hash": "d79547c66b1167d3fb908edadc6e19c3",
+    "n_assert": 2
+   },
+   {
+    "name": "test_03_16_family_50_59_unchanged",
+    "line": 369,
+    "len": 517,
+    "hash": "f81df88805abb73290d000d276e75414",
+    "n_assert": 2
+   },
+   {
+    "name": "test_03_17_cache_on_off_parity",
+    "line": 387,
+    "len": 974,
+    "hash": "3879f03ee058cf413d2d5d8622ee3b65",
+    "n_assert": 1
+   },
+   {
+    "name": "test_03_18_live_style_runtime_parity_all_70",
+    "line": 417,
+    "len": 1036,
+    "hash": "c1764571c8e0b063a70db473687c5446",
+    "n_assert": 3
+   },
+   {
+    "name": "test_03_19_golden_artifact_agreement",
+    "line": 451,
+    "len": 503,
+    "hash": "523ca327d3353c833d4286132100c0a8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_03_20_vector_hash_agreement",
+    "line": 467,
+    "len": 413,
+    "hash": "d7141b8182449ad13d72fba63b48dd52",
+    "n_assert": 1
+   },
+   {
+    "name": "test_03_33_ds_build_verify_roundtrip",
+    "line": 486,
+    "len": 960,
+    "hash": "dcb2338e64c8f243ada08899b1ad7756",
+    "n_assert": 4
+   }
+  ],
+  "n_tests": 18,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "datetime",
+   "hashlib",
+   "json",
+   "math",
+   "nexus_scalp.features.features70",
+   "nexus_scalp.features.liquidity_engine",
+   "nexus_scalp.features.liquidity_runtime",
+   "nexus_scalp.features.scalp_features",
+   "nexus_scalp.features.schema_contract",
+   "nexus_scalp.market_data.bar_aggregator",
+   "nexus_scalp.model_generation.artifact_store",
+   "nexus_scalp.model_generation.schema_v2",
+   "numpy",
+   "pathlib",
+   "polars",
+   "pytest",
+   "random",
+   "types"
+  ]
+ },
+ "test_70d_perf_task3.py": {
+  "tests": [
+   {
+    "name": "test_70d_construction_and_validation_bounded",
+    "line": 55,
+    "len": 1002,
+    "hash": "a71d546471dcd5c20fb9a50dc8513167",
+    "n_assert": 1
+   },
+   {
+    "name": "test_validator_cached_metadata_fast",
+    "line": 90,
+    "len": 551,
+    "hash": "396b2be7195faf9e97021a2e5ba69df6",
+    "n_assert": 1
+   },
+   {
+    "name": "test_runtime_hook_snapshot_bounded",
+    "line": 110,
+    "len": 1237,
+    "hash": "b0eaaeb6ce500e5a31be27ad4588ac77",
+    "n_assert": 1
+   },
+   {
+    "name": "test_no_db_on_feature_path",
+    "line": 153,
+    "len": 1424,
+    "hash": "f9e718b13146026cbdd8dc370f069367",
+    "n_assert": 1
+   }
+  ],
+  "n_tests": 4,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.domain.models",
+   "nexus_scalp.features.features70",
+   "nexus_scalp.features.inference_validator",
+   "nexus_scalp.features.runtime70",
+   "nexus_scalp.features.scalp_features",
+   "nexus_scalp.market_data.bar_aggregator",
+   "polars",
+   "pytest",
+   "sqlite3",
+   "statistics",
+   "tests.helpers.liquidity_fixtures",
+   "time"
+  ]
+ },
+ "test_70d_runtime_hook_task3.py": {
+  "tests": [
+   {
+    "name": "test_p14_news_on_liquidity_on",
+    "line": 77,
+    "len": 659,
+    "hash": "090b0718d9dd027406d59aea4ac4221f",
+    "n_assert": 7
+   },
+   {
+    "name": "test_p15_news_off_liquidity_on",
+    "line": 93,
+    "len": 588,
+    "hash": "a1566f29c108721aeb07ce302848fcce",
+    "n_assert": 5
+   },
+   {
+    "name": "test_p16_news_on_liquidity_off",
+    "line": 106,
+    "len": 492,
+    "hash": "c6437c04999ad77c77bd52c165c93514",
+    "n_assert": 5
+   },
+   {
+    "name": "test_p17_news_off_liquidity_off",
+    "line": 118,
+    "len": 357,
+    "hash": "c059f280148a29ad413419aee6b56988",
+    "n_assert": 4
+   },
+   {
+    "name": "test_p25_toggle_then_vector_still_canonical",
+    "line": 133,
+    "len": 695,
+    "hash": "9e573205dc51bfb8094a6acc9b407299",
+    "n_assert": 6
+   },
+   {
+    "name": "test_p25_state_reflects_toggles",
+    "line": 150,
+    "len": 278,
+    "hash": "256221f43956ea1aadbae5fed7b9c7cd",
+    "n_assert": 5
+   },
+   {
+    "name": "test_p26_60d_model_blocks_70d_runtime",
+    "line": 165,
+    "len": 342,
+    "hash": "4bf9e0445ff3db9a7be8b9686b385153",
+    "n_assert": 3
+   },
+   {
+    "name": "test_p26_70d_model_passes",
+    "line": 174,
+    "len": 215,
+    "hash": "5e4046941e5f99740a647f50c23dc3ce",
+    "n_assert": 1
+   },
+   {
+    "name": "test_p26_no_model_unknown_blocks_safely",
+    "line": 181,
+    "len": 265,
+    "hash": "9d6a97d5a40b03355b77d7f4b1a634cc",
+    "n_assert": 2
+   },
+   {
+    "name": "test_news_unavailable_is_explicit_not_fake",
+    "line": 194,
+    "len": 507,
+    "hash": "0f5814a895eea4a0c230ee6d577973c8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_throttled_trace_not_spammy",
+    "line": 208,
+    "len": 384,
+    "hash": "824ddcffdfe223790649be25078f86b5",
+    "n_assert": 3
+   }
+  ],
+  "n_tests": 11,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.domain.models",
+   "nexus_scalp.features.features70",
+   "nexus_scalp.features.inference_validator",
+   "nexus_scalp.features.runtime70",
+   "nexus_scalp.features.scalp_features",
+   "pytest",
+   "tests.helpers.liquidity_fixtures"
+  ]
+ },
+ "test_70d_bug106_incremental_phase19.py": {
+  "tests": [
+   {
+    "name": "test_bug106_incremental_byte_identical",
+    "line": 47,
+    "len": 591,
+    "hash": "dee8d826c2aff472403e0cd385cf19cd",
+    "n_assert": 3
+   },
+   {
+    "name": "test_bug106_incremental_speedup",
+    "line": 62,
+    "len": 717,
+    "hash": "ee769c6813498046689bfba4e4845bda",
+    "n_assert": 2
+   },
+   {
+    "name": "test_build_70d_dataset_incremental_with_parity_selfcheck",
+    "line": 84,
+    "len": 868,
+    "hash": "fb1e860518def0878409d7e7a5f67d78",
+    "n_assert": 2
+   },
+   {
+    "name": "test_build_70d_dataset_canonical_still_works",
+    "line": 109,
+    "len": 540,
+    "hash": "3081af0912a53a2412b65de6f8a06756",
+    "n_assert": 1
+   },
+   {
+    "name": "test_bug106_10_future_bars_cannot_alter_T",
+    "line": 133,
+    "len": 835,
+    "hash": "7b4e6d13f5834d4b5832dcd3c8dcf603",
+    "n_assert": 1
+   },
+   {
+    "name": "test_bug106_09_10_dimension_finite_clipped",
+    "line": 157,
+    "len": 637,
+    "hash": "a6c3e97afb89dbc457ec8e3b44090a26",
+    "n_assert": 3
+   },
+   {
+    "name": "test_bug106_07_news_family_preserved",
+    "line": 175,
+    "len": 734,
+    "hash": "5edaff9f24b9a2b732a404bc75727535",
+    "n_assert": 3
+   },
+   {
+    "name": "test_bug106_08_liquidity_v11_params_frozen",
+    "line": 195,
+    "len": 733,
+    "hash": "20010020d6fbacaf6bbc0b2b39c36a4f",
+    "n_assert": 6
+   },
+   {
+    "name": "test_bug106_13_schema_hash_stable",
+    "line": 215,
+    "len": 361,
+    "hash": "42c028c53c6b3f9374485f54c86487a7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_bug106_15_20k_benchmark_completes",
+    "line": 228,
+    "len": 458,
+    "hash": "52ef7f72e2b5064d97af68a3ae2b4779",
+    "n_assert": 2
+   }
+  ],
+  "n_tests": 10,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "math",
+   "nexus_scalp.features.liquidity_engine",
+   "nexus_scalp.features.liquidity_engine_opt",
+   "nexus_scalp.features.schema_contract",
+   "nexus_scalp.model_generation.artifact_store",
+   "nexus_scalp.model_generation.schema_v2",
+   "nexus_scalp.model_generation.schema_v2_incremental",
+   "polars",
+   "pytest",
+   "time"
+  ]
+ },
+ "test_temporal_liquidity_phase20.py": {
+  "tests": [
+   {
+    "name": "test_lag1_equals_previous_value",
+    "line": 85,
+    "len": 204,
+    "hash": "78baebb01fa982b5120c80b7082bf90c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_lag2_equals_two_back",
+    "line": 91,
+    "len": 292,
+    "hash": "cd983bbc5f44e5fdf3a64699f96966b4",
+    "n_assert": 2
+   },
+   {
+    "name": "test_lag3_missing_uses_neutral",
+    "line": 99,
+    "len": 315,
+    "hash": "4ede11360ea4d7ef062c960b75c6741e",
+    "n_assert": 2
+   },
+   {
+    "name": "test_delta1_half_diff",
+    "line": 114,
+    "len": 209,
+    "hash": "4c34399853b0670b4c7e64b806b49baf",
+    "n_assert": 1
+   },
+   {
+    "name": "test_delta_clipped",
+    "line": 120,
+    "len": 207,
+    "hash": "676cb271f0fe89a5bbd69272cce65fb1",
+    "n_assert": 1
+   },
+   {
+    "name": "test_persistence_fraction",
+    "line": 133,
+    "len": 574,
+    "hash": "52cf832c1126f9602ea235ec1087ff92",
+    "n_assert": 3
+   },
+   {
+    "name": "test_tsc_sweep_counts_bars_since_change",
+    "line": 152,
+    "len": 274,
+    "hash": "37d2fd470baeae4e1612b4e3ee7b2f14",
+    "n_assert": 1
+   },
+   {
+    "name": "test_tsc_sweep_resets_after_change",
+    "line": 158,
+    "len": 317,
+    "hash": "854b9b825789910e1b7c1f730a60a25e",
+    "n_assert": 1
+   },
+   {
+    "name": "test_cold_start_neutrals",
+    "line": 176,
+    "len": 338,
+    "hash": "72f4487f8b50a69381939f4f011a4ca0",
+    "n_assert": 4
+   },
+   {
+    "name": "test_cold_start_no_zero_distance",
+    "line": 185,
+    "len": 240,
+    "hash": "e6a430ff1bb6c021913e1835113c9b1f",
+    "n_assert": 1
+   },
+   {
+    "name": "test_future_bars_do_not_change_past",
+    "line": 198,
+    "len": 603,
+    "hash": "c54a8a825b4d8d2441b601c0e3eddf4d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_extract_uses_only_past",
+    "line": 212,
+    "len": 166,
+    "hash": "cb382b12b1bba83560162b68f933af6e",
+    "n_assert": 1
+   },
+   {
+    "name": "test_same_sequence_same_output",
+    "line": 224,
+    "len": 327,
+    "hash": "d8373e7635e4b0b001180644be6f2474",
+    "n_assert": 1
+   },
+   {
+    "name": "test_single_extraction_function_used",
+    "line": 240,
+    "len": 456,
+    "hash": "775df29c28b62f91885dd9409b3ab50f",
+    "n_assert": 2
+   },
+   {
+    "name": "test_tracker_keeps_bounded_history",
+    "line": 257,
+    "len": 201,
+    "hash": "5a726d8f55faf6737a76c98f39e6f080",
+    "n_assert": 1
+   },
+   {
+    "name": "test_sweep_persistence_value",
+    "line": 263,
+    "len": 205,
+    "hash": "87b87991e088e237ec408d47c255e45d",
+    "n_assert": 1
+   },
+   {
+    "name": "test_bounded_buffer_matches_rebuild",
+    "line": 275,
+    "len": 582,
+    "hash": "828c6b4ecc62b0c3e19fd2e4e50ff5d0",
+    "n_assert": 1
+   },
+   {
+    "name": "test_buy_confirm_then_sell_weak_no_flip",
+    "line": 299,
+    "len": 347,
+    "hash": "8daa2cb6124336c0ac04481194a06ed7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_sell_confirm_then_buy_weak_no_flip",
+    "line": 307,
+    "len": 324,
+    "hash": "ef975d1ed70902012591eeeed6d3e3e7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_strong_opposite_confirms",
+    "line": 317,
+    "len": 464,
+    "hash": "e6ac98e2ace8d0e7a60b961f91e2fc09",
+    "n_assert": 3
+   },
+   {
+    "name": "test_candidate_timeout",
+    "line": 326,
+    "len": 384,
+    "hash": "4c2b040ed6258e342c349e839eeaaa93",
+    "n_assert": 1
+   },
+   {
+    "name": "test_restart_reset",
+    "line": 335,
+    "len": 337,
+    "hash": "241f9462f0779f7b1f4bd087ebfe7fbb",
+    "n_assert": 3
+   },
+   {
+    "name": "test_model_schema_reset",
+    "line": 345,
+    "len": 282,
+    "hash": "f1a2552b8f6dd67463d89264d0e5a167",
+    "n_assert": 1
+   },
+   {
+    "name": "test_entry_exit_separation",
+    "line": 352,
+    "len": 606,
+    "hash": "2731ff863c8bf31f0ee0111c57139928",
+    "n_assert": 3
+   },
+   {
+    "name": "test_raw_output_unchanged",
+    "line": 367,
+    "len": 207,
+    "hash": "58d2ccbb42d28e3a9e5fff0b7b2fc8e7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_stable_deterministic",
+    "line": 373,
+    "len": 534,
+    "hash": "7e4b2af9314d934c1deac64fc7521f95",
+    "n_assert": 1
+   },
+   {
+    "name": "test_micro_flip_rate_decreases",
+    "line": 398,
+    "len": 841,
+    "hash": "c92ae13f8b929fab4fb9c40c79214f41",
+    "n_assert": 2
+   },
+   {
+    "name": "test_genuine_reversal_latency_bounded",
+    "line": 419,
+    "len": 564,
+    "hash": "dd14f2d42ef49a8ae224cb438fcdef34",
+    "n_assert": 2
+   },
+   {
+    "name": "test_o1_update",
+    "line": 439,
+    "len": 266,
+    "hash": "41699dd1fb7c9a2227e3beedafb57894",
+    "n_assert": 1
+   },
+   {
+    "name": "test_no_db_network_imports",
+    "line": 449,
+    "len": 484,
+    "hash": "4e4ab38616d78b45bdb8d42d9d2cbd04",
+    "n_assert": 2
+   },
+   {
+    "name": "test_snapshot_exposes_debug_fields",
+    "line": 470,
+    "len": 679,
+    "hash": "b0ccc0ee56787c0a373bfa59810bc258",
+    "n_assert": 7
+   },
+   {
+    "name": "test_candidate_schema_registered",
+    "line": 492,
+    "len": 219,
+    "hash": "49b97443a410e92f523656c73c8300c7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_temporal_names_contract",
+    "line": 497,
+    "len": 784,
+    "hash": "769a1fad923d25e3e47e5b70dc3b464f",
+    "n_assert": 3
+   },
+   {
+    "name": "test_ablation_guard",
+    "line": 518,
+    "len": 587,
+    "hash": "6a5568a4de36107e0821bf3c018687fb",
+    "n_assert": 4
+   }
+  ],
+  "n_tests": 34,
+  "classes": [
+   "TestTemporalLag",
+   "TestTemporalDelta",
+   "TestTemporalPersistence",
+   "TestTemporalTSC",
+   "TestTemporalColdStart",
+   "TestNoFutureLeakage",
+   "TestDeterminism",
+   "TestParity",
+   "TestStatePersistence",
+   "TestCacheParity",
+   "TestStabilityBuysell",
+   "TestStabilityConfirmation",
+   "TestRawUnchanged",
+   "TestFlipMetrics",
+   "TestRuntime",
+   "TestDebug",
+   "TestSchemaAndAblation"
+  ],
+  "imports": [
+   "__future__",
+   "datetime",
+   "inspect",
+   "nexus_scalp.features",
+   "nexus_scalp.features.schema",
+   "nexus_scalp.features.temporal",
+   "nexus_scalp.signals",
+   "nexus_scalp.signals.stability_controller",
+   "pytest",
+   "sys",
+   "time"
+  ]
+ },
+ "test_liquidity_task02_integration.py": {
+  "tests": [
+   {
+    "name": "test_task02_01_default_liquidity_off",
+    "line": 40,
+    "len": 205,
+    "hash": "9e59b85bec7006a2d58fab49ddfefe8d",
+    "n_assert": 1
+   },
+   {
+    "name": "test_task02_02_missing_setting_resolves_off",
+    "line": 46,
+    "len": 506,
+    "hash": "5122840a72542f55e38aef83648e0d0e",
+    "n_assert": 2
+   },
+   {
+    "name": "test_task02_07_explicit_true_persists",
+    "line": 63,
+    "len": 378,
+    "hash": "94736ba9345c1a31b6e60aea80c87426",
+    "n_assert": 3
+   },
+   {
+    "name": "test_task02_07_explicit_false_persists",
+    "line": 73,
+    "len": 421,
+    "hash": "09af86f5219def90319cdfa1f3df95da",
+    "n_assert": 2
+   },
+   {
+    "name": "test_task02_07_invalid_value_rejected",
+    "line": 83,
+    "len": 1094,
+    "hash": "a421132fba02c3819187485d049e9c61",
+    "n_assert": 3
+   },
+   {
+    "name": "test_task02_06_governor_toggle_persists_across_restart",
+    "line": 111,
+    "len": 1174,
+    "hash": "cd6b4834101e0ee482f718abb756dab5",
+    "n_assert": 4
+   },
+   {
+    "name": "test_task02_08_off_preserves_50d_semantics",
+    "line": 171,
+    "len": 591,
+    "hash": "7bfc534caa6590930daee9c13c6d58c9",
+    "n_assert": 3
+   },
+   {
+    "name": "test_task02_09_on_produces_60d",
+    "line": 186,
+    "len": 286,
+    "hash": "8506a2eafec3b8729e6bc7d68126ba65",
+    "n_assert": 1
+   },
+   {
+    "name": "test_task02_10_60d_index_order_exact",
+    "line": 195,
+    "len": 541,
+    "hash": "e13215f069aa811f858f92bdb203589c",
+    "n_assert": 4
+   },
+   {
+    "name": "test_task02_16_50d_model_with_liquidity_on_blocked",
+    "line": 212,
+    "len": 414,
+    "hash": "38c60840f9772af00a9df2151c6a1dcc",
+    "n_assert": 2
+   },
+   {
+    "name": "test_task02_16_60d_model_with_liquidity_off_blocked",
+    "line": 225,
+    "len": 429,
+    "hash": "819641636ae45badacc5d50b128643e6",
+    "n_assert": 2
+   },
+   {
+    "name": "test_task02_16_matching_contracts_pass",
+    "line": 238,
+    "len": 363,
+    "hash": "f9f4597e57eb0ef649c21b36cc755c3d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_task02_16_unknown_model_never_guessed",
+    "line": 248,
+    "len": 287,
+    "hash": "a00c0702ffcf66f27bcff794dc2f9889",
+    "n_assert": 2
+   },
+   {
+    "name": "test_task02_19_disabled_never_fabricates_liquidity",
+    "line": 261,
+    "len": 542,
+    "hash": "102008c60b1cd4d0fcd98dead7d98e46",
+    "n_assert": 3
+   },
+   {
+    "name": "test_task02_20_calculation_error_is_explicit",
+    "line": 274,
+    "len": 326,
+    "hash": "504885ddef5395e7476f1f9c70588ebb",
+    "n_assert": 1
+   },
+   {
+    "name": "test_task02_21_runtime_state_off_is_50d",
+    "line": 288,
+    "len": 459,
+    "hash": "2eb5e4d819cb8cd0250079788affd44d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_task02_21_liquidity_schema_registered_for_60d",
+    "line": 299,
+    "len": 186,
+    "hash": "08805505fcf06f50b416ae22fd1c5ed4",
+    "n_assert": 2
+   },
+   {
+    "name": "test_task02_03_report_off_exposes_50d_schema",
+    "line": 310,
+    "len": 323,
+    "hash": "f5b1df73f0e5240308374bedcc8908a8",
+    "n_assert": 3
+   },
+   {
+    "name": "test_task02_04_report_on_exposes_60d_schema",
+    "line": 320,
+    "len": 494,
+    "hash": "43aaf853d2c111054cfcfbd1ba5fc916",
+    "n_assert": 2
+   },
+   {
+    "name": "test_task02_04_algorithm_version_present",
+    "line": 332,
+    "len": 382,
+    "hash": "5e8da07d35073cffa81d3d9f875f69a2",
+    "n_assert": 2
+   },
+   {
+    "name": "test_task02_05_hot_reload_off_on_off_no_restart",
+    "line": 349,
+    "len": 815,
+    "hash": "e62bf5b919571a6bca6a501db75b4aae",
+    "n_assert": 5
+   },
+   {
+    "name": "test_task02_11_runtime_vector_build_60d",
+    "line": 367,
+    "len": 610,
+    "hash": "316b0d0ca1559db73021fb5efaf64569",
+    "n_assert": 5
+   },
+   {
+    "name": "test_task02_11_runtime_vector_blocked_when_disabled",
+    "line": 382,
+    "len": 270,
+    "hash": "5de490887773b2183942bed53c71666c",
+    "n_assert": 0
+   },
+   {
+    "name": "test_task02_11_runtime_vector_blocked_without_snapshot",
+    "line": 390,
+    "len": 272,
+    "hash": "53b4af03a520239897820e9523ea14f6",
+    "n_assert": 0
+   },
+   {
+    "name": "test_task02_11_runtime_vector_rejects_bad_base",
+    "line": 398,
+    "len": 381,
+    "hash": "6b74033c4a111ff0f7f505d69a389d0c",
+    "n_assert": 0
+   },
+   {
+    "name": "test_task02_15_golden_snapshot_parity",
+    "line": 413,
+    "len": 2066,
+    "hash": "958ebb9b2c5e324bd3fe8e2c2ec2f733",
+    "n_assert": 4
+   },
+   {
+    "name": "test_task02_11_real_dataset_artifact",
+    "line": 468,
+    "len": 850,
+    "hash": "ad8521f7e9ceb1828c00a8f1952cba5d",
+    "n_assert": 5
+   },
+   {
+    "name": "test_task02_13_14_dataset_replay_runtime_parity",
+    "line": 486,
+    "len": 1394,
+    "hash": "9ce560fe3c1afc1b9862cb8d0d671f0f",
+    "n_assert": 3
+   },
+   {
+    "name": "test_task02_17_18_candidate_trainer_60d_no_promotion",
+    "line": 519,
+    "len": 1860,
+    "hash": "fcc7f021792597c547c55223a4316b03",
+    "n_assert": 4
+   }
+  ],
+  "n_tests": 29,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "datetime",
+   "json",
+   "math",
+   "nexus_scalp.configuration.config",
+   "nexus_scalp.domain.models",
+   "nexus_scalp.features.liquidity_engine",
+   "nexus_scalp.features.liquidity_runtime",
+   "nexus_scalp.features.scalp_features",
+   "nexus_scalp.features.schema",
+   "nexus_scalp.market_data.bar_aggregator",
+   "nexus_scalp.model_generation.artifact_store",
+   "nexus_scalp.model_generation.models",
+   "nexus_scalp.model_generation.replay",
+   "nexus_scalp.model_generation.schema_v2",
+   "nexus_scalp.model_generation.training",
+   "nexus_scalp.settings.service",
+   "numpy",
+   "pathlib",
+   "polars",
+   "pytest",
+   "types"
+  ]
+ },
+ "test_liquidity_runtime_integration_phase18.py": {
+  "tests": [
+   {
+    "name": "test_70d_01_family_indices_do_not_overlap",
+    "line": 114,
+    "len": 453,
+    "hash": "e316e085e5778e53cdf7dcaf706c4db8",
+    "n_assert": 6
+   },
+   {
+    "name": "test_70d_27_no_index_collision_after_assembly",
+    "line": 127,
+    "len": 324,
+    "hash": "3ce6091e62efef8a2c4939e23876f1b8",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_02_scalp_v4_is_70_dimensions",
+    "line": 140,
+    "len": 316,
+    "hash": "b7cf3656f7228df6c2238f96c749f092",
+    "n_assert": 5
+   },
+   {
+    "name": "test_70d_02_scalp_v4_does_not_mutate_existing_schemas",
+    "line": 149,
+    "len": 359,
+    "hash": "781fdb5f49df55058649a2db4276953a",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_03_first_50_unchanged_through_governor",
+    "line": 161,
+    "len": 241,
+    "hash": "7ac8fc78679eae2b3b95135b71e7ab0b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_04_family_block_matches_scalp_v2_extras_order",
+    "line": 173,
+    "len": 485,
+    "hash": "5c2495ec1bac6a345316e37a5e07be8e",
+    "n_assert": 5
+   },
+   {
+    "name": "test_70d_04_no_family_block_fills_neutral_never_live",
+    "line": 184,
+    "len": 399,
+    "hash": "658850a0e01bac4e73db9e4cb3a0b21c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_05_liquidity_block_uses_canonical_producer_order",
+    "line": 197,
+    "len": 563,
+    "hash": "4aef9793487c415b8768b979ebc3e253",
+    "n_assert": 6
+   },
+   {
+    "name": "test_70d_05_liquidity_snapshot_places_indices_60_69",
+    "line": 211,
+    "len": 776,
+    "hash": "9155dd24abfce3492fc8d62fe622f01b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_06_07_news_off_liquidity_on_liquidity_stays_available",
+    "line": 232,
+    "len": 480,
+    "hash": "c2d9c82b4a47551d945b787d85a9e1d7",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_08_09_news_on_liquidity_off_news_remains_and_fallback_safe",
+    "line": 244,
+    "len": 534,
+    "hash": "b14c220d1958d4e652c65dc3c96cd991",
+    "n_assert": 5
+   },
+   {
+    "name": "test_70d_10_runtime_toggle_persists_via_settings_service",
+    "line": 262,
+    "len": 884,
+    "hash": "d7da4e162abab32162fd351884ba19af",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_11_toggle_hot_reload_updates_runtime_without_engine_restart",
+    "line": 280,
+    "len": 539,
+    "hash": "e34e055f3fbf5816f9ba00feea6f3e64",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_12_incompatible_model_blocked",
+    "line": 298,
+    "len": 513,
+    "hash": "b7a060ec7f7cf81d1fb36210ef4519e5",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_25_70d_model_rejects_60d_input",
+    "line": 308,
+    "len": 239,
+    "hash": "adfd3f35c257272f57c8a80e4568bf91",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_26_60d_model_rejects_70d_input",
+    "line": 314,
+    "len": 179,
+    "hash": "6d7ed1d1ba563586d9659a2f89c9bbfb",
+    "n_assert": 1
+   },
+   {
+    "name": "test_70d_12_70d_model_70d_runtime_passes",
+    "line": 319,
+    "len": 179,
+    "hash": "66c447a70b1e1004b3f29cfabb7325d6",
+    "n_assert": 1
+   },
+   {
+    "name": "test_70d_12_unknown_model_never_guessed",
+    "line": 324,
+    "len": 177,
+    "hash": "83f0084f85c2388a6a87be7e272eff79",
+    "n_assert": 1
+   },
+   {
+    "name": "test_70d_13_liquidity_state_endpoint_returns_real_values",
+    "line": 334,
+    "len": 552,
+    "hash": "00fcd1947c3072c55a05554300298a3d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_13_snapshot_payload_has_schema_and_dimension",
+    "line": 347,
+    "len": 724,
+    "hash": "f89e8db9a2e971cea9f4feceae16ff52",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_16_sse_incremental_carries_liquidity_section",
+    "line": 367,
+    "len": 868,
+    "hash": "5144fb32a8fd2ad459837163a0818dc2",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_17_reconnect_restores_state_from_server_snapshot",
+    "line": 384,
+    "len": 586,
+    "hash": "f4392b9f521577bc7ab36a402eee8178",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_19_disabled_state_has_no_fake_values",
+    "line": 402,
+    "len": 247,
+    "hash": "98f70aae53daab89c18d0e80f2f3417d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_19_degraded_after_error_is_honest",
+    "line": 410,
+    "len": 317,
+    "hash": "c7fba8df7ad295434c611b119eaeedee",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_20_stale_detection_uses_actual_timestamps",
+    "line": 423,
+    "len": 540,
+    "hash": "9e32ad96cab153dc43c655dfd721e46c",
+    "n_assert": 4
+   },
+   {
+    "name": "test_70d_21_overlay_pools_come_from_real_snapshot",
+    "line": 440,
+    "len": 535,
+    "hash": "fd07c5e0695f1f5d575870f8e48d37f1",
+    "n_assert": 2
+   },
+   {
+    "name": "test_70d_22_feature_schema_columns_report_70d",
+    "line": 458,
+    "len": 228,
+    "hash": "a6b78c4d45b2d5f2a95da2a7a62db606",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_24_60d_scalp_v2_schema_untouched_by_70d",
+    "line": 471,
+    "len": 352,
+    "hash": "e829d6b6a0d999106886ecbb1a962985",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_28_news_and_liquidity_states_are_independent",
+    "line": 485,
+    "len": 671,
+    "hash": "e90cc9394b7ee9c89806f24e760cdbcc",
+    "n_assert": 3
+   },
+   {
+    "name": "test_70d_runtime_smoke_governor_round_trip",
+    "line": 507,
+    "len": 516,
+    "hash": "b8b88212de83a06f2a1937eafbb8176b",
+    "n_assert": 5
+   },
+   {
+    "name": "test_aihub_07_sse_payload_with_pool_datetimes_serializes",
+    "line": 528,
+    "len": 771,
+    "hash": "b26ab095e08ff5d2b37617833bbe3846",
+    "n_assert": 3
+   },
+   {
+    "name": "test_aihub_08_nested_datetime_payload_serializes",
+    "line": 548,
+    "len": 956,
+    "hash": "37312f680b33be341c3ea2c4f7f21953",
+    "n_assert": 3
+   },
+   {
+    "name": "test_aihub_09_sse_serialization_failure_is_observable",
+    "line": 574,
+    "len": 527,
+    "hash": "3d037d36f05f271e6b3a8bb4bb750f9f",
+    "n_assert": 1
+   },
+   {
+    "name": "test_aihub_10_calculation_and_source_status_are_distinct",
+    "line": 591,
+    "len": 889,
+    "hash": "4f5d00b895d8fa259cc841e18c45c388",
+    "n_assert": 5
+   },
+   {
+    "name": "test_aihub_10b_calculation_status_field_distinct",
+    "line": 610,
+    "len": 1189,
+    "hash": "6fa827eca88acaed4272b30353f6a2a8",
+    "n_assert": 8
+   },
+   {
+    "name": "test_aihub_11_invalid_champion_does_not_become_active",
+    "line": 645,
+    "len": 944,
+    "hash": "694b6b6aa018f37ee7ac0cc06371620a",
+    "n_assert": 4
+   },
+   {
+    "name": "test_aihub_14_70d_candidate_never_promotes_automatically",
+    "line": 671,
+    "len": 474,
+    "hash": "e7734d72e6892b2ea7bd8003c434b1d5",
+    "n_assert": 1
+   },
+   {
+    "name": "test_aihub_15_model_inventory_distinguishes_lifecycle",
+    "line": 681,
+    "len": 862,
+    "hash": "004963e40cc36c1cd58d3be56f9e416f",
+    "n_assert": 3
+   },
+   {
+    "name": "test_liq_ui_01_enabled_report_indices_are_canonical_60_69",
+    "line": 740,
+    "len": 392,
+    "hash": "82cb7b688f0d5c2780ac6e1e3c096dab",
+    "n_assert": 3
+   },
+   {
+    "name": "test_liq_ui_02_disabled_report_indices_are_still_canonical_60_69",
+    "line": 750,
+    "len": 513,
+    "hash": "ca88b1ead221c86107eed6c2762173a5",
+    "n_assert": 3
+   },
+   {
+    "name": "test_liq_ui_03_disabled_report_never_active_values",
+    "line": 761,
+    "len": 747,
+    "hash": "f8e800caf5010f8af487a9811c494770",
+    "n_assert": 9
+   },
+   {
+    "name": "test_liq_ui_04_model_compatibility_not_applicable_when_disabled",
+    "line": 778,
+    "len": 613,
+    "hash": "caf0b1ba22f441dc6b7e3c0320da5d63",
+    "n_assert": 4
+   },
+   {
+    "name": "test_liq_ui_05_last_update_is_wall_clock_not_monotonic_epoch",
+    "line": 791,
+    "len": 463,
+    "hash": "b92cd9b7eba61c97b4d9fb2d827ba921",
+    "n_assert": 4
+   },
+   {
+    "name": "test_liq_ui_06_availability_matrix_explicit",
+    "line": 803,
+    "len": 809,
+    "hash": "3b859d213bcbd88bd28341275ff3c99d",
+    "n_assert": 6
+   },
+   {
+    "name": "test_liq_ui_07_state_revision_monotonic",
+    "line": 819,
+    "len": 710,
+    "hash": "c9c54b0e37dc0fd53e9f73f57ca0746d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_liq_ui_08_snapshot_payload_carries_per_value_provenance",
+    "line": 837,
+    "len": 817,
+    "hash": "945e7acdbc902c0a6fbe59d068d40c0e",
+    "n_assert": 5
+   },
+   {
+    "name": "test_liq_ui_09_algorithm_version_constant_is_provenance_label",
+    "line": 860,
+    "len": 658,
+    "hash": "d83dba1823c1de9148a86147990141aa",
+    "n_assert": 5
+   },
+   {
+    "name": "test_liq_ui_10_json_safe_payload",
+    "line": 873,
+    "len": 433,
+    "hash": "983465960b0ed718663b544977582dcc",
+    "n_assert": 0
+   }
+  ],
+  "n_tests": 48,
+  "classes": [
+   "_Champion50DEngine",
+   "_Weird"
+  ],
+  "imports": [
+   "__future__",
+   "datetime",
+   "json",
+   "math",
+   "nexus_scalp.features.liquidity_engine",
+   "nexus_scalp.features.liquidity_runtime",
+   "nexus_scalp.features.schema",
+   "nexus_scalp.features.schema_augment",
+   "nexus_scalp.model_lifecycle.integrity",
+   "nexus_scalp.models.scalp_net",
+   "nexus_scalp.settings.service",
+   "nexus_scalp.web.server",
+   "pathlib",
+   "pytest",
+   "time",
+   "torch",
+   "types",
+   "unittest.mock"
+  ]
+ },
+ "test_research_phase09b.py": {
+  "tests": [
+   {
+    "name": "test_preserves_temporal_order",
+    "line": 234,
+    "len": 746,
+    "hash": "e3ff6751b8c96d5ae44b49e99d3ac27a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_preserves_provenance",
+    "line": 248,
+    "len": 763,
+    "hash": "3dd6056950e3d1ccc8750a3be16d5dc1",
+    "n_assert": 7
+   },
+   {
+    "name": "test_future_outcomes_cannot_enter_discovery",
+    "line": 264,
+    "len": 746,
+    "hash": "14aa4fb8df1cd3ff6665213b9bdf3b9a",
+    "n_assert": 2
+   },
+   {
+    "name": "test_future_normalization_cannot_leak_backward",
+    "line": 279,
+    "len": 1114,
+    "hash": "ff59322d39d0750b4d3406a5228913ca",
+    "n_assert": 2
+   },
+   {
+    "name": "test_identity_deterministic",
+    "line": 310,
+    "len": 262,
+    "hash": "c46cac5220eda90ab1e89f48ec153bd4",
+    "n_assert": 3
+   },
+   {
+    "name": "test_version_immutable",
+    "line": 317,
+    "len": 341,
+    "hash": "d5cb24111bf8248b463a2f453bb19713",
+    "n_assert": 2
+   },
+   {
+    "name": "test_creation_reproducible",
+    "line": 324,
+    "len": 231,
+    "hash": "796cdf43d8fee32b8b0f1dc00e5bee69",
+    "n_assert": 1
+   },
+   {
+    "name": "test_deterministic",
+    "line": 343,
+    "len": 376,
+    "hash": "a7c1058619523a047a0e6af2da451592",
+    "n_assert": 1
+   },
+   {
+    "name": "test_execution_assumptions_affect_result",
+    "line": 352,
+    "len": 612,
+    "hash": "cfc80e4d3e83724416971099ffbe4c32",
+    "n_assert": 2
+   },
+   {
+    "name": "test_sltp_behavior_respected",
+    "line": 363,
+    "len": 874,
+    "hash": "ec6fa7f3806fa2e5347653b5f05194ec",
+    "n_assert": 3
+   },
+   {
+    "name": "test_friction_modeled",
+    "line": 381,
+    "len": 632,
+    "hash": "165e272350b49b61b943b370c6cf53a7",
+    "n_assert": 1
+   },
+   {
+    "name": "test_temporal_folds_correct",
+    "line": 401,
+    "len": 621,
+    "hash": "7012e579c5bb42dfc5770e094f81cf51",
+    "n_assert": 3
+   },
+   {
+    "name": "test_purging_works",
+    "line": 413,
+    "len": 907,
+    "hash": "f2866b965bc1b1e47db441f60f42750b",
+    "n_assert": 1
+   },
+   {
+    "name": "test_embargo_works",
+    "line": 429,
+    "len": 708,
+    "hash": "ac9af160920ebe616a7c2d1facc7ecf9",
+    "n_assert": 1
+   },
+   {
+    "name": "test_oos_boundary_respected",
+    "line": 442,
+    "len": 404,
+    "hash": "7c8f2909f37c7fdfea77731edef28922",
+    "n_assert": 1
+   },
+   {
+    "name": "test_in_sample_success_oos_failure_rejected",
+    "line": 466,
+    "len": 1045,
+    "hash": "0db111738231bdc075abb72bf48bab1c",
+    "n_assert": 3
+   },
+   {
+    "name": "test_oos_tracked_independently",
+    "line": 486,
+    "len": 904,
+    "hash": "5f87db8a6b809df4732c7f9391601493",
+    "n_assert": 2
+   },
+   {
+    "name": "test_spread_stress_evaluated",
+    "line": 511,
+    "len": 426,
+    "hash": "ad5e052a0c6bc1105ec2b6ede46d772e",
+    "n_assert": 2
+   },
+   {
+    "name": "test_slippage_stress_evaluated",
+    "line": 519,
+    "len": 432,
+    "hash": "6dba969055592cb33c69071f1efb3813",
+    "n_assert": 2
+   },
+   {
+    "name": "test_parameter_perturbation_evaluated",
+    "line": 527,
+    "len": 381,
+    "hash": "e11a50303b2b5c6600d09cdbbdc32852",
+    "n_assert": 1
+   },
+   {
+    "name": "test_fragile_candidate_fails_robustness",
+    "line": 534,
+    "len": 1114,
+    "hash": "0c07f493f79ec32e68c3ca1da3221f46",
+    "n_assert": 1
+   },
+   {
+    "name": "test_small_sample_low_confidence",
+    "line": 627,
+    "len": 548,
+    "hash": "8f0bceb3459daca6efd53917d9274c2c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_win_rate_alone_cannot_dominate",
+    "line": 637,
+    "len": 394,
+    "hash": "216b70976865a031ffab332ddb3ffabb",
+    "n_assert": 2
+   },
+   {
+    "name": "test_drawdown_impacts_score",
+    "line": 645,
+    "len": 294,
+    "hash": "364aacc7211801f2cb832fa2a99acd79",
+    "n_assert": 1
+   },
+   {
+    "name": "test_oos_impacts_score",
+    "line": 651,
+    "len": 478,
+    "hash": "bcc292c8ed8493aa7013f2f25fbf23da",
+    "n_assert": 2
+   },
+   {
+    "name": "test_robustness_impacts_score",
+    "line": 661,
+    "len": 403,
+    "hash": "d4c1b1055ab8ead0861311683bacc224",
+    "n_assert": 1
+   },
+   {
+    "name": "test_candidate_enters_backtesting",
+    "line": 676,
+    "len": 137,
+    "hash": "6e9ff22fc1140aee901ca0c7b2ddc8be",
+    "n_assert": 1
+   },
+   {
+    "name": "test_failed_validation_rejected",
+    "line": 679,
+    "len": 140,
+    "hash": "53e4c689509ebd93ec2264993b158ba6",
+    "n_assert": 1
+   },
+   {
+    "name": "test_successful_validation_validated",
+    "line": 682,
+    "len": 146,
+    "hash": "247b8b18a786965344d403bd280bcf86",
+    "n_assert": 1
+   },
+   {
+    "name": "test_validation_failure_cannot_activate",
+    "line": 685,
+    "len": 291,
+    "hash": "c6997b5ea34ae5bb1793042a37f7dda4",
+    "n_assert": 1
+   },
+   {
+    "name": "test_modified_strategy_new_version",
+    "line": 698,
+    "len": 230,
+    "hash": "0fefa0db54a1bf3c763222a576e34a97",
+    "n_assert": 1
+   },
+   {
+    "name": "test_old_validation_record_immutable",
+    "line": 704,
+    "len": 1140,
+    "hash": "4e5e9398e6d8a53e200a7341736265b2",
+    "n_assert": 3
+   },
+   {
+    "name": "test_candidate_cannot_bypass_risk_engine",
+    "line": 733,
+    "len": 220,
+    "hash": "1826943fb1d7fd5566230afe4ab76ef3",
+    "n_assert": 1
+   },
+   {
+    "name": "test_candidate_cannot_bypass_order_manager",
+    "line": 739,
+    "len": 229,
+    "hash": "9b2189b556b82f6c3f431f16d2f6eb2d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_candidate_cannot_submit_mt5_orders",
+    "line": 745,
+    "len": 207,
+    "hash": "8f66c8d3a22b82194ac89e72d028d74b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_phase08_experience_intact",
+    "line": 758,
+    "len": 348,
+    "hash": "2060912815de45d515a484797ad38eac",
+    "n_assert": 2
+   },
+   {
+    "name": "test_trade_intelligence_intact",
+    "line": 765,
+    "len": 193,
+    "hash": "47afbea5e54968fd21ae845084631595",
+    "n_assert": 1
+   },
+   {
+    "name": "test_accounting_intact",
+    "line": 770,
+    "len": 204,
+    "hash": "73380c21ea37d77161cd8b23eed588a3",
+    "n_assert": 1
+   },
+   {
+    "name": "test_50d_contract_intact",
+    "line": 776,
+    "len": 163,
+    "hash": "feac246c738ab3c76639dfdb13a2dea1",
+    "n_assert": 1
+   },
+   {
+    "name": "test_failure_isolated",
+    "line": 788,
+    "len": 695,
+    "hash": "de9ef9c06b4b17aa458c07758a60f910",
+    "n_assert": 1
+   },
+   {
+    "name": "test_restart_safe",
+    "line": 808,
+    "len": 891,
+    "hash": "c1e374f9dea9e40c8f7997395bb157ef",
+    "n_assert": 1
+   },
+   {
+    "name": "test_research_cannot_block_live_engine",
+    "line": 836,
+    "len": 1026,
+    "hash": "bafdb17cf563428470f0c482ec336cca",
+    "n_assert": 1
+   },
+   {
+    "name": "test_full_pipeline_registers_result",
+    "line": 870,
+    "len": 888,
+    "hash": "10b3216f4e07dd964c9fb83346658fd0",
+    "n_assert": 6
+   },
+   {
+    "name": "test_pipeline_never_promotes_to_active",
+    "line": 890,
+    "len": 633,
+    "hash": "162a37af4ab850122bf81e9e221c4011",
+    "n_assert": 1
+   },
+   {
+    "name": "test_discovery_from_experience",
+    "line": 902,
+    "len": 428,
+    "hash": "9b50aa1b5831b16d3dc5288ef2ff4eec",
+    "n_assert": 2
+   }
+  ],
+  "n_tests": 45,
+  "classes": [
+   "TestDatasetBuilder",
+   "TestCandidates",
+   "TestBacktest",
+   "TestWalkForward",
+   "TestOOSGate",
+   "TestRobustness",
+   "TestScoring",
+   "TestLifecycle",
+   "TestVersioning",
+   "TestSafetyContract",
+   "TestRegression",
+   "TestWorker",
+   "TestPipelineEndToEnd"
+  ],
+  "imports": [
+   "__future__",
+   "datetime",
+   "math",
+   "nexus_scalp.accounting.core",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.experience.ledger",
+   "nexus_scalp.experience.models",
+   "nexus_scalp.intelligence.store",
+   "nexus_scalp.research",
+   "nexus_scalp.research.leakage",
+   "nexus_scalp.research.models",
+   "nexus_scalp.research.splitting",
+   "nexus_scalp.research.worker",
+   "pytest",
+   "time"
+  ]
+ },
+ "test_shadow_phase11.py": {
+  "tests": [
+   {
+    "name": "test_champion_loads",
+    "line": 167,
+    "len": 155,
+    "hash": "5e4183177ae0a33dc4f5f3a28ad638ab",
+    "n_assert": 2
+   },
+   {
+    "name": "test_challenger_loads",
+    "line": 172,
+    "len": 176,
+    "hash": "e65e98663de2b5e58faad7fd45470936",
+    "n_assert": 2
+   },
+   {
+    "name": "test_identical_inputs",
+    "line": 177,
+    "len": 512,
+    "hash": "0c7062c6064584e63d5e8bbc024a1b4f",
+    "n_assert": 3
+   },
+   {
+    "name": "test_schema_mismatch_rejected",
+    "line": 192,
+    "len": 289,
+    "hash": "3d63d5e339433f2e0869007cdd733ba7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_corrupt_artifact_rejected",
+    "line": 198,
+    "len": 665,
+    "hash": "8bfd2ea7e2a22e807d2d0b5ee68f8ebb",
+    "n_assert": 0
+   },
+   {
+    "name": "test_challenger_produces_shadow_decision",
+    "line": 221,
+    "len": 1230,
+    "hash": "61ab221903e9375dd5ff018b1c8b35a5",
+    "n_assert": 1
+   },
+   {
+    "name": "test_shadow_decision_cannot_submit_mt5",
+    "line": 250,
+    "len": 324,
+    "hash": "114370c7ddeab03338475a34adcdd7fa",
+    "n_assert": 4
+   },
+   {
+    "name": "test_shadow_result_marked_simulated",
+    "line": 258,
+    "len": 114,
+    "hash": "6635978c718e8b6fc63a8e4e5b27bc1a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_shadow_outcomes_persisted",
+    "line": 262,
+    "len": 396,
+    "hash": "d488fce685580182ed6a203bb2ed9c0b",
+    "n_assert": 3
+   },
+   {
+    "name": "test_champion_unchanged_during_shadow",
+    "line": 272,
+    "len": 463,
+    "hash": "aa334d5a557bc0063747eb07c6154bd9",
+    "n_assert": 2
+   },
+   {
+    "name": "test_metrics_compare_correctly",
+    "line": 288,
+    "len": 440,
+    "hash": "790f6829ce4fe7373910188627382bbc",
+    "n_assert": 4
+   },
+   {
+    "name": "test_small_samples_insufficient",
+    "line": 297,
+    "len": 458,
+    "hash": "13df82708e950c66c31ceb8b53ad8414",
+    "n_assert": 3
+   },
+   {
+    "name": "test_oos_failure_blocks_promotion",
+    "line": 306,
+    "len": 409,
+    "hash": "6eeabc95312c129d9cb093573d96fb19",
+    "n_assert": 2
+   },
+   {
+    "name": "test_drawdown_regression_blocks_promotion",
+    "line": 314,
+    "len": 954,
+    "hash": "ccb2168b9813db14287e8b8563131c91",
+    "n_assert": 1
+   },
+   {
+    "name": "test_robustness_failure_blocks_promotion",
+    "line": 329,
+    "len": 358,
+    "hash": "b5e52b45005139468625384d0d2b98d5",
+    "n_assert": 1
+   },
+   {
+    "name": "test_critical_strategy_regression_blocks_promotion",
+    "line": 336,
+    "len": 812,
+    "hash": "8af3a53aef07da44adf5c767cbf47998",
+    "n_assert": 2
+   },
+   {
+    "name": "test_calibration_degradation_visible",
+    "line": 355,
+    "len": 481,
+    "hash": "cba5d8896f145577980233b521bd2eda",
+    "n_assert": 2
+   },
+   {
+    "name": "test_regime_specific_comparison_works",
+    "line": 371,
+    "len": 364,
+    "hash": "695cc3b031030de082c86de9debd7eb8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_critical_regime_degradation_not_averaged_away",
+    "line": 378,
+    "len": 718,
+    "hash": "23ac5937fa8c327f85bb3ae8a3cb48ab",
+    "n_assert": 2
+   },
+   {
+    "name": "test_strategy_specific_comparison_works",
+    "line": 392,
+    "len": 372,
+    "hash": "3b1dda4ad48beb6e63436b565d162782",
+    "n_assert": 2
+   },
+   {
+    "name": "test_retired_strategy_blocked",
+    "line": 399,
+    "len": 682,
+    "hash": "e30f4311dd08bfa1e350df57d31770c2",
+    "n_assert": 1
+   },
+   {
+    "name": "test_improved_strategy_evidence_recorded",
+    "line": 411,
+    "len": 391,
+    "hash": "257a818b1af6f186866c373c9c716c1f",
+    "n_assert": 1
+   },
+   {
+    "name": "test_challenger_failure_cannot_affect_champion",
+    "line": 425,
+    "len": 1040,
+    "hash": "b7615d424f6895cbcc41871d77a9ad4d",
+    "n_assert": 1
+   },
+   {
+    "name": "test_shadow_db_failure_cannot_stop_trading",
+    "line": 450,
+    "len": 536,
+    "hash": "9bb45f51b02186d7c273fea5f7a92d97",
+    "n_assert": 1
+   },
+   {
+    "name": "test_worker_restart_works",
+    "line": 460,
+    "len": 480,
+    "hash": "bdca1c89b14e4227c89687769655157a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_worker_cancellation_works",
+    "line": 472,
+    "len": 381,
+    "hash": "3fa8fee90e4cc2c13bf2cb287401fc50",
+    "n_assert": 1
+   },
+   {
+    "name": "test_invalid_challenger_cannot_enter_production_path",
+    "line": 482,
+    "len": 551,
+    "hash": "4ff084381b3850152cd2a1763f1d88b8",
+    "n_assert": 0
+   },
+   {
+    "name": "test_model_rebuild_does_not_erase_shadow_history",
+    "line": 502,
+    "len": 746,
+    "hash": "4a5fde2555ddf71552f250ef6892a7ab",
+    "n_assert": 3
+   },
+   {
+    "name": "test_feature_schema_metadata_preserved",
+    "line": 519,
+    "len": 240,
+    "hash": "83098299c20d111fa24c8c3a98a0a0b6",
+    "n_assert": 2
+   },
+   {
+    "name": "test_historical_lineage_preserved",
+    "line": 524,
+    "len": 488,
+    "hash": "289e6b701fed14d6fdba183409c92899",
+    "n_assert": 3
+   },
+   {
+    "name": "test_phase08_experience_intact",
+    "line": 541,
+    "len": 235,
+    "hash": "2b5e9c1beb5f1b778bc8d9cf4b58f45e",
+    "n_assert": 1
+   },
+   {
+    "name": "test_phase09_research_intact",
+    "line": 547,
+    "len": 191,
+    "hash": "85894ecadbea84099d79d9cbb0e11181",
+    "n_assert": 1
+   },
+   {
+    "name": "test_phase10_model_lifecycle_intact",
+    "line": 552,
+    "len": 278,
+    "hash": "06287248c3476412a687eb225e278efc",
+    "n_assert": 1
+   },
+   {
+    "name": "test_accounting_intact",
+    "line": 559,
+    "len": 184,
+    "hash": "20cd80c056a97a25523c263b5488ed9a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_live_hot_path_non_blocking",
+    "line": 564,
+    "len": 481,
+    "hash": "eaf772fdbdd2a624911857b6aa75f5d6",
+    "n_assert": 1
+   }
+  ],
+  "n_tests": 35,
+  "classes": [
+   "TestBasic",
+   "TestShadow",
+   "TestComparison",
+   "TestRegimeStrategy",
+   "TestFailureIsolation",
+   "TestModelEvolution",
+   "TestRegression"
+  ],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.accounting.core",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.experience.ledger",
+   "nexus_scalp.experience.models",
+   "nexus_scalp.model_lifecycle.store",
+   "nexus_scalp.research.store",
+   "nexus_scalp.shadow",
+   "nexus_scalp.shadow.challenger",
+   "nexus_scalp.shadow.comparison",
+   "nexus_scalp.shadow.engine",
+   "nexus_scalp.shadow.store",
+   "nexus_scalp.shadow.worker",
+   "pathlib",
+   "pytest",
+   "time"
+  ]
+ },
+ "test_shadow70_runtime.py": {
+  "tests": [
+   {
+    "name": "test_shadow01_valid_70d_candidate_loads",
+    "line": 91,
+    "len": 489,
+    "hash": "96df22c1926196f95f7e125f24503a7a",
+    "n_assert": 6
+   },
+   {
+    "name": "test_shadow01b_no_candidate_reports_no_validated",
+    "line": 104,
+    "len": 297,
+    "hash": "fa1fca39bf5ae074dcaf9ca5af0d533a",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow02_invalid_manifest_blocked",
+    "line": 112,
+    "len": 334,
+    "hash": "d79562048c751505fa96b46d4077b6af",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow03_schema_mismatch_blocked",
+    "line": 121,
+    "len": 360,
+    "hash": "51a5ef48139ac275f0bb2cfca4cc5b80",
+    "n_assert": 3
+   },
+   {
+    "name": "test_shadow04_scaler_mismatch_blocked",
+    "line": 131,
+    "len": 310,
+    "hash": "aaab3ca4c5a843cc316dea892705215d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow05_artifact_hash_mismatch_blocked",
+    "line": 140,
+    "len": 347,
+    "hash": "160eb04e64d6ef9254b6cba24301de38",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow05b_non_validated_candidate_blocked",
+    "line": 149,
+    "len": 341,
+    "hash": "60edfac0ccb14792bf172e8a9760c8a0",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow06_shadow_inference_succeeds",
+    "line": 163,
+    "len": 747,
+    "hash": "adcc4694528dfe26fba39c003afc11cf",
+    "n_assert": 5
+   },
+   {
+    "name": "test_shadow07_inference_failure_isolated",
+    "line": 184,
+    "len": 853,
+    "hash": "8078fd699446f23bb276d50d9521bea9",
+    "n_assert": 4
+   },
+   {
+    "name": "test_shadow07b_bad_vector_rejected",
+    "line": 209,
+    "len": 586,
+    "hash": "36c5e74a3ab9263c6b42aa20157f6d4d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow08_09_10_no_order_authority",
+    "line": 231,
+    "len": 955,
+    "hash": "03d582f412afe7aea3f52487d441b31e",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow11_champion_output_unaffected",
+    "line": 256,
+    "len": 922,
+    "hash": "85a37fb9d92f4f11df5a1bfbc92fa3b6",
+    "n_assert": 3
+   },
+   {
+    "name": "test_shadow12_broker_path_unchanged",
+    "line": 279,
+    "len": 430,
+    "hash": "e990f7ad5393c9d7260d3e37edb5844a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_shadow13_observation_idempotent",
+    "line": 294,
+    "len": 976,
+    "hash": "001066a307c995a727d66b42e590ed8c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow14_reconnect_no_duplicate",
+    "line": 322,
+    "len": 778,
+    "hash": "a2567e63ad6de0111adfcb7c79c53bbc",
+    "n_assert": 1
+   },
+   {
+    "name": "test_shadow14b_store_is_insert_or_ignore",
+    "line": 343,
+    "len": 1339,
+    "hash": "a9d93a6bd4f4c6dabd6e58813a0e937f",
+    "n_assert": 3
+   },
+   {
+    "name": "test_shadow15_bounded_queue",
+    "line": 386,
+    "len": 783,
+    "hash": "b30a61fb2cccf8cf381f5d06c157f584",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow16_backpressure_telemetry",
+    "line": 408,
+    "len": 779,
+    "hash": "6dcd7036dfaed90ebd87eeb6dbdcd13c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_shadow17_feature_provenance",
+    "line": 434,
+    "len": 1054,
+    "hash": "b99e26157398d39e215bc56f4ba06ebf",
+    "n_assert": 6
+   },
+   {
+    "name": "test_shadow18_liquidity_feature_health",
+    "line": 466,
+    "len": 489,
+    "hash": "14f2c60c83fe947b808e05b7e1cbdf08",
+    "n_assert": 5
+   },
+   {
+    "name": "test_shadow19_feature_drift",
+    "line": 481,
+    "len": 724,
+    "hash": "a86fc99e88ba39b63b6ddfcdb5fca8bc",
+    "n_assert": 4
+   },
+   {
+    "name": "test_shadow20_news_liquidity_state_tracking",
+    "line": 499,
+    "len": 707,
+    "hash": "70a320bd70a7c25a576c5ede1512a269",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow21_latency_measured",
+    "line": 523,
+    "len": 745,
+    "hash": "271e45ff6a75a421e3f21757edd879aa",
+    "n_assert": 4
+   },
+   {
+    "name": "test_shadow22_persistence_asynchronous",
+    "line": 544,
+    "len": 970,
+    "hash": "dd77d32d70e86a65c77bd596a44f77b3",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow23_mt5_disconnect_isolation",
+    "line": 574,
+    "len": 856,
+    "hash": "dac35769cada3329c8f76a6dbb771546",
+    "n_assert": 1
+   },
+   {
+    "name": "test_shadow24_restart_recovery",
+    "line": 597,
+    "len": 711,
+    "hash": "9ca3699cb1a5ae781ec7919232793cf3",
+    "n_assert": 3
+   },
+   {
+    "name": "test_shadow25_config_hot_reload",
+    "line": 618,
+    "len": 692,
+    "hash": "2024dbe58d70430780f4a38b6a2a68fd",
+    "n_assert": 4
+   },
+   {
+    "name": "test_shadow26_outcome_pending_before_resolution",
+    "line": 644,
+    "len": 632,
+    "hash": "f2dfbc7d2f982b67d4fd35cfdecc8f79",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow27_shadow_never_accounting",
+    "line": 662,
+    "len": 757,
+    "hash": "989cc2336f0c3755cd7528ec4cfc2d9b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow29_report_uses_real_data",
+    "line": 682,
+    "len": 813,
+    "hash": "3b61bacc61a1999646bb9a05ae1f6d96",
+    "n_assert": 4
+   },
+   {
+    "name": "test_shadow30_31_artifact_unchanged",
+    "line": 710,
+    "len": 735,
+    "hash": "75605a61981b5dd05ab003e82146e53c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_shadow32_memory_bounded",
+    "line": 730,
+    "len": 695,
+    "hash": "65677afa078a6fcfbbcc9d18eeb1812b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow33_no_sync_db_on_tick",
+    "line": 748,
+    "len": 583,
+    "hash": "844625fc5cecf46951b3ef473998d979",
+    "n_assert": 2
+   },
+   {
+    "name": "test_shadow34_live_feature_schema_exact_70d",
+    "line": 761,
+    "len": 1017,
+    "hash": "67ad6179abd5e6a6abceab4498495a6b",
+    "n_assert": 3
+   },
+   {
+    "name": "test_shadow35_legacy_champion_loadable",
+    "line": 792,
+    "len": 619,
+    "hash": "2b09e4f1a30ca5e1afa4653bc8a68ac3",
+    "n_assert": 4
+   },
+   {
+    "name": "test_disagreement_taxonomy",
+    "line": 811,
+    "len": 1088,
+    "hash": "4361c8bb266d18c4f38b6098bbcdcd7c",
+    "n_assert": 9
+   },
+   {
+    "name": "test_shadow36_happy_path_records_70d_observation",
+    "line": 929,
+    "len": 1134,
+    "hash": "a921b4ef56fb1f13f364500d20e2d2c4",
+    "n_assert": 9
+   },
+   {
+    "name": "test_shadow37_no_50d_shadow_still_records_70d",
+    "line": 953,
+    "len": 549,
+    "hash": "24c507bf2eb115c4245b3d4cc4919fd8",
+    "n_assert": 3
+   },
+   {
+    "name": "test_shadow38_news_disabled_no_unboundlocal",
+    "line": 965,
+    "len": 944,
+    "hash": "89eb701541ac03adf25dfe64d5f7aac9",
+    "n_assert": 4
+   },
+   {
+    "name": "test_shadow39_50d_shadow_failure_does_not_block_70d",
+    "line": 984,
+    "len": 626,
+    "hash": "47b1ba57291e600dd1a92a649b4aa61f",
+    "n_assert": 1
+   },
+   {
+    "name": "test_shadow41_governor_snapshot_reused_not_recomputed",
+    "line": 1035,
+    "len": 839,
+    "hash": "a1e4c716b6a313a4641a37c6ff3675b9",
+    "n_assert": 4
+   },
+   {
+    "name": "test_shadow42_stale_governor_falls_back_bounded",
+    "line": 1054,
+    "len": 1134,
+    "hash": "20fca1c13bb72cb55acc13f7f906535c",
+    "n_assert": 3
+   }
+  ],
+  "n_tests": 42,
+  "classes": [
+   "_Shadow70Harness",
+   "_FakeAggregator",
+   "_FakeGovernor",
+   "FakeRepo"
+  ],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.application.live_engine",
+   "nexus_scalp.domain.models",
+   "nexus_scalp.features.schema",
+   "nexus_scalp.features.schema_contract",
+   "nexus_scalp.market_data.bar_aggregator",
+   "nexus_scalp.shadow.engine",
+   "nexus_scalp.shadow.shadow70.health",
+   "nexus_scalp.shadow.shadow70.liq_provider",
+   "nexus_scalp.shadow.shadow70.models",
+   "nexus_scalp.shadow.shadow70.runtime",
+   "nexus_scalp.shadow.shadow70.store",
+   "nexus_scalp.shadow.shadow70.worker",
+   "nexus_scalp.shadow.store",
+   "os",
+   "pytest",
+   "queue",
+   "shutil",
+   "sqlite3",
+   "tempfile",
+   "tests.helpers.shadow70_fixtures",
+   "threading",
+   "time",
+   "types"
+  ]
+ },
+ "test_walk_forward_trainer.py": {
+  "tests": [
+   {
+    "name": "test_walk_forward_trainer_smc_fine_tune_online",
+    "line": 15,
+    "len": 3521,
+    "hash": "ea0c46002e1f6c5037c9fc7d0f772fd7",
+    "n_assert": 7
+   }
+  ],
+  "n_tests": 1,
+  "classes": [],
+  "imports": [
+   "nexus_scalp.features.scalp_features",
+   "nexus_scalp.models.scalp_net",
+   "nexus_scalp.training.walk_forward_trainer",
+   "numpy",
+   "os",
+   "pathlib",
+   "polars",
+   "pytest",
+   "tempfile",
+   "torch"
+  ]
+ },
+ "test_train_model_cli.py": {
+  "tests": [
+   {
+    "name": "test_reconstruct_features_and_bars_50d_contract",
+    "line": 44,
+    "len": 1398,
+    "hash": "8354912622aa2eb95a1d468440a8dff9",
+    "n_assert": 10
+   },
+   {
+    "name": "test_cli_feature_cols_compatibility_with_walk_forward_trainer",
+    "line": 75,
+    "len": 1522,
+    "hash": "c15d71ee9ed623df05ba33eb6fd8c2ca",
+    "n_assert": 3
+   }
+  ],
+  "n_tests": 2,
+  "classes": [],
+  "imports": [
+   "cli.train_model",
+   "datetime",
+   "nexus_scalp.training.walk_forward_trainer",
+   "polars",
+   "pytest"
+  ]
+ },
+ "test_schema_70d_reconciliation.py": {
+  "tests": [
+   {
+    "name": "test_schema_70d_01_exact_canonical_schema",
+    "line": 29,
+    "len": 254,
+    "hash": "cfe0111cfaf763f82bdd369a037724d7",
+    "n_assert": 2
+   },
+   {
+    "name": "test_schema_70d_02_feature_order_stable",
+    "line": 36,
+    "len": 452,
+    "hash": "67bc81ac83db98b6e710f4bb5fac67f5",
+    "n_assert": 6
+   },
+   {
+    "name": "test_schema_70d_03_dimension_exactly_70",
+    "line": 47,
+    "len": 293,
+    "hash": "54ed83e2406a0750fda45fdf79054940",
+    "n_assert": 4
+   },
+   {
+    "name": "test_schema_70d_04_hash_deterministic",
+    "line": 56,
+    "len": 496,
+    "hash": "9955373b8ba6b152ed4ce824c756bbd1",
+    "n_assert": 2
+   },
+   {
+    "name": "test_schema_70d_05_runtime_schema_matches_canonical",
+    "line": 70,
+    "len": 278,
+    "hash": "e0f75779290a4482de7ff3da4a3459bf",
+    "n_assert": 2
+   },
+   {
+    "name": "test_schema_70d_06_shadow_schema_matches_canonical",
+    "line": 78,
+    "len": 192,
+    "hash": "21bab30b03d42ddf79720956414fe1a4",
+    "n_assert": 1
+   },
+   {
+    "name": "test_schema_70d_07_governance_accepts_only_canonical",
+    "line": 83,
+    "len": 306,
+    "hash": "026cf34a8623ded086fe0ff1e76fe4bd",
+    "n_assert": 2
+   },
+   {
+    "name": "test_schema_70d_08_legacy_schema_blocked_from_production",
+    "line": 91,
+    "len": 1001,
+    "hash": "0bb4415b98bdf370e5c4aa73856b99d7",
+    "n_assert": 4
+   },
+   {
+    "name": "test_current_70d_01_current_head_verified",
+    "line": 133,
+    "len": 356,
+    "hash": "f0b4cca668c21c8813ae571f3df90302",
+    "n_assert": 1
+   },
+   {
+    "name": "test_current_70d_02_single_canonical_schema",
+    "line": 147,
+    "len": 452,
+    "hash": "3eaa040a3873d195f0542cdfeb479945",
+    "n_assert": 3
+   },
+   {
+    "name": "test_current_70d_03_schema_hash_consistency",
+    "line": 158,
+    "len": 334,
+    "hash": "5f06440f63aa89089530a3a6cf5d6150",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_04_champion_integrity",
+    "line": 166,
+    "len": 800,
+    "hash": "fa2fe8160366e2db8c66d760a485bebc",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_05_candidate_discovery_truth",
+    "line": 188,
+    "len": 803,
+    "hash": "e9a113674eee38f40351ba69ca89a389",
+    "n_assert": 4
+   },
+   {
+    "name": "test_current_70d_06_candidate_model_integrity",
+    "line": 206,
+    "len": 645,
+    "hash": "28bcaadc74b8cbbfbefe702fb167f54b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_07_dataset_truth",
+    "line": 221,
+    "len": 715,
+    "hash": "eb945b49c7e3d84671454ba3434398d5",
+    "n_assert": 3
+   },
+   {
+    "name": "test_current_70d_08_dataset_runtime_parity",
+    "line": 239,
+    "len": 578,
+    "hash": "694175aa724452ac609ec364a3e6c650",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_09_shadow_truth",
+    "line": 253,
+    "len": 388,
+    "hash": "8ccfd6926c7964037bf5484850b1dd78",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_10_bug105_shadow_hook",
+    "line": 265,
+    "len": 605,
+    "hash": "271a8556b40b7b56f0c23026436896a4",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_11_governance_truth",
+    "line": 280,
+    "len": 693,
+    "hash": "5ab62ee0385e36046590a6776cb26a66",
+    "n_assert": 3
+   },
+   {
+    "name": "test_current_70d_12_skip_not_pass",
+    "line": 297,
+    "len": 1084,
+    "hash": "478f2c36fa6e8bd22d47b16cbdc1cf3b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_13_ui_backend_state_parity",
+    "line": 326,
+    "len": 493,
+    "hash": "29cdd3075902c3bf3f7348070ac76ca4",
+    "n_assert": 3
+   },
+   {
+    "name": "test_current_70d_14_news_70d_contract",
+    "line": 338,
+    "len": 403,
+    "hash": "80fe447d2751b4daafa05f3a4fac03df",
+    "n_assert": 3
+   },
+   {
+    "name": "test_current_70d_15_liquidity_70d_contract",
+    "line": 349,
+    "len": 385,
+    "hash": "5b30499a512c2bf0e76af02dc6efc856",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_16_champion_write_protection",
+    "line": 359,
+    "len": 528,
+    "hash": "3a08848c875c3b83422253df1312d222",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_17_head3_weight_integrity_detection",
+    "line": 373,
+    "len": 1084,
+    "hash": "866edb54c6bc1c2fb17897e34647359a",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_18_3class_model_rejected",
+    "line": 399,
+    "len": 1191,
+    "hash": "aee510f601a07f1a568b2145771efbce",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_19_70d_scaler_dimension",
+    "line": 437,
+    "len": 512,
+    "hash": "daba82de0fed8ab0beab10fbadf8cb6e",
+    "n_assert": 2
+   },
+   {
+    "name": "test_current_70d_20_no_automatic_promotion",
+    "line": 450,
+    "len": 550,
+    "hash": "8046c61cb9d936c91504fa1bd21ad4e2",
+    "n_assert": 2
+   }
+  ],
+  "n_tests": 28,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "hashlib",
+   "inspect",
+   "json",
+   "nexus_scalp.application.live_engine",
+   "nexus_scalp.features.liquidity_runtime",
+   "nexus_scalp.features.schema",
+   "nexus_scalp.features.schema_contract",
+   "nexus_scalp.governance.alignment",
+   "nexus_scalp.governance.engine",
+   "nexus_scalp.governance.load_gate",
+   "nexus_scalp.governance.models",
+   "nexus_scalp.governance.transaction",
+   "nexus_scalp.governance.verify",
+   "nexus_scalp.model_generation.schema_v2",
+   "nexus_scalp.model_lifecycle.integrity",
+   "nexus_scalp.release.model_artifacts",
+   "nexus_scalp.shadow.shadow70.models",
+   "nexus_scalp.training.walk_forward_trainer",
+   "numpy",
+   "pathlib",
+   "polars",
+   "pytest",
+   "re",
+   "subprocess",
+   "torch"
+  ]
+ },
+ "test_research_task4_dataset.py": {
+  "tests": [
+   {
+    "name": "test_rs01_canonical_trade_reaches_research_sample",
+    "line": 46,
+    "len": 638,
+    "hash": "bed6f959f2df7e7a1103dc7526b1b590",
+    "n_assert": 8
+   },
+   {
+    "name": "test_rs02_missing_pnl_never_zero",
+    "line": 62,
+    "len": 774,
+    "hash": "c4094bedbcbf9383cb7a2e203c734843",
+    "n_assert": 2
+   },
+   {
+    "name": "test_rs03_missing_r_never_zero",
+    "line": 79,
+    "len": 1103,
+    "hash": "f392f4dd59bc9b89fb50ad216db78f87",
+    "n_assert": 2
+   },
+   {
+    "name": "test_rs04_duplicate_economic_trade_counts_once",
+    "line": 101,
+    "len": 548,
+    "hash": "ab7d1251318434f4367b50a4ba74913c",
+    "n_assert": 1
+   },
+   {
+    "name": "test_rs05_strategy_context_survives",
+    "line": 114,
+    "len": 608,
+    "hash": "943d2bbeb6afa0aa116d40d02de7584d",
+    "n_assert": 5
+   },
+   {
+    "name": "test_rs06_schema_version_survives",
+    "line": 130,
+    "len": 924,
+    "hash": "98e68ad2c74e0026131e1b50f1b226f6",
+    "n_assert": 3
+   },
+   {
+    "name": "test_rs07_50d_reproducible_after_60d",
+    "line": 154,
+    "len": 1010,
+    "hash": "2548d2f2c54aa9faef6b144068eebb17",
+    "n_assert": 3
+   },
+   {
+    "name": "test_rs08_invalid_label_rejected",
+    "line": 176,
+    "len": 824,
+    "hash": "febfb372075d28732fa097760ca8dd32",
+    "n_assert": 1
+   },
+   {
+    "name": "test_rs09_future_outcome_rejected",
+    "line": 200,
+    "len": 941,
+    "hash": "05ba32277d05365b846e7feaf3ff67f5",
+    "n_assert": 3
+   },
+   {
+    "name": "test_rs12_family_grouping_deterministic",
+    "line": 221,
+    "len": 488,
+    "hash": "333dd4831fa29a6520bf615aca08372b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_rs13_family_distribution_reports",
+    "line": 233,
+    "len": 488,
+    "hash": "3ba53a0b431efb3f1f01dd2dd06fe7c7",
+    "n_assert": 5
+   },
+   {
+    "name": "test_rs14_sample_floor_rejection_explicit",
+    "line": 246,
+    "len": 918,
+    "hash": "090f547f945875ae0f3b6b56ac88c215",
+    "n_assert": 5
+   },
+   {
+    "name": "test_rs14b_small_sample_tier_discovery",
+    "line": 263,
+    "len": 668,
+    "hash": "b78c9f89b6c34f8a962c5d48d0db2a5a",
+    "n_assert": 2
+   },
+   {
+    "name": "test_rs26_split_fills_not_double_counted",
+    "line": 279,
+    "len": 1110,
+    "hash": "9a788da60b02a902a35cbbd3a1c54f3f",
+    "n_assert": 2
+   }
+  ],
+  "n_tests": 14,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.experience.ledger",
+   "nexus_scalp.research.dataset",
+   "nexus_scalp.research.discovery",
+   "nexus_scalp.research.models",
+   "pytest",
+   "task4_research_helpers",
+   "tests.unit.task4_research_helpers"
+  ]
+ },
+ "test_research_registry_null_score_bug075.py": {
+  "tests": [
+   {
+    "name": "test_json_writer_absent_score_becomes_empty_object",
+    "line": 27,
+    "len": 357,
+    "hash": "66abb415b3fde3515984fc09831f62ef",
+    "n_assert": 2
+   },
+   {
+    "name": "test_json_writer_never_emits_null_literal",
+    "line": 37,
+    "len": 360,
+    "hash": "830a58d4403eb689d164c65097ce9b6e",
+    "n_assert": 2
+   },
+   {
+    "name": "test_json_writer_preserves_valid_scores",
+    "line": 46,
+    "len": 274,
+    "hash": "15306d5c828f291e88e8f21880835062",
+    "n_assert": 2
+   },
+   {
+    "name": "test_row_safe_normalizes_null_literals",
+    "line": 59,
+    "len": 869,
+    "hash": "5a13704f37a297af08939f15e2d5df4c",
+    "n_assert": 8
+   },
+   {
+    "name": "test_row_safe_keeps_valid_json",
+    "line": 84,
+    "len": 264,
+    "hash": "31d66681dbff2fbca8eba987df55e46f",
+    "n_assert": 3
+   },
+   {
+    "name": "test_registry_from_row_tolerates_null_score",
+    "line": 92,
+    "len": 2021,
+    "hash": "9c302dc69a7449c26708403e8476ebbc",
+    "n_assert": 3
+   },
+   {
+    "name": "test_verify_web_assets_pass_when_hashes_match",
+    "line": 180,
+    "len": 768,
+    "hash": "b151becd5d3dd042bdeebd1b2ea4ff84",
+    "n_assert": 1
+   },
+   {
+    "name": "test_verify_web_assets_fail_on_stale_bundle",
+    "line": 201,
+    "len": 1000,
+    "hash": "d866fd0ac3273d504a9d385d9a715039",
+    "n_assert": 2
+   },
+   {
+    "name": "test_build_script_records_web_hashes",
+    "line": 227,
+    "len": 412,
+    "hash": "30296d65a9e288ddd3f8abe7a068fe95",
+    "n_assert": 3
+   },
+   {
+    "name": "test_repo_web_bundle_is_current",
+    "line": 238,
+    "len": 484,
+    "hash": "3c79c69ba5192ffa096d56c897634752",
+    "n_assert": 4
+   }
+  ],
+  "n_tests": 10,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "hashlib",
+   "json",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.release.verify",
+   "nexus_scalp.research.registry",
+   "nexus_scalp.research.store",
+   "pathlib",
+   "sqlite3"
+  ]
+ },
+ "test_research_task4_validation.py": {
+  "tests": [
+   {
+    "name": "test_rs15_negative_oos_always_rejects",
+    "line": 72,
+    "len": 1136,
+    "hash": "8ae79b1a619369f597da5eb8eaf09169",
+    "n_assert": 4
+   },
+   {
+    "name": "test_rs16_robustness_degradation_measurable",
+    "line": 97,
+    "len": 694,
+    "hash": "38040b692574ef61820217dd458c3215",
+    "n_assert": 4
+   },
+   {
+    "name": "test_rs17_nan_inf_score_rejected",
+    "line": 114,
+    "len": 930,
+    "hash": "2a279f4f8dd3fc92aaae767c24e3dba3",
+    "n_assert": 2
+   },
+   {
+    "name": "test_rs18_candidate_identity_deterministic",
+    "line": 139,
+    "len": 792,
+    "hash": "18583ba010bcd1984eb945dc5ed3d40f",
+    "n_assert": 3
+   },
+   {
+    "name": "test_rs19_definition_change_new_version",
+    "line": 160,
+    "len": 552,
+    "hash": "77ae6c562e25ea964c80217ee937547c",
+    "n_assert": 2
+   },
+   {
+    "name": "test_rs20_registry_immutable",
+    "line": 175,
+    "len": 951,
+    "hash": "2c6a53b1c05b4920195df0f288337ae1",
+    "n_assert": 5
+   },
+   {
+    "name": "test_rs21_audit_exposes_rejection_reasons",
+    "line": 198,
+    "len": 926,
+    "hash": "e0316b1ae377eb307a13d211166cf889",
+    "n_assert": 5
+   },
+   {
+    "name": "test_rs22_worker_real_work_when_new_experience",
+    "line": 218,
+    "len": 547,
+    "hash": "1fb42a9577e2d325fd197d955c99bb53",
+    "n_assert": 2
+   },
+   {
+    "name": "test_rs23_worker_noop_when_dataset_unchanged",
+    "line": 231,
+    "len": 621,
+    "hash": "22e6a6345237fbe2d072faceee9609dc",
+    "n_assert": 2
+   },
+   {
+    "name": "test_rs24_family_select_validation",
+    "line": 246,
+    "len": 670,
+    "hash": "2881f16c189a7a674d37db9cbd15eba2",
+    "n_assert": 4
+   },
+   {
+    "name": "test_no_automatic_active",
+    "line": 261,
+    "len": 553,
+    "hash": "7dc5df5ba918d5123d35da408344bcb4",
+    "n_assert": 2
+   }
+  ],
+  "n_tests": 11,
+  "classes": [],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.experience.ledger",
+   "nexus_scalp.research.backtest",
+   "nexus_scalp.research.candidates",
+   "nexus_scalp.research.dataset",
+   "nexus_scalp.research.discovery",
+   "nexus_scalp.research.models",
+   "nexus_scalp.research.oos",
+   "nexus_scalp.research.pipeline",
+   "nexus_scalp.research.registry",
+   "nexus_scalp.research.robustness",
+   "nexus_scalp.research.scoring",
+   "nexus_scalp.research.walkforward",
+   "nexus_scalp.research.worker",
+   "pytest",
+   "task4_research_helpers",
+   "tests.unit.task4_research_helpers"
+  ]
+ },
+ "test_model_benchmark_phase13b.py": {
+  "tests": [
+   {
+    "name": "test_01_builds_and_outputs_3class",
+    "line": 133,
+    "len": 433,
+    "hash": "c94b234d0b50d48c163057672a2b8afa",
+    "n_assert": 2
+   },
+   {
+    "name": "test_02_invalid_arch_rejected",
+    "line": 145,
+    "len": 347,
+    "hash": "75d1f7c2ab60d7f528f43f5b68677326",
+    "n_assert": 0
+   },
+   {
+    "name": "test_02b_version_explicit",
+    "line": 153,
+    "len": 83,
+    "hash": "c868fd9a7d7b0cf7d819a0d44696e276",
+    "n_assert": 1
+   },
+   {
+    "name": "test_06_deterministic_init",
+    "line": 156,
+    "len": 418,
+    "hash": "92991ca35e50db73f21df56143e8031b",
+    "n_assert": 1
+   },
+   {
+    "name": "test_03_ordering_and_boundary",
+    "line": 172,
+    "len": 593,
+    "hash": "cddf9a057810dc971fa985a9611e3d23",
+    "n_assert": 2
+   },
+   {
+    "name": "test_05_causal_no_future",
+    "line": 186,
+    "len": 805,
+    "hash": "5df1b3fd45ad01f1c64fd2cce621e1fb",
+    "n_assert": 2
+   },
+   {
+    "name": "test_04_boundary_excludes_cross_symbol",
+    "line": 201,
+    "len": 898,
+    "hash": "b04b2b4c9e13e6fbc520f70ce8d14ae3",
+    "n_assert": 1
+   },
+   {
+    "name": "test_07_3class_labels_only",
+    "line": 216,
+    "len": 640,
+    "hash": "fd404db35aa4a04f79947867cfd9db80",
+    "n_assert": 1
+   },
+   {
+    "name": "test_08_nan_rejected",
+    "line": 238,
+    "len": 805,
+    "hash": "84962eb58b340378582fdb2d2400aba3",
+    "n_assert": 2
+   },
+   {
+    "name": "test_10_grad_limit_defined",
+    "line": 259,
+    "len": 71,
+    "hash": "504f7944957711f23cfa4123751a928a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_10b_nonfinite_loss_fails",
+    "line": 262,
+    "len": 675,
+    "hash": "807c3155d125b76d6f1b97ce595dbee0",
+    "n_assert": 1
+   },
+   {
+    "name": "test_11_news_off_input_50",
+    "line": 285,
+    "len": 582,
+    "hash": "d611a405f66eb8df82a65698544f758d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_12_news_on_input_62",
+    "line": 298,
+    "len": 605,
+    "hash": "687ae389c32bba44d0a09c50a9eae4c3",
+    "n_assert": 2
+   },
+   {
+    "name": "test_13_news_causality",
+    "line": 311,
+    "len": 637,
+    "hash": "ea6623b73aa0a0c0220ecbe4aa939797",
+    "n_assert": 1
+   },
+   {
+    "name": "test_14_manifest_provenance",
+    "line": 326,
+    "len": 687,
+    "hash": "ad59a99fe33fc8a5229d874897151fd3",
+    "n_assert": 4
+   },
+   {
+    "name": "test_matrix_same_dataset",
+    "line": 348,
+    "len": 965,
+    "hash": "44076de3284a03d17f97873420f8af8f",
+    "n_assert": 3
+   },
+   {
+    "name": "test_15b_dataset_parity_hash",
+    "line": 370,
+    "len": 321,
+    "hash": "879e7affa89989568f92bfbfeedcac10",
+    "n_assert": 1
+   },
+   {
+    "name": "test_19_class_collapse",
+    "line": 384,
+    "len": 155,
+    "hash": "e12fc8c207ebbd41ed3b862b0af86707",
+    "n_assert": 1
+   },
+   {
+    "name": "test_20_calibration",
+    "line": 388,
+    "len": 240,
+    "hash": "ad7ec2dc0dcf7c408e4cb6b74436e832",
+    "n_assert": 1
+   },
+   {
+    "name": "test_20b_confusion_macro_f1",
+    "line": 396,
+    "len": 271,
+    "hash": "f3d4b9805df32e49b105f0f816c51a1f",
+    "n_assert": 2
+   },
+   {
+    "name": "test_22_regime_metrics_present",
+    "line": 403,
+    "len": 344,
+    "hash": "7ed47ef18302fcc5fe25b564412b3522",
+    "n_assert": 1
+   },
+   {
+    "name": "test_17_oos_rejected",
+    "line": 411,
+    "len": 444,
+    "hash": "c55255f6cc22237ea9b31b9083b75ee1",
+    "n_assert": 1
+   },
+   {
+    "name": "test_24_champion_not_overwritten",
+    "line": 427,
+    "len": 570,
+    "hash": "3645adf5bb9496260c3bc306f6a0dc48",
+    "n_assert": 1
+   },
+   {
+    "name": "test_25_db_free_load",
+    "line": 439,
+    "len": 987,
+    "hash": "61ec6cbf012a95e6fb3eabf67c2f7736",
+    "n_assert": 2
+   },
+   {
+    "name": "test_27_artifact_integrity",
+    "line": 467,
+    "len": 488,
+    "hash": "e175f5e7fca74f7d18077a25a7171932",
+    "n_assert": 1
+   },
+   {
+    "name": "test_28_corrupted_rejected",
+    "line": 478,
+    "len": 742,
+    "hash": "37881df9983ebddd29186c093513b8d0",
+    "n_assert": 1
+   },
+   {
+    "name": "test_29_no_execution_access",
+    "line": 494,
+    "len": 420,
+    "hash": "0bdcf41a85780ffd1c81a5bb82b4b25c",
+    "n_assert": 3
+   },
+   {
+    "name": "test_30_phase_regression_imports",
+    "line": 505,
+    "len": 213,
+    "hash": "7443e427a6dd62bd2d2d111b54eab731",
+    "n_assert": 1
+   }
+  ],
+  "n_tests": 28,
+  "classes": [
+   "TestTCNAttentionArchitecture",
+   "TestSequenceContract",
+   "TestNumericalSafety",
+   "TestNewsAblation",
+   "TestFairBenchmark",
+   "TestValidation",
+   "TestSafetyRuntime"
+  ],
+  "imports": [
+   "__future__",
+   "builtins",
+   "datetime",
+   "inspect",
+   "nexus_scalp.model_generation",
+   "nexus_scalp.model_generation.architectures",
+   "nexus_scalp.model_generation.models",
+   "nexus_scalp.model_generation.sequence_training",
+   "nexus_scalp.model_generation.validation",
+   "nexus_scalp.model_lifecycle",
+   "nexus_scalp.news",
+   "nexus_scalp.shadow",
+   "numpy",
+   "pathlib",
+   "polars",
+   "pytest",
+   "torch"
+  ]
+ },
+ "test_news_keywords_dataset.py": {
+  "tests": [
+   {
+    "name": "test_dataset_is_large_and_deterministic",
+    "line": 41,
+    "len": 314,
+    "hash": "cc4b8a441f2895a62882fd2b5b08e518",
+    "n_assert": 3
+   },
+   {
+    "name": "test_dataset_categories_cover_all_major_groups",
+    "line": 49,
+    "len": 472,
+    "hash": "c9c0cb404f2e21d9227e1e4893605d4d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_keyword_definitions_are_valid",
+    "line": 64,
+    "len": 315,
+    "hash": "7dcd8d15b44d0ac507233404044d2c65",
+    "n_assert": 4
+   },
+   {
+    "name": "test_directional_keywords_include_bullish_and_bearish",
+    "line": 71,
+    "len": 325,
+    "hash": "cb27c7e5be8c9eedb84487042e9018c5",
+    "n_assert": 2
+   },
+   {
+    "name": "test_get_keyword_lookup",
+    "line": 78,
+    "len": 259,
+    "hash": "f5a4f200ab91ba8c941576bab7b77242",
+    "n_assert": 4
+   },
+   {
+    "name": "test_keywords_by_category",
+    "line": 84,
+    "len": 179,
+    "hash": "eeaebdf4850e244b5e8acc9593855a8a",
+    "n_assert": 2
+   },
+   {
+    "name": "test_empty_corpus_returns_safe_summary",
+    "line": 91,
+    "len": 318,
+    "hash": "d1fa2ac74c860ceb5fca14ed7b50ea1e",
+    "n_assert": 5
+   },
+   {
+    "name": "test_coverage_hits_and_share",
+    "line": 99,
+    "len": 677,
+    "hash": "967e59c6ec4da7e1f7b14ec9bd9494c8",
+    "n_assert": 5
+   },
+   {
+    "name": "test_direction_distribution_reflects_bias",
+    "line": 114,
+    "len": 332,
+    "hash": "6cc1983a19a28d947ef2ca359e15a7e8",
+    "n_assert": 2
+   },
+   {
+    "name": "test_top_keywords_are_sorted_by_hits",
+    "line": 120,
+    "len": 329,
+    "hash": "3912029e77e40983f98650a455b814d6",
+    "n_assert": 1
+   },
+   {
+    "name": "test_limit_texts",
+    "line": 127,
+    "len": 202,
+    "hash": "356686190b5bde08adcf286e4dbac030",
+    "n_assert": 1
+   },
+   {
+    "name": "test_article_hits_keywords",
+    "line": 134,
+    "len": 412,
+    "hash": "63272cfe9ccecd2606da1374f9da8cc7",
+    "n_assert": 4
+   },
+   {
+    "name": "test_hits_with_aliases",
+    "line": 143,
+    "len": 342,
+    "hash": "2ca8df82a04c87e68d9df5f8fae732e6",
+    "n_assert": 2
+   },
+   {
+    "name": "test_coverage_accepts_dict_rows",
+    "line": 150,
+    "len": 458,
+    "hash": "946e8cc290ced14bd5f4bc0f94a210e3",
+    "n_assert": 2
+   },
+   {
+    "name": "test_no_hits_on_unrelated_text",
+    "line": 162,
+    "len": 182,
+    "hash": "addcb823b8b84e423539a1f102b3eb2a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_gold_negatives_not_confused",
+    "line": 167,
+    "len": 381,
+    "hash": "b939e7f3bb88e6e362ff1a79780fcb22",
+    "n_assert": 1
+   },
+   {
+    "name": "test_keyword_topics_align_with_local_analyzer",
+    "line": 176,
+    "len": 507,
+    "hash": "10915f15c2ef4d20f9d4a97763472848",
+    "n_assert": 2
+   },
+   {
+    "name": "test_cached_matches_inline_semantics_every_keyword",
+    "line": 198,
+    "len": 1951,
+    "hash": "732aebf2f35dfc5afb0c468293e2c71d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_cache_is_bounded_and_reused",
+    "line": 239,
+    "len": 995,
+    "hash": "b420f8a7369c97eca65a164a101d47a6",
+    "n_assert": 3
+   },
+   {
+    "name": "test_cache_rebuilds_on_fingerprint_change",
+    "line": 257,
+    "len": 968,
+    "hash": "f707f77dd18b183d17c6dbac5207f5c0",
+    "n_assert": 4
+   },
+   {
+    "name": "test_coverage_output_identical_old_vs_new",
+    "line": 274,
+    "len": 1796,
+    "hash": "9d25e5057095b3401393266372d2eb03",
+    "n_assert": 3
+   },
+   {
+    "name": "test_regex_compilation_count_is_bounded",
+    "line": 308,
+    "len": 839,
+    "hash": "43df4ed52704c257bc90ac13b18cde52",
+    "n_assert": 2
+   },
+   {
+    "name": "test_statistical_speedup_bound",
+    "line": 324,
+    "len": 2103,
+    "hash": "bed8744cee2605c8b585884ee6937794",
+    "n_assert": 2
+   }
+  ],
+  "n_tests": 23,
+  "classes": [
+   "TestKeywordDataset",
+   "TestKeywordCoverage",
+   "TestKeywordHitsPerArticle",
+   "TestLocalAnalysisIntegration",
+   "TestKeywordPatternCache"
+  ],
+  "imports": [
+   "__future__",
+   "datetime",
+   "nexus_scalp.news.analysis",
+   "nexus_scalp.news.analysis.keywords",
+   "nexus_scalp.news.models",
+   "time"
+  ]
+ },
+ "test_scalp_features.py": {
+  "tests": [
+   {
+    "name": "test_scalp_feature_engine_cold_start",
+    "line": 13,
+    "len": 483,
+    "hash": "bcd6fafd4265ed570568498aec387a5a",
+    "n_assert": 3
+   },
+   {
+    "name": "test_dynamic_z_score_calculation",
+    "line": 26,
+    "len": 1336,
+    "hash": "da7847f2d6557064cf267eea3ee14de2",
+    "n_assert": 3
+   }
+  ],
+  "n_tests": 2,
+  "classes": [],
+  "imports": [
+   "datetime",
+   "nexus_scalp.domain.models",
+   "nexus_scalp.features.scalp_features",
+   "nexus_scalp.market_data.bar_aggregator",
+   "numpy"
+  ]
+ },
+ "test_intelligence_phase09.py": {
+  "tests": [
+   {
+    "name": "test_observes_full_timeline",
+    "line": 242,
+    "len": 3304,
+    "hash": "dd1ffd60b96fe0655cc100d817010362",
+    "n_assert": 8
+   },
+   {
+    "name": "test_timeline_is_immutable_and_dedup",
+    "line": 336,
+    "len": 1096,
+    "hash": "6fca409451c1fed0059901b1bb305060",
+    "n_assert": 1
+   },
+   {
+    "name": "test_mfe_mae_normalization",
+    "line": 362,
+    "len": 1811,
+    "hash": "fd117153b5c0e062a2da5c4d557ad1ba",
+    "n_assert": 2
+   },
+   {
+    "name": "test_profit_giveback_detection",
+    "line": 408,
+    "len": 1942,
+    "hash": "f184d18e51108bdf251d888a58c79da5",
+    "n_assert": 1
+   },
+   {
+    "name": "test_quality_decomposition",
+    "line": 471,
+    "len": 1004,
+    "hash": "a2d637b0c00da6ad6a54e2ff410f9c4c",
+    "n_assert": 3
+   },
+   {
+    "name": "test_bad_management_not_bad_strategy",
+    "line": 500,
+    "len": 1584,
+    "hash": "dcf29367499c191aa1a1378137e654f4",
+    "n_assert": 3
+   },
+   {
+    "name": "test_giveback_flag_reaches_autopsy",
+    "line": 540,
+    "len": 922,
+    "hash": "f6c961fac5f662814bc960b2059f011a",
+    "n_assert": 1
+   },
+   {
+    "name": "test_strategy_degrades",
+    "line": 569,
+    "len": 585,
+    "hash": "6b57a0c73dcd18da80300b1d332a9bd2",
+    "n_assert": 3
+   },
+   {
+    "name": "test_strategy_recovers",
+    "line": 579,
+    "len": 627,
+    "hash": "7e988729bf9cb96c9ad576492d3989ce",
+    "n_assert": 2
+   },
+   {
+    "name": "test_insufficient_evidence_passes_through",
+    "line": 596,
+    "len": 732,
+    "hash": "fdc61d041f2a19e3b9fd40ab8d3583ae",
+    "n_assert": 2
+   },
+   {
+    "name": "test_retired_strategy_blocks_before_dispatch",
+    "line": 614,
+    "len": 1245,
+    "hash": "58132cb0464c07d82b69043e4c900069",
+    "n_assert": 3
+   },
+   {
+    "name": "test_warn_tier_on_elevated_drawdown",
+    "line": 639,
+    "len": 1573,
+    "hash": "a4d855c4a5de4aa81b69c58c77be274f",
+    "n_assert": 2
+   },
+   {
+    "name": "test_old_schema_records_stay_valid",
+    "line": 685,
+    "len": 640,
+    "hash": "0b386860c16f8f4b743576525cb99535",
+    "n_assert": 4
+   },
+   {
+    "name": "test_rebuild_derived_from_immutable_ledger",
+    "line": 706,
+    "len": 493,
+    "hash": "3ddde17b3567b0a27217e46844011424",
+    "n_assert": 3
+   },
+   {
+    "name": "test_worker_failure_is_isolated",
+    "line": 722,
+    "len": 993,
+    "hash": "01c12e59972cefe8dc94ade4e46db30f",
+    "n_assert": 2
+   },
+   {
+    "name": "test_worker_checkpoint_persists_across_restart",
+    "line": 749,
+    "len": 2230,
+    "hash": "dfc86fbdf733af021264cc8bb8ac26c8",
+    "n_assert": 3
+   },
+   {
+    "name": "test_intelligence_holds_no_execution_capability",
+    "line": 814,
+    "len": 780,
+    "hash": "a1b100626ea16fb05e91f163b8f3b7f7",
+    "n_assert": 1
+   },
+   {
+    "name": "test_gate_rejection_before_order_dispatch",
+    "line": 836,
+    "len": 1117,
+    "hash": "e08648115c038d18cb47a5f05c878df8",
+    "n_assert": 3
+   },
+   {
+    "name": "test_lifecycle_works_without_mt5",
+    "line": 869,
+    "len": 1160,
+    "hash": "5a9111c806d1223e3954ae4dd37adce5",
+    "n_assert": 1
+   }
+  ],
+  "n_tests": 19,
+  "classes": [
+   "TestPositionLifecycle",
+   "TestAutopsyAndCausality",
+   "TestStrategyLifecycle",
+   "TestGate",
+   "TestFeatureSchemaMigration",
+   "TestSelfHealing",
+   "TestWorkerIsolation",
+   "TestSafetyContract",
+   "TestNoMT5",
+   "Boom"
+  ],
+  "imports": [
+   "datetime",
+   "gc",
+   "inspect",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.domain.enums",
+   "nexus_scalp.domain.models",
+   "nexus_scalp.experience.evaluator",
+   "nexus_scalp.experience.intelligence",
+   "nexus_scalp.experience.ledger",
+   "nexus_scalp.experience.models",
+   "nexus_scalp.experience.provenance",
+   "nexus_scalp.experience.quality",
+   "nexus_scalp.experience.retriever",
+   "nexus_scalp.features.scalp_features",
+   "nexus_scalp.intelligence",
+   "nexus_scalp.intelligence.gate",
+   "nexus_scalp.intelligence.models",
+   "nexus_scalp.intelligence.store",
+   "pytest",
+   "sqlite3",
+   "time"
+  ]
+ },
+ "test_htf_warmup_gate.py": {
+  "tests": [
+   {
+    "name": "test_1_insufficient_h1_history_results_in_not_ready",
+    "line": 126,
+    "len": 430,
+    "hash": "abbf98a950a37f70704ed8f297a7877d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_2_insufficient_h4_history_results_in_not_ready",
+    "line": 141,
+    "len": 430,
+    "hash": "e173815da962b776ebb82c5311e5014b",
+    "n_assert": 2
+   },
+   {
+    "name": "test_3_both_timeframes_sufficient_results_in_ready",
+    "line": 156,
+    "len": 420,
+    "hash": "f7f921162ea9f0edab5193882e2f31dd",
+    "n_assert": 2
+   },
+   {
+    "name": "test_4_normal_inference_blocked_while_warmup_incomplete",
+    "line": 170,
+    "len": 790,
+    "hash": "d8920cd75cfb4162cb4d0ae30f2f43ee",
+    "n_assert": 4
+   },
+   {
+    "name": "test_5_htf_fallback_caused_by_insufficient_history_is_detectable",
+    "line": 195,
+    "len": 513,
+    "hash": "02945c70ca9a1b626c987b07616e0928",
+    "n_assert": 2
+   },
+   {
+    "name": "test_6_valid_htf_features_do_not_incorrectly_report_fallback",
+    "line": 212,
+    "len": 624,
+    "hash": "037b78aa5c404aae4be64759b1451641",
+    "n_assert": 2
+   },
+   {
+    "name": "test_7_nan_inf_invalid_feature_fallback_remains_detectable",
+    "line": 230,
+    "len": 598,
+    "hash": "0c4cbbfcd0dbe2ed8794118c66d834ee",
+    "n_assert": 4
+   },
+   {
+    "name": "test_8_warmup_transitions_correctly_warming_up_to_ready",
+    "line": 250,
+    "len": 519,
+    "hash": "9270a7903ba06f715a894f23d15f520f",
+    "n_assert": 4
+   },
+   {
+    "name": "test_9_warmup_failure_remains_fail_safe",
+    "line": 268,
+    "len": 661,
+    "hash": "a492df8a970f8423cbae04623e8d54ec",
+    "n_assert": 3
+   },
+   {
+    "name": "test_10_process_tick_pipeline_does_not_perform_blocking_historical_bootstrap",
+    "line": 289,
+    "len": 810,
+    "hash": "20d942dbc95455b00d5670ed3ec2c11e",
+    "n_assert": 1
+   },
+   {
+    "name": "test_11_warmup_state_transitions_emit_expected_log_events",
+    "line": 314,
+    "len": 655,
+    "hash": "879900851708c794df38504514b6f88a",
+    "n_assert": 3
+   }
+  ],
+  "n_tests": 11,
+  "classes": [
+   "FakeMT5Adapter"
+  ],
+  "imports": [
+   "datetime",
+   "math",
+   "nexus_scalp.application.live_engine",
+   "nexus_scalp.configuration.config",
+   "nexus_scalp.domain.enums",
+   "nexus_scalp.domain.models",
+   "nexus_scalp.market_data.bar_aggregator",
+   "pytest",
+   "unittest.mock"
+  ]
+ },
+ "test_domain_models.py": {
+  "tests": [
+   {
+    "name": "test_tick_data_valid_instantiation",
+    "line": 16,
+    "len": 386,
+    "hash": "c975aac3b36e8538c9ac4bbba2daa12d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_tick_data_invalid_spread_raises_validation_error",
+    "line": 31,
+    "len": 411,
+    "hash": "01269d123e5ac6d64c273c18d377b471",
+    "n_assert": 0
+   },
+   {
+    "name": "test_trade_proposal_buy_invariants",
+    "line": 45,
+    "len": 542,
+    "hash": "103c825d0f636b03cbb447bd4d350dba",
+    "n_assert": 0
+   }
+  ],
+  "n_tests": 3,
+  "classes": [],
+  "imports": [
+   "datetime",
+   "nexus_scalp.domain.enums",
+   "nexus_scalp.domain.models",
+   "pydantic",
+   "pytest"
+  ]
+ },
+ "test_experience_intelligence.py": {
+  "tests": [
+   {
+    "name": "test_01_win_experience_persisted_and_retrievable_with_outcome",
+    "line": 239,
+    "len": 818,
+    "hash": "186802e420709b0d0a937ef6e0db2764",
+    "n_assert": 6
+   },
+   {
+    "name": "test_02_loss_experience_persisted_with_negative_outcome",
+    "line": 257,
+    "len": 778,
+    "hash": "5e5263bd8ddc785870636fff1748bede",
+    "n_assert": 3
+   },
+   {
+    "name": "test_03_unexecuted_proposal_persisted_but_excluded_from_scoring",
+    "line": 279,
+    "len": 624,
+    "hash": "74fe4d8f01d170b1d16ad67a3d40d37a",
+    "n_assert": 4
+   },
+   {
+    "name": "test_04_duplicate_decision_and_outcome_are_deduplicated",
+    "line": 294,
+    "len": 732,
+    "hash": "4cec76ad4ac3cb925cf00f08fb48f685",
+    "n_assert": 2
+   },
+   {
+    "name": "test_05_decision_row_is_immutable_in_memory_and_on_disk",
+    "line": 310,
+    "len": 1183,
+    "hash": "286c0cba8896acb1f950b47d52f3cb29",
+    "n_assert": 1
+   },
+   {
+    "name": "test_06_provenance_and_feature_schema_preserved",
+    "line": 346,
+    "len": 980,
+    "hash": "95d074f079df0d7e10a4af23e91180c7",
+    "n_assert": 5
+   },
+   {
+    "name": "test_07_outcome_preceding_decision_is_rejected",
+    "line": 368,
+    "len": 1163,
+    "hash": "387dabb15129169d64a82fcbfd5cf6d2",
+    "n_assert": 1
+   },
+   {
+    "name": "test_08_strategy_discovery_groups_similar_contexts",
+    "line": 405,
+    "len": 882,
+    "hash": "5687299468c8eebf6b796438278c2482",
+    "n_assert": 3
+   },
+   {
+    "name": "test_09_scoring_is_risk_and_distribution_aware",
+    "line": 427,
+    "len": 854,
+    "hash": "81c942fa971c249b398f8f506d199724",
+    "n_assert": 9
+   },
+   {
+    "name": "test_10_contextual_scoring_separates_regimes",
+    "line": 450,
+    "len": 1082,
+    "hash": "b3529e5e3b54bc51aa76a19896bc233d",
+    "n_assert": 4
+   },
+   {
+    "name": "test_11_minimum_sample_protection_blocks_premature_promotion",
+    "line": 475,
+    "len": 546,
+    "hash": "b168a3ed53514ef690aeec5a6d9d1d35",
+    "n_assert": 3
+   },
+   {
+    "name": "test_12_confidence_is_bounded_and_grows_with_evidence",
+    "line": 487,
+    "len": 847,
+    "hash": "9ac69cebda8fb3cf5c4966a54214d43b",
+    "n_assert": 4
+   },
+   {
+    "name": "test_13_single_loss_cannot_retire_a_healthy_strategy",
+    "line": 505,
+    "len": 516,
+    "hash": "30b599d987ad00b1542294dbc2fa4492",
+    "n_assert": 2
+   },
+   {
+    "name": "test_14_recent_degradation_downgrades_a_previously_good_strategy",
+    "line": 516,
+    "len": 620,
+    "hash": "a17cd170f1c1d0f5af112528052704d8",
+    "n_assert": 3
+   },
+   {
+    "name": "test_15_retirement_then_gated_recovery",
+    "line": 530,
+    "len": 1439,
+    "hash": "7e57953e61352568554e35291ecd1b17",
+    "n_assert": 4
+   },
+   {
+    "name": "test_16_experience_changes_the_decision",
+    "line": 574,
+    "len": 1018,
+    "hash": "ea732db9b5a2c56129b39368f3b1de5f",
+    "n_assert": 6
+   },
+   {
+    "name": "test_17_degraded_strategy_is_penalized_not_rejected",
+    "line": 601,
+    "len": 957,
+    "hash": "050b4f016e1bd0ba5fc4e30c7cb760aa",
+    "n_assert": 5
+   },
+   {
+    "name": "test_18_retired_strategy_rejection_happens_before_order_placement",
+    "line": 628,
+    "len": 1487,
+    "hash": "df14fc5c8346b04be096ef48e795d1b0",
+    "n_assert": 7
+   },
+   {
+    "name": "test_19_insufficient_evidence_never_fabricates_confidence",
+    "line": 671,
+    "len": 528,
+    "hash": "ca284f5cf46599dd6c87b0964b121cab",
+    "n_assert": 5
+   },
+   {
+    "name": "test_20_position_management_actions_are_never_gated",
+    "line": 683,
+    "len": 1095,
+    "hash": "3952cccdff9a326054e23e4830bb947d",
+    "n_assert": 3
+   },
+   {
+    "name": "test_21_outcome_is_attributed_to_the_originating_strategy",
+    "line": 722,
+    "len": 1162,
+    "hash": "6e45c36a62a2e3ebace24ac5256c2a5d",
+    "n_assert": 4
+   },
+   {
+    "name": "test_22_mae_mfe_are_risk_normalised",
+    "line": 757,
+    "len": 495,
+    "hash": "3abc8ef6bb50767ccff94de90e4c4f99",
+    "n_assert": 2
+   },
+   {
+    "name": "test_23_entry_quality_detects_chase_and_slippage",
+    "line": 773,
+    "len": 1107,
+    "hash": "75953e7f3cda4f608a8d8bf5607bf941",
+    "n_assert": 5
+   },
+   {
+    "name": "test_24_hold_behaviour_flags_ignored_invalidation_and_excessive_hold",
+    "line": 800,
+    "len": 1508,
+    "hash": "1393661e2febf362d978ee84f321413f",
+    "n_assert": 6
+   },
+   {
+    "name": "test_25_strategy_success_and_management_failure_are_separated",
+    "line": 836,
+    "len": 956,
+    "hash": "c6ea871e3abc186bfb4952adf1d91be5",
+    "n_assert": 4
+   },
+   {
+    "name": "test_26_lucky_win_is_not_scored_as_a_good_strategy",
+    "line": 866,
+    "len": 1274,
+    "hash": "a468a653ee7734309b827195db7b0102",
+    "n_assert": 4
+   },
+   {
+    "name": "test_27_derived_intelligence_rebuilds_from_immutable_ledger",
+    "line": 909,
+    "len": 1481,
+    "hash": "149cfc859c77d4dd2d6954244b3f1989",
+    "n_assert": 8
+   },
+   {
+    "name": "test_28_corrupt_registry_payload_is_survivable",
+    "line": 946,
+    "len": 1103,
+    "hash": "f8644107be7741ba9982c0e1d8e55d3c",
+    "n_assert": 3
+   },
+   {
+    "name": "test_29_replay_is_deterministic",
+    "line": 977,
+    "len": 735,
+    "hash": "f5f8e4aebbb2ddbe77779fe8e8339b61",
+    "n_assert": 5
+   },
+   {
+    "name": "test_30_self_heal_never_deletes_raw_experience",
+    "line": 997,
+    "len": 1234,
+    "hash": "98ab941bbd4146f674e836ae2989fc11",
+    "n_assert": 3
+   },
+   {
+    "name": "test_31_model_deletion_and_replacement_preserve_memory",
+    "line": 1039,
+    "len": 1727,
+    "hash": "59b7af50671b1c254e4d3d58d5fbd80a",
+    "n_assert": 7
+   },
+   {
+    "name": "test_32_model_provenance_history_is_queryable_without_artifacts",
+    "line": 1081,
+    "len": 714,
+    "hash": "d68c9fa006072c5179af7975ad3d7678",
+    "n_assert": 3
+   },
+   {
+    "name": "test_33_future_feature_dimensions_are_backward_compatible",
+    "line": 1098,
+    "len": 2202,
+    "hash": "8eef43bbd526446b579418b6723498c3",
+    "n_assert": 9
+   },
+   {
+    "name": "test_34_persistence_failure_is_isolated",
+    "line": 1159,
+    "len": 722,
+    "hash": "56422bd14712420664f3dc95f2449b10",
+    "n_assert": 3
+   },
+   {
+    "name": "test_35_retrieval_failure_is_isolated",
+    "line": 1178,
+    "len": 784,
+    "hash": "d636a9ae8e18cb8806807d2280081b44",
+    "n_assert": 6
+   },
+   {
+    "name": "test_36_evaluator_failure_is_isolated",
+    "line": 1198,
+    "len": 732,
+    "hash": "9e889ada90207de52090db2ed1842656",
+    "n_assert": 3
+   },
+   {
+    "name": "test_37_self_heal_failure_is_isolated",
+    "line": 1218,
+    "len": 495,
+    "hash": "2e2ba731c76edbc21f254979e127deb2",
+    "n_assert": 1
+   },
+   {
+    "name": "test_38_outcome_recording_failure_does_not_break_order_manager",
+    "line": 1234,
+    "len": 1219,
+    "hash": "c2f387a908a87e3be216886a247edfbd",
+    "n_assert": 1
+   },
+   {
+    "name": "test_39_retrieval_is_bounded",
+    "line": 1282,
+    "len": 799,
+    "hash": "f5b3d5f554eed8c94dd59470eca21ec4",
+    "n_assert": 3
+   },
+   {
+    "name": "test_40_large_experience_set_is_handled",
+    "line": 1302,
+    "len": 662,
+    "hash": "fc5fd097e74e94c247c3e58325e73d16",
+    "n_assert": 4
+   },
+   {
+    "name": "test_41_existing_signal_pipeline_unchanged",
+    "line": 1321,
+    "len": 224,
+    "hash": "a085eef4d7f8d9f280e57c30f7f799a6",
+    "n_assert": 1
+   },
+   {
+    "name": "test_42_existing_risk_engine_unchanged",
+    "line": 1328,
+    "len": 492,
+    "hash": "b864f9fe77f3eb2b2bd1e76f647313ac",
+    "n_assert": 3
+   },
+   {
+    "name": "test_43_existing_order_manager_contract_unchanged",
+    "line": 1340,
+    "len": 625,
+    "hash": "173591f5e63230654d027516e444726b",
+    "n_assert": 4
+   },
+   {
+    "name": "test_44_learning_layer_has_no_execution_capability",
+    "line": 1358,
+    "len": 1218,
+    "hash": "c02896c7cf381fa6d5caf5038c04dc52",
+    "n_assert": 3
+   },
+   {
+    "name": "test_45_canonical_50d_contract_preserved",
+    "line": 1392,
+    "len": 841,
+    "hash": "fda4ac00b94995210eae5567209e62c4",
+    "n_assert": 8
+   },
+   {
+    "name": "test_46_strategy_score_eligibility_projection",
+    "line": 1412,
+    "len": 398,
+    "hash": "31f2c0b458cd9e80fb2f352fb591e13e",
+    "n_assert": 1
+   },
+   {
+    "name": "test_47_correction_events_are_additive",
+    "line": 1420,
+    "len": 1050,
+    "hash": "5271c8a8c6f95073165df983c7db1f97",
+    "n_assert": 4
+   },
+   {
+    "name": "test_48_orphan_outcome_is_refused",
+    "line": 1452,
+    "len": 643,
+    "hash": "166cf260ee9f2419359935fb8be72e7f",
+    "n_assert": 2
+   },
+   {
+    "name": "test_49_gate_observability_counters",
+    "line": 1472,
+    "len": 1026,
+    "hash": "bab69e1197a2087c4bef8e143347bf93",
+    "n_assert": 6
+   },
+   {
+    "name": "test_50_score_cache_avoids_repeated_database_work",
+    "line": 1500,
+    "len": 1209,
+    "hash": "947dd9b8a11245b547b143064b2086a4",
+    "n_assert": 2
+   },
+   {
+    "name": "test_51_validated_high_expectancy_strategy_reinforces_confidence",
+    "line": 1537,
+    "len": 1461,
+    "hash": "1c44b927eb55a3159d2bde70c877bf7b",
+    "n_assert": 10
+   },
+   {
+    "name": "test_52_marginal_positive_strategy_is_allowed_without_boost",
+    "line": 1577,
+    "len": 942,
+    "hash": "fff01771f8879aaa1d02aa5e470ce7a3",
+    "n_assert": 3
+   },
+   {
+    "name": "test_53_weak_setup_and_risk_deviation_are_measured_against_policy",
+    "line": 1605,
+    "len": 1572,
+    "hash": "88a1b5aa5a7eab0fa84e27e7e40f2bac",
+    "n_assert": 5
+   },
+   {
+    "name": "test_54_overtrading_is_counted_from_the_ledger",
+    "line": 1646,
+    "len": 1297,
+    "hash": "d92a1fad793e9004e1106e60f559a37d",
+    "n_assert": 2
+   }
+  ],
+  "n_tests": 54,
+  "classes": [
+   "BrokenQueue",
+   "ExplodingRetriever",
+   "ExplodingEvaluator",
+   "ExplodingLedger",
+   "ExplodingEngine"
+  ],
+  "imports": [
+   "datetime",
+   "nexus_scalp.adapters.database.audit_repository",
+   "nexus_scalp.configuration.config",
+   "nexus_scalp.domain.enums",
+   "nexus_scalp.domain.models",
+   "nexus_scalp.execution.order_manager",
+   "nexus_scalp.experience.evaluator",
+   "nexus_scalp.experience.intelligence",
+   "nexus_scalp.experience.ledger",
+   "nexus_scalp.experience.models",
+   "nexus_scalp.experience.provenance",
+   "nexus_scalp.experience.quality",
+   "nexus_scalp.experience.retriever",
+   "nexus_scalp.features.scalp_features",
+   "nexus_scalp.risk.risk_engine",
+   "nexus_scalp.signals.policy",
+   "pydantic",
+   "pytest",
+   "sqlite3",
+   "unittest.mock"
+  ]
+ },
+ "test_policy.py": {
+  "tests": [
+   {
+    "name": "test_same_level_reentry_blocked_cleared_when_no_live_orders",
+    "line": 98,
+    "len": 3154,
+    "hash": "9b0bd9174732c4c078bb9d27b893b4e1",
+    "n_assert": 2
+   },
+   {
+    "name": "test_same_level_reentry_blocked_triggers_with_live_order",
+    "line": 193,
+    "len": 3124,
+    "hash": "1d9cd7ad9fe95e954e2868c4f8863e9d",
+    "n_assert": 2
+   },
+   {
+    "name": "test_sr_support_margin_relaxation_strong_bearish",
+    "line": 292,
+    "len": 2748,
+    "hash": "de938111728c591db47a8e165a729722",
+    "n_assert": 2
+   },
+   {
+    "name": "test_tick_sweep_requires_model_confidence",
+    "line": 377,
+    "len": 1518,
+    "hash": "203198dd5fe1a33878229d2f3d4af98a",
+    "n_assert": 2
+   },
+   {
+    "name": "test_candidate_confidence_is_raw_probability_not_floor",
+    "line": 416,
+    "len": 895,
+    "hash": "78764ea743774c58ec1aa57bd914fe4c",
+    "n_assert": 1
+   }
+  ],
+  "n_tests": 5,
+  "classes": [
+   "MockOrderManager"
+  ],
+  "imports": [
+   "copy",
+   "datetime",
+   "nexus_scalp.configuration.config",
+   "nexus_scalp.domain.enums",
+   "nexus_scalp.domain.models",
+   "nexus_scalp.features.scalp_features",
+   "nexus_scalp.signals.policy",
+   "pytest",
+   "torch"
+  ]
+ }
+}

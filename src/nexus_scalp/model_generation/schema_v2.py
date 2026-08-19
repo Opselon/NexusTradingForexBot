@@ -707,9 +707,7 @@ def build_70d_dataset(
                     "between canonical and incremental builders — refusing "
                     "the incremental dataset build"
                 )
-            logger.info(
-                "[SCHEMA_70D] event=PARITY_SELF_CHECK diffs=0 rows=%d", canon.height
-            )
+            logger.info("[SCHEMA_70D] event=PARITY_SELF_CHECK diffs=0 rows=%d", canon.height)
     if feat_frame.is_empty():
         raise ValueError("70D feature frame empty — check raw bars / min_bars")
     factory = DatasetFactory(
@@ -793,9 +791,7 @@ def verify_70d_artifact(
         if ts_min is not None and ts_max is not None:
             checks["timestamp_min"] = str(ts_min)
             checks["timestamp_max"] = str(ts_max)
-            checks["timestamp_sane"] = bool(
-                ts_min.year >= 2000 and ts_min < ts_max
-            )
+            checks["timestamp_sane"] = bool(ts_min.year >= 2000 and ts_min < ts_max)
     if "sample_id" in frame.columns:
         dup_sid = int(frame.select(pl.col("sample_id").is_duplicated()).sum().item())
         checks["duplicate_sample_ids"] = dup_sid

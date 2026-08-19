@@ -257,7 +257,10 @@ class HealthEngine:
             if cur == 0:
                 return "DEGRADED", f"database schema unversioned (expected {exp})"
             if cur < exp:
-                return "DEGRADED", f"database schema {cur} behind expected {exp} ({exp - cur} pending)"
+                return (
+                    "DEGRADED",
+                    f"database schema {cur} behind expected {exp} ({exp - cur} pending)",
+                )
             if cur > exp:
                 return "BLOCKED", f"database schema {cur} newer than app supports ({exp})"
             return "READY", f"database schema {cur} current"

@@ -137,7 +137,9 @@ def test_no_db_drift_consistent(web_dir: Path) -> None:
     assert block["version_status"] == ver.STATUS_CONSISTENT
 
 
-def test_0_0_0_version_reported_inconsistent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_0_0_0_version_reported_inconsistent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """An unstamped build must never claim consistency (brief §15)."""
     info = {"version": "0.0.0", "channel": "dev"}
     (tmp_path / "build-info.json").write_text(json.dumps(info), encoding="utf-8")

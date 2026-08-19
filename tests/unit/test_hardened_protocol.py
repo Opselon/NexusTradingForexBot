@@ -39,13 +39,21 @@ from nexus_scalp.training.walk_forward_trainer import ScalpDataset, WalkForwardT
 # =============================================================================
 
 
-def test_model_rollback_on_health_check_failure():
+def test_model_rollback_on_health_check_failure(tmp_path):
     """
     Verifies that when verify_health=True is passed, WalkForwardTrainer's
     fine_tune_online rejects a collapsed/degraded model and successfully rolls back.
+
+    Uses a tmp_path artifact directory so the run can never collide with a
+    repo-local scaler artifact from another schema (e.g. a leftover 70D
+    model.scaler.npz at the default candidate path).
     """
     trainer = WalkForwardTrainer(
-        num_folds=3, epochs_per_fold=1, min_rows_per_train_split=10, min_rows_per_test_split=5
+        num_folds=3,
+        epochs_per_fold=1,
+        min_rows_per_train_split=10,
+        min_rows_per_test_split=5,
+        artifact_save_path=tmp_path / "wf_rollback" / "model.pt",
     )
 
     # Pre-trained base weights representation

@@ -46,6 +46,7 @@ class TestAccountInfoMapping:
         assert snap.trade_mode == 0
         assert snap.trade_allowed is True
         assert snap.floating_pnl is not None  # equity - balance, MT5 definition
+
     def test_account_floating_pnl_definition(self) -> None:
         raw_fields = fixture_object("account_info")
         snap = build_account_snapshot(_Raw(raw_fields))

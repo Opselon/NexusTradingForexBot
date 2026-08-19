@@ -77,6 +77,7 @@ class TestUtcNormalization:
         assert out is not None
         assert out.tzinfo is not None
         assert out.utcoffset() == timedelta(0)
+
     def test_float_epoch(self) -> None:
         out = normalize_utc(1784417429.0)
         assert out is not None
@@ -146,6 +147,7 @@ class TestAccountSnapshotMapping:
         assert snap.server == "MetaQuotes-Demo"
         assert snap.floating_pnl == 123.45
         assert snap.margin_level_source == BROKER_NATIVE
+
     def test_missing_optional_fields_are_none_not_fake(self) -> None:
         snap = build_account_snapshot(_raw_account(server=None, company=None, credit=None))
         assert snap.server is None
@@ -262,6 +264,8 @@ class TestPositionDealMapping:
         assert snap.profit == 250.0
         assert snap.swap == -1.2
         assert snap.commission == -7.0
+
+
 class TestBarValidation:
     def _bar(self, time: int, o: float, h: float, l: float, c: float, v: int = 10):
         return build_rate_bar_snapshot(

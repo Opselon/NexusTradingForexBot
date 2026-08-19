@@ -60,9 +60,9 @@ def test_db_plan_dry_run(db_dir: Path) -> None:
     import sqlite3
 
     con = sqlite3.connect(db_dir / "artifacts" / "audit.db")
-    assert con.execute(
-        "SELECT value FROM schema_meta WHERE key='schema_version'"
-    ).fetchone()[0] == "1"
+    assert (
+        con.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0] == "1"
+    )
     con.close()
 
 

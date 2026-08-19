@@ -13,6 +13,7 @@ import json
 import sqlite3
 import tempfile
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -279,13 +280,17 @@ class TestPost70d09News200Wrong:
     def test_http_200_with_articles_healthy(self):
         from nexus_scalp.forensics.news_sources import classify_source
 
+        # Fresh success (10 minutes ago) — must classify HEALTHY. Never a
+        # hardcoded wall-clock date: that ages out of the 24h stale window
+        # and flips the assertion a day after it is written.
+        fresh = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
         c = classify_source(
             source_id="boe",
             enabled=True,
             healthy_flag=1,
             consecutive_failures=0,
             last_status=200,
-            last_success_at="2026-08-18T04:39:57+00:00",
+            last_success_at=fresh,
             article_count=704,
         )
         assert c["classification"] == "HEALTHY"

@@ -17,6 +17,7 @@ from tests.helpers.liquidity_fixtures import steady_bars
 #: Hot-path budget: the live tick pipeline must stay well under 100ms.
 HOT_PATH_BUDGET_MS = 100.0
 
+
 def _bars(n: int = 120) -> list[BarData]:
     return steady_bars(n, price=3300.0, step=0.1, t0=datetime(2026, 8, 1, 0, 0, tzinfo=UTC))
 

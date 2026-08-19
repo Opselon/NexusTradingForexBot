@@ -1,0 +1,1394 @@
+{
+ "file_summary": {
+  "tests/unit/test_database_migrations_phase18.py": {
+   "protects": [
+    "src/nexus_scalp/database/engine.py (DatabaseMigrationEngine)",
+    "src/nexus_scalp/database/gate.py (run_startup_migration_gate)",
+    "src/nexus_scalp/database/models.py (DatabaseDomain)",
+    "src/nexus_scalp/database/manifest.py, registry.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_migration_idempotent",
+     "test_modified_historical_migration_detected",
+     "test_wal_database_migration_safe",
+     "test_rollback_preserves_historical_data",
+     "test_downgrade_blocked",
+     "test_unexpected_schema_drift_detected",
+     "test_missing_index_detected",
+     "test_repeated_startup_noop_when_current",
+     "test_migration_failure_is_visible",
+     "test_failed_transactional_migration_rolls_back",
+     "test_non_transactional_migration_has_recovery",
+     "test_startup_gate_applies_and_reports",
+     "test_api_status_shape"
+    ],
+    "Tier2": [
+     "test_fresh_db_reaches_current_schema",
+     "test_legacy_baseline_detected",
+     "test_old_schema_upgrades_automatically",
+     "test_multiple_migrations_chain",
+     "test_index_migration_creates_expected_index",
+     "test_index_migration_does_not_duplicate",
+     "test_missing_column_is_migrated",
+     "test_new_table_is_migrated",
+     "test_migration_history_recorded",
+     "test_migration_checksum_recorded",
+     "test_lock_prevents_concurrency",
+     "test_restart_during_migration_recovers",
+     "test_financial_aggregates_unchanged",
+     "test_news_aggregates_unchanged",
+     "test_research_aggregates_unchanged",
+     "test_model_metadata_remains_valid",
+     "test_schema_plan_is_read_only",
+     "test_startup_gate_noop_when_current",
+     "test_update_process_runs_migration",
+     "test_safe_additive_migration_works",
+     "test_destructive_migration_blocks_safely",
+     "test_no_db_deletion_required_for_upgrade"
+    ],
+    "Tier3": [
+     "test_integrity_passes_after_migration"
+    ],
+    "Tier4": [
+     "test_cli_uses_same_engine",
+     "test_startup_uses_same_engine"
+    ]
+   },
+   "notes": "38 tests, TEST-DBM-01..40 systematic mapping; idempotency, tamper checksum, WAL backup, downgrade block, drift detection covered. Tier1 set directly guards the known 'schema migration idempotency' regression."
+  },
+  "tests/unit/test_database_hygiene_task11.py": {
+   "protects": [
+    "src/nexus_scalp/hygiene/worker.py (HygienePlanner/Scanner/CleanupExecutor, financial_aggregates)",
+    "src/nexus_scalp/hygiene/detectors.py (DuplicateDetector/OrphanDetector)",
+    "src/nexus_scalp/hygiene/retention.py (RetentionEngine)",
+    "src/nexus_scalp/hygiene/archive.py (ArchiveManager)",
+    "src/nexus_scalp/hygiene/state.py, worker_runner.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_hyg01_dry_run_makes_zero_mutation",
+     "test_hyg02_exact_duplicate_detection",
+     "test_hyg03_split_fill_is_not_duplicate",
+     "test_hyg12_archive_before_delete",
+     "test_hyg13_archive_checksum_verified",
+     "test_hyg26_post_cleanup_integrity_check",
+     "test_hyg27_cleanup_failure_stops_further_deletion",
+     "test_hyg35_no_deletion_when_confidence_lt_one",
+     "test_hyg04_financial_row_never_deleted_automatically",
+     "test_hyg05_migration_history_never_deleted",
+     "test_hyg14_cleanup_journal_created"
+    ],
+    "Tier2": [
+     "test_hyg06_research_evidence_preserved",
+     "test_hyg07_model_provenance_preserved",
+     "test_hyg08_expired_cache_cleanup",
+     "test_hyg09_temporary_state_cleanup",
+     "test_hyg10_orphan_detection",
+     "test_hyg11_orphan_deletion_blocked_when_ambiguous",
+     "test_hyg15_financial_aggregate_unchanged",
+     "test_hyg16_research_lineage_unchanged",
+     "test_hyg17_news_canonical_ids_unchanged",
+     "test_hyg18_wal_safe_maintenance",
+     "test_hyg19_db_busy_causes_deferral",
+     "test_hyg20_cleanup_budget_enforced",
+     "test_hyg21_cleanup_never_in_tick_hot_path",
+     "test_hyg22_legacy_schema_artifact_requires_migration_flow",
+     "test_hyg23_unsupported_legacy_runtime_data_classified",
+     "test_hyg24_cross_db_references_block_deletion",
+     "test_hyg25_rebuildable_derived_cleaned_and_rebuilt",
+     "test_hyg28_restart_during_cleanup_is_recoverable",
+     "test_hyg29_worker_state_persisted",
+     "test_hyg30_cli_plan_matches_worker_plan",
+     "test_hyg31_cli_apply_uses_worker_executor",
+     "test_hyg32_json_status_is_truthful",
+     "test_hyg33_telegram_report_matches_actual_cleanup",
+     "test_hyg34_large_database_cleanup_stays_bounded",
+     "test_hyg36_current_supported_schema_remains_intact"
+    ],
+    "Tier3": [
+     "test_hyg_real_db_copy_plan_only"
+    ],
+    "Tier4": []
+   },
+   "notes": "37 tests covering 36 HYG cases; archive-before-delete, journal, WAL safety, budget, hot-path isolation, confidence threshold covered. Tier1 directly guards the known 'hygiene duplicate detection' regression (HYG-02/03 split-fill never duplicate). test_hyg_real_db_copy_plan_only (line 886) is skipif-guarded on real production artifacts/audit.db \u2014 env-dependent, safe (copies to tmp, AUDIT_ONLY) but silently skips on CI."
+  },
+  "tests/unit/test_audit_db_growth_bug054.py": {
+   "protects": [
+    "src/nexus_scalp/adapters/database/audit_repository.py (log_signal dedup, purge_old_audit_data, guard telemetry)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_identical_decision_collapses_to_one_row",
+     "test_different_candle_is_new_decision",
+     "test_guard_codes_go_to_telemetry_not_signals",
+     "test_max_exposure_reached_remains_auditable",
+     "test_payload_is_minimal_and_approved_only",
+     "test_purge_removes_old_keeps_fresh_and_never_touches_ledger"
+    ],
+    "Tier2": [],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "BUG-054 regression: identical-decision collapse, guard-code routing to telemetry, lean payload (exact key-set assertion incl. blocked_by/decision_stage; brittle to schema evolution), retention purge protected by ledger/position_lifecycle preservation checks. Uses real AuditRepository background worker; _flush relies on queue.join + sleep \u2014 small flake risk."
+  },
+  "tests/unit/test_mt5_providers_phase14.py": {
+   "protects": [
+    "src/nexus_scalp/adapters/mt5/providers.py (normalize_utc, snapshots, validate_ohlc_bars)",
+    "src/nexus_scalp/adapters/mt5/diagnostics.py (run_mt5_call, MT5ConnectionState)",
+    "src/nexus_scalp/risk/risk_engine.py (broker-native margin/profit provenance)",
+    "src/nexus_scalp/configuration/config.py (RiskConfig)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_broker_epoch_offset_applied",
+     "test_stale_tick_detected",
+     "test_deal_net_result_subtracts_costs",
+     "test_failure_records_error_code",
+     "test_exception_captured_and_reraised",
+     "test_connection_state_machine",
+     "test_broker_native_margin",
+     "test_unavailable_falls_back_to_estimate",
+     "test_broker_native_profit",
+     "test_none_and_garbage_return_none",
+     "test_non_utc_aware_converted_to_utc"
+    ],
+    "Tier2": [
+     "test_aware_datetime_preserved",
+     "test_naive_datetime_treated_as_utc",
+     "test_numpy_datetime64_normalized",
+     "test_iso_string_with_z_normalized",
+     "test_iso_string_naive_treated_as_utc",
+     "test_sql_timestamp_string",
+     "test_float_epoch",
+     "test_full_mapping",
+     "test_none_raw_returns_unavailable",
+     "test_missing_optional_fields_are_none_not_fake",
+     "test_unsupported_field_semantics",
+     "test_spec_and_tick_separated",
+     "test_none_both_returns_unavailable",
+     "test_position_snapshot",
+     "test_valid_bars_pass",
+     "test_duplicate_timestamps_detected",
+     "test_descending_timestamps_detected",
+     "test_high_low_violation_detected",
+     "test_negative_volume_detected",
+     "test_success_records_duration_and_result_count",
+     "test_retcode_labels",
+     "test_no_adapter_keeps_fallback"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "33 tests; excellent time-normalization matrix (aware/naive/numpy64/ISO-Z/epoch/garbage), broker +3h epoch offset correction, stale tick detection, OHLC validation, diagnostics failure visibility, risk provenance fallback chain (BROKER_NATIVE -> UNAVAILABLE -> FALLBACK_ESTIMATE)."
+  },
+  "tests/unit/test_mt5_adapter.py": {
+   "protects": [
+    "src/nexus_scalp/adapters/mt5/mt5_adapter.py (DirectMT5Adapter)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_adapter_unconnected_state_raises_error"
+    ],
+    "Tier2": [],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "ONLY 1 test (18 lines) for the whole adapter: unconnected state raises RuntimeError. No coverage of connected-path mapping, error-code mapping, symbol info, time conversion, reconnect. Adapter behavior is only indirectly exercised via providers tests. Highest-value expansion candidate in this group."
+  },
+  "tests/unit/test_release_update_phase17.py": {
+   "protects": [
+    "src/nexus_scalp/release/updater.py (UpdateOrchestrator, quiesce, rollback)",
+    "src/nexus_scalp/release/update.py, verify.py, metadata.py (version/GitHub discovery)",
+    "src/nexus_scalp/database/engine.py (update-time migration)",
+    "src/nexus_scalp/observability/telegram_notifier.py (credential preservation)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_semver_blocked_downgrade",
+     "test_github_429_not_fabricated",
+     "test_github_dns_failure_returns_error",
+     "test_missing_release_is_not_fabricated",
+     "test_sha256_mismatch_blocks_install",
+     "test_manifest_mismatch_blocks_download",
+     "test_live_state_blocks_update",
+     "test_atomic_backup_verified",
+     "test_config_migration_preserves_overrides",
+     "test_database_migration_version_aware",
+     "test_migration_idempotent",
+     "test_migration_failure_rollback",
+     "test_application_replacement_atomic",
+     "test_rollback_restores_prior_application",
+     "test_app_swap_preserves_in_tree_user_data",
+     "test_rollback_never_restores_old_user_data",
+     "test_user_data_preservation_orchestrator",
+     "test_telegram_credential_preservation",
+     "test_update_concurrency_lock",
+     "test_dry_run_makes_no_mutation"
+    ],
+    "Tier2": [
+     "test_semver_comparison_numeric_not_lexicographic",
+     "test_stable_channel_skips_prerelease",
+     "test_beta_channel_accepts_prerelease",
+     "test_github_discovery_parses_latest_release",
+     "test_invalid_release_asset_blocked",
+     "test_unsupported_architecture_blocked",
+     "test_download_interruption_recovery",
+     "test_disk_space_gate",
+     "test_compatibility_gate_summary",
+     "test_quiesce_stops_engine",
+     "test_model_artifact_preservation",
+     "test_news_db_preservation",
+     "test_post_update_health_check_uses_engine_health",
+     "test_crash_recovery_state",
+     "test_update_state_machine_transitions",
+     "test_update_history_persisted"
+    ],
+    "Tier3": [
+     "test_install_mode_detection",
+     "test_helper_bootstrap_detection",
+     "test_onefile_cli_detection",
+     "test_direct_unsupported_migration_rejected",
+     "test_no_automatic_model_promotion_app_update"
+    ],
+    "Tier4": []
+   },
+   "notes": "42 tests mapping TEST-UP-01..35. Tier1 guards known regressions: release rollback (rollback never restores old user data), telegram credential preservation (BUG-072/080), migration idempotency/failure rollback, GitHub 429/DNS non-fabrication, sha256/manifest mismatch blocking. Uses print() in a few places; artifacts dirs tmp-scoped (safe)."
+  },
+  "tests/unit/test_release_migration_0007_phase19.py": {
+   "protects": [
+    "src/nexus_scalp/database/engine.py (AUDIT-0007 migration)",
+    "src/nexus_scalp/database/models.py (DatabaseDomain)",
+    "src/nexus_scalp/release/metadata.py (release_metadata table consumer)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_audit_0007_applies_and_is_idempotent",
+     "test_audit_0007_release_metadata_table_shape",
+     "test_audit_0007_integrity_and_financial_preserved",
+     "test_audit_0007_already_current_no_op"
+    ],
+    "Tier2": [],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "4 focused tests for AUDIT-0007 release_metadata migration: idempotency, table shape, integrity + financial preservation, already-current no-op. Hand-builds realistic v6-shaped legacy DB. All Tier1; overlaps with phase18 DBM-05 idempotency but targets the specific 0007 migration \u2014 keep."
+  },
+  "tests/unit/test_settings_api_bug072.py": {
+   "protects": [
+    "src/nexus_scalp/settings/service.py (SettingsService)",
+    "src/nexus_scalp/settings/secret_store.py (SecureSecretStore)",
+    "src/nexus_scalp/settings/__init__.py (SettingsDatabase)",
+    "src/nexus_scalp/web/server.py (/api/settings, /api/config routes)",
+    "src/nexus_scalp/observability/telegram_notifier.py (rebuild on save)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_config_save_persists_token_to_secret_store",
+     "test_config_save_empty_token_does_not_wipe_store",
+     "test_config_save_rebuilds_notifier",
+     "test_settings_never_contains_plaintext_token",
+     "test_clear_token_disables",
+     "test_telegram_status_truthful_when_missing"
+    ],
+    "Tier2": [
+     "test_provenance_shows_source_and_version",
+     "test_mutation_audited",
+     "test_telegram_settings_rebuild_notifier"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "BUG-072/080 regression: /api/config must persist telegram credentials to secret store, NOT wipe on empty masked token, and rebuild the live notifier; /api/settings never returns plaintext token. Uses REAL FastAPI TestClient + real SettingsService with tmp_path isolation (incl. live.yaml chdir isolation). Tier1 directly guards the known 'telegram credential routing (BUG-072/080)' regression."
+  },
+  "tests/unit/test_settings_subsystem_bug072.py": {
+   "protects": [
+    "src/nexus_scalp/settings/service.py, paths.py, secret_store.py, __init__.py (SettingsDatabase persistence/migration)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_secret_never_plaintext_on_disk",
+     "test_telegram_from_secure_store",
+     "test_missing_token_explicit_state",
+     "test_migration_succeeds_and_blanks_yaml",
+     "test_migration_failure_keeps_legacy",
+     "test_restart_reloads_telegram",
+     "test_corrupt_db_reports_degraded_state"
+    ],
+    "Tier2": [
+     "test_db_created_on_first_run",
+     "test_persist_across_restart",
+     "test_typed_values_roundtrip",
+     "test_version_increments",
+     "test_audit_records_every_mutation",
+     "test_mutability_classification",
+     "test_roundtrip",
+     "test_delete",
+     "test_absent_returns_none",
+     "test_enabled_without_config_still_safe"
+    ],
+    "Tier3": [
+     "test_new_install_requires_no_legacy"
+    ],
+    "Tier4": []
+   },
+   "notes": "Settings DB/subsystem behavior: persistence, corruption detection, legacy YAML->secret-store migration with failure path keeping legacy, restart reload. Complements settings_api_bug072 (subsystem-level vs web-API-level). Migration-failure-keeps-legacy is a rare and valuable edge case."
+  },
+  "tests/unit/test_web_security.py": {
+   "protects": [
+    "src/nexus_scalp/web/server.py (error handlers, SSE stream)",
+    "src/nexus_scalp/web/errors.py (make_error_handler, request-id middleware)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_01_no_exception_text_in_payload",
+     "test_02_no_sql_or_path_in_payload",
+     "test_03_stable_error_code_and_message",
+     "test_06_server_log_contains_detailed_exception",
+     "test_07_sse_payload_has_no_traceback",
+     "test_08_no_raw_str_e_in_server_returns"
+    ],
+    "Tier2": [
+     "test_04_request_id_present_and_header_echoed",
+     "test_05_request_id_autogenerated_when_missing",
+     "test_09_no_exception_repr_in_web_responses"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "Behavioral dashboard-hardening suite: exception/sql/path leak sanitization, stable error codes, request-id propagation, server-side log detail, SSE payload traceback-free (uses real uvicorn on local socket \u2014 careful, deliberately documented workaround for TestClient SSE buffering). test_07 is the only real-SSE sanitization check; test_06 is heavily guarded against logging order-flakes with very thorough comments."
+  },
+  "tests/unit/test_web_chart_forming_bar_bug082.py": {
+   "protects": [
+    "src/nexus_scalp/web/server.py (/api/chart/history, ENGINE_STATE fallback path)",
+    "src/nexus_scalp/market_data/bar_aggregator.py (BarData)",
+    "src/nexus_scalp/web/debug_snapshot.py (chart state)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_chart_history_forming_minute_flag",
+     "test_chart_history_forming_bar_not_in_completed_tail"
+    ],
+    "Tier2": [],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "BUG-082 regression: the still-forming M1 minute must be served is_complete=False (ENGINE_STATE path, adapter returns no broker history). Only 2 tests but both are precise behavioral assertions (61 bars = 60 completed + forming; forming bar excluded from completed tail). Tier1 \u2014 directly guards the known 'web div-balance/forming-bar' regression. Consider adding /api/live/state equivalents (only chart history covered)."
+  },
+  "tests/unit/test_news_phase12.py": {
+   "protects": [
+    "src/nexus_scalp/news/engine.py, worker.py, ingest/fetcher.py, ingest/deduplicator.py",
+    "src/nexus_scalp/news/analysis/* (decay, consensus, local, pipeline)",
+    "src/nexus_scalp/news/context.py, database.py, models.py, sources/base.py, seed.py, gate.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_01_canonicalize_item_produces_hash_and_utc",
+     "test_02_same_content_same_hash",
+     "test_08_ingestor_exact_duplicate_collapses",
+     "test_09_syndicated_title_merges_evidence",
+     "test_10_deduplicator_title_window",
+     "test_12_updated_article_creates_version_not_overwrite",
+     "test_16_stale_detection",
+     "test_38_duplicate_news_no_double_impact",
+     "test_39_historical_article_immutable",
+     "test_34_news_cannot_bypass_risk",
+     "test_33_news_cannot_force_buy",
+     "test_36_news_unavailable_no_influence",
+     "test_29_local_remains_authoritative_after_api_failure",
+     "test_60_news_subsystem_imports_without_mt5",
+     "test_61_news_gate_holds_no_execution_capability",
+     "test_63_news_context_safe_defaults_when_unavailable",
+     "test_66_news_engine_failure_does_not_block_trading"
+    ],
+    "Tier2": [
+     "test_03_updated_article_new_content_different_hash",
+     "test_04_malformed_feed_returns_typed_failure",
+     "test_05_rate_limit_result_flag",
+     "test_06_scheduler_due_logic",
+     "test_07_source_disablement",
+     "test_11_normalized_title_strips_noise",
+     "test_13_freshness_decays_exponentially",
+     "test_14_structural_news_retains_long_relevance",
+     "test_15_decayed_strength_scales",
+     "test_17_entities_extracted",
+     "test_18_topics_classified",
+     "test_19_xauusd_relevance_needs_drivers",
+     "test_20_xauusd_relevance_with_drivers_high",
+     "test_21_usd_relevance",
+     "test_22_directional_hypothesis",
+     "test_23_importance_source_priority",
+     "test_24_consensus_weighted_direction",
+     "test_25_missing_key_local_only",
+     "test_26_rate_limit_not_blocking",
+     "test_27_malformed_json_fallback",
+     "test_28_api_success_merged",
+     "test_30_pipeline_persists_analysis",
+     "test_31_aligned_news_bounded_boost",
+     "test_32_conflicting_news_caution",
+     "test_35_stale_news_no_influence",
+     "test_37_high_impact_state_caution",
+     "test_40_versioning_preserved",
+     "test_41_post_event_error_stored",
+     "test_42_trade_linkage",
+     "test_43_worker_starts_stops",
+     "test_44_worker_cycle_runs",
+     "test_45_worker_survives_source_failure",
+     "test_46_worker_restart_safe",
+     "test_47_queue_bounded",
+     "test_48_queue_dedup",
+     "test_49_worker_status_serializable",
+     "test_50_seed_idempotent",
+     "test_51_schema_initializes_cleanly",
+     "test_52_rebuild_works",
+     "test_53_context_cache_bounded",
+     "test_54_engine_health_available",
+     "test_55_engine_self_heal",
+     "test_56_article_analysis_by_id",
+     "test_62_ingest_never_blocks_hot_path",
+     "test_64_no_news_feeds_into_accounting",
+     "test_65_decay_config_safe_values",
+     "test_67_context_freshness_clamped_when_weights_below_one",
+     "test_68_driver_only_headlines_get_xauusd_relevance",
+     "test_69_impact_timeline_aggregates_buckets"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "66 tests, the reference suite for the news subsystem: dedup, decay, consensus, worker lifecycle, safety boundaries (news can't force buy / bypass risk), and MT5-free imports. Some tests use time.sleep \u2014 mild flake risk. Tier1 conservatively the failure-safety + dedup + immutability set; most Tier2 are still valuable behavioral checks."
+  },
+  "tests/unit/test_news_bridge_phase13b.py": {
+   "protects": [
+    "src/nexus_scalp/model_generation/news_bridge.py (build_news_frame_from_db, news_context_at, normalize_news_frame)",
+    "src/nexus_scalp/model_generation/models.py (default_news_context_schema)",
+    "src/nexus_scalp/news/database.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_causal_boundaries_exact",
+     "test_future_event_never_visible",
+     "test_no_news_returns_zero_vector",
+     "test_empty_frame_returns_none",
+     "test_all_12_fields_present_and_numeric"
+    ],
+    "Tier2": [
+     "test_no_dead_zero_columns_with_informative_input",
+     "test_state_and_novelty_encoded_numerically",
+     "test_bullish_bearish_aliased_from_scores",
+     "test_output_matches_schema_order",
+     "test_export_roundtrip",
+     "test_export_bounds"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "12-field news bridge schema: numeric contract, categorical encoding, strict causality (future invisible), DB->frame export roundtrip and bounds. Tier1: causal boundary tests (matches SSE/news-db contract regression surface in news_bridge_contract \u2014 see duplicates)."
+  },
+  "tests/unit/test_news_bridge_finalize_phase13b.py": {
+   "protects": [
+    "src/nexus_scalp/model_generation/news_bridge.py",
+    "src/nexus_scalp/model_generation/dataset_factory.py, benchmark.py, artifact_store.py",
+    "src/nexus_scalp/news/database.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_invalid_json_impacts_do_not_corrupt",
+     "test_nan_inf_never_reach_dataset",
+     "test_unknown_categorical_never_nan_or_random",
+     "test_T_minus_1_T_T_plus_1_exact",
+     "test_identical_timestamp_deterministic_selection",
+     "test_benchmark_runner_refuses_synthetic_news",
+     "test_real_shape_passes_gate"
+    ],
+    "Tier2": [
+     "test_multiple_sources_and_json_impacts",
+     "test_missing_and_malformed_values_default_safely",
+     "test_categorical_fields_encoded_deterministically",
+     "test_empty_db_export",
+     "test_no_news_frame_yields_zero_context_and_warning_path",
+     "test_real_news_dataset_distinguishable_and_identity_changes",
+     "test_news_changes_dataset_id_deterministically",
+     "test_only_12_news_fields_in_dataset",
+     "test_time_since_event_semantics",
+     "test_old_fixture_shape_rejected_by_gate",
+     "test_diagnostics_are_computed_not_faked"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "Finalize-phase: NaN/Inf guards, dataset identity hash determinism, benchmark readiness gate refusing synthetic news, diagnostics computed-not-faked. Tier1: NaN/Inf + benchmark gate + exact T-1/T/T+1."
+  },
+  "tests/unit/test_news_bridge_contract_phase13b.py": {
+   "protects": [
+    "src/nexus_scalp/model_generation/news_bridge.py (_safe_epoch_sec, news_quality_diagnostics, news_benchmark_readiness)",
+    "src/nexus_scalp/news/database.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_identical_timestamp_deterministic",
+     "test_future_event_strictly_invisible",
+     "test_nan_inf_never_enters_vector",
+     "test_polars_scalar_no_oserror",
+     "test_missing_news_readiness_gate_red",
+     "test_readiness_gate_red_on_synthetic_shape"
+    ],
+    "Tier2": [
+     "test_numpy_datetime64",
+     "test_naive_datetime_treated_utc",
+     "test_iso_string_and_bad_values",
+     "test_unknown_state_and_novelty_encode_deterministically",
+     "test_empty_db_export_is_empty_frame",
+     "test_invalid_impacts_json_safely_zero",
+     "test_empty_impacts_list",
+     "test_missing_values_default_safely",
+     "test_multiple_sources_preserved",
+     "test_diagnostics_real_values",
+     "test_readiness_gate_green_on_real_shape",
+     "test_readiness_gate_red_on_empty",
+     "test_per_field_stats_present"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "Causal boundary duplicates, Windows timestamp safety (polars scalar no OSError \u2014 a Windows-specific pitfall), categorical unknowns, NaN/Inf protection, readiness gate. test_polars_scalar_no_oserror is a rare Windows-only regression guard \u2014 preserve."
+  },
+  "tests/unit/test_telegram_notifier.py": {
+   "protects": [
+    "src/nexus_scalp/observability/telegram_notifier.py (send, dedup, rate limit, queue, HTML escape, callbacks)",
+    "src/nexus_scalp/execution/order_manager.py (thread replies, extended notifications)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_telegram_notifier_failed_send_retry_not_deduplicated",
+     "test_telegram_notifier_distinct_messages_not_conflated",
+     "test_telegram_notifier_deduplication",
+     "test_telegram_notifier_rate_limiting",
+     "test_telegram_notifier_html_escaping_and_truncation",
+     "test_telegram_notifier_queue_capacity_limit"
+    ],
+    "Tier2": [
+     "test_telegram_notifier_send_success",
+     "test_telegram_notifier_asynchronous_callback",
+     "test_order_manager_telegram_thread_replies",
+     "test_order_manager_extended_notifications"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "10 tests: dedup-window suppression, rate limit, queue capacity with CRITICAL bypass, HTML escaping + 4096 truncation, async callbacks, order-manager thread replies. Tier1 includes the two hard-won regression guards (failed-send must not poison the dedup cache; distinct messages with identical non-digit prefixes must not conflate) \u2014 direct guard for telegram regressions. queue_capacity test asserts res_crit is None \u2014 weak assertion (bypass returns None legitimately in callback mode), flagged in weak_or_obsolete."
+  },
+  "tests/unit/test_telegram_forensics_bug072.py": {
+   "protects": [
+    "src/nexus_scalp/observability/telegram_notifier.py (silent-failure path)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_http_200_ok_false_is_observable_failure",
+     "test_http_200_ok_false_is_retried_as_if_transient",
+     "test_disabled_notifier_silently_drops",
+     "test_network_failure_disappears",
+     "test_secret_never_leaks",
+     "test_worker_is_observable",
+     "test_health_state_api_present"
+    ],
+    "Tier2": [
+     "test_success_returned"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "BUG-072 forensic: HTTP 200 + ok:false treated as observable failure (not silent), disabled notifier drops are visible, health-state API present, secrets never leak. Direct guard for the telegram silent-failure regression. Overlaps with test_telegram_notifier failed-send test but targets the observability contract (health endpoint / diagnostics), not just retry behavior \u2014 partial duplicate, keep both."
+  },
+  "tests/unit/test_bug081_telegram_canonical.py": {
+   "protects": [
+    "src/nexus_scalp/observability/telegram_notifier.py (canonical close notification)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_canonical_close_uses_exit_reason_not_manual",
+     "test_canonical_close_unknown_stays_unknown",
+     "test_exit_label_mapping_never_manual_for_protective"
+    ],
+    "Tier2": [],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "BUG-081: POSITION CLOSED notification must consume the canonical exit reason, never the hardcoded MANUAL fallback; unknown exit stays unknown; protective exits never labeled manual. 3 precise regression guards (98 lines), all Tier1."
+  },
+  "tests/unit/test_telegram_reporting_bug057.py": {
+   "protects": [
+    "src/nexus_scalp/observability/telegram_notifier.py (notify_* templates)",
+    "src/nexus_scalp/web/server.py (/api/telegram/test)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_notify_test_message_dispatches",
+     "test_notifier_redacts_token_in_messages",
+     "test_web_telegram_test_endpoint_contract"
+    ],
+    "Tier2": [
+     "test_notify_engine_stopped_and_error",
+     "test_notify_audit_purge",
+     "test_notify_warmup_and_daily_summary"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "BUG-057 reporting templates: notify_* produce non-empty messages, web /api/telegram/test contract, token redaction in messages."
+  },
+  "tests/unit/test_forensic_monitoring_task11.py": {
+   "protects": [
+    "src/nexus_scalp/forensics/engine.py (health checks, policies)",
+    "src/nexus_scalp/forensics/models.py, registry.py",
+    "src/nexus_scalp/database/engine.py (migration-state check)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_duplicate_detected",
+     "test_known_historical_duplicate_is_warning",
+     "test_new_rows_critical",
+     "test_corrupt_db_is_critical",
+     "test_migration_state_pending_is_warning",
+     "test_critical_never_averaged_away",
+     "test_unknown_not_below_critical",
+     "test_checks_are_read_only",
+     "test_engine_has_no_mutation_api",
+     "test_deploy_gate_blocks_on_critical",
+     "test_growth_within_baseline",
+     "test_huge_growth_warning"
+    ],
+    "Tier2": [
+     "test_health_status_enum_has_five_levels",
+     "test_vector_contract_length_finite_bounds",
+     "test_vector_contract_unknown_when_no_vector",
+     "test_schema_registry_base_prefix",
+     "test_liquidity_family_indices",
+     "test_index_60_name_contract_snapshot",
+     "test_engine_flags_schema_violation_as_critical",
+     "test_constant_feature_is_dead",
+     "test_deadness_detected_with_liquidity_rows",
+     "test_flood_detected",
+     "test_canary_runs_or_unknown",
+     "test_canary_never_passes_without_positive_control",
+     "test_dataset_manifest_health",
+     "test_dataset_missing_is_unknown",
+     "test_parity_canary",
+     "test_model_artifact_missing_is_unknown",
+     "test_model_dimension_contract",
+     "test_integrity_ok",
+     "test_integrity_missing_is_unknown",
+     "test_broker_ledger_within_tolerance",
+     "test_missing_tables_is_unknown",
+     "test_historical_rows_warning",
+     "test_clean_pass",
+     "test_large_gap_degraded",
+     "test_both_zero_pass",
+     "test_never_traded_samples_are_legitimate",
+     "test_empty_worker_state_warning",
+     "test_zero_cycles_flagged",
+     "test_degraded_sources",
+     "test_healthy_db_pass",
+     "test_worker_stale_detected",
+     "test_zero_cycles_no_progress",
+     "test_no_reference_unknown",
+     "test_frozen_reference_drift_critical",
+     "test_flood_uses_varied_near_max",
+     "test_shadow_never_attached_unknown",
+     "test_running_but_no_comparisons_flagged",
+     "test_empty_governance_unknown",
+     "test_rejected_champion_critical",
+     "test_registry_empty_unknown",
+     "test_registry_champion_artifact_missing_critical",
+     "test_canonical_state_endpoint",
+     "test_api_surface_present",
+     "test_bundle_missing_unknown",
+     "test_bundle_with_no_version_marker_unknown",
+     "test_telegram_check_runs",
+     "test_trace_gap_warning",
+     "test_correlation_columns",
+     "test_check_result_carries_correlation_id",
+     "test_result_envelope_fields",
+     "test_fallback_pattern_detected",
+     "test_no_logs_unknown",
+     "test_clean_logs_pass",
+     "test_chart_zero_bars_degraded",
+     "test_chart_valid_bars_pass",
+     "test_chart_ohlc_violation_degraded",
+     "test_mt5_status_endpoint_exists",
+     "test_mode_check_runs",
+     "test_queue_check_runs",
+     "test_perf_check_runs",
+     "test_snapshot_counts",
+     "test_liquidity_change_selects_full_set",
+     "test_registry_change_selects_migrations",
+     "test_unknown_file_falls_back_to_runtime_smoke",
+     "test_snapshot_persists",
+     "test_dashboard_shape",
+     "test_immediate_policy_fires_every_time",
+     "test_aggregated_policy",
+     "test_periodic_policy",
+     "test_engine_fires_alert_log_on_critical",
+     "test_register_and_get",
+     "test_duplicate_register_requires_replace",
+     "test_compute_reference_stats"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "87 tests, the largest suite: 5-level health vocabulary (UNKNOWN semantics \u2014 unknown never below critical), duplicate/growth/migration-state checks, policy firing, deploy gate, read-only/no-mutation invariants, snapshot change-selection. Tier2 set is broad but each is a distinct behavioral check; never cut the UNKNOWN-not-below-critical / read-only / deploy-gate trio."
+  },
+  "tests/unit/test_incident_response_task12.py": {
+   "protects": [
+    "src/nexus_scalp/incidents/models.py, store.py, correlator.py, lineage.py, trace.py, impact.py, reports.py, accounting.py, timebase.py, telegram.py, worker.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_55_repeats_become_one_incident",
+     "test_distinct_fingerprints_stay_separate",
+     "test_same_fingerprint_window_merge",
+     "test_fingerprint_stable",
+     "test_correlation_id_groups_into_one_incident",
+     "test_chain_classification",
+     "test_clock_skew_measured",
+     "test_split_fill_families",
+     "test_zero_outcome_with_broker_truth_suspect",
+     "test_read_only_no_rewrite",
+     "test_mark_suspect_keeps_record",
+     "test_quarantine_never_deletes",
+     "test_zip_bundle_no_secrets",
+     "test_masks_sensitive_fields",
+     "test_incident_json_masked",
+     "test_first_alert_then_suppressed",
+     "test_low_severity_never_alerts",
+     "test_same_fingerprint_after_fix_is_regression_candidate",
+     "test_regression_flag",
+     "test_status_not_resolved_without_evidence",
+     "test_fix_validation_requires_regression_test"
+    ],
+    "Tier2": [
+     "test_incident_creation",
+     "test_incident_fields_complete",
+     "test_store_roundtrip",
+     "test_unknown_is_default",
+     "test_proven_requires_evidence",
+     "test_timeline_ordered_by_actual_timestamps",
+     "test_ticket_links_affected_records",
+     "test_pnl_lineage",
+     "test_exposure_lineage_has_inv011",
+     "test_first_divergence_known_bad_step",
+     "test_divergence_detected",
+     "test_rates_computed",
+     "test_model_output_lineage",
+     "test_feature_lineage",
+     "test_news_healthy",
+     "test_news_all_neutral_flagged",
+     "test_backend_empty_detected",
+     "test_backend_unavailable",
+     "test_worker_stall_detector_contract",
+     "test_worker_never_touches_trading",
+     "test_invariant_inspection",
+     "test_incident_for_migration",
+     "test_migration_tables_in_schema",
+     "test_version_consistency",
+     "test_why_blocked",
+     "test_why_closed",
+     "test_why_no_learning",
+     "test_why_no_strategy",
+     "test_why_ui_empty",
+     "test_impact_from_evidence",
+     "test_no_fabricated_numbers",
+     "test_recovery_plan_generated",
+     "test_recovery_plan_no_destructive_opts",
+     "test_recovery_states_enforced",
+     "test_json_and_md_export",
+     "test_message_contains_required_fields",
+     "test_bug_linkage_fields"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "62 tests: incident dedup/fingerprint stability, correlation-ID grouping, lineage (pnl/exposure/clock-skew), split-fill families, quarantine-never-deletes, masking (zip bundle + JSON), alert suppression semantics, regression-candidate logic, no-execution-imports/self-modification guards. Keep test_zip_bundle_no_secrets and masking tests on any trim list."
+  },
+  "tests/unit/test_logging.py": {
+   "protects": [
+    "src/nexus_scalp/observability/logging.py (_redact_sensitive_fields, configure_logging, get_logger)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_redact_sensitive_fields"
+    ],
+    "Tier2": [
+     "test_configure_logging_and_get_logger"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "Only 2 tests for the whole logging module: redaction of password/api_key keys + configure/get_logger smoke. Redaction test is Tier1 (security); configure test is a weak smoke (asserts non-None logger). Consider deeper coverage: nested dict redaction, non-string values, unknown keys, json output path."
+  },
+  "tests/unit/test_debug_snapshot_phase20.py": {
+   "protects": [
+    "src/nexus_scalp/web/debug_snapshot.py (snapshot build, SSE diag)",
+    "src/nexus_scalp/web/server.py (/api/debug/* routes)",
+    "src/nexus_scalp/features/schema_contract.py (70D contract display)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_debug_01_active_schema_displayed",
+     "test_debug_02_70d_dimension_validated",
+     "test_debug_03_all_70_indices_displayed",
+     "test_debug_27_invalid_model_contract_displayed",
+     "test_debug_28_70d_mismatch_displayed",
+     "test_debug_29_no_secret_leakage",
+     "test_debug_30_debug_does_not_block_hot_path",
+     "test_debug_31_snapshot_comparison",
+     "test_debug_32_feature_diff",
+     "test_sse_serialization_error_surfaces_in_debug",
+     "test_debug_25_json_snapshot_serialization",
+     "test_debug_26_datetime_serialization"
+    ],
+    "Tier2": [
+     "test_debug_04_feature_names_match_registry",
+     "test_debug_05_feature_values_match_backend",
+     "test_debug_06_feature_status_accurate",
+     "test_debug_07_liquidity_60_69_displayed",
+     "test_debug_08_news_state_displayed",
+     "test_debug_09_model_input_displayed",
+     "test_debug_10_model_output_displayed",
+     "test_debug_11_confidence_pipeline_displayed",
+     "test_debug_12_policy_gate_trace",
+     "test_debug_13_risk_trace",
+     "test_debug_14_exposure_broker_internal_comparison",
+     "test_debug_15_execution_trace",
+     "test_debug_16_position_state",
+     "test_debug_17_exit_decision_trace",
+     "test_debug_18_worker_state",
+     "test_debug_19_database_state",
+     "test_debug_20_cache_state",
+     "test_debug_21_chart_state",
+     "test_debug_22_sse_state",
+     "test_debug_23_correlation_id",
+     "test_debug_24_snapshot_capture",
+     "test_api_state_endpoint",
+     "test_api_snapshots_endpoints",
+     "test_api_compare_requires_both"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "36 tests for the /api/debug/state console: full 70D contract display, secret-leak scans (bot_token/api_key/password/private_key/-----BEGIN), no hot-path blocking, snapshot compare/diff, SSE serialization error surfacing (direct guard for known 'SSE serialization' regression), JSON + datetime serialization of every canonical type. Hermetic fake-engine fixtures."
+  },
+  "tests/unit/test_schema_70d_reconciliation.py": {
+   "protects": [
+    "src/nexus_scalp/features/schema_contract.py, features/schema.py",
+    "src/nexus_scalp/governance/* (alignment, engine, load_gate, verify)",
+    "src/nexus_scalp/model_generation/schema_v2.py",
+    "src/nexus_scalp/shadow/shadow70/models.py",
+    "src/nexus_scalp/release/model_artifacts.py",
+    "src/nexus_scalp/model_lifecycle/integrity.py, training/walk_forward_trainer.py, application/live_engine.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_schema_70d_01_exact_canonical_schema",
+     "test_schema_70d_02_feature_order_stable",
+     "test_schema_70d_03_dimension_exactly_70",
+     "test_schema_70d_04_hash_deterministic",
+     "test_schema_70d_05_runtime_schema_matches_canonical",
+     "test_schema_70d_06_shadow_schema_matches_canonical",
+     "test_schema_70d_08_legacy_schema_blocked_from_production",
+     "test_current_70d_02_single_canonical_schema",
+     "test_current_70d_03_schema_hash_consistency",
+     "test_current_70d_16_champion_write_protection",
+     "test_current_70d_17_head3_weight_integrity_detection",
+     "test_current_70d_18_3class_model_rejected",
+     "test_current_70d_19_70d_scaler_dimension",
+     "test_current_70d_20_no_automatic_promotion"
+    ],
+    "Tier2": [
+     "test_schema_70d_07_governance_accepts_only_canonical",
+     "test_current_70d_01_current_head_verified",
+     "test_current_70d_04_champion_integrity",
+     "test_current_70d_05_candidate_discovery_truth",
+     "test_current_70d_06_candidate_model_integrity",
+     "test_current_70d_07_dataset_truth",
+     "test_current_70d_08_dataset_runtime_parity",
+     "test_current_70d_09_shadow_truth",
+     "test_current_70d_10_bug105_shadow_hook",
+     "test_current_70d_11_governance_truth",
+     "test_current_70d_12_skip_not_pass",
+     "test_current_70d_13_ui_backend_state_parity",
+     "test_current_70d_14_news_70d_contract",
+     "test_current_70d_15_liquidity_70d_contract"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "Canonical 70D contract: ONE schema (scalp_v3, dim 70, hash 235b8fccc96b7e0e) across registry/runtime/shadow/governance; legacy scalp_v4 blocked from production; champion write-protection; head3 weight integrity detection. ~6 tests (current_70d_01/04/05/06/07/09) pytest.skip() when real artifacts/datasets absent \u2014 CI-gated coverage via honest skip-not-pass pattern (test_current_70d_12 enforces). Real-data tests are the only guard against actual artifact drift."
+  },
+  "tests/integration/test_database_execution_audit.py": {
+   "protects": [
+    "src/nexus_scalp/adapters/database/audit_repository.py",
+    "src/nexus_scalp/signals/policy.py, rule_matrix.py (spread-squeeze filter)",
+    "src/nexus_scalp/features/scalp_features.py, domain/models.py, domain/enums.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_database_execution_audit_pipeline"
+    ],
+    "Tier2": [],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "Real end-to-end pipeline: policy approval -> audit_signals + audit_executions + rejected NO_TRADE row with rejection_reason. WEAK points: writes to repo-relative 'artifacts/test_audit.db' (side effect, not tmp_path; deletes file at start), uses print() for verification, requires torch + full feature pipeline. sqlite3-based assertions are direct and behavioral. No other test covers audit_executions writes or the RULE_SPREAD_SQUEEZE_ONLY rejection path. Tier1 by uniqueness, but refactor to tmp_path fixture to remove repo pollution (it deletes artifacts/test_audit.db at start so it is self-cleaning)."
+  },
+  "tests/integration/test_signal_pipeline_health.py": {
+   "protects": [
+    "src/nexus_scalp/adapters/database/audit_repository.py",
+    "src/nexus_scalp/signals/policy.py",
+    "src/nexus_scalp/features/scalp_features.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_signal_pipeline_health_integration"
+    ],
+    "Tier2": [],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "Pipeline health: BUY_LIMIT candidate stored under model_action, rejected signal (very high threshold) retains rejection_reason + risk_allowed + guardian_status (BUG-054 lean-payload adjusted). Same weaknesses as test_database_execution_audit: writes artifacts/test_pipeline_health.db, print(), torch dependency. NEAR-DUPLICATE of test_database_execution_audit (same tick/FV/proposal scaffolding, same sqlite verification pattern) \u2014 the only distinct assertions are json_extract model_action count of BUY_LIMIT and the NO_TRADE payload checks. See duplicates entry."
+  },
+  "tests/release/test_release_hardening.py": {
+   "protects": [
+    "src/nexus_scalp/release/packaging.py (manifest/checksums gen+verify)",
+    "src/nexus_scalp/release/verify.py (ReleaseVerifier, verify_release)",
+    "src/nexus_scalp/release/environment.py, evaluate.py (architecture matrix)",
+    "src/nexus_scalp/release/exit_codes.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_manifest_tamper_artifact_detected",
+     "test_manifest_missing_artifact_detected",
+     "test_checksums_missing_file_detected",
+     "test_verifier_fails_on_tampered_release",
+     "test_verifier_fails_on_missing_manifest",
+     "test_verifier_identity_mismatch_fails",
+     "test_secrets_scan_flags_real_bot_token",
+     "test_secrets_scan_flags_real_api_key",
+     "test_secrets_scan_flags_jwt",
+     "test_secrets_scan_passes_placeholders",
+     "test_secrets_scan_passes_normal_source",
+     "test_checksums_verify_from_release_root",
+     "test_checksums_verify_from_portable_dir",
+     "test_architecture_support_matrix_is_explicit",
+     "test_real_release_artifacts_verify"
+    ],
+    "Tier2": [
+     "test_manifest_identity_fields"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "16 tests against REAL release packaging code with synthetic release-tree fixtures (and one skipif-guarded test against real built release: test_real_release_artifacts_verify). Secrets-scan REAL-vs-placeholder-vs-normal-source discrimination is high-value. Tier1."
+  },
+  "tests/release/test_build_script_hardening.py": {
+   "protects": [
+    "scripts/build/build_release.ps1",
+    ".github/workflows/release.yml",
+    "src/nexus_scalp/release/exit_codes.py",
+    "src/nexus_scalp/cli/main.py (help strings)"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_build_has_secret_guard",
+     "test_release_workflow_orders_verify_before_publish",
+     "test_release_workflow_no_publish_before_verify",
+     "test_cli_help_strings_are_ascii_safe",
+     "test_build_uses_native_windows_paths_for_pyinstaller",
+     "test_build_has_stale_exe_lock_guard"
+    ],
+    "Tier2": [
+     "test_build_references_packaged_entrypoint_not_launcher",
+     "test_checksums_contract_documented_in_docs",
+     "test_exit_codes_contract_documented",
+     "test_spaces_in_path_handling_documented"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "Static/behavioral guards on build scripts + release workflow: native Windows paths (no MSYS mangling), stale-EXE lock guard, hard secret guard, verify-before-publish ordering, ASCII-safe CLI help (BUG-037). These are source-text assertions \u2014 brittle to benign renames/formatting but cheap and valuable for infra. Tier1: secret guard + verify-before-publish + ASCII help."
+  },
+  "tests/unit/test_cli_db_phase18.py": {
+   "protects": [
+    "src/nexus_scalp/cli/main.py + cli/db_commands (db plan/status/migrate CLI)",
+    "src/nexus_scalp/database/engine.py, gate.py"
+   ],
+   "tiers": {
+    "Tier1": [
+     "test_db_migrate_applies_and_verify_passes",
+     "test_db_domain_filter",
+     "test_db_status_json_shape"
+    ],
+    "Tier2": [
+     "test_db_plan_dry_run",
+     "test_db_migrations_and_history"
+    ],
+    "Tier3": [],
+    "Tier4": []
+   },
+   "notes": "CLI-level db command coverage: dry-run plan, JSON status shape, migrate + verify, domain filter. Replaces the Tier4 hasattr-smoke tests in test_database_migrations_phase18 (test_cli_uses_same_engine/test_startup_uses_same_engine) with real behavior \u2014 see duplicates. Uses tmp workspace, parses CLI stdout robustly."
+  }
+ },
+ "duplicates": [
+  {
+   "group": "integration pipeline near-duplicates",
+   "files": [
+    "tests/integration/test_database_execution_audit.py",
+    "tests/integration/test_signal_pipeline_health.py"
+   ],
+   "detail": "Nearly identical scaffolding: same TickData/FeatureVector/Policy fixture values, same sqlite verification loop, same artifacts/<name>.db write location, both import torch + SignalPolicy + AuditRepository. Unique value each: execution_audit covers audit_executions writes + RULE_SPREAD_SQUEEZE_ONLY rejection via Real RuleMatrixEngine; pipeline_health adds json_extract model_action BUY_LIMIT count + guardian_status assertion. Recommendation: merge into one parameterized integration test or keep both but extract shared fixture into tests/integration/conftest.py (or helpers/) and switch both to tmp_path DBs.",
+   "severity": "MEDIUM"
+  },
+  {
+   "group": "news bridge causal boundary / timestamp determinism across three files",
+   "files": [
+    "tests/unit/test_news_bridge_phase13b.py",
+    "tests/unit/test_news_bridge_contract_phase13b.py",
+    "tests/unit/test_news_bridge_finalize_phase13b.py"
+   ],
+   "detail": "test_causal_boundaries_exact + test_future_event_never_visible (phase13b) overlap test_future_event_strictly_invisible + test_identical_timestamp_deterministic (contract) and test_T_minus_1_T_T_plus_1_exact + test_identical_timestamp_deterministic_selection (finalize). Also test_nan_inf_never_reach_dataset (finalize) vs test_nan_inf_never_enters_vector (contract); encode-determinism tests in all three. Each file targets a distinct phase of the same bridge, so consolidation is risky; recommend keeping all three but documenting the overlap \u2014 the causal-boundary + NaN/Inf assertions are cheap and cross-validate. Do NOT merge blindly (they pin different phases: normalize vs context vs dataset/benchmark gate).",
+   "severity": "LOW"
+  },
+  {
+   "group": "telegram notifier overlap (4 files)",
+   "files": [
+    "tests/unit/test_telegram_notifier.py",
+    "tests/unit/test_telegram_forensics_bug072.py",
+    "tests/unit/test_telegram_reporting_bug057.py",
+    "tests/unit/test_bug081_telegram_canonical.py"
+   ],
+   "detail": "All four exercise src/nexus_scalp/observability/telegram_notifier.py. Overlap: failed-send-retry-not-deduplicated (notifier) vs http_200_ok_false_is_retried_as_if_transient (forensics) both patch urllib.urlopen and assert a retry happens; send-success and message-id mapping appear in notifier + reporting. Not true duplicates: forensics asserts observability contract (send returns None w/ visible failure + health API), reporting asserts notify_* template dispatch, canonical asserts exit-reason mapping. Keep all; the overlap is intentionally layered (unit behavior vs observability contract vs templates).",
+   "severity": "LOW"
+  },
+  {
+   "group": "migration idempotency assertions in engine suites",
+   "files": [
+    "tests/unit/test_database_migrations_phase18.py",
+    "tests/unit/test_release_migration_0007_phase19.py",
+    "tests/unit/test_release_update_phase17.py"
+   ],
+   "detail": "test_migration_idempotent (phase18, generic) vs test_audit_0007_applies_and_is_idempotent (phase19, migration-specific) vs test_migration_idempotent (release_update, update-flow-specific). Distinct layers (engine / specific migration / update orchestrator) \u2014 keep, but note the phase18 + phase19 pair asserts the same engine property twice at different granularity.",
+   "severity": "LOW"
+  },
+  {
+   "group": "CLI-engine linkage: hasattr smokes vs real CLI tests",
+   "files": [
+    "tests/unit/test_database_migrations_phase18.py",
+    "tests/unit/test_cli_db_phase18.py"
+   ],
+   "detail": "test_cli_uses_same_engine + test_startup_uses_same_engine (phase18 Tier4) are hasattr() smokes ('module HAS attribute DatabaseMigrationEngine') \u2014 they assert import wiring, not behavior. test_cli_db_phase18.py test_db_migrate_applies_and_verify_passes + test_db_domain_filter exercise the actual CLI JSON behavior end-to-end. The hasattr smokes are redundant with the real CLI suite; safe to drop or keep only as import-regression guards (Tier4).",
+   "severity": "LOW"
+  }
+ ],
+ "weak_or_obsolete": [
+  {
+   "file": "tests/unit/test_database_migrations_phase18.py",
+   "test": "test_cli_uses_same_engine / test_startup_uses_same_engine",
+   "issue": "Tier4 hasattr() smokes \u2014 assert only that the module exposes a class name; superseded by real behavioral CLI tests in test_cli_db_phase18.py. Also test_migration_failure_is_visible relies on an undocumented private hook eng._fail_next (test-only backdoor); if that hook is removed the test silently passes with a fake success path.",
+   "action": "drop or keep as import guard only; prefer asserting the gate function exists and returns the documented shape (already done in test_startup_gate_applies_and_reports)"
+  },
+  {
+   "file": "tests/unit/test_audit_db_growth_bug054.py",
+   "test": "test_payload_is_minimal_and_approved_only",
+   "issue": "asserts exact set equality on payload keys \u2014 brittle to any additive schema evolution (e.g. a new approved diagnostic field breaks the test even when the change is intended). The len(row[0]) < 400 bound also hardcodes a byte size.",
+   "action": "preserve, but relax to subset assertion (required keys present, banned keys absent) + keep size bound"
+  },
+  {
+   "file": "tests/unit/test_audit_db_growth_bug054.py",
+   "test": "_flush helper",
+   "issue": "background worker drain uses queue.join() + fixed time.sleep(1.0); sleep-based synchronization is a flake source under load/CI.",
+   "action": "replace with poll-until-condition loop on row counts"
+  },
+  {
+   "file": "tests/unit/test_web_security.py",
+   "test": "test_08_no_raw_str_e_in_server_returns",
+   "issue": "opens src/nexus_scalp/web/server.py via CWD-relative path 'src/nexus_scalp/web/server.py' \u2014 breaks when pytest is run from a different working directory (pytest rootdir is repo so usually fine, but it is CWD-dependent). Same pattern in test_09 (uses relative open).",
+   "action": "anchor to Path(__file__).resolve().parents[2] like tests/unit/test_settings_api_bug072.py does"
+  },
+  {
+   "file": "tests/unit/test_web_security.py",
+   "test": "test_06_server_log_contains_detailed_exception",
+   "issue": "very elaborate logging capture with root-handler surgery and raiseExceptions toggling; documented order-dependence workarounds; brittle to structlog/rich renderer changes. Valuable assertion (server logs must keep detail) but high maintenance cost.",
+   "action": "keep Tier1; consider moving to a dedicated logger-fixture helper"
+  },
+  {
+   "file": "tests/unit/test_web_chart_forming_bar_bug082.py",
+   "test": "(suite)",
+   "issue": "only covers /api/chart/history ENGINE_STATE path; BUG-082 also touched /api/live/state and the broker-history path (adapter returns bars) \u2014 the adapter path and live/state path are untested.",
+   "action": "extend with live/state + broker-history fallback variants"
+  },
+  {
+   "file": "tests/unit/test_telegram_notifier.py",
+   "test": "test_telegram_notifier_queue_capacity_limit",
+   "issue": "asserts res_crit is None for the CRITICAL bypass message \u2014 but callback-mode send returns None even on success, so the assertion cannot distinguish bypass from drop; the 'dropped 6th INFO' assertion (first res is None) has the same ambiguity. Real proof the queue accepted the critical message is missing.",
+   "action": "assert via callbacks_received/urlopen invocation counts instead"
+  },
+  {
+   "file": "tests/unit/test_telegram_notifier.py",
+   "test": "test_telegram_notifier_rate_limiting",
+   "issue": "sends 5 messages with rate_limit=15 configured and asserts all succeed \u2014 the rate limiter never actually engages, so the test does not exercise the limit path (it is a send-success test in disguise).",
+   "action": "set rate_limit below sent count (e.g. 3) and assert the excess is suppressed"
+  },
+  {
+   "file": "tests/unit/test_mt5_adapter.py",
+   "test": "(whole file)",
+   "issue": "single 18-line smoke: only unconnected-state RuntimeError; no coverage of connected queries, symbol/rate mapping, error-code translation, reconnection. The adapter is the live-trading bridge to the broker \u2014 the thinnest coverage in the audit set.",
+   "action": "expand with mocked MT5-module cases mirroring test_mt5_providers_phase14 quality"
+  },
+  {
+   "file": "tests/unit/test_logging.py",
+   "test": "test_configure_logging_and_get_logger",
+   "issue": "smoke asserts logger is not None; configure_logging with json_format=False/log_to_file=False doesn't assert output routing, level application, or json output path.",
+   "action": "add json-format + level assertions"
+  },
+  {
+   "file": "tests/integration/test_database_execution_audit.py",
+   "test": "(whole file)",
+   "issue": "repo-relative DB 'artifacts/test_audit.db' (deletes at start, so self-cleaning, but pollutes repo dir and breaks parallel test isolation if two workers run it); print()-based verification; heavy torch dependency.",
+   "action": "switch to tmp_path fixture; replace prints with asserts"
+  },
+  {
+   "file": "tests/integration/test_signal_pipeline_health.py",
+   "test": "(whole file)",
+   "issue": "same artifact-DB/print/torch issues as test_database_execution_audit; near-duplicate scaffold.",
+   "action": "share fixtures, tmp_path DBs; see duplicates"
+  },
+  {
+   "file": "tests/unit/test_database_hygiene_task11.py",
+   "test": "test_hyg_real_db_copy_plan_only",
+   "issue": "skipif on a hardcoded Windows path 'C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\audit.db' \u2014 machine-specific; silently skips everywhere except the author's machine, so it provides no CI regression value (still valuable as a local forensic check).",
+   "action": "keep but base the skip on Path with REPO_ROOT so it works on any checkout"
+  },
+  {
+   "file": "tests/unit/test_schema_70d_reconciliation.py",
+   "test": "current_70d_01/04/05/06/07/09 (real-data tests)",
+   "issue": "pytest.skip() when champion/candidate/dataset artifacts absent \u2014 coverage gap on machines without artifacts; acceptable (honest skip-not-pass, enforced by test_current_70d_12), but the remaining skips mean drift in real artifacts is only caught where artifacts exist.",
+   "action": "keep; consider a nightly artifact-verification job instead of expecting local runs to cover it"
+  },
+  {
+   "file": "tests/release/test_build_script_hardening.py",
+   "test": "(whole file)",
+   "issue": "substring assertions on README/docs text (e.g. 'checksums' in docs.lower()) are vacuous \u2014 documents will always mention their own keywords; the valuable parts are the workflow-ordering and PS1 path assertions.",
+   "action": "drop or soften the docs-substring checks"
+  }
+ ],
+ "preserve_edge_cases": [
+  {
+   "file": "tests/unit/test_database_migrations_phase18.py",
+   "tests": [
+    "test_wal_database_migration_safe",
+    "test_modified_historical_migration_detected",
+    "test_rollback_preserves_historical_data",
+    "test_downgrade_blocked"
+   ],
+   "why": "WAL with uncheckpointed data survives backup+migration; tamper detection via checksum rewrite; rollback restores business rows bit-identical; schema version 999 downgrade blocked instead of clobbered"
+  },
+  {
+   "file": "tests/unit/test_database_hygiene_task11.py",
+   "tests": [
+    "test_hyg03_split_fill_is_not_duplicate",
+    "test_hyg35_no_deletion_when_confidence_lt_one",
+    "test_hyg13_archive_checksum_verified",
+    "test_hyg02_exact_duplicate_detection"
+   ],
+   "why": "split-fill rows must NEVER be treated as duplicates; below-1.0 confidence blocks deletion entirely; archive checksum verified before delete. Directly guards known 'hygiene duplicate detection' regression"
+  },
+  {
+   "file": "tests/unit/test_audit_db_growth_bug054.py",
+   "tests": [
+    "test_guard_codes_go_to_telemetry_not_signals",
+    "test_purge_removes_old_keeps_fresh_and_never_touches_ledger",
+    "test_identical_decision_collapses_to_one_row"
+   ],
+   "why": "guard codes never become audit_signals rows; purge respects per-table retention and NEVER touches audit_ledger (accounting truth); identical decision across request_ids collapses to exactly one row"
+  },
+  {
+   "file": "tests/unit/test_mt5_providers_phase14.py",
+   "tests": [
+    "test_broker_epoch_offset_applied",
+    "test_none_and_garbage_return_none",
+    "test_deal_net_result_subtracts_costs",
+    "test_non_utc_aware_converted_to_utc"
+   ],
+   "why": "broker-server-local epoch (+3h) mapped to real UTC, not treated as UTC; NaN/garbage timestamp -> None (never raised, never fabricated); deal net_result = profit - swap - commission - fee; fixed-offset tz converted to UTC with correct hour rollback"
+  },
+  {
+   "file": "tests/unit/test_release_update_phase17.py",
+   "tests": [
+    "test_github_429_not_fabricated",
+    "test_rollback_never_restores_old_user_data",
+    "test_telegram_credential_preservation",
+    "test_database_migration_version_aware",
+    "test_download_interruption_recovery"
+   ],
+   "why": "HTTP 429/DNS failures return typed errors not fabricated releases; rollback restores app snapshot but NEVER old user data (in-tree artifacts/data/logs survive); telegram credentials preserved across update; migration version-aware; interrupted downloads recover"
+  },
+  {
+   "file": "tests/unit/test_release_migration_0007_phase19.py",
+   "tests": [
+    "test_audit_0007_already_current_no_op",
+    "test_audit_0007_integrity_and_financial_preserved"
+   ],
+   "why": "already-v7 DB is a true no-op (pending empty); migration records backup path and leaves ledger PnL sum bit-exact (14.5) with FK check clean"
+  },
+  {
+   "file": "tests/unit/test_settings_api_bug072.py",
+   "tests": [
+    "test_config_save_empty_token_does_not_wipe_store",
+    "test_config_save_persists_token_to_secret_store",
+    "test_clear_token_disables"
+   ],
+   "why": "UI masked-token round-trip submits empty string \u2014 must NOT wipe the secret store; token persists to secret store with YAML verified token-free; explicit clear disables while keeping enabled=false semantics"
+  },
+  {
+   "file": "tests/unit/test_settings_subsystem_bug072.py",
+   "tests": [
+    "test_migration_failure_keeps_legacy",
+    "test_corrupt_db_reports_degraded_state",
+    "test_secret_never_plaintext_on_disk"
+   ],
+   "why": "legacy YAML->secret-store migration failure keeps legacy working (no data-loss cliff); corrupt settings DB reports degraded state instead of crashing; secrets encrypted/absent on disk"
+  },
+  {
+   "file": "tests/unit/test_web_security.py",
+   "tests": [
+    "test_07_sse_payload_has_no_traceback",
+    "test_02_no_sql_or_path_in_payload",
+    "test_04_request_id_present_and_header_echoed"
+   ],
+   "why": "real uvicorn SSE stream sanitized (no traceback/file://); sqlite error text and filesystem paths never leak; request-id echo + autogeneration contract"
+  },
+  {
+   "file": "tests/unit/test_web_chart_forming_bar_bug082.py",
+   "tests": [
+    "test_chart_history_forming_minute_flag",
+    "test_chart_history_forming_bar_not_in_completed_tail"
+   ],
+   "why": "the still-forming M1 minute must ship is_complete=False (61 bars = 60 completed + forming) and its OHLC never joins the completed tail \u2014 the exact BUG-082 / web div-balance regression"
+  },
+  {
+   "file": "tests/unit/test_news_phase12.py",
+   "tests": [
+    "test_08_ingestor_exact_duplicate_collapses",
+    "test_39_historical_article_immutable",
+    "test_34_news_cannot_bypass_risk",
+    "test_33_news_cannot_force_buy",
+    "test_29_local_remains_authoritative_after_api_failure",
+    "test_60_news_subsystem_imports_without_mt5"
+   ],
+   "why": "exact-content dedup collapses; historical articles immutable (versioned, never overwritten); news can neither force a buy nor bypass risk gates; local evidence authoritative after API failure; news subsystem must import without MT5"
+  },
+  {
+   "file": "tests/unit/test_news_bridge_contract_phase13b.py",
+   "tests": [
+    "test_polars_scalar_no_oserror",
+    "test_future_event_strictly_invisible",
+    "test_identical_timestamp_deterministic"
+   ],
+   "why": "Windows-specific polars scalar access must not raise OSError; future-dated news strictly invisible at T; identical-timestamp duplicate selection deterministic (last-of-group wins)"
+  },
+  {
+   "file": "tests/unit/test_news_bridge_finalize_phase13b.py",
+   "tests": [
+    "test_nan_inf_never_reach_dataset",
+    "test_unknown_categorical_never_nan_or_random",
+    "test_benchmark_runner_refuses_synthetic_news"
+   ],
+   "why": "NaN/Inf must never reach a training dataset; unknown categorical values encode deterministically (never NaN/random); benchmark runner refuses synthetic news shape \u2014 guards dataset integrity"
+  },
+  {
+   "file": "tests/unit/test_telegram_notifier.py",
+   "tests": [
+    "test_telegram_notifier_failed_send_retry_not_deduplicated",
+    "test_telegram_notifier_distinct_messages_not_conflated",
+    "test_telegram_notifier_html_escaping_and_truncation"
+   ],
+   "why": "failed send must not poison dedup cache (retry still fires); identical non-digit-prefix messages must not conflate (signature collisions); HTML escaping + 4096 truncation with closing tags"
+  },
+  {
+   "file": "tests/unit/test_forensic_monitoring_task11.py",
+   "tests": [
+    "test_critical_never_averaged_away",
+    "test_unknown_not_below_critical",
+    "test_known_historical_duplicate_is_warning",
+    "test_checks_are_read_only",
+    "test_engine_has_no_mutation_api"
+   ],
+   "why": "aggregation must never average CRITICAL away; UNKNOWN ordering semantics; historical duplicates degrade to WARNING while new duplicates are CRITICAL; the health engine is provably read-only"
+  },
+  {
+   "file": "tests/unit/test_incident_response_task12.py",
+   "tests": [
+    "test_55_repeats_become_one_incident",
+    "test_zip_bundle_no_secrets",
+    "test_quarantine_never_deletes",
+    "test_clock_skew_measured",
+    "test_same_fingerprint_after_fix_is_regression_candidate"
+   ],
+   "why": "55 repeats collapse to one incident via stable fingerprint; exported zip bundle strips secrets; quarantine keeps the record (never deletes); clock skew measured not assumed; same fingerprint after a fix flags a regression candidate"
+  },
+  {
+   "file": "tests/unit/test_debug_snapshot_phase20.py",
+   "tests": [
+    "test_sse_serialization_error_surfaces_in_debug",
+    "test_debug_26_datetime_serialization",
+    "test_debug_29_no_secret_leakage"
+   ],
+   "why": "SSE serialization errors surface with correlation_id in the debug console (known SSE serialization regression); every canonical type (datetime/features/model) serializes; no secret keys leak into snapshot JSON"
+  },
+  {
+   "file": "tests/unit/test_schema_70d_reconciliation.py",
+   "tests": [
+    "test_schema_70d_08_legacy_schema_blocked_from_production",
+    "test_current_70d_17_head3_weight_integrity_detection",
+    "test_current_70d_18_3class_model_rejected"
+   ],
+   "why": "legacy scalp_v4 blocked from production candidates; head3 weight tampering detected; 3-class models rejected (contract is 4-class)"
+  },
+  {
+   "file": "tests/release/test_release_hardening.py",
+   "tests": [
+    "test_secrets_scan_flags_real_bot_token",
+    "test_secrets_scan_passes_placeholders",
+    "test_verifier_identity_mismatch_fails"
+   ],
+   "why": "secrets scan distinguishes REAL tokens from placeholders (no false positives); identity mismatch (build-info version rewrite) fails verification"
+  }
+ ],
+ "protected_modified_files": [
+  {
+   "file": "tests/conftest.py",
+   "status": "PROTECTED \u2014 being modified by a parallel agent",
+   "action": "audit only; do not touch. Current content registers tests/helpers/shadow70_fixtures.py fixtures (contract, tmp_artifacts) repo-wide and enables assert rewriting for that helper module."
+  },
+  {
+   "file": "scratch/audit_test_inventory.json",
+   "status": "untracked scratch artifact from sibling audit agent",
+   "action": "do not modify"
+  },
+  {
+   "file": "scratch/audit_test_duplication.json",
+   "status": "untracked scratch artifact from sibling audit agent",
+   "action": "do not modify"
+  },
+  {
+   "file": "scratch/audit_ml_ast.json / scratch/audit_ml_digest.json",
+   "status": "untracked scratch artifacts (sibling ML-focused agent)",
+   "action": "do not modify"
+  },
+  {
+   "file": "tests/unit/test_database_performance.py",
+   "status": "DOES NOT EXIST in repo",
+   "action": "task context listed it as a focus file but no such file exists; performance coverage lives in test_70d_perf_task3.py / test_candle_intel_perf.py (model/perf domain, outside this audit's scope)"
+  }
+ ],
+ "summary": "Audited 30 test files (29 present; test_database_performance.py absent) protecting database/adapters/configuration/settings/news/observability/hygiene/incidents/release/web production under src/nexus_scalp; ~580 tests classified across 4 tiers. Key findings: (1) Near-duplicates: integration execution_audit vs pipeline_health share ~80% scaffolding and both write repo-relative artifacts/*.db \u2014 merge or share fixtures; news_bridge triple overlap is intentional phase-layered (normalize vs context vs dataset/benchmark gate) \u2014 keep; telegram 4-file cluster is layered, not duplicate \u2014 keep; migration idempotency asserted at engine/migration/update granularity \u2014 keep. (2) Weak/obsolete: test_mt5_adapter.py single 18-line smoke (thinnest coverage); test_logging.py smoke; telegram queue-capacity and rate-limit tests that never engage their mechanisms; CWD-relative opens in test_web_security.py; hardcoded machine path in test_hyg_real_db_copy_plan_only; hasattr-smoke Tier4 tests superseded by test_cli_db_phase18; docs-substring checks in test_build_script_hardening. (3) preserved edge cases listed above \u2014 highest priority: WAL backup, tamper checksum, downgrade block, split-fill-never-duplicate, purge-never-touches-ledger, broker epoch offset, rollback-never-restores-old-user-data, empty-token-no-wipe, forming-bar is_complete=False, news-cannot-force-buy, Windows polars OSError guard, NaN/Inf never in datasets, dedup-cache poisoning, UNKNOWN-vs-CRITICAL ordering, zip-no-secrets, SSE serialization error surfacing, legacy schema blocked. (4) Known-regression map: telegram credential routing (BUG-072/080) -> settings_api_bug072 + settings_subsystem_bug072 + release_update phase17; SSE serialization -> debug_snapshot_phase20 + web_security; schema migration idempotency -> database_migrations_phase18 + release_migration_0007 + release_update; retention windows -> audit_db_growth_bug054 + hygiene task11; hygiene duplicate detection -> hygiene task11 HYG-02/03; release rollback -> release_update phase17; web div-balance/forming bar -> web_chart_forming_bar_bug082."
+}

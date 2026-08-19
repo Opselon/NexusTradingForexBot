@@ -98,7 +98,20 @@ def configure_logging(
 
     handlers: list[logging.Handler] = []
 
-    console_handler = logging.StreamHandler(sys.stdout)
+    # Frozen-EXE hardening (BUG-122): the PyInstaller console runs on the
+    # active ANSI code page (cp1252 on this host). News titles / metadata
+    # legitimately carry em-dashes, EUR signs etc.; a console StreamHandler
+    # raising UnicodeEncodeError there would kill the asyncio loop from
+    # inside the error path. errors="replace" keeps the console readable
+    # and never lets a log write take down the engine.
+    _console_stream: Any = sys.stdout
+    try:
+        # TextIO has no reconfigure per typeshed; Any defers the check to
+        # runtime (AttributeError is caught below) so frozen wrappers still work.
+        _console_stream = _console_stream.reconfigure(errors="replace")
+    except (AttributeError, ValueError):
+        pass  # non-reconfigurable stream (e.g. some frozen wrappers)
+    console_handler = logging.StreamHandler(_console_stream)
     console_handler.setFormatter(formatter)
     console_handler.setLevel(numeric_level)
     handlers.append(console_handler)

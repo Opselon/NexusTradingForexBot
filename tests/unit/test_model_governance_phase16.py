@@ -619,12 +619,16 @@ class TestEvidence:
         """
         import nexus_scalp.governance.evidence as _evidence_mod
 
-        monkeypatch.setattr(_evidence_mod, "DRIFT_THRESHOLDS", {
-            "PROBABILITY": 0.20,
-            "ACTION": 0.25,
-            "FEATURE": 0.5,
-            "NEWS": 0.5,
-        })
+        monkeypatch.setattr(
+            _evidence_mod,
+            "DRIFT_THRESHOLDS",
+            {
+                "PROBABILITY": 0.20,
+                "ACTION": 0.25,
+                "FEATURE": 0.5,
+                "NEWS": 0.5,
+            },
+        )
         vec = [0.0] * 50 + [3.0] * 20  # drift ONLY in the 60..69 tail
         alerts = detect_drift(
             probs_window=[[0.8, 0.1, 0.1, 0.0]] * 40,

@@ -59,11 +59,13 @@ def _make_old_audit_db(path: Path) -> None:
     con.execute("INSERT INTO schema_meta (key, value) VALUES ('schema_version', '6')")
     # v6 means 0005/0006 were applied — record honest history rows so the
     # engine plans only AUDIT-0007.
-    for mid, ver in (("AUDIT-0002-add-audit-orders-ticket-index", 2),
-                     ("AUDIT-0003-ledger-exit-evidence-columns", 3),
-                     ("AUDIT-0004-ledger-close-time-index", 4),
-                     ("AUDIT-0005-governance-audit-tables", 5),
-                     ("AUDIT-0006-incident-response-tables", 6)):
+    for mid, ver in (
+        ("AUDIT-0002-add-audit-orders-ticket-index", 2),
+        ("AUDIT-0003-ledger-exit-evidence-columns", 3),
+        ("AUDIT-0004-ledger-close-time-index", 4),
+        ("AUDIT-0005-governance-audit-tables", 5),
+        ("AUDIT-0006-incident-response-tables", 6),
+    ):
         con.execute(
             "INSERT INTO schema_migrations (migration_id, domain, version, status) "
             "VALUES (?, 'audit', ?, 'applied')",

@@ -35,8 +35,15 @@ def artifact_root(tmp_path: Path) -> Path:
     root = tmp_path / "models"
     root.mkdir()
 
-    def _write(model_id: str, schema_id: str, dim: int, *, scaler: bool = True,
-               liquidity_algo: str = "1.0.0", artifact_hash: str = "") -> Path:
+    def _write(
+        model_id: str,
+        schema_id: str,
+        dim: int,
+        *,
+        scaler: bool = True,
+        liquidity_algo: str = "1.0.0",
+        artifact_hash: str = "",
+    ) -> Path:
         d = root / model_id
         d.mkdir()
         (d / "model.pt").write_bytes(b"weights-" + model_id.encode())
@@ -55,9 +62,7 @@ def artifact_root(tmp_path: Path) -> Path:
             "scaler_hash": rma.sha256_file(d / "scaler.npz") if scaler else "",
             "liquidity_algorithm_version": liquidity_algo,
         }
-        (d / "model.json").write_text(
-            json.dumps(mf, indent=2), encoding="utf-8"
-        )
+        (d / "model.json").write_text(json.dumps(mf, indent=2), encoding="utf-8")
         return d
 
     _write("champ_50d", "scalp_v1", 50)
@@ -131,9 +136,7 @@ def test_classify_champion_retained(artifact_root: Path) -> None:
     m70 = rma.compute_artifact_identity(artifact_root / "model_70d")
     assert m70 is not None
     # A champion is by definition protected: ACTIVE, never pruned/archived.
-    assert (
-        rma.classify_artifact(m70, is_champion=True) == rma.ArtifactClass.ACTIVE
-    )
+    assert rma.classify_artifact(m70, is_champion=True) == rma.ArtifactClass.ACTIVE
 
 
 def test_summarize_preserves_all_artifacts(artifact_root: Path) -> None:

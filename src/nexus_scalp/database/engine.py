@@ -854,8 +854,7 @@ class DatabaseMigrationEngine:
         unexpected = [
             d
             for d in drifts
-            if d.get("classification") == "UNEXPECTED_DRIFT"
-            or d.get("kind") == "EXTRA_COLUMN"
+            if d.get("classification") == "UNEXPECTED_DRIFT" or d.get("kind") == "EXTRA_COLUMN"
         ]
         ok = (
             cur == exp

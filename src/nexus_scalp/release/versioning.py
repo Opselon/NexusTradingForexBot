@@ -34,6 +34,7 @@ STATUS_INCONSISTENT = "VERSION_INCONSISTENCY"
 #: Web bundle stamp key inside build-info.json (written by the release build).
 WEB_BUNDLE_STAMP_KEY = "web_bundle_version"
 
+
 #: Runtime-capability probe (default: liquidity feature producer importable).
 def _liquidity_producer_available() -> bool:
     try:
@@ -104,9 +105,7 @@ class RuntimeVersionBlock:
         # (1) build-info stamp vs live-hash when BOTH present and disagreeing.
         live_hash, live_count = _hash_web_dir(self.web_dir)
         if stamp and live_count and live_hash and stamp != live_hash and live_count > 0:
-            problems.append(
-                f"web bundle stamp {stamp} != served assets hash {live_hash[:12]}"
-            )
+            problems.append(f"web bundle stamp {stamp} != served assets hash {live_hash[:12]}")
         # (2) active schema must be registered.
         if not active_schema.get("registered"):
             problems.append(f"active schema {ACTIVE_SCHEMA_ID} not registered")
@@ -114,17 +113,13 @@ class RuntimeVersionBlock:
         for _domain, dv in db_versions.items():
             if isinstance(dv, dict) and "current" in dv and "expected" in dv:
                 if dv["current"] != dv["expected"]:
-                    problems.append(
-                        f"db {_domain} v{dv['current']} != expected v{dv['expected']}"
-                    )
+                    problems.append(f"db {_domain} v{dv['current']} != expected v{dv['expected']}")
         # (4) app version sanity: never 0.0.0 in a real release (dev only).
         if app_version == "0.0.0":
             problems.append("application version 0.0.0 (unstamped build)")
 
         block["problems"] = problems
-        block["version_status"] = (
-            STATUS_INCONSISTENT if problems else STATUS_CONSISTENT
-        )
+        block["version_status"] = STATUS_INCONSISTENT if problems else STATUS_CONSISTENT
         return block
 
 

@@ -84,20 +84,26 @@ def _fresh_audit_db(path: Path, *, with_data: bool = True) -> None:
             "INSERT INTO audit_ledger (ticket, symbol, pnl, net_pnl_usd) "
             "VALUES (1001, 'XAUUSD', -12.5, -12.5), (1002, 'XAUUSD', 33.0, 33.0)"
         )
-        con.execute("INSERT INTO audit_broker_trades (ticket, pnl) VALUES (1001, -12.5), (1002, 33.0)")
+        con.execute(
+            "INSERT INTO audit_broker_trades (ticket, pnl) VALUES (1001, -12.5), (1002, 33.0)"
+        )
         con.execute(
             "INSERT INTO audit_experience_outcomes (outcome_id, ticket) "
             "VALUES ('o1', 1001), ('o2', 1002)"
         )
-        con.execute("INSERT INTO research_runs (run_id, strategy_id) VALUES ('r1', 'scalp_default')")
+        con.execute(
+            "INSERT INTO research_runs (run_id, strategy_id) VALUES ('r1', 'scalp_default')"
+        )
     con.commit()
     con.close()
 
 
 def _counts(path: Path) -> dict:
     con = sqlite3.connect(path)
+
     def q(sql: str):
         return con.execute(sql).fetchone()[0]
+
     out = {
         "ledger": q("SELECT COUNT(*) FROM audit_ledger"),
         "broker": q("SELECT COUNT(*) FROM audit_broker_trades"),

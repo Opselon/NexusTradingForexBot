@@ -429,13 +429,23 @@ class WalkForwardTrainer:
             return copy.deepcopy(target_model)
         valid_df = recent_df.slice(0, len(recent_df) - purge_len)
         X_raw, y = self._extract_X_y(valid_df, feature_cols)
-        # Cold-Start Scaler Fallback
+        # Cold-Start Scaler Fallback: a missing OR dimension-incompatible
+        # scaler (stale/foreign artifact from an older schema, e.g. a 70D
+        # scaler on a 50D trainer) must never crash online fine-tuning - the
+        # buffer scaler is refit instead (same resilience contract as the
+        # FileNotFoundError path below).
         try:
             scaler = self._load_scaler()
-        except FileNotFoundError:
-            logger.info(
-                "No pre-existing scaler artifact found for fine-tuning. Fitting initial scaler on recent memory buffer."
-            )
+        except (FileNotFoundError, RuntimeError) as _scaler_err:
+            if isinstance(_scaler_err, RuntimeError):
+                logger.warning(
+                    "Pre-existing scaler artifact incompatible with schema; refitting on buffer",
+                    error=str(_scaler_err),
+                )
+            else:
+                logger.info(
+                    "No pre-existing scaler artifact found for fine-tuning. Fitting initial scaler on recent memory buffer."
+                )
             scaler = self._fit_scaler(X_raw)
             # Persist the fitted fallback scaler IMMEDIATELY. Previously it was only
             # saved when a fine-tune passed the quality gate, so a rejected cold-start

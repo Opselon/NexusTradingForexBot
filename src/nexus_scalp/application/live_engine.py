@@ -27,7 +27,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nexus_scalp.hygiene.worker_runner import DatabaseHygieneWorker
+    from nexus_scalp.incidents.telemetry import IncidentTelemetryCollector
+    from nexus_scalp.incidents.worker import IncidentWorker
 
 import numpy as np
 import polars as pl
@@ -199,7 +204,7 @@ class LiveEngine:
         # ~24h — never every 60s.
         self._hygiene_interval_sec: float = 6 * 3600.0
         self._last_hygiene_time: float = 0.0
-        self._hygiene_worker = None  # lazy: DatabaseHygieneWorker (AUDIT_ONLY)
+        self._hygiene_worker: DatabaseHygieneWorker | None = None
         self._hygiene_mode = "AUDIT_ONLY"
 
         # TASK-13: incident response worker (background, off tick path).
@@ -207,8 +212,8 @@ class LiveEngine:
         # block trading; the worker is observability-only (INV-019).
         self._incident_interval_sec: float = 60.0
         self._last_incident_time: float = 0.0
-        self._incident_worker = None  # lazy: IncidentWorker
-        self._incident_telemetry = None  # lazy: IncidentTelemetryCollector
+        self._incident_worker: IncidentWorker | None = None  # lazy: IncidentWorker
+        self._incident_telemetry: IncidentTelemetryCollector | None = None
 
         self._running: bool = False
         self.server_state: Any = None

@@ -667,6 +667,8 @@ class TestBrokerReconciliation:
         ending_balance = starting_balance + sum(t.net_pnl for t in trades)
         assert ending_balance == pytest.approx(32830.02)
         assert sum(t.net_pnl for t in trades) == pytest.approx(-750.0)
+
+
 # ---------------------------------------------------------------------------
 # Normalizer regression (from the TASK-1 matrix)
 # ---------------------------------------------------------------------------

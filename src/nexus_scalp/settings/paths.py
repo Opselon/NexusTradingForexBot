@@ -8,6 +8,7 @@ survive upgrades/repairs, and are isolated from trading databases
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from nexus_scalp.release.paths import app_data_root, ensure_user_dirs
@@ -20,7 +21,17 @@ SETTINGS_DB_DIRNAME = "databases"
 
 
 def settings_db_path() -> Path:
-    """Absolute path of the isolated application-settings database."""
+    """Absolute path of the isolated application-settings database.
+
+    Honors the NEXUS_SETTINGS_DB env override (test isolation / diagnostics
+    escape hatch — same pattern as the NEXUS_TELEGRAM_BOT_TOKEN override).
+    When unset, falls back to <user-data>/databases/app_settings.db.
+    """
+    override = os.environ.get("NEXUS_SETTINGS_DB")
+    if override:
+        p = Path(override).expanduser()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
     ensure_user_dirs()
     db_dir = app_data_root() / SETTINGS_DB_DIRNAME
     db_dir.mkdir(parents=True, exist_ok=True)

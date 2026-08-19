@@ -400,4 +400,8 @@ hygiene_app = make_hygiene_app()
 # Convenience: expose a ready-to-register typer app for cli/main.py.
 db_app = make_db_app()
 # TASK-11: `nexus db hygiene *` — registered as a SUBCOMMAND of the `db` typer.
-db_app.add_typer(hygiene_app, name="hygiene", help="Database hygiene worker (TASK-11) — non-destructive defaults.")
+db_app.add_typer(
+    hygiene_app,
+    name="hygiene",
+    help="Database hygiene worker (TASK-11) — non-destructive defaults.",
+)

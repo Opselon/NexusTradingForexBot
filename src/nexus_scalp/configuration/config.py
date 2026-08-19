@@ -94,6 +94,20 @@ class AlgoConfig(BaseModel):
     w_hold_score: float = Field(default=0.10, ge=0.0, le=1.0)
 
 
+class ForensicReportConfig(BaseModel):
+    """TASK-12: periodic forensic Telegram report (bounded, dedup, config-driven).
+
+    Mirrors the shape read by nexus_scalp.forensics.telegram_report /
+    experience_gap (raw-YAML sections). Optional — disabled by default.
+    """
+
+    enabled: bool = False
+    interval_sec: int = 21600
+    minimum_severity: str = "WARNING"
+    aggregation_window_sec: int = 3600
+    experience_gap: dict[str, float] = Field(default_factory=dict)
+
+
 class AppConfig(BaseSettings):
     """
     Root application settings holding configuration sections.
@@ -116,6 +130,8 @@ class AppConfig(BaseSettings):
     news: NewsConfig | None = None
     # BUG-061: CANDLE INTELLIGENCE (local candle-close gate; isolated DB)
     candle_intel: CandleIntelligenceConfig | None = None
+    # TASK-12: FORENSIC REPORTING (periodic Telegram safety-net reports; optional)
+    forensic_report: ForensicReportConfig | None = None
 
     @classmethod
     def load_from_yaml(cls, yaml_path: Path) -> "AppConfig":

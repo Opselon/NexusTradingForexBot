@@ -132,7 +132,11 @@ class ArtifactStore:
 
         p = self.dataset_path(dataset_id)
         if not p.exists():
-            raise FileNotFoundError(f"Dataset artifact not found: {p}")
+            # Missing -> None (same convention as read_dataset_manifest).
+            # Callers guard with `if frame is None: pytest.skip(...)` /
+            # `if frame is None or frame.is_empty()`; raising here turned
+            # absent (not-yet-built) artifacts into hard test failures.
+            return None
         return pl.read_parquet(p)
 
     def read_dataset_manifest(self, dataset_id: str) -> dict[str, Any] | None:

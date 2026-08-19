@@ -663,6 +663,8 @@ def test_tl17_regime_reversal_is_captured():
         assert rev["to"] == "RANGING_MEAN_REVERSION"
     finally:
         audit.close()
+
+
 def test_tl19_timeline_event_ordering_is_deterministic():
     """Events persist with a monotonic per-ticket sequence and dedup key."""
     om, audit, db_path, mock, tracker = _make_om(with_tracker=True)

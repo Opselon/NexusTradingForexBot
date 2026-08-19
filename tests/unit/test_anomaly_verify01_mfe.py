@@ -134,6 +134,8 @@ def test_anom20_algorithm_version_preserved():
     trade = make_trade(direction="SELL", mae_points=-0.4, mfe_points=-0.6)
     anoms = _trade_data_anomalies(trade, "t9", "anomaly-v9")
     assert all(a.evidence.get("algorithm_version") == "anomaly-v9" for a in anoms)
+
+
 # ---------------------------------------------------------------------------
 # API/store: incident grouping
 # ---------------------------------------------------------------------------

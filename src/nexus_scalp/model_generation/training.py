@@ -313,15 +313,13 @@ class CandidateTrainer:
         try:
             import subprocess
 
-            _training_commit = (
-                subprocess.run(
-                    ["git", "rev-parse", "--short", "HEAD"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
-                ).stdout.strip()
-            )
+            _training_commit = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            ).stdout.strip()
         except Exception:
             _training_commit = ""
         manifest = ModelManifest(

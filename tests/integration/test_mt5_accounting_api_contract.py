@@ -138,6 +138,8 @@ class TestEquityCurveAndClosedHistory:
         # Broker trades carry position_id (the deterministic broker identity);
         # ledger rows carry ticket. Either is a valid row identity.
         assert (first.get("ticket")) or (first.get("position_id"))
+
+
 class TestStrategyAttributionFinancialConsistency:
     def test_strategy_rows_not_fabricated(self, client) -> None:
         res = client.get("/api/account/strategies")

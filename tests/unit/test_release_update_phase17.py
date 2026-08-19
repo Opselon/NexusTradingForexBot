@@ -171,6 +171,8 @@ def test_github_429_not_fabricated() -> None:
     assert upd.UpdateDiscovery.status_for_exception(err404) == "RELEASE_NOT_FOUND"
     err5xx = upd.GitHubDiscoveryError("503", "unavailable")
     assert upd.UpdateDiscovery.status_for_exception(err5xx) == "GITHUB_UNAVAILABLE"
+
+
 def test_missing_release_is_not_fabricated() -> None:
     plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(None)
     assert plan["status"] in ("RELEASE_NOT_FOUND", "NETWORK_ERROR", "GITHUB_UNAVAILABLE")
@@ -600,6 +602,8 @@ def test_install_mode_detection(app_root: Path, tmp_path: Path) -> None:
         "UNKNOWN",
     )
     assert det.describe(app_root).get("mode") == mode
+
+
 # ---------------------------------------------------------------------------
 # TEST-UP-34  staged upgrade path
 # ---------------------------------------------------------------------------

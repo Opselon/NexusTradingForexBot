@@ -64,8 +64,6 @@ def verify_checksums_file(sums_file: Path, base_dir: Path | None = None) -> dict
     return {"valid": ok, "files": results}
 
 
-
-
 def _manifest_feature_schema(info: dict[str, Any]) -> str:
     """Canonical active feature schema id (registry-derived, brief 37).
 
@@ -119,7 +117,8 @@ def _manifest_db_schema_version(info: dict[str, Any]) -> int:
         from nexus_scalp.database.registry import expected_version_for_domain
 
         return max(
-            expected_version_for_domain(d) for d in (
+            expected_version_for_domain(d)
+            for d in (
                 DatabaseDomain.AUDIT,
                 DatabaseDomain.NEWS,
                 DatabaseDomain.CANDLE_INTEL,

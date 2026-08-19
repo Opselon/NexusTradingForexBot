@@ -168,8 +168,13 @@ class RSSNewsSourceAdapter(NewsSourceAdapter):
         title = getattr(entry, "title", "") or ""
         link = getattr(entry, "link", "") or ""
         summary = getattr(entry, "summary", "") or ""
-        published = getattr(entry, "published", "") or getattr(entry, "updated", "") or ""
-        updated = getattr(entry, "updated", "") or published
+        published = getattr(entry, "published", "") or ""
+        # IMPORTANT: `"updated" in entry` does NOT trigger feedparser's
+        # deprecated published->updated fallback mapping (a direct attribute
+        # access on a published-only entry warns on EVERY call). Check the raw
+        # key first so feeds without an `updated` field never raise the
+        # DeprecationWarning, then fall back to `published` (identical value).
+        updated = getattr(entry, "updated", "") if "updated" in entry else published
         return {
             "title": title.strip(),
             "url": link,

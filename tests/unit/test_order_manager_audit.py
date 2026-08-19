@@ -19,6 +19,8 @@ def test_legacy_file_deletion() -> None:
     assert not legacy_path.exists(), (
         f"Dead legacy file {legacy_path} must be deleted from repository."
     )
+
+
 def test_active_order_manager_import_and_symbols() -> None:
     """Verifies that the active implementation src/nexus_scalp/execution/order_manager.py
 

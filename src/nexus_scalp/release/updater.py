@@ -1964,9 +1964,7 @@ class UpdateOrchestrator:
                     application_version=str(plan.get("target_version", "")),
                 )
                 dres = eng.migrate()
-                results["steps"].append({
-                    "kind": "database", "domain": domain_name, **dres
-                })
+                results["steps"].append({"kind": "database", "domain": domain_name, **dres})
                 if dres["state"] in (
                     "DB_MIGRATION_FAILED",
                     "DB_BLOCKED",
@@ -1978,9 +1976,7 @@ class UpdateOrchestrator:
             except Exception as e:
                 if isinstance(e, MigrationError):
                     raise
-                raise MigrationError(
-                    f"database migration failed for {domain_name}: {e}"
-                ) from e
+                raise MigrationError(f"database migration failed for {domain_name}: {e}") from e
         if any(s.get("applied") or s.get("migrated") for s in results["steps"]):
             results["result"] = "MIGRATED"
         return results

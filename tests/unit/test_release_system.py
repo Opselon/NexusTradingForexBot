@@ -110,6 +110,8 @@ def test_architecture_detection_reports_supported_or_unsupported() -> None:
         assert not env.architecture_supported
     else:
         assert env.architecture_supported
+
+
 # ---------------------------------------------------------------------------
 # 4. REQUIREMENTS EVALUATION
 # ---------------------------------------------------------------------------

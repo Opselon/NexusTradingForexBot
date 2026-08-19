@@ -212,9 +212,11 @@ def compute_artifact_identity(
     if not weights.exists():
         return None
     manifest = manifest or {}
-    mg = (artifact_dir / "model.json").read_text(encoding="utf-8") if (
-        artifact_dir / "model.json"
-    ).exists() else "{}"
+    mg = (
+        (artifact_dir / "model.json").read_text(encoding="utf-8")
+        if (artifact_dir / "model.json").exists()
+        else "{}"
+    )
     try:
         mf: dict[str, Any] = json.loads(mg)
     except Exception:
@@ -368,9 +370,9 @@ def check_runtime_compatibility(
         )
 
     # 3. Schema hash matches (SCHEMA_HASH_MISMATCH)
-    declared_schema_hash = str(
-        (manifest or {}).get("schema_hash") or ""
-    ) or schema_hash_for(identity.schema_id)
+    declared_schema_hash = str((manifest or {}).get("schema_hash") or "") or schema_hash_for(
+        identity.schema_id
+    )
     if declared_schema_hash and declared_schema_hash != schema_hash_for(identity.schema_id):
         failures.append("schema_hash mismatch (manifest vs registry)")
 
@@ -422,9 +424,7 @@ def list_artifact_directories(root: Path) -> list[Path]:
     return out
 
 
-def summarize_artifacts(
-    root: Path, *, champion_model_id: str = ""
-) -> list[dict[str, Any]]:
+def summarize_artifacts(root: Path, *, champion_model_id: str = "") -> list[dict[str, Any]]:
     """Release-facing inventory of all model artifacts (brief sections 9/38).
 
     Returns one record per artifact directory: identity + class + runtime
@@ -445,7 +445,9 @@ def summarize_artifacts(
                 "class": cls.value,
                 "runtime_compatibility": compat.as_dict(),
                 "retention": {
-                    "action": "KEEP" if cls in (ArtifactClass.ACTIVE, ArtifactClass.LEGACY, ArtifactClass.RETAINED) else "ARCHIVE_OPTIONAL",
+                    "action": "KEEP"
+                    if cls in (ArtifactClass.ACTIVE, ArtifactClass.LEGACY, ArtifactClass.RETAINED)
+                    else "ARCHIVE_OPTIONAL",
                     "pruneable_by_release": cls == ArtifactClass.ARCHIVABLE,
                 },
             }

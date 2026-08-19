@@ -819,15 +819,15 @@ def equal_high_low_strengths(
     # using the latest pool confirmed_at; the caller passes mid price via atr
     # use — we instead use the average of the newest cluster values as a
     # proxy for where price currently is relative to the levels).
-    last_price = float(
-        np.mean(
-            [c["value"] for c in _cluster_equal_levels(sh_vals, sh_times, atr, tolerance_atr)][:1]
-        )
-        or np.mean(
-            [c["value"] for c in _cluster_equal_levels(sl_vals, sl_times, atr, tolerance_atr)][:1]
-        )
-        or 0.0
-    )
+    _sh_latest = _cluster_equal_levels(sh_vals, sh_times, atr, tolerance_atr)
+    _sl_latest = _cluster_equal_levels(sl_vals, sl_times, atr, tolerance_atr)
+    # Mean of empty slice guard: `[:1]` on an empty cluster list makes
+    # np.mean() warn 'Mean of empty slice' and yield NaN; the `or 0.0`
+    # fallback then masks it. Take the level explicitly with an
+    # empty-guard instead - identical result, no RuntimeWarning.
+    _sh_last = _sh_latest[0]["value"] if _sh_latest else None
+    _sl_last = _sl_latest[0]["value"] if _sl_latest else None
+    last_price = float(_sh_last or _sl_last or 0.0)
     sh_clusters = _cluster_equal_levels(sh_vals, sh_times, atr, tolerance_atr)
     sl_clusters = _cluster_equal_levels(sl_vals, sl_times, atr, tolerance_atr)
     return _score(sh_clusters), _score(sl_clusters)

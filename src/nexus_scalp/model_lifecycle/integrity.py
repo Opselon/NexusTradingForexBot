@@ -97,9 +97,7 @@ def inspect_artifact(
         logger.error("[MODEL] event=INTEGRITY_FAILURE model_id=%s", model_id)
         return info
 
-    input_shape = state_dict.get("input_projection.weight") or state_dict.get(
-        "projection.weight"
-    )
+    input_shape = state_dict.get("input_projection.weight") or state_dict.get("projection.weight")
     if not input_shape:
         return info
     actual_dim = int(input_shape[1])
@@ -131,8 +129,7 @@ def inspect_artifact(
         # it is the ONLY head-scale tensor (defensive fallback).
         rows = int(state_dict[head_key][0])
         if head_key == "head.0.weight" and any(
-            k.startswith("head.") and k != "head.0.weight" and "weight" in k
-            for k in state_dict
+            k.startswith("head.") and k != "head.0.weight" and "weight" in k for k in state_dict
         ):
             head_key = None
         else:

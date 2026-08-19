@@ -13,6 +13,7 @@ Design: pure-logic classification helpers are tested directly; the few
 integration points read `git status`/`git rev-parse` of THIS repository and
 remain deterministic on any working tree (they never mutate anything).
 """
+
 from __future__ import annotations
 
 import json
@@ -100,7 +101,10 @@ def failure_class(baseline: dict[str, str], current: dict[str, str]) -> str:
 
 
 def risk_of(scope: list[str]) -> str:
-    if any(p.endswith(("schema.py", "registry.py", "live_engine.py", "order_manager.py")) for p in scope):
+    if any(
+        p.endswith(("schema.py", "registry.py", "live_engine.py", "order_manager.py"))
+        for p in scope
+    ):
         return "HIGH"
     if any("/tests/" in p or p.startswith("docs/") or p.startswith("agents/") for p in scope):
         return "LOW"
@@ -176,7 +180,10 @@ def test_git02_unknown_file_detection() -> None:
 
 def test_git03_parallel_wip_preservation() -> None:
     # The surveillance commit scope must never include another task's files.
-    foreign = {"src/nexus_scalp/features/liquidity_engine.py", "tests/unit/test_shadow70_runtime.py"}
+    foreign = {
+        "src/nexus_scalp/features/liquidity_engine.py",
+        "tests/unit/test_shadow70_runtime.py",
+    }
     scope = {c for c, _ in parse_porcelain(run_git("status", "--porcelain"))}
     # whatever the tree holds, our helper never mutates: it only classifies
     assert foreign.intersection(scope) == foreign.intersection(scope)
@@ -202,7 +209,7 @@ def test_git05_secret_detection() -> None:
     assert is_secret_like("token = '1234567890abcdefghijklmnopqrst'")
     assert is_secret_like("-----BEGIN RSA PRIVATE KEY-----\nAAAA")
     assert is_secret_like("bot123456789:ABCdefGHIjklMNOpqrsTUVwxyz_-0123456789ab")
-    assert not is_secret_like("api_key = os.environ.get(\"KEY\", \"\")")  # env indirection is fine
+    assert not is_secret_like('api_key = os.environ.get("KEY", "")')  # env indirection is fine
     assert not is_secret_like("os.environ['TELEGRAM_BOT_TOKEN']")
 
 
@@ -376,7 +383,9 @@ def test_git18_repository_state_update() -> None:
     rs = REPO_ROOT / "agents/repository_state.md"
     if not rs.exists():
         return
-    assert re.search(r"^## Snapshot 2026-08-19 \(TASK-13 git surveillance\)", rs.read_text("utf-8"), re.M)
+    assert re.search(
+        r"^## Snapshot 2026-08-19 \(TASK-13 git surveillance\)", rs.read_text("utf-8"), re.M
+    )
 
 
 # ---------------------------------------------------------------------------

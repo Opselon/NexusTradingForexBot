@@ -169,7 +169,8 @@ def test_current_70d_04_champion_integrity():
     import hashlib
 
     pt = REPO_ROOT / "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
-    if not pt.exists():
+    meta_path = REPO_ROOT / "artifacts/models/scalp/XAUUSD/v1.0.0/model.meta.json"
+    if not pt.exists() or not meta_path.exists():
         pytest.skip("champion artifact not present in this environment")
     h = hashlib.sha256(pt.read_bytes()).hexdigest()
     assert len(h) == 64
@@ -177,11 +178,7 @@ def test_current_70d_04_champion_integrity():
     # its meta (the meta records the current hash).
     import json
 
-    meta = json.loads(
-        (REPO_ROOT / "artifacts/models/scalp/XAUUSD/v1.0.0/model.meta.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
     assert meta.get("current_hash") == h
 
 

@@ -306,6 +306,8 @@ def test_liq36_repeated_calculation_identical() -> None:
     v1 = compute_liquidity_features(bars2, decision_at=t).as_vector()
     v2 = compute_liquidity_features(bars2[:201], decision_at=t).as_vector()
     assert v1 == v2
+
+
 # ---------------------------------------------------------------------------
 # TEST-LIQ-44 — edge cases
 # ---------------------------------------------------------------------------

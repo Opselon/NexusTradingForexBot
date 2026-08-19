@@ -122,6 +122,8 @@ class TestSilentFailureReproduction:
         ):
             msg_id = notifier.send("Network-broken alert")
         assert msg_id is None  # old contract
+
+
 class TestObservabilityContract:
     """BUG-072: every notification must carry correlation/event telemetry."""
 
