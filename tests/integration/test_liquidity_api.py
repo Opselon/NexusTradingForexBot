@@ -193,9 +193,10 @@ def test_70d_10_toggle_persists_and_returns_new_state(api_env) -> None:
     assert body["success"] is True
     assert body["enabled"] is True
     assert body["status"] in ("ENABLED", "UNAVAILABLE", "DEGRADED")
-    # persistence went through the governor -> SettingsService mock
-    gov._settings_service.set.assert_called_with(
-        "model.liquidity_features_enabled", "1", actor="web"
+    # persistence went through the governor -> SettingsService.db (canonical
+    # typed SettingsDatabase API; INV-010/BUG-080 — never live.yaml writes).
+    gov._settings_service.db.set.assert_called_with(
+        "model.liquidity_features_enabled", True, value_type="bool", actor="web"
     )
     # the runtime flag is applied in the same object (hot reload, no restart)
     assert gov.enabled is True

@@ -530,9 +530,9 @@ class LiquidityGovernor:
                 "family_indices": "0..49 (scalp_v1 protected)",
             }
         return {
-            "id": SCHEMA_LIQUIDITY_60D,
-            "dimension": DIMENSION_LIQUIDITY_60D,
-            "family_indices": "0..49 BASE | 50..59 LIQUIDITY",
+            "id": SCHEMA_70D,
+            "dimension": DIMENSION_70D,
+            "family_indices": "0..49 BASE | 50..59 FAMILY | 60..69 LIQUIDITY",
         }
 
     def model_compatibility(self) -> dict[str, Any]:
