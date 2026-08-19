@@ -3061,12 +3061,21 @@ class LiveEngine:
                     # news vector from the same context the Champion saw
                     try:
                         if news_ctx is not None:
-                            from nexus_scalp.governance.alignment import vectorize_news_context
+                            from nexus_scalp.governance.alignment import (
+                                vectorize_news_context,
+                            )
+                            from nexus_scalp.features.liquidity_runtime import (
+                                build_70d_vector,
+                            )
+                            from nexus_scalp.shadow.shadow70.news_provider import (
+                                build_news_10,
+                            )
 
                             nv = vectorize_news_context(news_ctx)
-                            news10 = (nv + [0.0] * 10)[:10]
+                            news10, _ = build_news_10(nv)
                     except Exception:
                         news10 = [0.0] * 10
+
                     # liquidity features: injected producer when available
                     liquidity_calc_version = ""
                     try:
@@ -3075,7 +3084,9 @@ class LiveEngine:
                         liq10, liquidity_calc_version = build_liquidity_10(self, tick)
                     except Exception:
                         liq10, liquidity_calc_version = [0.0] * 10, ""
-                    vector70 = (base50 + news10 + liq10)[:SHADOW70_DIMENSION]
+                    vector70 = build_70d_vector(
+                        base50, family_10=news10, liquidity_10=liq10
+                    )
                     obs = rt70.observe(
                         vector70=vector70,
                         champion_action=champion_action,
