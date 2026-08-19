@@ -38,7 +38,7 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.model_generation.benchmark_70d")
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 RAW_M5 = REPO_ROOT / "data/raw/XAUUSD_M5.parquet"
 OUT_DIR = REPO_ROOT / "artifacts/model_generation/liquidity_research"
 
