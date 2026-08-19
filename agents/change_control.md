@@ -388,4 +388,63 @@ Affected files: src/nexus_scalp/web/debug_snapshot.py (new),
 Contracts: DEBUG_SNAPSHOT v1 (canonical /api/debug/state payload),
        FEATURE_SCHEMA_70D v1 (scalp_v3 registry-driven rendering)
 Status: VERIFIED
+```text
+CHANGE-ID: CHG-0020
+Agent: Hermes-SecurityHardening
+Role: CodeQL Security Alert Remediation
+Task: BUG-113 (16 GitHub code-scanning alerts: 12 py/exception-information-exposure, insecure temp file, clear-text storage, URL sanitization)
+Scope: All exception handlers in web/server.py diagnostics/debug/db-status/deploy-gate/SSE paths now return sanitized _err() envelopes and generic codes; full detail only in server logs. Incident report writes wrapped in restrictive umask (0o077; no-op on Windows). Worker-stall probe test uses TemporaryDirectory. Git-remote URL test uses host-boundary urlsplit check. incidents/__init__ __all__ completed (4 constants).
+Affected files: src/nexus_scalp/web/server.py, src/nexus_scalp/incidents/reports.py,
+       src/nexus_scalp/incidents/__init__.py, tests/unit/test_incident_response_task12.py,
+       tests/unit/test_git_surveillance_task13.py, agents/bugs.md (BUG-113)
+Affected functions/classes: get_db_hygiene, get_diagnostics_incidents,
+       get_diagnostics_incident, get_diagnostics_health, get_diagnostics_lineage,
+       get_diagnostics_forensics, get_diagnostics_incident_report,
+       get_diagnostics_incident_zip, get_diagnostics_search, get_debug_state,
+       get_db_migration_status, get_forensic_health, sse_telemetry_stream,
+       write_incident_reports (+_restrictive_umask), incident package __all__
+Contracts touched: NONE (response shapes unchanged for success paths; error envelopes
+       already standardized via safe_error_payload; DB_MIGRATION_FAILED /
+       FORENSIC_ENGINE_UNAVAILABLE error codes keep their previous string values)
+Runtime paths touched: /api/diagnostics/*, /api/db/hygiene, /api/db/status,
+       /api/debug/state, /api/forensics/health, /api/ticks/stream error frame
+Owners affected: TASK-12 incidents (Hermes-IncidentResponse) — error envelope now
+       sanitized; TASK-70D-DEBUG-CONSOLE (Hermes-Forensic-70D-UI) — debug snapshot
+       reason is generic code; BUG-110 SSE diagnostic — field names preserved
+Risk: LOW — error responses change from raw-exception text to generic codes;
+       success-path payloads unchanged; detail remains in existing structured logs
+Dependencies: BUG-110 SSE canonical_json, TASK-12 incidents store/reports
+Required tests: tests/unit/test_incident_response_task12.py,
+       tests/unit/test_git_surveillance_task13.py (87 passed)
+Status: VERIFIED
+```
+```text
+CHANGE-ID: CHG-0021
+Agent: AGENT-12
+Role: Continuous Forensic Monitoring & Production Safety Engineer
+Task: TASK-12-POST-70D-MONITORING
+Scope: Canonical deploy gate (deploy_gate.py, DEPLOY_POLICY, fail-safe
+       FORENSIC_ENGINE_UNAVAILABLE, evidence JSON), beforePush.sh/ps1 step
+       5/5, experience-gap forensics (first-divergence, s18 taxonomy,
+       defect-rate semantics - corrects CHECK-ACC-04 misattribution), news
+       source classification (s14 taxonomy, 200-but-wrong proven), liquidity
+       golden-reference freeze (LIQUIDITY_70D_GOLDEN_BASELINE.json@4455874),
+       dual-registry governance + fingerprint cross-verify (CHECK-GOV-01/02),
+       bounded Telegram periodic report (config-driven, dedup), trend
+       analysis, CLI forensic --deploy-gate/--trend/--gap/--report,
+       TEST-POST70D-01..28
+Affected files: forensics/{deploy_gate,experience_gap,news_sources,
+       telegram_report,trend}.py (new), forensics/{checks,engine,
+       references,__init__}.py (extended), cli/main.py, beforePush.sh/ps1,
+       configs/base.yaml (forensic_report), docs/POST_70D_DEPLOY_GATE.md +
+       TASK-12 final + anomaly audit + performance, tests/
+Contracts touched: DEPLOY_GATE v1 (new), EXPERIENCE_GAP v1 (new),
+       NEWS_SOURCE_CLASSIFICATION v1 (new)
+Runtime paths touched: none (read-only monitoring; CLI/API/worker only)
+Owners affected: TASK-8 governance (stale champion rows), Hermes-News (200-but-wrong)
+Risk: LOW
+Dependencies: TASK-11 monitoring engine, 70D golden baseline
+Required tests: TEST-POST70D-01..28, TEST-MONITOR-01..36
+Status: READY_FOR_REVIEW
+```
 

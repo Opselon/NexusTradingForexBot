@@ -56,3 +56,17 @@ news:
     api_importance_floor: 0.55
     request_timeout_sec: 20.0
     enabled: true
+
+# TASK-12: periodic forensic Telegram report (bounded, dedup, config-driven).
+# enabled=false by default — operators opt in. interval_sec = min time between
+# reports; aggregation_window_sec = per-check cooldown (identical alerts
+# aggregate, never spam).
+forensic_report:
+  enabled: false
+  interval_sec: 21600
+  minimum_severity: "WARNING"
+  aggregation_window_sec: 3600
+  experience_gap:
+    gap_rate_warning: 0.20
+    gap_rate_degraded: 0.50
+    recoverable_min: 5

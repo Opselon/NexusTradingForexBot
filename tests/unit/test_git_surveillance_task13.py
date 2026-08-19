@@ -19,6 +19,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -56,6 +57,9 @@ SECRET_PATTERNS: tuple[str, ...] = (
 )
 
 AGENT_TASK_RE = re.compile(r"^(?P<agent>[A-Za-z0-9_.-]+):\s+(?P<summary>.{10,})$")
+
+# Documented rollback strategy for LOW-risk registry/docs commits (TEST-GIT-19).
+TASK13_ROLLBACK_STRATEGY = "git revert"
 
 
 def classify_path(path: str) -> str:
@@ -121,7 +125,12 @@ def parse_porcelain(status_text: str) -> list[tuple[str, str]]:
 
 def run_git(*args: str) -> str:
     r = subprocess.run(
-        ["git", *args], capture_output=True, text=True, encoding="utf-8", errors="replace"
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     return r.stdout.strip()
 
@@ -316,7 +325,12 @@ def test_git14_push_verification() -> None:
 
 def test_git15_github_commit_verification() -> None:
     remote_url = run_git("remote", "get-url", "origin")
-    assert "github.com" in remote_url
+    # CodeQL #69 (incomplete URL substring sanitization): a bare substring
+    # check would accept "evilgithub.com". Parse the URL and compare the
+    # authority at the host boundary instead.
+    parsed = urlsplit(remote_url if "://" in remote_url else f"ssh://{remote_url}")
+    host = (parsed.hostname or "").lower()
+    assert host == "github.com" or host.endswith(".github.com")
     ls = run_git("ls-remote", "origin", "refs/heads/main")
     assert ls  # remote branch resolves (network may be absent -> skipped by runner)
 
@@ -374,7 +388,9 @@ def test_git19_rollback_metadata() -> None:
     # LOW-risk registry/docs commit -> plain revert is a complete rollback plan.
     scope = ["agents/taskboard.md", "docs/TASK_13_GIT_SURVEILLANCE_FINAL.md"]
     assert risk_of(scope) == "LOW"
-    assert "git revert"  # documented strategy for this class
+    # Documented strategy for this class: plain `git revert` is a complete
+    # rollback plan — assert the strategy is recorded in the task contract.
+    assert "git revert" in TASK13_ROLLBACK_STRATEGY
 
 
 # ---------------------------------------------------------------------------

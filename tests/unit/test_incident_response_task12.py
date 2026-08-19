@@ -813,22 +813,23 @@ class TestUiEmpty:
 
 class TestWorkerStall:
     def test_worker_stall_detector_contract(self) -> None:
-        from nexus_scalp.incidents.worker import format_incident_worker_status
-
-        store = IncidentStore(db_path=":memory:")
-        # in-memory store is not supported directly; use tmp
+        # CodeQL #78 (insecure temporary file): never mktemp — use a
+        # TemporaryDirectory so the path is unpredictable and owned.
         import tempfile
 
-        store = IncidentStore(db_path=tempfile.mktemp(suffix=".db"))
-        from nexus_scalp.incidents.worker import IncidentWorker
+        from nexus_scalp.incidents.worker import format_incident_worker_status
 
-        w = IncidentWorker(store, interval_sec=0.0)
-        w.start()
-        w.tick([])
-        w.stop()
-        st = format_incident_worker_status(w)
-        assert "running" in st
-        assert "incidents_created" in st
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from nexus_scalp.incidents.worker import IncidentWorker
+
+            store = IncidentStore(db_path=str(Path(tmpdir) / "worker_stall.db"))
+            w = IncidentWorker(store, interval_sec=0.0)
+            w.start()
+            w.tick([])
+            w.stop()
+            st = format_incident_worker_status(w)
+            assert "running" in st
+            assert "incidents_created" in st
 
     def test_worker_never_touches_trading(self) -> None:
         """Worker imports must not pull execution/risk objects (spec 34)."""

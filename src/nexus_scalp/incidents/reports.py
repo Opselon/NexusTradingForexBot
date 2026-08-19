@@ -12,8 +12,11 @@ configuration are never included.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import re
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -57,6 +60,23 @@ def mask_secrets(value: Any) -> Any:
     if isinstance(value, str):
         return _SECRET_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", value)
     return value
+
+
+@contextlib.contextmanager
+def _restrictive_umask() -> Iterator[None]:
+    """Temporarily set umask to 0o077 (owner-only), restore afterwards.
+
+    Windows: umask is not supported; os.umask raises -> yield directly.
+    POSIX: 0600-equivalent perms on newly created report files.
+    """
+    try:
+        old_umask = os.umask(0o077)
+        try:
+            yield
+        finally:
+            os.umask(old_umask)
+    except (AttributeError, OSError):
+        yield
 
 
 def incident_json(incident: Incident) -> dict[str, Any]:
@@ -160,11 +180,14 @@ def write_incident_reports(incident: Incident, base_dir: str | Path) -> dict[str
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / f"{incident.incident_id}.json"
     md_path = out_dir / f"{incident.incident_id}.md"
-    json_path.write_text(
-        json.dumps(incident_json(incident), ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-    md_path.write_text(incident_markdown(incident), encoding="utf-8")
+    # CodeQL #77 (clear-text storage): write report files with a
+    # restrictive umask so credentials never land world-readable.
+    with _restrictive_umask():
+        json_path.write_text(
+            json.dumps(incident_json(incident), ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        md_path.write_text(incident_markdown(incident), encoding="utf-8")
     return {
         "json": str(json_path),
         "markdown": str(md_path),
