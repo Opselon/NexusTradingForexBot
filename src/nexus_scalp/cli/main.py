@@ -58,6 +58,15 @@ from nexus_scalp.cli.db_commands import db_app
 # TASK-10 `db` group; TASK-11 hygiene registers as a SUBCOMMAND of `db`
 # so the spec surface is `nexus db hygiene status|plan|run|pause|resume|history`.
 app.add_typer(db_app, name="db", help="Database schema migration & management (TASK-10).")
+
+# TASK-12 incident response & forensic diagnostics (`nexus incidents ...`).
+from nexus_scalp.cli.incident_commands import incidents_app
+
+app.add_typer(
+    incidents_app,
+    name="incidents",
+    help="Incident response & forensic diagnostics (TASK-12) — read-only by default.",
+)
 console = Console()
 
 MODE_ALIASES = {
@@ -1259,6 +1268,124 @@ def model_doctor(model_id: str = typer.Option(..., "--model")) -> None:
     except Exception as e:
         console.print(f"[red]Model {model_id} failed to load: {e}[/red]")
         raise typer.Exit(1) from None
+
+
+# =============================================================================
+# TASK-9 (production release): artifact release classification
+# -----------------------------------------------------------------------------
+# nexus model-artifacts [--json] -> per-artifact identity + class + runtime
+# compatibility (ACTIVE/LEGACY/RETAINED/ARCHIVABLE; MODEL_NOT_RUNTIME_COMPATIBLE
+# with the precise reason — never a silent semantic fallback).
+# =============================================================================
+
+
+@app.command("model-artifacts")
+def model_artifacts_cmd(
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """TASK-9: classify model artifacts + runtime compatibility (read-only)."""
+    from nexus_scalp.model_generation import default_artifact_root
+    from nexus_scalp.release import model_artifacts as rma
+
+    compat_overall = "COMPATIBLE"
+    records = rma.summarize_artifacts(default_artifact_root())
+    if not records:
+        console.print("[yellow]No model artifacts found.[/yellow]")
+        return
+    for rec in records:
+        st = rec["runtime_compatibility"]["status"]
+        if st != "COMPATIBLE":
+            compat_overall = "INCOMPATIBLE"
+    summary = {
+        "artifact_count": len(records),
+        "overall_compatibility": compat_overall,
+        "artifacts": records,
+    }
+    if json_mode:
+        _emit(summary, as_json=True)
+        return
+    console.print("[cyan]Model artifact release inventory[/cyan]")
+    for rec in records:
+        ident = rec["identity"]
+        console.print(
+            f"  {ident['model_id'] or ident['schema_id']} "
+            f"schema={ident['schema_id']}({ident['dimension']}D) "
+            f"class={rec['class']} runtime={rec['runtime_compatibility']['status']}"
+        )
+        if rec["runtime_compatibility"]["status"] != "COMPATIBLE":
+            console.print(f"    [red]{rec['runtime_compatibility']['reason']}[/red]")
+
+
+# =============================================================================
+# TASK-11: POST-70D CONTINUOUS FORENSIC MONITORING
+# -----------------------------------------------------------------------------
+# nexus forensic                   -> full health matrix + FORENSIC_HEALTH_SNAPSHOT
+# nexus forensic snapshot          -> persisted snapshot (JSON)
+# nexus forensic deploy-gate       -> release pre-flight (blocking check)
+# =============================================================================
+
+
+@app.command("forensic")
+def forensic_cmd(
+    snapshot: bool = typer.Option(
+        False, "--snapshot", help="Persist and print the FORENSIC_HEALTH_SNAPSHOT as JSON."
+    ),
+    deploy_gate: bool = typer.Option(
+        False, "--deploy-gate", help="Release pre-flight: exit 1 when a CRITICAL check blocks."
+    ),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """TASK-11 post-70D forensic health matrix (read-only)."""
+    from nexus_scalp.forensics import ForensicHealthEngine
+
+    engine = ForensicHealthEngine()
+    if deploy_gate:
+        ok, blockers = engine.can_deploy()
+        _emit(
+            {"deployable": ok, "blocking_checks": blockers},
+            as_json=json_mode,
+            plain=not json_mode,
+        )
+        if not ok:
+            raise typer.Exit(1)
+        return
+    if snapshot:
+        rec = engine.snapshot(persist=True)
+        _emit(rec.to_dict(), as_json=json_mode, plain=not json_mode)
+        return
+    dash = engine.dashboard()
+    if json_mode:
+        _emit(dash, True)
+        return
+    table = Table(title="SYSTEM FORENSIC HEALTH", box=box.SIMPLE)
+    table.add_column("Group", style="bold white")
+    table.add_column("Status", style="bold")
+    table.add_column("Check", style="dim")
+    table.add_column("Detail", style="dim")
+    for group, status in dash["groups"].items():
+        table.add_row(group, _verdict_style(status), "", "")
+    console.print(table)
+    console.print(
+        Panel(
+            f"Overall: [bold]{dash['overall']}[/bold]  "
+            f"CRITICAL={dash['critical_count']} WARNING={dash['warning_count']} "
+            f"DEGRADED={dash['degraded_count']} UNKNOWN={dash['unknown_count']}",
+            border_style="red" if dash["critical_count"] else "yellow",
+        )
+    )
+    problems = [
+        (r["check_id"], r["status"], r["evidence"])
+        for r in dash["rows"].values()
+        if r["status"] not in ("PASS",)
+    ]
+    if problems:
+        pt = Table(title="Non-passing checks (evidence)", box=box.SIMPLE)
+        pt.add_column("Check", style="bold white")
+        pt.add_column("Status", style="bold")
+        pt.add_column("Evidence", style="dim")
+        for cid, status, evidence in problems:
+            pt.add_row(cid, _verdict_style(status), evidence[:160])
+        console.print(pt)
 
 
 if __name__ == "__main__":
