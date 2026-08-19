@@ -38,6 +38,8 @@ reshapes). The shadow/observe path calls this with the canonical
 
 from __future__ import annotations
 
+import math
+
 from nexus_scalp.governance.alignment import NEWS_CONTEXT_DIM
 
 NEWS_FAMILY_DIM: int = 10
@@ -88,6 +90,6 @@ def verify_news_family(news10: list[float]) -> bool:
     """Sanity: the family block is exactly 10 finite values in [-3, +3]."""
     return (
         len(news10) == NEWS_FAMILY_DIM
-        and all(v == v and v not in (float("inf"), float("-inf")) for v in news10)
+        and all(math.isfinite(v) for v in news10)
         and all(-3.0 <= v <= 3.0 for v in news10)
     )
