@@ -220,6 +220,21 @@ Risk: LOW | MEDIUM | HIGH | CRITICAL
 Dependencies: <deps>
 Required tests: <tests>
 Status: PROPOSED | IMPLEMENTING | VERIFIED | READY_FOR_REVIEW | MERGED | REJECTED
+CHANGE-ID: CHG-0016
+Agent: Hermes-LiqOptAgent6
+Role: Liquidity Optimization Engineer
+Task: TASK-06-70D-LIQUIDITY-OPTIMIZATION
+Scope: Liquidity Intelligence 10D (indices 60..69 scalp_v4 / 50..59 scalp_liquidity_v1) forensic optimization: baseline measurement (real M5),
+       redundancy analysis vs Base 50D + News, bounded parameter search (EQH/EQL tolerance, confluence cutoff, sweep detection thresholds,
+       HTF weights, displacement window) with temporal train/validation/OOS discipline, golden dataset A/B comparison, TEST-LIQ-OPT-01..28,
+       algorithm versioning (liquidity-v1 -> liquidity-v1.x). NO production activation: candidate-only.
+Affected files: src/nexus_scalp/features/liquidity_engine.py (parameterization, ONLY when evidence-justified), docs/LIQUIDITY_70D_OPTIMIZATION_REPORT.md,
+       docs/LIQUIDITY_70D_IMPLEMENTATION_MAP.md, tests/unit/test_liquidity_optimization_phase19.py (new), agents/* registries
+Contracts touched: none (50D Base + News unchanged; liquidity family contract preserved; version bump only)
+Owners affected: Hermes-Parity (TASK-3), Hermes-ModelValidation-04, Hermes-Shadow70D, Hermes-LiquidityResearch (TASK-7)
+Risk: LOW (candidate-only; no live switch; no execution path)
+Dependencies: TASK-01..05 70D series landed; TASK-03 parity in flight
+Status: IN_PROGRESS
 ```
 
 ## Notes
