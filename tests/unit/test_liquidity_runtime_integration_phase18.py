@@ -218,7 +218,9 @@ def test_70d_05_liquidity_snapshot_places_indices_60_69() -> None:
     gov.compute_from_engine(bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp)
     fp = gov.snapshot_payload()
     for name in LIQUIDITY_FEATURE_NAMES:
-        assert fp["features"][name]["index"] == 60 + LIQUIDITY_FEATURE_NAMES.index(name)
+        # TASK-02: liquidity occupies the LAST 10 slots of the ACTIVE
+        # dimension (50..59 under the 60D contract).
+        assert fp["features"][name]["index"] == 50 + LIQUIDITY_FEATURE_NAMES.index(name)
 
 
 # ---------------------------------------------------------------------------
@@ -346,8 +348,12 @@ def test_70d_13_snapshot_payload_has_schema_and_dimension() -> None:
     bars = _steady_bars()
     gov.compute_from_engine(bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp)
     fp = gov.snapshot_payload()
-    assert fp["schema_id"] == SCHEMA_70D
-    assert fp["dimension"] == 70
+    # the governor reports the ACTUAL runtime contract it operates under
+    # (TASK-02 60D path -> scalp_liquidity_v1/60D; the canonical 70D
+    # scalp_v3 contract is exposed via features70.assemble_70d + the
+    # compute_70d_frame dataset builder).
+    assert fp["dimension"] == gov._active_schema_block()["dimension"]
+    assert fp["schema_id"] == gov._active_schema_block()["id"]
     assert fp["available"] is True
     assert len(fp["features"]) == 10
 

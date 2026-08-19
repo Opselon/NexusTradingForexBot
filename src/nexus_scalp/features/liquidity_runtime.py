@@ -530,9 +530,9 @@ class LiquidityGovernor:
                 "family_indices": "0..49 (scalp_v1 protected)",
             }
         return {
-            "id": SCHEMA_70D,
-            "dimension": DIMENSION_70D,
-            "family_indices": "0..49 BASE | 50..59 FAMILY | 60..69 LIQUIDITY",
+            "id": SCHEMA_LIQUIDITY_60D,
+            "dimension": DIMENSION_LIQUIDITY_60D,
+            "family_indices": "0..49 BASE | 50..59 LIQUIDITY",
         }
 
     def model_compatibility(self) -> dict[str, Any]:
@@ -557,24 +557,25 @@ class LiquidityGovernor:
             snap = self._last_snapshot
             if snap is None:
                 return {
-                    "schema_id": SCHEMA_70D,
-                    "dimension": DIMENSION_70D,
+                    "schema_id": self._active_schema_block()["id"],
+                    "dimension": self._active_schema_block()["dimension"],
                     "timestamp": None,
                     "source": SourceKind.UNAVAILABLE.value,
                     "features": {},
                     "available": False,
                     "reason": "NO_LIQUIDITY_SNAPSHOT",
                 }
+            act = self._active_schema_block()
             return {
-                "schema_id": SCHEMA_70D,
-                "dimension": DIMENSION_70D,
+                "schema_id": act["id"],
+                "dimension": act["dimension"],
                 "timestamp": snap.decision_at.isoformat() if snap.decision_at else None,
                 "source": self._source.value
                 if self._source is not None
                 else SourceKind.UNAVAILABLE.value,
                 "features": {
                     name: {
-                        "index": 60 + idx,  # TASK-2 70D contract: liquidity = 60..69
+                        "index": act["dimension"] - len(snap.names) + idx,  # last 10 slots
                         "value": float(value),
                         "timestamp": snap.decision_at.isoformat() if snap.decision_at else None,
                         "source": self._source.value

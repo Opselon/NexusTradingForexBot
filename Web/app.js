@@ -523,6 +523,7 @@ function renderLiquidityPanel(state) {
     setText('liq-status-value', st);
 
     setText('liq-schema', (state.schema && state.schema.id) || '--');
+    setText('liq-algo-version', state.algorithm_version || '--');
 
     setText('liq-dim', (state.schema && state.schema.dimension) != null ? String(state.schema.dimension) + 'D' : '--');
 
@@ -598,7 +599,11 @@ function renderLiquidityPanel(state) {
 
                 const valStr = (v !== null && v !== undefined) ? Number(v).toFixed(3) : '—';
 
-                const idx = 60 + i; // TASK-2 70D contract: liquidity = 60..69
+                // TASK-02 contract: derive the index from the BACKEND schema
+                // (no hardcoded number): liquidity occupies the LAST 10 slots of
+                // the active dimension (50..59 for 60D, 60..69 for 70D).
+                const baseDim = Number(state.schema && state.schema.dimension) || 60;
+                const idx = baseDim - 10 + i;
 
                 return '<div class="bg-darkBg/40 border border-borderClr/60 p-2.5 rounded-lg" title="' + escHtml(name) + ' (index ' + idx + ')">' +
 

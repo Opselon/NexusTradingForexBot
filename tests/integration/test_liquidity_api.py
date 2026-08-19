@@ -111,10 +111,12 @@ def _steady_bars(n: int = 60, base: float = 3300.0) -> list[SimpleNamespace]:
 
 
 @pytest.fixture
-def api_env():
+def api_env(tmp_path):
+    from nexus_scalp.settings.service import SettingsDatabase, SettingsService
     from nexus_scalp.web.server import create_app
 
-    gov = LiquidityGovernor(enabled=True, settings_service=MagicMock())
+    svc = SettingsService(db=SettingsDatabase(db_path=tmp_path / "settings.db"))
+    gov = LiquidityGovernor(enabled=True, settings_service=svc)
     engine = _FakeEngine(gov)
     gov.bind_engine(engine)
     app = create_app()
@@ -150,8 +152,10 @@ def test_70d_13_state_endpoint_real_values(api_env) -> None:
     assert body["enabled"] is True
     assert body["status"] == "ENABLED"
     assert body["available"] is True
-    assert body["schema"]["id"] == SCHEMA_70D
-    assert body["schema"]["dimension"] == 70
+    # TASK-02: enabled -> the ACTIVE schema is the 60D liquidity contract.
+    assert body["schema"]["id"] == "scalp_liquidity_v1"
+    assert body["schema"]["dimension"] == 60
+    assert body["reserved_70d_schema"]["id"] == SCHEMA_70D
     assert len(body["features"]) == 10
     for name in LIQUIDITY_FEATURE_NAMES:
         assert name in body["features"]
@@ -168,12 +172,14 @@ def test_70d_13_features_endpoint_per_value_index(api_env) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["success"] is True
-    assert body["schema_id"] == SCHEMA_70D
-    assert body["dimension"] == 70
+    assert body["schema_id"] == "scalp_liquidity_v1"
+    assert body["dimension"] == 60
     assert body["available"] is True
     for idx, name in enumerate(LIQUIDITY_FEATURE_NAMES):
         entry = body["features"][name]
-        assert entry["index"] == 60 + idx  # TASK-2 70D contract
+        # TASK-02: liquidity occupies the LAST 10 slots of the ACTIVE
+        # dimension: 50..59 under the 60D contract (70D: 60..69).
+        assert entry["index"] == 50 + idx
         assert isinstance(entry["value"], float)
         assert entry["status"] in ("ENABLED", "DEGRADED", "UNAVAILABLE", "DISABLED")
 
@@ -195,9 +201,8 @@ def test_70d_10_toggle_persists_and_returns_new_state(api_env) -> None:
     assert body["status"] in ("ENABLED", "UNAVAILABLE", "DEGRADED")
     # persistence went through the governor -> SettingsService.db (canonical
     # typed SettingsDatabase API; INV-010/BUG-080 — never live.yaml writes).
-    gov._settings_service.db.set.assert_called_with(
-        "model.liquidity_features_enabled", True, value_type="bool", actor="web"
-    )
+    row = gov._settings_service.db.get("model.liquidity_features_enabled")
+    assert row is not None and row.value is True
     # the runtime flag is applied in the same object (hot reload, no restart)
     assert gov.enabled is True
 
@@ -226,7 +231,8 @@ def test_70d_16_live_state_includes_liquidity_section(api_env) -> None:
     assert "liquidity" in body
     liq = body["liquidity"]
     assert liq["status"] in ("ENABLED", "DEGRADED", "UNAVAILABLE", "DISABLED")
-    assert liq["schema"]["id"] == SCHEMA_70D
+    assert liq["schema"]["id"] == "scalp_liquidity_v1"
+    assert liq["schema"]["dimension"] == 60
     if liq["available"]:
         assert len(liq["features"]) == 10
     # news remains an independent section (never degraded by liquidity absence)
@@ -243,7 +249,8 @@ def test_70d_17_reconnect_snapshot_restores_liquidity(api_env) -> None:
     body = resp.json()
     # get_system_state() embeds the liquidity section in the canonical graph
     assert "liquidity" in body
-    assert body["liquidity"]["schema"]["id"] == SCHEMA_70D
+    assert body["liquidity"]["schema"]["id"] == "scalp_liquidity_v1"
+    assert body["liquidity"]["schema"]["dimension"] == 60
 
 
 # ---------------------------------------------------------------------------
