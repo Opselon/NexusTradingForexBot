@@ -8,7 +8,7 @@ dimensions, indices 50..59 of a 60D ``scalp_liquidity_v1`` vector). TASK-2's
 job is the INTEGRATION layer: a real runtime governor that snapshots the
 10 liquidity values from the LIVE engine, derives explicit status
 (ENABLED / DISABLED / DEGRADED / UNAVAILABLE), builds the 70D feature
-contract (``scalp_v4``: BASE 0..49 | FAMILY 50..59 | LIQUIDITY 60..69),
+contract (``scalp_v3``: BASE 0..49 | FAMILY 50..59 | LIQUIDITY 60..69),
 enforces model/vector compatibility WITHOUT padding/truncation, and exposes
 everything through the canonical web state contract so the UI never invents
 values.
@@ -31,7 +31,7 @@ INVARIANTS
 6. THREAD-SAFE: the governor may be read from the web thread and written from
    the engine thread; every access goes through ``threading.RLock``.
 
-The 70D contract (``scalp_v4``):
+The 70D contract (``scalp_v3``):
     0..49   Base 50D features (scalp_v1, protected, untouched)
     50..59  Family block (TASK-5 momentum extras under scalp_v2, or the
             slot-50..59 family under scalp_liquidity_v1 — NEVER overwritten
@@ -62,7 +62,7 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.features.liquidity_runtime")
 
 #: The TASK-2 70D integration schema id (registered in features/schema.py).
-SCHEMA_70D: str = "scalp_v4"
+SCHEMA_70D: str = "scalp_v3"  # CANONICAL 70D id (TASK-03-70D-PARITY / schema_contract.py)
 DIMENSION_70D: int = 70
 
 #: Slot-50..59 family producer ids this governor understands.
@@ -70,7 +70,6 @@ FAMILY_SCHEMA_V2: str = "scalp_v2"  # TASK-5 momentum extras (50..59)
 FAMILY_SCHEMA_LIQUIDITY_60D: str = "scalp_liquidity_v1"  # TASK-1 60D (50..59)
 SCHEMA_LIQUIDITY_60D: str = "scalp_liquidity_v1"  # TASK-02 canonical 60D contract
 DIMENSION_LIQUIDITY_60D: int = 60
-LIQUIDITY_ALGORITHM_VERSION: str = "scalp_liquidity_v1.0.0"
 
 #: Neutral 10D used ONLY when liquidity is UNAVAILABLE and a caller still
 #: needs a structurally-valid 60D asset (documented neutral defaults, same
@@ -80,6 +79,22 @@ _NEUTRAL_60D_LIQUIDITY: tuple[float, ...] = (3.0, 3.0, 0.0, 0.0, 0.0, 3.0, 3.0, 
 #: Freshness threshold for LIVE status (seconds since the last successful
 #: snapshot). Industry-typical for M1 feature cadence; configurable per call.
 LIVE_STALE_AFTER_SEC: float = 90.0
+
+#: Algorithm version PROVENANCE. The production producer
+#: (liquidity_engine.compute_liquidity_features) carries no version field;
+#: this constant is the version the governor's configured pipeline refers to.
+#: The optimized candidate (liquidity_engine_opt, "liquidity-v1.1") is NOT
+#: wired into this governor; when it is adopted the provenance must point at
+#: the producer's own constant (BUG-111 discipline: never claim an active
+#: algorithm the runtime does not run).
+LIQUIDITY_ALGORITHM_VERSION: str = "scalp_liquidity_v1.0.0"
+
+#: Canonical liquidity block indices in the authoritative 70D registry
+#: (schema_contract.py). The API/UI contract MUST render these indices; the
+#: runtime never derives liquidity placement from the ACTIVE (50D) schema —
+#: that derivation is exactly the bug that showed idx 40..49 while DISABLED.
+LIQUIDITY_BLOCK_START: int = 60
+LIQUIDITY_BLOCK_END: int = 70
 
 
 class LiquidityStatus(Enum):
@@ -101,12 +116,14 @@ class CausalState(Enum):
     VALID = "VALID"
     STALE = "STALE"
     INVALID = "INVALID"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
 class ModelCompatibility(Enum):
     PASS = "PASS"
     BLOCK = "BLOCK"
     UNKNOWN = "UNKNOWN"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
 @dataclass(frozen=True)
@@ -264,9 +281,21 @@ class LiquidityGovernor:
         self._last_error: str | None = None
         self._last_error_at: float | None = None
         self._last_success_at: float | None = None
+        # Wall-clock (UTC epoch seconds) counterparts of the monotonic
+        # fields above. BUG-111: the report payload previously rendered
+        # monotonic seconds through datetime.fromtimestamp() -> the 1970
+        # sentinel. Monotonic is ONLY valid for age deltas; wall clock is
+        # the only valid input for absolute timestamps.
+        self._last_success_wall_at: float | None = None
+        self._last_error_wall_at: float | None = None
         self._last_latency_ms: float | None = None
         self._source: SourceKind = SourceKind.UNAVAILABLE
+        self._source_changed_wall_at: float | None = None
         self._engine_instance: Any = None
+        # Monotonic liquidity state revision (BUG-111 stale-SSE guard):
+        # incremented on every state mutation (snapshot, toggle, error).
+        # Consumers (UI/SSE) must ignore older revisions.
+        self._state_revision: int = 0
 
     # ------------------------------------------------------------------ state
 
@@ -306,6 +335,7 @@ class LiquidityGovernor:
         """
         with self._lock:
             self._enabled = bool(value)
+            self._state_revision += 1
             if self._settings_service is not None:
                 try:
                     # Persist via the canonical SettingsService -> SettingsDatabase
@@ -377,11 +407,18 @@ class LiquidityGovernor:
             latency_ms = (time.perf_counter() - started) * 1000.0
             with self._lock:
                 self._last_snapshot = snap
-                self._last_success_at = time.monotonic()
+                now_mono = time.monotonic()
+                now_wall = time.time()
+                self._last_success_at = now_mono
+                self._last_success_wall_at = now_wall
                 self._last_latency_ms = latency_ms
                 self._last_error = None
                 self._last_error_at = None
+                self._last_error_wall_at = None
+                if self._source != source:
+                    self._source_changed_wall_at = now_wall
                 self._source = source
+                self._state_revision += 1
             logger.info(
                 "[LIQUIDITY] event=FEATURE_CALCULATION_OK source=%s latency_ms=%.2f bars=%d",
                 source.value,
@@ -394,7 +431,11 @@ class LiquidityGovernor:
             with self._lock:
                 self._last_error = str(exc)
                 self._last_error_at = time.monotonic()
+                self._last_error_wall_at = time.time()
+                if self._source != SourceKind.UNAVAILABLE:
+                    self._source_changed_wall_at = time.time()
                 self._source = SourceKind.UNAVAILABLE
+                self._state_revision += 1
             logger.error(
                 "[LIQUIDITY] event=FEATURE_CALCULATION_FAILED stage=compute "
                 "feature=liquidity_10 error_code=%s error=%s duration_ms=%.2f",
@@ -477,6 +518,21 @@ class LiquidityGovernor:
             source = (
                 self._source.value if self._source is not None else SourceKind.UNAVAILABLE.value
             )
+            # Explicit separation of the two orthogonal dimensions (BUG-110
+            # contract): calculation_status = whether the last compute attempt
+            # SUCCEEDED; source_status = where the input data came from.
+            # FEATURE_CALCULATION_OK + source=UNAVAILABLE is a legitimate pair
+            # (bars computed from engine state without a live broker source) and
+            # must NOT collapse into a single healthy boolean.
+            if self._last_snapshot is not None:
+                calculation_status = "SUCCESS" if self._last_error is None or (
+                    self._last_success_at is not None
+                    and self._last_error_at is not None
+                    and self._last_success_at >= self._last_error_at
+                ) else "FAILED"
+            else:
+                calculation_status = "NOT_RUN" if self._last_error is None else "FAILED"
+            source_status = source  # LIVE_MARKET_STATE | REPLAY | UNAVAILABLE
             age_sec = (
                 round(time.monotonic() - self._last_success_at, 3)
                 if self._last_success_at is not None
@@ -485,14 +541,23 @@ class LiquidityGovernor:
             latency = round(self._last_latency_ms, 3) if self._last_latency_ms is not None else None
             error = self._last_error
             error_at = (
-                datetime.fromtimestamp(self._last_error_at, tz=UTC).isoformat()
-                if self._last_error_at is not None
+                datetime.fromtimestamp(self._last_error_wall_at, tz=UTC).isoformat()
+                if self._last_error_wall_at is not None
                 else None
             )
+            # WALL-CLOCK last update (BUG-111): monotonic seconds were
+            # previously rendered through fromtimestamp() -> 1970 sentinel.
+            # age_sec keeps using monotonic (a delta); absolute timestamps
+            # MUST come from the wall-clock counterpart.
             last_update = (
-                datetime.fromtimestamp(self._last_success_at, tz=UTC).isoformat()
-                if self._last_success_at is not None
+                datetime.fromtimestamp(self._last_success_wall_at, tz=UTC).isoformat()
+                if self._last_success_wall_at is not None
                 else None
+            )
+            # Snapshot DECISION timestamp (the bar time the values describe)
+            # — the truthful provenance of the feature values themselves.
+            snapshot_timestamp = (
+                snap.decision_at.isoformat() if snap is not None and snap.decision_at else None
             )
             features_dict: dict[str, float] = {}
             if snap is not None:
@@ -502,24 +567,57 @@ class LiquidityGovernor:
                 }
             pools_payload: list[dict[str, Any]] = []
             if snap is not None:
-                pools_payload = [
-                    {
-                        "side": getattr(p, "side", None),
-                        "source": getattr(p, "source", None),
-                        "state": getattr(p, "state", None),
-                        "price": getattr(p, "price", None),
-                        "confirmed_at": getattr(p, "confirmed_at", None),
-                    }
-                    for p in snap.pools
-                ]
+                pools_payload = []
+                for p in snap.pools:
+                    confirmed_at = getattr(p, "confirmed_at", None)
+                    if confirmed_at is not None and not isinstance(confirmed_at, str):
+                        confirmed_at = (
+                            confirmed_at.isoformat()
+                            if hasattr(confirmed_at, "isoformat")
+                            else str(confirmed_at)
+                        )
+                    pools_payload.append(
+                        {
+                            "side": getattr(p, "side", None),
+                            "source": getattr(p, "source", None),
+                            "state": getattr(p, "state", None),
+                            "price": getattr(p, "price", None),
+                            # ISO-8601 timezone-aware string — NEVER a raw
+                            # datetime (BUG-110 SSE: json.dumps(payload) in the
+                            # event_generator crashed on this field, killing
+                            # every SSE frame once pools were confirmed).
+                            "confirmed_at": confirmed_at,
+                        }
+                    )
+            # feature_availability: explicit, never inferred (BUG-111).
+            # DISABLED + retained snapshot = NOT_ACTIVE (historical cache);
+            # ENABLED + fresh snapshot = AVAILABLE; ENABLED + old snapshot
+            # = STALE_CACHE; no snapshot = UNAVAILABLE.
+            if not enabled:
+                feature_availability = "NOT_ACTIVE"
+            elif snap is None:
+                feature_availability = "UNAVAILABLE"
+            elif causal == CausalState.STALE.value:
+                feature_availability = "STALE_CACHE"
+            else:
+                feature_availability = "AVAILABLE"
+            # causal_state is NOT_APPLICABLE while disabled: validity only
+            # describes an ACTIVE computation, never a retained cache.
+            if not enabled:
+                causal = CausalState.NOT_APPLICABLE.value
             return {
                 "enabled": enabled,
-                "available": snap is not None and status != LiquidityStatus.UNAVAILABLE.value,
+                "state_revision": self._state_revision,
+                "available": feature_availability == "AVAILABLE",
+                "feature_availability": feature_availability,
                 "status": status,
+                "calculation_status": calculation_status,
+                "source_status": source_status,
                 "causal_state": causal,
                 "source": source,
                 "algorithm_version": LIQUIDITY_ALGORITHM_VERSION,
                 "last_update": last_update,
+                "snapshot_timestamp": snapshot_timestamp,
                 "age_sec": age_sec,
                 "latency_ms": latency,
                 "schema": self._active_schema_block(),
@@ -540,12 +638,13 @@ class LiquidityGovernor:
     def _active_schema_block(self) -> dict[str, Any]:
         """Canonical schema the runtime is ACTUALLY operating under.
 
-        OFF  -> the repo ACTIVE contract (scalp_v1, 50D) — unchanged
-               existing behavior.
-        ON   -> the TASK-02 60D contract (scalp_liquidity_v1, 60D:
-               BASE 0..49 | LIQUIDITY 50..59). The 70D scalp_v4 layout
-               (FAMILY 50..59 | LIQUIDITY 60..69) is exposed separately
-               as reserved_70d_schema for the shadow70 chain.
+        OFF  -> the repo ACTIVE contract (scalp_v1, 50D) — the honest
+               pre-liquidity runtime; features are NOT_ACTIVE.
+        ON   -> the CANONICAL 70D contract (scalp_v3: BASE 0..49 |
+               FAMILY/NEWS 50..59 | LIQUIDITY 60..69), the same family
+               layout schema_contract.py and the shadow70 chain use.
+               Liquidity placement (60..69) NEVER derives from the active
+               schema dimension (BUG-111: it derived 40..49 when OFF).
         """
         if not self._enabled:
             active = FEATURE_SCHEMAS.active
@@ -553,15 +652,37 @@ class LiquidityGovernor:
                 "id": active.schema_id,
                 "dimension": active.dimension,
                 "family_indices": "0..49 (scalp_v1 protected)",
+                "liquidity_indices": [LIQUIDITY_BLOCK_START, LIQUIDITY_BLOCK_END - 1],
             }
         return {
-            "id": SCHEMA_LIQUIDITY_60D,
-            "dimension": DIMENSION_LIQUIDITY_60D,
-            "family_indices": "0..49 BASE | 50..59 LIQUIDITY",
+            "id": SCHEMA_70D,
+            "dimension": DIMENSION_70D,
+            "family_indices": "0..49 BASE | 50..59 NEWS | 60..69 LIQUIDITY",
+            "liquidity_indices": [60, 69],
         }
 
     def model_compatibility(self) -> dict[str, Any]:
-        """Model-vs-runtime compatibility for the CURRENT loaded model."""
+        """Model-vs-runtime compatibility for the CURRENT loaded model.
+
+        Gated on the runtime toggle (BUG-111): while liquidity is
+        DISABLED the compatibility block is NOT_APPLICABLE — a disabled
+        runtime never claims a liquidity-enabled incompatibility. When
+        enabled, the current model (schema + dimension) is evaluated
+        against the canonical 70D contract (scalp_v3) with the explicit
+        matrix in resolve_model_compatibility (never padded/truncated).
+        """
+        if not self._enabled:
+            engine = self._engine_instance
+            model_schema = getattr(engine, "FEATURE_SCHEMA_ID", None) if engine is not None else None
+            model_dim = getattr(engine, "FEATURE_DIM", None) if engine is not None else None
+            return {
+                "result": ModelCompatibility.NOT_APPLICABLE.value,
+                "reason": "LIQUIDITY_DISABLED",
+                "model_schema_id": model_schema,
+                "model_dimension": model_dim,
+                "runtime_schema_id": SCHEMA_70D,
+                "runtime_dimension": DIMENSION_70D,
+            }
         engine = self._engine_instance
         model_schema: str | None = None
         model_dim: int | None = None
@@ -577,41 +698,77 @@ class LiquidityGovernor:
         )
 
     def snapshot_payload(self) -> dict[str, Any]:
-        """Ten real values with per-value index/source/timestamp (brief §8/§17)."""
+        """Ten real values with per-value index/source/timestamp (brief §8/§17).
+
+        BUG-111: per-value indices come from the AUTHORITATIVE feature
+        registry (schema_contract.canonical_feature_names -> 60..69),
+        never from the active-schema dimension (which derived 40..49 while
+        DISABLED). A retained snapshot while DISABLED is explicit:
+        ``runtime_enabled=False`` + per-value ``status=DISABLED`` +
+        ``feature_availability=NOT_ACTIVE`` with the snapshot timestamp.
+        """
         with self._lock:
             snap = self._last_snapshot
+            enabled = self._enabled
+            status = self.status()
+            causal = self.causal_state()
+            if not enabled:
+                causal = CausalState.NOT_APPLICABLE.value
+            if not enabled:
+                feature_availability = "NOT_ACTIVE"
+            elif snap is None:
+                feature_availability = "UNAVAILABLE"
+            elif causal == CausalState.STALE.value:
+                feature_availability = "STALE_CACHE"
+            else:
+                feature_availability = "AVAILABLE"
             if snap is None:
+                act = self._active_schema_block()
                 return {
-                    "schema_id": self._active_schema_block()["id"],
-                    "dimension": self._active_schema_block()["dimension"],
+                    "schema_id": act["id"],
+                    "dimension": act["dimension"],
                     "timestamp": None,
                     "source": SourceKind.UNAVAILABLE.value,
+                    "source_status": SourceKind.UNAVAILABLE.value,
+                    "feature_availability": feature_availability,
+                    "runtime_enabled": enabled,
                     "features": {},
                     "available": False,
+                    "state_revision": self._state_revision,
                     "reason": "NO_LIQUIDITY_SNAPSHOT",
                 }
             act = self._active_schema_block()
+            # Authoritative indices follow the ACTIVE schema's liquidity
+            # placement (TASK-02 60D: 50..59; 70D mode: 60..69). When the
+            # 70D registry names are available and the runtime is 70D they
+            # are used; otherwise the active schema's block start wins.
+            liq_start = int(act.get("liquidity_indices", [50, 59])[0])
+            indices = {n: liq_start + i for i, n in enumerate(LIQUIDITY_FEATURE_NAMES)}
+            source = self._source.value if self._source is not None else SourceKind.UNAVAILABLE.value
+            snap_ts = snap.decision_at.isoformat() if snap.decision_at else None
             return {
                 "schema_id": act["id"],
                 "dimension": act["dimension"],
-                "timestamp": snap.decision_at.isoformat() if snap.decision_at else None,
-                "source": self._source.value
-                if self._source is not None
-                else SourceKind.UNAVAILABLE.value,
+                "timestamp": snap_ts,
+                "source": source,
+                "source_status": source,
+                "feature_availability": feature_availability,
+                "runtime_enabled": enabled,
+                "state_revision": self._state_revision,
                 "features": {
                     name: {
-                        "index": act["dimension"] - len(snap.names) + idx,  # last 10 slots
+                        "index": indices[name],
                         "value": float(value),
-                        "timestamp": snap.decision_at.isoformat() if snap.decision_at else None,
-                        "source": self._source.value
-                        if self._source is not None
-                        else SourceKind.UNAVAILABLE.value,
-                        "status": self.status(),
+                        "timestamp": snap_ts,
+                        "source": source,
+                        "status": status,
+                        "feature_availability": feature_availability,
+                        "runtime_enabled": enabled,
                         "raw_value": float(value),
                         "normalized_value": float(value),
                         "clipped_value": float(value),
                     }
-                    for idx, (name, value) in enumerate(zip(snap.names, snap.features, strict=True))
+                    for name, value in zip(snap.names, snap.features, strict=True)
                 },
-                "available": True,
+                "available": feature_availability == "AVAILABLE",
             }
