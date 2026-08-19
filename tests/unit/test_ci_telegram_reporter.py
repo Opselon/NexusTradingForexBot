@@ -150,6 +150,16 @@ class TestChatIdResolution:
         r = CITelegramReporter(root)
         assert r.chat_id == "12345"
 
+    def test_telegram_bot_token_env_chain(self, tmp_path, monkeypatch):
+        # Root-cause regression: CI sets TELEGRAM_BOT_TOKEN (GitHub secret);
+        # the reporter must read it (not just NEXUS_TELEGRAM_BOT_TOKEN).
+        root = _build_results_tree(tmp_path / "res")
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:ABCdefghijklmnop")
+        monkeypatch.setenv("USER_ID", "5094837833")
+        r = CITelegramReporter(root)
+        assert r.bot_token == "123456:ABCdefghijklmnop"
+        assert r.notifier.enabled is True
+
     def test_user_id_fallback(self, tmp_path, monkeypatch):
         root = _build_results_tree(tmp_path / "res")
         monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)

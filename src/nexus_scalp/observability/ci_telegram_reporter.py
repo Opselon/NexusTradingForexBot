@@ -105,7 +105,13 @@ class CITelegramReporter:
             or _env("NEXUS_TELEGRAM_ADMIN_ID")
             or ""
         )
-        self.bot_token = bot_token or _env("NEXUS_TELEGRAM_BOT_TOKEN")
+        # Bot token: explicit arg > TELEGRAM_BOT_TOKEN (GitHub Actions secret,
+        # matches the repo's CI secrets doc) > NEXUS_TELEGRAM_BOT_TOKEN (runtime).
+        self.bot_token = (
+            bot_token
+            or _env("TELEGRAM_BOT_TOKEN")
+            or _env("NEXUS_TELEGRAM_BOT_TOKEN")
+        )
         self.server_url = server_url or _env("GITHUB_SERVER_URL") or "https://github.com"
         self.repository = repository or _env("GITHUB_REPOSITORY")
 
