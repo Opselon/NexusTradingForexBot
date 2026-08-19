@@ -49,13 +49,68 @@ def _neutral_10() -> list[float]:
     return [0.0] * 10
 
 
+#: Freshness window for REUSING the governor's cached snapshot (seconds).
+#: The governor recomputes on the bar-close cadence; reusing it keeps the
+#: 70D shadow hook at plumbing-level cost instead of a full liquidity
+#: engine rebuild (BUG-112: measured 42ms @200 bars .. 1163ms @4000 bars).
+GOVERNOR_SNAPSHOT_MAX_AGE_SEC: float = 90.0
+
+#: Fallback recompute history bound (same semantics as the dataset builder's
+#: LIQUIDITY_HISTORY_LIMIT — bounded causal tail; never unbounded).
+LIQUIDITY_FALLBACK_HISTORY_LIMIT: int = 4000
+
+
+def _governor_snapshot(engine: Any) -> tuple[list[float] | None, str]:
+    """Reuse the live governor's cached liquidity snapshot when fresh.
+
+    Returns (features_10, version) or (None, "") when unavailable/stale.
+    The governor is updated by live_engine on the bar-close cadence
+    (LiquidityGovernor.compute_from_engine) — reading its last snapshot is
+    O(1) and preserves EXACT train==live semantics (same producer, same
+    inputs).
+    """
+    import time
+
+    try:
+        gov = getattr(engine, "liquidity_governor", None)
+        if gov is None:
+            return None, ""
+        snap = gov.last_snapshot
+        if snap is None:
+            return None, ""
+        age = (
+            time.monotonic() - gov._last_success_at
+            if getattr(gov, "_last_success_at", None) is not None
+            else float("inf")
+        )
+        if age > GOVERNOR_SNAPSHOT_MAX_AGE_SEC:
+            return None, ""
+        vec = list(snap.features)
+        if len(vec) != 10:
+            return None, ""
+        return vec, "liquidity_governor:v1"
+    except Exception:
+        return None, ""
+
+
 def build_liquidity_10(engine: Any, tick: Any) -> tuple[list[float], str]:
     """Returns (10 liquidity features, calculation version).
+
+    REUSE-FIRST (BUG-112): the live governor already computes the canonical
+    10 liquidity values on the bar-close cadence. Reusing a fresh governor
+    snapshot costs ~µs; the full engine rebuild costs 42ms..1163ms per call
+    (measured @200..4000 bars) and would blow the 50ms shadow latency budget
+    on EVERY tick. Falls back to a BOUNDED recompute only when no fresh
+    governor snapshot exists (liquidity disabled / cold start).
 
     NEVER raises: any producer fault yields the neutral vector + version
     "unavailable" (isolated; the observe() call still succeeds).
     """
     try:
+        cached, version = _governor_snapshot(engine)
+        if cached is not None:
+            return cached, version
+
         from nexus_scalp.features.liquidity_engine import (
             compute_liquidity_features,
         )
@@ -69,6 +124,9 @@ def build_liquidity_10(engine: Any, tick: Any) -> tuple[list[float], str]:
                 bars = None
         if not bars:
             return _neutral_10(), "unavailable"
+        # BOUNDED causal tail (matches dataset-builder semantics) — never the
+        # full unbounded history (BUG-112 hot-path protection).
+        bars = bars[-LIQUIDITY_FALLBACK_HISTORY_LIMIT:]
         try:
             feats = compute_liquidity_features(bars, use_htf=True)
         except TypeError:

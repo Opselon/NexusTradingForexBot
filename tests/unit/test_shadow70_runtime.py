@@ -996,3 +996,87 @@ def test_shadow39_50d_shadow_failure_does_not_block_70d(
         h.shadow_engine.record_shadow_decision = boom  # type: ignore[method-assign]
         h.record()
         assert h.shadow70_count() == 1, "70D hook must be independent of 50D-shadow failures"
+
+
+# ---------------------------------------------------------------------------
+# TEST-SHADOW-41..42 (BUG-112 regression) — 70D shadow hot-path liquidity cost
+# ---------------------------------------------------------------------------
+# BUG-112: build_liquidity_10 recomputed the full liquidity engine (swings/
+# sessions/pools) on ALL aggregator bars per tick — measured 42ms @200 bars
+# .. 1163ms @4000 bars. On the per-tick 70D shadow hook (live after BUG-105)
+# that blows the 50ms latency budget and stalls the hot path. The fix
+# REUSES the live governor's fresh snapshot (O(1)) and falls back to a
+# BOUNDED engine rebuild only when no fresh snapshot exists.
+
+
+class _FakeAggregator:
+    def __init__(self, bars: list) -> None:
+        self._bars = bars
+
+    def get_completed_bars(self) -> list:
+        return self._bars
+
+
+class _FakeGovernor:
+    def __init__(self, features: list[float], fresh: bool = True) -> None:
+        import time
+        from types import SimpleNamespace
+
+        self.last_snapshot = SimpleNamespace(features=tuple(features))
+        self._last_success_at = time.monotonic() if fresh else time.monotonic() - 99999.0
+
+
+def _fake_engine(bars: list, governor=None) -> object:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(aggregator=_FakeAggregator(bars), liquidity_governor=governor)
+
+
+def test_shadow41_governor_snapshot_reused_not_recomputed() -> None:
+    """BUG-112: a FRESH governor snapshot is reused (version
+    liquidity_governor:v1, ~µs) — the full engine rebuild must NOT run."""
+    import time
+    from types import SimpleNamespace
+
+    from nexus_scalp.shadow.shadow70.liq_provider import build_liquidity_10
+
+    gov = _FakeGovernor([0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.0], fresh=True)
+    engine = _fake_engine([], governor=gov)  # empty bars: rebuild would fail
+    t0 = time.perf_counter()
+    liq10, version = build_liquidity_10(engine, SimpleNamespace(symbol="XAUUSD"))
+    dt_ms = (time.perf_counter() - t0) * 1000
+    assert version == "liquidity_governor:v1"
+    assert len(liq10) == 10
+    assert liq10[0] == 0.2
+    assert dt_ms < 5.0, f"governor-cached path must be ~µs, got {dt_ms:.3f}ms"
+
+
+def test_shadow42_stale_governor_falls_back_bounded() -> None:
+    """BUG-112: a STALE governor snapshot must fall back to the engine
+    rebuild (bounded tail), never silently serve stale values."""
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from nexus_scalp.market_data.bar_aggregator import BarData
+    from nexus_scalp.shadow.shadow70.liq_provider import build_liquidity_10
+
+    gov = _FakeGovernor([9.0] * 10, fresh=False)  # stale
+    bars = [
+        BarData(
+            symbol="XAUUSD",
+            timeframe="M5",
+            timestamp=datetime(2025, 3, 1, 0, 0, tzinfo=UTC).replace(minute=(i * 5) % 60),
+            open=3000.0 + i,
+            high=3001.0 + i,
+            low=2999.0 + i,
+            close=3000.5 + i,
+            tick_volume=100,
+            is_complete=True,
+        )
+        for i in range(120)
+    ]
+    engine = _fake_engine(bars, governor=gov)
+    liq10, version = build_liquidity_10(engine, SimpleNamespace(symbol="XAUUSD"))
+    assert version.startswith("liquidity_engine:")
+    assert len(liq10) == 10
+    assert all(-3.0 <= v <= 3.0 for v in liq10), liq10
