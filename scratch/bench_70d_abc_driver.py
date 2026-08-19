@@ -258,7 +258,7 @@ def run_from_artifacts() -> dict[str, Any]:
     for cell_id, schema_id, news_en in (
         ("A", "scalp_v1", False),
         ("B", "scalp_v2", True),
-        ("C", "scalp_v3", True),
+        ("C", "scalp_v3", False),
     ):
         did = CELL_DATASETS[cell_id]
         frame = store.read_dataset(did)

@@ -50,6 +50,8 @@ import polars as pl
 import pytest
 import torch
 
+from nexus_scalp.model_generation.artifact_store import ArtifactStore
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Existing TASK-5-era artifacts used to prove the fairness METHOD.
@@ -614,7 +616,12 @@ def test_70d_model_15_research_registry_updated() -> None:
     rep = json.loads(rep_path.read_text(encoding="utf-8"))
     assert set(rep["cells"]) == {"A", "B", "C"}
     assert rep["verdict"]["outcome"] in (
-        "STRONG POSITIVE", "WEAK POSITIVE", "NEUTRAL", "NEGATIVE", "INCONCLUSIVE", "INVALID",
+        "STRONG POSITIVE",
+        "WEAK POSITIVE",
+        "NEUTRAL",
+        "NEGATIVE",
+        "INCONCLUSIVE",
+        "INVALID",
     )
     # every cell completed with metrics
     for cid in ("A", "B", "C"):
@@ -635,8 +642,12 @@ def test_70d_model_18_liquidity_ablation_reproducible() -> None:
     # drop LIQUIDITY_10 (post_sweep_displacement = feat_69)
     feat_cols = [c for c in df.columns if c.startswith("feat_") and c != "feat_69"]
     exp = ExperimentFactory().create(
-        did, template="baseline_scalpnet_v1", experiment_id="exp_liq18_abl",
-        overrides={"training": {"epochs": 2, "batch_size": 256, "learning_rate": 0.001, "seed": 42}},
+        did,
+        template="baseline_scalpnet_v1",
+        experiment_id="exp_liq18_abl",
+        overrides={
+            "training": {"epochs": 2, "batch_size": 256, "learning_rate": 0.001, "seed": 42}
+        },
     )
     res = CandidateTrainer().train_candidate(exp, df, feature_cols=feat_cols, epochs=2)
     assert res["status"] == "COMPLETED", res
