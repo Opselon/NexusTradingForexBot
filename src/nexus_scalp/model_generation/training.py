@@ -126,6 +126,14 @@ class CandidateTrainer:
         feat_cols, news_cols = _split_columns(dataset_frame, experiment.news_enabled)
         if feature_cols:
             feat_cols = [c for c in feature_cols if c in dataset_frame.columns]
+            # BUG-112 (TASK-05): when the caller passes an EXPLICIT feature_cols
+            # that already includes the news block, news_cols must be derived
+            # from that list — otherwise the manifest records
+            # input_dimension = len(feat_cols) + len(news_cols) which
+            # DOUBLE-COUNTS news (e.g. 72 + 12 = 84 for a 72-wide model) and
+            # the runtime predict() then rejects its own artifact.
+            news_cols = [c for c in feat_cols if c.startswith("news_")]
+            feat_cols = [c for c in feat_cols if not c.startswith("news_")]
         if not feat_cols:
             return {"status": "FAILED", "error": "no feature columns in dataset"}
 

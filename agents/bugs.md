@@ -4884,3 +4884,63 @@ Verified the old code reproduces the exact AttributeError at line 4707.
 
 ### Verification
 FIXED - 3/3 regression tests pass; full test_model_lifecycle_api.py (22) + test_model_lifecycle_phase10.py (40) pass; ruff/mypy clean.
+
+
+## BUG-114 — Zero-PnL Ledger Rows from NONE-Fallback Reconstruction Persisted as Final (151 real broker tickets) (2026-08-19 AGENT-13)
+
+### Symptom
+151 closed broker trades have `audit_ledger.net_pnl_usd = 0.0` while
+`audit_broker_trades` (synced broker history) holds real PnL (e.g. ticket
+152487837184: broker +41.00, ledger 0.00). 32 of them also have
+`audit_experience_outcomes.realized_pnl_usd = 0.0` with no
+`reconstruction_source`. Account aggregates (Σ net_pnl_usd ≈ −5359.84)
+exclude the missing PnL; realized-R distribution is zero-heavy.
+
+### Root cause (PROVEN, first divergence = LEDGER stage)
+`execution/order_manager.py` close path: `reconstruct_broker_outcome()`
+returns `reconstruction_source="NONE"` (fallback snapshot estimate,
+`net_pnl_usd=0.0`) when the broker deal is not yet visible in the local
+history window at close time. The caller only replaces `profit_usd` from
+the broker when `reconstruction_source != "NONE"`; otherwise `profit_usd`
+stays 0.0 and `log_ledger_closed(pnl=0.0)` persists **zero as the final
+ledger value** — never flagged as UNKNOWN (BUG-046 discipline: "never
+silently coerce missing broker truth to 0.0" is violated at the caller,
+not the repository). The later broker-history sync (watermark + overlap)
+populates `audit_broker_trades` with the real PnL but **no post-sync
+ledger reconciliation exists** — the divergence is never repaired.
+
+Evidence chain (read-only probe scratch/agent13_first_divergence.py +
+artifacts/forensics/accounting_divergence.json):
+- 151 rows: broker PnL ≠ 0, ledger = 0, exit_reason_source = '' (all).
+- 32 rows have an outcome with realized_pnl_usd=0 and no reconstruction
+  source (RECOVERABLE_FROM_BROKER).
+- 117 rows have an experience but NO outcome written.
+- 0 rows have an audit_orders record; 0 have exit evidence provenance.
+- Classification: RECONSTRUCTION_FAILURE ×151 (first_correct=BROKER,
+  first_incorrect=LEDGER).
+
+### Fix (governed, NOT yet applied)
+- (a) Post-sync reconciliation: after a broker-history sync, reconcile
+  `audit_broker_trades.net_pnl` back into matching zero-PnL ledger rows
+  with `exit_reason_source=''` — append-only reconstruction metadata
+  (original_value / recovered_value / reconstruction_source /
+  reconstruction_algorithm_version / timestamp / confidence). Requires
+  operator approval (governed repair; the incident engine only generates
+  RECOMMENDED candidates).
+- (b) Close path: when `reconstruction_source="NONE"`, persist the ledger
+  row as UNKNOWN (e.g. net_pnl_usd NULL or a UNKNOWN flag) instead of 0.0
+  so the divergence is visible immediately — regression-tested.
+- (c) One economic execution → one canonical outcome: split fills must not
+  double-count; recovery is per-master-order family (TEST-ACCOUNTING-06/07).
+
+### Test
+- tests/unit/test_incident_accounting_timebase_task13.py
+  (TEST-ACCOUNTING-01..08) + tests/unit/test_incident_runtime_task13.py
+  TEST-INCIDENT-RUNTIME-06/07 (first-divergence + zero-outcome class).
+- 151-row real-data audit reproducible via
+  `nexus_scalp.incidents.accounting.AccountingForensicsEngine.audit_zero_pnl_ledger()`.
+- Status: PROVEN (evidence-complete; repair not yet executed — governed).
+
+### Related
+- TASK-12 incident INC-2026-D5659C10 (ACCOUNTING_DIVERGENCE, CRITICAL).
+- BUG-045 (zero-PnL fallback origin), BUG-046 (None->0.0 discipline).

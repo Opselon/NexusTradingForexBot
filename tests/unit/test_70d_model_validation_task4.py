@@ -789,3 +789,76 @@ def test_70d_model_32_default_save_path_not_live_champion() -> None:
     default = sig.parameters["artifact_save_path"].default
     assert str(default) != "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
     assert "wf_candidate" in str(default)
+
+
+# ---------------------------------------------------------------------------
+# TEST-70D-MODEL-33 — BUG-114 regression: manifest input_dimension must equal
+# the true model width when feature_cols (incl. news) is passed explicitly
+# ---------------------------------------------------------------------------
+
+
+def test_70d_model_33_manifest_input_dimension_no_double_count() -> None:
+    from nexus_scalp.model_generation.experiment_factory import ExperimentFactory
+    from nexus_scalp.model_generation.training import CandidateTrainer
+
+    rng = np.random.default_rng(3)
+    n = 400
+    cols: dict[str, object] = {
+        "sample_id": [f"s{i}" for i in range(n)],
+        "timestamp": list(range(n)),
+        "feature_schema_id": ["scalp_v2"] * n,
+        "label": list(
+            np.concatenate(
+                [
+                    np.zeros(280),
+                    np.ones(60),
+                    np.full(60, 2),
+                ]
+            ).astype(int)
+        ),
+    }
+    for i in range(60):
+        cols[f"feat_{i}"] = rng.normal(0, 1, n)
+    # 12 numeric news fields
+    for _j, name in enumerate(
+        [
+            "active_high_impact_events",
+            "xauusd_relevance",
+            "usd_relevance",
+            "bullish_pressure",
+            "bearish_pressure",
+            "conflict_score",
+            "novelty",
+            "freshness",
+            "confidence",
+            "source_consensus",
+            "news_state",
+            "time_since_event_sec",
+        ]
+    ):
+        cols[f"news_{name}"] = rng.normal(0, 1, n)
+    df = pl.DataFrame(cols)
+    exp = ExperimentFactory().create(
+        "ds_test", template="baseline_scalpnet_v1_news", experiment_id="exp_liq33"
+    )
+    feat_cols = [c for c in df.columns if c.startswith("feat_")] + [
+        c for c in df.columns if c.startswith("news_")
+    ]
+    res = CandidateTrainer().train_candidate(exp, df, feature_cols=feat_cols, epochs=2)
+    assert res["status"] == "COMPLETED", res
+    from nexus_scalp.model_generation.artifact_store import ArtifactStore
+
+    man = ArtifactStore().read_model_manifest(res["model_id"])
+    assert man is not None
+    fdim = man.get("feature_dimension")
+    input_dim = man.get("build_metadata", {}).get("input_dimension")
+    # BUG-114 contract: feature_dimension = base only (60); input_dimension =
+    # base + news (72); they must NEVER be 84 (double count).
+    assert fdim == 60
+    assert input_dim == 72, f"BUG-114: input_dimension double-counts news: {input_dim}"
+    # runtime must accept its own width
+    from nexus_scalp.model_generation.runtime import validate_and_load
+
+    rt = validate_and_load(res["model_id"], root=str(REPO_ROOT / "artifacts/model_generation"))
+    pred = rt.predict(np.random.default_rng(1).normal(0, 1, 72))
+    assert len(pred["probabilities"]) == 4
