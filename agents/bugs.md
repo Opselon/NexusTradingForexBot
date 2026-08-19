@@ -5073,3 +5073,42 @@ The Liquidity Intelligence panel displayed contradictory state after a live sess
   is out of scope). It was already fixed at HEAD (58c39f4): registration
   now lives in `_send_msg_sync` guarded by `ok`, covered by
   `test_telegram_notifier.py`. VERIFIED via the telemetry suite.
+## BUG-119 — UI execution-mode selector was a dead control: LIVE/SIM/REPLAY selection never persisted, never reached the engine (2026-08-19)
+
+- Category: UI_LIFECYCLE / PERSISTENCE
+- Symptom: The dashboard's execution-mode selector (LIVE TRADING /
+  SIMULATION / HIST_REPLAY) had NO change listener — selecting LIVE did
+  nothing. The engine start/stop button (/api/engine/toggle) started the
+  loop in-process but never persisted the mode; on restart the mode
+  reverted to the YAML default (PAPER). UI selection != persisted !=
+  engine runtime.
+- Root cause: (1) no `change` handler on `#execution-mode-selector`;
+  (2) no backend endpoint persisted `execution.mode`; (3) boot only read
+  mode from YAML/config, never from the canonical settings DB
+  (application_settings).
+- Fix (UI source-of-control, smallest correct change):
+  * NEW `POST /api/engine/mode`: validates mode, sets
+    `engine.config.execution.mode`, persists via SettingsService
+    `db.set('execution.mode', ...)` (HOT_RESTRICTED), and returns
+    `{mode, engine_running, runtime_mode}` where runtime_mode is derived
+    from REAL MT5 connection state (never faked).
+  * UI: `change` listener on `#execution-mode-selector` posts to the
+    endpoint; on failure the selector reverts to the server's
+    authoritative value; runtime badge renders the REAL state.
+  * Boot: LiveEngine reads `execution.mode` from the settings DB FIRST
+    (override), falling back to YAML — so a UI-requested mode survives
+    restart (mirrors the telegram.enabled pattern).
+  * MUTABILITY: `execution.mode` -> HOT_RESTRICTED (live-applyable).
+- Proof: engine boots PAPER; endpoint path sets LIVE; persisted; new
+  engine instance boots LIVE (restart survival); runtime_mode reported
+  `LIVE_CONFIGURED / MT5_DISCONNECTED` with an unconnected adapter
+  (truthful — never fake LIVE).
+- Tests: tests/integration/test_model_lifecycle_api.py
+  `test_engine_mode_apply_and_persist`, `test_engine_mode_rejects_invalid`,
+  `test_engine_mode_off_cycle` (61 passed incl. settings + liquidity).
+- Files: src/nexus_scalp/web/server.py, Web/app.js,
+  src/nexus_scalp/application/live_engine.py,
+  src/nexus_scalp/settings/service.py, tests/integration/test_model_lifecycle_api.py
+- Note: Liquidity Intelligence correctly follows engine state — when the
+  engine loop is stopped there is no new-bar compute and the UI shows
+  UNAVAILABLE/NOT_RUN (real state, never hardcoded).

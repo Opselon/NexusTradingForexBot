@@ -161,6 +161,78 @@ class TestModelLifecycleAPI:
         client = TestClient(app)
         assert client.post("/api/models/worker/start").json()["available"] is True
         assert engine._training_worker_started is True
+
+    # ------------------------------------------------------------------
+    # UI source-of-control: /api/engine/mode (execution-mode selector)
+    # The dashboard's LIVE/SIMULATION/REPLAY dropdown must persist the
+    # requested mode to the settings DB, apply it to the engine config,
+    # and report the REAL runtime state (never fake LIVE).
+    # ------------------------------------------------------------------
+
+    def test_engine_mode_apply_and_persist(self, wired_engine, tmp_path):
+        from nexus_scalp.settings.service import load_settings_service
+
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+
+        # LIVE requested through the UI path.
+        resp = client.post("/api/engine/mode", json={"mode": "LIVE"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is True
+        assert body["mode"] == "LIVE"
+        assert body["persisted"] is True
+        # Engine config applied.
+        assert engine.config.execution.mode.value == "LIVE"
+        # Settings DB persisted (canonical store).
+        svc = load_settings_service()
+        row = svc.db.get("execution.mode")
+        assert row is not None and str(row.value).upper() == "LIVE"
+        # Restore the prior mode so other fixtures boot from a clean
+        # requested state (the engine boot override reads this DB).
+        prior_row = svc.db.get("execution.mode")
+        if prior_row is not None:
+            svc.db.set("execution.mode", "PAPER", value_type="str", actor="test_cleanup")
+
+    def test_engine_mode_rejects_invalid(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        # The engine boots with the mode the PERSISTED settings already
+        # contain (boot override). Record it so the rejected request is
+        # verified to leave it untouched.
+        from nexus_scalp.settings.service import load_settings_service
+
+        svc = load_settings_service()
+        prior_row = svc.db.get("execution.mode")
+        prior_mode = (
+            str(prior_row.value).strip().upper() if prior_row and prior_row.value else "PAPER"
+        )
+        before = engine.config.execution.mode.value
+        resp = client.post("/api/engine/mode", json={"mode": "NOT_A_MODE"})
+        assert resp.status_code == 422
+        # Config untouched by the rejected request.
+        assert engine.config.execution.mode.value == before
+        assert prior_mode.upper() in {"LIVE", "PAPER", "REPLAY", "SHADOW", "BACKTEST"}
+
+    def test_engine_mode_off_cycle(self, wired_engine):
+        """ON then OFF: mode toggles persist and engine config follows."""
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+
+        r1 = client.post("/api/engine/mode", json={"mode": "LIVE"})
+        assert r1.status_code == 200 and r1.json()["mode"] == "LIVE"
+        r2 = client.post("/api/engine/mode", json={"mode": "PAPER"})
+        assert r2.status_code == 200 and r2.json()["mode"] == "PAPER"
+        assert engine.config.execution.mode.value == "PAPER"
+        from nexus_scalp.settings.service import load_settings_service
+
+        svc = load_settings_service()
+        row = svc.db.get("execution.mode")
+        assert str(row.value).upper() == "PAPER"
+        svc.db.set("execution.mode", "PAPER", value_type="str", actor="test_cleanup")
         assert client.post("/api/models/worker/cancel").json()["available"] is True
         assert client.post("/api/models/worker/stop").json()["available"] is True
         assert engine._training_worker_started is False

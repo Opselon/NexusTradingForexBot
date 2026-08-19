@@ -3577,7 +3577,13 @@ function handleIncomingLiveTick(payload, opts) {
 
         const sel = document.getElementById('execution-mode-selector');
 
-        if (sel) sel.value = payload.execution_mode;
+        if (sel) {
+
+            sel.value = payload.execution_mode;
+
+            window.__serverExecutionMode = payload.execution_mode;
+
+        }
 
     }
 
@@ -9528,6 +9534,45 @@ async function scanIntelligenceEvolution() {
 
 
 document.addEventListener('DOMContentLoaded', () => {
+
+    // UI source-of-control: execution-mode selector (LIVE/SIMULATION/REPLAY).
+    // Every change is persisted via the backend (settings DB) and applied
+    // to the engine; the runtime badge always shows REAL connection state.
+    const modeSel = document.getElementById('execution-mode-selector');
+    if (modeSel && !modeSel.dataset.modeBound) {
+        modeSel.dataset.modeBound = '1';
+        modeSel.addEventListener('change', async () => {
+            const requested = modeSel.value;
+            try {
+                const res = await NX.api.post('/api/engine/mode', { mode: requested }, { component: 'Engine', action: 'SET_MODE' });
+                if (res.ok && res.body && res.body.success) {
+                    const rt = res.body.runtime_mode || requested;
+                    const badge = document.getElementById('runtime-mode-badge');
+                    if (badge) {
+                        badge.textContent = rt;
+                        const isLive = String(rt).indexOf('LIVE') === 0;
+                        const isDegraded = String(rt).indexOf('DISCONNECTED') !== -1 || String(rt).indexOf('BLOCKED') !== -1;
+                        badge.className = 'text-[10px] px-2 py-0.5 rounded font-black border ' +
+                            (isLive && !isDegraded
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : isDegraded
+                                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30');
+                    }
+                    console.log('[ENGINE_UI] mode set to ' + res.body.mode + ' (runtime: ' + rt + ')');
+                } else {
+                    // Revert to the authoritative server value on failure.
+                    console.warn('[UI_ERROR] component=Engine action=SET_MODE ' + NX.api.msg(res, 'Mode change failed.'));
+                    if (window.__serverExecutionMode) modeSel.value = window.__serverExecutionMode;
+                }
+            } catch (err) {
+                console.error('[UI_ERROR] component=Engine action=SET_MODE', err);
+                if (window.__serverExecutionMode) modeSel.value = window.__serverExecutionMode;
+            }
+        });
+    }
+    // Track the authoritative server-reported mode so a failed change can revert.
+    window.__serverExecutionMode = modeSel ? modeSel.value : null;
 
     setTimeout(initAccountIntelligence, 1200);
 

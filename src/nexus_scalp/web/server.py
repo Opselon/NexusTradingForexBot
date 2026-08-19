@@ -273,6 +273,10 @@ class ToggleRequest(BaseModel):
     active: bool
 
 
+class EngineModeRequest(BaseModel):
+    mode: str
+
+
 class AlgoConfigRequest(BaseModel):
     atr_sl_buffer_multiplier: float
     min_risk_reward_ratio: float
@@ -2292,6 +2296,49 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             engine._running = False
 
         return {"success": True, "engine_running": engine._running}
+
+    # POST /api/engine/mode
+    # UI source-of-control: the dashboard's execution-mode selector.
+    # Persists the requested mode in the settings DB (canonical store,
+    # HOT_RESTRICTED) and applies it to the live engine config. The
+    # runtime badge is derived from ACTUAL connection state downstream.
+    @app.post("/api/engine/mode")
+    def set_engine_mode(req: EngineModeRequest) -> dict[str, Any]:
+        engine = app.state.engine
+        if not engine:
+            raise HTTPException(status_code=400, detail="Trading Engine reference not loaded.")
+        wanted = req.mode.strip().upper()
+        allowed = {m.value for m in ExecutionMode}
+        if wanted not in allowed:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid execution mode '{req.mode}' (allowed: {', '.join(sorted(allowed))})",
+            )
+        engine.config.execution.mode = ExecutionMode(wanted)
+        from nexus_scalp.settings import load_settings_service
+
+        svc = getattr(engine, "settings_service", None) or load_settings_service()
+        saved = svc.db.set(
+            "execution.mode",
+            wanted,
+            value_type="str",
+            source="USER_SETTINGS",
+            actor="web",
+        )
+        # Apply the mode truthfully: refresh runtime derivation while
+        # preserving the real connection state (never fake LIVE).
+        if hasattr(engine, "_update_runtime_mode"):
+            try:
+                engine._update_runtime_mode()
+            except Exception:
+                pass
+        return {
+            "success": True,
+            "mode": wanted,
+            "engine_running": bool(getattr(engine, "_running", False)),
+            "runtime_mode": getattr(engine, "_runtime_mode", wanted),
+            "persisted": bool(saved),
+        }
 
     # GET /api/config
     @app.get("/api/config")

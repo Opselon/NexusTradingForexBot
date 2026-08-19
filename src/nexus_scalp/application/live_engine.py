@@ -41,7 +41,7 @@ from nexus_scalp.candle_intelligence import (
     RegimeState,
 )
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.enums import ActionType, OrderType
+from nexus_scalp.domain.enums import ActionType, ExecutionMode, OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
     Position,
@@ -294,6 +294,19 @@ class LiveEngine:
             if cfg_enabled_row and cfg_enabled_row.value is not None
             else bool(config.telegram.enabled)
         )
+
+        # UI-controlled execution mode: the settings DB is authoritative
+        # when the user changed it from the dashboard (UI == source of
+        # control). Falls back to the YAML/config default otherwise so a
+        # fresh install keeps its documented default.
+        try:
+            mode_row = self.settings_service.db.get("execution.mode")
+            if mode_row is not None and mode_row.value is not None:
+                persisted_mode = str(mode_row.value).strip().upper()
+                if persisted_mode in {m.value for m in ExecutionMode}:
+                    self.config.execution.mode = ExecutionMode(persisted_mode)
+        except Exception as _mode_err:
+            logger.warning("[SETTINGS] execution.mode override failed (non-fatal): %s", _mode_err)
 
         self.notifier = TelegramNotifier(
             bot_token=bot_token,

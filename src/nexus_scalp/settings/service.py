@@ -53,6 +53,7 @@ MUTABILITY = {
     "telegram.admin_id": SECRET,
     "execution.symbol": RESTART_REQUIRED,
     "execution.timeframe": RESTART_REQUIRED,
+    "execution.mode": HOT_RESTRICTED,
     "execution.magic_number": RESTART_REQUIRED,
     "execution.max_slippage_points": HOT_RESTRICTED,
     "risk.max_account_drawdown_pct": HOT_RESTRICTED,
