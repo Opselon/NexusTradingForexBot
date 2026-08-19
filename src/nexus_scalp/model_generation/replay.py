@@ -13,9 +13,11 @@ ALERT/RESEARCH trigger — never an automatic retrain (spec 35).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
+import polars as pl
 
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
 from nexus_scalp.model_generation.runtime import LocalModelRuntime
@@ -178,4 +180,142 @@ def detect_prediction_drift(
         "threshold": threshold,
         "reference_distribution": ref_dist.tolist(),
         "current_distribution": cur_dist.tolist(),
+    }
+
+
+# =============================================================================
+# TASK-03-70D-PARITY: canonical 70D replay (reconstructs the SAME vector the
+# dataset builder produced, from raw bars + news only — anti-leakage).
+# =============================================================================
+
+
+def replay_70d_vector(
+    bars_frame: pl.DataFrame,
+    *,
+    timestamp: datetime,
+    news_frame: pl.DataFrame | None = None,
+    min_bars: int = 55,
+    spread: float = 0.20,
+    symbol: str = "XAUUSD",
+    timeframe: str = "M1",
+) -> dict[str, Any]:
+    """Recomputes the canonical 70D vector at a historical timestamp.
+
+    Uses the SAME producers as compute_70d_frame on the SAME causal window
+    (bars closed at/before ``timestamp`` only — future bars/news/liquidity
+    events are invisible). Returns provenance + the vector so parity with
+    the dataset row can be asserted bit-exact.
+
+    Raises ValueError when the timestamp has fewer than ``min_bars`` prior
+    completed bars (causal warm-up), or when the canonical contract is
+    violated (validate_70d_vector).
+    """
+    from nexus_scalp.domain.models import TickData
+    from nexus_scalp.features.features70 import (
+        FeatureSourceState,
+        news_10d_from_context,
+    )
+    from nexus_scalp.features.liquidity_engine import compute_liquidity_features
+    from nexus_scalp.features.scalp_features import ScalpFeatureEngine
+    from nexus_scalp.features.schema_contract import (
+        canonical_feature_names,
+        feature_schema_hash,
+        validate_70d_vector,
+    )
+    from nexus_scalp.market_data.bar_aggregator import BarData
+    from nexus_scalp.model_generation.news_bridge import news_context_at
+
+    raw = bars_frame.sort("time")
+    # normalize decision to UTC-aware (input may be polars-naive or aware)
+    target = timestamp
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=UTC)
+    else:
+        target = target.astimezone(UTC)
+    # causal filter: bars closed at/before decision
+    times_raw: list[datetime] = []
+    for row in raw.iter_rows(named=True):
+        t = row.get("time_utc") or row.get("time")
+        ts = t if isinstance(t, datetime) else None
+        if ts is None:
+            continue
+        ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+        times_raw.append(ts)
+    rows: list[dict[str, Any]] = []
+    for j in range(raw.height):
+        rj = raw.row(j, named=True)
+        rows.append(rj)
+    visible = [rows[j] for j in range(len(rows)) if times_raw[j] <= target]
+    if len(visible) < min_bars:
+        raise ValueError(
+            f"replay_70d_vector: {len(visible)} visible bars < min_bars={min_bars} "
+            f"at {timestamp.isoformat()}"
+        )
+
+    engine = ScalpFeatureEngine(symbol=symbol)
+    # Canonical windows (EXACTLY as compute_70d_frame):
+    #   - 50D engine     -> 55-bar causal window (all_bars[max(0,i-54):i+1])
+    #   - liquidity      -> FULL causal history (all_bars[:i+1]) so HTF
+    #                       buckets / session pools / confluence match.
+    bars = [
+        BarData(
+            symbol=symbol,
+            timeframe=timeframe,
+            timestamp=times_raw[rows.index(rj)],
+            open=float(rj["open"]),
+            high=float(rj["high"]),
+            low=float(rj["low"]),
+            close=float(rj["close"]),
+            tick_volume=int(rj.get("tick_volume", 0) or 0),
+            is_complete=True,
+        )
+        for rj in visible
+    ]
+    decision = bars[-1].timestamp
+    tick = TickData(
+        symbol=symbol,
+        timestamp=decision,
+        bid=float(visible[-1]["close"]),
+        ask=float(visible[-1]["close"]) + spread,
+        volume=int(visible[-1].get("tick_volume", 0) or 0),
+    )
+    base_window = bars[-min_bars:]
+    fv = engine.compute_from_bars(base_window, tick)
+    x50 = fv.to_tensor_input()
+    liquid = compute_liquidity_features(
+        bars,
+        decision_at=decision,
+        mid_price=float(visible[-1]["close"]),
+        atr=fv.atr_m1,
+    )
+    liq10 = list(liquid.as_vector())
+
+    news_enabled = news_frame is not None and not news_frame.is_empty()
+    if news_enabled:
+        ctx = news_context_at(news_frame, decision)
+        news10 = news_10d_from_context(ctx)
+        news_status = FeatureSourceState.FEATURE_AVAILABLE.value
+        news_hash = ""
+    else:
+        news10 = [0.0] * 10
+        news_status = FeatureSourceState.FEATURE_DISABLED.value
+        news_hash = ""
+
+    vector = list(x50) + news10 + liq10
+    validate_70d_vector(vector, context="replay_70d_vector")
+    return {
+        "schema_id": "scalp_v3",
+        "dimension": len(vector),
+        "timestamp_utc": decision.isoformat(),
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "feature_vector": vector,
+        "feature_names": list(canonical_feature_names()),
+        "feature_schema_hash": feature_schema_hash(),
+        "news_status": news_status,
+        "liquidity_status": FeatureSourceState.FEATURE_AVAILABLE.value,
+        "news_enabled": news_enabled,
+        "news_context_hash": news_hash,
+        "visible_bars": len(visible),
+        "calculation_version": "70d-v1.0.0",
     }

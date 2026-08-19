@@ -535,7 +535,6 @@ class LiveEngine:
         self._shadow70_worker_started: bool = False
         self._shadow70_enabled: bool = False  # enabled by operator via API attach
 
-
         # =====================================================================
         # PHASE 12: NEWS INTELLIGENCE ENGINE (isolated, optional)
         # ---------------------------------------------------------------------
@@ -555,7 +554,9 @@ class LiveEngine:
         # pipelines. NEVER touches orders/SL/TP/risk/execution (brief 21).
         # =====================================================================
         liq_cfg = getattr(config, "model", None)
-        liq_enabled = bool(getattr(liq_cfg, "liquidity_features_enabled", False)) if liq_cfg else False
+        liq_enabled = (
+            bool(getattr(liq_cfg, "liquidity_features_enabled", False)) if liq_cfg else False
+        )
         # NOTE: load_settings_service is imported at module level (line ~100);
         # a function-local import here would shadow it for the earlier
         # `self.settings_service = load_settings_service()` call (UnboundLocalError).
@@ -1156,9 +1157,10 @@ class LiveEngine:
                             exec_mode = str(
                                 getattr(self.config, "execution_mode", "PAPER") or "PAPER"
                             ).upper()
-                            apply_deletes = bool(
-                                getattr(self.config, "hygiene_apply_deletes", False)
-                            ) and exec_mode != "LIVE"
+                            apply_deletes = (
+                                bool(getattr(self.config, "hygiene_apply_deletes", False))
+                                and exec_mode != "LIVE"
+                            )
                             self._hygiene_worker = DatabaseHygieneWorker(
                                 repo_root=self.config.base_dir
                                 if hasattr(self.config, "base_dir")
@@ -2288,6 +2290,20 @@ class LiveEngine:
                 proposal=proposal,
             )
 
+            # =================================================================
+            # TASK-05-70D-SHADOW: 70D OBSERVATION HOOK (observability ONLY)
+            # -----------------------------------------------------------------
+            # Independent of the 50D shadow gate (BUG-105): runs on EVERY tick
+            # once a validated 70D candidate is attached and enabled, building
+            # the 70D vector from the SAME canonical state (50D + news +
+            # liquidity). A failure here is isolated (INV-018).
+            # =================================================================
+            self._record_shadow70_observation(
+                tick=tick,
+                fv=fv,
+                proposal=proposal,
+            )
+
             # Extract and update real SMC overlays for the live chart canvas
             real_overlays = self.signal_policy.extract_live_chart_overlays(
                 completed_bars=completed_bars, atr_val=fv.atr_m1
@@ -3040,90 +3056,128 @@ class LiveEngine:
         except Exception as e:
             # Shadow is observability only: a failure here NEVER disturbs live.
             logger.error("[SHADOW] event=RECORD_FAILURE (isolated)", error=str(e))
-            # =================================================================
-            # TASK-05-70D-SHADOW: 70D OBSERVATION HOOK (observability ONLY)
-            # -----------------------------------------------------------------
-            # When a validated 70D candidate is attached, the runtime builds the
-            # 70D vector from the SAME canonical state (50D + news + liquidity)
-            # and records a SIMULATED observation. A failure here is isolated:
-            # shadow can never disturb the Champion path (INV-018).
-            # =================================================================
-            try:
-                rt70 = getattr(self, "_shadow70_runtime", None)
-                if rt70 is not None and rt70.state.value == "READY" and getattr(self, "_shadow70_enabled", False):
-                    from nexus_scalp.shadow.shadow70.models import (
-                        SHADOW70_DIMENSION,
+
+    def _record_shadow70_observation(
+        self,
+        tick: TickData,
+        fv: Any,
+        proposal: TradeProposal,
+    ) -> None:
+        """BUG-105: 70D shadow observation (observability ONLY, INV-018).
+
+        Runs on EVERY tick (independent of the 50D shadow/Challenger gate —
+        the previous placement inside _record_shadow_decision's except block
+        made it dead code on the happy path). Builds the canonical 70D vector
+        (BASE 0..49 from the live 50D features, NEWS 50..59 from the same
+        news context the Champion consumed, LIQUIDITY 60..69 from the
+        liquidity producer) and records a SIMULATED observation. Fully
+        failure-isolated: any fault logs and returns; the Champion path is
+        never disturbed.
+        """
+        rt70 = getattr(self, "_shadow70_runtime", None)
+        if (
+            rt70 is None
+            or rt70.state.value != "READY"
+            or not getattr(self, "_shadow70_enabled", False)
+        ):
+            return
+        try:
+            from nexus_scalp.features.liquidity_runtime import (
+                build_70d_vector,
+            )
+            from nexus_scalp.shadow.shadow70.liq_provider import build_liquidity_10
+
+            base50 = [0.0] * 50
+            if fv is not None:
+                v = fv.to_tensor_input() if hasattr(fv, "to_tensor_input") else None
+                if v is not None and len(v) == 50:
+                    base50 = list(v)
+            feature_hash = getattr(fv, "feature_hash", "") or ""
+            regime_str = getattr(getattr(self, "_last_regime_state", None), "regime", None)
+            regime_str = getattr(regime_str, "value", "UNKNOWN") or "UNKNOWN"
+
+            # news vector from the same context the Champion saw
+            news10 = [0.0] * 10
+            news_ctx: Any = None
+            if self._news_enabled and self.news_engine is not None:
+                try:
+                    news_ctx = self.news_engine.current_context()
+                except Exception:
+                    news_ctx = None
+            if news_ctx is not None:
+                try:
+                    from nexus_scalp.governance.alignment import (
+                        vectorize_news_context,
+                    )
+                    from nexus_scalp.shadow.shadow70.news_provider import (
+                        build_news_10,
                     )
 
-                    base50 = x50 if len(x50) == 50 else [0.0] * 50
+                    news10, _ = build_news_10(vectorize_news_context(news_ctx))
+                except Exception:
                     news10 = [0.0] * 10
-                    liq10 = [0.0] * 10
-                    # news vector from the same context the Champion saw
-                    try:
-                        if news_ctx is not None:
-                            from nexus_scalp.governance.alignment import (
-                                vectorize_news_context,
-                            )
-                            from nexus_scalp.features.liquidity_runtime import (
-                                build_70d_vector,
-                            )
-                            from nexus_scalp.shadow.shadow70.news_provider import (
-                                build_news_10,
-                            )
 
-                            nv = vectorize_news_context(news_ctx)
-                            news10, _ = build_news_10(nv)
-                    except Exception:
-                        news10 = [0.0] * 10
+            # liquidity features: injected producer when available
+            liquidity_calc_version = ""
+            liq10 = [0.0] * 10
+            try:
+                liq10, liquidity_calc_version = build_liquidity_10(self, tick)
+            except Exception:
+                liq10, liquidity_calc_version = [0.0] * 10, ""
 
-                    # liquidity features: injected producer when available
-                    liquidity_calc_version = ""
-                    try:
-                        from nexus_scalp.shadow.shadow70.liq_provider import build_liquidity_10
+            # canonical schema identity for THIS observation (the old hook
+            # passed "" which silently skipped schema verification)
+            from nexus_scalp.features.schema_contract import feature_schema_hash
 
-                        liq10, liquidity_calc_version = build_liquidity_10(self, tick)
-                    except Exception:
-                        liq10, liquidity_calc_version = [0.0] * 10, ""
-                    vector70 = build_70d_vector(
-                        base50, family_10=news10, liquidity_10=liq10
-                    )
-                    obs = rt70.observe(
-                        vector70=vector70,
-                        champion_action=champion_action,
-                        champion_probabilities=champ_probs,
-                        champion_confidence=float(getattr(proposal, "confidence", 0.0)),
-                        snapshot_id=feature_hash,
-                        timestamp=tick.timestamp,
-                        symbol=tick.symbol,
-                        timeframe="M1",
-                        regime=regime_str,
-                        session=getattr(proposal, "session", "") or "ALL",
-                        news_context=(news_ctx.model_dump() if news_ctx is not None else None),
-                        news_state=str(getattr(news_ctx, "state", "") or "") if isinstance(news_ctx, object) else "",
-                        liquidity_state="",
-                        liquidity_calculation_version=liquidity_calc_version,
-                        liquidity_features_10=liq10,
-                        base_feature_hash=feature_hash,
-                        feature_schema_hash="",
-                        sample_source="LIVE",
-                        decision_id=getattr(proposal, "request_id", ""),
-                    )
-                    hm = getattr(self, "_shadow70_health", None)
-                    if hm is not None and obs.valid:
-                        hm.update(vector70, stale=False)
-                    dm = getattr(self, "_shadow70_drift", None)
-                    if dm is not None and obs.valid:
-                        dm.update(vector70)
-                    wk = getattr(self, "_shadow70_worker", None)
-                    if wk is not None:
-                        if not getattr(self, "_shadow70_worker_started", False):
-                            wk.start()
-                            self._shadow70_worker_started = True
-                        if not wk.enqueue(obs):
-                            pass  # backpressure already telemetried by the worker
-            except Exception as e70:
-                logger.error("[SHADOW70] hook failed (isolated, Champion unaffected)", error=str(e70))
+            schema_hash = feature_schema_hash()
 
+            vector70 = build_70d_vector(base50, family_10=news10, liquidity_10=liq10)
+
+            champion_action = (
+                proposal.action.value if hasattr(proposal.action, "value") else str(proposal.action)
+            )
+            champ_probs = [
+                float(v)
+                for v in (self._last_probs.tolist() if self._last_probs is not None else [])
+            ]
+            obs = rt70.observe(
+                vector70=vector70,
+                champion_action=champion_action,
+                champion_probabilities=champ_probs,
+                champion_confidence=float(getattr(proposal, "confidence", 0.0)),
+                snapshot_id=feature_hash or f"snap_{tick.timestamp.isoformat()}",
+                timestamp=tick.timestamp,
+                symbol=tick.symbol,
+                timeframe="M1",
+                regime=regime_str,
+                session=getattr(proposal, "session", "") or "ALL",
+                news_context=(news_ctx.model_dump() if news_ctx is not None else None),
+                news_state=str(getattr(news_ctx, "state", "") or "")
+                if isinstance(news_ctx, object)
+                else "",
+                liquidity_state="",
+                liquidity_calculation_version=liquidity_calc_version,
+                liquidity_features_10=liq10,
+                base_feature_hash=feature_hash,
+                feature_schema_hash=schema_hash,
+                sample_source="LIVE",
+                decision_id=getattr(proposal, "request_id", ""),
+            )
+            hm = getattr(self, "_shadow70_health", None)
+            if hm is not None and obs.valid:
+                hm.update(vector70, stale=False)
+            dm = getattr(self, "_shadow70_drift", None)
+            if dm is not None and obs.valid:
+                dm.update(vector70)
+            wk = getattr(self, "_shadow70_worker", None)
+            if wk is not None:
+                if not getattr(self, "_shadow70_worker_started", False):
+                    wk.start()
+                    self._shadow70_worker_started = True
+                if not wk.enqueue(obs):
+                    pass  # backpressure already telemetried by the worker
+        except Exception as e70:
+            logger.error("[SHADOW70] hook failed (isolated, Champion unaffected)", error=str(e70))
 
     # -------------------------
     # Async retraining worker

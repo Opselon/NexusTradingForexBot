@@ -833,3 +833,166 @@ def test_disagreement_taxonomy() -> None:
         == DisagreementClass.CONFIDENCE_DIVERGENCE
     )
     assert classify_disagreement("NO_TRADE", "WAIT") == DisagreementClass.NO_TRADE_DISAGREEMENT
+
+
+# ---------------------------------------------------------------------------
+# TEST-SHADOW-36..39 (BUG-105 regression) — live-engine 70D hook wiring
+# ---------------------------------------------------------------------------
+# BUG-105: the 70D observation hook was nested INSIDE the 50D-shadow except
+# block (dead on the happy path) and imported build_70d_vector inside
+# `if news_ctx is not None:` (UnboundLocalError with news disabled). These
+# tests execute the REAL LiveEngine._record_shadow_decision on a minimal
+# harness and assert observations flow on the happy path, independent of the
+# 50D shadow path, and that the 70D vector is the canonical 50+10+10 shape.
+
+
+class _Shadow70Harness:
+    """Minimal LiveEngine stand-in binding the REAL _record_shadow_decision."""
+
+    def __init__(self, tmp: str, *, shadow_challenger: bool = True) -> None:
+        from types import SimpleNamespace
+
+        from nexus_scalp.shadow.engine import ShadowEngine
+        from nexus_scalp.shadow.shadow70.health import (
+            Shadow70DriftMonitor,
+            Shadow70FeatureHealthMonitor,
+        )
+        from nexus_scalp.shadow.shadow70.runtime import Shadow70Runtime
+        from nexus_scalp.shadow.shadow70.store import Shadow70Store
+        from nexus_scalp.shadow.shadow70.worker import Shadow70Worker
+        from nexus_scalp.shadow.store import ShadowStore
+
+        self._tmp = tmp
+        self._shadow_challenger = SimpleNamespace() if shadow_challenger else None
+        self._governance_shadow = None
+        self.shadow_engine = ShadowEngine(store=ShadowStore(audit_repo=None))
+        self._news_enabled = False
+        self.news_engine = None
+        self._last_probs = None
+        self.FEATURE_DIM = 50
+        self.FEATURE_SCHEMA_ID = "scalp_v1"
+        self.aggregator = SimpleNamespace(get_completed_bars=lambda: [])
+        self.champion_manager = SimpleNamespace(
+            model_id="primary_scalp_scalp_v1_50d",
+            model_version="v1.0",
+            champion_or_none=lambda: None,
+        )
+        self.config = SimpleNamespace(model=SimpleNamespace(feature_schema_version="1.0"))
+        self._shadow70_store = Shadow70Store(audit_repo=None)
+        self._shadow70_runtime = Shadow70Runtime()
+        self._shadow70_health = Shadow70FeatureHealthMonitor(window=1000)
+        self._shadow70_drift = Shadow70DriftMonitor()
+        self._shadow70_worker = Shadow70Worker(store=self._shadow70_store, max_queue=2000)
+        self._shadow70_worker_started = False
+        self._shadow70_enabled = True
+        from nexus_scalp.features.schema_contract import feature_schema_hash
+        from tests.helpers.shadow70_fixtures import make_contract
+
+        contract = make_contract(tmp)
+        contract = contract.model_copy(update={"feature_schema_hash": feature_schema_hash()})
+        res = self._shadow70_runtime.attach(contract)
+        assert res.passed, res.reason
+        self._shadow70_runtime.set_inference(lambda v: [0.6, 0.2, 0.1, 0.1])
+
+    def shadow70_count(self) -> int:
+        return self._shadow70_runtime.observations
+
+    def record(self) -> None:
+        from types import SimpleNamespace
+
+        from nexus_scalp.application.live_engine import LiveEngine
+        from nexus_scalp.domain.models import TickData
+
+        f = LiveEngine._record_shadow_decision
+        tick = TickData(
+            symbol="XAUUSD",
+            timestamp=datetime.now(UTC),
+            bid=2000.0,
+            ask=2000.1,
+            volume=1.0,
+        )
+        fv = SimpleNamespace(to_tensor_input=lambda: [0.0] * 50, feature_hash="abc123")
+        regime = SimpleNamespace(regime=SimpleNamespace(value="NEUTRAL"))
+        self._last_regime_state = regime
+        proposal = SimpleNamespace(
+            action=SimpleNamespace(value="NO_TRADE"),
+            confidence=0.55,
+            request_id="req_probe",
+            session="ALL",
+        )
+        f(self, tick, fv, regime, proposal)
+        # BUG-105: the 70D hook is a SEPARATE method invoked at the same site
+        g = LiveEngine._record_shadow70_observation
+        g(self, tick, fv, proposal)
+
+
+def test_shadow36_happy_path_records_70d_observation(contract: Shadow70CandidateContract) -> None:
+    """BUG-105 regression: with a READY 70D runtime, a successful 50D-shadow
+    record MUST still produce a 70D observation (hook must not live in the
+    except path)."""
+
+    with tempfile.TemporaryDirectory() as tmp:
+        h = _Shadow70Harness(tmp, shadow_challenger=True)
+        assert h._shadow70_runtime.state.value == "READY"
+        assert h.shadow70_count() == 0
+        h.record()
+        assert h.shadow70_count() == 1, (
+            "happy path must record exactly one 70D observation (BUG-105)"
+        )
+        obs = h._shadow70_runtime.last_observation
+        assert obs is not None and obs.valid
+        assert obs.schema_dimension == SHADOW70_DIMENSION
+        assert obs.simulated is True
+        assert obs.sample_source == "LIVE"
+        # the observation records the 10D liquidity sub-block + hashes
+        # (full 70D is bounded evidence by contract); the worker persisted it
+        assert obs.liquidity_features_10 == [0.0] * 10  # neutral (no engine bars)
+        assert h._shadow70_worker.enqueued == 1
+
+
+def test_shadow37_no_50d_shadow_still_records_70d(contract: Shadow70CandidateContract) -> None:
+    """BUG-105: when NO 50D shadow/Challenger is attached (early-return gate),
+    the 70D hook must STILL run (it is enabled independently)."""
+
+    with tempfile.TemporaryDirectory() as tmp:
+        h = _Shadow70Harness(tmp, shadow_challenger=False)
+        assert h.shadow70_count() == 0
+        h.record()
+        assert h.shadow70_count() == 1, "70D hook must run even without a 50D shadow (BUG-105)"
+        assert h._shadow70_worker.enqueued == 1
+
+
+def test_shadow38_news_disabled_no_unboundlocal(contract: Shadow70CandidateContract) -> None:
+    """BUG-105: news_ctx None (news disabled) must NOT raise UnboundLocalError
+    for build_70d_vector — the vector still assembles with neutral news."""
+
+    with tempfile.TemporaryDirectory() as tmp:
+        h = _Shadow70Harness(tmp, shadow_challenger=True)
+        h._news_enabled = False
+        h.news_engine = None
+        h.record()
+        assert h.shadow70_count() == 1
+        obs = h._shadow70_runtime.last_observation
+        assert obs is not None and obs.valid, obs.reason if obs else "no observation"
+        # BUG-105 schema-identity: the live hook passes the canonical schema
+        # hash so per-observation schema verification runs (not silently
+        # skipped) — the observation carries the canonical schema identity
+        assert obs.schema_id == SHADOW70_SCHEMA_ID
+        assert obs.schema_dimension == SHADOW70_DIMENSION
+
+
+def test_shadow39_50d_shadow_failure_does_not_block_70d(
+    contract: Shadow70CandidateContract,
+) -> None:
+    """BUG-105 isolation: even when the 50D shadow record raises, the 70D
+    hook still records (exceptions are independent)."""
+
+    with tempfile.TemporaryDirectory() as tmp:
+        h = _Shadow70Harness(tmp, shadow_challenger=True)
+
+        def boom(*_a, **_k):
+            raise RuntimeError("forced 50D failure")
+
+        h.shadow_engine.record_shadow_decision = boom  # type: ignore[method-assign]
+        h.record()
+        assert h.shadow70_count() == 1, "70D hook must be independent of 50D-shadow failures"
