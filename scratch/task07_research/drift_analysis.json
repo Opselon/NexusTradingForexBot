@@ -1,0 +1,123 @@
+{
+  "research_run_id": "task07_drift_01",
+  "research_baseline_id": "e85de540e09d3339",
+  "reference": {
+    "source": "docs/LIQUIDITY_70D_GOLDEN_BASELINE.json (TASK-01, liquidity-v1.0, 29946 M5 rows)",
+    "n": 29946,
+    "temporal_range": [
+      "2025-03-12T06:35:00",
+      "2025-08-14T03:00:00"
+    ]
+  },
+  "live_proxy": {
+    "source": "scratch/task07_research/feature_distributions.json (liquidity-v1.1, 500 causal M5 points)",
+    "n": 500,
+    "temporal_range": [
+      "2025-03-12T06:35:00+00:00",
+      "2026-08-17T07:15:00+00:00"
+    ]
+  },
+  "caveat": "Reference window (2025-03..08) vs live-proxy window (2025-03..2026-08) differ: cross-window flags reflect REGIME/SESSION DRIFT (mission 20/21), NOT model failure. eqh/eql/sweep/confluence also differ BY DESIGN between v1.0 and v1.1 (TASK-06). Only the UNCHANGED features (bsl/ssl/internal/external distance, htf) are valid market-drift signals.",
+  "features": {
+    "bsl_distance_atr": {
+      "ref_mean": 1.563,
+      "live_mean": 0.6153,
+      "ref_std": 1.0349,
+      "live_std": 0.7414,
+      "mean_shift_abs": 0.9477,
+      "psi_approx": 1.8589,
+      "status": "CRITICAL",
+      "note": "stable family (unchanged between versions) \u2014 valid drift signal"
+    },
+    "ssl_distance_atr": {
+      "ref_mean": 1.7415,
+      "live_mean": 0.7502,
+      "ref_std": 1.0503,
+      "live_std": 0.8801,
+      "mean_shift_abs": 0.9913,
+      "psi_approx": 1.6906,
+      "status": "CRITICAL",
+      "note": "stable family (unchanged between versions) \u2014 valid drift signal"
+    },
+    "eqh_strength": {
+      "ref_mean": 0.8507,
+      "live_mean": 0.7871,
+      "ref_std": 0.1453,
+      "live_std": 0.1431,
+      "mean_shift_abs": 0.0636,
+      "psi_approx": 0.2158,
+      "status": "WATCH",
+      "note": "v1.0->v1.1 design change; not market drift"
+    },
+    "eql_strength": {
+      "ref_mean": 0.5853,
+      "live_mean": 0.3861,
+      "ref_std": 0.3678,
+      "live_std": 0.3383,
+      "mean_shift_abs": 0.1992,
+      "psi_approx": 0.4457,
+      "status": "WARNING",
+      "note": "v1.0->v1.1 design change; not market drift"
+    },
+    "htf_liquidity_score": {
+      "ref_mean": 0.2624,
+      "live_mean": 0.2019,
+      "ref_std": 2.3207,
+      "live_std": 2.8227,
+      "mean_shift_abs": 0.0605,
+      "psi_approx": 0.0787,
+      "status": "NORMAL",
+      "note": "stable family (unchanged between versions) \u2014 valid drift signal"
+    },
+    "internal_liquidity_distance": {
+      "ref_mean": 1.019,
+      "live_mean": 0.7474,
+      "ref_std": 0.9309,
+      "live_std": 0.7948,
+      "mean_shift_abs": 0.2716,
+      "psi_approx": 0.2912,
+      "status": "WARNING",
+      "note": "stable family (unchanged between versions) \u2014 valid drift signal"
+    },
+    "external_liquidity_distance": {
+      "ref_mean": 1.7265,
+      "live_mean": 2.7865,
+      "ref_std": 0.9741,
+      "live_std": 0.6451,
+      "mean_shift_abs": 1.06,
+      "psi_approx": 2.3205,
+      "status": "CRITICAL",
+      "note": "stable family (unchanged between versions) \u2014 valid drift signal"
+    },
+    "liquidity_confluence": {
+      "ref_mean": 2.7498,
+      "live_mean": 2.9991,
+      "ref_std": 0.2247,
+      "live_std": 0.0201,
+      "mean_shift_abs": 0.2493,
+      "psi_approx": 11.4493,
+      "status": "CRITICAL",
+      "note": "v1.0->v1.1 design change; not market drift"
+    },
+    "liquidity_sweep_state": {
+      "ref_mean": 0.2277,
+      "live_mean": -0.646,
+      "ref_std": 1.2964,
+      "live_std": 1.1067,
+      "mean_shift_abs": 0.8737,
+      "psi_approx": 0.6769,
+      "status": "CRITICAL",
+      "note": "v1.0->v1.1 design change; not market drift"
+    },
+    "post_sweep_displacement": {
+      "ref_mean": 0.0406,
+      "live_mean": 0.0877,
+      "ref_std": 0.1997,
+      "live_std": 0.3545,
+      "mean_shift_abs": 0.0471,
+      "psi_approx": 0.6082,
+      "status": "CRITICAL",
+      "note": "stable family (unchanged between versions) \u2014 valid drift signal"
+    }
+  }
+}

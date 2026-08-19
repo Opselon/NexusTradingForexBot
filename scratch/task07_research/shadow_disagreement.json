@@ -1,0 +1,38 @@
+{
+  "research_run_id": "task07_shadow_01",
+  "research_baseline_id": "e85de540e09d3339",
+  "status": "INSUFFICIENT_LIVE_EVIDENCE",
+  "reason": "Only 2 shadow70 observations exist, both SHADOW_BLOCKED (runtime IDLE \u2014 no validated 70D candidate attached). No champion-vs-shadow disagreement with real model outputs can be computed.",
+  "observations": [
+    {
+      "observation_id": "44be25c2d1821ca3",
+      "timestamp": "2026-08-18T23:51:04.502826+00:00",
+      "schema_id": "scalp_v3",
+      "champion_action": "BUY_MARKET",
+      "shadow_action": "NO_TRADE",
+      "disagreement": "NO_TRADE_DISAGREEMENT",
+      "error_code": "SHADOW_BLOCKED",
+      "sample_source": "LIVE",
+      "simulated": 1,
+      "valid": 0
+    },
+    {
+      "observation_id": "5e7b2157a9209ec2",
+      "timestamp": "2026-08-19T00:40:41.368304+00:00",
+      "schema_id": "scalp_v3",
+      "champion_action": "BUY_MARKET",
+      "shadow_action": "NO_TRADE",
+      "disagreement": "NO_TRADE_DISAGREEMENT",
+      "error_code": "SHADOW_BLOCKED",
+      "sample_source": "LIVE",
+      "simulated": 1,
+      "valid": 0
+    }
+  ],
+  "counts": {
+    "total": 2,
+    "valid": 0,
+    "blocked": 2
+  },
+  "next_evidence_threshold": "Shadow disagreement outcome analysis (champion correct / shadow correct / both / confidence-weighted) requires >= 50 valid observations with real model outputs and resolved outcomes (mission 17/32)."
+}
