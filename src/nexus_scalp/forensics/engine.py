@@ -104,6 +104,22 @@ class ForensicHealthEngine:
         self._history: list[SnapshotRecord] = []
         self._last_alert_at: dict[str, float] = {}
         self._active_blockers: list[str] = []
+        # TASK-12 §23: when the proven golden baseline exists, load the frozen
+        # liquidity references so drift/deadness checks become measurable.
+        # The freeze is provenance-guarded (only the golden doc may load).
+        self._auto_freeze_references()
+
+    def _auto_freeze_references(self) -> None:
+        try:
+            from nexus_scalp.forensics.references import (
+                GOLDEN_BASELINE_PATH,
+                freeze_liquidity_references_from_golden,
+            )
+
+            if Path(GOLDEN_BASELINE_PATH).exists() and len(self.references) == 0:
+                freeze_liquidity_references_from_golden(registry=self.references)
+        except Exception as exc:
+            logger.debug("[FORENSIC] golden reference auto-freeze skipped", error=str(exc))
 
     # ------------------------------------------------------------------
     # check matrix
@@ -114,7 +130,7 @@ class ForensicHealthEngine:
             "FeatureContract": [
                 C.check_feature_schema_registry,
                 C.check_feature_contract_70d,
-                C.check_feature_liquidity_contract,
+                lambda: C.check_feature_liquidity_contract(registry=self.references),
                 lambda: C.check_feature_contract_vector(None),
             ],
             "Model": [

@@ -1104,50 +1104,62 @@ def _parse_close_time(value: str | None) -> datetime | None:
 
 
 def check_experience_outcome_gap() -> CheckResult:
-    """§21: experiences-without-outcome / outcomes-without-experience drift."""
-    path = _audit_path()
-    if not path.exists():
-        return _unknown("CHECK-ACC-04", "audit.db missing", {}, "audit.db")
+    """§21: experiences-without-outcome — EXECUTED trades must not lose outcomes.
+
+    TASK-12 §16-20 correction (proven 2026-08-19): raw experience-vs-outcome
+    counts misattribute pre-execution decision samples (which never trade and
+    legitimately have no outcome) as pipeline losses. The truthful signal is
+    the DEFECT rate over executed trades: only executed trades with missing
+    outcomes indicate a learning-pipeline defect.
+    """
     try:
-        conn = _ro_connect(path)
-        try:
-            tables = _table_names(conn)
-            if "audit_experiences" not in tables or "audit_experience_outcomes" not in tables:
-                return _unknown("CHECK-ACC-04", "experience tables absent", {}, "experience tables")
-            exp = _row_count(conn, "audit_experiences") or 0
-            out = _row_count(conn, "audit_experience_outcomes") or 0
-            gap = exp - out
-            reason = "PASS"
-            status = HealthStatus.PASS
-            if exp > 0 and gap > 0:
-                ratio = gap / exp
-                if ratio > 0.5:
-                    status = HealthStatus.DEGRADED
-                    reason = f"learning pipeline dropping >50% of experiences ({gap}/{exp} without outcomes)"
-                elif ratio > 0.2:
-                    status = HealthStatus.WARNING
-                    reason = f"{gap}/{exp} experiences lack outcomes (>{20}%)"
-                else:
-                    reason = f"{gap}/{exp} experiences lack outcomes (<=20%)"
-            elif exp == 0 and out == 0:
-                status = HealthStatus.UNKNOWN
-                reason = "no experiences AND no outcomes — pipeline never ran"
-            return CheckResult(
-                "CHECK-ACC-04",
-                status,
-                evidence=reason,
-                observed={"experiences": exp, "outcomes": out, "gap": gap},
-                expected="experiences -> outcomes conversion complete",
-            )
-        finally:
-            conn.close()
+        from nexus_scalp.forensics.experience_gap import analyze_experience_gap
+
+        rep = analyze_experience_gap(_audit_path())
     except Exception as exc:
         return _unknown(
             "CHECK-ACC-04",
-            f"gap check raised: {exc!r}",
+            f"gap analysis raised: {exc!r}",
             {"error": str(exc)},
             "experience tables readable",
         )
+    d = rep.to_dict()
+    observed = {
+        "experiences": d["total_experiences"],
+        "outcomes": d["with_outcome"],
+        "gap": d["without_outcome"],
+        "gap_rate": d["gap_rate"],
+        "defect_rate": d["defect_rate"],
+        "classification": d["classification"],
+        "recoverable": d["recoverable_count"],
+        "unrecoverable": d["unrecoverable_count"],
+    }
+    status = (
+        HealthStatus(rep.status)
+        if rep.status
+        in (
+            "PASS",
+            "WARNING",
+            "DEGRADED",
+            "UNKNOWN",
+            "CRITICAL",
+        )
+        else HealthStatus.UNKNOWN
+    )
+    if status is HealthStatus.PASS:
+        reason = (
+            f"no executed trade lost its outcome (defect_rate {d['defect_rate']}); "
+            f"{d['without_outcome']} never-traded decision samples are legitimate"
+        )
+    else:
+        reason = f"learning pipeline defect rate {d['defect_rate']} (status {rep.status})"
+    return CheckResult(
+        "CHECK-ACC-04",
+        status,
+        evidence=reason,
+        observed=observed,
+        expected="defect_rate over executed trades within thresholds",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1904,54 +1916,94 @@ def check_shadow_health() -> CheckResult:
 
 
 def check_governance_consistency() -> CheckResult:
-    """§28: impossible governance states (REJECTED+CHAMPION, promoted w/o approval, etc.)."""
-    st = _shadow_state()
-    if not st.get("available"):
-        return _unknown("CHECK-GOV-01", "governance state unreadable", st, "audit.db readable")
-    if st.get("model_governance_state") in ("ABSENT", 0):
-        return _unknown(
-            "CHECK-GOV-01",
-            "governance state EMPTY — no model lifecycle evidence",
-            st,
-            "governance state rows",
-        )
-    # When rows exist, load them and inspect for impossible state combos.
+    """§28: impossible governance states across BOTH registries.
+
+    model_governance_state (TASK-6 governance) AND experience_model_registry
+    (canonical live champion registry, TASK-8). Impossible combos
+    (REJECTED+CHAMPION, promoted without approval) are CRITICAL. An empty
+    governance state with a populated champion registry is PASS (the
+    champion evidence lives in the experience registry).
+    """
     path = _audit_path()
+    if not path.exists():
+        return _unknown("CHECK-GOV-01", "audit.db missing", {}, "audit.db")
     conn = _ro_connect(path)
     try:
-        rows = conn.execute(
-            "SELECT model_id, model_version, lifecycle_state FROM model_governance_state"
-        ).fetchall()
+        tables = _table_names(conn)
+        gov_rows: list[dict[str, Any]] = []
+        reg_rows: list[dict[str, Any]] = []
+        if "model_governance_state" in tables:
+            cols = [
+                d[0]
+                for d in conn.execute("SELECT * FROM model_governance_state LIMIT 0").description
+            ]
+            gov_rows = [
+                dict(zip(cols, r, strict=False))
+                for r in conn.execute("SELECT * FROM model_governance_state").fetchall()
+            ]
+        if "experience_model_registry" in tables:
+            cols = [
+                d[0]
+                for d in conn.execute("SELECT * FROM experience_model_registry LIMIT 0").description
+            ]
+            reg_rows = [
+                dict(zip(cols, r, strict=False))
+                for r in conn.execute("SELECT * FROM experience_model_registry").fetchall()
+            ]
     finally:
         conn.close()
-    if not rows:
-        return _unknown("CHECK-GOV-01", "governance state table empty", st, "governance state rows")
     impossible: list[str] = []
-    for r in rows:
-        rec = dict(zip(("model_id", "model_version", "lifecycle_state"), r, strict=False))
-        state = str(rec.get("lifecycle_state") or "")
+    for rec in gov_rows + reg_rows:
+        state = str(rec.get("lifecycle_state") or rec.get("lifecycle_status") or "")
+        model = str(rec.get("model_id") or "")
         if "REJECTED" in state.upper() and "CHAMPION" in state.upper():
-            impossible.append(f"{rec['model_id']}: REJECTED+CHAMPION")
+            impossible.append(f"{model}: REJECTED+CHAMPION")
         if "NOT_APPROVED" in state.upper() and "CHAMPION" in state.upper():
-            impossible.append(f"{rec['model_id']}: not-approved+champion")
+            impossible.append(f"{model}: not-approved+champion")
     if impossible:
         return CheckResult(
             "CHECK-GOV-01",
             HealthStatus.CRITICAL,
             evidence="; ".join(impossible),
             observed={
-                "rows": [
-                    dict(zip(("model_id", "model_version", "lifecycle_state"), r, strict=False))
-                    for r in rows
-                ]
+                "impossible": impossible,
+                "gov_rows": len(gov_rows),
+                "reg_rows": len(reg_rows),
             },
             expected="no impossible lifecycle states",
             detail="GOVERNANCE_IMPOSSIBLE_STATE",
         )
+    if not gov_rows and not reg_rows:
+        return _unknown(
+            "CHECK-GOV-01",
+            "no lifecycle evidence in either registry",
+            {"gov_rows": 0, "reg_rows": 0},
+            ">= 1 governance row",
+        )
+    # champion identity in the experience registry: verify single current champion
+    champions = [r for r in reg_rows if "CHAMPION" in str(r.get("lifecycle_status", "")).upper()]
+    fingerprints = {
+        str(r.get("artifact_fingerprint") or "") for r in champions if r.get("artifact_fingerprint")
+    }
+    observed = {
+        "gov_rows": len(gov_rows),
+        "reg_rows": len(reg_rows),
+        "champion_rows": len(champions),
+        "distinct_fingerprints": sorted(fingerprints),
+    }
+    if len(fingerprints) > 1:
+        return CheckResult(
+            "CHECK-GOV-01",
+            HealthStatus.DEGRADED,
+            evidence=f"{len(fingerprints)} distinct champion fingerprints registered: {sorted(fingerprints)}",
+            observed=observed,
+            expected="one canonical champion fingerprint",
+            detail="CHAMPION_FINGERPRINT_DIVERGENCE",
+        )
     return _ok(
         "CHECK-GOV-01",
-        "no impossible governance states",
-        {"rows": len(rows)},
+        f"governance consistent: {len(champions)} champion row(s), {len(fingerprints)} fingerprint(s)",
+        observed,
         "no impossible lifecycle states",
     )
 
@@ -1959,64 +2011,124 @@ def check_governance_consistency() -> CheckResult:
 def check_champion_identity() -> CheckResult:
     """§29: registry says model A, runtime loads model B -> CRITICAL.
 
-    When the governance registry is empty the check is UNKNOWN (no identity
-    to verify), never PASS.
+    TASK-12 §27: cross-verifies the runtime model hash, the filesystem
+    artifact hash, the registry fingerprint and the manifest — all must
+    agree. Reads the canonical experience_model_registry champion rows
+    (TASK-8 governance) in addition to model_governance_state.
     """
-    st = _shadow_state()
-    if not st.get("available"):
-        return _unknown("CHECK-GOV-02", "governance state unreadable", st, "audit.db readable")
-    reg_count = st.get("model_governance_state")
-    if reg_count in ("ABSENT", 0):
-        return _unknown(
-            "CHECK-GOV-02",
-            "no champion registered in governance state — identity unverifiable",
-            st,
-            ">= 1 governance state row",
-        )
     path = _audit_path()
+    if not path.exists():
+        return _unknown("CHECK-GOV-02", "audit.db missing", {}, "audit.db")
     conn = _ro_connect(path)
     try:
-        cols = [
-            d[0] for d in conn.execute("SELECT * FROM model_governance_state LIMIT 0").description
-        ]
-        rows = conn.execute("SELECT * FROM model_governance_state").fetchall()
+        tables = _table_names(conn)
+        reg_rows: list[dict[str, Any]] = []
+        if "experience_model_registry" in tables:
+            cols = [
+                d[0]
+                for d in conn.execute("SELECT * FROM experience_model_registry LIMIT 0").description
+            ]
+            reg_rows = [
+                dict(zip(cols, r, strict=False))
+                for r in conn.execute("SELECT * FROM experience_model_registry").fetchall()
+            ]
     finally:
         conn.close()
-    champion_rows = []
-    for row in rows:
-        rec = dict(zip(cols, row, strict=False))
-        if "CHAMPION" in str(rec.get("lifecycle_state", "")).upper():
-            champion_rows.append(rec)
-    if not champion_rows:
+    champions = [r for r in reg_rows if "CHAMPION" in str(r.get("lifecycle_status", "")).upper()]
+    if not champions:
         return _unknown(
             "CHECK-GOV-02",
-            "no row in CHAMPION state",
-            st,
-            "a state row with lifecycle_state containing CHAMPION",
+            "no champion registered in experience_model_registry — identity unverifiable",
+            {"registry_rows": len(reg_rows)},
+            ">= 1 champion registry row",
         )
-    # Verify the artifact on disk for the registered champion.
+    # Filesystem artifact truth
     artifact = _champion_artifact_info()
     if not artifact.get("found"):
         return CheckResult(
             "CHECK-GOV-02",
             HealthStatus.CRITICAL,
-            evidence=f"registry champion {champion_rows[0]} but artifact missing",
-            observed={"registry": champion_rows[:3], "artifact": artifact},
+            evidence=f"registry champion {champions[0].get('model_id')} but artifact missing",
+            observed={"registry": champions[:3], "artifact": artifact},
             expected="registered champion artifact present",
             detail="CHAMPION_IDENTITY_MISMATCH",
         )
+    # Cross-verify hashes: the CURRENT champion row's fingerprint must equal
+    # the on-disk artifact hash. Older CHAMPION rows with stale fingerprints
+    # (artifact rewritten since) are registry-hygiene DEGRADED, not identity
+    # CRITICAL — unless the CURRENT row itself mismatches.
+    disk_hash = str(artifact.get("artifact_hash") or "").lower()
+    # newest champion row first (registered_at / id desc)
+    champions_sorted = sorted(
+        champions,
+        key=lambda r: (str(r.get("registered_at") or ""), int(r.get("id") or 0)),
+        reverse=True,
+    )
+    current = champions_sorted[0] if champions_sorted else {}
+    current_hash = str(current.get("artifact_fingerprint") or "").lower()
+    reg_hashes = {
+        str(r.get("artifact_fingerprint") or "").lower()
+        for r in champions
+        if r.get("artifact_fingerprint")
+    }
+    stale = sorted(reg_hashes - {current_hash}) if current_hash else sorted(reg_hashes)
+    schema_dims = {
+        (str(r.get("feature_schema_id") or ""), int(r.get("feature_dimension") or 0))
+        for r in champions
+    }
+    observed = {
+        "current_champion": {
+            k: current.get(k)
+            for k in (
+                "model_id",
+                "model_version",
+                "artifact_fingerprint",
+                "feature_schema_id",
+                "feature_dimension",
+                "artifact_path",
+                "registered_at",
+                "id",
+            )
+        },
+        "disk_artifact_hash": disk_hash,
+        "registry_hashes": sorted(reg_hashes),
+        "stale_hashes": stale,
+        "schema_dimensions": sorted(schema_dims),
+        "champion_row_count": len(champions),
+    }
+    current_mismatch = bool(
+        current_hash
+        and disk_hash
+        and not disk_hash.startswith(current_hash[:12])
+        and not current_hash.startswith(disk_hash[:12])
+    )
+    if current_mismatch:
+        return CheckResult(
+            "CHECK-GOV-02",
+            HealthStatus.CRITICAL,
+            evidence=f"current champion fingerprint {current_hash} diverges from disk hash {disk_hash}",
+            observed=observed,
+            expected="current registry fingerprint == disk artifact hash",
+            detail="CHAMPION_IDENTITY_MISMATCH",
+        )
+    if stale:
+        return CheckResult(
+            "CHECK-GOV-02",
+            HealthStatus.DEGRADED,
+            evidence=f"champion identity verified (disk matches current row) but {len(stale)} STALE "
+            f"champion fingerprint(s) remain in the registry: {sorted(stale)}",
+            observed=observed,
+            expected="one canonical champion fingerprint; no stale rows",
+            detail="CHAMPION_REGISTRY_STALE_ROWS",
+        )
     return _ok(
         "CHECK-GOV-02",
-        "registered champion has a present artifact",
-        {
-            "registry_rows": len(champion_rows),
-            "artifact_hash_prefix": artifact.get("artifact_hash", ""),
-        },
-        "registered champion artifact present",
+        f"champion identity verified: disk hash {disk_hash[:16]} matches the current registry fingerprint",
+        observed,
+        "registry fingerprint == disk artifact hash",
     )
 
 
-# ---------------------------------------------------------------------------
 # UI / API consistency (§30-31)
 # ---------------------------------------------------------------------------
 

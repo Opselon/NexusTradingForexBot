@@ -1324,11 +1324,14 @@ def model_artifacts_cmd(
 
 
 # =============================================================================
-# TASK-11: POST-70D CONTINUOUS FORENSIC MONITORING
+# TASK-11/12: POST-70D CONTINUOUS FORENSIC MONITORING + DEPLOY GATE
 # -----------------------------------------------------------------------------
-# nexus forensic                   -> full health matrix + FORENSIC_HEALTH_SNAPSHOT
-# nexus forensic snapshot          -> persisted snapshot (JSON)
-# nexus forensic deploy-gate       -> release pre-flight (blocking check)
+# nexus forensic                       -> full health matrix + snapshot
+# nexus forensic --deploy-gate         -> canonical deploy gate (exit-code)
+# nexus forensic --snapshot            -> persisted FORENSIC_HEALTH_SNAPSHOT
+# nexus forensic --trend               -> current vs previous snapshot diff
+# nexus forensic --gap                 -> experience->outcome gap forensics
+# nexus forensic --report              -> bounded periodic Telegram report
 # =============================================================================
 
 
@@ -1338,28 +1341,70 @@ def forensic_cmd(
         False, "--snapshot", help="Persist and print the FORENSIC_HEALTH_SNAPSHOT as JSON."
     ),
     deploy_gate: bool = typer.Option(
-        False, "--deploy-gate", help="Release pre-flight: exit 1 when a CRITICAL check blocks."
+        False, "--deploy-gate", help="Canonical deploy gate: exit 0 allowed, 1 block, 2 review, 3 engine unavailable."
+    ),
+    trend: bool = typer.Option(
+        False, "--trend", help="Compare the latest snapshot against the previous (read-only)."
+    ),
+    gap: bool = typer.Option(
+        False, "--gap", help="Experience->outcome gap forensics (read-only)."
+    ),
+    report: bool = typer.Option(
+        False, "--report", help="Run one bounded periodic Telegram forensic report cycle."
     ),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """TASK-11 post-70D forensic health matrix (read-only)."""
-    from nexus_scalp.forensics import ForensicHealthEngine
+    """TASK-11/12 post-70D forensic health matrix + canonical deploy gate (read-only)."""
+    from nexus_scalp.forensics import (
+        ForensicHealthEngine,
+        analyze_experience_gap,
+        latest_trend,
+        persist_gap_report,
+        run_deploy_gate,
+    )
 
     engine = ForensicHealthEngine()
+
     if deploy_gate:
-        ok, blockers = engine.can_deploy()
-        _emit(
-            {"deployable": ok, "blocking_checks": blockers},
-            as_json=json_mode,
-            plain=not json_mode,
-        )
-        if not ok:
-            raise typer.Exit(1)
+        result = run_deploy_gate(engine)
+        payload = result.to_dict()
+        payload["exit_code"] = result.exit_code
+        _emit(payload, as_json=json_mode, plain=False)
+        if not json_mode:
+            if payload["exit_code"] == 1:
+                console.print("[red]DEPLOYMENT BLOCKED[/red] — critical forensic checks failed.")
+                for c in payload["blocking_checks"]:
+                    console.print(f"  • {c}")
+            elif payload["exit_code"] == 2:
+                console.print("[yellow]DEPLOYMENT REQUIRES REVIEW[/yellow] — DEGRADED/UNKNOWN conditions.")
+            elif payload["exit_code"] == 3:
+                console.print("[red]FORENSIC ENGINE UNAVAILABLE[/red] — deployment cannot be verified.")
+        raise typer.Exit(payload["exit_code"])
+
+    if trend:
+        t = latest_trend(Path("artifacts") / "forensics")
+        _emit(t, as_json=json_mode, plain=not json_mode)
         return
+
+    if gap:
+        rep = analyze_experience_gap()
+        persist_gap_report(rep)
+        _emit(rep.to_dict(), as_json=json_mode, plain=not json_mode)
+        return
+
+    if report:
+        from nexus_scalp.forensics import TelegramReportScheduler
+
+        sched = TelegramReportScheduler()
+        outcome = sched.run_once(engine)
+        _emit(outcome, as_json=json_mode, plain=not json_mode)
+        return
+
     if snapshot:
         rec = engine.snapshot(persist=True)
         _emit(rec.to_dict(), as_json=json_mode, plain=not json_mode)
         return
+
     dash = engine.dashboard()
     if json_mode:
         _emit(dash, True)

@@ -17,6 +17,7 @@ CRITICAL DISCIPLINE (TASK-11 §8/§55):
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 #: Sentinel for "no reference registered".
@@ -160,3 +161,86 @@ def _isfinite(v: float) -> bool:
 
 #: Process-wide frozen references (empty until an explicit freeze action).
 FEATURE_REFERENCES = FeatureReferenceRegistry()
+
+
+# ---------------------------------------------------------------------------
+# Frozen reference loading from the proven 70D golden baseline (TASK-12 §23)
+# ---------------------------------------------------------------------------
+
+#: Canonical 70D liquidity feature names at indices 60..69 (contract snapshot).
+LIQUIDITY_70D_FEATURE_NAMES: tuple[str, ...] = (
+    "bsl_distance_atr",  # 60
+    "ssl_distance_atr",  # 61
+    "eqh_strength",  # 62
+    "eql_strength",  # 63
+    "htf_liquidity_score",  # 64
+    "internal_liquidity_distance",  # 65
+    "external_liquidity_distance",  # 66
+    "liquidity_confluence",  # 67
+    "liquidity_sweep_state",  # 68
+    "post_sweep_displacement",  # 69
+)
+
+#: Proven golden baseline document (TASK-02/03 70D series, 2026-08-19).
+GOLDEN_BASELINE_PATH: str = "docs/LIQUIDITY_70D_GOLDEN_BASELINE.json"
+
+
+def freeze_liquidity_references_from_golden(
+    baseline_path: str | Path | None = None,
+    registry: FeatureReferenceRegistry | None = None,
+    *,
+    replace: bool = False,
+) -> FeatureReferenceRegistry:
+    """Freezes the 10 liquidity reference distributions from the GOLDEN
+    BASELINE (proven, versioned, provenance-backed — §23/§24).
+
+    Only the golden baseline document may be used; the function refuses to
+    freeze from any other source. Returns the registry (process-wide default
+    when not supplied).
+    """
+    import json as _json
+
+    path = Path(baseline_path or GOLDEN_BASELINE_PATH)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"golden baseline not found at {path} — cannot freeze unvalidated references"
+        )
+    data = _json.loads(path.read_text(encoding="utf-8"))
+    # provenance guard (§24): must be the canonical golden baseline
+    schema = data.get("schema_id", "")
+    if schema != "scalp_liquidity_v1":
+        raise ValueError(
+            f"refusing to freeze from non-golden schema {schema!r} "
+            "(only scalp_liquidity_v1 golden baseline is canonical)"
+        )
+    source = f"{path.name}@{data.get('git_head_commit', 'unknown')}"
+    per_feature = data.get("per_feature", {})
+    reg = registry if registry is not None else FeatureReferenceRegistry()
+    for idx, name in enumerate(LIQUIDITY_70D_FEATURE_NAMES, start=60):
+        stats = per_feature.get(name)
+        if stats is None:
+            raise ValueError(f"golden baseline missing feature {name!r} — freeze aborted")
+        ref = FeatureReferenceStats(
+            feature_index=idx,
+            feature_name=name,
+            family="liquidity",
+            mean=float(stats["mean"]),
+            std=float(stats["std"]),
+            min_=float(stats["min"]),
+            max_=float(stats["max"]),
+            missing_rate=float(stats.get("missing_rate", 0.0)) / 100.0
+            if stats.get("missing_rate", 0) > 1
+            else float(stats.get("missing_rate", 0.0)),
+            zero_rate=float(stats.get("zero_rate", 0.0)) / 100.0
+            if stats.get("zero_rate", 0) > 1
+            else float(stats.get("zero_rate", 0.0)),
+            saturation_rate=float(stats.get("saturation_rate", 0.0)) / 100.0
+            if stats.get("saturation_rate", 0) > 1
+            else float(stats.get("saturation_rate", 0.0)),
+            mode_value=stats.get("mode_value"),
+            mode_fraction=float(stats.get("mode_fraction", 0.0)),
+            n=int(stats.get("n", 0)),
+            source=source,
+        )
+        reg.register(ref, replace=replace)
+    return reg

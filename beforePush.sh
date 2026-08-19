@@ -70,6 +70,31 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# 5. CANONICAL FORENSIC DEPLOY GATE (TASK-12)
+# -----------------------------------------------------------------------------
+# One health engine + one gate contract: `nexus forensic --deploy-gate`.
+# Exit 0 = ALLOW / ALLOW_WITH_WARNING; 1 = BLOCK (CRITICAL); 2 = REVIEW
+# (DEGRADED/UNKNOWN); 3 = FORENSIC_ENGINE_UNAVAILABLE (fail-safe block).
+# The hook only CALLS the canonical engine — it never re-implements health
+# rules (TASK-12 §5).
+write_step "5/5: Running Forensic Deploy Gate..."
+GATE_EXIT=0
+if .venv/Scripts/python.exe -m nexus_scalp.cli.main forensic --deploy-gate --json > artifacts/forensics/deploy_gate_result.json 2>&1; then
+    write_success "Forensic deploy gate: ALLOW (no critical conditions)."
+else
+    GATE_EXIT=$?
+    if [ "$GATE_EXIT" -eq 1 ]; then
+        write_failure "Forensic deploy gate BLOCKED deployment (CRITICAL checks). See artifacts/forensics/deploy_gate_result.json"
+    elif [ "$GATE_EXIT" -eq 2 ]; then
+        echo -e "\n${YELLOW} ⚠ Forensic deploy gate: REVIEW REQUIRED (DEGRADED/UNKNOWN conditions). See artifacts/forensics/deploy_gate_result.json${NC}"
+    elif [ "$GATE_EXIT" -eq 3 ]; then
+        write_failure "Forensic engine UNAVAILABLE — deployment cannot be verified (fail-safe block)."
+    else
+        write_failure "Forensic deploy gate failed with exit $GATE_EXIT."
+    fi
+fi
+
+# -----------------------------------------------------------------------------
 # ALL CHECKS PASSED
 # -----------------------------------------------------------------------------
 echo -e "\n========================================================"

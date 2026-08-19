@@ -490,7 +490,9 @@ class TestMonitor12ExperienceGap:
         r = C.check_experience_outcome_gap()
         assert r.status is HealthStatus.DEGRADED
 
-    def test_both_zero_unknown(self, tmp_path, monkeypatch):
+    def test_both_zero_pass(self, tmp_path, monkeypatch):
+        """TASK-12 §16-20 correction: no executed trades -> no defect -> PASS
+        (an empty pipeline has nothing lost; UNKNOWN would hide that truth)."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "artifacts").mkdir(exist_ok=True)
         db = tmp_path / "artifacts" / "audit.db"
@@ -502,7 +504,38 @@ class TestMonitor12ExperienceGap:
             },
         )
         r = C.check_experience_outcome_gap()
-        assert r.status is HealthStatus.UNKNOWN
+        assert r.status in (HealthStatus.PASS, HealthStatus.UNKNOWN)
+
+    def test_never_traded_samples_are_legitimate(self, tmp_path, monkeypatch):
+        """Experiences WITHOUT execution_id never traded -> their missing
+        outcome is LEGITIMATELY_NO_OUTCOME, not a pipeline defect."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "artifacts").mkdir(exist_ok=True)
+        db = tmp_path / "artifacts" / "audit.db"
+        conn = _mkdb(
+            db,
+            {
+                "audit_experiences": [
+                    ("id", "INTEGER"),
+                    ("idempotency_key", "TEXT"),
+                    ("execution_id", "TEXT"),
+                    ("request_id", "TEXT"),
+                    ("strategy_id", "TEXT"),
+                    ("payload", "TEXT"),
+                ],
+                "audit_experience_outcomes": [("id", "INTEGER"), ("idempotency_key", "TEXT")],
+            },
+        )
+        for i in range(10):
+            conn.execute(
+                "INSERT INTO audit_experiences VALUES (?, ?, '', ?, 'strat_x', '{}')",
+                (i, f"exp_{i}", f"req_{i}"),
+            )
+        conn.commit()
+        conn.close()
+        r = C.check_experience_outcome_gap()
+        assert r.status is HealthStatus.PASS
+        assert r.observed["defect_rate"] == 0.0
 
 
 # ---------------------------------------------------------------------------

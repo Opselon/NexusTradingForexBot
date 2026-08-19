@@ -210,6 +210,30 @@ Write-Success "Mypy static type verification passed with 0 errors!"
 Write-Success "All tests passed (pytest exit 0)!"
 
 # -----------------------------------------------------------------------------
+# 5. CANONICAL FORENSIC DEPLOY GATE (TASK-12)
+# -----------------------------------------------------------------------------
+# One health engine + one gate contract: `nexus forensic --deploy-gate`.
+# Exit 0 = ALLOW / ALLOW_WITH_WARNING; 1 = BLOCK (CRITICAL); 2 = REVIEW
+# (DEGRADED/UNKNOWN); 3 = FORENSIC_ENGINE_UNAVAILABLE (fail-safe block).
+# The hook only CALLS the canonical engine (TASK-12 s5) - no duplicated rules.
+Write-Step "5/5: Forensic Deploy Gate (canonical engine)"
+$GateLog = Join-Path $RunDir "forensic_gate.log"
+$GateOut = Join-Path $RunDir "forensic_gate.json"
+& $venvPy -m nexus_scalp.cli.main forensic --deploy-gate --json *> $GateOut
+$gateExit = $LASTEXITCODE
+if ($gateExit -eq 0) {
+    Write-Success "Forensic deploy gate: ALLOW (no critical conditions)."
+} elseif ($gateExit -eq 1) {
+    Write-Failure "Forensic deploy gate BLOCKED deployment (CRITICAL checks). Evidence: $GateOut"
+} elseif ($gateExit -eq 2) {
+    Write-Host "`nDEPLOYMENT REQUIRES REVIEW (DEGRADED/UNKNOWN conditions). Evidence: $GateOut" -ForegroundColor Yellow
+} elseif ($gateExit -eq 3) {
+    Write-Failure "Forensic engine UNAVAILABLE - deployment cannot be verified (fail-safe block). Evidence: $GateOut"
+} else {
+    Write-Failure "Forensic deploy gate failed with exit $gateExit. Evidence: $GateOut"
+}
+
+# -----------------------------------------------------------------------------
 # ALL CHECKS PASSED
 # -----------------------------------------------------------------------------
 Write-Host "`n========================================================" -ForegroundColor Green
