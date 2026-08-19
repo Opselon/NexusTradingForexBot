@@ -99,6 +99,21 @@ false) switches the layer without silently altering schema expectations.
 Status: 🟢 VERIFIED (2026-08-19 TASK-01-60D-LIQUIDITY: 60 focused tests incl.
 TEST-LIQ-23..28 anti-leakage, TEST-60D-BASE-01 first-50 unchanged).
 
+## INV-019 — The incident layer is diagnostic-only (TASK-12)
+Incident detection/correlation/root-cause tracing NEVER mutates trading
+behavior, RiskEngine, lot sizing, SL/TP, execution rules, thresholds, the
+Champion, models, Liquidity algorithms, accounting history, databases or
+research evidence. Containment is limited to advisory states (pause
+research worker, block model inference, mark dataset invalid, block
+migration/release). Recovery plans are generated RECOMMENDED and require
+operator approval before any execution; destructive recovery is never
+auto-executed. Quarantine marks records SUSPECT/INVALIDATED/QUARANTINED
+without deleting evidence (original + reason + incident_id + timestamp
+preserved). No incident analysis runs on the tick hot path (background,
+read-only, bounded — INV-001 intact).
+Status: VERIFIED (tests/unit/test_incident_response_task12.py
+TEST-INCIDENT-34/35 import+route scans; integration test_diagnostics_api.py).
+
 ## Registry notes
 - `agents/bugs.md` BUG-NNN entries provide the forensic evidence for each invariant.
 - New invariants: append with INV-NNN and reference the evidence.
@@ -227,3 +242,17 @@ Status: 🟢 VERIFIED (2026-08-19 TASK-02: 99 liquidity tests + API smoke).
   untouched), 20 (version), 22 (no production wiring), 23 (no self-tuning),
   27/28 (no execution/label change).
 - Current state: 🟢 v1 committed+blessed; v1.1 candidate-only, not wired.
+
+## INV-020 - 70D feature contract is schema-controlled and canonical (TASK-03-70D-PARITY)
+scalp_v3 = 70D = Base 0..49 (scalp_v1 protected) + News 10D 50..59 (news_context_v1 
+fields 0..8 + news_state) + Liquidity 10D 60..69 (liquidity_engine order). Single source 
+of truth: features/schema_contract.py (canonical registry JSON + feature_schema_hash 
+SHA-256 prefix-16 over index+name+family). Dataset, replay, inference and live MUST 
+produce/consume the identical vector; any dimension/order/hash mismatch blocks inference 
+with an explicit rejection code (SCHEMA_MISMATCH/DIMENSION_MISMATCH/
+FEATURE_ORDER_MISMATCH/SCHEMA_HASH_MISMATCH/SCALER_MISMATCH/NONFINITE_FEATURE/
+OUT_OF_RANGE_FEATURE/NEWS_UNAVAILABLE/LIQUIDITY_UNAVAILABLE/STALE_FEATURES). Never 
+pad/truncate/substitute. Family missing -> explicit FEATURE_DISABLED (neutral block) or 
+FEATURE_UNAVAILABLE (block) - never fabricated. Schema metadata cached at construction; 
+no DB/file I/O on the per-tick path (INV-001). Legacy 60D (scalp_v2) models keep 
+receiving 60D vectors only.
