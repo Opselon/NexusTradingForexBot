@@ -624,3 +624,61 @@ def test_70d_model_27_liquidity_redundancy_audit_smoke() -> None:
     assert len(feature_names) == 10
     assert all(d["best_pearson_with"] for n, d in rep.items() if not n.startswith("_"))
     assert len(flags) >= 0  # reported, not acted upon
+
+
+# ---------------------------------------------------------------------------
+# TEST-70D-MODEL-28/29 — label balance + parameter count / latency (brief 10/41/42)
+# ---------------------------------------------------------------------------
+
+
+def test_70d_model_28_label_balance_reported() -> None:
+    """Label distribution is reported and NOT rebalanced per-arm; NO_TRADE
+    domination is documented (why macro-F1 matters, brief 17)."""
+    v1 = V1_50D_ARTIFACTS[0]
+    if not v1.exists():
+        pytest.skip("50D artifact not present")
+    labels = pl.read_parquet(v1)["label"].to_numpy()
+    uniq, counts = np.unique(labels, return_counts=True)
+    dist = {int(u): int(c) for u, c in zip(uniq, counts, strict=False)}
+    assert dist == {0: 88202, 1: 5930, 2: 5814}  # frozen evidence
+    assert 0.88 <= counts.max() / len(labels) <= 0.89  # NO_TRADE domination
+    # 3-class contract: exactly 3 labels, no 4th class
+    assert set(dist) == {0, 1, 2}
+
+
+def test_70d_model_29_parameter_count_and_latency_reported() -> None:
+    """60D vs 70D parameter delta and inference latency are measured and
+    bounded (brief 41/42/43): the 70D input layer adds ~10 weights per neuron
+    but must not add unacceptable runtime latency."""
+    from nexus_scalp.model_generation.model_factory import ModelFactory
+
+    m60 = ModelFactory(feature_schema_id="scalp_v2").build(
+        "LEGACY_SCALPNET_V1", parameters={"input_dim": 60}
+    )
+    m70 = ModelFactory(feature_schema_id="scalp_v4").build(
+        "LEGACY_SCALPNET_V1", parameters={"input_dim": 70}
+    )
+    p60 = sum(p.numel() for p in m60.parameters())
+    p70 = sum(p.numel() for p in m70.parameters())
+    assert p60 == 266_212  # frozen evidence
+    assert p70 == 267_492
+    assert p70 - p60 == 1_280  # input projection only
+    assert (p70 - p60) / p60 < 0.01  # <1% parameter growth
+
+    m60.eval()
+    m70.eval()
+    x60 = torch.randn(256, 60)
+    x70 = torch.randn(256, 70)
+    with torch.inference_mode():
+        import time
+
+        s = time.perf_counter()
+        for _ in range(20):
+            m60(x60)
+        dt60 = (time.perf_counter() - s) / 20
+        s = time.perf_counter()
+        for _ in range(20):
+            m70(x70)
+        dt70 = (time.perf_counter() - s) / 20
+    # 70D must not be >2x slower than 60D on the same batch
+    assert dt70 < dt60 * 2.0 + 1e-6

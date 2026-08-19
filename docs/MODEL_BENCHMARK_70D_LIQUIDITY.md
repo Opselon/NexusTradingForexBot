@@ -342,3 +342,37 @@ Findings (synthetic, to verify on real data):
 - `liquidity_sweep_state` vs `feat_ob_liquidity_swept` ≈ 0.37-0.50: related
   but NOT duplicates (sweep state carries direction/severity beyond the 50D
   0/1 flag) — consistent with the TASK-01 thesis.
+
+## 7.3 LABEL BALANCE + PARAMETER COUNT / LATENCY (brief §10/§41/§42/§43 — PROVEN)
+
+Executed 2026-08-19 on the existing 50D artifact (frozen evidence; the 70D
+dataset must show the SAME distribution since labels come from the same
+triple-barrier labeler on the same timestamps):
+
+| label | count | share |
+| :--- | ---: | ---: |
+| NO_TRADE | 88,202 | 88.2% |
+| BUY_MARKET | 5,930 | 5.9% |
+| SELL_MARKET | 5,814 | 5.8% |
+
+dominant fraction 0.8825 (below the 0.95 collapse gate, but heavy enough that
+accuracy alone is meaningless → macro-F1 + per-class metrics are mandatory,
+brief §17).
+
+Parameter count (LEGACY_SCALPNET_V1, same architecture, only input dim):
+
+| model | params | delta |
+| :--- | ---: | ---: |
+| 60D baseline | 266,212 | — |
+| 70D candidate | 267,492 | +1,280 (+0.48%) |
+
+Inference latency (CPU, batch 256, 20 batches):
+
+| model | ms/batch | µs/sample |
+| :--- | ---: | ---: |
+| 60D | 1.67 | 6.5 |
+| 70D | 1.58 | 6.2 |
+
+70D adds <1% parameters and NO latency regression (within noise; the input
+projection is the only difference). Full training-time/memory comparison is
+deferred to the real A/B/C run (identical budgets; §40/§42).
