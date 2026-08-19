@@ -64,4 +64,6 @@
   end-to-end (artifacts/forensics/feature_vector_trace.json). Final status:
   RELEASE_HEALTHY_WITH_WARNINGS. Pushed: 066a7ba + 0094e75 (verified at
   origin/main). 2 latent hardening items documented (attach validation_result
-  forcing; governance/evidence 50-width cap).
+  forcing; governance/evidence 50-width cap).
+| TASK-05-70D-SHADOW-GOV-CHECK | AGENT-05 | HIGH | 70D Shadow Runtime + Champion Governance + Candidate Validation — BUG-106 fixed (bounded 4000-bar history, parity green); real 70D dataset build; A/B/C fair benchmark; shadow runtime verified (45 tests green, INV-018 isolation); Champion state = RESTORED_CANDIDATE (NOT byte-identical, GOVERNANCE_REVIEW_REQUIRED per INV-015); no promotion | TASK-04 (protocol, BUGs 101/103/104), TASK-03 parity, existing shadow70/ | schema_v2.py (LIQUIDITY_HISTORY_LIMIT), scratch/task5_*, docs/BUG-106-PERFORMANCE-FIX.md, docs/TASK-05-70D-SHADOW-FINAL.md | MODEL_GOVERNANCE v1, SHADOW_70D v1, SHADOW_LOAD_GATE v1 | none | IN_PROGRESS |
+
