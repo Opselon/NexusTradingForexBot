@@ -64,7 +64,6 @@ from nexus_scalp.features.liquidity_engine import (
     _session_code,
     detect_confirmed_swings,
     detect_reactive_sweep,
-    update_pool_states,
     equal_high_low_strengths,
     internal_external_distances,
     liquidity_confluence,
@@ -280,6 +279,65 @@ class IncrementalLiquidityState:
             )
         return out
 
+    def advance_pools_np(
+        self,
+        pools: list[LiquidityPool],
+        decision: datetime,
+        atr: float,
+    ) -> list[LiquidityPool]:
+        """Vectorized lifecycle advance for ANY pool list (swing/session/daily).
+
+        Byte-identical semantics to canonical update_pool_states:
+          - bars only at/after confirmed_at and <= decision can touch;
+          - touches, sweep evidence, reclaim evidence computed over numpy
+            slices; state resolution CONFIRMED -> TOUCHED -> SWEPT -> RECLAIMED.
+        """
+        safe_atr = max(atr, MIN_ATR)
+        tol = safe_atr * TOUCH_PROXIMITY_ATR
+        k = self._bar_index_at(decision)
+        out: list[LiquidityPool] = []
+        for p in pools:
+            if p.confirmed_at > decision:
+                out.append(p)
+                continue
+            c = self._first_bar_index_at_or_after(p.confirmed_at)
+            if c > k:
+                out.append(p)
+                continue
+            hi_slice = self.highs[c : k + 1]
+            lo_slice = self.lows[c : k + 1]
+            cl_slice = self.closes[c : k + 1]
+            if p.side == PoolSide.BSL:
+                touches = int((hi_slice >= p.price - tol).sum())
+                sweep_evidence = bool(((hi_slice > p.price) & (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR)).any())
+                reclaim_evidence = bool((cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR).any())
+                touched_at = self.times[c] if touches else None
+            else:
+                touches = int((lo_slice <= p.price + tol).sum())
+                sweep_evidence = bool(((lo_slice < p.price) & (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR)).any())
+                reclaim_evidence = bool((cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR).any())
+                touched_at = self.times[c] if touches else None
+            state = PoolState.CONFIRMED
+            last_touched = p.last_touched_at
+            if touches:
+                state = PoolState.TOUCHED
+                last_touched = last_touched or touched_at
+            if sweep_evidence and touches:
+                state = PoolState.SWEPT
+            if sweep_evidence and reclaim_evidence:
+                state = PoolState.RECLAIMED
+            out.append(
+                LiquidityPool(
+                    price=p.price, side=p.side, source=p.source,
+                    timeframe_minutes=p.timeframe_minutes, strength=p.strength,
+                    candidate_at=p.candidate_at, confirmed_at=p.confirmed_at,
+                    last_touched_at=last_touched, state=state,
+                    active=state not in (PoolState.INVALIDATED,),
+                    touch_count=touches,
+                )
+            )
+        return out
+
     def _first_bar_index_at_or_after(self, t: datetime) -> int:
         lo, hi = 0, self.n
         while lo < hi:
@@ -479,11 +537,11 @@ def compute_70d_frame_fast(
         # over ALL pools (BUG-106: session/daily pools must get the same
         # touch/sweep/reclaim advance the canonical update_pool_states
         # applies; without it PDH/PWH stayed CONFIRMED instead of SWEPT).
+        # canonical order: swings + session + daily; lifecycle advance is
+        # vectorized over numpy slices (identical semantics to
+        # update_pool_states, O(pools x slice) per row but numpy-speed).
         pools_all = vis_pools + session_pools + daily_pools
-        pools_all = update_pool_states(
-            pools_all, all_bars[max(0, i + 1 - SWEEP_ABS_MAX_BARS) : i + 1],
-            max(atr, MIN_ATR), now=ts,
-        )
+        pools_all = lstate.advance_pools_np(pools_all, ts, atr)
         # filter usable
         usable = [
             p for p in pools_all
