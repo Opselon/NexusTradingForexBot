@@ -1,0 +1,207 @@
+========================================================================
+70D SHADOW — LIVE READ-ONLY SMOKE (spec 49)
+repo=C:\Users\Capsizer\source\repos\NexusTradingForexBot  db=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\audit.db
+========================================================================
+
+[1] REGISTRY  candidates=2 champion=False
+    - primary_scalp_scalp_v1_50d@v1.0 schema=scalp_v1/50D status=CANDIDATE
+    - primary_scalp_scalp_v1_50d@v1.0 schema=scalp_v1/50D status=CANDIDATE
+2026-08-19 03:21:04 [warning  ] [SHADOW70] event=MODEL_LOAD_REJECTED failing_gate=CANDIDATE_EXISTS reason=No 70D candidate registered/validated (First Gate: NO_VALIDATED_CANDIDATE) status=NO_VALIDATED_CANDIDATE
+
+[2] LOAD GATE  status=NO_VALIDATED_CANDIDATE gate=CANDIDATE_EXISTS
+    reason=No 70D candidate registered/validated (First Gate: NO_VALIDATED_CANDIDATE)
+
+[3] OBSERVATIONS (read-only synthetic ticks)
+    valid=0 invalid=25 runtime_state=IDLE
+    dim=70 schema=scalp_v3
+
+[4] IDEMPOTENCY id1=29231c0f8dd1 id2=29231c0f8dd1 same=True
+
+[5] BROKER SAFETY broker_tokens_in_runtime=[] -> interaction_count=0
+
+[6] CHAMPION active_schema=scalp_v1/50D registry_hash=...
+
+[7] FEATURE HEALTH (10 liquidity features)
+    bsl_distance_atr             mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    ssl_distance_atr             mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    eqh_strength                 mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    eql_strength                 mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    htf_liquidity_score          mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    internal_liquidity_distance  mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    external_liquidity_distance  mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    liquidity_confluence         mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    liquidity_sweep_state        mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    post_sweep_displacement      mean= 0.2000 std=0.1414 miss=0.00 zero=0.20 n=40
+    drift status=None severity=NORMAL
+2026-08-19 03:21:04 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\audit.db
+2026-08-19 03:21:05 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-08-19 03:21:06 [info     ] Audit Database safely closed.
+
+[8] PERSISTENCE saved=1 shadow70_observations=1 events=0
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=1 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=2 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=3 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=4 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=5 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=6 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=7 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=8 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=9 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=10 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=11 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=12 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=13 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=14 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=15 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=16 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=17 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=18 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=19 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=20 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=21 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=22 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=23 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=24 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=25 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=26 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=27 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=28 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=29 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=30 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=31 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=32 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=33 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=34 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=35 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=36 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=37 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=38 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=39 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=40 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=41 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=42 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=43 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=44 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=45 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=46 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=47 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=48 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=49 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=50 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=51 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=52 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=53 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=54 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=55 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=56 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=57 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=58 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=59 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=60 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=61 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=62 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=63 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=64 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=65 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=66 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=67 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=68 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=69 queue_size=50
+2026-08-19 03:21:06 [warning  ] [SHADOW70] event=SHADOW_BACKPRESSURE dropped_snapshots=70 queue_size=50
+
+[9] QUEUE bounded qsize=50 max=50 dropped=70 mem_recent=27
+
+[10] SMOKE DONE in 2.04s
+{
+  "candidate_status": {
+    "registry": "NO_VALIDATED_CANDIDATE",
+    "load_gate": "NO_VALIDATED_CANDIDATE",
+    "failing_gate": "CANDIDATE_EXISTS",
+    "model_id": ""
+  },
+  "observations": {
+    "requested": 25,
+    "valid": 0,
+    "invalid": 25,
+    "runtime_state": "IDLE"
+  },
+  "idempotent": true,
+  "broker_tokens": [],
+  "broker_interaction_count": 0,
+  "champion": {
+    "active_schema": "scalp_v1",
+    "active_dimension": 50,
+    "registry_hash": ""
+  },
+  "feature_health": [
+    {
+      "name": "bsl_distance_atr",
+      "index": 0,
+      "samples": 40,
+      "finite_rate": 1.0,
+      "missing_rate": 0.0,
+      "stale_rate": 0.0,
+      "zero_rate": 0.2,
+      "mean": 0.2,
+      "std": 0.1414,
+      "min": 0.0,
+      "max": 0.4,
+      "missing_count": 0,
+      "stale_count": 0,
+      "zero_count": 8
+    },
+    {
+      "name": "ssl_distance_atr",
+      "index": 1,
+      "samples": 40,
+      "finite_rate": 1.0,
+      "missing_rate": 0.0,
+      "stale_rate": 0.0,
+      "zero_rate": 0.2,
+      "mean": 0.2,
+      "std": 0.1414,
+      "min": 0.0,
+      "max": 0.4,
+      "missing_count": 0,
+      "stale_count": 0,
+      "zero_count": 8
+    },
+    {
+      "name": "eqh_strength",
+      "index": 2,
+      "samples": 40,
+      "finite_rate": 1.0,
+      "missing_rate": 0.0,
+      "stale_rate": 0.0,
+      "zero_rate": 0.2,
+      "mean": 0.2,
+      "std": 0.1414,
+      "min": 0.0,
+      "max": 0.4,
+      "missing_count": 0,
+      "stale_count": 0,
+      "zero_count": 8
+    }
+  ],
+  "drift": {
+    "available": false,
+    "reason": "NO_REFERENCE_DISTRIBUTION",
+    "samples": 40,
+    "severity": "NORMAL"
+  },
+  "persistence": {
+    "saved": 1,
+    "rows": 1,
+    "events": 0
+  },
+  "queue": {
+    "enqueued": 50,
+    "persisted": 0,
+    "dropped": 70,
+    "persist_errors": 0,
+    "queue_size": 50,
+    "max_queue": 50,
+    "running": false,
+    "last_flush_at": "2026-08-18T23:51:06.537688+00:00"
+  }
+}
