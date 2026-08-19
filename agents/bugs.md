@@ -4773,3 +4773,114 @@ any pool confirmed (901 bars in the live log), every SSE frame crashed.
 ### Related
 - 70D contract: canonical 70D is scalp_v3 (TASK-03); wf_candidate
   manifest declares scalp_v4; NO auto-promotion (INV-015).
+## BUG-113 — CodeQL Security Alerts Batch: Information Exposure, Insecure Temp File, Clear-Text Storage, URL Sanitization (2026-08-19, GitHub code-scanning)
+
+### Symptom
+GitHub CodeQL workflow (security.yml, push to main) filed 16 open alerts on
+branch main: High severity py/path-injection (#62/#63/#67), py/clear-text-storage-of-sensitive-information (#77), py/insecure-temporary-file (#78), py/incomplete-url-substring-sanitization (#69); Medium py/exception-information-exposure (#66/#70/#71/#72/#73/#74/#75/#76/#79/#80) across src/nexus_scalp/web/server.py API endpoints.
+
+### Root cause
+- Exception handlers returned `str(exc)` / `str(e)` / `{e!r}` inside HTTP/SSE
+  payloads (diagnostics endpoints, /api/debug/state, /api/db/status, deploy
+  gate, SSE serialization diagnostic) — raw interpreter/DB error text (paths,
+  SQL fragments, internal state) leaked to any client.
+- `write_incident_reports` wrote incident .json/.md with default process umask
+  (world-readable on POSIX) although payloads are secret-MASKED.
+- `test_incident_response_task12.py` used `tempfile.mktemp()` for the worker
+  stall probe DB (predictable path + insecure race pattern).
+- `test_git_surveillance_task13.py` asserted `"github.com" in remote_url`
+  (bare substring — `evilgithub.com` would pass).
+- #62/#63/#67 (path traversal via /vendor/webfonts/{font_name}) were ALREADY
+  fixed at HEAD by b14b994 (basename + normpath containment) — alerts are
+  stale until the next scan.
+
+### Fix
+- server.py: every exception site now logs full detail via existing
+  `_log_err` / `log_web_error` and returns the sanitized `_err("INTERNAL_ERROR")`
+  envelope (code + message + request_id) or a generic code
+  (HYGIENE_UNAVAILABLE, DB_MIGRATION_FAILED, FORENSIC_ENGINE_UNAVAILABLE,
+  DEBUG_SNAPSHOT_ERROR, SSE_SERIALIZATION_ERROR). `blocking_reasons` no longer
+  embeds `{e!r}`. SSE serialization diagnostics carry field NAMES only;
+  exception text goes to the server log (`error=%r`).
+- incidents/reports.py: `_restrictive_umask()` context manager
+  (`os.umask(0o077)` restore-after; no-op on Windows) wraps report writes.
+- tests/unit/test_incident_response_task12.py: `tempfile.mktemp` ->
+  `TemporaryDirectory` inside the worker-stall probe.
+- tests/unit/test_git_surveillance_task13.py: URL host-boundary check via
+  `urlsplit` (host == github.com or *.github.com); also fixed two pre-existing
+  ruff findings in the file (PLW1510 subprocess check=False, PLW0129 dead
+  `assert "git revert"` -> documented TASK13_ROLLBACK_STRATEGY const).
+- incidents/__init__.py: extended `__all__` with the four imported-but-unused
+  constants (ENGINE_EVENT_MAP, RECONSTRUCTION_ALGORITHM_VERSION,
+  ROOT_CAUSE_CLASSES, ZERO_OUTCOME_CLASSES) — unblocked the repo-wide ruff
+  gate (F401) for the incidents package.
+
+### Verification
+- `ruff check` + `mypy` clean on all five touched files.
+- `pytest tests/unit/test_incident_response_task12.py tests/unit/test_git_surveillance_task13.py`
+  -> 87 passed (TestWorkerStall/TestIncidentExport/TestGit15 all green).
+- Full `beforePush.sh` gate: all remaining blockers are untracked parallel-agent
+  scratch/ + features/temporal.py (F401/PLR); touched files fully gate-clean.
+- git grep confirms zero `str(exc)/str(e)/str(err)` left in server.py response paths.
+
+### Regression guards
+- API error payloads must keep using `_err()`/safe_error_payload envelopes —
+  never raw `str(exception)` in responses (in-repo precedent: errors.py).
+- Incident reports must be written under the restrictive-umask context.
+- Tests must use TemporaryDirectory (never mktemp) and host-boundary URL checks.
+
+
+## BUG-114 — CandidateTrainer Manifest input_dimension Double-Counts News When feature_cols Passed Explicitly (TASK-05-70D-SHADOW, 2026-08-19)
+
+### Root cause
+`model_generation/training.py::CandidateTrainer.train_candidate`: when the
+caller passes an EXPLICIT `feature_cols` list that already includes the news
+block (e.g. the TASK-4/5 fair benchmark passes feat_* + news_*), the local
+`news_cols` remains the full `_split_columns` news list (12) while `feat_cols`
+is the explicit list (72 including news). The manifest then records
+`feature_dimension=len(feat_cols)=72` and
+`build_metadata.input_dimension=len(feat_cols)+len(news_cols)=72+12=84` —
+DOUBLE-COUNTING news. The runtime `predict()` compares `expected=84` against
+the actual 72-wide model and rejects the artifact with
+`ManifestValidationError: predict: expected 84 inputs (schema 72 + news), got 72`.
+
+### Evidence
+- task5_abc_B_v1 model.json: feature_dimension=72, input_dimension=84,
+  news_features=12 (double count), news_enabled=True.
+- Runtime predict on the model's own training width (72) raises
+  ManifestValidationError.
+
+### Fix
+When `feature_cols` is explicit, derive `news_cols` from it
+(`[c for c in feat_cols if c.startswith("news_")]`) so
+`len(feat_cols) + len(news_cols)` equals the true input width.
+
+### Regression test
+None added yet (benchmark rerun validates); recommend a unit test asserting
+input_dimension == feature_dimension for explicit feature_cols with news.
+
+### Verification
+FIXED - ruff/mypy clean; benchmark rerun pending.
+
+
+## BUG-112 — /api/models/integrity 500s: get_models_integrity calls `champ.info` on the ChampionManager (which has no `.info`) (Hermes-Bug112, 2026-08-19)
+
+### Root cause
+`src/nexus_scalp/web/server.py::get_models_integrity` treated the `ChampionManager` (engine.champion_manager) as if it were the loaded ChampionModel: it read `champ.info`, `champ.artifact_path`, `champ.scaler_path`.
+Only `ChampionModel` (returned by `champion_or_none()`) exposes `.info` (ModelArtifactInfo) and `.scaler_path`; the manager only holds paths/schema metadata. Every `/api` request hit `champ.info` and raised
+`AttributeError: 'ChampionManager' object has no attribute 'info'` → WEB_ERROR
+logged every second (observed 06:56:33-35, endpoint=/api, request_id=none).
+
+### Fix
+`get_models_integrity` now mirrors the sibling endpoints (`/api/models/summary`, `/api/models/champion`): it calls `champ.champion_or_none()` to LOAD the ChampionModel (never raises; None on
+cold-start → `{available: True, state: NO_CHAMPION}`) and builds the payload
+from `model.info` + `model.scaler_path`. `available: True` is preserved so the
+AI Hub UI keeps mounting; tensor diagnostics are backend-decided as before.
+
+### Regression test
+`tests/integration/test_model_lifecycle_api.py::TestModelsIntegrityRegression` (3 tests): endpoint answers 200 with a full payload on cold start; manager-less
+engine → UNAVAILABLE; real ScalpNet artifact → VALID tensor truth (actual_input_dimension == engine.FEATURE_DIM, actual_output_classes == 4).
+Verified the old code reproduces the exact AttributeError at line 4707.
+
+### Verification
+FIXED - 3/3 regression tests pass; full test_model_lifecycle_api.py (22) + test_model_lifecycle_phase10.py (40) pass; ruff/mypy clean.

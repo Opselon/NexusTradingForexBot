@@ -338,3 +338,68 @@ class TestGovernance70API:
         assert body["available"] is True
         assert "promotions" in body and "rollbacks" in body
         assert "emergency" in body
+
+
+class TestModelsIntegrityRegression:
+    """BUG-112 regression: /api/models/integrity crashed with
+    AttributeError: 'ChampionManager' object has no attribute 'info'.
+
+    The manager has no `.info`; integrity lives on the loaded ChampionModel
+    (returned by champion_or_none()). Cold-start (missing artifact) must
+    return NO_CHAMPION — never a 500.
+    """
+
+    def test_integrity_endpoint_no_crash(self, wired_engine):
+        """BUG-112 repro: the old code called `champ.info` on the
+        ChampionManager (which has no `.info`) and 500'd EVERY /api
+        request. The endpoint must answer 200 with a full payload
+        regardless of champion availability."""
+        repo, engine = wired_engine
+        # LiveEngine auto-mints a fresh artifact on cold start, so the
+        # fixture normally has a VALID champion — the important contract
+        # is 200 + complete payload, never an AttributeError 500.
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/integrity")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["available"] is True
+        assert body["state"] in ("ACTIVE", "NO_CHAMPION", "UNAVAILABLE"), body
+        assert "compatibility" in body and "integrity" in body
+        assert "model_id" in body and "artifact_path" in body
+
+    def test_integrity_endpoint_missing_manager(self, wired_engine):
+        repo, engine = wired_engine
+        # Defensive: a manager-less engine still answers 200 UNAVAILABLE.
+        del engine.champion_manager
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/integrity")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        assert body["state"] == "UNAVAILABLE"
+
+    def test_integrity_endpoint_valid_champion(self, wired_engine):
+        repo, engine = wired_engine
+        # Write a REAL ScalpNet artifact for the engine's declared schema so
+        # the champion loads and the payload reports tensor truth.
+        import torch
+
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        dim = engine.FEATURE_DIM
+        artifact = engine.config.model.model_artifact_path
+        net = ScalpNet(num_features=dim, num_classes=4)
+        torch.save({k: v.clone() for k, v in net.state_dict().items()}, artifact)
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/integrity")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["available"] is True
+        assert body["compatibility"] in ("VALID", "INVALID"), body
+        assert body["model_id"] == engine.champion_manager.model_id
+        assert body["actual_input_dimension"] == dim
+        assert body["actual_output_classes"] == 4
+        assert "reason" in body

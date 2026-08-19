@@ -65,6 +65,7 @@ def canonical_json(obj: Any) -> str:
       * unknown remains UNKNOWN -> _default raises TypeError so the caller
         can emit SSE_SERIALIZATION_ERROR instead of corrupt JSON
     """
+
     def _default(o: Any) -> Any:
         import uuid as _uuid
         from datetime import date, datetime
@@ -1029,12 +1030,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             model_meta["model_forward_ms"] = getattr(
                                 engine, "_last_model_forward_ms", None
                             )
-                            model_meta["feature_ms"] = getattr(
-                                engine, "_last_feature_ms", None
-                            )
-                            model_meta["e2e_ms"] = getattr(
-                                engine, "_last_e2e_ms", None
-                            )
+                            model_meta["feature_ms"] = getattr(engine, "_last_feature_ms", None)
+                            model_meta["e2e_ms"] = getattr(engine, "_last_e2e_ms", None)
                             # Model identity from the champion manager (real
                             # registry provenance; absent -> stays None).
                             champ = getattr(engine, "champion_manager", None)
@@ -1586,9 +1583,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             for db in ("audit", "news", "candle_intel"):
                 plans[db] = worker.plan_database(db)
             return {"status": st, "plans": plans}
-        except Exception as e:
+        except Exception as exc:
+            _log_err(exc, "db hygiene failed", endpoint="/api/db/hygiene")
             return {
-                "status": {"state": "DEGRADED", "error_state": str(e)},
+                "status": {
+                    "state": "DEGRADED",
+                    "error_state": "HYGIENE_UNAVAILABLE",
+                    "request_id": new_request_id(),
+                },
                 "plans": {},
             }
 
@@ -1641,7 +1643,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
         except Exception as exc:
             _log_err(exc, "incident list failed", endpoint="/api/diagnostics/incidents")
-            return {"available": False, "error": str(exc)[:300]}
+            return _err("INTERNAL_ERROR")
 
     @app.get("/api/diagnostics/incidents/{incident_id}")
     def get_diagnostics_incident(incident_id: str) -> dict[str, Any]:
@@ -1654,7 +1656,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return serialize_enums({"available": True, "incident": inc.as_dict()})
         except Exception as exc:
             _log_err(exc, "incident get failed", endpoint="/api/diagnostics/incidents/{id}")
-            return {"available": False, "error": str(exc)[:300]}
+            return _err("INTERNAL_ERROR")
 
     @app.get("/api/diagnostics/health")
     def get_diagnostics_health() -> dict[str, Any]:
@@ -1668,17 +1670,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 from nexus_scalp.incidents.worker import format_incident_worker_status
 
                 worker_health = format_incident_worker_status(w)
-                # Spec 39: distinguish DISABLED / RUNNING / DEGRADED / FAILED
-                state = worker_health.get("state", "UNKNOWN")
-                worker_health["display_state"] = (
-                    "RUNNING"
-                    if state in ("RUNNING", "STARTING")
-                    else "DEGRADED"
-                    if state == "DEGRADED"
-                    else "FAILED"
-                    if state == "FAILED"
-                    else "DISABLED"
-                )
+            # Spec 39: distinguish DISABLED / RUNNING / DEGRADED / FAILED
+            state = worker_health.get("state", "DISABLED")
+            worker_health["display_state"] = (
+                "RUNNING"
+                if state in ("RUNNING", "STARTING")
+                else "DEGRADED"
+                if state == "DEGRADED"
+                else "FAILED"
+                if state == "FAILED"
+                else "DISABLED"
+            )
             return serialize_enums(
                 {
                     "available": True,
@@ -1690,7 +1692,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
         except Exception as exc:
             _log_err(exc, "incident health failed", endpoint="/api/diagnostics/health")
-            return {"available": False, "error": str(exc)[:300]}
+            return _err("INTERNAL_ERROR")
 
     @app.get("/api/diagnostics/lineage")
     def get_diagnostics_lineage(
@@ -1727,7 +1729,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return serialize_enums(payload)
         except Exception as exc:
             _log_err(exc, "lineage failed", endpoint="/api/diagnostics/lineage")
-            return {"available": False, "error": str(exc)[:300]}
+            return _err("INTERNAL_ERROR")
 
     @app.get("/api/diagnostics/forensics")
     def get_diagnostics_forensics(
@@ -1756,13 +1758,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "kind": "accounting",
                     "checked_records": result["checked_records"],
                     "classification_counts": result["classification_counts"],
-                    "zero_outcome_classification_counts": result["zero_outcome_classification_counts"],
+                    "zero_outcome_classification_counts": result[
+                        "zero_outcome_classification_counts"
+                    ],
                     "recovery_candidate_count": result["recovery_candidate_count"],
                 }
             )
         except Exception as exc:
             _log_err(exc, "diagnostics forensics failed", endpoint="/api/diagnostics/forensics")
-            return {"available": False, "error": str(exc)[:300]}
+            return _err("INTERNAL_ERROR")
 
     @app.get("/api/diagnostics/incidents/{incident_id}/report")
     def get_diagnostics_incident_report(incident_id: str) -> dict[str, Any]:
@@ -1783,8 +1787,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 }
             )
         except Exception as exc:
-            _log_err(exc, "incident report failed", endpoint="/api/diagnostics/incidents/{id}/report")
-            return {"available": False, "error": str(exc)[:300]}
+            _log_err(
+                exc, "incident report failed", endpoint="/api/diagnostics/incidents/{id}/report"
+            )
+            return _err("INTERNAL_ERROR")
 
     @app.get("/api/diagnostics/incidents/{incident_id}/zip")
     def get_diagnostics_incident_zip(incident_id: str) -> dict[str, Any]:
@@ -1808,7 +1814,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
         except Exception as exc:
             _log_err(exc, "incident zip failed", endpoint="/api/diagnostics/incidents/{id}/zip")
-            return {"available": False, "error": str(exc)[:300]}
+            return _err("INTERNAL_ERROR")
 
     @app.get("/api/diagnostics/search")
     def get_diagnostics_search(query: str = "", limit: int = 50) -> dict[str, Any]:
@@ -1827,7 +1833,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
         except Exception as exc:
             _log_err(exc, "incident search failed", endpoint="/api/diagnostics/search")
-            return {"available": False, "error": str(exc)[:300]}
+            return _err("INTERNAL_ERROR")
 
     @app.get("/api/rules")
     def get_trading_rules() -> list[dict[str, Any]]:
@@ -3706,12 +3712,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return serialize_enums(payload)
         except Exception as exc:
             _log_err(exc, "Debug snapshot failed", endpoint="/api/debug/state")
+            # CodeQL #79/#80 (information exposure): exception detail stays
+            # in the server log; the wire carries a generic code only.
             return {
                 "snapshot_id": None,
                 "correlation_id": new_request_id(),
                 "timestamp": datetime.now(UTC).isoformat(),
                 "available": False,
-                "reason": f"DEBUG_SNAPSHOT_ERROR: {exc}",
+                "reason": "DEBUG_SNAPSHOT_ERROR",
             }
 
     @app.get("/api/debug/snapshots")
@@ -4466,11 +4474,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "tamper_detected": st.get("tamper_detected", False),
                 }
             except Exception as exc:
+                _log_err(exc, "db migration status failed", endpoint="/api/db/status")
                 out[dom.value] = {
                     "schema_version": 0,
                     "expected_version": eng.expected_version(),
                     "migration_state": "DB_MIGRATION_FAILED",
-                    "error": str(exc),
+                    "error": "DB_MIGRATION_FAILED",
                 }
         return serialize_enums({"available": True, "databases": out})
 
@@ -4516,7 +4525,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             # degraded/unknown review conditions also surface as reasons
             if payload["decision"] == "REVIEW_REQUIRED":
                 payload["blocking_reasons"] = [
-                    f"{c['check_id']} [{c['status']}]" for c in engine.dashboard()["rows"].values()
+                    f"{c['check_id']} [{c['status']}]"
+                    for c in engine.dashboard()["rows"].values()
                     if c["status"] in ("DEGRADED", "UNKNOWN")
                 ][:20]
             last = load_last_gate_result()
@@ -4530,8 +4540,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "decision": "FORENSIC_ENGINE_UNAVAILABLE",
                         "overall_status": "UNKNOWN",
                         "deployment_allowed": False,
-                        "blocking_reasons": [f"gate engine unavailable: {e!r}"],
-                        "engine_error": str(e),
+                        "blocking_reasons": ["gate engine unavailable"],
+                        "engine_error": "FORENSIC_ENGINE_UNAVAILABLE",
                     },
                 }
             )
@@ -4694,14 +4704,20 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             champ = getattr(engine, "champion_manager", None)
             if champ is None:
                 return {"available": True, "state": "UNAVAILABLE", "integrity": None}
-            info = champ.info
+            # `champion_or_none()` loads + verifies the Champion artifact and
+            # returns the ChampionModel (never raises; None on cold-start).
+            # The manager itself has no `.info` — integrity lives on the model.
+            model = champ.champion_or_none()
+            if model is None:
+                return {"available": True, "state": "NO_CHAMPION", "integrity": None}
+            info = model.info
             verdict = "VALID" if info.integrity_ok else "INVALID"
             active = bool(getattr(engine, "_bundle", None) is not None)
             payload: dict[str, Any] = {
                 "available": True,
-                "model_id": champ.model_id,
-                "model_version": champ.model_version,
-                "artifact_path": str(champ.artifact_path),
+                "model_id": model.model_id,
+                "model_version": model.model_version,
+                "artifact_path": str(model.artifact_path),
                 "artifact_hash": info.artifact_hash,
                 "schema_id": info.feature_schema_id,
                 "feature_dimension": info.feature_dimension,
@@ -4710,13 +4726,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "actual_output_classes": info.actual_output_classes,
                 "actual_hidden_dimension": info.actual_hidden_dimension,
                 "class_head_name": info.class_head_name,
-                "scaler_path": str(champ.scaler_path),
+                "scaler_path": str(model.scaler_path),
                 "scaler_hash": info.scaler_hash,
                 "scaler_dimension": info.scaler_dimension,
                 "compatibility": verdict,
                 "integrity": verdict,
-                "state": "ACTIVE" if (active and verdict == "VALID") else (
-                    "INCOMPATIBLE" if info.integrity_ok is False and info.artifact_hash else "INVALID"
+                "state": "ACTIVE"
+                if (active and verdict == "VALID")
+                else (
+                    "INCOMPATIBLE"
+                    if info.integrity_ok is False and info.artifact_hash
+                    else "INVALID"
                 ),
                 "active": active,
                 "reason": info.integrity_reason,
@@ -6473,25 +6493,28 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         # never a silent drop (BUG-110): identify which field
                         # failed and let recoverable frames continue.
                         failed_fields = _find_non_json_fields(payload)
+                        # CodeQL #76 (information exposure): wire carries a
+                        # generic code + field names; detail stays in the log.
                         diag = {
                             "event": "SSE_SERIALIZATION_ERROR",
-                            "correlation_id": f"sse-{state_version}",
+                            "correlation_id": f"sse-{version}",
                             "event_type": event_name,
-                            "error": str(ser_err),
+                            "error": "SSE_SERIALIZATION_ERROR",
                             "failed_fields": failed_fields,
                         }
                         logger.error(
-                            "[SSE] event=SERIALIZATION_ERROR version=%s fields=%s",
-                            state_version,
+                            "[SSE] event=SERIALIZATION_ERROR version=%s fields=%s error=%r",
+                            version,
                             failed_fields,
+                            ser_err,
                         )
                         # Record in the debug console diagnostics (brief 27).
-                        sse_diag["serialization_errors"] = int(
-                            sse_diag.get("serialization_errors", 0)
-                        ) + 1
+                        sse_diag["serialization_errors"] = (
+                            int(sse_diag.get("serialization_errors", 0)) + 1
+                        )
                         sse_diag["serialization_error"] = {
                             "correlation_id": diag["correlation_id"],
-                            "error": str(ser_err),
+                            "error": "SSE_SERIALIZATION_ERROR",
                             "failed_fields": failed_fields,
                             "event_type": event_name,
                         }
