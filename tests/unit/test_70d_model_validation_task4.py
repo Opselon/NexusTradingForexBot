@@ -770,3 +770,22 @@ def test_70d_model_31_70d_walk_forward_trains_end_to_end() -> None:
     with torch.inference_mode():
         out = model(torch.randn(2, 70))
     assert out.shape == (2, 4)
+
+
+# ---------------------------------------------------------------------------
+# TEST-70D-MODEL-32 — BUG-104 regression: default save path never the live path
+# ---------------------------------------------------------------------------
+
+
+def test_70d_model_32_default_save_path_not_live_champion() -> None:
+    """BUG-104 regression: a bare WalkForwardTrainer() must NEVER default to
+    the live Champion artifact path. Only an explicit operator-supplied path
+    may target it (LiveEngine passes it deliberately)."""
+    import inspect
+
+    from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
+
+    sig = inspect.signature(WalkForwardTrainer.__init__)
+    default = sig.parameters["artifact_save_path"].default
+    assert str(default) != "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
+    assert "wf_candidate" in str(default)
