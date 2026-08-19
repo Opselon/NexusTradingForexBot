@@ -676,13 +676,17 @@ class LiquidityGovernor:
         """
         if not self._enabled:
             engine = self._engine_instance
-            model_schema = getattr(engine, "FEATURE_SCHEMA_ID", None) if engine is not None else None
-            model_dim = getattr(engine, "FEATURE_DIM", None) if engine is not None else None
+            disabled_model_schema = (
+                getattr(engine, "FEATURE_SCHEMA_ID", None) if engine is not None else None
+            )
+            disabled_model_dim = (
+                getattr(engine, "FEATURE_DIM", None) if engine is not None else None
+            )
             return {
                 "result": ModelCompatibility.NOT_APPLICABLE.value,
                 "reason": "LIQUIDITY_DISABLED",
-                "model_schema_id": model_schema,
-                "model_dimension": model_dim,
+                "model_schema_id": disabled_model_schema,
+                "model_dimension": disabled_model_dim,
                 "runtime_schema_id": SCHEMA_70D,
                 "runtime_dimension": DIMENSION_70D,
             }
@@ -751,7 +755,9 @@ class LiquidityGovernor:
             # derive from a 60D active-schema dimension.
             liq_start = int(act.get("liquidity_indices", [60, 69])[0])
             indices = {n: liq_start + i for i, n in enumerate(LIQUIDITY_FEATURE_NAMES)}
-            source = self._source.value if self._source is not None else SourceKind.UNAVAILABLE.value
+            source = (
+                self._source.value if self._source is not None else SourceKind.UNAVAILABLE.value
+            )
             snap_ts = snap.decision_at.isoformat() if snap.decision_at else None
             return {
                 "schema_id": act["id"],
