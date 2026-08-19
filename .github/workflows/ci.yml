@@ -5,6 +5,12 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Run the full suite incl. integration tests (use on ci-tests or manually)"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -14,6 +20,7 @@ permissions:
   contents: read
 
 jobs:
+  # Fast, essential checks — run on every push/PR to main|develop.
   quality:
     name: Code Quality & Tests
     runs-on: ubuntu-latest
@@ -46,8 +53,10 @@ jobs:
 
       - name: Pytest with coverage
         run: |
-          # Ignores browser-bound E2E tests unless running in dedicated E2E pipeline
-          pytest --ignore=tests/integration/test_playwright_e2e.py \
+          # Full suite (incl. integration, no browser E2E) runs in the
+          # 'heavy-ci' job on ci-tests or manual dispatch. This job stays
+          # fast on normal pushes: unit tests + coverage only.
+          pytest tests/unit/ \
                  --cov=src \
                  --cov-report=term-missing \
                  --cov-report=xml:./coverage.xml -q
@@ -59,3 +68,66 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  # Heavy testing (integration, E2E, research/backtest, model validation)
+  # — does NOT run on every push. Executes only:
+  #   * pushes to the dedicated ci-tests branch, or
+  #   * manual workflow_dispatch with inputs.full=true
+  # Keep job names/selectors in sync with the actual test tree.
+  heavy-ci:
+    name: Heavy CI (${{ matrix.suite }})
+    if: github.ref_name == 'ci-tests' || inputs.full == true
+    runs-on: ubuntu-latest
+    needs: quality
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [integration, e2e, research-backtest, model-validation]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+          pip install pytest-cov
+
+      - name: Integration suite (no MT5, no browser)
+        if: matrix.suite == 'integration'
+        run: pytest tests/integration/ -q --tb=short --ignore=tests/integration/test_playwright_e2e.py
+
+      - name: E2E suite (Playwright)
+        if: matrix.suite == 'e2e'
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+          pytest tests/integration/test_playwright_e2e.py -q --tb=short
+
+      - name: Research & backtest suites
+        if: matrix.suite == 'research-backtest'
+        run: |
+          pytest tests/unit/test_research_phase09b.py \
+                tests/unit/test_research_registry_null_score_bug075.py \
+                tests/unit/test_research_task4_dataset.py \
+                tests/unit/test_research_task4_validation.py \
+                tests/unit/test_model_benchmark_phase13b.py \
+                tests/unit/test_model_generation_phase13.py \
+                tests/integration/test_research_api.py -q --tb=short
+
+      - name: Model validation suites
+        if: matrix.suite == 'model-validation'
+        run: |
+          pytest tests/unit/test_70d_model_validation_task4.py \
+                tests/unit/test_model_governance_phase16.py \
+                tests/unit/test_model_lifecycle_phase10.py \
+                tests/unit/test_train_model_cli.py \
+                tests/integration/test_model_lifecycle_api.py -q --tb=short

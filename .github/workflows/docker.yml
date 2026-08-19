@@ -1,5 +1,9 @@
 name: Docker Build & Publish
 
+# Builds and publishes the GHCR image. Triggered ONLY on pushes to the
+# dedicated 'docker' branch or via manual workflow_dispatch. Normal
+# development pushes (main/develop/ci-tests) intentionally do NOT build
+# or publish images.
 on:
   push:
     branches: [docker]

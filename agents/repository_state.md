@@ -277,3 +277,21 @@ training_dataset_id.
   HIGH_CONFIDENCE.
 - Telegram CRITICAL/HIGH alerts wired + verified end-to-end (1 alert, dedup).
 - artifacts/forensics/accounting_divergence.json + timebase_probe.json.
+
+## Snapshot 2026-08-19 (TASK-CI-ISOLATION — Hermes-CI-Isolation)
+
+- GitHub Actions audit COMPLETE: 4 workflows (ci/release/docker/security).
+- ci.yml: 'quality' = ruff/format/mypy/unit+coverage on every push+PR to
+  main|develop; NEW 'heavy-ci' 4-arm matrix (integration, e2e Playwright,
+  research-backtest, model-validation) runs ONLY on ci-tests branch or
+  manual dispatch inputs.full=true. Concurrency (cancel-in-progress) kept.
+- security.yml: push-triggered CodeQL/Trivy on every main/develop push
+  REMOVED; now PR to main|develop + push to ci-tests + weekly Monday 06:00
+  UTC schedule + workflow_dispatch. Concurrency group added.
+- docker.yml / release.yml: triggers UNCHANGED (docker branch / v* tags +
+  dispatch). Comment-only doc blocks added to docker.yml.
+- ci-tests branch created from origin/main for heavy CI execution.
+- Validation: actionlint clean on all changed files (release.yml carries a
+  pre-existing ::set-output deprecation warning at line 247, untouched).
+- Normal pushes to main/develop now run ONLY the fast quality gate;
+  heavy suites run on ci-tests or manual dispatch.

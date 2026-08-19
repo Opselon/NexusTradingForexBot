@@ -448,3 +448,37 @@ Required tests: TEST-POST70D-01..28, TEST-MONITOR-01..36
 Status: READY_FOR_REVIEW
 ```
 
+```text
+CHANGE-ID: CHG-0019
+Agent: Hermes-CI-Isolation
+Role: CI / GitHub Actions Pipeline Engineer
+Task: TASK-CI-ISOLATION
+Scope: GitHub Actions CI isolation & test branch. Audited all 4 workflows
+       (ci/release/docker/security). ci.yml split: 'quality' (ruff/mypy/
+       unit+coverage) runs on every push+PR to main|develop; new 'heavy-ci'
+       matrix (integration / e2e-playwright / research-backtest / model-
+       validation) runs ONLY on the ci-tests branch or manual dispatch
+       (inputs.full=true). security.yml: push trigger replaced by ci-tests
+       branch + PR + weekly schedule + dispatch. docker.yml + release.yml:
+       triggers preserved (comment-only). concurrency groups added to
+       ci.yml (already present) + security.yml. ci-tests branch created
+       from origin/main. Actionlint-validated (all files pass; release.yml
+       pre-existing ::set-output deprecation warning at line 247 NOT
+       modified — out of scope).
+Affected files: .github/workflows/ci.yml (rewritten), .github/workflows/
+       security.yml (rewritten), .github/workflows/docker.yml (comment
+       only), agents/change_control.md, agents/taskboard.md,
+       agents/repository_state.md (append-only rows)
+Affected functions/classes: NONE in src/ (workflow YAML only)
+Contracts touched: CI_TRIGGER_POLICY v1 (heavy CI only on ci-tests /
+       dispatch; security weekly+PR; docker/release unchanged)
+Runtime paths touched: NONE (no application code, no DB, no hot path)
+Owners affected: Hermes-Release (release.yml untouched), Hermes-DevOps
+       (workflow owners)
+Risk: LOW. Heavy CI no longer runs on every push — intentional (objective).
+       PR validation + security PR scans + release triggers preserved.
+Dependencies: none
+Required tests: actionlint .github/workflows/*.yml (0 errors on changed
+       files), YAML parse, branch filter cross-check
+Status: VERIFIED
+```
