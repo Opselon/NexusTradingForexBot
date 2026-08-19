@@ -247,6 +247,24 @@ FEATURE_SCHEMAS.register(
 )
 
 
+FEATURE_SCHEMAS.register(
+    FeatureSchema(
+        schema_id="scalp_v4_temporal_candidate",
+        dimension=92,
+        description=(
+            "RESEARCH CANDIDATE (TASK-TEMPORAL-01): scalp_v3 canonical 70D "
+            "(Base 0..49 | News 50..59 | Liquidity 60..69) + 22 causal temporal "
+            "Liquidity Intelligence dimensions (lag1/lag2/delta1/persistence/"
+            "time-since-change over the canonical liquidity 10D, produced by "
+            "features/temporal.py). Never ACTIVE/CHAMPION — promotion is a "
+            "separate governance decision (brief 45). The ACTIVE live contract "
+            "remains scalp_v1."
+        ),
+        supersedes="scalp_v1",
+    )
+)
+
+
 def active_schema() -> FeatureSchema:
     """Convenience accessor for the live feature contract."""
     return FEATURE_SCHEMAS.active
