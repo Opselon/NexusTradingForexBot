@@ -5,6 +5,56 @@
 > Status lifecycle: PROPOSED → IMPLEMENTING → VERIFIED → READY_FOR_REVIEW → MERGED | REJECTED.
 
 ## Open / recent changes
+
+```text
+CHANGE-ID: CHG-0017
+Agent: Hermes-Forensic-12
+Role: Incident Correlation / Root-Cause / Recovery Diagnostics Engineer
+Task: TASK-12-FORENSIC-INCIDENT-RESPONSE
+Scope: Incident response layer above TASK-11 monitoring: canonical incident
+       model (INC-YYYY-hex8, 8 statuses, 5 severities), correlation engine
+       (fingerprint + correlation_id + ticket grouping, causal chain from
+       actual timestamps), value lineage (source-of-truth traces), WHY
+       workflows (blocked/closed/no-learning/no-strategy/UI-empty),
+       MT5/ledger divergence + clock-skew + split-fill + outcome forensics,
+       impact analysis (observed-only), non-destructive quarantine,
+       recovery-plan generation (RECOMMENDED, approval-gated, no
+       destructive options), incident reports (JSON+MD, secret-masked),
+       AuditRepository-queued persistence via governed AUDIT-0006 migration,
+       CLI `nexus incidents *`, read-only /api/diagnostics/*, Forensic
+       Incident Center web tab, Telegram CRITICAL/HIGH alerts with
+       throttling/dedup, worker (background, bounded, off tick path)
+Affected files: src/nexus_scalp/incidents/{models,store,correlator,lineage,
+       trace,impact,reports,worker,telegram,__init__}.py (new),
+       src/nexus_scalp/database/registry.py (AUDIT-0006), cli/main.py +
+       cli/incident_commands.py (new), web/server.py (diagnostics routes),
+       Web/index.html + Web/app.js (Incident Center), tests/unit/
+       test_incident_response_task12.py (62 tests), tests/integration/
+       test_diagnostics_api.py, docs/70D_INCIDENT_RESPONSE_MODEL.md,
+       docs/70D_INITIAL_INCIDENT_FORENSIC_REPORT.md,
+       docs/70D_INCIDENT_RESPONSE_FINAL_REPORT.md, agents/* registries
+Affected functions/classes: Incident, IncidentStore, IncidentCorrelator,
+       LineageEngine, ImpactAnalyzer, QuarantineManager, RecoveryPlanner,
+       IncidentWorker, IncidentTelegramNotifier, news_incidents,
+       version_consistency, broker_ledger_divergence, clock_skew,
+       split_fill_groups, outcome_forensics, learning_pipeline_rates,
+       why_blocked/why_closed/why_no_learning/why_no_strategy/why_ui_empty
+Contracts touched: INCIDENT_RESPONSE v1 (new), INCIDENT_CORRELATION v1
+       (new), VALUE_LINEAGE v1 (new), RECOVERY_GOVERNANCE v1 (new);
+       consumed: AUDIT-0006 migration (new), DB_MIGRATION v1
+Runtime paths touched: web server (5 new GET routes), CLI (nexus incidents),
+       live_engine NOT touched (worker available for TASK-13 wiring),
+       audit.db (additive tables only)
+Owners affected: TASK-11 monitoring (forensics/), TASK-13 handoff
+       (worker wiring + incident console), governance (no change)
+Risk: LOW — diagnostic-only; no execution/risk/policy imports; additive
+       migration; all routes GET; recovery never auto-executed
+Dependencies: TASK-11 forensics/ (models), AuditRepository queued writer,
+       TASK-10 migration engine
+Required tests: TEST-INCIDENT-01..35 + integration diagnostics API tests
+Status: IMPLEMENTING
+```
+
 CHANGE-ID: CHG-0015
 Agent: Hermes-Parity
 Role: 70D Dataset/Replay/Inference/Runtime Contract Engineer

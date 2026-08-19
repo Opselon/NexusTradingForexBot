@@ -9,6 +9,7 @@ from nexus_scalp.governance.load_gate import (
     read_manifest_file,
     read_registry_lifecycle,
 )
+from nexus_scalp.governance.lock import PromotionLock, PromotionLockError
 from nexus_scalp.governance.models import (
     CalibrationBucket,
     DriftAlert,
@@ -26,6 +27,11 @@ from nexus_scalp.governance.models import (
 from nexus_scalp.governance.reporting import build_governance_report, model_shadow_update_text
 from nexus_scalp.governance.shadow_runtime import GovernanceShadowRuntime
 from nexus_scalp.governance.store import GovernanceStore
+from nexus_scalp.governance.transaction import (
+    PromotionTransactionError,
+    execute_promotion_transaction,
+)
+from nexus_scalp.governance.verify import verify_candidate
 
 __all__ = [
     "CalibrationBucket",
@@ -39,14 +45,19 @@ __all__ = [
     "LoadGateStep",
     "ModelGovernanceEngine",
     "ModelLoadGate",
+    "PromotionLock",
+    "PromotionLockError",
     "PromotionState",
+    "PromotionTransactionError",
     "PromotionTransition",
     "RegistryCategory",
     "RegistryModel",
     "ShadowParity",
     "build_governance_report",
     "evaluate_load_gate",
+    "execute_promotion_transaction",
     "model_shadow_update_text",
     "read_manifest_file",
     "read_registry_lifecycle",
+    "verify_candidate",
 ]

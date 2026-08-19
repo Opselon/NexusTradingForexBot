@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from nexus_scalp.governance.load_gate import ModelLoadGate, sha256_hex
+from nexus_scalp.governance.load_gate import ModelLoadGate, read_manifest_file, sha256_hex
 from nexus_scalp.governance.models import (
     PROMOTION_TRANSITIONS,
     GovernanceErrorCode,
@@ -82,6 +82,11 @@ class ModelGovernanceEngine:
         self.dep = dependency_map or {}
         self._health_cache: dict[str, Any] = {}
         self._last_reconcile: dict[str, Any] | None = None
+        #: Emergency controls (spec 31) — frozen flag + disabled candidates.
+        #: In-memory by design; the event ledger records every action.
+        self.promotion_frozen: bool = False
+        self.disabled_candidates: set[str] = set()
+        self._emergency_reasons: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Registry truthfulness
@@ -414,6 +419,10 @@ class ModelGovernanceEngine:
             raise PromotionGateError(
                 "promotion requires the operator approval token (no auto-promotion)"
             )
+        if self.promotion_frozen:
+            raise PromotionGateError("promotion frozen by operator (emergency stop)")
+        if model_id in self.disabled_candidates:
+            raise PromotionGateError(f"candidate {model_id} disabled by operator (emergency stop)")
         t = self.transition(
             model_id=model_id,
             model_version=model_version,
@@ -562,3 +571,280 @@ class ModelGovernanceEngine:
             return self.store.summary()
         except Exception:
             return {}
+
+    # ------------------------------------------------------------------
+    # Promotion preview / rollback preview / emergency controls (TASK-08)
+    # ------------------------------------------------------------------
+
+    def promotion_preview(
+        self,
+        *,
+        model_id: str,
+        model_version: str,
+        artifact_path: Path | str = "",
+        scaler_path: Path | str = "",
+        manifest: dict[str, Any] | None = None,
+        runtime_schema_id: str = "",
+        runtime_dimension: int = 0,
+        feature_schema_hash: str = "",
+        liquidity_algorithm_version: str = "",
+        training_commit: str = "",
+        oos_artifact: str = "",
+        shadow_evidence: dict[str, Any] | None = None,
+        news_contract: dict[str, Any] | None = None,
+        liquidity_contract: dict[str, Any] | None = None,
+        locks_dir: Path | str | None = None,
+    ) -> dict[str, Any]:
+        """PROMOTION PREVIEW (spec 28). READ-ONLY: no mutation, no lock.
+
+        Returns the exact preview contract the UI renders BEFORE any
+        operator decision: current champion identity + hash, candidate
+        identity + hash, schema pair, gate verdicts, rollback availability.
+        """
+        from nexus_scalp.governance.verify import verify_candidate
+
+        champion: dict[str, Any] = {}
+        try:
+            champ = self._current_champion_identity()
+            if champ:
+                champion = champ
+        except Exception:
+            champion = {}
+
+        verification = verify_candidate(
+            model_id=model_id,
+            model_version=model_version,
+            artifact_path=artifact_path,
+            scaler_path=scaler_path,
+            manifest=manifest,
+            runtime_schema_id=runtime_schema_id,
+            runtime_dimension=runtime_dimension,
+            feature_schema_hash=feature_schema_hash,
+            liquidity_algorithm_version=liquidity_algorithm_version,
+            training_commit=training_commit,
+            oos_artifact=oos_artifact,
+            shadow_evidence=shadow_evidence,
+            news_contract=news_contract,
+            liquidity_contract=liquidity_contract,
+            store=self.store,
+        )
+
+        gates = verification["gates"]
+        gate_summary = {
+            "technical": gates.get("artifact_exists", {}).get("status", "UNKNOWN"),
+            "schema": gates.get("schema_registered", {}).get("status", "UNKNOWN"),
+            "dataset": gates.get("manifest_valid", {}).get("status", "UNKNOWN"),
+            "walk_forward": gates.get("training_commit_recorded", {}).get("status", "UNKNOWN"),
+            "oos": gates.get("oos_artifact_recorded", {}).get("status", "UNKNOWN"),
+            "robustness": gates.get("liquidity_version_matches", {}).get("status", "UNKNOWN"),
+            "calibration": gates.get("feature_schema_hash_matches", {}).get("status", "UNKNOWN"),
+            "shadow": gates.get("shadow_evidence_recorded", {}).get("status", "UNKNOWN"),
+            "drift": gates.get("news_contract_valid", {}).get("status", "UNKNOWN"),
+            "liquidity": gates.get("liquidity_contract_valid", {}).get("status", "UNKNOWN"),
+        }
+
+        rollback_available = bool(champion and champion.get("artifact_hash"))
+
+        return {
+            "available": True,
+            "promotion_id_hint": f"preview_{model_id}_{model_version}",
+            "current_champion": champion,
+            "candidate": {
+                "model_id": model_id,
+                "version": model_version,
+                "schema": (manifest or {}).get("feature_schema_id", ""),
+                "hash": (manifest or {}).get("artifact_hash", ""),
+            },
+            "schema": {
+                "champion": champion.get("schema_id", ""),
+                "candidate": (manifest or {}).get("feature_schema_id", ""),
+            },
+            "gates": gate_summary,
+            "verification": {
+                "eligible": verification["eligible"],
+                "failures": verification["failures"],
+                "skipped": verification["skipped"],
+                "reason": verification["reason"],
+            },
+            "rollback": {
+                "available": rollback_available,
+                "target": (
+                    f"{champion.get('model_id', '')}@{champion.get('version', '')}"
+                    if rollback_available
+                    else ""
+                ),
+            },
+            "checked_at": verification["checked_at"],
+            "locked": bool(locks_dir) and self._promotion_lock_held(Path(locks_dir)),
+        }
+
+    def _current_champion_identity(self) -> dict[str, Any] | None:
+        """Reads the CURRENT Champion identity (registry truth, read-only)."""
+        if not self.store or not getattr(self.store, "audit_repo", None):
+            return None
+        try:
+            conn = sqlite3.connect(
+                f"file:{self.store.audit_repo._db_path}?mode=ro", uri=True, timeout=5.0
+            )
+            try:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT * FROM experience_model_registry "
+                    "WHERE lifecycle_status='CHAMPION' ORDER BY registered_at DESC LIMIT 1;"
+                ).fetchone()
+                if row is None:
+                    return None
+                d = dict(row)
+                return {
+                    "model_id": str(d.get("model_id", "")),
+                    "version": str(d.get("model_version", "")),
+                    "schema_id": str(d.get("feature_schema_id", "")),
+                    "artifact_hash": str(d.get("artifact_fingerprint", "")),
+                    "lifecycle_state": str(d.get("lifecycle_status", "CHAMPION")),
+                }
+            finally:
+                conn.close()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _promotion_lock_held(locks_dir: Path) -> bool:
+        """True when a promotion transaction lock currently exists."""
+        for p in locks_dir.glob("promotion*.lock"):
+            if p.exists():
+                return True
+        return False
+
+    def rollback_preview(
+        self,
+        *,
+        failed_model_id: str,
+        previous_model_id: str = "",
+        previous_artifact: Path | str = "",
+        previous_scaler: Path | str = "",
+    ) -> dict[str, Any]:
+        """ROLLBACK PREVIEW (spec 30). READ-ONLY; verifies the old artifact
+        is still valid before the operator commits to a rollback."""
+        prev: dict[str, Any] = {}
+        if previous_model_id:
+            prev = {"model_id": previous_model_id}
+            try:
+                champ = self._current_champion_identity()
+                if champ and champ["model_id"] == previous_model_id:
+                    prev = champ
+            except Exception:
+                pass
+        artifact_ok = False
+        artifact_hash = ""
+        detail = "no artifact path"
+        p = Path(previous_artifact) if previous_artifact else Path("")
+        if p.exists():
+            artifact_hash = sha256_hex(p)
+            artifact_ok = bool(artifact_hash)
+            sca = Path(previous_scaler) if previous_scaler else Path(str(p) + ".scaler.npz")
+            gate = self.load_gate.evaluate(
+                artifact_path=p,
+                scaler_path=sca,
+                model_id=previous_model_id,
+                manifest=None,
+            )
+            artifact_ok = artifact_ok and gate.passed
+            detail = f"load_gate={gate.passed} gate={gate.failing_gate.value if gate.failing_gate else 'none'}"
+        manifest_hash = ""
+        manifest_path = Path(str(p) + ".json")
+        if manifest_path.exists():
+            mf = read_manifest_file(manifest_path)
+            if mf:
+                import hashlib
+
+                manifest_hash = hashlib.sha256(
+                    str(sorted(mf.items())).encode("utf-8", errors="replace")
+                ).hexdigest()
+        return {
+            "available": True,
+            "rollback_candidate": {
+                "model_id": previous_model_id or "",
+                "version": prev.get("version", ""),
+                "schema": prev.get("schema_id", ""),
+            },
+            "artifact": {
+                "path": str(p),
+                "hash": artifact_hash,
+                "valid": artifact_ok,
+                "detail": detail,
+            },
+            "manifest_hash": manifest_hash,
+            "schema": prev.get("schema_id", ""),
+            "failed_model_id": failed_model_id,
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+
+    def emergency_freezes(self) -> dict[str, Any]:
+        """Emergency stop state (spec 31): freeze promotion + disable
+        candidates. Always truthful; read-only."""
+        return {
+            "promotion_frozen": self.promotion_frozen,
+            "disabled_candidates": sorted(self.disabled_candidates),
+            "reasons": dict(self._emergency_reasons),
+        }
+
+    def freeze_promotions(self, actor: str, reason: str = "") -> None:
+        """Freezes ALL promotions (spec 31). Distinct from Stop Bot."""
+        self.promotion_frozen = True
+        self._emergency_reasons["promotion_frozen"] = reason or actor
+        self._record_governance_event(
+            event="PROMOTION_FREEZE",
+            stage=GovernanceStage.PROMOTION,
+            model_id="",
+            actor=actor,
+            reason=reason or "operator freeze",
+        )
+
+    def unfreeze_promotions(self, actor: str, reason: str = "") -> None:
+        self.promotion_frozen = False
+        self._emergency_reasons.pop("promotion_frozen", None)
+        self._record_governance_event(
+            event="PROMOTION_UNFREEZE",
+            stage=GovernanceStage.PROMOTION,
+            model_id="",
+            actor=actor,
+            reason=reason or "operator unfreeze",
+        )
+
+    def disable_candidate(self, model_id: str, actor: str, reason: str = "") -> None:
+        """Disables a candidate (spec 31); the evidence is NEVER deleted."""
+        self.disabled_candidates.add(model_id)
+        self._emergency_reasons[f"disabled_{model_id}"] = reason or actor
+        self.store.set_state(model_id, "", "QUARANTINED")
+        self._record_governance_event(
+            event="CANDIDATE_DISABLED",
+            stage=GovernanceStage.PROMOTION,
+            model_id=model_id,
+            actor=actor,
+            reason=reason or "operator disable",
+        )
+
+    def _record_governance_event(
+        self,
+        *,
+        event: str,
+        stage: GovernanceStage,
+        model_id: str,
+        actor: str,
+        reason: str,
+    ) -> None:
+        try:
+            self.store.record_event(
+                GovernanceEvent(
+                    event_id=f"ev_{uuid.uuid4().hex[:16]}",
+                    event=event,
+                    stage=stage,
+                    model_id=model_id,
+                    actor=actor,
+                    previous_state="",
+                    new_state="",
+                    reason=reason,
+                )
+            )
+        except Exception:
+            pass

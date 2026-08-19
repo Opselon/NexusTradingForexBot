@@ -197,3 +197,34 @@ Update this file additively after substantial work (new modules, model changes, 
 - Parallel-session 70D liquidity working tree (liquidity_engine.py,
   scalp_v4 registration, liquidity_features_enabled flag) remains
   UNTOUCHED and read-only for this task.
+
+## Snapshot 2026-08-19 (TASK-03-70D-PARITY - 70D contract landed)
+- scalp_v3 redefined 350D -> 70D canonical (Base|News|Liquidity). Registered: scalp_v1 
+50D (ACTIVE), scalp_v2 60D (candidate), scalp_v3 70D (candidate, canonical), scalp_v4 70D 
+(TASK-2 integration candidate), scalp_liquidity_v1 60D (TASK-1 candidate).
+- NEW: features/schema_contract.py, features/features70.py, features/inference_validator.py, 
+features/runtime70.py, model_generation/replay.py replay_70d_vector, schema_v2 
+compute_70d_frame/build_70d_dataset/verify_70d_artifact, manifest feature_schema_hash + 
+training_dataset_id.
+- Tests: tests/unit/test_70d_{contract,dataset,replay,validator,runtime,perf}_task3.py 
+(70+ cases), tests/helpers/golden70d.py (11 scenarios).
+- Docs: docs/70D_DATA_CONTRACT.md, docs/agent_handoffs/TASK-03-70D-PARITY.md.
+- Commits: 3cc53a3, 09dd0bc, 5401d7f, 14fff5a, b531243, abafa9c (all pushed).
+- Next: TASK-4 benchmark UNBLOCKED; TASK-5 shadow70 can consume a validated candidate.
+
+## Snapshot 2026-08-19 (TASK-08-70D-GOVERNANCE — governance control plane)
+
+- TASK-8 (Hermes-GovAgent8) extended the TASK-6 governance boundary for the
+  70D challenger lifecycle WITHOUT promoting anything (evidence chain still
+  INSUFFICIENT_EVIDENCE until TASK-03 parity + a real validated candidate).
+- New: governance/verify.py (14-gate verify_candidate, SKIP=INSUFFICIENT),
+  governance/transaction.py (atomic promotion txn, crash-recoverable audit
+  states), governance/lock.py (cross-process promotion lock); engine
+  promotion_preview/rollback_preview/emergency freeze+disable; store audit
+  persistence; load_gate reads the canonical schema registry; migration
+  AUDIT-0005 (model_promotion_audit + model_rollback_audit).
+- API: /api/models/governance/{status,promotion-preview,rollback-preview,
+  audits}, /api/models/promotion/execute, /api/models/governance/emergency/*
+- UI: Promotion Controls block (preview/promote/freeze + status badge).
+- Tests: TEST-GOV-01..30 (TestGovernance70), TestGovernance70API (7).
+- BUG-108: AUDIT-0007 release_metadata migration baseline-skeleton fix.

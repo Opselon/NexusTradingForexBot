@@ -17,13 +17,29 @@
 | MT5_BROKER_SNAPSHOT | v1 | ACTIVE | adapters/mt5/ | live_engine, accounting |
 | NEWS_CONTEXT | v1 | ACTIVE | news/ | live_engine, signals |
 | STRATEGY_CANDIDATE | v1 (content-addressed) | ACTIVE | strategies/ | research worker |
-| MODEL_GOVERNANCE | v1 | ACTIVE | governance/ | live_engine, web, telegram (TASK-6/CHG-0003) |
+| MODEL_GOVERNANCE | v2 (extended TASK-08: verify_candidate 14-gate matrix, promotion transaction, preview, emergency, audit tables) | ACTIVE | governance/ (verify.py, transaction.py, lock.py, engine.py, store.py) | live_engine, web, telegram (TASK-6/CHG-0003 + TASK-08) |
 | MODEL_LOAD_GATE | v1 | ACTIVE | governance/load_gate.py | shadow attach, registry (TASK-6) |
 | SHADOW_PARITY | v1 | ACTIVE | governance/alignment.py | shadow runtime (TASK-6) |
 | PROMOTION_STATE_MACHINE | v1 | ACTIVE | governance/engine.py | web, telegram (TASK-6) |
 | MODEL_MANIFEST | v1 | ACTIVE | model_lifecycle/ | training, runtime |
 | FEATURE_SCHEMA_60D | v1 (scalp_v2, candidate-only) | ACTIVE | features/schema_augment.py, model_generation/schema_v2.py | model_generation training/benchmark, TASK-6 governance |
 | LIQUIDITY_60D | v1 (scalp_liquidity_v1, candidate-only) | ACTIVE | features/liquidity_engine.py, schema.py, model_generation/schema_v2.py | 70D series (TASK-02..07), model_generation, research (TASK-01-60D-LIQUIDITY) |
+## FEATURE_SCHEMA_70D v1 - canonical 70D contract (TASK-03-70D-PARITY)
+- schema_id scalp_v3, dimension 70, candidate-only; ACTIVE live contract stays scalp_v1.
+- Layout: 0..49 Base (scalp_v1 protected) | 50..59 News 10D (news_context_v1 fields 
+0..8 + news_state, NOT a blind first-10 slice) | 60..69 Liquidity 10D (liquidity_engine 
+as_vector order).
+- Single source of truth: features/schema_contract.py (canonical registry JSON, 
+feature_schema_hash SHA-256 prefix-16).
+- Producers: ScalpFeatureEngine.compute_from_bars / news_bridge.news_context_at + 
+features70.news_10d_from_context / liquidity_engine.compute_liquidity_features.
+- Consumers: schema_v2.compute_70d_frame, replay_70d_vector, inference_validator, 
+runtime70, shadow70 (TASK-5).
+- Compatibility: 60D scalp_v2 model + 70D runtime -> BLOCK; 70D model + 60D runtime -> 
+BLOCK. Scaler dimension must equal feature dimension (SCALER_MISMATCH stops).
+- Missing semantics: FEATURE_DISABLED (explicit neutral) vs FEATURE_UNAVAILABLE 
+(blocks) - never fabricated values.
+
 | FEATURE_SCHEMA_70D | v1 (scalp_v4, candidate-only) | ACTIVE | features/schema.py (registered by TASK-02-70D-INTEGRATION; consumed by TASK-04 benchmark protocol) | model_generation training/benchmark, TASK-4+ governance/validation |
 | ACCOUNTING_SNAPSHOT | v1 | ACTIVE | accounting/ | web, telegram |
 | EXIT_CLASSIFICATION | v3 (evidence provenance) | ACTIVE | experience/outcome_recovery.py | ledger, accounting, telegram |
@@ -41,6 +57,10 @@
 | BEHAVIOR_ANALYSIS | v1 (behavior-v1) | ACTIVE | intelligence/behavior.py | reporting, web, telegram |
 | ANOMALY_EVENT | v1 (anomaly-v1) | ACTIVE | intelligence/behavior.py | reporting, web, telegram |
 | DB_MIGRATION | v1 | ACTIVE | database/engine.py | startup, cli, updater, health, web |
+| INCIDENT_RESPONSE | v1 | ACTIVE | incidents/ (TASK-12) | web diagnostics, CLI, live_engine (observability) |
+| INCIDENT_CORRELATION | v1 | ACTIVE | incidents/correlator.py (fingerprint + correlation_id windows) | incident store, worker |
+| VALUE_LINEAGE | v1 | ACTIVE | incidents/lineage.py (source-of-truth trace) | diagnostics API, why-traces |
+| RECOVERY_GOVERNANCE | v1 | ACTIVE | incidents/impact.py (RECOMMENDED→APPROVED→EXECUTING) | incidents, operator console |
 | SCHEMA_MANIFEST | v1 | ACTIVE | database/manifest.py | database/engine.py, cli, health |
 | MODEL_RELEASE | v1 | ACTIVE | release/model_artifacts.py | release pipeline, cli model-artifacts, diagnostics (TASK-9) |
 | VERSION_CONSISTENCY | v1 | ACTIVE | release/versioning.py | web /api/status, cli version --json, health (TASK-9) |

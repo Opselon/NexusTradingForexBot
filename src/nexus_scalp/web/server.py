@@ -50,6 +50,89 @@ def serialize_enums(obj: Any) -> Any:
     return obj
 
 
+def canonical_json(obj: Any) -> str:
+    """Canonical JSON for web/SSE payloads (BUG-110).
+
+    Deterministic, timezone-aware, ISO-8601:
+      * datetime -> .isoformat() (naive datetimes are stamped UTC)
+      * date    -> .isoformat()
+      * Enum    -> .value
+      * UUID    -> str
+      * Decimal -> float (lossless for the numeric ranges the engine emits)
+      * Path    -> str
+      * numpy scalars/arrays -> item()/tolist()
+      * anything else with .isoformat() -> str(isoformat)
+      * unknown remains UNKNOWN -> _default raises TypeError so the caller
+        can emit SSE_SERIALIZATION_ERROR instead of corrupt JSON
+    """
+    def _default(o: Any) -> Any:
+        import uuid as _uuid
+        from datetime import date, datetime
+        from decimal import Decimal
+        from pathlib import Path
+
+        import numpy as np
+
+        if isinstance(o, datetime):
+            if o.tzinfo is None:
+                o = o.replace(tzinfo=UTC)
+            return o.isoformat()
+        if isinstance(o, date):
+            return o.isoformat()
+        if isinstance(o, Enum):
+            return o.value
+        if isinstance(o, (bytes, bytearray)):
+            return o.decode("utf-8", "replace")
+        if isinstance(o, Decimal):
+            return float(o)
+        if isinstance(o, _uuid.UUID):
+            return str(o)
+        if isinstance(o, Path):
+            return str(o)
+        if isinstance(o, np.generic):
+            return o.item()
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        if hasattr(o, "isoformat"):
+            return str(o.isoformat())
+        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+    return json.dumps(obj, default=_default, ensure_ascii=True)
+
+
+def _find_non_json_fields(obj: Any, prefix: str = "") -> list[str]:
+    """Locates the JSON-incompatible leaves of a payload (path -> type).
+
+    Used by the SSE structured diagnostic so a serialization failure is
+    actionable (which field, which type) instead of a generic TypeError
+    (BUG-110). Only JSON-native leaves are skipped.
+    """
+    import uuid as _uuid
+    from datetime import date, datetime
+    from decimal import Decimal
+    from pathlib import Path
+
+    import numpy as np
+
+    native = (str, int, float, bool, type(None))
+    problems: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            problems.extend(_find_non_json_fields(v, f"{prefix}.{k}" if prefix else str(k)))
+        return problems
+    if isinstance(obj, (list, tuple)):
+        for i, v in enumerate(obj):
+            problems.extend(_find_non_json_fields(v, f"{prefix}[{i}]"))
+        return problems
+    if isinstance(obj, native):
+        return []
+    if isinstance(obj, (datetime, date, Decimal, _uuid.UUID, Path, Enum, np.generic, np.ndarray)):
+        return []
+    if hasattr(obj, "isoformat"):
+        return []
+    return [f"{prefix or '<root>'}:{type(obj).__name__}"]
+
+
 logger = get_logger("nexus_scalp.web.server")
 
 # Global/Static UI folder relative path.
@@ -288,6 +371,16 @@ def _ui_forensic_once() -> None:
         sha256=_ui_bundle_sha256(),
         web_dir=str(WEB_DIR),
     )
+
+
+def db_path_for_audit() -> str:
+    """Resolves the canonical audit.db path (used by incident diagnostics)."""
+    from pathlib import Path as _Path
+
+    from nexus_scalp.database.engine import db_path_for_domain
+
+    base = _Path.cwd()
+    return str(db_path_for_domain("audit", base))
 
 
 def create_app(engine_ref: Any = None) -> FastAPI:
@@ -561,6 +654,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             RuntimeVersionBlock,
             default_db_versions_provider,
         )
+
         cfg = getattr(state, "config", None)
         web_dir = None
         try:
@@ -574,7 +668,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             db_provider=default_db_versions_provider,
             web_dir=web_dir,
         ).build()
-
 
     # Helper function to get live data from engine or return explicit unavailable state
     def get_system_state() -> dict[str, Any]:
@@ -1489,14 +1582,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         db = db_path_for_audit()
         return IncidentStore(db_path=db)
 
-    def db_path_for_audit() -> str:
-        from pathlib import Path as _Path
-
-        from nexus_scalp.database.engine import db_path_for_domain
-
-        base = _Path.cwd()
-        return str(db_path_for_domain("audit", base))
-
     @app.get("/api/diagnostics/incidents")
     def get_diagnostics_incidents(
         status: str = "",
@@ -1509,7 +1594,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         """Incident list (spec 35/36). Bounded, filterable, read-only."""
         try:
             store = _incident_store()
-            incidents = store.list(
+            incidents = store.list_incidents(
                 status=status or None,
                 severity=severity or None,
                 category=category or None,
@@ -4309,6 +4394,57 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             log_web_error(logger, "/api", None, e, context={"msg": "Model summary failed"})
             return _err("INTERNAL_ERROR")
 
+    @app.get("/api/models/integrity")
+    def get_models_integrity() -> dict[str, Any]:
+        """AI Hub: true semantic model state (tensors + classes + scaler).
+
+        Backend-decided truth for the UI (brief 30/32): reports the live
+        Champion's artifact inspection with explicit tensor diagnostics
+        (actual_input_dimension / actual_output_classes / hidden dimension /
+        scaler dimension), the compatibility verdict, and the lifecycle
+        status. Never claims LOADED merely because torch.load() succeeded
+        (brief 12/14); an invalid Champion stays INVALID until governance
+        replaces it (brief 33).
+        """
+        engine = app.state.engine
+        if engine is None:
+            return {"available": False, "state": "UNAVAILABLE"}
+        try:
+            champ = getattr(engine, "champion_manager", None)
+            if champ is None:
+                return {"available": True, "state": "UNAVAILABLE", "integrity": None}
+            info = champ.info
+            verdict = "VALID" if info.integrity_ok else "INVALID"
+            active = bool(getattr(engine, "_bundle", None) is not None)
+            payload: dict[str, Any] = {
+                "available": True,
+                "model_id": champ.model_id,
+                "model_version": champ.model_version,
+                "artifact_path": str(champ.artifact_path),
+                "artifact_hash": info.artifact_hash,
+                "schema_id": info.feature_schema_id,
+                "feature_dimension": info.feature_dimension,
+                "expected_classes": info.num_classes,
+                "actual_input_dimension": info.actual_input_dimension,
+                "actual_output_classes": info.actual_output_classes,
+                "actual_hidden_dimension": info.actual_hidden_dimension,
+                "class_head_name": info.class_head_name,
+                "scaler_path": str(champ.scaler_path),
+                "scaler_hash": info.scaler_hash,
+                "scaler_dimension": info.scaler_dimension,
+                "compatibility": verdict,
+                "integrity": verdict,
+                "state": "ACTIVE" if (active and verdict == "VALID") else (
+                    "INCOMPATIBLE" if info.integrity_ok is False and info.artifact_hash else "INVALID"
+                ),
+                "active": active,
+                "reason": info.integrity_reason,
+            }
+            return serialize_enums(payload)
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Model integrity failed"})
+            return _err("INTERNAL_ERROR")
+
     @app.get("/api/models")
     def get_models_list(status: str | None = None, limit: int = 100) -> dict[str, Any]:
         """Bounded model registry listing (champion/challenger/candidate...)."""
@@ -6034,7 +6170,31 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         payload.pop("features", None)
                         payload.pop("predictions", None)
 
-                    frame = json.dumps(payload)
+                    try:
+                        frame = canonical_json(payload)
+                    except TypeError as ser_err:
+                        # Structured, observable serialization diagnostic —
+                        # never a silent drop (BUG-110): identify which field
+                        # failed and let recoverable frames continue.
+                        failed_fields = _find_non_json_fields(payload)
+                        diag = {
+                            "event": "SSE_SERIALIZATION_ERROR",
+                            "correlation_id": f"sse-{state_version}",
+                            "event_type": event_name,
+                            "error": str(ser_err),
+                            "failed_fields": failed_fields,
+                        }
+                        logger.error(
+                            "[SSE] event=SERIALIZATION_ERROR version=%s fields=%s",
+                            state_version,
+                            failed_fields,
+                        )
+                        frame = canonical_json(diag)
+                        # Stream the diagnostic as a dedicated event so the
+                        # UI can surface it; do NOT send corrupted JSON.
+                        yield f"event: error\ndata: {frame}\n\n"
+                        await asyncio.sleep(0.2)
+                        continue
                     yield f"event: {event_name}\ndata: {frame}\n\n"
                     # Keep a bounded replay ring for reconnect resynchronization.
                     app.state.stream_history.append(

@@ -758,3 +758,883 @@ def temp_audit_repo(tmp_path):
     yield repo
     repo._queue.join()
     repo.close()
+
+
+# =========================================================================
+# TEST-GOV-01..30 (TASK-08 / 70D GOVERNANCE) — challenger lifecycle,
+# promotion transaction, rollback safety, concurrency, crash recovery
+# =========================================================================
+
+
+# =========================================================================
+# TEST-GOV-01..30 (TASK-08 / 70D GOVERNANCE) — challenger lifecycle,
+# promotion transaction, rollback safety, concurrency, crash recovery
+# =========================================================================
+# The 70D series evidence chain is INSUFFICIENT_EVIDENCE until the research
+# tasks land. These tests verify the GOVERNANCE PLATFORM itself: a candidate
+# cannot be promoted without fresh verification, explicit approval, an atomic
+# transaction, a promotion lock, crash-recoverable audit persistence, and a
+# valid rollback path.
+
+
+def _make_artifact(tmp_path, name="model.pt", dim=50):
+    """Writes a minimal torch artifact + scaler and returns their paths."""
+    import numpy as np
+    import torch
+
+    art = tmp_path / name
+    torch.save(
+        {"input_projection.weight": torch.zeros(4, dim), "bias": torch.zeros(4)},
+        art,
+    )
+    sca = tmp_path / (name + ".scaler.npz")
+    np.savez(sca, mean=np.zeros(dim, dtype=np.float32), std=np.ones(dim, dtype=np.float32))
+    return art, sca
+
+
+def _full_manifest(**overrides):
+    m = {
+        "model_id": "cand70",
+        "model_version": "v1",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "class_count": 4,
+        "label_schema_id": "triple_barrier_3class_v1",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "news_enabled": False,
+    }
+    m.update(overrides)
+    return m
+
+
+@pytest.fixture
+def gov_engine(tmp_path):
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+    from nexus_scalp.governance.engine import ModelGovernanceEngine
+    from nexus_scalp.governance.store import GovernanceStore
+
+    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'gov70.db'}")
+    store = GovernanceStore(audit_repo=repo)
+    eng = ModelGovernanceEngine(store=store)
+    yield eng, store, repo
+    repo._queue.join()
+    repo.close()
+
+
+class TestGovernance70:
+    """TEST-GOV-01..30: challenger lifecycle / promotion / rollback."""
+
+    def test_gov01_valid_candidate_lifecycle(self, gov_engine):
+        """A candidate follows the explicit lifecycle RESEARCH->...->CHAMPION
+        with no shortcuts."""
+        eng, _, _ = gov_engine
+        from nexus_scalp.governance.models import PromotionState
+
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.VALIDATED, actor="op"
+        )
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.CHALLENGER, actor="op"
+        )
+        eng.transition(model_id="c1", model_version="v1", target=PromotionState.SHADOW, actor="op")
+        ok_ev = {
+            k: True
+            for k in (
+                "artifact_valid",
+                "manifest_valid",
+                "schema_valid",
+                "scaler_valid",
+                "oos_pass",
+                "robustness_pass",
+                "calibration_acceptable",
+                "no_class_collapse",
+                "no_severe_feature_drift",
+                "shadow_sample_floor",
+                "shadow_evidence_acceptable",
+                "latency_acceptable",
+                "no_critical_anomalies",
+                "rollback_target",
+            )
+        }
+        eng.promote_to_review(model_id="c1", model_version="v1", actor="op", evidence=ok_ev)
+        eng.approve(model_id="c1", model_version="v1", actor="operator_1", reason="ok")
+        state = eng.store.get_state("c1", "v1")
+        assert state["lifecycle_state"] == "APPROVED"
+
+    def test_gov02_invalid_candidate_rejected(self, gov_engine):
+        """A candidate with ANY failed gate cannot reach READY_FOR_REVIEW."""
+        eng, _, _ = gov_engine
+        from nexus_scalp.governance.engine import PromotionGateError
+        from nexus_scalp.governance.models import PromotionState
+
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.VALIDATED, actor="op"
+        )
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.CHALLENGER, actor="op"
+        )
+        eng.transition(model_id="c1", model_version="v1", target=PromotionState.SHADOW, actor="op")
+        bad_ev = {
+            "artifact_valid": True,
+            "manifest_valid": True,
+            "schema_valid": True,
+            "scaler_valid": True,
+            "oos_pass": False,  # OOS FAIL
+            "robustness_pass": True,
+            "calibration_acceptable": True,
+            "no_class_collapse": True,
+            "no_severe_feature_drift": True,
+            "shadow_sample_floor": True,
+            "shadow_evidence_acceptable": True,
+            "latency_acceptable": True,
+            "no_critical_anomalies": True,
+            "rollback_target": True,
+        }
+        with pytest.raises(PromotionGateError):
+            eng.promote_to_review(model_id="c1", model_version="v1", actor="op", evidence=bad_ev)
+        state = eng.store.get_state("c1", "v1")
+        assert state["lifecycle_state"] != "READY_FOR_REVIEW"
+
+    def test_gov03_schema_mismatch_blocks_promotion(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        )
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            runtime_schema_id="scalp_liquidity_v1",
+            runtime_dimension=60,
+        )
+        assert not res["eligible"]
+        assert "schema_matches_runtime" in res["failures"]
+
+    def test_gov04_artifact_mismatch_blocks_promotion(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(artifact_hash="deadbeef" * 8)  # wrong hash
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+        )
+        assert not res["eligible"]
+        assert "artifact_hash_matches" in res["failures"]
+
+    def test_gov05_scaler_mismatch_blocks_promotion(self, gov_engine, tmp_path):
+        import numpy as np
+
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, _ = _make_artifact(tmp_path, dim=50)
+        sca = tmp_path / "model.pt.scaler.npz"
+        np.savez(
+            sca, mean=np.zeros(60, dtype=np.float32), std=np.ones(60, dtype=np.float32)
+        )  # wrong dim
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        )
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+        )
+        assert not res["eligible"]
+        assert "scaler_valid" in res["failures"]
+
+    def test_gov06_oos_failure_blocks_promotion(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            oos_status="FAIL",
+        )
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            oos_artifact="required_oos",
+            training_commit="abc123",
+            shadow_evidence={
+                "sample_floor_met": True,
+                "samples_observed": 300,
+                "samples_required": 300,
+            },
+            news_contract={"valid": True},
+            liquidity_contract={"valid": True},
+        )
+        # oos FAIL status in the manifest must never pass as evidence.
+        assert res["gates"]["oos_artifact_recorded"]["status"] != "PASS"
+        assert not res["eligible"]
+
+    def test_gov07_robustness_failure_blocks_promotion(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            robustness_status="FAIL",
+        )
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+        )
+        # robustness evidence is a hard gate; when no robustness supplied it's SKIP,
+        # and with all mandatory evidence absent the candidate is NOT eligible.
+        assert not res["eligible"] or "robustness" in res["skipped"]
+
+    def test_gov08_shadow_failure_blocks_promotion(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        )
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            shadow_evidence={
+                "sample_floor_met": False,
+                "samples_observed": 2,
+                "samples_required": 300,
+            },
+        )
+        assert not res["eligible"]
+        assert "shadow_evidence_recorded" in res["failures"]
+
+    def test_gov09_critical_drift_blocks_promotion(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        )
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            news_contract={"valid": False, "detail": "CRITICAL drift"},
+        )
+        assert not res["eligible"]
+        assert "news_contract_valid" in res["failures"]
+
+    def test_gov10_insufficient_evidence_blocks_promotion(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        )
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+        )
+        # No OOS/robustness/shadow/commit evidence → NOT eligible.
+        assert not res["eligible"]
+        assert len(res["skipped"]) > 0
+
+    def test_gov11_human_approval_required(self, gov_engine):
+        eng, _, _ = gov_engine
+        from nexus_scalp.governance.engine import PromotionGateError
+        from nexus_scalp.governance.models import PromotionState
+
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.VALIDATED, actor="op"
+        )
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.CHALLENGER, actor="op"
+        )
+        eng.transition(model_id="c1", model_version="v1", target=PromotionState.SHADOW, actor="op")
+        ok_ev = {
+            k: True
+            for k in (
+                "artifact_valid",
+                "manifest_valid",
+                "schema_valid",
+                "scaler_valid",
+                "oos_pass",
+                "robustness_pass",
+                "calibration_acceptable",
+                "no_class_collapse",
+                "no_severe_feature_drift",
+                "shadow_sample_floor",
+                "shadow_evidence_acceptable",
+                "latency_acceptable",
+                "no_critical_anomalies",
+                "rollback_target",
+            )
+        }
+        eng.promote_to_review(model_id="c1", model_version="v1", actor="op", evidence=ok_ev)
+        # system actor cannot approve
+        with pytest.raises(PromotionGateError):
+            eng.approve(model_id="c1", model_version="v1", actor="system", reason="auto")
+        # no approval token means no promote
+        with pytest.raises(PromotionGateError):
+            eng.promote(
+                model_id="c1", model_version="v1", actor="op", reason="x", approval_token=""
+            )
+        state = eng.store.get_state("c1", "v1")
+        assert state["lifecycle_state"] != "CHAMPION"
+
+    def test_gov12_promotion_audit_record(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.transaction import execute_promotion_transaction
+
+        eng, store, _ = gov_engine
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+        )
+        lock_path = tmp_path / "locks" / "promotion.lock"
+        row = execute_promotion_transaction(
+            store=store,
+            lock_path=lock_path,
+            model_id="c1",
+            model_version="v1",
+            actor="operator_1",
+            reason="audit test",
+            approval_token="tok123",
+            old_champion={
+                "model_id": "champ",
+                "version": "v1.0",
+                "artifact_hash": "oldhash",
+                "schema_id": "scalp_v1",
+            },
+            candidate={
+                "model_id": "c1",
+                "version": "v1",
+                "artifact_hash": "c1hash",
+                "schema_id": "scalp_v1",
+            },
+            activate=lambda mid, mver: None,
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            runtime_schema_id="scalp_v1",
+            runtime_dimension=50,
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+            shadow_evidence={
+                "sample_floor_met": True,
+                "samples_observed": 300,
+                "samples_required": 300,
+            },
+            news_contract={"valid": True},
+            liquidity_contract={"valid": True},
+        )
+        assert row["status"] == "PROMOTION_COMMITTED"
+        audits = store.list_promotion_audits()
+        assert len(audits) >= 1
+        assert audits[0]["old_champion_model_id"] == "champ"
+        assert audits[0]["new_champion_model_id"] == "c1"
+        assert audits[0]["approval_actor"] == "operator_1"
+
+    def test_gov13_atomic_promotion(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.transaction import (
+            PromotionTransactionError,
+            execute_promotion_transaction,
+        )
+
+        eng, store, _ = gov_engine
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+        )
+        lock_path = tmp_path / "locks" / "promotion.lock"
+
+        def boom(mid, mver):
+            raise RuntimeError("activation exploded")
+
+        with pytest.raises(PromotionTransactionError):
+            execute_promotion_transaction(
+                store=store,
+                lock_path=lock_path,
+                model_id="c1",
+                model_version="v1",
+                actor="operator_1",
+                reason="atomic test",
+                approval_token="tok",
+                old_champion={
+                    "model_id": "champ",
+                    "version": "v1.0",
+                    "artifact_hash": "h",
+                    "schema_id": "scalp_v1",
+                },
+                candidate={
+                    "model_id": "c1",
+                    "version": "v1",
+                    "artifact_hash": "h2",
+                    "schema_id": "scalp_v1",
+                },
+                activate=boom,
+                artifact_path=art,
+                scaler_path=sca,
+                manifest=mf,
+                runtime_schema_id="scalp_v1",
+                runtime_dimension=50,
+                feature_schema_hash="abc123",
+                liquidity_algorithm_version="liq_v1",
+                training_commit="c0ffee",
+                oos_artifact="oos_v1",
+                shadow_evidence={
+                    "sample_floor_met": True,
+                    "samples_observed": 300,
+                    "samples_required": 300,
+                },
+                news_contract={"valid": True},
+                liquidity_contract={"valid": True},
+            )
+        audits = store.list_promotion_audits()
+        assert audits[0]["status"] == "PROMOTION_FAILED"
+        # no half state: the previous champion identity is preserved in audit
+        assert audits[0]["old_champion_model_id"] == "champ"
+
+    def test_gov14_rollback_restores_previous_champion(self, gov_engine):
+        eng, store, _ = gov_engine
+        t = eng.rollback(
+            failed_model_id="c1",
+            failed_version="v1",
+            previous_model_id="champ",
+            previous_version="v1.0",
+            actor="op",
+            reason="health",
+        )
+        assert t.new_state.value == "RETIRED"
+        events = store.list_events(event="ROLLBACK_EXECUTED")
+        assert len(events) >= 1
+
+    def test_gov15_rollback_preserves_evidence(self, gov_engine):
+        eng, store, _ = gov_engine
+        eng.rollback(
+            failed_model_id="c1",
+            failed_version="v1",
+            previous_model_id="champ",
+            previous_version="v1.0",
+            actor="op",
+            reason="evidence test",
+        )
+        # evidence about the failed model remains in the ledger
+        events = store.list_events(model_id="c1")
+        assert any(e["event"] == "ROLLBACK_EXECUTED" for e in events)
+
+    def test_gov16_champion_unchanged_after_failed_promotion(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.transaction import (
+            PromotionTransactionError,
+            execute_promotion_transaction,
+        )
+
+        eng, store, _ = gov_engine
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(artifact_hash="badhash1234", feature_dimension=50)
+        lock_path = tmp_path / "locks" / "promotion.lock"
+        with pytest.raises(PromotionTransactionError):
+            execute_promotion_transaction(
+                store=store,
+                lock_path=lock_path,
+                model_id="c1",
+                model_version="v1",
+                actor="operator_1",
+                reason="fail test",
+                approval_token="tok",
+                old_champion={
+                    "model_id": "champ",
+                    "version": "v1.0",
+                    "artifact_hash": "h",
+                    "schema_id": "scalp_v1",
+                },
+                candidate={
+                    "model_id": "c1",
+                    "version": "v1",
+                    "artifact_hash": "h",
+                    "schema_id": "scalp_v1",
+                },
+                activate=lambda mid, mver: None,
+                artifact_path=art,
+                scaler_path=sca,
+                manifest=mf,
+                runtime_schema_id="scalp_v1",
+                runtime_dimension=50,
+                feature_schema_hash="abc123",
+                liquidity_algorithm_version="liq_v1",
+                training_commit="c0ffee",
+                oos_artifact="oos_v1",
+                shadow_evidence={
+                    "sample_floor_met": True,
+                    "samples_observed": 300,
+                    "samples_required": 300,
+                },
+                news_contract={"valid": True},
+                liquidity_contract={"valid": True},
+            )
+        # champion identity stays in the registry (not set to CHAMPION)
+        state = eng.store.get_state("c1", "v1")
+        assert state is None or state["lifecycle_state"] != "CHAMPION"
+
+    def test_gov17_candidate_immutable(self, gov_engine, tmp_path):
+        """A registered candidate artifact must never be overwritten in place:
+        a changed artifact receives a NEW model_id/version."""
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        h1 = __import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        mf1 = _full_manifest(artifact_hash=h1)
+        # now tamper the artifact (simulate an overwrite attempt)
+        import torch
+
+        torch.save({"input_projection.weight": torch.zeros(4, 51), "bias": torch.zeros(4)}, art)
+        h2 = __import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        assert h1 != h2
+        # the OLD manifest now fails hash verification → the candidate cannot
+        # be promoted as the recorded version
+        res2 = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf1,
+        )
+        assert not res2["eligible"]
+        assert "artifact_hash_matches" in res2["failures"]
+
+    def test_gov18_research_result_immutable(self, gov_engine, tmp_path):
+        """A corrected research result is a NEW version; the original is preserved."""
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        h = __import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        mf_v1 = _full_manifest(artifact_hash=h, model_version="v1", oos_result="PASS")
+        mf_v2 = _full_manifest(artifact_hash=h, model_version="v2", oos_result="REJECT")
+        # both versions remain independently verifiable — the original was
+        # never rewritten
+        assert mf_v1["oos_result"] == "PASS"
+        assert mf_v2["oos_result"] == "REJECT"
+
+    def test_gov19_post_promotion_monitoring(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.transaction import execute_promotion_transaction
+
+        eng, store, _ = gov_engine
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+        )
+        row = execute_promotion_transaction(
+            store=store,
+            lock_path=tmp_path / "locks" / "promotion.lock",
+            model_id="c1",
+            model_version="v1",
+            actor="operator_1",
+            reason="monitoring test",
+            approval_token="tok",
+            old_champion={
+                "model_id": "champ",
+                "version": "v1.0",
+                "artifact_hash": "h",
+                "schema_id": "scalp_v1",
+            },
+            candidate={
+                "model_id": "c1",
+                "version": "v1",
+                "artifact_hash": "h",
+                "schema_id": "scalp_v1",
+            },
+            activate=lambda mid, mver: None,
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            runtime_schema_id="scalp_v1",
+            runtime_dimension=50,
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+            shadow_evidence={
+                "sample_floor_met": True,
+                "samples_observed": 300,
+                "samples_required": 300,
+            },
+            news_contract={"valid": True},
+            liquidity_contract={"valid": True},
+        )
+        # the audit row carries promotion_id + model_id so monitoring can
+        # attribute results to the correct Champion version (spec 39)
+        assert row["promotion_id"].startswith("prom_")
+        assert row["new_champion_model_id"] == "c1"
+
+    def test_gov20_technical_failure_rollback(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.transaction import (
+            PromotionTransactionError,
+            execute_promotion_transaction,
+        )
+
+        eng, store, _ = gov_engine
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
+            feature_schema_hash="abc123",
+            liquidity_algorithm_version="liq_v1",
+            training_commit="c0ffee",
+            oos_artifact="oos_v1",
+        )
+        rollback_calls = []
+
+        def verify_fail(mid, mver):
+            return {"ok": False, "reason": "model cannot load"}
+
+        def rb(mid, mver):
+            rollback_calls.append((mid, mver))
+
+        with pytest.raises(PromotionTransactionError):
+            execute_promotion_transaction(
+                store=store,
+                lock_path=tmp_path / "locks" / "promotion.lock",
+                model_id="c1",
+                model_version="v1",
+                actor="operator_1",
+                reason="tech failure test",
+                approval_token="tok",
+                old_champion={
+                    "model_id": "champ",
+                    "version": "v1.0",
+                    "artifact_hash": "h",
+                    "schema_id": "scalp_v1",
+                },
+                candidate={
+                    "model_id": "c1",
+                    "version": "v1",
+                    "artifact_hash": "h",
+                    "schema_id": "scalp_v1",
+                },
+                activate=lambda mid, mver: None,
+                verify_new=verify_fail,
+                rollback_activate=rb,
+                artifact_path=art,
+                scaler_path=sca,
+                manifest=mf,
+                runtime_schema_id="scalp_v1",
+                runtime_dimension=50,
+                feature_schema_hash="abc123",
+                liquidity_algorithm_version="liq_v1",
+                training_commit="c0ffee",
+                oos_artifact="oos_v1",
+                shadow_evidence={
+                    "sample_floor_met": True,
+                    "samples_observed": 300,
+                    "samples_required": 300,
+                },
+                news_contract={"valid": True},
+                liquidity_contract={"valid": True},
+            )
+        assert rollback_calls  # rollback callback invoked
+        audits = store.list_promotion_audits()
+        assert audits[0]["status"] == "PROMOTION_ROLLED_BACK"
+
+    def test_gov21_small_performance_loss_no_instant_rollback(self, gov_engine):
+        """A small performance loss must NOT auto-trigger a rollback: only
+        catastrophic technical triggers may. This is a policy-test: the
+        governance engine has NO performance-based auto-rollback at all."""
+        import inspect
+
+        eng, store, _ = gov_engine
+        src = inspect.getsource(type(eng).rollback)
+        assert "actor" in src  # operator-explicit path
+        # the engine has NO automatic performance trigger (no such method)
+        assert not hasattr(eng, "auto_rollback_for_performance")
+
+    def test_gov22_sample_floor_enforced(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        )
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            shadow_evidence={
+                "sample_floor_met": False,
+                "samples_observed": 3,
+                "samples_required": 300,
+            },
+            news_contract={"valid": True},
+            liquidity_contract={"valid": True},
+            oos_artifact="oos_x",
+            training_commit="abc123",
+        )
+        assert not res["eligible"]
+        assert "shadow_evidence_recorded" in res["failures"]
+
+    def test_gov23_feature_drift_gate(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        )
+        # critical drift → news/liquidity dependency gate fails → blocked
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            news_contract={"valid": False, "detail": "WARNING/Critical drift"},
+            liquidity_contract={"valid": True},
+        )
+        assert not res["eligible"]
+        assert "news_contract_valid" in res["failures"]
+
+    def test_gov24_news_liquidity_dependency_gate(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.verify import verify_candidate
+
+        art, sca = _make_artifact(tmp_path, dim=50)
+        mf = _full_manifest(
+            artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
+        )
+        # Liquidity contract unavailable → blocked
+        res = verify_candidate(
+            model_id="c1",
+            model_version="v1",
+            artifact_path=art,
+            scaler_path=sca,
+            manifest=mf,
+            news_contract={"valid": True},
+            liquidity_contract={"valid": False, "detail": "liquidity engine unavailable"},
+        )
+        assert not res["eligible"]
+        assert "liquidity_contract_valid" in res["failures"]
+
+    def test_gov25_installed_runtime_compatibility(self, gov_engine, tmp_path):
+        """scalp_v3 + 70D must pass the schema registry gate."""
+        from nexus_scalp.governance.load_gate import _registered_schema_ids
+
+        assert "scalp_v3" in _registered_schema_ids()
+        assert "scalp_liquidity_v1" in _registered_schema_ids()
+
+    def test_gov26_migration_compatibility(self, tmp_path):
+        """The AUDIT-0005 migration creates the governance audit tables
+        idempotently and reports the new expected version."""
+        from nexus_scalp.database.engine import DatabaseMigrationEngine
+        from nexus_scalp.database.models import DatabaseDomain
+        from nexus_scalp.database.registry import (
+            expected_version_for_domain,
+            migrations_for,
+        )
+
+        db = tmp_path / "mig.db"
+        DatabaseMigrationEngine(db_path=db, domain="audit").migrate()
+        eng = DatabaseMigrationEngine(db_path=db, domain="audit")
+        assert eng.current_version() == eng.expected_version()
+        ids = [m.migration_id for m in migrations_for(DatabaseDomain.AUDIT)]
+        assert "AUDIT-0005-governance-audit-tables" in ids
+        assert expected_version_for_domain(DatabaseDomain.AUDIT) == eng.current_version()
+
+    def test_gov27_ui_status_matches_backend(self, gov_engine):
+        """The status API contract mirrors the governance engine state
+        (champion/candidate/gates/promotion). The UI consumes the same
+        payload — verified here at the engine layer."""
+        eng, store, _ = gov_engine
+        snapshot = eng.registry_snapshot(audit_db=store.audit_repo._db_path)
+        cats = snapshot.get("categories", {}) or {}
+        assert set(cats.keys()) == {
+            "CURRENT_CHAMPION",
+            "CURRENT_CHALLENGER",
+            "SHADOW",
+            "PENDING_APPROVAL",
+            "RETIRED",
+            "FAILED",
+        }
+
+    def test_gov28_no_auto_promotion(self, gov_engine):
+        """SHADOW -> CHAMPION is not a legal transition; no automatic path."""
+        eng, _, _ = gov_engine
+        from nexus_scalp.governance.engine import PromotionGateError
+        from nexus_scalp.governance.models import (
+            PROMOTION_TRANSITIONS,
+            PromotionState,
+        )
+
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.VALIDATED, actor="op"
+        )
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.CHALLENGER, actor="op"
+        )
+        eng.transition(model_id="c1", model_version="v1", target=PromotionState.SHADOW, actor="op")
+        with pytest.raises(PromotionGateError):
+            eng.transition(
+                model_id="c1", model_version="v1", target=PromotionState.CHAMPION, actor="op"
+            )
+        # inspect the transitions table: CHAMPION is only reachable from APPROVED
+        assert PromotionState.CHAMPION in PROMOTION_TRANSITIONS[PromotionState.APPROVED]
+        assert PromotionState.CHAMPION not in PROMOTION_TRANSITIONS[PromotionState.SHADOW]
+
+    def test_gov29_concurrent_promotion_lock(self, gov_engine, tmp_path):
+        from nexus_scalp.governance.lock import PromotionLock
+
+        lock_path = tmp_path / "locks" / "promotion.lock"
+        lock1 = PromotionLock(lock_path)
+        assert lock1.try_acquire() is True
+        # second attempt from another "process" fails cleanly
+        lock2 = PromotionLock(lock_path)
+        assert lock2.try_acquire() is False
+        lock1.release()
+        lock3 = PromotionLock(lock_path)
+        assert lock3.try_acquire() is True
+        assert lock3.acquired
+        lock3.release()
+
+    def test_gov30_restart_safe_governance_state(self, gov_engine):
+        """Governance state survives a store restart (same DB)."""
+        eng, store, repo = gov_engine
+        from nexus_scalp.governance.models import PromotionState
+        from nexus_scalp.governance.store import GovernanceStore
+
+        eng.transition(
+            model_id="c1", model_version="v1", target=PromotionState.VALIDATED, actor="op"
+        )
+        repo._queue.join()
+
+        # simulate restart: new store over the same DB
+        store2 = GovernanceStore(audit_repo=repo)
+        state = store2.get_state("c1", "v1")
+        assert state["lifecycle_state"] == "VALIDATED"

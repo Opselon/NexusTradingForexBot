@@ -72,6 +72,24 @@ _INSERT_HEALTH_SQL = """
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 """
 
+_INSERT_PROMOTION_AUDIT_SQL = """
+    INSERT OR REPLACE INTO model_promotion_audit (
+        promotion_id, old_champion_model_id, old_champion_version,
+        old_champion_hash, old_champion_schema, new_champion_model_id,
+        new_champion_version, new_champion_hash, new_champion_schema,
+        candidate_hash, schema_id, approval_actor, approval_reason,
+        approval_token, rollback_target, status, recorded_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+"""
+
+_INSERT_ROLLBACK_AUDIT_SQL = """
+    INSERT OR REPLACE INTO model_rollback_audit (
+        rollback_id, failed_model_id, failed_version, previous_model_id,
+        previous_version, previous_artifact_hash, previous_manifest_hash,
+        previous_schema_id, actor, reason, rollback_kind, status, recorded_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+"""
+
 
 class GovernanceStore:
     """Append-only governance persistence (audit.db, queued writes)."""
@@ -178,6 +196,48 @@ class GovernanceStore:
                         shadow_dropped INTEGER DEFAULT 0,
                         last_update TEXT DEFAULT '',
                         payload TEXT DEFAULT '{}'
+                    );
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS model_promotion_audit (
+                        promotion_id TEXT PRIMARY KEY,
+                        old_champion_model_id TEXT NOT NULL DEFAULT '',
+                        old_champion_version TEXT NOT NULL DEFAULT '',
+                        old_champion_hash TEXT NOT NULL DEFAULT '',
+                        old_champion_schema TEXT NOT NULL DEFAULT '',
+                        new_champion_model_id TEXT NOT NULL DEFAULT '',
+                        new_champion_version TEXT NOT NULL DEFAULT '',
+                        new_champion_hash TEXT NOT NULL DEFAULT '',
+                        new_champion_schema TEXT NOT NULL DEFAULT '',
+                        candidate_hash TEXT NOT NULL DEFAULT '',
+                        schema_id TEXT NOT NULL DEFAULT '',
+                        approval_actor TEXT NOT NULL DEFAULT '',
+                        approval_reason TEXT NOT NULL DEFAULT '',
+                        approval_token TEXT NOT NULL DEFAULT '',
+                        rollback_target TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT 'PROMOTION_RECORDED',
+                        recorded_at TEXT NOT NULL
+                    );
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS model_rollback_audit (
+                        rollback_id TEXT PRIMARY KEY,
+                        failed_model_id TEXT NOT NULL DEFAULT '',
+                        failed_version TEXT NOT NULL DEFAULT '',
+                        previous_model_id TEXT NOT NULL DEFAULT '',
+                        previous_version TEXT NOT NULL DEFAULT '',
+                        previous_artifact_hash TEXT NOT NULL DEFAULT '',
+                        previous_manifest_hash TEXT NOT NULL DEFAULT '',
+                        previous_schema_id TEXT NOT NULL DEFAULT '',
+                        actor TEXT NOT NULL DEFAULT '',
+                        reason TEXT NOT NULL DEFAULT '',
+                        rollback_kind TEXT NOT NULL DEFAULT 'MANUAL',
+                        status TEXT NOT NULL DEFAULT 'ROLLBACK_RECORDED',
+                        recorded_at TEXT NOT NULL
                     );
                     """
                 )
@@ -460,6 +520,121 @@ class GovernanceStore:
                 conn.close()
         except Exception:
             return None
+
+    # ------------------------------------------------------------------
+    # Promotion / rollback audit (TASK-08, persisted in model_promotion_audit
+    # + model_rollback_audit — migration AUDIT-0005)
+    # ------------------------------------------------------------------
+
+    def record_promotion_audit(self, row: dict[str, Any]) -> bool:
+        """Persists ONE promotion transaction audit record (spec 29)."""
+        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+            return False
+        self.ensure_schema()
+        args = (
+            row.get("promotion_id", f"prom_{uuid.uuid4().hex[:16]}"),
+            row.get("old_champion_model_id", ""),
+            row.get("old_champion_version", ""),
+            row.get("old_champion_hash", ""),
+            row.get("old_champion_schema", ""),
+            row.get("new_champion_model_id", ""),
+            row.get("new_champion_version", ""),
+            row.get("new_champion_hash", ""),
+            row.get("new_champion_schema", ""),
+            row.get("candidate_hash", ""),
+            row.get("schema_id", ""),
+            row.get("approval_actor", ""),
+            row.get("approval_reason", ""),
+            row.get("approval_token", ""),
+            row.get("rollback_target", ""),
+            row.get("status", "PROMOTION_RECORDED"),
+            (row.get("recorded_at") or datetime.now(UTC)).isoformat()
+            if hasattr(row.get("recorded_at"), "isoformat")
+            else str(row.get("recorded_at", datetime.now(UTC).isoformat())),
+        )
+        try:
+            self.audit_repo._queue.put_nowait((_INSERT_PROMOTION_AUDIT_SQL, args))
+            return True
+        except Exception as e:
+            logger.error("[MODEL_GOVERNANCE] promotion audit write failed", error=str(e))
+            return False
+
+    def record_rollback_audit(self, row: dict[str, Any]) -> bool:
+        """Persists ONE rollback audit record (spec 30)."""
+        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+            return False
+        self.ensure_schema()
+        args = (
+            row.get("rollback_id", f"rb_{uuid.uuid4().hex[:16]}"),
+            row.get("failed_model_id", ""),
+            row.get("failed_version", ""),
+            row.get("previous_model_id", ""),
+            row.get("previous_version", ""),
+            row.get("previous_artifact_hash", ""),
+            row.get("previous_manifest_hash", ""),
+            row.get("previous_schema_id", ""),
+            row.get("actor", ""),
+            row.get("reason", ""),
+            row.get("rollback_kind", "MANUAL"),
+            row.get("status", "ROLLBACK_RECORDED"),
+            (row.get("recorded_at") or datetime.now(UTC)).isoformat()
+            if hasattr(row.get("recorded_at"), "isoformat")
+            else str(row.get("recorded_at", datetime.now(UTC).isoformat())),
+        )
+        try:
+            self.audit_repo._queue.put_nowait((_INSERT_ROLLBACK_AUDIT_SQL, args))
+            return True
+        except Exception as e:
+            logger.error("[MODEL_GOVERNANCE] rollback audit write failed", error=str(e))
+            return False
+
+    def list_promotion_audits(self, limit: int = 100) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+            return out
+        try:
+            self.audit_repo._queue.join()
+        except Exception:
+            pass
+        bounded = max(1, min(int(limit), MAX_EVENTS_READ))
+        try:
+            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM model_promotion_audit ORDER BY recorded_at DESC LIMIT ?;",
+                    (bounded,),
+                ).fetchall()
+                out = [dict(r) for r in rows]
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("[MODEL_GOVERNANCE] promotion audits read failed", error=str(e))
+        return out
+
+    def list_rollback_audits(self, limit: int = 100) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+            return out
+        try:
+            self.audit_repo._queue.join()
+        except Exception:
+            pass
+        bounded = max(1, min(int(limit), MAX_EVENTS_READ))
+        try:
+            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM model_rollback_audit ORDER BY recorded_at DESC LIMIT ?;",
+                    (bounded,),
+                ).fetchall()
+                out = [dict(r) for r in rows]
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("[MODEL_GOVERNANCE] rollback audits read failed", error=str(e))
+        return out
 
     def summary(self) -> dict[str, Any]:
         out: dict[str, Any] = {"available": False}

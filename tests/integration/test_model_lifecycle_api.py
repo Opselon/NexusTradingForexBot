@@ -240,3 +240,101 @@ class TestModelLifecycleSafety:
         assert not hasattr(nexus_scalp.model_lifecycle, "RiskEngine")
         assert not hasattr(nexus_scalp.model_lifecycle, "OrderManager")
         assert not hasattr(nexus_scalp.model_lifecycle, "OrderLifecycleManager")
+
+
+class TestGovernance70API:
+    """TASK-08 governance API surface (spec 28/29/30/31/32)."""
+
+    def test_status_endpoint_matches_backend(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/governance/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        assert (
+            "champion" in body and "candidate" in body and "gates" in body and "promotion" in body
+        )
+        assert body["promotion"]["frozen"] is False  # UI badge truth (spec 33)
+
+    def test_promotion_preview_read_only(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/governance/promotion-preview?model_id=cand_x")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        preview = body["preview"]
+        assert "current_champion" in preview
+        assert "gates" in preview
+        assert "rollback" in preview
+
+    def test_promotion_execute_requires_token(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.post(
+            "/api/models/promotion/execute",
+            json={"actor": "op", "model_id": "cand_x", "model_version": "v1", "reason": "x"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
+
+    def test_rollback_preview_endpoint(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/governance/rollback-preview?failed_model_id=fail_x")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        assert "rollback_candidate" in body["preview"]
+
+    def test_emergency_freeze_blocks_promotion(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.post(
+            "/api/models/governance/emergency/freeze",
+            json={"actor": "operator_1", "reason": "test freeze"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["available"] is True
+        assert engine.governance_engine.promotion_frozen is True
+        # a frozen promotion is rejected by the transaction endpoint
+        resp2 = client.post(
+            "/api/models/promotion/execute",
+            json={
+                "actor": "operator_1",
+                "model_id": "cand_x",
+                "model_version": "v1",
+                "reason": "x",
+                "approval_token": "tok",
+                "old_champion_model_id": "champ",
+                "old_champion_version": "v1",
+                "old_champion_hash": "h",
+            },
+        )
+        body2 = resp2.json()
+        assert body2.get("error", {}).get("code") == "PROMOTION_BLOCKED"
+        # unfreeze
+        resp3 = client.post(
+            "/api/models/governance/emergency/unfreeze",
+            json={"actor": "operator_1", "reason": "test unfreeze"},
+        )
+        assert resp3.json()["available"] is True
+        assert engine.governance_engine.promotion_frozen is False
+
+    def test_audits_endpoint(self, wired_engine):
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/models/governance/audits")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is True
+        assert "promotions" in body and "rollbacks" in body
+        assert "emergency" in body

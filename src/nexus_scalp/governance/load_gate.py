@@ -27,6 +27,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.governance.models import (
     GovernanceErrorCode,
     LoadGateResult,
@@ -37,8 +38,10 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.governance.load_gate")
 
-#: All registered schema ids in the canonical schema registry, in dimension order.
-_REGISTERED_SCHEMA_IDS: tuple[str, ...] = ("scalp_v1", "scalp_v2", "scalp_v3")
+
+def _registered_schema_ids() -> tuple[str, ...]:
+    """All registered schema ids from the CANONICAL schema registry."""
+    return tuple(s.schema_id for s in FEATURE_SCHEMAS.list_schemas())
 
 
 def sha256_hex(path: Path) -> str:
@@ -169,7 +172,7 @@ class ModelLoadGate:
 
         # 4. SCHEMA_VALID — schema id must be REGISTERED (never guessed)
         sid = str(mf.get("feature_schema_id", "") or "")
-        if sid not in _REGISTERED_SCHEMA_IDS:
+        if sid not in _registered_schema_ids():
             return self._fail(
                 model_id,
                 model_version,
