@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from nexus_scalp.features.liquidity_engine import LIQUIDITY_FEATURE_NAMES
 from nexus_scalp.features.liquidity_runtime import (
+    DIMENSION_70D,
     SCHEMA_70D,
     LiquidityGovernor,
 )
@@ -153,8 +154,8 @@ def test_70d_13_state_endpoint_real_values(api_env) -> None:
     assert body["status"] == "ENABLED"
     assert body["available"] is True
     # TASK-02: enabled -> the ACTIVE schema is the 60D liquidity contract.
-    assert body["schema"]["id"] == "scalp_liquidity_v1"
-    assert body["schema"]["dimension"] == 60
+    assert body["schema"]["id"] == SCHEMA_70D  # canonical scalp_v3 (TASK-11)
+    assert body["schema"]["dimension"] == 70
     assert body["reserved_70d_schema"]["id"] == SCHEMA_70D
     assert len(body["features"]) == 10
     for name in LIQUIDITY_FEATURE_NAMES:
@@ -172,14 +173,13 @@ def test_70d_13_features_endpoint_per_value_index(api_env) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["success"] is True
-    assert body["schema_id"] == "scalp_liquidity_v1"
-    assert body["dimension"] == 60
+    assert body["schema_id"] == SCHEMA_70D
+    assert body["dimension"] == DIMENSION_70D
     assert body["available"] is True
     for idx, name in enumerate(LIQUIDITY_FEATURE_NAMES):
         entry = body["features"][name]
-        # TASK-02: liquidity occupies the LAST 10 slots of the ACTIVE
-        # dimension: 50..59 under the 60D contract (70D: 60..69).
-        assert entry["index"] == 50 + idx
+        # BUG-111: canonical 70D registry placement — liquidity is 60..69.
+        assert entry["index"] == 60 + idx
         assert isinstance(entry["value"], float)
         assert entry["status"] in ("ENABLED", "DEGRADED", "UNAVAILABLE", "DISABLED")
 
@@ -231,8 +231,8 @@ def test_70d_16_live_state_includes_liquidity_section(api_env) -> None:
     assert "liquidity" in body
     liq = body["liquidity"]
     assert liq["status"] in ("ENABLED", "DEGRADED", "UNAVAILABLE", "DISABLED")
-    assert liq["schema"]["id"] == "scalp_liquidity_v1"
-    assert liq["schema"]["dimension"] == 60
+    assert liq["schema"]["id"] == SCHEMA_70D
+    assert liq["schema"]["dimension"] == 70
     if liq["available"]:
         assert len(liq["features"]) == 10
     # news remains an independent section (never degraded by liquidity absence)
@@ -249,8 +249,8 @@ def test_70d_17_reconnect_snapshot_restores_liquidity(api_env) -> None:
     body = resp.json()
     # get_system_state() embeds the liquidity section in the canonical graph
     assert "liquidity" in body
-    assert body["liquidity"]["schema"]["id"] == "scalp_liquidity_v1"
-    assert body["liquidity"]["schema"]["dimension"] == 60
+    assert body["liquidity"]["schema"]["id"] == SCHEMA_70D  # canonical scalp_v3
+    assert body["liquidity"]["schema"]["dimension"] == 70
 
 
 # ---------------------------------------------------------------------------

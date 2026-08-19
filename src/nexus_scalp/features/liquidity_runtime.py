@@ -742,7 +742,11 @@ class LiquidityGovernor:
             # placement (TASK-02 60D: 50..59; 70D mode: 60..69). When the
             # 70D registry names are available and the runtime is 70D they
             # are used; otherwise the active schema's block start wins.
-            liq_start = int(act.get("liquidity_indices", [50, 59])[0])
+            # TASK-11 canonicalization: the runtime schema block is the
+            # canonical 70D contract (scalp_v3) whose liquidity block is
+            # ALWAYS 60..69 (schema_contract canonical names); never
+            # derive from a 60D active-schema dimension.
+            liq_start = int(act.get("liquidity_indices", [60, 69])[0])
             indices = {n: liq_start + i for i, n in enumerate(LIQUIDITY_FEATURE_NAMES)}
             source = self._source.value if self._source is not None else SourceKind.UNAVAILABLE.value
             snap_ts = snap.decision_at.isoformat() if snap.decision_at else None

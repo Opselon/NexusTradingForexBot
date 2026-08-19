@@ -1020,6 +1020,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             model_meta["latency_ms"] = getattr(
                                 engine, "_last_inference_latency_ms", None
                             )
+                            # TASK latency forensics: honest staged breakdown
+                            # (model_forward / feature / e2e / queue) — the
+                            # UI must not conflate these with one number.
+                            model_meta["latency_breakdown"] = getattr(
+                                engine, "_last_latency_breakdown", None
+                            )
+                            model_meta["model_forward_ms"] = getattr(
+                                engine, "_last_model_forward_ms", None
+                            )
+                            model_meta["feature_ms"] = getattr(
+                                engine, "_last_feature_ms", None
+                            )
+                            model_meta["e2e_ms"] = getattr(
+                                engine, "_last_e2e_ms", None
+                            )
                             # Model identity from the champion manager (real
                             # registry provenance; absent -> stays None).
                             champ = getattr(engine, "champion_manager", None)
@@ -1643,15 +1658,34 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     @app.get("/api/diagnostics/health")
     def get_diagnostics_health() -> dict[str, Any]:
-        """Aggregated incident health (spec 35). Counts + recurring patterns."""
+        """Aggregated incident health (spec 35/39). Counts + worker state."""
         try:
             store = _incident_store()
+            worker_health: dict[str, Any] = {"state": "DISABLED"}
+            engine = app.state.engine
+            w = getattr(engine, "_incident_worker", None)
+            if w is not None:
+                from nexus_scalp.incidents.worker import format_incident_worker_status
+
+                worker_health = format_incident_worker_status(w)
+                # Spec 39: distinguish DISABLED / RUNNING / DEGRADED / FAILED
+                state = worker_health.get("state", "UNKNOWN")
+                worker_health["display_state"] = (
+                    "RUNNING"
+                    if state in ("RUNNING", "STARTING")
+                    else "DEGRADED"
+                    if state == "DEGRADED"
+                    else "FAILED"
+                    if state == "FAILED"
+                    else "DISABLED"
+                )
             return serialize_enums(
                 {
                     "available": True,
                     "counts": store.count(),
                     "recurring": store.recurring_fingerprints(limit=10),
                     "by_component": store.stats_by_component(),
+                    "worker": worker_health,
                 }
             )
         except Exception as exc:
@@ -1693,6 +1727,87 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return serialize_enums(payload)
         except Exception as exc:
             _log_err(exc, "lineage failed", endpoint="/api/diagnostics/lineage")
+            return {"available": False, "error": str(exc)[:300]}
+
+    @app.get("/api/diagnostics/forensics")
+    def get_diagnostics_forensics(
+        kind: str = "accounting",
+    ) -> dict[str, Any]:
+        """TASK-13 read-only forensic probes (spec 14/23).
+
+        kind=accounting -> first-divergence audit of zero-PnL ledger rows.
+        kind=timebase  -> live timebase probe (host/DB/broker offsets).
+        Never writes; bounded.
+        """
+        try:
+            db = db_path_for_audit()
+            if kind == "timebase":
+                from nexus_scalp.incidents.timebase import TimebaseProbe
+
+                return serialize_enums(
+                    {"available": True, "kind": "timebase", **TimebaseProbe(db).run()}
+                )
+            from nexus_scalp.incidents.accounting import AccountingForensicsEngine
+
+            result = AccountingForensicsEngine(db).audit_zero_pnl_ledger(max_rows=50)
+            return serialize_enums(
+                {
+                    "available": True,
+                    "kind": "accounting",
+                    "checked_records": result["checked_records"],
+                    "classification_counts": result["classification_counts"],
+                    "zero_outcome_classification_counts": result["zero_outcome_classification_counts"],
+                    "recovery_candidate_count": result["recovery_candidate_count"],
+                }
+            )
+        except Exception as exc:
+            _log_err(exc, "diagnostics forensics failed", endpoint="/api/diagnostics/forensics")
+            return {"available": False, "error": str(exc)[:300]}
+
+    @app.get("/api/diagnostics/incidents/{incident_id}/report")
+    def get_diagnostics_incident_report(incident_id: str) -> dict[str, Any]:
+        """TASK-13: incident report export (JSON+MD paths, secret-masked)."""
+        try:
+            from nexus_scalp.incidents.reports import incident_json, incident_markdown
+
+            store = _incident_store()
+            inc = store.get(incident_id)
+            if inc is None:
+                return {"available": False, "error": f"incident {incident_id} not found"}
+            return serialize_enums(
+                {
+                    "available": True,
+                    "incident_id": incident_id,
+                    "json": incident_json(inc),
+                    "markdown": incident_markdown(inc),
+                }
+            )
+        except Exception as exc:
+            _log_err(exc, "incident report failed", endpoint="/api/diagnostics/incidents/{id}/report")
+            return {"available": False, "error": str(exc)[:300]}
+
+    @app.get("/api/diagnostics/incidents/{incident_id}/zip")
+    def get_diagnostics_incident_zip(incident_id: str) -> dict[str, Any]:
+        """TASK-13: evidence ZIP export (spec 46). Secret-masked always."""
+        try:
+            from nexus_scalp.incidents.reports import export_zip_bundle
+
+            store = _incident_store()
+            inc = store.get(incident_id)
+            if inc is None:
+                return {"available": False, "error": f"incident {incident_id} not found"}
+            zip_path = export_zip_bundle(inc, str(Path.cwd() / "artifacts"))
+            return serialize_enums(
+                {
+                    "available": True,
+                    "incident_id": incident_id,
+                    "zip_path": str(zip_path),
+                    "size_bytes": zip_path.stat().st_size if zip_path.exists() else 0,
+                    "note": "all payloads secret-masked (spec 47)",
+                }
+            )
+        except Exception as exc:
+            _log_err(exc, "incident zip failed", endpoint="/api/diagnostics/incidents/{id}/zip")
             return {"available": False, "error": str(exc)[:300]}
 
     @app.get("/api/diagnostics/search")
@@ -3152,7 +3267,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 detail="PyTorch runtime is temporarily unavailable on this host.",
             ) from import_err
 
-        started = time.perf_counter()
+        # TASK latency forensics: staged honest timing (monotonic).
+        from nexus_scalp.features.latency_tracer import LatencyStage, LatencyTracer
+
+        _trace = LatencyTracer()
+        _trace.mark(LatencyStage.T0_MARKET_EVENT)
+        _trace.mark(LatencyStage.T1_FEATURE_START)
+        _trace.mark(LatencyStage.T2_FEATURE_DONE)
 
         try:
             if engine is not None and getattr(engine, "_bundle", None) is not None:
@@ -3161,11 +3282,20 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     bundle = engine._bundle
                 x_np = np.array(sanitized, dtype=np.float32).reshape(1, -1)
                 x_np = bundle.scaler.transform_50d(x_np)
+                _trace.mark(LatencyStage.T3_SCALER_DONE)
                 x = torch.tensor(x_np, dtype=torch.float32)
                 x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+                _trace.mark(LatencyStage.T4_TENSOR_DONE)
                 bundle.model.eval()
-                with torch.inference_mode():
-                    probs_tensor = bundle.model(x)
+                _trace.mark(LatencyStage.T5_MODEL_START)
+                _prior_threads = torch.get_num_threads()
+                torch.set_num_threads(1)
+                try:
+                    with torch.inference_mode():
+                        probs_tensor = bundle.model(x)
+                finally:
+                    torch.set_num_threads(_prior_threads)
+                _trace.mark(LatencyStage.T6_MODEL_DONE)
                 model_source = "LIVE_BUNDLE"
             else:
                 # Engine offline: instantiate a fresh net so the endpoint still validates
@@ -3176,8 +3306,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 model.eval()
                 x = torch.tensor([sanitized], dtype=torch.float32)
                 x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
-                with torch.inference_mode():
-                    probs_tensor = model(x)
+                _trace.mark(LatencyStage.T4_TENSOR_DONE)
+                _trace.mark(LatencyStage.T5_MODEL_START)
+                _prior_threads = torch.get_num_threads()
+                torch.set_num_threads(1)
+                try:
+                    with torch.inference_mode():
+                        probs_tensor = model(x)
+                finally:
+                    torch.set_num_threads(_prior_threads)
+                _trace.mark(LatencyStage.T6_MODEL_DONE)
                 model_source = "FRESH_INSTANCE"
         except HTTPException:
             raise
@@ -3190,7 +3328,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 detail="Model inference could not be completed.",
             ) from infer_err
 
-        latency_ms = (time.perf_counter() - started) * 1000.0
+        _trace.mark(LatencyStage.T7_DECODE_DONE)
+        _trace.mark(LatencyStage.T8_CONFIDENCE_DONE)
+        _trace.mark(LatencyStage.T10_PUBLISHED)
+        latency_ms = _trace.e2e_ms()
+        latency_breakdown = _trace.to_dict()
 
         probs_list = [float(p) for p in probs_tensor.detach().cpu().numpy().flatten().tolist()]
         while len(probs_list) < 4:
@@ -3213,6 +3355,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "ai_wait": ai_wait,
             "probabilities": probs_list,
             "predicted_class_index": argmax_idx,
+            "latency_breakdown": latency_breakdown,
+            "model_forward_ms": latency_breakdown.get("model_ms"),
+            "feature_ms": latency_breakdown.get("feature_ms"),
+            "e2e_ms": latency_breakdown.get("e2e_ms"),
             "predicted_label": labels.get(argmax_idx, "UNKNOWN"),
             "confidence": probs_list[argmax_idx],
             "latency_ms": round(latency_ms, 3),
@@ -3558,7 +3704,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             if store is not None:
                 store.push(payload)
             return serialize_enums(payload)
-        except Exception as exc:  # noqa: BLE001 - never a silent 500
+        except Exception as exc:
             _log_err(exc, "Debug snapshot failed", endpoint="/api/debug/state")
             return {
                 "snapshot_id": None,
@@ -4347,6 +4493,49 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             log_web_error(logger, "/api", None, e, context={"msg": "Forensic health failed"})
             return _err("INTERNAL_ERROR")
 
+    @app.get("/api/forensics/deploy-gate")
+    def get_forensic_deploy_gate() -> dict[str, Any]:
+        """TASK-12: canonical deploy gate (§9).
+
+        Exposes overall_status, deployment_allowed, blocking_reasons,
+        health_snapshot_id, commit_sha and checks. Read-only; never mutates.
+        Engine failure -> FORENSIC_ENGINE_UNAVAILABLE (never silent pass).
+        """
+        try:
+            from nexus_scalp.forensics import (
+                ForensicHealthEngine,
+                load_last_gate_result,
+                run_deploy_gate,
+            )
+
+            engine = ForensicHealthEngine()
+            result = run_deploy_gate(engine)
+            payload = result.to_dict()
+            payload["deployment_allowed"] = payload["decision"] in ("ALLOW", "ALLOW_WITH_WARNING")
+            payload["blocking_reasons"] = payload["blocking_checks"]
+            # degraded/unknown review conditions also surface as reasons
+            if payload["decision"] == "REVIEW_REQUIRED":
+                payload["blocking_reasons"] = [
+                    f"{c['check_id']} [{c['status']}]" for c in engine.dashboard()["rows"].values()
+                    if c["status"] in ("DEGRADED", "UNKNOWN")
+                ][:20]
+            last = load_last_gate_result()
+            return serialize_enums({"available": True, "gate": payload, "last_gate": last})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Deploy gate failed"})
+            return serialize_enums(
+                {
+                    "available": True,
+                    "gate": {
+                        "decision": "FORENSIC_ENGINE_UNAVAILABLE",
+                        "overall_status": "UNKNOWN",
+                        "deployment_allowed": False,
+                        "blocking_reasons": [f"gate engine unavailable: {e!r}"],
+                        "engine_error": str(e),
+                    },
+                }
+            )
+
     @app.post("/api/research/discover")
     def trigger_research_discovery() -> dict[str, Any]:
         """Builds the dataset + runs bounded candidate discovery.
@@ -4845,6 +5034,18 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             if not artifact_path or not _ShadowPath(artifact_path).exists():
                 return {"available": False, "reason": "CHALLENGER_ARTIFACT_NOT_FOUND"}
 
+            lifecycle_status = str(candidate.get("lifecycle_status", "") or "")
+            # TASK-14 hardening #1: ONLY a CHALLENGER row (already filtered
+            # above) maps to VALIDATED_CANDIDATE. Any other status — REJECTED,
+            # ARCHIVED, INVALID, CANDIDATE, empty — must NOT be forced into
+            # the validated contract. The previous expression forced ANY
+            # non-"VALIDATED" status string to VALIDATED_CANDIDATE
+            # (defense-in-depth gap; rows were pre-filtered CHALLENGER so no
+            # exploit was reachable, but a registry bug could have slipped a
+            # non-validated row into shadow).
+            validation_result = (
+                "VALIDATED_CANDIDATE" if lifecycle_status == "CHALLENGER" else lifecycle_status
+            )
             contract = Shadow70CandidateContract(
                 model_id=candidate.get("model_id", ""),
                 model_version=candidate.get("model_version", ""),
@@ -4853,9 +5054,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 feature_schema_hash="",  # filled from manifest below
                 scaler_hash="",
                 training_dataset_id=candidate.get("training_run_id", ""),
-                validation_result=str(candidate.get("lifecycle_status", ""))
-                if "VALIDATED" in str(candidate.get("lifecycle_status", ""))
-                else "VALIDATED_CANDIDATE",
+                validation_result=validation_result,
                 artifact_hash=candidate.get("artifact_fingerprint", ""),
                 artifact_path=artifact_path,
                 scaler_path=scaler_path,
@@ -5923,7 +6122,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
             return {
                 "success": False,
-                "schema_id": "scalp_v4",
+                "schema_id": "scalp_v3",
                 "dimension": 70,
                 "timestamp": None,
                 "source": "UNAVAILABLE",
