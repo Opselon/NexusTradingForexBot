@@ -143,6 +143,26 @@ engine loads the Champion from the operator-owned artifact path.
 Status: 🟢 VERIFIED (2026-08-18 TASK-5 experiment: 4 candidate cells,
 all REJECTED, Champion hash unchanged).
 
+## INV-018 — Migration-owned tables must NOT be added to the schema manifest (TASK-9)
+The baseline skeleton builder (`_create_baseline_tables`) creates every
+manifest-listed table as an `id INTEGER PRIMARY KEY` skeleton on fresh DBs.
+Adding a migration-created table (e.g. release_metadata) to the manifest
+makes the migration's `CREATE INDEX ... ON <table>(key)` fail on fresh
+installs (`no such column: key`, BUG-108 class). Migration-owned tables
+stay OUT of the manifest; their full DDL lives in the migration only.
+Status: VERIFIED (2026-08-19 — my fix + TASK-8's column-repair fix both
+proven; fresh v0->v7 migration green).
+
+## INV-019 — Release artifacts/migrations carry registry-derived schema identity (TASK-9)
+The release manifest (feature_schema, supported_model_schemas,
+db_schema_version, required_migrations) and the runtime version block
+(/api/status versioning, nexus version --json) derive from the canonical
+schema registry + migration registry — never hardcoded. Any contradiction
+(app/web/db/model) is reported as VERSION_INCONSISTENCY, never silently
+ignored. Web bundle identity is the build stamp OR a live content-hash of
+the ACTUAL served assets (stale bundled app.js cannot hide).
+Status: VERIFIED (2026-08-19, TEST-REL-16/27/30).
+
 ## INV-013 — Database evolution is migration-controlled (TASK-10)
 Schema changes (tables/columns/indexes) MUST be declared as versioned,
 checksummed migrations in `src/nexus_scalp/database/registry.py` and applied

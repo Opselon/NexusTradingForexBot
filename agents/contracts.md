@@ -42,6 +42,9 @@
 | ANOMALY_EVENT | v1 (anomaly-v1) | ACTIVE | intelligence/behavior.py | reporting, web, telegram |
 | DB_MIGRATION | v1 | ACTIVE | database/engine.py | startup, cli, updater, health, web |
 | SCHEMA_MANIFEST | v1 | ACTIVE | database/manifest.py | database/engine.py, cli, health |
+| MODEL_RELEASE | v1 | ACTIVE | release/model_artifacts.py | release pipeline, cli model-artifacts, diagnostics (TASK-9) |
+| VERSION_CONSISTENCY | v1 | ACTIVE | release/versioning.py | web /api/status, cli version --json, health (TASK-9) |
+| FORENSIC_HEALTH | v1 | ACTIVE | forensics/engine.py | CLI (`nexus forensic`), web (`/api/forensics/health`), release preflight |
 
 ## Contract detail template
 

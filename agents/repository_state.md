@@ -166,3 +166,34 @@ Update this file additively after substantial work (new modules, model changes, 
   pool overlays from real snapshot pools.
 - Tests: tests/unit/test_liquidity_runtime_integration_phase18.py (30),
   tests/integration/test_liquidity_api.py (9); 99 liquidity tests total pass.
+
+## Snapshot 2026-08-19 (TASK-9 — 70D production release layer, Hermes-ProdRel)
+
+- NEW `src/nexus_scalp/release/model_artifacts.py` — artifact identity +
+  ACTIVE/LEGACY/RETAINED/ARCHIVABLE classification + 70D dependency check
+  (MODEL_NOT_RUNTIME_COMPATIBLE, no silent fallback). CLI:
+  `nexus model-artifacts [--json]`.
+- NEW `src/nexus_scalp/release/versioning.py` — RuntimeVersionBlock:
+  app/commit/web_bundle(hashed)/feature_schema/db_schema with
+  VERSION_INCONSISTENCY drift verdict. Wired into `/api/status`
+  (`versioning` block) + `nexus version --json`.
+- RELEASE MANIFEST schema coverage: feature_schema/supported_model_
+  schemas/web_bundle_version/db_schema_version/required_migrations all
+  registry-derived (BUG-109 fixed: was hardcoded scalp_v1/50D).
+- MIGRATION: AUDIT-0007-release-metadata (audit v6 -> v7) — additive
+  release_metadata key/value table; tested on a copy of the real
+  artifacts/audit.db (ledger/PnL unchanged, integrity ok). INV-018
+  documents the manifest/baseline interaction (BUG-108 class fix).
+- TESTS: TEST-REL-01..30 acceptance now executable —
+  test_release_{model_artifacts,versioning,manifest,migration_0007,
+  acceptance}_phase19.py (42 new tests) + phase17 update suite (42) +
+  phase18 migration suite (43) all green. Full release suite: 84.
+- DOCS: docs/70D_PRODUCTION_RELEASE_FORENSICS.md,
+  docs/70D_INSTALLATION_COMPATIBILITY.md, docs/70D_PRODUCTION_DEPLOYMENT.md,
+  docs/70D_UPDATE_AND_MIGRATION.md.
+- REGISTRIES: contracts MODEL_RELEASE v1 + VERSION_CONSISTENCY v1,
+  INV-018/019, CHG-0013 VERIFIED, BUG-109 appended, taskboard TASK-9
+  VERIFIED. Schema versions: audit=7, news=2, candle_intel=2.
+- Parallel-session 70D liquidity working tree (liquidity_engine.py,
+  scalp_v4 registration, liquidity_features_enabled flag) remains
+  UNTOUCHED and read-only for this task.

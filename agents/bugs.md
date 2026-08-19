@@ -4586,3 +4586,31 @@ Category: SWEEP · CAUSALITY
   matching the measured nearest-pool distance distribution: p95 2.27 ATR).
 - Tests: TEST-LIQ-OPT-16 (breakout not sweep), TEST-LIQ-OPT-04 (causality
   inheritance), new relevance-gate unit in test_liquidity_optimization_phase19.py.
+
+## BUG-109 — Release Manifest Feature Schema Was Hardcoded (scalp_v1/50D) — 70D-Era Release Contract Drift Class (2026-08-19 TASK-9)
+
+- Category: RELEASE / VERSION_DRIFT
+- Symptom: `release/packaging.py::generate_manifest` wrote
+  `"feature_schema": "scalp_v1"` and `"model_compatibility":
+  "scalp_v1 / 50D"` unconditionally (no registry lookup). Any future
+  release built from a tree whose canonical schema advanced (e.g.
+  scalp_v4/70D) would produce a SELF-CONTRADICTORY release contract:
+  the manifest would claim scalp_v1 while the bundle ships the 70D
+  schema registry and supported_model_schemas — exactly the
+  VERSION_INCONSISTENCY class the brief forbids (v9 backend + v8 Web +
+  v7 DB + v10 model must be diagnosable).
+- Root cause: `generate_manifest` used a scalar constant instead of the
+  canonical schema registry (features/schema.py) + migration registry.
+- Fix (TASK-9): manifest now derives feature_schema from the registry
+  (stamped build-info wins when it resolves, else ACTIVE_SCHEMA_ID),
+  emits feature_schema_dimension, supported_model_schemas (every
+  registered schema id incl. scalp_v4), web_bundle_version,
+  db_schema_version (max expected across domains) and required_
+  migrations (all migration ids). No field is ever hardcoded.
+- Proof: `nexus_scalp.release.packaging._manifest_*` — registry-derived
+  values; unknown stamped schema falls back to ACTIVE_SCHEMA_ID.
+- Tests: tests/unit/test_release_manifest_phase19.py (TEST-REL-27,
+  5 tests) — validates schema coverage + round-trip verify.
+- Related: BUG-108 (AUDIT-0007 fresh-DB failure) fixed in the same
+  TASK-9 session (manifest/baseline interaction); both closed the
+  fresh-install + release-contract classes.

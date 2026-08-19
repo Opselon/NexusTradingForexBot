@@ -142,6 +142,48 @@ Status: VERIFIED
 
 
 ```text
+CHANGE-ID: CHG-0013
+Agent: Hermes-ProdRel
+Role: Production Deployment / Migration / Runtime Reliability Engineer
+Task: TASK-09-70D-PRODUCTION-RELEASE
+Scope: 70D production release layer — model artifact release packaging +
+       70D/60D compatibility classification (ACTIVE/LEGACY/RETAINED/
+       ARCHIVABLE) + liquidity-producer dependency check
+       (MODEL_NOT_RUNTIME_COMPATIBLE, no silent fallback);
+       runtime version-consistency block (app/commit/web_bundle_hash/
+       feature_schema/db_schema; VERSION_INCONSISTENCY on drift);
+       release manifest schema coverage (registry-derived feature_schema,
+       supported_model_schemas, web_bundle_version, db_schema_version,
+       required_migrations); AUDIT-0007 release_metadata migration;
+       TEST-REL-01..30 acceptance suite; 3 install/deploy/update docs
+Affected files: release/model_artifacts.py (new), release/versioning.py
+       (new), release/packaging.py, database/registry.py,
+       database/manifest.py, web/server.py, cli/main.py,
+       tests/unit/test_release_{model_artifacts,versioning,manifest,
+       migration_0007,acceptance}_phase19.py, docs/70D_{PRODUCTION_RELEASE_
+       FORENSICS,INSTALLATION_COMPATIBILITY,PRODUCTION_DEPLOYMENT,UPDATE_AND_
+       MIGRATION}.md, docs/agent_handoffs/TASK-09-70D-PRODUCTION-RELEASE.md
+Affected functions/classes: generate_manifest (+_manifest_* helpers),
+       RuntimeVersionBlock, compute_artifact_identity/classify_artifact/
+       check_runtime_compatibility/summarize_artifacts,
+       _audit_0007_release_metadata, _runtime_version_block, version_cmd,
+       model_artifacts_cmd
+Contracts touched: MODEL_RELEASE v1 (new), VERSION_CONSISTENCY v1 (new),
+       UPDATE_SYSTEM v1 (manifest schema coverage), DB_MIGRATION v1
+       (AUDIT-0007 additive release_metadata)
+Runtime paths touched: /api/status versioning block (read-only addition);
+       nexus version --json (additive); startup migration chain includes
+       AUDIT-0007 (v6->v7); CLI model-artifacts (read-only)
+Owners affected: all release consumers, web UI, DB owners (audit domain)
+Risk: MEDIUM
+Dependencies: TASK-9 update engine, TASK-10 migration engine, TASK-6 load
+       gate, canonical schema registry (scalp_v1/v2/v4/liquidity)
+Required tests: TEST-REL-01..30 (phase19 suites), TEST-UP-01..35, TEST-DBM
+Status: VERIFIED
+```
+
+
+```text
 CHANGE-ID: CHG-0011
 Agent: Hermes-Research
 Role: Strategy Research / Discovery / Validation Forensic Engineer
