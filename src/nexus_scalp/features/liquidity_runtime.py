@@ -525,11 +525,14 @@ class LiquidityGovernor:
             # (bars computed from engine state without a live broker source) and
             # must NOT collapse into a single healthy boolean.
             if self._last_snapshot is not None:
-                calculation_status = "SUCCESS" if self._last_error is None or (
+                if self._last_error is None or (
                     self._last_success_at is not None
                     and self._last_error_at is not None
                     and self._last_success_at >= self._last_error_at
-                ) else "FAILED"
+                ):
+                    calculation_status = "SUCCESS"
+                else:
+                    calculation_status = "FAILED"
             else:
                 calculation_status = "NOT_RUN" if self._last_error is None else "FAILED"
             source_status = source  # LIVE_MARKET_STATE | REPLAY | UNAVAILABLE
