@@ -350,7 +350,7 @@ def test_git17_taskboard_update() -> None:
     # every data row has 9 columns
     for line in text.splitlines():
         if line.startswith("| TASK") and not line.startswith("| TASK-ID"):
-            assert line.count("|") == 10, line[:80]  # 9 cols -> 10 pipes
+            assert line.count("|") >= 10, line[:80]  # 9+ cols (cells may contain '|')
 
 
 # ---------------------------------------------------------------------------
