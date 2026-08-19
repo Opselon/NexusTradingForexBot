@@ -388,7 +388,10 @@ class TestCompatibility:
         s2 = FEATURE_SCHEMAS.resolve("scalp_v2")
         s3 = FEATURE_SCHEMAS.resolve("scalp_v3")
         assert s2.dimension == 60
-        assert s3.dimension == 350
+        # TASK-03-70D-PARITY: scalp_v3 is the CANONICAL 70D contract (Base
+        # 0..49 | News 50..59 | Liquidity 60..69); the earlier forward-declared
+        # 350D research contract never materialized (no artifact ever existed).
+        assert s3.dimension == 70
 
     def test_dimension_mismatch_rejected(self, tmp_path):
         path = tmp_path / "bad.pt"
@@ -409,6 +412,125 @@ class TestCompatibility:
         # 10-dim scaler vs 50-dim declared contract: mismatch must be False.
         assert scaler_compatibility(scaler, 50) is False
         assert scaler_compatibility(scaler, 10) is True
+
+    # ------------------------------------------------------------------
+    # TEST-AIHUB-01..06 / 11 / 12 / 13 — AI Hub tensor compatibility
+    # (BUG-110: class count must come from the classifier head, never from
+    # input_projection whose shape[0] is the hidden width 128)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_scalpnet_artifact(path, num_features=50, num_classes=4) -> None:
+        import torch
+
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        net = ScalpNet(num_features=num_features, num_classes=num_classes)
+        torch.save({k: v.clone() for k, v in net.state_dict().items()}, path)
+
+    def test_aihub_01_valid_50d_4class_artifact_passes(self, tmp_path):
+        """A REAL ScalpNet 50D/4-class artifact (hidden 128) must be VALID."""
+        p = tmp_path / "model.pt"
+        self._make_scalpnet_artifact(p, num_features=50, num_classes=4)
+        info = inspect_artifact(
+            p, model_id="m", feature_schema_id="scalp_v1",
+            feature_dimension=50, num_classes=4,
+        )
+        assert info.integrity_ok is True
+        assert info.actual_input_dimension == 50
+        assert info.actual_output_classes == 4
+        assert info.actual_hidden_dimension == 128
+        assert info.class_head_name == "classifier.weight"
+
+    def test_aihub_02_class_count_from_head_not_hidden_width(self, tmp_path):
+        """Regression: the verifier must NEVER report hidden=128 as classes."""
+        p = tmp_path / "model.pt"
+        self._make_scalpnet_artifact(p, num_features=50, num_classes=4)
+        info = inspect_artifact(
+            p, model_id="m", feature_schema_id="scalp_v1",
+            feature_dimension=50, num_classes=4,
+        )
+        assert info.actual_output_classes == 4  # NOT 128
+        assert info.actual_hidden_dimension == 128  # the 128 lives here
+
+    def test_aihub_03_70d_4class_artifact_loads(self, tmp_path):
+        """A 70D/4-class ScalpNet must pass when declared as scalp_v3/70D."""
+        p = tmp_path / "model70.pt"
+        self._make_scalpnet_artifact(p, num_features=70, num_classes=4)
+        info = inspect_artifact(
+            p, model_id="m70", feature_schema_id="scalp_v3",
+            feature_dimension=70, num_classes=4,
+        )
+        assert info.integrity_ok is True
+        assert info.actual_input_dimension == 70
+        assert info.actual_output_classes == 4
+
+    def test_aihub_04_wrong_scaler_dimension_rejected(self, tmp_path):
+        """50D model + 10D scaler = INVALID (never silently proceeds)."""
+        import numpy as np
+
+        p = tmp_path / "model.pt"
+        self._make_scalpnet_artifact(p, num_features=50, num_classes=4)
+        scaler = tmp_path / "model.scaler.npz"
+        np.savez(scaler, mean=np.zeros(10), std=np.ones(10))
+        info = inspect_artifact(
+            p, scaler_path=str(scaler), model_id="m",
+            feature_schema_id="scalp_v1", feature_dimension=50, num_classes=4,
+        )
+        assert info.integrity_ok is False
+        assert info.scaler_dimension == 10
+        assert info.integrity_reason == "SCALER_DIMENSION_MISMATCH"
+
+    def test_aihub_05_class_count_mismatch_rejected(self, tmp_path):
+        """A genuine 6-class artifact is INVALID against the 4-class contract."""
+        p = tmp_path / "model6.pt"
+        self._make_scalpnet_artifact(p, num_features=50, num_classes=6)
+        info = inspect_artifact(
+            p, model_id="m", feature_schema_id="scalp_v1",
+            feature_dimension=50, num_classes=4,
+        )
+        assert info.integrity_ok is False
+        assert info.actual_output_classes == 6
+        assert info.integrity_reason == "CLASS_COUNT_MISMATCH"
+
+    def test_aihub_06_schema_hash_mismatch_rejected(self, tmp_path):
+        """Schema-id mismatch (60D artifact under 50D contract) = INVALID."""
+        p = tmp_path / "model60.pt"
+        self._make_scalpnet_artifact(p, num_features=60, num_classes=4)
+        info = inspect_artifact(
+            p, model_id="m", feature_schema_id="scalp_v1",
+            feature_dimension=50, num_classes=4,
+        )
+        assert info.integrity_ok is False
+        assert info.actual_input_dimension == 60
+        assert info.integrity_reason == "DIMENSION_MISMATCH"
+
+    def test_aihub_12_dry_run_inference_tensor_shape(self, tmp_path):
+        """Dry-run inference on the loaded artifact yields (1,4) finite logits."""
+        import torch
+
+        p = tmp_path / "model.pt"
+        self._make_scalpnet_artifact(p, num_features=50, num_classes=4)
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        net = ScalpNet(num_features=50, num_classes=4)
+        net.load_state_dict(torch.load(p, map_location="cpu", weights_only=True))
+        net.eval()
+        with torch.no_grad():
+            x = torch.zeros(1, 50)
+            logits = net(x, return_logits=True)
+        assert tuple(logits.shape) == (1, 4)
+        assert bool(torch.isfinite(logits).all())
+
+    def test_aihub_13_invalid_tensor_shape_explicit_error(self, tmp_path):
+        """A corrupt/garbage artifact yields integrity_ok False, never a crash."""
+        p = tmp_path / "garbage.pt"
+        p.write_bytes(b"not a torch checkpoint")
+        info = inspect_artifact(
+            p, model_id="m", feature_schema_id="scalp_v1",
+            feature_dimension=50, num_classes=4,
+        )
+        assert info.integrity_ok is False
 
 
 # =============================================================================

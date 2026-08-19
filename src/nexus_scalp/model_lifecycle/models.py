@@ -161,6 +161,13 @@ class ModelArtifactInfo(BaseModel):
     scaler_hash: str = Field(default="")
     integrity_ok: bool = Field(default=False)
     checked_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # --- AI Hub tensor diagnostics (populated by the integrity inspector) ---
+    actual_input_dimension: int | None = Field(default=None)
+    actual_output_classes: int | None = Field(default=None)
+    actual_hidden_dimension: int | None = Field(default=None)
+    class_head_name: str = Field(default="classifier.weight")
+    scaler_dimension: int | None = Field(default=None)
+    integrity_reason: str = Field(default="")
 
     @field_validator("checked_at")
     @classmethod

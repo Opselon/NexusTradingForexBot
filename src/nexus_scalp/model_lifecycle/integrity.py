@@ -97,14 +97,110 @@ def inspect_artifact(
         logger.error("[MODEL] event=INTEGRITY_FAILURE model_id=%s", model_id)
         return info
 
-    input_shape = state_dict.get("input_projection.weight")
+    input_shape = state_dict.get("input_projection.weight") or state_dict.get(
+        "projection.weight"
+    )
     if not input_shape:
         return info
     actual_dim = int(input_shape[1])
-    actual_out = int(input_shape[0])
 
-    ok = actual_dim == dim and actual_out == num_classes and bool(info.artifact_hash)
+    # =====================================================================
+    # CLASS-HEAD PROBE (BUG-110): the class count MUST come from the
+    # classifier head (the final Linear), never from input_projection,
+    # whose shape[0] is the HIDDEN width (128) — reading it as classes
+    # produced the false "actual_classes=128 / expected_classes=4"
+    # INTEGRITY_FAILURE on every valid ScalpNet v1 artifact.
+    # Head candidates resolved in canonical priority order:
+    #   classifier.weight > head.2.weight > head.1.weight > fc_out.weight
+    # and verified against every 2D weight in the state_dict (any tensor
+    # whose last axis carries the class logits). Never pads/truncates.
+    # =====================================================================
+    head_candidates = [
+        "classifier.weight",
+        "head.3.weight",  # TCNAttentionV1 final layer (Linear(hidden//2, C))
+        "head.2.weight",
+        "head.1.weight",
+        "head.0.weight",  # TCNAttentionV1 first head layer (not a class head)
+        "fc_out.weight",
+    ]
+    head_key = next((k for k in head_candidates if k in state_dict), None)
+    actual_out: int | None = None
+    if head_key is not None:
+        # head.0.weight is the FIRST head layer (hidden->hidden/2) — its rows
+        # are a hidden width, not classes. Only treat it as a class head when
+        # it is the ONLY head-scale tensor (defensive fallback).
+        rows = int(state_dict[head_key][0])
+        if head_key == "head.0.weight" and any(
+            k.startswith("head.") and k != "head.0.weight" and "weight" in k
+            for k in state_dict
+        ):
+            head_key = None
+        else:
+            actual_out = rows
+    else:
+        # Fallback: find any 2D weight whose out count is NOT a hidden width.
+        two_dim_weights = [k for k, v in state_dict.items() if len(v) == 2]
+        candidate_outs: set[int] = set()
+        for k in two_dim_weights:
+            rows = int(state_dict[k][0])
+            if rows <= 64:
+                candidate_outs.add(rows)
+        if len(candidate_outs) == 1:
+            actual_out = next(iter(candidate_outs))
+
+    if actual_out is None:
+        logger.error(
+            "[MODEL] event=INTEGRITY_FAILURE model_id=%s reason=CLASS_HEAD_NOT_FOUND",
+            model_id,
+            expected_dim=dim,
+            expected_classes=num_classes,
+        )
+        return info.model_copy(
+            update={
+                "actual_input_dimension": actual_dim,
+                "actual_output_classes": None,
+                "actual_hidden_dimension": (
+                    int(input_shape[0]) if input_shape and len(input_shape) == 2 else None
+                ),
+                "integrity_ok": False,
+                "integrity_reason": "CLASS_HEAD_NOT_FOUND",
+            }
+        )
+
+    hidden_dim = int(input_shape[0]) if input_shape and len(input_shape) == 2 else None
+
+    # Scaler dimension is a REAL gate alongside model tensors.
+    scaler_dim: int | None = None
+    if scaler_path:
+        sp = Path(scaler_path)
+        if sp.exists():
+            try:
+                import numpy as np
+
+                data = np.load(sp)
+                mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
+                std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
+                if mean.shape[0] == std.shape[0]:
+                    scaler_dim = int(mean.shape[0])
+            except Exception as e:
+                logger.warning("[MODEL] scaler dimension inspection failed", error=str(e))
+
+    ok = (
+        bool(info.artifact_hash)
+        and actual_dim == dim
+        and actual_out == num_classes
+        and (scaler_dim is None or scaler_dim == dim)
+    )
+    reason = ""
     if not ok:
+        if not info.artifact_hash:
+            reason = "ARTIFACT_HASH_MISSING"
+        elif actual_dim != dim:
+            reason = "DIMENSION_MISMATCH"
+        elif actual_out != num_classes:
+            reason = "CLASS_COUNT_MISMATCH"
+        elif scaler_dim is not None and scaler_dim != dim:
+            reason = "SCALER_DIMENSION_MISMATCH"
         logger.error(
             "[MODEL] event=INTEGRITY_FAILURE (compatibility)",
             model_id=model_id,
@@ -112,8 +208,21 @@ def inspect_artifact(
             actual_dim=actual_dim,
             expected_classes=num_classes,
             actual_classes=actual_out,
+            head_key=head_key,
+            scaler_dimension=scaler_dim,
+            reason=reason,
         )
-    info = info.model_copy(update={"integrity_ok": ok})
+    info = info.model_copy(
+        update={
+            "integrity_ok": ok,
+            "actual_input_dimension": actual_dim,
+            "actual_output_classes": actual_out,
+            "actual_hidden_dimension": hidden_dim,
+            "class_head_name": head_key or "",
+            "scaler_dimension": scaler_dim,
+            "integrity_reason": reason,
+        }
+    )
     return info
 
 
