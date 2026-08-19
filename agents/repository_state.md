@@ -152,3 +152,17 @@ Update this file additively after substantial work (new modules, model changes, 
   no CI workflow runs on push-main (release.yml targets tags).
 - Next milestone: TASK-01 coherent commit (fix 5 tests -> commit foundation alone),
   then TASK-02/03/04 chain; TASK-07 research still BLOCKED_ON_FROZEN_LIQUIDITY_VERSION.
+
+## Snapshot 2026-08-19 (TASK-02-70D-INTEGRATION)
+- 70D integration contract `scalp_v4` registered (BASE 0..49 | FAMILY 50..59
+  | LIQUIDITY 60..69); `scalp_v3`/350D untouched.
+- New `features/liquidity_runtime.py` (LiquidityGovernor + build_70d_vector +
+  resolve_model_compatibility). Live engine computes the 10 liquidity values
+  on new-bar cadence (information-only).
+- New API: GET /api/liquidity/state, GET /api/liquidity/features,
+  POST /api/liquidity/toggle; canonical /api/status + /api/live/state embed a
+  `liquidity` section (SSE carries it).
+- UI: Liquidity Intelligence tab (status/schema/values/toggle) + chart
+  pool overlays from real snapshot pools.
+- Tests: tests/unit/test_liquidity_runtime_integration_phase18.py (30),
+  tests/integration/test_liquidity_api.py (9); 99 liquidity tests total pass.

@@ -113,6 +113,30 @@ def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _liquidity_state_section(engine: Any) -> dict[str, Any]:
+    """Canonical liquidity section embedded in /api/status + live/state + SSE.
+
+    Real state only; independent of news (brief 5). On any failure the
+    section reports UNAVAILABLE with a reason — never fabricated numbers.
+    """
+    try:
+        gov = getattr(engine, "liquidity_governor", None) if engine is not None else None
+        if gov is None:
+            from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+            gov = LiquidityGovernor(enabled=False)
+        return gov.report()
+    except Exception as e:
+        log_web_error(logger, "/api", None, e, context={"msg": "Liquidity state section failed"})
+        return {
+            "enabled": False,
+            "available": False,
+            "status": "UNAVAILABLE",
+            "causal_state": "INVALID",
+            "reason": "LIQUIDITY_STATE_ERROR",
+        }
+
+
 class ServerState:
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -1289,6 +1313,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "ai_reason": ai_reason,
             "predictions": predictions_payload,
             "algo_config": algo_config_data,
+            "liquidity": _liquidity_state_section(app.state.engine),
             "visual_overlays": {
                 "rectangles": rectangles,
                 "bos_lines": real_smc_overlays.get("bos_lines", []),
@@ -1421,6 +1446,150 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             }
 
     # REST APIs: Trading Rules
+
+    # =====================================================================
+    # TASK-12: INCIDENT RESPONSE & FORENSIC DIAGNOSTICS (spec 35/36/37/44)
+    # ---------------------------------------------------------------------
+    # /api/diagnostics/incidents          incident list + counts
+    # /api/diagnostics/incidents/{id}     one incident (full record)
+    # /api/diagnostics/health             aggregated incident health
+    # /api/diagnostics/lineage            value lineage / one-click trace
+    # /api/diagnostics/search             deterministic bounded search
+    # All read-only; no trading mutation. Reuses the existing diagnostics
+    # surface (no competing diagnostic APIs).
+    # ---------------------------------------------------------------------
+
+    def _incident_store() -> Any:
+        from nexus_scalp.incidents.store import IncidentStore
+
+        db = db_path_for_audit()
+        return IncidentStore(db_path=db)
+
+    def db_path_for_audit() -> str:
+        from pathlib import Path as _Path
+
+        from nexus_scalp.database.engine import db_path_for_domain
+
+        base = _Path.cwd()
+        return str(db_path_for_domain("audit", base))
+
+    @app.get("/api/diagnostics/incidents")
+    def get_diagnostics_incidents(
+        status: str = "",
+        severity: str = "",
+        category: str = "",
+        component: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Incident list (spec 35/36). Bounded, filterable, read-only."""
+        try:
+            store = _incident_store()
+            incidents = store.list(
+                status=status or None,
+                severity=severity or None,
+                category=category or None,
+                component=component or None,
+                limit=max(1, min(int(limit), 500)),
+                offset=max(0, int(offset)),
+            )
+            return serialize_enums(
+                {
+                    "available": True,
+                    "counts": store.count(),
+                    "incidents": [i.as_dict() for i in incidents],
+                }
+            )
+        except Exception as exc:
+            _log_err(exc, "incident list failed", endpoint="/api/diagnostics/incidents")
+            return {"available": False, "error": str(exc)[:300]}
+
+    @app.get("/api/diagnostics/incidents/{incident_id}")
+    def get_diagnostics_incident(incident_id: str) -> dict[str, Any]:
+        """One incident record (spec 35)."""
+        try:
+            store = _incident_store()
+            inc = store.get(incident_id)
+            if inc is None:
+                return {"available": False, "error": f"incident {incident_id} not found"}
+            return serialize_enums({"available": True, "incident": inc.as_dict()})
+        except Exception as exc:
+            _log_err(exc, "incident get failed", endpoint="/api/diagnostics/incidents/{id}")
+            return {"available": False, "error": str(exc)[:300]}
+
+    @app.get("/api/diagnostics/health")
+    def get_diagnostics_health() -> dict[str, Any]:
+        """Aggregated incident health (spec 35). Counts + recurring patterns."""
+        try:
+            store = _incident_store()
+            return serialize_enums(
+                {
+                    "available": True,
+                    "counts": store.count(),
+                    "recurring": store.recurring_fingerprints(limit=10),
+                    "by_component": store.stats_by_component(),
+                }
+            )
+        except Exception as exc:
+            _log_err(exc, "incident health failed", endpoint="/api/diagnostics/health")
+            return {"available": False, "error": str(exc)[:300]}
+
+    @app.get("/api/diagnostics/lineage")
+    def get_diagnostics_lineage(
+        field: str = "pnl",
+        ticket: str = "",
+    ) -> dict[str, Any]:
+        """Value lineage / one-click trace (spec 8/37/38). Read-only."""
+        try:
+            from nexus_scalp.incidents.lineage import LineageEngine
+
+            engine = LineageEngine()
+            if field == "pnl":
+                trace = engine.pnl_trace()
+            elif field == "realized_r":
+                trace = engine.realized_r_trace()
+            elif field == "open_positions":
+                trace = engine.exposure_trace()
+            elif field == "model_output":
+                trace = engine.model_output_trace()
+            else:
+                trace = engine.trace(field)
+            payload: dict[str, Any] = {
+                "available": True,
+                "field": trace.field,
+                "source": trace.source,
+                "hops": trace.hops(),
+                "why": {},
+            }
+            if ticket:
+                from nexus_scalp.incidents.trace import why_closed, why_no_learning
+
+                payload["why_closed"] = why_closed(db_path_for_audit(), ticket)
+                payload["why_no_learning"] = why_no_learning(db_path_for_audit(), ticket)
+            return serialize_enums(payload)
+        except Exception as exc:
+            _log_err(exc, "lineage failed", endpoint="/api/diagnostics/lineage")
+            return {"available": False, "error": str(exc)[:300]}
+
+    @app.get("/api/diagnostics/search")
+    def get_diagnostics_search(query: str = "", limit: int = 50) -> dict[str, Any]:
+        """Deterministic bounded incident search (spec 44)."""
+        if not query.strip():
+            return {"available": True, "incidents": []}
+        try:
+            store = _incident_store()
+            incidents = store.search(query, limit=max(1, min(int(limit), 100)))
+            return serialize_enums(
+                {
+                    "available": True,
+                    "query": query,
+                    "incidents": [i.as_dict() for i in incidents],
+                }
+            )
+        except Exception as exc:
+            _log_err(exc, "incident search failed", endpoint="/api/diagnostics/search")
+            return {"available": False, "error": str(exc)[:300]}
+
     @app.get("/api/rules")
     def get_trading_rules() -> list[dict[str, Any]]:
         engine = app.state.engine
@@ -1635,6 +1804,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "state": None,
                     "reason": "NEWS_CONTEXT_ERROR",
                 }
+
+        # TASK-02-70D-INTEGRATION: Liquidity section already embedded in the
+        # canonical state graph (get_system_state); surface it explicitly.
+        live["liquidity"] = state.get("liquidity") or _liquidity_state_section(engine)
         return serialize_enums(live)
 
     @app.get("/api/live/accounting")
@@ -3954,6 +4127,25 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 }
         return serialize_enums({"available": True, "databases": out})
 
+    @app.get("/api/forensics/health")
+    def get_forensic_health() -> dict[str, Any]:
+        """TASK-11: post-70D continuous forensic health snapshot.
+
+        Central dashboard data — every check item carries
+        status/last_check/last_error/evidence/expected/correlation_id plus an
+        expandable detail_view (§51/§52). Read-only; runs the check matrix on
+        demand and persists the snapshot to artifacts/forensics/.
+        """
+        try:
+            from nexus_scalp.forensics import ForensicHealthEngine
+
+            engine = ForensicHealthEngine()
+            dash = engine.dashboard()
+            return serialize_enums({"available": True, "forensics": dash})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Forensic health failed"})
+            return _err("INTERNAL_ERROR")
+
     @app.post("/api/research/discover")
     def trigger_research_discovery() -> dict[str, Any]:
         """Builds the dataset + runs bounded candidate discovery.
@@ -4289,6 +4481,254 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return _err("INTERNAL_ERROR")
 
     @app.get("/api/models/shadow/runs")
+    @app.get("/api/models/shadow70/summary")
+    def get_shadow70_summary() -> dict[str, Any]:
+        """70D shadow runtime summary (spec 28 / 33 / 45/46). Real data only."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        from nexus_scalp.shadow.shadow70 import Shadow70Runtime, Shadow70Store
+
+        runtime: Shadow70Runtime | None = getattr(engine, "_shadow70_runtime", None)
+        store: Shadow70Store | None = getattr(engine, "_shadow70_store", None)
+        out: dict[str, Any] = {"available": True, "runtime": None, "store": None, "worker": None}
+        if runtime is not None:
+            out["runtime"] = runtime.summary()
+            out["runtime"]["state"] = runtime.state.value
+            out["runtime"]["load_result"] = (
+                runtime.load_result.to_dict() if runtime.load_result else None
+            )
+        if store is not None:
+            out["store"] = store.summary()
+            out["store"]["disagreement_counts"] = store.disagreement_counts()
+            try:
+                out["store"]["recent_observations"] = [
+                    {
+                        "observation_id": r.get("observation_id", ""),
+                        "timestamp": r.get("timestamp", ""),
+                        "champion_action": r.get("champion_action", ""),
+                        "shadow_action": r.get("shadow_action", ""),
+                        "champion_confidence": r.get("champion_confidence", 0.0),
+                        "shadow_confidence": r.get("shadow_confidence", 0.0),
+                        "disagreement": r.get("disagreement", ""),
+                        "regime": r.get("regime", ""),
+                        "news_state": r.get("news_state", ""),
+                        "liquidity_state": r.get("liquidity_state", ""),
+                        "outcome": r.get("outcome", "PENDING"),
+                    }
+                    for r in store.list_observations(limit=20)
+                ]
+            except Exception:
+                pass
+        from nexus_scalp.shadow.shadow70.worker import format_shadow70_status
+
+        out["worker"] = format_shadow70_status(getattr(engine, "_shadow70_worker", None))
+        return serialize_enums(out)
+
+    @app.get("/api/models/shadow70/health")
+    def get_shadow70_health() -> dict[str, Any]:
+        """Liquidity feature health + drift (spec 20 / 21 / 29)."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        from nexus_scalp.shadow.shadow70 import (
+            Shadow70DriftMonitor,
+            Shadow70FeatureHealthMonitor,
+        )
+
+        health: Shadow70FeatureHealthMonitor | None = getattr(engine, "_shadow70_health", None)
+        drift: Shadow70DriftMonitor | None = getattr(engine, "_shadow70_drift", None)
+        store = getattr(engine, "_shadow70_store", None)
+        return serialize_enums(
+            {
+                "available": True,
+                "feature_health": [h.to_dict() for h in health.health()] if health else [],
+                "drift": drift.summary() if drift else {"available": False},
+                "persisted_alerts": store.latest_drift_alerts(limit=25) if store else [],
+                "persisted_health": store.latest_feature_health() if store else [],
+            }
+        )
+
+    @app.post("/api/models/shadow70/attach")
+    def attach_shadow70() -> dict[str, Any]:
+        """Attaches a VALIDATED 70D candidate with full load validation.
+
+        Only a candidate whose contract passes manifest/hash/schema/dimension/
+        scaler gates may enter the 70D shadow runtime (spec 3 / 4). The
+        inference callable is resolved lazily from the artifact the same way
+        the ChallengerRuntime does (pure torch inference, no execution).
+        """
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        try:
+            from pathlib import Path as _ShadowPath
+
+            # Locate the validated 70D candidate in the lifecycle registry.
+            from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
+            from nexus_scalp.shadow.shadow70.models import (
+                SHADOW70_DIMENSION,
+                SHADOW70_SCHEMA_ID,
+                Shadow70CandidateContract,
+            )
+            from nexus_scalp.shadow.shadow70.runtime import Shadow70Runtime
+
+            lifecycle = ModelLifecycleRegistry(
+                audit_repo=engine.audit,
+                model_registry=engine.model_registry,
+            )
+            rows = lifecycle.list_models(status="CHALLENGER", limit=20)
+            candidate = None
+            for row in rows:
+                schema_id = row.get("feature_schema_id", "")
+                dim = int(row.get("feature_dimension", 0) or 0)
+                if schema_id == SHADOW70_SCHEMA_ID and dim == SHADOW70_DIMENSION:
+                    candidate = row
+                    break
+            if candidate is None:
+                return {"available": False, "reason": "NO_VALIDATED_CANDIDATE"}
+
+            artifact_path = candidate.get("artifact_path", "")
+            scaler_path = str(_ShadowPath(artifact_path)) + ".scaler.npz"
+            if not artifact_path or not _ShadowPath(artifact_path).exists():
+                return {"available": False, "reason": "CHALLENGER_ARTIFACT_NOT_FOUND"}
+
+            contract = Shadow70CandidateContract(
+                model_id=candidate.get("model_id", ""),
+                model_version=candidate.get("model_version", ""),
+                schema_id=SHADOW70_SCHEMA_ID,
+                dimension=SHADOW70_DIMENSION,
+                feature_schema_hash="",  # filled from manifest below
+                scaler_hash="",
+                training_dataset_id=candidate.get("training_run_id", ""),
+                validation_result=str(candidate.get("lifecycle_status", ""))
+                if "VALIDATED" in str(candidate.get("lifecycle_status", ""))
+                else "VALIDATED_CANDIDATE",
+                artifact_hash=candidate.get("artifact_fingerprint", ""),
+                artifact_path=artifact_path,
+                scaler_path=scaler_path,
+                num_classes=4,
+            )
+            # manifest: read model.json next to the artifact (schema hash)
+            manifest_path = _ShadowPath(artifact_path).parent / "model.json"
+            if manifest_path.exists():
+                import json as _json
+
+                try:
+                    man = _json.loads(manifest_path.read_text(encoding="utf-8"))
+                    contract = contract.model_copy(
+                        update={
+                            "feature_schema_hash": str(
+                                man.get("feature_schema_hash") or man.get("feature_schema_id", "")
+                            ),
+                            "scaler_hash": str(man.get("scaler_hash", "")),
+                        }
+                    )
+                except Exception:
+                    pass
+
+            runtime: Shadow70Runtime = engine._shadow70_runtime
+            result = runtime.attach(contract)
+            if not result.passed:
+                return {
+                    "available": False,
+                    "reason": result.status.value,
+                    "failing_gate": result.failing_gate,
+                    "detail": result.reason,
+                }
+
+            # inference fn: torch state-dict loader, same as ChallengerRuntime
+            def _make_infer(path: str, scaler: str, dim: int):
+                def _infer(vector70: list[float]) -> list[float]:
+                    import numpy as np
+                    import torch
+
+                    from nexus_scalp.models.scalp_net import ScalpNet
+
+                    state = torch.load(path, map_location="cpu", weights_only=False)
+                    model = ScalpNet(num_features=dim, num_classes=4)
+                    model.load_state_dict(state)
+                    model.eval()
+                    data = np.load(scaler)
+                    mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
+                    std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
+                    x = (np.asarray(vector70, dtype=np.float32).reshape(1, -1) - mean) / (
+                        std + 1e-8
+                    )
+                    xt = torch.tensor(x, dtype=torch.float32)
+                    xt = torch.nan_to_num(xt, nan=0.0, posinf=1.0, neginf=-1.0)
+                    with torch.inference_mode():
+                        logits = model(xt, return_logits=True)
+                        probs = torch.nn.functional.softmax(logits, dim=-1)[0]
+                    return [float(v) for v in probs.tolist()]
+
+                return _infer
+
+            runtime.set_inference(_make_infer(artifact_path, scaler_path, SHADOW70_DIMENSION))
+            engine._shadow70_enabled = True
+            wk = engine._shadow70_worker
+            if wk is not None and not getattr(engine, "_shadow70_worker_started", False):
+                wk.start()
+                engine._shadow70_worker_started = True
+            return serialize_enums({"available": True, "runtime": runtime.summary()})
+        except Exception as e:
+            _log_err(e, "Shadow70 attach failed", endpoint="/api/models/shadow70/attach")
+            return _err("OPERATION_FAILED", extra={"reason": "SHADOW_LOAD_FAILED"})
+
+    @app.post("/api/models/shadow70/start")
+    def start_shadow70_worker() -> dict[str, Any]:
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        wk = getattr(engine, "_shadow70_worker", None)
+        if wk is None:
+            return {"available": False}
+        wk.start()
+        engine._shadow70_worker_started = True
+        return {"available": True, "worker": wk.status()}
+
+    @app.post("/api/models/shadow70/stop")
+    def stop_shadow70_worker() -> dict[str, Any]:
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        wk = getattr(engine, "_shadow70_worker", None)
+        if wk is None:
+            return {"available": False}
+        wk.stop(flush=True)
+        engine._shadow70_worker_started = False
+        return {"available": True, "worker": wk.status()}
+
+    @app.post("/api/models/shadow70/detach")
+    def detach_shadow70() -> dict[str, Any]:
+        """Stops shadow work without touching the Champion (spec 32)."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        rt = getattr(engine, "_shadow70_runtime", None)
+        if rt is not None:
+            rt.stop()
+        engine._shadow70_enabled = False
+        return {"available": True, "status": rt.state.value if rt else "NONE"}
+
+    @app.get("/api/models/shadow70/disagreements")
+    def get_shadow70_disagreements(limit: int = 100) -> dict[str, Any]:
+        """Recent Champion-vs-Shadow disagreements (spec 30). Real data only."""
+        engine = _shadow()
+        if engine is None:
+            return {"available": False}
+        store = getattr(engine, "_shadow70_store", None)
+        if store is None:
+            return {"available": True, "rows": []}
+        return serialize_enums(
+            {
+                "available": True,
+                "rows": store.list_observations(
+                    limit=max(1, min(int(limit), 500)), disagreement_only=True
+                ),
+            }
+        )
+
     def get_shadow_runs(limit: int = 50) -> dict[str, Any]:
         """Append-only shadow run history."""
         engine = _shadow()
@@ -4769,6 +5209,295 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             log_web_error(logger, "/api", None, e, context={"msg": "Promotion rollback failed"})
             return _err("INTERNAL_ERROR")
 
+    # -------------------------------------------------------------------------
+    # TASK-08: 70D governance — promotion preview / transaction / rollback
+    # preview / emergency controls / audit trail (spec 28 / 29 / 30 / 31 / 32)
+    # -------------------------------------------------------------------------
+
+    def _promotion_lock_path() -> str:
+        """Cross-process promotion lock location (artifacts/governance/)."""
+        engine = app.state.engine
+        base = Path(
+            engine.config.artifacts_dir if hasattr(engine.config, "artifacts_dir") else "artifacts"
+        )
+        locks_dir = base / "governance" / "locks"
+        return str(locks_dir / "promotion.lock")
+
+    @app.get("/api/models/governance/status")
+    def get_governance_status() -> dict[str, Any]:
+        """MODEL STATUS API (spec 32): champion, candidate, gates, promotion."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            health = engine._governance_snapshot_health()
+            champ = health.get("champion", {})
+            chal = health.get("challenger", {})
+            state = engine.governance_engine._promotion_state_summary() or {}
+            by_state = state.get("by_state", {})
+            # champion schema/hash live in the registry snapshot
+            snapshot = engine.governance_engine.registry_snapshot(
+                audit_db=engine.audit._db_path if engine.audit else "",
+                champion_id=engine.champion_manager.model_id,
+                champion_artifact=engine.config.model.model_artifact_path,
+            )
+            cats = snapshot.get("categories", {}) or {}
+            champ_cat = (cats.get("CURRENT_CHAMPION") or {}) if cats else {}
+            chal_cat = (cats.get("CURRENT_CHALLENGER") or {}) if cats else {}
+            candidate_status = chal_cat.get("lifecycle_state", "") or chal.get("state", "NONE")
+            candidate_status = candidate_status or "NONE"
+            gates = engine.governance_engine.promotion_checklist({})
+            return serialize_enums(
+                {
+                    "available": True,
+                    "champion": {
+                        "model_id": champ_cat.get("model_id", "") or champ.get("id", ""),
+                        "version": champ_cat.get("version", "") or champ.get("version", ""),
+                        "schema": champ_cat.get("schema_id", "") or champ.get("schema", ""),
+                        "hash": champ_cat.get("artifact_hash", "")
+                        or champ.get("artifact_hash", ""),
+                    },
+                    "candidate": {
+                        "model_id": chal_cat.get("model_id", "") or chal.get("id", ""),
+                        "status": candidate_status,
+                        "schema": chal_cat.get("schema_id", "") or chal.get("schema", ""),
+                    },
+                    "gates": {
+                        "technical": "PASS" if champ.get("healthy") else "UNKNOWN",
+                        "oos": "PASS" if gates.get("passed") else "INCONCLUSIVE",
+                        "robustness": "PASS" if gates.get("passed") else "INCONCLUSIVE",
+                        "shadow": "PASS"
+                        if bool(health.get("shadow", {}).get("comparisons"))
+                        else "INCONCLUSIVE",
+                        "drift": "INCONCLUSIVE",
+                    },
+                    "promotion": {
+                        "eligible": bool(champ.get("healthy")),
+                        "approved": candidate_status == "APPROVED",
+                        "frozen": engine.governance_engine.promotion_frozen,
+                    },
+                }
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Governance status failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/models/governance/promotion-preview")
+    def get_promotion_preview(model_id: str = "", model_version: str = "") -> dict[str, Any]:
+        """PROMOTION PREVIEW (spec 28). READ-ONLY — shows exact gates BEFORE
+        any operator decision. No mutation, no lock."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        if not model_id:
+            return _err("PROMOTION_BLOCKED", extra={"reason": "model_id required"})
+        try:
+            preview = engine.governance_engine.promotion_preview(
+                model_id=model_id,
+                model_version=model_version,
+                artifact_path=engine.config.model.model_artifact_path,
+                runtime_schema_id=engine.champion_manager.model.feature_schema_id
+                if engine.champion_manager.model
+                else "",
+                runtime_dimension=engine.champion_manager.model.feature_dimension
+                if engine.champion_manager.model
+                else 0,
+                locks_dir=Path(_promotion_lock_path()).parent,
+            )
+            return serialize_enums({"available": True, "preview": preview})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Promotion preview failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/models/promotion/execute")
+    def execute_promotion(payload: dict[str, Any]) -> dict[str, Any]:
+        """PROMOTION TRANSACTION (spec 8 / 29): the ONLY promotion path.
+
+        Requires: actor, model_id, model_version, reason, approval_token,
+        old_champion_model_id/version + old_champion_hash.
+        A button can never call a hidden auto-promotion path — this endpoint
+        re-verifies everything fresh, takes the cross-process promotion lock,
+        records the old Champion, activates, verifies, and commits (spec 37).
+        """
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.governance.transaction import (
+                PromotionTransactionError,
+                execute_promotion_transaction,
+            )
+
+            actor = str(payload.get("actor", "") or "").strip()
+            model_id = str(payload.get("model_id", "") or "")
+            model_version = str(payload.get("model_version", "") or "")
+            reason = str(payload.get("reason", "") or "")
+            approval_token = str(payload.get("approval_token", "") or "")
+            if not actor or not model_id or not approval_token:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={"reason": "actor, model_id and approval_token required"},
+                )
+            if engine.governance_engine.promotion_frozen:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={"reason": "promotion frozen (emergency stop)"},
+                )
+            old_champion = {
+                "model_id": str(payload.get("old_champion_model_id", "") or ""),
+                "version": str(payload.get("old_champion_version", "") or ""),
+                "artifact_hash": str(payload.get("old_champion_hash", "") or ""),
+                "schema_id": str(payload.get("old_champion_schema", "") or ""),
+            }
+            audit_row = execute_promotion_transaction(
+                store=engine.governance_store,
+                lock_path=_promotion_lock_path(),
+                model_id=model_id,
+                model_version=model_version,
+                actor=actor,
+                reason=reason or "operator promotion",
+                approval_token=approval_token,
+                old_champion=old_champion,
+                candidate={
+                    "model_id": model_id,
+                    "version": model_version,
+                    "artifact_hash": str(payload.get("candidate_hash", "") or ""),
+                    "schema_id": str(payload.get("candidate_schema", "") or ""),
+                },
+                activate=lambda mid, mver: engine._activate_promoted_model(
+                    model_id=mid, model_version=mver
+                ),
+                verify_new=lambda mid, mver: {"ok": engine._champion_bundle_healthy()},
+                rollback_activate=lambda mid, mver: engine._activate_rollback_model(
+                    model_id=mid, model_version=mver
+                ),
+                artifact_path=engine.config.model.model_artifact_path,
+                runtime_schema_id=engine.champion_manager.model.feature_schema_id
+                if engine.champion_manager.model
+                else "",
+                runtime_dimension=engine.champion_manager.model.feature_dimension
+                if engine.champion_manager.model
+                else 0,
+                correlation_id="api_promotion",
+            )
+            return serialize_enums({"available": True, "promotion": audit_row})
+        except PromotionTransactionError as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Promotion transaction blocked"})
+            return _err(
+                "PROMOTION_BLOCKED",
+                extra={
+                    "reason": "promotion transaction blocked",
+                    "detail": str(getattr(e, "safe_message", "") or type(e).__name__),
+                },
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Promotion execute failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/models/governance/rollback-preview")
+    def get_rollback_preview(
+        failed_model_id: str = "", previous_model_id: str = ""
+    ) -> dict[str, Any]:
+        """ROLLBACK PREVIEW (spec 30): verifies the old artifact is still
+        valid BEFORE the operator commits. Read-only."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            if not failed_model_id:
+                return _err("PROMOTION_BLOCKED", extra={"reason": "failed_model_id required"})
+            preview = engine.governance_engine.rollback_preview(
+                failed_model_id=failed_model_id,
+                previous_model_id=previous_model_id,
+                previous_artifact=engine.config.model.model_artifact_path,
+            )
+            return serialize_enums({"available": True, "preview": preview})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Rollback preview failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/models/governance/emergency/freeze")
+    def freeze_promotions(payload: dict[str, Any]) -> dict[str, Any]:
+        """FREEZE PROMOTION (spec 31): emergency stop, distinct from Stop Bot."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            actor = str(payload.get("actor", "") or "").strip()
+            if not actor:
+                return _err("PROMOTION_BLOCKED", extra={"reason": "actor required"})
+            engine.governance_engine.freeze_promotions(
+                actor=actor, reason=str(payload.get("reason", "") or "")
+            )
+            return serialize_enums(
+                {"available": True, "state": engine.governance_engine.emergency_freezes()}
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Promotion freeze failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/models/governance/emergency/unfreeze")
+    def unfreeze_promotions(payload: dict[str, Any]) -> dict[str, Any]:
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            actor = str(payload.get("actor", "") or "").strip()
+            if not actor:
+                return _err("PROMOTION_BLOCKED", extra={"reason": "actor required"})
+            engine.governance_engine.unfreeze_promotions(
+                actor=actor, reason=str(payload.get("reason", "") or "")
+            )
+            return serialize_enums(
+                {"available": True, "state": engine.governance_engine.emergency_freezes()}
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Promotion unfreeze failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/models/governance/emergency/disable")
+    def disable_candidate(payload: dict[str, Any]) -> dict[str, Any]:
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            actor = str(payload.get("actor", "") or "").strip()
+            model_id = str(payload.get("model_id", "") or "")
+            if not actor or not model_id:
+                return _err("PROMOTION_BLOCKED", extra={"reason": "actor and model_id required"})
+            engine.governance_engine.disable_candidate(
+                model_id=model_id,
+                actor=actor,
+                reason=str(payload.get("reason", "") or ""),
+            )
+            return serialize_enums(
+                {"available": True, "state": engine.governance_engine.emergency_freezes()}
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Candidate disable failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/models/governance/audits")
+    def get_governance_audits(limit: int = 100) -> dict[str, Any]:
+        """Immutable promotion/rollback audit trail (spec 29 / 30)."""
+        engine = _governance()
+        if engine is None:
+            return {"available": False}
+        try:
+            promotions = engine.governance_store.list_promotion_audits(limit=limit)
+            rollbacks = engine.governance_store.list_rollback_audits(limit=limit)
+            return serialize_enums(
+                {
+                    "available": True,
+                    "promotions": promotions,
+                    "rollbacks": rollbacks,
+                    "emergency": engine.governance_engine.emergency_freezes(),
+                }
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Governance audits failed"})
+            return _err("INTERNAL_ERROR")
+
     def _intelligence_worker_status(worker: Any) -> dict[str, Any]:
         from nexus_scalp.intelligence.worker import format_intelligence_worker_status
 
@@ -4889,6 +5618,96 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "News timeline failed"})
             return _err("INTERNAL_ERROR")
+
+    # =========================================================================
+    # TASK-02-70D-INTEGRATION: LIQUIDITY INTELLIGENCE API
+    # -------------------------------------------------------------------------
+    # Real backend state only. The UI toggle routes through POST
+    # /api/liquidity/toggle which persists via SettingsService
+    # (model.liquidity_features_enabled, HOT_RESTRICTED) and hot-applies the
+    # governor. Never UI-only, never fake values (brief 6/10/17/25).
+    # =========================================================================
+    def _liquidity_governor() -> Any:
+        """Resolve the live engine's liquidity governor (standalone fallback)."""
+        engine = app.state.engine
+        gov = getattr(engine, "liquidity_governor", None) if engine is not None else None
+        if gov is not None:
+            return gov
+        from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+        return LiquidityGovernor(enabled=False)
+
+    @app.get("/api/liquidity/state")
+    def get_liquidity_state() -> dict[str, Any]:
+        """Canonical liquidity status: enabled/available/status/source/latency/
+        causal state + ten real values + model compatibility."""
+        try:
+            gov = _liquidity_governor()
+            return {"success": True, **gov.report()}
+        except Exception as e:
+            log_web_error(
+                logger,
+                "/api/liquidity/state",
+                None,
+                e,
+                context={"msg": "Liquidity state introspection failed"},
+            )
+            return {
+                "success": False,
+                "enabled": False,
+                "available": False,
+                "status": "UNAVAILABLE",
+                "causal_state": "INVALID",
+                "reason": "LIQUIDITY_STATE_ERROR",
+            }
+
+    @app.get("/api/liquidity/features")
+    def get_liquidity_features() -> dict[str, Any]:
+        """Ten individual liquidity values (real runtime snapshot; brief 17)."""
+        try:
+            gov = _liquidity_governor()
+            return {"success": True, **gov.snapshot_payload()}
+        except Exception as e:
+            log_web_error(
+                logger,
+                "/api/liquidity/features",
+                None,
+                e,
+                context={"msg": "Liquidity features introspection failed"},
+            )
+            return {
+                "success": False,
+                "schema_id": "scalp_v4",
+                "dimension": 70,
+                "timestamp": None,
+                "source": "UNAVAILABLE",
+                "features": {},
+                "available": False,
+                "reason": "LIQUIDITY_FEATURES_ERROR",
+            }
+
+    @app.post("/api/liquidity/toggle")
+    def set_liquidity_toggle(payload: dict[str, Any]) -> dict[str, Any]:
+        """Enable/disable Liquidity Intelligence (real backend config).
+
+        Flow: UI -> POST -> backend validates -> governor persists via
+        SettingsService -> runtime flag applied -> new status returned.
+        NEVER restarts the engine; NEVER touches orders/risk/execution.
+        """
+        try:
+            desired = bool(payload.get("enabled"))
+            gov = _liquidity_governor()
+            gov.set_enabled(desired, actor="web")
+            return {"success": True, **gov.report()}
+        except Exception as e:
+            log_web_error(
+                logger,
+                "/api/liquidity/toggle",
+                None,
+                e,
+                context={"msg": "Liquidity toggle failed"},
+            )
+            return {"success": False, "error": "LIQUIDITY_TOGGLE_FAILED"}
 
     @app.get("/api/news/state")
     def get_news_state() -> dict[str, Any]:

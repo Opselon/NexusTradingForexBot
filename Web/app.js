@@ -1,4453 +1,9989 @@
 // app.js
+
 // Front-End Engine for Nexus Scalp Engine (NSE) Control Center
 
+
+
 let eventSource = null;
+
 let currentTab = 'tab-monitoring';
+
 let currentFeatureCategory = 'volatility';
+
 let candleData = []; // [{time, open, high, low, close, volume, is_complete}]
+
 let predictions = []; // [{time, action, confidence, actual_delta, outcome}]
+
 let selectedConfig = {};
 
+
+
 let supportLevels = [];
+
 let resistanceLevels = [];
+
 let lastFeatures = [];
+
 let visualOverlays = { rectangles: [], order_lines: null };
 
+
+
 const FEATURE_NAMES_JS = [
+
     "upper_wick_ratio",             // feat_0
+
     "lower_wick_ratio",             // feat_1
+
     "body_to_range_ratio",          // feat_2
+
     "is_doji",                      // feat_3
+
     "pinbar_sig",                   // feat_4
+
     "engulfing_sig",                // feat_5
+
     "close_location_value",         // feat_6
+
     "consecutive_momentum_count",   // feat_7
+
     "norm_displacement",            // feat_8
+
     "rapid_reversal_spike_val",     // feat_9
+
     "dist_to_swing_high_20",        // feat_10
+
     "dist_to_swing_low_20",         // feat_11
+
     "price_compression_flag_ratio", // feat_12
+
     "extreme_sig",                  // feat_13
+
     "stop_hunt_depth",              // feat_14
+
     "liquidity_sweep_signal",       // feat_15
+
     "session_tokyo",                // feat_16
+
     "session_london",               // feat_17
+
     "session_ny",                   // feat_18
+
     "session_overlap_london_ny",    // feat_19
+
     "lag_1_log_return",             // feat_20
+
     "lag_2_log_return",             // feat_21
+
     "lag_3_log_return",             // feat_22
+
     "lag_1_atr_ratio",              // feat_23
+
     "lag_1_volume_z",               // feat_24
+
     "lag_1_clv",                    // feat_25
+
     "fvg_sig",                      // feat_26
+
     "order_block_type",             // feat_27
+
     "choch_sig",                    // feat_28
+
     "breakout_sig",                 // feat_29
+
     "norm_tk_diff",                 // feat_30
+
     "tk_cross_signal",              // feat_31
+
     "kumo_sig",                     // feat_32
+
     "norm_kumo_width",              // feat_33
+
     "norm_rsi",                     // feat_34
+
     "dist_to_ema_21",               // feat_35
+
     "dist_to_ema_50",               // feat_36
+
     "cross_asset_z_score",          // feat_37
+
     "norm_dist_to_tenkan",          // feat_38
+
     "norm_dist_to_kijun",           // feat_39
+
     "htf_h4_trend",                 // feat_40
+
     "htf_h1_momentum",              // feat_41
+
     "htf_m30_structure",            // feat_42
+
     "htf_m15_confirmation",         // feat_43
+
     "support_zone_dist",            // feat_44
+
     "resistance_zone_dist",         // feat_45
+
     "feat_ob_valid_bos",            // feat_46
+
     "feat_ob_equilibrium_ratio",    // feat_47
+
     "feat_ob_liquidity_swept",      // feat_48
+
     "feat_ob_fib_50_60_alignment",  // feat_49
+
 ];
 
+
+
 // Chart state variables for interactive Zoom, Pan, Drag, and Tooltip
+
 let liveMode = true; // Auto scroll to newest candle
+
 let uiPaused = false; // Ignore incoming state updates
+
 let candleWidth = 10;
+
 let candleGap = 3;
+
 let chartPanX = 0; // Negative values translate to historical panning
+
 let isDragging = false;
+
 let dragStartX = 0;
+
 let lastPanX = 0;
+
 let lastTouchDist = 0; // Pinch to zoom support
+
 let crosshairX = -1;
+
 let crosshairY = -1;
 
+
+
 // AI VIEW / FORENSIC REPLAY mode state (Phase 14)
+
 let aiViewEnabled = false;      // when true, chart shows the AI-visible context of the selected candle
+
 let aiViewCandleIdx = -1;       // selected candle index for AI VIEW
+
 let lastAiSnapshot = null;      // last live payload used to derive per-candle snapshots
 
+
+
 // Canonical UTC time formatting for chart timestamps (transport is UTC ISO).
+
 function formatUTCTime(t) {
+
     if (!t) return '--';
+
     const s = String(t);
+
     // ISO "2026-08-17T02:31:00+00:00" -> "02:31:00Z" (slice before offset)
+
     const m = s.match(/(\d{2}):(\d{2}):(\d{2})/);
+
     return m ? `${m[1]}:${m[2]}:${m[3]}Z` : s;
+
 }
+
+
 
 // Toggle AI VIEW: shows the exact market/feature/model snapshot the AI saw at
+
 // the candle nearest the crosshair (or the latest candle).
+
 function toggleAiView() {
+
     aiViewEnabled = !aiViewEnabled;
+
     const btn = document.getElementById('btn-ai-view');
+
     const panel = document.getElementById('ai-snapshot-panel');
+
     if (panel) panel.classList.toggle('hidden', !aiViewEnabled);
+
     if (btn) {
+
         if (aiViewEnabled) {
+
             btn.className = "px-2 py-0.5 rounded bg-accentGold/10 text-accentGold hover:bg-accentGold/20 border border-accentGold/30 transition";
+
             btn.innerHTML = `<i class="fa-solid fa-robot mr-1"></i> AI VIEW ON`;
+
             // Default to the newest candle when enabling.
+
             if (candleData.length > 0) {
+
                 aiViewCandleIdx = candleData.length - 1;
+
             }
+
             renderAiSnapshotPanel();
+
             if (currentTab === 'tab-monitoring') drawChart();
+
         } else {
+
             btn.className = "px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-gray-400 transition";
+
             btn.innerHTML = `<i class="fa-solid fa-robot mr-1"></i> AI View`;
+
         }
+
     }
+
 }
+
+
 
 // Per-candle AI snapshot: OHLC + spread/ATR/regime + probability distribution
+
 // (from the last live state) + strategy + structure. This is the honest
+
 // representation of what the model saw: the live feature vector belongs to the
+
 // LATEST inference, so older candles show the market context and mark model
+
 // output as belonging to the latest inference (no fabricated per-candle
+
 // probabilities).
+
 function renderAiSnapshotPanel() {
+
     const panel = document.getElementById('ai-snapshot-panel');
+
     if (!panel) return;
 
+
+
     if (!aiViewEnabled || candleData.length === 0) {
+
         panel.innerHTML = '<div class="text-textMuted italic text-[11px]">Enable AI VIEW and hover a candle to inspect the exact AI-visible market context.</div>';
+
         return;
+
     }
+
+
 
     const idx = (aiViewCandleIdx >= 0 && aiViewCandleIdx < candleData.length) ? aiViewCandleIdx : candleData.length - 1;
+
     const c = candleData[idx];
+
     const snap = lastAiSnapshot || {};
 
+
+
     const reg = snap.regime || '—';
+
     const atr = (snap.atr != null) ? Number(snap.atr).toFixed(2) : '—';
+
     const spread = (snap.spread != null) ? snap.spread : '—';
+
     const prov = snap.provenance || {};
 
+
+
     // Latest live model output (single authoritative inference).
+
     const probs = snap.probs || {};
+
     let probHtml = '';
+
     if (probs.available && probs.no_trade != null) {
+
         probHtml = `
+
             <div class="text-[10px] font-mono">
+
                 <div class="flex justify-between"><span class="text-accentCyan">NO_TRADE</span><span class="text-white font-bold">${(probs.no_trade * 100).toFixed(1)}%</span></div>
+
                 <div class="flex justify-between"><span class="text-emerald-400">BUY</span><span class="text-white font-bold">${(probs.buy * 100).toFixed(1)}%</span></div>
+
                 <div class="flex justify-between"><span class="text-rose-400">SELL</span><span class="text-white font-bold">${(probs.sell * 100).toFixed(1)}%</span></div>
+
             </div>`;
+
     } else {
+
         probHtml = '<div class="text-[10px] text-textMuted">Model inference unavailable at this snapshot.</div>';
+
     }
+
+
 
     const decision = snap.ai_decision || '—';
+
     const conf = (snap.ai_confidence != null) ? (snap.ai_confidence * 100).toFixed(1) + '%' : '—';
 
+
+
     panel.innerHTML = `
+
         <div class="grid grid-cols-2 gap-3 text-[10px] font-mono">
+
             <div class="bg-darkBg/50 rounded p-2 border border-borderClr/40">
+
                 <div class="text-textMuted uppercase mb-1">Candle [${idx}]</div>
+
                 <div class="text-white">${formatUTCTime(c.time)}</div>
+
                 <div class="mt-1 text-gray-300">O <span class="text-white">${c.open.toFixed(2)}</span></div>
+
                 <div class="text-gray-300">H <span class="text-emerald-400">${c.high.toFixed(2)}</span></div>
+
                 <div class="text-gray-300">L <span class="text-rose-400">${c.low.toFixed(2)}</span></div>
+
                 <div class="text-gray-300">C <span class="text-white">${c.close.toFixed(2)}</span></div>
+
                 <div class="text-gray-300">V <span class="text-white">${c.volume}</span></div>
+
                 <div class="mt-1 text-textMuted">${c.is_complete ? 'COMPLETED' : 'FORMING'}</div>
+
             </div>
+
             <div class="space-y-2">
+
                 <div class="bg-darkBg/50 rounded p-2 border border-borderClr/40">
+
                     <div class="text-textMuted uppercase mb-1">Market Context</div>
+
                     <div class="text-gray-300">Regime <span class="text-accentGold font-bold">${reg}</span></div>
+
                     <div class="text-gray-300">ATR <span class="text-white">${atr}</span></div>
+
                     <div class="text-gray-300">Spread <span class="text-white">${spread} pts</span></div>
+
                 </div>
+
                 <div class="bg-darkBg/50 rounded p-2 border border-borderClr/40">
+
                     <div class="text-textMuted uppercase mb-1">Model Output (latest inference)</div>
+
                     ${probHtml}
+
                 </div>
+
             </div>
+
         </div>
+
         <div class="mt-2 bg-darkBg/50 rounded p-2 border border-borderClr/40 text-[10px] font-mono">
+
             <div class="text-textMuted uppercase mb-1">Policy Snapshot</div>
+
             <div class="text-gray-300">Decision <span class="text-accentCyan font-bold">${decision}</span> · Confidence <span class="text-white">${conf}</span></div>
+
             <div class="text-gray-300 mt-1">${snap.ai_reason || '—'}</div>
+
             <div class="mt-1 text-textMuted">
+
                 provenance: ${prov.price || 'UNAVAILABLE'} · ${prov.features || 'UNAVAILABLE'} · ${prov.model || 'UNAVAILABLE'}
+
             </div>
+
         </div>
+
     `;
+
 }
+
+
 
 // Feature Delta View: compares the live 50D vector against the previous snapshot.
+
 function renderFeatureDeltas() {
+
     const box = document.getElementById('feature-delta-view');
+
     if (!box) return;
+
     if (!lastFeatures || lastFeatures.length === 0) {
+
         box.innerHTML = '<div class="text-textMuted italic text-[11px]">No feature snapshots recorded yet.</div>';
+
         return;
+
     }
+
     const rows = lastFeatures.slice(0, 12).map(f => {
+
         const val = (f.value != null) ? f.value.toFixed(2) : '—';
+
         return `<div class="flex justify-between text-[9px] font-mono border-b border-borderClr/30 py-0.5">
+
             <span class="text-textMuted truncate">${f.name}</span>
+
             <span class="text-white">${val}</span>
+
         </div>`;
+
     }).join('');
+
     box.innerHTML = `<div class="text-[10px] text-textMuted mb-1 uppercase">Current live values (top 12)</div>${rows}`;
+
 }
+
+
+
+// ===========================================================================
+
+// TASK-02-70D-INTEGRATION: LIQUIDITY INTELLIGENCE UI
+
+// Real backend state only (GET /api/liquidity/state). The toggle calls
+
+// POST /api/liquidity/toggle which persists via SettingsService and
+
+// hot-applies the runtime governor. No fake values, no silent failures.
+
+// ===========================================================================
+
+function liqStatusStyle(status) {
+
+    const s = String(status || '').toUpperCase();
+
+    const styles = {
+
+        ENABLED: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+
+        LIVE: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+
+        DISABLED: 'bg-slate-500/10 text-slate-300 border-slate-500/30',
+
+        DEGRADED: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+
+        STALE: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+
+        UNAVAILABLE: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+
+        ERROR: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+
+        INVALID: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+
+        VALID: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+
+    };
+
+    return styles[s] || styles.UNAVAILABLE;
+
+}
+
+
+
+function liqValueColor(v) {
+
+    if (v === null || v === undefined || Number.isNaN(v)) return 'text-textMuted';
+
+    // Structural data is NOT a directional signal (brief 18): magnitude is
+
+    // never rendered as BUY/SELL pressure; only a sign tint is applied.
+
+    if (v >= 1.0) return 'text-emerald-400';
+
+    if (v <= -1.0) return 'text-rose-400';
+
+    return 'text-accentCyan';
+
+}
+
+
+
+function setText(id, val) {
+
+    const el = document.getElementById(id);
+
+    if (el && val !== undefined && val !== null) el.textContent = val;
+
+}
+
+
+
+function renderLiquidityPanel(state) {
+
+    if (!state || typeof state !== 'object') return;
+
+    const st = state.status || 'UNAVAILABLE';
+
+    const badge = document.getElementById('liq-status-badge');
+
+    if (badge) {
+
+        badge.textContent = st;
+
+        badge.className = 'text-[10px] font-black px-2 py-1 rounded border ' + liqStatusStyle(st);
+
+    }
+
+    const navBadge = document.getElementById('liq-nav-state');
+
+    if (navBadge) { navBadge.textContent = st; navBadge.className = 'text-[9px] font-black px-1.5 py-0.5 rounded border ' + liqStatusStyle(st); }
+
+
+
+    setText('liq-status-value', st);
+
+    setText('liq-schema', (state.schema && state.schema.id) || '--');
+
+    setText('liq-dim', (state.schema && state.schema.dimension) != null ? String(state.schema.dimension) + 'D' : '--');
+
+    setText('liq-feature-count', state.feature_count != null ? String(state.feature_count) : '--');
+
+    setText('liq-source', state.source || '--');
+
+    setText('liq-causal', state.causal_state || '--');
+
+    setText('liq-last-update', state.last_update ? String(state.last_update).replace('T', ' ').slice(0, 19) : '--');
+
+    setText('liq-latency', state.latency_ms != null ? state.latency_ms.toFixed(2) + ' ms' : '--');
+
+    setText('liq-available', state.available ? 'Available' : 'Unavailable');
+
+
+
+    const mc = state.model_compatibility || {};
+
+    const mcEl = document.getElementById('liq-model-compat');
+
+    if (mcEl) {
+
+        const res = mc.result || 'UNKNOWN';
+
+        mcEl.textContent = res + (mc.reason ? ' (' + mc.reason + ')' : '');
+
+        mcEl.className = 'text-sm font-mono font-bold mt-1 ' + (res === 'PASS' ? 'text-emerald-400' : (res === 'BLOCK' ? 'text-rose-400' : 'text-amber-400'));
+
+    }
+
+
+
+    const btn = document.getElementById('liq-toggle-btn');
+
+    if (btn) {
+
+        if (state.enabled) {
+
+            btn.textContent = 'Disable Liquidity Intelligence';
+
+            btn.className = 'bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded px-3 py-1 text-xs font-bold hover:bg-rose-500/20 transition';
+
+        } else {
+
+            btn.textContent = 'Enable Liquidity Intelligence';
+
+            btn.className = 'bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition';
+
+        }
+
+    }
+
+
+
+    const grid = document.getElementById('liq-features-grid');
+
+    if (grid) {
+
+        const feats = state.features || {};
+
+        const names = state.feature_names || Object.keys(feats);
+
+        if (!names.length) {
+
+            grid.innerHTML = '<div class="text-textMuted italic text-xs col-span-5">No liquidity snapshot yet — waiting for the live engine.</div>';
+
+        } else {
+
+            grid.innerHTML = names.map((name, i) => {
+
+                const v = feats[name];
+
+                const valStr = (v !== null && v !== undefined) ? Number(v).toFixed(3) : '—';
+
+                const idx = 60 + i; // TASK-2 70D contract: liquidity = 60..69
+
+                return '<div class="bg-darkBg/40 border border-borderClr/60 p-2.5 rounded-lg" title="' + escHtml(name) + ' (index ' + idx + ')">' +
+
+                    '<div class="text-[9px] text-textMuted font-bold uppercase truncate">' + escHtml(name).replace(/_/g, ' ') + '</div>' +
+
+                    '<div class="flex items-baseline justify-between mt-1">' +
+
+                        '<span class="text-sm font-mono font-black ' + liqValueColor(v) + '">' + valStr + '</span>' +
+
+                        '<span class="text-[8px] text-textMuted font-mono">idx ' + idx + '</span>' +
+
+                    '</div>' +
+
+                '</div>';
+
+            }).join('');
+
+        }
+
+    }
+
+
+
+    const errEl = document.getElementById('liq-error');
+
+    if (errEl) {
+
+        if (state.error) {
+
+            errEl.textContent = 'Error: ' + state.error;
+
+            errEl.classList.remove('hidden');
+
+        } else {
+
+            errEl.classList.add('hidden');
+
+        }
+
+    }
+
+}
+
+
+
+async function loadLiquidityState() {
+
+    const endpoint = '/api/liquidity/state';
+
+    try {
+
+        const res = await fetch(endpoint, { headers: { 'X-Request-ID': 'liq_' + Date.now().toString(36) } });
+
+        if (!res.ok) {
+
+            console.warn('[LIQUIDITY_UI] event=request_failed endpoint=' + endpoint + ' status=' + res.status + ' correlation_id=liq_fail_' + Date.now());
+
+            return;
+
+        }
+
+        const data = await res.json();
+
+        if (data && data.success !== false) {
+
+            renderLiquidityPanel(data);
+
+            console.log('[LIQUIDITY_UI] event=state_loaded schema=' + (data.schema ? data.schema.id : '?') + ' dimension=' + (data.schema ? data.schema.dimension : '?') + ' enabled=' + (data.enabled === true) + ' available=' + (data.available === true));
+
+        } else {
+
+            console.warn('[LIQUIDITY_UI] event=load_failed endpoint=' + endpoint + ' status=200 body_error=' + (data && data.reason ? data.reason : '?'));
+
+        }
+
+    } catch (err) {
+
+        console.warn('[LIQUIDITY_UI] event=load_failed endpoint=' + endpoint + ' status=network correlation_id=liq_net_' + Date.now() + ' error=' + (err && err.message ? err.message : String(err)));
+
+    }
+
+}
+
+
+
+async function toggleLiquidity() {
+
+    const btn = document.getElementById('liq-toggle-btn');
+
+    const current = btn ? !btn.textContent.startsWith('Enable') : false;
+
+    const endpoint = '/api/liquidity/toggle';
+
+    try {
+
+        const res = await fetch(endpoint, {
+
+            method: 'POST',
+
+            headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'liq_toggle_' + Date.now().toString(36) },
+
+            body: JSON.stringify({ enabled: !current }),
+
+        });
+
+        if (!res.ok) {
+
+            console.warn('[LIQUIDITY_UI] event=toggle_failed endpoint=' + endpoint + ' status=' + res.status + ' correlation_id=liq_tgl_' + Date.now());
+
+            return;
+
+        }
+
+        const data = await res.json();
+
+        if (data && data.success !== false) {
+
+            renderLiquidityPanel(data);
+
+            console.log('[LIQUIDITY_UI] event=toggle_applied enabled=' + (data.enabled === true) + ' status=' + (data.status || '?'));
+
+        } else {
+
+            console.warn('[LIQUIDITY_UI] event=toggle_rejected endpoint=' + endpoint + ' reason=' + (data && data.error ? data.error : '?'));
+
+        }
+
+    } catch (err) {
+
+        console.warn('[LIQUIDITY_UI] event=toggle_failed endpoint=' + endpoint + ' status=network error=' + (err && err.message ? err.message : String(err)));
+
+    }
+
+}
+
+
+
+// Keep the liquidity panel in sync from the canonical snapshot (SSE/status).
+
+function syncLiquidityFromSnapshot(payload) {
+
+    if (payload && payload.liquidity) {
+
+        renderLiquidityPanel(payload.liquidity);
+
+        window.__liquidityPools = payload.liquidity.pools || [];
+
+        if (typeof drawChart === 'function') drawChart();
+
+    }
+
+}
+
+
 
 // On Startup
+
 window.addEventListener('load', () => {
+
     initApp();
+
     initDebugHub();
+
     // REST snapshot first (canonical), then SSE for incremental updates.
+
     // This guarantees a complete initial render even when the SSE stream is
+
     // slow to open, and gives refresh/reconnect a full fresh snapshot.
+
     fetchSystemSnapshot();
+
     startSSE();
+
     loadConfiguration();
+
+    loadLiquidityState();
+
     setInterval(updateHeartbeats, 5000);
+
 });
 
+
+
 // GET /api/status canonical snapshot -> render full UI immediately.
+
 // Called on page load AND after every SSE reconnect so the dashboard always
+
 // converges back to live state without a manual refresh.
+
 async function fetchSystemSnapshot() {
+
     try {
+
         const res = await fetch('/api/status', { headers: { 'X-Request-ID': 'snapshot_' + Date.now().toString(36) } });
+
         if (!res.ok) {
+
             console.warn('[UI_ERROR] component=State action=LOAD_SNAPSHOT status=' + res.status);
+
             setSystemBadge('disconnected');
+
             return;
+
         }
+
         const data = await res.json();
+
         lastApiResponseAt = Date.now();
+
         lastSnapshotVersion = data.state_version != null ? data.state_version : lastSnapshotVersion;
+
         lastSnapshotAt = Date.now();
+
         updateObsStrip();
+
         handleIncomingLiveTick(data, { isSnapshot: true });
+
     } catch (err) {
+
         console.warn('[UI_ERROR] component=State action=LOAD_SNAPSHOT status=network', err);
+
         setSystemBadge('disconnected');
+
     }
+
 }
+
+
 
 // Health badge coloring (LiveUiState.2 health section).
+
 function healthBadgeStyle(status) {
+
     const styles = {
+
         READY: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
+
         IDLE: 'bg-slate-500/10 text-slate-300 border border-slate-500/30',
+
         WARMING_UP: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+
         STALE: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+
         DEGRADED: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+
         DISCONNECTED: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+
         ERROR: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+
         UNAVAILABLE: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+
         STOPPED: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+
         DISABLED: 'bg-slate-500/10 text-slate-300 border border-slate-500/30',
+
     };
+
     return styles[status] || styles.UNAVAILABLE;
+
 }
+
+
 
 function initApp() {
+
     console.log("Nexus Scalp Engine Front-End Booted.");
+
     console.log("[UI_STATE] canonical state source: GET /api/status snapshot + /api/ticks/stream SSE");
 
+
+
     // FORENSIC HARDENING: no dummy feature seed. The Feature Matrix renders
+
     // only real ENGINE_STATE values; before the first snapshot arrives it
+
     // shows an explicit waiting state (zeros were previously rendered as if
+
     // they were live values - a fake-data masquerade).
+
     lastFeatures = [];
 
+
+
     // Hook up some simulation button controls
+
     document.getElementById('btn-toggle-engine').addEventListener('click', toggleEngineRunning);
 
+
+
     // Register interactive zoom and pan events on canvas container
+
     const container = document.getElementById('chart-container');
+
     const canvas = document.getElementById('candleChart');
+
     if (container && canvas) {
+
         // Drag scrolling (mouse)
+
         container.addEventListener('mousedown', (e) => {
+
             isDragging = true;
+
             dragStartX = e.clientX;
+
             lastPanX = chartPanX;
+
             liveMode = false;
+
             updateLiveToggleUI();
+
         });
+
+
 
         // Click selects the candle for AI VIEW forensic inspection.
+
         container.addEventListener('click', (e) => {
+
             const rect = canvas.getBoundingClientRect();
+
             const x = e.clientX - rect.left;
+
             const idx = Math.floor((x - chartPanX) / (candleWidth + candleGap));
+
             if (idx >= 0 && idx < candleData.length) {
+
                 aiViewCandleIdx = idx;
+
                 if (aiViewEnabled) {
+
                     renderAiSnapshotPanel();
+
                     drawChart();
+
                 }
+
             }
+
         });
+
+
 
         window.addEventListener('mousemove', (e) => {
+
             // Mouse move coordinate track for crosshair tooltip
+
             const rect = canvas.getBoundingClientRect();
+
             crosshairX = e.clientX - rect.left;
+
             crosshairY = e.clientY - rect.top;
 
+
+
             if (isDragging) {
+
                 const deltaX = e.clientX - dragStartX;
+
                 chartPanX = lastPanX + deltaX;
+
                 drawChart();
+
             } else {
+
                 updateCrosshairTooltip();
+
             }
+
         });
+
+
 
         window.addEventListener('mouseup', () => {
+
             isDragging = false;
+
         });
+
+
 
         // Mousewheel zoom centered on pointer
+
         container.addEventListener('wheel', (e) => {
+
             e.preventDefault();
+
             const rect = canvas.getBoundingClientRect();
+
             const mouseX = e.clientX - rect.left;
+
             const priceX = mouseX - chartPanX;
 
+
+
             const oldWidth = candleWidth;
+
             if (e.deltaY < 0) {
+
                 candleWidth = Math.min(50, candleWidth + 1);
+
             } else {
+
                 candleWidth = Math.max(3, candleWidth - 1);
+
             }
+
+
 
             // Adjust pan position to keep zoom centered under pointer
+
             const ratio = candleWidth / oldWidth;
+
             chartPanX = mouseX - priceX * ratio;
+
             liveMode = false;
+
             updateLiveToggleUI();
+
             drawChart();
+
         }, { passive: false });
 
+
+
         // Touch swipe scrolling & pinch-to-zoom (mobile)
+
         container.addEventListener('touchstart', (e) => {
+
             isDragging = true;
+
             liveMode = false;
+
             updateLiveToggleUI();
+
             if (e.touches.length === 1) {
+
                 dragStartX = e.touches[0].clientX;
+
                 lastPanX = chartPanX;
+
             } else if (e.touches.length === 2) {
+
                 lastTouchDist = Math.hypot(
+
                     e.touches[0].clientX - e.touches[1].clientX,
+
                     e.touches[0].clientY - e.touches[1].clientY
+
                 );
+
             }
+
         });
+
+
 
         container.addEventListener('touchmove', (e) => {
+
             if (!isDragging) return;
+
             if (e.touches.length === 1) {
+
                 const deltaX = e.touches[0].clientX - dragStartX;
+
                 chartPanX = lastPanX + deltaX;
+
                 drawChart();
+
             } else if (e.touches.length === 2) {
+
                 const dist = Math.hypot(
+
                     e.touches[0].clientX - e.touches[1].clientX,
+
                     e.touches[0].clientY - e.touches[1].clientY
+
                 );
+
                 const delta = dist - lastTouchDist;
+
                 lastTouchDist = dist;
+
                 candleWidth = Math.max(3, Math.min(50, candleWidth + (delta * 0.05)));
+
                 drawChart();
+
             }
+
         });
+
+
 
         container.addEventListener('touchend', () => {
+
             isDragging = false;
+
         });
+
+
 
         container.addEventListener('mouseleave', () => {
+
             crosshairX = -1;
+
             crosshairY = -1;
+
             updateCrosshairTooltip();
+
         });
+
     }
+
+
 
     // Window auto-resize handling
+
     window.addEventListener('resize', () => {
+
         if (currentTab === 'tab-monitoring') {
+
             drawChart();
+
         }
+
     });
 
+
+
     // Fetch initial historical OHLC bars & overlays immediately to bootstrap the canvas visualizer
+
     NX.api.get('/api/chart/history', { component: 'Chart', action: 'LOAD_HISTORY' })
+
         .then(payload => {
+
             if (!payload.ok) {
+
                 console.warn('[UI_ERROR] component=Chart action=LOAD_HISTORY ' + NX.api.msg(payload, 'Chart history unavailable.'));
+
                 setChartStatus('error');
+
                 drawChart();
+
                 return;
+
             }
+
             const body = payload.body || {};
+
             if (body.bars && body.bars.length > 0) {
+
                 candleData = body.bars;
+
                 setChartStatus('ok');
+
             } else {
+
                 candleData = [];
+
                 // Explicit empty state - never synthetic candles.
+
                 setChartStatus('empty');
+
                 drawChart();
+
                 return;
+
             }
+
             if (body.visual_overlays) {
+
                 visualOverlays = body.visual_overlays;
+
             }
+
             // Auto fit and paint the candles immediately
+
             autoFitChart();
+
             drawChart();
+
         })
+
         .catch(err => {
+
             console.warn('[UI_ERROR] component=Chart action=LOAD_HISTORY status=network', err);
+
             setChartStatus('error');
+
             drawChart();
+
         });
+
 }
+
+
 
 function setChartStatus(state) {
+
     const el = document.getElementById('chart-status');
+
     if (!el) return;
+
     if (state === 'ok') {
+
         el.textContent = '';
+
         el.className = '';
+
     } else if (state === 'empty') {
+
         el.textContent = 'NO CANDLE DATA — engine offline or no bars yet.';
+
         el.className = 'text-[10px] font-mono text-textMuted mt-1';
+
     } else if (state === 'error') {
+
         el.textContent = 'Chart data unavailable — check server logs (request_id in console).';
+
         el.className = 'text-[10px] font-mono text-rose-400 mt-1';
+
     } else if (state === 'stale') {
+
         el.textContent = 'Live stream stale — no updates for 30s.';
+
         el.className = 'text-[10px] font-mono text-amber-400 mt-1';
+
     }
+
 }
+
+
 
 // RESYNC (BUG-054): re-fetch the full broker candle history and swap it into
+
 // the chart. Called manually via the Resync button, after every SSE reconnect,
+
 // and by the stale watchdog. The server mirrors the broker bars into the
+
 // engine aggregator + ServerState, so the whole dashboard converges.
+
 let chartResyncInFlight = false;
+
 let lastChartResyncAt = 0;
 
+
+
 async function resyncChart() {
+
     if (chartResyncInFlight) return;
+
     chartResyncInFlight = true;
+
     const btn = document.getElementById('btn-resync-chart');
+
     if (btn) {
+
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Resyncing…';
+
         btn.disabled = true;
+
     }
+
     try {
+
         const res = await fetch('/api/chart/history?count=900', {
+
             headers: { 'X-Request-ID': 'resync_' + Date.now().toString(36) }
+
         });
+
         if (!res.ok) {
+
             console.warn('[UI_ERROR] component=Chart action=RESYNC status=' + res.status);
+
             setChartStatus('error');
+
             return;
+
         }
+
         const body = await res.json();
+
         if (body.bars && body.bars.length > 0) {
+
             candleData = body.bars;
+
             setChartStatus('ok');
+
             if (body.visual_overlays) visualOverlays = body.visual_overlays;
+
             if (body.source) {
+
                 const srcBadge = document.getElementById('chart-source-badge');
+
                 if (srcBadge) srcBadge.textContent = 'sync ' + body.source + ' ✓';
+
             }
+
             autoFitChart();
+
             drawChart();
+
         } else {
+
             setChartStatus('empty');
+
             drawChart();
+
         }
+
         lastChartResyncAt = Date.now();
+
     } catch (err) {
+
         console.warn('[UI_ERROR] component=Chart action=RESYNC status=network', err);
+
         setChartStatus('error');
+
     } finally {
+
         chartResyncInFlight = false;
+
         if (btn) {
+
             btn.innerHTML = '<i class="fa-solid fa-rotate mr-1"></i> Resync';
+
             btn.disabled = false;
+
         }
+
     }
+
 }
+
+
 
 function toggleLiveMode() {
+
     liveMode = !liveMode;
+
     updateLiveToggleUI();
+
     if (liveMode) {
+
         autoFitChart();
+
     }
+
 }
+
+
 
 function updateLiveToggleUI() {
+
     const btn = document.getElementById('btn-live-toggle');
+
     if (btn) {
+
         if (liveMode) {
+
             btn.className = "px-2 py-0.5 rounded bg-accentCyan/10 text-accentCyan hover:bg-accentCyan/20 border border-accentCyan/30 transition";
+
         } else {
+
             btn.className = "px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-gray-400 transition";
+
         }
+
     }
+
 }
+
+
 
 function togglePlayPause() {
+
     uiPaused = !uiPaused;
+
     const btn = document.getElementById('btn-play-pause');
+
     if (btn) {
+
         if (uiPaused) {
+
             btn.innerHTML = `<i class="fa-solid fa-play mr-1"></i> Resume UI`;
+
             btn.className = "px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 transition";
+
         } else {
+
             btn.innerHTML = `<i class="fa-solid fa-pause mr-1"></i> Pause UI`;
+
             btn.className = "px-2 py-0.5 rounded bg-darkBg hover:bg-borderClr border border-borderClr text-gray-300 transition";
+
         }
+
     }
+
 }
+
+
 
 function autoFitChart() {
+
     const canvas = document.getElementById('candleChart');
+
     if (!canvas || candleData.length === 0) return;
+
     const rect = canvas.getBoundingClientRect();
+
     const w = rect.width;
 
+
+
     // Auto calculate ideal candle width and pan to fit all elements
+
     candleWidth = Math.max(3, Math.min(30, (w - 100) / candleData.length - candleGap));
+
     chartPanX = w - 60 - candleData.length * (candleWidth + candleGap);
+
     drawChart();
+
 }
+
+
 
 // Tab Switching Mechanism
+
 function switchTab(tabId, element) {
+
     // Hide all tabs
+
     document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+
     document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+
     // Deactivate all nav buttons
+
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
 
+
+
     // Show selected tab
+
     const targetTab = document.getElementById(tabId);
+
     if (targetTab) {
+
         targetTab.classList.remove('hidden');
+
         targetTab.classList.add('active');
+
     }
+
+
 
     // Activate selected button
+
     if (element) {
+
         element.classList.add('active');
+
     }
+
     currentTab = tabId;
 
+
+
     if (tabId === 'tab-monitoring') {
+
         drawChart();
+
     }
+
     if (tabId === 'tab-account') {
+
         // Charts need a visible canvas (getBoundingClientRect must be > 0).
+
         // Refresh accounting panel + charts now that the tab is shown.
+
         setTimeout(() => {
+
             loadAccountPerformance();
+
             loadAdvancedMetrics();
+
             loadAccountCharts();
+
             loadClosedTrades();
+
             loadAccountPeriod(window.__currentPeriodKind || 'DAY', document.querySelector('.acct-period-btn'));
+
         }, 80);
+
     }
+
     if (tabId === 'tab-rules') {
+
         loadRules();
+
     }
+
     if (tabId === 'tab-ai-analysis') {
+
         loadIntelligenceSummary();
+
     }
+
     if (tabId === 'tab-research') {
+
         loadResearchSummary();
+
     }
+
     if (tabId === 'tab-news') {
+
         loadNewsState();
+
     }
+
+    if (tabId === 'tab-liquidity') {
+
+        loadLiquidityState();
+
+    }
+
+    if (tabId === 'tab-incidents') {
+
+        loadIncidents();
+
+    }
+
     if (tabId === 'tab-debug') {
+
         startDebugHub();
+
     } else {
+
         stopDebugHub();
+
     }
+
 }
 
+
+
 // =============================================================================
+
 // DEBUG & DIAGNOSTICS HUB
+
 // =============================================================================
+
+
 
 let debugRefreshTimer = null;
+
 let debugFeatureCache = [];
+
 let debugIpcSeenIds = new Set();
+
 let debugIpcCleared = false;
 
+
+
 const DEBUG_STATUS_STYLES = {
+
     HEALTHY:      { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', icon: 'fa-circle-check',        dot: 'bg-emerald-400' },
+
     DEGRADED:     { text: 'text-accentGold',  bg: 'bg-amber-500/10',   border: 'border-amber-500/30',   icon: 'fa-triangle-exclamation', dot: 'bg-amber-400' },
+
     UNHEALTHY:    { text: 'text-rose-400',    bg: 'bg-rose-500/10',    border: 'border-rose-500/30',    icon: 'fa-circle-xmark',         dot: 'bg-rose-400' },
+
     DISCONNECTED: { text: 'text-slate-400',   bg: 'bg-slate-500/10',   border: 'border-slate-500/30',   icon: 'fa-plug-circle-xmark',    dot: 'bg-slate-400' },
+
     UNKNOWN:      { text: 'text-slate-400',   bg: 'bg-slate-500/10',   border: 'border-slate-500/30',   icon: 'fa-circle-question',      dot: 'bg-slate-400' }
+
 };
 
+
+
 function debugStatusStyle(status) {
+
     return DEBUG_STATUS_STYLES[status] || DEBUG_STATUS_STYLES.UNKNOWN;
+
 }
+
+
 
 // Wire up the input-mode selector and anomaly filter once the DOM is ready.
+
 function initDebugHub() {
+
     const modeSelect = document.getElementById('debug-model-input-mode');
+
     const customBox = document.getElementById('debug-model-custom-vector');
+
     if (modeSelect && customBox) {
+
         modeSelect.addEventListener('change', () => {
+
             if (modeSelect.value === 'custom') {
+
                 customBox.classList.remove('hidden');
+
                 if (!customBox.value.trim()) {
+
                     customBox.value = JSON.stringify(new Array(50).fill(0));
+
                 }
+
             } else {
+
                 customBox.classList.add('hidden');
+
             }
+
         });
+
     }
+
+
 
     const anomalyToggle = document.getElementById('debug-feature-anomalies-only');
+
     if (anomalyToggle) {
+
         anomalyToggle.addEventListener('change', () => renderDebugFeatures(debugFeatureCache));
+
     }
 
+
+
     const autoToggle = document.getElementById('debug-autorefresh');
+
     if (autoToggle) {
+
         autoToggle.addEventListener('change', () => {
+
             if (currentTab === 'tab-debug') {
+
                 startDebugHub();
+
             }
+
         });
+
     }
+
 }
+
+
 
 function startDebugHub() {
+
     refreshDebugHub();
+
     stopDebugHub();
+
     const autoToggle = document.getElementById('debug-autorefresh');
+
     if (autoToggle && autoToggle.checked) {
+
         debugRefreshTimer = setInterval(refreshDebugHub, 3000);
+
     }
+
 }
+
+
 
 function stopDebugHub() {
+
     if (debugRefreshTimer) {
+
         clearInterval(debugRefreshTimer);
+
         debugRefreshTimer = null;
+
     }
+
 }
+
+
 
 // Pull every diagnostics endpoint in parallel so one slow subsystem cannot stall the UI.
+
 async function refreshDebugHub() {
+
     await Promise.all([
+
         loadDebugHealth(),
+
         loadDebugFeatures(),
+
         loadDebugIpcTelemetry()
+
     ]);
+
 }
+
+
 
 async function loadDebugHealth() {
+
     try {
+
         const res = await fetch('/api/debug/health');
+
         const data = await res.json();
+
+
 
         const overallEl = document.getElementById('debug-overall-status');
+
         const navBadge = document.getElementById('debug-nav-badge');
+
         const style = debugStatusStyle(data.overall_status);
 
+
+
         if (overallEl) {
+
             overallEl.textContent = data.overall_status;
+
             overallEl.className = `text-sm font-black font-mono ${style.text}`;
+
         }
+
         if (navBadge) {
+
             navBadge.textContent = (data.overall_status || 'NA').substring(0, 3);
+
             navBadge.className = `ml-auto text-[9px] font-black px-1.5 py-0.5 rounded ${style.bg} ${style.text} border ${style.border}`;
+
         }
+
+
 
         const grid = document.getElementById('debug-health-grid');
+
         if (!grid) return;
 
+
+
         const subsystems = data.subsystems || [];
+
         if (subsystems.length === 0) {
+
             grid.innerHTML = `<div class="bg-panelBg border border-borderClr rounded-xl p-4 text-xs text-textMuted italic">No subsystem data returned.</div>`;
+
             return;
+
         }
 
+
+
         grid.innerHTML = subsystems.map(sub => {
+
             const st = debugStatusStyle(sub.status);
+
             const metricRows = Object.keys(sub.metrics || {}).map(key => `
+
                 <div class="flex justify-between text-[10px] font-mono">
+
                     <span class="text-textMuted truncate mr-2">${key}</span>
+
                     <span class="text-gray-300 truncate">${formatDebugMetric(sub.metrics[key])}</span>
+
                 </div>
+
             `).join('');
 
+
+
             return `
+
                 <div class="bg-panelBg border ${st.border} rounded-xl p-4 flex flex-col space-y-3 shadow-md hover:shadow-lg transition-all duration-300">
+
                     <div class="flex items-start justify-between">
+
                         <span class="text-[11px] font-black text-white leading-tight pr-2">${sub.name}</span>
+
                         <span class="w-2 h-2 rounded-full ${st.dot} mt-1 shrink-0 ${sub.status === 'HEALTHY' ? 'animate-pulse' : ''}"></span>
+
                     </div>
+
                     <div class="flex items-center space-x-1.5">
+
                         <i class="fa-solid ${st.icon} ${st.text} text-xs"></i>
+
                         <span class="text-[10px] font-black font-mono ${st.text}">${sub.status}</span>
+
                     </div>
+
                     <p class="text-[10px] text-textMuted leading-snug">${sub.detail || ''}</p>
+
                     ${metricRows ? `<div class="pt-2 border-t border-borderClr/60 space-y-1">${metricRows}</div>` : ''}
+
                 </div>
+
             `;
+
         }).join('');
+
     } catch (err) {
+
         console.error("Failed to load debug health", err);
+
     }
+
 }
+
+
 
 function formatDebugMetric(value) {
+
     if (value === null || value === undefined) return '--';
+
     if (typeof value === 'boolean') return value ? 'true' : 'false';
+
     if (typeof value === 'number') {
+
         return Number.isInteger(value) ? String(value) : value.toFixed(2);
+
     }
+
     const str = String(value);
+
     return str.length > 26 ? '...' + str.slice(-23) : str;
+
 }
 
+
+
 async function loadDebugFeatures() {
+
     try {
+
         const res = await fetch('/api/debug/features');
+
         const data = await res.json();
+
+
 
         debugFeatureCache = data.features || [];
 
+
+
         const validCount = debugFeatureCache.length - (data.anomaly_count || 0);
+
         const validEl = document.getElementById('debug-feature-valid-count');
+
         const anomalyEl = document.getElementById('debug-feature-anomaly-count');
+
         const staleEl = document.getElementById('debug-feature-stale');
 
+
+
         if (validEl) validEl.textContent = `VALID ${validCount}/${debugFeatureCache.length}`;
+
         if (anomalyEl) {
+
             anomalyEl.textContent = `ANOMALY ${data.anomaly_count || 0}`;
+
             anomalyEl.className = (data.anomaly_count || 0) === 0
+
                 ? 'px-2 py-1 rounded bg-slate-500/10 text-slate-400 border border-slate-500/30 font-mono'
+
                 : 'px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 font-mono';
+
         }
+
         if (staleEl) {
+
             const age = data.age_seconds;
+
             staleEl.textContent = age === null || age === undefined ? 'AGE --' : `AGE ${age.toFixed(1)}s`;
+
             staleEl.className = data.is_stale
+
                 ? 'px-2 py-1 rounded bg-amber-500/10 text-accentGold border border-amber-500/30 font-mono'
+
                 : 'px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono';
+
         }
+
+
 
         renderDebugFeatures(debugFeatureCache);
+
     } catch (err) {
+
         console.error("Failed to load debug features", err);
+
     }
+
 }
+
+
 
 function renderDebugFeatures(features) {
+
     const tbody = document.getElementById('debug-features-table');
+
     if (!tbody) return;
 
+
+
     const anomaliesOnly = document.getElementById('debug-feature-anomalies-only');
+
     let list = features || [];
+
     if (anomaliesOnly && anomaliesOnly.checked) {
+
         list = list.filter(f => !f.is_valid);
+
     }
+
+
 
     if (list.length === 0) {
+
         tbody.innerHTML = `
+
             <tr>
+
                 <td colspan="4" class="py-6 text-center text-textMuted italic font-sans">
+
                     ${(anomaliesOnly && anomaliesOnly.checked) ? 'No anomalies detected — all 50 features are valid.' : 'Awaiting feature stream...'}
+
                 </td>
+
             </tr>
+
         `;
+
         return;
+
     }
 
+
+
     tbody.innerHTML = list.map(feat => {
+
         const isValid = feat.is_valid;
+
         const tagClass = isValid
+
             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+
             : 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+
         const valClass = isValid
+
             ? (feat.value >= 1.0 ? 'text-emerald-400' : (feat.value <= -1.0 ? 'text-rose-400' : 'text-gray-200'))
+
             : 'text-rose-400';
+
         return `
+
             <tr class="hover:bg-darkBg/40 transition ${isValid ? '' : 'bg-rose-500/5'}">
+
                 <td class="py-1.5 px-3 text-textMuted">${feat.key}</td>
+
                 <td class="py-1.5 px-3 text-gray-300">${feat.name}</td>
+
                 <td class="py-1.5 px-3 text-right font-black ${valClass}">${Number(feat.value).toFixed(6)}</td>
+
                 <td class="py-1.5 px-3 text-right pr-4">
+
                     <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${tagClass}">${feat.status}</span>
+
                 </td>
+
             </tr>
+
         `;
+
     }).join('');
+
 }
 
+
+
 // Fire a real PyTorch forward pass and render the resulting probability bars.
+
 async function runModelDiagnosticsTest() {
+
     const btn = document.getElementById('debug-run-model-btn');
+
     const mode = document.getElementById('debug-model-input-mode');
+
     const customBox = document.getElementById('debug-model-custom-vector');
+
+
 
     let payload = { use_live_features: true };
 
+
+
     if (mode) {
+
         if (mode.value === 'zeros') {
+
             payload = { features: new Array(50).fill(0), use_live_features: false };
+
         } else if (mode.value === 'custom') {
+
             try {
+
                 const parsed = JSON.parse(customBox.value);
+
                 if (!Array.isArray(parsed) || parsed.length !== 50) {
+
                     alert("Custom vector must be a JSON array of exactly 50 numbers.");
+
                     return;
+
                 }
+
                 payload = { features: parsed.map(Number), use_live_features: false };
+
             } catch (e) {
+
                 alert("Custom vector is not valid JSON: " + e.message);
+
                 return;
+
             }
+
         }
+
     }
+
+
 
     if (btn) {
+
         btn.disabled = true;
+
         btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Running Inference...</span>`;
+
     }
 
+
+
     try {
+
         const res = await fetch('/api/debug/model-test', {
+
             method: 'POST',
+
             headers: { 'Content-Type': 'application/json' },
+
             body: JSON.stringify(payload)
+
         });
+
+
 
         if (!res.ok) {
+
             const errBody = await res.json().catch(() => ({ detail: res.statusText }));
+
             alert("Model test failed: " + (errBody.detail || res.statusText));
+
             return;
+
         }
 
+
+
         const data = await res.json();
+
         applyModelTestResult(data);
+
     } catch (err) {
+
         console.error("Model diagnostics test failed", err);
+
         alert("Model diagnostics test failed: " + err.message);
+
     } finally {
+
         if (btn) {
+
             btn.disabled = false;
+
             btn.innerHTML = `<i class="fa-solid fa-flask-vial"></i> <span>Run Model Diagnostics Test</span>`;
+
         }
+
     }
+
 }
+
+
 
 function applyModelTestResult(data) {
+
     const setBar = (valueId, barId, prob) => {
+
         const pct = (Number(prob) * 100);
+
         const valEl = document.getElementById(valueId);
+
         const barEl = document.getElementById(barId);
+
         if (valEl) valEl.textContent = `${pct.toFixed(2)}%`;
+
         if (barEl) barEl.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+
     };
 
+
+
     setBar('debug-prob-buy', 'debug-prob-buy-bar', data.ai_buy);
+
     setBar('debug-prob-sell', 'debug-prob-sell-bar', data.ai_sell);
+
     setBar('debug-prob-no-trade', 'debug-prob-no-trade-bar', data.ai_no_trade);
 
+
+
     const predEl = document.getElementById('debug-model-prediction');
+
     if (predEl) {
+
         predEl.textContent = data.predicted_label || '--';
+
         predEl.className = 'text-[11px] font-mono font-black ' + (
+
             data.predicted_label === 'BUY_MARKET' ? 'text-emerald-400'
+
             : data.predicted_label === 'SELL_MARKET' ? 'text-rose-400'
+
             : 'text-white'
+
         );
+
     }
+
+
 
     const latEl = document.getElementById('debug-model-latency');
+
     if (latEl) latEl.textContent = `${Number(data.latency_ms || 0).toFixed(2)}ms`;
 
+
+
     const srcEl = document.getElementById('debug-model-source');
+
     if (srcEl) srcEl.textContent = data.model_source === 'LIVE_BUNDLE' ? 'LIVE' : 'FRESH';
 
+
+
     appendIpcLine(
+
         `MODEL_TEST ${data.predicted_label} conf=${(Number(data.confidence) * 100).toFixed(1)}% ` +
+
         `buy=${(Number(data.ai_buy) * 100).toFixed(1)}% sell=${(Number(data.ai_sell) * 100).toFixed(1)}% ` +
+
         `nt=${(Number(data.ai_no_trade) * 100).toFixed(1)}% [${data.latency_ms}ms / ${data.model_source}]`,
+
         'text-accentCyan'
+
     );
+
 }
+
+
 
 async function loadDebugIpcTelemetry() {
+
     try {
+
         const res = await fetch('/api/debug/ipc-telemetry?limit=60');
+
         const data = await res.json();
 
+
+
         const latEl = document.getElementById('debug-ipc-latency');
+
         if (latEl) latEl.textContent = `AVG ${Number(data.avg_latency_ms || 0).toFixed(2)} ms`;
 
+
+
         const expEl = document.getElementById('debug-ipc-exposure');
+
         if (expEl && data.exposure) {
+
             const total = (data.exposure.positions || 0) + (data.exposure.pendings || 0);
+
             expEl.textContent = `EXPOSURE ${total}/${data.max_total_exposure} (P${data.exposure.positions || 0}/L${data.exposure.pendings || 0})`;
+
             expEl.className = total > (data.max_total_exposure || 1)
+
                 ? 'px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 font-mono'
+
                 : 'px-2 py-1 rounded bg-accentCyan/10 text-accentCyan border border-accentCyan/30 font-mono';
+
         }
+
+
 
         // The endpoint returns newest-first; replay oldest-first so the console reads
+
         // chronologically as lines are appended.
+
         const events = (data.events || []).slice().reverse();
+
         events.forEach(ev => {
+
             if (debugIpcSeenIds.has(ev.id)) return;
+
             debugIpcSeenIds.add(ev.id);
 
+
+
             const reason = String(ev.reason || '');
+
             let color = 'text-gray-300';
+
             if (/REJECT|FAIL|BLOCK|ABORT/i.test(reason) || /REJECTED/i.test(ev.action || '')) {
+
                 color = 'text-rose-400';
+
             } else if (/AI_REVERSAL/i.test(reason)) {
+
                 color = 'text-accentGold';
+
             } else if (/cancel|expire/i.test(reason)) {
+
                 color = 'text-amber-400';
+
             } else if (/Executed/i.test(ev.action || '')) {
+
                 color = 'text-emerald-400';
+
             }
 
+
+
             const latencyMs = ev.latency !== null && ev.latency !== undefined
+
                 ? (Number(ev.latency) * 1000).toFixed(1) + 'ms'
+
                 : '--';
 
+
+
             appendIpcLine(
+
                 `#${ev.ticket || 0} ${String(ev.action || 'EVENT').toUpperCase()} ` +
+
                 `${ev.symbol || ''} vol=${ev.volume ?? 0} px=${ev.price ?? 0} ` +
+
                 `sl=${ev.stop_loss ?? 0} tp=${ev.take_profit ?? 0} ` +
+
                 `mode=${ev.execution_mode || 'STANDARD'} ipc=${latencyMs} :: ${reason}`,
+
                 color,
+
                 ev.timestamp
+
             );
+
         });
+
     } catch (err) {
+
         console.error("Failed to load IPC telemetry", err);
+
     }
+
 }
+
+
 
 function appendIpcLine(text, colorClass, timestamp) {
+
     const consoleEl = document.getElementById('debug-ipc-console');
+
     if (!consoleEl) return;
 
+
+
     if (!debugIpcCleared) {
+
         // Drop the placeholder on the first real line.
+
         const placeholder = consoleEl.querySelector('.font-sans');
+
         if (placeholder) placeholder.remove();
+
         debugIpcCleared = true;
+
     }
+
+
 
     const ts = timestamp ? String(timestamp).substring(11, 19) : new Date().toISOString().substring(11, 19);
+
     const line = document.createElement('div');
+
     line.className = `${colorClass || 'text-gray-300'} whitespace-pre-wrap break-all`;
+
     line.textContent = `[${ts}] ${text}`;
+
     consoleEl.appendChild(line);
 
+
+
     // Cap the console buffer so long sessions cannot grow the DOM without bound.
+
     while (consoleEl.childElementCount > 400) {
+
         consoleEl.removeChild(consoleEl.firstElementChild);
+
     }
+
     consoleEl.scrollTop = consoleEl.scrollHeight;
+
 }
+
+
 
 function clearIpcConsole() {
+
     const consoleEl = document.getElementById('debug-ipc-console');
+
     if (consoleEl) {
+
         consoleEl.innerHTML = '<div class="text-textMuted italic font-sans">Console cleared.</div>';
+
         debugIpcCleared = false;
+
     }
+
 }
+
+
 
 // Server-Sent Events (SSE) Stream Subscriber
+
 // HARDENED (LiveUiState.2): typed events (`state` full snapshot / `tick`
+
 // incremental), bounded exponential reconnect (no reconnect storm), explicit
+
 // DISCONNECTED badge on failure, HEARTBEAT-driven staleness mark, monotonic
+
 // state_version guard (out-of-order updates are dropped), and payload-level
+
 // sanitization (never render malformed candles silently).
+
 let sseRetryDelay = 1000;
+
 let sseLastEventAt = 0;
+
 let sseStaleTimer = null;
 
+
+
 // FRONTEND OBSERVABILITY (Phase 14): track last snapshot / SSE timestamps so
+
 // the operator can verify data age and synchronization.
+
 let lastApiResponseAt = 0;
+
 let lastSnapshotVersion = null;
+
 let lastSnapshotAt = 0;
 
+
+
 // LiveUiState.2 merge model: the UI keeps ONE authoritative snapshot object.
+
 // REST bootstrap replaces it; SSE `tick` events merge into it; SSE `state`
+
 // events replace it. Out-of-order versions are rejected.
+
 let liveUiSnapshot = null;
 
+
+
 function updateObsStrip() {
+
     const el = document.getElementById('obs-strip');
+
     if (!el) return;
+
     const now = Date.now();
+
     const apiAge = lastApiResponseAt ? Math.round((now - lastApiResponseAt) / 1000) + 's' : '—';
+
     const sseAge = sseLastEventAt ? Math.round((now - sseLastEventAt) / 1000) + 's' : '—';
+
     const snapTs = lastSnapshotAt ? new Date(lastSnapshotAt).toISOString().substring(11, 19) + 'Z' : '—';
+
     el.textContent =
+
         `rest ${apiAge} · sse ${sseAge} · v${lastSnapshotVersion || '—'} @ ${snapTs}`;
+
 }
+
+
 
 function sseStaleCheck() {
+
     if (!eventSource) return;
+
     // If no live event has arrived in 30s, mark stream stale (amber) but do
+
     // not tear down - a paused engine still keeps the stream open.
+
     if (sseLastEventAt && (Date.now() - sseLastEventAt) > 30000) {
+
         const badge = document.getElementById('system-status-badge');
+
         if (badge) {
+
             badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span> STALE';
+
             badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold';
+
         }
+
         setChartStatus('stale');
+
         // RESYNC (BUG-054): a stale live stream after a reconnect/downtime
+
         // must re-fetch the full broker candle history (throttled to once
+
         // per 30s so a dead stream can't hammer the server).
+
         if (Date.now() - lastChartResyncAt > 30000) {
+
             resyncChart();
+
         }
+
     }
+
     updateObsStrip();
+
 }
+
+
 
 function setSystemBadge(state) {
+
     const badge = document.getElementById('system-status-badge');
+
     if (!badge) return;
+
     if (state === 'active') {
+
         badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span> ACTIVE';
+
         badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold';
+
         sseRetryDelay = 1000;
+
     } else if (state === 'paused') {
+
         badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span> PAUSED';
+
         badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold';
+
         sseRetryDelay = 1000;
+
     } else {
+
         badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5"></span> DISCONNECTED';
+
         badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center justify-center font-bold';
+
     }
+
 }
 
+
+
 function startSSE() {
+
     if (eventSource) {
+
         eventSource.close();
+
         eventSource = null;
+
     }
+
+
 
     console.log('[UI_STREAM] event=CONNECTING endpoint=/api/ticks/stream');
 
+
+
     // Connect to server Sent Events streaming endpoint
+
     eventSource = new EventSource('/api/ticks/stream');
 
+
+
     eventSource.onopen = () => {
+
         console.log('[UI_STREAM] event=CONNECTED');
+
         sseRetryDelay = 1000;
+
         if (sseStaleTimer) clearInterval(sseStaleTimer);
+
         sseStaleTimer = setInterval(sseStaleCheck, 5000);
+
         // After any (re)connect, pull a fresh canonical snapshot so the UI
+
         // converges to live state even if SSE events were missed while down.
+
         console.log('[UI_STREAM] event=RESYNC reason=RECONNECT');
+
         fetchSystemSnapshot();
+
         // RESYNC (BUG-054): after downtime the chart must also re-fetch the
+
         // full broker candle history (throttled to once per 10s).
+
         if (Date.now() - lastChartResyncAt > 10000) {
+
             resyncChart();
+
         }
+
     };
+
+
 
     eventSource.onmessage = (event) => {
+
         sseRetryDelay = 1000;
+
         sseLastEventAt = Date.now();
+
         try {
+
             const data = JSON.parse(event.data);
+
             lastApiResponseAt = Date.now();
+
             if (data.state_version != null) lastSnapshotVersion = data.state_version;
+
             updateObsStrip();
+
             handleIncomingLiveTick(data);
+
         } catch (err) {
+
             console.error('[UI_ERROR] component=SSE action=PARSE request_id=-', err);
+
         }
+
     };
+
+
 
     eventSource.addEventListener('state', (event) => {
+
         sseRetryDelay = 1000;
+
         sseLastEventAt = Date.now();
+
         try {
+
             const data = JSON.parse(event.data);
+
             lastApiResponseAt = Date.now();
+
             if (data.state_version != null) lastSnapshotVersion = data.state_version;
+
             updateObsStrip();
+
             // Full snapshot: replace the merged state, then render.
+
             liveUiSnapshot = data;
+
             handleIncomingLiveTick(data, { isSnapshot: true });
+
         } catch (err) {
+
             console.error('[UI_ERROR] component=SSE action=PARSE_STATE request_id=-', err);
+
         }
+
     }, false);
+
+
 
     eventSource.addEventListener('tick', (event) => {
+
         sseRetryDelay = 1000;
+
         sseLastEventAt = Date.now();
+
         try {
+
             const data = JSON.parse(event.data);
+
             lastApiResponseAt = Date.now();
+
             // Monotonic version guard: drop out-of-order updates.
+
             const v = data.state_version;
+
             if (v != null && lastSnapshotVersion != null && v <= lastSnapshotVersion) {
+
                 console.warn('[UI_STREAM] event=DROPPED reason=OUT_OF_ORDER version=' + v);
+
                 return;
+
             }
+
             if (v != null) lastSnapshotVersion = v;
+
             updateObsStrip();
+
             handleIncomingLiveTick(data);
+
         } catch (err) {
+
             console.error('[UI_ERROR] component=SSE action=PARSE_TICK request_id=-', err);
+
         }
+
     }, false);
+
+
 
     eventSource.addEventListener('heartbeat', () => {
+
         sseLastEventAt = Date.now();
+
         updateObsStrip();
+
     }, false);
 
+
+
     eventSource.onerror = (err) => {
+
         // Bounded exponential reconnect: EventSource auto-reconnects; we
+
         // additionally cap the rate to avoid a reconnect storm on a dead server.
+
         console.warn('[UI_ERROR] component=SSE action=RECONNECT status=network', err);
+
         setSystemBadge('disconnected');
+
         if (eventSource) {
+
             eventSource.close();
+
             eventSource = null;
+
             const delay = Math.min(sseRetryDelay, 15000);
+
             sseRetryDelay = Math.min(sseRetryDelay * 2, 15000);
+
             setTimeout(() => {
+
                 if (!eventSource) startSSE();
+
             }, delay);
+
         }
+
     };
+
 }
+
+
 
 // Handle Incoming Live Market Tick & State Updates
+
 function handleIncomingLiveTick(payload, opts) {
+
     if (uiPaused) return; // Prevent updates if user paused the visualizer
+
     const isSnapshot = !!(opts && opts.isSnapshot);
 
+
+
     // Merge incremental updates into the authoritative snapshot. Full
+
     // snapshots replace it; ticks overlay only the changed sections so the
+
     // heavyweight lists (bars/features/predictions) survive between full
+
     // events and refresh never destroys the UI shell.
+
     if (isSnapshot) {
+
         liveUiSnapshot = payload;
+
     } else if (liveUiSnapshot) {
+
         liveUiSnapshot = Object.assign({}, liveUiSnapshot, payload);
+
     } else {
+
         liveUiSnapshot = payload;
+
     }
+
     payload = liveUiSnapshot;
 
+
+
     // Retain the latest payload for AI VIEW per-candle snapshots.
+
     lastAiSnapshot = payload;
 
+
+
     // Update Connection State badge
+
     const badge = document.getElementById('system-status-badge');
+
     if (payload.engine_running) {
+
         badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span> ACTIVE`;
+
         badge.className = "ml-3 text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center";
+
         document.getElementById('btn-toggle-engine').innerHTML = `<i class="fa-solid fa-circle-stop"></i> <span>Stop Bot</span>`;
+
         document.getElementById('btn-toggle-engine').className = "flex-1 bg-rose-500 hover:bg-rose-600 text-white font-bold py-1.5 px-3 rounded text-xs transition shadow-md shadow-rose-500/10 flex items-center justify-center space-x-1";
+
     } else {
+
         badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span> PAUSED`;
+
         badge.className = "ml-3 text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center";
+
         const btn = document.getElementById('btn-toggle-engine');
+
         if (btn) {
+
             btn.innerHTML = `<i class="fa-solid fa-circle-play"></i> <span>Start Bot</span>`;
+
             btn.className = "flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-1.5 px-3 rounded text-xs transition shadow-md shadow-emerald-500/10 flex items-center justify-center space-x-1";
+
         }
+
     }
+
+
 
     // Provenance + snapshot identity (FULL-STATE diagnostic strip)
+
     const prov = payload.provenance || {};
+
     const snapId = document.getElementById('state-version-indicator');
+
     if (snapId) snapId.textContent = 'v' + (payload.state_version || '--') + ' · ' + (payload.snapshot_timestamp || '').substring(11, 19);
 
+
+
     // Top Header Stats (null-safe: render explicit unavailable, never fake)
+
     const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+
     if (payload.symbol != null) setTxt('quick-symbol', payload.symbol);
+
     if (payload.bid != null && payload.ask != null) {
+
         setTxt('quick-bid-ask', `${payload.bid.toFixed(2)} / ${payload.ask.toFixed(2)}`);
+
     }
+
     if (payload.regime != null) setTxt('quick-regime', payload.regime);
+
     if (payload.execution_mode != null) {
+
         const sel = document.getElementById('execution-mode-selector');
+
         if (sel) sel.value = payload.execution_mode;
+
     }
+
     // Real runtime mode (backend-derived from MT5 connection state; the
+
     // configured-mode selector above never lies about being LIVE).
+
     const runtimeMode = payload.runtime_mode || payload.execution_mode || null;
+
     const modeBadge = document.getElementById('runtime-mode-badge');
+
     if (modeBadge && runtimeMode) {
+
         modeBadge.textContent = runtimeMode;
+
         const isLive = String(runtimeMode).indexOf('LIVE') === 0;
+
         const isDegraded = String(runtimeMode).indexOf('DISCONNECTED') !== -1 || String(runtimeMode).indexOf('BLOCKED') !== -1;
+
         modeBadge.className = 'text-[10px] px-2 py-0.5 rounded font-black border ' +
+
             (isLive && !isDegraded
+
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+
                 : isDegraded
+
                     ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+
                     : 'bg-amber-500/10 text-amber-400 border-amber-500/30');
+
     }
+
+
 
     // Header health: engine/mode badge + last-update age.
+
     const health = payload.health || {};
+
     const healthBadge = document.getElementById('header-health-badge');
+
     if (healthBadge && health.subsystems) {
+
         const overall = health.overall || 'UNAVAILABLE';
+
         const style = healthBadgeStyle(overall);
+
         healthBadge.textContent = overall;
+
         healthBadge.className = 'text-[10px] px-2 py-0.5 rounded font-black ' + style;
+
     }
+
     const healthDetail = document.getElementById('header-health-detail');
+
     if (healthDetail && health.details) {
+
         healthDetail.textContent = health.details.engine || health.details.mt5 || '—';
+
     }
+
     const lastUpdate = document.getElementById('header-last-update');
+
     if (lastUpdate) {
+
         lastUpdate.textContent = lastSnapshotAt
+
             ? Math.round((Date.now() - lastSnapshotAt) / 1000) + 's ago'
+
             : '—';
+
     }
+
+
 
     // Monitoring Panel
+
     if (payload.bid != null) setTxt('monitor-bid', payload.bid.toFixed(2));
+
     if (payload.ask != null) setTxt('monitor-ask', payload.ask.toFixed(2));
+
     if (payload.spread != null) setTxt('monitor-spread', `${payload.spread} pts`);
+
     // Explicit STALE marker when the broker tick is old (task section 11:
+
     // never show a stale price as current).
+
     const tickStaleEl = document.getElementById('monitor-tick-state');
+
     if (tickStaleEl) {
+
         if (payload.tick_stale) {
+
             tickStaleEl.textContent = 'STALE';
+
             tickStaleEl.className = 'text-[10px] font-mono font-black text-rose-400';
+
         } else if (payload.tick_freshness_ms != null) {
+
             tickStaleEl.textContent = 'LIVE';
+
             tickStaleEl.className = 'text-[10px] font-mono font-black text-emerald-400';
+
         } else {
+
             tickStaleEl.textContent = '—';
+
             tickStaleEl.className = 'text-[10px] font-mono font-black text-textMuted';
+
         }
+
     }
+
     if (payload.atr != null) {
+
         const volVal = payload.atr;
+
         setTxt('monitor-atr', (volVal < 0.1) ? volVal.toFixed(6) : volVal.toFixed(2));
+
     }
+
     if (payload.regime != null) setTxt('monitor-regime', payload.regime);
 
+
+
     // AI Prediction Card
+
     if (payload.ai_decision != null) setTxt('ai-decision-badge', payload.ai_decision);
+
     if (payload.ai_confidence != null) setTxt('ai-confidence', `Conf: ${(payload.ai_confidence * 100).toFixed(2)}%`);
+
     if (payload.ai_reason != null) setTxt('ai-reason-text', `"${payload.ai_reason}"`);
 
+
+
     // Softmax probabilities (available flag; no fake 99.5/0.2/0.3 defaults)
+
     const probs = payload.probs || {};
+
     if (probs.available && probs.no_trade != null && probs.buy != null && probs.sell != null) {
+
         const pNoTrade = (probs.no_trade * 100).toFixed(1);
+
         const pBuy = (probs.buy * 100).toFixed(1);
+
         const pSell = (probs.sell * 100).toFixed(1);
 
+
+
         setTxt('prob-no-trade', `${pNoTrade}%`);
+
         setTxt('prob-buy', `${pBuy}%`);
+
         setTxt('prob-sell', `${pSell}%`);
+
         const ntBar = document.getElementById('prob-no-trade-bar');
+
         const bBar = document.getElementById('prob-buy-bar');
+
         const sBar = document.getElementById('prob-sell-bar');
+
         if (ntBar) ntBar.style.width = `${pNoTrade}%`;
+
         if (bBar) bBar.style.width = `${pBuy}%`;
+
         if (sBar) sBar.style.width = `${pSell}%`;
+
     }
+
+
 
     // ScalpNet panel (real model metadata; renders "—" until a live inference exists)
+
     const model = payload.model || {};
+
     if (model.available) {
+
         setTxt('model-id', model.model_id || '—');
+
         setTxt('model-version', model.model_version || '—');
+
         setTxt('model-architecture', model.architecture || '—');
+
         setTxt('model-artifact', model.artifact_path || '—');
+
         setTxt('model-schema', model.feature_schema_id || '—');
+
         setTxt('model-scaler', model.scaler_ready ? 'READY' : 'NOT READY');
+
         // Inference latency (real measured ms when available)
+
         if (model.latency_ms != null) {
+
             setTxt('model-inference-time', `${Number(model.latency_ms).toFixed(2)}ms`);
+
         }
+
         if (payload.probs && payload.probs.available) {
+
             setTxt('model-data-source', 'LIVE INFERENCE');
+
         } else {
+
             setTxt('model-data-source', 'AWAITING FIRST INFERENCE');
+
         }
+
     } else {
+
         setTxt('model-data-source', 'AWAITING LIVE STATE');
+
     }
+
+
 
     // Account Section (fields may be null when the broker adapter is
+
         // unavailable - render an explicit unavailable state, never $"NaN")
+
         const accBal = payload.account && payload.account.balance;
+
         const accEq = payload.account && payload.account.equity;
+
         const accFloat = payload.account && payload.account.floating;
+
         const accDd = payload.account && payload.account.drawdown;
+
         const accWr = payload.account && payload.account.win_rate;
+
         const accMargin = payload.account && payload.account.margin_free;
+
         setTxt('acc-balance', (accBal != null) ? `$${accBal.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '—');
+
         setTxt('acc-equity', (accEq != null) ? `$${accEq.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '—');
+
         setTxt('acc-floating', (accFloat != null) ? `${accFloat >= 0 ? '+' : ''}$${accFloat.toFixed(2)}` : '—');
+
         const flEl = document.getElementById('acc-floating');
+
         if (flEl) flEl.className = `text-lg font-black font-mono ${(accFloat != null && accFloat < 0) ? 'text-rose-400' : 'text-emerald-400'}`;
+
         setTxt('acc-drawdown', (accDd != null) ? `${accDd.toFixed(2)}%` : '—');
+
         setTxt('acc-winrate', (accWr != null) ? `${accWr.toFixed(1)}%` : '—');
+
         setTxt('acc-margin-free', (accMargin != null) ? `$${accMargin.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '—');
+
         setTxt('acc-open-positions', (payload.account && payload.account.open_positions != null) ? String(payload.account.open_positions) : '—');
 
+
+
     // TRADE-CLOSE DETECTOR (live update with orders):
+
     // when open_positions drops or floating PnL settles from non-zero to
+
     // zero, a position just closed — refresh the accounting panel NOW so the
+
     // charts and PnL statistics update with the order (not on the 30s timer).
+
     const curOpen = (payload.account && payload.account.open_positions != null) ? Number(payload.account.open_positions) : null;
+
     const curFloat = (payload.account && payload.account.floating != null) ? Number(payload.account.floating) : null;
+
     if (curOpen != null && window.__lastOpenCount != null && curOpen < window.__lastOpenCount) {
+
         window.__acctRefreshAt = Date.now();
+
         loadAccountPerformance();
+
         loadAdvancedMetrics();
+
         loadAccountCharts();
+
         loadClosedTrades();
+
     } else if (curFloat != null && window.__lastFloatVal != null && window.__lastFloatVal !== 0 && curFloat === 0) {
+
         window.__acctRefreshAt = Date.now();
+
         loadAccountPerformance();
+
         loadAdvancedMetrics();
+
         loadAccountCharts();
+
         loadClosedTrades();
+
     }
+
     window.__lastOpenCount = curOpen;
+
     window.__lastFloatVal = curFloat;
+
         // Real broker account identity (from the typed snapshot)
+
         const acc = payload.account || {};
+
         setTxt('acc-login', (acc.login != null) ? String(acc.login) : '—');
+
         setTxt('acc-server', acc.server || '—');
+
         setTxt('acc-currency', acc.currency || '—');
+
         setTxt('acc-leverage', (acc.leverage != null) ? `1:${acc.leverage}` : '—');
+
         setTxt('acc-margin-level', (acc.margin_level != null && acc.margin_level > 0) ? `${acc.margin_level.toFixed(0)}%` : '—');
+
         setTxt('acc-trade-allowed', (acc.trade_allowed != null) ? (acc.trade_allowed ? 'YES' : 'NO') : '—');
 
+
+
     if (payload.support_levels) {
+
         supportLevels = payload.support_levels;
+
     }
+
     if (payload.resistance_levels) {
+
         resistanceLevels = payload.resistance_levels;
+
     }
+
     if (payload.visual_overlays) {
+
         visualOverlays = payload.visual_overlays;
+
     }
+
+
+
+    // TASK-02-70D-INTEGRATION: canonical snapshot liquidity section.
+
+    if (payload.liquidity) {
+
+        syncLiquidityFromSnapshot(payload);
+
+    }
+
+
 
     // Dynamic Candle updates (Single Source of truth includes forming bar)
+
     if (payload.bars && payload.bars.length > 0) {
+
         candleData = payload.bars;
+
         const barsMeta = document.getElementById('chart-bars-meta');
+
         if (barsMeta) {
+
             const forming = candleData.filter(b => b.is_complete === false).length;
+
             barsMeta.textContent = `${candleData.length - forming} closed + ${forming} forming`;
+
         }
+
         const srcBadge = document.getElementById('chart-source-badge');
+
         if (srcBadge) {
+
             const ts = (payload.timestamps && payload.timestamps.tick) || '';
+
             srcBadge.textContent = `price ${(payload.symbol || '—')} @ ${ts ? ts.substring(11, 19) + 'Z' : '—'}`;
+
         }
+
         if (currentTab === 'tab-monitoring') {
+
             if (liveMode && !isDragging) {
+
                 // Pin view to the right side (newest bar) in live tracking mode
+
                 const canvas = document.getElementById('candleChart');
+
                 if (canvas) {
+
                     const rect = canvas.getBoundingClientRect();
+
                     chartPanX = rect.width - 60 - candleData.length * (candleWidth + candleGap);
+
                 }
+
             }
+
             drawChart();
+
             updateCrosshairTooltip();
+
         }
+
     } else if (isSnapshot && candleData.length === 0) {
+
         // Explicit empty snapshot: keep the canvas in a clear empty state.
+
         setChartStatus('empty');
+
         drawChart();
+
     }
+
+
 
     // Populate active positions table
+
     populatePositionsTable(payload.positions || []);
 
+
+
     // Populate AI Analysis Category (real ENGINE_STATE features only)
+
     if (payload.features && payload.features.length > 0) {
+
         updateFeaturesGrid(payload.features);
+
         renderFeatureDeltas();
+
     }
+
+
 
     // Populate Prediction Outcomes (real audit_signals history)
+
     if (payload.predictions && payload.predictions.length > 0) {
+
         predictions = payload.predictions;
+
         updatePredictionsTable();
+
     } else if (isSnapshot) {
+
         predictions = [];
+
         updatePredictionsTable();
+
     }
+
 }
+
+
 
 // Helper to retrieve visible candles indices
+
 function getVisibleIndices(w) {
+
     const startIdx = Math.max(0, Math.floor(-chartPanX / (candleWidth + candleGap)));
+
     const endIdx = Math.min(candleData.length - 1, Math.ceil((w - 60 - chartPanX) / (candleWidth + candleGap)));
+
     return { startIdx, endIdx };
+
 }
+
+
 
 // Draw candlestick data onto HTML5 Canvas with smooth responsive rendering and auto scaling
+
 function drawChart() {
+
     const canvas = document.getElementById('candleChart');
+
     if (!canvas) return;
+
     const ctx = canvas.getContext('2d');
+
+
 
     // Handle retina display scaling (setTransform resets any prior scale)
+
     const dpr = window.devicePixelRatio || 1;
+
     const rect = canvas.getBoundingClientRect();
+
     canvas.width = rect.width * dpr;
+
     canvas.height = rect.height * dpr;
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+
 
     const w = rect.width;
+
     const h = rect.height;
 
+
+
     // Draw grid background
+
     ctx.fillStyle = '#090d16';
+
     ctx.fillRect(0, 0, w, h);
+
+
 
     if (candleData.length === 0) {
+
         ctx.fillStyle = '#94a3b8';
+
         ctx.font = '12px sans-serif';
+
         ctx.textAlign = 'center';
+
         ctx.fillText("Awaiting historical OHLC stream mapping...", w / 2, h / 2);
+
         return;
+
     }
+
+
 
     // Determine boundaries for visible range only (prevents compressed squash look)
+
     const { startIdx, endIdx } = getVisibleIndices(w);
+
     let highPrice = -Infinity;
+
     let lowPrice = Infinity;
+
     for (let i = startIdx; i <= endIdx; i++) {
+
         const c = candleData[i];
+
         if (c.high > highPrice) highPrice = c.high;
+
         if (c.low < lowPrice) lowPrice = c.low;
+
     }
+
+
 
     // Fallback if no candles are visible
+
     if (highPrice === -Infinity || lowPrice === Infinity) {
+
         candleData.forEach(c => {
+
             if (c.high > highPrice) highPrice = c.high;
+
             if (c.low < lowPrice) lowPrice = c.low;
+
         });
+
     }
+
+
 
     const priceRange = (highPrice - lowPrice) || 1.0;
+
     const padding = priceRange * 0.08;
+
     const minPrice = lowPrice - padding;
+
     const maxPrice = highPrice + padding;
+
     const priceRangePadded = maxPrice - minPrice;
 
+
+
     // Grid lines matched to visible price scaling
+
     ctx.strokeStyle = '#121826';
+
     ctx.lineWidth = 1;
+
     for (let i = 40; i < h - 20; i += 40) {
+
         ctx.beginPath();
+
         ctx.moveTo(0, i);
+
         ctx.lineTo(w - 60, i);
+
         ctx.stroke();
+
     }
+
     // Vertical grid lines
+
     const step = (candleWidth + candleGap) * 5;
+
     for (let i = chartPanX % step; i < w - 60; i += step) {
+
         ctx.beginPath();
+
         ctx.moveTo(i, 0);
+
         ctx.lineTo(i, h - 20);
+
         ctx.stroke();
+
     }
+
+
 
     // Render validated zones (transparent rectangles)
+
     if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.rectangles && visualOverlays.rectangles.length > 0) {
+
         visualOverlays.rectangles.forEach(rect => {
+
             const yHigh = h - 20 - ((rect.price_high - minPrice) / priceRangePadded) * (h - 40);
+
             const yLow = h - 20 - ((rect.price_low - minPrice) / priceRangePadded) * (h - 40);
+
             const rectHeight = Math.max(1, yLow - yHigh);
 
+
+
             let color = 'rgba(0, 230, 118, 0.25)'; // Green Box for Bullish FVG
+
             let label = rect.type;
 
+
+
             if (rect.type === 'BULLISH_ORDER_BLOCK' || rect.type === 'BEARISH_ORDER_BLOCK') {
+
                 color = 'rgba(255, 255, 255, 0.08)'; // white/transparent box for valid OBs
+
                 label = `ob (${(rect.ai_confidence * 100).toFixed(0)}%)`;
+
             } else if (rect.type === 'BEARISH_FVG') {
+
                 color = 'rgba(255, 23, 68, 0.25)'; // Red Box for Bearish FVG
+
             } else if (rect.type === 'STOP_HUNT_ZONE') {
+
                 color = 'rgba(255, 215, 0, 0.35)'; // Gold Box for Swept Liquidity Pools
+
             }
+
+
 
             let xStart = 0;
+
             let xEnd = w - 60;
+
             if (rect.time) {
+
                 const candleIdx = candleData.findIndex(c => c.time === rect.time);
+
                 if (candleIdx !== -1) {
+
                     xStart = Math.max(0, chartPanX + candleIdx * (candleWidth + candleGap));
+
                 }
+
             }
+
             const rectWidth = Math.max(1, xEnd - xStart);
 
+
+
             ctx.fillStyle = color;
+
             ctx.fillRect(xStart, yHigh, rectWidth, rectHeight);
 
+
+
             if (rect.type === 'BULLISH_ORDER_BLOCK' || rect.type === 'BEARISH_ORDER_BLOCK') {
+
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+
                 ctx.lineWidth = 1;
+
                 ctx.strokeRect(xStart, yHigh, rectWidth, rectHeight);
+
             }
+
+
 
             // Display zone type & AI Confidence % inside the box
+
             ctx.fillStyle = 'rgba(226, 232, 240, 0.9)';
+
             ctx.font = 'bold 9px sans-serif';
+
             ctx.textAlign = 'left';
+
             const textY = Math.min(Math.max(yHigh + 12, 12), h - 22);
+
             ctx.fillText(label, xStart + 8, textY);
+
         });
+
     }
+
+
 
     // Render BOS Lines (Break of Structure)
+
     if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.bos_lines && visualOverlays.bos_lines.length > 0) {
+
         ctx.lineWidth = 1.5;
+
         ctx.strokeStyle = 'rgba(230, 81, 0, 0.85)'; // Orange/Gold
+
         ctx.setLineDash([4, 2]);
+
         visualOverlays.bos_lines.forEach(line => {
+
             const y = h - 20 - ((line.price - minPrice) / priceRangePadded) * (h - 40);
+
             if (y >= 0 && y < h - 20) {
+
                 ctx.beginPath();
+
                 ctx.moveTo(0, y);
+
                 ctx.lineTo(w - 60, y);
+
                 ctx.stroke();
+
+
 
                 ctx.fillStyle = 'rgba(230, 81, 0, 0.9)';
+
                 ctx.font = 'bold 9px sans-serif';
+
                 ctx.fillText("BOS", 25, y - 4);
+
             }
+
         });
+
         ctx.setLineDash([]);
+
     }
+
+
 
     // Render 50% Midline through middle of the impulse leg
+
     if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.midlines && visualOverlays.midlines.length > 0) {
+
         ctx.lineWidth = 1.2;
+
         ctx.strokeStyle = 'rgba(148, 163, 184, 0.8)'; // Silver
+
         ctx.setLineDash([6, 4]);
+
         visualOverlays.midlines.forEach(line => {
+
             const y = h - 20 - ((line.price - minPrice) / priceRangePadded) * (h - 40);
+
             if (y >= 0 && y < h - 20) {
+
                 ctx.beginPath();
+
                 ctx.moveTo(0, y);
+
                 ctx.lineTo(w - 60, y);
+
                 ctx.stroke();
+
+
 
                 ctx.fillStyle = 'rgba(148, 163, 184, 0.9)';
+
                 ctx.font = 'bold 9px sans-serif';
+
                 ctx.fillText("50%", w - 90, y - 4);
+
             }
+
         });
+
         ctx.setLineDash([]);
+
     }
+
+
 
     // Render LIQ Markers at liquidity sweep points
+
     if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.liq_markers && visualOverlays.liq_markers.length > 0) {
+
         ctx.font = 'bold 9px sans-serif';
+
         ctx.textAlign = 'center';
+
         visualOverlays.liq_markers.forEach(liq => {
+
             const y = h - 20 - ((liq.price - minPrice) / priceRangePadded) * (h - 40);
+
             let x = w / 2;
+
             if (liq.time) {
+
                 const candleIdx = candleData.findIndex(c => c.time === liq.time);
+
                 if (candleIdx !== -1) {
+
                     x = chartPanX + candleIdx * (candleWidth + candleGap) + candleWidth / 2;
+
                 }
+
             }
+
             if (y >= 0 && y < h - 20) {
+
                 ctx.fillStyle = '#ffeb3b'; // Vivid Yellow
+
                 ctx.fillText("liq", x, liq.type === 'LIQ_HIGH' ? y - 10 : y + 14);
+
             }
+
         });
+
         ctx.textAlign = 'left';
+
     }
+
+
+
+    // TASK-02-70D-INTEGRATION: Liquidity pool overlays (REAL backend values
+
+    // only — the engine's snapshot pools; absent -> no lines, chart intact).
+
+    const liqOverlays = (typeof window.__liquidityPools !== 'undefined') ? (window.__liquidityPools || []) : [];
+
+    if (liqOverlays.length > 0) {
+
+        ctx.font = 'bold 8px sans-serif';
+
+        ctx.textAlign = 'right';
+
+        liqOverlays.forEach(pool => {
+
+            const price = Number(pool.price);
+
+            if (!isFinite(price)) return;
+
+            const y = h - 20 - ((price - minPrice) / priceRangePadded) * (h - 40);
+
+            if (y < 0 || y >= h - 20) return;
+
+            ctx.strokeStyle = (pool.side === 1 || pool.side === 'BSL') ? 'rgba(16,185,129,0.45)' : 'rgba(244,63,94,0.45)';
+
+            ctx.setLineDash([4, 3]);
+
+            ctx.lineWidth = 1;
+
+            ctx.beginPath();
+
+            ctx.moveTo(0, y);
+
+            ctx.lineTo(w, y);
+
+            ctx.stroke();
+
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = ctx.strokeStyle;
+
+            const tag = (pool.state !== undefined && pool.state !== null) ? 'pool:' + pool.state : 'pool';
+
+            ctx.fillText(tag, w - 4, y - 3);
+
+        });
+
+        ctx.textAlign = 'left';
+
+    }
+
+
 
     // Draw candles within visible bounds
+
     candleData.forEach((candle, idx) => {
+
         if (idx < startIdx || idx > endIdx) return;
+
         const x = chartPanX + idx * (candleWidth + candleGap);
 
+
+
         // Translate price to Y pixels
+
         const yOpen = h - 20 - ((candle.open - minPrice) / priceRangePadded) * (h - 40);
+
         const yClose = h - 20 - ((candle.close - minPrice) / priceRangePadded) * (h - 40);
+
         const yHigh = h - 20 - ((candle.high - minPrice) / priceRangePadded) * (h - 40);
+
         const yLow = h - 20 - ((candle.low - minPrice) / priceRangePadded) * (h - 40);
 
+
+
         const isGreen = candle.close >= candle.open;
+
         // Styling matching professional TradingView layout
+
         const color = isGreen ? '#10b981' : '#f43f5e';
 
+
+
         ctx.strokeStyle = color;
+
         ctx.fillStyle = color;
+
         ctx.lineWidth = Math.max(1, candleWidth * 0.15);
 
+
+
         // Draw shadow wick line
+
         ctx.beginPath();
+
         ctx.moveTo(x + candleWidth / 2, yHigh);
+
         ctx.lineTo(x + candleWidth / 2, yLow);
+
         ctx.stroke();
+
+
 
         // Draw solid candle body
+
         const rectHeight = Math.max(1, Math.abs(yClose - yOpen));
+
         ctx.fillRect(x, Math.min(yOpen, yClose), candleWidth, rectHeight);
 
+
+
         // Draw light dashed border on uncompleted live forming candles
+
         if (candle.is_complete === false) {
+
             ctx.strokeStyle = '#38bdf8';
+
             ctx.setLineDash([2, 2]);
+
             ctx.strokeRect(x, Math.min(yOpen, yClose), candleWidth, rectHeight);
+
             ctx.setLineDash([]);
+
         }
+
     });
+
+
 
     // Draw Support levels
+
     if (typeof supportLevels !== 'undefined' && supportLevels.length > 0) {
+
         ctx.strokeStyle = 'rgba(16, 185, 129, 0.45)'; // semi-transparent green
+
         ctx.lineWidth = 1.5;
+
         ctx.setLineDash([3, 3]);
+
         supportLevels.forEach(level => {
+
             const y = h - 20 - ((level - minPrice) / priceRangePadded) * (h - 40);
+
             if (y >= 0 && y < h - 20) {
+
                 ctx.beginPath();
+
                 ctx.moveTo(0, y);
+
                 ctx.lineTo(w - 60, y);
+
                 ctx.stroke();
+
+
 
                 // Draw label "Support [price]" on the right edge
+
                 ctx.fillStyle = '#10b981';
+
                 ctx.font = '8px monospace';
+
                 ctx.fillText(`S: ${level.toFixed(2)}`, w - 110, y - 3);
+
             }
+
         });
+
         ctx.setLineDash([]);
+
     }
+
+
 
     // Draw Resistance levels
+
     if (typeof resistanceLevels !== 'undefined' && resistanceLevels.length > 0) {
+
         ctx.strokeStyle = 'rgba(244, 63, 94, 0.45)'; // semi-transparent red
+
         ctx.lineWidth = 1.5;
+
         ctx.setLineDash([3, 3]);
+
         resistanceLevels.forEach(level => {
+
             const y = h - 20 - ((level - minPrice) / priceRangePadded) * (h - 40);
+
             if (y >= 0 && y < h - 20) {
+
                 ctx.beginPath();
+
                 ctx.moveTo(0, y);
+
                 ctx.lineTo(w - 60, y);
+
                 ctx.stroke();
 
+
+
                 // Draw label "Resistance [price]" on the right edge
+
                 ctx.fillStyle = '#f43f5e';
+
                 ctx.font = '8px monospace';
+
                 ctx.fillText(`R: ${level.toFixed(2)}`, w - 110, y - 3);
+
             }
+
         });
+
         ctx.setLineDash([]);
+
     }
+
+
 
     // Render active order execution lines & premium interactive tooltip
+
     if (typeof visualOverlays !== 'undefined' && visualOverlays && visualOverlays.order_lines && visualOverlays.order_lines.active) {
+
         const line = visualOverlays.order_lines;
+
         const yEntry = h - 20 - ((line.entry_price - minPrice) / priceRangePadded) * (h - 40);
+
         const ySL = h - 20 - ((line.sl_price - minPrice) / priceRangePadded) * (h - 40);
+
         const yTP = h - 20 - ((line.tp_price - minPrice) / priceRangePadded) * (h - 40);
 
+
+
         if (yEntry >= 0 && yEntry < h - 20) {
+
             // Blue Line for entry (Blue solid)
+
             ctx.strokeStyle = 'rgba(0, 230, 240, 0.95)';
+
             ctx.lineWidth = 1.8;
+
             ctx.beginPath();
+
             ctx.moveTo(0, yEntry);
+
             ctx.lineTo(w - 60, yEntry);
+
             ctx.stroke();
+
+
 
             ctx.fillStyle = 'rgba(0, 230, 240, 0.95)';
+
             ctx.font = 'bold 9px monospace';
+
             ctx.fillText(`ENTRY: ${line.entry_price.toFixed(2)}`, 15, yEntry - 4);
+
         }
+
+
 
         if (ySL >= 0 && ySL < h - 20) {
+
             // Red Dashed Line for Stop Loss (Red dashed)
+
             ctx.strokeStyle = 'rgba(255, 23, 68, 0.95)';
+
             ctx.lineWidth = 1.8;
+
             ctx.setLineDash([4, 4]);
+
             ctx.beginPath();
+
             ctx.moveTo(0, ySL);
+
             ctx.lineTo(w - 60, ySL);
+
             ctx.stroke();
+
             ctx.setLineDash([]);
+
+
 
             ctx.fillStyle = 'rgba(255, 23, 68, 0.95)';
+
             ctx.font = 'bold 9px monospace';
+
             ctx.fillText(`SL: ${line.sl_price.toFixed(2)}`, 15, ySL - 4);
+
         }
+
+
 
         if (yTP >= 0 && yTP < h - 20) {
+
             // Green Dashed Line for Take Profit (Green dashed)
+
             ctx.strokeStyle = 'rgba(0, 230, 118, 0.95)';
+
             ctx.lineWidth = 1.8;
+
             ctx.setLineDash([4, 4]);
+
             ctx.beginPath();
+
             ctx.moveTo(0, yTP);
+
             ctx.lineTo(w - 60, yTP);
+
             ctx.stroke();
+
             ctx.setLineDash([]);
 
+
+
             ctx.fillStyle = 'rgba(0, 230, 118, 0.95)';
+
             ctx.font = 'bold 9px monospace';
+
             ctx.fillText(`TP: ${line.tp_price.toFixed(2)}`, 15, yTP - 4);
+
         }
+
+
 
         // Draw Interactive Tooltip beside lines
+
         const tooltipX = Math.max(10, w - 380);
+
         const tooltipY = Math.min(Math.max(yEntry + 15, 30), h - 85);
 
+
+
         ctx.fillStyle = 'rgba(18, 24, 38, 0.95)';
+
         ctx.strokeStyle = '#1e293b';
+
         ctx.lineWidth = 1.5;
 
+
+
         // Tooltip container box
+
         ctx.beginPath();
+
         if (typeof ctx.roundRect === 'function') {
+
             ctx.roundRect(tooltipX, tooltipY, 310, 52, 6);
+
         } else {
+
             ctx.rect(tooltipX, tooltipY, 310, 52);
+
         }
+
         ctx.fill();
+
         ctx.stroke();
+
+
 
         // Tooltip Text
+
         ctx.fillStyle = '#e2e8f0';
+
         ctx.font = 'bold 9px sans-serif';
+
         ctx.textAlign = 'left';
+
         ctx.fillText(`Order Evaluated: ${line.direction}`, tooltipX + 10, tooltipY + 16);
 
+
+
         ctx.fillStyle = '#94a3b8';
+
         ctx.font = '9px monospace';
+
         ctx.fillText(`Target RR: 1:${line.risk_reward_ratio.toFixed(2)} | Dollar Risk: $${line.risk_usd.toFixed(2)}`, tooltipX + 10, tooltipY + 30);
+
         ctx.fillText(`Potential Profit: $${line.profit_usd.toFixed(2)} | Zone Score: ${line.zone_score.toFixed(0)}%`, tooltipX + 10, tooltipY + 42);
+
     }
+
+
 
     // Draw side price scale axis labels
+
     ctx.fillStyle = '#475569';
+
     ctx.font = '9px monospace';
+
     ctx.textAlign = 'left';
+
     ctx.strokeStyle = '#1e293b';
+
     ctx.lineWidth = 1;
+
     ctx.beginPath();
+
     ctx.moveTo(w - 60, 0);
+
     ctx.lineTo(w - 60, h - 20);
+
     ctx.stroke();
+
+
 
     const numPriceLabels = 6;
+
     for (let i = 0; i <= numPriceLabels; i++) {
+
         const p = minPrice + (priceRangePadded * i) / numPriceLabels;
+
         const y = h - 20 - (i / numPriceLabels) * (h - 40);
+
         ctx.fillText(p.toFixed(2), w - 55, y + 3);
+
     }
+
+
 
     // Draw crosshair hover guides if active inside bounds
+
     if (crosshairX >= 0 && crosshairX < w - 60 && crosshairY >= 0 && crosshairY < h - 20) {
+
         ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+
         ctx.setLineDash([3, 3]);
+
         ctx.lineWidth = 1;
 
+
+
         // Horiz cross
+
         ctx.beginPath();
+
         ctx.moveTo(0, crosshairY);
+
         ctx.lineTo(w - 60, crosshairY);
+
         ctx.stroke();
+
+
 
         // Vert cross
+
         ctx.beginPath();
+
         ctx.moveTo(crosshairX, 0);
+
         ctx.lineTo(crosshairX, h - 20);
+
         ctx.stroke();
+
         ctx.setLineDash([]);
+
     }
+
 }
+
+
 
 // Update crosshair info bubble overlay details
+
 function updateCrosshairTooltip() {
+
     const canvas = document.getElementById('candleChart');
+
     const tooltip = document.getElementById('chart-tooltip');
+
     if (!canvas || !tooltip || candleData.length === 0) return;
 
+
+
     const w = canvas.getBoundingClientRect().width;
+
     const h = canvas.getBoundingClientRect().height;
 
+
+
     if (crosshairX < 0 || crosshairX >= w - 60 || crosshairY < 0 || crosshairY >= h - 20) {
+
         tooltip.classList.add('hidden');
+
         return;
+
     }
+
+
 
     // Find the candle under mouse crosshair
+
     const targetIdx = Math.floor((crosshairX - chartPanX) / (candleWidth + candleGap));
+
     if (targetIdx >= 0 && targetIdx < candleData.length) {
+
         const c = candleData[targetIdx];
+
         const isGreen = c.close >= c.open;
+
         const ohlcText = `
+
             <div class="flex justify-between space-x-4">
+
                 <span>${formatUTCTime(c.time)}</span>
+
                 <span class="${isGreen ? 'text-emerald-400' : 'text-rose-400'}">${c.is_complete ? 'Completed' : 'Forming'}</span>
+
             </div>
+
             <div class="grid grid-cols-2 gap-x-3 mt-1 text-[9px] text-gray-400">
+
                 <div>O: <span class="text-white font-bold">${c.open.toFixed(2)}</span></div>
+
                 <div>H: <span class="text-white font-bold">${c.high.toFixed(2)}</span></div>
+
                 <div>L: <span class="text-white font-bold">${c.low.toFixed(2)}</span></div>
+
                 <div>C: <span class="text-white font-bold">${c.close.toFixed(2)}</span></div>
+
                 <div>V: <span class="text-white font-bold">${c.volume}</span></div>
+
             </div>
+
         `;
+
         tooltip.innerHTML = ohlcText;
+
         tooltip.classList.remove('hidden');
 
+
+
         // Position tooltip bubble nicely next to mouse cursor
+
         tooltip.style.left = `${Math.min(w - 180, crosshairX + 15)}px`;
+
         tooltip.style.top = `${Math.min(h - 90, crosshairY + 15)}px`;
+
     } else {
+
         tooltip.classList.add('hidden');
+
     }
+
 }
+
+
 
 function resetChart() {
+
     candleWidth = 10;
+
     candleGap = 3;
+
     liveMode = true;
+
     updateLiveToggleUI();
+
     autoFitChart();
+
 }
+
+
 
 // Populate Broker Position Management Table
+
 function populatePositionsTable(positions) {
+
     const tableBody = document.getElementById('open-positions-table');
+
     document.getElementById('pos-count-badge').textContent = `${positions.length} Open`;
 
+
+
     if (positions.length === 0) {
+
         tableBody.innerHTML = `
+
             <tr>
+
                 <td colspan="9" class="py-6 text-center text-textMuted italic font-sans text-xs">No active positions currently registered on broker.</td>
+
             </tr>
+
         `;
+
         return;
+
     }
+
+
 
     tableBody.innerHTML = positions.map(pos => `
+
         <tr class="hover:bg-darkBg/30 transition">
+
             <td class="py-3.5 pl-2 font-bold text-gray-300">#${pos.ticket}</td>
+
             <td class="py-3.5 text-accentCyan font-bold">${pos.symbol}</td>
+
             <td class="py-3.5">
+
                 <span class="px-2 py-0.5 rounded text-[11px] font-extrabold ${pos.type === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">
+
                     ${pos.type}
+
                 </span>
+
             </td>
+
             <td class="py-3.5 text-gray-200">${pos.volume.toFixed(2)}</td>
+
             <td class="py-3.5 text-gray-400">${pos.price_open.toFixed(2)}</td>
+
             <td class="py-3.5 text-rose-400/80">${pos.sl > 0 ? pos.sl.toFixed(2) : '-'}</td>
+
             <td class="py-3.5 text-emerald-400/80">${pos.tp > 0 ? pos.tp.toFixed(2) : '-'}</td>
+
             <td class="py-3.5 font-bold ${pos.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+
                 ${pos.profit >= 0 ? '+' : ''}$${pos.profit.toFixed(2)}
+
             </td>
+
             <td class="py-3.5 pr-2 text-right space-x-1.5 font-sans">
+
                 <button onclick="openModifyModal(${pos.ticket}, '${pos.symbol}', ${pos.sl}, ${pos.tp})" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan hover:text-cyan-300 px-2.5 py-1 rounded text-xs font-semibold transition">
+
                     Modify SL/TP
+
                 </button>
+
                 <button onclick="executeClosePosition(${pos.ticket})" class="bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 px-2.5 py-1 rounded text-xs font-semibold transition">
+
                     Close Deal
+
                 </button>
+
             </td>
+
         </tr>
+
     `).join('');
+
 }
+
+
 
 // Open SL/TP modifications modal popup
+
 function openModifyModal(ticket, symbol, sl, tp) {
+
     document.getElementById('modify-ticket').value = ticket;
+
     document.getElementById('modify-ticket-display').textContent = `#${ticket}`;
+
     document.getElementById('modify-symbol-display').textContent = symbol;
+
     document.getElementById('modify-sl-input').value = sl || '';
+
     document.getElementById('modify-tp-input').value = tp || '';
+
     document.getElementById('modify-modal').classList.remove('hidden');
+
 }
+
+
 
 function closeModifyModal() {
+
     document.getElementById('modify-modal').classList.add('hidden');
+
 }
+
+
 
 // REST callout: submit order modifications directly to active broker
+
 async function submitModifyPosition() {
+
     const ticket = parseInt(document.getElementById('modify-ticket').value);
+
     const sl = parseFloat(document.getElementById('modify-sl-input').value) || 0.0;
+
     const tp = parseFloat(document.getElementById('modify-tp-input').value) || 0.0;
 
+
+
     try {
+
         const result = await NX.api.post('/api/positions/modify', { ticket, stop_loss: sl, take_profit: tp }, { component: 'Positions', action: 'MODIFY' });
+
         if (result.ok && result.body.success) {
+
             console.log("SL/TP bracket modification successfully executed.");
+
             closeModifyModal();
+
         } else {
+
             alert('Execution failed: ' + NX.api.msg(result, 'Unknown error'));
+
         }
+
     } catch (err) {
+
         console.error("IPC failure", err);
+
     }
+
 }
+
+
 
 // REST callout: close live positions
+
 async function executeClosePosition(ticket) {
+
     if (!confirm(`Are you absolutely sure you want to close position ticket #${ticket} immediately?`)) {
+
         return;
+
     }
 
+
+
     try {
+
         const result = await NX.api.post('/api/positions/close', { ticket }, { component: 'Positions', action: 'CLOSE' });
+
         if (result.ok && result.body.success) {
+
             console.log(`Live Position #${ticket} closed successfully.`);
+
         } else {
+
             alert('Execution failed: ' + NX.api.msg(result, 'Unknown error'));
+
         }
+
     } catch (err) {
+
         console.error("IPC failure during close", err);
+
     }
+
 }
+
+
 
 // AI Feature Selection Category Switcher
+
 function selectFeatureCategory(category, element) {
+
     document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
+
     if (element) {
+
         element.classList.add('active');
+
     } else if (event && event.currentTarget) {
+
         event.currentTarget.classList.add('active');
+
     }
+
     currentFeatureCategory = category;
 
+
+
     const titles = {
+
         'volatility': 'Volatility & Microstructure Features (Log Scale)',
+
         'candlestick': 'Candlestick Anatomy & Patterns',
+
         'patterns': 'Structure & Swing Patterns (Distance metrics)',
+
         'sessions': 'Market Sessions Time Lags',
+
         'ict': 'ICT Smart Money Concepts (FVG / Order Block)',
+
         'ichimoku': 'Ichimoku Kinko Hyo (Cloud conformance)',
+
         'multitimeframe': 'Multi-Timeframe Context & Support/Resistance Levels'
+
     };
+
     document.getElementById('feature-category-title').textContent = titles[category] || titles['volatility'];
+
     updateFeaturesGrid();
+
 }
+
+
 
 // Dynamic Grid populate for 50D AI features (real ENGINE_STATE values only)
+
 function updateFeaturesGrid(features) {
+
     if (features) {
+
         lastFeatures = features;
+
     } else {
+
         features = lastFeatures;
+
     }
+
+
 
     const grid = document.getElementById('features-grid');
+
     if (!grid) return;
+
     if (!features || features.length === 0) {
+
         grid.innerHTML = '<div class="col-span-3 text-center text-textMuted italic py-8 text-xs">Awaiting live 50D feature stream from engine…</div>';
+
         return;
+
     }
+
+
 
     // Filter features based on active selection category
+
     let activeList = [];
+
     if (currentFeatureCategory === 'volatility') {
+
         activeList = features.slice(0, 6);
+
     } else if (currentFeatureCategory === 'candlestick') {
+
         activeList = features.slice(6, 14);
+
     } else if (currentFeatureCategory === 'patterns') {
+
         activeList = features.slice(14, 20);
+
     } else if (currentFeatureCategory === 'sessions') {
+
         activeList = features.slice(20, 28);
+
     } else if (currentFeatureCategory === 'ict') {
+
         activeList = features.slice(28, 34);
+
     } else if (currentFeatureCategory === 'ichimoku') {
+
         activeList = features.slice(34, 40);
+
     } else if (currentFeatureCategory === 'multitimeframe') {
+
         activeList = features.slice(40, 50);
+
     } else {
+
         activeList = features.slice(0, 6);
+
     }
+
+
 
     grid.innerHTML = activeList.map(feat => {
+
         const val = feat.value;
+
         const valStr = (val != null) ? val.toFixed(4) : '—';
+
         const colorClass = (val == null) ? 'text-textMuted'
+
             : (val >= 1.0 ? 'text-emerald-400' : (val <= -1.0 ? 'text-rose-400' : 'text-accentCyan'));
+
         return `
+
             <div class="bg-darkBg/40 border border-borderClr/60 p-3 rounded-lg flex flex-col justify-between hover:border-borderClr transition shadow-sm">
+
                 <span class="text-[10px] text-textMuted font-bold uppercase truncate tracking-wide">${feat.name}</span>
+
                 <div class="flex items-baseline justify-between mt-1.5">
+
                     <span class="text-sm font-mono font-black ${colorClass}">${valStr}</span>
+
                     <span class="text-[9px] text-textMuted font-semibold">Dim ${feat.index}</span>
+
                 </div>
+
             </div>
+
         `;
+
     }).join('');
+
 }
+
+
 
 // Update Past Signal Outcomes & Accuracy Tracking
+
 // FORENSIC HARDENING: predictions now come from the real audit_signals ledger
+
 // (immutable per-M1 model decisions with actual softmax probabilities). The
+
 // old simulated_outcomes list was fabricated per-click and is no longer used.
+
 function updatePredictionsTable() {
+
     const tbody = document.getElementById('prediction-vs-movement-table');
+
     if (!tbody) return;
 
+
+
     if (!predictions || predictions.length === 0) {
+
         tbody.innerHTML = `
+
             <tr>
+
                 <td colspan="5" class="py-4 text-center text-textMuted italic font-sans">No AI predictions recorded yet (audit_signals empty — waiting for live engine decisions).</td>
+
             </tr>
+
         `;
+
         return;
+
     }
+
+
 
     let trueCount = 0;
+
     let falseCount = 0;
 
+
+
     tbody.innerHTML = predictions.map(p => {
+
         const conf = (p.confidence != null) ? (p.confidence * 100).toFixed(1) + '%' : '--';
+
         const probs = p.probabilities || {};
+
         const probsStr = (probs.no_trade != null || probs.buy != null || probs.sell != null)
+
             ? `NT ${(probs.no_trade != null ? (probs.no_trade * 100).toFixed(0) : '--')}% ` +
+
               `B ${(probs.buy != null ? (probs.buy * 100).toFixed(0) : '--')}% ` +
+
               `S ${(probs.sell != null ? (probs.sell * 100).toFixed(0) : '--')}%`
+
             : '';
+
         const timeStr = String(p.time || '').replace('T', ' ');
 
+
+
         return `
+
             <tr class="hover:bg-darkBg/10" title="${probsStr} ${p.reason || ''}">
+
                 <td class="py-2 text-textMuted">${timeStr || '--'}</td>
+
                 <td class="py-2 text-white font-bold">${p.action || '--'}</td>
+
                 <td class="py-2 text-accentCyan">${conf}</td>
+
                 <td class="py-2 text-textMuted text-[9px]">${(p.regime || '--').substring(0, 14)}</td>
+
                 <td class="py-2 text-right">${p.reason ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-darkBg border border-borderClr/40">${p.reason.substring(0, 18)}</span>` : ''}</td>
+
             </tr>
+
         `;
+
     }).join('');
+
+
 
     // Accuracy stats remain from live-evaluated outcomes only (audit ledger).
+
     document.getElementById('acc-true-signals').textContent = trueCount;
+
     document.getElementById('acc-false-signals').textContent = falseCount;
+
     document.getElementById('acc-bar').style.width = '0%';
+
 }
+
+
 
 // Simulate Interactive Tick Injection (real backend: /api/simulation/tick)
+
 async function injectSimTick(type) {
+
     try {
+
         const result = await NX.api.post('/api/simulation/tick', { type }, { component: 'Simulation', action: 'INJECT_TICK' });
+
         if (!result.ok) {
+
             console.warn(NX.api.msg(result, 'Simulation dispatch failed.'));
+
             const el = document.getElementById('sim-status');
+
             if (el) el.textContent = 'Failed';
+
             return;
+
         }
+
         console.log(`Simulation tick of type ${type} successfully dispatched to engine pipeline.`);
+
         const el = document.getElementById('sim-status');
+
         if (el) el.textContent = "Dispatched";
+
         setTimeout(() => { if (el) el.textContent = "Ready"; }, 1000);
+
     } catch (err) {
+
         console.error('[UI_ERROR] component=Simulation action=INJECT_TICK', err);
+
     }
+
 }
+
+
 
 // Toggle Historical Replay status (real backend: /api/replay/toggle)
+
 async function toggleReplay() {
+
     const isReplaying = document.getElementById('btn-replay-play').textContent.includes("Stop");
+
     const speed = parseInt(document.getElementById('replay-speed').value, 10) || 1;
 
+
+
     try {
+
         const result = await NX.api.post('/api/replay/toggle', { active: !isReplaying, speed }, { component: 'Replay', action: 'TOGGLE' });
+
         if (!result.ok) {
+
             console.warn(NX.api.msg(result, 'Replay toggle failed.'));
+
             return;
+
         }
+
         if (result.body.success) {
+
             if (!isReplaying) {
+
                 document.getElementById('btn-replay-play').innerHTML = `<i class="fa-solid fa-stop"></i> <span>Stop Replay</span>`;
+
                 document.getElementById('btn-replay-play').className = "bg-rose-500 hover:bg-rose-600 text-white font-bold py-1.5 px-4 rounded transition";
+
             } else {
+
                 document.getElementById('btn-replay-play').innerHTML = `<i class="fa-solid fa-play"></i> <span>Start Replay</span>`;
+
                 document.getElementById('btn-replay-play').className = "bg-accentCyan hover:bg-cyan-500 text-black font-bold py-1.5 px-4 rounded transition";
+
             }
+
         }
+
     } catch (err) {
+
         console.error('[UI_ERROR] component=Replay action=TOGGLE', err);
+
     }
+
 }
+
+
 
 // Load configurations from disk live.yaml
+
 async function loadConfiguration() {
+
     try {
+
         const res = await fetch('/api/config');
+
         selectedConfig = await res.json();
 
+
+
         // Populate Form
+
         document.getElementById('cfg-exec-symbol').value = selectedConfig.execution.symbol;
+
         document.getElementById('cfg-exec-timeframe').value = selectedConfig.execution.timeframe;
+
         document.getElementById('cfg-exec-magic').value = selectedConfig.execution.magic_number;
+
         document.getElementById('cfg-exec-slippage').value = selectedConfig.execution.max_slippage_points;
 
+
+
         document.getElementById('cfg-risk-drawdown').value = selectedConfig.risk.max_account_drawdown_pct;
+
         document.getElementById('cfg-risk-pertrade').value = selectedConfig.risk.risk_per_trade_pct;
+
         document.getElementById('cfg-risk-maxpos').value = selectedConfig.risk.max_concurrent_positions;
+
         document.getElementById('cfg-risk-maxspread').value = selectedConfig.risk.max_spread_points;
+
         document.getElementById('cfg-risk-maxlots').value = selectedConfig.risk.max_allowed_lots;
+
         document.getElementById('cfg-risk-enforce-sl').checked = selectedConfig.risk.enforce_stop_loss;
 
+
+
         document.getElementById('cfg-model-threshold').value = selectedConfig.model.confidence_threshold;
+
         document.getElementById('cfg-model-path').value = selectedConfig.model.model_artifact_path;
 
+
+
         if (selectedConfig.telegram) {
+
             document.getElementById('cfg-telegram-enabled').checked = selectedConfig.telegram.enabled || false;
+
             const rawToken = selectedConfig.telegram.bot_token || '';
+
             const tokenField = document.getElementById('cfg-telegram-token');
+
             // BUG-072: server returns a MASKED token; the field must not be
+
             // submitted back as a real credential. Placeholder holds the mask.
+
             if (rawToken.indexOf('*') >= 0) {
+
                 tokenField.value = '';
+
                 tokenField.placeholder = rawToken;
+
                 tokenField.dataset.masked = '1';
+
             } else {
+
                 tokenField.value = rawToken;
+
                 tokenField.dataset.masked = '';
+
             }
+
             document.getElementById('cfg-telegram-admin').value = selectedConfig.telegram.admin_id || '';
+
         } else {
+
             document.getElementById('cfg-telegram-enabled').checked = false;
+
             document.getElementById('cfg-telegram-token').value = '';
+
             document.getElementById('cfg-telegram-admin').value = '';
+
         }
 
+
+
     } catch (err) {
+
         console.error("Failed to load configurations", err);
+
     }
 
+
+
     try {
+
         const res = await fetch('/api/algo/config');
+
         const algoConfig = await res.json();
 
+
+
         document.getElementById('tuner-atr-sl-buffer').value = algoConfig.atr_sl_buffer_multiplier;
+
         document.getElementById('val-atr-sl-buffer').innerText = algoConfig.atr_sl_buffer_multiplier;
 
+
+
         document.getElementById('tuner-min-rr').value = algoConfig.min_risk_reward_ratio;
+
         document.getElementById('val-min-rr').innerText = algoConfig.min_risk_reward_ratio;
 
+
+
         document.getElementById('tuner-zone-conf').value = algoConfig.ai_zone_confidence_threshold;
+
         document.getElementById('val-zone-conf').innerText = algoConfig.ai_zone_confidence_threshold;
 
+
+
         document.getElementById('tuner-fvg-mitigation').value = algoConfig.fvg_mitigation_sensitivity;
+
         document.getElementById('val-fvg-mitigation').innerText = algoConfig.fvg_mitigation_sensitivity;
 
+
+
         document.getElementById('tuner-ob-lookback').value = algoConfig.order_block_lookback_bars;
+
         document.getElementById('val-ob-lookback').innerText = algoConfig.order_block_lookback_bars;
+
     } catch (err) {
+
         console.error("Failed to load algo configuration", err);
+
     }
+
 }
+
+
 
 // Save dynamic algorithm parameters back to disk and hot-swap them
+
 async function saveAlgoTuner() {
+
     const updated = {
+
         atr_sl_buffer_multiplier: parseFloat(document.getElementById('tuner-atr-sl-buffer').value),
+
         min_risk_reward_ratio: parseFloat(document.getElementById('tuner-min-rr').value),
+
         ai_zone_confidence_threshold: parseFloat(document.getElementById('tuner-zone-conf').value),
+
         fvg_mitigation_sensitivity: parseFloat(document.getElementById('tuner-fvg-mitigation').value),
+
         order_block_lookback_bars: parseInt(document.getElementById('tuner-ob-lookback').value)
+
     };
 
+
+
     try {
+
         const result = await NX.api.put('/api/algo/config', updated, { component: 'Tuner', action: 'SAVE_ALGO' });
+
         if (result.ok && result.body.success) {
+
             alert("Dynamic Algorithm thresholds successfully updated & hot-swapped!");
+
         } else {
+
             alert('Failed to save algorithm thresholds: ' + NX.api.msg(result, 'Unknown error'));
+
         }
+
     } catch (err) {
+
         console.error("Failed to save algo configurations", err);
+
     }
+
 }
+
+
 
 // Save configuration back to disk live.yaml
+
 async function saveConfiguration() {
+
     const updated = {
+
         execution: {
+
             symbol: document.getElementById('cfg-exec-symbol').value,
+
             timeframe: document.getElementById('cfg-exec-timeframe').value,
+
             magic_number: parseInt(document.getElementById('cfg-exec-magic').value),
+
             max_slippage_points: parseInt(document.getElementById('cfg-exec-slippage').value)
+
         },
+
         risk: {
+
             max_account_drawdown_pct: parseFloat(document.getElementById('cfg-risk-drawdown').value),
+
             risk_per_trade_pct: parseFloat(document.getElementById('cfg-risk-pertrade').value),
+
             max_concurrent_positions: parseInt(document.getElementById('cfg-risk-maxpos').value),
+
             max_spread_points: parseInt(document.getElementById('cfg-risk-maxspread').value),
+
             max_allowed_lots: parseFloat(document.getElementById('cfg-risk-maxlots').value),
+
             enforce_stop_loss: document.getElementById('cfg-risk-enforce-sl').checked
+
         },
+
         model: {
+
             confidence_threshold: parseFloat(document.getElementById('cfg-model-threshold').value),
+
             model_artifact_path: document.getElementById('cfg-model-path').value,
+
             feature_schema_version: selectedConfig.model.feature_schema_version
+
         },
+
         telegram: {
+
             enabled: document.getElementById('cfg-telegram-enabled').checked,
+
             bot_token: resolveTelegramTokenField(),
+
             admin_id: document.getElementById('cfg-telegram-admin').value
+
         },
+
         mt5: selectedConfig.mt5
+
     };
 
+
+
     try {
+
         const result = await NX.api.post('/api/config', updated, { component: 'Config', action: 'SAVE_CONFIG' });
+
         if (result.ok && result.body.success) {
+
             alert("Configuration successfully saved and dynamically hot-reloaded into engine!");
+
         } else {
+
             // Clearer failure UX: distinguish "server unreachable" from a real
+
             // backend rejection so the operator knows what to do.
+
             if (result.status === 0 || (result.error && result.error.code === 'NETWORK_ERROR')) {
+
                 alert('Failed to save: the web server is not reachable (network request failed).\n\nIs the engine running? Start it with:  nse run  (web UI on http://127.0.0.1:8080)\n\nRequest ID: ' + (result.error && result.error.request_id || '-'));
+
             } else {
+
                 alert('Failed to save: ' + NX.api.msg(result, 'Unknown error'));
+
             }
+
         }
+
     } catch (err) {
+
         console.error("Failed to save config", err);
+
     }
+
 }
+
+
 
 // BUG-072: the server never returns the real token. When the field holds a
+
 // masked placeholder, submitting must NOT overwrite the stored secret.
+
 function resolveTelegramTokenField() {
+
     const field = document.getElementById('cfg-telegram-token');
+
     if (field && field.dataset && field.dataset.masked === '1') {
+
         return '';  // keep the existing secure-store secret untouched
+
     }
+
     return field ? field.value : '';
+
 }
+
+
 
 // Telegram connectivity test: sends a test message through the engine notifier.
+
 async function testTelegram() {
+
     const statusEl = document.getElementById('telegram-test-status');
+
     if (statusEl) statusEl.textContent = 'Sending...';
+
     // Save the current token/admin first so the live notifier picks them up.
+
     try {
+
         const updated = {
+
             execution: selectedConfig.execution,
+
             risk: selectedConfig.risk,
+
             model: selectedConfig.model,
+
             telegram: {
+
                 enabled: document.getElementById('cfg-telegram-enabled').checked,
+
                 bot_token: resolveTelegramTokenField(),
+
                 admin_id: document.getElementById('cfg-telegram-admin').value
+
             },
+
             mt5: selectedConfig.mt5
+
         };
+
         const save = await NX.api.post('/api/config', updated, { component: 'Config', action: 'SAVE_TELEGRAM' });
+
         if (!save.ok) {
+
             if (save.status === 0 || (save.error && save.error.code === 'NETWORK_ERROR')) {
+
                 if (statusEl) statusEl.textContent = '\u274c Server unreachable \u2014 engine not running?';
+
                 return;
+
             }
+
             if (statusEl) statusEl.textContent = '\u274c Save failed: ' + NX.api.msg(save, 'error');
+
             return;
+
         }
+
         const result = await NX.api.post('/api/telegram/test', {}, { component: 'Telegram', action: 'TEST' });
+
         if (result.ok && result.body.success) {
+
             const mid = result.body.message_id ? ' (message_id=' + result.body.message_id + ')' : '';
+
             if (statusEl) statusEl.textContent = '\u2705 Test message delivered!' + mid;
+
         } else if (result.status === 0 || (result.error && result.error.code === 'NETWORK_ERROR')) {
+
             if (statusEl) statusEl.textContent = '\u274c Server unreachable \u2014 engine not running?';
+
         } else {
+
             const errBody = result.body && result.body.error;
+
             const category = errBody && errBody.category ? ' [' + errBody.category + ']' : '';
+
             if (statusEl) statusEl.textContent = '\u274c ' + NX.api.msg(result, 'send failed') + category;
+
         }
+
     } catch (err) {
+
         console.error("Telegram test failed", err);
+
         if (statusEl) statusEl.textContent = '\u274c Error: ' + (err && err.message || err);
+
     }
+
 }
+
+
 
 // Bind telegram test button on DOMContentLoaded (idempotent).
+
 document.addEventListener('DOMContentLoaded', function bindTelegramTest() {
+
     const btn = document.getElementById('btn-telegram-test');
+
     if (btn && !btn.dataset.bound) {
+
         btn.dataset.bound = '1';
+
         btn.addEventListener('click', testTelegram);
+
     }
+
 });
 
+
+
 // Control switch: start/stop bot thread
+
 async function toggleEngineRunning() {
+
     const isStopping = document.getElementById('btn-toggle-engine').textContent.includes("Stop");
 
+
+
     try {
+
         const result = await NX.api.post('/api/engine/toggle', { active: !isStopping }, { component: 'Engine', action: 'TOGGLE' });
+
         if (result.ok && result.body.success) {
+
             console.log("Engine running state successfully toggled.");
+
         } else {
+
             console.warn('[UI_ERROR] component=Engine action=TOGGLE ' + NX.api.msg(result, 'Engine toggle failed.'));
+
         }
+
     } catch (err) {
+
         console.error('[UI_ERROR] component=Engine action=TOGGLE', err);
+
     }
+
 }
+
+
 
 // Update telegram bot heartbeats
+
 async function updateHeartbeats() {
+
     try {
+
         const res = await fetch('/api/observability/stats');
+
         const data = await res.json();
+
         document.getElementById('tg-queue').textContent = `${data.tg_queue} pending`;
+
         document.getElementById('tg-channel').textContent = data.tg_enabled ? 'Active' : 'Disabled';
+
         document.getElementById('tg-status-badge').className = `w-2 h-2 rounded-full ${data.tg_enabled ? 'bg-emerald-400' : 'bg-gray-400'}`;
+
         // BUG-072: truthful worker state (READY/DEGRADED/STOPPED + counters)
+
         const tg = data.telegram;
+
         const liveStatus = document.getElementById('telegram-live-status');
+
         const workerEl = document.getElementById('tg-status-worker');
+
         if (tg && liveStatus && workerEl) {
+
             const st = tg.status || 'STOPPED';
+
             const color = st === 'READY' ? 'text-emerald-400' : (st === 'DEGRADED' ? 'text-amber-400' : 'text-rose-400');
+
             workerEl.innerHTML = `<span class="${color} font-bold">${st}</span> &middot; sent=${tg.sent_count} failed=${tg.failed_count} retries=${tg.retry_count}` +
+
                 (tg.failure_category ? ` &middot; last_failure=<span class="text-rose-400">${tg.failure_category}</span>` : '') +
+
                 (tg.last_success && tg.last_success !== '-' ? ` &middot; last_success=${tg.last_success}` : '');
+
             liveStatus.classList.remove('hidden');
+
         }
+
     } catch (err) {}
+
 }
+
+
 
 // Fetch all rules from database and render the UI panel dynamically
+
 async function loadRules() {
+
     const t0 = performance.now();
+
     console.log('[UI_API] endpoint=/api/rules event=REQUEST');
+
     try {
+
         const res = await fetch('/api/rules');
+
         if (!res.ok) {
+
             console.error('[UI_ERROR] component=RuleMatrix endpoint=/api/rules status=' + res.status + ' error_code=HTTP_' + res.status);
+
             throw new Error('HTTP ' + res.status);
+
         }
+
         const rules = await res.json();
+
         console.log('[UI_API] endpoint=/api/rules event=SUCCESS status=200 latency_ms=' + Math.round(performance.now() - t0) + ' rules=' + (Array.isArray(rules) ? rules.length : 'n/a'));
 
+
+
         // Categorize rules
+
         const categorized = {};
+
         rules.forEach(rule => {
+
             if (!categorized[rule.category]) {
+
                 categorized[rule.category] = [];
+
             }
+
             categorized[rule.category].push(rule);
+
         });
 
+
+
         const container = document.getElementById('rules-categories-container');
+
         if (!container) return;
 
+
+
         // Render Categorized Grid Panels
+
         container.innerHTML = Object.keys(categorized).map(catName => {
+
             const catRules = categorized[catName];
+
             return `
+
                 <div class="border border-borderClr bg-darkBg/20 rounded-lg p-5 space-y-4">
+
                     <h4 class="text-sm font-black text-accentCyan tracking-wider uppercase border-b border-borderClr pb-2 flex items-center">
+
                         <i class="fa-solid fa-folder-open mr-2 text-accentGold"></i> ${catName}
+
                     </h4>
+
                     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
                         ${catRules.map(rule => renderRuleCard(rule)).join('')}
+
                     </div>
+
                 </div>
+
             `;
+
         }).join('');
+
     } catch (err) {
+
         console.error('[UI_ERROR] component=RuleMatrix endpoint=/api/rules action=LOAD message=' + (err && err.message));
+
         const container = document.getElementById('rules-categories-container');
+
         if (container && !container.innerHTML.trim()) {
+
             container.innerHTML = '<div class="text-accentRed italic p-4 border border-accentRed/30 rounded">Failed to load rules: ' + esc(err && err.message ? String(err.message) : 'unknown error') + '</div>';
+
         }
+
     }
+
 }
+
+
 
 // Generate premium, responsive HTML card for individual rule control
+
 function renderRuleCard(rule) {
+
     const isChecked = rule.is_enabled ? 'checked' : '';
+
     const params = typeof rule.parameters === 'string' ? JSON.parse(rule.parameters) : rule.parameters;
+
     const ruleId = rule.rule_name;
 
+
+
     // Build parameter input fields
+
     const paramInputs = Object.keys(params).map(key => {
+
         const val = params[key];
+
         const type = typeof val === 'number' ? 'number' : (typeof val === 'boolean' ? 'checkbox' : 'text');
+
         const step = typeof val === 'number' && !Number.isInteger(val) ? '0.01' : '1';
 
+
+
         if (type === 'checkbox') {
+
             const cbChecked = val ? 'checked' : '';
+
             return `
+
                 <div class="flex items-center justify-between text-xs py-1">
+
                     <span class="text-gray-400 font-semibold font-mono">${key}</span>
+
                     <input type="checkbox" id="param-${ruleId}-${key}" ${cbChecked} class="w-3.5 h-3.5 text-accentCyan bg-darkBg border-borderClr rounded cursor-pointer">
+
                 </div>
+
             `;
+
         } else {
+
             return `
+
                 <div class="flex flex-col space-y-1 text-xs py-1">
+
                     <span class="text-gray-400 font-semibold font-mono">${key}</span>
+
                     <input type="${type}" step="${step}" id="param-${ruleId}-${key}" value="${val}" class="bg-darkBg border border-borderClr/60 text-white rounded px-2 py-1 text-[11px] font-mono focus:outline-none focus:border-accentCyan">
+
                 </div>
+
             `;
+
         }
+
     }).join('');
+
+
 
     return `
+
         <div class="bg-panelBg/85 border border-borderClr/80 hover:border-borderClr p-4 rounded-xl flex flex-col justify-between space-y-3 shadow-md hover:shadow-lg hover:shadow-accentCyan/5 transition-all duration-300">
+
             <div class="flex items-start justify-between">
+
                 <div class="space-y-1">
+
                     <span class="text-[11px] font-mono font-black text-gray-300 tracking-wider flex items-center">
+
                         <i class="fa-solid fa-crosshair text-accentRose mr-1.5 text-[10px]"></i> ${rule.rule_name}
+
                     </span>
+
                     <p class="text-[10px] text-textMuted font-sans">Dynamic Matrix Scalper</p>
+
                 </div>
+
+
 
                 <!-- Slide Toggle Switch -->
+
                 <label class="relative inline-flex items-center cursor-pointer">
+
                     <input type="checkbox" id="toggle-${ruleId}" ${isChecked} onchange="toggleRuleState('${ruleId}')" class="sr-only peer">
+
                     <div class="w-9 h-5 bg-darkBg border border-borderClr peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accentCyan peer-checked:after:bg-black peer-checked:after:border-black"></div>
+
                 </label>
+
             </div>
+
+
 
             <!-- Parameters Collapsible Header -->
+
             <div class="bg-darkBg/40 border border-borderClr/60 p-2.5 rounded-lg space-y-2">
+
                 <div class="text-[10px] font-bold text-accentCyan flex items-center justify-between uppercase">
+
                     <span>Config Parameters</span>
+
                     <i class="fa-solid fa-gears text-textMuted"></i>
+
                 </div>
+
                 <div class="space-y-1.5">
+
                     ${paramInputs || '<span class="text-[10px] text-textMuted italic">No configurable parameters.</span>'}
+
                 </div>
+
             </div>
+
+
 
             <!-- Action Save Bar -->
+
             <div class="flex items-center justify-end pt-1">
+
                 <button onclick="saveRuleParameters('${ruleId}', '${encodeURIComponent(JSON.stringify(params))}')" class="text-[10px] bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan hover:text-cyan-300 px-2.5 py-1 rounded font-bold border border-accentCyan/20 transition flex items-center space-x-1">
+
                     <i class="fa-solid fa-floppy-disk"></i> <span>Save Parameters</span>
+
                 </button>
+
             </div>
+
         </div>
+
     `;
+
 }
+
+
 
 // Toggle enabled status of a specific rule dynamically
+
 async function toggleRuleState(ruleId) {
+
     const isEnabled = document.getElementById(`toggle-${ruleId}`).checked;
 
+
+
     try {
+
         const result = await NX.api.post('/api/rules/toggle', {
+
             rule_name: ruleId,
+
             is_enabled: isEnabled,
+
             parameters: null
+
         }, { component: 'Rules', action: 'TOGGLE' });
+
         if (result.ok && result.body.success) {
+
             console.log(`Rule ${ruleId} has been successfully toggled to ${isEnabled}.`);
+
         } else {
+
             alert('Failed to toggle rule state: ' + NX.api.msg(result, 'Unknown error'));
+
         }
+
     } catch (err) {
+
         console.error('[UI_ERROR] component=Rules action=TOGGLE', err);
+
     }
+
 }
+
+
 
 // Update specific rule parameters on disk/db
+
 async function saveRuleParameters(ruleId, originalParamsEncoded) {
+
     const originalParams = JSON.parse(decodeURIComponent(originalParamsEncoded));
+
     const isEnabled = document.getElementById(`toggle-${ruleId}`).checked;
 
+
+
     const updatedParams = {};
+
     Object.keys(originalParams).forEach(key => {
+
         const originalVal = originalParams[key];
+
         const inputElement = document.getElementById(`param-${ruleId}-${key}`);
+
         if (!inputElement) return;
 
+
+
         if (typeof originalVal === 'boolean') {
+
             updatedParams[key] = inputElement.checked;
+
         } else if (typeof originalVal === 'number') {
+
             updatedParams[key] = Number(inputElement.value);
+
         } else {
+
             updatedParams[key] = inputElement.value;
+
         }
+
     });
 
+
+
     try {
+
         const res = await fetch('/api/rules/toggle', {
+
             method: 'POST',
+
             headers: { 'Content-Type': 'application/json' },
+
             body: JSON.stringify({
+
                 rule_name: ruleId,
+
                 is_enabled: isEnabled,
+
                 parameters: updatedParams
+
             })
+
         });
+
         const result = await res.json();
+
         if (result.success) {
+
             alert(`Parameters for ${ruleId} successfully updated & saved dynamically!`);
+
             loadRules(); // reload to refresh Original params state encoded
+
         } else {
+
             alert("Failed to save parameters.");
+
         }
+
     } catch (err) {
+
         console.error("Failed to save rule parameters", err);
+
     }
+
 }
+
+
 
 /* =========================================================================
+
  * PHASE 08: ACCOUNT PERFORMANCE & INTELLIGENCE PANEL
+
  * All numbers are fetched from the canonical AccountingCore REST endpoints.
+
  * There is NO synthetic fallback: unavailable data renders explicit states.
+
  * ========================================================================= */
 
+
+
 function acctLineChart(canvasId, emptyId, labels, series, color, fmt) {
+
     const canvas = document.getElementById(canvasId);
+
     const empty = document.getElementById(emptyId);
+
     if (!canvas) return;
+
     // Hidden-tab guard: canvases inside a hidden tab report 0 size and draw
+
     // nothing. Fall back to the attribute height so the chart still renders;
+
     // the tab-switch path re-runs the loaders once visible anyway.
+
     if (canvas.getBoundingClientRect().height === 0) {
+
         canvas.style.height = (canvas.getAttribute('height') || 180) + 'px';
+
     }
+
     if (!labels || labels.length === 0 || !series || series.every(v => v == null)) {
+
         if (empty) empty.classList.remove('hidden');
+
         canvas.style.display = 'none';
+
         return;
+
     }
+
     if (empty) empty.classList.add('hidden');
+
     canvas.style.display = 'block';
+
     const ctx = canvas.getContext('2d');
+
     const dpr = window.devicePixelRatio || 1;
+
     const rect = canvas.getBoundingClientRect();
+
     canvas.width = rect.width * dpr;
+
     canvas.height = rect.height * dpr;
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     const w = rect.width || 300;
+
     const h = rect.height || 180;
+
     ctx.clearRect(0, 0, w, h);
+
     ctx.fillStyle = '#090d16';
+
     ctx.fillRect(0, 0, w, h);
 
+
+
     const padL = 52, padR = 12, padT = 14, padB = 26;
+
     const values = series.filter(v => v != null).map(Number);
+
     if (values.length === 0) return;
+
     const min = Math.min(...values), max = Math.max(...values);
+
     const range = (max - min) || 1;
+
     const lo = min - range * 0.08, hi = max + range * 0.08;
+
     const px = i => padL + (i / (labels.length - 1 || 1)) * (w - padL - padR);
+
     const py = v => padT + (1 - (v - lo) / (hi - lo)) * (h - padT - padB);
 
+
+
     ctx.strokeStyle = '#121826';
+
     ctx.fillStyle = '#64748b';
+
     ctx.font = '9px monospace';
+
     ctx.lineWidth = 1;
+
     for (let g = 0; g <= 4; g++) {
+
         const v = lo + (hi - lo) * g / 4;
+
         const y = py(v);
+
         ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+
         ctx.textAlign = 'right';
+
         ctx.fillText(fmt ? fmt(v) : v.toFixed(2), padL - 4, y + 3);
+
     }
+
     ctx.strokeStyle = color || '#22d3ee';
+
     ctx.lineWidth = 1.6;
+
     ctx.beginPath();
+
     series.forEach((v, i) => {
+
         if (v == null) return;
+
         const x = px(i), y = py(Number(v));
+
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+
     });
+
     ctx.stroke();
+
     const lastIdx = series.map((v, i) => v == null ? -1 : i).filter(i => i >= 0).pop();
+
     if (lastIdx != null) {
+
         ctx.fillStyle = color || '#22d3ee';
+
         ctx.beginPath();
+
         ctx.arc(px(lastIdx), py(Number(series[lastIdx])), 2.5, 0, Math.PI * 2);
+
         ctx.fill();
+
     }
+
     ctx.textAlign = 'center';
+
     const step = Math.max(1, Math.floor(labels.length / 6));
+
     labels.forEach((lab, i) => {
+
         if (i % step !== 0) return;
+
         ctx.fillText(String(lab), px(i), h - 8);
+
     });
+
 }
+
+
 
 function acctFmtMoney(v) {
+
     if (v == null) return '--';
+
     const n = Number(v);
+
     return (n >= 0 ? '+' : '-') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2 });
+
 }
+
+
 
 function acctFmtPct(v) {
+
     if (v == null) return '--';
+
     return Number(v).toFixed(2) + '%';
+
 }
+
+
 
 function acctFmtNum(v, digits) {
+
     if (v == null) return '--';
+
     return Number(v).toFixed(digits == null ? 2 : digits);
+
 }
 
+
+
 // =============================================================================
+
 // MODEL GOVERNANCE PANEL (TASK-6) — canonical governance API consumer
+
 // =============================================================================
+
 async function loadGovernancePanel() {
+
     const results = await Promise.allSettled([
+
         NX.api.get('/api/models/governance/health', { component: 'Governance', action: 'LOAD_HEALTH' }),
+
         NX.api.get('/api/models/governance/registry', { component: 'Governance', action: 'LOAD_REGISTRY' }),
+
         NX.api.get('/api/models/governance/events', { component: 'Governance', action: 'LOAD_EVENTS' })
+
     ]);
+
     let health = null, registry = null, events = [];
+
     if (results[0].status === 'fulfilled' && results[0].value.ok) health = results[0].value.body.health;
+
     if (results[1].status === 'fulfilled' && results[1].value.ok) registry = results[1].value.body.registry;
+
     if (results[2].status === 'fulfilled' && results[2].value.ok) {
+
         const body = results[2].value.body;
+
         events = Array.isArray(body.events) ? body.events.slice(0, 20) : [];
+
     }
+
     renderGovernanceHealth(health);
+
     renderGovernanceRegistry(registry);
+
     renderGovernanceEvents(events);
+
+    loadPromotionStatus();
+
     if (health) {
+
         const st = document.getElementById('gov-nav-state');
+
         if (st) {
+
             const sh = health.shadow || {};
+
             st.textContent = sh.running ? 'ON' : 'OFF';
+
             st.className = 'ml-auto text-[9px] font-black px-1.5 py-0.5 rounded border ' + (sh.running ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-slate-500/20 text-slate-300 border-slate-500/30');
+
         }
+
     }
+
 }
+
+
 
 function renderGovernanceHealth(health) {
+
     const champ = document.getElementById('gov-champ-health');
+
     const chalState = document.getElementById('gov-chal-state');
+
     if (!health) {
+
         if (champ) champ.textContent = 'NO DATA';
+
         if (chalState) chalState.textContent = '--';
+
         return;
+
     }
+
     const c = health.champion || {};
+
     const k = health.challenger || {};
+
     const s = health.shadow || {};
+
     if (champ) {
+
         champ.textContent = c.healthy ? 'HEALTHY' : 'DEGRADED';
+
         champ.className = 'text-[10px] font-black px-2 py-1 rounded uppercase ' + (c.healthy ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30');
+
     }
+
     if (chalState) chalState.textContent = k.state || 'NONE';
+
 }
+
+
 
 function renderGovernanceRegistry(registry) {
+
     const champBody = document.getElementById('gov-champ-body');
+
     const chalBody = document.getElementById('gov-chal-body');
+
     const shadowBody = document.getElementById('gov-shadow-body');
+
     const latencyBody = document.getElementById('gov-latency-body');
+
     const promoBody = document.getElementById('gov-promo-body');
+
     if (!registry) {
+
         ['gov-champ-body', 'gov-chal-body', 'gov-shadow-body', 'gov-latency-body', 'gov-promo-body'].forEach(function (id) {
+
             const el = document.getElementById(id);
+
             if (el) el.innerHTML = '<div class=\'text-textMuted italic\'>No data</div>';
+
         });
+
         return;
+
     }
+
     const cats = registry.categories || {};
+
     const champ = cats.CURRENT_CHAMPION || {};
+
     const chal = cats.CURRENT_CHALLENGER || {};
+
     const verify = registry.champion_verification || {};
+
     const gate = (verify.load_gate || {});
+
     if (champBody) {
+
         champBody.innerHTML = (
+
             '<div><span class=\'text-textMuted\'>ID   </span>' + escHtml(champ.model_id || '?') + ' @ ' + escHtml(champ.version || '?') + '</div>' +
+
             '<div><span class=\'text-textMuted\'>Schema</span> ' + escHtml(champ.schema_id || '?') + ' / ' + (champ.input_dimension || 0) + 'D</div>' +
+
             '<div><span class=\'text-textMuted\'>Hash  </span>' + escHtml((verify.hash || champ.artifact_hash || '?').slice(0, 16)) + '</div>' +
+
             '<div><span class=\'text-textMuted\'>Life  </span>' + escHtml(champ.lifecycle_state || '?') + '  (gate: ' + (gate.passed ? 'PASS' : 'FAIL/' + escHtml((gate.failing_gate || '?'))) + ')</div>'
+
         );
+
     }
+
     if (chalBody) {
+
         if (chal && chal.model_id) {
+
             chalBody.innerHTML = (
+
                 '<div><span class=\'text-textMuted\'>ID   </span>' + escHtml(chal.model_id) + ' @ ' + escHtml(chal.version || '?') + '</div>' +
+
                 '<div><span class=\'text-textMuted\'>Schema</span> ' + escHtml(chal.schema_id || '?') + ' / ' + (chal.input_dimension || 0) + 'D</div>' +
+
                 '<div><span class=\'text-textMuted\'>Life  </span>' + escHtml(chal.lifecycle_state || '?') + '</div>'
+
             );
+
         } else {
+
             chalBody.innerHTML = '<div class=\'text-textMuted italic\'>No validated challenger attached</div>';
+
         }
+
     }
+
     const sh = registry.shadow || {};
+
     if (shadowBody) {
+
         shadowBody.innerHTML = (
+
             '<div>comparisons ' + (sh.comparisons != null ? sh.comparisons : '--') + '</div>' +
+
             '<div>errors      ' + (sh.errors != null ? sh.errors : '--') + '</div>' +
+
             '<div>dropped     ' + (sh.dropped != null ? sh.dropped : '--') + '</div>'
+
         );
+
     }
+
     if (latencyBody) {
+
         latencyBody.innerHTML = (
+
             '<div>avg ' + (sh.avg_latency_ms != null ? sh.avg_latency_ms : '--') + ' ms</div>' +
+
             '<div>p95 ' + (sh.p95_latency_ms != null ? sh.p95_latency_ms : '--') + ' ms</div>'
+
         );
+
     }
+
     if (promoBody) {
+
         promoBody.innerHTML = '<div class=\'text-accentGold font-bold\'>' + escHtml((cats.SHADOW && cats.SHADOW.lifecycle_state) || 'SHADOW') + '</div><div class=\'text-textMuted\'>NO AUTO PROMOTION</div>';
+
     }
+
 }
+
+
 
 function renderGovernanceEvents(events) {
+
     const body = document.getElementById('gov-events-body');
+
     if (!body) return;
+
     if (!events || !events.length) {
+
         body.innerHTML = '<div class=\'text-textMuted italic\'>No governance events yet</div>';
+
         return;
+
     }
+
     body.innerHTML = events.map(function (e) {
+
         return '<div class=\'flex justify-between gap-2\'><span class=\'text-accentCyan\'>' + escHtml(e.event || '') + '</span><span>' + escHtml(String(e.model_id || '').slice(0, 24)) + '</span><span class=\'text-textMuted\'>' + escHtml((e.timestamp || '').slice(0, 19)) + '</span></div>';
+
     }).join('');
+
 }
+
+
+
+// =============================================================================
+
+// PROMOTION CONTROLS (TASK-08 70D governance) — preview + explicit approval flow
+
+// =============================================================================
+
+async function showPromotionPreview() {
+
+    const modelId = (document.getElementById('gov-promo-candidate') || {}).value || '';
+
+    if (!modelId) {
+
+        console.warn('[UI_ERROR] component=Governance action=PROMOTION_PREVIEW missing model_id');
+
+        return;
+
+    }
+
+    const result = await NX.api.get('/api/models/governance/promotion-preview?model_id=' + encodeURIComponent(modelId), { component: 'Governance', action: 'PROMOTION_PREVIEW' });
+
+    const body = document.getElementById('gov-promo-preview');
+
+    if (!body) return;
+
+    if (!result.ok || !result.body || !result.body.preview) {
+
+        body.innerHTML = '<div class=\'text-rose-400\'>' + escHtml(NX.api.msg(result, 'Preview failed')) + '</div>';
+
+        return;
+
+    }
+
+    const p = result.body.preview;
+
+    const g = p.gates || {};
+
+    const v = p.verification || {};
+
+    const champ = p.current_champion || {};
+
+    const cand = p.candidate || {};
+
+    const roll = p.rollback || {};
+
+    const gateRow = function (name, st) {
+
+        const cls = st === 'PASS' ? 'text-emerald-300' : st === 'FAIL' ? 'text-rose-300' : 'text-amber-300';
+
+        return '<div><span class=\'text-textMuted\'>' + name + '</span> <span class=\'' + cls + ' font-black\'>' + escHtml(st || 'UNKNOWN') + '</span></div>';
+
+    };
+
+    body.innerHTML =
+
+        '<div class=\'text-accentGold font-black\'>PROMOTION PREVIEW (read-only)</div>' +
+
+        '<div><span class=\'text-textMuted\'>Champion</span> ' + escHtml(champ.model_id || '?') + ' @ ' + escHtml(champ.version || '?') +
+
+            ' <span class=\'text-textMuted\'>hash</span> ' + escHtml((champ.artifact_hash || '').slice(0, 12) || '?') + '</div>' +
+
+        '<div><span class=\'text-textMuted\'>Candidate</span> ' + escHtml(cand.model_id || '?') + ' @ ' + escHtml(cand.version || '?') +
+
+            ' <span class=\'text-textMuted\'>schema</span> ' + escHtml(cand.schema || '?') + '</div>' +
+
+        '<div><span class=\'text-textMuted\'>Schema</span> champion=' + escHtml((p.schema || {}).champion || '?') + ' candidate=' + escHtml((p.schema || {}).candidate || '?') + '</div>' +
+
+        '<div class=\'mt-1\'>' + gateRow('OOS', g.oos) + gateRow('Robustness', g.robustness) + gateRow('Shadow', g.shadow) + gateRow('Drift', g.drift) + gateRow('Liquidity', g.liquidity) + '</div>' +
+
+        '<div><span class=\'text-textMuted\'>Rollback</span> ' + (roll.available ? 'AVAILABLE -> ' + escHtml(roll.target || '') : 'NONE') + '</div>' +
+
+        '<div><span class=\'text-textMuted\'>Eligible</span> <span class=\'' + (v.eligible ? 'text-emerald-300' : 'text-rose-300') + ' font-black\'>' + (v.eligible ? 'YES' : 'NO') + '</span>' +
+
+            (v.reason ? ' <span class=\'text-textMuted\'>' + escHtml(v.reason) + '</span>' : '') + '</div>' +
+
+        (p.locked ? '<div class=\'text-amber-300\'>WAIT: another promotion is currently in progress (lock held)</div>' : '');
+
+}
+
+
+
+async function executePromotionUI() {
+
+    const modelId = (document.getElementById('gov-promo-candidate') || {}).value || '';
+
+    const token = (document.getElementById('gov-promo-token') || {}).value || '';
+
+    if (!modelId || !token) {
+
+        console.warn('[UI_ERROR] component=Governance action=PROMOTION_EXECUTE missing model_id/token');
+
+        return;
+
+    }
+
+    if (!confirm('PROMOTION IS FINAL AND AUDITED.\n\nPromote ' + modelId + ' to Champion?\n\nThis requires explicit operator approval and records an immutable audit event.')) {
+
+        return;
+
+    }
+
+    const actor = prompt('Operator identity (required for the audit trail):') || '';
+
+    if (!actor) {
+
+        console.warn('[UI_ERROR] component=Governance action=PROMOTION_EXECUTE missing actor');
+
+        return;
+
+    }
+
+    const result = await NX.api.post('/api/models/promotion/execute', {
+
+        actor: actor,
+
+        model_id: modelId,
+
+        model_version: '',
+
+        reason: 'operator promotion via governance UI',
+
+        approval_token: token,
+
+        old_champion_model_id: '',
+
+        old_champion_version: '',
+
+        old_champion_hash: '',
+
+        old_champion_schema: ''
+
+    }, { component: 'Governance', action: 'PROMOTION_EXECUTE' });
+
+    const body = document.getElementById('gov-promo-preview');
+
+    if (!result.ok) {
+
+        if (body) body.innerHTML = '<div class=\'text-rose-400\'>PROMOTION BLOCKED: ' + escHtml(NX.api.msg(result, 'blocked')) + '</div>';
+
+        return;
+
+    }
+
+    if (body) body.innerHTML = '<div class=\'text-emerald-300 font-black\'>PROMOTION COMMITTED — audit record ' + escHtml((result.body.promotion || {}).promotion_id || '?') + '</div>';
+
+    loadGovernancePanel();
+
+}
+
+
+
+async function freezePromotionsUI() {
+
+    const actor = prompt('Operator identity:') || '';
+
+    if (!actor) return;
+
+    const result = await NX.api.post('/api/models/governance/emergency/freeze', { actor: actor, reason: 'operator freeze from UI' }, { component: 'Governance', action: 'PROMOTION_FREEZE' });
+
+    if (result.ok) loadGovernancePanel();
+
+}
+
+
+
+async function unfreezePromotionsUI() {
+
+    const actor = prompt('Operator identity:') || '';
+
+    if (!actor) return;
+
+    const result = await NX.api.post('/api/models/governance/emergency/unfreeze', { actor: actor, reason: 'operator unfreeze from UI' }, { component: 'Governance', action: 'PROMOTION_UNFREEZE' });
+
+    if (result.ok) loadGovernancePanel();
+
+}
+
+
+
+async function loadPromotionStatus() {
+
+    const result = await NX.api.get('/api/models/governance/status', { component: 'Governance', action: 'LOAD_STATUS' });
+
+    const el = document.getElementById('gov-promo-freeze');
+
+    if (!el) return;
+
+    if (!result.ok || !result.body || !result.body.available) {
+
+        el.textContent = 'UNAVAILABLE';
+
+        return;
+
+    }
+
+    const promo = result.body.promotion || {};
+
+    if (promo.frozen) {
+
+        el.textContent = 'PROMOTION FROZEN';
+
+        el.className = 'text-[10px] font-black px-2 py-1 rounded uppercase border bg-rose-500/20 text-rose-300 border-rose-500/30';
+
+    } else {
+
+        el.textContent = 'PROMOTIONS ENABLED';
+
+        el.className = 'text-[10px] font-black px-2 py-1 rounded uppercase border bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+
+    }
+
+}
+
+
+
+
 
 async function reconcileRegistry() {
+
     const result = await NX.api.post('/api/models/registry/reconcile', {}, { component: 'Governance', action: 'RECONCILE' });
+
     if (!result.ok) {
+
         console.warn('[UI_ERROR] component=Governance action=RECONCILE ' + NX.api.msg(result, 'Reconcile failed'));
+
         return;
+
     }
+
     renderGovernanceRegistry(result.body.registry);
+
 }
+
+
 
 function escHtml(s) {
+
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 }
+
+
 
 async function loadAccountPerformance() {
+
     try {
+
         const res = await fetch('/api/account/performance');
+
         if (!res.ok) return;
+
         const data = await res.json();
+
         if (!data.available) return;
 
+
+
         if (data.live) {
+
             const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+
             if (data.live.balance != null) setText('acc-balance', '$' + Number(data.live.balance).toLocaleString('en-US', { minimumFractionDigits: 2 }));
+
             if (data.live.equity != null) setText('acc-equity', '$' + Number(data.live.equity).toLocaleString('en-US', { minimumFractionDigits: 2 }));
+
             if (data.live.floating_pnl != null) setText('acc-floating', acctFmtMoney(data.live.floating_pnl));
+
             if (data.live.margin_free != null) setText('acc-margin-free', '$' + Number(data.live.margin_free).toLocaleString('en-US', { minimumFractionDigits: 2 }));
+
             if (data.live.open_positions != null) setText('acc-open-positions', String(data.live.open_positions));
+
         }
+
         if (data.drawdown && data.drawdown.has_data && data.drawdown.current_drawdown_pct != null) {
+
             const el = document.getElementById('acc-drawdown');
+
             if (el) el.textContent = Number(data.drawdown.current_drawdown_pct).toFixed(2) + '%';
+
         }
+
         if (data.totals && data.totals.win_rate != null) {
+
             const el = document.getElementById('acc-winrate');
+
             if (el) el.textContent = Number(data.totals.win_rate).toFixed(1) + '%';
+
         }
+
     } catch (err) {
+
         console.error('Account performance load failed', err);
+
     }
+
 }
+
+
 
 // Advanced risk metrics (Sharpe/Sortino/Calmar/SQN/... from accounting core).
+
 // =============================================================================
+
 // PHASE 16b (UX v2): PERFORMANCE INTELLIGENCE ENGINE
+
 // Verve-coded summary lines + deep scenario analysis. Every claim derives from
+
 // real aggregates (a = data.advanced from the accounting core); missing stats
+
 // produce a neutral hint, never a fabricated claim. Numbers are real; the
+
 // prose is the audit trail made readable.
+
 // =============================================================================
+
+
 
 function acctNum(v, d) {
+
     return v == null ? '--' : Number(v).toFixed(d == null ? 2 : d);
+
 }
+
 function acctR(v) {
+
     return v == null ? '--' : Number(v).toFixed(3) + 'R';
+
 }
+
 function acctPctV(v, d) {
+
     return v == null ? '--' : Number(v).toFixed(d == null ? 2 : d) + '%';
+
 }
+
 function acctPct1(v) {
+
     return v == null ? '--' : (Number(v) * 100).toFixed(1) + '%';
+
 }
+
 function acctTone(v) {
+
     return v == null ? 'text-gray-400' : (v >= 0 ? 'text-emerald-400' : 'text-rose-400');
+
 }
+
 function acctChip(txt, cls) {
+
     return '<span class="inline-block text-[9px] uppercase tracking-widest font-bold rounded px-1.5 py-0.5 ' + (cls || 'bg-accentCyan/10 text-accentCyan') + '">' + txt + '</span>';
+
 }
+
 function acctBarRow(label, pct, cls, valStr) {
+
     const w = Math.max(2, Math.min(100, Number(pct) || 0));
+
     return '<div class="flex items-center gap-2 text-[10px] font-mono py-0.5">' +
+
         '<span class="w-40 truncate text-textMuted shrink-0">' + label + '</span>' +
+
         '<div class="flex-1 h-1.5 rounded-full bg-darkBg overflow-hidden">' +
+
         '<div class="h-full rounded-full ' + cls + '" style="width:' + w + '%"></div></div>' +
+
         '<span class="w-28 text-right shrink-0 text-gray-300">' + (valStr || '') + '</span></div>';
+
 }
+
+
 
 function toggleAccountIntelMode(btn) {
+
     const deep = document.getElementById('acct-intel-deep');
+
     if (!deep) return;
+
     const showing = !deep.classList.contains('hidden');
+
     deep.classList.toggle('hidden');
+
     window.__acctIntelDeepVisible = deep.classList.contains('hidden') ? false : true;
+
     if (btn) {
+
         btn.innerHTML = showing
+
             ? '<i class="fa-solid fa-microscope mr-1"></i>Deep Analysis'
+
             : '<i class="fa-solid fa-compress mr-1"></i>Hide Analysis';
+
     }
+
 }
+
+
 
 function renderAccountIntelTexts(a, data) {
+
     const box = document.getElementById('acct-intel-texts');
+
     if (!box) return;
+
     const lines = [];
+
     const add = (txt, cls) => lines.push(
+
         '<div class="flex items-start gap-2 py-0.5">' +
+
         '<span class="text-accentCyan mt-0.5 text-[10px] w-3 text-center shrink-0">&#9656;</span>' +
+
         '<span class="' + (cls || 'text-textMuted') + '">' + txt + '</span></div>');
+
     const denom = (a.win_rate_denominator || 'NONE').toLowerCase();
 
+
+
     // 1. Win-rate & loss-rate reconciliation (the core debug tool).
+
     if (a.win_rate != null && a.loss_rate_decided != null) {
+
         const wr = Number(a.win_rate);
+
         const verdict = wr >= 50 ? 'count edge confirmed'
+
             : (wr >= 40 ? 'counts are marginal' : 'counts are bleeding');
+
         const cls = wr >= 50 ? 'text-emerald-400' : (wr >= 40 ? 'text-amber-400' : 'text-rose-400');
+
         add('Win rate <b class="' + cls + '">' + acctPctV(a.win_rate) + '</b> vs loss rate <b class="text-rose-400">' +
+
             acctPctV(a.loss_rate_decided) + '</b> (decided, denominator "' + denom + '") &mdash; ' + verdict + '. ' +
+
             'Scratches included: win-rate-all <b>' + acctPctV(a.win_rate_all) + '</b>, loss-rate-all <b class="text-rose-400">' +
+
             acctPctV(a.loss_rate_all) + '</b>.', 'text-textMuted');
+
     }
+
     if (a.pnl_weighted_win_rate != null) {
+
         const pw = Number(a.pnl_weighted_win_rate);
+
         add('PnL-weighted win rate <b class="' + (pw >= 50 ? 'text-emerald-400' : 'text-rose-400') + '">' + acctPctV(pw) + '</b> &mdash; ' +
+
             'the dollar-weighted counterpart of the trade-count win rate' +
+
             (a.win_rate != null ? ' (' + (pw > a.win_rate ? 'profits concentrate in winners' : 'wins are small, losses heavy') + ').' : '.'), 'text-textMuted');
+
     }
+
     if (a.total_costs != null && a.net_pnl != null) {
+
         add('Cost drag ' + acctFmtMoney(a.total_costs) + ' (comm + swap) = ' +
+
             (a.cost_drag_pct != null ? acctPctV(a.cost_drag_pct) : 'n/a') + ' of gross profit; net ' +
+
             acctFmtMoney(a.net_pnl) + '.', Number(a.total_costs) > 0 ? 'text-amber-400' : 'text-textMuted');
+
     }
+
     if (a.stop_loss_share != null) {
+
         const pct = (a.stop_loss_share * 100).toFixed(1);
+
         if (a.stop_loss_share >= 0.7) {
+
             add(pct + '% of losses exited at a protective stop &mdash; stop discipline is doing the closing (' +
+
                 (a.avg_loss_r != null ? 'avg loss ' + acctNum(a.avg_loss_r, 3) + 'R' : 'avg loss R n/a') + ').', 'text-emerald-400');
+
         } else {
+
             add('Only ' + pct + '% of losses exited at a stop &mdash; losers may be bleeding out via manual/emergency/strategy exits (' +
+
                 (a.avg_loss_r != null ? 'avg loss <b>' + acctNum(a.avg_loss_r, 3) + 'R</b>' : 'avg loss R n/a') + ').', 'text-amber-400');
+
         }
+
     }
+
     if (a.avg_mae_r != null && a.avg_mfe_r != null) {
+
         add('Avg adverse excursion ' + acctR(a.avg_mae_r) + ' vs avg favourable excursion ' + acctR(a.avg_mfe_r) + ' &mdash; ' +
+
             (a.avg_mae_r > a.avg_mfe_r ? 'the book fights the market before it works.' : 'the book generally works before it fights.'), 'text-textMuted');
+
     }
+
     if (a.loss_efficiency_pct != null) {
+
         add('Losers gave back ~' + acctNum(a.loss_efficiency_pct, 1) + '% of their peak favourable excursion before closing red.', 'text-textMuted');
+
     }
+
     if (a.expectancy_breakeven_incl != null) {
+
         const e = Number(a.expectancy_breakeven_incl);
+
         add('Expectancy incl. breakevens <b class="' + (e >= 0 ? 'text-emerald-400' : 'text-rose-400') + '">' + acctFmtMoney(e) +
+
             '</b> per trade (' + a.sample_trades + ' closed). ' +
+
             (e >= 0 ? 'Positive on raw money.' : 'Negative on raw money &mdash; costs + giveback exceed edge.'),
+
             e >= 0 ? 'text-emerald-400' : 'text-rose-400');
+
     }
+
     if (lines.length === 0) {
+
         add('Not enough closed trades for performance intelligence yet.', 'text-textMuted');
+
     }
+
     box.innerHTML = lines.join('');
+
 }
+
+
 
 // ============================ DEEP ANALYSIS ================================
+
 // renderAccountDeepAnalysis(a, data) — builds the "Deep Analysis" block.
+
 // Every section derives from real aggregates; thresholds are honest heuristics.
+
 // ============================ SECTION A: VERDICT ============================
 
+
+
 function acctVerdict(a) {
+
     // Overall tone from the two most load-bearing facts: expectancy sign
+
     // (decided denominator) and stop-loss discipline share.
+
     if (a.expectancy == null && a.net_pnl == null) {
+
         return { label: 'NEUTRAL', text: 'Not enough evidence for a verdict yet.', cls: 'text-gray-400', bar: 'bg-gray-500' };
+
     }
+
     const exp = a.expectancy != null ? Number(a.expectancy) : (Number(a.net_pnl) / Math.max(1, a.sample_trades));
+
     const stop = a.stop_loss_share != null ? Number(a.stop_loss_share) : null;
+
     const wr = a.win_rate != null ? Number(a.win_rate) : 0;
+
     const lose = exp < 0;
+
     const undisciplined = stop != null && stop < 0.7;
+
     if (lose && undisciplined) {
+
         return { label: 'BLEEDING', text: 'Negative expectancy AND weak stop discipline — the two compounding problems are both live.',
+
             cls: 'text-rose-400', bar: 'bg-rose-500' };
+
     }
+
     if (lose) {
+
         return { label: 'LOSING EDGE', text: 'Negative expectancy: every decided trade erodes equity on average (costs + giveback included).',
+
             cls: 'text-rose-400', bar: 'bg-rose-500' };
+
     }
+
     if (undisciplined) {
+
         return { label: 'FRAGILE', text: 'Positive expectancy but losers rarely end at a stop — the edge depends on manual mercy, not the risk system.',
+
             cls: 'text-amber-400', bar: 'bg-amber-500' };
+
     }
+
     if (wr >= 50 && exp > 0) {
+
         return { label: 'CONFIRMED', text: 'Positive expectancy with a count edge — the classic profile of a system that works as designed.',
+
             cls: 'text-emerald-400', bar: 'bg-emerald-500' };
+
     }
+
     return { label: 'GRINDING', text: 'Positive expectancy despite a low win rate — the payoff profile carries the book.', cls: 'text-sky-400', bar: 'bg-sky-500' };
+
 }
+
+
 
 // ==================== SECTION B: EDGE REALITY (builders) ====================
 
+
+
 function acctSecEdge(a) {
+
     const wins = a.win_rate != null ? Number(a.win_rate) : null;
+
     const loss = a.loss_rate_decided != null ? Number(a.loss_rate_decided) : null;
+
     const wrAll = a.win_rate_all != null ? Number(a.win_rate_all) : null;
+
     const lossAll = a.loss_rate_all != null ? Number(a.loss_rate_all) : null;
+
     const pnlw = a.pnl_weighted_win_rate != null ? Number(a.pnl_weighted_win_rate) : null;
+
     const rows = [];
+
     if (wins != null && loss != null) {
+
         rows.push(acctBarRow('wins (decided)', wins, 'bg-emerald-500', acctPctV(wins)));
+
         rows.push(acctBarRow('losses (decided)', loss, 'bg-rose-500', acctPctV(loss)));
+
     }
+
     if (wrAll != null && lossAll != null) {
+
         rows.push(acctBarRow('wins (all incl. scratches)', wrAll, 'bg-emerald-500/60', acctPctV(wrAll)));
+
         rows.push(acctBarRow('losses (all)', lossAll, 'bg-rose-500/60', acctPctV(lossAll)));
+
     }
+
     if (pnlw != null) {
+
         rows.push(acctBarRow('PnL-share from winners', pnlw, 'bg-accentCyan', acctPctV(pnlw)));
+
     }
+
     if (!rows.length) {
+
         return '<div class="text-textMuted italic text-xs">No closed-trade sample for rate mathematics yet.</div>';
+
     }
+
+
 
     // Expectancy waterfall as bar segments: gross profit vs gross loss vs costs.
+
     let waterfall = '';
+
     if (a.gross_profit != null && a.gross_loss != null) {
+
         const gp = Math.max(0, Number(a.gross_profit));
+
         const gl = Math.max(0, Number(a.gross_loss));
+
         const costs = a.total_costs != null ? Math.max(0, Number(a.total_costs)) : 0;
+
         const tot = (gp + gl + costs) || 1;
+
         const wGp = Math.round(gp / tot * 100), wGl = Math.round(gl / tot * 100), wC = Math.max(0, 100 - wGp - wGl);
+
         waterfall = '<div class="mt-2">' +
+
             '<div class="flex h-2.5 rounded-full overflow-hidden bg-darkBg">' +
+
             '<div class="bg-emerald-500" style="width:' + wGp + '%" title="gross profit"></div>' +
+
             '<div class="bg-rose-500" style="width:' + wGl + '%" title="gross loss"></div>' +
+
             '<div class="bg-amber-400" style="width:' + wC + '%" title="costs"></div></div>' +
+
             '<div class="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-[10px] font-mono text-textMuted">' +
+
             '<span><span class="text-emerald-400">&#9632;</span> gross profit ' + acctFmtMoney(gp) + '</span>' +
+
             '<span><span class="text-rose-400">&#9632;</span> gross loss ' + acctFmtMoney(gl) + '</span>' +
+
             '<span><span class="text-amber-400">&#9632;</span> costs ' + acctFmtMoney(costs) + '</span></div></div>';
+
     }
+
+
 
     // R-based edge column.
+
     const rCells = [
+
         ['Avg R', acctR(a.avg_r), acctTone(a.avg_r)],
+
         ['Avg Win R (realized)', a.avg_r_multiple != null ? acctNum(a.avg_r_multiple, 3) + 'R' : '--', a.avg_r_multiple != null && a.avg_r_multiple > 0 ? 'text-emerald-400' : 'text-gray-400'],
+
         ['Avg Loss R (realized)', a.avg_loss_r != null ? acctNum(a.avg_loss_r, 3) + 'R' : '--', a.avg_loss_r != null && a.avg_loss_r < 0 ? 'text-rose-400' : 'text-gray-400'],
+
         ['R sample coverage', a.r_coverage_ratio != null ? acctPct1(a.r_coverage_ratio) : '--', 'text-gray-300'],
+
         ['Payoff ratio', acctNum(a.payoff_ratio, 2), acctTone(a.payoff_ratio != null ? Number(a.payoff_ratio) - 1 : null)],
+
     ];
+
     const rHtml = '<div class="grid grid-cols-2 gap-2">' +
+
         rCells.map(c => '<div class="bg-darkBg/50 rounded-md px-2 py-1.5 border border-borderClr/40">' +
+
             '<span class="text-[9px] uppercase tracking-wider text-textMuted block">' + c[0] + '</span>' +
+
             '<span class="font-mono font-bold text-xs ' + c[2] + '">' + c[1] + '</span></div>').join('') + '</div>';
 
+
+
     return '<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">' +
+
         '<div class="space-y-1">' + rows.join('') + waterfall + '</div>' +
+
         '<div>' + rHtml + '</div></div>';
+
 }
+
 // ============== SECTION C: EXIT DISCIPLINE & LOSS PERSISTENCE ==============
 
+
+
 function acctSecExit(a) {
+
     const stop = a.stop_loss_share;
+
     const lossR = a.avg_loss_r != null ? Math.abs(Number(a.avg_loss_r)) : null;
+
     const hold = a.avg_hold_sec;
+
     const rows = [];
 
+
+
     if (stop != null) {
+
         const pct = (stop * 100).toFixed(1);
+
         const ok = stop >= 0.7;
+
         rows.push('<div class="flex items-center gap-3 text-sm">' +
+
             '<span class="w-36 shrink-0 text-[10px] uppercase tracking-wider text-textMuted">stop-loss exits</span>' +
+
             '<div class="flex-1 h-2 rounded-full bg-darkBg overflow-hidden">' +
+
             '<div class="h-full rounded-full ' + (ok ? 'bg-emerald-500' : 'bg-amber-500') + '" style="width:' + pct + '%"></div></div>' +
+
             '<span class="font-mono font-black text-xs w-14 text-right ' + (ok ? 'text-emerald-400' : 'text-amber-400') + '">' + pct + '%</span></div>');
+
         rows.push('<div class="text-[10px] text-textMuted leading-relaxed">' +
+
             (ok ? 'Stop system is doing the closing. Discipline is structural, not incidental.'
+
                 : 'Two-thirds or more of losers did NOT end at a stop. Losers are bleeding out via manual / emergency / strategy exits.') + '</div>');
+
         if (lossR != null) {
+
             const cls = lossR <= 1.0 ? 'text-emerald-400' : (lossR <= 1.5 ? 'text-amber-400' : 'text-rose-400');
+
             rows.push('<div class="text-xs font-mono ' + cls + '">avg loss <b>' + acctNum(a.avg_loss_r, 3) + 'R</b>' +
+
                 (lossR > 1.0 ? ' &mdash; losses exceed the planned risk unit; the risk plan is not the binding constraint.' : ' &mdash; losses stay inside the planned risk unit.') + '</div>');
+
         }
+
     } else {
+
         rows.push('<div class="text-textMuted italic text-xs">No exit-classification evidence yet.</div>');
+
     }
+
     if (hold != null) {
+
         const h = Math.round(Number(hold));
+
         rows.push('<div class="text-xs text-textMuted">avg hold <b class="text-gray-200">' + h + 's</b> per trade' +
+
             (h <= 90 ? ' &mdash; scalper timing profile.' : (h <= 600 ? ' &mdash; intraday swing-leaning.' : ' &mdash; persistent book; watch overnight gaps.')) + '</div>');
+
     }
+
     rows.push('<div class="text-xs text-textMuted">avg MAE ' + acctR(a.avg_mae_r) + ' vs avg MFE ' + acctR(a.avg_mfe_r) +
+
         (a.avg_mae_r != null && a.avg_mfe_r != null ? ' &mdash; ' +
+
             (Number(a.avg_mae_r) > Number(a.avg_mfe_r) ? 'adverse excursion dominates: entries fight the move.' : 'favourable excursion dominates: entries enjoy follow-through.') : '') + '</div>');
+
     if (a.loss_efficiency_pct != null) {
+
         rows.push('<div class="text-xs text-textMuted">losers gave back ~<b class="text-amber-400">' + acctNum(a.loss_efficiency_pct, 1) + '%</b> of peak favourable excursion before closing red' +
+
             (Number(a.loss_efficiency_pct) > 50 ? ' &mdash; exits are late on the winner side of losers.' : '.') + '</div>');
+
     }
+
     if (a.win_mae_capture_pct != null) {
+
         rows.push('<div class="text-xs text-textMuted">winners kept only ~<b class="text-gray-200">' + acctNum(a.win_mae_capture_pct, 1) + '%</b> of adverse excursion before closing green (100% = perfect stop discipline).</div>');
+
     }
+
     return '<div class="space-y-2">' + rows.join('') + '</div>';
+
 }
+
+
 
 // ================= SECTION D: PROFIT / LOSS DISTRIBUTION ===================
 
+
+
 function acctSecDistribution(a) {
+
     const winN = a.max_consecutive_wins;
+
     const lossN = a.max_consecutive_losses;
+
     const avgWin = a.average_win != null ? Number(a.average_win) : null;
+
     const avgLoss = a.average_loss != null ? Number(a.average_loss) : null;
+
     const payoff = a.payoff_ratio != null ? Number(a.payoff_ratio) : null;
+
     const skew = a.profit_skew;
+
     const cells = [];
+
     cells.push(['Avg Win', avgWin != null ? acctFmtMoney(avgWin) : '--', avgWin != null ? 'text-emerald-400' : 'text-gray-400']);
+
     cells.push(['Avg Loss', avgLoss != null ? acctFmtMoney(avgLoss) : '--', avgLoss != null ? 'text-rose-400' : 'text-gray-400']);
+
     cells.push(['Payoff Ratio', payoff != null ? acctNum(payoff, 2) : '--', payoff != null && payoff >= 1 ? 'text-emerald-400' : (payoff != null ? 'text-rose-400' : 'text-gray-400')]);
+
     cells.push(['Best Trade', a.best_trade != null ? acctFmtMoney(a.best_trade) : '--', 'text-emerald-400']);
+
     cells.push(['Worst Trade', a.worst_trade != null ? acctFmtMoney(a.worst_trade) : '--', 'text-rose-400']);
+
     cells.push(['Profit Skew', skew != null ? acctNum(skew, 2) : '--', skew != null && skew > 0 ? 'text-emerald-400' : 'text-gray-400']);
+
     cells.push(['Loss Skew', a.loss_skew != null ? acctNum(a.loss_skew, 2) : '--', a.loss_skew != null && a.loss_skew < 0 ? 'text-rose-400' : 'text-gray-400']);
+
     cells.push(['Max Win Streak', winN != null ? String(winN) : '--', 'text-emerald-400']);
+
     cells.push(['Max Loss Streak', lossN != null ? String(lossN) : '--', 'text-rose-400']);
 
+
+
     // pairwise verdict
+
     let verdict = '';
+
     if (avgWin != null && avgLoss != null) {
+
         const ratio = avgWin / Math.abs(avgLoss);
+
         const met = payoff != null ? ratio / payoff : ratio;
+
         if (met < 1) {
+
             verdict = 'The win:loss size ratio is <b class="text-rose-400">below breakeven for this win rate</b> &mdash; winners do not pay for losers at the current hit rate.';
+
         } else if (met < 1.25) {
+
             verdict = 'Win:loss size ratio just about pays the hit rate &mdash; but only just; costs can flip it.';
+
         } else {
+
             verdict = 'The win:loss size ratio <b class="text-emerald-400">exceeds the breakeven ratio</b> &mdash; payoff structure supports the win rate.';
+
         }
+
         if (winN != null && lossN != null && lossN > 4 && lossN > winN * 2) {
+
             verdict += ' Max loss streak ' + lossN + ' vs win streak ' + winN + ' &mdash; drawdowns cluster harder than recoveries.';
+
         }
+
     }
+
     return '<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">' +
+
         cells.map(c => '<div class="bg-darkBg/50 rounded-md px-2 py-1.5 border border-borderClr/40">' +
+
             '<span class="text-[9px] uppercase tracking-wider text-textMuted block">' + c[0] + '</span>' +
+
             '<span class="font-mono font-bold text-xs ' + c[2] + '">' + c[1] + '</span></div>').join('') +
+
         '</div>' + (verdict ? '<div class="mt-2 text-xs text-textMuted">' + verdict + '</div>' : '');
+
 }
+
 // =============== SECTION E: SCENARIO ANALYSIS (5 core + bonus) ==============
+
 // acctScenario*() returns {title, icon, tone, body} or null when the sample
+
 // cannot support the scenario. Never fabricates.
 
+
+
 function acctScenarioStopDiscipline(a) {
+
     if (a.stop_loss_share == null || a.avg_loss_r == null) return null;
+
     const stop = Number(a.stop_loss_share);
+
     const lossR = Math.abs(Number(a.avg_loss_r));
+
     const title = stop >= 0.7 ? 'Stop discipline is doing the closing' : 'Losers are bleeding out';
+
     const icon = stop >= 0.7 ? 'fa-shield-halved' : 'fa-truck-medical';
+
     const tone = stop >= 0.7 ? 'emerald' : 'amber';
+
     let body;
+
     if (stop >= 0.7) {
+
         body = '<p>On this sample, <b>' + (stop * 100).toFixed(1) + '% of losses ended at a protective stop</b> and the average loser burns ' +
+
             acctNum(a.avg_loss_r, 3) + 'R. The exit engine is the binding constraint on losses &mdash; the risk plan is enforced in practice, not just on paper.</p>' +
+
             '<p class="mt-1">A healthy stop-loss share means the loss distribution is truncated at the planned risk unit; the remaining bleed (if any) comes from strategy/manual exits, not from stops blowing through.</p>' +
+
             (lossR > 1.0 ? '<p class="mt-1 text-rose-400">Caveat: avg loss of ' + acctNum(a.avg_loss_r, 3) + 'R still exceeds the 1R plan &mdash; slippage, gaps or mid-bar stops are leaking beyond the unit.</p>' : '');
+
     } else {
+
         body = '<p>Only <b>' + (stop * 100).toFixed(1) + '% of losers closed at a stop</b>. The other ' + (100 - stop * 100).toFixed(1) +
+
             '% exited via manual, emergency or strategy paths &mdash; and the average loser still costs ' + acctNum(a.avg_loss_r, 3) + 'R.</p>' +
+
             '<p class="mt-1">When the stop system closes fewer than ~70% of losers, the tail of the loss distribution is controlled by human reaction time. Fixing exit classification first will show whether the bleed is strategy exits (by design) or mercy exits (by hesitation).</p>';
+
     }
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
+
 
 function acctScenarioExcursion(a) {
+
     if (a.avg_mae_r == null || a.avg_mfe_r == null) return null;
+
     const mae = Number(a.avg_mae_r), mfe = Number(a.avg_mfe_r);
+
     const adverse = mae > mfe;
+
     const title = adverse ? 'The book fights the market before it works' : 'The book works before it fights';
+
     const icon = adverse ? 'fa-person-falling' : 'fa-person-running';
+
     const tone = adverse ? 'rose' : 'emerald';
+
     let body;
+
     if (adverse) {
+
         body = '<p>Avg adverse excursion <b>' + acctNum(mae, 3) + 'R</b> vs avg favourable excursion <b>' + acctNum(mfe, 3) + 'R</b>.' +
+
             ' Trades go underwater by more than they ever go green before the close &mdash; entries are early, counter-trend, or both.</p>' +
+
             '<p class="mt-1">Every trade that must survive an adverse excursion before it can pay is a trade paying the market for patience. The fix is entry-side: better timing (later entries), or wider stops that let favourable excursion develop without being stopped first.</p>';
+
     } else {
+
         body = '<p>Avg favourable excursion <b>' + acctNum(mfe, 3) + 'R</b> exceeds avg adverse excursion <b>' + acctNum(mae, 3) + 'R</b>.' +
+
             ' Positions generally move toward profit before they move against &mdash; the entry timing is directionally sound.</p>' +
+
             '<p class="mt-1">When MFE dominates MAE but the book still loses, the loss is not in entry, it is in exit: winners are given back or cut early. Focus the audit on the exit side.</p>';
+
     }
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
+
 
 function acctScenarioGiveback(a) {
+
     if (a.loss_efficiency_pct == null) return null;
+
     const gb = Number(a.loss_efficiency_pct);
+
     const title = gb > 50 ? 'Losers give back their peak' : 'Losers cut their winners early';
+
     const icon = gb > 50 ? 'fa-rotate-left' : 'fa-scissors';
+
     const tone = gb > 50 ? 'amber' : 'emerald';
+
     let body;
+
     if (gb > 50) {
+
         body = '<p>Losers gave back ~<b>' + acctNum(gb, 1) + '%</b> of their peak favourable excursion before closing red.' +
+
             ' A loser that was once +2R and closed -0.5R is not a bad entry, it is a bad exit.</p>' +
+
             '<p class="mt-1">Giveback this large is the signature of trailing stops that are too wide, take-profit levels that are too far, or manual patience that turns winners into losers. Every giveback point is edge that existed and was then surrendered.</p>';
+
     } else {
+
         body = '<p>Losers gave back only ~<b>' + acctNum(gb, 1) + '%</b> of their peak favourable excursion.' +
+
             ' When a loser does go green, the exit system cuts it before it can round-trip.</p>' +
+
             '<p class="mt-1">This is the healthy pattern: the book takes its losers quickly even when the market briefly agreed with the entry. The remaining problem, if any, is on the winner side (win MAE capture).</p>';
+
     }
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
+
 
 function acctScenarioCostDrag(a) {
+
     if (a.total_costs == null) return null;
+
     const costs = Number(a.total_costs);
+
     const drag = a.cost_drag_pct != null ? Number(a.cost_drag_pct) : null;
+
     const net = a.net_pnl != null ? Number(a.net_pnl) : null;
+
     if (costs === 0 && drag == null && net == null) return null;
+
     const title = costs > 0 ? 'Costs are a tax on every trade' : 'Cost drag is flat';
+
     const icon = costs > 0 ? 'fa-receipt' : 'fa-circle-check';
+
     const tone = costs > 0 ? 'amber' : 'emerald';
+
     let body;
+
     if (costs > 0) {
+
         body = '<p>Total costs (commission + swap) = <b>' + acctFmtMoney(costs) + '</b>' +
+
             (drag != null ? ', <b>' + acctPctV(drag) + '</b> of gross profit' : '') + '. Net PnL ' + acctFmtMoney(net) + '.</p>' +
+
             '<p class="mt-1">Costs are only neutral when the gross edge covers them. With ' + a.sample_trades + ' closed trades the per-trade cost is ' +
+
             (a.sample_trades ? acctFmtMoney(costs / a.sample_trades) : '--') + ' &mdash; every trade starts that far behind. If the edge per trade is smaller than the cost per trade, no win-rate tuning fixes it: only fewer, better trades do.</p>';
+
     } else {
+
         body = '<p>Cost drag is <b>flat</b> &mdash; the broker\u2019s commission/swap stack is not eating the book.</p>' +
+
             '<p class="mt-1">With costs neutral, any remaining net loss is 100% execution/edge problem, not overhead. That simplifies the diagnosis: it is not the broker, it is the system.</p>';
+
     }
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
+
 
 function acctScenarioStreaks(a) {
+
     if (a.max_consecutive_losses == null) return null;
+
     const l = Number(a.max_consecutive_losses);
+
     const w = a.max_consecutive_wins != null ? Number(a.max_consecutive_wins) : 0;
+
     const title = l > 4 ? 'Loss streaks cluster harder than recoveries' : 'Streak profile is balanced';
+
     const icon = l > 4 ? 'fa-wave-square' : 'fa-scale-balanced';
+
     const tone = l > 4 ? 'rose' : 'emerald';
+
     let body;
+
     if (l > 4) {
+
         body = '<p>Max loss streak <b>' + l + '</b> vs max win streak <b>' + w + '</b>.' +
+
             ' When the market regime turns, the book loses ' + l + ' in a row before a single recovery &mdash; that is the shape of a drawdown.</p>' +
+
             '<p class="mt-1">A ' + l + '-streak at the current risk per trade is the true tail of the equity curve. If the risk plan sizes for the average loss but the streak sizes for the maximum, the account is under-capitalized for its own regime risk.</p>';
+
     } else {
+
         body = '<p>Max loss streak <b>' + l + '</b> vs max win streak <b>' + w + '</b>.' +
+
             ' Neither side clusters pathologically &mdash; the book alternates, which is what a mean-reversion-ish scalp profile should do.</p>' +
+
             '<p class="mt-1">Balanced streaks mean variance is not the primary enemy; expectancy per trade is. Fix the edge, not the streaks.</p>';
+
     }
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
 // =========== SECTION E (cont.): BONUS SCENARIOS + COMPOSER =================
 
+
+
 function acctScenarioExpectancy(a) {
+
     if (a.expectancy_breakeven_incl == null) return null;
+
     const e = Number(a.expectancy_breakeven_incl);
+
     const decided = a.expectancy != null ? Number(a.expectancy) : null;
+
     const title = e >= 0 ? 'Breakeven-inclusive expectancy is positive' : 'Breakeven-inclusive expectancy is negative';
+
     const icon = e >= 0 ? 'fa-seedling' : 'fa-triangle-exclamation';
+
     const tone = e >= 0 ? 'emerald' : 'rose';
+
     let body;
+
     if (e >= 0) {
+
         body = '<p>Expectancy incl. breakevens is <b>' + acctFmtMoney(e) + '</b> per trade over ' + a.sample_trades + ' closed trades.' +
+
             (decided != null ? ' The decided-only version is ' + acctFmtMoney(decided) + ' &mdash; scratches dilute it to ' + acctFmtMoney(e) + '.' : '') + '</p>' +
+
             '<p class="mt-1">Positive raw-money expectancy is the single most load-bearing number in this panel: it means the system currently prices in all costs and still pays. Protect it &mdash; the next step is scaling it without breaking the denominators.</p>';
+
     } else {
+
         body = '<p>Every closed trade (including breakevens) costs <b>' + acctFmtMoney(Math.abs(e)) + '</b> on average &mdash; ' +
+
             a.sample_trades + ' trades × that drag = ' + acctFmtMoney(a.net_pnl || (e * a.sample_trades)) + ' of bleed.</p>' +
+
             '<p class="mt-1">Negative expectancy with a positive gross profile means the hole is in exit quality (giveback), cost control, or both. Fixing either flips the number; fixing both is the whole game.</p>';
+
     }
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
+
 
 function acctScenarioWinnerMae(a) {
+
     if (a.win_mae_capture_pct == null) return null;
+
     const cap = Number(a.win_mae_capture_pct);
+
     const title = cap >= 70 ? 'Winners keep their adverse excursion' : 'Winners bleed adverse excursion before closing green';
+
     const icon = cap >= 70 ? 'fa-angles-up' : 'fa-arrow-trend-down';
+
     const tone = cap >= 70 ? 'emerald' : 'rose';
+
     let body;
+
     if (cap >= 70) {
+
         body = '<p>Winner MAE capture is <b>' + acctNum(cap, 1) + '%</b> &mdash; winners held ~' + acctNum(cap, 1) +
+
             '% of their adverse excursion back before closing green. Entry timing on winners is clean.</p>' +
+
             '<p class="mt-1">High capture means the entry-to-profit path is short. If the book still loses, the pressure is on the loser side of the distribution, not the winner side.</p>';
+
     } else {
+
         body = '<p>Winners took on <b>' + acctNum(cap, 1) + '%</b> of their adverse excursion before green &mdash; even the winners fight the market before they pay.</p>' +
+
             '<p class="mt-1">Low capture + negative expectancy is the classic early-entry signature: the model enters before confirmation and pays the market for patience on both sides.</p>';
+
     }
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
+
 
 function acctScenarioRiskPerTrade(a) {
+
     if (a.avg_risk_usd == null) return null;
+
     const r = Number(a.avg_risk_usd);
+
     const title = r > 0 ? 'Risk per trade is the unit the whole book is measured in' : 'Risk per trade is flat';
+
     const icon = 'fa-coins';
+
     const tone = 'sky';
+
     let body;
+
     if (r > 0) {
+
         body = '<p>Avg risk deployed per trade is <b>' + acctFmtMoney(r) + '</b>. Every R-denominated stat in this panel (avg R, avg MAE/MFE, avg loss R) is a multiple of this unit.</p>' +
+
             '<p class="mt-1">With risk per trade this size, a ' + (a.max_consecutive_losses || '?') + '-loss streak is a ' +
+
             acctFmtMoney(r * Math.max(1, Number(a.max_consecutive_losses) || 1)) + ' drawdown before recoveries. The risk plan is what converts a bad streak into an account problem &mdash; size it for the streak, not the average.</p>';
+
     } else {
+
         body = '<p>No risk basis recovered for R-denominated stats yet (r_sample_count ' + (a.r_sample_count || 0) + ').</p>';
+
     }
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
+
 
 function acctScenarioRatios(a) {
+
     if (a.sharpe_ratio == null && a.sortino_ratio == null && a.calmar_ratio == null && a.sqn == null) return null;
+
     const sh = a.sharpe_ratio != null ? Number(a.sharpe_ratio) : null;
+
     const so = a.sortino_ratio != null ? Number(a.sortino_ratio) : null;
+
     const ca = a.calmar_ratio != null ? Number(a.calmar_ratio) : null;
+
     const sq = a.sqn != null ? Number(a.sqn) : null;
+
     const negCount = [sh, so, ca, sq].filter(v => v != null && v < 0).length;
+
     const title = negCount >= 2 ? 'Risk-adjusted ratios confirm the bleed' : 'Risk-adjusted ratios are mixed';
+
     const icon = negCount >= 2 ? 'fa-heart-crack' : 'fa-scale-unbalanced';
+
     const tone = negCount >= 2 ? 'rose' : 'amber';
+
     const fmtCol = v => v != null ? '<b class="' + (v >= 0 ? 'text-emerald-400' : 'text-rose-400') + '">' + acctNum(v, 2) + '</b>' : '--';
+
     let body = '<p>Sharpe ' + fmtCol(sh) + ' · Sortino ' + fmtCol(so) + ' · Calmar ' + fmtCol(ca) + ' · SQN ' + fmtCol(sq) + '.</p>';
+
     if (negCount >= 2) {
+
         body += '<p class="mt-1">When the risk-adjusted core is negative across multiple lenses, the drawdown is not a blip &mdash; it is the statistical expectation. The equity curve is a fair price for this process as-is.</p>' +
+
             '<p class="mt-1">No single ratio need be textbook-good; but they all being negative together is the strongest signal in the panel that the current process, at the current size, should not be scaled yet.</p>';
+
     } else {
+
         body += '<p class="mt-1">Mixed ratios: some lenses negative, some not &mdash; the risk profile is not uniformly broken, which means targeted fixes (exit discipline, giveback) can land on the negative side without rebuilding the whole book.</p>';
+
     }
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
+
 
 function acctScenarioHoldTime(a) {
+
     if (a.avg_hold_sec == null) return null;
+
     const h = Math.round(Number(a.avg_hold_sec));
+
     const vwap = a.net_pnl != null ? Number(a.net_pnl) : null;
+
     const title = h <= 90 ? 'Scalper timing profile' : (h <= 600 ? 'Intraday swing-leaning profile' : 'Persistent book, watch the overnight');
+
     const icon = h <= 90 ? 'fa-bolt' : (h <= 600 ? 'fa-hourglass-half' : 'fa-moon');
+
     const tone = h <= 90 ? 'accent' : (h <= 600 ? 'sky' : 'amber');
+
     const body = '<p>Avg hold is <b>' + h + 's</b> per trade.' +
+
         (h <= 90 ? ' A pure scalp profile: ' + (vwap != null && vwap < 0 ? 'the book bleeds on spread-heavy quick exits &mdash; cost per trade matters more than win rate.' : 'timing dominates and costs matter most.') :
+
             (h <= 600 ? ' Positions ride minutes, not seconds &mdash; giveback management and MFE capture matter more than raw speed.' :
+
                 ' Holds that long at FX scale carry overnight/rollover risk into every prayer &mdash; swap drag (see cost drag) is a permanent headwind.')) + '</p>';
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
 
+
+
 function acctScenarioSkewness(a) {
+
     if (a.profit_skew == null && a.loss_skew == null) return null;
+
     const ps = a.profit_skew != null ? Number(a.profit_skew) : null;
+
     const ls = a.loss_skew != null ? Number(a.loss_skew) : null;
+
     const good = (ps != null && ps > 0) && (ls != null && ls < 0);
+
     const title = good ? 'Distribution shape favours the book' : 'Distribution shape fights the book';
+
     const icon = good ? 'fa-chart-simple' : 'fa-chart-pie';
+
     const tone = good ? 'emerald' : 'rose';
+
     const body = '<p>Profit skew <b>' + (ps != null ? acctNum(ps, 2) : '--') + '</b>' +
+
         ' &middot; Loss skew <b>' + (ls != null ? acctNum(ls, 2) : '--') + '</b>. ' +
+
         (good
+
             ? 'Positive profit skew (occasional large winners) + negative loss skew (many small losers) is the textbook winning shape.'
+
             : 'The shape here means wins cluster small and losses come in chunks &mdash; the tail is on the wrong side.') + '</p>';
+
     return { title: title, icon: icon, tone: tone, body: body };
+
 }
+
+
 
 // ---- composer -------------------------------------------------------------
 
+
+
 function acctScenarioCard(s) {
+
     if (!s) return '';
+
     const toneCls = {
+
         emerald: ['border-emerald-400/30', 'text-emerald-400'],
+
         rose: ['border-rose-400/30', 'text-rose-400'],
+
         amber: ['border-amber-400/30', 'text-amber-400'],
+
         sky: ['border-sky-400/30', 'text-sky-400'],
+
         accent: ['border-accentCyan/30', 'text-accentCyan'],
+
     }[s.tone] || ['border-borderClr/50', 'text-accentCyan'];
+
     return '<div class="rounded-lg border ' + toneCls[0] + ' bg-darkBg/40 p-3">' +
+
         '<div class="flex items-center gap-2 mb-1.5">' +
+
         '<i class="fa-solid ' + s.icon + ' ' + toneCls[1] + '"></i>' +
+
         '<span class="text-xs font-bold text-gray-100">' + s.title + '</span></div>' +
+
         '<div class="text-[11px] leading-relaxed text-textMuted">' + s.body + '</div></div>';
+
 }
+
+
 
 function renderAccountDeepAnalysis(a, data) {
+
     const wrap = document.getElementById('acct-intel-deep');
+
     if (!wrap) return;
+
     const verdict = acctVerdict(a);
+
     let html = '';
 
+
+
     // Verdict banner
+
     html += '<div class="rounded-lg border border-borderClr/60 bg-darkBg/40 p-3 flex items-center gap-3">' +
+
         '<span class="text-2xl ' + verdict.cls + '"><i class="fa-solid fa-gauge-high"></i></span>' +
+
         '<div><div class="flex items-center gap-2"><span class="uppercase tracking-widest text-[9px] text-textMuted">verdict</span>' +
+
         '<span class="text-xs font-black ' + verdict.cls + '">' + verdict.label + '</span></div>' +
+
         '<div class="text-[11px] text-textMuted">' + verdict.text + '</div></div></div>';
 
+
+
     // Section B: Edge reality
+
     html += '<div><div class="flex items-center gap-2 mb-2">' +
+
         '<span class="text-[10px] uppercase tracking-widest text-textMuted/80 font-bold">Edge Reality</span>' +
+
         '<span class="text-[9px] text-textMuted/50">counts · dollar-weight · R-unit</span></div>' + acctSecEdge(a) + '</div>';
 
+
+
     // Section C: Exit discipline
+
     html += '<div><div class="flex items-center gap-2 mb-2">' +
+
         '<span class="text-[10px] uppercase tracking-widest text-textMuted/80 font-bold">Exit Discipline &amp; Loss Persistence</span>' +
+
         '<span class="text-[9px] text-textMuted/50">stop share · loss R · excursion</span></div>' + acctSecExit(a) + '</div>';
 
+
+
     // Section D: Distribution
+
     html += '<div><div class="flex items-center gap-2 mb-2">' +
+
         '<span class="text-[10px] uppercase tracking-widest text-textMuted/80 font-bold">Profit &amp; Loss Distribution</span>' +
+
         '<span class="text-[9px] text-textMuted/50">sizes · skew · streaks</span></div>' + acctSecDistribution(a) + '</div>';
 
+
+
     // Section E: Scenario cards
+
     const scenarios = [
+
         acctScenarioStopDiscipline(a),
+
         acctScenarioExcursion(a),
+
         acctScenarioGiveback(a),
+
         acctScenarioCostDrag(a),
+
         acctScenarioStreaks(a),
+
         acctScenarioExpectancy(a),
+
         acctScenarioWinnerMae(a),
+
         acctScenarioRiskPerTrade(a),
+
         acctScenarioRatios(a),
+
         acctScenarioHoldTime(a),
+
         acctScenarioSkewness(a),
+
     ].filter(Boolean);
+
     if (scenarios.length) {
+
         html += '<div><div class="flex items-center gap-2 mb-2">' +
+
             '<span class="text-[10px] uppercase tracking-widest text-textMuted/80 font-bold">Scenario Analysis</span>' +
+
             '<span class="text-[9px] text-textMuted/50">' + scenarios.length + ' live scenarios · each falsifiable</span></div>' +
+
             '<div class="grid grid-cols-1 xl:grid-cols-2 gap-2">' + scenarios.map(acctScenarioCard).join('') + '</div></div>';
+
     }
+
     wrap.innerHTML = html;
+
     // Deep Analysis stays collapsed by default (the toggle button reveals it).
+
     // Re-renders (period switch / auto-refresh) must not force it open.
+
     if (!window.__acctIntelDeepVisible) {
+
         wrap.classList.add('hidden');
+
     }
+
 }
+
 // ===== WIRING: loadAdvancedMetrics v2 + period extras + refresh hook =======
 
+
+
 async function loadAdvancedMetrics() {
+
     try {
+
         const res = await fetch('/api/account/performance');
+
         if (!res.ok) return;
+
         const data = await res.json();
+
         if (!data.available || !data.advanced) return;
+
         const a = data.advanced;
+
         const setText = (id, txt, cls) => {
+
             const el = document.getElementById(id);
+
             if (!el) return;
+
             if (cls) el.className = 'font-mono font-black text-sm ' + cls;
+
             el.textContent = txt;
+
         };
+
         const color = v => (v == null ? 'text-gray-400' : (v >= 0 ? 'text-emerald-400' : 'text-rose-400'));
+
         const fmt = (v, d = 2) => (v == null ? 'n/a' : Number(v).toFixed(d));
+
         setText('acct-sharpe', fmt(a.sharpe_ratio), color(a.sharpe_ratio));
+
         setText('acct-sortino', fmt(a.sortino_ratio), color(a.sortino_ratio));
+
         setText('acct-calmar', fmt(a.calmar_ratio), color(a.calmar_ratio));
+
         setText('acct-sqn', fmt(a.sqn), color(a.sqn));
+
         setText('acct-recovery-factor', fmt(a.recovery_factor), color(a.recovery_factor));
+
         setText('acct-payoff', fmt(a.payoff_ratio), color(a.payoff_ratio));
+
         setText('acct-avg-win', a.average_win == null ? 'n/a' : acctFmtMoney(a.average_win), 'text-emerald-400');
+
         setText('acct-avg-loss', a.average_loss == null ? 'n/a' : acctFmtMoney(a.average_loss), 'text-rose-400');
+
         setText('acct-win-streak', String(a.max_consecutive_wins ?? 'n/a'), 'text-emerald-400');
+
         setText('acct-loss-streak', String(a.max_consecutive_losses ?? 'n/a'), 'text-rose-400');
+
         setText('acct-eq-vol', a.equity_volatility_pct == null ? 'n/a' : fmt(a.equity_volatility_pct) + '%');
+
         setText('acct-pnl-tstat', fmt(a.profit_standard_error), color(a.profit_standard_error));
+
         setText('acct-stop-share', a.stop_loss_share == null ? 'n/a' : fmt(a.stop_loss_share * 100, 1) + '%', 'text-gray-200');
+
         setText('acct-avg-loss-r', fmt(a.avg_loss_r, 3), 'text-rose-400');
+
         setText('acct-avg-win-r', fmt(a.avg_r_multiple, 3), 'text-emerald-400');
+
         setText('acct-avg-mae-r', fmt(a.avg_mae_r, 3), 'text-rose-400');
+
         setText('acct-avg-mfe-r', fmt(a.avg_mfe_r, 3), 'text-emerald-400');
+
         setText('acct-adv-avg-hold', a.avg_hold_sec == null ? 'n/a' : Math.round(a.avg_hold_sec) + 's', 'text-gray-200');
+
         setText('acct-avg-risk-usd', a.avg_risk_usd == null ? 'n/a' : acctFmtMoney(a.avg_risk_usd), 'text-gray-200');
+
         setText('acct-r-coverage', a.r_coverage_ratio == null ? 'n/a' : (a.r_coverage_ratio * 100).toFixed(1) + '%', 'text-gray-200');
+
         // Period-level extras live in the period payload, not advanced; guard.
+
         const src = document.getElementById('acct-adv-source');
+
         if (src) src.textContent = 'source: accounting core · ' + a.sample_trades + ' closed trades';
+
         renderAccountIntelTexts(a, data);
+
         renderAccountDeepAnalysis(a, data);
+
     } catch (err) {
+
         console.error('Advanced metrics load failed', err);
+
     }
+
 }
+
+
 
 function acctSetIfId(id, txt) {
+
     const el = document.getElementById(id);
+
     if (el) el.textContent = txt;
+
 }
+
+
 
 // New period fields: gross split bar + expectancy incl. breakevens + breakevens count.
+
 function renderAccountPeriodExtras(p) {
+
     const gp = p.gross_profit != null ? Math.max(0, Number(p.gross_profit)) : 0;
+
     const gl = p.gross_loss != null ? Math.max(0, Number(p.gross_loss)) : 0;
+
     const tot = (gp + gl) || 1;
+
     acctSetIfId('acct-gross-profit', acctFmtMoney(gp));
+
     acctSetIfId('acct-gross-loss', acctFmtMoney(gl));
+
     const split = document.getElementById('acct-hero-split');
+
     if (split) {
+
         const wGp = Math.round(gp / tot * 100);
+
         split.innerHTML = '<div class="bg-emerald-500" style="width:' + wGp + '%"></div>' +
+
             '<div class="bg-rose-500" style="width:' + (100 - wGp) + '%"></div>';
+
     }
+
     acctSetIfId('acct-expectancy-incl', p.expectancy_breakeven_incl != null ? acctFmtMoney(p.expectancy_breakeven_incl) : 'n/a');
+
     acctSetIfId('acct-breakevens', p.breakeven_count != null ? String(p.breakeven_count) : '--');
+
     if (p.win_rate_denominator) {
+
         acctSetIfId('acct-win-denom', 'denominator: ' + p.win_rate_denominator);
+
         const chip = document.getElementById('acct-period-denom-chip');
+
         if (chip) {
+
             chip.textContent = 'denominator: ' + p.win_rate_denominator;
+
             chip.classList.remove('hidden');
+
         }
+
     }
+
 }
+
+
 
 async function loadAccountPeriod(kind, btn) {
+
     window.__currentPeriodKind = kind;
+
     try {
+
         const res = await fetch('/api/account/performance/' + kind);
+
         if (!res.ok) return;
+
         const data = await res.json();
+
         if (!data.available || !data.period) return;
+
         const p = data.period;
+
         document.getElementById('acct-net-pnl').textContent = acctFmtMoney(p.net_pnl);
+
         document.getElementById('acct-net-pnl').className = 'font-mono font-black text-sm ' + (p.net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400');
+
         document.getElementById('acct-pnl-pct').textContent = acctFmtPct(p.pnl_pct);
+
         document.getElementById('acct-trades').textContent = String(p.total_trades);
+
         document.getElementById('acct-winrate-period').textContent = acctFmtPct(p.win_rate);
+
         document.getElementById('acct-expectancy').textContent = acctFmtMoney(p.expectancy);
+
         document.getElementById('acct-profit-factor').textContent = acctFmtNum(p.profit_factor, 3);
+
         document.getElementById('acct-avg-r').textContent = acctFmtNum(p.average_r, 3);
+
         document.getElementById('acct-max-dd').textContent = acctFmtPct(p.max_drawdown_pct);
+
         document.getElementById('acct-best-trade').textContent = acctFmtMoney(p.best_trade);
+
         document.getElementById('acct-worst-trade').textContent = acctFmtMoney(p.worst_trade);
+
         document.getElementById('acct-avg-hold').textContent = p.average_holding_sec != null ? Math.round(p.average_holding_sec) + 's' : '--';
+
         document.getElementById('acct-risk-deployed').textContent = acctFmtMoney(p.total_risk_deployed);
+
         document.getElementById('acct-loss-rate-decided').textContent = acctFmtPct(p.loss_rate_decided);
+
         document.getElementById('acct-loss-rate-all').textContent = acctFmtPct(p.loss_rate_all);
+
         document.getElementById('acct-winrate-all').textContent = acctFmtPct(p.win_rate_all);
+
         document.getElementById('acct-winrate-pnlw').textContent = acctFmtPct(p.pnl_weighted_win_rate);
+
         document.getElementById('acct-avg-pnl-decided').textContent = acctFmtMoney(p.avg_pnl_per_decided);
+
         document.getElementById('acct-cost-drag').textContent = (p.cost_drag_pct != null ? acctFmtNum(p.cost_drag_pct, 2) + '%' : '--');
+
         renderAccountPeriodExtras(p);
+
         const wrDeno = p.win_rate_denominator || 'NONE';
+
         const wrDenoEl = document.getElementById('acct-win-denom');
+
         if (wrDenoEl) wrDenoEl.textContent = 'denominator: ' + wrDeno;
 
+
+
         document.querySelectorAll('.acct-period-btn').forEach(b => {
+
             b.className = 'acct-period-btn px-4 py-1.5 rounded-lg text-xs font-bold bg-darkBg text-textMuted border border-borderClr';
+
         });
+
         if (btn) btn.className = 'acct-period-btn px-4 py-1.5 rounded-lg text-xs font-bold bg-accentCyan/15 text-accentCyan border border-accentCyan/30';
 
+
+
         loadPeriodSeries(kind);
+
     } catch (err) {
+
         console.error('Account period load failed', err);
+
     }
+
 }
+
+
 
 async function loadPeriodSeries(kind) {
+
     try {
+
         const res = await fetch('/api/account/performance/' + kind + '/series?count=12');
+
         if (!res.ok) return;
+
         const data = await res.json();
+
         if (!data.available || !data.periods || data.periods.length === 0) return;
+
         const labels = data.periods.map(p => p.key);
+
         const net = data.periods.map(p => p.net_pnl);
+
         acctLineChart('acct-period-chart', 'acct-period-chart-empty', labels, net, '#22d3ee', acctFmtMoney);
+
     } catch (err) {
+
         console.error('Period series load failed', err);
+
     }
+
 }
+
+
 
 async function loadAccountCharts() {
+
     try {
+
         const res = await fetch('/api/account/equity-curve');
+
         if (!res.ok) return;
+
         const data = await res.json();
+
         if (!data.available) return;
 
+
+
         const curve = data.equity_curve || [];
+
         const labels = curve.map(c => { const t = new Date(c.timestamp); return (t.getMonth() + 1) + '/' + t.getDate(); });
+
         acctLineChart('acct-equity-chart', 'acct-equity-empty', labels, curve.map(c => c.equity), '#34d399', v => '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }));
+
         acctLineChart('acct-drawdown-chart', 'acct-drawdown-empty', labels, curve.map(c => c.drawdown_pct), '#fb7185', v => Number(v).toFixed(2) + '%');
 
+
+
         const cum = data.cumulative_pnl || [];
+
         acctLineChart('acct-cumulative-chart', 'acct-cumulative-empty', cum.map(c => { const t = new Date(c.timestamp); return (t.getMonth() + 1) + '/' + t.getDate(); }), cum.map(c => c.cumulative_pnl), '#fbbf24', acctFmtMoney);
+
     } catch (err) {
+
         console.error('Account charts load failed', err);
+
     }
+
 }
+
+
 
 async function loadAccountStrategies() {
+
     try {
+
         const res = await fetch('/api/account/strategies');
+
         if (!res.ok) return;
+
         const data = await res.json();
+
         const tbody = document.getElementById('acct-strategy-table');
+
         if (!tbody) return;
+
         if (!data.available || !data.strategies || data.strategies.length === 0) {
+
             tbody.innerHTML = '<tr><td colspan="8" class="py-4 text-center text-textMuted italic font-sans">NO STRATEGY EVIDENCE AVAILABLE</td></tr>';
+
             return;
+
         }
+
         tbody.innerHTML = data.strategies.map(s => {
+
             const lifecycle = s.lifecycle_state || 'DISCOVERED';
+
             // Distinct, truthful styling per lifecycle. DISCOVERED (observed
+
             // but unscored family) is informational, never an error.
+
             const lifeColor = lifecycle === 'ACTIVE' ? 'text-emerald-400' :
+
                 (lifecycle === 'RETIRED' || lifecycle === 'QUARANTINED') ? 'text-rose-400' :
+
                 (lifecycle === 'DISCOVERED') ? 'text-sky-400' : 'text-amber-400';
+
             return '<tr class="border-b border-borderClr/30">' +
+
                 '<td class="py-2 pl-2 font-mono text-accentCyan">' + s.strategy_id + '</td>' +
+
                 '<td class="py-2">' + s.trade_count + '</td>' +
+
                 '<td class="py-2 ' + (s.net_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400') + '">' + acctFmtMoney(s.net_pnl) + '</td>' +
+
                 '<td class="py-2">' + acctFmtPct(s.win_rate) + '</td>' +
+
                 '<td class="py-2">' + acctFmtNum(s.profit_factor, 3) + '</td>' +
+
                 '<td class="py-2">' + acctFmtNum(s.average_r, 3) + '</td>' +
+
                 '<td class="py-2 ' + lifeColor + '">' + lifecycle + '</td>' +
+
                 '<td class="py-2 pr-2 text-right">' + acctFmtNum(s.confidence, 4) + '</td>' +
+
                 '</tr>';
+
         }).join('');
+
     } catch (err) {
+
         console.error('Account strategies load failed', err);
+
     }
+
 }
+
+
 
 async function loadTradeForensics() {
+
     const input = document.getElementById('acct-forensic-ticket');
+
     const out = document.getElementById('acct-forensic-output');
+
     if (!input || !out) return;
+
     const ticket = String(input.value || '').trim();
+
     if (!ticket) { out.textContent = 'Enter a ticket to inspect.'; out.classList.remove('hidden'); return; }
+
     try {
+
         const res = await fetch('/api/account/trades/' + encodeURIComponent(ticket));
+
         if (!res.ok) { out.textContent = 'HTTP ' + res.status; out.classList.remove('hidden'); return; }
+
         const data = await res.json();
+
         out.textContent = JSON.stringify(data, null, 2);
+
         out.classList.remove('hidden');
+
     } catch (err) {
+
         out.textContent = 'Inspection failed: ' + err;
+
         out.classList.remove('hidden');
+
     }
+
 }
+
+
 
 function initAccountIntelligence() {
+
     loadAccountPerformance();
+
     loadAdvancedMetrics();
+
     loadAccountPeriod('DAY', document.querySelector('.acct-period-btn'));
+
     loadAccountCharts();
+
     loadAccountStrategies();
+
     loadClosedTrades();
+
     loadRiskPlan();
+
 }
+
+
 
 // Closed Trading History: authoritative rows from /api/account/trades.
+
 async function loadClosedTrades() {
+
     const tbody = document.getElementById('trade-history-table');
+
     if (!tbody) return;
+
     try {
+
         const res = await fetch('/api/account/trades?limit=50');
+
         if (!res.ok) {
+
             tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-textMuted italic font-sans text-xs">Closed history unavailable (' + res.status + ')</td></tr>';
+
             return;
+
         }
+
         const rows = await res.json();
+
         const list = Array.isArray(rows) ? rows : (rows.trades || rows.rows || []);
+
         if (!list || list.length === 0) {
+
             tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-textMuted italic font-sans text-xs">No historical trades found yet — broker history sync pending.</td></tr>';
+
             return;
+
         }
+
         tbody.innerHTML = list.map(t => {
+
             const dir = String(t.direction || '--').toUpperCase();
+
             const dirCls = dir.startsWith('BUY') ? 'text-emerald-400' : (dir.startsWith('SELL') ? 'text-rose-400' : 'text-textMuted');
+
             const net = (t.net_pnl != null) ? Number(t.net_pnl) : (t.pnl != null ? Number(t.pnl) : null);
+
             const netCls = net == null ? 'text-textMuted' : (net >= 0 ? 'text-emerald-400' : 'text-rose-400');
+
             const vol = (t.volume != null) ? Number(t.volume) : null;
+
             const exitT = t.exit_time || t.close_time || t.closed_at || '';
+
             const timeStr = exitT ? new Date(exitT).toLocaleString('en-GB', { hour12: false }) : '--';
+
             const id = t.ticket != null ? t.ticket : (t.position_id != null ? t.position_id : (t.trade_id || '--'));
+
             return '<tr>' +
+
                 '<td class="py-2 pl-2 font-mono text-accentCyan">' + id + '</td>' +
+
                 '<td class="py-2">' + (t.symbol || '--') + '</td>' +
+
                 '<td class="py-2 ' + dirCls + '">' + dir + '</td>' +
+
                 '<td class="py-2">' + (vol != null ? Number(vol).toFixed(2) : '--') + '</td>' +
+
                 '<td class="py-2 font-mono">' + (t.entry_price != null ? Number(t.entry_price).toFixed(2) + ' → ' : '') + (t.exit_price != null ? Number(t.exit_price).toFixed(2) : '--') + '</td>' +
+
                 '<td class="py-2 font-mono ' + netCls + '">' + (net != null ? acctFmtMoney(net) : '--') + '</td>' +
+
                 '<td class="py-2 pr-2 text-right font-mono text-textMuted">' + timeStr + '</td>' +
+
                 '</tr>';
+
         }).join('');
+
     } catch (err) {
+
         console.error('Closed trades load failed', err);
+
         tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-center text-textMuted italic font-sans text-xs">Closed history load failed.</td></tr>';
+
     }
+
 }
+
+
 
 // Risk Plan: authoritative numbers from /api/live/accounting (single source
+
 // of truth - the SAME RiskEngine the live engine uses; no JS-side math).
+
 async function loadRiskPlan() {
+
     try {
+
         const res = await fetch('/api/live/accounting');
+
         if (!res.ok) return;
+
         const data = await res.json();
+
         const srcEl = document.getElementById('risk-plan-source');
+
         if (srcEl) srcEl.textContent = data.source || (data.available ? 'RISK_ENGINE' : 'UNAVAILABLE');
+
         if (!data.available || !data.plan) {
+
             return;
+
         }
+
         const p = data.plan;
+
         const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+
         setTxt('rp-risk-usd', (p.risk_usd != null) ? '$' + Number(p.risk_usd).toFixed(2) : '—');
+
         setTxt('rp-lot-size', (p.lot_size != null) ? Number(p.lot_size).toFixed(2) : '—');
+
         setTxt('rp-margin', (p.margin_required != null) ? '$' + Number(p.margin_required).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—');
+
         setTxt('rp-exposure', (p.exposure_pct != null) ? Number(p.exposure_pct).toFixed(2) + '%' : '—');
+
         const note = document.getElementById('rp-note');
+
         if (note) {
+
             note.textContent = p.note ? String(p.note) : (p.entry != null ? `entry ${p.entry} · SL ${p.stop_loss} · lots ${p.lot_size} (min ${p.min_lot}, step ${p.lot_step})` : '');
+
         }
+
     } catch (err) {
+
         console.warn('[UI_ERROR] component=Accounting action=LOAD_RISK_PLAN', err);
+
     }
+
 }
-// =============================================================================
 
 // =============================================================================
-// PHASE 09B: STRATEGY RESEARCH ENGINE (registry / discovery / validation)
+
+
+
 // =============================================================================
+
+// PHASE 09B: STRATEGY RESEARCH ENGINE (registry / discovery / validation)
+
+// =============================================================================
+
+
 
 async function loadResearchSummary() {
+
     try {
+
         const res = await fetch('/api/research/summary');
+
         if (!res.ok) return;
+
         const body = await res.json();
+
         if (!body.available || !body.summary) return;
+
         const s = body.summary;
+
         document.getElementById('research-registry-total').textContent = s.total ?? '--';
+
         const by = s.by_lifecycle || {};
+
         document.getElementById('research-validated-count').textContent = by.VALIDATED ?? '0';
+
         document.getElementById('research-rejected-count').textContent =
+
             (by.REJECTED || 0) + (by.DEGRADED || 0) + (by.RETIRED || 0);
+
         const w = s.worker || {};
+
         document.getElementById('research-worker-status').textContent =
+
             (w.status || '--') + ' · ' + (w.cycle_count || 0) + 'cyc';
+
         renderResearchOutcomeQuality(s.outcome_quality);
+
         loadResearchRegistry();
+
     } catch (e) {
+
         console.warn('research summary failed', e);
+
     }
+
 }
+
+
 
 function renderResearchOutcomeQuality(q) {
+
     const box = document.getElementById('research-outcome-quality');
+
     if (!box) return;
+
     if (!q || !q.available) {
+
         box.innerHTML = '<div class="text-textMuted italic">Outcome quality unavailable.</div>';
+
         return;
+
     }
+
     const srcs = q.reconstruction_sources || {};
+
     const srcDesc = Object.entries(srcs).map(([k, v]) => esc(k) + ': ' + v).join(' · ');
+
     const zeroCls = q.zero_r_outcomes > 0 ? 'text-accentRed' : 'text-accentGreen';
+
     box.innerHTML =
+
         '<div class="grid grid-cols-2 lg:grid-cols-5 gap-2">' +
+
         '<div><span class="text-textMuted">closed</span> <b class="text-white">' + (q.closed_outcomes ?? '--') + '</b></div>' +
+
         '<div><span class="text-textMuted">nonzero R</span> <b class="text-accentGreen">' + (q.nonzero_r_outcomes ?? '--') + '</b></div>' +
+
         '<div><span class="text-textMuted">zero R</span> <b class="' + zeroCls + '">' + (q.zero_r_outcomes ?? '--') + '</b></div>' +
+
         '<div><span class="text-textMuted">+R</span> <b class="text-accentGreen">' + (q.positive_r_outcomes ?? '--') + '</b></div>' +
+
         '<div><span class="text-textMuted">-R</span> <b class="text-accentRed">' + (q.negative_r_outcomes ?? '--') + '</b></div>' +
+
         '</div>' +
+
         '<div class="mt-1 text-textMuted">sources: ' + srcDesc + '</div>';
+
 }
+
+
 
 async function repairResearchOutcomes() {
+
     const box = document.getElementById('research-repair-result');
+
     box.innerHTML = '<div class="text-textMuted italic">Repairing zero-R outcomes from broker history (bounded, idempotent)…</div>';
+
     try {
+
         const res = await NX.api.post('/api/research/repair-outcomes', {}, { component: 'Research', action: 'REPAIR_OUTCOMES' });
+
         const body = res.ok ? res.body : { available: false, error: res.error };
+
         if (!body.available) {
+
             box.innerHTML = '<div class="text-accentRed italic">Repair unavailable: ' + esc(body.error || '') + '</div>';
+
             return;
+
         }
+
         const r = body.result || {};
+
         box.innerHTML = '<div class="text-accentGreen">Repair pass complete.</div>' +
+
             '<div class="mt-1">candidates: ' + (r.candidates ?? 0) +
+
             ' · repaired: <b class="text-accentGreen">' + (r.repaired ?? 0) + '</b>' +
+
             ' · unrepaired: ' + (r.unrepaired ?? 0) +
+
             ' · skipped_no_broker: ' + (r.skipped_no_broker ?? 0) + '</div>' +
+
             (r.repaired_rows || []).slice(0, 12).map(row =>
+
                 '<div class="text-[10px]">ticket ' + esc(String(row.ticket)) +
+
                 ' · R ' + row.old_r + ' → <b class="text-accentGreen">' + row.new_r + '</b>' +
+
                 ' · pnl ' + row.new_pnl + ' · ' + esc(row.source) + '</div>').join('');
+
         loadResearchSummary();
+
     } catch (e) {
+
         console.warn('research repair failed', e);
+
         box.innerHTML = '<div class="text-accentRed italic">Repair failed.</div>';
+
     }
+
 }
+
+
 
 // BUG-075: registry `score` may be absent, the literal "null" (historical
+
 // writer defect), '{}', valid JSON, or malformed. Never let any of them crash
+
 // the research panel: decode defensively and emit a visible [UI_ERROR].
+
 function safeScoreObj(v) {
+
     if (v == null) return null;
+
     if (typeof v === 'object') return v;
+
     try {
+
         const parsed = JSON.parse(v);
+
         return (parsed && typeof parsed === 'object') ? parsed : null;
+
     } catch (e) {
+
         console.error('[UI_ERROR] component=ResearchRegistry action=SCORE_DECODE value=' + String(v).slice(0, 60));
+
         return null;
+
     }
+
 }
+
 function safeScore(v) {
+
     const o = safeScoreObj(v);
+
     const fs = o && o.final_score;
+
     return (typeof fs === 'number' && isFinite(fs)) ? fs : '--';
+
 }
+
+
 
 async function loadResearchRegistry() {
+
     try {
+
         const res = await NX.api.get('/api/research/registry?limit=20', { component: 'ResearchRegistry', action: 'LOAD' });
+
         if (!res.ok) {
+
             const box = document.getElementById('research-registry');
+
             if (box) box.innerHTML = '<div class="text-accentRed italic">Research registry request failed: ' + esc(NX.api.msg(res, 'Registry unavailable')) + '</div>';
+
             return;
+
         }
+
         const body = res.body || {};
+
         if (!body.available) {
+
             const box = document.getElementById('research-registry');
+
             if (box) box.innerHTML = '<div class="text-textMuted italic">Research registry unavailable (available=false).</div>';
+
             return;
+
         }
+
         const box = document.getElementById('research-registry');
+
         const rows = body.registry || [];
+
         if (!rows.length) {
+
             box.innerHTML = '<div class="text-textMuted italic">No strategies in the registry yet. Run discovery first.</div>';
+
             return;
+
         }
+
         box.innerHTML = rows.map(r => {
+
             const sc = safeScore(r.score);
+
             const lc = esc(r.lifecycle || '--');
+
             return '<div class="flex items-center justify-between bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+
                 '<span class="text-accentCyan font-bold">' + esc(r.strategy_id) + '</span>' +
+
                 '<span class="text-textMuted">v' + esc(r.strategy_version.slice(0, 8)) + '</span>' +
+
                 '<span class="text-textMuted">' + esc(r.feature_schema_id) + '</span>' +
+
                 '<span class="text-accentGreen font-bold">' + esc(lc) + '</span>' +
+
                 '<span class="text-textMuted">score ' + esc(String(sc)) + '</span>' +
+
                 '</div>';
+
         }).join('');
+
     } catch (e) {
+
         console.warn('research registry failed', e);
+
     }
+
 }
+
+
 
 async function scanResearchDiscovery() {
+
     const box = document.getElementById('research-registry');
+
     box.innerHTML = '<div class="text-textMuted italic">Discovering candidates from experience ledger…</div>';
+
     try {
+
         const res = await NX.api.post('/api/research/discover', {}, { component: 'Research', action: 'DISCOVER' });
+
         const body = res.ok ? res.body : { available: false, error: res.error };
+
         if (!body.available) {
+
             box.innerHTML = '<div class="text-accentRed italic">Discovery unavailable: ' + esc(body.error || '') + '</div>';
+
             return;
+
         }
+
         box.innerHTML = '<div class="text-accentGreen">Dataset ' + esc(body.dataset_id) + ' · ' +
+
             body.samples + ' samples · ' + (body.candidates || []).length + ' candidates discovered.</div>' +
+
             (body.candidates || []).slice(0, 10).map(c =>
+
                 '<div class="flex items-center justify-between bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+
                 '<span class="text-accentCyan font-bold">' + esc(c.strategy_id) + '</span>' +
+
                 '<span class="text-textMuted">' + esc(c.discovery_method) + '</span>' +
+
                 '<span class="text-textMuted">' + (c.discovery_evidence.samples ?? '--') + ' samples</span>' +
+
                 '</div>').join('');
+
         loadResearchSummary();
+
     } catch (e) {
+
         console.warn('research discovery failed', e);
+
     }
+
 }
+
+
 
 async function validateResearchCandidate() {
+
     const sid = (document.getElementById('research-validate-id').value || '').trim();
+
     const box = document.getElementById('research-validation-result');
+
     if (!sid) { box.innerHTML = '<div class="text-accentRed italic">Enter a strategy_id first.</div>'; return; }
+
     box.innerHTML = '<div class="text-textMuted italic">Running backtest → walk-forward → OOS → robustness → score…</div>';
+
     try {
+
         const res = await NX.api.post('/api/research/validate?strategy_id=' + encodeURIComponent(sid), {}, { component: 'Research', action: 'VALIDATE' });
+
         const body = res.ok ? res.body : { available: false, error: res.error };
+
         if (!body.available) {
+
             box.innerHTML = '<div class="text-accentRed italic">Validation unavailable: ' + esc(body.reason || body.error || '') + '</div>';
+
             return;
+
         }
+
         const r = body.result || {};
+
         box.innerHTML = '<div class="text-accentCyan font-bold">lifecycle: ' + esc(r.lifecycle) + '</div>' +
+
             '<div>expectancy_r: ' + esc(r.backtest?.expectancy_r ?? '--') + '</div>' +
+
             '<div>oos_expectancy_r: ' + esc(r.oos?.oos_expectancy_r ?? '--') + ' · oos_status: ' + esc(r.oos?.status ?? '--') + '</div>' +
+
             '<div>robustness: ' + esc(r.robustness?.status ?? '--') + '</div>' +
+
             '<div>score: ' + esc(safeScore(r.score)) + ' · verdict: ' + esc((safeScoreObj(r.score) || {}).verdict ?? '--') + '</div>';
+
         loadResearchSummary();
+
     } catch (e) {
+
         console.warn('research validate failed', e);
+
     }
+
 }
+
+
 
 // PHASE 09: TRADE INTELLIGENCE BRAIN (lifecycle / autopsy / behavior / evolution)
+
 // =============================================================================
+
+
 
 function esc(s) {
+
     return String(s == null ? '' : s)
+
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
         .replace(/"/g, '&quot;');
+
 }
+
+
 
 async function loadIntelligenceSummary() {
+
     try {
+
         const res = await fetch('/api/intelligence/summary');
+
         if (!res.ok) return;
+
         const body = await res.json();
+
         if (!body.available) return;
+
         document.getElementById('intel-lifecycle-count').textContent = body.lifecycle_events ?? '--';
+
         document.getElementById('intel-autopsy-count').textContent = body.autopsies ?? '--';
+
         const w = body.worker || {};
+
         document.getElementById('intel-worker-status').textContent =
+
             'worker: ' + (w.status || '--') + ' · cycles: ' + (w.cycle_count || 0);
+
         if (body.last_suitability) {
+
             const s = body.last_suitability;
+
             document.getElementById('intel-suitability').innerHTML =
+
                 '<b class="text-accentCyan">' + esc(s.decision) + '</b> · ' +
+
                 'suitability ' + s.suitability_score + ' · ' + esc(s.reason) +
+
                 ' <span class="text-textMuted">(' + esc(s.strategy_id) + ')</span>';
+
         }
+
         // Load evolution candidates whenever the panel is refreshed.
+
         loadIntelligenceEvolution();
+
         loadIntelligenceAutopsies();
+
     } catch (e) {
+
         console.warn('intelligence summary failed', e);
+
     }
+
 }
+
+
 
 async function loadIntelligenceTimeline() {
+
     const ticket = (document.getElementById('intel-ticket-input').value || '').trim();
+
     if (!ticket) return;
+
     const box = document.getElementById('intel-timeline');
+
     box.innerHTML = '<div class="text-textMuted italic">Loading timeline…</div>';
+
     try {
+
         const res = await fetch('/api/intelligence/positions/' + encodeURIComponent(ticket) + '/timeline');
+
         const body = await res.json();
+
         if (!body.available || !body.events.length) {
+
             box.innerHTML = '<div class="text-textMuted italic">No lifecycle events for ticket ' + esc(ticket) + '.</div>';
+
             return;
+
         }
+
         box.innerHTML = body.events.map(ev =>
+
             '<div class="flex items-start justify-between bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+
                 '<span><span class="text-accentCyan font-bold">' + esc(ev.event_type) + '</span>' +
+
                 ' <span class="text-textMuted">' + esc(ev.detail || '') + '</span></span>' +
+
                 '<span class="text-textMuted whitespace-nowrap ml-2">MFE ' + (ev.performance ? ev.performance.mfe : 0) +
+
                 ' · MAE ' + (ev.performance ? ev.performance.mae : 0) + '</span>' +
+
             '</div>'
+
         ).join('');
+
     } catch (e) {
+
         box.innerHTML = '<div class="text-textMuted italic">Timeline load failed.</div>';
+
     }
+
 }
+
+
 
 async function loadIntelligenceAutopsies() {
+
     try {
+
         const res = await fetch('/api/intelligence/autopsies?limit=8');
+
         const body = await res.json();
+
         const box = document.getElementById('intel-autopsies');
+
         if (!body.available || !body.autopsies.length) {
+
             box.innerHTML = '<div class="text-textMuted italic">No autopsies available.</div>';
+
             return;
+
         }
+
         box.innerHTML = body.autopsies.map(a =>
+
             '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+
                 '<div class="flex justify-between"><span class="text-accentCyan font-bold">' + esc(a.quality_verdict || 'UNKNOWN') +
+
                 '</span><span class="text-textMuted">ticket ' + esc(a.ticket) + '</span></div>' +
+
                 '<div class="text-textMuted">' + esc(a.narrative || '') + '</div>' +
+
             '</div>'
+
         ).join('');
+
         loadIntelligenceBehavior();
+
         loadIntelligenceAnomalies();
+
     } catch (e) {
+
         console.warn('autopsies load failed', e);
+
     }
+
 }
+
+
 
 // Behavior detections: real data from /api/intelligence/behavior.
+
 // NO DATA renders an explicit "NO DATA" state - nothing is fabricated.
+
 async function loadIntelligenceBehavior() {
+
     try {
+
         const res = await fetch('/api/intelligence/behavior?limit=8');
+
         const body = await res.json();
+
         const countEl = document.getElementById('intel-behavior-count');
+
         const box = document.getElementById('intel-behavior');
+
         const detections = body.detections || [];
+
         if (!body.available || detections.length === 0) {
+
             if (countEl) countEl.textContent = '0';
+
             if (box) box.innerHTML = '<div class="text-textMuted italic text-[11px]">NO DATA — no behavior detections recorded.</div>';
+
             return;
+
         }
+
         if (countEl) countEl.textContent = detections.length;
+
         if (box) {
+
             box.innerHTML = detections.map(b =>
+
                 '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+
                     '<div class="flex justify-between"><span class="text-accentCyan font-bold">' + esc(b.pattern || b.behavior_type || b.behavior || 'UNKNOWN') +
+
                     '</span><span class="text-textMuted">' + esc(b.symbol || '') + ' · ' + esc(String(b.detected_at || '').substring(0, 16)) + '</span></div>' +
+
                     '<div class="text-textMuted">' + esc(b.summary || b.detail || '') + '</div>' +
+
                 '</div>'
+
             ).join('');
+
         }
+
     } catch (e) {
+
         console.warn('behavior load failed', e);
+
     }
+
 }
+
+
 
 // Anomaly events: evidence-based inconsistencies from /api/intelligence/anomalies.
+
 async function loadIntelligenceAnomalies() {
+
     try {
+
         const res = await fetch('/api/intelligence/anomalies?limit=8');
+
         const body = await res.json();
+
         const box = document.getElementById('intel-anomalies');
+
         const anomalies = body.anomalies || [];
+
         if (!body.available || anomalies.length === 0) {
+
             if (box) box.innerHTML = '<div class="text-textMuted italic text-[11px]">NO DATA — no anomaly events recorded.</div>';
+
             return;
+
         }
+
         if (box) {
+
             box.innerHTML = anomalies.map(a => {
+
                 const obs = (a.observation_count > 1) ? ' <span class="text-textMuted">(x' + esc(String(a.observation_count)) + ')</span>' : '';
+
                 const range = (a.first_seen && a.last_seen && a.first_seen !== a.last_seen)
+
                     ? ' <span class="text-textMuted">' + esc(String(a.first_seen).substring(0, 16) + '..' + String(a.last_seen).substring(0, 16)) + '</span>'
+
                     : '';
+
                 return '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+
                     '<div class="flex justify-between"><span class="text-amber-400 font-bold">' + esc(a.anomaly_type || a.category || 'UNKNOWN') + obs +
+
                     '</span><span class="text-textMuted">' + esc(String(a.severity || '')) + ' · ' + esc(String(a.detected_at || '').substring(0, 16)) + range + '</span></div>' +
+
                     '<div class="text-textMuted">' + esc((a.evidence && a.evidence.explanation) ? a.evidence.explanation : JSON.stringify(a.evidence || '')) + '</div>' +
+
                 '</div>';
+
             }).join('');
+
         }
+
     } catch (e) {
+
         console.warn('anomalies load failed', e);
+
     }
+
 }
+
+
 
 async function loadIntelligenceEvolution() {
+
     try {
+
         const res = await fetch('/api/intelligence/evolution?limit=8');
+
         const body = await res.json();
+
         const box = document.getElementById('intel-evolution');
+
         if (!body.available || !body.candidates.length) {
+
             box.innerHTML = '<div class="text-textMuted italic">No evolution candidates. Click "Scan Now" to discover strategy variations.</div>';
+
             return;
+
         }
+
         document.getElementById('intel-evolution-count').textContent = body.candidates.length;
+
         box.innerHTML = body.candidates.map(c =>
+
             '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+
                 '<div class="flex justify-between"><span class="text-accentCyan font-bold">' + esc(c.status) +
+
                 '</span><span class="text-textMuted">' + esc(c.candidate_id.slice(0, 14)) + '</span></div>' +
+
                 '<div class="text-textMuted">' + esc(c.hypothesis) + '</div>' +
+
             '</div>'
+
         ).join('');
+
     } catch (e) {
+
         console.warn('evolution load failed', e);
+
     }
+
 }
+
+
 
 async function scanIntelligenceEvolution() {
+
     const box = document.getElementById('intel-evolution');
+
     box.innerHTML = '<div class="text-textMuted italic">Scanning for strategy variations…</div>';
+
     try {
+
         const res = await NX.api.post('/api/intelligence/evolution/scan', {}, { component: 'Intelligence', action: 'EVOLUTION_SCAN' });
+
         const body = res.ok ? res.body : { available: false, error: res.error };
+
         if (!body.available) {
+
             box.innerHTML = '<div class="text-textMuted italic">Scan failed.</div>';
+
             return;
+
         }
+
         box.innerHTML = (body.candidates && body.candidates.length)
+
             ? body.candidates.map(c =>
+
                 '<div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">' +
+
                     '<span class="text-accentCyan font-bold">' + esc(c.status) + '</span> ' +
+
                     esc(c.hypothesis) +
+
                 '</div>').join('')
+
             : '<div class="text-textMuted italic">No new candidates discovered.</div>';
+
     } catch (e) {
+
         box.innerHTML = '<div class="text-textMuted italic">Scan failed.</div>';
+
     }
+
 }
+
+
 
 document.addEventListener('DOMContentLoaded', () => {
+
     setTimeout(initAccountIntelligence, 1200);
+
     setTimeout(loadIntelligenceSummary, 1500);
+
     // Periodically refresh account intelligence (broker history sync fills in
+
     // real values after engine start; charts need fresh points to render).
+
     setInterval(() => {
+
         loadAccountPerformance();
+
         loadAdvancedMetrics();
+
         loadAccountCharts();
+
         loadClosedTrades();
+
     }, 30000);
+
     const observer = new MutationObserver(() => {
+
         const tab = document.getElementById('tab-account');
+
         if (tab && !tab.classList.contains('hidden') && !window.__acctIntelLoaded) {
+
             window.__acctIntelLoaded = true;
+
             initAccountIntelligence();
+
         }
+
         const aiTab = document.getElementById('tab-ai-analysis');
+
         if (aiTab && !aiTab.classList.contains('hidden') && !window.__aiIntelLoaded) {
+
             window.__aiIntelLoaded = true;
+
             loadIntelligenceSummary();
+
         }
+
     });
+
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+
 });
+
+
 
 // PHASE 12: NEWS INTELLIGENCE (live feed / state / fetch / analyze)
+
 // =============================================================================
+
+
 
 function setNewsStatus(msg, isError) {
+
     const el = document.getElementById('news-status-line');
+
     if (!el) return;
+
     if (!msg) { el.classList.add('hidden'); return; }
+
     el.classList.remove('hidden');
+
     el.textContent = (isError ? '⚠ ' : '') + msg + ' — ' + new Date().toLocaleTimeString();
+
     el.style.color = isError ? '#f87171' : '#64748b';
+
 }
+
+
 
 async function loadNewsState() {
+
     try {
+
         const res = await fetch('/api/news/state');
+
         if (!res.ok) {
+
             console.error('[UI_ERROR] component=News endpoint=/api/news/state status=' + res.status);
+
             throw new Error('HTTP ' + res.status);
+
         }
+
         const body = await res.json();
+
         if (!body.available) {
+
             document.getElementById('news-state-value').textContent = 'OFF';
+
             document.getElementById('news-state-badge').textContent = 'OFF';
+
             setNewsStatus('news engine unavailable (available=false)', true);
+
             return;
+
         }
+
         const state = body.state || 'NORMAL';
+
         document.getElementById('news-state-value').textContent = state;
+
         document.getElementById('news-state-badge').textContent = state;
+
         const badge = document.getElementById('news-nav-state');
+
         if (badge) { badge.textContent = state; badge.className = 'ml-auto text-[9px] font-black px-1.5 py-0.5 rounded border ' + stateColor(state); }
+
         document.getElementById('news-xauusd-rel').textContent = (body.xauusd_relevance * 100).toFixed(0) + '%';
+
         document.getElementById('news-bull').textContent = (body.bullish_score * 100).toFixed(0) + '%';
+
         document.getElementById('news-bear').textContent = (body.bearish_score * 100).toFixed(0) + '%';
+
         document.getElementById('news-events').textContent = body.active_event_count ?? 0;
+
         setNewsStatus('state=' + state + ' events=' + (body.active_event_count ?? 0));
+
         loadNewsFeed();
+
         loadNewsKeywords();
+
     } catch (e) {
+
         console.error('[UI_ERROR] component=News endpoint=/api/news/state action=LOAD message=' + (e && e.message));
+
         setNewsStatus('news state failed: ' + (e && e.message), true);
+
         const val = document.getElementById('news-state-value');
+
         if (val && (val.textContent === '--' || val.textContent === 'OFF')) val.textContent = 'ERR';
+
     }
+
 }
+
+
 
 // search-as-you-type for the keyword dataset filter
+
 let __newsKwSearchTimer = null;
+
 function bindNewsKeywordSearch() {
+
     const input = document.getElementById('news-kw-search');
+
     if (!input || input.dataset.bound) return;
+
     input.dataset.bound = '1';
+
     input.addEventListener('input', () => {
+
         clearTimeout(__newsKwSearchTimer);
+
         __newsKwSearchTimer = setTimeout(loadNewsKeywords, 300);
+
     });
+
 }
+
+
 
 function stateColor(state) {
+
     const colors = {
+
         BREAKING: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+
         HIGH_IMPACT: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+
         CONFLICTED: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
+
         ELEVATED: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+
         STALE: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+
         NORMAL: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+
     };
+
     return colors[state] || colors.NORMAL;
+
 }
 
+
+
 // =============================================================================
+
 // NEWS IMPACT TIMELINE CHART (canvas line chart: bullish/bearish/neutral)
+
 // =============================================================================
+
 let __newsTfSec = 900; // default 15m buckets
+
 let __newsTfHours = 48;
 
+
+
 function setNewsTimeframe(bucketSec) {
+
     __newsTfSec = bucketSec;
+
     // widen the lookback window as buckets grow so the chart stays useful
+
     __newsTfHours = bucketSec >= 86400 ? 168 : bucketSec >= 14400 ? 72 : 48;
+
     document.querySelectorAll('[id^="news-tf-"]').forEach(b => {
+
         const active = (b.id === 'news-tf-15m' && bucketSec === 900) ||
+
                        (b.id === 'news-tf-1h' && bucketSec === 3600) ||
+
                        (b.id === 'news-tf-4h' && bucketSec === 14400) ||
+
                        (b.id === 'news-tf-1d' && bucketSec === 86400);
+
         b.className = active
+
             ? 'px-2 py-0.5 rounded bg-accentCyan/20 border border-accentCyan/60 text-accentCyan transition'
+
             : 'px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition';
+
     });
+
     loadNewsTimeline();
+
 }
+
+
 
 async function loadNewsTimeline() {
+
     try {
+
         const res = await fetch('/api/news/timeline?bucket_sec=' + __newsTfSec + '&hours_back=' + __newsTfHours);
+
         if (!res.ok) throw new Error('HTTP ' + res.status);
+
         const body = await res.json();
+
         if (!body.available) return;
+
         drawNewsImpactChart(body.buckets || []);
+
     } catch (e) {
+
         console.warn('news timeline failed', e);
+
     }
+
 }
+
+
 
 function drawNewsImpactChart(buckets) {
+
     const canvas = document.getElementById('newsImpactChart');
+
     if (!canvas) return;
+
     const ctx = canvas.getContext('2d');
+
     const dpr = window.devicePixelRatio || 1;
+
     const rect = canvas.getBoundingClientRect();
+
     canvas.width = rect.width * dpr;
+
     canvas.height = rect.height * dpr;
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     const w = rect.width, h = rect.height;
+
     ctx.fillStyle = '#090d16';
+
     ctx.fillRect(0, 0, w, h);
 
+
+
     if (!buckets || buckets.length < 1) {
+
         ctx.fillStyle = '#64748b';
+
         ctx.font = '11px sans-serif';
+
         ctx.textAlign = 'center';
+
         ctx.fillText('No news impact data in this window', w / 2, h / 2);
+
         return;
+
     }
+
+
 
     const padL = 34, padR = 8, padT = 12, padB = 18;
+
     const plotW = w - padL - padR, plotH = h - padT - padB;
 
+
+
     // zero-centered y-scale across bullish(+)/bearish(-)/neutral magnitudes
+
     let maxAbs = 0.05;
+
     buckets.forEach(b => {
+
         maxAbs = Math.max(maxAbs, Math.abs(b.bullish || 0), Math.abs(b.bearish || 0), Math.abs(b.neutral || 0));
+
     });
+
     const midY = padT + plotH / 2;
+
     const scale = (plotH / 2 - 6) / maxAbs; // px per unit
 
+
+
     // grid
+
     ctx.strokeStyle = '#1e293b';
+
     ctx.lineWidth = 1;
+
     ctx.beginPath();
+
     ctx.moveTo(padL, midY); ctx.lineTo(w - padR, midY); // zero line
+
     ctx.stroke();
+
     ctx.fillStyle = '#475569';
+
     ctx.font = '9px monospace';
+
     ctx.textAlign = 'right';
+
     ctx.fillText('0', padL - 4, midY + 3);
+
     ctx.fillText('+' + maxAbs.toFixed(2), padL - 4, padT + 6);
+
     ctx.fillText('-' + maxAbs.toFixed(2), padL - 4, h - padB + 6);
 
+
+
     const n = buckets.length;
+
     const step = plotW / Math.max(n - 1, 1);
 
+
+
     // helper: draw a polyline + area
+
     const line = (key, color, signed) => {
+
         ctx.beginPath();
+
         buckets.forEach((b, i) => {
+
             const x = padL + i * step;
+
             const y = midY - (signed ? (b[key] || 0) * scale : (b[key] || 0) * scale);
+
             if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+
         });
+
         ctx.strokeStyle = color;
+
         ctx.lineWidth = 1.6;
+
         ctx.stroke();
+
     };
+
     const fill = (key, color, signed) => {
+
         ctx.beginPath();
+
         buckets.forEach((b, i) => {
+
             const x = padL + i * step;
+
             const y = midY - (b[key] || 0) * scale;
+
             if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+
         });
+
         ctx.lineTo(padL + (n - 1) * step, midY);
+
         ctx.lineTo(padL, midY);
+
         ctx.closePath();
+
         ctx.fillStyle = color;
+
         ctx.globalAlpha = 0.18;
+
         ctx.fill();
+
         ctx.globalAlpha = 1.0;
+
     };
+
     // neutral area (light), then bearish (below zero, red), bullish (above zero, green)
+
     fill('neutral', '#94a3b8');
+
     fill('bearish', '#ef4444');
+
     fill('bullish', '#22c55e');
+
     line('neutral', '#94a3b8');
+
     line('bearish', '#ef4444');
+
     line('bullish', '#22c55e');
 
+
+
     // bucket markers + time labels
+
     ctx.textAlign = 'center';
+
     ctx.font = '9px monospace';
+
     buckets.forEach((b, i) => {
+
         const x = padL + i * step;
+
         // point marker
+
         ctx.beginPath();
+
         ctx.arc(x, midY - (b.bullish || 0) * scale, 2, 0, Math.PI * 2);
+
         ctx.fillStyle = '#22c55e'; ctx.fill();
+
         ctx.beginPath();
+
         ctx.arc(x, midY - (b.bearish || 0) * scale, 2, 0, Math.PI * 2);
+
         ctx.fillStyle = '#ef4444'; ctx.fill();
+
         // x labels: every ~4th bucket
+
         if (n <= 24 || i % Math.ceil(n / 12) === 0) {
+
             const t = new Date(b.bucket_start);
+
             ctx.fillStyle = '#475569';
+
             const lbl = __newsTfSec >= 86400 ? t.toLocaleDateString(undefined, {month:'short', day:'numeric'})
+
                 : t.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+
             ctx.fillText(lbl, x, h - 4);
+
         }
+
     });
 
+
+
     // top headline annotation of the max-impact bucket
+
     let top = buckets.reduce((a, b) => (Math.abs(b.bullish) + Math.abs(b.bearish) > Math.abs(a.bullish) + Math.abs(a.bearish) ? b : a), buckets[0]);
+
     if (top && (top.top_title || top.article_count)) {
+
         ctx.fillStyle = '#94a3b8';
+
         ctx.font = '10px monospace';
+
         ctx.textAlign = 'left';
+
         ctx.fillText((top.top_title || ('N events')).slice(0, 62), padL + 2, padT + 10);
+
     }
+
 }
+
+
 
 async function loadNewsFeed() {
+
     try {
+
         const res = await fetch('/api/news?limit=20');
+
         if (!res.ok) {
+
             console.error('[UI_ERROR] component=News endpoint=/api/news status=' + res.status);
+
             throw new Error('HTTP ' + res.status);
+
         }
+
         const body = await res.json();
+
         const feed = document.getElementById('news-feed');
+
         if (!body.available || !body.articles || body.articles.length === 0) {
+
             feed.innerHTML = '<div class="text-textMuted italic">No news events yet. Click "Fetch News" or wait for the worker.</div>';
+
             return;
+
         }
+
         feed.innerHTML = body.articles.map(a => {
+
             const hasAna = !!(a.analysis && (a.analysis.direction || a.analysis.relevance_to_xauusd));
+
             const dir = hasAna ? (a.analysis.direction || 'NEUTRAL') : 'PENDING';
+
             const dirColor = dir === 'BULLISH' ? 'text-accentGreen' : dir === 'BEARISH' ? 'text-accentRed' : dir === 'PENDING' ? 'text-slate-500' : 'text-slate-400';
+
             const imp = hasAna ? Math.round((a.importance_score || 0) * 100) : null;
+
             const rel = hasAna ? Math.round((a.analysis.relevance_to_xauusd || 0) * 100) + '%' : '--';
+
             const mech = hasAna && a.analysis.market_mechanism ? a.analysis.market_mechanism : '';
+
             const impColor = imp == null ? 'bg-slate-600/20 text-slate-400' : imp >= 70 ? 'bg-rose-500/20 text-rose-300' : imp >= 50 ? 'bg-orange-500/20 text-orange-300' : imp >= 30 ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-500/20 text-slate-400';
+
             return '<div class="bg-darkBg/40 border border-borderClr/40 rounded p-2.5">' +
+
                 '<div class="flex justify-between items-center gap-2">' +
+
                 '<span class="font-bold text-white truncate" title="' + esc(a.title) + '">' + esc(a.title) + '</span>' +
+
                 '<span class="text-[9px] ' + dirColor + ' font-black shrink-0 border ' + (dir === 'BULLISH' ? 'border-accentGreen/30' : dir === 'BEARISH' ? 'border-accentRed/30' : 'border-slate-500/30') + ' rounded px-1.5 py-0.5">' + esc(dir) + '</span></div>' +
+
                 '<div class="flex items-center gap-3 mt-1 text-[10px] text-textMuted">' +
+
                 '<span>' + esc(a.source_name || a.source_id || '') + '</span>' +
+
                 '<span class="' + impColor + ' rounded px-1 py-0.5">imp ' + imp + '</span>' +
+
                 '<span class="text-amber-400/80">XAU ' + rel + '</span>' +
+
                 '<span>' + esc(String(a.published_at || '').slice(0, 16)) + '</span></div>' +
+
                 (mech ? '<div class="text-[9px] text-slate-500 mt-0.5 truncate">' + esc(mech) + '</div>' : '') +
+
                 '<div class="flex gap-2 mt-1">' +
+
                 '<button onclick="analyzeNewsWithAI(\'' + a.article_id + '\')" class="text-[9px] bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-2 py-0.5 hover:bg-accentCyan/20">Analyze with AI</button>' +
+
                 '</div></div>';
+
         }).join('');
+
         setNewsStatus('feed: ' + body.articles.length + ' articles');
+
         loadNewsTimeline();
+
     } catch (e) {
+
         console.error('[UI_ERROR] component=News endpoint=/api/news action=LOAD message=' + (e && e.message));
+
         setNewsStatus('news feed failed: ' + (e && e.message), true);
+
     }
+
 }
+
+
 
 async function loadNewsKeywords() {
+
     try {
+
         const q = (document.getElementById('news-kw-search')?.value || '').trim();
+
         const cat = document.getElementById('news-kw-category')?.value || '';
+
         const res = await fetch('/api/news/keywords?top_n=25&category=' + encodeURIComponent(cat) + '&q=' + encodeURIComponent(q));
+
         if (!res.ok) throw new Error('HTTP ' + res.status);
+
         const body = await res.json();
+
         if (!body.available) {
+
             const tbl = document.getElementById('news-kw-table');
+
             if (tbl) tbl.innerHTML = '<div class="text-textMuted italic p-2">Keyword dataset unavailable.</div>';
+
             return;
+
         }
+
         // dataset meta
+
         const set = body.dataset || {};
+
         const cov = body.coverage || {};
+
         document.getElementById('news-kw-total').textContent = set.total_keywords ?? '--';
+
         document.getElementById('news-kw-articles').textContent = cov.articles_scanned ?? '--';
+
         document.getElementById('news-kw-mentions').textContent = cov.total_mentions ?? '--';
+
         document.getElementById('news-kw-active').textContent = cov.active_keywords ?? '--';
+
         const dir = cov.direction_distribution || {};
+
         document.getElementById('news-kw-dir').innerHTML =
+
             '<span class="text-accentGreen">' + (dir.BULLISH ?? 0) + '</span> / ' +
+
             '<span class="text-accentRed">' + (dir.BEARISH ?? 0) + '</span> / ' +
+
             '<span class="text-slate-400">' + (dir.NEUTRAL ?? 0) + '</span>';
+
         // populate category select once
+
         const sel = document.getElementById('news-kw-category');
+
         if (sel && sel.options.length <= 1 && set.categories) {
+
             Object.keys(set.categories).sort().forEach(c => {
+
                 const opt = document.createElement('option');
+
                 opt.value = c;
+
                 opt.textContent = c + ' (' + set.categories[c] + ')';
+
                 sel.appendChild(opt);
+
             });
+
         }
+
         // top keywords table
+
         const tbl = document.getElementById('news-kw-table');
+
         const tops = cov.top_keywords || [];
+
         const kws = body.keywords || [];
+
         if (top_none(tops)) {
+
             tbl.innerHTML = '<div class="text-textMuted italic p-2">No keyword hits in the scanned corpus yet. Fetch news to populate.</div>';
+
             return;
+
         }
+
         tbl.innerHTML = '<table class="w-full text-left">' +
+
             '<thead><tr class="text-textMuted uppercase text-[9px] border-b border-borderClr/40">' +
+
             '<th class="p-1.5">Keyword</th><th class="p-1.5">Category</th><th class="p-1.5">Bias</th>' +
+
             '<th class="p-1.5 text-right">Hits</th><th class="p-1.5 text-right">Mentions</th><th class="p-1.5 text-right">Share</th></tr></thead><tbody>' +
+
             tops.map(k => kwRow(k)).join('') +
+
             (kws.length > tops.length ? '<tr><td colspan="6" class="p-1.5 text-[9px] text-textMuted italic">' + (kws.length - tops.length) + ' more dataset keywords (filter to browse)…</td></tr>' : '') +
+
             '</tbody></table>';
+
     } catch (e) {
+
         console.error('[UI_ERROR] component=News endpoint=/api/news/keywords action=LOAD message=' + (e && e.message));
+
         const tbl = document.getElementById('news-kw-table');
+
         if (tbl) tbl.innerHTML = '<div class="text-accentRed italic p-2">keyword load failed: ' + esc(e && e.message ? String(e.message) : 'unknown') + '</div>';
+
         setNewsStatus('keyword dataset failed: ' + (e && e.message), true);
+
     }
+
 }
+
+
 
 function top_none(tops) {
+
     return !tops || tops.length === 0;
+
 }
+
+
 
 function kwRow(k) {
+
     const biasColor = k.direction_bias === 'BULLISH' ? 'text-accentGreen' : k.direction_bias === 'BEARISH' ? 'text-accentRed' : 'text-slate-400';
+
     return '<tr class="border-b border-borderClr/20 hover:bg-darkBg/30">' +
+
         '<td class="p-1.5 font-bold text-white">' + esc(k.keyword) + '</td>' +
+
         '<td class="p-1.5 text-textMuted">' + esc(k.category) + '</td>' +
+
         '<td class="p-1.5 ' + biasColor + '">' + esc(k.direction_bias || 'NEUTRAL') + '</td>' +
+
         '<td class="p-1.5 text-right text-accentCyan">' + k.article_hits + '</td>' +
+
         '<td class="p-1.5 text-right">' + k.mention_count + '</td>' +
+
         '<td class="p-1.5 text-right">' + Math.round((k.share || 0) * 100) + '%</td></tr>';
+
 }
+
+
 
 async function analyzeNewsWithAI(articleId) {
+
     try {
+
         const res = await NX.api.post('/api/news/analyze/' + articleId, {}, { component: 'News', action: 'ANALYZE' });
+
         const body = res.ok ? res.body : { available: false, error: res.error };
+
         alert(body && body.ok ? 'Analysis queued (status: ' + (body.status || 'QUEUED') + ')' : 'Analysis request failed');
+
         setTimeout(loadNewsFeed, 1500);
+
     } catch (e) {
+
         console.warn('news analyze failed', e);
+
     }
+
 }
+
+
 
 async function triggerNewsRefresh() {
+
     try {
+
         const res = await NX.api.post('/api/news/refresh', {}, { component: 'News', action: 'REFRESH' });
+
         const body = res.ok ? res.body : { available: false, error: res.error };
+
         if (!body || !body.available) {
+
             console.error('[UI_ERROR] component=News endpoint=/api/news/refresh action=REFRESH available=false');
+
             setNewsStatus('news refresh failed', true);
+
             alert('News engine unavailable');
+
         } else if (body.cooldown) {
+
             // bandwidth guard: server rejected the re-fetch, show remaining wait
+
             setNewsStatus('refresh cooldown: ' + body.cooldown + 's (bandwidth guard)');
+
         } else {
+
             setNewsStatus('fetch complete: ' + (body.ingested ? body.ingested.new : 0) + ' new items');
+
         }
+
         loadNewsState();
+
     } catch (e) {
+
         console.warn('news refresh failed', e);
+
         setNewsStatus('news refresh failed: ' + e.message, true);
+
     }
+
 }
 
+
+
 // auto-load news state on tab open + keep it fresh (auto-reconnect semantics:
+
 // the panel re-polls every 60s so a worker restart / engine start is picked up
+
 // without manual refresh, and silent failures become visible via the status line)
+
 let __newsRefreshTimer = null;
+
 function startNewsAutoRefresh() {
+
     if (__newsRefreshTimer) return;
+
     __newsRefreshTimer = setInterval(() => {
+
         if (document.getElementById('tab-news') && !document.getElementById('tab-news').classList.contains('hidden')) {
+
             loadNewsState();
+
         }
+
     }, 60000);
+
 }
+
 const __newsTabObserver = new MutationObserver(() => {
+
     const tab = document.getElementById('tab-news');
+
     if (tab && !tab.classList.contains('hidden') && !window.__newsIntelLoaded) {
+
         window.__newsIntelLoaded = true;
+
         bindNewsKeywordSearch();
+
         loadNewsState();
+
         startNewsAutoRefresh();
+
     }
+
 });
+
 __newsTabObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+
 // (stale Phase-16 duplicate renderer removed in UX v2)
+
 // Renders human audit lines with real values only; missing stats produce a
+
 // neutral hint, never a fabricated claim.
+
+
+
+// =============================================================================
+
+// 70D SHADOW MODEL PANEL (TASK-05-70D-SHADOW) — real data only
+
+// =============================================================================
+
+async function loadShadow70Panel() {
+
+    const results = await Promise.allSettled([
+
+        NX.api.get('/api/models/shadow70/summary', { component: 'Shadow70', action: 'LOAD_SUMMARY' }),
+
+        NX.api.get('/api/models/shadow70/health', { component: 'Shadow70', action: 'LOAD_HEALTH' }),
+
+        NX.api.get('/api/models/shadow70/disagreements', { component: 'Shadow70', action: 'LOAD_DISAGREEMENTS' })
+
+    ]);
+
+    let summary = null, health = null, disagreements = [];
+
+    if (results[0].status === 'fulfilled' && results[0].value.ok) summary = results[0].value.body;
+
+    if (results[1].status === 'fulfilled' && results[1].value.ok) health = results[1].value.body;
+
+    if (results[2].status === 'fulfilled' && results[2].value.ok) {
+
+        const b = results[2].value.body;
+
+        disagreements = Array.isArray(b.rows) ? b.rows.slice(0, 30) : [];
+
+    }
+
+    renderShadow70(summary, health, disagreements);
+
+}
+
+
+
+function renderShadow70(summary, health, disagreements) {
+
+    const st = document.getElementById('s70-status');
+
+    if (st) {
+
+        const rt = (summary && summary.runtime) || {};
+
+        const state = rt.status || 'IDLE';
+
+        st.textContent = state;
+
+        st.className = 'text-[10px] font-black px-2 py-1 rounded uppercase border ' + (
+
+            state === 'READY' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+
+            : state === 'DEGRADED' || state === 'WARNING' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+
+            : state === 'FAILED' || state === 'BLOCKED' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+
+            : 'bg-slate-500/20 text-slate-300 border-slate-500/30');
+
+    }
+
+    const modelBody = document.getElementById('s70-model-body');
+
+    if (modelBody) {
+
+        const rt = (summary && summary.runtime) || {};
+
+        if (rt.model_id) {
+
+            modelBody.innerHTML =
+
+                '<div><span class=\'text-textMuted\'>ID      </span>' + escHtml(rt.model_id) + ' @ ' + escHtml(rt.model_version || '?') + '</div>' +
+
+                '<div><span class=\'text-textMuted\'>Schema  </span>' + escHtml(rt.schema || '?') + ' / ' + (rt.dimension || 0) + 'D</div>' +
+
+                '<div><span class=\'text-textMuted\'>Hash    </span>' + escHtml((rt.artifact_hash || '?').slice(0, 16)) + '</div>' +
+
+                '<div><span class=\'text-textMuted\'>Scaler  </span>' + escHtml((rt.scaler_hash || '?').slice(0, 16)) + '</div>';
+
+        } else {
+
+            modelBody.innerHTML = '<div class=\'text-textMuted italic\'>No validated 70D candidate attached</div>';
+
+        }
+
+    }
+
+    const rtBody = document.getElementById('s70-runtime-body');
+
+    if (rtBody) {
+
+        const rt = (summary && summary.runtime) || {};
+
+        const wk = (summary && summary.worker) || {};
+
+        rtBody.innerHTML =
+
+            '<div>inferences   ' + (rt.observations != null ? rt.observations : '--') + '</div>' +
+
+            '<div>errors       ' + (rt.errors != null ? rt.errors : '--') + '</div>' +
+
+            '<div>dropped      ' + (rt.dropped != null ? rt.dropped : '--') + '</div>' +
+
+            '<div>timeouts     ' + (rt.timeouts != null ? rt.timeouts : '--') + '</div>' +
+
+            '<div>avg latency  ' + (rt.avg_latency_ms != null ? rt.avg_latency_ms.toFixed(3) + ' ms' : '--') + '</div>' +
+
+            '<div>p95 latency  ' + (rt.p95_latency_ms != null ? rt.p95_latency_ms.toFixed(3) + ' ms' : '--') + '</div>' +
+
+            '<div>queue        ' + (wk.queue_size != null ? wk.queue_size + '/' + (wk.max_queue || '?') : '--') + '</div>';
+
+    }
+
+    const diffBody = document.getElementById('s70-diff-body');
+
+    if (diffBody) {
+
+        const rt = (summary && summary.runtime) || {};
+
+        const store = (summary && summary.store) || {};
+
+        const agg = (store.disagreement_counts) || {};
+
+        const total = (store.observations || 0);
+
+        const agree = (store.agreements || 0);
+
+        const agreePct = total > 0 ? (100 * agree / total).toFixed(1) : '--';
+
+        diffBody.innerHTML =
+
+            '<div>observations ' + total + '</div>' +
+
+            '<div>agreement    ' + agreePct + '%</div>' +
+
+            '<div>avg conf Δ   ' + (rt.avg_conf_delta != null ? rt.avg_conf_delta.toFixed(4) : '--') + '</div>' +
+
+            '<div class=\'text-textMuted\'><b>BY CLASS</b></div>' +
+
+            Object.keys(agg).sort().map(function (k) {
+
+                return '<div>' + escHtml(k) + ' = ' + agg[k] + '</div>';
+
+            }).join('');
+
+    }
+
+    const healthBody = document.getElementById('s70-health-body');
+
+    if (healthBody) {
+
+        const fh = (health && health.feature_health) || [];
+
+        if (fh.length) {
+
+            healthBody.innerHTML = fh.map(function (h) {
+
+                const drift = (health.drift && health.drift.severity) || 'NORMAL';
+
+                return '<div class=\'bg-darkBg border border-borderClr/60 rounded p-2\'>' +
+
+                    '<div class=\'text-textMuted\'>' + escHtml(h.name) + '</div>' +
+
+                    '<div>mean ' + h.mean.toFixed(3) + ' std ' + h.std.toFixed(3) + '</div>' +
+
+                    '<div>miss ' + (100 * h.missing_rate).toFixed(1) + '% zero ' + (100 * h.zero_rate).toFixed(1) + '%</div>' +
+
+                    '<div>drift ' + escHtml(drift) + ' · samples ' + h.samples + '</div></div>';
+
+            }).join('');
+
+        } else {
+
+            healthBody.innerHTML = '<div class=\'text-textMuted italic\'>No live feature health yet</div>';
+
+        }
+
+    }
+
+    const disBody = document.getElementById('s70-disagreements-body');
+
+    if (disBody) {
+
+        if (disagreements.length) {
+
+            disBody.innerHTML = disagreements.map(function (r) {
+
+                return '<div class=\'flex justify-between gap-2\'><span>' + escHtml((r.timestamp || '').slice(0, 19)) + '</span>' +
+
+                    '<span>' + escHtml(r.champion_action || '') + ' → ' + escHtml(r.shadow_action || '') + '</span>' +
+
+                    '<span class=\'text-accentGold\'>' + escHtml(r.disagreement || '') + '</span>' +
+
+                    '<span>outcome ' + escHtml(r.outcome || 'PENDING') + '</span></div>';
+
+            }).join('');
+
+        } else {
+
+            disBody.innerHTML = '<div class=\'text-textMuted italic\'>No disagreements recorded</div>';
+
+        }
+
+    }
+
+}
+
+
+
+// =====================================================================
+
+// FORENSIC INCIDENT CENTER (TASK-12)
+
+// =====================================================================
+
+async function loadIncidents() {
+
+    const listEl = document.getElementById('incident-list');
+
+    if (!listEl) return;
+
+    listEl.innerHTML = '<p class="text-xs text-textMuted">Loading incidents...</p>';
+
+    try {
+
+        const resp = await fetch('/api/diagnostics/health');
+
+        const data = await resp.json();
+
+        if (!data.available) { listEl.innerHTML = '<p class="text-xs text-rose-400">Incident API unavailable</p>'; return; }
+
+        const c = data.counts || {};
+
+        document.getElementById('inc-summary-open').textContent = c.open ?? '--';
+
+        document.getElementById('inc-summary-critical').textContent = c.critical ?? '--';
+
+        document.getElementById('inc-summary-high').textContent = c.high ?? '--';
+
+        document.getElementById('inc-summary-medium').textContent = c.medium ?? '--';
+
+        const badge = document.getElementById('incident-nav-badge');
+
+        if (badge) badge.textContent = (c.open ?? 0) + ' open';
+
+        const resp2 = await fetch('/api/diagnostics/incidents?limit=50');
+
+        const data2 = await resp2.json();
+
+        const incidents = (data2.incidents || []).filter(i =>
+
+            ['CRITICAL','HIGH','MEDIUM'].includes(i.severity) &&
+
+            ['OPEN','INVESTIGATING','ROOT_CAUSE_IDENTIFIED','CONTAINED','RECOVERY_READY'].includes(i.status));
+
+        if (!incidents.length) {
+
+            listEl.innerHTML = '<p class="text-xs text-textMuted">No open CRITICAL/HIGH/MEDIUM incidents.</p>';
+
+            return;
+
+        }
+
+        listEl.innerHTML = '';
+
+        incidents.forEach(inc => {
+
+            const card = document.createElement('div');
+
+            const sevColor = {CRITICAL: 'text-rose-400 border-rose-500/40', HIGH: 'text-orange-400 border-orange-500/40', MEDIUM: 'text-yellow-400 border-yellow-500/40'}[inc.severity] || 'text-gray-300 border-borderClr';
+
+            card.className = 'border rounded-lg p-3 bg-darkBg/50 cursor-pointer ' + sevColor;
+
+            card.onclick = () => showIncidentDetail(inc.incident_id);
+
+            card.innerHTML = '<div class="flex justify-between items-center"><div class="flex items-center gap-2">' +
+
+                '<span class="font-mono text-xs font-bold">' + esc(inc.incident_id) + '</span>' +
+
+                '<span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/30">' + inc.severity + '</span>' +
+
+                '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 border border-slate-500/30">' + inc.category + '</span>' +
+
+                '</div><span class="text-[10px] text-textMuted">' + (inc.detected_at||'').slice(0,19).replace('T',' ') + '</span></div>' +
+
+                '<p class="text-xs text-gray-300 mt-2"><b>' + esc(inc.operation||'') + '</b> @ <code class="text-accentCyan">' + esc(inc.component||'') + '</code></p>' +
+
+                '<p class="text-[11px] text-textMuted mt-1">root cause: <b>' + inc.root_cause_status + '</b> | impact: ' +
+
+                (inc.impact ? inc.impact.affected_trades + ' trades / ' + inc.impact.affected_records + ' records' : 'n/a') +
+
+                (inc.repeated_count > 1 ? ' | repeats: ' + inc.repeated_count : '') + '</p>';
+
+            listEl.appendChild(card);
+
+        });
+
+    } catch (e) {
+
+        listEl.innerHTML = '<p class="text-xs text-rose-400">Failed to load incidents: ' + esc(String(e)) + '</p>';
+
+    }
+
+}
+
+
+
+async function showIncidentDetail(id) {
+
+    const el = document.getElementById('incident-detail');
+
+    if (!el) return;
+
+    el.classList.remove('hidden');
+
+    el.innerHTML = '<p class="text-xs text-textMuted">Loading...</p>';
+
+    try {
+
+        const resp = await fetch('/api/diagnostics/incidents/' + encodeURIComponent(id));
+
+        const data = await resp.json();
+
+        if (!data.available || !data.incident) { el.innerHTML = '<p class="text-xs text-rose-400">Not found</p>'; return; }
+
+        const inc = data.incident;
+
+        let html = '<h3 class="text-sm font-bold text-white">Incident <code>' + esc(inc.incident_id) + '</code>' +
+
+            ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/30">' + inc.severity + '</span>' +
+
+            ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 border border-slate-500/30">' + inc.status + '</span></h3>';
+
+        html += '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">' +
+
+            '<div><span class="text-textMuted">Category:</span> ' + esc(inc.category) + '</div>' +
+
+            '<div><span class="text-textMuted">Component:</span> <code>' + esc(inc.component) + '</code></div>' +
+
+            '<div><span class="text-textMuted">Root cause:</span> ' + inc.root_cause_status + '</div>' +
+
+            '<div><span class="text-textMuted">Correlation:</span> <code>' + esc(inc.correlation_id || '—') + '</code></div>' +
+
+            '<div><span class="text-textMuted">First seen:</span> ' + esc((inc.first_seen_at||'').slice(0,19).replace('T',' ')) + '</div>' +
+
+            '<div><span class="text-textMuted">Last seen:</span> ' + esc((inc.last_seen_at||'').slice(0,19).replace('T',' ')) + '</div>' +
+
+            '<div><span class="text-textMuted">Repeats:</span> ' + (inc.repeated_count||1) + '</div>' +
+
+            (inc.related_bug_id ? '<div><span class="text-textMuted">BUG:</span> ' + esc(inc.related_bug_id) + '</div>' : '') +
+
+            '</div>';
+
+        if (inc.root_cause) html += '<p class="text-xs text-gray-300 mt-2">' + esc(inc.root_cause) + '</p>';
+
+        const plan = inc.recovery_plan || {};
+
+        if (plan.options && plan.options.length) {
+
+            html += '<h4 class="text-xs font-bold text-accentCyan mt-3">Recovery plan (' + esc(plan.status||'RECOMMENDED') + ')</h4><ul class="text-[11px] space-y-1 mt-1">';
+
+            plan.options.forEach(o => { html += '<li>[' + esc(o.status) + '] ' + esc(o.action) + '</li>'; });
+
+            html += '</ul>';
+
+        }
+
+        if (inc.timeline && inc.timeline.length) {
+
+            html += '<h4 class="text-xs font-bold text-accentCyan mt-3">Timeline</h4><ul class="text-[11px] space-y-1 mt-1 max-h-48 overflow-y-auto">';
+
+            inc.timeline.forEach(t => { html += '<li><code>' + esc((t.timestamp||'').slice(11,19)) + '</code> [' + esc(t.source) + '] ' + esc(t.event_type) + '</li>'; });
+
+            html += '</ul>';
+
+        }
+
+        if (inc.quarantine_entries && inc.quarantine_entries.length) {
+
+            html += '<h4 class="text-xs font-bold text-amber-400 mt-3">Quarantine</h4><ul class="text-[11px] space-y-1 mt-1">';
+
+            inc.quarantine_entries.forEach(q => { html += '<li><code>' + esc(q.target_table) + '</code> ' + esc(q.record_key) + ' -> ' + esc(q.status) + ' (' + esc(q.reason) + ')</li>'; });
+
+            html += '</ul>';
+
+        }
+
+        el.innerHTML = html;
+
+    } catch (e) {
+
+        el.innerHTML = '<p class="text-xs text-rose-400">' + esc(String(e)) + '</p>';
+
+    }
+
+}
+
+
+
+async function searchIncidents() {
+
+    const input = document.getElementById('incident-search-input');
+
+    const resEl = document.getElementById('incident-search-results');
+
+    if (!input || !resEl) return;
+
+    const q = input.value.trim();
+
+    resEl.innerHTML = '';
+
+    if (!q) return;
+
+    resEl.innerHTML = '<p class="text-xs text-textMuted">Tracing...</p>';
+
+    try {
+
+        const resp = await fetch('/api/diagnostics/search?query=' + encodeURIComponent(q) + '&limit=20');
+
+        const data = await resp.json();
+
+        const incidents = data.incidents || [];
+
+        if (!incidents.length) {
+
+            resEl.innerHTML = '<p class="text-xs text-amber-400">No incidents found for "' + esc(q) + '".</p>';
+
+        } else {
+
+            resEl.innerHTML = '';
+
+            incidents.forEach(inc => {
+
+                const row = document.createElement('div');
+
+                row.className = 'border border-borderClr rounded p-2 bg-darkBg/50 cursor-pointer';
+
+                row.onclick = () => showIncidentDetail(inc.incident_id);
+
+                row.innerHTML = '<span class="font-mono text-[11px] font-bold">' + esc(inc.incident_id) + '</span> ' +
+
+                    '<span class="text-[10px] text-orange-300">' + inc.severity + '</span> ' +
+
+                    '<span class="text-[11px]">' + esc(inc.operation||'') + '</span> @ <code class="text-[11px] text-accentCyan">' + esc(inc.component||'') + '</code>';
+
+                resEl.appendChild(row);
+
+            });
+
+        }
+
+    } catch (e) {
+
+        resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(String(e)) + '</p>';
+
+    }
+
+}
