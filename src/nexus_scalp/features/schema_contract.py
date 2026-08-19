@@ -10,7 +10,7 @@ live runtime and the UI. This module is the shared, immutable specification:
     dimension:          70
     family layout:      indices 0..49  = Base 50D (scalp_v1 contract, protected)
                         indices 50..59 = News 10D (canonical news_context_v1
-                                        first-10 selection, order fixed below)
+                                        fields 0..8 + news_state selection, order fixed below)
                         indices 60..69 = Liquidity 10D (canonical
                                         liquidity_engine.as_vector() order)
 
@@ -71,8 +71,8 @@ NEWS_END: int = 60  # exclusive -> indices 50..59
 LIQUIDITY_START: int = 60
 LIQUIDITY_END: int = 70  # exclusive -> indices 60..69
 
-#: Canonical news 10D block: first 10 fields of news_context_v1, fixed order.
-#: MUST match the first 10 entries of NewsContextSchema.fields
+#: Canonical news 10D block: fields 0..8 + news_state (index 10) of news_context_v1, fixed order.
+#: NOT a blind first-10 slice; source_consensus (index 9) stays outside the 70D block.
 #: (model_generation/models.py) at import time (asserted below).
 NEWS_10D_NAMES: tuple[str, ...] = (
     "active_high_impact_events",

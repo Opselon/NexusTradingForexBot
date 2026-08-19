@@ -616,3 +616,40 @@ def news_benchmark_readiness(
         "diagnostics": diag,
         "generated_at": datetime.now(UTC).isoformat(),
     }
+
+
+# =============================================================================
+# TASK-03-70D-PARITY: canonical news 10D block (indices 50..59 of scalp_v3)
+# =============================================================================
+
+
+def news_10d_vector(
+    context: dict[str, float] | None,
+    *,
+    default: float = 0.0,
+) -> list[float]:
+    """Canonical 10D news block for the 70D contract.
+
+    Selection: first 10 fields of the canonical news_context_v1 order
+    (active_high_impact_events, xauusd_relevance, usd_relevance,
+    bullish_pressure, bearish_pressure, conflict_score, novelty, freshness,
+    confidence, source_consensus). The remaining 2 fields (news_state,
+    time_since_event_sec) belong to the 12-field context for the 60D path;
+    they are NOT in the 70D news block by contract — never silently reordered
+    or substituted (features/schema_contract.py hashes the selection).
+
+    The canonical order lives in features.schema_contract.NEWS_10D_NAMES;
+    this producer exists so news_bridge remains the single news authority.
+    """
+    from nexus_scalp.features.schema_contract import NEWS_10D_NAMES
+
+    out: list[float] = []
+    for f in NEWS_10D_NAMES:
+        try:
+            v = float((context or {}).get(f, default))
+        except (TypeError, ValueError):
+            v = default
+        if math.isnan(v) or math.isinf(v):
+            v = default
+        out.append(v)
+    return out

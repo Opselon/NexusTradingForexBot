@@ -500,3 +500,234 @@ def verify_liquidity_artifact(
         "all_in_range": in_range,
         "dataset_hash": man.get("dataset_hash", ""),
     }
+
+
+# =============================================================================
+# TASK-03-70D-PARITY: scalp_v3 canonical 70D dataset builder (ADDITIVE)
+# =============================================================================
+# 70D vector = Base 50D (scalp_v1, indices 0..49) + News 10D (canonical
+# news_context_v1 fields 0..8 + news_state, indices 50..59) + Liquidity 10D (liquidity_engine
+# as_vector order, indices 60..69). The canonical contract lives in
+# features/schema_contract.py; this builder calls the SAME canonical producers
+# the live/replay paths use (ScalpFeatureEngine.compute_from_bars,
+# news_bridge.news_context_at, liquidity_engine.compute_liquidity_features) on
+# the SAME causal window. Training == replay == live by construction.
+# =============================================================================
+
+SEVENTY_D_SCHEMA_ID: str = "scalp_v3"
+NEWS_10D_START: int = 50
+LIQUIDITY_10D_START: int = 60
+
+
+def compute_70d_frame(
+    df: pl.DataFrame,
+    *,
+    min_bars: int = 55,
+    spread: float = SPREAD_USD,
+    news_frame: pl.DataFrame | None = None,
+) -> pl.DataFrame:
+    """Computes a scalp_v3 (70D) feature frame from raw bars + optional news.
+
+    For each row i (i >= min_bars-1) the canonical 50D engine, the news
+    bridge (causally-correct snapshot at bar time) and the liquidity engine
+    run on the SAME causal window [i-54 .. i] with a synthetic tick at bar
+    i's close — identical convention to compute_60d_frame /
+    compute_liquidity_frame, so a 70D artifact is directly comparable.
+
+    News contract: when ``news_frame`` is None the news block is the
+    documented neutral 10D (all zeros) with ``news_status=FEATURE_DISABLED``.
+    When a news frame IS provided, every row gets the causally correct
+    news_context_at(t) 0..8+news_state selection. Liquidity values are the canonical
+    engine's as_vector() (already clipped [-3,+3], finite).
+
+    Returns a frame with columns:
+        timestamp, open, high, low, close, spread, atr_m1, tick_volume,
+        news_status, liquidity_status, feat_0..feat_69
+    """
+    from nexus_scalp.features.features70 import (
+        FeatureSourceState,
+        clamp_neutral_family,
+        news_10d_from_context,
+    )
+    from nexus_scalp.model_generation.news_bridge import news_context_at
+
+    raw = df.sort("time")
+    times: list[datetime] = []
+    for row in raw.iter_rows(named=True):
+        t = row.get("time_utc") or row.get("time")
+        ts = t if isinstance(t, datetime) else None
+        if ts is None:
+            continue
+        ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+        times.append(ts)
+
+    engine = ScalpFeatureEngine(symbol="XAUUSD")
+    n = raw.height
+    all_bars: list[BarData] = []
+    for j in range(n):
+        bj = raw.row(j, named=True)
+        all_bars.append(
+            BarData(
+                symbol="XAUUSD",
+                timeframe="M1",
+                timestamp=times[j],
+                open=float(bj["open"]),
+                high=float(bj["high"]),
+                low=float(bj["low"]),
+                close=float(bj["close"]),
+                tick_volume=int(bj.get("tick_volume", 0) or 0),
+                is_complete=True,
+            )
+        )
+    news_enabled = news_frame is not None and not news_frame.is_empty()
+    rows: list[dict[str, Any]] = []
+    for i in range(n):
+        if i + 1 < min_bars:
+            continue  # causal warm-up
+        ts = times[i]
+        b = raw.row(i, named=True)
+        tick = TickData(
+            symbol="XAUUSD",
+            timestamp=ts,
+            bid=float(b["close"]),
+            ask=float(b["close"]) + spread,
+            volume=int(b.get("tick_volume", 0) or 0),
+        )
+        window = all_bars[max(0, i - 54) : i + 1]
+        fv = engine.compute_from_bars(window, tick)
+        x50 = fv.to_tensor_input()
+
+        liquid = compute_liquidity_features(
+            window,
+            decision_at=ts,
+            mid_price=float(b["close"]),
+            atr=fv.atr_m1,
+        )
+        liq10 = list(liquid.as_vector())
+
+        if news_enabled:
+            ctx = news_context_at(news_frame, ts)
+            news10 = news_10d_from_context(ctx)
+            news_status = FeatureSourceState.FEATURE_AVAILABLE.value
+        else:
+            news10 = [0.0] * 10
+            news_status = FeatureSourceState.FEATURE_DISABLED.value
+
+        rec = {
+            "timestamp": ts,
+            "open": float(b["open"]),
+            "high": float(b["high"]),
+            "low": float(b["low"]),
+            "close": float(b["close"]),
+            "spread": spread,
+            "atr_m1": float(fv.atr_m1),
+            "tick_volume": int(b.get("tick_volume", 0) or 0),
+            "news_status": news_status,
+            "liquidity_status": FeatureSourceState.FEATURE_AVAILABLE.value,
+        }
+        for idx in range(50):
+            rec[f"feat_{idx}"] = float(x50[idx])
+        for idx in range(10):
+            rec[f"feat_{50 + idx}"] = float(clamp_neutral_family(news10, (0.0,) * 10)[idx])
+        for idx in range(10):
+            rec[f"feat_{60 + idx}"] = float(
+                clamp_neutral_family(liq10, (3.0, 3.0, 0.0, 0.0, 0.0, 3.0, 3.0, 0.0, 0.0, 0.0))[idx]
+            )
+        rows.append(rec)
+        if i % 20000 == 0 and i > 0:
+            logger.info("[SCHEMA_70D] computed %d rows (of ~%d)", i, n)
+    return pl.DataFrame(rows)
+
+
+def build_70d_dataset(
+    bars_frame: pl.DataFrame,
+    *,
+    timeframe: str = "M1",
+    news_frame: pl.DataFrame | None = None,
+    strategy_id: str = "scalp_default",
+    strategy_version: str = "1.0.0",
+    store: ArtifactStore | None = None,
+    seed: int = 42,
+    dataset_id: str | None = None,
+) -> dict[str, Any]:
+    """Builds + persists a scalp_v3 (70D) dataset artifact."""
+    store = store or ArtifactStore()
+    feat_frame = compute_70d_frame(bars_frame, news_frame=news_frame)
+    if feat_frame.is_empty():
+        raise ValueError("70D feature frame empty — check raw bars / min_bars")
+    factory = DatasetFactory(
+        store=store,
+        sample_factory=SampleFactory(feature_schema_id=SEVENTY_D_SCHEMA_ID),
+    )
+    handle = factory.build(
+        feat_frame,
+        symbol="XAUUSD",
+        timeframe=timeframe,
+        news_frame=news_frame,
+        strategy_id=strategy_id,
+        strategy_version=strategy_version,
+        seed=seed,
+        dataset_id=dataset_id,
+    )
+    logger.info(
+        "[SCHEMA_70D] event=DATASET_BUILT dataset_id=%s rows=%d",
+        handle.get("dataset_id"),
+        handle.get("counts", {}).get("total", 0),
+    )
+    return handle
+
+
+def verify_70d_artifact(
+    dataset_id: str,
+    store: ArtifactStore | None = None,
+) -> dict[str, Any]:
+    """Quality gate for a scalp_v3 70D artifact (brief 41).
+
+    Asserts: dimension == 70, all finite, all in [-3,+3], manifest schema_id
+    == scalp_v3, schema hash correct, no duplicate timestamps, no duplicate
+    sample identity. Returns per-check booleans + an exact rejection summary
+    (never a bare "dataset failed").
+    """
+    store = store or ArtifactStore()
+    from nexus_scalp.features.schema_contract import feature_schema_hash
+
+    man = store.read_dataset_manifest(dataset_id)
+    if man is None:
+        return {"ok": False, "reason": "MANIFEST_MISSING"}
+    frame = store.read_dataset(dataset_id)
+    feat_cols = [c for c in frame.columns if c.startswith("feat_")]
+    checks: dict[str, Any] = {"feature_count": len(feat_cols)}
+    checks["dimension_ok"] = len(feat_cols) == 70
+    checks["schema_id_ok"] = man.get("feature_schema_id") == SEVENTY_D_SCHEMA_ID
+    checks["schema_hash_ok"] = bool(
+        man.get("feature_schema_hash") and man["feature_schema_hash"] == feature_schema_hash()
+    )
+    arr = frame.select(feat_cols).to_numpy().astype(np.float64)
+    finite_mask = np.isfinite(arr).all(axis=1)
+    range_mask = ((arr >= -3.0) & (arr <= 3.0)).all(axis=1)
+    checks["all_finite"] = bool(finite_mask.all())
+    checks["all_in_range"] = bool(range_mask.all())
+    n_reject_finite = int((~finite_mask).sum())
+    n_reject_range = int((~range_mask).sum())
+    checks["rejected_rows"] = {
+        "NONFINITE_FEATURE": n_reject_finite,
+        "OUT_OF_RANGE_FEATURE": n_reject_range,
+    }
+    if "timestamp" in frame.columns:
+        dup_ts = int(frame.select(pl.col("timestamp").is_duplicated()).sum())
+        checks["duplicate_timestamps"] = dup_ts
+    if "sample_id" in frame.columns:
+        dup_sid = int(frame.select(pl.col("sample_id").is_duplicated()).sum())
+        checks["duplicate_sample_ids"] = dup_sid
+    checks["rows"] = frame.height
+    checks["ok"] = bool(
+        checks["dimension_ok"]
+        and checks["schema_id_ok"]
+        and checks["schema_hash_ok"]
+        and checks["all_finite"]
+        and checks["all_in_range"]
+        and not checks.get("duplicate_timestamps", 0)
+        and not checks.get("duplicate_sample_ids", 0)
+    )
+    checks["dataset_hash"] = man.get("dataset_hash", "")
+    return checks

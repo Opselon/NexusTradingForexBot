@@ -322,6 +322,11 @@ class ModelManifest(BaseModel):
     artifact_hash: str = Field(default="")
     manifest_hash: str = Field(default="")
     scaler_hash: str = Field(default="")
+    #: TASK-03-70D-PARITY: canonical feature-schema content hash + the
+    #: training dataset identity (brief 6/21). Reused by the inference
+    #: validator to guarantee training==inference schema identity.
+    feature_schema_hash: str = Field(default="")
+    training_dataset_id: str = Field(default="")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     build_metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -371,6 +376,9 @@ class DatasetManifest(BaseModel):
     news_version: str = Field(default="")
     strategy_context_version: str = Field(default="")
     dataset_hash: str = Field(default="")
+    #: TASK-03-70D-PARITY: canonical feature-schema content hash (scalp_v3).
+    #: Training/replay/inference compare this SAME value (brief 5/40).
+    feature_schema_hash: str = Field(default="")
 
     @field_validator("created_at")
     @classmethod
