@@ -175,14 +175,18 @@ def test_liq29_training_and_live_same_function() -> None:
     # last row direct recompute
     last = frame.row(frame.height - 1, named=True)
     t = last["timestamp"]
+    # TASK-03-70D-PARITY: canonical window = FULL causal history over the RAW
+    # input bars (all rows <= decision; the builder's i indexes the raw frame
+    # and uses all_bars[:i+1]). Rebuild from the raw rows, not the emitted
+    # frame (which starts at min_bars).
     window_bars = []
-    for j in range(max(0, frame.height - 55), frame.height):
-        r = frame.row(j, named=True)
+    for j in range(len(rows)):
+        r = rows[j]
         window_bars.append(
             BarData(
                 symbol="XAUUSD",
                 timeframe="M5",
-                timestamp=r["timestamp"],
+                timestamp=r["time"],
                 open=r["open"],
                 high=r["high"],
                 low=r["low"],
@@ -191,8 +195,15 @@ def test_liq29_training_and_live_same_function() -> None:
                 is_complete=True,
             )
         )
+    # The frame's timestamp column is polars-naive; the liquidity engine's
+    # causal filter compares tz-aware datetimes, so normalize to the aware UTC
+    # instant (identical to the dataset builder's decision_at=ts).
+    decision_at = t.replace(tzinfo=UTC)
     direct = compute_liquidity_features(
-        window_bars, decision_at=t, mid_price=float(last["close"]), atr=float(last["atr_m1"])
+        window_bars,
+        decision_at=decision_at,
+        mid_price=float(last["close"]),
+        atr=float(last["atr_m1"]),
     )
     for k in range(10):
         assert last[f"feat_{50 + k}"] == pytest.approx(direct.as_vector()[k], abs=1e-9)

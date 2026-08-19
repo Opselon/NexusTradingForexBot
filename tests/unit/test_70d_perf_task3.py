@@ -31,8 +31,7 @@ PERF_SKIP = pytest.mark.skipif(True, reason="perf probe run explicitly")
 
 
 def _bars(n: int = 120) -> list[BarData]:
-    return steady_bars(n, price=3300.0, step=0.1,
-                       t0=datetime(2026, 8, 1, 0, 0, tzinfo=UTC))
+    return steady_bars(n, price=3300.0, step=0.1, t0=datetime(2026, 8, 1, 0, 0, tzinfo=UTC))
 
 
 def _percentiles(samples: list[float]) -> dict[str, float]:
@@ -56,23 +55,29 @@ def _measure(fn, n: int = 30) -> dict[str, float]:
 def test_70d_construction_and_validation_bounded() -> None:
     bars = _bars()
     engine = ScalpFeatureEngine(symbol="XAUUSD")
-    base = [0.0] * 50
 
     def full_70d() -> None:
         from nexus_scalp.domain.models import TickData
 
         last = bars[-1]
-        tick = TickData(symbol="XAUUSD", timestamp=last.timestamp, bid=last.close,
-                        ask=last.close + 0.2, volume=last.tick_volume)
+        tick = TickData(
+            symbol="XAUUSD",
+            timestamp=last.timestamp,
+            bid=last.close,
+            ask=last.close + 0.2,
+            volume=last.tick_volume,
+        )
         fv = engine.compute_from_bars(bars, tick)
         x50 = fv.to_tensor_input()
         snap = assemble_70d(
             base50=x50,
             news10=[0.1] * 10,
             liquidity10=[0.2] * 10,
-            symbol="XAUUSD", timeframe="M1",
+            symbol="XAUUSD",
+            timeframe="M1",
             timestamp_utc=last.timestamp,
-            news_available=True, liquidity_available=True,
+            news_available=True,
+            liquidity_available=True,
         )
         snap.validate(context="perf")
 
@@ -83,13 +88,18 @@ def test_70d_construction_and_validation_bounded() -> None:
 
 @PERF_SKIP
 def test_validator_cached_metadata_fast() -> None:
-    v = InferenceValidator(expected_schema_id="scalp_v3", expected_dimension=70,
-                           expected_schema_hash="")
+    v = InferenceValidator(
+        expected_schema_id="scalp_v3", expected_dimension=70, expected_schema_hash=""
+    )
     vec = [0.0] * 50 + [0.1] * 10 + [0.2] * 10
 
     def validate() -> None:
-        v.validate(vec, news_status="FEATURE_AVAILABLE",
-                   liquidity_status="FEATURE_AVAILABLE", context="perf")
+        v.validate(
+            vec,
+            news_status="FEATURE_AVAILABLE",
+            liquidity_status="FEATURE_AVAILABLE",
+            context="perf",
+        )
 
     stats = _measure(validate, n=50)
     print(f"\n[VALIDATOR] cached per-tick validation: {stats}")
@@ -103,14 +113,27 @@ def test_runtime_hook_snapshot_bounded() -> None:
     from nexus_scalp.domain.models import TickData
 
     last = bars[-1]
-    tick = TickData(symbol="XAUUSD", timestamp=last.timestamp, bid=last.close,
-                    ask=last.close + 0.2, volume=last.tick_volume)
+    tick = TickData(
+        symbol="XAUUSD",
+        timestamp=last.timestamp,
+        bid=last.close,
+        ask=last.close + 0.2,
+        volume=last.tick_volume,
+    )
     engine = ScalpFeatureEngine(symbol="XAUUSD")
-    news_ctx = {"active_high_impact_events": 1.0, "xauusd_relevance": 0.8,
-                "usd_relevance": 0.5, "bullish_pressure": 0.4,
-                "bearish_pressure": 0.1, "conflict_score": 0.2,
-                "novelty": 0.0, "freshness": 1.0, "confidence": 0.9,
-                "source_consensus": 0.7, "news_state": 2.0}
+    news_ctx = {
+        "active_high_impact_events": 1.0,
+        "xauusd_relevance": 0.8,
+        "usd_relevance": 0.5,
+        "bullish_pressure": 0.4,
+        "bearish_pressure": 0.1,
+        "conflict_score": 0.2,
+        "novelty": 0.0,
+        "freshness": 1.0,
+        "confidence": 0.9,
+        "source_consensus": 0.7,
+        "news_state": 2.0,
+    }
 
     def snapshot() -> None:
         fv = engine.compute_from_bars(bars, tick)
@@ -149,13 +172,22 @@ def test_no_db_on_feature_path() -> None:
         from nexus_scalp.domain.models import TickData
 
         last = bars[-1]
-        tick = TickData(symbol="XAUUSD", timestamp=last.timestamp, bid=last.close,
-                        ask=last.close + 0.2, volume=last.tick_volume)
+        tick = TickData(
+            symbol="XAUUSD",
+            timestamp=last.timestamp,
+            bid=last.close,
+            ask=last.close + 0.2,
+            volume=last.tick_volume,
+        )
         fv = engine.compute_from_bars(bars, tick)
         snap = assemble_70d(
-            base50=list(fv.to_tensor_input()), news10=[0.0] * 10,
-            liquidity10=[0.0] * 10, symbol="XAUUSD", timeframe="M1",
-            timestamp_utc=last.timestamp, news_available=True,
+            base50=list(fv.to_tensor_input()),
+            news10=[0.0] * 10,
+            liquidity10=[0.0] * 10,
+            symbol="XAUUSD",
+            timeframe="M1",
+            timestamp_utc=last.timestamp,
+            news_available=True,
             liquidity_available=True,
         )
         snap.validate(context="no-db")
