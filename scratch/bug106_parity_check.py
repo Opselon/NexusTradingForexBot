@@ -46,8 +46,7 @@ def main() -> int:
         f = fast[c].to_list()
         for i, (a, b) in enumerate(zip(r, f, strict=True)):
             d = abs(float(a) - float(b))
-            if d > max_delta:
-                max_delta = d
+            max_delta = max(max_delta, d)
             if d > 1e-9:
                 mismatched.append({"col": c, "row": i, "ref": float(a), "fast": float(b), "delta": d})
                 if len(mismatched) >= 20:

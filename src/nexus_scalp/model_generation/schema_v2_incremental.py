@@ -64,6 +64,7 @@ from nexus_scalp.features.liquidity_engine import (
     _session_code,
     detect_confirmed_swings,
     detect_reactive_sweep,
+    update_pool_states,
     equal_high_low_strengths,
     internal_external_distances,
     liquidity_confluence,
@@ -151,12 +152,72 @@ class IncrementalLiquidityState:
         # uses users[-20:] where ORDER matters (BUG-106 parity).
         self.all_pools: list[LiquidityPool] = list(self.sh_pools) + list(self.sl_pools)
 
+        # --- incremental daily grouping (BUG-106: daily_pools_at was O(n)
+        # per row — it rebuilt the full day->bars dict from scratch). We
+        # maintain the grouping additively: each new bar appends to its
+        # day, and completed-day aggregates are cached. ---
+        self._day_idx: dict[str, list[int]] = {}
+        self._day_hi: dict[str, float] = {}
+        self._day_lo: dict[str, float] = {}
+        self._last_day_processed = -1
+        self._precompute_daily()
+        self._precompute_htf()
+        self._day_list: list[str] = []  # refreshed each call (cheap: <= 3 years)
+
         # --- per-row pool state recompute (atr-aware, vectorized slices) ---
         # The canonical update_pool_states recomputes every pool's state at
         # EVERY row with the CURRENT atr (touch/sweep/reclaim thresholds are
         # atr-scaled), so state cannot be cached across rows. We keep the
         # O(pools x slice) recompute but over precomputed numpy arrays with
         # slice comparisons (no list rebuilds, no _bars_to_arrays).
+
+    def _precompute_daily(self) -> None:
+            """One-pass daily grouping + running high/low per UTC day."""
+            for i in range(self.n):
+                d = self.times[i].date().isoformat()
+                if d not in self._day_idx:
+                    self._day_idx[d] = [i]
+                    self._day_hi[d] = float(self.highs[i])
+                    self._day_lo[d] = float(self.lows[i])
+                else:
+                    self._day_idx[d].append(i)
+                    if self.highs[i] > self._day_hi[d]:
+                        self._day_hi[d] = float(self.highs[i])
+                    if self.lows[i] < self._day_lo[d]:
+                        self._day_lo[d] = float(self.lows[i])
+            self._last_day_processed = self.n - 1
+
+
+    def _precompute_htf(self) -> None:
+        """Per-period UTC-minute-bucket running high/low, computed ONCE.
+
+        Each bucket key = (period_minutes, bucket_start_minute).
+        Value = (high, low). Membership never changes (bars are fixed);
+        at decision time we only filter buckets whose end <= decision and
+        drop the still-forming bucket (end > decision) — identical to the
+        canonical completed-bucket rule.
+        """
+        self._htf_buckets: dict[tuple[int, int], tuple[float, float]] = {}
+        for i in range(self.n):
+            total_min = int(self.times[i].timestamp()) // 60
+            for period in HTF_TIMEFRAMES_MIN:
+                bm = (total_min // period) * period
+                key = (period, bm)
+                if key not in self._htf_buckets:
+                    self._htf_buckets[key] = (float(self.highs[i]), float(self.lows[i]))
+                else:
+                    h, l = self._htf_buckets[key]
+                    if self.highs[i] > h:
+                        h = float(self.highs[i])
+                    if self.lows[i] < l:
+                        l = float(self.lows[i])
+                    self._htf_buckets[key] = (h, l)
+        # per-period sorted bucket starts (for the completed filter)
+        self._htf_period_starts: dict[int, list[int]] = {}
+        for period in HTF_TIMEFRAMES_MIN:
+            self._htf_period_starts[period] = sorted(
+                bm for (p, bm) in self._htf_buckets if p == period
+            )
 
     def _bar_index_at(self, t: datetime) -> int:
         lo, hi = 0, self.n
@@ -260,18 +321,29 @@ class IncrementalLiquidityState:
         ]
 
     def daily_pools_at(self, decision: datetime, lookback_days: int = 3) -> list[LiquidityPool]:
-        """PDH/PDL/PWH/PWL pools (canonical semantics, incremental grouping)."""
-        # group bars by UTC date, only completed days (last bar of next day closed)
-        days: dict[str, list[int]] = {}
-        for i in range(self._bar_index_at(decision) + 1):
-            days.setdefault(self.times[i].date().isoformat(), []).append(i)
-        day_list = sorted(days)
+        """PDH/PDL/PWH/PWL pools (canonical semantics, incremental grouping).
+
+        Uses the precomputed per-day running high/low (BUG-106: this was
+        O(n) per row when it rebuilt the grouping from scratch). Day list is
+        computed from the pre-grouped keys (bounded by calendar days)."""
+        # completed days only: the last bar of a day must be <= decision AND
+        # the day must be finished (next day has at least one bar <= decision)
+        k = self._bar_index_at(decision)
+        if k < 0:
+            return []
+        # days with bars up to decision
+        day_list = []
+        for d in self._day_idx:
+            idxs = self._day_idx[d]
+            if idxs and idxs[0] <= k:
+                day_list.append(d)
+        day_list.sort()
         if len(day_list) < 2:
             return []
         prev = day_list[-2]
-        prev_idx = days[prev]
-        p_dh = float(np.max(self.highs[prev_idx]))
-        p_dl = float(np.min(self.lows[prev_idx]))
+        prev_idx = self._day_idx[prev]
+        p_dh = self._day_hi[prev]
+        p_dl = self._day_lo[prev]
         confirmed = self.times[max(prev_idx)]
         pools = [
             LiquidityPool(price=p_dh, side=PoolSide.BSL, source=PoolSource.PDH,
@@ -283,10 +355,9 @@ class IncrementalLiquidityState:
         ]
         completed_days = day_list[:-1][-lookback_days:]
         if completed_days:
-            idxs = [i for d in completed_days for i in days[d]]
-            wh = float(np.max(self.highs[idxs]))
-            wl = float(np.min(self.lows[idxs]))
-            last_day = days[completed_days[-1]]
+            wh = max(self._day_hi[d] for d in completed_days)
+            wl = min(self._day_lo[d] for d in completed_days)
+            last_day = self._day_idx[completed_days[-1]]
             conf = self.times[max(last_day)]
             pools.append(LiquidityPool(price=wh, side=PoolSide.BSL, source=PoolSource.PWH,
                                        timeframe_minutes=1440 * 7, strength=1.4,
@@ -297,29 +368,29 @@ class IncrementalLiquidityState:
         return pools
 
     def htf_score_at(self, decision: datetime, atr: float) -> float:
-        """HTF liquidity score — incremental bucket max/min (canonical semantics)."""
-        times = self.times
-        rel = [i for i, t in enumerate(times) if t <= decision]
-        if not rel:
+        """HTF liquidity score — precomputed bucket max/min (canonical semantics).
+
+        Completed-bucket rule preserved: a bucket counts only when its end
+        (next bucket start) <= decision; the forming bucket is excluded.
+        BUG-106: O(buckets) per row instead of O(n) (no per-row regrouping).
+        """
+        last_idx = self._bar_index_at(decision)
+        if last_idx < 0:
             return DEFAULT_HTF_SCORE
-        last_close = float(self.closes[rel[-1]])
+        last_close = float(self.closes[last_idx])
         scores: list[float] = []
         for period in HTF_TIMEFRAMES_MIN:
-            buckets: dict[int, list[int]] = {}
-            for i in rel:
-                total_min = int(times[i].timestamp()) // 60
-                bm = (total_min // period) * period
-                buckets.setdefault(bm, []).append(i)
-            if not buckets:
+            starts = self._htf_period_starts.get(period, [])
+            if not starts:
                 continue
-            starts = sorted(buckets)
-            for bm in starts[:-1]:
+            # completed buckets: start + period <= decision (end <= decision)
+            # iterate starts; the last one may be forming -> exclude by end check
+            for bm in starts:
                 b_end_dt = datetime.fromtimestamp((bm + period) * 60, tz=UTC)
                 if b_end_dt > decision:
-                    continue
-                bucket_bars = buckets[bm]
-                bh = float(max(self.highs[i] for i in bucket_bars))
-                bl = float(min(self.lows[i] for i in bucket_bars))
+                    continue  # still forming at decision time (canonical rule)
+                key = (period, bm)
+                bh, bl = self._htf_buckets[key]
                 tf_weight = {60: 0.9, 240: 1.2, 1440: 1.6}.get(period, 0.9)
                 for level, side_sign in ((bh, 1.0), (bl, -1.0)):
                     dist = abs(level - last_close) / max(atr, MIN_ATR)
@@ -404,8 +475,16 @@ def compute_70d_frame_fast(
         vis_pools = lstate.pools_visible_at(ts, atr)
         session_pools = lstate.session_pools_at(ts)
         daily_pools = lstate.daily_pools_at(ts)
+        # canonical order: swings + session + daily, THEN lifecycle advance
+        # over ALL pools (BUG-106: session/daily pools must get the same
+        # touch/sweep/reclaim advance the canonical update_pool_states
+        # applies; without it PDH/PWH stayed CONFIRMED instead of SWEPT).
         pools_all = vis_pools + session_pools + daily_pools
-        # lifecycle advance already applied per-pool incrementally; filter usable
+        pools_all = update_pool_states(
+            pools_all, all_bars[max(0, i + 1 - SWEEP_ABS_MAX_BARS) : i + 1],
+            max(atr, MIN_ATR), now=ts,
+        )
+        # filter usable
         usable = [
             p for p in pools_all
             if p.usable_at <= ts and p.state != PoolState.CANDIDATE
