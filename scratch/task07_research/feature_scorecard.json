@@ -1,0 +1,264 @@
+{
+  "research_run_id": "task07_scorecard_01",
+  "research_baseline_id": "e85de540e09d3339",
+  "features": {
+    "bsl_distance_atr": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.028,
+      "neutral_sentinel_frac": 0.028,
+      "redundancy_max_abs_spearman": 0.185,
+      "stability_mean_shift_abs": 0.0737,
+      "drift_status": "CRITICAL",
+      "drift_note": "stable family (unchanged between versions) \u2014 valid drift signal",
+      "version_delta_mean": 0.0,
+      "version_frac_changed": 0.0,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "HIGH"
+    },
+    "ssl_distance_atr": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.058,
+      "neutral_sentinel_frac": 0.058,
+      "redundancy_max_abs_spearman": 0.516,
+      "stability_mean_shift_abs": 0.2469,
+      "drift_status": "CRITICAL",
+      "drift_note": "stable family (unchanged between versions) \u2014 valid drift signal",
+      "version_delta_mean": 0.0,
+      "version_frac_changed": 0.0,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "HIGH"
+    },
+    "eqh_strength": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.0,
+      "neutral_sentinel_frac": 0.0,
+      "redundancy_max_abs_spearman": 0.15,
+      "stability_mean_shift_abs": 0.0072,
+      "drift_status": "WATCH",
+      "drift_note": "v1.0->v1.1 design change; not market drift",
+      "version_delta_mean": -0.3063,
+      "version_frac_changed": 1.0,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "MEDIUM"
+    },
+    "eql_strength": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.0,
+      "neutral_sentinel_frac": 0.0,
+      "redundancy_max_abs_spearman": 0.286,
+      "stability_mean_shift_abs": 0.0261,
+      "drift_status": "WARNING",
+      "drift_note": "v1.0->v1.1 design change; not market drift",
+      "version_delta_mean": 0.0657,
+      "version_frac_changed": 1.0,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "MEDIUM"
+    },
+    "htf_liquidity_score": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.568,
+      "neutral_sentinel_frac": 0.016,
+      "redundancy_max_abs_spearman": 0.37,
+      "stability_mean_shift_abs": 0.559,
+      "drift_status": "NORMAL",
+      "drift_note": "stable family (unchanged between versions) \u2014 valid drift signal",
+      "version_delta_mean": 0.0,
+      "version_frac_changed": 0.0,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "HIGH"
+    },
+    "internal_liquidity_distance": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.04,
+      "neutral_sentinel_frac": 0.04,
+      "redundancy_max_abs_spearman": 0.516,
+      "stability_mean_shift_abs": 0.0458,
+      "drift_status": "WARNING",
+      "drift_note": "stable family (unchanged between versions) \u2014 valid drift signal",
+      "version_delta_mean": 0.0,
+      "version_frac_changed": 0.0,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "MEDIUM"
+    },
+    "external_liquidity_distance": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.87,
+      "neutral_sentinel_frac": 0.87,
+      "redundancy_max_abs_spearman": 0.363,
+      "stability_mean_shift_abs": 0.028,
+      "drift_status": "CRITICAL",
+      "drift_note": "stable family (unchanged between versions) \u2014 valid drift signal",
+      "version_delta_mean": 0.0,
+      "version_frac_changed": 0.0,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "MEDIUM"
+    },
+    "liquidity_confluence": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.998,
+      "neutral_sentinel_frac": 0.998,
+      "redundancy_max_abs_spearman": 0.068,
+      "stability_mean_shift_abs": 0.0018,
+      "drift_status": "CRITICAL",
+      "drift_note": "v1.0->v1.1 design change; not market drift",
+      "version_delta_mean": -0.7975,
+      "version_frac_changed": 0.5675,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "HIGH"
+    },
+    "liquidity_sweep_state": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.0,
+      "neutral_sentinel_frac": 0.0,
+      "redundancy_max_abs_spearman": 0.685,
+      "stability_mean_shift_abs": 0.044,
+      "drift_status": "CRITICAL",
+      "drift_note": "v1.0->v1.1 design change; not market drift",
+      "version_delta_mean": 1.6675,
+      "version_frac_changed": 0.65,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "HIGH"
+    },
+    "post_sweep_displacement": {
+      "causality": "PASS",
+      "parity": "PASS",
+      "coverage_frac": 1.0,
+      "missingness_frac": 0.0,
+      "saturation_frac": 0.006,
+      "neutral_sentinel_frac": 0.006,
+      "redundancy_max_abs_spearman": 0.685,
+      "stability_mean_shift_abs": 0.0351,
+      "drift_status": "CRITICAL",
+      "drift_note": "stable family (unchanged between versions) \u2014 valid drift signal",
+      "version_delta_mean": -0.0595,
+      "version_frac_changed": 0.1625,
+      "shadow_influence": "NONE (no valid shadow observations yet)",
+      "oos_importance": "N/A (no fitted model yet)",
+      "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
+      "research_usefulness": "MEDIUM"
+    }
+  },
+  "families": {
+    "LOCATION": {
+      "members": [
+        "bsl_distance_atr",
+        "ssl_distance_atr"
+      ],
+      "mean_saturation": 0.043,
+      "max_redundancy": 0.516,
+      "drift_statuses": {
+        "bsl_distance_atr": "CRITICAL",
+        "ssl_distance_atr": "CRITICAL"
+      }
+    },
+    "STRUCTURE": {
+      "members": [
+        "eqh_strength",
+        "eql_strength"
+      ],
+      "mean_saturation": 0.0,
+      "max_redundancy": 0.286,
+      "drift_statuses": {
+        "eqh_strength": "WATCH",
+        "eql_strength": "WARNING"
+      }
+    },
+    "HTF": {
+      "members": [
+        "htf_liquidity_score"
+      ],
+      "mean_saturation": 0.568,
+      "max_redundancy": 0.37,
+      "drift_statuses": {
+        "htf_liquidity_score": "NORMAL"
+      }
+    },
+    "CONFLUENCE": {
+      "members": [
+        "liquidity_confluence"
+      ],
+      "mean_saturation": 0.998,
+      "max_redundancy": 0.068,
+      "drift_statuses": {
+        "liquidity_confluence": "CRITICAL"
+      }
+    },
+    "EVENT": {
+      "members": [
+        "liquidity_sweep_state"
+      ],
+      "mean_saturation": 0.0,
+      "max_redundancy": 0.685,
+      "drift_statuses": {
+        "liquidity_sweep_state": "CRITICAL"
+      }
+    },
+    "DISPLACEMENT": {
+      "members": [
+        "post_sweep_displacement"
+      ],
+      "mean_saturation": 0.006,
+      "max_redundancy": 0.685,
+      "drift_statuses": {
+        "post_sweep_displacement": "CRITICAL"
+      }
+    },
+    "DISTANCE_EXT": {
+      "members": [
+        "internal_liquidity_distance",
+        "external_liquidity_distance"
+      ],
+      "mean_saturation": 0.455,
+      "max_redundancy": 0.516,
+      "drift_statuses": {
+        "internal_liquidity_distance": "WARNING",
+        "external_liquidity_distance": "CRITICAL"
+      }
+    }
+  }
+}
