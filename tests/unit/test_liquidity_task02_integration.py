@@ -369,9 +369,7 @@ def test_task02_11_runtime_vector_build_60d(tmp_path) -> None:
 
     gov = LiquidityGovernor(enabled=True)
     bars = _bars(80)
-    gov.compute_from_engine(
-        bars=bars, mid_price=3300.0, atr=1.2, decision_at=bars[-1].timestamp
-    )
+    gov.compute_from_engine(bars=bars, mid_price=3300.0, atr=1.2, decision_at=bars[-1].timestamp)
     vec = gov.build_runtime_60d_vector([0.0] * 50)
     assert len(vec) == 60
     assert all(math.isfinite(v) for v in vec)
@@ -424,7 +422,9 @@ def test_task02_15_golden_snapshot_parity(tmp_path) -> None:
     from nexus_scalp.features.liquidity_engine import compute_liquidity_features
     from nexus_scalp.market_data.bar_aggregator import BarData
 
-    golden_path = Path(__file__).resolve().parents[2] / "tests" / "golden" / "liquidity_70d_reference.json"
+    golden_path = (
+        Path(__file__).resolve().parents[2] / "tests" / "golden" / "liquidity_70d_reference.json"
+    )
     if not golden_path.exists():
         pytest.skip("golden liquidity reference not generated")
     golden = json.loads(golden_path.read_text(encoding="utf-8"))
@@ -438,10 +438,17 @@ def test_task02_15_golden_snapshot_parity(tmp_path) -> None:
         ts = row["time_utc"]
         ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
         bars.append(
-            BarData(symbol="XAUUSD", timeframe="M1", timestamp=ts,
-                    open=float(row["open"]), high=float(row["high"]),
-                    low=float(row["low"]), close=float(row["close"]),
-                    tick_volume=int(row.get("tick_volume", 0) or 0), is_complete=True)
+            BarData(
+                symbol="XAUUSD",
+                timeframe="M1",
+                timestamp=ts,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                tick_volume=int(row.get("tick_volume", 0) or 0),
+                is_complete=True,
+            )
         )
     for name, sample in golden["samples"].items():
         decision = datetime.fromisoformat(sample["timestamp"])
@@ -502,7 +509,6 @@ def test_task02_13_14_dataset_replay_runtime_parity(tmp_path) -> None:
     from nexus_scalp.features.liquidity_engine import LIQUIDITY_FEATURE_NAMES
 
     # the liquidity feature NAMES contract is asserted by TEST-TASK02-10
-
 
 
 # ---------------------------------------------------------------------------

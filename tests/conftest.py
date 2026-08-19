@@ -17,6 +17,6 @@ import pytest
 
 # Pull fixture definitions into this conftest's namespace so pytest's
 # fixture manager sees them repo-wide (testpaths=tests).
-from tests.helpers.shadow70_fixtures import contract, tmp_artifacts  # noqa: F401
+from tests.helpers.shadow70_fixtures import contract, tmp_artifacts
 
 pytest.register_assert_rewrite("tests.helpers.shadow70_fixtures")

@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "<string>", line 8, in <module>
+  File "C:\Users\Capsizer\source\repos\NexusTradingForexBot\scratch\bench_70d_abc_driver.py", line 160, in main
+    raw = _load_raw(n_rows)
+          ^^^^^^^^^^^^^^^^^
+  File "C:\Users\Capsizer\source\repos\NexusTradingForexBot\scratch\bench_70d_abc_driver.py", line 56, in _load_raw
+    df = pl.read_parquet(RAW_M5)
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\polars\_utils\deprecation.py", line 135, in wrapper
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\polars\_utils\deprecation.py", line 135, in wrapper
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\polars\io\parquet\functions.py", line 195, in read_parquet
+    return lf.collect()
+           ^^^^^^^^^^^^
+  File "C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\polars\lazyframe\frame.py", line 1967, in collect
+    return wrap_df(ldf.collect(callback))
+                   ^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: The system cannot find the path specified. (os error 3): C:\Users\Capsizer\source\repos\data\raw\XAUUSD_M5.parquet
+BENCH_DONE RC=1

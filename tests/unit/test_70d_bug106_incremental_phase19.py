@@ -121,6 +121,7 @@ def test_build_70d_dataset_canonical_still_works(
     )
     assert handle.get("dataset_id") == "ag09_canonical_check"
 
+
 # ---------------------------------------------------------------------------
 # TEST-BUG106 suite (mission 31) — extended by Hermes-Bug106
 # ---------------------------------------------------------------------------

@@ -117,6 +117,7 @@ def sweep_lookback(pools: list[Any], times: list[datetime], i: int, price: float
     bars_needed = max(bars_needed, 2)
     return min(SWEEP_ABS_MAX_BARS, bars_needed)
 
+
 # ---------------------------------------------------------------------------
 # Incremental session/daily pools
 # ---------------------------------------------------------------------------
@@ -198,21 +199,20 @@ class IncrementalLiquidityState:
         # slice comparisons (no list rebuilds, no _bars_to_arrays).
 
     def _precompute_daily(self) -> None:
-            """One-pass daily grouping + running high/low per UTC day."""
-            for i in range(self.n):
-                d = self.times[i].date().isoformat()
-                if d not in self._day_idx:
-                    self._day_idx[d] = [i]
+        """One-pass daily grouping + running high/low per UTC day."""
+        for i in range(self.n):
+            d = self.times[i].date().isoformat()
+            if d not in self._day_idx:
+                self._day_idx[d] = [i]
+                self._day_hi[d] = float(self.highs[i])
+                self._day_lo[d] = float(self.lows[i])
+            else:
+                self._day_idx[d].append(i)
+                if self.highs[i] > self._day_hi[d]:
                     self._day_hi[d] = float(self.highs[i])
+                if self.lows[i] < self._day_lo[d]:
                     self._day_lo[d] = float(self.lows[i])
-                else:
-                    self._day_idx[d].append(i)
-                    if self.highs[i] > self._day_hi[d]:
-                        self._day_hi[d] = float(self.highs[i])
-                    if self.lows[i] < self._day_lo[d]:
-                        self._day_lo[d] = float(self.lows[i])
-            self._last_day_processed = self.n - 1
-
+        self._last_day_processed = self.n - 1
 
     def _precompute_htf(self) -> None:
         """Per-period UTC-minute-bucket running high/low, computed ONCE.
@@ -274,12 +274,26 @@ class IncrementalLiquidityState:
             cl_slice = self.closes[c : k + 1]
             if p.side == PoolSide.BSL:
                 touches = int((hi_slice >= p.price - tol).sum())
-                sweep_evidence = bool(((hi_slice > p.price) & (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR)).any())
-                reclaim_evidence = bool((cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR).any())
+                sweep_evidence = bool(
+                    (
+                        (hi_slice > p.price)
+                        & (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR)
+                    ).any()
+                )
+                reclaim_evidence = bool(
+                    (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR).any()
+                )
             else:
                 touches = int((lo_slice <= p.price + tol).sum())
-                sweep_evidence = bool(((lo_slice < p.price) & (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR)).any())
-                reclaim_evidence = bool((cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR).any())
+                sweep_evidence = bool(
+                    (
+                        (lo_slice < p.price)
+                        & (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR)
+                    ).any()
+                )
+                reclaim_evidence = bool(
+                    (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR).any()
+                )
             state = PoolState.CONFIRMED
             last_touched = p.last_touched_at
             if touches:
@@ -336,13 +350,27 @@ class IncrementalLiquidityState:
             cl_slice = self.closes[c : k + 1]
             if p.side == PoolSide.BSL:
                 touches = int((hi_slice >= p.price - tol).sum())
-                sweep_evidence = bool(((hi_slice > p.price) & (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR)).any())
-                reclaim_evidence = bool((cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR).any())
+                sweep_evidence = bool(
+                    (
+                        (hi_slice > p.price)
+                        & (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR)
+                    ).any()
+                )
+                reclaim_evidence = bool(
+                    (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR).any()
+                )
                 touched_at = self.times[c] if touches else None
             else:
                 touches = int((lo_slice <= p.price + tol).sum())
-                sweep_evidence = bool(((lo_slice < p.price) & (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR)).any())
-                reclaim_evidence = bool((cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR).any())
+                sweep_evidence = bool(
+                    (
+                        (lo_slice < p.price)
+                        & (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR)
+                    ).any()
+                )
+                reclaim_evidence = bool(
+                    (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR).any()
+                )
                 touched_at = self.times[c] if touches else None
             state = PoolState.CONFIRMED
             last_touched = p.last_touched_at
@@ -355,10 +383,15 @@ class IncrementalLiquidityState:
                 state = PoolState.RECLAIMED
             out.append(
                 LiquidityPool(
-                    price=p.price, side=p.side, source=p.source,
-                    timeframe_minutes=p.timeframe_minutes, strength=p.strength,
-                    candidate_at=p.candidate_at, confirmed_at=p.confirmed_at,
-                    last_touched_at=last_touched, state=state,
+                    price=p.price,
+                    side=p.side,
+                    source=p.source,
+                    timeframe_minutes=p.timeframe_minutes,
+                    strength=p.strength,
+                    candidate_at=p.candidate_at,
+                    confirmed_at=p.confirmed_at,
+                    last_touched_at=last_touched,
+                    state=state,
                     active=state not in (PoolState.INVALIDATED,),
                     touch_count=touches,
                 )
@@ -394,14 +427,22 @@ class IncrementalLiquidityState:
         confirmed = self.times[i1]
         return [
             LiquidityPool(
-                price=hi, side=PoolSide.BSL, source=PoolSource.SESSION_HIGH,
-                timeframe_minutes=1, strength=0.8,
-                candidate_at=self.times[hi_idx], confirmed_at=confirmed,
+                price=hi,
+                side=PoolSide.BSL,
+                source=PoolSource.SESSION_HIGH,
+                timeframe_minutes=1,
+                strength=0.8,
+                candidate_at=self.times[hi_idx],
+                confirmed_at=confirmed,
             ),
             LiquidityPool(
-                price=lo, side=PoolSide.SSL, source=PoolSource.SESSION_LOW,
-                timeframe_minutes=1, strength=0.8,
-                candidate_at=self.times[lo_idx], confirmed_at=confirmed,
+                price=lo,
+                side=PoolSide.SSL,
+                source=PoolSource.SESSION_LOW,
+                timeframe_minutes=1,
+                strength=0.8,
+                candidate_at=self.times[lo_idx],
+                confirmed_at=confirmed,
             ),
         ]
 
@@ -431,12 +472,24 @@ class IncrementalLiquidityState:
         p_dl = self._day_lo[prev]
         confirmed = self.times[max(prev_idx)]
         pools = [
-            LiquidityPool(price=p_dh, side=PoolSide.BSL, source=PoolSource.PDH,
-                          timeframe_minutes=1440, strength=1.2,
-                          candidate_at=confirmed, confirmed_at=confirmed),
-            LiquidityPool(price=p_dl, side=PoolSide.SSL, source=PoolSource.PDL,
-                          timeframe_minutes=1440, strength=1.2,
-                          candidate_at=confirmed, confirmed_at=confirmed),
+            LiquidityPool(
+                price=p_dh,
+                side=PoolSide.BSL,
+                source=PoolSource.PDH,
+                timeframe_minutes=1440,
+                strength=1.2,
+                candidate_at=confirmed,
+                confirmed_at=confirmed,
+            ),
+            LiquidityPool(
+                price=p_dl,
+                side=PoolSide.SSL,
+                source=PoolSource.PDL,
+                timeframe_minutes=1440,
+                strength=1.2,
+                candidate_at=confirmed,
+                confirmed_at=confirmed,
+            ),
         ]
         completed_days = day_list[:-1][-lookback_days:]
         if completed_days:
@@ -444,12 +497,28 @@ class IncrementalLiquidityState:
             wl = min(self._day_lo[d] for d in completed_days)
             last_day = self._day_idx[completed_days[-1]]
             conf = self.times[max(last_day)]
-            pools.append(LiquidityPool(price=wh, side=PoolSide.BSL, source=PoolSource.PWH,
-                                       timeframe_minutes=1440 * 7, strength=1.4,
-                                       candidate_at=conf, confirmed_at=conf))
-            pools.append(LiquidityPool(price=wl, side=PoolSide.SSL, source=PoolSource.PWL,
-                                       timeframe_minutes=1440 * 7, strength=1.4,
-                                       candidate_at=conf, confirmed_at=conf))
+            pools.append(
+                LiquidityPool(
+                    price=wh,
+                    side=PoolSide.BSL,
+                    source=PoolSource.PWH,
+                    timeframe_minutes=1440 * 7,
+                    strength=1.4,
+                    candidate_at=conf,
+                    confirmed_at=conf,
+                )
+            )
+            pools.append(
+                LiquidityPool(
+                    price=wl,
+                    side=PoolSide.SSL,
+                    source=PoolSource.PWL,
+                    timeframe_minutes=1440 * 7,
+                    strength=1.4,
+                    candidate_at=conf,
+                    confirmed_at=conf,
+                )
+            )
         return pools
 
     def htf_score_at(self, decision: datetime, atr: float) -> float:
@@ -570,21 +639,24 @@ def compute_70d_frame_fast(
         pools_all = vis_pools + session_pools + daily_pools
         pools_all = lstate.advance_pools_np(pools_all, ts, atr)
         # filter usable
-        usable = [
-            p for p in pools_all
-            if p.usable_at <= ts and p.state != PoolState.CANDIDATE
-        ]
+        usable = [p for p in pools_all if p.usable_at <= ts and p.state != PoolState.CANDIDATE]
         bsl_above = [p for p in usable if p.side == PoolSide.BSL and p.price > float(b["close"])]
         ssl_below = [p for p in usable if p.side == PoolSide.SSL and p.price < float(b["close"])]
         price = float(b["close"])
         safe_atr = max(atr, MIN_ATR)
         bsl_dist = (
-            _clip3(_safe_div(min(p.price for p in bsl_above) - price, safe_atr, DEFAULT_BSL_DISTANCE))
-            if bsl_above else DEFAULT_BSL_DISTANCE
+            _clip3(
+                _safe_div(min(p.price for p in bsl_above) - price, safe_atr, DEFAULT_BSL_DISTANCE)
+            )
+            if bsl_above
+            else DEFAULT_BSL_DISTANCE
         )
         ssl_dist = (
-            _clip3(_safe_div(price - max(p.price for p in ssl_below), safe_atr, DEFAULT_SSL_DISTANCE))
-            if ssl_below else DEFAULT_SSL_DISTANCE
+            _clip3(
+                _safe_div(price - max(p.price for p in ssl_below), safe_atr, DEFAULT_SSL_DISTANCE)
+            )
+            if ssl_below
+            else DEFAULT_SSL_DISTANCE
         )
         sh_vis = [p for p in vis_pools if p.side == PoolSide.BSL]
         sl_vis = [p for p in vis_pools if p.side == PoolSide.SSL]
@@ -600,8 +672,16 @@ def compute_70d_frame_fast(
         )
 
         liq10 = [
-            bsl_dist, ssl_dist, _clip3(eqh), _clip3(eql), _clip3(htf),
-            internal, external, confluence, _clip3(sweep_state), displacement,
+            bsl_dist,
+            ssl_dist,
+            _clip3(eqh),
+            _clip3(eql),
+            _clip3(htf),
+            internal,
+            external,
+            confluence,
+            _clip3(sweep_state),
+            displacement,
         ]
 
         if news_enabled:

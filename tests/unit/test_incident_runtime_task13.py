@@ -415,7 +415,7 @@ class TestAccountingFirstDivergence:
         for r in res["records"]:
             assert r["first_correct_stage"] == "BROKER"
             assert r["first_incorrect_stage"] == "LEDGER"
-            assert r["classification"] == "ZERO_DEFAULT_BUG"
+            assert r["classification"] == "RECONSTRUCTION_FAILURE"
 
     def test_recovery_candidates_generated(self, tmp_path: Path) -> None:
         db = _audit_db(tmp_path, zero_ledger=2)

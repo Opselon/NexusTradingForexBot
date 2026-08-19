@@ -78,7 +78,6 @@ def _feature_registry() -> dict[str, Any]:
             SCHEMA_ID,
             SCHEMA_VERSION,
             canonical_feature_names,
-            canonical_registry_json,
             family_of,
             feature_schema_hash,
         )
@@ -106,7 +105,7 @@ def _feature_registry() -> dict[str, Any]:
             },
             "rows": rows,
         }
-    except Exception as exc:  # noqa: BLE001 - observable degradation
+    except Exception as exc:
         return {
             "available": False,
             "reason": f"FEATURE_REGISTRY_UNAVAILABLE: {exc}",
@@ -169,9 +168,7 @@ def _runtime_section(engine: Any) -> dict[str, Any]:
             tick = getattr(engine, "_last_tick", None)
             if tick is not None and getattr(tick, "timestamp", None) is not None:
                 try:
-                    tick_age_sec = max(
-                        0.0, (datetime.now(UTC) - tick.timestamp).total_seconds()
-                    )
+                    tick_age_sec = max(0.0, (datetime.now(UTC) - tick.timestamp).total_seconds())
                 except Exception:
                     tick_age_sec = None
             if not broker_connected:
@@ -193,9 +190,7 @@ def _runtime_section(engine: Any) -> dict[str, Any]:
     if fv is not None:
         ts = getattr(fv, "timestamp_utc", None) or getattr(fv, "timestamp", None)
         if ts is not None:
-            last_feature_update = (
-                ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
-            )
+            last_feature_update = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
         try:
             feature_latency_ms = getattr(engine, "_last_inference_latency_ms", None)
         except Exception:
@@ -238,13 +233,11 @@ def _runtime_section(engine: Any) -> dict[str, Any]:
             "tick_age_sec": tick_age_sec,
             "bar_stream": bar_stream,
             "news": "ENABLED" if _flag("_news_enabled") else "DISABLED",
-            "liquidity": "ENABLED" if _flag("_liquidity_enabled") else (
-                "DISABLED"
-            ),
+            "liquidity": "ENABLED" if _flag("_liquidity_enabled") else ("DISABLED"),
             "shadow": "RUNNING" if _flag("_shadow_worker_started") else "IDLE",
-            "shadow70": "RUNNING" if _flag("_shadow70_worker_started") else (
-                "IDLE" if _flag("_shadow70_enabled") else "DISABLED"
-            ),
+            "shadow70": "RUNNING"
+            if _flag("_shadow70_worker_started")
+            else ("IDLE" if _flag("_shadow70_enabled") else "DISABLED"),
             "research": "RUNNING" if _flag("_research_worker_started") else "IDLE",
             "training": "RUNNING" if _flag("_training_worker_started") else "IDLE",
             "accounting": "RUNNING" if _flag("_accounting_worker_started") else "IDLE",
@@ -297,9 +290,7 @@ def _features_section(engine: Any) -> dict[str, Any]:
                 vec = vectorize_news_context(ctx)
                 selected = [vec[i] for i in (0, 1, 2, 3, 4, 5, 6, 7, 8, 10)]
                 news_values = [float(v) for v in selected]
-                news_ts = (
-                    ctx.timestamp.isoformat() if getattr(ctx, "timestamp", None) else None
-                )
+                news_ts = ctx.timestamp.isoformat() if getattr(ctx, "timestamp", None) else None
                 news_state = str(getattr(ctx.state, "value", "NORMAL"))
                 assert len(news_values) == len(NEWS_10D_NAMES)  # contract guard
         except Exception:
@@ -326,7 +317,9 @@ def _features_section(engine: Any) -> dict[str, Any]:
         liq_values = []
 
     # Merge stage values per family.
-    def _stage(family: str, idx: int, base: list[float], news: list[float], liq: list[float]) -> dict[str, Any]:
+    def _stage(
+        family: str, idx: int, base: list[float], news: list[float], liq: list[float]
+    ) -> dict[str, Any]:
         if family == "base":
             if idx < len(base):
                 return {"raw": base[idx], "final": base[idx], "exposed": True}
@@ -353,9 +346,9 @@ def _features_section(engine: Any) -> dict[str, Any]:
         else:
             try:
                 v = float(value)
-                if v != v:  # NaN
-                    status = "INVALID"
-                elif v in (float("inf"), float("-inf")):
+                import math
+
+                if math.isnan(v) or math.isinf(v):
                     status = "INVALID"
             except (TypeError, ValueError):
                 status = "UNAVAILABLE"
@@ -372,7 +365,11 @@ def _features_section(engine: Any) -> dict[str, Any]:
                 "source": (
                     "ENGINE_STATE"
                     if family in ("base", "news") and stage["exposed"]
-                    else ("LIQUIDITY_GOVERNOR" if family == "liquidity" and stage["exposed"] else "UNAVAILABLE")
+                    else (
+                        "LIQUIDITY_GOVERNOR"
+                        if family == "liquidity" and stage["exposed"]
+                        else "UNAVAILABLE"
+                    )
                 ),
                 "timestamp": (
                     fv_ts
@@ -559,9 +556,7 @@ def _model_section(engine: Any) -> dict[str, Any]:
         # validate width vs classes
         if probs_list is not None and num_classes is not None and len(probs_list) != num_classes:
             model_output_status = "MODEL_OUTPUT_INVALID"
-            out["invalid_reason"] = (
-                f"probs width {len(probs_list)} != model classes {num_classes}"
-            )
+            out["invalid_reason"] = f"probs width {len(probs_list)} != model classes {num_classes}"
         # CLASS-OF-BUG regression (actual_classes=128): even when the probs
         # width matches the artifact's own head, a non-4-class live output is
         # INVALID for the production contract (expected_classes=4) — the
@@ -582,9 +577,7 @@ def _model_section(engine: Any) -> dict[str, Any]:
             or _feature_registry().get("schema_hash"),
             "scaler_hash": scaler_hash,
             "scaler_ready": scaler_ready,
-            "input_tensor_shape": (
-                [1, len(input_tensor)] if input_tensor is not None else None
-            ),
+            "input_tensor_shape": ([1, len(input_tensor)] if input_tensor is not None else None),
             "input_dtype": "float32",
             "device": str(next(model.parameters()).device)
             if hasattr(model, "parameters")
@@ -601,17 +594,13 @@ def _model_section(engine: Any) -> dict[str, Any]:
             },
             "logits": logits_list,
             "predicted_class": predicted,
-            "confidence": (
-                max(probs_list) if probs_list else None
-            ),
+            "confidence": (max(probs_list) if probs_list else None),
             "status": model_output_status,
             "inference_latency_ms": getattr(engine, "_last_inference_latency_ms", None),
-            "inference_timestamp": getattr(
-                getattr(engine, "_last_fv", None), "timestamp_utc", None
-            )
+            "inference_timestamp": getattr(getattr(engine, "_last_fv", None), "timestamp_utc", None)
             or None,
         }
-    except Exception as exc:  # noqa: BLE001 - visible failure
+    except Exception as exc:
         out = {
             "available": False,
             "reason": f"MODEL_STATE_ERROR: {exc}",
@@ -667,9 +656,7 @@ def _confidence_section(engine: Any) -> dict[str, Any]:
                 suit_adj = None
 
         final_conf = float(getattr(proposal, "confidence", 0.0)) if proposal else None
-        final_action = (
-            getattr(proposal.action, "value", None) if proposal is not None else None
-        )
+        final_action = getattr(proposal.action, "value", None) if proposal is not None else None
 
         decision = None
         if final_conf is not None and threshold is not None:
@@ -697,7 +684,7 @@ def _confidence_section(engine: Any) -> dict[str, Any]:
                 {"name": "FINAL", "value": final_conf, "present": final_conf is not None},
             ],
         }
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {"available": False, "reason": f"CONFIDENCE_ERROR: {exc}"}
 
 
@@ -715,14 +702,13 @@ def _policy_section(engine: Any) -> dict[str, Any]:
     gates: list[dict[str, Any]] = []
 
     # 1. Signal / model action
-    model_action = getattr(proposal, "model_action", None) if proposal else None
     action = getattr(proposal.action, "value", None) if proposal else None
     gates.append(
         {
             "name": "SIGNAL",
-            "status": "PASS" if action not in (None, "NO_TRADE", "WAIT") else (
-                "PASS" if action in ("NO_TRADE", "WAIT") else "UNAVAILABLE"
-            ),
+            "status": "PASS"
+            if action not in (None, "NO_TRADE", "WAIT")
+            else ("PASS" if action in ("NO_TRADE", "WAIT") else "UNAVAILABLE"),
             "actual": action,
             "threshold": "TRADE or NO_TRADE",
             "reason": getattr(proposal, "reason_code", "") or "",
@@ -743,9 +729,9 @@ def _policy_section(engine: Any) -> dict[str, Any]:
                 "status": "PASS" if conf >= threshold else "FAIL",
                 "actual": round(conf, 4),
                 "threshold": round(threshold, 4),
-                "reason": "confidence >= threshold" if conf >= threshold else (
-                    "confidence below threshold"
-                ),
+                "reason": "confidence >= threshold"
+                if conf >= threshold
+                else ("confidence below threshold"),
             }
         )
     else:
@@ -766,9 +752,7 @@ def _policy_section(engine: Any) -> dict[str, Any]:
     gates.append(
         {
             "name": "REGIME",
-            "status": (
-                "BLOCKED" if guardian == "ACTIVE" else "PASS"
-            ),
+            "status": ("BLOCKED" if guardian == "ACTIVE" else "PASS"),
             "actual": regime_name or "UNKNOWN",
             "threshold": "UNSAFE regimes blocked",
             "reason": (
@@ -793,9 +777,9 @@ def _policy_section(engine: Any) -> dict[str, Any]:
                 "status": "PASS" if rr >= min_rr else "FAIL",
                 "actual": round(rr, 3),
                 "threshold": round(min_rr, 3),
-                "reason": "risk/reward meets minimum" if rr >= min_rr else (
-                    "risk/reward below minimum"
-                ),
+                "reason": "risk/reward meets minimum"
+                if rr >= min_rr
+                else ("risk/reward below minimum"),
             }
         )
     else:
@@ -845,7 +829,9 @@ def _policy_section(engine: Any) -> dict[str, Any]:
             {
                 "name": "NEWS",
                 "status": "PASS",
-                "actual": "DISABLED" if not getattr(engine, "_news_enabled", False) else "NO_VERDICT",
+                "actual": "DISABLED"
+                if not getattr(engine, "_news_enabled", False)
+                else "NO_VERDICT",
                 "threshold": "-",
                 "reason": "news gate not applied or disabled",
             }
@@ -866,12 +852,14 @@ def _policy_section(engine: Any) -> dict[str, Any]:
     gates.append(
         {
             "name": "EXPOSURE",
-            "status": "PASS" if exposure_ok is True else (
-                "BLOCKED" if exposure_ok is False else "UNAVAILABLE"
-            ),
+            "status": "PASS"
+            if exposure_ok is True
+            else ("BLOCKED" if exposure_ok is False else "UNAVAILABLE"),
             "actual": 1 if exposure_ok is True else (0 if exposure_ok is False else None),
             "threshold": "1 (slot free)",
-            "reason": "exposure slot available" if exposure_ok is True else (
+            "reason": "exposure slot available"
+            if exposure_ok is True
+            else (
                 "exposure slot occupied" if exposure_ok is False else "exposure state unavailable"
             ),
         }
@@ -882,9 +870,9 @@ def _policy_section(engine: Any) -> dict[str, Any]:
     gates.append(
         {
             "name": "RISK",
-            "status": "PASS" if risk_allowed is True else (
-                "FAIL" if risk_allowed is False else "UNAVAILABLE"
-            ),
+            "status": "PASS"
+            if risk_allowed is True
+            else ("FAIL" if risk_allowed is False else "UNAVAILABLE"),
             "actual": risk_allowed,
             "threshold": "True",
             "reason": getattr(proposal, "rejection_reason", "") or "",
@@ -897,11 +885,7 @@ def _policy_section(engine: Any) -> dict[str, Any]:
     gates.append(
         {
             "name": "EXECUTION",
-            "status": (
-                "BLOCKED"
-                if blocked_by not in (None, "")
-                else ("PASS" if action not in (None, "NO_TRADE", "WAIT") else "PASS")
-            ),
+            "status": ("BLOCKED" if blocked_by not in (None, "") else "PASS"),
             "actual": stage or "-",
             "threshold": "-",
             "reason": f"blocked_by={blocked_by}" if blocked_by else "no blocker",
@@ -946,7 +930,7 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         out["max_spread_points"] = float(cfg.risk.max_spread_points)
         out["max_account_drawdown_pct"] = float(cfg.risk.max_account_drawdown_pct)
         out["hard_max_lots"] = 10.0
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         out["config_error"] = str(exc)
 
     # Account truth from the adapter snapshot.
@@ -975,9 +959,7 @@ def _risk_section(engine: Any) -> dict[str, Any]:
             peak = getattr(engine, "_peak_equity", 0.0)
             eq = account["equity"]
             if peak and eq is not None:
-                account["drawdown_pct"] = round(
-                    (peak - eq) / max(peak, 1.0) * 100.0, 3
-                )
+                account["drawdown_pct"] = round((peak - eq) / max(peak, 1.0) * 100.0, 3)
     except Exception:
         pass
     out["account"] = account
@@ -985,12 +967,10 @@ def _risk_section(engine: Any) -> dict[str, Any]:
     # RiskEngine decision on the last proposal.
     proposal = getattr(engine, "_last_proposal", None)
     risk_allowed = getattr(proposal, "risk_allowed", None) if proposal else None
-    out["decision"] = "PASS" if risk_allowed is True else (
-        "BLOCK" if risk_allowed is False else "NOT_EVALUATED"
+    out["decision"] = (
+        "PASS" if risk_allowed is True else ("BLOCK" if risk_allowed is False else "NOT_EVALUATED")
     )
-    out["reason"] = (
-        getattr(proposal, "rejection_reason", "") if proposal else "no proposal yet"
-    )
+    out["reason"] = getattr(proposal, "rejection_reason", "") if proposal else "no proposal yet"
     return out
 
 
@@ -1030,9 +1010,11 @@ def _exposure_section(engine: Any) -> dict[str, Any]:
     try:
         symbol = engine.config.execution.symbol
         all_positions = engine.adapter.get_all_positions(symbol=symbol)
-        pending_orders = engine.adapter.get_pending_orders(symbol=symbol) if hasattr(
-            engine.adapter, "get_pending_orders"
-        ) else []
+        pending_orders = (
+            engine.adapter.get_pending_orders(symbol=symbol)
+            if hasattr(engine.adapter, "get_pending_orders")
+            else []
+        )
         broker = {
             "positions": len(all_positions),
             "pendings": len(pending_orders),
@@ -1045,9 +1027,7 @@ def _exposure_section(engine: Any) -> dict[str, Any]:
     # Reconciliation age from the order manager monotonic gate.
     last_reconcile = getattr(om, "_last_reconcile_attempt", None) if om else None
     if last_reconcile is not None:
-        out["last_reconciliation"] = datetime.fromtimestamp(
-            last_reconcile, tz=UTC
-        ).isoformat()
+        out["last_reconciliation"] = datetime.fromtimestamp(last_reconcile, tz=UTC).isoformat()
         out["reconciliation_age_sec"] = round(max(0.0, time.monotonic() - last_reconcile), 1)
     else:
         out["last_reconciliation"] = None
@@ -1118,18 +1098,14 @@ def _positions_section(engine: Any) -> dict[str, Any]:
                 pos["mae"] = mae
                 pos["peak_pnl"] = om._peak_profit_usd.get(ticket)
                 pos["peak_drawdown"] = (
-                    om._peak_drawdown_usd.get(ticket)
-                    if hasattr(om, "_peak_drawdown_usd")
-                    else None
+                    om._peak_drawdown_usd.get(ticket) if hasattr(om, "_peak_drawdown_usd") else None
                 )
                 pos["hold_seconds"] = None
                 entry_ts = om._entry_timestamps.get(ticket)
                 if entry_ts is not None:
                     try:
                         now = tick.timestamp if tick is not None else datetime.now(UTC)
-                        pos["hold_seconds"] = max(
-                            0.0, (now - entry_ts).total_seconds()
-                        )
+                        pos["hold_seconds"] = max(0.0, (now - entry_ts).total_seconds())
                     except Exception:
                         pass
                 try:
@@ -1147,19 +1123,15 @@ def _positions_section(engine: Any) -> dict[str, Any]:
                         else None
                     )
                     pos["exit_state"] = (
-                        getattr(prot, "exit_state", None)
-                        if hasattr(prot, "exit_state")
-                        else None
+                        getattr(prot, "exit_state", None) if hasattr(prot, "exit_state") else None
                     )
                 except Exception:
                     pass
                 pos["entry_confidences"] = (
-                    om._entry_confidences.get(ticket)
-                    if hasattr(om, "_entry_confidences")
-                    else None
+                    om._entry_confidences.get(ticket) if hasattr(om, "_entry_confidences") else None
                 )
             out["positions"].append(pos)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         out["reason"] = f"POSITIONS_ERROR: {exc}"
     return out
 
@@ -1220,9 +1192,7 @@ def _exit_section(engine: Any) -> dict[str, Any]:
                 try:
                     prot = om.get_protection_state(ticket)
                     entry["ai_state"] = (
-                        getattr(prot, "exit_state", None)
-                        if hasattr(prot, "exit_state")
-                        else "IDLE"
+                        getattr(prot, "exit_state", None) if hasattr(prot, "exit_state") else "IDLE"
                     ) or "IDLE"
                     entry["strategy_state"] = (
                         getattr(prot, "strategy_exit_state", None)
@@ -1245,7 +1215,7 @@ def _exit_section(engine: Any) -> dict[str, Any]:
                         )
                 entry["exit_candidates"] = candidates
             out["positions"].append(entry)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         out["reason"] = f"EXIT_FORENSICS_ERROR: {exc}"
     return out
 
@@ -1261,7 +1231,7 @@ def _liquidity_section(engine: Any) -> dict[str, Any]:
             }
         report = gov.report()
         return {"available": True, "report": report}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {"available": False, "reason": f"LIQUIDITY_ERROR: {exc}"}
 
 
@@ -1270,7 +1240,10 @@ def _news_section(engine: Any) -> dict[str, Any]:
     dimensions are active in the model (news 10D at 50..59)."""
     if engine is None:
         return {"available": False}
-    out: dict[str, Any] = {"available": True, "enabled": bool(getattr(engine, "_news_enabled", False))}
+    out: dict[str, Any] = {
+        "available": True,
+        "enabled": bool(getattr(engine, "_news_enabled", False)),
+    }
     ctx = None
     try:
         if engine._news_enabled and engine.news_engine is not None:
@@ -1304,9 +1277,7 @@ def _news_section(engine: Any) -> dict[str, Any]:
         out["reason"] = "NO_NEWS_CONTEXT"
     # News dimensions active in the model contract.
     reg = _feature_registry()
-    out["model_dimensions"] = [
-        row for row in reg.get("rows", []) if row["family"] == "news"
-    ]
+    out["model_dimensions"] = [row for row in reg.get("rows", []) if row["family"] == "news"]
     return out
 
 
@@ -1339,8 +1310,7 @@ def _workers_section(engine: Any) -> dict[str, Any]:
             "last_failure": _iso(getattr(worker, "last_failure_at", None)),
             "last_error": str(last_error)[:200],
             "duration_ms": round(duration * 1000.0, 1) if duration else None,
-            "queue": getattr(worker, "queue_size", None)
-            or getattr(worker, "_queue_size", None),
+            "queue": getattr(worker, "queue_size", None) or getattr(worker, "_queue_size", None),
         }
 
     try:
@@ -1433,7 +1403,7 @@ def _database_section(engine: Any) -> dict[str, Any]:
                 "last_read": None,
                 "health": "READY" if path.exists() else "MISSING",
             }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return {
                 "path": _mask_path(str(path)),
                 "health": "ERROR",
@@ -1543,9 +1513,7 @@ def _cache_section(engine: Any) -> dict[str, Any]:
         try:
             ctx = engine.news_engine.current_context()
             if ctx is not None:
-                news_ts = (
-                    ctx.timestamp.isoformat() if getattr(ctx, "timestamp", None) else None
-                )
+                news_ts = ctx.timestamp.isoformat() if getattr(ctx, "timestamp", None) else None
                 news_status = "STALE" if getattr(ctx, "stale", False) else "CACHED"
         except Exception:
             news_status = "ERROR"
@@ -1553,7 +1521,7 @@ def _cache_section(engine: Any) -> dict[str, Any]:
         "status": news_status,
         "size": 1 if news_ts else 0,
         "age_sec": _age(news_ts),
-        "ttl": f"{getattr(getattr(engine, 'news_engine', None), 'cache', None) and getattr(getattr(engine.news_engine, 'cache', None), 'ttl_sec', None) or 60}s",
+        "ttl": f"{(getattr(getattr(engine, 'news_engine', None), 'cache', None) and getattr(getattr(engine.news_engine, 'cache', None), 'ttl_sec', None)) or 60}s",
         "last_update": news_ts,
     }
     # Exposure cache = live tickets cache
@@ -1577,8 +1545,6 @@ def _cache_section(engine: Any) -> dict[str, Any]:
     chart_bars = 0
     try:
         if hasattr(engine, "server_state") is False:
-            from nexus_scalp.web.server import ServerState
-
             ss = getattr(engine, "_server_state", None)
         ss = getattr(engine, "server_state", None)
         if ss is not None:
@@ -1653,7 +1619,9 @@ def _chart_section(engine: Any, app_state: Any) -> dict[str, Any]:
             if completed:
                 out["first_timestamp"] = completed[0].timestamp.isoformat()
                 out["last_timestamp"] = completed[-1].timestamp.isoformat()
-            out["data_source"] = "AGGREGATOR" if out["data_source"] == "UNAVAILABLE" else out["data_source"]
+            out["data_source"] = (
+                "AGGREGATOR" if out["data_source"] == "UNAVAILABLE" else out["data_source"]
+            )
         except Exception:
             pass
     out["sse_state"] = _sse_state_section(app_state)
@@ -1738,7 +1706,7 @@ def build_debug_snapshot(engine: Any, app_state: Any) -> dict[str, Any]:
                 section = {"value": section}
             section["_section"] = name
             return section
-        except Exception as exc:  # noqa: BLE001 - NO HIDDEN ERRORS
+        except Exception as exc:
             return {
                 "_section": name,
                 "available": False,
@@ -1813,9 +1781,7 @@ class DebugSnapshotStore:
         return None
 
 
-def diff_snapshots(
-    a: dict[str, Any], b: dict[str, Any]
-) -> dict[str, Any]:
+def diff_snapshots(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     """Feature + model + confidence + regime + liquidity + news + policy +
     risk diff between two snapshots (brief 34). Pure function; JSON-safe."""
     out: dict[str, Any] = {
@@ -1866,7 +1832,7 @@ def diff_snapshots(
             return None
         return sec.get("value") if "value" in sec else sec
 
-    for key, target in (
+    for key, _target in (
         ("model", "model"),
         ("confidence", "confidence"),
         ("policy", "policy"),

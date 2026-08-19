@@ -639,7 +639,15 @@ class TelegramNotifier:
         with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
             http_status = resp.status
             body = resp.read()
-        return self._parse_response(http_status, body)
+        outcome = self._parse_response(http_status, body)
+        if outcome.get("ok") is True:
+            # Register the dedup signature ONLY on a confirmed delivery:
+            # a failed send (timeout/5xx) never registers, so a retry is
+            # NOT suppressed as a duplicate (the pre-fix poisoning bug).
+            sig = re.sub(r"\s+", "", full_text)[:150]
+            with self._lock:
+                self._recent_messages[sig] = time.time()
+        return outcome
 
     def _parse_response(self, http_status: int, body: bytes) -> dict[str, Any]:
         """HTTP 200 is NOT success — verify the JSON `ok` field (spec §6)."""
@@ -810,11 +818,15 @@ class TelegramNotifier:
         self._recent_messages = {
             k: t for k, t in self._recent_messages.items() if now - t < self.deduplication_window
         }
-        sig = re.sub(r"\d+", "", html_text)[:150]
-        if sig in self._recent_messages:
-            return True
-        self._recent_messages[sig] = now
-        return False
+        # Signature keeps digits: stripping them made every message with
+        # a number share the first-150-chars prefix (report ids, pnl,
+        # trade counts), so the 2nd/3rd distinct notification was wrongly
+        # suppressed as a duplicate.
+        # Dedup compares ONLY against successfully delivered messages:
+        # a failed attempt never registers, so retries of a timed-out
+        # send are NOT suppressed (the pre-fix poisoning bug).
+        sig = re.sub(r"\s+", "", html_text)[:150]
+        return sig in self._recent_messages
 
     def shutdown(self, timeout: float | None = None) -> None:
         self.stop_worker(timeout=timeout)

@@ -1833,9 +1833,7 @@ class LiveEngine:
                 telegram_notifier=notifier if notifier is not None else None,
             )
             self._incident_worker.start()
-            self._incident_telemetry = IncidentTelemetryCollector(
-                worker=self._incident_worker
-            )
+            self._incident_telemetry = IncidentTelemetryCollector(worker=self._incident_worker)
             logger.info("[INCIDENT_WORKER] event=START status=RUNNING")
         except Exception as inc_start_err:
             self._incident_worker = None

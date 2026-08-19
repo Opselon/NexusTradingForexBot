@@ -56,9 +56,19 @@ class ChampionModel:
         self.feature_schema_id = feature_schema_id
         self.feature_dimension = int(feature_dimension)
         self.num_classes = int(num_classes)
-        self.scaler_path = (
-            Path(scaler_path) if scaler_path else Path(str(self.artifact_path) + ".scaler.npz")
-        )
+        if scaler_path:
+            self.scaler_path = Path(scaler_path)
+        else:
+            # Canonical sibling naming: model.pt -> model.scaler.npz (the
+            # trainer/forensics convention). The old '.pt.scaler.npz'
+            # suffix silently missed the real file and logged a misleading
+            # 'scaler missing' warning on every verify while never
+            # validating the scaler.
+            art = Path(self.artifact_path)
+            if art.name.endswith(".pt"):
+                self.scaler_path = art.with_name("model.scaler.npz")
+            else:
+                self.scaler_path = Path(str(art) + ".scaler.npz")
         self.info: ModelArtifactInfo = inspect_artifact(
             self.artifact_path,
             self.scaler_path,

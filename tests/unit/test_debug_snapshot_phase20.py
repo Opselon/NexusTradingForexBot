@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -120,14 +121,10 @@ class _FakeOrderManager:
 
     def count_total_exposure(self, symbol: str | None = None) -> tuple[int, int]:
         positions = sum(
-            1
-            for info in self._live_tickets_cache.values()
-            if info.get("type") != "PENDING"
+            1 for info in self._live_tickets_cache.values() if info.get("type") != "PENDING"
         )
         pendings = sum(
-            1
-            for info in self._live_tickets_cache.values()
-            if info.get("type") == "PENDING"
+            1 for info in self._live_tickets_cache.values() if info.get("type") == "PENDING"
         )
         return positions, pendings
 
@@ -238,7 +235,7 @@ class _FakeNewsContext:
     freshness = 0.9
     source_consensus = 0.6
     stale = False
-    active_high_impact = ["CPI", "FOMC"]
+    active_high_impact: ClassVar[list[str]] = ["CPI", "FOMC"]
 
 
 class _FakeEngine:
@@ -332,9 +329,7 @@ class _FakeEngine:
         self.champion_manager = SimpleNamespace(
             model_id="champ-70d-0001",
             model_version="1.0.0",
-            info=SimpleNamespace(
-                scaler_hash="abc123", artifact_hash="def456"
-            ),
+            info=SimpleNamespace(scaler_hash="abc123", artifact_hash="def456"),
         )
         self.config = SimpleNamespace(
             execution=SimpleNamespace(symbol="XAUUSD", mode=SimpleNamespace(value="LIVE")),
@@ -363,36 +358,58 @@ class _FakeEngine:
             last_error="",
         )
         self.history_sync_worker = SimpleNamespace(
-            running=True, cycle_count=7, last_cycle_start=datetime.now(UTC),
-            last_cycle_duration=0.01, last_error="",
+            running=True,
+            cycle_count=7,
+            last_cycle_start=datetime.now(UTC),
+            last_cycle_duration=0.01,
+            last_error="",
         )
         self.intelligence_worker = SimpleNamespace(
-            running=True, cycle_count=3, last_cycle_start=datetime.now(UTC),
-            last_cycle_duration=0.02, last_error="",
+            running=True,
+            cycle_count=3,
+            last_cycle_start=datetime.now(UTC),
+            last_cycle_duration=0.02,
+            last_error="",
         )
         self.research_worker = SimpleNamespace(
-            running=True, cycle_count=1, last_cycle_start=datetime.now(UTC),
-            last_cycle_duration=0.1, last_error="",
+            running=True,
+            cycle_count=1,
+            last_cycle_start=datetime.now(UTC),
+            last_cycle_duration=0.1,
+            last_error="",
         )
         self.training_worker = SimpleNamespace(
-            running=True, cycle_count=0, last_cycle_start=datetime.now(UTC),
-            last_cycle_duration=0.0, last_error="",
+            running=True,
+            cycle_count=0,
+            last_cycle_start=datetime.now(UTC),
+            last_cycle_duration=0.0,
+            last_error="",
         )
         self.shadow_worker = SimpleNamespace(
-            running=True, cycle_count=11, last_cycle_start=datetime.now(UTC),
-            last_cycle_duration=0.03, last_error="",
+            running=True,
+            cycle_count=11,
+            last_cycle_start=datetime.now(UTC),
+            last_cycle_duration=0.03,
+            last_error="",
         )
         self._shadow70_worker = SimpleNamespace(
-            running=True, cycle_count=9, last_cycle_start=datetime.now(UTC),
-            last_cycle_duration=0.04, last_error="",
+            running=True,
+            cycle_count=9,
+            last_cycle_start=datetime.now(UTC),
+            last_cycle_duration=0.04,
+            last_error="",
         )
         self.news_worker = SimpleNamespace(
-            running=True, cycle_count=5, last_cycle_start=datetime.now(UTC),
-            last_cycle_duration=0.01, last_error="", interval_sec=60.0,
+            running=True,
+            cycle_count=5,
+            last_cycle_start=datetime.now(UTC),
+            last_cycle_duration=0.01,
+            last_error="",
+            interval_sec=60.0,
             _jobs=SimpleNamespace(qsize=lambda: 0),
             _queued_ids=set(),
             engine=SimpleNamespace(
-                current_context=lambda: _FakeNewsContext(),
+                current_context=_FakeNewsContext,
             ),
         )
         self.telegram_notifier = SimpleNamespace(
@@ -405,7 +422,7 @@ class _FakeEngine:
             }
         )
         self.news_engine = SimpleNamespace(
-            current_context=lambda: _FakeNewsContext(),
+            current_context=_FakeNewsContext,
             db=SimpleNamespace(db_path="artifacts/news.db"),
         )
         self.adapter = SimpleNamespace(
@@ -436,11 +453,19 @@ class _FakeEngine:
             get_completed_bars=lambda: [
                 SimpleNamespace(
                     timestamp=datetime(2026, 8, 19, 11, 59, 0, tzinfo=UTC),
-                    open=2400.0, high=2402.0, low=2398.0, close=2401.0, tick_volume=12,
+                    open=2400.0,
+                    high=2402.0,
+                    low=2398.0,
+                    close=2401.0,
+                    tick_volume=12,
                 ),
                 SimpleNamespace(
                     timestamp=datetime(2026, 8, 19, 12, 0, 0, tzinfo=UTC),
-                    open=2401.0, high=2403.0, low=2399.0, close=2402.0, tick_volume=9,
+                    open=2401.0,
+                    high=2403.0,
+                    low=2399.0,
+                    close=2402.0,
+                    tick_volume=9,
                 ),
             ],
             get_current_forming_bar=lambda: None,
@@ -462,9 +487,7 @@ class _FakeEngine:
         )
         self.regime_classifier = SimpleNamespace(_stable_regime=None)
         self._bundle_lock = _FakeLock()
-        self._bundle = _FakeBundle(
-            num_features=dim, num_classes=classes
-        ) if has_bundle else None
+        self._bundle = _FakeBundle(num_features=dim, num_classes=classes) if has_bundle else None
 
     def _load_or_create_bundle(self, **kw):
         return self._bundle
@@ -473,7 +496,7 @@ class _FakeEngine:
         pass
 
 
-def _make_app(engine) -> "TestClient":
+def _make_app(engine) -> TestClient:
     from nexus_scalp.web.server import create_app as _create_app
 
     app = _create_app(engine)
@@ -621,8 +644,15 @@ class TestDebugSections:
         pol = snap["policy"]
         gates = {g["name"]: g for g in pol["gates"]}
         assert set(gates) >= {
-            "SIGNAL", "CONFIDENCE", "REGIME", "R:R", "SAME-LEVEL",
-            "NEWS", "EXPOSURE", "RISK", "EXECUTION",
+            "SIGNAL",
+            "CONFIDENCE",
+            "REGIME",
+            "R:R",
+            "SAME-LEVEL",
+            "NEWS",
+            "EXPOSURE",
+            "RISK",
+            "EXECUTION",
         }
         assert gates["CONFIDENCE"]["status"] == "FAIL"
         assert gates["CONFIDENCE"]["actual"] == 0.31
@@ -646,7 +676,9 @@ class TestDebugSections:
     def test_debug_14_exposure_broker_internal_comparison(self):
         eng = _FakeEngine()
         eng.order_manager._live_tickets_cache[1001] = {
-            "type": "POSITION", "symbol": "XAUUSD", "ticket": 1001,
+            "type": "POSITION",
+            "symbol": "XAUUSD",
+            "ticket": 1001,
         }
         snap = build_debug_snapshot(eng, None)
         exp = snap["exposure"]
@@ -692,7 +724,8 @@ class TestDebugSections:
         assert pos["regime"] == "CALM"
         assert pos["news_state"] == "NORMAL"
         assert [c["reason"] for c in pos["exit_candidates"]] == [
-            "PROFIT_GIVEBACK", "REGIME_CHANGE",
+            "PROFIT_GIVEBACK",
+            "REGIME_CHANGE",
         ]
 
     def test_debug_18_worker_state(self):

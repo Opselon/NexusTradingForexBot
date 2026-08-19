@@ -294,3 +294,42 @@ def test_order_manager_extended_notifications(
 def time_from_str(s: str) -> datetime.datetime:
     """Helper to parse ISO string with UTC timezone."""
     return datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+@patch("urllib.request.urlopen")
+def test_telegram_notifier_failed_send_retry_not_deduplicated(
+    mock_urlopen: MagicMock, notifier: TelegramNotifier
+) -> None:
+    """A send that FAILS (timeout) must NOT register its signature, so
+    the retry is not suppressed as a duplicate - the pre-fix poisoning
+    where the first failed attempt blocked every retry forever."""
+    import urllib.error
+
+    mock_urlopen.side_effect = [urllib.error.URLError("timeout"), None]
+    notifier.send("Retry Me 42")
+    import time as _t
+
+    deadline = _t.time() + 3.0
+    while _t.time() < deadline and mock_urlopen.call_count < 2:
+        _t.sleep(0.05)
+    assert mock_urlopen.call_count >= 2, (
+        f"retry was suppressed by dedup cache: calls={mock_urlopen.call_count}"
+    )
+
+
+@patch("urllib.request.urlopen")
+def test_telegram_notifier_distinct_messages_not_conflated(
+    mock_urlopen: MagicMock, notifier: TelegramNotifier
+) -> None:
+    """The dedup signature stripped ALL digits, so any two messages
+    sharing the first 150 non-digit chars (report ids, pnl numbers,
+    dates) collapsed to one signature and the 2nd was suppressed."""
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.read.return_value = b'{"ok": true, "result": {"message_id": 201}}'
+    mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+    first = notifier.send("Daily report 2026-08-19 pnl=-189.88 trades=9")
+    second = notifier.send("Daily report 2026-08-20 pnl=+42.10 trades=12")
+    assert first == 201
+    assert second == 201

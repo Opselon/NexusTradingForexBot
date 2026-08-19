@@ -593,9 +593,7 @@ def test_aihub_10_calculation_and_source_status_are_distinct() -> None:
     the governor computes from engine bars but has no live broker source."""
     gov = LiquidityGovernor(enabled=True)
     bars = _steady_bars()
-    gov.compute_from_engine(
-        bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp
-    )
+    gov.compute_from_engine(bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp)
     rep = gov.report()
     # Both signals coexist with distinct semantics:
     assert rep["source"] == "LIVE_MARKET_STATE"  # live tick path present here
@@ -621,9 +619,7 @@ def test_aihub_10b_calculation_status_field_distinct() -> None:
 
     gov = LiquidityGovernor(enabled=True)
     bars = _steady_bars()
-    gov.compute_from_engine(
-        bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp
-    )
+    gov.compute_from_engine(bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp)
     rep = gov.report()
     assert rep["calculation_status"] == "SUCCESS"
     assert rep["source_status"] == "LIVE_MARKET_STATE"
@@ -658,8 +654,11 @@ def test_aihub_11_invalid_champion_does_not_become_active(tmp_path) -> None:
     p = tmp_path / "bad6.pt"
     torch.save({k: v.clone() for k, v in net.state_dict().items()}, p)
     info = inspect_artifact(
-        p, model_id="m", feature_schema_id="scalp_v1",
-        feature_dimension=50, num_classes=4,
+        p,
+        model_id="m",
+        feature_schema_id="scalp_v1",
+        feature_dimension=50,
+        num_classes=4,
     )
     assert info.integrity_ok is False
     assert info.actual_output_classes == 6
@@ -692,14 +691,15 @@ def test_aihub_15_model_inventory_distinguishes_lifecycle(tmp_path) -> None:
     p = tmp_path / "champ.pt"
     torch.save({k: v.clone() for k, v in net.state_dict().items()}, p)
     info = inspect_artifact(
-        p, model_id="primary_scalp", feature_schema_id="scalp_v1",
-        feature_dimension=50, num_classes=4,
+        p,
+        model_id="primary_scalp",
+        feature_schema_id="scalp_v1",
+        feature_dimension=50,
+        num_classes=4,
     )
     assert info.integrity_ok is True
     assert info.actual_output_classes == 4
     assert info.actual_input_dimension == 50
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -842,8 +842,15 @@ def test_liq_ui_08_snapshot_payload_carries_per_value_provenance() -> None:
     fp = gov.snapshot_payload()
     for name in LIQUIDITY_FEATURE_NAMES:
         e = fp["features"][name]
-        assert set(e) >= {"index", "value", "timestamp", "source",
-                          "status", "feature_availability", "runtime_enabled"}
+        assert set(e) >= {
+            "index",
+            "value",
+            "timestamp",
+            "source",
+            "status",
+            "feature_availability",
+            "runtime_enabled",
+        }
         assert e["index"] == 60 + LIQUIDITY_FEATURE_NAMES.index(name)
         assert e["timestamp"] == fp["timestamp"]
         assert e["runtime_enabled"] is True
