@@ -218,3 +218,41 @@ def test_verify_70d_artifact_on_missing() -> None:
     res = verify_70d_artifact("no_such_dataset")
     assert res["ok"] is False
     assert res["reason"] == "MANIFEST_MISSING"
+
+
+def test_verify_70d_artifact_rejects_epoch_zero_timestamps() -> None:
+    """TASK-14: a dataset whose timestamps collapsed to 1970 (epoch-seconds
+    misread as microseconds) MUST fail verification — the previous gate let
+    the broken ds_d3f35b12d63148da pass."""
+    import tempfile
+    from datetime import UTC, datetime
+
+    from nexus_scalp.model_generation.artifact_store import ArtifactStore
+
+    with tempfile.TemporaryDirectory() as tmp:
+        store = ArtifactStore(root=tmp)
+        # craft a minimal manifest + frame with 1970 timestamps
+        man = {
+            "dataset_id": "epoch_zero",
+            "feature_schema_id": "scalp_v3",
+            "feature_schema_hash": "235b8fccc96b7e0e",
+            "dataset_hash": "x",
+        }
+        store.write_json(store.dataset_manifest_path("epoch_zero"), man)
+        n = 60
+        frame = pl.DataFrame(
+            {
+                "sample_id": [f"s{i}" for i in range(n)],
+                "timestamp": [
+                    # repo convention: naive-UTC datetimes in dataset frames
+                    datetime(1970, 1, 1, 0, 0).replace(microsecond=i * 300)
+                    for i in range(n)
+                ],
+                **{f"feat_{i}": [0.0] * n for i in range(70)},
+            }
+        )
+        store.save_dataset("epoch_zero", frame, manifest=man)
+        res = verify_70d_artifact("epoch_zero", store=store)
+        assert res["ok"] is False, res
+        assert res.get("timestamp_sane") is False, res
+        assert res["timestamp_min"].startswith("1970"), res

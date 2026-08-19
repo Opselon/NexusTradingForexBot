@@ -668,10 +668,48 @@ def build_70d_dataset(
     store: ArtifactStore | None = None,
     seed: int = 42,
     dataset_id: str | None = None,
+    incremental: bool = False,
+    verify_parity: bool = False,
 ) -> dict[str, Any]:
-    """Builds + persists a scalp_v3 (70D) dataset artifact."""
+    """Builds + persists a scalp_v3 (70D) dataset artifact.
+
+    ``incremental`` (AGENT-09, BUG-106): uses the byte-identical incremental
+    builder (schema_v2_incremental.compute_70d_frame_fast) — O(n*window)
+    instead of O(n^2). ``verify_parity`` additionally runs the canonical
+    builder on the first 400 rows and asserts byte-identical features (an
+    equivalence self-check embedded in the build; use on the first build of
+    a new liquidity-engine revision).
+    """
     store = store or ArtifactStore()
-    feat_frame = compute_70d_frame(bars_frame, news_frame=news_frame)
+    if not incremental:
+        feat_frame = compute_70d_frame(bars_frame, news_frame=news_frame)
+    else:
+        from nexus_scalp.model_generation.schema_v2_incremental import (
+            compute_70d_frame_fast,
+        )
+
+        feat_frame = compute_70d_frame_fast(bars_frame, news_frame=news_frame)
+        if verify_parity:
+            # BUG-106 equivalence proof: the fast builder must produce
+            # byte-identical features to the canonical on the same input.
+            small = bars_frame.head(400)
+            canon = compute_70d_frame(small, news_frame=news_frame)
+            fast = compute_70d_frame_fast(small, news_frame=news_frame)
+            fcols = [c for c in canon.columns if c.startswith("feat_")]
+            diffs = 0
+            for c in fcols:
+                a = canon[c].to_list()
+                b = fast[c].to_list()
+                diffs += sum(1 for x, y in zip(a, b, strict=True) if x != y)
+            if diffs:
+                raise ValueError(
+                    f"BUG-106 parity self-check FAILED: {diffs} feature diffs "
+                    "between canonical and incremental builders — refusing "
+                    "the incremental dataset build"
+                )
+            logger.info(
+                "[SCHEMA_70D] event=PARITY_SELF_CHECK diffs=0 rows=%d", canon.height
+            )
     if feat_frame.is_empty():
         raise ValueError("70D feature frame empty — check raw bars / min_bars")
     factory = DatasetFactory(
@@ -746,6 +784,18 @@ def verify_70d_artifact(
     if "timestamp" in frame.columns:
         dup_ts = int(frame.select(pl.col("timestamp").is_duplicated()).sum().item())
         checks["duplicate_timestamps"] = dup_ts
+        # TASK-14 timestamp sanity (caught the 1970-epoch bug): a real dataset
+        # must be strictly-ordered and within a sane window. XAUUSD M5 history
+        # exists from ~2020; anything before 2000 is a conversion error (e.g.
+        # epoch-seconds misread as microseconds -> 1970-01-01 00:29:xx).
+        ts_min = frame["timestamp"].min()
+        ts_max = frame["timestamp"].max()
+        if ts_min is not None and ts_max is not None:
+            checks["timestamp_min"] = str(ts_min)
+            checks["timestamp_max"] = str(ts_max)
+            checks["timestamp_sane"] = bool(
+                ts_min.year >= 2000 and ts_min < ts_max
+            )
     if "sample_id" in frame.columns:
         dup_sid = int(frame.select(pl.col("sample_id").is_duplicated()).sum().item())
         checks["duplicate_sample_ids"] = dup_sid
@@ -758,6 +808,7 @@ def verify_70d_artifact(
         and checks["all_in_range"]
         and not checks.get("duplicate_timestamps", 0)
         and not checks.get("duplicate_sample_ids", 0)
+        and checks.get("timestamp_sane", True)
     )
     checks["dataset_hash"] = man.get("dataset_hash", "")
     return checks
