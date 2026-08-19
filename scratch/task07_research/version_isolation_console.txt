@@ -1,0 +1,138 @@
+bars=100000
+sample points=400
+  ..0/400
+  ..100/400
+  ..200/400
+  ..300/400
+{
+  "samples": 400,
+  "per_feature_summary": {
+    "bsl_distance_atr": {
+      "delta_mean": 0.0,
+      "v1_std": 0.7319,
+      "v11_std": 0.7319,
+      "v1_sat": 0.0275,
+      "v11_sat": 0.0275,
+      "v1_unique": 381,
+      "v11_unique": 381,
+      "frac_changed": 0.0
+    },
+    "ssl_distance_atr": {
+      "delta_mean": 0.0,
+      "v1_std": 0.9177,
+      "v11_std": 0.9177,
+      "v1_sat": 0.0675,
+      "v11_sat": 0.0675,
+      "v1_unique": 369,
+      "v11_unique": 369,
+      "frac_changed": 0.0
+    },
+    "eqh_strength": {
+      "delta_mean": -0.3063,
+      "v1_std": 0.1402,
+      "v11_std": 0.1765,
+      "v1_sat": 0.0,
+      "v11_sat": 0.0,
+      "v1_unique": 374,
+      "v11_unique": 379,
+      "frac_changed": 1.0
+    },
+    "eql_strength": {
+      "delta_mean": 0.0657,
+      "v1_std": 0.3413,
+      "v11_std": 0.175,
+      "v1_sat": 0.0,
+      "v11_sat": 0.0,
+      "v1_unique": 385,
+      "v11_unique": 384,
+      "frac_changed": 1.0
+    },
+    "htf_liquidity_score": {
+      "delta_mean": 0.0,
+      "v1_std": 2.8019,
+      "v11_std": 2.8019,
+      "v1_sat": 0.565,
+      "v11_sat": 0.565,
+      "v1_unique": 180,
+      "v11_unique": 180,
+      "frac_changed": 0.0
+    },
+    "internal_liquidity_distance": {
+      "delta_mean": 0.0,
+      "v1_std": 0.8184,
+      "v11_std": 0.8184,
+      "v1_sat": 0.0475,
+      "v11_sat": 0.0475,
+      "v1_unique": 377,
+      "v11_unique": 377,
+      "frac_changed": 0.0
+    },
+    "external_liquidity_distance": {
+      "delta_mean": 0.0,
+      "v1_std": 0.6625,
+      "v11_std": 0.6625,
+      "v1_sat": 0.8575,
+      "v11_sat": 0.8575,
+      "v1_unique": 58,
+      "v11_unique": 58,
+      "frac_changed": 0.0
+    },
+    "liquidity_confluence": {
+      "delta_mean": -0.7975,
+      "v1_std": 0.0225,
+      "v11_std": 0.8263,
+      "v1_sat": 0.9975,
+      "v11_sat": 0.4325,
+      "v1_unique": 2,
+      "v11_unique": 225,
+      "frac_changed": 0.5675
+    },
+    "liquidity_sweep_state": {
+      "delta_mean": 1.6675,
+      "v1_std": 1.1172,
+      "v11_std": 1.3062,
+      "v1_sat": 0.0,
+      "v11_sat": 0.0,
+      "v1_unique": 4,
+      "v11_unique": 5,
+      "frac_changed": 0.65
+    },
+    "post_sweep_displacement": {
+      "delta_mean": -0.0595,
+      "v1_std": 0.3791,
+      "v11_std": 0.1931,
+      "v1_sat": 0.0075,
+      "v11_sat": 0.0,
+      "v1_unique": 46,
+      "v11_unique": 22,
+      "frac_changed": 0.1625
+    }
+  },
+  "session_delta": {
+    "ASIAN_TOKYO": {
+      "n": 118,
+      "confluence_delta_mean": -0.779,
+      "sweep_delta_mean": 1.5169
+    },
+    "LONDON": {
+      "n": 92,
+      "confluence_delta_mean": -0.6825,
+      "sweep_delta_mean": 1.6413
+    },
+    "LONDON_NY_OVERLAP": {
+      "n": 51,
+      "confluence_delta_mean": -0.8014,
+      "sweep_delta_mean": 1.9608
+    },
+    "NEW_YORK": {
+      "n": 90,
+      "confluence_delta_mean": -0.7122,
+      "sweep_delta_mean": 1.6667
+    },
+    "OFF_HOURS": {
+      "n": 49,
+      "confluence_delta_mean": -1.2102,
+      "sweep_delta_mean": 1.7755
+    }
+  }
+}

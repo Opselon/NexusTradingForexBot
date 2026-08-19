@@ -1,0 +1,334 @@
+{
+  "research_run_id": "task07_version_isolation_01",
+  "research_baseline_id": "e85de540e09d3339",
+  "versions": {
+    "v1": "liquidity-v1.0 (committed liquidity_engine.py, golden baseline 4455874)",
+    "v1_1": "liquidity-v1.1 (candidate liquidity_engine_opt.py, TASK-06)"
+  },
+  "protocol": "identical causal inputs (bars, decision_at, ATR), 200-bar stride, LOOKBACK=2000, decision_at gating",
+  "samples": 400,
+  "time_range": [
+    "2025-03-12T06:35:00+00:00",
+    "2026-05-01T05:20:00+00:00"
+  ],
+  "per_feature": {
+    "bsl_distance_atr": {
+      "v1": {
+        "n": 400,
+        "mean": 0.6177,
+        "median": 0.3478,
+        "std": 0.7319,
+        "min": 0.0017,
+        "max": 3.0,
+        "unique_at_4dp": 381,
+        "saturation_frac_abs_ge_3": 0.0275,
+        "neutral_sentinel_frac_3": 0.0275,
+        "zero_frac": 0.0
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 0.6177,
+        "median": 0.3478,
+        "std": 0.7319,
+        "min": 0.0017,
+        "max": 3.0,
+        "unique_at_4dp": 381,
+        "saturation_frac_abs_ge_3": 0.0275,
+        "neutral_sentinel_frac_3": 0.0275,
+        "zero_frac": 0.0
+      },
+      "delta_mean": 0.0,
+      "delta_std": 0.0,
+      "frac_changed": 0.0
+    },
+    "ssl_distance_atr": {
+      "v1": {
+        "n": 400,
+        "mean": 0.7992,
+        "median": 0.3877,
+        "std": 0.9177,
+        "min": 0.0016,
+        "max": 3.0,
+        "unique_at_4dp": 369,
+        "saturation_frac_abs_ge_3": 0.0675,
+        "neutral_sentinel_frac_3": 0.0675,
+        "zero_frac": 0.0
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 0.7992,
+        "median": 0.3877,
+        "std": 0.9177,
+        "min": 0.0016,
+        "max": 3.0,
+        "unique_at_4dp": 369,
+        "saturation_frac_abs_ge_3": 0.0675,
+        "neutral_sentinel_frac_3": 0.0675,
+        "zero_frac": 0.0
+      },
+      "delta_mean": 0.0,
+      "delta_std": 0.0,
+      "frac_changed": 0.0
+    },
+    "eqh_strength": {
+      "v1": {
+        "n": 400,
+        "mean": 0.7845,
+        "median": 0.7843,
+        "std": 0.1402,
+        "min": 0.4443,
+        "max": 1.0,
+        "unique_at_4dp": 374,
+        "saturation_frac_abs_ge_3": 0.0,
+        "neutral_sentinel_frac_3": 0.0,
+        "zero_frac": 0.0
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 0.4782,
+        "median": 0.4565,
+        "std": 0.1765,
+        "min": 0.1372,
+        "max": 1.0,
+        "unique_at_4dp": 379,
+        "saturation_frac_abs_ge_3": 0.0,
+        "neutral_sentinel_frac_3": 0.0,
+        "zero_frac": 0.0
+      },
+      "delta_mean": -0.3063,
+      "delta_std": 0.1524,
+      "frac_changed": 1.0
+    },
+    "eql_strength": {
+      "v1": {
+        "n": 400,
+        "mean": 0.3906,
+        "median": 0.2686,
+        "std": 0.3413,
+        "min": 0.0007,
+        "max": 1.0,
+        "unique_at_4dp": 385,
+        "saturation_frac_abs_ge_3": 0.0,
+        "neutral_sentinel_frac_3": 0.0,
+        "zero_frac": 0.0
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 0.4563,
+        "median": 0.4287,
+        "std": 0.175,
+        "min": 0.0988,
+        "max": 1.0,
+        "unique_at_4dp": 384,
+        "saturation_frac_abs_ge_3": 0.0,
+        "neutral_sentinel_frac_3": 0.0,
+        "zero_frac": 0.0
+      },
+      "delta_mean": 0.0657,
+      "delta_std": 0.258,
+      "frac_changed": 1.0
+    },
+    "htf_liquidity_score": {
+      "v1": {
+        "n": 400,
+        "mean": 0.3645,
+        "median": 2.3998,
+        "std": 2.8019,
+        "min": -3.0,
+        "max": 3.0,
+        "unique_at_4dp": 180,
+        "saturation_frac_abs_ge_3": 0.565,
+        "neutral_sentinel_frac_3": 0.015,
+        "zero_frac": 0.0
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 0.3645,
+        "median": 2.3998,
+        "std": 2.8019,
+        "min": -3.0,
+        "max": 3.0,
+        "unique_at_4dp": 180,
+        "saturation_frac_abs_ge_3": 0.565,
+        "neutral_sentinel_frac_3": 0.015,
+        "zero_frac": 0.0
+      },
+      "delta_mean": 0.0,
+      "delta_std": 0.0,
+      "frac_changed": 0.0
+    },
+    "internal_liquidity_distance": {
+      "v1": {
+        "n": 400,
+        "mean": 0.7774,
+        "median": 0.4662,
+        "std": 0.8184,
+        "min": 0.0,
+        "max": 3.0,
+        "unique_at_4dp": 377,
+        "saturation_frac_abs_ge_3": 0.0475,
+        "neutral_sentinel_frac_3": 0.0475,
+        "zero_frac": 0.005
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 0.7774,
+        "median": 0.4662,
+        "std": 0.8184,
+        "min": 0.0,
+        "max": 3.0,
+        "unique_at_4dp": 377,
+        "saturation_frac_abs_ge_3": 0.0475,
+        "neutral_sentinel_frac_3": 0.0475,
+        "zero_frac": 0.005
+      },
+      "delta_mean": 0.0,
+      "delta_std": 0.0,
+      "frac_changed": 0.0
+    },
+    "external_liquidity_distance": {
+      "v1": {
+        "n": 400,
+        "mean": 2.7717,
+        "median": 3.0,
+        "std": 0.6625,
+        "min": 0.0077,
+        "max": 3.0,
+        "unique_at_4dp": 58,
+        "saturation_frac_abs_ge_3": 0.8575,
+        "neutral_sentinel_frac_3": 0.8575,
+        "zero_frac": 0.0
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 2.7717,
+        "median": 3.0,
+        "std": 0.6625,
+        "min": 0.0077,
+        "max": 3.0,
+        "unique_at_4dp": 58,
+        "saturation_frac_abs_ge_3": 0.8575,
+        "neutral_sentinel_frac_3": 0.8575,
+        "zero_frac": 0.0
+      },
+      "delta_mean": 0.0,
+      "delta_std": 0.0,
+      "frac_changed": 0.0
+    },
+    "liquidity_confluence": {
+      "v1": {
+        "n": 400,
+        "mean": 2.9989,
+        "median": 3.0,
+        "std": 0.0225,
+        "min": 2.5493,
+        "max": 3.0,
+        "unique_at_4dp": 2,
+        "saturation_frac_abs_ge_3": 0.9975,
+        "neutral_sentinel_frac_3": 0.9975,
+        "zero_frac": 0.0
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 2.2014,
+        "median": 2.2876,
+        "std": 0.8263,
+        "min": 0.3319,
+        "max": 3.0,
+        "unique_at_4dp": 225,
+        "saturation_frac_abs_ge_3": 0.4325,
+        "neutral_sentinel_frac_3": 0.4325,
+        "zero_frac": 0.0
+      },
+      "delta_mean": -0.7975,
+      "delta_std": 0.8248,
+      "frac_changed": 0.5675
+    },
+    "liquidity_sweep_state": {
+      "v1": {
+        "n": 400,
+        "mean": -0.63,
+        "median": -1.0,
+        "std": 1.1172,
+        "min": -2.0,
+        "max": 2.0,
+        "unique_at_4dp": 4,
+        "saturation_frac_abs_ge_3": 0.0,
+        "neutral_sentinel_frac_3": 0.0,
+        "zero_frac": 0.0
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 1.0375,
+        "median": 2.0,
+        "std": 1.3062,
+        "min": -2.0,
+        "max": 2.0,
+        "unique_at_4dp": 5,
+        "saturation_frac_abs_ge_3": 0.0,
+        "neutral_sentinel_frac_3": 0.0,
+        "zero_frac": 0.0025
+      },
+      "delta_mean": 1.6675,
+      "delta_std": 1.5514,
+      "frac_changed": 0.65
+    },
+    "post_sweep_displacement": {
+      "v1": {
+        "n": 400,
+        "mean": 0.094,
+        "median": 0.0,
+        "std": 0.3791,
+        "min": 0.0,
+        "max": 3.0,
+        "unique_at_4dp": 46,
+        "saturation_frac_abs_ge_3": 0.0075,
+        "neutral_sentinel_frac_3": 0.0075,
+        "zero_frac": 0.8825
+      },
+      "v1_1": {
+        "n": 400,
+        "mean": 0.0345,
+        "median": 0.0,
+        "std": 0.1931,
+        "min": 0.0,
+        "max": 2.3364,
+        "unique_at_4dp": 22,
+        "saturation_frac_abs_ge_3": 0.0,
+        "neutral_sentinel_frac_3": 0.0,
+        "zero_frac": 0.945
+      },
+      "delta_mean": -0.0595,
+      "delta_std": 0.4292,
+      "frac_changed": 0.1625
+    }
+  },
+  "bivariate": {},
+  "session_delta": {
+    "ASIAN_TOKYO": {
+      "n": 118,
+      "confluence_delta_mean": -0.779,
+      "sweep_delta_mean": 1.5169
+    },
+    "LONDON": {
+      "n": 92,
+      "confluence_delta_mean": -0.6825,
+      "sweep_delta_mean": 1.6413
+    },
+    "LONDON_NY_OVERLAP": {
+      "n": 51,
+      "confluence_delta_mean": -0.8014,
+      "sweep_delta_mean": 1.9608
+    },
+    "NEW_YORK": {
+      "n": 90,
+      "confluence_delta_mean": -0.7122,
+      "sweep_delta_mean": 1.6667
+    },
+    "OFF_HOURS": {
+      "n": 49,
+      "confluence_delta_mean": -1.2102,
+      "sweep_delta_mean": 1.7755
+    }
+  }
+}
