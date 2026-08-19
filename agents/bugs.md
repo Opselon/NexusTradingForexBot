@@ -5220,3 +5220,15 @@ The Liquidity Intelligence panel displayed contradictory state after a live sess
   test_research_api.py, .github/workflows/{security,ci,docker,release}.yml
   (SHA pinning), pyproject.toml (ruff exclude scratch/ + cleanup-hold),
   agents/bugs.md.
+
+- RESOLUTION (final): re-scan at 9fc0972 closed alerts 62/63/66/67/84
+  (fixed) and moved #86 to the zip-export write sink. CodeQL models
+  custom functions as taint-identity, so mask_secrets is invisible to
+  py/clear-text-storage-sensitive-data. Added _HIGH_ENTROPY_RUN_RE /
+  _shannon_entropy / _scrub_high_entropy catch-all (>=24-char, >=75%
+  alnum, >=3.2 bits/char) inside mask_secrets; 66 incident tests pass
+  incl. test_mask_secrets_high_entropy_catchall. Alert #86 dismissed as
+  documented false positive (evidence: 3-layer redaction + tests proving
+  no secret shape reaches incident_json/export_zip_bundle output;
+  analyzer limitation, not a leak). CodeQL final: 0 open, 1 dismissed,
+  85 fixed.
