@@ -4689,3 +4689,87 @@ probe + this bug row are the guard.
 
 ### Verification
 NOT APPLIED — documented as a writer defect; dataset content verified correct.
+
+
+## BUG-111 — Deterministic Dataset ID Ignores Input Frame Identity: Rebuild on a Smaller Slice Overwrites the Larger Dataset (TASK-05-70D-SHADOW, 2026-08-19)
+
+### Root cause
+`model_generation/dataset_factory.py::deterministic_dataset_id` hashes only
+(symbol|timeframe|feature_schema_id|label_schema_id|strategy_id|config_hash)
+— NOT the input frame's row count / time range / content hash. Rebuilding a
+dataset from a smaller slice of the same config therefore produces the SAME
+dataset_id and OVERWRITES the existing (larger) artifact. Observed:
+ds_cb30f87520e9e6a4 (scalp_v1) and ds_b64513f79687824a (scalp_v2) were
+rebuilt from a 2,500-bar slice (2,446 rows) and replaced the previous
+99,946-row artifacts under the SAME ids.
+
+### Evidence
+- Before: ds_cb30... rows=99,946; after build_abc_datasets.py: rows=2,446.
+- The twin same-generation artifacts ds_af362f55e86a15ca (scalp_v1) and
+  ds_f9a06027a76588ff (scalp_v2) remain at 99,946 rows — the 100K data is
+  NOT lost, only the cb30/b645 ids now address the small rebuild.
+
+### Fix (recommended)
+Include an input-frame identity component (row count + time range hash, or
+the raw frame's content hash) in deterministic_dataset_id.
+
+### Verification
+FINDING RECORDED; mitigation for the TASK-5 benchmark: A/B/C all use the
+2,446-row slice, so the comparison is internally fair; the 100K twins
+preserve the full data.
+
+## BUG-112 — Integrity Verifier Read Hidden Width as Class Count + SSE datetime Leak (AI Hub Forensic, 2026-08-19)
+
+### Symptom (live log evidence, artifacts/logs/nse_live.log 2026-08-19 04:45)
+- `MODEL INTEGRITY FAILURE: actual_classes=128 actual_dim=50 expected_classes=4 expected_dim=50 model_id=primary_scalp`
+  followed by `Champion unavailable: artifact missing or invalid` — even though the artifact is a VALID 50D/4-class ScalpNet.
+- `WEB_ERROR endpoint=/api exception_type=TypeError Object of type datetime is not JSON serializable`
+  at server.py event_generator `json.dumps(payload)` — repeating every SSE cycle once liquidity pools were confirmed.
+
+### Root cause A — class-head probe
+`model_lifecycle/integrity.py::inspect_artifact` derived the output class
+count from `input_projection.weight.shape[0]`. That tensor is
+(hidden_dim, feature_dim) = (128, 50): shape[0]=128 is the HIDDEN width,
+never the class count. The true head is `classifier.weight` = (4, 32).
+Every valid ScalpNet v1 artifact (hidden 128) was therefore falsely
+rejected. Proven by state-dict match (missing=[], extra=[]) + dry-run
+logits (1,4) finite on the LIVE artifact; 18/18 scanned artifacts have a
+4-class head.
+
+### Root cause B — SSE datetime
+`LiquidityGovernor.report()` built `pools_payload` with
+`getattr(p, "confirmed_at", None)` — a raw `datetime` (LiquidityPool
+field). report() is embedded in `get_system_state()["liquidity"]`, so once
+any pool confirmed (901 bars in the live log), every SSE frame crashed.
+
+### Fix
+- integrity.py: class count from the classifier head (canonical priority:
+  classifier.weight > head.3.weight (TCN) > fc_out.weight; head.0 only
+  when it is the sole head-scale tensor); input dim supports both ScalpNet
+  (input_projection) and TCNAttentionV1 (projection). ModelArtifactInfo
+  gains tensor diagnostics (actual_input_dimension, actual_output_classes,
+  actual_hidden_dimension, class_head_name, scaler_dimension,
+  integrity_reason). Scaler dimension is now a real gate.
+- liquidity_runtime.py report(): pools `confirmed_at` isoformatted.
+- server.py: canonical_json() encoder (datetime/date/Enum/UUID/Decimal/
+  Path/numpy; naive->UTC; unknown raises), SSE handler emits structured
+  SSE_SERIALIZATION_ERROR (correlation_id, event_type, failed_fields) and
+  continues; _find_non_json_fields() locates the failing leaf.
+- AI Hub: GET /api/models/integrity (backend-decided VALID/INVALID/
+  ACTIVE/INCOMPATIBLE); UI renders integrity/state/classes from backend.
+
+### Tests
+- tests/unit/test_model_lifecycle_phase10.py TEST-AIHUB-01..06/11/12/13
+- tests/unit/test_liquidity_runtime_integration_phase18.py
+  TEST-AIHUB-07/08/09/10/10b/14/15
+
+### Verification
+- LIVE champion: VALID dim 50 classes 4 scaler 50 (hash 9105cef7d93e23b8)
+- bench_c TCN 3-class: INVALID / CLASS_COUNT_MISMATCH / classes 3
+- wf_candidate 70D: VALID dim 70 classes 4 scaler 70
+- SSE payload with confirmed pools serializes (ISO-8601)
+- 25 phase10 tests + 38 phase18 tests green
+
+### Related
+- 70D contract: canonical 70D is scalp_v3 (TASK-03); wf_candidate
+  manifest declares scalp_v4; NO auto-promotion (INV-015).
