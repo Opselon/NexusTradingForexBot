@@ -52,7 +52,7 @@ Risk: LOW — diagnostic-only; no execution/risk/policy imports; additive
 Dependencies: TASK-11 forensics/ (models), AuditRepository queued writer,
        TASK-10 migration engine
 Required tests: TEST-INCIDENT-01..35 + integration diagnostics API tests
-Status: IMPLEMENTING
+Status: VERIFIED (absorbed into commit 066a7ba; quality gates clean)
 ```
 
 CHANGE-ID: CHG-0015

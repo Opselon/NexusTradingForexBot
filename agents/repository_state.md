@@ -228,3 +228,19 @@ training_dataset_id.
 - UI: Promotion Controls block (preview/promote/freeze + status badge).
 - Tests: TEST-GOV-01..30 (TestGovernance70), TestGovernance70API (7).
 - BUG-108: AUDIT-0007 release_metadata migration baseline-skeleton fix.
+
+## Snapshot 2026-08-19 (TASK-12 — incident response layer)
+
+- NEW `src/nexus_scalp/incidents/` (models/store/correlator/lineage/trace/
+  impact/reports/worker/telegram) — canonical incident model, correlation
+  engine, value lineage, WHY workflows, impact analysis, quarantine,
+  approval-gated recovery plans, secret-masked reports.
+- AUDIT-0006 additive migration (incidents/events/traces/quarantine tables)
+  applied to artifacts/audit.db (schema v7, integrity ok).
+- CLI `nexus incidents list|show|search|stats|report|export|scan|trace-why|lineage`.
+- API GET /api/diagnostics/{incidents,incidents/{id},health,lineage,search}
+  (read-only). Web Forensic Incident Center tab.
+- 5 real baseline incidents persisted (1 CRITICAL ACCOUNTING_DIVERGENCE,
+  1 HIGH TIMEBASE_DIVERGENCE, 3 MEDIUM) from the read-only forensic scan;
+  reports in artifacts/incidents/.
+- Absorbed into commit 066a7ba (parallel agent); attribution in taskboard.
