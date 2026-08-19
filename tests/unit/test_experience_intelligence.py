@@ -1101,7 +1101,7 @@ def test_33_future_feature_dimensions_are_backward_compatible(temp_audit_repo, c
     schema, with no silent reinterpretation.
     """
     ledger, _, _, _ = components
-    for schema, dim in (("scalp_v1", 50), ("scalp_v2", 60), ("scalp_v3", 350)):
+    for schema, dim in (("scalp_v1", 50), ("scalp_v2", 60), ("scalp_v3", 70)):  # TASK-03 canonical 70D
         ledger.record_experience(
             make_record(
                 f"k_{schema}",
@@ -1112,7 +1112,7 @@ def test_33_future_feature_dimensions_are_backward_compatible(temp_audit_repo, c
         )
     temp_audit_repo._queue.join()
 
-    for schema, dim in (("scalp_v1", 50), ("scalp_v2", 60), ("scalp_v3", 350)):
+    for schema, dim in (("scalp_v1", 50), ("scalp_v2", 60), ("scalp_v3", 70)):  # TASK-03 canonical 70D
         rec = ledger.get_experiences_for_strategy(f"strat_{schema}")[0]
         assert rec.feature_schema_id == schema
         assert rec.feature_dimension == dim
@@ -1121,7 +1121,7 @@ def test_33_future_feature_dimensions_are_backward_compatible(temp_audit_repo, c
     census = ledger.get_schema_distribution()
     assert census["scalp_v1/50D"] == 1
     assert census["scalp_v2/60D"] == 1
-    assert census["scalp_v3/350D"] == 1
+    assert census["scalp_v3/70D"] == 1  # TASK-03 canonical 70D
 
     # A declared dimension must match the payload length.
     with pytest.raises(ValidationError):

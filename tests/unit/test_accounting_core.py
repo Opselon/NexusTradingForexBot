@@ -1338,7 +1338,7 @@ class TestProvenanceSurvival:
 
         assert FEATURE_SCHEMAS.resolve("scalp_v1").dimension == 50
         assert FEATURE_SCHEMAS.resolve("scalp_v2").dimension == 60
-        assert FEATURE_SCHEMAS.resolve("scalp_v3").dimension == 350
+        assert FEATURE_SCHEMAS.resolve("scalp_v3").dimension == 70  # TASK-03: scalp_v3 is now the canonical 70D contract
         # strict resolution: unknown id raises, never silently defaults
         with pytest.raises(KeyError):
             FEATURE_SCHEMAS.resolve("nope")

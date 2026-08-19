@@ -192,9 +192,18 @@ FEATURE_SCHEMAS.register(
 FEATURE_SCHEMAS.register(
     FeatureSchema(
         schema_id="scalp_v3",
-        dimension=350,
-        description="Wide multi-symbol / multi-timeframe research contract.",
-        supersedes="scalp_v2",
+        dimension=70,
+        description=(
+            "CANONICAL 70D contract (TASK-03-70D-PARITY): Base 50D (scalp_v1, "
+            "indices 0..49) + News 10D (canonical news_context_v1 first-10, "
+            "indices 50..59) + Liquidity 10D (features/liquidity_engine "
+            "as_vector order, indices 60..69). The single source of truth for "
+            "the 70D vector is features/schema_contract.py (schema hash, family "
+            "layout, validation). Candidate-only; the ACTIVE live contract "
+            "remains scalp_v1. Supersedes the forward-declared 350D research "
+            "contract which never materialized (no 350D artifact ever existed)."
+        ),
+        supersedes="scalp_v1",
     )
 )
 FEATURE_SCHEMAS.register(

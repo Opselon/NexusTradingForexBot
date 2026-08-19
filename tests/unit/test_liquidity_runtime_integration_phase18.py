@@ -149,7 +149,7 @@ def test_70d_02_scalp_v4_does_not_mutate_existing_schemas() -> None:
     assert FEATURE_SCHEMAS.resolve("scalp_v1").dimension == 50
     assert FEATURE_SCHEMAS.resolve("scalp_v2").dimension == 60  # TASK-5 momentum
     assert FEATURE_SCHEMAS.resolve("scalp_liquidity_v1").dimension == 60  # TASK-1
-    assert FEATURE_SCHEMAS.resolve("scalp_v3").dimension == 350  # untouched
+    assert FEATURE_SCHEMAS.resolve("scalp_v3").dimension == 70  # TASK-03 canonical 70D
 
 
 # ---------------------------------------------------------------------------
