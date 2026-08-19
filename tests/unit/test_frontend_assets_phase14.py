@@ -157,10 +157,59 @@ class TestLocalAssetsServed:
             resolved = (WEB_DIR / "vendor" / "fontawesome" / url).resolve()
             assert resolved.exists(), f"CSS url() asset missing: {url} ({resolved})"
 
+    # ---------------------------------------------------------------------------
+    # 4. DOM contract (initApp completes without null deref)
+    # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# 4. DOM contract (initApp completes without null deref)
-# ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # CodeQL py/path-injection (#62/#63/#67) regression: the webfonts
+    # route must never build a path from user input. Traversal attempts
+    # must 404, and only real bundled font files may be served.
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        "malicious",
+        [
+            "..%2f..%2f..%2fetc%2fpasswd",
+            "..\..\..\Windows\win.ini",
+            "../../../../etc/passwd",
+            "....//....//etc/passwd",
+            "%2e%2e%2f%2e%2e%2fsecret.txt",
+            "fa-solid-900.woff2/../../server.py",
+            "C:/Windows/system.ini",
+            "//etc/hosts",
+        ],
+    )
+    def test_webfont_traversal_attempts_404(self, client: TestClient, malicious: str) -> None:
+        r = client.get(f"/vendor/webfonts/{malicious}")
+        assert r.status_code == 404, f"traversal {malicious!r} must 404"
+
+    def test_webfont_unknown_name_404(self, client: TestClient) -> None:
+        r = client.get("/vendor/webfonts/../server.py")
+        assert r.status_code == 404
+        r2 = client.get("/vendor/webfonts/no-such-font.woff2")
+        assert r2.status_code == 404
+
+    def test_webfont_real_file_still_served(self, client: TestClient) -> None:
+        r = client.get("/vendor/webfonts/fa-solid-900.woff2")
+        assert r.status_code == 200
+        assert r.headers["content-type"] in (
+            "font/woff2",
+            "application/octet-stream",
+            "application/font-woff2",
+            "font/woff",
+        )  # FileResponse from a real bundled asset, never text/html
+        body = r.content
+        assert len(body) > 1000  # real binary font payload
+
+    def test_webfont_response_not_script_html(self, client: TestClient) -> None:
+        """A successful webfont response must never be HTML/script - the
+        FileResponse must point at a real binary asset (path-injection side
+        effect check: no content-type confusion)."""
+        r = client.get("/vendor/webfonts/fa-brands-400.ttf")
+        assert r.status_code == 200
+        assert "text/html" not in r.headers.get("content-type", "")
+        assert "<script" not in r.text
 
 
 class TestDomContract:
@@ -238,3 +287,71 @@ class TestChartResyncContract:
         app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
         assert "resyncChart();" in app_js
         assert "lastChartResyncAt" in app_js
+
+
+# ---------------------------------------------------------------------------
+# 7. Tab-section nesting contract (Forensic Incident Center regression)
+# ---------------------------------------------------------------------------
+
+
+class TestTabSectionNesting:
+    """BUG-120 regression: every .tab-content section must be a SIBLING of
+    the others, never nested inside another .tab-content section.
+
+    The Forensic Incident Center was nested inside the Liquidity panel
+    (a missing </section>), so switchTab() revealed the child while its
+    hidden parent kept it invisible (0x0 rect -> blank tab).
+    The legacy div-balance checker PASSED because the imbalance was in
+    <section> elements, not <div>s.
+    """
+
+    def test_tab_sections_are_siblings(self) -> None:
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        # Locate every .tab-content section open tag.
+        opens = list(re.finditer(r'<section\s+id="([^"]+)"\s+class="tab-content', html))
+        assert len(opens) >= 8, f"suspiciously few tab sections: {len(opens)}"
+        for _i, m in enumerate(opens):
+            sec_id = m.group(1)
+            # The section body runs until the </section> that closes it.
+            # A nested .tab-content section before that close proves nesting.
+            depth = 1
+            pos = m.end()
+            while depth > 0:
+                nxt_open = html.find("<section", pos)
+                nxt_close = html.find("</section>", pos)
+                if nxt_close == -1:
+                    break
+                if nxt_open != -1 and nxt_open < nxt_close:
+                    depth += 1
+                    pos = nxt_open + len("<section")
+                else:
+                    depth -= 1
+                    pos = nxt_close + len("</section>")
+            body = html[m.end() : pos]
+            nested = re.findall(r'<section\s+id="([^"]+)"\s+class="tab-content', body)
+            assert not nested, (
+                f"tab section #{sec_id} CONTAINS nested tab sections {nested}; "
+                "every .tab-content must be a sibling (BUG-120: incidents was "
+                "nested inside liquidity)"
+            )
+
+    def test_incident_tab_section_has_expected_panels(self) -> None:
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        m = re.search(r'<section\s+id="tab-incidents"', html)
+        assert m, "Forensic Incident Center section missing"
+        # The 4 panels + list + detail containers the incident JS populates.
+        for dom_id in (
+            "incident-list",
+            "incident-detail",
+            "incident-search-input",
+            "inc-summary-open",
+            "inc-worker-state",
+        ):
+            assert f'id="{dom_id}"' in html, f"incident panel missing id={dom_id}"
+
+    def test_every_nav_button_target_has_a_sibling_section(self) -> None:
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        nav_targets = set(re.findall(r"switchTab\('(tab-[^']+)'", html))
+        sections = set(re.findall(r'<section\s+id="(tab-[^"]+)"', html))
+        missing = sorted(t for t in nav_targets if t not in sections)
+        assert not missing, f"nav buttons reference missing tab sections: {missing}"

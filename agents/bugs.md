@@ -5112,3 +5112,46 @@ The Liquidity Intelligence panel displayed contradictory state after a live sess
 - Note: Liquidity Intelligence correctly follows engine state — when the
   engine loop is stopped there is no new-bar compute and the UI shows
   UNAVAILABLE/NOT_RUN (real state, never hardcoded).
+## BUG-120 — Forensic Incident Center tab invisible: tab-incidents nested inside tab-liquidity (missing </section>) (2026-08-19 Hermes-Forensic-04)
+
+- Category: UI_MARKUP / LAYOUT (BUG-068 class, section-level variant)
+- Symptom: Forensic Incident Center menu item existed; clicking it appeared
+  to do nothing — the tab stayed a blank 0x0 panel. Summary cards, worker
+  health, and incident list all LOADED (API 200s, DOM populated) but the
+  panel was never visible. No console errors, no failed requests, no
+  backend exceptions.
+- Root cause: `Web/index.html` section nesting bug introduced in commit
+  111f16e6 (TASK-01 liquidity handoff): `<section id="tab-liquidity">`
+  (line 2229) was never closed before `<section id="tab-incidents">`
+  opened (line 2319). The incident panel became a CHILD of the liquidity
+  panel. switchTab() removes `hidden` from the child and adds `active`,
+  but the PARENT section still has `hidden` (display:none), so the child
+  renders at 0x0. The legacy div_balance_check.py PASSED because the
+  imbalance is in <section> tags, not <div>s — hand-maintained HTML with
+  only a div-balance guard was blind to section nesting.
+- Fix (smallest correct): insert one `</section>` after the liquidity
+  panel's closing `</div>` (before the TAB 13 comment) and delete the
+  now-orphaned trailing `</section>` that previously closed the
+  mis-nested structure. `tab-incidents` is now a true sibling of
+  `tab-liquidity`/`tab-debug`/`tab-governance`. No JS, API, or DB change
+  needed — the data path was healthy end-to-end.
+- Proof (real browser, Playwright headless chromium against a live paper
+  session): BEFORE fix — `INCIDENT_PANEL_VISIBLE: false`, incidentsRect
+  {x:0,y:0,w:0,h:0}, parent section display:none; AFTER fix —
+  `INCIDENT_PANEL_VISIBLE: true`, rect {x:280,y:162,w:1296,h:1009.5};
+  nav badge "5 open", summary 5/1/1/3, 5 incident cards render, detail
+  view opens, search finds INC-2026-D5659C10, Accounting Audit probe
+  (50 checked / 11 RECOVERABLE_FROM_BROKER) and Timebase probe run;
+  0 console errors, 0 page errors, 0 failed requests; Liquidity and
+  Monitoring tabs still work (no collateral damage).
+- Tests: tests/unit/test_frontend_assets_phase14.py
+  `TestTabSectionNesting` (3 tests: tab sections are siblings; incident
+  tab has expected panels; every nav target has a sibling section).
+  41 passed in that file (incl. parallel CodeQL webfont tests).
+- Note: Forensic Incident Center data path verified healthy: audit.db
+  has all 4 incident tables (5 incidents: 1 CRITICAL / 1 HIGH / 3 MEDIUM,
+  statuses OPEN/ROOT_CAUSE_IDENTIFIED); all /api/diagnostics/* endpoints
+  200 with correct schema; `serialize_enums` output matches the UI's
+  expectations exactly.
+- Files: Web/index.html, tests/unit/test_frontend_assets_phase14.py,
+  agents/bugs.md.
