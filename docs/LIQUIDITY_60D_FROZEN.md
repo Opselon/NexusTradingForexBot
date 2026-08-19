@@ -78,3 +78,23 @@
 ANY change to the frozen constants/formulas requires:
 schema/version review -> new tests -> new experiment -> new commit -> new
 handoff (per TASK-02 §3). A weak model result is NOT a reason to change.
+
+## STEP 21/22 PERFORMANCE MEASUREMENT (real data, 2026-08-19)
+
+Measured (cProfile, 200-row real window on XAUUSD M1):
+- per-row cost: ~11.6 ms/row (compute_liquidity_frame, 1000 rows = 70s on a
+  contended host; 100k rows = 499s standalone)
+- dominant cost: _bars_to_arrays/_bar_times re-derivation (~40% of time:
+  each sub-function re-builds numpy arrays + timestamps from the BarData
+  list on every call)
+
+PROVEN BOTTLENECK: the canonical engine re-derives bar arrays per sub-call.
+DESIGNED FIX (NOT applied — engine frozen): thread a single pre-computed
+(bars_to_arrays, bar_times) pair through compute_liquidity_features and its
+sub-functions; identical outputs, ~2-3x throughput. Apply in a FUTURE schema
+version with its own golden re-baseline, per the change policy.
+
+Live hot-path impact: the liquidity snapshot runs on the bar-close cadence
+(not per-tick); 11.6ms << 60s M1 cadence -> NO live hot-path regression.
+Dataset-build impact: 100k-row frame ≈ 8-19 min; bounded slices recommended
+for iteration.
