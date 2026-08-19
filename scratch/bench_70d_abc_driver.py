@@ -235,5 +235,130 @@ def _verdict(results: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# TASK-05 runner — consume built dataset artifacts over the SAME raw slice
+# ---------------------------------------------------------------------------
+
+CELL_DATASETS: dict[str, str] = {
+    "A": "ds_task5_abc_A",  # replaced at runtime from task5_abc_dataset_ids.json
+    "B": "ds_task5_abc_B",
+    "C": "ds_task5_real70d_2500",
+}
+
+
+def run_from_artifacts() -> dict[str, Any]:
+    """Trains A/B/C from the persisted dataset artifacts (same raw slice,
+    identical timestamps/labels per DatasetFactory construction)."""
+    ids_path = REPO_ROOT / "artifacts/benchmarks/task5_abc_dataset_ids.json"
+    if ids_path.exists():
+        ids = json.loads(ids_path.read_text(encoding="utf-8"))
+        CELL_DATASETS.update({"A": ids["A_50d"], "B": ids["B_60d"], "C": ids["C_70d"]})
+    store = ArtifactStore()
+    results: dict[str, Any] = {}
+    for cell_id, schema_id, news_en in (
+        ("A", "scalp_v1", False),
+        ("B", "scalp_v2", True),
+        ("C", "scalp_v3", True),
+    ):
+        did = CELL_DATASETS[cell_id]
+        frame = store.read_dataset(did)
+        if frame is None or frame.is_empty():
+            results[cell_id] = {"status": "FAILED", "error": f"dataset {did} missing/empty"}
+            continue
+        feat_cols = [c for c in frame.columns if c.startswith("feat_")]
+        # numeric news columns only (exclude news_context_schema_id String col)
+        num_dtypes = {c: t for c, t in zip(frame.columns, frame.dtypes, strict=False)}
+        news_cols = [
+            c
+            for c in frame.columns
+            if c.startswith("news_") and str(num_dtypes[c]).startswith(("Float", "Int"))
+        ]
+        if news_en:
+            feat_cols = feat_cols + news_cols
+        exp = ExperimentFactory(store=store).create(
+            did,
+            template="baseline_scalpnet_v1_news" if news_en else "baseline_scalpnet_v1",
+            experiment_id=f"task5_abc_{cell_id}",
+            overrides={"training": TRAIN_CFG},
+        )
+        t0 = time.perf_counter()
+        res = CandidateTrainer(store=store).train_candidate(
+            exp,
+            frame,
+            feature_cols=feat_cols,
+            model_id=f"task5_abc_{cell_id}_v1",
+            epochs=int(TRAIN_CFG["epochs"]),
+        )
+        train_s = round(time.perf_counter() - t0, 2)
+        out: dict[str, Any] = {
+            "cell": cell_id,
+            "schema": schema_id,
+            "train_seconds": train_s,
+            "dataset": did,
+        }
+        if res["status"] != "COMPLETED":
+            out.update({"status": "FAILED", "error": res.get("error", "")})
+            results[cell_id] = out
+            continue
+        out["status"] = "COMPLETED"
+        out["model_id"] = res["model_id"]
+        out["val_accuracy"] = res.get("val_accuracy")
+        labels_arr = frame["label"].to_numpy().astype(np.int64)
+        n = frame.height
+        val_idx = np.arange(int(n * 0.8), n)
+        X = frame.select([c for c in feat_cols if c in frame.columns]).to_numpy().astype(np.float32)
+        from nexus_scalp.model_generation.runtime import validate_and_load
+
+        rt = validate_and_load(res["model_id"], root=str(REPO_ROOT / "artifacts/model_generation"))
+        # LocalModelRuntime.predict is single-vector; loop the val block (bounded)
+        prob_rows = []
+        for row_vec in X[val_idx]:
+            pred = rt.predict(row_vec)
+            prob_rows.append(pred["probabilities"])
+        probs = np.asarray(prob_rows, dtype=np.float64)
+        if probs.shape[0] == 0:
+            out["status"] = "FAILED"
+            out["error"] = "no predictions"
+            results[cell_id] = out
+            continue
+        y_true = labels_arr[val_idx]
+        preds = np.argmax(probs, axis=1)
+        cm = confusion_and_class_metrics(y_true, preds, num_classes=3)
+        cal = compute_calibration(probs, y_true)
+        out["metrics"] = {
+            "accuracy": cm.get("accuracy"),
+            "macro_f1": cm.get("macro_f1"),
+            "per_class": cm.get("per_class"),
+            "ece": cal.get("ece"),
+            "brier": cal.get("brier", None),
+            "n_val": len(y_true),
+        }
+        uniq, counts = np.unique(labels_arr, return_counts=True)
+        out["label_dist"] = {str(int(u)): int(c) for u, c in zip(uniq, counts, strict=False)}
+        results[cell_id] = out
+        print(
+            f"[ABC] {cell_id} ({schema_id}) {out['status']} "
+            f"acc={out.get('metrics', {}).get('accuracy')} f1={out.get('metrics', {}).get('macro_f1')}",
+            flush=True,
+        )
+    report = {
+        "experiment": "TASK-05 A/B/C fair benchmark (real 70D dataset)",
+        "generated_at_utc": datetime.now(UTC).isoformat(),
+        "train_cfg": TRAIN_CFG,
+        "cells": results,
+        "verdict": _verdict(results),
+    }
+    out_path = OUT_DIR / "benchmark_70d_abc_task5.json"
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, default=str)
+    print(f"report: {out_path}")
+    return report
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--from-artifacts":
+        run_from_artifacts()
+    else:
+        main()

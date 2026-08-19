@@ -1,0 +1,14 @@
+2026-08-19 07:13:27 [info     ] [EXPERIMENT] event=CREATED experiment_id=task5_abc_A template=baseline_scalpnet_v1
+2026-08-19 07:13:50 [info     ] [TRAIN] event=CANDIDATE_READY model_id=task5_abc_A_v1 val_acc=0.2408
+2026-08-19 07:13:51 [info     ] [MODEL] event=LOADED model_id=task5_abc_A_v1 device=cpu
+[ABC] A (scalp_v1) COMPLETED acc=0.2408 f1=0.1815
+2026-08-19 07:13:54 [info     ] [EXPERIMENT] event=CREATED experiment_id=task5_abc_B template=baseline_scalpnet_v1_news
+2026-08-19 07:14:10 [info     ] [TRAIN] event=CANDIDATE_READY model_id=task5_abc_B_v1 val_acc=0.2388
+2026-08-19 07:14:10 [info     ] [MODEL] event=LOADED model_id=task5_abc_B_v1 device=cpu
+[ABC] B (scalp_v2) COMPLETED acc=0.2388 f1=0.18
+2026-08-19 07:14:24 [info     ] [EXPERIMENT] event=CREATED experiment_id=task5_abc_C template=baseline_scalpnet_v1_news
+2026-08-19 07:14:31 [info     ] [TRAIN] event=CANDIDATE_READY model_id=task5_abc_C_v1 val_acc=0.2041
+2026-08-19 07:14:31 [info     ] [MODEL] event=LOADED model_id=task5_abc_C_v1 device=cpu
+[ABC] C (scalp_v3) COMPLETED acc=0.2041 f1=0.1538
+report: C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\model_generation\liquidity_research\benchmark_70d_abc_task5.json
+EXIT 0
