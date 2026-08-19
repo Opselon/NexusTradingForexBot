@@ -38,6 +38,7 @@ from __future__ import annotations
 import math
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -255,13 +256,21 @@ def test_70d_08_09_news_on_liquidity_off_news_remains_and_fallback_safe() -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_70d_10_runtime_toggle_persists_via_settings_service() -> None:
-    svc = MagicMock()
+def test_70d_10_runtime_toggle_persists_via_settings_service(tmp_path) -> None:
+    """The governor persists through SettingsService.db (the SettingsService
+    facade exposes no set(); the DB owns the typed application_settings
+    table). Verifies the REAL persistence path with a real temp DB."""
+    from nexus_scalp.settings.service import SettingsDatabase, SettingsService
+
+    svc = SettingsService(db=SettingsDatabase(db_path=Path(tmp_path) / "s.db"))
     gov = LiquidityGovernor(enabled=False, settings_service=svc)
     gov.set_enabled(True, actor="test")
-    svc.set.assert_called_once_with("model.liquidity_features_enabled", "1", actor="test")
+    row = svc.db.get("model.liquidity_features_enabled")
+    assert row is not None and row.value is True
     assert gov.enabled is True
     gov.set_enabled(False, actor="test")
+    row2 = svc.db.get("model.liquidity_features_enabled")
+    assert row2 is not None and row2.value is False
     assert gov.enabled is False
 
 

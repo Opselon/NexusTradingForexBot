@@ -305,11 +305,17 @@ class LiquidityGovernor:
             self._enabled = bool(value)
             if self._settings_service is not None:
                 try:
-                    self._settings_service.set(
-                        "model.liquidity_features_enabled",
-                        "1" if self._enabled else "0",
-                        actor=actor,
-                    )
+                    # Persist via the canonical SettingsService -> SettingsDatabase
+                    # (SettingsService exposes no set(); the DB owns the typed
+                    # table - INV-010/BUG-080 discipline).
+                    db = getattr(self._settings_service, "db", None)
+                    if db is not None and hasattr(db, "set"):
+                        db.set(
+                            "model.liquidity_features_enabled",
+                            self._enabled,
+                            value_type="bool",
+                            actor=actor,
+                        )
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.error(
                         "[LIQUIDITY] event=PERSIST_FAILED actor=%s error=%s",
