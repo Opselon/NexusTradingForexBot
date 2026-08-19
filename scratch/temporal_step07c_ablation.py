@@ -13,6 +13,7 @@ the REAL sequence).
 
 Output: artifacts/forensics/temporal_ablation.json
 """
+
 from __future__ import annotations
 
 import json
@@ -24,14 +25,14 @@ import polars as pl
 
 sys.path.insert(0, "src")
 
-from nexus_scalp.features.temporal import (  # noqa: E402
+from nexus_scalp.features.temporal import (
     TEMPORAL_FEATURE_NAMES,
     TemporalLiquidityTracker,
 )
-from nexus_scalp.model_generation.artifact_store import ArtifactStore  # noqa: E402
-from nexus_scalp.model_generation.experiment_factory import ExperimentFactory  # noqa: E402
-from nexus_scalp.model_generation.model_factory import ModelFactory  # noqa: E402
-from nexus_scalp.model_generation.training import CandidateTrainer  # noqa: E402
+from nexus_scalp.model_generation.artifact_store import ArtifactStore
+from nexus_scalp.model_generation.experiment_factory import ExperimentFactory
+from nexus_scalp.model_generation.model_factory import ModelFactory
+from nexus_scalp.model_generation.training import CandidateTrainer
 
 REPO = Path(__file__).resolve().parents[1]
 FRAME = REPO / "artifacts/forensics/temporal_frame_4000.parquet"
@@ -64,7 +65,7 @@ def main() -> None:
         snap = tracker.update([float(x) for x in liq_np[i]], str(ts_col[i]))
         temp_rows.append(list(snap.values))
     temp_np = np.asarray(temp_rows, dtype=np.float64)
-    for j, name in enumerate(TEMPORAL_FEATURE_NAMES):
+    for j, _name in enumerate(TEMPORAL_FEATURE_NAMES):
         df = df.with_columns(pl.Series(f"feat_{70 + j}", temp_np[:, j]))
 
     # labels
@@ -101,7 +102,8 @@ def main() -> None:
         import torch
 
         model = ModelFactory().build(
-            architecture=exp.architecture, num_classes=3,
+            architecture=exp.architecture,
+            num_classes=3,
             parameters={"input_dim": len(feat_cols), **(exp.architecture_parameters or {})},
         )
         model.load_state_dict(torch.load(store.model_weights_path(mid), map_location="cpu"))
@@ -116,7 +118,11 @@ def main() -> None:
         val = slice(int(n * 0.8), n)
         acc = float(np.mean(preds[val] == label_np[val]))
         seq = ["BUY" if int(p) == 1 else "SELL" if int(p) == 2 else "NONE" for p in preds]
-        flips = sum(1 for i in range(1, n) if seq[i] != seq[i - 1] and seq[i] != "NONE" and seq[i - 1] != "NONE")
+        flips = sum(
+            1
+            for i in range(1, n)
+            if seq[i] != seq[i - 1] and seq[i] != "NONE" and seq[i - 1] != "NONE"
+        )
         results[name] = {
             "status": "COMPLETED",
             "val_accuracy": round(acc, 4),

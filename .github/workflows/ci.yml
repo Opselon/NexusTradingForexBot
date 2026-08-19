@@ -277,7 +277,7 @@ jobs:
   # ---------------------------------------------------------------------------
   heavy-ci:
     name: Heavy CI (${{ matrix.suite }})
-    if: github.ref_name == 'ci-tests' || inputs.full == true
+    if: always() && (github.ref_name == 'ci-tests' || inputs.full == true)
     runs-on: ubuntu-latest
     needs: quality
     timeout-minutes: 45
@@ -434,7 +434,7 @@ jobs:
   # ---------------------------------------------------------------------------
   aggregate:
     name: Aggregate CI Results
-    if: github.ref_name == 'ci-tests' || inputs.full == true
+    if: always() && (github.ref_name == 'ci-tests' || inputs.full == true)
     needs: heavy-ci
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -8,6 +8,7 @@ difference must be documented (parity finding).
 
 from datetime import UTC, datetime
 
+import numpy as np
 import polars as pl
 
 from nexus_scalp.domain.models import TickData
@@ -19,28 +20,42 @@ from nexus_scalp.model_generation.schema_v2 import SPREAD_USD
 df = pl.read_parquet("data/raw/XAUUSD_M5.parquet").head(3000)
 times = [datetime.fromtimestamp(int(row["time"]), tz=UTC) for row in df.iter_rows(named=True)]
 all_bars = [
-    BarData(symbol="XAUUSD", timeframe="M1", timestamp=times[j],
-            open=float(df["open"][j]), high=float(df["high"][j]), low=float(df["low"][j]),
-            close=float(df["close"][j]), tick_volume=1, is_complete=True)
+    BarData(
+        symbol="XAUUSD",
+        timeframe="M1",
+        timestamp=times[j],
+        open=float(df["open"][j]),
+        high=float(df["high"][j]),
+        low=float(df["low"][j]),
+        close=float(df["close"][j]),
+        tick_volume=1,
+        is_complete=True,
+    )
     for j in range(df.height)
 ]
 engine = ScalpFeatureEngine(symbol="XAUUSD")
 
-import numpy as np
 
 diff_rows = 0
 max_diff = 0.0
 n_checked = 0
 for i in range(500, 1500):  # skip warm-up, sample a region
     ts = times[i]
-    tick = TickData(symbol="XAUUSD", timestamp=ts, bid=float(df["close"][i]),
-                    ask=float(df["close"][i]) + SPREAD_USD, volume=1)
-    window = all_bars[max(0, i - 54):i + 1]
+    tick = TickData(
+        symbol="XAUUSD",
+        timestamp=ts,
+        bid=float(df["close"][i]),
+        ask=float(df["close"][i]) + SPREAD_USD,
+        volume=1,
+    )
+    window = all_bars[max(0, i - 54) : i + 1]
     fv = engine.compute_from_bars(window, tick)
-    liq_full = compute_liquidity_features(all_bars[: i + 1], decision_at=ts,
-                                          mid_price=float(df["close"][i]), atr=fv.atr_m1)
-    liq_win = compute_liquidity_features(window, decision_at=ts,
-                                         mid_price=float(df["close"][i]), atr=fv.atr_m1)
+    liq_full = compute_liquidity_features(
+        all_bars[: i + 1], decision_at=ts, mid_price=float(df["close"][i]), atr=fv.atr_m1
+    )
+    liq_win = compute_liquidity_features(
+        window, decision_at=ts, mid_price=float(df["close"][i]), atr=fv.atr_m1
+    )
     vf = np.array(liq_full.as_vector())
     vw = np.array(liq_win.as_vector())
     d = np.abs(vf - vw).max()

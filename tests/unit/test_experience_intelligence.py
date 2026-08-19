@@ -1101,7 +1101,11 @@ def test_33_future_feature_dimensions_are_backward_compatible(temp_audit_repo, c
     schema, with no silent reinterpretation.
     """
     ledger, _, _, _ = components
-    for schema, dim in (("scalp_v1", 50), ("scalp_v2", 60), ("scalp_v3", 70)):  # TASK-03 canonical 70D
+    for schema, dim in (
+        ("scalp_v1", 50),
+        ("scalp_v2", 60),
+        ("scalp_v3", 70),
+    ):  # TASK-03 canonical 70D
         ledger.record_experience(
             make_record(
                 f"k_{schema}",
@@ -1112,7 +1116,11 @@ def test_33_future_feature_dimensions_are_backward_compatible(temp_audit_repo, c
         )
     temp_audit_repo._queue.join()
 
-    for schema, dim in (("scalp_v1", 50), ("scalp_v2", 60), ("scalp_v3", 70)):  # TASK-03 canonical 70D
+    for schema, dim in (
+        ("scalp_v1", 50),
+        ("scalp_v2", 60),
+        ("scalp_v3", 70),
+    ):  # TASK-03 canonical 70D
         rec = ledger.get_experiences_for_strategy(f"strat_{schema}")[0]
         assert rec.feature_schema_id == schema
         assert rec.feature_dimension == dim
@@ -1160,7 +1168,12 @@ def test_34_persistence_failure_is_isolated(temp_audit_repo, components, sample_
     """A full/broken write queue must not raise into the live path."""
     ledger, _, _, engine = components
 
-    class BrokenQueue:
+    import queue as _queue_mod
+
+    class BrokenQueue(_queue_mod.Queue):
+        """A queue whose PUT side is broken (full), reads still work so the
+        background audit worker never crashes on a missing interface."""
+
         def put_nowait(self, item):
             raise RuntimeError("QUEUE_FULL")
 

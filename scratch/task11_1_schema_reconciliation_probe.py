@@ -5,6 +5,7 @@ Read-only. Documents the ACTUAL state of every 70D schema reference.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -14,7 +15,6 @@ sys.path.insert(0, str(REPO))
 from nexus_scalp.features.schema import FEATURE_SCHEMAS  # noqa: E402
 from nexus_scalp.features.schema_contract import (  # noqa: E402
     DIMENSION,
-    NEWS_10D_NAMES,
     SCHEMA_ID,
     canonical_feature_names,
     feature_schema_hash,
@@ -42,22 +42,25 @@ print("v4 desc:", (v4.description or "")[:180])
 print("\n=== ACTIVE RUNTIME USAGE ===")
 try:
     from nexus_scalp.features.liquidity_runtime import SCHEMA_70D
+
     print("liquidity_runtime.SCHEMA_70D:", SCHEMA_70D, "(ACTIVE_RUNTIME)")
 except Exception as e:
     print("liquidity_runtime import err:", e)
 try:
     from nexus_scalp.shadow.shadow70.models import SHADOW70_SCHEMA_ID
+
     print("shadow70.SHADOW70_SCHEMA_ID:", SHADOW70_SCHEMA_ID, "(SHADOW)")
 except Exception as e:
     print("shadow70 import err:", e)
 try:
     from nexus_scalp.model_generation.schema_v2 import SEVENTY_D_SCHEMA_ID
+
     print("schema_v2.SEVENTY_D_SCHEMA_ID:", SEVENTY_D_SCHEMA_ID, "(DATASET)")
 except Exception as e:
     print("schema_v2 import err:", e)
 
 print("\n=== DATASET MANIFEST PROVENANCE ===")
-import json
+
 for ds in ("ds_d3f35b12d63148da", "ds_d3886c503d6c0901"):
     p = REPO / f"artifacts/model_generation/datasets/{ds}/dataset_manifest.json"
     if p.exists():

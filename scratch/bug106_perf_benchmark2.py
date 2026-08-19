@@ -4,6 +4,7 @@ The canonical reference is quadratic -> only measured at 500/1000/2000
 (the parity harness already proves equality). This probes the incremental
 builder's complexity trend: rows/sec should be ~flat (O(n) amortized).
 """
+
 from __future__ import annotations
 
 import gc
@@ -33,7 +34,7 @@ def run_one(n: int, full: pl.DataFrame) -> dict:
     t0 = time.time()
     f = compute_70d_frame_fast(df, news_frame=None)
     dt = time.time() - t0
-    cur, peak = tracemalloc.get_traced_memory()
+    _cur, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     return {
         "rows_in": n,

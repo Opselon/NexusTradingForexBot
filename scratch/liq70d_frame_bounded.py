@@ -8,11 +8,11 @@ exact same semantics: all bars <= ts, forming HTF bucket excluded.
 
 Findings are recorded for the parity builder (suggested fix upstream).
 """
+
 from __future__ import annotations
 
 import time
 
-import numpy as np
 import polars as pl
 
 from nexus_scalp.domain.models import TickData
@@ -115,8 +115,8 @@ def build_bounded_70d_frame(raw: pl.DataFrame, news_frame: pl.DataFrame | None =
             rec[f"feat_{60 + idx}"] = float(liq10[idx])
         rows.append(rec)
         if (i + 1) % 2000 == 0:
-            print(f"  row {i+1}/{n} ({time.perf_counter()-t0:.0f}s)", flush=True)
-    print(f"rows: {len(rows)} in {time.perf_counter()-t0:.0f}s", flush=True)
+            print(f"  row {i + 1}/{n} ({time.perf_counter() - t0:.0f}s)", flush=True)
+    print(f"rows: {len(rows)} in {time.perf_counter() - t0:.0f}s", flush=True)
     return pl.DataFrame(rows)
 
 

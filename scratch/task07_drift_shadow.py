@@ -20,6 +20,7 @@ B) SHADOW DISAGREEMENT (mission 16/17/32): the 2 real shadow70 observations
 Outputs: scratch/task07_research/drift_analysis.json
          scratch/task07_research/shadow_disagreement.json
 """
+
 from __future__ import annotations
 
 import json
@@ -40,8 +41,8 @@ def _psi(ref: list[float], live: list[float], bins: int = 10) -> float:
     """Population stability index (project convention, see shadow70/health.py)."""
     if not ref or not live:
         return float("nan")
-    lo = min(min(ref), min(live))
-    hi = max(max(ref), max(live))
+    lo = min(*ref, *live)
+    hi = max(*ref, *live)
     if hi - lo < 1e-9:
         return 0.0
     edges = [lo + (hi - lo) * i / bins for i in range(bins + 1)]
@@ -62,7 +63,7 @@ def _psi(ref: list[float], live: list[float], bins: int = 10) -> float:
 
 
 def _classify(psi: float, mean_shift: float) -> str:
-    if psi != psi:  # nan
+    if math.isnan(psi):
         return "NORMAL"
     if psi < 0.10 and mean_shift < 0.2:
         return "NORMAL"
@@ -80,10 +81,16 @@ def main() -> int:
     dist = json.load(open(OUT / "feature_distributions.json", encoding="utf-8"))
 
     names = [
-        "bsl_distance_atr", "ssl_distance_atr", "eqh_strength", "eql_strength",
-        "htf_liquidity_score", "internal_liquidity_distance",
-        "external_liquidity_distance", "liquidity_confluence",
-        "liquidity_sweep_state", "post_sweep_displacement",
+        "bsl_distance_atr",
+        "ssl_distance_atr",
+        "eqh_strength",
+        "eql_strength",
+        "htf_liquidity_score",
+        "internal_liquidity_distance",
+        "external_liquidity_distance",
+        "liquidity_confluence",
+        "liquidity_sweep_state",
+        "post_sweep_displacement",
     ]
     drift = {
         "research_run_id": RESEARCH_RUN_ID,
@@ -106,7 +113,7 @@ def main() -> int:
         lv = dist["features_sample"][name]
         # reconstruct crude samples for PSI from the reference stats via normal approx
         # (we do not have the raw rows; PSI on normal approx is documented as approximate)
-        import random  # noqa: PLC0415
+        import random
 
         rng = random.Random(42)
         mu_r, sd_r = r["mean"], r["std"]
@@ -123,15 +130,16 @@ def main() -> int:
             "mean_shift_abs": round(mean_shift, 4),
             "psi_approx": round(psi, 4),
             "status": _classify(psi, mean_shift),
-            "note": "v1.0->v1.1 design change; not market drift" if name in
-                    ("eqh_strength", "eql_strength", "liquidity_confluence", "liquidity_sweep_state") else
-                    "stable family (unchanged between versions) — valid drift signal",
+            "note": "v1.0->v1.1 design change; not market drift"
+            if name
+            in ("eqh_strength", "eql_strength", "liquidity_confluence", "liquidity_sweep_state")
+            else "stable family (unchanged between versions) — valid drift signal",
         }
 
     (OUT / "drift_analysis.json").write_text(json.dumps(drift, indent=2), encoding="utf-8")
 
     # shadow disagreement
-    import sqlite3  # noqa: PLC0415
+    import sqlite3
 
     con = sqlite3.connect(REPO / "artifacts" / "audit.db")
     con.row_factory = sqlite3.Row
@@ -157,15 +165,24 @@ def main() -> int:
             }
             for o in obs
         ],
-        "counts": {"total": len(obs), "valid": sum(1 for o in obs if o["valid"]), "blocked": sum(1 for o in obs if o["error_code"] == "SHADOW_BLOCKED")},
+        "counts": {
+            "total": len(obs),
+            "valid": sum(1 for o in obs if o["valid"]),
+            "blocked": sum(1 for o in obs if o["error_code"] == "SHADOW_BLOCKED"),
+        },
         "next_evidence_threshold": "Shadow disagreement outcome analysis (champion correct / shadow correct / both / confidence-weighted) requires >= 50 valid observations with real model outputs and resolved outcomes (mission 17/32).",
     }
     (OUT / "shadow_disagreement.json").write_text(json.dumps(shadow, indent=2), encoding="utf-8")
 
-    print(json.dumps({
-        "drift": {k: v["status"] for k, v in drift["features"].items()},
-        "shadow": {"status": shadow["status"], "observations": shadow["counts"]},
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "drift": {k: v["status"] for k, v in drift["features"].items()},
+                "shadow": {"status": shadow["status"], "observations": shadow["counts"]},
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

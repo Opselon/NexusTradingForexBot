@@ -13,12 +13,13 @@ v1.0-only consolidation run, so results are directly comparable).
 
 Outputs (tracked): scratch/task07_research/version_isolation_v1_vs_v1_1.json
 """
+
 from __future__ import annotations
 
 import json
 import math
 import sys
-from datetime import UTC, datetime
+from datetime import UTC
 from pathlib import Path
 
 REPO = Path(r"C:\Users\Capsizer\source\repos\NexusTradingForexBot")
@@ -70,10 +71,17 @@ def load_bars() -> list[BarData]:
         t = row["time_utc"]
         ts = t.replace(tzinfo=UTC) if t.tzinfo is None else t.astimezone(UTC)
         bars.append(
-            BarData(symbol="XAUUSD", timeframe="M5", timestamp=ts,
-                    open=float(row["open"]), high=float(row["high"]),
-                    low=float(row["low"]), close=float(row["close"]),
-                    tick_volume=int(row["tick_volume"] or 0), is_complete=True)
+            BarData(
+                symbol="XAUUSD",
+                timeframe="M5",
+                timestamp=ts,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                tick_volume=int(row["tick_volume"] or 0),
+                is_complete=True,
+            )
         )
     return bars
 
@@ -87,8 +95,12 @@ def stats(vals: list[float]) -> dict:
     sv = sorted(vals)
     uniq = len(set(round(v, 4) for v in vals))
     return {
-        "n": n, "mean": round(mean, 4), "median": round(sv[n // 2], 4),
-        "std": round(std, 4), "min": round(min(vals), 4), "max": round(max(vals), 4),
+        "n": n,
+        "mean": round(mean, 4),
+        "median": round(sv[n // 2], 4),
+        "std": round(std, 4),
+        "min": round(min(vals), 4),
+        "max": round(max(vals), 4),
         "unique_at_4dp": uniq,
         "saturation_frac_abs_ge_3": round(sum(1 for v in vals if abs(v) >= 2.999) / n, 4),
         "neutral_sentinel_frac_3": round(sum(1 for v in vals if v == 3.0) / n, 4),
@@ -97,7 +109,6 @@ def stats(vals: list[float]) -> dict:
 
 
 def main() -> int:
-    from datetime import UTC  # noqa: PLC0415
 
     bars = load_bars()
     print(f"bars={len(bars)}", flush=True)
@@ -109,11 +120,17 @@ def main() -> int:
         lo = max(0, i + 1 - LOOKBACK)
         window = bars[lo : i + 1]
         ts = window[-1].timestamp
-        atr = float(liquidity_atr([b.high for b in window], [b.low for b in window], [b.close for b in window]))
+        atr = float(
+            liquidity_atr(
+                [b.high for b in window], [b.low for b in window], [b.close for b in window]
+            )
+        )
         v1 = compute_liquidity_features(window, decision_at=ts, atr=atr)
         v11 = compute_liquidity_features_v1_1(window, decision_at=ts, atr=atr)
         rec = {"timestamp": ts.isoformat(), "session": session_of(ts)}
-        for name, a, b in zip(LIQUIDITY_FEATURE_NAMES, v1.as_vector(), v11.as_vector(), strict=True):
+        for name, a, b in zip(
+            LIQUIDITY_FEATURE_NAMES, v1.as_vector(), v11.as_vector(), strict=True
+        ):
             rec[f"v1_{name}"] = float(a)
             rec[f"v11_{name}"] = float(b)
             rec[f"d_{name}"] = float(b) - float(a)
@@ -128,8 +145,10 @@ def main() -> int:
     out = {
         "research_run_id": RESEARCH_RUN_ID,
         "research_baseline_id": BASELINE_ID,
-        "versions": {"v1": "liquidity-v1.0 (committed liquidity_engine.py, golden baseline 4455874)",
-                     "v1_1": LIQUIDITY_ALGORITHM_VERSION + " (candidate liquidity_engine_opt.py, TASK-06)"},
+        "versions": {
+            "v1": "liquidity-v1.0 (committed liquidity_engine.py, golden baseline 4455874)",
+            "v1_1": LIQUIDITY_ALGORITHM_VERSION + " (candidate liquidity_engine_opt.py, TASK-06)",
+        },
         "protocol": "identical causal inputs (bars, decision_at, ATR), 200-bar stride, LOOKBACK=2000, decision_at gating",
         "samples": n,
         "time_range": [rows[0]["timestamp"], rows[-1]["timestamp"]],
@@ -149,7 +168,7 @@ def main() -> int:
         }
 
     # bivariate: confluence vs sweep state under both versions + session x version
-    from collections import defaultdict  # noqa: PLC0415
+    from collections import defaultdict
 
     by_sess: dict[str, dict] = defaultdict(dict)
     for r in rows:
@@ -161,26 +180,56 @@ def main() -> int:
         out["session_delta"][sess] = {
             "n": len(cols[f"v1_{names[0]}"]),
             "confluence_delta_mean": round(
-                sum(c - a for a, c in zip(cols["v1_liquidity_confluence"], cols["v11_liquidity_confluence"], strict=True)) / len(cols["v1_liquidity_confluence"]), 4),
+                sum(
+                    c - a
+                    for a, c in zip(
+                        cols["v1_liquidity_confluence"],
+                        cols["v11_liquidity_confluence"],
+                        strict=True,
+                    )
+                )
+                / len(cols["v1_liquidity_confluence"]),
+                4,
+            ),
             "sweep_delta_mean": round(
-                sum(c - a for a, c in zip(cols["v1_liquidity_sweep_state"], cols["v11_liquidity_sweep_state"], strict=True)) / len(cols["v1_liquidity_sweep_state"]), 4),
+                sum(
+                    c - a
+                    for a, c in zip(
+                        cols["v1_liquidity_sweep_state"],
+                        cols["v11_liquidity_sweep_state"],
+                        strict=True,
+                    )
+                )
+                / len(cols["v1_liquidity_sweep_state"]),
+                4,
+            ),
         }
 
-    (OUT / "version_isolation_v1_vs_v1_1.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
-    print(json.dumps({
-        "samples": n,
-        "per_feature_summary": {
-            name: {"delta_mean": out["per_feature"][name]["delta_mean"],
-                   "v1_std": out["per_feature"][name]["v1"]["std"],
-                   "v11_std": out["per_feature"][name]["v1_1"]["std"],
-                   "v1_sat": out["per_feature"][name]["v1"]["saturation_frac_abs_ge_3"],
-                   "v11_sat": out["per_feature"][name]["v1_1"]["saturation_frac_abs_ge_3"],
-                   "v1_unique": out["per_feature"][name]["v1"]["unique_at_4dp"],
-                   "v11_unique": out["per_feature"][name]["v1_1"]["unique_at_4dp"],
-                   "frac_changed": out["per_feature"][name]["frac_changed"]}
-            for name in names},
-        "session_delta": out["session_delta"],
-    }, indent=2))
+    (OUT / "version_isolation_v1_vs_v1_1.json").write_text(
+        json.dumps(out, indent=2), encoding="utf-8"
+    )
+    print(
+        json.dumps(
+            {
+                "samples": n,
+                "per_feature_summary": {
+                    name: {
+                        "delta_mean": out["per_feature"][name]["delta_mean"],
+                        "v1_std": out["per_feature"][name]["v1"]["std"],
+                        "v11_std": out["per_feature"][name]["v1_1"]["std"],
+                        "v1_sat": out["per_feature"][name]["v1"]["saturation_frac_abs_ge_3"],
+                        "v11_sat": out["per_feature"][name]["v1_1"]["saturation_frac_abs_ge_3"],
+                        "v1_unique": out["per_feature"][name]["v1"]["unique_at_4dp"],
+                        "v11_unique": out["per_feature"][name]["v1_1"]["unique_at_4dp"],
+                        "frac_changed": out["per_feature"][name]["frac_changed"],
+                    }
+                    for name in names
+                },
+                "session_delta": out["session_delta"],
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

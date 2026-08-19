@@ -9,7 +9,10 @@
 4. confluence: what is the zone/dedup behavior on real data? 11 unique values
    suggests severe quantization of the score.
 """
+
 import sys
+import time as _t
+from collections import Counter
 
 sys.path.insert(0, r"C:\Users\Capsizer\source\repos\NexusTradingForexBot")
 
@@ -20,6 +23,10 @@ import polars as pl
 
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features import liquidity_engine as le
+from nexus_scalp.features.liquidity_engine import (
+    detect_confirmed_swings,
+    equal_high_low_strengths,
+)
 from nexus_scalp.features.scalp_features import ScalpFeatureEngine
 from nexus_scalp.market_data.bar_aggregator import BarData
 
@@ -35,24 +42,31 @@ for r in rows:
 
 N = 12000
 bars = [
-    BarData(symbol="XAUUSD", timeframe="M5", timestamp=times[j],
-            open=float(rows[j]["open"]), high=float(rows[j]["high"]),
-            low=float(rows[j]["low"]), close=float(rows[j]["close"]),
-            tick_volume=int(rows[j].get("tick_volume", 0) or 0), is_complete=True)
+    BarData(
+        symbol="XAUUSD",
+        timeframe="M5",
+        timestamp=times[j],
+        open=float(rows[j]["open"]),
+        high=float(rows[j]["high"]),
+        low=float(rows[j]["low"]),
+        close=float(rows[j]["close"]),
+        tick_volume=int(rows[j].get("tick_volume", 0) or 0),
+        is_complete=True,
+    )
     for j in range(N)
 ]
 engine = ScalpFeatureEngine(symbol="XAUUSD")
 
 # 1. EQH last_price tracking: collect pools + eqh while price moves
 print("=== EQH/EQL strength last_price probe (select rows) ===")
-from nexus_scalp.features.liquidity_engine import (
-    detect_confirmed_swings,
-    equal_high_low_strengths,
-)
 
 for i in (100, 500, 1000, 2000, 5000, 9000, 11900):
-    win = bars[i-55:i+1]
-    s = le.liquidity_atr(np.array([b.high for b in win]), np.array([b.low for b in win]), np.array([b.close for b in win]))
+    win = bars[i - 55 : i + 1]
+    s = le.liquidity_atr(
+        np.array([b.high for b in win]),
+        np.array([b.low for b in win]),
+        np.array([b.close for b in win]),
+    )
     sh, sl = detect_confirmed_swings(win)
     price = win[-1].close
     e = equal_high_low_strengths(sh, sl, s)
@@ -60,31 +74,44 @@ for i in (100, 500, 1000, 2000, 5000, 9000, 11900):
 
 # 2. sweep_state value census on real data
 print("\n=== sweep_state census (rows 100..12000) ===")
-from collections import Counter
 
 cnt = Counter()
-import time as _t
 
 t0 = _t.perf_counter()
 for i in range(55, N):
-    win = bars[i-55:i+1]
+    win = bars[i - 55 : i + 1]
     ts = times[i]
     b = rows[i]
-    tick = TickData(symbol="XAUUSD", timestamp=ts, bid=float(b["close"]), ask=float(b["close"])+0.2, volume=0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=ts, bid=float(b["close"]), ask=float(b["close"]) + 0.2, volume=0
+    )
     fv = engine.compute_from_bars(win, tick)
-    liq = le.compute_liquidity_features(win, decision_at=ts, mid_price=float(b["close"]), atr=fv.atr_m1)
+    liq = le.compute_liquidity_features(
+        win, decision_at=ts, mid_price=float(b["close"]), atr=fv.atr_m1
+    )
     cnt[liq.liquidity_sweep_state] += 1
 print("sweep state census:", dict(sorted(cnt.items())))
-print(f"probe time {_t.perf_counter()-t0:.1f}s")
+print(f"probe time {_t.perf_counter() - t0:.1f}s")
 
 # 3. confluence value census + zone characteristics
 print("\n=== confluence census ===")
 cnt2 = Counter()
 for i in range(55, N):
-    win = bars[i-55:i+1]
+    win = bars[i - 55 : i + 1]
     ts = times[i]
     b = rows[i]
-    fv = engine.compute_from_bars(win, TickData(symbol="XAUUSD", timestamp=ts, bid=float(b["close"]), ask=float(b["close"])+0.2, volume=0))
-    liq = le.compute_liquidity_features(win, decision_at=ts, mid_price=float(b["close"]), atr=fv.atr_m1)
+    fv = engine.compute_from_bars(
+        win,
+        TickData(
+            symbol="XAUUSD",
+            timestamp=ts,
+            bid=float(b["close"]),
+            ask=float(b["close"]) + 0.2,
+            volume=0,
+        ),
+    )
+    liq = le.compute_liquidity_features(
+        win, decision_at=ts, mid_price=float(b["close"]), atr=fv.atr_m1
+    )
     cnt2[round(liq.liquidity_confluence, 4)] += 1
 print("confluence distinct:", len(cnt2), "top:", [(k, v) for k, v in cnt2.most_common(8)])

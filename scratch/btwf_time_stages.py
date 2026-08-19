@@ -1,24 +1,23 @@
 """Time compute_70d_frame stage-by-stage on a tiny slice to find the hotspot."""
+
 import time
+from datetime import UTC, datetime
 
 import polars as pl
-
-from nexus_scalp.model_generation.schema_v2 import compute_70d_frame
-
-df = pl.read_parquet("data/raw/XAUUSD_M5.parquet").head(2000)
-
-t0 = time.time()
-f = compute_70d_frame(df, news_frame=None)
-print(f"compute_70d_frame 2000 rows: {time.time()-t0:.1f}s rows={f.height}")
-
-# Now time internal stages separately: replicate the inner loop with timing
-from datetime import UTC, datetime
 
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.liquidity_engine import compute_liquidity_features
 from nexus_scalp.features.scalp_features import ScalpFeatureEngine
 from nexus_scalp.market_data.bar_aggregator import BarData
-from nexus_scalp.model_generation.schema_v2 import SPREAD_USD
+from nexus_scalp.model_generation.schema_v2 import SPREAD_USD, compute_70d_frame
+
+df = pl.read_parquet("data/raw/XAUUSD_M5.parquet").head(2000)
+
+t0 = time.time()
+f = compute_70d_frame(df, news_frame=None)
+print(f"compute_70d_frame 2000 rows: {time.time() - t0:.1f}s rows={f.height}")
+
+# Now time internal stages separately: replicate the inner loop with timing
 
 raw = df.sort("time")
 times = []
@@ -36,10 +35,17 @@ all_bars = []
 for j in range(n):
     bj = raw.row(j, named=True)
     all_bars.append(
-        BarData(symbol="XAUUSD", timeframe="M1", timestamp=times[j],
-                open=float(bj["open"]), high=float(bj["high"]), low=float(bj["low"]),
-                close=float(bj["close"]), tick_volume=int(bj.get("tick_volume", 0) or 0),
-                is_complete=True)
+        BarData(
+            symbol="XAUUSD",
+            timeframe="M1",
+            timestamp=times[j],
+            open=float(bj["open"]),
+            high=float(bj["high"]),
+            low=float(bj["low"]),
+            close=float(bj["close"]),
+            tick_volume=int(bj.get("tick_volume", 0) or 0),
+            is_complete=True,
+        )
     )
 
 t_engine = 0.0
@@ -51,16 +57,25 @@ for i in range(n):
         continue
     ts = times[i]
     b = raw.row(i, named=True)
-    tick = TickData(symbol="XAUUSD", timestamp=ts, bid=float(b["close"]),
-                    ask=float(b["close"]) + SPREAD_USD, volume=int(b.get("tick_volume", 0) or 0))
-    window = all_bars[max(0, i - 54):i + 1]
+    tick = TickData(
+        symbol="XAUUSD",
+        timestamp=ts,
+        bid=float(b["close"]),
+        ask=float(b["close"]) + SPREAD_USD,
+        volume=int(b.get("tick_volume", 0) or 0),
+    )
+    window = all_bars[max(0, i - 54) : i + 1]
     t0 = time.time()
     fv = engine.compute_from_bars(window, tick)
     t_engine += time.time() - t0
     t0 = time.time()
-    liquid = compute_liquidity_features(window, decision_at=ts, mid_price=float(b["close"]), atr=fv.atr_m1)
+    liquid = compute_liquidity_features(
+        window, decision_at=ts, mid_price=float(b["close"]), atr=fv.atr_m1
+    )
     t_liq += time.time() - t0
     count += 1
     if count >= 100:
         break
-print(f"first 100 rows: 50D engine {t_engine:.2f}s  liquidity {t_liq:.2f}s  per-row { (t_engine+t_liq)/100*1000:.1f} ms")
+print(
+    f"first 100 rows: 50D engine {t_engine:.2f}s  liquidity {t_liq:.2f}s  per-row {(t_engine + t_liq) / 100 * 1000:.1f} ms"
+)

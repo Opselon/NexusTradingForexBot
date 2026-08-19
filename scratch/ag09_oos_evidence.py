@@ -4,6 +4,7 @@ evidence chain: evaluate the EXISTING candidate on its held-out eval split,
 compute calibration + robustness under perturbation. NO retraining, NO
 tuning after OOS observation (OOS LOCK — brief §16).
 """
+
 import json
 import sys
 from pathlib import Path
@@ -15,7 +16,6 @@ sys.path.insert(0, "src")
 
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
 from nexus_scalp.model_generation.validation import (
-    ValidationFactory,
     compute_calibration,
 )
 
@@ -25,7 +25,9 @@ DATASET = "ds_task5_real70d_2500"
 store = ArtifactStore()
 man = store.read_model_manifest(MODEL)
 ds_frame = store.read_dataset(DATASET)
-print("model:", MODEL, "schema:", man.get("feature_schema_id"), "dim:", man.get("feature_dimension"))
+print(
+    "model:", MODEL, "schema:", man.get("feature_schema_id"), "dim:", man.get("feature_dimension")
+)
 print("dataset rows:", ds_frame.height)
 
 # ---- held-out eval split (OOS LOCK: only is_eval_sample rows) ----
@@ -33,11 +35,12 @@ eval_mask = ds_frame["is_eval_sample"].to_numpy().astype(bool)
 n_eval = int(eval_mask.sum())
 print("eval rows:", n_eval)
 feat_cols = [c for c in ds_frame.columns if c.startswith("feat_")]
-X_eval = ds_frame.filter(pl.col("is_eval_sample") == True).select(feat_cols).to_numpy().astype(np.float32)  # noqa: E712
-y_eval = ds_frame.filter(pl.col("is_eval_sample") == True)["label"].to_numpy().astype(np.int64)
+X_eval = ds_frame.filter(pl.col("is_eval_sample")).select(feat_cols).to_numpy().astype(np.float32)
+y_eval = ds_frame.filter(pl.col("is_eval_sample"))["label"].to_numpy().astype(np.int64)
 
 # ---- load the model + scaler (artifact integrity first) ----
 import torch  # noqa: E402
+
 from nexus_scalp.model_generation.model_factory import ModelFactory  # noqa: E402
 
 weights_path = store.model_weights_path(MODEL)
@@ -70,9 +73,12 @@ preds = np.argmax(probs, axis=1)
 
 # ---- OOS metrics ----
 from nexus_scalp.model_generation.validation import confusion_and_class_metrics  # noqa: E402
+
 cm = confusion_and_class_metrics(y_eval, preds)
 acc = float(np.mean(preds == y_eval))
-bal_acc = float((np.array([np.mean(preds[y_eval == c] == c) for c in (0, 1, 2) if (y_eval == c).any()])).mean())
+bal_acc = float(
+    (np.array([np.mean(preds[y_eval == c] == c) for c in (0, 1, 2) if (y_eval == c).any()])).mean()
+)
 
 # ---- calibration ----
 cal = compute_calibration(probs, y_eval)
@@ -92,7 +98,9 @@ oos_result = {
     "ece": cal.get("ece"),
     "well_calibrated": cal.get("well_calibrated"),
     "calibration_detail": cal,
-    "label_counts": {str(k): int(v) for k, v in zip(*np.unique(y_eval, return_counts=True))},
+    "label_counts": {
+        str(k): int(v) for k, v in zip(*np.unique(y_eval, return_counts=True), strict=False)
+    },
     "verdict_note": "OOS LOCKED: no tuning after this observation",
 }
 
@@ -106,7 +114,8 @@ for name, level in noise_levels.items():
         lp = model(torch.from_numpy(X_p.astype(np.float32)))
         pp = torch.softmax(lp, dim=1).numpy()
     if pp.shape[1] == 4:
-        pp = pp[:, :3]; pp = pp / pp.sum(axis=1, keepdims=True)
+        pp = pp[:, :3]
+        pp = pp / pp.sum(axis=1, keepdims=True)
     pr = np.argmax(pp, axis=1)
     robustness[name] = {
         "accuracy": round(float(np.mean(pr == y_eval)), 4),

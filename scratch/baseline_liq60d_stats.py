@@ -9,10 +9,12 @@ stream:
 Plus per-call latency (p50/p95/max) and overall frame time.
 """
 
+import json
 import sys
 import time
 from datetime import UTC, datetime
 
+import numpy as np
 import polars as pl
 
 sys.path.insert(0, r"C:\Users\Capsizer\source\repos\NexusTradingForexBot")
@@ -68,7 +70,13 @@ for i in range(MIN_BARS - 1, n):
     window = bars[i - MIN_BARS + 1 : i + 1]
     ts = times[i]
     b = rows[i]
-    tick = TickData(symbol="XAUUSD", timestamp=ts, bid=float(b["close"]), ask=float(b["close"]) + SPREAD, volume=0)
+    tick = TickData(
+        symbol="XAUUSD",
+        timestamp=ts,
+        bid=float(b["close"]),
+        ask=float(b["close"]) + SPREAD,
+        volume=0,
+    )
     fv = engine.compute_from_bars(window, tick)
     t0 = time.perf_counter()
     liquid = le.compute_liquidity_features(
@@ -80,9 +88,10 @@ for i in range(MIN_BARS - 1, n):
     lat.append((time.perf_counter() - t0) * 1000.0)
     vecs.append(liquid.as_vector())
 elapsed = time.perf_counter() - t_compute
-print(f"computed {len(vecs)} rows in {elapsed:.1f}s ({elapsed/max(1,len(vecs))*1000:.2f} ms/row full-engine)")
+print(
+    f"computed {len(vecs)} rows in {elapsed:.1f}s ({elapsed / max(1, len(vecs)) * 1000:.2f} ms/row full-engine)"
+)
 
-import numpy as np
 
 A = np.asarray(vecs, dtype=np.float64)
 print("vector count:", A.shape, "nonfinite total:", int((~np.isfinite(A)).sum()))
@@ -99,30 +108,50 @@ for k in range(10):
     uniq = len(np.unique(fin))
     p = np.percentile(fin, [1, 5, 50, 95, 99]) if len(fin) else [0] * 5
     stats[names[k]] = dict(
-        n=len(fin), min=float(fin.min()), max=float(fin.max()), mean=float(fin.mean()),
+        n=len(fin),
+        min=float(fin.min()),
+        max=float(fin.max()),
+        mean=float(fin.mean()),
         median=float(np.median(fin)),
-        std=float(fin.std()), p01=float(p[0]), p05=float(p[1]), p50=float(p[2]),
-        p95=float(p[3]), p99=float(p[4]), zero_rate=zr, missing_rate=mr,
-        saturation_rate=sat, unique_count=uniq,
+        std=float(fin.std()),
+        p01=float(p[0]),
+        p05=float(p[1]),
+        p50=float(p[2]),
+        p95=float(p[3]),
+        p99=float(p[4]),
+        zero_rate=zr,
+        missing_rate=mr,
+        saturation_rate=sat,
+        unique_count=uniq,
     )
     st = stats[names[k]]
-    print(f"{names[k]:<28}{st['min']:>8.3f}{st['max']:>8.3f}"
-          f"{st['mean']:>8.3f}{st['median']:>8.3f}{st['std']:>8.3f}"
-          f"{st['p01']:>8.3f}{st['p05']:>8.3f}{st['p95']:>8.3f}"
-          f"{st['p99']:>8.3f}{zr:>7.2f}{mr:>7.2f}{sat:>7.2f}{uniq:>7d}")
+    print(
+        f"{names[k]:<28}{st['min']:>8.3f}{st['max']:>8.3f}"
+        f"{st['mean']:>8.3f}{st['median']:>8.3f}{st['std']:>8.3f}"
+        f"{st['p01']:>8.3f}{st['p05']:>8.3f}{st['p95']:>8.3f}"
+        f"{st['p99']:>8.3f}{zr:>7.2f}{mr:>7.2f}{sat:>7.2f}{uniq:>7d}"
+    )
 
 la = np.asarray(lat)
-print(f"\nlatency (liquidity only) ms: p50={np.percentile(la, 50):.3f} p95={np.percentile(la, 95):.3f} max={la.max():.3f}")
+print(
+    f"\nlatency (liquidity only) ms: p50={np.percentile(la, 50):.3f} p95={np.percentile(la, 95):.3f} max={la.max():.3f}"
+)
 
 # persist stats for the report
-import json
 
 out = {
     "source": RAW,
     "rows_computed": len(vecs),
     "temporal": [times[MIN_BARS - 1].isoformat(), times[n - 1].isoformat()],
-    "latency_ms": {"p50": float(np.percentile(la, 50)), "p95": float(np.percentile(la, 95)), "max": float(la.max())},
-    "per_feature": {k: {kk: (float(vv) if isinstance(vv, (int, float)) else vv) for kk, vv in stats[k].items()} for k in stats},
+    "latency_ms": {
+        "p50": float(np.percentile(la, 50)),
+        "p95": float(np.percentile(la, 95)),
+        "max": float(la.max()),
+    },
+    "per_feature": {
+        k: {kk: (float(vv) if isinstance(vv, (int, float)) else vv) for kk, vv in stats[k].items()}
+        for k in stats
+    },
 }
 with open(r"scratch/liq60d_baseline_stats.json", "w", encoding="utf-8") as fh:
     json.dump(out, fh, indent=2)

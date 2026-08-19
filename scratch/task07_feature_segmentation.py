@@ -47,6 +47,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 RESEARCH_RUN_ID = "task07_features_01"
 SCHEMA_ID = "scalp_liquidity_v1"  # 60D contract (indices 50..59 = liquidity)
 
+
 # Session windows (UTC, XAUUSD): Tokyo 00-09, London 08-16, NY 13-21,
 # London-NY overlap 13-16, off-hours the rest.
 def session_of(ts: datetime) -> str:
@@ -69,8 +70,8 @@ def load_bars() -> list[BarData]:
     ).fetchall()
     con.close()
     bars: list[BarData] = []
-    for ts, o, h, l, c, v in rows:
-        ts = ts if isinstance(ts, datetime) else datetime.fromisoformat(str(ts))
+    for ts_raw, o, h, l, c, v in rows:
+        ts = ts_raw if isinstance(ts_raw, datetime) else datetime.fromisoformat(str(ts_raw))
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=UTC)
         bars.append(
@@ -210,13 +211,19 @@ def main() -> int:
         entry = {"n": sess_n}
         for name in names:
             entry[name] = stats([r[name] for r in rows])
-        entry["sweep_frequency"] = round(
-            sum(1 for r in rows if float(r["sweep_state"]) != 0.0) / sess_n, 4
-        ) if sess_n else 0.0
-        entry["confluence_positive_frac"] = round(
-            sum(1 for r in rows if float(r["confluence"]) > 0.0) / sess_n, 4
-        ) if sess_n else 0.0
-        entry["avg_pools_per_bar"] = round(sum(r["pools"] for r in rows) / sess_n, 2) if sess_n else 0
+        entry["sweep_frequency"] = (
+            round(sum(1 for r in rows if float(r["sweep_state"]) != 0.0) / sess_n, 4)
+            if sess_n
+            else 0.0
+        )
+        entry["confluence_positive_frac"] = (
+            round(sum(1 for r in rows if float(r["confluence"]) > 0.0) / sess_n, 4)
+            if sess_n
+            else 0.0
+        )
+        entry["avg_pools_per_bar"] = (
+            round(sum(r["pools"] for r in rows) / sess_n, 2) if sess_n else 0
+        )
         session_an["sessions"][sess] = entry
 
     # 3) redundancy matrix (overall + by session centroid)
@@ -261,15 +268,44 @@ def main() -> int:
         "research_baseline_id": "e85de540e09d3339",
         "schema_id": SCHEMA_ID,
         "source": "HISTORICAL/REPLAY",
-        "columns": {"feature_distributions": dist, "session_analysis": session_an, "redundancy": redun, "families": fam, "stability": stability},
+        "columns": {
+            "feature_distributions": dist,
+            "session_analysis": session_an,
+            "redundancy": redun,
+            "families": fam,
+            "stability": stability,
+        },
     }
-    (OUT / "feature_distributions.json").write_text(json.dumps(payload["columns"]["feature_distributions"], indent=2), encoding="utf-8")
-    (OUT / "session_analysis.json").write_text(json.dumps(payload["columns"]["session_analysis"], indent=2), encoding="utf-8")
+    (OUT / "feature_distributions.json").write_text(
+        json.dumps(payload["columns"]["feature_distributions"], indent=2), encoding="utf-8"
+    )
+    (OUT / "session_analysis.json").write_text(
+        json.dumps(payload["columns"]["session_analysis"], indent=2), encoding="utf-8"
+    )
     (OUT / "feature_quality.json").write_text(
-        json.dumps({"research_baseline_id": "e85de540e09d3339", "research_run_id": RESEARCH_RUN_ID, "redundancy": redun, "families": fam, "stability": stability}, indent=2),
+        json.dumps(
+            {
+                "research_baseline_id": "e85de540e09d3339",
+                "research_run_id": RESEARCH_RUN_ID,
+                "redundancy": redun,
+                "families": fam,
+                "stability": stability,
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
-    print(json.dumps({"samples": n, "sessions": {k: v["n"] for k, v in session_an["sessions"].items()}, "max_abs_corr": redun["max_abs_corr"], "top_correlated": redun.get("top_correlated")}, indent=2))
+    print(
+        json.dumps(
+            {
+                "samples": n,
+                "sessions": {k: v["n"] for k, v in session_an["sessions"].items()},
+                "max_abs_corr": redun["max_abs_corr"],
+                "top_correlated": redun.get("top_correlated"),
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

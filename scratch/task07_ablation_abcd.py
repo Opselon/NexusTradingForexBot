@@ -24,12 +24,12 @@ project's LEGACY_SCALPNET_V1 through CandidateTrainer when cheap; otherwise a
 plain logistic regression on the frozen features (documented) so the ablation
 measures FEATURE information, not architecture tuning.
 """
+
 from __future__ import annotations
 
 import json
 import sys
 import time
-from collections import Counter
 from datetime import UTC
 from pathlib import Path
 
@@ -39,7 +39,10 @@ sys.path.insert(0, str(REPO / "src"))
 import numpy as np  # noqa: E402
 import polars as pl  # noqa: E402
 
-from nexus_scalp.features.liquidity_engine import compute_liquidity_features, liquidity_atr  # noqa: E402
+from nexus_scalp.features.liquidity_engine import (  # noqa: E402
+    compute_liquidity_features,
+    liquidity_atr,
+)
 from nexus_scalp.features.scalp_features import ScalpFeatureEngine  # noqa: E402
 from nexus_scalp.market_data.bar_aggregator import BarData  # noqa: E402
 
@@ -48,11 +51,16 @@ OUT.mkdir(parents=True, exist_ok=True)
 RESEARCH_RUN_ID = "task07_ablation_small_01"
 BASELINE_ID = "e85de540e09d3339"
 LOOKBACK = 2000
-N_ROWS = 900          # decision points (bounded for runtime)
-LABEL_HORIZON = 5     # bars
+N_ROWS = 900  # decision points (bounded for runtime)
+LABEL_HORIZON = 5  # bars
 LABEL_THRESH_MULT = 0.5  # x ATR
 
-SESSIONS = {"ASIAN_TOKYO": (0, 8), "LONDON": (8, 13), "LONDON_NY_OVERLAP": (13, 16), "NEW_YORK": (16, 21)}
+SESSIONS = {
+    "ASIAN_TOKYO": (0, 8),
+    "LONDON": (8, 13),
+    "LONDON_NY_OVERLAP": (13, 16),
+    "NEW_YORK": (16, 21),
+}
 
 
 def session_of(ts) -> str:
@@ -69,10 +77,19 @@ def load_bars() -> list[BarData]:
     for row in df.iter_rows(named=True):
         t = row["time_utc"]
         ts = t.replace(tzinfo=UTC) if t.tzinfo is None else t.astimezone(UTC)
-        bars.append(BarData(symbol="XAUUSD", timeframe="M5", timestamp=ts,
-                            open=float(row["open"]), high=float(row["high"]),
-                            low=float(row["low"]), close=float(row["close"]),
-                            tick_volume=int(row["tick_volume"] or 0), is_complete=True))
+        bars.append(
+            BarData(
+                symbol="XAUUSD",
+                timeframe="M5",
+                timestamp=ts,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                tick_volume=int(row["tick_volume"] or 0),
+                is_complete=True,
+            )
+        )
     return bars
 
 
@@ -81,10 +98,12 @@ def compute_row(bars: list[BarData], i: int) -> dict:
     lo = max(0, i + 1 - LOOKBACK)
     window = bars[lo : i + 1]
     ts = window[-1].timestamp
-    atr = float(liquidity_atr([b.high for b in window], [b.low for b in window], [b.close for b in window]))
+    atr = float(
+        liquidity_atr([b.high for b in window], [b.low for b in window], [b.close for b in window])
+    )
     # canonical 50D engine (synthetic tick at decision close — the dataset
     # convention used by compute_60d_frame: decision tick at bar close)
-    from nexus_scalp.domain.models import TickData  # noqa: PLC0415
+    from nexus_scalp.domain.models import TickData
 
     eng = ScalpFeatureEngine(symbol="XAUUSD")
     tick = TickData(
@@ -160,8 +179,8 @@ def main() -> int:
 
     # simple, robust classifier for feature-information measurement:
     # multinomial logistic regression with L2 (sklearn) — architecture-agnostic
-    from sklearn.linear_model import LogisticRegression  # noqa: PLC0415
-    from sklearn.metrics import accuracy_score, f1_score  # noqa: PLC0415
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import accuracy_score, f1_score
 
     results = {}
     for cid in ["A", "B", "C", "D"]:
@@ -194,7 +213,7 @@ def main() -> int:
         brier = float(np.mean((proba - y_onehot) ** 2)) if proba.shape[1] == 3 else float("nan")
         results[cid] = {
             "dim": dims[cid],
-            "train_n": int(len(y_train)),
+            "train_n": len(y_train),
             "val_n": int(n_val),
             "accuracy": round(float(acc), 4),
             "macro_f1": round(float(mf1), 4),
@@ -202,7 +221,10 @@ def main() -> int:
             "brier": round(float(brier), 4),
             "fit_seconds": fit_s,
         }
-        print(f"  cell {cid}: acc={results[cid]['accuracy']} f1={results[cid]['macro_f1']} ece={results[cid]['ece']} brier={results[cid]['brier']} ({fit_s}s)", flush=True)
+        print(
+            f"  cell {cid}: acc={results[cid]['accuracy']} f1={results[cid]['macro_f1']} ece={results[cid]['ece']} brier={results[cid]['brier']} ({fit_s}s)",
+            flush=True,
+        )
 
     # verdict logic (mission 34/35: n>=100 per cell else INCONCLUSIVE/LOW_EVIDENCE)
     ns = {c: results[c]["val_n"] for c in results}
@@ -212,7 +234,13 @@ def main() -> int:
         db = results["D"]["macro_f1"] - results["B"]["macro_f1"]
         da = results["C"]["macro_f1"] - results["A"]["macro_f1"]
         verdict = {
-            "outcome": "POSITIVE" if db >= 0.02 and da >= 0.02 else "NEUTRAL" if abs(db) < 0.02 and abs(da) < 0.02 else "NEGATIVE" if db <= -0.02 or da <= -0.02 else "INCONCLUSIVE",
+            "outcome": "POSITIVE"
+            if db >= 0.02 and da >= 0.02
+            else "NEUTRAL"
+            if abs(db) < 0.02 and abs(da) < 0.02
+            else "NEGATIVE"
+            if db <= -0.02 or da <= -0.02
+            else "INCONCLUSIVE",
             "delta_D_minus_B_f1": round(db, 4),
             "delta_C_minus_A_f1": round(da, 4),
         }
@@ -227,7 +255,11 @@ def main() -> int:
         "label_contract": f"forward {LABEL_HORIZON}-bar return vs {LABEL_THRESH_MULT}*ATR (identical across cells)",
         "cells": results,
         "verdict": verdict,
-        "limitations": ["small n (LOW_EVIDENCE unless n>=100)", "news block NEUTRAL (no aligned news)", "linear model — measures feature information, not the production architecture"],
+        "limitations": [
+            "small n (LOW_EVIDENCE unless n>=100)",
+            "news block NEUTRAL (no aligned news)",
+            "linear model — measures feature information, not the production architecture",
+        ],
     }
     (OUT / "ablation_abcd_small.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({"cells": results, "verdict": verdict}, indent=2))

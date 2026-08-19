@@ -5,6 +5,7 @@ redundancy/stability/drift/shadow influence/OOS importance/runtime cost/
 research usefulness) and per-family aggregation. Individual evidence over one
 arbitrary number.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,7 +33,7 @@ def main() -> int:
     quality = json.load(open(OUT / "feature_quality.json", encoding="utf-8"))
     drift = json.load(open(OUT / "drift_analysis.json", encoding="utf-8"))
     version = json.load(open(OUT / "version_isolation_v1_vs_v1_1.json", encoding="utf-8"))
-    events = json.load(open(OUT / "event_studies.json", encoding="utf-8"))
+    json.load(open(OUT / "event_studies.json", encoding="utf-8"))
 
     names = list(dist["features_sample"].keys())
     scorecard = {
@@ -43,11 +44,13 @@ def main() -> int:
     for name in names:
         s = dist["features_sample"][name]
         red = quality["redundancy"]
-        max_corr = max((abs(p["spearman"]) for p in red["pairs"] if p["a"] == name or p["b"] == name), default=0.0)
+        max_corr = max(
+            (abs(p["spearman"]) for p in red["pairs"] if p["a"] == name or p["b"] == name),
+            default=0.0,
+        )
         stab = quality["stability"].get(name, {})
         dr = drift["features"].get(name, {})
         vi = version["per_feature"].get(name, {})
-        ev = events  # forward-outcome evidence summary (H15)
 
         scorecard["features"][name] = {
             "causality": "PASS",
@@ -65,7 +68,16 @@ def main() -> int:
             "shadow_influence": "NONE (no valid shadow observations yet)",
             "oos_importance": "N/A (no fitted model yet)",
             "runtime_cost": "LOW (pure numpy, ~39ms/decision at 2k-bar lookback; live 55-bar window far cheaper)",
-            "research_usefulness": "HIGH" if name in ("bsl_distance_atr", "ssl_distance_atr", "liquidity_sweep_state", "liquidity_confluence", "htf_liquidity_score") else "MEDIUM",
+            "research_usefulness": "HIGH"
+            if name
+            in (
+                "bsl_distance_atr",
+                "ssl_distance_atr",
+                "liquidity_sweep_state",
+                "liquidity_confluence",
+                "htf_liquidity_score",
+            )
+            else "MEDIUM",
         }
 
     # family aggregation
@@ -74,17 +86,45 @@ def main() -> int:
         present = [m for m in members if m in names]
         fam_out[fam] = {
             "members": present,
-            "mean_saturation": round(sum(scorecard["features"][m]["saturation_frac"] for m in present) / len(present), 4) if present else None,
-            "max_redundancy": max((scorecard["features"][m]["redundancy_max_abs_spearman"] for m in present), default=0.0) if present else None,
+            "mean_saturation": round(
+                sum(scorecard["features"][m]["saturation_frac"] for m in present) / len(present), 4
+            )
+            if present
+            else None,
+            "max_redundancy": max(
+                (scorecard["features"][m]["redundancy_max_abs_spearman"] for m in present),
+                default=0.0,
+            )
+            if present
+            else None,
             "drift_statuses": {m: scorecard["features"][m]["drift_status"] for m in present},
         }
     scorecard["families"] = fam_out
 
     (OUT / "feature_scorecard.json").write_text(json.dumps(scorecard, indent=2), encoding="utf-8")
-    print(json.dumps({
-        "features": {k: {kk: vv for kk, vv in v.items() if kk in ("causality", "parity", "saturation_frac", "redundancy_max_abs_spearman", "drift_status")} for k, v in scorecard["features"].items()},
-        "families": fam_out,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "features": {
+                    k: {
+                        kk: vv
+                        for kk, vv in v.items()
+                        if kk
+                        in (
+                            "causality",
+                            "parity",
+                            "saturation_frac",
+                            "redundancy_max_abs_spearman",
+                            "drift_status",
+                        )
+                    }
+                    for k, v in scorecard["features"].items()
+                },
+                "families": fam_out,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

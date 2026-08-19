@@ -22,15 +22,13 @@ from __future__ import annotations
 import json
 import statistics
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC
 
-import numpy as np
 import polars as pl
 
 from nexus_scalp.features.liquidity_engine import (
     compute_liquidity_features,
     detect_confirmed_swings,
-    htf_liquidity_score,
 )
 from nexus_scalp.market_data.bar_aggregator import BarData
 
@@ -43,10 +41,15 @@ def load_bars() -> list[BarData]:
         ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
         bars.append(
             BarData(
-                symbol="XAUUSD", timeframe="M1", timestamp=ts,
-                open=float(row["open"]), high=float(row["high"]),
-                low=float(row["low"]), close=float(row["close"]),
-                tick_volume=int(row.get("tick_volume", 0) or 0), is_complete=True,
+                symbol="XAUUSD",
+                timeframe="M1",
+                timestamp=ts,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                tick_volume=int(row.get("tick_volume", 0) or 0),
+                is_complete=True,
             )
         )
     return bars
@@ -112,7 +115,9 @@ def main() -> dict:
     for start in range(300, n - 300, 2000):
         decision = bars[start].timestamp
         a = compute_liquidity_features(bars, decision_at=decision, mid_price=bars[start].close)
-        b = compute_liquidity_features(bars[: start + 1], decision_at=decision, mid_price=bars[start].close)
+        b = compute_liquidity_features(
+            bars[: start + 1], decision_at=decision, mid_price=bars[start].close
+        )
         if a.as_vector() == b.as_vector():
             inv_ok += 1
         inv_samples += 1
@@ -124,8 +129,10 @@ def main() -> dict:
     for start in range(300, n, step):
         t0 = time.perf_counter()
         compute_liquidity_features(
-            bars[start - 55 : start + 1], decision_at=bars[start].timestamp,
-            mid_price=bars[start].close, atr=None,
+            bars[start - 55 : start + 1],
+            decision_at=bars[start].timestamp,
+            mid_price=bars[start].close,
+            atr=None,
         )
         lat.append((time.perf_counter() - t0) * 1000.0)
     p50 = statistics.median(lat)

@@ -1,4 +1,6 @@
 """BUG-106 scale benchmark: canonical vs fast at 1K/5K/10K/20K rows."""
+
+import json
 import sys
 import time
 
@@ -36,6 +38,5 @@ for n in (1000, 5000, 10000):
     )
     print(results[-1], flush=True)
 
-import json
 
 print(json.dumps(results, indent=2))

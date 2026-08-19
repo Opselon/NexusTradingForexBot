@@ -20,24 +20,25 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from nexus_scalp.features.schema_contract import (  # noqa: E402
+from nexus_scalp.features.schema_contract import (
     SCHEMA_ID as CANONICAL_70D_ID,
 )
 from nexus_scalp.features.schema_contract import (
     canonical_feature_names,
     feature_schema_hash,
 )
-from nexus_scalp.shadow.shadow70.models import (  # noqa: E402
+from nexus_scalp.shadow.shadow70.models import (
     Shadow70CandidateContract,
     classify_disagreement,
 )
-from nexus_scalp.shadow.shadow70.runtime import (  # noqa: E402
+from nexus_scalp.shadow.shadow70.runtime import (
     Shadow70Runtime,
     sha256_file,
 )
+
+REPO = Path(__file__).resolve().parents[1]
 
 AUDIT_DB = REPO / "artifacts" / "audit.db"
 CAND_DIR = REPO / "artifacts" / "model_generation" / "models" / "wf_candidate"
@@ -59,9 +60,13 @@ def section(name: str) -> None:
 def git_head() -> None:
     import subprocess
 
-    r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True)
+    r = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=False
+    )
     EVIDENCE["head"] = r.stdout.strip() if r.returncode == 0 else "?"
-    r2 = subprocess.run(["git", "rev-parse", "origin/main"], cwd=REPO, capture_output=True, text=True)
+    r2 = subprocess.run(
+        ["git", "rev-parse", "origin/main"], cwd=REPO, capture_output=True, text=True, check=False
+    )
     EVIDENCE["origin_main"] = r2.stdout.strip() if r2.returncode == 0 else "?"
     print(f"HEAD={EVIDENCE['head']} origin/main={EVIDENCE['origin_main']}")
 
@@ -118,12 +123,14 @@ def discover_candidate() -> dict[str, object] | None:
     ]
     conn.close()
     d["registry"] = [
-        {k: str(v)[:40] for k, v in r.items() if k in ("model_id", "lifecycle_status", "feature_schema_id", "feature_dimension")}
+        {
+            k: str(v)[:40]
+            for k, v in r.items()
+            if k in ("model_id", "lifecycle_status", "feature_schema_id", "feature_dimension")
+        }
         for r in rows
     ]
-    d["registered"] = any(
-        "wf_candidate" in str(r.get("model_id", "")) for r in rows
-    )
+    d["registered"] = any("wf_candidate" in str(r.get("model_id", "")) for r in rows)
     EVIDENCE["discovery"] = d
     return d
 
@@ -365,7 +372,9 @@ def disagreement_evidence() -> dict[str, object]:
         got = classify_disagreement(ca, sa, conf_a, conf_b).value
         match = got == expected
         ok += 1 if match else 0
-        rows.append({"champion": ca, "shadow": sa, "expected": expected, "got": got, "match": match})
+        rows.append(
+            {"champion": ca, "shadow": sa, "expected": expected, "got": got, "match": match}
+        )
     res = {"cases": len(cases), "matched": ok, "rows": rows}
     print(json.dumps(res, indent=2))
     EVIDENCE["disagreement"] = res
@@ -394,9 +403,23 @@ def safety_evidence() -> dict[str, object]:
     import nexus_scalp.shadow.shadow70.models as m_mod
     import nexus_scalp.shadow.shadow70.runtime as rt_mod
 
-    src = open(rt_mod.__file__, encoding="utf-8").read() + open(m_mod.__file__, encoding="utf-8").read()
-    broker_tokens = [t for t in ("order_send", "order_modify", "order_cancel", "close_position",
-                                 "MetaTrader5", "mt5", "symbol_info") if t in src]
+    src = (
+        open(rt_mod.__file__, encoding="utf-8").read()
+        + open(m_mod.__file__, encoding="utf-8").read()
+    )
+    broker_tokens = [
+        t
+        for t in (
+            "order_send",
+            "order_modify",
+            "order_cancel",
+            "close_position",
+            "MetaTrader5",
+            "mt5",
+            "symbol_info",
+        )
+        if t in src
+    ]
     res = {
         "champion_registry_fingerprint": champion.get("artifact_fingerprint", ""),
         "champion_artifact_sha256_16": champion_hash,
@@ -429,8 +452,17 @@ def worker_ui_evidence() -> dict[str, object]:
         "worker_queue_max": st["max_queue"],
         "ui_payload_shape": {
             "summary": ["runtime", "store", "worker"],
-            "runtime_keys": ["model_id", "schema", "dimension", "status", "observations",
-                             "errors", "dropped", "avg_latency_ms", "p95_latency_ms"],
+            "runtime_keys": [
+                "model_id",
+                "schema",
+                "dimension",
+                "status",
+                "observations",
+                "errors",
+                "dropped",
+                "avg_latency_ms",
+                "p95_latency_ms",
+            ],
             "store_keys": ["observations", "agreements", "invalid", "events"],
         },
         "note": "un-attached runtime reports IDLE with 0 observations — truthful",
@@ -507,9 +539,15 @@ def main() -> int:
     if not attach.get("passed"):
         EVIDENCE["verdict"] = "BLOCKED_ON_CANDIDATE"
     elif schema.get("schema_match") and integrity.get("tensor_dimension") == 70:
-        EVIDENCE["verdict"] = "SHADOW_VALIDATED_WITH_LIMITATIONS" if obs.get("valid_observations", 0) < 100 else "SHADOW_VALIDATED"
+        EVIDENCE["verdict"] = (
+            "SHADOW_VALIDATED_WITH_LIMITATIONS"
+            if obs.get("valid_observations", 0) < 100
+            else "SHADOW_VALIDATED"
+        )
     else:
-        EVIDENCE["verdict"] = "BLOCKED_ON_SCHEMA" if not schema.get("schema_match") else "BLOCKED_ON_RUNTIME"
+        EVIDENCE["verdict"] = (
+            "BLOCKED_ON_SCHEMA" if not schema.get("schema_match") else "BLOCKED_ON_RUNTIME"
+        )
     print(f"\nVERDICT: {EVIDENCE['verdict']}")
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     OUT_JSON.write_text(json.dumps(EVIDENCE, indent=2, default=str), encoding="utf-8")

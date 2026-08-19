@@ -14,12 +14,11 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer  # noqa: E402
+from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
 REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "artifacts/model_generation/models/wf_candidate"
@@ -40,7 +39,9 @@ def main() -> int:
         )
         .alias("label")
     )
-    print(f"rows: {df.height} | feat cols: {len(feat_cols)} | labels: {df['label'].value_counts().to_dict()}")
+    print(
+        f"rows: {df.height} | feat cols: {len(feat_cols)} | labels: {df['label'].value_counts().to_dict()}"
+    )
 
     tr = WalkForwardTrainer(
         num_folds=4,
@@ -53,7 +54,9 @@ def main() -> int:
     t0 = time.perf_counter()
     model = tr.train_and_validate(df, feat_cols)
     dt = time.perf_counter() - t0
-    print(f"WALK-FORWARD OK in {dt:.1f}s — model params: {sum(p.numel() for p in model.parameters())}")
+    print(
+        f"WALK-FORWARD OK in {dt:.1f}s — model params: {sum(p.numel() for p in model.parameters())}"
+    )
 
     # model hash
     h = hashlib.sha256((OUT / "model.pt").read_bytes()).hexdigest()

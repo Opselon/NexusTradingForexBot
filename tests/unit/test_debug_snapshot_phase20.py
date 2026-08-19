@@ -950,3 +950,54 @@ class TestDebugApi:
         broken = {"liquidity": {"pools": [{"state": object()}]}}
         fields = _find_non_json_fields(broken)
         assert any("state" in f for f in fields)
+
+    def test_api_state_no_exception_text_when_sections_raise(self):
+        """CodeQL py/stack-trace-exposure (#84) regression: when a snapshot
+        section raises, the payload carries a STABLE error code and the
+        exception text stays server-side only. Exception text, paths, SQL or
+        tracebacks must never appear in the JSON response body."""
+        import nexus_scalp.web.debug_snapshot as ds
+
+        def _boom(engine):
+            raise RuntimeError("SECRET_INTERNAL_MARKER_FEATURES")
+
+        with patch.object(ds, "_features_section", side_effect=_boom):
+            c = self._client(_FakeEngine())
+            r = c.get("/api/debug/state")
+        assert r.status_code == 200
+        body = r.text
+        assert "SECRET_INTERNAL_MARKER_FEATURES" not in body
+        assert "RuntimeError" not in body
+        assert "Traceback" not in body
+        assert "C:/Users" not in body
+        # The stable code IS present so the UI can render a truthful error
+        d = r.json()
+        features = d["features"]
+        assert features["available"] is False
+        assert features["reason"] == "SECTION_ERROR"
+
+    def test_section_error_reason_has_no_exc_interpolation(self):
+        """CodeQL py/stack-trace-exposure (#84) regression: no reason field
+        in the snapshot payload may embed exception text (f-string '{exc}',
+        str(exc), tracebacks, paths, SQL). Legitimate stable codes / state
+        markers are fine - exception internals are server-side only."""
+        import re as _re
+
+        c = self._client(None)
+        r = c.get("/api/debug/state")
+        assert r.status_code == 200
+        body = r.text
+        # exception internals must never appear in the wire body
+        assert "RuntimeError" not in body
+        assert "Traceback" not in body
+        assert "C:/Users" not in body
+        assert "Error(" not in body
+        d = r.json()
+        for sec_name, sec in d.items():
+            if isinstance(sec, dict) and "reason" in sec:
+                reason = sec["reason"]
+                assert isinstance(reason, str)
+                # stable code format: uppercase tokens separated by _
+                assert _re.fullmatch(r"[A-Z][A-Z0-9_]*(?: [A-Z][A-Z0-9_]*)*", reason), (
+                    f"reason {reason!r} in section {sec_name} looks like exception text"
+                )

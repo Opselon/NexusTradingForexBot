@@ -15,6 +15,13 @@ import sys
 import numpy as np
 import polars as pl
 
+sys.path.insert(0, r"C:\Users\Capsizer\source\repos\NexusTradingForexBot")
+
+from nexus_scalp.domain.models import TickData
+from nexus_scalp.features import liquidity_engine as le
+from nexus_scalp.features.scalp_features import ScalpFeatureEngine
+from nexus_scalp.market_data.bar_aggregator import BarData
+
 
 def _pearson(a: np.ndarray, b: np.ndarray) -> float:
     """Vectorized Pearson correlation (scipy-free; the venv has no scipy)."""
@@ -25,12 +32,6 @@ def _pearson(a: np.ndarray, b: np.ndarray) -> float:
         return 0.0
     return float((a * b).sum() / den)
 
-sys.path.insert(0, r"C:\Users\Capsizer\source\repos\NexusTradingForexBot")
-
-from nexus_scalp.domain.models import TickData
-from nexus_scalp.features import liquidity_engine as le
-from nexus_scalp.features.scalp_features import ScalpFeatureEngine
-from nexus_scalp.market_data.bar_aggregator import BarData
 
 RAW = r"data/raw/XAUUSD_M5.parquet"
 N_ROWS = 12000
@@ -41,17 +42,28 @@ rows = df.to_dicts()
 times: list = []
 for r in rows:
     t = r.get("time_utc") or r.get("time")
-    ts = t if isinstance(t, __import__("datetime").datetime) else __import__("datetime").datetime.fromtimestamp(float(t), tz=__import__("datetime").UTC)
+    ts = (
+        t
+        if isinstance(t, __import__("datetime").datetime)
+        else __import__("datetime").datetime.fromtimestamp(float(t), tz=__import__("datetime").UTC)
+    )
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=__import__("datetime").UTC)
     times.append(ts)
 
 n = min(N_ROWS, df.height)
 bars = [
-    BarData(symbol="XAUUSD", timeframe="M5", timestamp=times[j],
-            open=float(rows[j]["open"]), high=float(rows[j]["high"]),
-            low=float(rows[j]["low"]), close=float(rows[j]["close"]),
-            tick_volume=int(rows[j].get("tick_volume", 0) or 0), is_complete=True)
+    BarData(
+        symbol="XAUUSD",
+        timeframe="M5",
+        timestamp=times[j],
+        open=float(rows[j]["open"]),
+        high=float(rows[j]["high"]),
+        low=float(rows[j]["low"]),
+        close=float(rows[j]["close"]),
+        tick_volume=int(rows[j].get("tick_volume", 0) or 0),
+        is_complete=True,
+    )
     for j in range(n)
 ]
 
@@ -62,9 +74,17 @@ for i in range(MIN_BARS - 1, n):
     window = bars[i - MIN_BARS + 1 : i + 1]
     ts = times[i]
     b = rows[i]
-    tick = TickData(symbol="XAUUSD", timestamp=ts, bid=float(b["close"]), ask=float(b["close"]) + SPREAD, volume=0)
+    tick = TickData(
+        symbol="XAUUSD",
+        timestamp=ts,
+        bid=float(b["close"]),
+        ask=float(b["close"]) + SPREAD,
+        volume=0,
+    )
     fv = engine.compute_from_bars(window, tick)
-    liq = le.compute_liquidity_features(window, decision_at=ts, mid_price=float(b["close"]), atr=fv.atr_m1)
+    liq = le.compute_liquidity_features(
+        window, decision_at=ts, mid_price=float(b["close"]), atr=fv.atr_m1
+    )
     vectors60.append(fv.to_tensor_input() + liq.as_vector())
 
 A = np.asarray(vectors60, dtype=np.float64)
@@ -108,7 +128,9 @@ for sv in sorted(set(A[:, 58].tolist())):
 # dependency: htf vs internal/external
 print("\n=== htf vs others ===")
 for other in (54, 55, 56, 57):
-    print(f"htf({liq_names[4]}) ~ {liq_names[other-50]}: r={_pearson(A[:,54], A[:,other]):+.3f}")
+    print(
+        f"htf({liq_names[4]}) ~ {liq_names[other - 50]}: r={_pearson(A[:, 54], A[:, other]):+.3f}"
+    )
 
 np.save(r"scratch/liq60d_vectors60_baseline.npy", A)
 print("\nsaved scratch/liq60d_vectors60_baseline.npy")

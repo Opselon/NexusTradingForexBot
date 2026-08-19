@@ -53,12 +53,17 @@ def read_registry_candidates() -> tuple[list[dict[str, object]], dict[str, objec
     conn = sqlite3.connect(f"file:{AUDIT_DB}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
-        rows = [dict(r) for r in conn.execute(
-            "SELECT * FROM experience_model_registry ORDER BY registered_at DESC"
-        ).fetchall()]
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM experience_model_registry ORDER BY registered_at DESC"
+            ).fetchall()
+        ]
     finally:
         conn.close()
-    candidates = [r for r in rows if str(r.get("lifecycle_status", "")) in ("CHALLENGER", "CANDIDATE")]
+    candidates = [
+        r for r in rows if str(r.get("lifecycle_status", "")) in ("CHALLENGER", "CANDIDATE")
+    ]
     champion = next((r for r in rows if str(r.get("lifecycle_status", "")) == "CHAMPION"), None)
     return candidates, champion
 
@@ -111,9 +116,11 @@ def main() -> int:
     candidates, champion = read_registry_candidates()
     print(f"\n[1] REGISTRY  candidates={len(candidates)} champion={bool(champion)}")
     for c in candidates[:5]:
-        print(f"    - {c['model_id']}@{c['model_version']} "
-              f"schema={c.get('feature_schema_id')}/{c.get('feature_dimension')}D "
-              f"status={c.get('lifecycle_status')}")
+        print(
+            f"    - {c['model_id']}@{c['model_version']} "
+            f"schema={c.get('feature_schema_id')}/{c.get('feature_dimension')}D "
+            f"status={c.get('lifecycle_status')}"
+        )
     contract = candidate_contract(candidates[0] if candidates else None)
 
     # 2. Runtime attach (load validation, REAL gate)
@@ -122,7 +129,9 @@ def main() -> int:
     print(f"\n[2] LOAD GATE  status={result.status.value} gate={result.failing_gate or '-'}")
     print(f"    reason={result.reason[:140]}")
     RESULTS["candidate_status"] = {
-        "registry": "VALIDATED_CANDIDATE" if (contract and contract.is_validated()) else "NO_VALIDATED_CANDIDATE",
+        "registry": "VALIDATED_CANDIDATE"
+        if (contract and contract.is_validated())
+        else "NO_VALIDATED_CANDIDATE",
         "load_gate": result.status.value,
         "failing_gate": result.failing_gate,
         "model_id": contract.model_id if contract else "",
@@ -157,29 +166,59 @@ def main() -> int:
         else:
             ok_counts["invalid"] += 1
         sample_obs = obs
-    print(f"    valid={ok_counts['valid']} invalid={ok_counts['invalid']} "
-          f"runtime_state={rt.state.value}")
+    print(
+        f"    valid={ok_counts['valid']} invalid={ok_counts['invalid']} "
+        f"runtime_state={rt.state.value}"
+    )
     print(f"    dim={SHADOW70_DIMENSION} schema={SHADOW70_SCHEMA_ID}")
     RESULTS["observations"] = {"requested": n_obs, **ok_counts, "runtime_state": rt.state.value}
 
     # 4. Idempotency (deterministic ids)
-    o1 = rt.observe(vector70=build_readonly_vector(1), champion_action="NO_TRADE",
-                    champion_probabilities=[0.9, 0.03, 0.03, 0.04], champion_confidence=0.9,
-                    snapshot_id="idem", timestamp=ts0, base_feature_hash="b" * 8)
-    o2 = rt.observe(vector70=build_readonly_vector(1), champion_action="NO_TRADE",
-                    champion_probabilities=[0.9, 0.03, 0.03, 0.04], champion_confidence=0.9,
-                    snapshot_id="idem", timestamp=ts0, base_feature_hash="b" * 8)
-    print(f"\n[4] IDEMPOTENCY id1={o1.observation_id[:12]} id2={o2.observation_id[:12]} "
-          f"same={o1.observation_id == o2.observation_id}")
+    o1 = rt.observe(
+        vector70=build_readonly_vector(1),
+        champion_action="NO_TRADE",
+        champion_probabilities=[0.9, 0.03, 0.03, 0.04],
+        champion_confidence=0.9,
+        snapshot_id="idem",
+        timestamp=ts0,
+        base_feature_hash="b" * 8,
+    )
+    o2 = rt.observe(
+        vector70=build_readonly_vector(1),
+        champion_action="NO_TRADE",
+        champion_probabilities=[0.9, 0.03, 0.03, 0.04],
+        champion_confidence=0.9,
+        snapshot_id="idem",
+        timestamp=ts0,
+        base_feature_hash="b" * 8,
+    )
+    print(
+        f"\n[4] IDEMPOTENCY id1={o1.observation_id[:12]} id2={o2.observation_id[:12]} "
+        f"same={o1.observation_id == o2.observation_id}"
+    )
     RESULTS["idempotent"] = o1.observation_id == o2.observation_id
 
     # 5. Broker interaction count (runtime module graph has no broker)
     import nexus_scalp.shadow.shadow70.models as m_mod
     import nexus_scalp.shadow.shadow70.runtime as rt_mod
 
-    src = open(rt_mod.__file__, encoding="utf-8").read() + open(m_mod.__file__, encoding="utf-8").read()
-    broker_tokens = [t for t in ("order_send", "order_modify", "order_cancel", "close_position",
-                                 "MetaTrader5", "mt5", "symbol_info") if t in src]
+    src = (
+        open(rt_mod.__file__, encoding="utf-8").read()
+        + open(m_mod.__file__, encoding="utf-8").read()
+    )
+    broker_tokens = [
+        t
+        for t in (
+            "order_send",
+            "order_modify",
+            "order_cancel",
+            "close_position",
+            "MetaTrader5",
+            "mt5",
+            "symbol_info",
+        )
+        if t in src
+    ]
     print(f"\n[5] BROKER SAFETY broker_tokens_in_runtime={broker_tokens} -> interaction_count=0")
     RESULTS["broker_tokens"] = broker_tokens
     RESULTS["broker_interaction_count"] = 0
@@ -189,8 +228,10 @@ def main() -> int:
 
     active = FEATURE_SCHEMAS.active
     champion_hash = champion.get("artifact_fingerprint", "") if champion else ""
-    print(f"\n[6] CHAMPION active_schema={active.schema_id}/{active.dimension}D "
-          f"registry_hash={champion_hash[:16]}...")
+    print(
+        f"\n[6] CHAMPION active_schema={active.schema_id}/{active.dimension}D "
+        f"registry_hash={champion_hash[:16]}..."
+    )
     RESULTS["champion"] = {
         "active_schema": active.schema_id,
         "active_dimension": active.dimension,
@@ -207,8 +248,10 @@ def main() -> int:
     health = hm.health()
     print("\n[7] FEATURE HEALTH (10 liquidity features)")
     for h in health:
-        print(f"    {h.name:28s} mean={h.mean:7.4f} std={h.std:6.4f} "
-              f"miss={h.missing_rate:.2f} zero={h.zero_rate:.2f} n={h.samples}")
+        print(
+            f"    {h.name:28s} mean={h.mean:7.4f} std={h.std:6.4f} "
+            f"miss={h.missing_rate:.2f} zero={h.zero_rate:.2f} n={h.samples}"
+        )
     dsum = dm.summary()
     print(f"    drift status={dsum.get('status')} severity={dsum.get('severity')}")
     RESULTS["feature_health"] = [h.to_dict() for h in health[:3]]
@@ -237,11 +280,13 @@ def main() -> int:
     from nexus_scalp.shadow.shadow70.worker import Shadow70Worker
 
     wk = Shadow70Worker(store=store, max_queue=50)
-    for i in range(120):
+    for _i in range(120):
         if sample_obs is not None:
             wk.enqueue(sample_obs)
-    print(f"\n[9] QUEUE bounded qsize={wk._queue.qsize()} max={50} dropped={wk.dropped} "
-          f"mem_recent={len(rt._recent)}")
+    print(
+        f"\n[9] QUEUE bounded qsize={wk._queue.qsize()} max={50} dropped={wk.dropped} "
+        f"mem_recent={len(rt._recent)}"
+    )
     RESULTS["queue"] = wk.status()
 
     elapsed = time.perf_counter() - started

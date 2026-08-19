@@ -23,12 +23,11 @@ continuation prob, volatility ratio, n.
 
 Output: scratch/task07_research/event_studies.json
 """
+
 from __future__ import annotations
 
 import json
-import math
 import sys
-from collections import defaultdict
 from datetime import UTC
 from pathlib import Path
 
@@ -57,10 +56,19 @@ def load_bars() -> list[BarData]:
     for row in df.iter_rows(named=True):
         t = row["time_utc"]
         ts = t.replace(tzinfo=UTC) if t.tzinfo is None else t.astimezone(UTC)
-        bars.append(BarData(symbol="XAUUSD", timeframe="M5", timestamp=ts,
-                            open=float(row["open"]), high=float(row["high"]),
-                            low=float(row["low"]), close=float(row["close"]),
-                            tick_volume=int(row["tick_volume"] or 0), is_complete=True))
+        bars.append(
+            BarData(
+                symbol="XAUUSD",
+                timeframe="M5",
+                timestamp=ts,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                tick_volume=int(row["tick_volume"] or 0),
+                is_complete=True,
+            )
+        )
     return bars
 
 
@@ -81,14 +89,24 @@ def main() -> int:
         f = compute_liquidity_features_v1_1(w, decision_at=ts, atr=atr)
         ref_bsl.append(f.bsl_distance_atr)
         ref_ssl.append(f.ssl_distance_atr)
+
     def pct(vals: list[float], p: float) -> float:
         sv = sorted(vals)
         return sv[min(len(sv) - 1, int(len(sv) * p))]
+
     bsl_lo, bsl_hi = pct(ref_bsl, 1 / 3), pct(ref_bsl, 2 / 3)
     ssl_lo, ssl_hi = pct(ref_ssl, 1 / 3), pct(ref_ssl, 2 / 3)
     bins = {
-        "bsl": {"near_max": bsl_lo, "medium_max": bsl_hi, "frozen_on": "reference slice (first 25% of history)"},
-        "ssl": {"near_max": ssl_lo, "medium_max": ssl_hi, "frozen_on": "reference slice (first 25% of history)"},
+        "bsl": {
+            "near_max": bsl_lo,
+            "medium_max": bsl_hi,
+            "frozen_on": "reference slice (first 25% of history)",
+        },
+        "ssl": {
+            "near_max": ssl_lo,
+            "medium_max": ssl_hi,
+            "frozen_on": "reference slice (first 25% of history)",
+        },
     }
     print(f"frozen bins bsl={bsl_lo:.2f}/{bsl_hi:.2f} ssl={ssl_lo:.2f}/{ssl_hi:.2f}", flush=True)
 
@@ -227,16 +245,27 @@ def main() -> int:
 
     (OUT / "event_studies.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     # console digest: horizon 5
-    print(json.dumps({
-        "events_total": len(events),
-        "sweep_n": {k: len(v) for k, v in sweep_buckets.items()},
-        "confluence_n": {k: len(v) for k, v in conf_buckets.items()},
-        "bsl_bin_n": {b: len([e for e in events if e["bsl_bin"] == b]) for b in ["near", "medium", "far"]},
-        "ssl_bin_n": {b: len([e for e in events if e["ssl_bin"] == b]) for b in ["near", "medium", "far"]},
-        "htf_n": {k: len(v) for k, v in htf_buckets.items()},
-        "h5_sweep": {k: out["sweep"][k]["5"] for k in out["sweep"]},
-        "h5_confluence": {k: out["confluence"][k]["5"] for k in out["confluence"]},
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "events_total": len(events),
+                "sweep_n": {k: len(v) for k, v in sweep_buckets.items()},
+                "confluence_n": {k: len(v) for k, v in conf_buckets.items()},
+                "bsl_bin_n": {
+                    b: len([e for e in events if e["bsl_bin"] == b])
+                    for b in ["near", "medium", "far"]
+                },
+                "ssl_bin_n": {
+                    b: len([e for e in events if e["ssl_bin"] == b])
+                    for b in ["near", "medium", "far"]
+                },
+                "htf_n": {k: len(v) for k, v in htf_buckets.items()},
+                "h5_sweep": {k: out["sweep"][k]["5"] for k in out["sweep"]},
+                "h5_confluence": {k: out["confluence"][k]["5"] for k in out["confluence"]},
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

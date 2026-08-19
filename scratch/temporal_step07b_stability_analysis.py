@@ -3,6 +3,7 @@
 Reuses the 5 persisted temporal_matrix_* models and the saved temporal
 frame to compute RAW vs STABILIZED flip metrics + decision-margin analysis.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,13 +16,13 @@ import polars as pl
 
 sys.path.insert(0, "src")
 
-from nexus_scalp.features.temporal import (  # noqa: E402
+from nexus_scalp.features.temporal import (
     TEMPORAL_FEATURE_NAMES,
     TemporalLiquidityTracker,
 )
-from nexus_scalp.model_generation.artifact_store import ArtifactStore  # noqa: E402
-from nexus_scalp.model_generation.model_factory import ModelFactory  # noqa: E402
-from nexus_scalp.signals.stability_controller import (  # noqa: E402
+from nexus_scalp.model_generation.artifact_store import ArtifactStore
+from nexus_scalp.model_generation.model_factory import ModelFactory
+from nexus_scalp.signals.stability_controller import (
     DecisionStabilityController,
 )
 
@@ -126,7 +127,11 @@ def main() -> None:
         val = slice(int(n * 0.8), n)
         acc = float(np.mean(preds[val] == label_np[val])) if label_np is not None else None
         seq = ["BUY" if int(p) == 1 else "SELL" if int(p) == 2 else "NONE" for p in preds]
-        flips = sum(1 for i in range(1, n) if seq[i] != seq[i - 1] and seq[i] != "NONE" and seq[i - 1] != "NONE")
+        flips = sum(
+            1
+            for i in range(1, n)
+            if seq[i] != seq[i - 1] and seq[i] != "NONE" and seq[i - 1] != "NONE"
+        )
         directional = sum(1 for s in seq if s != "NONE")
         results[cell] = {
             "status": "COMPLETED",
@@ -135,7 +140,9 @@ def main() -> None:
             "flips": flips,
             "directional": directional,
             "flips_per_1000_bars": round(flips / n * 1000, 2),
-            "median_signal_duration_bars": statistics.median(durations(seq)) if durations(seq) else None,
+            "median_signal_duration_bars": statistics.median(durations(seq))
+            if durations(seq)
+            else None,
         }
         seqs[cell] = seq
         probs_by_cell[cell] = probs
@@ -148,8 +155,10 @@ def main() -> None:
             continue
         probs = probs_by_cell[cell]
         ctrl = DecisionStabilityController(
-            entry_min_margin=0.05, hard_reversal_margin=0.20,
-            entry_confirm_bars=2, exit_confirm_bars=1,
+            entry_min_margin=0.05,
+            hard_reversal_margin=0.20,
+            entry_confirm_bars=2,
+            exit_confirm_bars=1,
         )
         stable_seq: list[str] = []
         events = []
@@ -158,29 +167,47 @@ def main() -> None:
             stable_seq.append(d.stable_direction)
             if d.event:
                 events.append(d.event)
-        stable_flips = sum(1 for i in range(1, len(stable_seq))
-                           if stable_seq[i] != stable_seq[i - 1] and stable_seq[i] != "NONE" and stable_seq[i - 1] != "NONE")
+        stable_flips = sum(
+            1
+            for i in range(1, len(stable_seq))
+            if stable_seq[i] != stable_seq[i - 1]
+            and stable_seq[i] != "NONE"
+            and stable_seq[i - 1] != "NONE"
+        )
         raw_flips = results[cell]["flips"]
         stab_dur = durations(stable_seq)
         stability[cell] = {
             "raw_flips": raw_flips,
             "stable_flips": stable_flips,
-            "flip_reduction_pct": round((1 - stable_flips / raw_flips) * 100, 2) if raw_flips else 0.0,
+            "flip_reduction_pct": round((1 - stable_flips / raw_flips) * 100, 2)
+            if raw_flips
+            else 0.0,
             "raw_median_signal_duration_bars": results[cell]["median_signal_duration_bars"],
             "stable_median_signal_duration_bars": statistics.median(stab_dur) if stab_dur else None,
             "confirmed_events": len(events),
             "event_sample": [
-                {"previous": e.previous, "new": e.new_direction, "margin": e.margin,
-                 "reason": e.confirmation_reason, "candidate_age": e.candidate_age}
+                {
+                    "previous": e.previous,
+                    "new": e.new_direction,
+                    "margin": e.margin,
+                    "reason": e.confirmation_reason,
+                    "candidate_age": e.candidate_age,
+                }
                 for e in events[:10]
             ],
         }
-        print(f"[EXP] {cell} stability: raw={raw_flips} stable={stable_flips} "
-              f"reduction={stability[cell]['flip_reduction_pct']}% events={len(events)}")
+        print(
+            f"[EXP] {cell} stability: raw={raw_flips} stable={stable_flips} "
+            f"reduction={stability[cell]['flip_reduction_pct']}% events={len(events)}"
+        )
 
     # ---- decision margin analysis (brief 25) -------------------------------
-    margins_all = [abs(float(p[1]) - float(p[2])) for cell in CELLS if cell in probs_by_cell
-                   for p in probs_by_cell[cell]]
+    margins_all = [
+        abs(float(p[1]) - float(p[2]))
+        for cell in CELLS
+        if cell in probs_by_cell
+        for p in probs_by_cell[cell]
+    ]
     margin_stats = {
         "min": round(min(margins_all), 6),
         "median": round(statistics.median(margins_all), 6),
@@ -201,7 +228,7 @@ def main() -> None:
             "exit_confirm_bars": 1,
         },
         "note": "same frame/labels/split/architecture/budget; only feature "
-                "representation differs; stability controller research-only",
+        "representation differs; stability controller research-only",
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=1, default=str), encoding="utf-8")

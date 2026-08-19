@@ -1,6 +1,8 @@
 """Scale probe: measure compute_60d_frame / compute_70d_frame / train cost on a slice."""
+
 import time
 
+import numpy as np
 import polars as pl
 
 from nexus_scalp.model_generation.schema_v2 import compute_60d_frame, compute_70d_frame
@@ -21,7 +23,11 @@ feat60 = [c for c in f60.columns if c.startswith("feat_")]
 feat70 = [c for c in f70.columns if c.startswith("feat_")]
 print("60D feat cols:", len(feat60), "70D feat cols:", len(feat70))
 # spot-check finite/bounds on 70D
-import numpy as np
 
 arr = f70.select(feat70).to_numpy()
-print("70D nonfinite:", int((~np.isfinite(arr)).sum()), "out-of-range:", int(((arr < -3) | (arr > 3)).sum()))
+print(
+    "70D nonfinite:",
+    int((~np.isfinite(arr)).sum()),
+    "out-of-range:",
+    int(((arr < -3) | (arr > 3)).sum()),
+)

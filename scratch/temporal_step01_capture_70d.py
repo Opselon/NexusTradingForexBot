@@ -19,6 +19,7 @@ Two capture modes (both strictly causal, INV-008):
 
 Output: artifacts/forensics/70d_signal_flapping_trace.json
 """
+
 from __future__ import annotations
 
 import json
@@ -87,9 +88,7 @@ def infer_event(
 ) -> dict:
     """One causal 70D inference at bar i (bars[0..i] visible)."""
     ts = bars[i].timestamp
-    tick = TickData(
-        symbol="XAUUSD", timestamp=ts, bid=mid_price, ask=mid_price + 0.04, volume=0
-    )
+    tick = TickData(symbol="XAUUSD", timestamp=ts, bid=mid_price, ask=mid_price + 0.04, volume=0)
     window = bars[max(0, i - 54) : i + 1]
     fv = engine.compute_from_bars(window, tick)
     x50 = fv.to_tensor_input()
@@ -124,11 +123,9 @@ def infer_event(
     for p in liq.pools:
         pool_states.append(
             {
-                "side": int(p.side) if hasattr(p.side, "value") else int(p.side),
-                "state": int(p.state) if hasattr(p.state, "value") else int(p.state),
-                "state_name": PoolState(p.state).name
-                if hasattr(p.state, "value")
-                else PoolState(p.state).name,
+                "side": int(p.side),
+                "state": int(p.state),
+                "state_name": PoolState(p.state).name,
                 "price": float(p.price),
                 "usable_at": str(p.usable_at),
             }

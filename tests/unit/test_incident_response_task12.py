@@ -29,6 +29,7 @@ from nexus_scalp.incidents.impact import ImpactAnalyzer, QuarantineManager, Reco
 from nexus_scalp.incidents.lineage import LineageEngine
 from nexus_scalp.incidents.models import (
     BlastRadius,
+    EvidenceItem,
     Incident,
     IncidentCategory,
     IncidentSeverity,
@@ -1111,6 +1112,37 @@ class TestSecretMasking:
         inc.notes.append("bot_token=eyJhbGciOiJIUzI1NiJ9.abc")
         payload = incident_json(inc)
         assert "eyJhbGciOiJIUzI1NiJ9" not in json.dumps(payload)
+
+    def test_incident_json_masks_value_shaped_secrets(self) -> None:
+        """CodeQL py/clear-text-storage (#86) regression: secret-SHAPED
+        values are redacted even under non-sensitive keys (notes, arbitrary
+        string payloads) - not just sensitive key names."""
+        inc = Incident(category=IncidentCategory.TELEGRAM)
+        inc.notes.append(
+            "credential rotation: token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+            "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c was rotated"
+        )
+        inc.notes.append("key sk-1234567890abcdef1234567890abcdef leaked")
+        payload = incident_json(inc)
+        blob = json.dumps(payload)
+        assert "eyJhbGciOiJIUzI1NiJ9" not in blob
+        assert "sk-1234567890abcdef1234567890abcdef" not in blob
+        assert "[REDACTED]" in blob
+
+    def test_incident_json_masks_bot_token_shape(self) -> None:
+        inc = Incident(category=IncidentCategory.TELEGRAM)
+        inc.notes.append("bot: 123456789:ABCDEFghijklmnopqrstuvwxyz123456789")
+        payload = incident_json(inc)
+        blob = json.dumps(payload)
+        assert "123456789:ABCDEFghijklmnopqrstuvwxyz123456789" not in blob
+
+    def test_mask_secrets_value_level_redaction(self) -> None:
+        m = mask_secrets({"detail": "ghp_1234567890abcdefghijklmnopqrstuvwxyz"})
+        assert "ghp_1234567890abcdefghijklmnopqrstuvwxyz" not in json.dumps(m)
+        m2 = mask_secrets(
+            {"detail": "connected with token 123456789:ABCDEFghijklmnopqrstuvwxyz123456789 now"}
+        )
+        assert "123456789:ABCDEFghijklmnopqrstuvwxyz123456789" not in json.dumps(m2)
 
 
 # ---------------------------------------------------------------------------

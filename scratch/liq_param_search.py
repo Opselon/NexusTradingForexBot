@@ -18,6 +18,7 @@ Scores (TASK-6 §10 FeatureQuality concept, quantified for THIS task):
 
 Results are written to scratch/liq_opt_results.json for the report.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -38,8 +39,16 @@ load_bars = _liq_opt_lab.load_bars
 def info_metrics(A: np.ndarray) -> dict[str, float]:
     """Per-feature info quality on a vector matrix."""
     names = [
-        "bsl", "ssl", "eqh", "eql", "htf", "internal", "external",
-        "confluence", "sweep_state", "displacement",
+        "bsl",
+        "ssl",
+        "eqh",
+        "eql",
+        "htf",
+        "internal",
+        "external",
+        "confluence",
+        "sweep_state",
+        "displacement",
     ]
     out = {}
     for k in range(10):
@@ -84,7 +93,9 @@ def perturb_stability(producer, bars, params, eps: float = 0.05):
 
     def run(p):
         p.as_dict()
-        v, _ = compute_vectors(bars, lambda win, **kw: producer(win, **kw, params=p), min_bars=55)
+        v, _ = compute_vectors(
+            bars, lambda win, _p=p, **kw: producer(win, **kw, params=_p), min_bars=55
+        )
         return v
 
     v0 = run(params)
@@ -127,7 +138,7 @@ def main() -> None:
     # ---- baseline v1 vectors on TRAIN (golden anchor) ----
     t0 = time.perf_counter()
     A_v1_tr, _ = compute_vectors(train_bars, v1)
-    print(f"v1 TRAIN {A_v1_tr.shape} in {time.perf_counter()-t0:.1f}s")
+    print(f"v1 TRAIN {A_v1_tr.shape} in {time.perf_counter() - t0:.1f}s")
     score_v1_tr = family_score(A_v1_tr)
     print(f"v1 TRAIN family_score={score_v1_tr:.4f}")
 
@@ -135,8 +146,8 @@ def main() -> None:
     grid = list(
         itertools.product(
             [0.15, 0.30, 0.45],  # eqh_tolerance
-            [0.75, 1.00],        # confluence cutoff
-            [2.0, 4.0],          # sweep relevance
+            [0.75, 1.00],  # confluence cutoff
+            [2.0, 4.0],  # sweep relevance
         )
     )
     print(f"coarse grid: {len(grid)} cells")
@@ -148,7 +159,7 @@ def main() -> None:
             sweep_relevance_atr=swe_rel,
         )
         t0 = time.perf_counter()
-        A, _ = compute_vectors(train_bars, lambda w, **kw: v11(w, **kw, params=p))
+        A, _ = compute_vectors(train_bars, lambda w, _p=p, **kw: v11(w, **kw, params=_p))
         s = family_score(A)
         dt_ = time.perf_counter() - t0
         # perturbation cost is expensive; sample 2 cells only
@@ -163,7 +174,9 @@ def main() -> None:
                 "stability": stab,
             }
         )
-        print(f"grid cell eqh={eqh_tol} conf={conf_cut} rel={swe_rel} score={s:.4f} runtime={dt_:.0f}s")
+        print(
+            f"grid cell eqh={eqh_tol} conf={conf_cut} rel={swe_rel} score={s:.4f} runtime={dt_:.0f}s"
+        )
     # narrow: pick best cell
     best = max(results, key=lambda r: r["train_score"])
     LiquidityParams(**best["params"])
@@ -184,7 +197,7 @@ def main() -> None:
     ]
     for v in variants:
         p = LiquidityParams(**v)
-        A, _ = compute_vectors(train_bars, lambda w, **kw: v11(w, **kw, params=p))
+        A, _ = compute_vectors(train_bars, lambda w, _p=p, **kw: v11(w, **kw, params=_p))
         s = family_score(A)
         narrow.append({"params": p.as_dict(), "train_score": s})
     best_n = max(narrow, key=lambda r: r["train_score"])
@@ -207,9 +220,11 @@ def main() -> None:
     delta = ab_diff(A_v1_oos, A_v11_oos)
     print("\n=== OOS A/B diff (v1 -> v1.1) ===")
     for k, v in delta.items():
-        print(f"{k:<28} changed%={v['changed_pct']:6.2f} meanΔ={v['mean_delta']:+.4f} "
-              f"sat {v['old_saturation_pct']:.1f}->{v['new_saturation_pct']:.1f} "
-              f"uniq {v['old_unique']}->{v['new_unique']}")
+        print(
+            f"{k:<28} changed%={v['changed_pct']:6.2f} meanΔ={v['mean_delta']:+.4f} "
+            f"sat {v['old_saturation_pct']:.1f}->{v['new_saturation_pct']:.1f} "
+            f"uniq {v['old_unique']}->{v['new_unique']}"
+        )
 
     # stability of the FINAL param set (small sample)
     stab_final = perturb_stability(v11, train_bars[:2000], final_params)

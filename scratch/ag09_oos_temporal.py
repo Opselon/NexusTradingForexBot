@@ -10,11 +10,12 @@ the last temporal window NEVER seen by training. This script:
   3. Evaluates on the untouched tail (317 rows) — the OOS result.
   4. Records OOS artifact + metrics. Nothing after this may tune against it.
 """
+
+import datetime as dt
 import json
 import sys
 from pathlib import Path
 
-import datetime as dt
 import numpy as np
 import polars as pl
 import torch
@@ -23,10 +24,9 @@ sys.path.insert(0, "src")
 
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
 from nexus_scalp.model_generation.experiment_factory import ExperimentConfig
-from nexus_scalp.model_generation.sample_factory import SampleFactory
+from nexus_scalp.model_generation.model_factory import ModelFactory
 from nexus_scalp.model_generation.training import CandidateTrainer
 from nexus_scalp.model_generation.validation import (
-    ValidationFactory,
     compute_calibration,
     confusion_and_class_metrics,
 )
@@ -69,12 +69,13 @@ if res.get("status") != "COMPLETED":
 
 # ---- evaluate on the OOS tail (never touched by training) ----
 man = store.read_model_manifest("ag09_oos_C_v1")
-state = torch.load(store.model_weights_path("ag09_oos_C_v1"), map_location="cpu", weights_only=False)
+state = torch.load(
+    store.model_weights_path("ag09_oos_C_v1"), map_location="cpu", weights_only=False
+)
 scaler = np.load(store.model_scaler_path("ag09_oos_C_v1"))
 mean = scaler["mean"].astype(np.float32)
 std = scaler["std"].astype(np.float32)
 
-from nexus_scalp.model_generation.model_factory import ModelFactory
 model = ModelFactory().build(
     architecture="LEGACY_SCALPNET_V1",
     num_classes=4,
@@ -101,8 +102,18 @@ brier = float(np.mean(np.sum((pp - np.eye(3)[y_oos]) ** 2, axis=1)))
 
 result = {
     "model_id": "ag09_oos_C_v1",
-    "oos_split": {"cutoff": str(CUTOFF), "train_rows": train_frame.height, "oos_rows": oos_frame.height},
-    "hyperparameters": {"epochs": 6, "lr": 1e-3, "batch_size": 256, "seed": 42, "architecture": "LEGACY_SCALPNET_V1"},
+    "oos_split": {
+        "cutoff": str(CUTOFF),
+        "train_rows": train_frame.height,
+        "oos_rows": oos_frame.height,
+    },
+    "hyperparameters": {
+        "epochs": 6,
+        "lr": 1e-3,
+        "batch_size": 256,
+        "seed": 42,
+        "architecture": "LEGACY_SCALPNET_V1",
+    },
     "train_status": res.get("status"),
     "artifact_hash": store.read_model_manifest("ag09_oos_C_v1").get("artifact_hash", ""),
     "results": {
@@ -112,7 +123,9 @@ result = {
         "confusion_matrix": cm.get("matrix") or cm.get("confusion_matrix"),
         "ece": cal.get("ece"),
         "brier": round(brier, 4),
-        "class_distribution": {str(k): int(v) for k, v in zip(*np.unique(y_oos, return_counts=True))},
+        "class_distribution": {
+            str(k): int(v) for k, v in zip(*np.unique(y_oos, return_counts=True), strict=False)
+        },
     },
     "gate_comparison": {
         "oos_accuracy_floor_0_30": acc >= 0.30,

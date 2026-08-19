@@ -18,6 +18,7 @@ DecisionStabilityController (flip metrics before/after).
 
 Output: artifacts/forensics/temporal_experiment_matrix.json
 """
+
 from __future__ import annotations
 
 import json
@@ -96,8 +97,13 @@ def main() -> None:
         ls = default_label_schema()
         lbl = [ls.encode(s) for s in labeled["label"].to_list()]
         df = labeled.with_columns(pl.Series("label", lbl))
-    print("[EXP] labels:", {int(k): int(v) for k, v in zip(
-        *np.unique(df["label"].to_numpy(), return_counts=True), strict=False)})
+    print(
+        "[EXP] labels:",
+        {
+            int(k): int(v)
+            for k, v in zip(*np.unique(df["label"].to_numpy(), return_counts=True), strict=False)
+        },
+    )
 
     cells = {
         "A_70d": [],
@@ -153,7 +159,11 @@ def main() -> None:
         acc = float(np.mean(preds[val] == df["label"].to_numpy()[val]))
         # flip metrics on directional preds (full frame)
         seq = ["BUY" if p == 1 else "SELL" if p == 2 else "NONE" for p in preds]
-        flips = sum(1 for i in range(1, n) if seq[i] != seq[i - 1] and seq[i] != "NONE" and seq[i - 1] != "NONE")
+        flips = sum(
+            1
+            for i in range(1, n)
+            if seq[i] != seq[i - 1] and seq[i] != "NONE" and seq[i - 1] != "NONE"
+        )
         directional = sum(1 for s in seq if s != "NONE")
         results[cell] = {
             "status": "COMPLETED",
@@ -169,8 +179,10 @@ def main() -> None:
 
     # ---- stability controller on the baseline (A) raw sequence -----------
     ctrl = DecisionStabilityController(
-        entry_min_margin=0.05, hard_reversal_margin=0.20,
-        entry_confirm_bars=2, exit_confirm_bars=1,
+        entry_min_margin=0.05,
+        hard_reversal_margin=0.20,
+        entry_confirm_bars=2,
+        exit_confirm_bars=1,
     )
     probs_a = models["A_70d"][0]
     stable_seq: list[str] = []
@@ -180,9 +192,15 @@ def main() -> None:
         stable_seq.append(d.stable_direction)
         if d.event:
             events.append(d.event)
-    stable_flips = sum(1 for i in range(1, len(stable_seq))
-                       if stable_seq[i] != stable_seq[i - 1] and stable_seq[i] != "NONE" and stable_seq[i - 1] != "NONE")
+    stable_flips = sum(
+        1
+        for i in range(1, len(stable_seq))
+        if stable_seq[i] != stable_seq[i - 1]
+        and stable_seq[i] != "NONE"
+        and stable_seq[i - 1] != "NONE"
+    )
     raw_flips = results["A_70d"]["flips"]
+
     # signal duration stats
     def durations(seq):
         durs = []
@@ -190,7 +208,8 @@ def main() -> None:
         for s in seq:
             if s == "NONE":
                 if cur is not None:
-                    durs.append(cnt); cur, cnt = None, 0
+                    durs.append(cnt)
+                    cur, cnt = None, 0
                 continue
             if s == cur:
                 cnt += 1
@@ -201,7 +220,13 @@ def main() -> None:
         if cur is not None:
             durs.append(cnt)
         return durs
-    raw_dur = durations(["BUY" if int(p.argmax()) == 1 else "SELL" if int(p.argmax()) == 2 else "NONE" for p in probs_a])
+
+    raw_dur = durations(
+        [
+            "BUY" if int(p.argmax()) == 1 else "SELL" if int(p.argmax()) == 2 else "NONE"
+            for p in probs_a
+        ]
+    )
     stab_dur = durations(stable_seq)
     stability = {
         "raw_flips": raw_flips,
@@ -211,8 +236,13 @@ def main() -> None:
         "stable_median_signal_duration_bars": statistics.median(stab_dur) if stab_dur else None,
         "confirmed_events": len(events),
         "event_sample": [
-            {"previous": e.previous, "new": e.new_direction, "margin": e.margin,
-             "reason": e.confirmation_reason, "candidate_age": e.candidate_age}
+            {
+                "previous": e.previous,
+                "new": e.new_direction,
+                "margin": e.margin,
+                "reason": e.confirmation_reason,
+                "candidate_age": e.candidate_age,
+            }
             for e in events[:20]
         ],
         "parameters": {
@@ -223,8 +253,10 @@ def main() -> None:
             "max_candidate_age": ctrl.max_candidate_age,
         },
     }
-    print(f"[EXP] stability: raw_flips={raw_flips} stable_flips={stable_flips} "
-          f"reduction={stability['flip_reduction_pct']}% events={len(events)}")
+    print(
+        f"[EXP] stability: raw_flips={raw_flips} stable_flips={stable_flips} "
+        f"reduction={stability['flip_reduction_pct']}% events={len(events)}"
+    )
 
     payload = {
         "experiment": "STEP-07 temporal experiment matrix",
@@ -234,8 +266,8 @@ def main() -> None:
         "results": results,
         "stability_controller": stability,
         "note": "same frame/labels/split/architecture/budget; only feature "
-                "representation differs; stability controller applied to the "
-                "baseline A raw sequence (research instrument, never ACTIVE)",
+        "representation differs; stability controller applied to the "
+        "baseline A raw sequence (research instrument, never ACTIVE)",
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=1, default=str), encoding="utf-8")

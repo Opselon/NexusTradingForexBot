@@ -5,6 +5,7 @@ news_provider -> liquidity_engine -> build_70d_vector / assemble_70d),
 validates against the canonical schema contract, and writes
 artifacts/forensics/feature_vector_trace.json (per-index mapping).
 """
+
 import json
 import math
 import sys
@@ -13,17 +14,15 @@ from pathlib import Path
 
 sys.path.insert(0, r"C:/Users/Capsizer/source/repos/NexusTradingForexBot/src")
 
-from nexus_scalp.features.scalp_features import ScalpFeatureEngine  # noqa: E402
-from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID, FEATURE_SCHEMAS  # noqa: E402
-from nexus_scalp.features.schema_contract import (  # noqa: E402
+from nexus_scalp.features.scalp_features import ScalpFeatureEngine
+from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID, FEATURE_SCHEMAS
+from nexus_scalp.features.schema_contract import (
     DIMENSION,
-    LIQUIDITY_10D_NAMES,
-    NEWS_10D_NAMES,
     canonical_feature_names,
     feature_schema_hash,
     validate_70d_vector,
 )
-from nexus_scalp.market_data.bar_aggregator import BarData  # noqa: E402
+from nexus_scalp.market_data.bar_aggregator import BarData
 
 
 def bars(n: int = 80, start: float = 1.10000, step: float = 0.0001) -> list[BarData]:
@@ -49,7 +48,9 @@ def bars(n: int = 80, start: float = 1.10000, step: float = 0.0001) -> list[BarD
             )
         )
         px = c
-        ts = ts.replace(minute=(ts.minute + 1) % 60, hour=(ts.hour + (1 if ts.minute == 59 else 0)) % 24)
+        ts = ts.replace(
+            minute=(ts.minute + 1) % 60, hour=(ts.hour + (1 if ts.minute == 59 else 0)) % 24
+        )
         if i and i % 24 == 23:
             ts = ts.replace(day=ts.day + 1)
     return out
@@ -58,18 +59,20 @@ def bars(n: int = 80, start: float = 1.10000, step: float = 0.0001) -> list[BarD
 def main() -> None:
     b = bars()
     fe = ScalpFeatureEngine()
-    from nexus_scalp.domain.models import TickData  # noqa: PLC0415
+    from nexus_scalp.domain.models import TickData
 
     mid = b[-1].close
-    tick = TickData(symbol="XAUUSD", timestamp=b[-1].timestamp, bid=mid, ask=mid + 0.0001, volume=1.0)
+    tick = TickData(
+        symbol="XAUUSD", timestamp=b[-1].timestamp, bid=mid, ask=mid + 0.0001, volume=1.0
+    )
     fv = fe.compute_from_bars(b, tick)
     vec50 = list(fv.to_tensor_input())
     assert len(vec50) == 50, len(vec50)
     print("base50 len:", len(vec50), "finite:", all(math.isfinite(v) for v in vec50))
 
     # news 10 from a canonical context
-    from nexus_scalp.governance.alignment import vectorize_news_context  # noqa: PLC0415
-    from nexus_scalp.shadow.shadow70.news_provider import build_news_10  # noqa: PLC0415
+    from nexus_scalp.governance.alignment import vectorize_news_context
+    from nexus_scalp.shadow.shadow70.news_provider import build_news_10
 
     ctx = {
         "state": "ELEVATED",
@@ -88,7 +91,7 @@ def main() -> None:
     print("news v12 len:", len(nv), "-> news10 len:", len(news10))
 
     # liquidity 10
-    from nexus_scalp.features.liquidity_engine import compute_liquidity_features  # noqa: PLC0415
+    from nexus_scalp.features.liquidity_engine import compute_liquidity_features
 
     liq = compute_liquidity_features(b, use_htf=True)
     liq10 = list(liq.as_vector() if hasattr(liq, "as_vector") else [])
@@ -99,11 +102,13 @@ def main() -> None:
     print("liq10 len:", len(liq10), liq10[:3], "...")
 
     # assemble both ways
-    from nexus_scalp.features.features70 import assemble_70d  # noqa: PLC0415
-    from nexus_scalp.features.liquidity_runtime import build_70d_vector  # noqa: PLC0415
+    from nexus_scalp.features.features70 import assemble_70d
+    from nexus_scalp.features.liquidity_runtime import build_70d_vector
 
     v70a = build_70d_vector(vec50, family_10=news10, liquidity_10=liq10)
-    snap = assemble_70d(base50=vec50, news10=news10, liquidity10=liq10, symbol="XAUUSD", timeframe="M1")
+    snap = assemble_70d(
+        base50=vec50, news10=news10, liquidity10=liq10, symbol="XAUUSD", timeframe="M1"
+    )
     v70b = snap.vector
 
     names = canonical_feature_names()
@@ -123,11 +128,15 @@ def main() -> None:
                 "index": i,
                 "name": names[i],
                 "family": fam,
-                "source": "scalp_features" if i < 50 else ("news_provider" if i < 60 else "liquidity_engine"),
+                "source": "scalp_features"
+                if i < 50
+                else ("news_provider" if i < 60 else "liquidity_engine"),
                 "value": float(v70a[i]),
             }
         )
-    dest = Path(r"C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/forensics/feature_vector_trace.json")
+    dest = Path(
+        r"C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/forensics/feature_vector_trace.json"
+    )
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(
         json.dumps(

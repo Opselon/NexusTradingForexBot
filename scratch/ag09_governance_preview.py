@@ -6,15 +6,16 @@ verify_candidate on:
   - ag09_oos_C_v1  (the true-temporal-OOS 70D candidate, scalp_v3)
 with the OOS + shadow evidence that ACTUALLY exists (no fabrication).
 """
+
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, "src")
 
+from nexus_scalp.features.schema_contract import feature_schema_hash
 from nexus_scalp.governance.verify import verify_candidate
 from nexus_scalp.model_generation.artifact_store import ArtifactStore
-from nexus_scalp.features.schema_contract import feature_schema_hash
 
 store = ArtifactStore()
 
@@ -42,8 +43,14 @@ for mid in CANDIDATES:
             training_commit="c5d6739" if mid == "task5_abc_C_v1" else "HEAD-ag09",
             oos_artifact=oos_artifact,
             shadow_evidence=shadow_evidence,
-            news_contract={"valid": True, "detail": "news block FEATURE_DISABLED (neutral zeros) — documented policy"},
-            liquidity_contract={"valid": True, "detail": "liquidity_engine 70d-v1.0.0 parity-verified"},
+            news_contract={
+                "valid": True,
+                "detail": "news block FEATURE_DISABLED (neutral zeros) — documented policy",
+            },
+            liquidity_contract={
+                "valid": True,
+                "detail": "liquidity_engine 70d-v1.0.0 parity-verified",
+            },
         )
         results[mid] = v
     except Exception as e:

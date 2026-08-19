@@ -417,9 +417,14 @@ share/python-wheels/
 nosetests.xml
 coverage.xml
 htmlcov/
+.junit.xml
 .mypy_cache/
 .ruff_cache/
 .pytype/
+# GitHub Actions per-run results (generated fresh on every CI run; never committed)
+ci-results/
+# Quarantined test-suite consolidation hold (untracked; see TASK-TestConsolidation)
+_cleanup_hold_20260819/
 
 # ==============================================================================
 # 3. MACHINE LEARNING & PYTORCH ARTIFACTS

@@ -10,6 +10,7 @@ inference fn; the model stage uses the AGENT-LATENCY measured forward
 (0.298ms p50) as the documented reference. Produces
 artifacts/benchmarks/70d_live_latency.json.
 """
+
 import json
 import statistics
 import sys
@@ -20,8 +21,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, r"C:/Users/Capsizer/source/repos/NexusTradingForexBot")
 
-from nexus_scalp.features.liquidity_runtime import build_70d_vector  # noqa: E402
-from nexus_scalp.shadow.shadow70.liq_provider import build_liquidity_10  # noqa: E402
+from nexus_scalp.features.liquidity_runtime import build_70d_vector
+from nexus_scalp.shadow.shadow70.liq_provider import build_liquidity_10
 
 
 def main() -> None:
@@ -34,7 +35,9 @@ def main() -> None:
         last_snapshot=SimpleNamespace(features=tuple(liq10)),
         _last_success_at=time.monotonic(),
     )
-    engine = SimpleNamespace(aggregator=SimpleNamespace(get_completed_bars=lambda: []), liquidity_governor=governor)
+    engine = SimpleNamespace(
+        aggregator=SimpleNamespace(get_completed_bars=lambda: []), liquidity_governor=governor
+    )
     tick = SimpleNamespace(symbol="XAUUSD", timestamp=datetime.now(UTC), bid=3000.0, ask=3000.3)
 
     N = 500
@@ -42,10 +45,10 @@ def main() -> None:
     for _ in range(N):
         t0 = time.perf_counter()
         # T0 -> T3: liquidity via governor (BUG-112 fixed path)
-        liq, ver = build_liquidity_10(engine, tick)
+        liq, _ver = build_liquidity_10(engine, tick)
         t_liq = time.perf_counter()
         # T3 -> T4: 70D assembly
-        v70 = build_70d_vector(base50, family_10=news10, liquidity_10=liq)
+        build_70d_vector(base50, family_10=news10, liquidity_10=liq)
         t_asm = time.perf_counter()
         # T4 -> T9: observe (validation + classification; model forward ref 0.298ms)
         # simulate the model forward with the measured reference distribution
@@ -73,7 +76,9 @@ def main() -> None:
             "mean_ms": round(statistics.mean(vals), 4),
             "std_ms": round(statistics.stdev(vals), 4),
         }
-        print(f"{k}: p50={out[k]['p50_ms']} p95={out[k]['p95_ms']} p99={out[k]['p99_ms']} max={out[k]['max_ms']}")
+        print(
+            f"{k}: p50={out[k]['p50_ms']} p95={out[k]['p95_ms']} p99={out[k]['p99_ms']} max={out[k]['max_ms']}"
+        )
 
     doc = {
         "task": "TASK-14 STEP-07 70D shadow full-path latency",
@@ -91,7 +96,9 @@ def main() -> None:
             "assembly_70d_ms": out["assembly_ms"]["p50_ms"],
         },
     }
-    dest = Path(r"C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/benchmarks/70d_live_latency.json")
+    dest = Path(
+        r"C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/benchmarks/70d_live_latency.json"
+    )
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(doc, indent=2), encoding="utf-8")
     print("written:", dest)

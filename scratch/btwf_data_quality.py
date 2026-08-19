@@ -1,5 +1,8 @@
 """Data quality forensics probe for raw XAUUSD M5 bars (TASK-BT-WF-OOS)."""
+
+import datetime as dt
 import hashlib
+import itertools
 import json
 
 import polars as pl
@@ -41,8 +44,6 @@ if "tick_volume" in df.columns:
         "zero_pct": float((tv == 0).mean()),
     }
 
-import datetime as dt
-import itertools
 
 # time column is epoch seconds (int) — convert
 ts_dt = [dt.datetime.fromtimestamp(x, tz=dt.UTC) for x in ts]

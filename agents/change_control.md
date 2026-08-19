@@ -519,3 +519,39 @@ Required tests: actionlint all workflows (0 errors); make_ci_results.py
        release.yml diff review; live GitHub run verification pending
 Status: VERIFIED
 ```
+
+```text
+CHANGE-ID: CHG-0023
+Agent: Hermes-CI-Lint
+Role: CI / lint gate engineer
+Task: TASK-CI-LINT-FIX
+Scope: Fix GitHub Actions quality gate (ruff check/format) broken by
+       unpinned ruff (>=0.2.0 -> latest 0.16.3 flagging 141 lint errors
+       across scratch/ probes). Pin ruff==0.16.3 in pyproject dev extras
+       (reproducible CI), fix all lint errors in tracked files (import
+       sorting/placement, unused imports, semicolon statements, percent
+       format -> f-strings, B023 lambda loop-var binding, RUF034
+       redundant hasattr, PLR0124 psi!=psi -> math.isnan, PLW2901 loop
+       var, B007 unused loop vars, PLW1510 subprocess check=False,
+       zip strict=, UP017 datetime.UTC), ruff-format all tracked files.
+       Parallel-agent WIP files (Web/, src/ live_engine etc.) NOT
+       touched; scripts/ci/*, tests/conftest.py, 3 test files formatted
+       to keep `ruff format --check .` green repo-wide.
+Affected files: pyproject.toml (ruff pin), scratch/*.py (~40 probes),
+       scripts/ci/{make_ci_results,collect_results}.py,
+       tests/conftest.py, tests/unit/test_70d_parity_task3.py,
+       tests/unit/test_debug_snapshot_phase20.py,
+       tests/unit/test_incident_response_task12.py,
+       tests/unit/test_release_*_phase19.py (+7 format-only test files),
+       agents/{change_control,taskboard}.md
+Affected functions/classes: NONE in src/ (scratch/scripts/tests/lint only)
+Contracts touched: none (no src/ behavior change)
+Runtime paths touched: NONE
+Owners affected: all scratch/ owners (format/lint normalization only)
+Risk: LOW. Lint/format-only; no runtime behavior change. ruff pinned to
+       the CI-verified version so local == CI.
+Dependencies: none
+Required tests: ruff check . (clean), ruff format --check . (clean),
+       mypy src (clean), pytest tests/unit
+Status: VERIFIED
+```

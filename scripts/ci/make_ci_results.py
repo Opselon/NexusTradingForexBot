@@ -24,6 +24,7 @@ CLI (used by ci.yml):
 Exit codes: 0 on success, 1 on any error unless --continue-on-error is passed
 (used for reporting steps so failures there never hide real test results).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -72,10 +73,14 @@ def _write_json(path: Path, payload: dict) -> None:
 def _tool_version(tool: str) -> str:
     try:
         out = subprocess.run(
-            [tool, "--version"], capture_output=True, text=True, timeout=30
+            [tool, "--version"], capture_output=True, text=True, timeout=30, check=False
         )
-        return (out.stdout or out.stderr).strip().splitlines()[0] if (out.returncode == 0) else "unavailable"
-    except Exception:  # noqa: BLE001 - reporting helper must never crash the pipeline
+        return (
+            (out.stdout or out.stderr).strip().splitlines()[0]
+            if (out.returncode == 0)
+            else "unavailable"
+        )
+    except Exception:
         return "unavailable"
 
 
@@ -176,7 +181,11 @@ def cmd_manifest(args: argparse.Namespace) -> int:
             }
         )
 
-    manifest = {"run_id": run_id, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "files": files}
+    manifest = {
+        "run_id": run_id,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "files": files,
+    }
     _write_json(run_info / "manifest.json", manifest)
 
     # Checksums cover every file EXCEPT SHA256SUMS.txt and manifest.json
@@ -195,31 +204,40 @@ def cmd_manifest(args: argparse.Namespace) -> int:
 def _load_json(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001 - missing/corrupt side files degrade to None, never crash
+    except Exception:
         return None
 
 
 def _junit_stats(path: Path) -> dict:
-    """Parse tests/errors/failures/skipped from a JUnit XML file."""
+    """Parse tests/errors/failures/skipped/time from pytest's JUnit XML.
+
+    Handles both root <testsuite> and pytest's <testsuites> wrapper (the
+    aggregate counts sit on the child <testsuite> in xunit2 output).
+    """
     stats = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "time": 0.0}
     try:
         import xml.etree.ElementTree as ET
 
         tree = ET.parse(path)
         root = tree.getroot()
-        for attr in ("tests", "failures", "errors", "skipped", "time"):
-            if attr in root.attrib:
-                try:
-                    stats[attr] = float(root.attrib[attr])
-                except ValueError:
-                    stats[attr] = 0
-    except Exception:  # noqa: BLE001
+        if root.tag == "testsuites":
+            nodes = root.findall("testsuite")
+        else:
+            nodes = [root]
+        for node in nodes:
+            for attr in ("tests", "failures", "errors", "skipped", "time"):
+                if attr in node.attrib:
+                    try:
+                        stats[attr] += float(node.attrib[attr])
+                    except ValueError:
+                        pass
+    except Exception:
         pass
     return stats
 
 
 def _coverage_pct(path: Path) -> float | None:
-    """Read line-rate from a Cobertura coverage.xml (single package average)."""
+    """Read line-rate from a Cobertura coverage.xml (package-level average)."""
     try:
         import xml.etree.ElementTree as ET
 
@@ -230,13 +248,16 @@ def _coverage_pct(path: Path) -> float | None:
             # Sum over <class> elements if the root has no aggregate rate.
             classes = root.findall(".//class")
             if classes:
-                total = sum(float(c.attrib.get("lines-valid", 0) or 0) for c in classes)
-                covered = sum(float(c.attrib.get("lines-covered", 0) or 0) for c in classes)
+                total = 0.0
+                covered = 0.0
+                for c in classes:
+                    total += float(c.attrib.get("lines-valid", 0) or 0)
+                    covered += float(c.attrib.get("lines-covered", 0) or 0)
                 if total > 0:
                     return covered / total * 100.0
             return None
         return float(rate) * 100.0
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -282,9 +303,12 @@ def cmd_summary(args: argparse.Namespace) -> int:
         cov_extra = _load_json(root / "run-info" / "coverage-extra.json") or {}
         coverage_pct = cov_extra.get("percent")
 
-    overall = "FAILED" if any(
-        c.get("status") in ("failed", "errored") for c in checks.values()
-    ) or any(d.get("status") in ("failed", "errored") for _, d in heavy_rows) else "PASSED"
+    overall = (
+        "FAILED"
+        if any(c.get("status") in ("failed", "errored") for c in checks.values())
+        or any(d.get("status") in ("failed", "errored") for _, d in heavy_rows)
+        else "PASSED"
+    )
 
     lines: list[str] = []
     lines.append("# CI Validation Summary")
@@ -300,9 +324,11 @@ def cmd_summary(args: argparse.Namespace) -> int:
     lines.append("| Check | Status | Details |")
     lines.append("|---|---|---|")
     for label, c in checks.items():
-        lines.append(f"| {label} | {c.get('status','?').upper()} | {c.get('detail','')} |")
+        lines.append(f"| {label} | {c.get('status', '?').upper()} | {c.get('detail', '')} |")
     for label, d in heavy_rows:
-        lines.append(f"| {label} (heavy) | {d.get('status','?').upper()} | {d.get('detail','')} |")
+        lines.append(
+            f"| {label} (heavy) | {d.get('status', '?').upper()} | {d.get('detail', '')} |"
+        )
     lines.append("")
     lines.append("## Test Statistics")
     lines.append("")
@@ -314,7 +340,9 @@ def cmd_summary(args: argparse.Namespace) -> int:
     lines.append(f"- Passed: {passed}")
     lines.append(f"- Failed: {failed}")
     lines.append(f"- Skipped: {skipped}")
-    lines.append(f"- Coverage: {coverage_pct:.1f}%" if coverage_pct is not None else "- Coverage: n/a")
+    lines.append(
+        f"- Coverage: {coverage_pct:.1f}%" if coverage_pct is not None else "- Coverage: n/a"
+    )
     if junit.get("detail"):
         lines.append(f"- Note: {junit['detail']}")
     lines.append("")
@@ -327,17 +355,27 @@ def cmd_summary(args: argparse.Namespace) -> int:
         "- Tools: "
         + ", ".join(
             f"{name} {ver}"
-            for name, ver in [("ruff", _tool_version("ruff")), ("mypy", _tool_version("mypy")), ("pytest", _tool_version("pytest"))]
+            for name, ver in [
+                ("ruff", _tool_version("ruff")),
+                ("mypy", _tool_version("mypy")),
+                ("pytest", _tool_version("pytest")),
+            ]
         )
     )
     lines.append("")
     lines.append("## Evidence")
     lines.append("")
     lines.append("Full machine-readable results are in this artifact: `ci-results/`.")
-    lines.append("- `run-info/summary.md` (this file) · `run-info/manifest.json` (all files + sha256)")
-    lines.append("- `run-info/SHA256SUMS.txt` (checksums) · `run-info/*.json` (per-check status + exit codes)")
+    lines.append(
+        "- `run-info/summary.md` (this file) · `run-info/manifest.json` (all files + sha256)"
+    )
+    lines.append(
+        "- `run-info/SHA256SUMS.txt` (checksums) · `run-info/*.json` (per-check status + exit codes)"
+    )
     lines.append("- `ruff/lint.json` + `lint.txt` · `format/format.txt` · `mypy/mypy.txt`")
-    lines.append("- `pytest/junit.xml` + `pytest.txt` + `coverage.xml` (+ `pytest/htmlcov/` when generated)")
+    lines.append(
+        "- `pytest/junit.xml` + `pytest.txt` + `coverage.xml` (+ `pytest/htmlcov/` when generated)"
+    )
     lines.append("")
 
     md_path.write_text("\n".join(lines), encoding="utf-8")
@@ -386,30 +424,43 @@ def cmd_secret_check(args: argparse.Namespace) -> int:
 
 def cmd_list_checks(args: argparse.Namespace) -> int:
     """Debug aid: print installed tool versions and supported output formats."""
-    print(json.dumps(
-        {
-            "ruff": _tool_version("ruff"),
-            "mypy": _tool_version("mypy"),
-            "pytest": _tool_version("pytest"),
-            "python": _tool_version("python"),
-        },
-        indent=2, sort_keys=True,
-    ))
-    print("Ruff output formats: concise, full, json, json-lines, junit, grouped, github, gitlab, pylint, rdjson, azure, sarif")
-    print("Mypy output: text (--no-error-summary), JUnit XML (--junit-xml), JSON via --junit-format=global")
+    print(
+        json.dumps(
+            {
+                "ruff": _tool_version("ruff"),
+                "mypy": _tool_version("mypy"),
+                "pytest": _tool_version("pytest"),
+                "python": _tool_version("python"),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    print(
+        "Ruff output formats: concise, full, json, json-lines, junit, grouped, github, gitlab, pylint, rdjson, azure, sarif"
+    )
+    print(
+        "Mypy output: text (--no-error-summary), JUnit XML (--junit-xml), JSON via --junit-format=global"
+    )
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="NSE CI results pipeline (run inside GitHub Actions / locally)")
+    parser = argparse.ArgumentParser(
+        description="NSE CI results pipeline (run inside GitHub Actions / locally)"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_init = sub.add_parser("init", help="reset ci-results/ and write run metadata")
     p_init.add_argument("root")
-    p_init.add_argument("--json", default="", help="also write env digest JSON (used by report steps)")
+    p_init.add_argument(
+        "--json", default="", help="also write env digest JSON (used by report steps)"
+    )
     p_init.set_defaults(func=cmd_init)
 
-    p_man = sub.add_parser("manifest", help="scan ci-results/ and write manifest.json + SHA256SUMS.txt")
+    p_man = sub.add_parser(
+        "manifest", help="scan ci-results/ and write manifest.json + SHA256SUMS.txt"
+    )
     p_man.add_argument("root")
     p_man.set_defaults(func=cmd_manifest)
 

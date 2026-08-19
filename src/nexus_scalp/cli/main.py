@@ -1341,14 +1341,14 @@ def forensic_cmd(
         False, "--snapshot", help="Persist and print the FORENSIC_HEALTH_SNAPSHOT as JSON."
     ),
     deploy_gate: bool = typer.Option(
-        False, "--deploy-gate", help="Canonical deploy gate: exit 0 allowed, 1 block, 2 review, 3 engine unavailable."
+        False,
+        "--deploy-gate",
+        help="Canonical deploy gate: exit 0 allowed, 1 block, 2 review, 3 engine unavailable.",
     ),
     trend: bool = typer.Option(
         False, "--trend", help="Compare the latest snapshot against the previous (read-only)."
     ),
-    gap: bool = typer.Option(
-        False, "--gap", help="Experience->outcome gap forensics (read-only)."
-    ),
+    gap: bool = typer.Option(False, "--gap", help="Experience->outcome gap forensics (read-only)."),
     report: bool = typer.Option(
         False, "--report", help="Run one bounded periodic Telegram forensic report cycle."
     ),
@@ -1376,9 +1376,13 @@ def forensic_cmd(
                 for c in payload["blocking_checks"]:
                     console.print(f"  • {c}")
             elif payload["exit_code"] == 2:
-                console.print("[yellow]DEPLOYMENT REQUIRES REVIEW[/yellow] — DEGRADED/UNKNOWN conditions.")
+                console.print(
+                    "[yellow]DEPLOYMENT REQUIRES REVIEW[/yellow] — DEGRADED/UNKNOWN conditions."
+                )
             elif payload["exit_code"] == 3:
-                console.print("[red]FORENSIC ENGINE UNAVAILABLE[/red] — deployment cannot be verified.")
+                console.print(
+                    "[red]FORENSIC ENGINE UNAVAILABLE[/red] — deployment cannot be verified."
+                )
         raise typer.Exit(payload["exit_code"])
 
     if trend:
