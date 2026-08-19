@@ -1,0 +1,12 @@
+SCALER mean=(50,) std=(50,)
+ARTIFACT sha256=9105cef7d93e23b8a7d529ef797efba9283f36bc8190d2729909c1fc95634d2f
+ARTIFACT bytes=1326059
+STATE_DICT input_projection.weight=(128, 50) (hidden width)
+STATE_DICT classifier.weight=(4, 32) (true class head)
+ACTUAL: input=50 hidden=128 classes=4
+ScalpNet state_dict: missing=[] extra=[]
+Dry-run logits shape=(1, 4) finite=True
+VERIFIER-BUG actual_classes=128 (input_projection[0]) vs TRUE classes=4 (classifier[0])
+SSE-DATETIME: report() pools payload FAILS json.dumps -> Object of type datetime is not JSON serializable
+CONFIRMED: pool.confirmed_at raw datetime reaches the SSE frame via report().pools
+PROBE DONE (read-only)
