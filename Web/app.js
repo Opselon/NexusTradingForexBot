@@ -796,13 +796,26 @@ async function toggleLiquidity() {
 
 // Keep the liquidity panel in sync from the canonical snapshot (SSE/status).
 
+// BUG-111 stale-SSE guard: liquidity carries its own monotonic
+// state_revision; the UI drops older revisions so a delayed SSE tick
+// can never overwrite a newer toggle/snapshot with stale state.
+let __liquidityLastRevision = -1;
+
 function syncLiquidityFromSnapshot(payload) {
 
     if (payload && payload.liquidity) {
 
-        renderLiquidityPanel(payload.liquidity);
+        const liq = payload.liquidity;
+        const rev = (liq.state_revision != null) ? Number(liq.state_revision) : -1;
+        if (rev >= 0 && __liquidityLastRevision >= 0 && rev < __liquidityLastRevision) {
+            console.warn('[LIQUIDITY_UI] event=STALE_REVISION_DROPPED rev=' + rev + ' last=' + __liquidityLastRevision);
+            return;
+        }
+        if (rev >= 0) __liquidityLastRevision = rev;
 
-        window.__liquidityPools = payload.liquidity.pools || [];
+        renderLiquidityPanel(liq);
+
+        window.__liquidityPools = liq.pools || [];
 
         if (typeof drawChart === 'function') drawChart();
 

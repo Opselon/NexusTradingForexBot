@@ -698,3 +698,179 @@ def test_aihub_15_model_inventory_distinguishes_lifecycle(tmp_path) -> None:
     assert info.integrity_ok is True
     assert info.actual_output_classes == 4
     assert info.actual_input_dimension == 50
+
+
+
+
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# BUG-111 REGRESSION SUITE - Liquidity Intelligence UI state contract
+# (2026-08-19 forensic task). Every assertion is a regression guard for a
+# PROVEN runtime contradiction:
+#   idx 40..49 while DISABLED        -> canonical registry 60..69
+#   last_update = 1970 (monotonic)   -> wall-clock ISO-8601
+#   DISABLED + 10 'features'         -> NOT_ACTIVE provenance
+#   BLOCK(LIQUIDITY_ENABLED...)      -> NOT_APPLICABLE while disabled
+#   available=True + source UNAVAILABLE -> explicit availability matrix
+# ---------------------------------------------------------------------------
+
+
+class _Champion50DEngine:
+    """Models the CURRENT live champion: scalp_v1 / 50D (repo active)."""
+
+    FEATURE_SCHEMA_ID = "scalp_v1"
+    FEATURE_DIM = 50
+
+
+def _bug111_governor_with_snapshot(enabled: bool = True) -> LiquidityGovernor:
+    gov = LiquidityGovernor(enabled=enabled)
+    gov.bind_engine(_Champion50DEngine())
+    bars = _steady_bars(120)
+    gov.compute_from_engine(
+        bars=bars,
+        mid_price=3305.0,
+        atr=1.5,
+        decision_at=datetime(2026, 8, 19, 9, 30, 0, tzinfo=UTC),
+    )
+    return gov
+
+
+def test_liq_ui_01_enabled_report_indices_are_canonical_60_69() -> None:
+    gov = _bug111_governor_with_snapshot(enabled=True)
+    fp = gov.snapshot_payload()
+    for name in LIQUIDITY_FEATURE_NAMES:
+        idx = fp["features"][name]["index"]
+        assert idx == 60 + LIQUIDITY_FEATURE_NAMES.index(name)
+    assert fp["dimension"] == DIMENSION_70D
+    assert fp["schema_id"] == SCHEMA_70D
+
+
+def test_liq_ui_02_disabled_report_indices_are_still_canonical_60_69() -> None:
+    """BUG-111: DISABLED must NOT shift indices to 40..49 (the old
+    active-schema-derived math). The registry owns placement."""
+    gov = _bug111_governor_with_snapshot(enabled=False)
+    fp = gov.snapshot_payload()
+    indexes = [fp["features"][n]["index"] for n in LIQUIDITY_FEATURE_NAMES]
+    assert indexes == list(range(60, 70))
+    assert fp["feature_availability"] == "NOT_ACTIVE"
+    assert fp["runtime_enabled"] is False
+
+
+def test_liq_ui_03_disabled_report_never_active_values() -> None:
+    """DISABLED + retained snapshot: values are exposed ONLY as a
+    timestamped last-snapshot with NOT_ACTIVE provenance - never as
+    active model inputs; availability is False."""
+    gov = _bug111_governor_with_snapshot(enabled=False)
+    rep = gov.report()
+    assert rep["enabled"] is False
+    assert rep["available"] is False
+    assert rep["feature_availability"] == "NOT_ACTIVE"
+    assert rep["status"] == "DISABLED"
+    assert len(rep["features"]) == 10
+    assert rep["causal_state"] == "NOT_APPLICABLE"
+    assert rep["last_update"] is not None
+    assert not rep["last_update"].startswith("1970")
+    assert rep["snapshot_timestamp"] == "2026-08-19T09:30:00+00:00"
+
+
+def test_liq_ui_04_model_compatibility_not_applicable_when_disabled() -> None:
+    """A disabled runtime never reports LIQUIDITY_ENABLED_BUT_MODEL_
+    INCOMPATIBLE (that reason claims liquidity is enabled)."""
+    gov = _bug111_governor_with_snapshot(enabled=False)
+    mc = gov.report()["model_compatibility"]
+    assert mc["result"] == "NOT_APPLICABLE"
+    assert mc["reason"] == "LIQUIDITY_DISABLED"
+    gov2 = _bug111_governor_with_snapshot(enabled=True)
+    mc2 = gov2.report()["model_compatibility"]
+    assert mc2["result"] == "BLOCK"
+    assert mc2["reason"] == "LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE"
+
+
+def test_liq_ui_05_last_update_is_wall_clock_not_monotonic_epoch() -> None:
+    """Regression for the 1970 timestamp: last_update must be wall-clock
+    ISO-8601 (UTC), never fromtimestamp(monotonic)."""
+    gov = _bug111_governor_with_snapshot(enabled=False)
+    lu = gov.report()["last_update"]
+    assert lu is not None
+    assert lu.endswith("+00:00")
+    assert not lu.startswith("1970")
+    parsed = datetime.fromisoformat(lu)
+    assert parsed.year >= 2025
+
+
+def test_liq_ui_06_availability_matrix_explicit() -> None:
+    """feature_availability matrix: AVAILABLE / STALE_CACHE / NOT_ACTIVE /
+    UNAVAILABLE - explicit states, never inferred from each other."""
+    gov = _bug111_governor_with_snapshot(enabled=True)
+    assert gov.report()["feature_availability"] == "AVAILABLE"
+    with patch.object(gov, "_last_success_at", time.monotonic() - 9999.0):
+        rep = gov.report()
+        assert rep["feature_availability"] == "STALE_CACHE"
+        assert rep["causal_state"] == "STALE"
+    cold = LiquidityGovernor(enabled=True)
+    assert cold.report()["feature_availability"] == "UNAVAILABLE"
+    assert cold.report()["available"] is False
+    cold2 = _bug111_governor_with_snapshot(enabled=False)
+    assert cold2.report()["feature_availability"] == "NOT_ACTIVE"
+
+
+def test_liq_ui_07_state_revision_monotonic() -> None:
+    """state_revision increments monotonically on snapshot/toggle/error -
+    the UI drops older revisions (stale SSE guard)."""
+    gov = LiquidityGovernor(enabled=False)
+    r0 = gov.report()["state_revision"]
+    gov.set_enabled(True, actor="test")
+    r1 = gov.report()["state_revision"]
+    assert r1 > r0
+    bars = _steady_bars(60)
+    gov.compute_from_engine(bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp)
+    r2 = gov.report()["state_revision"]
+    assert r2 > r1
+    with pytest.raises(ValueError):
+        gov.compute_from_engine(bars=[], mid_price=1.0, atr=1.0)
+    r3 = gov.report()["state_revision"]
+    assert r3 > r2
+
+
+def test_liq_ui_08_snapshot_payload_carries_per_value_provenance() -> None:
+    """Every feature carries index/value/timestamp/source/status/
+    feature_availability/runtime_enabled - the UI renders exactly these,
+    never derived values."""
+    gov = _bug111_governor_with_snapshot(enabled=True)
+    fp = gov.snapshot_payload()
+    for name in LIQUIDITY_FEATURE_NAMES:
+        e = fp["features"][name]
+        assert set(e) >= {"index", "value", "timestamp", "source",
+                          "status", "feature_availability", "runtime_enabled"}
+        assert e["index"] == 60 + LIQUIDITY_FEATURE_NAMES.index(name)
+        assert e["timestamp"] == fp["timestamp"]
+        assert e["runtime_enabled"] is True
+    assert fp["available"] is True
+
+
+def test_liq_ui_09_algorithm_version_constant_is_provenance_label() -> None:
+    """algorithm_version is a deterministic provenance constant (the
+    producer carries no version of its own); it never implies an active
+    calculation while disabled - calculation_status says the truth."""
+    gov = _bug111_governor_with_snapshot(enabled=False)
+    rep = gov.report()
+    assert isinstance(rep["algorithm_version"], str)
+    assert rep["algorithm_version"].startswith("scalp_liquidity_")
+    assert rep["calculation_status"] == "SUCCESS"
+    assert rep["status"] == "DISABLED"
+    assert rep["source_status"] in ("LIVE_MARKET_STATE", "UNAVAILABLE", "REPLAY")
+
+
+def test_liq_ui_10_json_safe_payload() -> None:
+    """report() and snapshot_payload() serialize through json.dumps - the
+    SSE frame never breaks on datetime/Enum/Decimal leaves."""
+    import json
+
+    gov = _bug111_governor_with_snapshot(enabled=True)
+    json.dumps(gov.report())
+    json.dumps(gov.snapshot_payload())
+    gov.set_enabled(False, actor="test")
+    json.dumps(gov.report())
+    json.dumps(gov.snapshot_payload())

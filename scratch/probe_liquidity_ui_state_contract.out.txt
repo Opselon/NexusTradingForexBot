@@ -1,0 +1,79 @@
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\fromnumeric.py:3504: RuntimeWarning: Mean of empty slice.
+  return _methods._mean(a, axis=axis, dtype=dtype,
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\_methods.py:129: RuntimeWarning: invalid value encountered in scalar divide
+  ret = ret.dtype.type(ret / rcount)
+2026-08-19 06:26:19 [info     ] [LIQUIDITY] event=FEATURE_CALCULATION_OK source=LIVE_MARKET_STATE latency_ms=35.73 bars=120
+2026-08-19 06:26:19 [info     ] [LIQUIDITY] event=STATE_UPDATED enabled=False actor=probe
+==============================================================================
+PROBE: Liquidity Intelligence UI State Contract — reproduction
+==============================================================================
+
+[1] RUNTIME STATE (governor internals)
+    enabled            = False
+    snapshot present   = True
+    _last_success_at   = 43809.453  (time.monotonic!)
+    _source            = SourceKind.LIVE_MARKET_STATE
+    status()           = DISABLED
+    causal_state()     = VALID
+
+[2] GET /api/liquidity/state  (report())
+    enabled                = False
+    available              = False
+    status                 = 'DISABLED'
+    causal_state           = 'NOT_APPLICABLE'
+    source                 = 'LIVE_MARKET_STATE'
+    algorithm_version      = 'scalp_liquidity_v1.0.0'
+    last_update            = '2026-08-19T02:56:19.065248+00:00'
+    latency_ms             = 35.732
+    schema             = {'id': 'scalp_v1', 'dimension': 50, 'family_indices': '0..49 (scalp_v1 protected)', 'liquidity_indices': [60, 69]}
+    model_compatibility= {'result': 'NOT_APPLICABLE', 'reason': 'LIQUIDITY_DISABLED', 'model_schema_id': 'scalp_v1', 'model_dimension': 50, 'runtime_schema_id': 'scalp_v3', 'runtime_dimension': 70}
+    feature_count      = 10
+    feat bsl_distance_atr             = 3.0
+    feat ssl_distance_atr             = 3.0
+    feat eqh_strength                 = 0.0
+    feat eql_strength                 = 0.0
+    feat htf_liquidity_score          = 0.5795799300526187
+    feat internal_liquidity_distance  = 3.0
+    feat external_liquidity_distance  = 3.0
+    feat liquidity_confluence         = 0.0
+    feat liquidity_sweep_state        = 0.0
+    feat post_sweep_displacement      = 0.0
+
+[3] GET /api/liquidity/features (snapshot_payload())
+    schema_id = scalp_v1  dimension = 50
+    timestamp = 2026-08-19T09:30:00+00:00
+    bsl_distance_atr             idx= 60 value=     3.0 status=DISABLED source=LIVE_MARKET_STATE
+    ssl_distance_atr             idx= 61 value=     3.0 status=DISABLED source=LIVE_MARKET_STATE
+    eqh_strength                 idx= 62 value=     0.0 status=DISABLED source=LIVE_MARKET_STATE
+    eql_strength                 idx= 63 value=     0.0 status=DISABLED source=LIVE_MARKET_STATE
+    htf_liquidity_score          idx= 64 value=0.5795799300526187 status=DISABLED source=LIVE_MARKET_STATE
+    internal_liquidity_distance  idx= 65 value=     3.0 status=DISABLED source=LIVE_MARKET_STATE
+    external_liquidity_distance  idx= 66 value=     3.0 status=DISABLED source=LIVE_MARKET_STATE
+    liquidity_confluence         idx= 67 value=     0.0 status=DISABLED source=LIVE_MARKET_STATE
+    liquidity_sweep_state        idx= 68 value=     0.0 status=DISABLED source=LIVE_MARKET_STATE
+    post_sweep_displacement      idx= 69 value=     0.0 status=DISABLED source=LIVE_MARKET_STATE
+
+[4] AUTHORITATIVE REGISTRY (schema_contract.py scalp_v3 70D)
+    schema_id    = scalp_v3  dimension = 70
+    bsl_distance_atr             idx= 60 family=liquidity
+    ssl_distance_atr             idx= 61 family=liquidity
+    eqh_strength                 idx= 62 family=liquidity
+    eql_strength                 idx= 63 family=liquidity
+    htf_liquidity_score          idx= 64 family=liquidity
+    internal_liquidity_distance  idx= 65 family=liquidity
+    external_liquidity_distance  idx= 66 family=liquidity
+    liquidity_confluence         idx= 67 family=liquidity
+    liquidity_sweep_state        idx= 68 family=liquidity
+    post_sweep_displacement      idx= 69 family=liquidity
+    liquidity block = 60..69
+
+[5] TIMESTAMP FORENSICS (last_update path)
+    _last_success_at (monotonic sec since boot) = 43809.453
+    report last_update = 1970-01-01T12:10:09.453000+00:00    <- WRONG: fromtimestamp(monotonic) => 1970 epoch
+    snapshot decision_at (real bar ts)         = 2026-08-19T09:30:00+00:00
+
+[6] CONTRADICTION MATRIX (PROVEN)
+    A. Status=DISABLED yet 10 liquidity values exposed as 'features'
+    F. algorithm_version='scalp_liquidity_v1.0.0' != producer version liquidity-v1.1
+
+PROBE DONE

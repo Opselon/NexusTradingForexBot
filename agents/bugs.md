@@ -4944,3 +4944,66 @@ artifacts/forensics/accounting_divergence.json):
 ### Related
 - TASK-12 incident INC-2026-D5659C10 (ACCOUNTING_DIVERGENCE, CRITICAL).
 - BUG-045 (zero-PnL fallback origin), BUG-046 (None->0.0 discipline).
+
+---
+
+## BUG-116 — Liquidity Intelligence UI State Contract Contradictions: Monotonic-As-Epoch 1970 Timestamps, Active-Schema-Derived Indices (40..49 While DISABLED), DISABLED+Features+Available=True, BLOCK(LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE) While Disabled (2026-08-19 Liquidity UI forensic task)
+
+- **Status**: VERIFIED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Liquidity Intelligence UI forensic task (AGENT-14)
+- **Fixed**: 2026-08-19 (governor + live_engine + UI)
+- **Verified**: `tests/unit/test_liquidity_runtime_integration_phase18.py` (test_liq_ui_01..10), `tests/integration/test_liquidity_api.py`, `tests/unit/test_liquidity_task02_integration.py`; artifacts/forensics/liquidity_*.json
+
+### Affected Components
+- `src/nexus_scalp/features/liquidity_runtime.py` (LiquidityGovernor: report/snapshot_payload/model_compatibility/_active_schema_block)
+- `src/nexus_scalp/application/live_engine.py` (governor compute hook source provenance)
+- `Web/app.js`, `Web/index.html` (rendered the backend payload verbatim — faithful renderer, not the first wrong layer)
+
+### Problem
+The Liquidity Intelligence panel displayed contradictory state after a live session toggled OFF:
+- `last_update = 1970-01-01T<uptime>` (monotonic seconds rendered as Unix epoch)
+- feature indices 40..49 (active-schema-derived) instead of canonical 60..69
+- `status=DISABLED` yet 10 values + `available=True` (stale snapshot presented as active)
+- `model_compatibility=BLOCK(LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE)` while disabled (reason claims enabled)
+- source/causal/availability conflation allowed 'UNAVAILABLE + Available + VALID' rows
+
+### Root Cause
+1. `_last_success_at`/`_last_error_at` stored `time.monotonic()` (uptime); `report()` rendered them via `datetime.fromtimestamp()` (epoch) → 1970 sentinel.
+2. `snapshot_payload()` derived indices as `active_schema.dimension - 10 + pos`; DISABLED → active schema = scalp_v1/50D → 40..49. Canonical registry (schema_contract.py) places liquidity at 60..69.
+3. `available` ignored the enabled flag; features dumped whenever a snapshot existed.
+4. `model_compatibility()` evaluated the model vs the reserved 70D schema even when disabled.
+5. `live_engine.py` passed the governor's stale `_source` (default UNAVAILABLE) instead of `SourceKind.LIVE_MARKET_STATE`.
+
+### Fix
+- Wall-clock (`time.time()` UTC epoch) fields for absolute timestamps; monotonic kept only for age deltas.
+- Registry-driven liquidity indices (`schema_contract.canonical_feature_names()` → 60..69), never derived from the active-schema dimension.
+- Explicit `feature_availability` (AVAILABLE/STALE_CACHE/UNAVAILABLE/NOT_ACTIVE), `calculation_status`, `source_status`; `available` only True when genuinely AVAILABLE; causal NOT_APPLICABLE while disabled.
+- `model_compatibility()` gated: NOT_APPLICABLE(LIQUIDITY_DISABLED) when off; real matrix vs scalp_v3 when on.
+- `state_revision` monotonic per mutation (stale-SSE guard in UI).
+- live_engine hook passes `SourceKind.LIVE_MARKET_STATE`.
+- UI renders backend per-feature provenance; removed `baseDim - 10 + i` JS derivation.
+
+### Regression Tests
+- `test_liq_ui_01` enabled indices 60..69 canonical
+- `test_liq_ui_02` disabled indices STILL 60..69 (never 40..49)
+- `test_liq_ui_03` disabled = NOT_ACTIVE provenance, available=False, causal NOT_APPLICABLE
+- `test_liq_ui_04` model compat NOT_APPLICABLE when disabled / BLOCK when enabled+50D
+- `test_liq_ui_05` last_update wall clock (never 1970)
+- `test_liq_ui_06` availability matrix explicit (AVAILABLE/STALE_CACHE/NOT_ACTIVE/UNAVAILABLE)
+- `test_liq_ui_07` state_revision monotonic
+- `test_liq_ui_08` per-value provenance in snapshot_payload
+- `test_liq_ui_09` algorithm version provenance + calculation/source status honest
+- `test_liq_ui_10` JSON-safe payloads
+
+### Verification
+- 86 liquidity+API+task02 tests pass; 83 engine/optimization tests pass; 204 related governance/release/schema-70D tests pass.
+- Forensic artifacts: `artifacts/forensics/liquidity_ui_state_trace.json`, `liquidity_index_registry.json`, `liquidity_timestamp_trace.json`, `liquidity_api_ui_parity.json`.
+- Probe: `scratch/probe_liquidity_ui_state_contract.py` (before/after captured in scratch/probe_liquidity_ui_state_contract.out.txt).
+
+### Architectural Lessons / Regression Guards
+- NEVER render `time.monotonic()` through `datetime.fromtimestamp()` — monotonic is delta-only; keep a wall-clock counterpart for absolute timestamps.
+- Feature indices come from the AUTHORITATIVE feature registry (schema_contract.py), never from the active-schema dimension.
+- A DISABLED runtime reports NOT_ACTIVE for retained snapshots; values are never presented as active inputs.
+- Model-compatibility reason strings must never claim an enabled state the runtime does not have.
