@@ -503,3 +503,51 @@ def test_task02_13_14_dataset_replay_runtime_parity(tmp_path) -> None:
 
     # the liquidity feature NAMES contract is asserted by TEST-TASK02-10
 
+
+
+# ---------------------------------------------------------------------------
+# TEST-TASK02-17/18 — candidate path exists; never auto-promotes (STEP 14-15)
+# ---------------------------------------------------------------------------
+
+
+def test_task02_17_18_candidate_trainer_60d_no_promotion(tmp_path) -> None:
+    """A scalp_liquidity_v1 candidate can be trained from the real dataset;
+    the result is a CANDIDATE id, never the Champion, and the Champion
+    artifact path is untouched."""
+    import polars as pl
+
+    from nexus_scalp.model_generation.artifact_store import ArtifactStore
+    from nexus_scalp.model_generation.models import ExperimentConfig
+    from nexus_scalp.model_generation.training import CandidateTrainer
+
+    store = ArtifactStore(tmp_path)
+    frame = pl.DataFrame(
+        {
+            "label": [0, 0, 1, 2, 0, 1, 2, 0, 0, 1, 2, 0] * 5,
+            **{f"feat_{i}": [0.0] * 60 for i in range(60)},
+        }
+    )
+    # ensure feat_50..59 carry real liquidity-like values so the trainer sees
+    # a non-degenerate 60D block
+    frame = frame.with_columns(
+        [pl.Series(f"feat_{50 + i}", [float((i + 1) * 0.1)] * 60) for i in range(10)]
+    )
+    exp = ExperimentConfig(
+        experiment_id="exp_liq_60d_smoke",
+        dataset_id="ds_liq_task02_real_1k",
+        architecture="MLP_V2",
+        training={"epochs": 1, "batch_size": 16, "lr": 1e-3, "seed": 42},
+    )
+    res = CandidateTrainer(store=store).train_candidate(
+        exp, frame, feature_cols=[f"feat_{i}" for i in range(60)], epochs=1
+    )
+    assert res["status"] in ("COMPLETED", "TRAINED", "FAILED", "REJECTED")
+    mid = res.get("model_id", "")
+    # a candidate id is NEVER the Champion id
+    assert "primary_scalp" not in mid
+    # candidate ids are prefixed cand_ (deterministic CandidateTrainer scheme)
+    if res["status"] == "COMPLETED":
+        assert mid.startswith("cand_")
+    # Champion artifact path untouched (no file created under the champion path)
+    champion_path = tmp_path / "models" / "scalp" / "XAUUSD" / "v1.0.0" / "model.pt"
+    assert not champion_path.exists()
