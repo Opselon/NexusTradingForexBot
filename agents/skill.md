@@ -65,6 +65,8 @@
 15e. [Challenger Shadow Trading & Champion Evaluation (PHASE 11)](#15e-challenger-shadow-trading--champion-evaluation-phase-11)
 15f. [News Intelligence Engine (PHASE 12)](#15f-news-intelligence-engine-phase-12)
 15j. [Outcome Correlation, Broker Reconstruction & Break-Even Learning (PHASE 14)](#15j-outcome-correlation-broker-reconstruction--break-even-learning-phase-14)
+15k. [Adaptive Model Intelligence — 60D Challenger Path (TASK-5)](#15k-adaptive-model-intelligence--60d-challenger-path--continuous-learning-forensics-task-5-2026-08-18)
+15m. [Liquidity Intelligence & 70D Canonical Tensor Contract (TASK-01..07)](#15m-liquidity-intelligence--70d-canonical-tensor-contract-task-0107-2026-08-19)
 15. [Known Engineering Pitfalls & Invariants](#15-known-engineering-pitfalls--invariants)
 16. [Testing & CI/CD Pipeline Audit](#16-testing--cicd-pipeline-audit)
 17. [Documentation vs. Reality Audit Matrix](#17-documentation-vs-reality-audit-matrix)
@@ -261,7 +263,7 @@ NexusTradingForexBot/
 | `src/nexus_scalp/adapters/mt5/remote_gateway.py` | Adapters | Remote ZMQ Gateway Adapter | `RemoteMT5GatewayAdapter` | `LiveEngine` | `zmq` | JSON over TCP/ZMQ | OrderResult, Ticks | 🟢 VERIFIED | Medium |
 | `src/nexus_scalp/adapters/paper/paper_adapter.py` | Adapters | Simulated paper trading adapter | `PaperMT5Adapter` | `LiveEngine`, Tests | Internal state | TickData, Orders | Simulated OrderResult | 🟢 VERIFIED | Low |
 | `src/nexus_scalp/adapters/database/audit_repository.py` | Adapters | SQLite WAL Audit & Autopsy Ledger | `AuditRepository` | `LiveEngine`, Server, OrderManager | `sqlite3` | Signals, Orders, Account, Autopsies | DB Records, Summaries | 🟢 VERIFIED | Low (Async Queue) |
-| `src/nexus_scalp/models/scalp_net.py` | Models | PyTorch Deep Neural Network | `ScalpNet`, `CausalConv1d`, `SinusoidalPositionalEncoding` | `LiveEngine`, `WalkForwardTrainer` | `torch.nn` | 50D Tensor `(B, 50)` | 4 Logits `(B, 4)` | 🟢 VERIFIED | Medium |
+| `src/nexus_scalp/models/scalp_net.py` | Models | PyTorch Deep Neural Network | `ScalpNet`, `CausalConv1d`, `SinusoidalPositionalEncoding` | `LiveEngine`, `WalkForwardTrainer` | `torch.nn` | 50D Tensor `(B, 50)` (serving champion); 70D tensor `(B, 70)` for scalp_v3 candidates | 4 Logits `(B, 4)` | 🟢 VERIFIED | Medium |
 | `src/nexus_scalp/features/scalp_features.py` | Features | 50D Master Feature Engineering | `ScalpFeatureEngine`, `FeatureVector`, `FeaturePipelineFrozenError` | `LiveEngine`, Trainer, Tests | `numpy`, `polars` | Bar list, TickData | 50D FeatureVector | 🟢 VERIFIED | Medium |
 | `src/nexus_scalp/features/regime_classifier.py` | Features | Market Regime Classification | `MarketRegimeClassifier`, `MarketRegimeState`, `RegimeType` | `LiveEngine`, Policy | Internal math | Ticks, Spreads, Volatility | MarketRegimeState | 🟢 VERIFIED | Low |
 | `src/nexus_scalp/labeling/triple_barrier.py` | Labeling | Cost-Aware Purged Triple Barrier | `TripleBarrierLabeler` | Trainer, `LiveEngine` online retrain | `polars`, `numpy` | OHLCV DataFrame | Labeled DataFrame (`0, 1, 2`) | 🟢 VERIFIED | Medium |
@@ -1047,8 +1049,11 @@ strategy_intelligence_registry -> lifecycle & confidence (READ, never recomputed
 8. **MODEL REBUILD NEVER ERASES MEMORY.** Experiences carry their own
    `feature_schema_id`/`feature_dimension`/`model_id`/`model_version` at
    decision time (via `features/schema.py` registry + `experience/provenance.py`).
-   The live contract remains 50D (`scalp_v1`); 60D (`scalp_v2`) and 350D
-   (`scalp_v3`) are forward-declared for future widening.
+   The SERVING champion remains 50D (`scalp_v1`); the canonical research/dataset
+   schema is `scalp_v3` = 70D (Base 0..49 | News 50..59 | Liquidity 60..69,
+   see §15m). `scalp_v2` = 60D (candidate-only, Liquidity at 50..59) is FROZEN.
+   The old "350D forward-declared" note is OBSOLETE — no 350D artifact ever
+   existed; the declaration was superseded (TEST-29).
 
 ### 🗄️ Canonical Tables (all in `audit.db`, SQLite WAL)
 
@@ -2623,6 +2628,103 @@ LiveUiState.2 + Web/app.js + index.html      runtime-mode badge, STALE/LIVE
   no challenger promoted; Champion hash unchanged.
 
 
+## 15m. Liquidity Intelligence & 70D Canonical Tensor Contract (TASK-01..07, 2026-08-19)
+
+### Canonical 70D tensor geometry — SINGLE source of truth (`features/schema_contract.py`)
+
+The 70D contract is `scalp_v3` (hash `235b8fcc...`). ONE market snapshot
+produces ONE canonical 70D vector with identical semantics in dataset,
+replay, training, inference, and live (`canonical_feature_names()`,
+`feature_schema_hash()`, `validate_70d_vector()`).
+
+| Block | Indices | Family | Source |
+|---|---|---|---|
+| Base | 0..49 | `base` | `scalp_features.FEATURE_NAMES` (scalp_v1 50D, protected) |
+| News | 50..59 | `news` | `news_context_v1` fields 0..8 + `news_state` (idx 10) — NOT a blind first-10 slice; `source_consensus` (idx 9) stays outside the block |
+| Liquidity | 60..69 | `liquidity` | `liquidity_engine.LIQUIDITY_FEATURE_NAMES` (identical order to `LiquidityFeatures.as_vector()`) |
+
+- `BASE_START/END = 0/50`, `NEWS_START/END = 50/60`, `LIQUIDITY_START/END = 60/70`.
+- `canonical_feature_names()` RAISES at import/test time if any upstream
+  contract drifts (a 51st base name, news-field rename, liquidity rename) —
+  never silently at inference.
+- `scalp_v2` = 60D (Liquidity at 50..59, `liquidity_engine.build_60d_vector`)
+  is FROZEN (candidate-only, TASK-5). The 350D forward-declaration is
+  OBSOLETE — no artifact ever existed.
+
+### Liquidity 10D canonical names (indices 60..69, exact order)
+
+`bsl_distance_atr` · `ssl_distance_atr` · `eqh_strength` · `eql_strength`
+· `htf_liquidity_score` · `internal_liquidity_distance`
+· `external_liquidity_distance` · `liquidity_confluence`
+· `liquidity_sweep_state` · `post_sweep_displacement` —
+all finite, clipped `[-3, +3]` (value gate in `compute_from_engine`).
+
+### Liquidity producer (`features/liquidity_engine.py`, TASK-1)
+
+- `compute_liquidity_features()` = canonical pure-causal 10D producer used by
+  training, replay, and live with the SAME inputs.
+- Anti-leakage: bars with timestamp > `decision_at` are invisible; fractal
+  swing confirmation requires ±`window` bars (`SWING_CONFIRM_BARS`).
+- Pool lifecycle: CANDIDATE → CONFIRMED → (usable at `usable_at <= decision`)
+  with BSL/SSL sides; equal-high/low strength; HTF (H1/H4/D1) evidence;
+  internal/external distance; confluence; reactive sweep + post-sweep
+  displacement. Structural information ONLY — never a trade signal.
+- Complexity note: `detect_confirmed_swings` is O(n·window) per new bar
+  (≈44 ms @ 900 bars, ≈460 ms @ 3500 bars) — bounded by the 4000-bar cap.
+
+### Runtime governor (`features/liquidity_runtime.py`, TASK-2)
+
+- `LiquidityGovernor` owns: enabled flag (persisted via SettingsService
+  `model.liquidity_features_enabled`, HOT_RESTRICTED), latest snapshot,
+  status/causal derivation. The engine is the PRODUCER; the governor never
+  computes in the web thread.
+- `compute_from_engine(bars, mid_price, atr, decision_at, source)` — called
+  by LiveEngine on new-bar cadence (pure numpy, no I/O, no DB; info-only,
+  INV-020). On failure: source → UNAVAILABLE, error stored, exception raised
+  (engine hook isolates it).
+- Status: ENABLED / DISABLED / DEGRADED / UNAVAILABLE.
+  Causal state: VALID / STALE / INVALID (NO snapshot ⇒ INVALID ⇒ UNAVAILABLE).
+- `status()` is derived from timestamps: no snapshot ⇒ UNAVAILABLE; error
+  after last success ⇒ DEGRADED; age > `LIVE_STALE_AFTER_SEC` ⇒ DEGRADED.
+- `snapshot_payload()`: per-value indices from the AUTHORITATIVE registry
+  (60..69), NEVER from the active-schema dimension (BUG-111); runtime_enabled
+  + NOT_ACTIVE/UNAVAILABLE/STALE_CACHE/AVAILABLE; `reason: NO_LIQUIDITY_SNAPSHOT`.
+- `build_runtime_60d_vector()` raises (never pads/zero-fills) when disabled
+  or no snapshot (INV-009).
+- BUG-111: wall-clock (UTC epoch) timestamps for absolute values; monotonic
+  ONLY for age deltas — the 1970-sentinel render bug.
+- Model compatibility: `BLOCK (LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE)`
+  when the serving model is 50D/60D while liquidity is enabled — the UI
+  shows this rather than a fake AVAILABLE.
+
+### API + UI (TASK-2)
+
+- `GET /api/liquidity/state` · `GET /api/liquidity/features` ·
+  `POST /api/liquidity/toggle` (persists via SettingsService, INV-010/BUG-080
+  discipline — never live.yaml). Canonical `liquidity` section in
+  `/api/status` and `/api/live/state` + SSE.
+- UI: Liquidity Intelligence tab, ten values with backend indices 60..69,
+  chart pool overlays from `report().pools` ONLY.
+- Status semantics: engine not running ⇒ no snapshot ⇒ UNAVAILABLE / NOT_RUN
+  / `--` timestamps. NEVER hardcode AVAILABLE — it must depend on real engine
+  market data.
+
+### UI-controlled engine lifecycle (BUG-119, 2026-08-19)
+
+- The UI is the source of control for LIVE/execution mode. The dashboard's
+  `#execution-mode-selector` (LIVE/SIMULATION/REPLAY) posts to
+  `POST /api/engine/mode` on change.
+- Backend: validates mode, sets `engine.config.execution.mode`, persists via
+  SettingsService `db.set('execution.mode', ...)` (HOT_RESTRICTED), returns
+  `{mode, engine_running, runtime_mode}`.
+- Truthful runtime: `runtime_mode` derives from REAL MT5 connection state
+  (`_update_runtime_mode`) — `LIVE_CONFIGURED / MT5_DISCONNECTED` when not
+  connected; never fake LIVE.
+- Boot: LiveEngine reads `execution.mode` from the settings DB FIRST
+  (override), falls back to YAML — a UI-requested mode survives restart.
+- Engine start/stop: `POST /api/engine/toggle` runs/stops the loop
+  in-process (asyncio task); stop sets `_running=False` (graceful).
+
 ## 16. Known Engineering Pitfalls & Invariants
 
 If you are an AI coding agent making changes to this repository in the future, **memorize these active engineering rules and constraints**:
@@ -2640,7 +2742,28 @@ If you are an AI coding agent making changes to this repository in the future, *
 ### 🚨 3. Feature Vector 50D Contract Alignment
 * **Pitfall:** Truncating or hardcoding feature selection indices in training scripts or model inputs.
 * **Symptom:** Crashes with tensor dimension mismatch error (`ValueError: 50D feature contract violation`).
-* **Rule:** All training scripts and inference pipelines MUST generate and select all 50 feature columns (`feat_0` .. `feat_49`) matching `WalkForwardTrainer.NUM_FEATURES = 50` and `ScalpNet`.
+* **Rule:** All training scripts and inference pipelines MUST generate and select all 50 feature columns (`feat_0` .. `feat_49`) matching `WalkForwardTrainer.NUM_FEATURES = 50` and `ScalpNet`. For 70D work use the canonical `schema_contract` geometry (Base 0..49 | News 50..59 | Liquidity 60..69) and `build_70d_vector` — NEVER hand-assemble slices.
+
+### 🚨 3b. Champion hot-path caching (BUG-118, 2026-08-19)
+* **Pitfall:** `ChampionManager.champion_or_none()` re-verified + re-logged
+  `[MODEL] CHAMPION VERIFIED` on EVERY call; web/governance polls at ~2 Hz
+  flooded `nse_live.log` and re-read the artifact (hash + scaler) per call.
+* **Rule:** the manager caches the verified ChampionModel keyed on the
+  artifact fingerprint `(st_size, st_mtime_ns)`; identical polls return the
+  memoized instance without re-reading or logging. ANY artifact rewrite
+  (retrain/promotion/rollback/rebuild) changes the fingerprint → fresh
+  verify + exactly one log. Cold-start None is memoized too (one warning).
+  `champion_or_none(force_reload=True)` is the fresh-verify escape hatch.
+
+### 🚨 3c. UI execution-mode lifecycle (BUG-119, 2026-08-19)
+* **Pitfall:** the dashboard's execution-mode selector was a dead control
+  (no change listener, no persistence) and the engine start/stop button
+  never persisted the requested mode — UI selection != persisted != runtime.
+* **Rule:** UI is the source of control: `POST /api/engine/mode` (persists
+  `execution.mode` via SettingsService, HOT_RESTRICTED; returns real
+  `runtime_mode` derived from MT5 connection). Boot reads the settings DB
+  FIRST (override) then YAML. The UI badge must show the REAL runtime state
+  (e.g. `LIVE_CONFIGURED / MT5_DISCONNECTED`) — never fake LIVE.
 
 ### 🚨 4. SSE / JSON Stream Enum Serialization Constraint
 * **Pitfall:** Pushing raw domain models containing Enums directly into FastAPI SSE or WebSocket generators.
