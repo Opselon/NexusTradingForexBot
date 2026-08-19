@@ -5,6 +5,16 @@
 > Status lifecycle: PROPOSED → IMPLEMENTING → VERIFIED → READY_FOR_REVIEW → MERGED | REJECTED.
 
 ## Open / recent changes
+CHANGE-ID: CHG-0015
+Agent: Hermes-Parity
+Role: 70D Dataset/Replay/Inference/Runtime Contract Engineer
+Task: TASK-03-70D-PARITY
+Scope: canonical 70D feature contract (scalp_v3 = Base 0..49 + News 10D 50..59 + Liquidity 10D 60..69); deterministic feature_schema_hash; immutable 70D snapshot with provenance; dataset builder (compute_70d_frame) + quality gates + reproducibility; replay parity + anti-leakage; inference validator with explicit rejection codes; model manifest extension (feature_schema_hash, training_dataset_id) + scaler compatibility (no pad/truncate); legacy 60D protection (mismatch blocked); four News/Liquidity toggle combinations; golden corpus; real-data parity; no fake fallback values; no DB on tick hot path (INV-001). Trading behavior untouched; no Champion change; no auto-promotion.
+Affected files: features/schema_contract.py (new), features/schema.py, model_generation/schema_v2.py, model_generation/models.py, model_generation/news_bridge.py, model_generation/replay.py, inference validator (new module), application/live_engine.py (guarded additive hook), tests/unit/test_70d_contract_parity_task3.py, docs/70D_DATA_CONTRACT.md, docs/agent_handoffs/TASK-03-70D-PARITY.md, agents/{taskboard,change_control,contracts,runtime_invariants,repository_state,bugs}.md (additive rows)
+Contracts: FEATURE_SCHEMA_70D v1 (scalp_v3 70D canonical), FEATURE_SCHEMA_HASH v1 (new), INFERENCE_CONTRACT v1 (new)
+Risk: LOW-MEDIUM (feature-contract hardening only; live 50D hot path untouched; guarded 70D hook behind config flag)
+Status: IN_PROGRESS
+
 
 ```text
 CHANGE-ID: CHG-0014
@@ -167,6 +177,7 @@ Status: VERIFIED
 | CHG-0002 | Hermes-DBMigrate | TASK-10 | Automatic DB migration engine: versioned per-domain migrations, baseline detection, idempotent additive migration, index management, WAL-safe backup, startup/CLI/update integration | DB_MIGRATION v1 (new), SCHEMA_MANIFEST v1 (new) | all agents (DB consumers) | HIGH | VERIFIED |
 | CHG-0001 | Hermes-Behavior | TASK-2 | Behavioral/anomaly intelligence: wire BehaviorDetectionEngine into IntelligenceWorker; add evidence-based detectors; versioned idempotent persistence; report truth-states (NO_DATA/CLEAR/FLAGS_FOUND/ANOMALIES_FOUND) + coverage | BEHAVIOR_ANALYSIS v1 (new), ANOMALY v1 (new) | Hermes-Accounting (reporting), Hermes-TradeLifecycle (TASK-3) | MEDIUM | VERIFIED |
 | CHG-0006 | Hermes-DBHygiene | TASK-11 | Database hygiene worker: inventory/classification matrix, deterministic duplicate+orphan detection, retention engine, archive-before-delete with hashes, bounded executor, journal, verification, CLI nexus db hygiene *, worker state | DATABASE_HYGIENE v1 (new), RETENTION_POLICY v1 (new) | all DB consumers | MEDIUM | VERIFIED |
+| CHG-0015 | Hermes-70D-Integration (TASK-2) | TASK-02-70D-INTEGRATION | 70D Liquidity integration + UI/runtime control plane: scalp_v4=70D schema, features/liquidity_runtime.py governor, /api/liquidity/* endpoints, canonical liquidity section in /api/status + live/state + SSE, Liquidity Intelligence UI panel + toggle, chart overlays from real pools, TEST-70D-01..28 + API suite | LIQUIDITY_RUNTIME v1 (new), LIQUIDITY_API v1 (new), FEATURE_SCHEMA_70D v1 (scalp_v4) | live_engine (info-only hook), web/server.py, Web/ | LOW | VERIFIED |
 | CHG-0005 | Hermes-TASK1 (Performance Intelligence Data-Truth Auditor) | TASK-1 | Metric-truth repair (Performance Intelligence): MAE/MFE sign-convention normalization, MFE-capture portfolio-ratio semantics, fill-rate real denominator, funnel rejection re-tabulation (NO_TRADE+blocked_by), timestamp-cutoff normalization (ISO 'T' vs space), drawdown window labels (period vs 90D), model funnel new prediction_to_trade_rate | ACCOUNTING_SNAPSHOT v1 (extended: period_drawdown_pct, drawdown_window), TRADE_OUTCOME v3 (read), EXIT_CLASSIFICATION v2 (read) | Hermes-Accounting, Hermes-Behavior (reporting), Hermes-TradeLifecycle (TASK-3) | MEDIUM | VERIFIED |
 
 ```text
