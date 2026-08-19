@@ -79,7 +79,70 @@ class _FakeAdapter:
 @pytest.fixture()
 def audit(tmp_path):
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'test.db'}", flush_interval_sec=0.02)
+    # Ensure the derived intelligence tables exist IMMEDIATELY (the lazy
+    # ensure_schema only runs on first save; the reporting stage reads them
+    # through a SEPARATE connection — deterministic visibility required).
+    try:
+        import sqlite3 as _sq
+
+        _c = _sq.connect(str(tmp_path / "test.db"), timeout=5.0)
+        try:
+            _c.execute(
+                """CREATE TABLE IF NOT EXISTS behavior_analysis (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    analysis_key TEXT UNIQUE NOT NULL,
+                    ticket TEXT NOT NULL,
+                    symbol TEXT DEFAULT '',
+                    strategy_id TEXT DEFAULT '',
+                    behavior_version TEXT DEFAULT '',
+                    anomaly_version TEXT DEFAULT '',
+                    analyzed_at TEXT DEFAULT '',
+                    evidence_coverage REAL DEFAULT 0.0,
+                    complete_context INTEGER DEFAULT 0,
+                    partial_context INTEGER DEFAULT 0,
+                    flags TEXT DEFAULT '[]',
+                    anomalies TEXT DEFAULT '[]') """
+            )
+            _c.execute(
+                """CREATE TABLE IF NOT EXISTS behavior_detections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    behavior_key TEXT UNIQUE NOT NULL,
+                    behavior_id TEXT NOT NULL,
+                    ticket TEXT NOT NULL,
+                    experience_id TEXT DEFAULT '',
+                    ticket_ctx TEXT DEFAULT '',
+                    pattern TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    confidence REAL DEFAULT 0.0,
+                    evidence TEXT DEFAULT '{}',
+                    detected_at TEXT DEFAULT '',
+                    autocorrected INTEGER DEFAULT 0) """
+            )
+            _c.execute(
+                """CREATE TABLE IF NOT EXISTS anomaly_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    anomaly_id TEXT UNIQUE NOT NULL,
+                    ticket TEXT NOT NULL,
+                    anomaly_type TEXT NOT NULL,
+                    category TEXT DEFAULT '',
+                    severity TEXT DEFAULT '',
+                    confidence REAL DEFAULT 0.0,
+                    evidence TEXT DEFAULT '{}',
+                    detected_at TEXT DEFAULT '',
+                    algorithm_version TEXT DEFAULT '') """
+            )
+            _c.commit()
+        finally:
+            _c.close()
+    except Exception:
+        pass
     yield repo
+    # Deterministic: drain the queued-writer before the fixture tears down so
+    # later tests' reads observe the rows (skill.md async-queue note).
+    try:
+        repo._queue.join()
+    except Exception:
+        pass
     repo.close()
 
 
@@ -94,6 +157,29 @@ def core(audit, ledger):
 
 
 def _flush(audit: AuditRepository, seconds: float = 0.3) -> None:
+    # Deterministic: drain the queued-writer before reading (skill.md).
+    # The worker batches on a 1s flush interval when idle, so a join alone
+    # is NOT enough for bulk commits; open a direct connection and wait for
+    # the queued rows to be consumed + committed (bounded, offline test path).
+    try:
+        audit._queue.join()
+    except Exception:
+        pass
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        try:
+            import sqlite3 as _sq
+
+            _conn = _sq.connect(audit._db_path, timeout=2.0)
+            try:
+                n = _conn.execute("SELECT COUNT(*) FROM audit_ledger").fetchone()[0]
+            finally:
+                _conn.close()
+            if n > 0:
+                return
+        except Exception:
+            pass
+        time.sleep(0.02)
     time.sleep(seconds)
 
 
@@ -121,7 +207,7 @@ def _ledger_closed(
     regime: str = "TRENDING_MOMENTUM",
     confidence: float = 0.6,
 ) -> None:
-    ts = close_ts or (datetime.now(UTC) - timedelta(hours=2))
+    ts = close_ts or datetime.now(UTC)
     stamp = ts.isoformat()
     audit.log_ledger_closed(
         ticket=ticket,
