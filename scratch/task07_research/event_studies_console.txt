@@ -1,0 +1,94 @@
+bars=100000
+frozen bins bsl=0.21/0.59 ssl=0.21/0.58
+  ..events 200
+  ..events 400
+  ..events 600
+  ..events 800
+  ..events 1000
+events collected=1000
+{
+  "events_total": 1000,
+  "sweep_n": {
+    "sweep_negative": 214,
+    "sweep_zero": 1,
+    "sweep_positive": 785
+  },
+  "confluence_n": {
+    "low_lt_1": 114,
+    "medium_1_2": 283,
+    "high_gt_2": 603
+  },
+  "bsl_bin_n": {
+    "near": 353,
+    "medium": 313,
+    "far": 334
+  },
+  "ssl_bin_n": {
+    "near": 364,
+    "medium": 268,
+    "far": 368
+  },
+  "htf_n": {
+    "htf_negative": 453,
+    "htf_zero": 0,
+    "htf_positive": 547
+  },
+  "h5_sweep": {
+    "sweep_negative": {
+      "n": 214,
+      "mean_abs_move_atr": 1.2273,
+      "mean_mfe_atr": 1.2825,
+      "mean_mae_atr": -1.2976,
+      "reversal_prob": 0.7009,
+      "continuation_prob": 0.7383,
+      "mean_vol_ratio": 2.5801
+    },
+    "sweep_zero": {
+      "n": 1,
+      "mean_abs_move_atr": 0.7601,
+      "mean_mfe_atr": 0.1272,
+      "mean_mae_atr": -2.7001,
+      "reversal_prob": 1.0,
+      "continuation_prob": 1.0,
+      "mean_vol_ratio": 2.8274
+    },
+    "sweep_positive": {
+      "n": 785,
+      "mean_abs_move_atr": 1.2201,
+      "mean_mfe_atr": 1.254,
+      "mean_mae_atr": -1.1697,
+      "reversal_prob": 0.6764,
+      "continuation_prob": 0.6968,
+      "mean_vol_ratio": 2.4237
+    }
+  },
+  "h5_confluence": {
+    "low_lt_1": {
+      "n": 114,
+      "mean_abs_move_atr": 1.6806,
+      "mean_mfe_atr": 1.6786,
+      "mean_mae_atr": -1.2618,
+      "reversal_prob": 0.6754,
+      "continuation_prob": 0.7895,
+      "mean_vol_ratio": 2.9405
+    },
+    "medium_1_2": {
+      "n": 283,
+      "mean_abs_move_atr": 1.2572,
+      "mean_mfe_atr": 1.2413,
+      "mean_mae_atr": -1.3153,
+      "reversal_prob": 0.6996,
+      "continuation_prob": 0.735,
+      "mean_vol_ratio": 2.5566
+    },
+    "high_gt_2": {
+      "n": 603,
+      "mean_abs_move_atr": 1.1175,
+      "mean_mfe_atr": 1.1879,
+      "mean_mae_atr": -1.1319,
+      "reversal_prob": 0.675,
+      "continuation_prob": 0.6766,
+      "mean_vol_ratio": 2.3198
+    }
+  }
+}
