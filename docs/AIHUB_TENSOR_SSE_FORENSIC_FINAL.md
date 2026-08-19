@@ -294,8 +294,9 @@ Absorbed by parallel commits (content verified in history):
 
 ## K. REMOTE
 
-Local HEAD == origin/main == `5a37374` (0 ahead, 0 behind; `origin/main`
-contains both my commits).
+Final state: local HEAD == origin/main == `02aae46` (0 ahead, 0 behind).
+All 4 Hermes-AIHubForensic commits verified ON origin/main:
+`b7cde3a`, `5a37374`, `41be7a8`, `2d57599`.
 
 ---
 
