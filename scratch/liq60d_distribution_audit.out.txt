@@ -1,0 +1,17 @@
+feature                          min     max    mean   zero%  sat+3%  uniq
+bsl_distance_atr              0.0169     3.0   1.146    0.0%    7.4%    73
+ssl_distance_atr              0.0392     3.0   1.217    0.0%   11.7%    70
+eqh_strength                     0.0     1.0  0.7547    0.0%    0.0%    71
+eql_strength                     0.0     1.0  0.5125    0.0%    0.0%    73
+htf_liquidity_score          -2.3411  2.6224  0.3136    0.0%    0.0%    70
+internal_liquidity_distance   0.0169     3.0  1.1228    0.0%   26.6%    70
+external_liquidity_distance   0.0994  2.7003  1.0876    0.0%    0.0%    77
+liquidity_confluence          1.8935     3.0  2.7551    0.0%   44.7%     9
+liquidity_sweep_state           -2.0     2.0 -0.3936    0.0%    0.0%     4
+post_sweep_displacement          0.0  0.4401  0.0096    0.0%    0.0%     4
+
+vectors: 94 | regimes: {'TRENDING_UP': 3, 'TRENDING_DOWN': 3, 'RANGING': 9, 'VOLATILE': 7, 'SWEEP': 3, 'RANDOM_WALK': 69}
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\fromnumeric.py:3504: RuntimeWarning: Mean of empty slice.
+  return _methods._mean(a, axis=axis, dtype=dtype,
+C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\_methods.py:129: RuntimeWarning: invalid value encountered in scalar divide
+  ret = ret.dtype.type(ret / rcount)

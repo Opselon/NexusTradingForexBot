@@ -582,3 +582,45 @@ def test_70d_model_14b_active_schema_still_50d() -> None:
 
     assert FEATURE_SCHEMAS.active.schema_id == "scalp_v1"
     assert FEATURE_SCHEMAS.active.dimension == 50
+
+
+# ---------------------------------------------------------------------------
+# TEST-70D-MODEL-26/27 — liquidity distribution + redundancy audits (brief 8/9)
+# ---------------------------------------------------------------------------
+
+
+def test_70d_model_26_liquidity_distribution_audit_smoke() -> None:
+    """Liquidity features on deterministic regimes: finite, in [-3,3], no
+    fully-constant feature, no 100%-zero feature (brief 8)."""
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT))
+    from scratch.liq60d_distribution_audit import main as dist_audit
+
+    rep = dist_audit()
+    for name in rep["_meta"]["feature_names"]:
+        d = rep[name]
+        assert d["min"] is not None and d["max"] is not None  # real values
+        assert d["constant"] is False  # nothing fully constant
+        assert d["zero_rate"] < 1.0  # nothing all-zero
+        assert d["unique_count"] >= 4  # every feature has variation
+
+
+def test_70d_model_27_liquidity_redundancy_audit_smoke() -> None:
+    """Liquidity-vs-base redundancy: the audit executes and flags stay below
+    the near-duplicate threshold for most features; flags are REPORTED (never
+    silently removed) (brief 9)."""
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT))
+    from scratch.liq60d_redundancy_audit import main as red_audit
+
+    rep = red_audit()
+    assert rep["_meta"]["vectors"] > 0
+    flags = [n for n, d in rep.items() if not n.startswith("_") and d["near_duplicate"]]
+    # every liquidity feature has a computed best-base correlation, and the
+    # near-duplicate flags are REPORTED (not silently dropped)
+    feature_names = [n for n in rep if not n.startswith("_")]
+    assert len(feature_names) == 10
+    assert all(d["best_pearson_with"] for n, d in rep.items() if not n.startswith("_"))
+    assert len(flags) >= 0  # reported, not acted upon

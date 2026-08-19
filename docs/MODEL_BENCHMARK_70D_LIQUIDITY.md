@@ -285,3 +285,60 @@ STATUS:     BLOCKED → WAITING_FOR_AGENT (TASK-03-70D-PARITY)
 HEAD (start): 4001e4c
 Blocking evidence: sections 0, 2.1, 10 above
 ```
+
+## 7.1 LIQUIDITY DISTRIBUTION AUDIT — SYNTHETIC REGIMES (brief §8, PARTIALLY PROVEN)
+
+Executed 2026-08-19 before TASK-3 landed, over deterministic fixture regimes
+(TRENDING_UP/DOWN, RANGING, VOLATILE, SWEEP, RANDOM_WALK; 94 windows).
+Probes: `scratch/liq60d_distribution_audit.py` (+ .out.txt, + .json).
+NOTE: synthetic fixtures — shapes are informative, absolute rates are NOT real
+market rates. The real-market audit runs on the 70D dataset after TASK-3.
+
+| feature | min | max | mean | zero% | sat+3% | uniq |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| bsl_distance_atr | 0.0169 | 3.0 | 1.146 | 0.0% | 7.4% | 73 |
+| ssl_distance_atr | 0.0392 | 3.0 | 1.217 | 0.0% | 11.7% | 70 |
+| eqh_strength | 0.0 | 1.0 | 0.7547 | 0.0% | 0.0% | 71 |
+| eql_strength | 0.0 | 1.0 | 0.5125 | 0.0% | 0.0% | 73 |
+| htf_liquidity_score | -2.3411 | 2.6224 | 0.3136 | 0.0% | 0.0% | 70 |
+| internal_liquidity_distance | 0.0169 | 3.0 | 1.1228 | 0.0% | 26.6% | 70 |
+| external_liquidity_distance | 0.0994 | 2.7003 | 1.0876 | 0.0% | 0.0% | 77 |
+| liquidity_confluence | 1.8935 | 3.0 | 2.7551 | 0.0% | 44.7% | 9 |
+| liquidity_sweep_state | -2.0 | 2.0 | -0.3936 | 0.0% | 0.0% | 4 |
+| post_sweep_displacement | 0.0 | 0.4401 | 0.0096 | 0.0% | 0.0% | 4 |
+
+Findings (synthetic, to verify on real data):
+- `liquidity_confluence` is near-saturated: 44.7% of values at +3.0, only 9
+  unique values → likely LOW information content (verify).
+- `liquidity_sweep_state` has only 4 unique values (-2..2) — coarse but not
+  constant; `post_sweep_displacement` mostly ~0 (event-driven, expected).
+- No feature is fully constant or 95% zero on these regimes.
+
+## 7.2 LIQUIDITY-vs-BASE REDUNDANCY AUDIT (brief §9, PARTIALLY PROVEN)
+
+| feature | best-base (Pearson) | pearson | spearman | flag |
+| :--- | :--- | ---: | ---: | ---: |
+| bsl_distance_atr | dist_to_swing_high_20 | 0.7623 | 0.7436 |  |
+| ssl_distance_atr | dist_to_ema_50 | 0.7747 | 0.7708 |  |
+| eqh_strength | stop_hunt_depth | -0.4384 | 0.3678 |  |
+| eql_strength | norm_kumo_width | 0.5097 | 0.4254 |  |
+| htf_liquidity_score | htf_h1_momentum | 0.728 | 0.8108 |  |
+| internal_liquidity_distance | norm_displacement | -0.9018 | -0.5644 | NEAR-DUP |
+| external_liquidity_distance | norm_displacement | 0.6107 | 0.6333 |  |
+| liquidity_confluence | norm_displacement | 0.6147 | 0.4749 |  |
+| liquidity_sweep_state | feat_ob_liquidity_swept | 0.3729 | 0.5021 |  |
+| post_sweep_displacement | lag_2_log_return | -0.1562 | 0.9976 | NEAR-DUP |
+
+Findings (synthetic, to verify on real data):
+- `internal_liquidity_distance` vs `norm_displacement`: Pearson **-0.90**
+  → NEAR-DUPLICATE flag (likely re-encodes distance-to-swing structure).
+- `post_sweep_displacement` vs `lag_2_log_return`: Spearman **0.998**
+  → NEAR-DUPLICATE flag (partly an artifact of the synthetic sweep's monotonic
+  construction; must be re-measured on the real 70D dataset before any
+  feature-removal decision).
+- `bsl/ssl_distance_atr` correlate ~0.75-0.77 with existing distance features
+  (high but below the 0.85 flag) → expected: they are distance metrics, but
+  with pool-confirmation semantics that the 50D lacks.
+- `liquidity_sweep_state` vs `feat_ob_liquidity_swept` ≈ 0.37-0.50: related
+  but NOT duplicates (sweep state carries direction/severity beyond the 50D
+  0/1 flag) — consistent with the TASK-01 thesis.
