@@ -151,3 +151,50 @@ When you take over (TASK-5: 70D Shadow runtime / drift / champion-safe deploymen
   table in MODEL_BENCHMARK_70D_LIQUIDITY.md §31, full `beforePush.ps1`.
 - Risk: parallel agents continue editing shared files (registries, schema.py);
   re-check tails before each registry write (contract §4).
+
+## 8. INCIDENT SUPPLEMENT (2026-08-19, added during the commit-per-step continuation)
+
+### 8.1 BUG-103 — WalkForwardTrainer CrossEntropy weight-width crash (FIXED)
+Every walk-forward training run crashed at `CrossEntropyLoss` construction:
+the class-weight tensor derived width from the 3-class label set while the
+model emits 4 logits (`MODEL_HEAD_CLASSES`). `_build_class_weights` now uses
+MODEL_HEAD_CLASSES. Regression: TEST-70D-MODEL-31.
+
+### 8.2 BUG-104 — Bare trainer run CLOBBERED the live Champion artifact (FIXED + INCIDENT)
+A TASK-4 synthetic 70D smoke (WalkForwardTrainer, default save path) wrote a
+70D model over `artifacts/models/scalp/XAUUSD/v1.0.0/model.pt`. The frozen
+Champion bytes (f0f70efb...) are NOT recoverable from this repo (artifacts
+gitignored; exhaustive hash scan found no copy). Recovery applied:
+- BUG-104 fix: default artifact_save_path -> `wf_candidate/` (LiveEngine
+  still passes the production path explicitly).
+- Champion path restored from `bench_a_v1` (50D, scalp_v1, seed 42, same
+  recipe family; NOT byte-identical; meta.json marked RESTORED_CANDIDATE).
+- Full incident: `docs/CHAMPION_ARTIFACT_INCIDENT_20260819.md`.
+
+**OPERATOR ACTION REQUIRED (INV-015):** restore the original model.pt from an
+external backup (verify f0f70efb.../811554e5...) OR approve a governed
+retrain/promotion. Until then the active artifact is bench_a_v1-derived
+(50D, functional).
+
+### 8.3 Extra gates added during continuation
+- TEST-70D-MODEL-26/27: liquidity distribution + redundancy audit smoke
+  (brief 8/9), evidence in scratch/liq60d_*audit*.json + doc 7.1/7.2.
+- TEST-70D-MODEL-28/29: label balance frozen (88.2% NO_TRADE) + parameter
+  count/latency (70D +1,280 params = +0.48%, no latency regression), doc 7.3.
+- TEST-70D-MODEL-30: regime coverage gate (dataset 100% UNKNOWN — regime
+  analysis impossible today), doc 7.4.
+- TEST-70D-MODEL-31: 70D walk-forward end-to-end (BUG-103 regression).
+- TEST-70D-MODEL-32: BUG-104 default-path guard.
+- TEST-70D-MODEL-14 updated: asserts 50D contract + honest meta on the
+  Champion path (frozen hash preserved in the incident doc).
+
+### 8.4 Commits (continuation, all pushed)
+```text
+8e81e92  liquidity distribution + redundancy audits (brief 8/9)
+4455874  label balance + param/latency gates (brief 10/41/42/43)
+1270be1  regime-coverage finding (brief 23)
+9cd5ea7  BUG-103 + BUG-104 fixed, incident documented
+990b726  walk_forward_trainer.py CRLF normalization
+94dbc76  TEST-70D-MODEL-32 BUG-104 guard
+```
+origin/main verified = 94dbc76 at last push.
