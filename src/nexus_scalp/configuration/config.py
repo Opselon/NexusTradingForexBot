@@ -3,6 +3,21 @@ Configuration Management Engine
 ===============================
 Provides environment-aware configuration parsing and validation.
 Loads YAML configurations with fallback to environment overrides.
+
+ROLE IN THE RUNTIME CONFIGURATION ARCHITECTURE (see `runtime_config.py`):
+
+* ``AppConfig`` / section models here are the **bootstrap / import / export /
+  compatibility schema** (a.k.a. "live.yaml role"). They are pure
+  declarative dataclasses — *never* the authoritative runtime state.
+* The authoritative runtime state is the versioned, immutable
+  ``RuntimeConfiguration`` snapshot built by
+  ``nexus_scalp.configuration.runtime_config`` (persistent store →
+  validation → version → ConfigurationChanged → atomic runtime swap).
+* Consumers MUST read the current runtime snapshot through
+  ``RuntimeConfigStore.get_snapshot()`` (thread-safe, lock-free reads);
+  they MUST NOT read / cache values captured at constructor time for the
+  live-hot-path parameters documented in skill.md (effective scope
+  LIVE_IMMEDIATE / NEXT_DECISION).
 """
 
 from pathlib import Path
@@ -108,6 +123,35 @@ class ForensicReportConfig(BaseModel):
     experience_gap: dict[str, float] = Field(default_factory=dict)
 
 
+class RetentionsConfig(BaseModel):
+    """TASK-22: retention windows consumed by the runtime hygiene engine."""
+
+    telemetry_days: int = 7
+    cache_hours: int = 24
+    failed_jobs_days: int = 14
+    audit_days: int = 0  # 0 = unlimited (financial truth is never purged)
+
+
+class DatabaseHygieneConfig(BaseModel):
+    """TASK-22: runtime database hygiene engine (continuous, config-driven).
+
+    Mirrors the `database_hygiene` YAML section. The hygiene worker itself
+    remains AUDIT_ONLY/safe-clean by construction (TASK-11 contract); this
+    config only drives the SCHEDULER cadence, cycle depth, and reporting.
+    """
+
+    enabled: bool = True
+    interval_minutes: int = 30
+    deep_maintenance_interval_hours: int = 6
+    aggressive_cleanup: bool = False
+    dry_run: bool = True
+    apply_deletes: bool = False
+    batch_size: int = 200
+    telegram_report: bool = True
+    telegram_min_interval_sec: int = 3600
+    retention: RetentionsConfig = RetentionsConfig()
+
+
 class AppConfig(BaseSettings):
     """
     Root application settings holding configuration sections.
@@ -132,6 +176,8 @@ class AppConfig(BaseSettings):
     candle_intel: CandleIntelligenceConfig | None = None
     # TASK-12: FORENSIC REPORTING (periodic Telegram safety-net reports; optional)
     forensic_report: ForensicReportConfig | None = None
+    # TASK-22: DATABASE HYGIENE (continuous runtime cleanup; optional)
+    database_hygiene: DatabaseHygieneConfig | None = None
 
     @classmethod
     def load_from_yaml(cls, yaml_path: Path) -> "AppConfig":

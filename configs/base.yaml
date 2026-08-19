@@ -61,6 +61,28 @@ news:
 # enabled=false by default — operators opt in. interval_sec = min time between
 # reports; aggregation_window_sec = per-check cooldown (identical alerts
 # aggregate, never spam).
+# TASK-22: runtime DATABASE HYGIENE engine (continuous, config-driven).
+# enabled: master switch for the background cycle. interval_minutes: light
+# cycle cadence (default 30). deep_maintenance_interval_hours: heavier cycle
+# (index health + WAL/VACUUM-in-maint-window + full audit). Cleanup NEVER
+# blocks trading: cycles run async, small batches, bounded budgets. SAFE_CLEAN
+# deletes only when apply_deletes=true AND execution.mode != LIVE.
+database_hygiene:
+  enabled: true
+  interval_minutes: 30
+  deep_maintenance_interval_hours: 6
+  aggressive_cleanup: false
+  dry_run: true
+  apply_deletes: false
+  batch_size: 200
+  telegram_report: true
+  telegram_min_interval_sec: 3600
+  retention:
+    telemetry_days: 7
+    cache_hours: 24
+    failed_jobs_days: 14
+    audit_days: 0
+
 forensic_report:
   enabled: false
   interval_sec: 21600
