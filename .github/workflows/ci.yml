@@ -19,8 +19,26 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PYTHON_VERSION: "3.11"
+  # Canonical per-run results directory. Every check writes ONLY into its own
+  # subdirectory; the tree is wiped and recreated at the start of every run so
+  # no result from a previous run can leak into this one.
+  CI_RESULTS_DIR: ci-results
+  # Retention for the single canonical CI results artifact (days).
+  CI_ARTIFACT_RETENTION_DAYS: "30"
+
 jobs:
+  # ---------------------------------------------------------------------------
   # Fast, essential checks — run on every push/PR to main|develop.
+  # Every validation step follows the same pattern:
+  #   1. run the tool, capturing stdout+stderr into ITS OWN result file
+  #   2. record the real exit code in run-info/<check>.json
+  #   3. after ALL checks, report + package + upload artifacts
+  #   4. fail the job at the very end if any check failed
+  # This guarantees the full artifact (including failure evidence) is produced
+  # even when checks fail — failures are never hidden by continue-on-error.
+  # ---------------------------------------------------------------------------
   quality:
     name: Code Quality & Tests
     runs-on: ubuntu-latest
@@ -42,38 +60,221 @@ jobs:
           pip install -e ".[dev,web]"
           pip install pytest-cov
 
-      - name: Ruff - Lint
-        run: ruff check .
-
-      - name: Ruff - Format check
-        run: ruff format --check .
-
-      - name: Mypy - Type checking
-        run: mypy src
-
-      - name: Pytest with coverage
+      # -------- Results tree + run metadata (fresh on every run) --------
+      - name: Initialize results tree
         run: |
+          python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
+            --json "$CI_RESULTS_DIR/run-info/env-digest.json"
+
+      # -------- Ruff lint (own directory; JSON machine output + text log) --------
+      - name: Ruff - Lint
+        id: ruff-lint
+        continue-on-error: true
+        run: |
+          set +e
+          ruff check . --output-format json > "$CI_RESULTS_DIR/ruff/lint.json" 2> "$CI_RESULTS_DIR/ruff/lint.stderr.txt"
+          rc=$?
+          ruff check . > "$CI_RESULTS_DIR/ruff/lint.txt" 2>&1 || true
+          { echo "RUFF_LINT_RC=$rc"; } >> "$GITHUB_ENV"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" ruff_lint "$rc" "violations found (see ruff/)" || true
+          exit 0
+
+      # -------- Ruff format check (own directory; validates, never rewrites) --------
+      - name: Ruff - Format check
+        id: ruff-format
+        continue-on-error: true
+        run: |
+          set +e
+          ruff format --check . > "$CI_RESULTS_DIR/format/format.txt" 2>&1
+          rc=$?
+          { echo "RUFF_FORMAT_RC=$rc"; } >> "$GITHUB_ENV"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" ruff_format "$rc" "files would be reformatted (see format/)" || true
+          exit 0
+
+      # -------- Mypy type checking (own directory; text log + JUnit XML) --------
+      - name: Mypy - Type checking
+        id: mypy
+        continue-on-error: true
+        run: |
+          set +e
+          mypy src --junit-xml "$CI_RESULTS_DIR/mypy/mypy-junit.xml" > "$CI_RESULTS_DIR/mypy/mypy.txt" 2>&1
+          rc=$?
+          { echo "MYPY_RC=$rc"; } >> "$GITHUB_ENV"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" mypy "$rc" "type errors found (see mypy/)" || true
+          exit 0
+
+      # -------- Pytest + coverage (own directory; junit.xml + log + cobertura) --------
+      - name: Pytest with coverage
+        id: pytest
+        continue-on-error: true
+        run: |
+          set +e
           # Full suite (incl. integration, no browser E2E) runs in the
           # 'heavy-ci' job on ci-tests or manual dispatch. This job stays
           # fast on normal pushes: unit tests + coverage only.
           pytest tests/unit/ \
                  --cov=src \
                  --cov-report=term-missing \
-                 --cov-report=xml:./coverage.xml -q
+                 --cov-report=xml:"$CI_RESULTS_DIR/pytest/coverage.xml" \
+                 --cov-report=html:"$CI_RESULTS_DIR/pytest/htmlcov" \
+                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" \
+                 -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
+          rc=$?
+          { echo "PYTEST_RC=$rc"; } >> "$GITHUB_ENV"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" pytest "$rc" "see pytest/junit.xml + pytest.txt" || true
+          exit 0
 
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v5
+      # -------- Coverage status (derived from the same pytest run above) --------
+      - name: Coverage report
+        id: coverage
+        continue-on-error: true
+        run: |
+          set +e
+          python - <<'PY' || true
+          import json, os, re
+          root = os.environ["CI_RESULTS_DIR"]
+          pct = None
+          log_path = os.path.join(root, "pytest", "pytest.txt")
+          try:
+              with open(log_path, encoding="utf-8", errors="replace") as fh:
+                  for line in fh:
+                      m = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)\s+(\d+)\s+(\d+)%", line)
+                      if m:
+                          pct = float(m.group(3))
+          except Exception:
+              pass
+          status = "passed" if pct is not None else "errored"
+          payload = {
+              "check": "coverage",
+              "status": status,
+              "exit_code": 0,
+              "detail": f"{pct:.1f}% line coverage" if pct is not None else "coverage% not found in log",
+              "percent": pct,
+          }
+          with open(os.path.join(root, "run-info", "coverage.json"), "w") as fh:
+              json.dump(payload, fh)
+          with open(os.path.join(root, "run-info", "coverage-extra.json"), "w") as fh:
+              json.dump({"percent": pct}, fh)
+          print(f"coverage={pct}")
+          PY
+          exit 0
+
+      # -------- Secret presence preflight (booleans ONLY — values never printed) --------
+      - name: Secret presence check
+        continue-on-error: true
+        run: |
+          python scripts/ci/make_ci_results.py secret-check "$CI_RESULTS_DIR"
+          exit 0
+
+      # -------- Aggregate: step summary + manifest + checksums --------
+      - name: Generate CI summary (step summary + summary.md)
+        continue-on-error: true
+        run: |
+          set +e
+          # Pytest details for the summary (tests/passed/failed/skipped)
+          python - <<'PY' || true
+          import json, os
+          import xml.etree.ElementTree as ET
+          root = os.environ["CI_RESULTS_DIR"]
+          junit = os.path.join(root, "pytest", "junit.xml")
+          detail = ""
+          try:
+              tree = ET.parse(junit)
+              attrs = tree.getroot().attrib
+              tests = int(attrs.get("tests", 0))
+              failures = int(attrs.get("failures", 0)) + int(attrs.get("errors", 0))
+              skipped = int(attrs.get("skipped", 0))
+              detail = f"{tests} tests, {failures} failed, {skipped} skipped"
+          except Exception:
+              detail = "no junit.xml produced"
+          with open(os.path.join(root, "run-info", "pytest-extra.json"), "w") as fh:
+              json.dump({"detail": detail}, fh)
+          print(detail)
+          PY
+          python scripts/ci/make_ci_results.py summary "$CI_RESULTS_DIR" || true
+          python scripts/ci/make_ci_results.py manifest "$CI_RESULTS_DIR" || true
+          # Concise $GITHUB_STEP_SUMMARY (actual values only)
+          python - <<'PY' || true
+          import json, os
+          root = os.environ["CI_RESULTS_DIR"]
+          info_dir = os.path.join(root, "run-info")
+
+          def load(name):
+              try:
+                  with open(os.path.join(info_dir, name), encoding="utf-8") as fh:
+                      return json.load(fh)
+              except Exception:
+                  return {}
+
+          checks = {
+              "Ruff Lint": load("ruff_lint.json").get("status", "skipped"),
+              "Ruff Format": load("ruff_format.json").get("status", "skipped"),
+              "Mypy": load("mypy.json").get("status", "skipped"),
+              "Pytest": load("pytest.json").get("status", "skipped"),
+              "Coverage": load("coverage.json").get("status", "skipped"),
+          }
+          meta = load("metadata.json")
+          extra = load("pytest-extra.json")
+          cov = load("coverage-extra.json").get("percent")
+          lines = ["## CI Validation", ""]
+          for name, status in checks.items():
+              lines.append(f"- {name}: **{status.upper()}**")
+          lines.append("")
+          lines.append(extra.get("detail", "Tests: n/a"))
+          if cov is not None:
+              lines.append(f"Coverage: {cov:.1f}%")
+          lines.append("")
+          lines.append(f"Artifact: `{meta.get('artifact', 'ci-results-*')}` (30-day retention)")
+          lines.append("See the artifact's `ci-results/run-info/summary.md` for full details.")
+          summary = "\n".join(lines)
+          print(summary)
+          with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a", encoding="utf-8") as fh:
+              fh.write(summary + "\n")
+          PY
+          exit 0
+
+      # -------- One canonical artifact per run --------
+      - name: Upload CI results artifact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
+          name: ci-results-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
+          path: ci-results/
+          if-no-files-found: error
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
 
+      # -------- Final gate: fail the job if any check failed (real exit codes) --------
+      - name: Fail job if any check failed
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          root = os.environ["CI_RESULTS_DIR"]
+          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "coverage"]
+          statuses = {}
+          for name in checks:
+              p = os.path.join(root, "run-info", f"{name}.json")
+              try:
+                  with open(p, encoding="utf-8") as fh:
+                      statuses[name] = json.load(fh).get("status", "skipped")
+              except Exception:
+                  statuses[name] = "errored"
+          failed = [k for k, v in statuses.items() if v in ("failed", "errored")]
+          print(" | ".join(f"{k}={v}" for k, v in statuses.items()))
+          if failed:
+              print(f"FAILING CHECKS: {', '.join(failed)}")
+              raise SystemExit(1)
+          print("ALL CHECKS PASSED")
+          PY
+
+  # ---------------------------------------------------------------------------
   # Heavy testing (integration, E2E, research/backtest, model validation)
   # — does NOT run on every push. Executes only:
   #   * pushes to the dedicated ci-tests branch, or
   #   * manual workflow_dispatch with inputs.full=true
-  # Keep job names/selectors in sync with the actual test tree.
+  # Each matrix arm produces its own result artifact; the aggregate job merges
+  # them into ONE canonical ci-results artifact for the whole run.
+  # ---------------------------------------------------------------------------
   heavy-ci:
     name: Heavy CI (${{ matrix.suite }})
     if: github.ref_name == 'ci-tests' || inputs.full == true
@@ -84,6 +285,9 @@ jobs:
       fail-fast: false
       matrix:
         suite: [integration, e2e, research-backtest, model-validation]
+
+    env:
+      CI_RESULTS_DIR: ci-results
 
     steps:
       - name: Checkout repository
@@ -101,33 +305,158 @@ jobs:
           pip install -e ".[dev,web]"
           pip install pytest-cov
 
-      - name: Integration suite (no MT5, no browser)
-        if: matrix.suite == 'integration'
-        run: pytest tests/integration/ -q --tb=short --ignore=tests/integration/test_playwright_e2e.py
-
-      - name: E2E suite (Playwright)
-        if: matrix.suite == 'e2e'
+      - name: Initialize results tree
         run: |
-          pip install playwright
-          python -m playwright install --with-deps chromium
-          pytest tests/integration/test_playwright_e2e.py -q --tb=short
+          python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
+            --json "$CI_RESULTS_DIR/run-info/env-digest.json"
 
-      - name: Research & backtest suites
-        if: matrix.suite == 'research-backtest'
+      - name: Run suite
+        id: suite
+        continue-on-error: true
         run: |
-          pytest tests/unit/test_research_phase09b.py \
-                tests/unit/test_research_registry_null_score_bug075.py \
-                tests/unit/test_research_task4_dataset.py \
-                tests/unit/test_research_task4_validation.py \
-                tests/unit/test_model_benchmark_phase13b.py \
-                tests/unit/test_model_generation_phase13.py \
-                tests/integration/test_research_api.py -q --tb=short
+          set +e
+          case "${{ matrix.suite }}" in
+            integration)
+              pytest tests/integration/ --ignore=tests/integration/test_playwright_e2e.py \
+                --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
+              ;;
+            e2e)
+              pip install playwright
+              python -m playwright install --with-deps chromium
+              pytest tests/integration/test_playwright_e2e.py \
+                --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
+              ;;
+            research-backtest)
+              pytest tests/unit/test_research_phase09b.py \
+                    tests/unit/test_research_registry_null_score_bug075.py \
+                    tests/unit/test_research_task4_dataset.py \
+                    tests/unit/test_research_task4_validation.py \
+                    tests/unit/test_model_benchmark_phase13b.py \
+                    tests/unit/test_model_generation_phase13.py \
+                    tests/integration/test_research_api.py \
+                --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
+              ;;
+            model-validation)
+              pytest tests/unit/test_70d_model_validation_task4.py \
+                    tests/unit/test_model_governance_phase16.py \
+                    tests/unit/test_model_lifecycle_phase10.py \
+                    tests/unit/test_train_model_cli.py \
+                    tests/integration/test_model_lifecycle_api.py \
+                --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
+              ;;
+          esac
+          rc=$?
+          { echo "SUITE_RC=$rc"; } >> "$GITHUB_ENV"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" "${{ matrix.suite }}" "$rc" "suite ${{ matrix.suite }}" || true
+          exit 0
 
-      - name: Model validation suites
-        if: matrix.suite == 'model-validation'
+      - name: Generate suite summary
+        continue-on-error: true
         run: |
-          pytest tests/unit/test_70d_model_validation_task4.py \
-                tests/unit/test_model_governance_phase16.py \
-                tests/unit/test_model_lifecycle_phase10.py \
-                tests/unit/test_train_model_cli.py \
-                tests/integration/test_model_lifecycle_api.py -q --tb=short
+          set +e
+          # Pytest details for the summary
+          python - <<'PY' || true
+          import json, os
+          import xml.etree.ElementTree as ET
+          root = os.environ["CI_RESULTS_DIR"]
+          junit = os.path.join(root, "pytest", "junit.xml")
+          detail = ""
+          try:
+              tree = ET.parse(junit)
+              attrs = tree.getroot().attrib
+              tests = int(attrs.get("tests", 0))
+              failures = int(attrs.get("failures", 0)) + int(attrs.get("errors", 0))
+              skipped = int(attrs.get("skipped", 0))
+              detail = f"{tests} tests, {failures} failed, {skipped} skipped"
+          except Exception:
+              detail = "no junit.xml produced"
+          with open(os.path.join(root, "run-info", "pytest-extra.json"), "w") as fh:
+              json.dump({"detail": detail}, fh)
+          PY
+          python scripts/ci/make_ci_results.py summary "$CI_RESULTS_DIR" || true
+          python scripts/ci/make_ci_results.py manifest "$CI_RESULTS_DIR" || true
+          python - <<'PY' || true
+          import json, os
+          root = os.environ["CI_RESULTS_DIR"]
+          info_dir = os.path.join(root, "run-info")
+          def load(name):
+              try:
+                  with open(os.path.join(info_dir, name), encoding="utf-8") as fh:
+                      return json.load(fh)
+              except Exception:
+                  return {}
+          suite = "${{ matrix.suite }}"
+          status = load(suite + ".json").get("status", "skipped")
+          extra = load("pytest-extra.json")
+          lines = [f"## Heavy CI {suite} Results", ""]
+          lines.append(f"Status: **{status.upper()}**")
+          lines.append(extra.get("detail", "Tests: n/a"))
+          lines.append("")
+          lines.append(f"Artifact: `ci-results-{suite}-{os.environ.get('GITHUB_RUN_NUMBER', '?')}-{os.environ.get('GITHUB_SHA', '?')}` (30-day retention)")
+          summary = "\n".join(lines)
+          print(summary)
+          with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a", encoding="utf-8") as fh:
+              fh.write(summary + "\n")
+          PY
+          exit 0
+
+      - name: Upload suite artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-results-${{ matrix.suite }}-${{ github.run_number }}-${{ github.sha }}
+          path: ci-results/
+          if-no-files-found: error
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
+
+      - name: Fail job if suite failed
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          root = os.environ["CI_RESULTS_DIR"]
+          suite = "${{ matrix.suite }}"
+          p = os.path.join(root, "run-info", suite + ".json")
+          try:
+              with open(p, encoding="utf-8") as fh:
+                  status = json.load(fh).get("status", "skipped")
+          except Exception:
+              status = "errored"
+          print(f"suite={suite} status={status}")
+          if status in ("failed", "errored"):
+              raise SystemExit(1)
+          print("SUITE PASSED")
+          PY
+
+  # ---------------------------------------------------------------------------
+  # Aggregation — merge per-arm results into ONE canonical artifact for the
+  # whole run. Runs only when heavy-ci ran (ci-tests or dispatch full=true).
+  # ---------------------------------------------------------------------------
+  aggregate:
+    name: Aggregate CI Results
+    if: github.ref_name == 'ci-tests' || inputs.full == true
+    needs: heavy-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download all suite artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Prepare canonical result structure
+        run: |
+          rm -rf ci-results
+          mkdir -p ci-results/run-info
+          cp -r artifacts/ci-results/. ci-results/ 2>/dev/null || true
+          find ci-results -type f | sort
+
+      - name: Upload canonical aggregate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-results-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
+          path: ci-results/
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
+          if-no-files-found: error

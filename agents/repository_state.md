@@ -295,3 +295,22 @@ training_dataset_id.
   pre-existing ::set-output deprecation warning at line 247, untouched).
 - Normal pushes to main/develop now run ONLY the fast quality gate;
   heavy suites run on ci-tests or manual dispatch.
+
+## Snapshot 2026-08-19 (TASK-CI-REPORTING — Hermes-CI-Reporting)
+
+- Unified CI results system live in ci.yml: every check writes to its own
+  ci-results/<category>/ dir; run-info/ holds metadata.json, per-check
+  status JSONs, summary.md, manifest.json, SHA256SUMS.txt, secrets-present.json.
+- Quality job: ruff (json+txt) / format (txt) / mypy (txt+junit) / pytest
+  (junit.xml + log + cobertura coverage.xml + htmlcov). $GITHUB_STEP_SUMMARY
+  populated. One canonical artifact ci-results-${{workflow}}-${{run_number}}-${{sha}}
+  (30-day retention). Final gate fails the job on any check failure while
+  artifacts are still uploaded (continue-on-error only for capture steps).
+- heavy-ci matrix (4 arms) each produce their own artifact; aggregate job
+  merges them into ONE canonical artifact. Isolation retained: heavy CI
+  still runs only on ci-tests or dispatch inputs.full=true.
+- release.yml: deprecated ::set-output (arm64-report) replaced with
+  $GITHUB_STEP_SUMMARY. All workflows actionlint-clean (0 errors).
+- docs/ci-secrets.md documents secret NAMES/purpose/location (values never).
+- scripts/ci/make_ci_results.py: authoritative CI results pipeline,
+  adopted from parallel agent, verified end-to-end locally.

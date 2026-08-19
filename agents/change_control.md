@@ -482,3 +482,40 @@ Required tests: actionlint .github/workflows/*.yml (0 errors on changed
        files), YAML parse, branch filter cross-check
 Status: MERGED
 ```
+
+```text
+CHANGE-ID: CHG-0022
+Agent: Hermes-CI-Reporting
+Role: CI / GitHub Actions Pipeline Engineer
+Task: TASK-CI-REPORTING
+Scope: Unified CI results system (ci-results/) for the quality job incl.
+       ruff JSON + lint.txt, format.txt, mypy text + junit, pytest
+       junit.xml + log + cobertura coverage.xml + htmlcov, run-info/
+       (metadata.json, summary.md, manifest.json, SHA256SUMS.txt,
+       per-check status json, secrets-present.json), $GITHUB_STEP_SUMMARY,
+       one canonical artifact per run (30-day retention), final gate
+       preserving real failure exits. Heavy-ci matrix arms (integration /
+       e2e / research-backtest / model-validation) each produce their own
+       artifact; aggregate job merges into ONE canonical ci-results
+       artifact. docs/ci-secrets.md added. release.yml ::set-output
+       deprecation fixed via $GITHUB_STEP_SUMMARY (arm64-report job).
+       Scripts: scripts/ci/make_ci_results.py (authoritative result
+       pipeline, validated end-to-end locally).
+Affected files: .github/workflows/ci.yml (extended: heavy-ci + aggregate +
+       unified reporting), .github/workflows/release.yml (::set-output ->
+       GITHUB_STEP_SUMMARY), scripts/ci/make_ci_results.py (new, from
+       parallel agent — adopted + verified), docs/ci-secrets.md (new),
+       agents/change_control.md, agents/taskboard.md, agents/repository_state.md
+Affected functions/classes: NONE in src/ — workflow YAML + CI scripts only
+Contracts touched: CI_RESULTS v1 (canonical reporting layout), CI_TRIGGER_POLICY
+       v1 (unchanged: heavy CI only on ci-tests/dispatch)
+Runtime paths touched: NONE (no application code)
+Owners affected: none (release workflow triggers unchanged)
+Risk: LOW. Reporting-only additions; failure semantics preserved (final
+       gate fails on any check failure; artifacts still uploaded on failure).
+Dependencies: none
+Required tests: actionlint all workflows (0 errors); make_ci_results.py
+       exercised end-to-end locally (init/check/summary/manifest/checksums);
+       release.yml diff review; live GitHub run verification pending
+Status: VERIFIED
+```

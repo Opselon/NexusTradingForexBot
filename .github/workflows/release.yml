@@ -248,7 +248,13 @@ jobs:
           echo "::warning::Windows ARM64 is UNSUPPORTED by the current dependency stack"
           echo "(PyTorch/Polars/PyArrow/MetaTrader5 publish no Windows ARM64 wheels)."
           echo "No ARM64 installer will be produced. This is an explicit, loud non-support."
-          echo "::set-output name=message::unsupported"
+          {
+            echo "## ARM64 Support Report"
+            echo ""
+            echo "Windows ARM64 is UNSUPPORTED by the current dependency stack"
+            echo "(PyTorch/Polars/PyArrow/MetaTrader5 publish no Windows ARM64 wheels)."
+            echo "No ARM64 installer is produced. This is an explicit, loud non-support."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # E. RELEASE — publish (only after B + C succeed)
