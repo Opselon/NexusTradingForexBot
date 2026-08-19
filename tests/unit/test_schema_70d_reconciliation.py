@@ -8,8 +8,9 @@ explicitly blocked from new production candidates.
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.features.schema_contract import (
@@ -89,8 +90,7 @@ def test_schema_70d_07_governance_accepts_only_canonical() -> None:
 
 def test_schema_70d_08_legacy_schema_blocked_from_production() -> None:
     """TEST-SCHEMA-70D-08 — scalp_v4 is legacy: blocked from new candidates."""
-    from nexus_scalp.release.model_artifacts import classify_artifact
-    from nexus_scalp.release.model_artifacts import ModelArtifactIdentity
+    from nexus_scalp.release.model_artifacts import ModelArtifactIdentity, classify_artifact
 
     # A scalp_v4 identity must NOT classify as a current-production contract.
     cls = classify_artifact(
@@ -112,6 +112,8 @@ def test_schema_70d_08_legacy_schema_blocked_from_production() -> None:
     # Legacy scalp_v4 must not be the dataset builder target nor shadow target.
     assert SEVENTY_D_SCHEMA_ID != "scalp_v4"
     assert SHADOW70_SCHEMA_ID != "scalp_v4"
+
+
 # =============================================================================
 # TEST-CURRENT-70D-01..20 — current-state reconciliation guards
 # (TASK: CURRENT-70D-RECONCILIATION, 2026-08-19)
@@ -133,7 +135,11 @@ def test_current_70d_01_current_head_verified():
     import subprocess
 
     head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=True,
     ).stdout.strip()
     assert len(head) == 40  # a real SHA exists; the guard re-anchors at run time
 
@@ -141,8 +147,8 @@ def test_current_70d_01_current_head_verified():
 def test_current_70d_02_single_canonical_schema():
     """TEST-CURRENT-70D-02 — exactly one canonical 70D schema id."""
     from nexus_scalp.features.schema_contract import SCHEMA_ID
-    from nexus_scalp.shadow.shadow70.models import SHADOW70_SCHEMA_ID
     from nexus_scalp.model_generation.schema_v2 import SEVENTY_D_SCHEMA_ID
+    from nexus_scalp.shadow.shadow70.models import SHADOW70_SCHEMA_ID
 
     assert SCHEMA_ID == "scalp_v3"
     assert SHADOW70_SCHEMA_ID == "scalp_v3"
@@ -235,10 +241,7 @@ def test_current_70d_08_dataset_runtime_parity():
     column ordering matches feat_0..feat_69 (parity floor)."""
     import polars as pl
 
-    mf = (
-        REPO_ROOT
-        / "artifacts/model_generation/datasets/ds_d3f35b12d63148da/dataset.parquet"
-    )
+    mf = REPO_ROOT / "artifacts/model_generation/datasets/ds_d3f35b12d63148da/dataset.parquet"
     if not mf.exists():
         pytest.skip("real 70D dataset not present")
     df = pl.read_parquet(mf)
@@ -269,7 +272,7 @@ def test_current_70d_10_bug105_shadow_hook():
     src = inspect.getsource(LiveEngine._record_shadow70_observation)
     # runs on every tick when the runtime is READY + enabled (no 50D shadow
     # dependency in the guard)
-    assert "rt70.state.value != \"READY\"" in src
+    assert 'rt70.state.value != "READY"' in src
     # canonical schema hash is used at observation time
     assert "feature_schema_hash()" in src
 
@@ -456,4 +459,3 @@ def test_current_70d_20_no_automatic_promotion():
     assert PromotionState.CHAMPION not in PROMOTION_TRANSITIONS[PromotionState.SHADOW]
     # CHAMPION is reachable only from APPROVED
     assert PromotionState.CHAMPION in PROMOTION_TRANSITIONS[PromotionState.APPROVED]
-
