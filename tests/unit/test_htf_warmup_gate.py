@@ -121,25 +121,15 @@ def base_config(tmp_path):
     return cfg
 
 
-# Test 1: Insufficient H1 history -> NOT_READY / SAFE_NOT_READY
+# Tests 1+2 (consolidated): insufficient H1 or H4 history -> SAFE_NOT_READY
 @pytest.mark.asyncio
-async def test_1_insufficient_h1_history_results_in_not_ready(base_config):
-    adapter = FakeMT5Adapter(h1_count=5, h4_count=14, m1_count=3500)
-    audit = MagicMock()
-    engine = LiveEngine(
-        config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True
-    )
-
-    await engine._cold_start_warmup("XAUUSD")
-
-    assert engine.warmup_state == "SAFE_NOT_READY"
-    assert engine._inference_enabled is False
-
-
-# Test 2: Insufficient H4 history -> NOT_READY / SAFE_NOT_READY
-@pytest.mark.asyncio
-async def test_2_insufficient_h4_history_results_in_not_ready(base_config):
-    adapter = FakeMT5Adapter(h1_count=14, h4_count=2, m1_count=3500)
+@pytest.mark.parametrize(
+    ("h1_count", "h4_count"),
+    [(5, 14), (14, 2)],
+    ids=["insufficient_h1", "insufficient_h4"],
+)
+async def test_insufficient_history_results_in_not_ready(base_config, h1_count, h4_count):
+    adapter = FakeMT5Adapter(h1_count=h1_count, h4_count=h4_count, m1_count=3500)
     audit = MagicMock()
     engine = LiveEngine(
         config=base_config, adapter=adapter, audit_repo=audit, force_fresh_model=True

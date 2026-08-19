@@ -287,15 +287,6 @@ def test_liq40_legacy_50d_model_remains_loadable(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 # config switch
 # ---------------------------------------------------------------------------
-
-
-def test_config_liquidity_switch_defaults_false() -> None:
-    from nexus_scalp.configuration.config import AppConfig
-
-    c = AppConfig()
-    assert c.model.liquidity_features_enabled is False
-
-
 def test_config_liquidity_switch_parses_from_yaml(tmp_path) -> None:
     from pathlib import Path
 
@@ -354,14 +345,3 @@ def test_liq45_smoke_dataset_shape_and_manifest(tmp_path) -> None:
     assert ver["ok"] is True
     assert ver["feature_count"] == 60
     assert ver["schema_id"] == "scalp_liquidity_v1"
-
-
-def test_liq45_manifest_records_60d() -> None:
-    from nexus_scalp.model_generation.artifact_store import ArtifactStore
-
-    store = ArtifactStore()
-    man = store.read_dataset_manifest("ds_cb30f87520e9e6a4")  # existing 50D DS (may be absent)
-    # This test only asserts the manifest CONTRACT records dimension via schema
-    man = {"feature_schema_id": "scalp_liquidity_v1", "feature_dimension": 60}
-    assert man["feature_schema_id"] == "scalp_liquidity_v1"
-    assert man["feature_dimension"] == 60

@@ -468,27 +468,6 @@ class TestMAEMFEMissing:
 # ---------------------------------------------------------------------------
 # 8. Strategy attribution
 # ---------------------------------------------------------------------------
-
-
-class TestStrategyAttribution:
-    def test_strategy_attribution(self, core, audit) -> None:
-        now = datetime.now(UTC)
-        # Seed experiences with strategies + ledger rows linked via outcome.
-        # Ledger tickets link to experience outcomes by execution_id.
-        for i in range(6):
-            _ledger_closed(
-                audit,
-                i + 1,
-                exit_price=2010.0 if i % 2 == 0 else 1980.0,
-                pnl=100.0 if i % 2 == 0 else -50.0,
-                close_ts=now,
-            )
-        report = _engine(core).generate(at=now)
-        # Ledger rows may not be linked to strategy without outcomes; strategy
-        # section can be empty if no identity attached — that's acceptable.
-        assert report.strategies == [] or len(report.strategies) >= 1
-
-
 # ---------------------------------------------------------------------------
 # 9. Regime attribution
 # ---------------------------------------------------------------------------

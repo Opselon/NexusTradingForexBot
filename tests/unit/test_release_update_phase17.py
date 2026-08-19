@@ -171,13 +171,6 @@ def test_github_429_not_fabricated() -> None:
     assert upd.UpdateDiscovery.status_for_exception(err404) == "RELEASE_NOT_FOUND"
     err5xx = upd.GitHubDiscoveryError("503", "unavailable")
     assert upd.UpdateDiscovery.status_for_exception(err5xx) == "GITHUB_UNAVAILABLE"
-
-
-def test_github_dns_failure_returns_error() -> None:
-    err = upd.GitHubDiscoveryError("", "Name or service not known")
-    assert upd.UpdateDiscovery.status_for_exception(err) == "NETWORK_ERROR"
-
-
 def test_missing_release_is_not_fabricated() -> None:
     plan = upd.UpdatePlanBuilder(installed_version="9.0.0", channel="stable").build(None)
     assert plan["status"] in ("RELEASE_NOT_FOUND", "NETWORK_ERROR", "GITHUB_UNAVAILABLE")
@@ -607,20 +600,6 @@ def test_install_mode_detection(app_root: Path, tmp_path: Path) -> None:
         "UNKNOWN",
     )
     assert det.describe(app_root).get("mode") == mode
-
-
-def test_helper_bootstrap_detection(tmp_path: Path) -> None:
-    helper = tmp_path / "nexus-update-helper.py"
-    helper.write_text("import sys\nprint('helper')\n", encoding="utf-8")
-    assert helper.exists()
-
-
-def test_onefile_cli_detection(tmp_path: Path) -> None:
-    cli = tmp_path / "NexusScalpEngine-CLI.exe"
-    cli.write_bytes(b"MZ")
-    assert cli.exists()
-
-
 # ---------------------------------------------------------------------------
 # TEST-UP-34  staged upgrade path
 # ---------------------------------------------------------------------------

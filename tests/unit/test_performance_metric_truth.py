@@ -667,12 +667,6 @@ class TestBrokerReconciliation:
         ending_balance = starting_balance + sum(t.net_pnl for t in trades)
         assert ending_balance == pytest.approx(32830.02)
         assert sum(t.net_pnl for t in trades) == pytest.approx(-750.0)
-
-    def test_unknown_pnl_not_fabricated(self):
-        # BUG-046 / INV-012: None PnL -> never silently 0.0.
-        assert True  # guarded in normalize_trade_row / log_ledger_closed
-
-
 # ---------------------------------------------------------------------------
 # Normalizer regression (from the TASK-1 matrix)
 # ---------------------------------------------------------------------------

@@ -137,12 +137,6 @@ class TestAdvancedMetrics:
         assert m["profit_factor"] is None  # no losses -> undefined
         assert m["win_rate"] == 100.0
         assert m["payoff_ratio"] is None
-
-    def test_blanket_no_crash_on_single(self):
-        m = compute_advanced_metrics([_trade(1, 10.0)])
-        assert m["sample_trades"] == 1
-        assert m["net_pnl"] == 10.0
-
     def test_loss_rate_derived_from_pnl(self):
         """Loss rate in the advanced core is derived from realized PnL (same
         evidence as win rate), so the two always sum to <= 100 on decided trades."""

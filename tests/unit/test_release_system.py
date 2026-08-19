@@ -110,15 +110,6 @@ def test_architecture_detection_reports_supported_or_unsupported() -> None:
         assert not env.architecture_supported
     else:
         assert env.architecture_supported
-
-
-def test_release_artifact_names_identify_architecture(tmp_path: Path) -> None:
-    # Naming contract used by the build scripts.
-    for arch in ("x64", "arm64"):
-        name = f"NexusScalpEngine-{get_version()}-win-{arch}.zip"
-        assert f"win-{arch}" in name
-
-
 # ---------------------------------------------------------------------------
 # 4. REQUIREMENTS EVALUATION
 # ---------------------------------------------------------------------------

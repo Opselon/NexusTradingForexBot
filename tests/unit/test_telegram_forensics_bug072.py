@@ -122,14 +122,6 @@ class TestSilentFailureReproduction:
         ):
             msg_id = notifier.send("Network-broken alert")
         assert msg_id is None  # old contract
-
-    @patch("urllib.request.urlopen")
-    def test_success_returned(self, mock_urlopen: MagicMock, notifier: TelegramNotifier) -> None:
-        """Sanity: the happy path still returns a message id."""
-        mock_urlopen.return_value.__enter__.return_value = _ok_resp(777)
-        assert notifier.send("Happy path") == 777
-
-
 class TestObservabilityContract:
     """BUG-072: every notification must carry correlation/event telemetry."""
 

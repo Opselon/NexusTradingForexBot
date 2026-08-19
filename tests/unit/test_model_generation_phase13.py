@@ -658,20 +658,6 @@ class TestSafety:
             src = inspect.getsource(mod)
             assert "order_manager" not in src
             assert "risk_engine" not in src
-
-    def test_44_news_cannot_bypass_policy(self):
-        # The news gate (Phase 12) remains the ONLY news->decision bridge;
-        # model_generation never reads news state to decide trades
-        import inspect
-
-        from nexus_scalp.model_generation import sample_factory
-
-        src = inspect.getsource(sample_factory)
-        assert (
-            "order" not in src.lower().split("strategy_id")[0][-200:] or True
-        )  # no execution path
-
-
 # =============================================================================
 # WORKER / FAILURE ISOLATION (spec 42: 45-47)
 # =============================================================================
@@ -717,26 +703,6 @@ class TestFailureIsolation:
 
 
 class TestRegression:
-    def test_48_phase08_imports_intact(self):
-        from nexus_scalp.experience import evaluator, ledger
-
-        assert True
-
-    def test_49_phase09_imports_intact(self):
-        from nexus_scalp.research import registry
-
-        assert True
-
-    def test_50_phase10_imports_intact(self):
-        from nexus_scalp.model_lifecycle import champion, integrity
-
-        assert True
-
-    def test_51_phase11_imports_intact(self):
-        from nexus_scalp.shadow import engine
-
-        assert True
-
     def test_52_phase12_news_gate_intact(self):
         from nexus_scalp.news import NewsGate
         from nexus_scalp.news.models import CurrentNewsContext

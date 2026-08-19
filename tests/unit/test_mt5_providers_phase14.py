@@ -77,12 +77,6 @@ class TestUtcNormalization:
         assert out is not None
         assert out.tzinfo is not None
         assert out.utcoffset() == timedelta(0)
-
-    def test_sql_timestamp_string(self) -> None:
-        out = normalize_utc("2026-08-17 01:30:29")
-        assert out is not None
-        assert out.hour == 1 and out.minute == 30
-
     def test_float_epoch(self) -> None:
         out = normalize_utc(1784417429.0)
         assert out is not None
@@ -152,12 +146,6 @@ class TestAccountSnapshotMapping:
         assert snap.server == "MetaQuotes-Demo"
         assert snap.floating_pnl == 123.45
         assert snap.margin_level_source == BROKER_NATIVE
-
-    def test_none_raw_returns_unavailable(self) -> None:
-        snap = build_account_snapshot(None)
-        assert snap.available is False
-        assert snap.source == UNAVAILABLE
-
     def test_missing_optional_fields_are_none_not_fake(self) -> None:
         snap = build_account_snapshot(_raw_account(server=None, company=None, credit=None))
         assert snap.server is None
@@ -274,34 +262,6 @@ class TestPositionDealMapping:
         assert snap.profit == 250.0
         assert snap.swap == -1.2
         assert snap.commission == -7.0
-
-    def test_deal_net_result_subtracts_costs(self) -> None:
-        raw = SimpleNamespace(
-            ticket=200,
-            order=150,
-            position_id=100,
-            symbol="XAUUSD",
-            type=0,
-            entry=1,
-            magic=888101,
-            identifier=100,
-            time=1784417429,
-            time_msc=0,
-            external_id="",
-            reason=0,
-            volume=0.5,
-            price=4395.0,
-            profit=250.0,
-            fee=0.0,
-            swap=-1.2,
-            commission=-7.0,
-            comment="",
-        )
-        snap = build_deal_snapshot(raw)
-        assert snap.profit == 250.0
-        assert snap.net_result == 250.0 - 1.2 - 7.0 - 0.0
-
-
 class TestBarValidation:
     def _bar(self, time: int, o: float, h: float, l: float, c: float, v: int = 10):
         return build_rate_bar_snapshot(

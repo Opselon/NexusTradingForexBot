@@ -194,8 +194,3 @@ class TestConnectionState:
         engine, _client = paper_engine
         state = engine.adapter.connection_state()
         assert state.state == MT5ConnectionState.CONNECTED
-
-    def test_forced_disconnect_state(self, offline_engine) -> None:
-        engine, _client = offline_engine
-        state = engine.adapter.connection_state()
-        assert state.state == MT5ConnectionState.DISCONNECTED

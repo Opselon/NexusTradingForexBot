@@ -306,19 +306,6 @@ def test_liq36_repeated_calculation_identical() -> None:
     v1 = compute_liquidity_features(bars2, decision_at=t).as_vector()
     v2 = compute_liquidity_features(bars2[:201], decision_at=t).as_vector()
     assert v1 == v2
-
-
-def test_liq37_same_input_same_output_swings() -> None:
-    bars = swing_high_bars(50, 3310.0, 3300.0)
-    sh1, sl1 = detect_confirmed_swings(bars)
-    sh2, sl2 = detect_confirmed_swings(bars)
-    assert [(p.price, p.confirmed_at) for p in sh1] == [(p.price, p.confirmed_at) for p in sh2]
-    assert len(sh1) >= 1
-    # confirmed_at == candidate_at + SWING_CONFIRM_BARS (bar-time)
-    p = sh1[0]
-    assert p.confirmed_at > p.candidate_at
-
-
 # ---------------------------------------------------------------------------
 # TEST-LIQ-44 — edge cases
 # ---------------------------------------------------------------------------

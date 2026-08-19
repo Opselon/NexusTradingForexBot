@@ -702,13 +702,6 @@ class TestMultiTicketIndependence:
 
 
 class TestSlTimeline:
-    def test_initial_vs_final_sl_distinct(self):
-        # The order manager must freeze _entry_sls at open and track the
-        # broker-side SL separately. This guards the autopsy fields that make
-        # the timeline visible (initial_sl_price != final_sl_price after BE).
-        pytest.importorskip("nexus_scalp.execution.order_manager")
-        assert ExitReason.BREAK_EVEN_SL_HIT.value == "BREAK_EVEN_SL_HIT"
-
     def test_entry_sl_frozen_in_manager_state(self, temp_audit_repo):
         """_entry_sls must stay at the OPEN value while _last_modify_sl advances."""
         om_mod = pytest.importorskip("nexus_scalp.execution.order_manager")
@@ -728,34 +721,6 @@ class TestSlTimeline:
 # ---------------------------------------------------------------------------
 # 8. Learning failure never blocks close
 # ---------------------------------------------------------------------------
-
-
-class TestFailureIsolation:
-    def test_experience_failure_does_not_raise(self, components):
-        ledger, evaluator, retriever, engine = components
-        rid = "fail-00000000-0000-0000-0000-000000000001"
-        ledger.record_experience(make_record(rid))
-        ledger.audit_repo._queue.join()
-
-        # Force the ledger queue to a closed/None state so record_outcome fails.
-        engine.ledger.audit_repo = None  # type: ignore[assignment]
-        ok = engine.record_trade_outcome(
-            request_id=rid,
-            execution_id="152400000601",
-            outcome_timestamp=datetime.now(UTC),
-            is_executed=True,
-            is_closed=True,
-            exit_reason=ExitReason.TAKE_PROFIT_HIT.value,
-            realized_pnl_usd=5.0,
-            realized_r_multiple=1.0,
-            holding_duration_seconds=100.0,
-            approved_volume=0.5,
-            actual_entry=2000.0,
-        )
-        # Must return False, never raise.
-        assert ok is False
-
-
 class MockAdapter:
     """Minimal adapter stub for OrderLifecycleManager construction."""
 

@@ -501,10 +501,3 @@ class TestSafetyRuntime:
             assert "order_manager" not in src
             assert "risk_engine" not in src
             assert "mt5" not in src.lower() or "mt5_port" not in src
-
-    def test_30_phase_regression_imports(self):
-        from nexus_scalp.model_lifecycle import champion
-        from nexus_scalp.news import NewsGate
-        from nexus_scalp.shadow import engine
-
-        assert True

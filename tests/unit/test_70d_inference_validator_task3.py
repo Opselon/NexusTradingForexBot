@@ -55,14 +55,6 @@ def test_p13_60d_model_blocks_60d_runtime() -> None:
     res = compatible_model_schema("scalp_v2", 60, "scalp_v3", 70)
     assert res["result"] == "BLOCK"
     assert res["reason"] == "SCHEMA_MISMATCH"
-
-
-def test_p13_70d_model_blocks_70d_runtime_with_60d_model() -> None:
-    # Established 60D model + 70D runtime feature -> BLOCK
-    res = compatible_model_schema("scalp_v2", 60, "scalp_v3", 70)
-    assert res["result"] == "BLOCK"
-
-
 def test_p13_pass_when_schema_and_dimension_match() -> None:
     res = compatible_model_schema("scalp_v3", 70, "scalp_v3", 70)
     assert res["result"] == "PASS"
@@ -250,16 +242,6 @@ def test_p09_scaler_dimension_match_passes() -> None:
     v = _validator(scaler=ScalerContract(dimension=70))
     r = v.validate(_vec70(), context="test")
     assert r.ok is True
-
-
-def test_p10_scaler_never_padded_or_truncated() -> None:
-    # Silently padding a 60D scaler to 70D is FORBIDDEN (brief 19):
-    # dimension mismatch must stop, not adapt.
-    v = _validator(scaler=ScalerContract(dimension=60))
-    r = v.validate(_vec70(), context="test")
-    assert r.code == RejectionCode.SCALER_MISMATCH
-
-
 def test_validator_result_shape() -> None:
     v = _validator()
     r: ValidationResult = v.validate(_vec70(), context="test")

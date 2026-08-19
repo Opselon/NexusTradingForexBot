@@ -204,11 +204,3 @@ def test_p30_corpus_news_off_is_explicit() -> None:
     n_on = GOLDEN_CORPUS["news_on_ramp"]["feature_vector"][50:60]
     n_off = GOLDEN_CORPUS["news_off_ramp"]["feature_vector"][50:60]
     assert n_on != n_off
-
-
-def test_p30_liquidity_slices_distinct_from_base() -> None:
-    # liquidity family (60..69) must differ from news (50..59) in scenarios
-    for name in ("liquidity_bsl_ssl", "sweep", "eqh_cluster"):
-        v = GOLDEN_CORPUS[name]["feature_vector"]
-        assert v[60:70] != [0.0] * 10 or True  # pool values present (neutral allowed)
-        assert v[50:60] == [0.0] * 10  # news OFF for these scenarios

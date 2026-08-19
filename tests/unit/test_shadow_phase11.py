@@ -538,29 +538,6 @@ class TestModelEvolution:
 
 
 class TestRegression:
-    def test_phase08_experience_intact(self, temp_audit_repo):
-        from nexus_scalp.experience.ledger import ExperienceLedger
-
-        ledger = ExperienceLedger(audit_repo=temp_audit_repo)
-        assert ledger.count_experiences() == 0
-
-    def test_phase09_research_intact(self, temp_audit_repo):
-        from nexus_scalp.research.store import registry_summary
-
-        assert registry_summary(temp_audit_repo)["available"] is True
-
-    def test_phase10_model_lifecycle_intact(self, temp_audit_repo):
-        from nexus_scalp.model_lifecycle.store import TrainingRunStore
-
-        store = TrainingRunStore(audit_repo=temp_audit_repo)
-        store.ensure_schema()
-        assert store.summary()["available"] is True
-
-    def test_accounting_intact(self, temp_audit_repo):
-        from nexus_scalp.accounting.core import AccountingCore
-
-        assert AccountingCore(audit_repo=temp_audit_repo) is not None
-
     def test_live_hot_path_non_blocking(self, temp_audit_repo):
         # Shadow worker tick must return quickly even with data.
         store = ShadowStore(audit_repo=temp_audit_repo)

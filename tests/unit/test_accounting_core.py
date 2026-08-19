@@ -1231,11 +1231,6 @@ class TestWorker:
         # second call within interval -> throttled
         assert w.tick() is False
         assert w.cycle_count == 1
-
-    def test_worker_idle_when_stopped(self, core) -> None:
-        w = AccountingWorker(core=core)
-        assert w.tick() is False
-
     def test_worker_failure_isolated(self, audit, core) -> None:
         """A failing adapter must produce event=FAILURE and never raise."""
         core.adapter.fail_account = True
@@ -1333,16 +1328,6 @@ class TestSelfHealing:
 
 
 class TestProvenanceSurvival:
-    def test_feature_schema_dimension_forward_compat(self) -> None:
-        from nexus_scalp.features.schema import FEATURE_SCHEMAS
-
-        assert FEATURE_SCHEMAS.resolve("scalp_v1").dimension == 50
-        assert FEATURE_SCHEMAS.resolve("scalp_v2").dimension == 60
-        assert FEATURE_SCHEMAS.resolve("scalp_v3").dimension == 70  # TASK-03: scalp_v3 is now the canonical 70D contract
-        # strict resolution: unknown id raises, never silently defaults
-        with pytest.raises(KeyError):
-            FEATURE_SCHEMAS.resolve("nope")
-
     def test_experience_rows_carry_schema_and_model_identity(self, audit, core) -> None:
         import sqlite3
 

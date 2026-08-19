@@ -138,13 +138,6 @@ class TestEquityCurveAndClosedHistory:
         # Broker trades carry position_id (the deterministic broker identity);
         # ledger rows carry ticket. Either is a valid row identity.
         assert (first.get("ticket")) or (first.get("position_id"))
-
-    def test_mt5_status_history_endpoint_still_available(self, client) -> None:
-        res = client.get("/api/mt5/status?history_days=1")
-        # Engine without a real adapter: endpoint must degrade honestly.
-        assert res.status_code in (200, 500)
-
-
 class TestStrategyAttributionFinancialConsistency:
     def test_strategy_rows_not_fabricated(self, client) -> None:
         res = client.get("/api/account/strategies")

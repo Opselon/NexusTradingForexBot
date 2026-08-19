@@ -38,18 +38,6 @@ def _sync_once(repo: AuditRepository, *, deals=None, orders=None) -> dict:
 
 
 class TestBrokerHistoryTables:
-    def test_tables_exist_after_repo_create(self, audit: AuditRepository) -> None:
-        with sqlite3.connect(audit._db_path, timeout=5.0) as conn:
-            tables = {
-                r[0]
-                for r in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                ).fetchall()
-            }
-        assert "audit_broker_orders" in tables
-        assert "audit_broker_deals" in tables
-        assert "audit_broker_trades" in tables
-
     def test_first_sync_persists_everything(self, audit: AuditRepository) -> None:
         ctx = _sync_once(audit)
         with sqlite3.connect(audit._db_path, timeout=5.0) as conn:

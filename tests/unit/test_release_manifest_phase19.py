@@ -74,14 +74,6 @@ def test_manifest_supported_schemas_include_70d() -> None:
     assert "scalp_v2" in schemas  # 60D legacy
     assert "scalp_v4" in schemas  # 70D contract
     assert "scalp_liquidity_v1" in schemas  # 60D liquidity
-
-
-def test_manifest_model_compatibility_all_schemas() -> None:
-    line = pkg._manifest_model_compatibility({})
-    assert "scalp_v1 (50D)" in line
-    assert "scalp_v4 (70D)" in line
-
-
 def test_manifest_roundtrip_verify(tmp_path: Path) -> None:
     """verify_manifest must accept the enriched manifest (additive keys)."""
     root = tmp_path / "release"

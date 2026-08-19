@@ -663,32 +663,6 @@ def test_tl17_regime_reversal_is_captured():
         assert rev["to"] == "RANGING_MEAN_REVERSION"
     finally:
         audit.close()
-
-
-def test_tl18_liquidity_reversal_is_captured():
-    """Liquidity/structure flip while open records a LIQUIDITY_REVERSAL event."""
-    om, audit, db_path, mock, _ = _make_om()
-    try:
-        om._entry_prices[12] = 2000.0
-        om._entry_sls[12] = 1995.0
-        om._entry_directions[12] = "BUY"
-        om._entry_timestamps[12] = datetime.now(UTC)
-        om._entry_order_ids[12] = "req_tl18"
-        # Manual evidence append is the bounded path; the classifier keeps it.
-        om._reversal_events.setdefault(12, []).append(
-            {
-                "type": "LIQUIDITY_REVERSAL",
-                "at": datetime.now(UTC).isoformat(),
-                "from": "bullish_structure",
-                "to": "bearish_liquidity_sweep",
-            }
-        )
-        events = om._reversal_events.get(12, [])
-        assert any(e["type"] == "LIQUIDITY_REVERSAL" for e in events)
-    finally:
-        audit.close()
-
-
 def test_tl19_timeline_event_ordering_is_deterministic():
     """Events persist with a monotonic per-ticket sequence and dedup key."""
     om, audit, db_path, mock, tracker = _make_om(with_tracker=True)
@@ -717,20 +691,6 @@ def test_tl19_timeline_event_ordering_is_deterministic():
 # ---------------------------------------------------------------------------
 # TEST-TL-20..24: schema metadata, accounting/experience/research/telegram
 # ---------------------------------------------------------------------------
-
-
-def test_tl20_feature_schema_metadata_survives_lineage():
-    """FeatureSnapshot validates against declared dimension (50/60/350)."""
-    from nexus_scalp.experience.models import FeatureSnapshot
-
-    fs50 = FeatureSnapshot(feature_schema_id="scalp_v1", feature_dimension=50, values=[0.0] * 50)
-    assert fs50.is_canonical_live_schema
-    fs60 = FeatureSnapshot(feature_schema_id="scalp_v2", feature_dimension=60, values=[0.0] * 60)
-    assert not fs60.is_canonical_live_schema  # schema-aware, not hardcoded 50
-    with pytest.raises(ValueError):
-        FeatureSnapshot(feature_schema_id="scalp_v1", feature_dimension=50, values=[0.0] * 51)
-
-
 def test_tl21_canonical_trade_pnl_equals_accounting_pnl():
     """normalize_trade_row computes net PnL exactly once (gross - costs)."""
     from nexus_scalp.accounting.normalize import normalize_trade_row

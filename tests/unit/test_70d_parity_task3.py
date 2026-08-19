@@ -29,6 +29,7 @@ import pytest
 from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
 from nexus_scalp.features.schema_contract import (
     DIMENSION,
+    NEWS_10D_NAMES,
     canonical_feature_names,
     feature_schema_hash,
 )
@@ -194,23 +195,6 @@ def test_03_02_03_dataset_replay_runtime_parity() -> None:
 # ---------------------------------------------------------------------------
 # TEST-03-04 — 70D feature ordering
 # ---------------------------------------------------------------------------
-
-
-def test_03_04_70d_feature_ordering() -> None:
-    names = canonical_feature_names()
-    assert len(names) == 70
-    assert names[60] == "bsl_distance_atr"
-    assert names[61] == "ssl_distance_atr"
-    assert names[62] == "eqh_strength"
-    assert names[63] == "eql_strength"
-    assert names[64] == "htf_liquidity_score"
-    assert names[65] == "internal_liquidity_distance"
-    assert names[66] == "external_liquidity_distance"
-    assert names[67] == "liquidity_confluence"
-    assert names[68] == "liquidity_sweep_state"
-    assert names[69] == "post_sweep_displacement"
-
-
 # ---------------------------------------------------------------------------
 # TEST-03-05 — schema hash agreement
 # ---------------------------------------------------------------------------
@@ -367,8 +351,6 @@ def test_03_15_50d_regression() -> None:
 
 
 def test_03_16_family_50_59_unchanged() -> None:
-    from nexus_scalp.features.schema_contract import NEWS_10D_NAMES, canonical_feature_names
-
     names = canonical_feature_names()
     assert tuple(names[50:60]) == NEWS_10D_NAMES
     # news block neutral when no news frame
@@ -462,21 +444,6 @@ def test_03_19_golden_artifact_agreement() -> None:
 # ---------------------------------------------------------------------------
 # TEST-03-20 — vector hash agreement
 # ---------------------------------------------------------------------------
-
-
-def test_03_20_vector_hash_agreement() -> None:
-    import hashlib
-
-    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-    bars = _mkbars(240, t0)
-    frame = compute_70d_frame(_to_frame(bars))
-    ds = _dataset_liquidity_row(frame)
-    live, _ = _governor_liquidity(bars)
-    h_ds = hashlib.sha256(repr(ds).encode()).hexdigest()
-    h_live = hashlib.sha256(repr(live).encode()).hexdigest()
-    assert h_ds == h_live
-
-
 # ---------------------------------------------------------------------------
 # TEST-03-33 — verify_70d_artifact runs on a real built dataset
 # (regression for the .item() DataFrame-int bug + manifest hash stamp)

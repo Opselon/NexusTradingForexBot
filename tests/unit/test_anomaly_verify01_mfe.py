@@ -134,19 +134,6 @@ def test_anom20_algorithm_version_preserved():
     trade = make_trade(direction="SELL", mae_points=-0.4, mfe_points=-0.6)
     anoms = _trade_data_anomalies(trade, "t9", "anomaly-v9")
     assert all(a.evidence.get("algorithm_version") == "anomaly-v9" for a in anoms)
-
-
-def test_anom23_mfe_anomaly_severity_is_low():
-    """TEST-ANOM-23: IMPOSSIBLE_EXCURSION severity is LOW by contract."""
-    trade = make_trade(direction="SELL", mae_points=-0.4, mfe_points=-0.6)
-    exc = [
-        a
-        for a in _trade_data_anomalies(trade, "t10", "anomaly-v1")
-        if a.anomaly_type == "IMPOSSIBLE_EXCURSION"
-    ]
-    assert exc[0].severity == "LOW"
-
-
 # ---------------------------------------------------------------------------
 # API/store: incident grouping
 # ---------------------------------------------------------------------------

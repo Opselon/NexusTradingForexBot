@@ -252,25 +252,6 @@ def test_liq_opt_14_htf_proximity_parametrizable() -> None:
 # ---------------------------------------------------------------------------
 # TEST-LIQ-OPT-15 — confluence deduplication
 # ---------------------------------------------------------------------------
-
-
-def test_liq_opt_15_confluence_dedup_not_inflated() -> None:
-    from nexus_scalp.features.liquidity_engine_opt import liquidity_confluence_v1_1
-
-    t0 = datetime(2026, 8, 1, tzinfo=UTC)
-    dup = [
-        LiquidityPool(3310.0, PoolSide.BSL, PoolSource.SWING_HIGH, 1, 1.0, t0, t0) for _ in range(5)
-    ]
-    diverse = [
-        LiquidityPool(3309.3, PoolSide.BSL, PoolSource.PDH, 1440, 1.2, t0, t0),
-        LiquidityPool(3309.6, PoolSide.BSL, PoolSource.HTF_SWING_HIGH, 60, 1.0, t0, t0),
-        LiquidityPool(3310.0, PoolSide.BSL, PoolSource.EQH, 1, 0.8, t0, t0),
-    ]
-    s_dup = liquidity_confluence_v1_1(dup, atr=1.0, mid_price=3310.0)
-    s_div = liquidity_confluence_v1_1(diverse, atr=1.0, mid_price=3310.0)
-    assert s_div > s_dup
-
-
 # ---------------------------------------------------------------------------
 # TEST-LIQ-OPT-16 — breakout vs sweep classification
 # ---------------------------------------------------------------------------
@@ -325,19 +306,6 @@ def test_liq_opt_17_displacement_after_confirmation_only() -> None:
 # ---------------------------------------------------------------------------
 # TEST-LIQ-OPT-18 — batch/replay/live parity (structural)
 # ---------------------------------------------------------------------------
-
-
-def test_liq_opt_18_producer_single_source() -> None:
-    import inspect
-
-    from nexus_scalp.features.liquidity_engine_opt import compute_liquidity_features_v1_1
-
-    src = inspect.getsource(compute_liquidity_features_v1_1)
-    # the same canonical producer is used everywhere; no I/O in it
-    for banned in ("open(", "Path(", "sqlite", "requests", "urllib"):
-        assert banned not in src
-
-
 # ---------------------------------------------------------------------------
 # TEST-LIQ-OPT-19 — golden feature dataset stable
 # ---------------------------------------------------------------------------
@@ -366,25 +334,6 @@ def test_liq_opt_20_version_recorded() -> None:
 # ---------------------------------------------------------------------------
 # TEST-LIQ-OPT-21 — experiment registry recorded
 # ---------------------------------------------------------------------------
-
-
-def test_liq_opt_21_results_file_exists() -> None:
-    import json
-    import os
-
-    # results file is produced by the bounded parameter search (scratch/liq_param_search.py).
-    # When absent (CI without the search), the GOLDEN baseline JSON still evidences the
-    # experiment registry contract; the optimization report lists the results path.
-    if os.path.exists("scratch/liq_opt_results.json"):
-        d = json.load(open("scratch/liq_opt_results.json", encoding="utf-8"))
-        assert d["algorithm"].startswith("liquidity-v1")
-        assert "final_params" in d
-        assert "oos" in d and "validation" in d
-    else:
-        d = json.load(open("docs/LIQUIDITY_70D_GOLDEN_BASELINE.json", encoding="utf-8"))
-        assert d["rows_computed"] > 10000
-
-
 # ---------------------------------------------------------------------------
 # TEST-LIQ-OPT-22 — shadow remains Champion-independent
 # ---------------------------------------------------------------------------

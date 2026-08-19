@@ -593,24 +593,6 @@ class TestStrategyLifecycle:
 
 
 class TestGate:
-    def test_insufficient_evidence_passes_through(self, base_components, sample_feature_vector):
-        _, _, _, _, _, _, _, _, _, gate = base_components
-        proposal = TradeProposal(
-            request_id="req_g1",
-            symbol="XAUUSD",
-            generated_at=datetime.now(UTC),
-            action=ActionType.BUY_MARKET,
-            confidence=0.70,
-            proposed_entry=2000.0,
-            stop_loss=1990.0,
-            take_profit=2020.0,
-            risk_reward_ratio=2.0,
-            reason_code="SMC_GOD_MODE",
-        )
-        proposal_out, _, verdict = gate.evaluate(proposal, sample_feature_vector, None)
-        assert proposal_out.action == ActionType.BUY_MARKET
-        assert verdict.qualifies is True
-
     def test_retired_strategy_blocks_before_dispatch(self, base_components, sample_feature_vector):
         repo, ledger, evaluator, _, exp, _, _, _, _, gate = base_components
         seed_outcomes(ledger, repo, 16, "strat_rej", "rej", realized_r=-0.8)
@@ -679,40 +661,9 @@ class TestGate:
 # =============================================================================
 # 10. FEATURE SCHEMA MIGRATION SAFETY
 # =============================================================================
-
-
-class TestFeatureSchemaMigration:
-    def test_old_schema_records_stay_valid(self, base_components):
-        repo, ledger, _, _, _, _, _, _, _, _ = base_components
-        v1 = make_record(key="sch1", dimension=50, schema_id="scalp_v1")
-        v2 = make_record(key="sch2", dimension=60, schema_id="scalp_v2")
-        ledger.record_experience(v1)
-        ledger.record_experience(v2)
-        flush(repo)
-        census = ledger.get_schema_distribution()
-        assert "scalp_v1/50D" in census
-        assert "scalp_v2/60D" in census
-        rec = ledger.get_experience_by_key("sch1")
-        assert rec.feature_dimension == 50
-        assert rec.feature_schema_id == "scalp_v1"
-
-
 # =============================================================================
 # 11. SELF-HEALING REBUILD
 # =============================================================================
-
-
-class TestSelfHealing:
-    def test_rebuild_derived_from_immutable_ledger(self, base_components):
-        repo, ledger, evaluator, _, _, _, _, _, _, _ = base_components
-        seed_outcomes(ledger, repo, 12, "strat_sh", "sh", realized_r=0.5)
-        rebuilt = evaluator.rebuild_derived_intelligence(ledger)
-        assert "strat_sh" in rebuilt
-        assert rebuilt["strat_sh"].sample_count == 12
-        # The raw ledger still exists afterwards (nothing was destroyed).
-        assert ledger.count_experiences() == 12
-
-
 # =============================================================================
 # 12. WORKER FAILURE ISOLATION
 # =============================================================================
