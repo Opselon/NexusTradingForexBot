@@ -1,0 +1,273 @@
+{
+  "probed_at_utc": "2026-08-18T23:24:09.402732+00:00",
+  "audit": {
+    "exists": true,
+    "size_bytes": 50921472,
+    "integrity": "ok",
+    "journal_mode": "wal",
+    "foreign_keys": 0,
+    "tables": [
+      "anomaly_events",
+      "audit_account_snapshots",
+      "audit_broker_deals",
+      "audit_broker_history_meta",
+      "audit_broker_orders",
+      "audit_broker_trades",
+      "audit_executions",
+      "audit_experience_corrections",
+      "audit_experience_outcomes",
+      "audit_experiences",
+      "audit_guard_telemetry",
+      "audit_ledger",
+      "audit_orders",
+      "audit_signals",
+      "behavior_analysis",
+      "behavior_detections",
+      "experience_model_registry",
+      "intelligence_worker_state",
+      "model_comparisons",
+      "model_governance_events",
+      "model_governance_state",
+      "model_runtime_health",
+      "model_shadow_comparisons",
+      "position_lifecycle_events",
+      "research_runs",
+      "research_worker_state",
+      "schema_meta",
+      "schema_migrations",
+      "sqlite_sequence",
+      "strategy_evolution_candidates",
+      "strategy_intelligence_registry",
+      "strategy_registry",
+      "trade_autopsies",
+      "trading_rules_config",
+      "training_runs"
+    ],
+    "table_count": 35,
+    "schema_meta": {
+      "schema_version": "4"
+    },
+    "row_counts": {
+      "anomaly_events": 22,
+      "audit_account_snapshots": 1011,
+      "audit_broker_deals": 7516,
+      "audit_broker_history_meta": 1,
+      "audit_broker_orders": 9634,
+      "audit_broker_trades": 3635,
+      "audit_executions": 273,
+      "audit_experience_corrections": 0,
+      "audit_experience_outcomes": 74,
+      "audit_experiences": 230,
+      "audit_guard_telemetry": 569,
+      "audit_ledger": 266,
+      "audit_orders": 7489,
+      "audit_signals": 15151,
+      "behavior_analysis": 264,
+      "behavior_detections": 225,
+      "experience_model_registry": 2,
+      "intelligence_worker_state": 0,
+      "model_comparisons": 0,
+      "model_governance_events": 0,
+      "model_governance_state": 0,
+      "model_runtime_health": 6,
+      "model_shadow_comparisons": 0,
+      "position_lifecycle_events": 11875,
+      "research_runs": 0,
+      "research_worker_state": 0,
+      "schema_meta": 1,
+      "schema_migrations": 3,
+      "sqlite_sequence": 13,
+      "strategy_evolution_candidates": 0,
+      "strategy_intelligence_registry": 110,
+      "strategy_registry": 2,
+      "trade_autopsies": 73,
+      "trading_rules_config": 30,
+      "training_runs": 0
+    }
+  },
+  "news": {
+    "exists": true,
+    "size_bytes": 6373376,
+    "integrity": "ok",
+    "journal_mode": "wal",
+    "foreign_keys": 0,
+    "tables": [
+      "news_analysis",
+      "news_analysis_runs",
+      "news_article_versions",
+      "news_articles",
+      "news_consensus",
+      "news_entities",
+      "news_event_links",
+      "news_health",
+      "news_impacts",
+      "news_post_event",
+      "news_sources",
+      "news_topics",
+      "news_trade_links",
+      "news_worker_state",
+      "schema_meta",
+      "schema_migrations",
+      "sqlite_sequence"
+    ],
+    "table_count": 17,
+    "schema_meta": {
+      "schema_version": "2"
+    },
+    "row_counts": {
+      "news_analysis": 877,
+      "news_analysis_runs": 877,
+      "news_article_versions": 0,
+      "news_articles": 1677,
+      "news_consensus": 0,
+      "news_entities": 2056,
+      "news_event_links": 0,
+      "news_health": 10,
+      "news_impacts": 671,
+      "news_post_event": 0,
+      "news_sources": 11,
+      "news_topics": 1663,
+      "news_trade_links": 0,
+      "news_worker_state": 1,
+      "schema_meta": 1,
+      "schema_migrations": 1,
+      "sqlite_sequence": 3
+    }
+  },
+  "candle_intel": {
+    "exists": true,
+    "size_bytes": 1134592,
+    "integrity": "ok",
+    "journal_mode": "wal",
+    "foreign_keys": 0,
+    "tables": [
+      "audit_log",
+      "candle_closures",
+      "candle_patterns",
+      "candles",
+      "exit_signals",
+      "feature_vectors",
+      "market_regimes",
+      "open_positions",
+      "risk_evaluations",
+      "rule_vetoes",
+      "schema_meta",
+      "schema_migrations",
+      "sqlite_sequence",
+      "trade_decisions",
+      "trade_proposals"
+    ],
+    "table_count": 15,
+    "schema_meta": {
+      "schema_version": "2"
+    },
+    "row_counts": {
+      "audit_log": 0,
+      "candle_closures": 342,
+      "candle_patterns": 1054,
+      "candles": 342,
+      "exit_signals": 0,
+      "feature_vectors": 0,
+      "market_regimes": 396,
+      "open_positions": 0,
+      "risk_evaluations": 396,
+      "rule_vetoes": 114,
+      "schema_meta": 1,
+      "schema_migrations": 1,
+      "sqlite_sequence": 7,
+      "trade_decisions": 396,
+      "trade_proposals": 0
+    }
+  },
+  "state_intelligence_worker_state": {
+    "columns": [
+      "scope",
+      "last_checkpoint",
+      "last_cycle_at",
+      "last_error",
+      "cycle_count"
+    ],
+    "latest_rows": []
+  },
+  "state_research_worker_state": {
+    "columns": [
+      "scope",
+      "last_checkpoint",
+      "last_cycle_at",
+      "last_error",
+      "cycle_count"
+    ],
+    "latest_rows": []
+  },
+  "state_news_worker_state": {
+    "error": "no such table: news_worker_state"
+  },
+  "state_model_governance_state": {
+    "columns": [
+      "id",
+      "model_id",
+      "model_version",
+      "lifecycle_state",
+      "updated_at",
+      "evidence"
+    ],
+    "latest_rows": []
+  },
+  "state_shadow_runs": {
+    "error": "no such table: shadow_runs"
+  },
+  "state_shadow_decisions": {
+    "error": "no such table: shadow_decisions"
+  },
+  "schema_migrations": [
+    {
+      "migration_id": "AUDIT-0002-add-audit-orders-ticket-index",
+      "domain": "audit",
+      "version": 2,
+      "description": "ensure audit_orders(ticket, order_id) composite index (P3)",
+      "checksum": "c8075728fbadbab4ca154e013045e227f04790e3d480077e90f84829dab7e424",
+      "applied_at": "2026-08-18T21:52:43.830157+00:00",
+      "application_version": "",
+      "git_commit": "",
+      "execution_ms": 0,
+      "status": "applied"
+    },
+    {
+      "migration_id": "AUDIT-0003-ledger-exit-evidence-columns",
+      "domain": "audit",
+      "version": 3,
+      "description": "add exit-classification evidence columns (BUG-083)",
+      "checksum": "0abfce3438ffe8f9d2a53cc2598275eb62a433b781067fc1cfaf3f1403f7bcc6",
+      "applied_at": "2026-08-18T21:52:43.832671+00:00",
+      "application_version": "",
+      "git_commit": "",
+      "execution_ms": 1,
+      "status": "applied"
+    },
+    {
+      "migration_id": "AUDIT-0004-ledger-close-time-index",
+      "domain": "audit",
+      "version": 4,
+      "description": "add audit_ledger(close_time) index (P3 forensic finding)",
+      "checksum": "92d3e6dbe85d9a45dbf739b8c52119bf77a388c54cdedec471439ab32448b6d3",
+      "applied_at": "2026-08-18T21:52:43.836464+00:00",
+      "application_version": "",
+      "git_commit": "",
+      "execution_ms": 2,
+      "status": "applied"
+    }
+  ],
+  "champion_artifact_dir": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD",
+  "champion_files": {
+    "v1.0.0": {
+      "model.pt": 1325291,
+      "model.scaler.npz": 900
+    }
+  },
+  "datasets": [
+    "ds_af362f55e86a15ca",
+    "ds_b64513f79687824a",
+    "ds_cb30f87520e9e6a4",
+    "ds_f9a06027a76588ff"
+  ]
+}
