@@ -395,6 +395,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     app.state.versioner = StateVersioner()
     # Bounded per-stream event ring for reconnect resynchronization.
     app.state.stream_history = deque(maxlen=200)  # type: ignore[assignment]
+    # Debug 70D forensic console: rolling snapshot ring + SSE diagnostics.
+    from nexus_scalp.web.debug_snapshot import DebugSnapshotStore
+
+    app.state.debug_snapshot_store = DebugSnapshotStore(max_snapshots=64)
+    # SSE observability (brief 27): connection state + serialization errors.
+    app.state.sse_diag = {
+        "connection": "UNKNOWN",
+        "connected_at": None,
+        "last_event": None,
+        "event_count": 0,
+        "last_latency_ms": None,
+        "serialization_errors": 0,
+        "serialization_error": None,
+        "reconnect_count": 0,
+    }
     # News refresh cooldown (bandwidth guard): monotonic timestamp of the last
     # forced fetch so repeated "Fetch News" clicks cannot hammer RSS feeds.
     import threading
@@ -3514,6 +3529,83 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         }
 
     # =========================================================================
+    # DEBUG 70D FORENSIC CONSOLE — CANONICAL SNAPSHOT API (brief 41/28/33/34)
+    # -------------------------------------------------------------------------
+    # GET /api/debug/state            -> one canonical full debug snapshot
+    # GET /api/debug/snapshots        -> rolling snapshot history (ids only)
+    # GET /api/debug/snapshots/{id}   -> a stored snapshot
+    # GET /api/debug/compare?a=&b=    -> feature/model/confidence/regime/
+    #                                    liquidity/news/policy/risk diff
+    # All read-only; assembled from in-memory engine state and cached worker
+    # reports (brief 43: no DB scans, no recompute, no model reload).
+    # =========================================================================
+
+    @app.get("/api/debug/state")
+    def get_debug_state() -> dict[str, Any]:
+        """Canonical 70D runtime intelligence snapshot for the Debug tab.
+
+        One payload with: runtime / contract / features (70D matrix) / model
+        / confidence / policy / risk / exposure / execution / positions /
+        exit / liquidity / news / workers / database / caches / chart / sse
+        / errors. Every section is real backend state or an explicit
+        UNAVAILABLE marker with a reason + correlation_id (brief 36/42).
+        """
+        from nexus_scalp.web.debug_snapshot import build_debug_snapshot
+
+        try:
+            payload = build_debug_snapshot(app.state.engine, app.state)
+            store = getattr(app.state, "debug_snapshot_store", None)
+            if store is not None:
+                store.push(payload)
+            return serialize_enums(payload)
+        except Exception as exc:  # noqa: BLE001 - never a silent 500
+            _log_err(exc, "Debug snapshot failed", endpoint="/api/debug/state")
+            return {
+                "snapshot_id": None,
+                "correlation_id": new_request_id(),
+                "timestamp": datetime.now(UTC).isoformat(),
+                "available": False,
+                "reason": f"DEBUG_SNAPSHOT_ERROR: {exc}",
+            }
+
+    @app.get("/api/debug/snapshots")
+    def get_debug_snapshots() -> dict[str, Any]:
+        """Rolling debug snapshot history (brief 33) — ids/timestamps only."""
+        store = getattr(app.state, "debug_snapshot_store", None)
+        if store is None:
+            return {"available": False, "snapshots": []}
+        return {"available": True, "snapshots": store.list()}
+
+    @app.get("/api/debug/snapshots/{snapshot_id}")
+    def get_debug_snapshot(snapshot_id: str) -> dict[str, Any]:
+        """One stored debug snapshot by id (brief 33/49)."""
+        store = getattr(app.state, "debug_snapshot_store", None)
+        if store is None:
+            return {"available": False, "reason": "NO_SNAPSHOT_STORE"}
+        snap = store.get(snapshot_id)
+        if snap is None:
+            return {"available": False, "reason": f"SNAPSHOT_NOT_FOUND: {snapshot_id}"}
+        return serialize_enums(snap)
+
+    @app.get("/api/debug/compare")
+    def get_debug_compare(a: str, b: str) -> dict[str, Any]:
+        """Compare two stored snapshots (brief 34): feature deltas + model/
+        confidence/regime/liquidity/news/policy/risk changes."""
+        from nexus_scalp.web.debug_snapshot import diff_snapshots
+
+        store = getattr(app.state, "debug_snapshot_store", None)
+        if store is None:
+            return {"available": False, "reason": "NO_SNAPSHOT_STORE"}
+        snap_a = store.get(a)
+        snap_b = store.get(b)
+        if snap_a is None or snap_b is None:
+            return {
+                "available": False,
+                "reason": "SNAPSHOT_NOT_FOUND (need both a and b)",
+            }
+        return serialize_enums(diff_snapshots(snap_a, snap_b))
+
+    # =========================================================================
     # PHASE 08 EXPERIENCE INTELLIGENCE REST APIs
     # -------------------------------------------------------------------------
     # All endpoints are READ-ONLY over derived state, except the explicit
@@ -6149,8 +6241,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
         async def event_generator():
             last_full: int = 0
+            sse_diag = app.state.sse_diag
+            sse_diag["connection"] = "CONNECTED"
+            sse_diag["connected_at"] = datetime.now(UTC).isoformat()
+            sse_diag["reconnect_count"] = int(sse_diag.get("reconnect_count", 0)) + 1
             while True:
                 if await request.is_disconnected():
+                    sse_diag["connection"] = "DISCONNECTED"
                     break
                 try:
                     payload = get_system_state()
@@ -6189,12 +6286,26 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             state_version,
                             failed_fields,
                         )
+                        # Record in the debug console diagnostics (brief 27).
+                        sse_diag["serialization_errors"] = int(
+                            sse_diag.get("serialization_errors", 0)
+                        ) + 1
+                        sse_diag["serialization_error"] = {
+                            "correlation_id": diag["correlation_id"],
+                            "error": str(ser_err),
+                            "failed_fields": failed_fields,
+                            "event_type": event_name,
+                        }
                         frame = canonical_json(diag)
                         # Stream the diagnostic as a dedicated event so the
                         # UI can surface it; do NOT send corrupted JSON.
                         yield f"event: error\ndata: {frame}\n\n"
                         await asyncio.sleep(0.2)
                         continue
+                    # SSE observability counters (brief 27).
+                    sse_diag["last_event"] = event_name
+                    sse_diag["event_count"] = int(sse_diag.get("event_count", 0)) + 1
+                    sse_diag["last_latency_ms"] = None
                     yield f"event: {event_name}\ndata: {frame}\n\n"
                     # Keep a bounded replay ring for reconnect resynchronization.
                     app.state.stream_history.append(

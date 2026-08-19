@@ -646,6 +646,7 @@ class LiveEngine:
         # Web / UI Synchronization states to act as single source of truth
         self._last_tick: TickData | None = None
         self._last_fv: FeatureVector | None = None
+        self._last_model_input_tensor: list[float] | None = None
         self._last_regime_state: MarketRegimeState | None = None
         self._last_probs: torch.Tensor | None = None
         self._last_proposal: TradeProposal | None = None
@@ -2916,6 +2917,14 @@ class LiveEngine:
         x_np = bundle.scaler.transform_50d(x_np)
         x = torch.tensor(x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+
+        # Debug/forensics: keep the exact model input the live path consumed
+        # (post-scaler, pre-softmax). Read-only observability (INV-018);
+        # never used for execution.
+        try:
+            self._last_model_input_tensor = x.detach().cpu().numpy().reshape(-1).tolist()
+        except Exception:
+            self._last_model_input_tensor = None
 
         bundle.model.eval()
         with torch.inference_mode():
