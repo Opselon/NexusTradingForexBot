@@ -4426,6 +4426,18 @@ function updateFeaturesGrid(features) {
 
 
 
+    // TASK-02-70D-INTEGRATION (brief 9): three-group feature matrix header.
+    // BASE 0..49 | NEWS 50..59 (news_context_v1 family) | LIQUIDITY 60..69.
+    const groupHeader = document.getElementById('feature-groups');
+    if (groupHeader) {
+        groupHeader.innerHTML =
+            '<div class="flex flex-wrap gap-2 text-[9px] font-mono">' +
+            '<span class="px-2 py-0.5 rounded bg-accentCyan/10 text-accentCyan border border-accentCyan/30">BASE 0..49 (' + features.length + ' live)</span>' +
+            '<span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">NEWS 50..59 (family slot)</span>' +
+            '<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">LIQUIDITY 60..69</span>' +
+            '</div>';
+    }
+
     // Filter features based on active selection category
 
     let activeList = [];
