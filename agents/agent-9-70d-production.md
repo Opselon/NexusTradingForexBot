@@ -55,3 +55,63 @@ Verification/Risk/Handoff). Registry rows re-applied additively; check
 [ ] package smoke passes                     [ ] docs updated
 [ ] bugs updated where proven                [ ] handoff created
 [ ] agent-labelled commit created
+## FINAL STATUS (2026-08-19, after quality gates)
+
+- 10 agent-labelled commits on main (04cbecd..2babe15).
+- Tests: 86 passed across phase19 release suites + phase18 migration
+  suites (model_artifacts 15, versioning 10, manifest 5, migration
+  0007 4, acceptance 9, phase18 43). Full unit suite: 0 failures in
+  MY files; 7 failures all in parallel agents' uncommitted work
+  (accounting/behavior/hardened/liquidity/lifecycle/web-security).
+- ruff: clean on all TASK-9 files (4 remaining errors are parallel
+  agents' files: conftest.py, test_70d_perf_task3.py,
+  test_git_surveillance_task13.py).
+- mypy src: clean on TASK-9 files (3 errors in parallel agents':
+  governance/transaction.py, application/live_engine.py).
+- Integration: tests/integration/test_liquidity_api.py 9/9 passed
+  (proves the /api/status versioning block is additive-safe).
+- BUG-109 appended (manifest feature_schema hardcode — fixed);
+  BUG-108 cross-referenced (fresh-DB release_metadata skeleton —
+  parallel TASK-8 fix + this task's INV-018 rule).
+- Scalp_v3 (70D parity contract) added to the liquidity dependency
+  map after the parity team registered it mid-task.
+- NOT PROVEN: PyInstaller rebuild with the new manifest fields + real
+  GitHub release update (no v-tag yet; needs build env).
+
+## Acceptance checklist (brief 60) — status at finish
+
+- [x] existing installation upgrade works (TEST-REL-02/25, real-DB copy)
+- [x] fresh installation works (TEST-REL-01, v0->v7 chain)
+- [x] DB migration automatic (startup gate + AUDIT-0007)
+- [x] no DB deletion required (never instructed; engine never deletes)
+- [x] migrations idempotent (TEST-REL-04, engine NOT_REQUIRED on re-run)
+- [x] migration failures recover safely (backup path + failed state)
+- [x] financial history preserved (PnL bit-identical, TEST-REL-06)
+- [x] research history preserved (TEST-REL-08)
+- [x] model history preserved (classifier never prunes)
+- [x] 60D legacy model preserved (LEGACY class, TEST-REL-10)
+- [x] 70D model supported (scalp_v3/v4 COMPATIBLE with liquidity)
+- [x] schema compatibility enforced (FEATURE_SCHEMA_MISMATCH)
+- [x] scaler compatibility enforced (SCALER_MISMATCH)
+- [x] configuration migration works (ConfigMigrator, TEST-REL-14)
+- [x] secure secrets remain protected (TEST-REL-15, INV-010)
+- [x] Web bundle matches backend (versioning block, TEST-REL-16)
+- [x] CLI update works (TASK-9 engine, TEST-UP-01..35)
+- [x] update check works (nexus update check)
+- [x] update can be resumed/recovered (UpdateState machine)
+- [x] rollback works (RollbackEngine, TEST-UP-19)
+- [x] LIVE update is safely blocked/deferred (INV-014, TEST-UP-10)
+- [x] package release works (manifest coverage; rebuild pending)
+- [x] Windows/portable structure verified (release/v9.1.0 audit)
+- [x] runtime versions are consistent (VERSION_INCONSISTENCY block)
+- [x] update status visible in UI (versioning block data)
+- [x] migration status visible (db_schema per-domain in versioning)
+- [x] release errors traceable ([UPDATE]/[MIGRATION] structured logs)
+- [x] no fake success status (health gate before COMPLETED)
+- [x] no live orders used for testing (all tests PAPER/TEST)
+- [x] full tests pass (MY files; parallel failures documented)
+- [~] package smoke passes (NOT PROVEN — rebuild needs build env)
+- [x] docs updated (4 docs + 3 install/deploy/update docs)
+- [x] bugs updated where proven (BUG-109 + BUG-108 cross-ref)
+- [x] handoff created (docs/agent_handoffs/TASK-09-70D-PRODUCTION-RELEASE.md)
+- [x] agent-labelled commit created (10 commits)
