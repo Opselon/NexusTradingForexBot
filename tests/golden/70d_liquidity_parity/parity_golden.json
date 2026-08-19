@@ -1,0 +1,53 @@
+{
+  "schema_id": "scalp_v3",
+  "dimension": 70,
+  "schema_hash": "235b8fccc96b7e0e",
+  "feature_names_60_69": [
+    "bsl_distance_atr",
+    "ssl_distance_atr",
+    "eqh_strength",
+    "eql_strength",
+    "htf_liquidity_score",
+    "internal_liquidity_distance",
+    "external_liquidity_distance",
+    "liquidity_confluence",
+    "liquidity_sweep_state",
+    "post_sweep_displacement"
+  ],
+  "algorithm_version": "liquidity_engine:70d-v1.0.0",
+  "fixture": {
+    "symbol": "XAUUSD",
+    "timeframe": "M1",
+    "n_bars": 240,
+    "seed": 7,
+    "t0": "2026-08-01T00:00:00+00:00",
+    "base": 3300.0,
+    "step": 0.1
+  },
+  "dataset_liquidity": [
+    0.8059817313,
+    3.0,
+    0.0,
+    0.0,
+    0.0,
+    3.0,
+    0.8059817313,
+    1.8934944028,
+    1.0,
+    0.0
+  ],
+  "live_liquidity": [
+    0.8059817313,
+    3.0,
+    0.0,
+    0.0,
+    0.0,
+    3.0,
+    0.8059817313,
+    1.8934944028,
+    1.0,
+    0.0
+  ],
+  "max_abs_delta": 0.0,
+  "exact_match": true
+}
