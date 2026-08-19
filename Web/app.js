@@ -531,6 +531,10 @@ function renderLiquidityPanel(state) {
 
     setText('liq-source', state.source || '--');
 
+    setText('liq-source-status', state.source_status || state.source || '--');
+
+    setText('liq-calc-status', state.calculation_status || '--');
+
     setText('liq-causal', state.causal_state || '--');
 
     setText('liq-last-update', state.last_update ? String(state.last_update).replace('T', ' ').slice(0, 19) : '--');
@@ -1631,7 +1635,15 @@ function initDebugHub() {
 
     if (anomalyToggle) {
 
-        anomalyToggle.addEventListener('change', () => renderDebugFeatures(debugFeatureCache));
+        anomalyToggle.addEventListener('change', () => renderDebugFeatures(debugSnapshotCache ? debugSnapshotCache.features : []));
+
+    }
+
+    const featureFilter = document.getElementById('debug-feature-filter');
+
+    if (featureFilter) {
+
+        featureFilter.addEventListener('input', () => renderDebugFeatures(debugSnapshotCache ? debugSnapshotCache.features : []));
 
     }
 
@@ -1697,9 +1709,9 @@ async function refreshDebugHub() {
 
         loadDebugHealth(),
 
-        loadDebugFeatures(),
+        loadDebugIpcTelemetry(),
 
-        loadDebugIpcTelemetry()
+        loadDebugSnapshot()
 
     ]);
 
@@ -2349,6 +2361,718 @@ function clearIpcConsole() {
 
 
 
+
+// =============================================================================
+// DEBUG 70D FORENSIC CONSOLE — snapshot rendering (backend truth only)
+// =============================================================================
+
+let debugSnapshotCache = null;      // latest full /api/debug/state payload
+let debugSnapshotHistory = [];      // snapshot ids from /api/debug/snapshots
+
+function debugFmt(v, digits = 4) {
+    if (v === null || v === undefined) return '--';
+    if (typeof v === 'number') {
+        if (!isFinite(v)) return String(v);
+        return Number.isInteger(v) ? String(v) : v.toFixed(digits);
+    }
+    return String(v);
+}
+
+function debugTone(status) {
+    // status -> {text, bg, border} for consistent visual rules
+    const s = String(status || '').toUpperCase();
+    if (s.includes('OK') || s === 'PASS' || s === 'VALID' || s === 'READY' || s === 'RUNNING' || s === 'LIVE' || s === 'CONNECTED' || s === 'ENABLED' || s === 'HEALTHY') {
+        return { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', dot: 'bg-emerald-400', icon: 'fa-circle-check' };
+    }
+    if (s.includes('BROKEN') || s.includes('INVALID') || s === 'FAIL' || s === 'BLOCK' || s === 'BLOCKED' || s === 'ERROR' || s === 'REJECT') {
+        return { text: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/30', dot: 'bg-rose-400', icon: 'fa-circle-xmark' };
+    }
+    if (s.includes('DEGRADED') || s === 'WARN' || s === 'STALE' || s === 'WARNING') {
+        return { text: 'text-accentGold', bg: 'bg-amber-500/10', border: 'border-amber-500/30', dot: 'bg-amber-400', icon: 'fa-triangle-exclamation' };
+    }
+    if (s.includes('UNAVAILABLE') || s === 'UNKNOWN' || s === 'DISABLED' || s === 'DISCONNECTED' || s === 'STOPPED' || s === 'EMPTY') {
+        return { text: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/30', dot: 'bg-slate-400', icon: 'fa-circle-question' };
+    }
+    return { text: 'text-slate-300', bg: 'bg-slate-500/15', border: 'border-slate-500/30', dot: 'bg-slate-400', icon: 'fa-circle-info' };
+}
+
+function debugStatusChip(label, status, extraClass) {
+    const t = debugTone(status);
+    return `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${t.bg} ${t.text} ${t.border} ${extraClass || ''}">${label}: ${String(status)}</span>`;
+}
+
+function debugKV(label, value, tone) {
+    const t = debugTone(tone || 'INFO');
+    return `<div class="flex justify-between gap-2 py-0.5"><span class="text-textMuted">${label}</span><span class="${t.text} font-bold">${debugFmt(value)}</span></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// MAIN SNAPSHOT LOADER — consumes /api/debug/state (canonical endpoint)
+// ---------------------------------------------------------------------------
+async function loadDebugSnapshot() {
+    try {
+        const res = await fetch('/api/debug/state');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        debugSnapshotCache = data;
+        renderDebugSnapshot(data);
+        loadDebugSnapshotHistory(true);
+    } catch (err) {
+        console.error('Failed to load debug snapshot', err);
+    }
+}
+
+function renderDebugSnapshot(d) {
+    // correlation / snapshot identity (brief 28)
+    const corrEl = document.getElementById('debug-correlation-id');
+    if (corrEl) corrEl.textContent = d.correlation_id || '--';
+    const snapEl = document.getElementById('debug-snapshot-id');
+    if (snapEl) snapEl.textContent = (d.snapshot_id || '--').substring(0, 22);
+
+    renderDebugRuntime(d.runtime);
+    renderDebugContractBanner(d.contract);
+    renderDebugFeatures(d.features);
+    renderDebugModel(d.model);
+    renderDebugConfidence(d.confidence);
+    renderDebugPolicy(d.policy);
+    renderDebugRisk(d.risk);
+    renderDebugExposure(d.exposure);
+    renderDebugExecution(d.execution);
+    renderDebugPositions(d.positions);
+    renderDebugExit(d.exit);
+    renderDebugLiquidity(d.liquidity);
+    renderDebugNews(d.news);
+    renderDebugWorkers(d.workers);
+    renderDebugDatabase(d.database);
+    renderDebugCaches(d.caches);
+    renderDebugChart(d.chart, d.sse);
+    renderDebugErrors(d.errors);
+    debugSnapshotForTree = d;
+    renderDebugJsonTree(d, false);
+}
+
+
+function renderDebugRuntime(rt) {
+    const map = {
+        'dbg-mode': rt && rt.mode, 'dbg-symbol': rt && rt.symbol,
+        'dbg-timeframe': rt && rt.timeframe, 'dbg-runtime': rt && rt.runtime,
+        'dbg-inference': rt && rt.inference, 'dbg-warmup': rt && rt.warmup,
+        'dbg-model-id': rt && rt.model_id, 'dbg-model-version': rt && rt.model_version,
+        'dbg-schema': rt && rt.schema_id, 'dbg-dimension': rt && rt.dimension,
+        'dbg-schema-hash': rt && rt.schema_hash, 'dbg-algo-version': rt && rt.algorithm_version,
+        'dbg-feature-update': rt && rt.last_feature_update, 'dbg-feature-latency': rt && rt.feature_latency_ms ? (rt.feature_latency_ms).toFixed(2) + ' ms' : '--'
+    };
+    for (const [id, val] of Object.entries(map)) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val === null || val === undefined ? '--' : String(val);
+    }
+    // runtime / inference colored
+    const rtEl = document.getElementById('dbg-runtime');
+    if (rtEl && rt) { const t = debugTone(rt.runtime); rtEl.className = 'text-sm font-black font-mono ' + t.text; }
+    const infEl = document.getElementById('dbg-inference');
+    if (infEl && rt) { const t = debugTone(rt.inference); infEl.className = 'text-sm font-black font-mono ' + t.text; }
+    const dimEl = document.getElementById('dbg-dimension');
+    if (dimEl && rt && rt.dimension) {
+        const t = (rt.dimension === 70) ? debugTone('PASS') : debugTone('WARN');
+        dimEl.className = 'text-sm font-black font-mono ' + t.text;
+    }
+    // subsystem flags
+    const flagsEl = document.getElementById('debug-subsystem-flags');
+    if (flagsEl && rt && rt.subsystems) {
+        const labels = {
+            broker_connected: 'Broker', tick_stream: 'Tick Stream', bar_stream: 'Bar Stream',
+            news: 'News', liquidity: 'Liquidity', shadow: 'Shadow', shadow70: 'Shadow70',
+            research: 'Research', training: 'Training', accounting: 'Accounting', telegram: 'Telegram'
+        };
+        flagsEl.innerHTML = Object.entries(labels).map(([k, label]) => {
+            const v = rt.subsystems[k];
+            const tone = debugTone(v === true ? 'ENABLED' : String(v));
+            return `<div class="bg-darkBg/40 border ${tone.border} rounded-lg px-2 py-1 text-center"><div class="text-[8px] uppercase tracking-widest text-textMuted">${label}</div><div class="text-[10px] font-black font-mono ${tone.text}">${v === true ? 'ON' : v === false ? 'OFF' : String(v)}</div></div>`;
+        }).join('');
+    }
+}
+
+function renderDebugContractBanner(ct) {
+    const banner = document.getElementById('debug-contract-banner');
+    if (!banner) return;
+    if (!ct || !ct.status) { banner.classList.add('hidden'); return; }
+    const broken = String(ct.status).includes('BROKEN') || String(ct.model_status || '').includes('INVALID');
+    const tone = broken ? debugTone('BROKEN') : debugTone('PASS');
+    const dimOk = ct.dimension_match ? '' : ` | EXPECTED DIM ${ct.expected_dimension} vs ACTUAL ${debugFmt(ct.actual_dimension)}`;
+    const clsOk = ct.classes_match ? '' : ` | EXPECTED CLASSES ${ct.expected_classes} vs ACTUAL ${debugFmt(ct.actual_classes)}`;
+    const vecOk = ct.vector_match ? '' : ` | LIVE VECTOR ${debugFmt(ct.live_vector_len)} != EXPECTED ${debugFmt(ct.expected_dimension)}`;
+    banner.className = `rounded-xl border ${tone.border} ${tone.bg} px-4 py-3 text-xs font-mono ${tone.text}`;
+    banner.innerHTML = `<i class="fa-solid ${broken ? 'fa-triangle-exclamation' : 'fa-circle-check'} mr-2"></i>
+        <b>${ct.status}</b> — schema ${debugFmt(ct.actual_schema_id)} dim ${debugFmt(ct.actual_dimension)}${dimOk}${clsOk}${vecOk}
+        <span class="opacity-60">| model: ${ct.model_status}</span>`;
+    banner.classList.remove('hidden');
+}
+
+function renderDebugFeatures(feats) {
+    const tbody = document.getElementById('debug-features-table');
+    if (!tbody) return;
+    const rows = (feats && feats.rows) || [];
+    const health = (feats && feats.health) || {};
+    const badges = {
+        'TOTAL': health.total, 'VALID': health.valid, 'INVALID': health.invalid,
+        'FALLBACK': health.fallback, 'UNAVAIL': health.unavailable, 'STALE': health.stale
+    };
+    const badgeEls = document.querySelectorAll('#debug-feature-health-badges span');
+    badgeEls.forEach((el, i) => {
+        const label = el.textContent.split(' ')[0];
+        el.textContent = `${label} ${badges[label] ?? '--'}`;
+    });
+    const staleEl = document.getElementById('debug-feature-stale');
+    const age = feats && feats.timestamp ? ((Date.now() - new Date(feats.timestamp).getTime()) / 1000).toFixed(1) : null;
+    if (staleEl) staleEl.textContent = age === null ? 'AGE --' : `AGE ${age}s`;
+
+    const issuesOnly = document.getElementById('debug-feature-anomalies-only');
+    const filterEl = document.getElementById('debug-feature-filter');
+    let list = rows.slice();
+    if (issuesOnly && issuesOnly.checked) list = list.filter(r => String(r.status) !== 'VALID');
+    if (filterEl && filterEl.value.trim()) {
+        const q = filterEl.value.trim().toLowerCase();
+        list = list.filter(r => r.name.toLowerCase().includes(q) || r.family.toLowerCase().includes(q) || String(r.index).includes(q));
+    }
+    if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="10" class="py-6 text-center text-textMuted italic font-sans">No features match the current filter.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = list.map(f => {
+        const tone = debugTone(f.status);
+        const cls = tone.text;
+        const familyColor = f.family === 'base' ? 'text-gray-300' : f.family === 'news' ? 'text-accentGold' : 'text-accentCyan';
+        const val = typeof f.final === 'number' ? f.final.toFixed(6) : f.final;
+        return `<tr class="hover:bg-darkBg/40 transition cursor-pointer" onclick="showDebugFeatureDetail(${f.index})">
+            <td class="py-1.5 px-3 text-textMuted">${f.index}</td>
+            <td class="py-1.5 px-3 text-gray-200">${f.name}</td>
+            <td class="py-1.5 px-3 ${familyColor}">${f.family}</td>
+            <td class="py-1.5 px-3 text-right font-mono">${debugFmt(f.raw)}</td>
+            <td class="py-1.5 px-3 text-right font-mono">${debugFmt(f.normalized)}</td>
+            <td class="py-1.5 px-3 text-right font-mono">${debugFmt(f.clipped)}</td>
+            <td class="py-1.5 px-3 text-right font-black ${cls}">${val}</td>
+            <td class="py-1.5 px-3"><span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${tone.bg} ${tone.text} ${tone.border}">${f.status}</span></td>
+            <td class="py-1.5 px-3 text-textMuted">${debugFmt(f.source)}</td>
+            <td class="py-1.5 px-3 text-textMuted">${debugFmt(f.causality)}</td>
+        </tr>`;
+    }).join('');
+}
+
+function showDebugFeatureDetail(index) {
+    const d = debugSnapshotCache;
+    if (!d || !d.features || !d.features.rows) return;
+    const f = d.features.rows.find(r => r.index === index);
+    if (!f) return;
+    const panel = document.getElementById('debug-feature-detail');
+    const liq = d.liquidity && d.liquidity.report && d.liquidity.report.features;
+    const poolInfo = (f.family === 'liquidity' && liq && liq[f.name]) ? liq[f.name] : null;
+    panel.classList.remove('hidden');
+    let extra = '';
+    if (f.family === 'liquidity') {
+        extra = `<div class="mt-3 pt-2 border-t border-borderClr/60">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Liquidity Pool Context</div>
+            ${poolInfo && typeof poolInfo === 'object'
+                ? Object.entries(poolInfo).map(([k, v]) => `<div class="flex justify-between py-0.5"><span class="text-textMuted">${k}</span><span class="text-gray-300">${debugFmt(v)}</span></div>`).join('')
+                : 'Pool detail only available in the Liquidity Intelligence section.'}
+        </div>`;
+    }
+    panel.innerHTML = `<div class="flex justify-between items-center border-b border-borderClr pb-3 mb-3">
+        <h3 class="text-md font-bold text-white"><i class="fa-solid fa-magnifying-glass mr-2 text-accentCyan"></i>FEATURE DETAIL — ${f.index} ${f.name}</h3>
+        <button onclick="document.getElementById('debug-feature-detail').classList.add('hidden')" class="text-textMuted hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs font-mono">
+        ${debugKV('Feature Index', f.index)}${debugKV('Feature Name', f.name)}${debugKV('Family', f.family)}
+        ${debugKV('Current Value', f.final, f.status)}${debugKV('Raw Value', f.raw)}${debugKV('Normalization', f.normalized)}
+        ${debugKV('Clip Range', f.clipped)}${debugKV('Status', f.status, f.status)}${debugKV('Source', f.source)}
+        ${debugKV('Source Timestamp', f.timestamp)}${debugKV('Causality', f.causality)}
+    </div>${extra}`;
+}
+
+
+function renderDebugModel(m) {
+    const body = document.getElementById('debug-model-body');
+    if (!body) return;
+    if (!m || !m.available) {
+        body.innerHTML = `<div class="text-textMuted italic font-sans">${(m && m.reason) || 'Model state unavailable.'}</div>`;
+        return;
+    }
+    const tone = debugTone(m.status);
+    const probs = m.probabilities || {};
+    const input = m.input_tensor || [];
+    const inputPreview = input.length ? '[' + input.slice(0, 12).map(v => Number(v).toFixed(4)).join(', ') + (input.length > 12 ? ', ...' : '') + ']' : '--';
+    let html = `
+        <div class="flex flex-wrap gap-2 mb-2">
+            ${debugStatusChip('MODEL OUTPUT', m.status)}
+            ${m.num_classes ? debugStatusChip('CLASSES', m.num_classes, m.num_classes === 4 ? '' : 'bg-rose-500/20 text-rose-400') : ''}
+            ${m.schema_id ? debugStatusChip('SCHEMA', m.schema_id) : ''}
+        </div>
+        ${debugKV('Model ID', m.model_id)}${debugKV('Model Version', m.model_version)}
+        ${debugKV('Schema ID', m.schema_id)}${debugKV('Dimension', m.dimension)}
+        ${debugKV('Schema Hash', m.schema_hash)}${debugKV('Scaler Hash', m.scaler_hash)}
+        ${debugKV('Scaler Ready', m.scaler_ready)}${debugKV('Input Shape', m.input_tensor_shape ? JSON.stringify(m.input_tensor_shape) : '--')}
+        ${debugKV('Input Dtype', m.input_dtype)}${debugKV('Device', m.device)}
+        ${debugKV('Inference Latency', m.inference_latency_ms !== null && m.inference_latency_ms !== undefined ? Number(m.inference_latency_ms).toFixed(2) + ' ms' : '--')}
+        <div class="mt-2 pt-2 border-t border-borderClr/60">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Feature Tensor (post-scaler, exact live input)</div>
+            <div class="text-[10px] text-gray-400 break-all">${inputPreview}</div>
+            <div class="text-[9px] text-textMuted mt-1">Full ${input.length} values expandable in the JSON tree (DEBUG SNAPSHOT JSON).</div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-borderClr/60">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Probabilities</div>
+            ${debugKV('NO_TRADE', probs.NO_TRADE, 'INFO')}${debugKV('BUY_MARKET', probs.BUY_MARKET, 'INFO')}${debugKV('SELL_MARKET', probs.SELL_MARKET, 'INFO')}${debugKV('WAIT', probs.WAIT, 'INFO')}
+            ${debugKV('Predicted Class', m.predicted_class === null || m.predicted_class === undefined ? '--' : ['NO_TRADE','BUY_MARKET','SELL_MARKET','WAIT'][m.predicted_class], 'INFO')}
+            ${debugKV('Confidence (max prob)', m.confidence)}
+        </div>
+    `;
+    body.innerHTML = html;
+}
+
+function renderDebugConfidence(c) {
+    const body = document.getElementById('debug-confidence-body');
+    if (!body) return;
+    if (!c || !c.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(c && c.reason) || 'No confidence state.'}</div>`; return; }
+    const decision = c.decision;
+    const decTone = decision === 'PASS' ? 'PASS' : (decision === 'REJECT' ? 'FAIL' : 'INFO');
+    let html = `<div class="flex flex-wrap gap-2 mb-2">${debugStatusChip('DECISION', decision || 'N/A', decTone)}</div>`;
+    html += c.stages.map(s => {
+        const val = s.value;
+        const shown = val === null || val === undefined ? '--' : (typeof val === 'number' ? val.toFixed(4) : debugFmt(val));
+        const note = s.name === 'FINAL' ? ' (proposal)' : (s.name === 'RAW_MODEL' ? ' (max prob)' : '');
+        return `<div class="flex justify-between py-0.5"><span class="text-textMuted">${s.name}${note}</span><span class="text-gray-300 font-bold">${shown}</span></div>`;
+    }).join('');
+    html += `
+        ${debugKV('Required Threshold', c.required_threshold)}
+        ${debugKV('Final Action', c.final_action)}
+        <div class="mt-2 pt-2 border-t border-borderClr/60 text-[10px] text-textMuted">
+            Calibration is reported only when the runtime applies one. Stages not present are never fabricated.
+        </div>`;
+    body.innerHTML = html;
+}
+
+function renderDebugPolicy(p) {
+    const body = document.getElementById('debug-policy-body');
+    if (!body) return;
+    if (!p || !p.available || !p.gates) { body.innerHTML = `<div class="text-textMuted italic font-sans">No policy trace.</div>`; return; }
+    const tone = debugTone(p.decision);
+    let html = `<div class="flex flex-wrap gap-2 mb-2">
+        ${debugStatusChip('DECISION', p.decision || 'N/A', p.decision)}
+        ${debugStatusChip('STAGE', p.decision_stage || '-')}
+        ${p.blocked_by ? debugStatusChip('BLOCKED BY', p.blocked_by, 'FAIL') : ''}
+    </div>`;
+    html += p.gates.map(g => {
+        const t = debugTone(g.status);
+        return `<div class="flex items-center justify-between py-1 border-b border-borderClr/20">
+            <span class="text-textMuted font-bold w-24">${g.name}</span>
+            <span class="text-gray-300 w-40 truncate">${debugFmt(g.actual)} / ${debugFmt(g.threshold)}</span>
+            <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${t.bg} ${t.text} ${t.border}">${g.status}</span>
+        </div>
+        <div class="text-[9px] text-textMuted pb-1">${(g.reason || '').substring(0, 160)}</div>`;
+    }).join('');
+    body.innerHTML = html;
+}
+
+function renderDebugRisk(r) {
+    const body = document.getElementById('debug-risk-body');
+    if (!body) return;
+    if (!r || !r.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">Risk engine unavailable.</div>`; return; }
+    const acc = r.account || {};
+    let html = `<div class="flex flex-wrap gap-2 mb-2">
+        ${debugStatusChip('DECISION', r.decision, r.decision)}
+        ${r.kill_switch_active ? debugStatusChip('KILL SWITCH', 'ACTIVE', 'FAIL') : ''}
+        ${r.survival_mode ? debugStatusChip('SURVIVAL MODE', 'ACTIVE', 'WARN') : ''}
+    </div>`;
+    html += `
+        ${debugKV('Balance', acc.balance)}${debugKV('Equity', acc.equity)}${debugKV('Free Margin', acc.margin_free)}
+        ${debugKV('Margin', acc.margin)}${debugKV('Margin Level', acc.margin_level)}${debugKV('Drawdown %', acc.drawdown_pct)}
+        ${debugKV('Risk %', r.risk_per_trade_pct)}${debugKV('Max Lots', r.max_allowed_lots)}${debugKV('Hard Max Lots', r.hard_max_lots)}
+        ${debugKV('Max Positions', r.max_concurrent_positions)}${debugKV('Max Spread', r.max_spread_points)}
+        ${debugKV('Min R:R', r.min_risk_reward_ratio)}${debugKV('Max DD %', r.max_account_drawdown_pct)}
+        <div class="mt-2 pt-2 border-t border-borderClr/60">${debugKV('Reason', r.reason)}</div>`;
+    body.innerHTML = html;
+}
+
+
+function renderDebugExposure(x) {
+    const body = document.getElementById('debug-exposure-body');
+    if (!body) return;
+    if (!x || !x.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">Exposure unavailable.</div>`; return; }
+    const int = x.internal || {}, brk = x.broker || {};
+    let html = `<div class="grid grid-cols-2 gap-3">
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">INTERNAL STATE</div>
+            ${debugKV('Positions', int.positions)}${debugKV('Pending Orders', int.pendings)}${debugKV('Total', int.total)}
+            ${debugKV('Max Total Exposure', int.max_total_exposure)}
+        </div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">BROKER TRUTH</div>
+            ${debugKV('Positions', brk.positions)}${debugKV('Pending Orders', brk.pendings)}
+        </div>
+    </div>`;
+    const mismatch = x.mismatch;
+    html += `<div class="mt-2">
+        ${debugKV('Last Reconciliation', x.last_reconciliation)}
+        ${debugKV('Reconciliation Age (s)', x.reconciliation_age_sec)}
+        ${debugKV('Mismatch', mismatch === null ? '--' : (mismatch ? 'YES' : 'NO'), mismatch ? 'FAIL' : 'PASS')}
+    </div>`;
+    body.innerHTML = html;
+}
+
+function renderDebugExecution(e) {
+    const body = document.getElementById('debug-execution-body');
+    if (!body) return;
+    if (!e || !e.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">Execution unavailable.</div>`; return; }
+    const conn = e.connection || {};
+    let html = '';
+    html += `${debugKV('Adapter', e.adapter)}${debugKV('Global State', e.global_state, e.global_state)}${debugKV('Consecutive Failures', e.consecutive_failures)}
+        ${debugKV('Processed Orders', e.processed_orders_count)}`;
+    if (conn) {
+        html += `<div class="mt-2 pt-2 border-t border-borderClr/60"><div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Broker Connection</div>`;
+        Object.entries(conn).forEach(([k, v]) => { if (typeof v !== 'object') html += debugKV(k, v); });
+        html += `</div>`;
+    }
+    body.innerHTML = html;
+}
+
+function renderDebugPositions(ps) {
+    const body = document.getElementById('debug-positions-body');
+    if (!body) return;
+    if (!ps || !ps.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(ps && ps.reason) || 'No position state.'}</div>`; return; }
+    if (!ps.positions || !ps.positions.length) { body.innerHTML = `<div class="text-textMuted italic font-sans">No open positions.</div>`; return; }
+    let html = '';
+    ps.positions.forEach(p => {
+        const dir = p.direction;
+        const dirTone = String(dir || '').toUpperCase().includes('SELL') ? 'FAIL' : 'PASS';
+        html += `<div class="border border-borderClr/40 rounded-lg p-2 mb-2 bg-darkBg/30">
+            <div class="flex flex-wrap gap-2 mb-1">
+                ${debugStatusChip('#' + p.ticket, String(dir || '').toUpperCase(), dirTone)}
+                ${p.pnl !== null && p.pnl !== undefined ? debugStatusChip('PnL', Number(p.pnl).toFixed(2), p.pnl >= 0 ? 'PASS' : 'FAIL') : ''}
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px]">
+                ${debugKV('Lots', p.lots)}${debugKV('Entry', p.entry)}${debugKV('Current', p.current)}
+                ${debugKV('SL', p.sl)}${debugKV('TP', p.tp)}${debugKV('MFE', p.mfe)}
+                ${debugKV('MAE', p.mae)}${debugKV('Peak PnL', p.peak_pnl)}${debugKV('Hold (s)', p.hold_seconds)}
+                ${debugKV('Breakeven Armed', p.breakeven_armed)}${debugKV('Trailing Armed', p.trailing_armed)}
+            </div>
+        </div>`;
+    });
+    body.innerHTML = html;
+}
+
+function renderDebugExit(ex) {
+    const body = document.getElementById('debug-exit-body');
+    if (!body) return;
+    if (!ex || !ex.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(ex && ex.reason) || 'No exit forensics.'}</div>`; return; }
+    if (!ex.positions || !ex.positions.length) { body.innerHTML = `<div class="text-textMuted italic font-sans">No open positions to exit-forensic.</div>`; return; }
+    let html = '';
+    ex.positions.forEach(p => {
+        html += `<div class="border border-borderClr/40 rounded-lg p-2 mb-2 bg-darkBg/30">
+            <div class="flex flex-wrap gap-2 mb-1">
+                ${debugStatusChip('#' + p.ticket, String(p.direction || '').toUpperCase())}
+                ${debugStatusChip('AI STATE', p.ai_state || 'IDLE')}
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px]">
+                ${debugKV('Regime', p.regime)}${debugKV('News State', p.news_state)}${debugKV('MFE', p.mfe)}
+                ${debugKV('MAE', p.mae)}${debugKV('Hold (s)', p.hold_seconds)}${debugKV('Strategy State', p.strategy_state)}
+            </div>
+            ${(p.exit_candidates && p.exit_candidates.length) ? `<div class="mt-1 pt-1 border-t border-borderClr/40 text-[10px]">
+                <div class="text-[10px] uppercase tracking-widest text-textMuted mb-0.5">Exit Candidates</div>
+                ${p.exit_candidates.map(c => `<div class="flex justify-between py-0.5"><span class="text-gray-300">${c.reason}</span><span class="text-textMuted">${c.status}</span></div>`).join('')}
+            </div>` : ''}
+        </div>`;
+    });
+    body.innerHTML = html;
+}
+
+
+function renderDebugLiquidity(lq) {
+    const body = document.getElementById('debug-liquidity-body');
+    if (!body) return;
+    if (!lq || !lq.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(lq && lq.reason) || 'Liquidity unavailable.'}</div>`; return; }
+    const rep = lq.report || {};
+    const feats = (rep.features && typeof rep.features === 'object') ? rep.features : {};
+    const pools = rep.pools || [];
+    let html = `<div class="flex flex-wrap gap-2 mb-2">
+        ${debugStatusChip('STATUS', rep.status || 'UNAVAILABLE', rep.status)}
+        ${debugStatusChip('CAUSAL', rep.causal_state || 'UNAVAILABLE', rep.causal_state)}
+        ${debugStatusChip('SOURCE', rep.source || 'UNAVAILABLE')}
+        ${debugStatusChip('SCHEMA', (rep.schema || {}).id || '--')}
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2 text-[10px]">
+        ${['bsl_distance_atr','ssl_distance_atr','eqh_strength','eql_strength','htf_liquidity_score'].map(n => `<div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">${n}</div><div class="text-accentCyan font-black">${debugFmt(feats[n])}</div></div>`).join('')}
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2 text-[10px]">
+        ${['internal_liquidity_distance','external_liquidity_distance','liquidity_confluence','liquidity_sweep_state','post_sweep_displacement'].map(n => `<div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">${n}</div><div class="text-accentCyan font-black">${debugFmt(feats[n])}</div></div>`).join('')}
+    </div>`;
+    if (pools.length) {
+        html += `<div class="mt-2 pt-2 border-t border-borderClr/60">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Active Pools (BSL/SSL/EQH/EQL — why each distance is what it is)</div>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 text-[10px]">
+                ${pools.map(p => `<div class="bg-darkBg/40 border ${debugTone(p.state).border} rounded-lg p-2">
+                    <div class="flex justify-between"><span class="text-accentCyan font-black">${debugFmt(p.side)}</span><span class="${debugTone(p.state).text} font-bold">${debugFmt(p.state)}</span></div>
+                    <div class="text-textMuted">${debugFmt(p.source)} @ ${debugFmt(p.price, 2)}</div>
+                    <div class="text-textMuted">Confr: ${debugFmt(p.confirmed_at)}</div>
+                </div>`).join('')}
+            </div>
+        </div>`;
+    }
+    html += `<div class="mt-2 text-[10px] text-textMuted">Last update ${debugFmt(rep.last_update)} · age ${debugFmt(rep.age_sec)}s · latency ${debugFmt(rep.latency_ms)}ms · algo ${debugFmt(rep.algorithm_version)}</div>`;
+    body.innerHTML = html;
+}
+
+function renderDebugNews(n) {
+    const body = document.getElementById('debug-news-body');
+    if (!body) return;
+    if (!n || !n.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">News unavailable.</div>`; return; }
+    let html = `<div class="flex flex-wrap gap-2 mb-2">
+        ${debugStatusChip('ENABLED', n.enabled ? 'YES' : 'NO', n.enabled ? 'PASS' : 'INFO')}
+        ${debugStatusChip('STATE', n.state || 'UNAVAILABLE', n.state)}
+        ${n.stale ? debugStatusChip('FRESHNESS', 'STALE', 'WARN') : ''}
+    </div>`;
+    html += `
+        ${debugKV('Available', n.available)}${debugKV('Freshness', n.freshness)}${debugKV('Bullish', n.bullish)}
+        ${debugKV('Bearish', n.bearish)}${debugKV('Mixed/Conflict', n.mixed)}${debugKV('High Impact', n.high_impact)}
+        ${debugKV('XAUUSD Relevance', n.xauusd_relevance)}${debugKV('USD Relevance', n.usd_relevance)}
+        ${debugKV('Consensus', n.consensus)}${debugKV('Confidence', n.confidence)}
+        ${debugKV('Context Timestamp', n.timestamp)}`;
+    if (n.active_events && n.active_events.length) {
+        html += `<div class="mt-2 pt-2 border-t border-borderClr/60"><div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Active Events</div>`;
+        html += n.active_events.map(ev => `<div class="text-[10px] text-amber-300">• ${debugFmt(ev)}</div>`).join('');
+        html += `</div>`;
+    }
+    if (n.model_dimensions && n.model_dimensions.length) {
+        html += `<div class="mt-2 pt-2 border-t border-borderClr/60">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">News Dimensions Active in Model (indices 50..59)</div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-1 text-[10px] text-accentGold">${n.model_dimensions.map(x => `<div>${x.index} ${x.name}</div>`).join('')}</div>
+        </div>`;
+    }
+    body.innerHTML = html;
+}
+
+
+function renderDebugWorkers(w) {
+    const body = document.getElementById('debug-workers-body');
+    if (!body) return;
+    if (!w || !w.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">Workers unavailable.</div>`; return; }
+    const wk = w.workers || {};
+    const labels = { accounting: 'Accounting', history_sync: 'History Sync', intelligence: 'Intelligence', research: 'Research', training: 'Training', shadow: 'Shadow', shadow70: 'Shadow70', news: 'News', telegram: 'Telegram' };
+    let html = '';
+    Object.entries(labels).forEach(([key, label]) => {
+        const worker = wk[key] || {};
+        const state = worker.state || 'UNAVAILABLE';
+        const tone = debugTone(state);
+        // degraded classification: RUNNING but no recent useful work
+        let degraded = false;
+        if (state === 'RUNNING') {
+            const ls = worker.last_success;
+            if (ls) {
+                const ageSec = (Date.now() - new Date(ls).getTime()) / 1000;
+                if (ageSec > 600) degraded = true; // 10 min
+            }
+        }
+        const dispState = degraded ? 'DEGRADED' : state;
+        const dispTone = degraded ? debugTone('DEGRADED') : tone;
+        html += `<div class="border border-borderClr/40 rounded-lg p-2 mb-1 bg-darkBg/30">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-200 font-bold">${label}</span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${dispTone.bg} ${dispTone.text} ${dispTone.border}">${dispState}${degraded ? ' (idle>10m)' : ''}</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px] mt-1">
+                ${debugKV('Cycle', worker.cycle)}${debugKV('Last Start', worker.last_start)}${debugKV('Last Success', worker.last_success)}
+                ${debugKV('Duration ms', worker.duration_ms)}${debugKV('Queue', worker.queue)}${debugKV('Last Error', worker.last_error)}
+            </div>
+        </div>`;
+    });
+    body.innerHTML = html;
+}
+
+function renderDebugDatabase(db) {
+    const body = document.getElementById('debug-database-body');
+    if (!body) return;
+    if (!db || !db.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">Database state unavailable.</div>`; return; }
+    const dbs = db.databases || {};
+    const labels = { audit: 'audit.db', news: 'news.db', candle_intel: 'candle_intel.db', research: 'research storage' };
+    let html = '';
+    Object.entries(labels).forEach(([key, label]) => {
+        const d = dbs[key] || {};
+        const tone = debugTone(d.health);
+        html += `<div class="border border-borderClr/40 rounded-lg p-2 mb-1 bg-darkBg/30">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-200 font-bold">${label}</span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${tone.bg} ${tone.text} ${tone.border}">${d.health || 'UNAVAILABLE'}</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px] mt-1">
+                ${debugKV('Path', d.path)}${debugKV('Size', d.size_bytes !== null && d.size_bytes !== undefined ? (d.size_bytes / 1024).toFixed(1) + ' KB' : '--')}
+                ${debugKV('WAL', d.wal_bytes !== null && d.wal_bytes !== undefined ? (d.wal_bytes / 1024).toFixed(1) + ' KB' : '--')}
+                ${debugKV('Reason', d.reason)}
+            </div>
+        </div>`;
+    });
+    body.innerHTML = html;
+}
+
+function renderDebugCaches(ca) {
+    const body = document.getElementById('debug-caches-body');
+    if (!body) return;
+    if (!ca || !ca.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">Cache state unavailable.</div>`; return; }
+    const caches = ca.caches || {};
+    const labels = { model: 'Model', feature: 'Feature', liquidity: 'Liquidity', news: 'News', exposure: 'Exposure', chart: 'Chart', research: 'Research' };
+    let html = '';
+    Object.entries(labels).forEach(([key, label]) => {
+        const c = caches[key] || {};
+        const tone = debugTone(c.status);
+        html += `<div class="border border-borderClr/40 rounded-lg p-2 mb-1 bg-darkBg/30">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-200 font-bold">${label}</span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${tone.bg} ${tone.text} ${tone.border}">${c.status || '--'}</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px] mt-1">
+                ${debugKV('Size', c.size)}${debugKV('Age s', c.age_sec !== null && c.age_sec !== undefined ? c.age_sec.toFixed(1) : '--')}
+                ${debugKV('TTL', c.ttl)}${debugKV('Last Update', c.last_update)}
+            </div>
+        </div>`;
+    });
+    body.innerHTML = html;
+}
+
+function renderDebugChart(ch, sse) {
+    const body = document.getElementById('debug-chart-body');
+    if (!body) return;
+    let html = '';
+    if (ch && ch.available) {
+        html += `<div class="border border-borderClr/40 rounded-lg p-2 mb-1 bg-darkBg/30">
+            <div class="text-gray-200 font-bold mb-1">Chart</div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px]">
+                ${debugKV('Data Source', ch.data_source)}${debugKV('Bars Received', ch.bars_received)}
+                ${debugKV('First TS', ch.first_timestamp)}${debugKV('Last TS', ch.last_timestamp)}
+                ${debugKV('Timeframe', ch.timeframe)}
+            </div>
+            <div class="grid grid-cols-3 gap-1 text-[10px] mt-1">
+                ${debugKV('Liquidity OL', ch.overlays ? ch.overlays.liquidity : false, ch.overlays && ch.overlays.liquidity ? 'PASS' : 'INFO')}
+                ${debugKV('News OL', ch.overlays ? ch.overlays.news : false, ch.overlays && ch.overlays.news ? 'PASS' : 'INFO')}
+                ${debugKV('SMC OL', ch.overlays ? ch.overlays.smc : false, ch.overlays && ch.overlays.smc ? 'PASS' : 'INFO')}
+            </div>
+        </div>`;
+    }
+    if (sse) {
+        const tone = debugTone(sse.connection);
+        html += `<div class="border border-borderClr/40 rounded-lg p-2 mb-1 bg-darkBg/30">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-200 font-bold">SSE</span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${tone.bg} ${tone.text} ${tone.border}">${sse.connection || 'UNKNOWN'}</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px] mt-1">
+                ${debugKV('Connected At', sse.connected_at)}${debugKV('Last Event', sse.last_event)}
+                ${debugKV('Event Count', sse.event_count)}${debugKV('Last Latency ms', sse.last_latency_ms)}
+                ${debugKV('Serialization Errors', sse.serialization_errors, sse.serialization_errors > 0 ? 'FAIL' : 'PASS')}
+                ${debugKV('Reconnects', sse.reconnect_count)}
+            </div>
+            ${sse.serialization_error ? `<div class="mt-1 text-[10px] text-rose-400">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i>SSE_SERIALIZATION_ERROR — ${debugFmt(sse.serialization_error.correlation_id)} :: ${debugFmt((sse.serialization_error.failed_fields || []).join(', '))}
+            </div>` : ''}
+        </div>`;
+    }
+    body.innerHTML = html || '<div class="text-textMuted italic font-sans">No chart/SSE state.</div>';
+}
+
+function renderDebugErrors(er) {
+    const body = document.getElementById('debug-errors-body');
+    if (!body) return;
+    const errors = (er && er.errors) || [];
+    if (!errors.length) { body.classList.add('hidden'); return; }
+    body.classList.remove('hidden');
+    body.innerHTML = `<div class="text-[10px] uppercase tracking-widest text-rose-400 mb-1">NO HIDDEN ERRORS — backend failures surfaced</div>` +
+        errors.map(e => `<div class="py-1 border-b border-rose-500/20">
+            ${debugFmt(e.timestamp)} · ${e.component} · ${e.endpoint} · ${e.error_code} · corr ${debugFmt(e.correlation_id)}
+            <div class="text-[9px] text-textMuted">${debugFmt(e.exception)}</div>
+        </div>`).join('');
+}
+
+
+let debugSnapshotForTree = null;
+
+async function loadDebugSnapshotHistory(preserveSelection) {
+    try {
+        const res = await fetch('/api/debug/snapshots');
+        const data = await res.json();
+        debugSnapshotHistory = (data.snapshots || []).slice().reverse(); // newest first
+        const selA = document.getElementById('debug-snapshot-compare-a');
+        const selB = document.getElementById('debug-snapshot-compare-b');
+        if (!selA || !selB) return;
+        const opts = debugSnapshotHistory.map(s => `<option value="${s.snapshot_id}">${(s.snapshot_id || '').substring(0, 18)} ${(s.timestamp || '').substring(11, 19)}</option>`).join('');
+        if (!preserveSelection || selA.options.length === 0) {
+            selA.innerHTML = opts;
+            selB.innerHTML = opts;
+            if (debugSnapshotHistory.length >= 2) {
+                selA.selectedIndex = Math.min(1, debugSnapshotHistory.length - 1);
+                selB.selectedIndex = 0;
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load snapshot history', err);
+    }
+}
+
+async function compareDebugSnapshots() {
+    const body = document.getElementById('debug-compare-body');
+    if (!body) return;
+    const a = document.getElementById('debug-snapshot-compare-a').value;
+    const b = document.getElementById('debug-snapshot-compare-b').value;
+    if (!a || !b || a === b) { body.innerHTML = '<div class="text-accentGold text-[10px]">Select two different snapshots.</div>'; return; }
+    try {
+        const res = await fetch(`/api/debug/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        const d = await res.json();
+        const diffs = d.feature_diffs || [];
+        const html = [
+            `<div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">FEATURE DIFF — ${(d.a_timestamp || '').substring(11, 19)} → ${(d.b_timestamp || '').substring(11, 19)} (${diffs.length} changed)</div>`,
+            ...diffs.slice(0, 40).map(f => {
+                const deltaTone = f.delta >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                return `<div class="flex justify-between text-[10px] py-0.5 border-b border-borderClr/20">
+                    <span class="text-textMuted w-10">${f.index}</span><span class="text-gray-300 w-40 truncate">${f.name}</span>
+                    <span class="text-gray-400">${debugFmt(f.t0)} → ${debugFmt(f.t1)}</span>
+                    <span class="${deltaTone} font-black">Δ ${f.delta >= 0 ? '+' : ''}${debugFmt(f.delta)}</span>
+                </div>`;
+            }).join(''),
+            `<div class="mt-2 pt-2 border-t border-borderClr/40 text-[10px] text-textMuted">Model/Confidence/Policy/Risk changes: see JSON tree or use the single-snapshot panels.</div>`
+        ].join('');
+        body.innerHTML = html;
+    } catch (err) {
+        body.innerHTML = `<div class="text-rose-400 text-[10px]">Compare failed: ${err.message}</div>`;
+    }
+}
+
+function copyDebugSnapshot() {
+    if (!debugSnapshotCache) return;
+    navigator.clipboard.writeText(JSON.stringify(debugSnapshotCache, null, 2)).then(() => {
+        const el = document.getElementById('debug-compare-body');
+        if (el) el.innerHTML = '<div class="text-emerald-400 text-[10px]">Snapshot copied to clipboard.</div>';
+    }).catch(() => alert('Clipboard unavailable — use Download instead.'));
+}
+
+function downloadDebugSnapshot() {
+    if (!debugSnapshotCache) return;
+    const blob = new Blob([JSON.stringify(debugSnapshotCache, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${debugSnapshotCache.snapshot_id || 'debug'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function toggleDebugJsonTree() {
+    const tree = document.getElementById('debug-json-tree');
+    if (!tree) return;
+    tree.classList.toggle('hidden');
+    if (!tree.classList.contains('hidden')) renderDebugJsonTree(debugSnapshotCache, true);
+}
+
+function renderDebugJsonTree(d, force) {
+    const tree = document.getElementById('debug-json-tree');
+    if (!tree) return;
+    if (tree.classList.contains('hidden') && !force) return;
+    tree.textContent = d ? JSON.stringify(d, null, 2) : 'No snapshot captured yet.';
+}
+
 // Server-Sent Events (SSE) Stream Subscriber
 
 // HARDENED (LiveUiState.2): typed events (`state` full snapshot / `tick`
@@ -2980,6 +3704,20 @@ function handleIncomingLiveTick(payload, opts) {
         setTxt('model-schema', model.feature_schema_id || '—');
 
         setTxt('model-scaler', model.scaler_ready ? 'READY' : 'NOT READY');
+
+        // AI Hub integrity verdict (backend-decided; the UI never derives
+        // model health locally from a file path — BUG-110 discipline).
+        NX.api.get('/api/models/integrity', { component: 'AIHub', action: 'LOAD_INTEGRITY' })
+            .then(function (resp) {
+                if (!resp || !resp.available) return;
+                const el = document.getElementById('model-integrity');
+                if (el) { el.textContent = resp.compatibility || '--'; el.className = 'text-accentCyan font-bold truncate ' + ((resp.compatibility === 'VALID') ? '' : 'text-rose-400'); }
+                const st = document.getElementById('model-state');
+                if (st) st.textContent = resp.state || '--';
+                const cls = document.getElementById('model-classes');
+                if (cls) cls.textContent = resp.actual_output_classes != null ? String(resp.actual_output_classes) : '--';
+            })
+            .catch(function () { /* integrity endpoint unavailable: cards stay '—' */ });
 
         // Inference latency (real measured ms when available)
 
