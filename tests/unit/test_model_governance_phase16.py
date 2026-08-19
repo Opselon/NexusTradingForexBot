@@ -608,6 +608,35 @@ class TestEvidence:
         )
         assert all(a.kind != "PROBABILITY" for a in aligned) or aligned == []
 
+    def test_lg20b_feature_drift_uses_full_vector_width(self, monkeypatch):
+        """TASK-14 hardening #2: the FEATURE drift statistic must use the
+        ACTUAL vector width — a 70D window's tail (news 50..59 + liquidity
+        60..69) must NOT be silently truncated to 50.
+
+        Decisive construction: vec = [0.0]*50 + [3.0]*20 gives
+        old-50-cap mean_abs = 0.0 (tail invisible -> no alert) vs
+        full-width mean_abs = 60/70 = 0.857 (> 0.5 threshold -> alert).
+        """
+        import nexus_scalp.governance.evidence as _evidence_mod
+
+        monkeypatch.setattr(_evidence_mod, "DRIFT_THRESHOLDS", {
+            "PROBABILITY": 0.20,
+            "ACTION": 0.25,
+            "FEATURE": 0.5,
+            "NEWS": 0.5,
+        })
+        vec = [0.0] * 50 + [3.0] * 20  # drift ONLY in the 60..69 tail
+        alerts = detect_drift(
+            probs_window=[[0.8, 0.1, 0.1, 0.0]] * 40,
+            actions=["NO_TRADE"] * 40,
+            feature_window=[vec] * 40,
+            model_id="m70",
+        )
+        feat = [a for a in alerts if a.kind == "FEATURE"]
+        assert feat, "70D tail-only drift must trigger a FEATURE alert (no 50-cap)"
+        # statistic equals full-width math: mean of abs means = 60/70
+        assert abs(feat[0].value - 60.0 / 70.0) < 0.01, feat[0].value
+
 
 # =========================================================================
 # 7. PROMOTION / ROLLBACK (TEST-LG-21..24) + TELEGRAM (TEST-LG-28)

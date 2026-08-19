@@ -39,7 +39,13 @@ def main() -> None:
     )
 
     t0 = time.perf_counter()
-    handle = build_70d_dataset(frame_in, timeframe="M5", dataset_id=None)
+    handle = build_70d_dataset(
+        frame_in,
+        timeframe="M5",
+        dataset_id=None,
+        incremental=True,      # BUG-106 fast builder (byte-identical)
+        verify_parity=True,    # canonical-vs-fast equivalence self-check
+    )
     print("BUILD OK in %.1fs" % (time.perf_counter() - t0))
     did = handle.get("dataset_id")
     print("dataset_id:", did)

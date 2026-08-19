@@ -281,7 +281,12 @@ def detect_drift(
             )
 
     if feature_window and len(feature_window) >= 30:
-        width = min(len(feature_window[0]), 50)
+        # TASK-14 hardening #2: use the ACTUAL vector width. The old
+        # `min(len(vec), 50)` silently truncated a 70D feature window's tail
+        # (news 50..59 + liquidity 60..69) out of the drift statistic —
+        # exactly the "silent 70->50 truncation" the 70D governance contract
+        # forbids. Shorter vectors remain safe (explicit per-index guard).
+        width = len(feature_window[0])
         means = [0.0] * width
         for vec in feature_window:
             for c in range(width):
