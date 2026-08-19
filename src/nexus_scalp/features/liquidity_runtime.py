@@ -68,6 +68,9 @@ DIMENSION_70D: int = 70
 #: Slot-50..59 family producer ids this governor understands.
 FAMILY_SCHEMA_V2: str = "scalp_v2"  # TASK-5 momentum extras (50..59)
 FAMILY_SCHEMA_LIQUIDITY_60D: str = "scalp_liquidity_v1"  # TASK-1 60D (50..59)
+SCHEMA_LIQUIDITY_60D: str = "scalp_liquidity_v1"  # TASK-02 canonical 60D contract
+DIMENSION_LIQUIDITY_60D: int = 60
+LIQUIDITY_ALGORITHM_VERSION: str = "scalp_liquidity_v1.0.0"
 
 #: Neutral 10D used ONLY when liquidity is UNAVAILABLE and a caller still
 #: needs a structurally-valid 60D asset (documented neutral defaults, same
@@ -490,10 +493,12 @@ class LiquidityGovernor:
                 "status": status,
                 "causal_state": causal,
                 "source": source,
+                "algorithm_version": LIQUIDITY_ALGORITHM_VERSION,
                 "last_update": last_update,
                 "age_sec": age_sec,
                 "latency_ms": latency,
-                "schema": {
+                "schema": self._active_schema_block(),
+                "reserved_70d_schema": {
                     "id": SCHEMA_70D,
                     "dimension": DIMENSION_70D,
                     "family_indices": "0..49 BASE | 50..59 FAMILY | 60..69 LIQUIDITY",
@@ -506,6 +511,29 @@ class LiquidityGovernor:
                 "pools": pools_payload,
                 "model_compatibility": self.model_compatibility(),
             }
+
+    def _active_schema_block(self) -> dict[str, Any]:
+        """Canonical schema the runtime is ACTUALLY operating under.
+
+        OFF  -> the repo ACTIVE contract (scalp_v1, 50D) — unchanged
+               existing behavior.
+        ON   -> the TASK-02 60D contract (scalp_liquidity_v1, 60D:
+               BASE 0..49 | LIQUIDITY 50..59). The 70D scalp_v4 layout
+               (FAMILY 50..59 | LIQUIDITY 60..69) is exposed separately
+               as reserved_70d_schema for the shadow70 chain.
+        """
+        if not self._enabled:
+            active = FEATURE_SCHEMAS.active
+            return {
+                "id": active.schema_id,
+                "dimension": active.dimension,
+                "family_indices": "0..49 (scalp_v1 protected)",
+            }
+        return {
+            "id": SCHEMA_LIQUIDITY_60D,
+            "dimension": DIMENSION_LIQUIDITY_60D,
+            "family_indices": "0..49 BASE | 50..59 LIQUIDITY",
+        }
 
     def model_compatibility(self) -> dict[str, Any]:
         """Model-vs-runtime compatibility for the CURRENT loaded model."""

@@ -367,7 +367,10 @@ def test_70d_16_sse_incremental_carries_liquidity_section() -> None:
     report = gov.report()
     # contract test: the exact dict that get_system_state() embeds
     assert "status" in report and "features" in report
-    assert report["schema"]["id"] == SCHEMA_70D
+    # TASK-02: when enabled the ACTIVE schema is the 60D liquidity contract;
+    # the 70D scalp_v4 contract is exposed as the reserved block.
+    assert report["schema"]["id"] == "scalp_liquidity_v1"
+    assert report["reserved_70d_schema"]["id"] == SCHEMA_70D
 
 
 def test_70d_17_reconnect_restores_state_from_server_snapshot() -> None:

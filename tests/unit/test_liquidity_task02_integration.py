@@ -300,3 +300,41 @@ def test_task02_21_liquidity_schema_registered_for_60d() -> None:
     s = FEATURE_SCHEMAS.resolve("scalp_liquidity_v1")
     assert s.dimension == 60
     assert s.supersedes == "scalp_v1"
+
+
+# ---------------------------------------------------------------------------
+# TEST-TASK02-03/04/05 — governor 60D API-state truthfulness (STEP 3)
+# ---------------------------------------------------------------------------
+
+
+def test_task02_03_report_off_exposes_50d_schema() -> None:
+    from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+    gov = LiquidityGovernor(enabled=False)
+    rep = gov.report()
+    assert rep["enabled"] is False
+    assert rep["schema"]["id"] == "scalp_v1"
+    assert rep["schema"]["dimension"] == 50
+
+
+def test_task02_04_report_on_exposes_60d_schema() -> None:
+    from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+    gov = LiquidityGovernor(enabled=True)
+    rep = gov.report()
+    assert rep["enabled"] is True
+    assert rep["schema"]["id"] == "scalp_liquidity_v1"
+    assert rep["schema"]["dimension"] == 60
+    assert rep.get("reserved_70d_schema", {}).get("id") == "scalp_v4"
+
+
+def test_task02_04_algorithm_version_present() -> None:
+    from nexus_scalp.features.liquidity_runtime import (
+        LIQUIDITY_ALGORITHM_VERSION,
+        LiquidityGovernor,
+    )
+
+    assert LIQUIDITY_ALGORITHM_VERSION == "scalp_liquidity_v1.0.0"
+    gov = LiquidityGovernor(enabled=True)
+    rep = gov.report()
+    assert rep["algorithm_version"] == LIQUIDITY_ALGORITHM_VERSION
