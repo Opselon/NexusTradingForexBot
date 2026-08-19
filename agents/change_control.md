@@ -6,6 +6,38 @@
 
 ## Open / recent changes
 
+
+```text
+CHANGE-ID: CHG-0018
+Agent: Hermes-ShadowLive70D
+Role: 70D Shadow Deployment & Candidate Validation Engineer
+Task: TASK-70D-SHADOW-LIVE-VALIDATION
+Scope: Current-state verification (HEAD 3f3f3d9), 70D candidate discovery
+       (wf_candidate DISCOVERED; NOT VALIDATED — unregistered, scalp_v4 vs
+       canonical scalp_v3, missing provenance/validation), gated attach
+       rejection proof (by design), Champion-unchanged + broker=0 proof,
+       governance verify matrix via verify_candidate (read-only), evidence
+       JSON + final docs + TEST-SHADOW-LIVE-01..20
+Affected files: tests/unit/test_shadow70_live_valid.py (new),
+       scratch/shadow70_live_evidence.py (new), docs/70D_SHADOW_LIVE_
+       VALIDATION_FINAL.md (new), docs/agent_handoffs/TASK-70D-SHADOW-LIVE-
+       VALIDATION.md (new), artifacts/validation/70d_shadow_live_evidence.json
+       (new), agents/* registries
+Affected functions/classes: none in src/ (read-only evidence task; reuse of
+       Shadow70Runtime.attach + governance.verify.verify_candidate)
+Contracts touched: SHADOW_70D v1 (reused), MODEL_GOVERNANCE v2 (reused),
+       INV-018 (honored)
+Runtime paths touched: NONE (no production mutation; shadow attach is
+       exercised only against the runtime object in-process with a
+       deliberately non-attached candidate)
+Owners affected: Hermes-GovAgent8 (TASK-08 governance), TASK-04 validation
+Risk: NONE (read-only; no promotion, no broker, no Champion touch)
+Dependencies: TASK-05 shadow70 runtime, TASK-08 governance verify,
+       TASK-04 wf_candidate artifact
+Required tests: TEST-SHADOW-LIVE-01..20
+Status: IMPLEMENTING
+```
+
 ```text
 CHANGE-ID: CHG-0017
 Agent: Hermes-Forensic-12
@@ -332,3 +364,28 @@ Status: IN_PROGRESS
 ## Notes
 - Substantial tasks also get a TASK-ID in `agents/taskboard.md` and a handoff in `docs/agent_handoffs/`.
 - Reference CHANGE-ID in PRs/issues alongside BUG-NNN / TASK-ID (contract §42).
+CHANGE-ID: CHG-0019
+Agent: Hermes-Forensic-70D-UI
+Role: Debug UI / Runtime Observability Engineer
+Task: TASK-70D-DEBUG-CONSOLE
+Scope: Debug tab upgraded into full 70D runtime intelligence console.
+       One canonical /api/debug/state snapshot (18 sections) rendered by
+       the UI — the frontend never computes trading intelligence.
+       Registry-driven 70D feature matrix (schema_contract scalp_v3),
+       contract validation (70D CONTRACT BROKEN / MODEL CONTRACT INVALID
+       incl. actual_classes=128 regression), confidence pipeline, policy
+       gate trace, risk/exposure/execution/positions/exit forensics,
+       liquidity context, news, workers, database, caches, chart, SSE
+       diagnostics, snapshot capture/compare/diff. TEST-DEBUG-01..32.
+Affected files: src/nexus_scalp/web/debug_snapshot.py (new),
+       src/nexus_scalp/web/server.py (/api/debug/state + snapshots +
+       compare + SSE diagnostics), src/nexus_scalp/application/
+       live_engine.py (_last_model_input_tensor stash), Web/index.html,
+       Web/app.js (Debug tab rebuild), tests/unit/
+       test_debug_snapshot_phase20.py (new, 36 tests),
+       docs/DEBUG_70D_FORENSIC_UPGRADE_FINAL.md (new),
+       docs/agent_handoffs/2026-08-19_Hermes-Forensic-70D-UI_debug-console.md
+Contracts: DEBUG_SNAPSHOT v1 (canonical /api/debug/state payload),
+       FEATURE_SCHEMA_70D v1 (scalp_v3 registry-driven rendering)
+Status: VERIFIED
+
