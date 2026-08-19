@@ -1,0 +1,30 @@
+.....................................................................sss [ 76%]
+......................                                                   [100%]
+============================== warnings summary ===============================
+tests\conftest.py:22
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\tests\conftest.py:22: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; tests.helpers.shadow70_fixtures
+    pytest.register_assert_rewrite("tests.helpers.shadow70_fixtures")
+
+.venv\Lib\site-packages\numpy\core\fromnumeric.py:3504: 1 warning
+tests/unit/test_70d_dataset_parity_task3.py: 1 warning
+tests/unit/test_70d_parity_task3.py: 16 warnings
+tests/unit/test_70d_replay_parity_task3.py: 6 warnings
+tests/unit/test_70d_runtime_hook_task3.py: 6 warnings
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\fromnumeric.py:3504: RuntimeWarning: Mean of empty slice.
+    return _methods._mean(a, axis=axis, dtype=dtype,
+
+.venv\Lib\site-packages\numpy\core\_methods.py:129: 1 warning
+tests/unit/test_70d_dataset_parity_task3.py: 1 warning
+tests/unit/test_70d_parity_task3.py: 16 warnings
+tests/unit/test_70d_replay_parity_task3.py: 6 warnings
+tests/unit/test_70d_runtime_hook_task3.py: 6 warnings
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\numpy\core\_methods.py:129: RuntimeWarning: invalid value encountered in scalar divide
+    ret = ret.dtype.type(ret / rcount)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\unit\test_70d_perf_task3.py:54: perf probe run explicitly
+SKIPPED [1] tests\unit\test_70d_perf_task3.py:89: perf probe run explicitly
+SKIPPED [1] tests\unit\test_70d_perf_task3.py:109: perf probe run explicitly
+91 passed, 3 skipped, 61 warnings in 766.85s (0:12:46)
+EXIT 0
