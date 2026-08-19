@@ -475,3 +475,35 @@ def test_03_20_vector_hash_agreement() -> None:
     h_ds = hashlib.sha256(repr(ds).encode()).hexdigest()
     h_live = hashlib.sha256(repr(live).encode()).hexdigest()
     assert h_ds == h_live
+
+
+# ---------------------------------------------------------------------------
+# TEST-03-33 — verify_70d_artifact runs on a real built dataset
+# (regression for the .item() DataFrame-int bug + manifest hash stamp)
+# ---------------------------------------------------------------------------
+
+
+def test_03_33_ds_build_verify_roundtrip() -> None:
+    """A built 70D dataset must pass verify_70d_artifact end-to-end
+    (regression: int(pl.DataFrame.sum()) TypeError; schema hash stamp)."""
+    import numpy as np
+
+    from nexus_scalp.model_generation.artifact_store import ArtifactStore
+    from nexus_scalp.model_generation.schema_v2 import (
+        build_70d_dataset,
+        verify_70d_artifact,
+    )
+
+    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
+    bars = _mkbars(120, t0)
+    frame = _to_frame(bars)
+    store = ArtifactStore()
+    handle = build_70d_dataset(frame, timeframe="M1", store=store, seed=42)
+    did = handle["dataset_id"]
+    v = verify_70d_artifact(did, store=store)
+    assert v["ok"] is True, v
+    assert v["feature_count"] == 70
+    assert v["schema_hash_ok"] is True
+    # manifest carries the canonical hash
+    man = store.read_dataset_manifest(did) or {}
+    assert man.get("feature_schema_hash") == feature_schema_hash()

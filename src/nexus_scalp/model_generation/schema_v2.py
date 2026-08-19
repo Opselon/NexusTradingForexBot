@@ -221,6 +221,11 @@ def build_60d_dataset(
         handle.get("dataset_id"),
         handle.get("counts", {}).get("total", 0),
     )
+    logger.info(
+        "[SCHEMA_V2] event=DATASET_BUILT dataset_id=%s rows=%d",
+        handle.get("dataset_id"),
+        handle.get("counts", {}).get("total", 0),
+    )
     return handle
 
 
@@ -675,6 +680,17 @@ def build_70d_dataset(
         seed=seed,
         dataset_id=dataset_id,
     )
+    # TASK-03 parity lineage: stamp the canonical feature-schema hash so
+    # verify_70d_artifact can prove schema agreement (brief 27).
+    try:
+        from nexus_scalp.features.schema_contract import feature_schema_hash
+
+        man = store.read_dataset_manifest(handle["dataset_id"]) or {}
+        man["feature_schema_hash"] = feature_schema_hash()
+        # ArtifactStore persists manifests as JSON via write_json
+        store.write_json(store.dataset_manifest_path(handle["dataset_id"]), man)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("[SCHEMA_70D] event=SCHEMA_HASH_STAMP_FAILED error=%s", exc)
     logger.info(
         "[SCHEMA_70D] event=DATASET_BUILT dataset_id=%s rows=%d",
         handle.get("dataset_id"),
@@ -720,10 +736,10 @@ def verify_70d_artifact(
         "OUT_OF_RANGE_FEATURE": n_reject_range,
     }
     if "timestamp" in frame.columns:
-        dup_ts = int(frame.select(pl.col("timestamp").is_duplicated()).sum())
+        dup_ts = int(frame.select(pl.col("timestamp").is_duplicated()).sum().item())
         checks["duplicate_timestamps"] = dup_ts
     if "sample_id" in frame.columns:
-        dup_sid = int(frame.select(pl.col("sample_id").is_duplicated()).sum())
+        dup_sid = int(frame.select(pl.col("sample_id").is_duplicated()).sum().item())
         checks["duplicate_sample_ids"] = dup_sid
     checks["rows"] = frame.height
     checks["ok"] = bool(
