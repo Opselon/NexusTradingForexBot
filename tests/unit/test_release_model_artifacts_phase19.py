@@ -24,7 +24,6 @@ import pytest
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.release import model_artifacts as rma
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
