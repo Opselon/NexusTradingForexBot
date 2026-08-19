@@ -1,0 +1,414 @@
+{
+  "research_run_id": "task07_consolidated_02",
+  "research_baseline_id": "e85de540e09d3339",
+  "redundancy": {
+    "pairs": [
+      {
+        "a": "bsl_distance_atr",
+        "b": "ssl_distance_atr",
+        "spearman": 0.1847
+      },
+      {
+        "a": "bsl_distance_atr",
+        "b": "eqh_strength",
+        "spearman": 0.0323
+      },
+      {
+        "a": "bsl_distance_atr",
+        "b": "eql_strength",
+        "spearman": 0.0008
+      },
+      {
+        "a": "bsl_distance_atr",
+        "b": "htf_liquidity_score",
+        "spearman": -0.1325
+      },
+      {
+        "a": "bsl_distance_atr",
+        "b": "internal_liquidity_distance",
+        "spearman": 0.0983
+      },
+      {
+        "a": "bsl_distance_atr",
+        "b": "external_liquidity_distance",
+        "spearman": -0.1581
+      },
+      {
+        "a": "bsl_distance_atr",
+        "b": "liquidity_confluence",
+        "spearman": -0.0563
+      },
+      {
+        "a": "bsl_distance_atr",
+        "b": "liquidity_sweep_state",
+        "spearman": 0.0626
+      },
+      {
+        "a": "bsl_distance_atr",
+        "b": "post_sweep_displacement",
+        "spearman": 0.0147
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "eqh_strength",
+        "spearman": 0.1139
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "eql_strength",
+        "spearman": 0.1996
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "htf_liquidity_score",
+        "spearman": 0.3705
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "internal_liquidity_distance",
+        "spearman": 0.5161
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "external_liquidity_distance",
+        "spearman": -0.3628
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "liquidity_confluence",
+        "spearman": 0.0448
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "liquidity_sweep_state",
+        "spearman": 0.2317
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "post_sweep_displacement",
+        "spearman": -0.0666
+      },
+      {
+        "a": "eqh_strength",
+        "b": "eql_strength",
+        "spearman": -0.0117
+      },
+      {
+        "a": "eqh_strength",
+        "b": "htf_liquidity_score",
+        "spearman": 0.0688
+      },
+      {
+        "a": "eqh_strength",
+        "b": "internal_liquidity_distance",
+        "spearman": 0.1503
+      },
+      {
+        "a": "eqh_strength",
+        "b": "external_liquidity_distance",
+        "spearman": -0.0264
+      },
+      {
+        "a": "eqh_strength",
+        "b": "liquidity_confluence",
+        "spearman": 0.0073
+      },
+      {
+        "a": "eqh_strength",
+        "b": "liquidity_sweep_state",
+        "spearman": 0.0143
+      },
+      {
+        "a": "eqh_strength",
+        "b": "post_sweep_displacement",
+        "spearman": -0.0195
+      },
+      {
+        "a": "eql_strength",
+        "b": "htf_liquidity_score",
+        "spearman": 0.2243
+      },
+      {
+        "a": "eql_strength",
+        "b": "internal_liquidity_distance",
+        "spearman": 0.286
+      },
+      {
+        "a": "eql_strength",
+        "b": "external_liquidity_distance",
+        "spearman": -0.1663
+      },
+      {
+        "a": "eql_strength",
+        "b": "liquidity_confluence",
+        "spearman": -0.0454
+      },
+      {
+        "a": "eql_strength",
+        "b": "liquidity_sweep_state",
+        "spearman": 0.1292
+      },
+      {
+        "a": "eql_strength",
+        "b": "post_sweep_displacement",
+        "spearman": -0.0056
+      },
+      {
+        "a": "htf_liquidity_score",
+        "b": "internal_liquidity_distance",
+        "spearman": 0.2442
+      },
+      {
+        "a": "htf_liquidity_score",
+        "b": "external_liquidity_distance",
+        "spearman": -0.1184
+      },
+      {
+        "a": "htf_liquidity_score",
+        "b": "liquidity_confluence",
+        "spearman": 0.0039
+      },
+      {
+        "a": "htf_liquidity_score",
+        "b": "liquidity_sweep_state",
+        "spearman": 0.1054
+      },
+      {
+        "a": "htf_liquidity_score",
+        "b": "post_sweep_displacement",
+        "spearman": -0.074
+      },
+      {
+        "a": "internal_liquidity_distance",
+        "b": "external_liquidity_distance",
+        "spearman": -0.3502
+      },
+      {
+        "a": "internal_liquidity_distance",
+        "b": "liquidity_confluence",
+        "spearman": 0.0526
+      },
+      {
+        "a": "internal_liquidity_distance",
+        "b": "liquidity_sweep_state",
+        "spearman": 0.0792
+      },
+      {
+        "a": "internal_liquidity_distance",
+        "b": "post_sweep_displacement",
+        "spearman": 0.0147
+      },
+      {
+        "a": "external_liquidity_distance",
+        "b": "liquidity_confluence",
+        "spearman": -0.0172
+      },
+      {
+        "a": "external_liquidity_distance",
+        "b": "liquidity_sweep_state",
+        "spearman": -0.3007
+      },
+      {
+        "a": "external_liquidity_distance",
+        "b": "post_sweep_displacement",
+        "spearman": 0.1059
+      },
+      {
+        "a": "liquidity_confluence",
+        "b": "liquidity_sweep_state",
+        "spearman": -0.0682
+      },
+      {
+        "a": "liquidity_confluence",
+        "b": "post_sweep_displacement",
+        "spearman": 0.0163
+      },
+      {
+        "a": "liquidity_sweep_state",
+        "b": "post_sweep_displacement",
+        "spearman": -0.6847
+      }
+    ],
+    "max_abs_corr": 0.6847,
+    "top_correlated": [
+      {
+        "a": "liquidity_sweep_state",
+        "b": "post_sweep_displacement",
+        "spearman": -0.6847
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "internal_liquidity_distance",
+        "spearman": 0.5161
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "htf_liquidity_score",
+        "spearman": 0.3705
+      },
+      {
+        "a": "ssl_distance_atr",
+        "b": "external_liquidity_distance",
+        "spearman": -0.3628
+      },
+      {
+        "a": "internal_liquidity_distance",
+        "b": "external_liquidity_distance",
+        "spearman": -0.3502
+      },
+      {
+        "a": "external_liquidity_distance",
+        "b": "liquidity_sweep_state",
+        "spearman": -0.3007
+      }
+    ]
+  },
+  "stability": {
+    "bsl_distance_atr": {
+      "first_half_mean": 0.6522,
+      "second_half_mean": 0.5785,
+      "first_half_std": 0.7533,
+      "second_half_std": 0.7274,
+      "mean_shift_abs": 0.0737
+    },
+    "ssl_distance_atr": {
+      "first_half_mean": 0.8736,
+      "second_half_mean": 0.6267,
+      "first_half_std": 0.9435,
+      "second_half_std": 0.7929,
+      "mean_shift_abs": 0.2469
+    },
+    "eqh_strength": {
+      "first_half_mean": 0.7835,
+      "second_half_mean": 0.7907,
+      "first_half_std": 0.1421,
+      "second_half_std": 0.1439,
+      "mean_shift_abs": 0.0072
+    },
+    "eql_strength": {
+      "first_half_mean": 0.3991,
+      "second_half_mean": 0.373,
+      "first_half_std": 0.3438,
+      "second_half_std": 0.3322,
+      "mean_shift_abs": 0.0261
+    },
+    "htf_liquidity_score": {
+      "first_half_mean": 0.4814,
+      "second_half_mean": -0.0776,
+      "first_half_std": 2.7883,
+      "second_half_std": 2.8291,
+      "mean_shift_abs": 0.559
+    },
+    "internal_liquidity_distance": {
+      "first_half_mean": 0.7703,
+      "second_half_mean": 0.7245,
+      "first_half_std": 0.798,
+      "second_half_std": 0.791,
+      "mean_shift_abs": 0.0458
+    },
+    "external_liquidity_distance": {
+      "first_half_mean": 2.7725,
+      "second_half_mean": 2.8005,
+      "first_half_std": 0.648,
+      "second_half_std": 0.642,
+      "mean_shift_abs": 0.028
+    },
+    "liquidity_confluence": {
+      "first_half_mean": 2.9982,
+      "second_half_mean": 3.0,
+      "first_half_std": 0.0284,
+      "second_half_std": 0.0,
+      "mean_shift_abs": 0.0018
+    },
+    "liquidity_sweep_state": {
+      "first_half_mean": -0.624,
+      "second_half_mean": -0.668,
+      "first_half_std": 1.1111,
+      "second_half_std": 1.1017,
+      "mean_shift_abs": 0.044
+    },
+    "post_sweep_displacement": {
+      "first_half_mean": 0.1053,
+      "second_half_mean": 0.0702,
+      "first_half_std": 0.4124,
+      "second_half_std": 0.284,
+      "mean_shift_abs": 0.0351
+    }
+  },
+  "families": {
+    "LOCATION": {
+      "members": [
+        "bsl_distance_atr",
+        "ssl_distance_atr"
+      ],
+      "mean": {
+        "bsl_distance_atr": 0.6153,
+        "ssl_distance_atr": 0.7502
+      },
+      "sample_mean_magnitude": 0.6828
+    },
+    "STRUCTURE": {
+      "members": [
+        "eqh_strength",
+        "eql_strength"
+      ],
+      "mean": {
+        "eqh_strength": 0.7871,
+        "eql_strength": 0.3861
+      },
+      "sample_mean_magnitude": 0.5866
+    },
+    "HTF": {
+      "members": [
+        "htf_liquidity_score"
+      ],
+      "mean": {
+        "htf_liquidity_score": 0.2019
+      },
+      "sample_mean_magnitude": 2.771
+    },
+    "CONFLUENCE": {
+      "members": [
+        "liquidity_confluence"
+      ],
+      "mean": {
+        "liquidity_confluence": 2.9991
+      },
+      "sample_mean_magnitude": 2.9991
+    },
+    "EVENT": {
+      "members": [
+        "liquidity_sweep_state"
+      ],
+      "mean": {
+        "liquidity_sweep_state": -0.646
+      },
+      "sample_mean_magnitude": 1.214
+    },
+    "DISPLACEMENT": {
+      "members": [
+        "post_sweep_displacement"
+      ],
+      "mean": {
+        "post_sweep_displacement": 0.0877
+      },
+      "sample_mean_magnitude": 0.0877
+    },
+    "DISTANCE_EXT": {
+      "members": [
+        "internal_liquidity_distance",
+        "external_liquidity_distance"
+      ],
+      "mean": {
+        "internal_liquidity_distance": 0.7474,
+        "external_liquidity_distance": 2.7865
+      },
+      "sample_mean_magnitude": 1.767
+    }
+  },
+  "key_findings": [
+    "liquidity_confluence has near-zero variance in the full TASK-01 baseline (mean 2.75, std 0.22 of 0..3) and CONSTANT 3.0 on the M1 288-bar window \u2014 candidate degeneracy: diversity term (1+ln(unique_sources)) saturates; combined with tf_sum and strength terms it clips at 3.0 in most configurations",
+    "post_sweep_displacement is ~92.5% zeros on 30k M5 rows (mean 0.041, std 0.20) \u2014 sparse event feature",
+    "internal/external distance negatively correlated (spearman ~-0.55) \u2014 expected geometry, not redundancy"
+  ]
+}

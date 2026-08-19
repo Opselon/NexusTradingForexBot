@@ -27,8 +27,8 @@ import json
 import math
 import sqlite3
 import sys
-from collections import Counter, defaultdict
-from datetime import UTC, datetime, time as dtime
+from collections import defaultdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(r"C:\Users\Capsizer\source\repos\NexusTradingForexBot")

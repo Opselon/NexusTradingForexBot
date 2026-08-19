@@ -751,4 +751,4 @@ class TestApiStatusShape:
         assert "expected_version" in st
         assert "migration_state" in st
         assert "integrity" in st
-        assert st["current_version"] == 4  # audit current after migrations
+        assert st["current_version"] == 7  # audit current after migrations (AUDIT-0006 incidents + AUDIT-0007 release_metadata)

@@ -423,8 +423,7 @@ class LiquidityGovernor:
             raise RuntimeError("build_runtime_60d_vector: no liquidity snapshot")
         if len(features50) != BASE_50D:
             raise ValueError(
-                f"build_runtime_60d_vector: base must be exactly {BASE_50D}D, "
-                f"got {len(features50)}"
+                f"build_runtime_60d_vector: base must be exactly {BASE_50D}D, got {len(features50)}"
             )
         vec = list(features50) + list(snap.features)
         validate_60d_liquidity_vector(vec, context="runtime")

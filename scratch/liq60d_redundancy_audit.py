@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 
+from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.liquidity_engine import (
     LIQUIDITY_FEATURE_NAMES,
     compute_liquidity_features,
@@ -22,7 +23,6 @@ from nexus_scalp.features.scalp_features import (
     FEATURE_NAMES,
     ScalpFeatureEngine,
 )
-from nexus_scalp.domain.models import TickData
 from tests.helpers.liquidity_fixtures import (
     bar,
     steady_bars,
@@ -104,7 +104,7 @@ def main() -> dict:
     base_rows: list[np.ndarray] = []
     liq_rows: list[np.ndarray] = []
     engine = ScalpFeatureEngine(symbol="XAUUSD")
-    for name, bars in regimes.items():
+    for _name, bars in regimes.items():
         for start in range(0, max(len(bars) - 55, 1), 5):
             win = bars[start : start + 56]
             if len(win) < 56:
@@ -139,7 +139,6 @@ def main() -> dict:
     for j, lname in enumerate(LIQUIDITY_FEATURE_NAMES):
         pearson_max = 0.0
         spearman_max = 0.0
-        best_base = ""
         for i, bname in enumerate(FEATURE_NAMES):
             pc = _pearson(B[:, i], L[:, j])
             sc = _spearman(B[:, i], L[:, j])

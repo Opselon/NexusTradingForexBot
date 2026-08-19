@@ -1,17 +1,16 @@
 """TASK-03-70D-PARITY registry claim (additive rows only, CRLF-safe)."""
-import io
 from pathlib import Path
 
 ROOT = Path(r"C:\Users\Capsizer\source\repos\NexusTradingForexBot")
 
 
 def read_text(p: Path) -> str:
-    with io.open(p, "r", encoding="utf-8", newline="") as f:
+    with open(p, encoding="utf-8", newline="") as f:
         return f.read()
 
 
 def write_text(p: Path, s: str) -> None:
-    with io.open(p, "w", newline="", encoding="utf-8") as f:
+    with open(p, "w", newline="", encoding="utf-8") as f:
         f.write(s)
 
 

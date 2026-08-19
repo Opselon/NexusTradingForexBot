@@ -14,15 +14,15 @@ from types import SimpleNamespace
 
 sys.path.insert(0, r"C:/Users/Capsizer/source/repos/NexusTradingForexBot/src")
 
-from nexus_scalp.domain.models import TickData  # noqa: E402
-from nexus_scalp.shadow.shadow70.models import (  # noqa: E402
+from nexus_scalp.domain.models import TickData
+from nexus_scalp.shadow.shadow70.models import (
     SHADOW70_DIMENSION,
     SHADOW70_SCHEMA_ID,
     Shadow70CandidateContract,
 )
-from nexus_scalp.shadow.shadow70.runtime import Shadow70LoadValidator, Shadow70Runtime  # noqa: E402
-from nexus_scalp.shadow.shadow70.store import Shadow70Store  # noqa: E402
-from nexus_scalp.shadow.shadow70.worker import Shadow70Worker  # noqa: E402
+from nexus_scalp.shadow.shadow70.runtime import Shadow70Runtime
+from nexus_scalp.shadow.shadow70.store import Shadow70Store
+from nexus_scalp.shadow.shadow70.worker import Shadow70Worker
 
 
 def make_contract(tmp: str) -> Shadow70CandidateContract:
@@ -56,12 +56,11 @@ class Harness:
     source (imported from live_engine and bound)."""
 
     def __init__(self, tmp: str) -> None:
-        import tempfile
 
         self._tmp = tmp
         self._shadow_challenger = SimpleNamespace()  # attached -> happy path
         self._governance_shadow = None
-        from nexus_scalp.shadow.engine import ShadowEngine, ShadowComparer
+        from nexus_scalp.shadow.engine import ShadowEngine
         from nexus_scalp.shadow.store import ShadowStore
 
         self.shadow_engine = ShadowEngine(store=ShadowStore(audit_repo=None))
@@ -138,7 +137,7 @@ def main() -> None:
         h.record()
         print("observations after HAPPY record:", h.shadow70_count())
         # Now force the 50D shadow path to raise: make shadow_engine.record_shadow_decision fail
-        def boom(*a, **k):  # noqa: ANN002, ANN003
+        def boom(*a, **k):
             raise RuntimeError("50D shadow path failure (forced for proof)")
 
         h.shadow_engine.record_shadow_decision = boom  # type: ignore[method-assign]

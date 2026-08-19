@@ -1,0 +1,110 @@
+{
+  "research_run_id": "task07_consolidated_02",
+  "research_baseline_id": "e85de540e09d3339",
+  "news_db": {
+    "articles": 1677,
+    "range": [
+      "2026-08-17T01:37:18.745190+00:00",
+      "2026-08-18T04:43:57.517056+00:00"
+    ]
+  },
+  "liquidity_sample": {
+    "n": 500,
+    "time_range": [
+      "2025-03-12T06:35:00+00:00",
+      "2026-08-17T07:15:00+00:00"
+    ]
+  },
+  "interaction": {
+    "status": "INSUFFICIENT_OVERLAP",
+    "reason": "No 70D dataset with joint news+liquidity columns exists; news.db articles cover only 2026-08-17..18 while the liquidity sample spans 2025-03..2026-08. The 4-state NEWS x LIQUIDITY table (NEWS_INACTIVE/ACTIVE x LIQUIDITY_NORMAL/EVENT) cannot be computed on aligned samples yet.",
+    "evidence_available": {
+      "liquidity_alone": {
+        "bsl_distance_atr": {
+          "n": 29946,
+          "mean": 1.563,
+          "std": 1.0349,
+          "saturation_rate_pct": 20.28,
+          "missing_rate": 0.0,
+          "zero_rate": 0.0
+        },
+        "ssl_distance_atr": {
+          "n": 29946,
+          "mean": 1.7415,
+          "std": 1.0503,
+          "saturation_rate_pct": 27.5,
+          "missing_rate": 0.0,
+          "zero_rate": 0.0
+        },
+        "eqh_strength": {
+          "n": 29946,
+          "mean": 0.8507,
+          "std": 0.1453,
+          "saturation_rate_pct": 0.0,
+          "missing_rate": 0.0,
+          "zero_rate": 0.5109
+        },
+        "eql_strength": {
+          "n": 29946,
+          "mean": 0.5853,
+          "std": 0.3678,
+          "saturation_rate_pct": 0.0,
+          "missing_rate": 0.0,
+          "zero_rate": 0.9217
+        },
+        "htf_liquidity_score": {
+          "n": 29946,
+          "mean": 0.2624,
+          "std": 2.3207,
+          "saturation_rate_pct": 0.0,
+          "missing_rate": 0.0,
+          "zero_rate": 0.0301
+        },
+        "internal_liquidity_distance": {
+          "n": 29946,
+          "mean": 1.019,
+          "std": 0.9309,
+          "saturation_rate_pct": 9.28,
+          "missing_rate": 0.0,
+          "zero_rate": 0.344
+        },
+        "external_liquidity_distance": {
+          "n": 29946,
+          "mean": 1.7265,
+          "std": 0.9741,
+          "saturation_rate_pct": 20.15,
+          "missing_rate": 0.0,
+          "zero_rate": 0.4909
+        },
+        "liquidity_confluence": {
+          "n": 29946,
+          "mean": 2.7498,
+          "std": 0.2247,
+          "saturation_rate_pct": 34.28,
+          "missing_rate": 0.0,
+          "zero_rate": 0.0
+        },
+        "liquidity_sweep_state": {
+          "n": 29946,
+          "mean": 0.2277,
+          "std": 1.2964,
+          "saturation_rate_pct": 0.0,
+          "missing_rate": 0.0,
+          "zero_rate": 0.0
+        },
+        "post_sweep_displacement": {
+          "n": 29946,
+          "mean": 0.0406,
+          "std": 0.1997,
+          "saturation_rate_pct": 0.04,
+          "missing_rate": 0.0,
+          "zero_rate": 92.5499
+        }
+      },
+      "news_alone": {
+        "articles_in_db": 1677,
+        "notes": "news_context_v1 is the canonical 10D news block (70D contract indices 50..59)"
+      }
+    }
+  }
+}

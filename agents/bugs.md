@@ -4502,3 +4502,87 @@ contract and the brief's candidate-contract check.
 - tests/unit/test_shadow70_runtime.py (TEST-SHADOW-01..35) + test_shadow70_
   news_family.py — 41 passed post-fix. Status: FIXED (reconciled; AGENT-10's
   news-family work remains intact — only the constant default restored).
+
+## BUG-108 — AUDIT-0007 release_metadata Migration Failed With "no such column: key" on Fresh Databases (2026-08-19 TASK-08 governance gate)
+
+- Category: MIGRATION / COMPATIBILITY
+- Symptom: `DatabaseMigrationEngine(domain="audit").migrate()` on a FRESH
+  database failed during AUDIT-0007-release-metadata with
+  `OperationalError: no such column: key`, leaving the audit domain at
+  version 6 with state DB_MIGRATION_FAILED. TEST-GOV-26 (migration
+  compatibility) exposed it; the whole audit migration chain after
+  AUDIT-0006 was blocked for new installs.
+- Root cause: the TASK-10 baseline builder (`_create_baseline_tables`)
+  creates every manifest-listed table as a minimal skeleton
+  (`id INTEGER PRIMARY KEY`), including `release_metadata`. AUDIT-0007's
+  `CREATE INDEX ... ON release_metadata(key)` then failed because the
+  baseline skeleton has no `key` column — `CREATE TABLE IF NOT EXISTS`
+  skipped the existing skeleton, and the index referenced a missing column.
+- Fix: `_audit_0007_release_metadata` is now column-repair-aware — after
+  the idempotent CREATE TABLE it adds `key` (PK), `value`, `updated_at`
+  when missing (PRAGMA table_info check), so the index is valid on fresh,
+  baseline-created AND pre-existing tables. Rollback stays drop-if-empty.
+- Proof: fresh `migrate()` now runs AUDIT-0002..0007 to version 7 with
+  integrity ok; idempotent re-run reports current==expected==7.
+- Tests: TEST-GOV-26 (version-agnostic migration compatibility),
+  tests/unit/test_database_migrations_phase18.py::TestApiStatusShape
+  (audit current == 7).
+
+## BUG-106 — 70D Shadow Observation Hook Was Dead Code: Nested Inside the 50D-Shadow except Block + Conditional-Import UnboundLocalError (TASK-70D-SYSTEM-FLOW-FORENSICS, 2026-08-19)
+
+Three structural defects made the 70D shadow observation path produce ZERO
+observations on the happy path:
+
+1. **Hook nested inside `except`**: the 70D observation block lived inside the
+   `except Exception as e:` of `LiveEngine._record_shadow_decision` — it ran
+   ONLY when the 50D shadow record raised. On the normal path (no exception)
+   the 70D hook was skipped entirely (dead code).
+2. **Conditional-import scoping**: `build_70d_vector` was imported inside
+   `if news_ctx is not None:` but called unconditionally → Python
+   `UnboundLocalError: cannot access local variable 'build_70d_vector'` when
+   the news context was None (news disabled = default). Even the forced-
+   failure path then failed.
+3. **Early-return gate**: `_record_shadow_decision` returns immediately when
+   no 50D shadow/Challenger is attached — so with a 70D candidate enabled but
+   no 50D shadow, the 70D hook could NEVER run.
+4. **Empty schema identity**: the hook passed `feature_schema_hash=""` so
+   per-observation schema verification was silently skipped.
+
+- Symptom: "RUNNING but doing zero work" — `shadow70_observations` stayed
+  empty in production despite `_shadow70_enabled=True` + READY runtime; the
+  only row in the live DB was a fixture smoke row (SHADOW_BLOCKED).
+- Proof: `scratch/repro_shadow70_hook_dead_code.py` — happy-path record →
+  0 observations; forced 50D failure → hook raised UnboundLocalError. After
+  the fix: happy path → 1 observation, forced failure → 2 (independent).
+- Root cause: accidental block placement (hook pasted inside except) +
+  conditional import of the assembler + the 50D early-return gate.
+- Fix: new standalone `LiveEngine._record_shadow70_observation()` called from
+  `_process_tick_pipeline` on EVERY tick (independent of the 50D shadow gate);
+  imports hoisted to method scope; canonical `feature_schema_hash()` passed to
+  `observe()` (schema identity verified per observation).
+- Tests: TEST-SHADOW-36..39 in tests/unit/test_shadow70_runtime.py (happy-path
+  records; no-50D-shadow still records; news-disabled no UnboundLocalError;
+  50D-failure independence). 75 shadow70+parity tests pass.
+- Commit: absorbed into 14fff5a (Hermes-Parity) via the parallel swarm;
+  regression suite re-verified against that commit before push.
+
+
+## BUG-107 — Sweep Detector Has No Relevance Gate: Pools 200 ATR Away Reported as APPROACHING (TASK-06-70D-LIQUIDITY-OPTIMIZATION, 2026-08-19)
+
+Category: SWEEP · CAUSALITY
+
+- File: `src/nexus_scalp/features/liquidity_engine.py::detect_reactive_sweep`
+- Symptom: `liquidity_sweep_state` never emits 0 (NO_RELEVANT_LIQUIDITY) on
+  real data; census over 11,945 rows: {-2:888, -1:4316, +1:4852, +2:1889} —
+  ~40% of rows report APPROACHING(+1) even when the nearest pool is far.
+- Root cause: the no-touch branch returns APPROACHING/TOUCHED against the
+  nearest pool without ANY distance threshold;
+  `if price >= nearest.price - tol` is evaluated even when the pool is many
+  ATR away. Direct proof: a BSL pool 200 ATR above price returns state 1.0
+  (APPROACHING).
+- Fix (candidate v1.1): `SWEEP_RELEVANCE_ATR` (default 2.0) gates the
+  interaction: |pool - price| > relevance*ATR → NO_RELEVANT_LIQUIDITY (0.0).
+  With default 2.0 ATR the 0-state now appears honestly (~7% of real rows,
+  matching the measured nearest-pool distance distribution: p95 2.27 ATR).
+- Tests: TEST-LIQ-OPT-16 (breakout not sweep), TEST-LIQ-OPT-04 (causality
+  inheritance), new relevance-gate unit in test_liquidity_optimization_phase19.py.

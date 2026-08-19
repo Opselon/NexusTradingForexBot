@@ -1,0 +1,77 @@
+{
+  "research_run_id": "task07_consolidated_02",
+  "research_baseline_id": "e85de540e09d3339",
+  "method": "MODEL-FREE (no fitted 70D model exists; permutation/ablation/SHAP require one). OOS-safety is structural: no OOS data was used for any choice made here.",
+  "per_feature": {
+    "bsl_distance_atr": {
+      "discriminative_power_proxy": 0.9082,
+      "neutral_sentinel_frac": 0.028,
+      "zero_frac": 0.0,
+      "std": 0.7414,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    },
+    "ssl_distance_atr": {
+      "discriminative_power_proxy": 0.8828,
+      "neutral_sentinel_frac": 0.058,
+      "zero_frac": 0.0,
+      "std": 0.8801,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    },
+    "eqh_strength": {
+      "discriminative_power_proxy": 0.9199,
+      "neutral_sentinel_frac": 0.0,
+      "zero_frac": 0.0,
+      "std": 0.1431,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    },
+    "eql_strength": {
+      "discriminative_power_proxy": 0.8872,
+      "neutral_sentinel_frac": 0.0,
+      "zero_frac": 0.0,
+      "std": 0.3383,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    },
+    "htf_liquidity_score": {
+      "discriminative_power_proxy": 0.8378,
+      "neutral_sentinel_frac": 0.016,
+      "zero_frac": 0.0,
+      "std": 2.8227,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    },
+    "internal_liquidity_distance": {
+      "discriminative_power_proxy": 0.897,
+      "neutral_sentinel_frac": 0.04,
+      "zero_frac": 0.004,
+      "std": 0.7948,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    },
+    "external_liquidity_distance": {
+      "discriminative_power_proxy": 0.6381,
+      "neutral_sentinel_frac": 0.87,
+      "zero_frac": 0.0,
+      "std": 0.6451,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    },
+    "liquidity_confluence": {
+      "discriminative_power_proxy": 0.6525,
+      "neutral_sentinel_frac": 0.998,
+      "zero_frac": 0.0,
+      "std": 0.0201,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    },
+    "liquidity_sweep_state": {
+      "discriminative_power_proxy": 0.9078,
+      "neutral_sentinel_frac": 0.0,
+      "zero_frac": 0.0,
+      "std": 1.1067,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    },
+    "post_sweep_displacement": {
+      "discriminative_power_proxy": 0.6646,
+      "neutral_sentinel_frac": 0.006,
+      "zero_frac": 0.882,
+      "std": 0.3545,
+      "note": "model-free proxy only; real OOS importance requires the 70D model (TASK-3/4)"
+    }
+  }
+}

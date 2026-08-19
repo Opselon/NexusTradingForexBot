@@ -16,7 +16,6 @@ Checks:
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import sqlite3
@@ -30,11 +29,13 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "tests"))
 sys.path.insert(0, str(REPO))
 
-from nexus_scalp.shadow.shadow70.health import Shadow70DriftMonitor, Shadow70FeatureHealthMonitor  # noqa: E402
+from nexus_scalp.shadow.shadow70.health import (  # noqa: E402
+    Shadow70DriftMonitor,
+    Shadow70FeatureHealthMonitor,
+)
 from nexus_scalp.shadow.shadow70.runtime import Shadow70Runtime  # noqa: E402
 from nexus_scalp.shadow.shadow70.store import Shadow70Store  # noqa: E402
 from nexus_scalp.shadow.shadow70.worker import Shadow70Worker  # noqa: E402
-
 from tests.helpers.shadow70_fixtures import make_contract, vector70  # noqa: E402
 
 
@@ -52,7 +53,6 @@ def main() -> int:
         # 30 observations with varying champion actions -> disagreements arise
         ts0 = datetime.now(UTC)
         actions = ["BUY_MARKET", "NO_TRADE", "SELL_MARKET", "NO_TRADE"]
-        from nexus_scalp.shadow.shadow70.models import DisagreementClass
 
         classes: set[str] = set()
         for i in range(30):

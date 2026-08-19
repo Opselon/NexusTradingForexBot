@@ -52,12 +52,12 @@ LIQ_NAMES = (
 
 def _to_objs(bars: list[dict]) -> list[SimpleNamespace]:
     out = []
-    for b in bars:
-        b = dict(b)
-        ts = b["timestamp"]
-        b["timestamp"] = ts if isinstance(ts, datetime) else datetime.fromtimestamp(ts, tz=UTC)
-        b.setdefault("symbol", "XAUUSD")
-        out.append(SimpleNamespace(**b))
+    for item in bars:
+        d = dict(item)
+        ts = d["timestamp"]
+        d["timestamp"] = ts if isinstance(ts, datetime) else datetime.fromtimestamp(ts, tz=UTC)
+        d.setdefault("symbol", "XAUUSD")
+        out.append(SimpleNamespace(**d))
     return out
 
 

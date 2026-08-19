@@ -1,0 +1,54 @@
+bars=100000
+sample points=500
+samples=500
+{
+  "samples": 500,
+  "sessions": {
+    "ASIAN_TOKYO": 153,
+    "LONDON": 114,
+    "LONDON_NY_OVERLAP": 62,
+    "NEW_YORK": 115,
+    "OFF_HOURS": 56
+  },
+  "regimes": {
+    "RANGING_MEAN_REVERSION": 172,
+    "TRENDING_MOMENTUM": 328
+  },
+  "max_abs_corr": 0.6847,
+  "top_correlated": [
+    [
+      "liquidity_sweep_state",
+      "post_sweep_displacement",
+      -0.6847
+    ],
+    [
+      "ssl_distance_atr",
+      "internal_liquidity_distance",
+      0.5161
+    ],
+    [
+      "ssl_distance_atr",
+      "htf_liquidity_score",
+      0.3705
+    ],
+    [
+      "ssl_distance_atr",
+      "external_liquidity_distance",
+      -0.3628
+    ],
+    [
+      "internal_liquidity_distance",
+      "external_liquidity_distance",
+      -0.3502
+    ],
+    [
+      "external_liquidity_distance",
+      "liquidity_sweep_state",
+      -0.3007
+    ]
+  ],
+  "confluence_constant": {
+    "sample_mean": 2.9991,
+    "sample_std": 0.0201
+  }
+}

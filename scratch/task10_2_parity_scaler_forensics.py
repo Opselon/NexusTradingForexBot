@@ -25,7 +25,6 @@ from nexus_scalp.features.schema_contract import (  # noqa: E402
     canonical_feature_names,
     feature_schema_hash,
 )
-from nexus_scalp.features.schema import FEATURE_SCHEMAS  # noqa: E402
 
 LIQ_NAMES = (
     "bsl_distance_atr",

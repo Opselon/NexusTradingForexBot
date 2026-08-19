@@ -401,8 +401,10 @@ def compute_liquidity_frame(
         window = all_bars[max(0, i - 54) : i + 1]
         fv = engine.compute_from_bars(window, tick)
         x50 = fv.to_tensor_input()
+        # TASK-03-70D-PARITY fix: full causal history for the
+        # liquidity engine (matches live governor semantics).
         liquid = compute_liquidity_features(
-            window,
+            all_bars[: i + 1],
             decision_at=ts,
             mid_price=float(b["close"]),
             atr=fv.atr_m1,
@@ -597,8 +599,12 @@ def compute_70d_frame(
         fv = engine.compute_from_bars(window, tick)
         x50 = fv.to_tensor_input()
 
+        # TASK-03-70D-PARITY fix: the liquidity engine must see the
+        # SAME full causal history the live governor sees (all
+        # closed bars <= ts) so HTF buckets / session pools /
+        # confluence match train == live. 50D window unchanged.
         liquid = compute_liquidity_features(
-            window,
+            all_bars[: i + 1],
             decision_at=ts,
             mid_price=float(b["close"]),
             atr=fv.atr_m1,

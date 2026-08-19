@@ -184,3 +184,26 @@ applies it without engine restart; persistence goes through SettingsService
 (never live.yaml direct writes). Liquidity availability is independent of
 news availability in both directions.
 Status: 🟢 VERIFIED (2026-08-19 TASK-02: 99 liquidity tests + API smoke).
+
+
+## INV-021 — Liquidity algorithm optimization is versioned, candidate-only, and never self-tuning (TASK-06-70D-LIQUIDITY-OPTIMIZATION)
+
+- Scope: `features/liquidity_engine.py` (committed v1) and any future
+  optimization candidate (e.g. `features/liquidity_engine_opt.py` v1.1).
+- Rules:
+  1. The COMMITTED v1 engine is the frozen golden baseline; algorithmic
+     changes live in a NEW module/version (`liquidity_algorithm_version`),
+     never by mutating the committed producer in place before evidence.
+  2. Parameter selection uses TRAIN only; VALIDATION selects; OOS is
+     evaluated ONCE and LOCKED. No parameter changes after OOS review
+     (new experiment = new version).
+  3. No automatic/self-tuning mutation in production: no online gradient
+     updates, no self-modifying parameter paths (TEST-LIQ-OPT-23).
+  4. The optimization layer NEVER changes Base 0..49, News 50..59, labels,
+     triple-barrier definitions, or execution/risk paths.
+  5. Every model manifest records which `liquidity_algorithm_version`
+     produced its training data (governance/verify.py checks it).
+- Enforcing checks: TEST-LIQ-OPT-04 (causality), 05/06 (Base+News
+  untouched), 20 (version), 22 (no production wiring), 23 (no self-tuning),
+  27/28 (no execution/label change).
+- Current state: 🟢 v1 committed+blessed; v1.1 candidate-only, not wired.

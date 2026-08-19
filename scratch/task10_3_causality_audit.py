@@ -104,9 +104,9 @@ def main() -> int:
     print("T:", T.isoformat())
     print("v_before:", [round(x, 6) for x in v_before])
     print("v_after :", [round(x, 6) for x in v_after])
-    diffs = [abs(a - b) for a, b in zip(v_before, v_after)]
+    diffs = [abs(a - b) for a, b in zip(v_before, v_after, strict=False)]
     print("max abs diff:", max(diffs))
-    for i, (nm, d) in enumerate(zip(LIQ_NAMES, diffs)):
+    for i, (nm, d) in enumerate(zip(LIQ_NAMES, diffs, strict=False)):
         flag = "  <-- LEAK" if d > 1e-9 else ""
         print(f"  {60 + i} {nm}: diff={d:.9f}{flag}")
 

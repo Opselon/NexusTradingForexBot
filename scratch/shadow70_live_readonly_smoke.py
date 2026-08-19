@@ -30,7 +30,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from nexus_scalp.shadow.shadow70.health import Shadow70DriftMonitor, Shadow70FeatureHealthMonitor  # noqa: E402
+from nexus_scalp.shadow.shadow70.health import (  # noqa: E402
+    Shadow70DriftMonitor,
+    Shadow70FeatureHealthMonitor,
+)
 from nexus_scalp.shadow.shadow70.models import (  # noqa: E402
     SHADOW70_DIMENSION,
     SHADOW70_SCHEMA_ID,
@@ -38,7 +41,6 @@ from nexus_scalp.shadow.shadow70.models import (  # noqa: E402
 )
 from nexus_scalp.shadow.shadow70.runtime import (  # noqa: E402
     Shadow70Runtime,
-    sha256_file,
 )
 from nexus_scalp.shadow.shadow70.store import Shadow70Store  # noqa: E402
 
@@ -172,8 +174,8 @@ def main() -> int:
     RESULTS["idempotent"] = o1.observation_id == o2.observation_id
 
     # 5. Broker interaction count (runtime module graph has no broker)
-    import nexus_scalp.shadow.shadow70.runtime as rt_mod
     import nexus_scalp.shadow.shadow70.models as m_mod
+    import nexus_scalp.shadow.shadow70.runtime as rt_mod
 
     src = open(rt_mod.__file__, encoding="utf-8").read() + open(m_mod.__file__, encoding="utf-8").read()
     broker_tokens = [t for t in ("order_send", "order_modify", "order_cancel", "close_position",

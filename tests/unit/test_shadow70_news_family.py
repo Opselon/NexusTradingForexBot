@@ -20,7 +20,18 @@ from nexus_scalp.shadow.shadow70.news_provider import (
 # [active, xauusd_relevance, usd_relevance, bullish, bearish, conflict,
 #  novelty, freshness, confidence, source_consensus, state_enc, time_since]
 HIGH_IMPACT_V12 = [
-    3.0, 0.92, 0.55, 0.70, 0.10, 0.0, 0.0, 0.90, 0.80, 0.60, 2.0, 42.0,
+    3.0,
+    0.92,
+    0.55,
+    0.70,
+    0.10,
+    0.0,
+    0.0,
+    0.90,
+    0.80,
+    0.60,
+    2.0,
+    42.0,
 ]
 
 
