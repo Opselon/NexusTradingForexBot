@@ -4886,7 +4886,7 @@ Verified the old code reproduces the exact AttributeError at line 4707.
 FIXED - 3/3 regression tests pass; full test_model_lifecycle_api.py (22) + test_model_lifecycle_phase10.py (40) pass; ruff/mypy clean.
 
 
-## BUG-114 — Zero-PnL Ledger Rows from NONE-Fallback Reconstruction Persisted as Final (151 real broker tickets) (2026-08-19 AGENT-13)
+## BUG-115 — Zero-PnL Ledger Rows from NONE-Fallback Reconstruction Persisted as Final (151 real broker tickets) (2026-08-19 AGENT-13)
 
 ### Symptom
 151 closed broker trades have `audit_ledger.net_pnl_usd = 0.0` while

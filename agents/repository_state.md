@@ -199,14 +199,14 @@ Update this file additively after substantial work (new modules, model changes, 
   UNTOUCHED and read-only for this task.
 
 ## Snapshot 2026-08-19 (TASK-03-70D-PARITY - 70D contract landed)
-- scalp_v3 redefined 350D -> 70D canonical (Base|News|Liquidity). Registered: scalp_v1 
-50D (ACTIVE), scalp_v2 60D (candidate), scalp_v3 70D (candidate, canonical), scalp_v4 70D 
+- scalp_v3 redefined 350D -> 70D canonical (Base|News|Liquidity). Registered: scalp_v1
+50D (ACTIVE), scalp_v2 60D (candidate), scalp_v3 70D (candidate, canonical), scalp_v4 70D
 (TASK-2 integration candidate), scalp_liquidity_v1 60D (TASK-1 candidate).
-- NEW: features/schema_contract.py, features/features70.py, features/inference_validator.py, 
-features/runtime70.py, model_generation/replay.py replay_70d_vector, schema_v2 
-compute_70d_frame/build_70d_dataset/verify_70d_artifact, manifest feature_schema_hash + 
+- NEW: features/schema_contract.py, features/features70.py, features/inference_validator.py,
+features/runtime70.py, model_generation/replay.py replay_70d_vector, schema_v2
+compute_70d_frame/build_70d_dataset/verify_70d_artifact, manifest feature_schema_hash +
 training_dataset_id.
-- Tests: tests/unit/test_70d_{contract,dataset,replay,validator,runtime,perf}_task3.py 
+- Tests: tests/unit/test_70d_{contract,dataset,replay,validator,runtime,perf}_task3.py
 (70+ cases), tests/helpers/golden70d.py (11 scenarios).
 - Docs: docs/70D_DATA_CONTRACT.md, docs/agent_handoffs/TASK-03-70D-PARITY.md.
 - Commits: 3cc53a3, 09dd0bc, 5401d7f, 14fff5a, b531243, abafa9c (all pushed).
@@ -259,3 +259,21 @@ training_dataset_id.
   1970-01-01 writer artifact; dataset content verified correct).
 - Parallel WIP in tree (model_lifecycle AI-Hub diagnostics, liquidity_runtime, schema_v2,
   tests) untouched. See docs/TASK-09-70D-CANDIDATE-VALIDATION-FINAL.md.
+
+## Snapshot 2026-08-19 (TASK-13 — incident runtime activation)
+
+- IncidentWorker wired into live_engine (60s throttle, asyncio.to_thread, off
+  tick path, lazy construction, shutdown hook) with structured telemetry
+  (IncidentTelemetryCollector + emit_incident_telemetry from MT5/execution/
+  reconciliation failures).
+- Worker state machine STARTING/RUNNING/DEGRADED/STOPPING/STOPPED/FAILED +
+  latency p50/p95/p99 + useful-work telemetry (spec 7/39).
+- AccountingForensicsEngine: BUG-114 PROVEN — 151 zero-PnL ledger rows from
+  NONE-fallback reconstruction persisted as final; first divergence LEDGER;
+  RECONSTRUCTION_FAILURE x151; 32 zero outcomes RECOVERABLE_FROM_BROKER;
+  151 recovery candidates (RECOMMENDED, never auto-applied).
+- TimebaseProbe: HISTORY_QUERY_ERROR — DB clock healthy (-0.7s), broker
+  offset = bulk sync-lag; TIMEBASE_DIVERGENCE incident resolved
+  HIGH_CONFIDENCE.
+- Telegram CRITICAL/HIGH alerts wired + verified end-to-end (1 alert, dedup).
+- artifacts/forensics/accounting_divergence.json + timebase_probe.json.

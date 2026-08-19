@@ -250,15 +250,18 @@ class AccountingForensicsEngine:
         out: dict[str, Any] | None,
     ) -> str:
         """Evidence-driven classification (spec 16)."""
-        # The ledger was written with pnl=None -> 0.0 while the broker later
-        # synced real PnL. That is the proven pattern for this dataset:
-        # the close-time write had no deal evidence and the reconciliation
-        # that should backfill the ledger from broker history never ran.
+        # PROVEN chain (order_manager close path + broker history sync):
+        #   1. at close time the broker deal was not yet visible locally ->
+        #      reconstruct_broker_outcome returned reconstruction_source=NONE
+        #      with net_pnl_usd=0.0 (fallback snapshot estimate);
+        #   2. profit_usd stayed 0.0 -> log_ledger_closed persisted 0.0 as
+        #      the FINAL ledger value (not flagged as unknown);
+        #   3. the later broker-history sync populated audit_broker_trades
+        #      with the real PnL, but NO post-sync ledger reconciliation ran.
+        # The zero is therefore a reconstruction fallback persisted as if it
+        # were a real result -> RECONSTRUCTION_FAILURE.
         if r.get("exit_reason_source") in (None, ""):
-            # No evidence provenance on the ledger row: the close was written
-            # without broker deal evidence -> ZERO_DEFAULT_BUG (pnl=None->0.0
-            # coercion, BUG-046 discipline violation at the persistence layer).
-            return "ZERO_DEFAULT_BUG"
+            return "RECONSTRUCTION_FAILURE"
         if exp is not None and out is None:
             return "OUTCOME_PROPAGATION_FAILURE"
         if out is not None and abs(float(out.get("realized_pnl_usd") or 0.0)) < 0.005:
