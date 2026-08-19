@@ -1,150 +1,124 @@
-# TASK-02-70D-INTEGRATION — Handoff (Hermes-70D-Integration)
+# TASK-02-70D-INTEGRATION — FINAL HANDOFF (60D Liquidity Integration)
 
-> Agent: Hermes-70D-Integration (TASK-2) · 2026-08-19
-> Branch: `main` · Starting HEAD: `4001e4c` (TASK-2 began) — parallel agents
-> committed `c56d334` (TASK-07 blocked-state) + `d1fb393` / `6bbd8e7`
-> (TASK-04 model-validation) while this task ran; this task's work is
-> additive on top of the current HEAD.
+> Agent: AGENT-02 (Hermes-LiquidityIntegration) · 2026-08-19 · Branch: main
+> Task: REAL 70D LIQUIDITY INTEGRATION + UI CONTROL + DATASET/PARITY VALIDATION
+> (TASK-02 of the 10-task 60D Liquidity Intelligence program — the tasking
+> specifies the 60D `scalp_liquidity_v1` contract; the "70D" in the title
+> refers to the program series.)
 
-## 1. What TASK-1 actually delivered (verified at TASK-2 start)
+## CURRENT STATE
+- branch: `main`
+- HEAD: `2ad88bb` (STEP-14/15) + final ruff-clean commit
+- origin/main: in sync (every commit pushed + verified local==remote)
 
-- **Production engine** (uncommitted WIP when TASK-2 started):
-  `src/nexus_scalp/features/liquidity_engine.py` (52 KB) — pure-causal 10D
-  liquidity producer (`compute_liquidity_features`, `LiquidityFeatures`,
-  `LIQUIDITY_FEATURE_NAMES`, pools/state machine).
-- **Schema**: `scalp_liquidity_v1` (60D; liquidity at 50..59) registered in
-  `features/schema.py`; `model.liquidity_features_enabled` flag in
-  `ModelConfig` + `configs/base.yaml`; dataset builder
-  `compute_liquidity_frame`/`build_liquidity_dataset`/
-  `verify_liquidity_artifact` in `model_generation/schema_v2.py`.
-- **Tests**: `tests/unit/test_liquidity_engine_causality.py` (343 lines),
-  `test_liquidity_engine_contract.py` (382), `test_liquidity_engine_features.py`
-  (334), fixtures `tests/helpers/liquidity_fixtures.py`.
-- **Docs**: `docs/LIQUIDITY_60D_FORENSIC_BASELINE.md`,
-  `docs/LIQUIDITY_60D_50D_CONTRACT_SNAPSHOT.json`, `docs/LIQUIDITY_60D.md`.
-- TASK-1 did NOT deliver: runtime governor, API, UI, toggle, 70D schema —
-  that was TASK-2's job.
+## LIQUIDITY
+- enabled/disabled: **DISABLED by default** (`model.liquidity_features_enabled=false`
+  in config; missing setting resolves false; no inference from model presence)
+- algorithm_version: `scalp_liquidity_v1.0.0`
+- schema: `scalp_liquidity_v1` (dim 60; indices 0..49 = protected scalp_v1,
+  50..59 = liquidity); ACTIVE live schema remains `scalp_v1`
+- OFF -> pure 50D (unchanged semantics); ON -> 60D exact contract
 
-## 2. Repo-reality adaptations (brief TEST-29 "adapt names")
+## UI
+- toggle: exists (Enable/Disable Liquidity Intelligence), reads/writes the
+  backend via /api/liquidity/state + /api/liquidity/toggle (NEVER UI-only)
+- persistence: governor persists via SettingsService -> SettingsDatabase
+  (typed bool; the swarm's original path called a non-existent method and
+  stored truthy strings — FIXED in STEP-1/2, restart-persistence proven)
+- hot reload: OFF<->ON applies live on the same governor (no restart);
+  proven by tests
+- UI index derivation: liquidity block index = active schema dimension - 10
+  (no hardcoded 60/70)
 
-- The brief's "News 10D at 50..59" does NOT match this repo: slot 50..59 is
-  the **TASK-5 scalp_v2 momentum family** (`schema_augment.compute_60d_extras`).
-  Real News = independent 12D `news_context_v1` stream (models).
-- `scalp_v3` = **350D** already registered + asserted in existing tests
-  (`test_accounting_core.py`, `test_experience_intelligence.py`). The 70D
-  contract is therefore **`scalp_v4`**:
-  `BASE 0..49 | FAMILY 50..59 | LIQUIDITY 60..69`.
-- TASK-1's ledger already prescribed the separate-schema-id pattern
-  (`scalp_liquidity_v1`), so `scalp_v4` is consistent with it.
+## DATASET
+- source: `data/raw/XAUUSD_M1.parquet` (REAL broker data, 100k rows,
+  2026-05-01..2026-08-17, no dup timestamps, no nulls)
+- full-frame stats: 99,946 rows, 60 feat cols, all finite, all in [-3,3]
+- dataset artifact: `ds_liq_task02_real_1k` (1146 real rows, 60 feat cols,
+  scalp_liquidity_v1, triple-barrier labels 60 buy/53 sell/1033 no-trade,
+  split 802/171/173, verify_ok) — artifacts/ gitignored by design
+- feature distributions (feat_50..59): BSL/SSL mean ~1.7 ATR with ~25% +3
+  saturation; EQH/EQL 0..1; HTF -3..3 mean ~0; internal/external 1.0/1.77;
+  confluence mean 2.71 (21% sat — note for research); sweep rare (mean 0.15)
 
-## 3. What TASK-2 delivered
+## PARITY
+- dataset == replay: replay reads the artifact's feat_* columns -> the exact
+  60D vector the builder wrote (TEST-TASK02-13/14)
+- dataset == runtime: both call the SAME canonical
+  `compute_liquidity_features` (structural; TEST-LIQ-29/30 + golden)
+- 50D protected: TEST-60D-BASE-01 + TEST-TASK02-08 (OFF == pure 50D)
 
-### New files
-- `src/nexus_scalp/features/liquidity_runtime.py` — LiquidityGovernor
-  (thread-safe snapshot + status ENABLED/DISABLED/DEGRADED/UNAVAILABLE +
-  causal VALID/STALE/INVALID + latency + model compat),
-  `build_70d_vector` (strict, no pad/truncate), `resolve_model_compatibility`,
-  `LiquiditySnapshot`.
-- `tests/unit/test_liquidity_runtime_integration_phase18.py` — TEST-70D-01..28
-  mapped to the real repo contract (30 tests).
-- `tests/integration/test_liquidity_api.py` — REST tests for
-  /api/liquidity/state|features|toggle + live/status sections (9 tests).
+## MODEL
+- baseline: 50D scalp_v1 (existing Champion, untouched)
+- candidate path: CandidateTrainer on the 60D contract (TEST-TASK02-17/18:
+  cand_* id, COMPLETED, Champion path untouched)
+- NO promotion anywhere (TASK-02 never promotes; verified by test)
 
-### Modified files (TASK-2 owned)
-- `src/nexus_scalp/features/schema.py` — adds `scalp_v4` (70D) registration
-  (TASK-1's scalp_liquidity_v1 registration kept).
-- `src/nexus_scalp/application/live_engine.py` — governor init (reads
-  SettingsService persisted value first, falls back to config) + new-bar
-  snapshot hook (pure numpy, info-only, failure-isolated).
-- `src/nexus_scalp/settings/service.py` — `model.liquidity_features_enabled`
-  added to MUTABILITY as HOT_RESTRICTED.
-- `src/nexus_scalp/web/server.py` — `/api/liquidity/state`,
-  `/api/liquidity/features`, `POST /api/liquidity/toggle`,
-  `_liquidity_state_section()` helper, `liquidity` section in the canonical
-  state graph (embedded in /api/status + /api/live/state + SSE).
-- `Web/index.html` — Liquidity Intelligence tab (nav button + panel:
-  status/schema/dimension/features/source/causal/last-update/latency/model
-  compat/toggle + ten per-value cards idx 60..69).
-- `Web/app.js` — `loadLiquidityState`, `toggleLiquidity`,
-  `renderLiquidityPanel`, `syncLiquidityFromSnapshot`, chart pool overlays
-  (window.__liquidityPools from real snapshot only), console traces
-  `[LIQUIDITY_UI]` (no silent catch).
-- `configs/base.yaml`, `docs/LIQUIDITY_60D.md` (appendix), registries
-  (contracts/invariants/change_control/taskboard/repository_state).
+## PERFORMANCE (real data)
+- per-row: ~11.6 ms (200-row cProfile) / 70s per 1000-row frame (contended)
+- p50=39.6ms p95=49.7ms max=54.4ms per 501-bar window (latency probe)
+- live hot-path: liquidity runs on bar-close cadence only (11.6ms << 60s) —
+  NO hot-path regression
+- PROVEN bottleneck: `_bars_to_arrays`/`_bar_times` re-derivation (~40% of
+  time); designed fix (thread arrays once) documented in
+  docs/LIQUIDITY_60D_FROZEN.md — NOT applied (engine frozen)
 
-## 4. Key semantics / invariants added
+## TESTS (136 passed)
+- tests/unit/test_liquidity_engine_{contract,causality,features}.py: 60
+- tests/unit/test_liquidity_task02_integration.py: 29 (TEST-TASK02-01..21)
+- tests/unit/test_liquidity_runtime_integration_phase18.py: 38 (swarm 70D)
+- tests/integration/test_liquidity_api.py: 14 (60D contract)
+- ruff check + format: clean on all touched files; node --check clean;
+  index.html div-balance clean
 
-- **INV-020** (runtime_invariants.md): the liquidity toggle is
-  information-only; never touches orders/SL/TP/risk/execution/account/news.
-  Hot-reloadable without engine restart; persists via SettingsService.
-- **Model compatibility** (no auto-migration): 60D model + 70D runtime →
-  BLOCK with `LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE`; 70D+70D → PASS;
-  unknown → UNKNOWN. Never pad/truncate/silently upgrade.
-- **News/Liquidity independence**: either can be enabled/disabled/
-  unavailable without affecting the other (TEST-70D-06..09/28).
+## COMMITS (TASK-02, all pushed + remote-verified)
+| Step | SHA |
+| :--- | :--- |
+| STEP-0 baseline | cf84f79 |
+| STEP-1/2 flag contract + persistence fix | 9eab99e |
+| STEP-3 API state | a703b8e |
+| STEP-4/5 UI toggle | 5bca9f3 |
+| STEP-6/7 hot reload + runtime 60D vector | 8d8270e |
+| STEP-9 real-data causality | 4de3ce7 |
+| STEP-10/16/17 golden + freeze | 2e9b0f0 |
+| STEP-21/22 performance | b41d76c |
+| STEP-8/11/12 real dataset + parity | 3a6405d |
+| STEP-14/15 candidate path | 2ad88bb |
 
-## 5. Tests (TASK-2 verification)
+## BUGS
+- (proven, fixed) Governor persistence called `SettingsService.set()` which
+  does not exist -> toggles never persisted across restart; ALSO the truthy
+  string `"0"` bug stored enabled=true. Fixed: `SettingsService.db.set(key,
+  real_bool, value_type="bool")`. Regression: TEST-TASK02-06/27.
 
-- `tests/unit/test_liquidity_runtime_integration_phase18.py`: 30 passed.
-- `tests/integration/test_liquidity_api.py`: 9 passed.
-- TASK-1 suites (60 tests) still pass.
-- Total liquidity suites: 99 passed.
-- Quality gates on TASK-2 files: ruff check ✅, ruff format ✅, mypy ✅.
-- NOTE: `tests/unit/test_model_governance_phase16.py::TestGovernance70`
-  has 5 pre-existing failures from the PARALLEL TASK-08/70D-governance WIP
-  (PROVEN: fail identically without TASK-2's changes; not owned by TASK-2).
+## REMAINING RISKS
+- PROVEN: causality on real data (swing +5 delay 500/500, HTF exclusion
+  25/25, sweep invariant 25/25, historical invariance 25/25)
+- PROVEN: performance bottleneck (array re-derivation) with designed fix
+- NOT PROVEN: full-scale 100k dataset artifact (compute took ~8-19 min and
+  the swarm's CPU load made bounded builds hang; 1k/5k slices verified —
+  the 100k FRAME stats are proven, the artifact build recipe is verified on
+  1k)
+- UNKNOWN: real trained 60D candidate quality (no full training run —
+  OUT OF SCOPE for TASK-02: "a weak 60D model is a valid research result",
+  the training experiment belongs to TASK-04-70D-MODEL-VALIDATION)
+- CONTENTION: `features/liquidity_runtime.py` + `web/server.py` are shared
+  with the parallel 70D swarm (TASK-03-70D-PARITY renamed SCHEMA_70D ->
+  scalp_v3; their governor schema block may show 70D when enabled). The
+  TASK-02 60D contract is enforced at the ENGINE level (build_runtime_60d_vector)
+  + tests + golden; the swarm owns the governor's 70D semantics.
 
-## 6. Runtime smoke (real evidence)
-
-```
-GET /api/liquidity/state  -> ENABLED, scalp_v4/70D, 10 real values,
-                             latency 8.01 ms, causal VALID, source LIVE_MARKET_STATE
-GET /api/liquidity/features -> indices 60..69 exact
-POST /api/liquidity/toggle  -> OFF -> DISABLED, ON -> ENABLED (hot, no restart)
-GET /api/live/state         -> liquidity section present; news independent
-GET /api/status             -> liquidity section present
-```
-
-## 7. Known risks / unfinished
-
-- TASK-1's liquidity_engine.py + tests + docs are still UNCOMMITTED in this
-  tree (TASK-1's own commit did not land). TASK-2 committed them together
-  with the integration (agent-labelled, additive) so the 70D series has a
-  frozen, testable base. If TASK-1 later publishes its own commit, expect an
-  overlap — resolve additively (do NOT rewrite TASK-2's rows).
-- The `scalp_v4` bench path (training a real 70D model) is owned by TASK-04
-  (model-validation protocol) and TASK-03 (parity) — not in TASK-2 scope.
-- Chart overlays draw from `report().pools` (state enums serialized as ints
-  via serialize_enums); the UI color-maps side 1/-1.
-- The live engine hook fires on new-bar cadence only; a long-idle feed yields
-  DEGRADED/STALE via timestamps (intended, brief 25).
-
-## 8. EXACT NEXT-AGENT INSTRUCTIONS (TASK-3)
-
-1. READ FIRST: `agents/skill.md`, `agents/bugs.md` tail (next free BUG-NNN),
-   `agents/contracts.md` (LIQUIDITY_RUNTIME/LIQUIDITY_API/FEATURE_SCHEMA_70D
-   rows), `agents/runtime_invariants.md` (INV-020), `agents/taskboard.md`
-   (TASK-02 row), `docs/agent_handoffs/TASK-02-70D-INTEGRATION.md`.
-2. Run the liquidity suites to confirm the base:
-   `.venv/Scripts/python.exe -m pytest tests/unit/test_liquidity_runtime_integration_phase18.py tests/integration/test_liquidity_api.py tests/unit/test_liquidity_engine_*.py -q`
-3. TASK-3 (per brief series) builds the **training/live parity** layer:
-   `model_generation/schema_v2.py::compute_liquidity_frame` exists (TASK-1)
-   — wire it into the fair benchmark as the 70D dataset producer and prove
-   live-vs-training parity for feat_60..69 with the SAME causal window
-   (dataset builder vs `LiquidityGovernor.compute_from_engine`).
-4. Reuse `build_70d_vector`/`resolve_model_compatibility` — do NOT re-implement
-   family placement or the compat matrix.
-5. If you touch `Web/app.js`: keep it PURE CRLF (normalize after edits,
-   `node --check` after every edit). `Web/index.html` is LF; keep div balance
-   (scripts/div_balance_check.py).
-6. If you touch `web/server.py` or `live_engine.py`, keep the file's line
-   ending uniform (server.py is LF; live_engine.py is LF) and re-run
-   py_compile + affected tests.
-7. Persist any NEW settings key through `SettingsService` + MUTABILITY
-   (never live.yaml direct writes, INV-010).
-8. Commit agent-labelled (`Hermes-70D-...: <imperative>`) with full body
-   (Agent/Role/Scope/Why/Implementation/Verification/Risk/Handoff). Verify
-   `git diff --cached --name-only` immediately before commit (parallel-agent
-   hazard: other agents run git concurrently).
-9. Final gate: beforePush.ps1 (or the equivalent 4-part command) — report
-   pre-existing parallel-agent failures separately from your own.
+## NEXT AGENT (TASK-03 / TASK-04-70D-MODEL-VALIDATION)
+1. Read docs/LIQUIDITY_60D_FROZEN.md + docs/LIQUIDITY_60D.md +
+   tests/golden/liquidity_70d_reference.json (the frozen contract).
+2. TASK-04: run the real A/B — BASELINE 50D scalp_v1 vs CANDIDATE 60D
+   scalp_liquidity_v1 on the SAME dataset/timestamps/split/purge/embargo/
+   procedure (use ds_liq_task02_real_1k or build a larger slice with the
+   documented array-threading optimization under a NEW schema version).
+3. Do NOT change the frozen constants without schema/version review +
+   new tests + new golden re-baseline + new commit + new handoff.
+4. The swarm's 70D chain (TASK-03-70D-PARITY, TASK-05-70D-SHADOW) builds on
+   scalp_liquidity_v1 as the family producer at 50..59 — coordinate any
+   change via agents/taskboard.md.
+5. Confluence saturation (feat_57 ~21% at +3) and BSL/SSL ~25% +3
+   saturation are research signals for TASK-07-70D-LIQUIDITY-RESEARCH.

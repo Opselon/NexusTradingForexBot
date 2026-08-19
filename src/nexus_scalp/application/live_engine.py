@@ -57,7 +57,7 @@ from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import PreTradeExperienceDecision
 from nexus_scalp.experience.provenance import ModelRegistry
 from nexus_scalp.experience.retriever import ExperienceRetriever
-from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+from nexus_scalp.features.liquidity_runtime import LiquidityGovernor, SourceKind
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.features.schema import active_columns, active_dimension, active_schema
@@ -201,6 +201,14 @@ class LiveEngine:
         self._last_hygiene_time: float = 0.0
         self._hygiene_worker = None  # lazy: DatabaseHygieneWorker (AUDIT_ONLY)
         self._hygiene_mode = "AUDIT_ONLY"
+
+        # TASK-13: incident response worker (background, off tick path).
+        # Lazy construction in run_loop so a DB failure at startup can never
+        # block trading; the worker is observability-only (INV-019).
+        self._incident_interval_sec: float = 60.0
+        self._last_incident_time: float = 0.0
+        self._incident_worker = None  # lazy: IncidentWorker
+        self._incident_telemetry = None  # lazy: IncidentTelemetryCollector
 
         self._running: bool = False
         self.server_state: Any = None
@@ -651,6 +659,12 @@ class LiveEngine:
         self._last_probs: torch.Tensor | None = None
         self._last_proposal: TradeProposal | None = None
         self._last_inference_latency_ms: float | None = None
+        # TASK latency forensics: honest staged breakdown (model/feature/e2e).
+        self._last_latency_breakdown: dict | None = None
+        self._last_model_forward_ms: float | None = None
+        self._last_feature_ms: float | None = None
+        self._last_e2e_ms: float | None = None
+        self._inference_count: int = 0
         #: Most recent Phase 08 pre-trade verdict, surfaced by the REST API.
         self._last_experience_decision: PreTradeExperienceDecision | None = None
 
@@ -962,6 +976,12 @@ class LiveEngine:
         """
         if not self.adapter.connect():
             logger.critical("MT5 connect() failed. Engine shutting down.")
+            self.emit_incident_telemetry(
+                event_type="MT5_CONNECT_FAILED",
+                component="mt5",
+                severity="HIGH",
+                correlation_id="startup",
+            )
             try:
                 self.notifier.notify_error(
                     "MT5 Connectivity",
@@ -1008,6 +1028,12 @@ class LiveEngine:
             logger.error(
                 "[EXECUTION_RECONCILIATION] event=STARTUP_FAILED (isolated)",
                 error=str(startup_rec_err),
+            )
+            self.emit_incident_telemetry(
+                event_type="EXECUTION_RECONCILIATION_FAILED",
+                component="execution",
+                severity="HIGH",
+                correlation_id="startup",
             )
 
         await self._cold_start_warmup(symbol)
@@ -1072,6 +1098,12 @@ class LiveEngine:
                     if not self.adapter.is_connected():
                         logger.warning(
                             "[WARNING] Tick stream stalled and MT5 disconnected. Triggering MT5 adapter healthcheck & auto-reconnect"
+                        )
+                        self.emit_incident_telemetry(
+                            event_type="MT5_DISCONNECTED",
+                            component="mt5",
+                            severity="HIGH",
+                            correlation_id="tick-stream",
                         )
                         try:
                             self.adapter.disconnect()
@@ -1180,6 +1212,23 @@ class LiveEngine:
                         logger.warning(
                             "[DB_HYGIENE] event=CYCLE_FAILED (isolated)",
                             error=str(hyg_err),
+                        )
+
+                # TASK-13: incident response cycle (throttled ~60s, off the
+                # tick path via to_thread; observability-only, INV-019). The
+                # worker correlates structured telemetry into incidents and
+                # persists them; it can never block or alter trading.
+                if now_t - self._last_incident_time >= self._incident_interval_sec:
+                    self._last_incident_time = now_t
+                    try:
+                        if self._incident_worker is None:
+                            self._ensure_incident_worker()
+                        if self._incident_worker is not None:
+                            await asyncio.to_thread(self._incident_worker.tick)
+                    except Exception as inc_err:
+                        logger.warning(
+                            "[INCIDENT_WORKER] event=CYCLE_FAILED (isolated)",
+                            error=str(inc_err),
                         )
 
                 # Daily Telegram performance summary (BUG-057): throttled to
@@ -1349,6 +1398,12 @@ class LiveEngine:
         # PHASE 12: stop the news intelligence worker (isolated, optional).
         try:
             await self._stop_news_worker()
+        except Exception:
+            pass
+
+        # TASK-13: stop the incident response worker (isolated).
+        try:
+            await self._stop_incident_worker()
         except Exception:
             pass
 
@@ -1755,6 +1810,81 @@ class LiveEngine:
             self.news_worker.stop()
         except Exception as err:
             logger.error("[NEWS_WORKER] event=STOP status=FAILED", error=str(err))
+
+    def _ensure_incident_worker(self) -> None:
+        """Lazily constructs the incident worker + telemetry collector.
+
+        Fully isolated: a construction failure logs and leaves the worker
+        None so the engine keeps trading (INV-019).
+        """
+        try:
+            if self._incident_worker is not None:
+                return
+            from nexus_scalp.incidents.store import IncidentStore
+            from nexus_scalp.incidents.telemetry import IncidentTelemetryCollector
+            from nexus_scalp.incidents.worker import IncidentWorker
+
+            db_path = getattr(self.audit, "_db_path", "")
+            store = IncidentStore(db_path=db_path, audit_repo=self.audit)
+            notifier = getattr(self, "notifier", None)
+            self._incident_worker = IncidentWorker(
+                store=store,
+                interval_sec=self._incident_interval_sec,
+                telegram_notifier=notifier if notifier is not None else None,
+            )
+            self._incident_worker.start()
+            self._incident_telemetry = IncidentTelemetryCollector(
+                worker=self._incident_worker
+            )
+            logger.info("[INCIDENT_WORKER] event=START status=RUNNING")
+        except Exception as inc_start_err:
+            self._incident_worker = None
+            self._incident_telemetry = None
+            logger.warning(
+                "[INCIDENT_WORKER] event=START_FAILED (isolated)",
+                error=str(inc_start_err),
+            )
+
+    def emit_incident_telemetry(
+        self,
+        *,
+        event_type: str,
+        component: str,
+        error_code: str = "",
+        correlation_id: str = "",
+        ticket: str = "",
+        execution_id: str = "",
+        severity: str | None = None,
+    ) -> bool:
+        """Feeds one structured runtime event into the incident pipeline.
+
+        Called from engine error handlers; never blocks, never raises.
+        Returns True when accepted.
+        """
+        if self._incident_telemetry is None:
+            return False
+        try:
+            return self._incident_telemetry.emit(
+                event_type=event_type,
+                component=component,
+                error_code=error_code,
+                correlation_id=correlation_id,
+                ticket=ticket,
+                execution_id=execution_id,
+                severity=severity,
+            )
+        except Exception:
+            return False
+
+    async def _stop_incident_worker(self) -> None:
+        """Stops the incident worker (idempotent, never raises)."""
+        try:
+            if self._incident_worker is not None:
+                self._incident_worker.stop()
+                self._incident_worker = None
+            self._incident_telemetry = None
+        except Exception as err:
+            logger.error("[INCIDENT_WORKER] event=STOP status=FAILED", error=str(err))
 
     def _news_strategy_direction(self, proposal: Any) -> str:
         """Infers the strategy direction behind a proposal for the news gate.
@@ -2320,11 +2450,11 @@ class LiveEngine:
                         mid_price=float(tick.bid),
                         atr=float(fv.atr_m1),
                         decision_at=tick.timestamp,
-                        source=(
-                            self.liquidity_governor._source
-                            if getattr(self.liquidity_governor, "_source", None) is not None
-                            else None
-                        ),
+                        # BUG-111: the source of THIS computation is the
+                        # live market state — never the governor's stale
+                        # prior _source (which defaulted to UNAVAILABLE and
+                        # corrupted the first live snapshot's provenance).
+                        source=SourceKind.LIVE_MARKET_STATE,
                     )
                 except Exception as liq_exc:
                     logger.warning(
@@ -2643,6 +2773,12 @@ class LiveEngine:
                 )
         except Exception as obs_err:
             logger.error("[POSITION_TRACK] observation failed (isolated)", error=str(obs_err))
+            self.emit_incident_telemetry(
+                event_type="POSITION_TRACK_FAILED",
+                component="execution",
+                severity="MEDIUM",
+                correlation_id="position-track",
+            )
 
     def _position_performance(self, ticket: int) -> PositionPerformance:
         """Builds risk-normalised excursion performance from order-manager state."""
@@ -2905,8 +3041,15 @@ class LiveEngine:
     def _infer_probabilities(self, fv) -> torch.Tensor:
         import time as _time
 
-        _start = _time.perf_counter()
+        # --- honest staged latency trace (monotonic, TASK: latency forensics) ---
+        from nexus_scalp.features.latency_tracer import LatencyStage, LatencyTracer
+
+        _trace = LatencyTracer(prediction_id=f"inf_{_time.perf_counter_ns()}")
+        _trace.mark(LatencyStage.T0_MARKET_EVENT)
+        _trace.mark(LatencyStage.T1_FEATURE_START)
+
         x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="live_inference")
+        _trace.mark(LatencyStage.T2_FEATURE_DONE)
         x_np = np.array(x50, dtype=np.float32).reshape(1, -1)
 
         with self._bundle_lock:
@@ -2915,21 +3058,52 @@ class LiveEngine:
             raise RuntimeError("Model bundle not initialized")
 
         x_np = bundle.scaler.transform_50d(x_np)
+        _trace.mark(LatencyStage.T3_SCALER_DONE)
         x = torch.tensor(x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+        _trace.mark(LatencyStage.T4_TENSOR_DONE)
 
         # Debug/forensics: keep the exact model input the live path consumed
         # (post-scaler, pre-softmax). Read-only observability (INV-018);
-        # never used for execution.
+        # never used for execution. SAMPLED (every 64th) to keep the hot
+        # path allocation-free; full capture available in debug mode.
+        # Debug/forensics input capture: sampled (every 64th) to keep
+        # the hot path allocation-free; full capture in debug mode.
+        _dbg_every = getattr(self, "_latency_dbg_every", 64) or 64
         try:
-            self._last_model_input_tensor = x.detach().cpu().numpy().reshape(-1).tolist()
+            if (self._inference_count % _dbg_every) == 0:
+                self._last_model_input_tensor = x.detach().cpu().numpy().reshape(-1).tolist()
+            else:
+                self._last_model_input_tensor = None
         except Exception:
             self._last_model_input_tensor = None
 
+        # HONEST Model Forward stage (T5..T6) — nothing else in between.
+        _trace.mark(LatencyStage.T5_MODEL_START)
         bundle.model.eval()
-        with torch.inference_mode():
-            probs = bundle.model(x)
-        self._last_inference_latency_ms = (_time.perf_counter() - _start) * 1000.0
+        # Latency fix: intra-op multithreading on a 267k-param net is pure
+        # overhead under host contention (~60ms vs 0.25ms single-threaded,
+        # same logits — verified). Pin to 1 thread for the forward and
+        # restore; safe under the bundle lock (no concurrent model call).
+        _prior_threads = torch.get_num_threads()
+        torch.set_num_threads(1)
+        try:
+            with torch.inference_mode():
+                probs = bundle.model(x)
+        finally:
+            torch.set_num_threads(_prior_threads)
+        _trace.mark(LatencyStage.T6_MODEL_DONE)
+
+        self._inference_count = getattr(self, "_inference_count", 0) + 1
+        _trace.mark(LatencyStage.T7_DECODE_DONE)
+        _trace.mark(LatencyStage.T8_CONFIDENCE_DONE)
+        _trace.mark(LatencyStage.T10_PUBLISHED)
+        self._last_inference_latency_ms = _trace.model_ms()
+        # keep the honest staged breakdown for the API/UI
+        self._last_latency_breakdown = _trace.to_dict()
+        self._last_model_forward_ms = _trace.model_ms()
+        self._last_feature_ms = _trace.feature_ms()
+        self._last_e2e_ms = _trace.e2e_ms()
         return probs
 
     def _record_shadow_decision(

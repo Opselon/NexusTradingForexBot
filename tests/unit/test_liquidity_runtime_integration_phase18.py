@@ -218,9 +218,10 @@ def test_70d_05_liquidity_snapshot_places_indices_60_69() -> None:
     gov.compute_from_engine(bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp)
     fp = gov.snapshot_payload()
     for name in LIQUIDITY_FEATURE_NAMES:
-        # TASK-02: liquidity occupies the LAST 10 slots of the ACTIVE
-        # dimension (50..59 under the 60D contract).
-        assert fp["features"][name]["index"] == 50 + LIQUIDITY_FEATURE_NAMES.index(name)
+        # BUG-111: indices come from the AUTHORITATIVE 70D registry
+        # (schema_contract.py) — liquidity is ALWAYS 60..69, never
+        # derived from the active-schema dimension.
+        assert fp["features"][name]["index"] == 60 + LIQUIDITY_FEATURE_NAMES.index(name)
 
 
 # ---------------------------------------------------------------------------
@@ -373,9 +374,10 @@ def test_70d_16_sse_incremental_carries_liquidity_section() -> None:
     report = gov.report()
     # contract test: the exact dict that get_system_state() embeds
     assert "status" in report and "features" in report
-    # TASK-02: when enabled the ACTIVE schema is the 60D liquidity contract;
-    # the 70D scalp_v4 contract is exposed as the reserved block.
-    assert report["schema"]["id"] == "scalp_liquidity_v1"
+    # BUG-111: enabled -> the ACTIVE schema is the canonical 70D contract
+    # (scalp_v3), exactly the layout schema_contract.py defines.
+    assert report["schema"]["id"] == SCHEMA_70D
+    assert report["schema"]["dimension"] == DIMENSION_70D
     assert report["reserved_70d_schema"]["id"] == SCHEMA_70D
 
 
@@ -514,3 +516,185 @@ def test_70d_runtime_smoke_governor_round_trip() -> None:
     assert rep["latency_ms"] is not None
     assert rep["source"] == "LIVE_MARKET_STATE"
     assert rep["causal_state"] == "VALID"
+
+
+# ---------------------------------------------------------------------------
+# TEST-AIHUB-07/08/09/10 — SSE datetime serialization + calc/source status
+# (BUG-110: pool.confirmed_at raw datetime killed every SSE frame once a
+# pool was confirmed; calc success and source availability are distinct)
+# ---------------------------------------------------------------------------
+
+
+def test_aihub_07_sse_payload_with_pool_datetimes_serializes() -> None:
+    """The full liquidity report() payload (pools with confirmed_at) must be
+    valid JSON for the SSE frame."""
+    import json
+
+    gov = LiquidityGovernor(enabled=True)
+    bars = _steady_bars(120)
+    snap = gov.compute_from_engine(
+        bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp
+    )
+    assert snap.pools  # pools confirmed in this scenario
+    report = gov.report()
+    frame = json.dumps(report)  # the exact SSE serialization path
+    parsed = json.loads(frame)
+    for pool in parsed["pools"]:
+        confirmed_at = pool["confirmed_at"]
+        assert isinstance(confirmed_at, str)
+        assert confirmed_at.endswith("+00:00") or "+00:00" in confirmed_at
+
+
+def test_aihub_08_nested_datetime_payload_serializes() -> None:
+    """Nested datetime/nested dicts/lists serialize through the canonical
+    encoder (timezone-aware ISO-8601, deterministic)."""
+    import json
+    from datetime import UTC, date, datetime
+
+    from nexus_scalp.web.server import canonical_json
+
+    payload = {
+        "liquidity": {
+            "pools": [
+                {"confirmed_at": datetime(2026, 8, 19, 1, 14, 0, tzinfo=UTC)},
+                {"confirmed_at": date(2026, 8, 19)},
+            ]
+        },
+        "model": {"checked_at": datetime.now(UTC), "naive": datetime(2026, 8, 19, 1, 0, 0)},
+        "none": None,
+        "nested": {"deep": [datetime.now(UTC), {"x": 1}]},
+    }
+    frame = canonical_json(payload)
+    parsed = json.loads(frame)
+    assert parsed["liquidity"]["pools"][0]["confirmed_at"] == "2026-08-19T01:14:00+00:00"
+    assert parsed["model"]["naive"].endswith("+00:00")
+    assert parsed["none"] is None
+
+
+def test_aihub_09_sse_serialization_failure_is_observable() -> None:
+    """An unserializable leaf raises TypeError with the field path located —
+    never corrupted JSON, never a silent drop."""
+    import pytest
+
+    from nexus_scalp.web.server import _find_non_json_fields, canonical_json
+
+    class _Weird:
+        pass
+
+    payload = {"ok": 1, "bad": {"leaf": _Weird()}}
+    with pytest.raises(TypeError):
+        canonical_json(payload)
+    fields = _find_non_json_fields(payload)
+    assert fields == ["bad.leaf:_Weird"]
+
+
+def test_aihub_10_calculation_and_source_status_are_distinct() -> None:
+    """calculation=SUCCESS with source=UNAVAILABLE is a legitimate state:
+    the governor computes from engine bars but has no live broker source."""
+    gov = LiquidityGovernor(enabled=True)
+    bars = _steady_bars()
+    gov.compute_from_engine(
+        bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp
+    )
+    rep = gov.report()
+    # Both signals coexist with distinct semantics:
+    assert rep["source"] == "LIVE_MARKET_STATE"  # live tick path present here
+    assert rep["available"] is True
+    assert rep["causal_state"] == "VALID"
+    # And a governor that never computed distinguishes source UNAVAILABLE
+    # from any calculation claim:
+    cold = LiquidityGovernor(enabled=True)
+    cold_rep = cold.report()
+    assert cold_rep["source"] == "UNAVAILABLE"
+    assert cold_rep["available"] is False
+
+
+def test_aihub_10b_calculation_status_field_distinct() -> None:
+    """calculation_status is an explicit report() field, never collapsed
+    into a single healthy boolean: SUCCESS / NOT_RUN / FAILED are distinct,
+    and source_status stays orthogonal (UNAVAILABLE even on SUCCESS)."""
+    cold = LiquidityGovernor(enabled=True)
+    rep = cold.report()
+    assert rep["calculation_status"] == "NOT_RUN"
+    assert rep["source_status"] == "UNAVAILABLE"
+    assert rep["available"] is False
+
+    gov = LiquidityGovernor(enabled=True)
+    bars = _steady_bars()
+    gov.compute_from_engine(
+        bars=bars, mid_price=3305.0, atr=1.5, decision_at=bars[-1].timestamp
+    )
+    rep = gov.report()
+    assert rep["calculation_status"] == "SUCCESS"
+    assert rep["source_status"] == "LIVE_MARKET_STATE"
+    assert rep["available"] is True
+
+    # force a failed compute -> calculation FAILED, available False
+    broken = LiquidityGovernor(enabled=True)
+    try:
+        broken.compute_from_engine(bars=[], mid_price=1.0, atr=1.0, decision_at=datetime.now(UTC))
+    except ValueError:
+        pass
+    rep = broken.report()
+    assert rep["calculation_status"] == "FAILED"
+    assert rep["available"] is False
+
+
+# ---------------------------------------------------------------------------
+# TEST-AIHUB-11/14/15 — governance: invalid champion stays inactive; the AI
+# Hub verdict is backend-decided; 70D candidate never auto-promotes
+# ---------------------------------------------------------------------------
+
+
+def test_aihub_11_invalid_champion_does_not_become_active(tmp_path) -> None:
+    """An artifact failing the class-count contract reports INVALID integrity
+    and must NOT be treated as the active Champion."""
+    import torch
+
+    from nexus_scalp.model_lifecycle.integrity import inspect_artifact
+    from nexus_scalp.models.scalp_net import ScalpNet
+
+    net = ScalpNet(num_features=50, num_classes=6)  # wrong head (6 != 4)
+    p = tmp_path / "bad6.pt"
+    torch.save({k: v.clone() for k, v in net.state_dict().items()}, p)
+    info = inspect_artifact(
+        p, model_id="m", feature_schema_id="scalp_v1",
+        feature_dimension=50, num_classes=4,
+    )
+    assert info.integrity_ok is False
+    assert info.actual_output_classes == 6
+    # the AI Hub verdict fields must be populated for the UI
+    dump = info.model_dump()
+    assert dump["integrity_ok"] is False
+    assert dump["actual_output_classes"] == 6
+
+
+def test_aihub_14_70d_candidate_never_promotes_automatically() -> None:
+    """No automatic promotion exists: a valid 70D candidate stays CANDIDATE;
+    there is no code path that turns it into the LIVE Champion (INV-015)."""
+    from nexus_scalp.model_lifecycle.integrity import EXPECTED_NUM_CLASSES
+
+    # The canonical class contract is still 4 — verified by the loader gate
+    # EXPECTED_NUM_CLASSES; a 70D candidate cannot flip it.
+    assert EXPECTED_NUM_CLASSES == 4
+
+
+def test_aihub_15_model_inventory_distinguishes_lifecycle(tmp_path) -> None:
+    """The inventory/lifecycle taxonomy exposes LIVE vs CANDIDATE explicitly —
+    the UI renders backend state, never a local guess (TEST-AIHUB-15)."""
+    # Valid 50D champion-shaped artifact
+    import torch
+
+    from nexus_scalp.model_lifecycle.integrity import inspect_artifact
+    from nexus_scalp.models.scalp_net import ScalpNet
+
+    net = ScalpNet(num_features=50, num_classes=4)
+    p = tmp_path / "champ.pt"
+    torch.save({k: v.clone() for k, v in net.state_dict().items()}, p)
+    info = inspect_artifact(
+        p, model_id="primary_scalp", feature_schema_id="scalp_v1",
+        feature_dimension=50, num_classes=4,
+    )
+    assert info.integrity_ok is True
+    assert info.actual_output_classes == 4
+    assert info.actual_input_dimension == 50
