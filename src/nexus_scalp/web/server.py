@@ -553,6 +553,29 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "checked_at": _iso_now(),
         }
 
+    def _runtime_version_block(state: Any) -> dict[str, Any]:
+        """Version-consistency block for /api/status (TASK-9 production
+        release layer): real backend/build data, never hardcoded; reports
+        VERSION_INCONSISTENCY on drift (brief sections 15/52)."""
+        from nexus_scalp.release.versioning import (
+            RuntimeVersionBlock,
+            default_db_versions_provider,
+        )
+        cfg = getattr(state, "config", None)
+        web_dir = None
+        try:
+            if cfg is not None and hasattr(cfg, "base_dir"):
+                web_dir = Path(cfg.base_dir) / "Web"
+            if web_dir is None or not web_dir.is_dir():
+                web_dir = Path("Web") if Path("Web").is_dir() else None
+        except Exception:
+            web_dir = None
+        return RuntimeVersionBlock(
+            db_provider=default_db_versions_provider,
+            web_dir=web_dir,
+        ).build()
+
+
     # Helper function to get live data from engine or return explicit unavailable state
     def get_system_state() -> dict[str, Any]:
         """Canonical live-state snapshot for the dashboard.
@@ -1322,6 +1345,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "order_lines": order_lines,
             },
             "health": _build_health_section(app.state, now_mono),
+            "versioning": _runtime_version_block(app.state),
             "diagnostics": {
                 "state_age_sec": None,
                 "tick_age_sec": _age_sec(now_mono, tick_timestamp),
@@ -5234,7 +5258,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             champ = health.get("champion", {})
             chal = health.get("challenger", {})
             state = engine.governance_engine._promotion_state_summary() or {}
-            by_state = state.get("by_state", {})
+            state.get("by_state", {})
             # champion schema/hash live in the registry snapshot
             snapshot = engine.governance_engine.registry_snapshot(
                 audit_db=engine.audit._db_path if engine.audit else "",
@@ -5292,16 +5316,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         if not model_id:
             return _err("PROMOTION_BLOCKED", extra={"reason": "model_id required"})
         try:
+            champ_ref = engine.champion_manager.champion_or_none()
             preview = engine.governance_engine.promotion_preview(
                 model_id=model_id,
                 model_version=model_version,
                 artifact_path=engine.config.model.model_artifact_path,
-                runtime_schema_id=engine.champion_manager.model.feature_schema_id
-                if engine.champion_manager.model
-                else "",
-                runtime_dimension=engine.champion_manager.model.feature_dimension
-                if engine.champion_manager.model
-                else 0,
+                runtime_schema_id=champ_ref.feature_schema_id if champ_ref else "",
+                runtime_dimension=champ_ref.feature_dimension if champ_ref else 0,
                 locks_dir=Path(_promotion_lock_path()).parent,
             )
             return serialize_enums({"available": True, "preview": preview})
@@ -5343,6 +5364,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "PROMOTION_BLOCKED",
                     extra={"reason": "promotion frozen (emergency stop)"},
                 )
+            champ_ref = engine.champion_manager.champion_or_none()
             old_champion = {
                 "model_id": str(payload.get("old_champion_model_id", "") or ""),
                 "version": str(payload.get("old_champion_version", "") or ""),
@@ -5372,12 +5394,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     model_id=mid, model_version=mver
                 ),
                 artifact_path=engine.config.model.model_artifact_path,
-                runtime_schema_id=engine.champion_manager.model.feature_schema_id
-                if engine.champion_manager.model
-                else "",
-                runtime_dimension=engine.champion_manager.model.feature_dimension
-                if engine.champion_manager.model
-                else 0,
+                runtime_schema_id=champ_ref.feature_schema_id if champ_ref else "",
+                runtime_dimension=champ_ref.feature_dimension if champ_ref else 0,
                 correlation_id="api_promotion",
             )
             return serialize_enums({"available": True, "promotion": audit_row})

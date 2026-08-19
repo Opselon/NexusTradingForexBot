@@ -127,6 +127,13 @@ def version_cmd(
     """Show canonical version + build identity."""
     info = get_version_info()
     if json_mode:
+        from nexus_scalp.release.versioning import RuntimeVersionBlock
+
+        try:
+            block = RuntimeVersionBlock(web_dir=Path("Web") if Path("Web").is_dir() else None)
+            info = {**info, "web_bundle": block.build()}
+        except Exception:
+            pass  # version truth never blocks the CLI
         _emit(info, True)
         return
     if plain:
