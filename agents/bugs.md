@@ -4470,3 +4470,35 @@ The original Champion model.pt is unrecoverable from this repo. Operator
 must either restore from an external backup (verify hashes) or approve a
 retrain/promotion through ModelGovernanceEngine. Until then the active
 artifact is RESTORED_CANDIDATE (bench_a_v1-derived), functionally 50D.
+
+
+## BUG-105 — 70D Shadow Runtime Schema ID Drifted From Canonical scalp_v3 To scalp_v4 (TASK-05-70D-SHADOW, 2026-08-19)
+
+### Root cause
+The canonical 70D contract (features/schema_contract.py, TASK-03-70D-PARITY)
+defines SCHEMA_ID = "scalp_v3" (70D: Base 50 + News 10 + Liquidity 10) and
+the TASK-05/10 brief mandates schema_id=scalp_v3 for the 70D candidate. A
+parallel agent (AGENT-10, TASK-10-70D-FINAL-FORENSIC) renamed the shadow70
+runtime's SHADOW70_SCHEMA_ID constant to "scalp_v4" during their news-family
+canonicalization — silently diverging the runtime from the registered
+contract and the brief's candidate-contract check.
+
+### Evidence
+- src/nexus_scalp/features/schema_contract.py:63 SCHEMA_ID = "scalp_v3" (HEAD).
+- src/nexus_scalp/features/schema.py registers scalp_v3 (70D, canonical) AND
+  scalp_v4 (70D, alternate family layout) — both exist.
+- shadow70/models.py at commit 0fa1d96: SHADOW70_SCHEMA_ID = "scalp_v4"
+  (pre-reconciliation) — a scalp_v3-validated candidate would fail the
+  runtime's schema gate (SCHEMA_VALID) despite being canonical.
+- The brief (§3 / §57) requires schema_id=scalp_v3.
+
+### Fix (reconciliation)
+- shadow70/models.py: SHADOW70_SCHEMA_ID restored to "scalp_v3" with a
+  documented comment. The validator defaults from it, so candidate contract
+  checks now match the canonical contract again. Test: 41/41 shadow70
+  runtime + news-family tests green after the restore.
+
+### Test
+- tests/unit/test_shadow70_runtime.py (TEST-SHADOW-01..35) + test_shadow70_
+  news_family.py — 41 passed post-fix. Status: FIXED (reconciled; AGENT-10's
+  news-family work remains intact — only the constant default restored).

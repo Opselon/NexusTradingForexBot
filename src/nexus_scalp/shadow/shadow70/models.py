@@ -26,7 +26,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 #: Canonical 70D schema id for this runtime (POST_70D / 70D series contract).
-SHADOW70_SCHEMA_ID: str = "scalp_v4"
+#: TASK-03-70D-PARITY schema_contract.py defines scalp_v3 == 70D; the brief
+#: mandates schema_id=scalp_v3 for the 70D candidate. (AGENT-10 temporarily
+#: moved the runtime to scalp_v4 for the news-family canonicalization; the
+#: canonical id is restored here — reconciliation, TASK-05-70D-SHADOW.)
+SHADOW70_SCHEMA_ID: str = "scalp_v3"
 
 #: 50 Base + 10 News + 10 Liquidity (INV-70D-001..003 / INV-70D-004).
 SHADOW70_DIMENSION: int = 70
