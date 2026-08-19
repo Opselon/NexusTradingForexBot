@@ -65,3 +65,12 @@ class OrphanClass(StrEnum):
     REBUILDABLE = "REBUILDABLE"
     CORRUPTION = "CORRUPTION"
     UNKNOWN = "UNKNOWN"
+
+
+__all__ = [
+    "Confidence",
+    "DataTier",
+    "OrphanClass",
+    "WorkerMode",
+    "WorkerState",
+]
