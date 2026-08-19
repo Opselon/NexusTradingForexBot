@@ -139,9 +139,26 @@ class ChampionManager:
         self.feature_schema_id = schema.schema_id
         self.feature_dimension = feature_dimension or schema.dimension
         self.num_classes = int(num_classes)
+        # Coarse cache for the ~2 Hz hot path (web/governance polls call
+        # champion_or_none()); the memoized verified Champion is reused
+        # while the artifact fingerprint (size+mtime) is unchanged, so
+        # requests re-read neither the artifact nor the log line (BUG-118).
+        # ANY rewrite of the artifact file (retrain, promotion, rollback,
+        # collapse recovery) changes the fingerprint -> next call verifies
+        # afresh and logs once.
+        self._cached_champion: ChampionModel | None = None
+        self._cache_fingerprint: tuple[int, int] | None = None
+        self._cold_start_none: bool = False
+        self._cold_start_fingerprint: tuple[int, int] | None = None
 
     def load_champion(self) -> ChampionModel:
-        """Loads + verifies the Champion; raises on corruption."""
+        """Loads + verifies the Champion; raises on corruption.
+
+        Logs '[MODEL] CHAMPION VERIFIED' ONLY when the verified instance
+        changes (initial load or a different artifact fingerprint) so the
+        hot path stays silent (BUG-118 — the message was emitted on every
+        call, spamming nse_live.log at ~2 Hz).
+        """
         champion = ChampionModel(
             self.artifact_path,
             model_id=self.model_id,
@@ -151,21 +168,50 @@ class ChampionManager:
             num_classes=self.num_classes,
         )
         champion.verify(raise_on_mismatch=True)
-        logger.info(
-            "[MODEL] CHAMPION VERIFIED",
-            model_id=champion.model_id,
-            version=champion.model_version,
-            hash=champion.artifact_hash,
-        )
+        if self._cached_champion is None or (
+            self._cached_champion.artifact_hash != champion.artifact_hash
+        ):
+            logger.info(
+                "[MODEL] CHAMPION VERIFIED",
+                model_id=champion.model_id,
+                version=champion.model_version,
+                hash=champion.artifact_hash,
+            )
+        self._cached_champion = champion
+        self._cache_fingerprint = self._artifact_fingerprint()
+        self._cold_start_none = False
         return champion
 
-    def champion_or_none(self) -> ChampionModel | None:
-        """Best-effort load: returns None (never raises) when unavailable."""
+    def champion_or_none(self, force_reload: bool = False) -> ChampionModel | None:
+        """Best-effort load: returns None (never raises) when unavailable.
+
+        Hot-path cached (BUG-118): once verified, the same ChampionModel
+        is returned while the artifact fingerprint is unchanged, so ~2 Hz
+        web/governance polls re-read neither the artifact nor the log line.
+        A cold-start None is memoized too (no repeated warning).
+        force_reload=True performs a fresh verify (startup, hot-swap).
+        """
+        fp = self._artifact_fingerprint()
+        if not force_reload:
+            if self._cached_champion is not None and self._cache_fingerprint == fp:
+                return self._cached_champion
+            if self._cold_start_none and self._cold_start_fingerprint == fp:
+                return None
         try:
             return self.load_champion()
         except Exception as e:
             logger.warning("[MODEL] Champion unavailable", error=str(e))
+            self._cold_start_none = True
+            self._cold_start_fingerprint = fp
             return None
+
+    def _artifact_fingerprint(self) -> tuple[int, int] | None:
+        """Cheap identity of the artifact file (size + mtime_ns)."""
+        try:
+            st = self.artifact_path.stat()
+        except OSError:
+            return None
+        return (st.st_size, st.st_mtime_ns)
 
     def candidate_artifact_path(self, run_id: str) -> Path:
         """Staging path for a candidate - NEVER the champion path (spec 33)."""

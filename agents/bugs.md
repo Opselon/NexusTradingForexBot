@@ -5035,3 +5035,41 @@ The Liquidity Intelligence panel displayed contradictory state after a live sess
 - Tests: governance preview run on ag09_oos_C_v1 (scratch/ag09_
   governance_preview.py); TEST-TASK09-09 (candidate manifest completeness)
   covers the contract.
+## BUG-118 — [MODEL] CHAMPION VERIFIED log spam + redundant artifact re-verify on ~2 Hz hot path (2026-08-19)
+
+- Category: OBSERVABILITY / MODEL_LIFECYCLE
+- Symptom: `nse_live.log` filled with `[MODEL] CHAMPION VERIFIED` lines at
+  ~1-2 Hz for the SAME unchanged artifact (hash=9105cef7d93e23b8).
+  Observed cadence: 1x/sec during startup, 2x/sec steady state — every
+  web/governance poll (`/api/models/*`, governance health snapshot,
+  registry sync) called `champion_or_none()` -> `load_champion()` which
+  re-ran `ChampionModel.verify()` (re-reading + hashing the artifact,
+  re-loading the scaler npz) and re-logged on EVERY call.
+- Root cause: `ChampionManager` had no memoization — the hot path
+  performed full integrity re-verification + a log line per call.
+- Fix: `ChampionManager` now caches the verified `ChampionModel` keyed by
+  a cheap artifact fingerprint (`(st_size, st_mtime_ns)`); identical polls
+  return the cached instance WITHOUT re-reading the artifact or logging.
+  ANY artifact rewrite (retrain, promotion, rollback, collapse recovery)
+  changes size/mtime -> next call re-verifies afresh and logs exactly once
+  (log-on-change guard compares artifact hashes). Cold-start None is also
+  memoized (single warning). `champion_or_none(force_reload=True)` keeps
+  the fresh-verify escape hatch for startup/hot-swap callers.
+- Behavior contract preserved: `champion_or_none()` still returns None
+  (never raises) on cold start (BUG-112/113) and still returns a
+  fresh instance after any artifact change (verified by tests).
+- Proof: repeated `champion_or_none()` (50x) logs exactly ONE
+  CHAMPION VERIFIED line; a content rewrite re-verifies and logs once
+  (new hash); cold-start polls log one "Champion unavailable" warning.
+- Tests: `tests/unit/test_model_lifecycle_phase10.py`
+  TEST-BUG118-01..04 (`test_bug118_*`): log-once-per-fingerprint,
+  artifact-rewrite re-verify-once, cold-start memoization,
+  force_reload fresh verify.
+- Note: structlog renders via `ConsoleRenderer` to stdout — BUG-118 tests
+  assert on `capsys` output, not caplog records.
+- Related: the Telegram SEND_FAILED `NameError: name 'full_text' is not
+  defined` seen in the same log was a parallel-agent in-flight regression
+  (dedup signature registered inside `_parse_response` where `full_text`
+  is out of scope). It was already fixed at HEAD (58c39f4): registration
+  now lives in `_send_msg_sync` guarded by `ok`, covered by
+  `test_telegram_notifier.py`. VERIFIED via the telemetry suite.

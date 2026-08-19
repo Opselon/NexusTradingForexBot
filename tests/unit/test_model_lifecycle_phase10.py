@@ -433,8 +433,11 @@ class TestCompatibility:
         p = tmp_path / "model.pt"
         self._make_scalpnet_artifact(p, num_features=50, num_classes=4)
         info = inspect_artifact(
-            p, model_id="m", feature_schema_id="scalp_v1",
-            feature_dimension=50, num_classes=4,
+            p,
+            model_id="m",
+            feature_schema_id="scalp_v1",
+            feature_dimension=50,
+            num_classes=4,
         )
         assert info.integrity_ok is True
         assert info.actual_input_dimension == 50
@@ -447,8 +450,11 @@ class TestCompatibility:
         p = tmp_path / "model.pt"
         self._make_scalpnet_artifact(p, num_features=50, num_classes=4)
         info = inspect_artifact(
-            p, model_id="m", feature_schema_id="scalp_v1",
-            feature_dimension=50, num_classes=4,
+            p,
+            model_id="m",
+            feature_schema_id="scalp_v1",
+            feature_dimension=50,
+            num_classes=4,
         )
         assert info.actual_output_classes == 4  # NOT 128
         assert info.actual_hidden_dimension == 128  # the 128 lives here
@@ -458,8 +464,11 @@ class TestCompatibility:
         p = tmp_path / "model70.pt"
         self._make_scalpnet_artifact(p, num_features=70, num_classes=4)
         info = inspect_artifact(
-            p, model_id="m70", feature_schema_id="scalp_v3",
-            feature_dimension=70, num_classes=4,
+            p,
+            model_id="m70",
+            feature_schema_id="scalp_v3",
+            feature_dimension=70,
+            num_classes=4,
         )
         assert info.integrity_ok is True
         assert info.actual_input_dimension == 70
@@ -474,8 +483,12 @@ class TestCompatibility:
         scaler = tmp_path / "model.scaler.npz"
         np.savez(scaler, mean=np.zeros(10), std=np.ones(10))
         info = inspect_artifact(
-            p, scaler_path=str(scaler), model_id="m",
-            feature_schema_id="scalp_v1", feature_dimension=50, num_classes=4,
+            p,
+            scaler_path=str(scaler),
+            model_id="m",
+            feature_schema_id="scalp_v1",
+            feature_dimension=50,
+            num_classes=4,
         )
         assert info.integrity_ok is False
         assert info.scaler_dimension == 10
@@ -486,8 +499,11 @@ class TestCompatibility:
         p = tmp_path / "model6.pt"
         self._make_scalpnet_artifact(p, num_features=50, num_classes=6)
         info = inspect_artifact(
-            p, model_id="m", feature_schema_id="scalp_v1",
-            feature_dimension=50, num_classes=4,
+            p,
+            model_id="m",
+            feature_schema_id="scalp_v1",
+            feature_dimension=50,
+            num_classes=4,
         )
         assert info.integrity_ok is False
         assert info.actual_output_classes == 6
@@ -498,8 +514,11 @@ class TestCompatibility:
         p = tmp_path / "model60.pt"
         self._make_scalpnet_artifact(p, num_features=60, num_classes=4)
         info = inspect_artifact(
-            p, model_id="m", feature_schema_id="scalp_v1",
-            feature_dimension=50, num_classes=4,
+            p,
+            model_id="m",
+            feature_schema_id="scalp_v1",
+            feature_dimension=50,
+            num_classes=4,
         )
         assert info.integrity_ok is False
         assert info.actual_input_dimension == 60
@@ -527,10 +546,106 @@ class TestCompatibility:
         p = tmp_path / "garbage.pt"
         p.write_bytes(b"not a torch checkpoint")
         info = inspect_artifact(
-            p, model_id="m", feature_schema_id="scalp_v1",
-            feature_dimension=50, num_classes=4,
+            p,
+            model_id="m",
+            feature_schema_id="scalp_v1",
+            feature_dimension=50,
+            num_classes=4,
         )
         assert info.integrity_ok is False
+
+    # ------------------------------------------------------------------
+    # BUG-118 — '[MODEL] CHAMPION VERIFIED' spam: the manager logged on
+    # every champion_or_none() call (~2 Hz from web/governance polls) and
+    # re-read the artifact each time. The verified Champion is now memoized
+    # per artifact fingerprint (size+mtime): identical polls return the
+    # cached instance WITHOUT re-logging, and ANY artifact rewrite (retrain,
+    # promotion, rollback, collapse recovery) changes the fingerprint and
+    # triggers exactly ONE fresh verify + log.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_bug118_champion(tmp_path, num_features=50, num_classes=4):
+        import numpy as np
+
+        p = tmp_path / "model.pt"
+        TestCompatibility._make_scalpnet_artifact(p, num_features, num_classes)
+        scaler = tmp_path / "model.scaler.npz"
+        np.savez(scaler, mean=np.zeros(num_features), std=np.ones(num_features))
+        return ChampionManager(
+            artifact_path=p,
+            feature_schema_id="scalp_v1",
+            feature_dimension=num_features,
+        )
+
+    def test_bug118_champion_verified_logs_once_per_fingerprint(self, tmp_path, capsys):
+        """Repeated champion_or_none() polls must NOT spam the log."""
+        mgr = self._make_bug118_champion(tmp_path)
+        capsys.readouterr()  # drain any boot noise
+
+        first = mgr.champion_or_none()
+        assert first is not None
+        # 50 identical hot-path polls -> still exactly ONE log line
+        for _ in range(50):
+            assert mgr.champion_or_none() is first
+        out = capsys.readouterr().out
+        assert out.count("CHAMPION VERIFIED") == 1, f"expected 1 log, got:\n{out}"
+
+    def test_bug118_artifact_rewrite_reverifies_once(self, tmp_path, capsys):
+        """A content rewrite (retrain/promotion) invalidates the cache and
+        re-verifies, logging CHAMPION VERIFIED once for the new hash."""
+        mgr = self._make_bug118_champion(tmp_path)
+        import time
+
+        capsys.readouterr()  # drain boot noise
+        first = mgr.champion_or_none()
+        assert first is not None
+        # hot path cached: identical polls return the SAME instance, silent
+        assert mgr.champion_or_none() is first
+
+        # simulate retrain artifact rewrite: a NEW checkpoint overwrites the
+        # model file (new content hash + new mtime => new fingerprint)
+        import os
+
+        import torch
+
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        net = ScalpNet(num_features=50, num_classes=4)
+        with torch.no_grad():
+            for p in net.parameters():
+                p.add_(1e-3)  # different weights => different artifact hash
+        torch.save({k: v.clone() for k, v in net.state_dict().items()}, mgr.artifact_path)
+        time.sleep(0.01)
+        os.utime(mgr.artifact_path, None)
+
+        second = mgr.champion_or_none()
+        assert second is not None
+        assert second is not first
+        out = capsys.readouterr().out
+        assert out.count("CHAMPION VERIFIED") == 2, (
+            f"expected 2 logs (initial+rewrite), got:\n{out}"
+        )
+
+    def test_bug118_cold_start_none_memoized(self, tmp_path, capsys):
+        """Missing artifact returns None once; repeated polls stay silent."""
+        mgr = ChampionManager(artifact_path=str(tmp_path / "missing.pt"))
+        capsys.readouterr()  # drain boot noise
+
+        assert mgr.champion_or_none() is None
+        for _ in range(30):
+            assert mgr.champion_or_none() is None
+        out = capsys.readouterr().out
+        assert out.count("Champion unavailable") == 1, f"expected 1 warning, got:\n{out}"
+
+    def test_bug118_force_reload_performs_fresh_verify(self, tmp_path):
+        """force_reload=True bypasses the memo (startup/hot-swap contract)."""
+        mgr = self._make_bug118_champion(tmp_path)
+        first = mgr.champion_or_none()
+        second = mgr.champion_or_none(force_reload=True)
+        assert second is not None
+        assert first is not None
+        assert second is not first
 
 
 # =============================================================================
