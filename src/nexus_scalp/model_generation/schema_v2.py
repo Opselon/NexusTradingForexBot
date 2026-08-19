@@ -340,6 +340,14 @@ def verify_60d_artifact(dataset_id: str, store: ArtifactStore | None = None) -> 
 # =============================================================================
 
 LIQUIDITY_SCHEMA_ID = "scalp_liquidity_v1"
+#: BUG-106 (TASK-04/05): the liquidity engine's causal history window MUST be
+#: bounded to match the LIVE aggregator cap (live_engine.py: `_completed_bars`
+#: trimmed to 4000 on every tick, line ~2070). Passing ALL history to
+#: compute_liquidity_features per row is O(n^2) AND breaks train==live parity
+#: (live sees <=4000 bars, training saw 100K+). 4000 M5 bars = ~14 days,
+#: sufficient for completed D1 buckets (1440 bars).
+LIQUIDITY_HISTORY_LIMIT: int = 4000
+
 #: Where the liquidity engine's 10 features start inside the 60D vector.
 LIQUIDITY_EXTRA_START: int = 50
 
@@ -409,7 +417,7 @@ def compute_liquidity_frame(
         # TASK-03-70D-PARITY fix: full causal history for the
         # liquidity engine (matches live governor semantics).
         liquid = compute_liquidity_features(
-            all_bars[: i + 1],
+            all_bars[max(0, i + 1 - LIQUIDITY_HISTORY_LIMIT) : i + 1],
             decision_at=ts,
             mid_price=float(b["close"]),
             atr=fv.atr_m1,
@@ -609,7 +617,7 @@ def compute_70d_frame(
         # closed bars <= ts) so HTF buckets / session pools /
         # confluence match train == live. 50D window unchanged.
         liquid = compute_liquidity_features(
-            all_bars[: i + 1],
+            all_bars[max(0, i + 1 - LIQUIDITY_HISTORY_LIMIT) : i + 1],
             decision_at=ts,
             mid_price=float(b["close"]),
             atr=fv.atr_m1,

@@ -4646,3 +4646,17 @@ is the guard.
 ### Verification
 NOT APPLIED — recorded as an upstream finding for the 70D series owner
 (blocked the TASK-4 benchmark execution within this session).
+
+### FIXED (TASK-05, 2026-08-19)
+Applied `LIQUIDITY_HISTORY_LIMIT=4000` in `model_generation/schema_v2.py`:
+both `compute_liquidity_frame` and `compute_70d_frame` now pass
+`all_bars[max(0, i+1-4000):i+1]` to the liquidity engine — matching the LIVE
+aggregator cap (live_engine.py `_completed_bars` trimmed to 4000 per tick,
+~line 2070) AND the 4000-bar parity golden (TEST-03-01b deep4000).
+- Complexity: O(n^2) -> O(n x 4000).
+- Per-call 20K-history cost: 27.6 s -> 1.22 s (~22x).
+- Parity re-run: tests/unit/test_70d_parity_task3.py + dataset_parity GREEN.
+- Evidence: scratch/probe_bug106_engine_curve.py/.out.txt,
+  artifacts/benchmarks/bug106_engine_curve.json,
+  docs/BUG-106-PERFORMANCE-FIX.md.
+
