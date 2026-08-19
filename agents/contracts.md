@@ -30,6 +30,8 @@
 | RESEARCH_RESULT | v1 | ACTIVE | research/ | registry, web |
 | UPDATE_SYSTEM | v1 | ACTIVE | release/updater.py, cli/main.py | installed users, release CI |
 | SHADOW_70D | v1 | ACTIVE | shadow/shadow70/ (TASK-05-70D-SHADOW) | web, research, drift | 
+| LIQUIDITY_RUNTIME | v1 (TASK-02-70D-INTEGRATION) | ACTIVE | features/liquidity_runtime.py (LiquidityGovernor: real snapshot, ENABLED/DISABLED/DEGRADED/UNAVAILABLE, model compat, 70D assembly) | web/server.py, live_engine.py, Web/ |
+| LIQUIDITY_API | v1 (TASK-02-70D-INTEGRATION) | ACTIVE | web/server.py /api/liquidity/state|features|toggle + canonical liquidity section in /api/status + /api/live/state + SSE | Web dashboard |
 | SHADOW_LOAD_GATE | v1 | ACTIVE | shadow/shadow70/runtime.py (manifest/hash/schema/dimension/scaler) | shadow70 loader |
 | SHADOW_FEATURE_HEALTH | v1 | ACTIVE | shadow/shadow70/health.py | web, drift monitor |
 | SHADOW_DRIFT | v1 | ACTIVE | shadow/shadow70/drift.py | web, alerting |

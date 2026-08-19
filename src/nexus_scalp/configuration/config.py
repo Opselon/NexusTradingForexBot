@@ -56,6 +56,12 @@ class ModelConfig(BaseModel):
     confidence_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     feature_schema_version: str = "v1.0"
     model_artifact_path: str = "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
+    #: TASK-01-60D-LIQUIDITY explicit switch. False (default) -> EXACTLY the
+    #: existing 50D behavior; True -> the 60D liquidity feature layer is
+    #: available to candidate pipelines. The switch NEVER silently alters
+    #: schema expectations: enabled input schemas are explicitly 60D
+    #: (scalp_liquidity_v1) and manifests record feature_dimension=60.
+    liquidity_features_enabled: bool = False
 
 
 class AlgoConfig(BaseModel):

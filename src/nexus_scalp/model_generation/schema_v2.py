@@ -30,6 +30,7 @@ import numpy as np
 import polars as pl
 
 from nexus_scalp.domain.models import TickData
+from nexus_scalp.features.liquidity_engine import compute_liquidity_features
 from nexus_scalp.features.scalp_features import ScalpFeatureEngine
 from nexus_scalp.features.schema_augment import (
     NUM_EXTRA_60D,
@@ -319,5 +320,183 @@ def verify_60d_artifact(dataset_id: str, store: ArtifactStore | None = None) -> 
         "all_finite": finite,
         "duplicate_groups": dup_cols,
         "duplicate_warning": bool(dup_cols),
+        "dataset_hash": man.get("dataset_hash", ""),
+    }
+
+
+# =============================================================================
+# TASK-01-60D-LIQUIDITY: scalp_liquidity_v1 dataset builder (ADDITIVE)
+# =============================================================================
+# The liquidity 60D path mirrors compute_60d_frame but produces feat_50..59
+# from features/liquidity_engine.compute_liquidity_features on the SAME causal
+# window the 50D engine consumes (last 55 completed bars + synthetic tick at
+# close). Training/live/replay parity is structural: they all call the exact
+# same canonical function with identical inputs.
+# =============================================================================
+
+LIQUIDITY_SCHEMA_ID = "scalp_liquidity_v1"
+#: Where the liquidity engine's 10 features start inside the 60D vector.
+LIQUIDITY_EXTRA_START: int = 50
+
+
+def compute_liquidity_frame(
+    df: pl.DataFrame,
+    *,
+    min_bars: int = 55,
+    spread: float = SPREAD_USD,
+) -> pl.DataFrame:
+    """Computes a scalp_liquidity_v1 (60D) feature frame from raw bars.
+
+    For each row i (i >= min_bars-1) the existing 50D engine AND the
+    liquidity engine run on the same causal window [i-54 .. i] with a
+    synthetic tick at bar i's close — identical convention to
+    ``compute_60d_frame``, so a liquidity-60D artifact is directly
+    comparable to the 50D Data-Gate artifact.
+
+    Returns a frame with columns:
+        timestamp, open, high, low, close, spread, atr_m1, tick_volume,
+        feat_0..feat_59 (feat_50..59 = liquidity features)
+    """
+    raw = df.sort("time")
+    times: list[datetime] = []
+    for row in raw.iter_rows(named=True):
+        t = row.get("time_utc") or row.get("time")
+        ts = t if isinstance(t, datetime) else None
+        if ts is None:
+            continue
+        ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+        times.append(ts)
+
+    engine = ScalpFeatureEngine(symbol="XAUUSD")
+    n = raw.height
+    all_bars: list[BarData] = []
+    for j in range(n):
+        bj = raw.row(j, named=True)
+        all_bars.append(
+            BarData(
+                symbol="XAUUSD",
+                timeframe="M5",
+                timestamp=times[j],
+                open=float(bj["open"]),
+                high=float(bj["high"]),
+                low=float(bj["low"]),
+                close=float(bj["close"]),
+                tick_volume=int(bj.get("tick_volume", 0) or 0),
+                is_complete=True,
+            )
+        )
+    rows: list[dict[str, Any]] = []
+    for i in range(n):
+        if i + 1 < min_bars:
+            continue  # causal warm-up: no 50D features without 55 bars
+        ts = times[i]
+        b = raw.row(i, named=True)
+        tick = TickData(
+            symbol="XAUUSD",
+            timestamp=ts,
+            bid=float(b["close"]),
+            ask=float(b["close"]) + spread,
+            volume=int(b.get("tick_volume", 0) or 0),
+        )
+        window = all_bars[max(0, i - 54) : i + 1]
+        fv = engine.compute_from_bars(window, tick)
+        x50 = fv.to_tensor_input()
+        liquid = compute_liquidity_features(
+            window,
+            decision_at=ts,
+            mid_price=float(b["close"]),
+            atr=fv.atr_m1,
+        )
+        extras = liquid.as_vector()
+        rec = {
+            "timestamp": ts,
+            "open": float(b["open"]),
+            "high": float(b["high"]),
+            "low": float(b["low"]),
+            "close": float(b["close"]),
+            "spread": spread,
+            "atr_m1": float(fv.atr_m1),
+            "tick_volume": int(b.get("tick_volume", 0) or 0),
+        }
+        for idx in range(50):
+            rec[f"feat_{idx}"] = float(x50[idx])
+        for idx in range(len(extras)):
+            rec[f"feat_{LIQUIDITY_EXTRA_START + idx}"] = float(extras[idx])
+        rows.append(rec)
+        if i % 20000 == 0 and i > 0:
+            logger.info("[LIQUIDITY_SCHEMA] computed %d rows (of ~%d)", i, n)
+    return pl.DataFrame(rows)
+
+
+def build_liquidity_dataset(
+    bars_frame: pl.DataFrame,
+    *,
+    timeframe: str = "M5",
+    news_frame: pl.DataFrame | None = None,
+    strategy_id: str = "scalp_default",
+    strategy_version: str = "1.0.0",
+    store: ArtifactStore | None = None,
+    seed: int = 42,
+    dataset_id: str | None = None,
+) -> dict[str, Any]:
+    """Builds + persists a scalp_liquidity_v1 (60D) dataset artifact.
+
+    Returns the DatasetFactory handle dict (dataset_id, counts, hash).
+    """
+    store = store or ArtifactStore()
+    feat_frame = compute_liquidity_frame(bars_frame)
+    if feat_frame.is_empty():
+        raise ValueError("liquidity 60D feature frame empty — check raw bars / min_bars")
+
+    factory = DatasetFactory(
+        store=store,
+        sample_factory=SampleFactory(feature_schema_id=LIQUIDITY_SCHEMA_ID),
+    )
+    handle = factory.build(
+        feat_frame,
+        symbol="XAUUSD",
+        timeframe=timeframe,
+        news_frame=news_frame,
+        strategy_id=strategy_id,
+        strategy_version=strategy_version,
+        seed=seed,
+        dataset_id=dataset_id,
+    )
+    logger.info(
+        "[LIQUIDITY_SCHEMA] event=DATASET_BUILT dataset_id=%s rows=%d",
+        handle.get("dataset_id"),
+        handle.get("counts", {}).get("total", 0),
+    )
+    return handle
+
+
+def verify_liquidity_artifact(
+    dataset_id: str, store: ArtifactStore | None = None
+) -> dict[str, Any]:
+    """Verifies a scalp_liquidity_v1 artifact: 60 feat columns, manifest
+    schema_id, all values finite AND within [-3,+3]."""
+    store = store or ArtifactStore()
+    man = store.read_dataset_manifest(dataset_id)
+    if man is None:
+        return {"ok": False, "reason": "MANIFEST_MISSING"}
+    frame = store.read_dataset(dataset_id)
+    feat_cols = [c for c in frame.columns if c.startswith("feat_")]
+    if len(feat_cols) != 60:
+        return {"ok": False, "reason": f"EXPECTED_60_FEATURES_GOT_{len(feat_cols)}"}
+    if man.get("feature_schema_id") != LIQUIDITY_SCHEMA_ID:
+        return {
+            "ok": False,
+            "reason": f"MANIFEST_SCHEMA {man.get('feature_schema_id')} != {LIQUIDITY_SCHEMA_ID}",
+        }
+    arr = frame.select(feat_cols).to_numpy().astype(np.float64)
+    finite = bool(np.isfinite(arr).all())
+    in_range = bool((arr >= -3.0).all() and (arr <= 3.0).all())
+    return {
+        "ok": finite and in_range,
+        "feature_count": len(feat_cols),
+        "schema_id": man.get("feature_schema_id"),
+        "rows": frame.height,
+        "all_finite": finite,
+        "all_in_range": in_range,
         "dataset_hash": man.get("dataset_hash", ""),
     }

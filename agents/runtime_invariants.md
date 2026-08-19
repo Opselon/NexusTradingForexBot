@@ -174,3 +174,13 @@ that builds the model before seeding violates the fair-benchmark/reproducibility
 contract (TASK-4 brief §39). WalkForwardTrainer and CandidateTrainer comply
 post-BUG-101.
 Status: 🟢 VERIFIED (2026-08-19 TASK-04: fresh-process smoke identical 0.3 == 0.3).
+
+## INV-020 — Liquidity Intelligence toggle is information-only and hot-reloadable (TASK-02-70D-INTEGRATION)
+`model.liquidity_features_enabled` (SettingsService key, HOT_RESTRICTED)
+controls ONLY feature/status information generation (70D liquidity block at
+60..69). Enabling/disabling it NEVER changes orders, SL/TP, RiskEngine,
+execution mode, account state, news state, or the active model. The runtime
+applies it without engine restart; persistence goes through SettingsService
+(never live.yaml direct writes). Liquidity availability is independent of
+news availability in both directions.
+Status: 🟢 VERIFIED (2026-08-19 TASK-02: 99 liquidity tests + API smoke).

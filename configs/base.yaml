@@ -21,6 +21,9 @@ model:
   confidence_threshold: 0.75
   feature_schema_version: "v1.0"
   model_artifact_path: "artifacts/models/scalp/EURUSD/v1.0.0/model.pt"
+  # TASK-01-60D-LIQUIDITY: explicit switch. false -> existing 50D behavior;
+  # true -> 60D liquidity feature layer for candidate pipelines.
+  liquidity_features_enabled: false
 
 algo:
   atr_sl_buffer_multiplier: 1.5

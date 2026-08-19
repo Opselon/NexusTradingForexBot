@@ -197,6 +197,45 @@ FEATURE_SCHEMAS.register(
         supersedes="scalp_v2",
     )
 )
+FEATURE_SCHEMAS.register(
+    FeatureSchema(
+        schema_id="scalp_v4",
+        dimension=70,
+        description=(
+            "scalp_v1 50D Base + 10 slot-50..59 family features (TASK-5 "
+            "scalp_v2 momentum extras or TASK-1 liquidity at 50..59 under "
+            "their own schema ids) + 10 TASK-01-60D-LIQUIDITY Liquidity "
+            "Intelligence features (bsl_distance_atr, ssl_distance_atr, "
+            "eqh_strength, eql_strength, htf_liquidity_score, "
+            "internal_liquidity_distance, external_liquidity_distance, "
+            "liquidity_confluence, liquidity_sweep_state, "
+            "post_sweep_displacement) at indices 60..69. The 70D integration "
+            "contract: BASE 0..49 | FAMILY 50..59 | LIQUIDITY 60..69 "
+            "(TASK-02-70D-INTEGRATION). Candidate-only; the ACTIVE live "
+            "contract remains scalp_v1."
+        ),
+        supersedes="scalp_v1",
+    )
+)
+FEATURE_SCHEMAS.register(
+    FeatureSchema(
+        schema_id="scalp_liquidity_v1",
+        dimension=60,
+        description=(
+            "scalp_v1 + 10 TASK-01-60D-LIQUIDITY causal Liquidity Intelligence "
+            "features (bsl_distance_atr, ssl_distance_atr, eqh_strength, "
+            "eql_strength, htf_liquidity_score, internal_liquidity_distance, "
+            "external_liquidity_distance, liquidity_confluence, "
+            "liquidity_sweep_state, post_sweep_displacement) — produced by "
+            "features/liquidity_engine.compute_liquidity_features. Candidate-only; "
+            "the ACTIVE live contract remains scalp_v1. Distinct from scalp_v2 "
+            "(TASK-5 momentum augmentation) which keeps indices 50..59; "
+            "scalp_liquidity_v1 defines its OWN 10D semantics at indices 50..59 "
+            "under a separate schema id."
+        ),
+        supersedes="scalp_v1",
+    )
+)
 
 
 def active_schema() -> FeatureSchema:

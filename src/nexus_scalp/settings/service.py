@@ -62,6 +62,7 @@ MUTABILITY = {
     "risk.max_allowed_lots": HOT_RESTRICTED,
     "risk.enforce_stop_loss": HOT_RESTRICTED,
     "model.confidence_threshold": HOT_RESTRICTED,
+    "model.liquidity_features_enabled": HOT_RESTRICTED,
     "model.model_artifact_path": RESTART_REQUIRED,
     "algo.atr_sl_buffer_multiplier": HOT_RESTRICTED,
     "algo.min_risk_reward_ratio": HOT_RESTRICTED,
