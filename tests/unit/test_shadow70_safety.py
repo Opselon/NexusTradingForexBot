@@ -246,6 +246,10 @@ def test_shadow40_worker_persists_to_real_db(tmp_artifacts: str) -> None:
     db = os.path.join(tmp_artifacts, "audit.db")
     repo = RealRepo(db)
     store = Shadow70Store(audit_repo=repo)
+    # lazy-schema contract: ensure tables BEFORE the writer starts so a
+    # full-suite ordering slip cannot race schema creation with the writer
+    # thread's first inserts (observed in the parallel full run).
+    store.ensure_schema()
     wk = Shadow70Worker(store=store, max_queue=500, batch_size=25)
     wk.start()
     try:
