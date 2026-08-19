@@ -219,7 +219,7 @@ Owners affected: Hermes-Accounting (excursion metrics), Hermes-Learning (outcome
 Risk: MEDIUM
 Dependencies: BUG-081/095 (split-fill context), BUG-096/097/098 (this task)
 Required tests: TEST-ANOM-01..28
-Status: VERIFIED
+Status: MERGED
 ```
 
 
@@ -261,7 +261,7 @@ Risk: MEDIUM
 Dependencies: TASK-9 update engine, TASK-10 migration engine, TASK-6 load
        gate, canonical schema registry (scalp_v1/v2/v4/liquidity)
 Required tests: TEST-REL-01..30 (phase19 suites), TEST-UP-01..35, TEST-DBM
-Status: VERIFIED
+Status: MERGED
 ```
 
 
@@ -288,7 +288,7 @@ Owners affected: Hermes-Research, Hermes-Accounting (research_runs consumers)
 Risk: MEDIUM
 Dependencies: TASK-1/2/3 outcome repair (BUG-045/073/081) — 32 zero-R outcomes remain upstream
 Required tests: TEST-RS-01..26 (test_research_task4_dataset.py, test_research_task4_validation.py)
-Status: VERIFIED
+Status: MERGED
 ```
 
 ## Open / recent changes (table)
@@ -324,7 +324,7 @@ Owners affected: Hermes-Accounting (reporting contract), Hermes-TradeLifecycle (
 Risk: MEDIUM
 Dependencies: BUG-081/082 ledger/exit normalization; TASK-1; TASK-3 (sequential consumer)
 Required tests: TEST-BHV-01..20 (tests/unit/test_behavior_anomaly_intelligence_phase16.py)
-Status: VERIFIED
+Status: MERGED
 ```
 
 ## Template
@@ -387,7 +387,7 @@ Affected files: src/nexus_scalp/web/debug_snapshot.py (new),
        docs/agent_handoffs/2026-08-19_Hermes-Forensic-70D-UI_debug-console.md
 Contracts: DEBUG_SNAPSHOT v1 (canonical /api/debug/state payload),
        FEATURE_SCHEMA_70D v1 (scalp_v3 registry-driven rendering)
-Status: VERIFIED
+Status: MERGED
 ```text
 CHANGE-ID: CHG-0020
 Agent: Hermes-SecurityHardening
@@ -416,7 +416,7 @@ Risk: LOW — error responses change from raw-exception text to generic codes;
 Dependencies: BUG-110 SSE canonical_json, TASK-12 incidents store/reports
 Required tests: tests/unit/test_incident_response_task12.py,
        tests/unit/test_git_surveillance_task13.py (87 passed)
-Status: VERIFIED
+Status: MERGED
 ```
 ```text
 CHANGE-ID: CHG-0021
@@ -480,5 +480,5 @@ Risk: LOW. Heavy CI no longer runs on every push — intentional (objective).
 Dependencies: none
 Required tests: actionlint .github/workflows/*.yml (0 errors on changed
        files), YAML parse, branch filter cross-check
-Status: VERIFIED
+Status: MERGED
 ```
