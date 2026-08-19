@@ -1,0 +1,60 @@
+bars=100000
+decision points=900 stride=108
+  ..0/900
+  ..200/900
+  ..400/900
+  ..600/900
+  ..800/900
+  cell A: acc=0.3889 f1=0.387 ece=0.0989 brier=0.229 (0.07s)
+  cell B: acc=0.3889 f1=0.387 ece=0.0989 brier=0.229 (0.05s)
+  cell C: acc=0.3889 f1=0.3864 ece=0.1448 brier=0.2358 (0.06s)
+  cell D: acc=0.3833 f1=0.3816 ece=0.1393 brier=0.2359 (0.06s)
+{
+  "cells": {
+    "A": {
+      "dim": 50,
+      "train_n": 720,
+      "val_n": 180,
+      "accuracy": 0.3889,
+      "macro_f1": 0.387,
+      "ece": 0.0989,
+      "brier": 0.229,
+      "fit_seconds": 0.07
+    },
+    "B": {
+      "dim": 60,
+      "train_n": 720,
+      "val_n": 180,
+      "accuracy": 0.3889,
+      "macro_f1": 0.387,
+      "ece": 0.0989,
+      "brier": 0.229,
+      "fit_seconds": 0.05
+    },
+    "C": {
+      "dim": 60,
+      "train_n": 720,
+      "val_n": 180,
+      "accuracy": 0.3889,
+      "macro_f1": 0.3864,
+      "ece": 0.1448,
+      "brier": 0.2358,
+      "fit_seconds": 0.06
+    },
+    "D": {
+      "dim": 70,
+      "train_n": 720,
+      "val_n": 180,
+      "accuracy": 0.3833,
+      "macro_f1": 0.3816,
+      "ece": 0.1393,
+      "brier": 0.2359,
+      "fit_seconds": 0.06
+    }
+  },
+  "verdict": {
+    "outcome": "NEUTRAL",
+    "delta_D_minus_B_f1": -0.0054,
+    "delta_C_minus_A_f1": -0.0006
+  }
+}
