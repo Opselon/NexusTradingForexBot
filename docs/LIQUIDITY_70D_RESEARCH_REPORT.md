@@ -48,14 +48,28 @@ Evidence quality markers: PROVEN / NOT PROVEN / UNKNOWN (mission 52).
 
 ## 2. ABLATION (A/B/C/D)
 
-- Status: **PENDING** — A/B/C/D requires 70D model + dataset (TASK-3/4).
-  The TASK-4 fair-benchmark driver (scratch/bench_70d_abc_driver.py) is
-  running on 6000 rows (identical splits, identical training budget per cell);
-  its report lands at artifacts/model_generation/liquidity_research/benchmark_70d_abc.json.
-- Path fix committed: `parents[2]` -> `parents[1]` (driver could not find
-  data/raw from the scratch dir).
-- Until the verdict: `NOT PROVEN` (model-level), no claims about incremental
-  Liquidity contribution at model level.
+- **Small-sample exploratory ablation (PROVEN, feature-level)**: 900 decision
+  points (identical timestamps), labels = 5-bar forward return vs 0.5*ATR
+  (identical across cells), tail-20% split (val_n=180/cell), logistic
+  regression feature-information probe:
+
+  | cell | dim | acc | macro-F1 | ECE | Brier |
+  | :--- | ---: | ---: | ---: | ---: | ---: |
+  | A Base 50D | 50 | 0.3889 | 0.3870 | 0.0989 | 0.2290 |
+  | B +News | 60 | 0.3889 | 0.3870 | 0.0989 | 0.2290 |
+  | C +Liquidity | 60 | 0.3889 | 0.3864 | 0.1448 | 0.2358 |
+  | D +News+Liquidity | 70 | 0.3833 | 0.3816 | 0.1393 | 0.2359 |
+
+  delta (D−B) macro-F1 = **−0.0054**, delta (C−A) = **−0.0006** →
+  verdict **NEUTRAL** (feature level; NO evidence that Liquidity adds
+  predictive information in this probe).
+  Limitations (documented, do not over-read): news block NEUTRAL (no aligned
+  news), linear probe (not the production TCN/ScalpNet), small n (900
+  points). Model-level verdict with the production architecture remains
+  PENDING (TASK-4 full benchmark blocked on compute_70d_frame O(n²)
+  performance — driver stalled at cell C, killed after 17 min).
+- TASK-4 fair-benchmark driver: path bug fixed (parents[2] -> parents[1]);
+  full run needs a bounded-window compute_70d_frame to be tractable.
 
 ## 3. FEATURE ATTRIBUTION (10 dimensions)
 
@@ -177,11 +191,16 @@ None activated in production (mission 26/47).
 
 ## 13. VERDICT
 
-LIQUIDITY SUPPORTS IN SPECIFIC CONDITIONS (feature-level, PROVEN);
-model-level verdict PENDING (A/B/C benchmark). Conditions where Liquidity
-helps: as volatility/activity context (sweep), as structural state
-(confluence), as extension context (distance). Not a standalone directional
-signal.
+LIQUIDITY SUPPORTS IN SPECIFIC CONDITIONS (feature-level, PROVEN) — with an
+important nuance from the ablation: at the FEATURE-INFORMATION level the
+10D Liquidity block added NO predictive value in the small-sample probe
+(NEUTRAL, delta D−B = −0.0054 F1). The support is in SPECIFIC CONDITIONS:
+- as volatility/activity context (sweep) — event studies PROVEN,
+- as structural state (confluence, distance) — event studies PROVEN,
+- v1.1 fixes real v1.0 degeneracies (confluence saturation, sweep flood,
+  eqh step) — distributional PROVEN.
+The model-level verdict (production architecture, real news) is PENDING —
+neither positive nor negative yet. Do not promote any rule.
 
 ## 14. FILES (research artifacts)
 
