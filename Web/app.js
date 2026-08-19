@@ -503,6 +503,15 @@ function renderLiquidityPanel(state) {
     if (!state || typeof state !== 'object') return;
 
     const st = state.status || 'UNAVAILABLE';
+    // BUG-111: every value is rendered from its BACKEND provenance —
+    // per-feature index/source/status come from the API payload, NEVER
+    // derived from a hardcoded base dimension in JS.
+    const backendIdx = (state.feature_names || []).map((n, i) => {
+        const f = (state.features || {})[n];
+        return f && typeof f === 'object' && f.index != null ? f.index : null;
+    });
+    const feaAvail = state.feature_availability || (state.available ? 'AVAILABLE' : 'UNAVAILABLE');
+    const disabled = state.enabled === false;
 
     const badge = document.getElementById('liq-status-badge');
 
@@ -537,11 +546,34 @@ function renderLiquidityPanel(state) {
 
     setText('liq-causal', state.causal_state || '--');
 
-    setText('liq-last-update', state.last_update ? String(state.last_update).replace('T', ' ').slice(0, 19) : '--');
+    // BUG-111: wall-clock last_update (never the 1970 monotonic sentinel);
+    // a retained snapshot while DISABLED shows its snapshot timestamp too,
+    // so old values can never masquerade as live.
+    let lastUpdateTxt = state.last_update ? String(state.last_update).replace('T', ' ').slice(0, 19) : '--';
+    if (state.snapshot_timestamp && state.snapshot_timestamp !== state.last_update) {
+        lastUpdateTxt += ' · snap ' + String(state.snapshot_timestamp).replace('T', ' ').slice(0, 19);
+    }
+    setText('liq-last-update', lastUpdateTxt);
 
     setText('liq-latency', state.latency_ms != null ? state.latency_ms.toFixed(2) + ' ms' : '--');
 
-    setText('liq-available', state.available ? 'Available' : 'Unavailable');
+    // BUG-111 explicit availability semantics: AVAILABLE / STALE_CACHE /
+    // UNAVAILABLE / NOT_ACTIVE — never a bare 'Available' next to
+    // 'Source: UNAVAILABLE'.
+    const availMap = {
+        AVAILABLE: 'Available',
+        STALE_CACHE: 'STALE CACHE',
+        UNAVAILABLE: 'Unavailable',
+        NOT_ACTIVE: 'NOT ACTIVE',
+    };
+    setText('liq-available', availMap[feaAvail] || feaAvail || (state.available ? 'Available' : 'Unavailable'));
+    const aEl = document.getElementById('liq-available');
+    if (aEl) {
+        const baseCls = 'text-sm font-mono font-bold mt-1 ';
+        if (feaAvail === 'AVAILABLE') aEl.className = baseCls + 'text-emerald-400';
+        else if (feaAvail === 'STALE_CACHE' || feaAvail === 'NOT_ACTIVE') aEl.className = baseCls + 'text-amber-400';
+        else aEl.className = baseCls + 'text-rose-400';
+    }
 
 
 
@@ -599,17 +631,34 @@ function renderLiquidityPanel(state) {
 
             grid.innerHTML = names.map((name, i) => {
 
-                const v = feats[name];
+                const raw = feats[name];
+                // BUG-111: per-feature provenance object from the backend
+                // (index/source/status/timestamp); fall back to a bare
+                // number ONLY for legacy payloads — never derive the index
+                // from a JS-computed base dimension.
+                const meta = (raw && typeof raw === 'object') ? raw : null;
+                const v = meta ? meta.value : raw;
+                const idx = meta && meta.index != null ? meta.index : (backendIdx[i] != null ? backendIdx[i] : '');
+                const src = meta ? (meta.source || '') : '';
+                const fst = meta ? (meta.status || '') : '';
+                const fa = meta ? (meta.feature_availability || feaAvail) : feaAvail;
 
                 const valStr = (v !== null && v !== undefined) ? Number(v).toFixed(3) : '—';
 
-                // TASK-02 contract: derive the index from the BACKEND schema
-                // (no hardcoded number): liquidity occupies the LAST 10 slots of
-                // the active dimension (50..59 for 60D, 60..69 for 70D).
-                const baseDim = Number(state.schema && state.schema.dimension) || 60;
-                const idx = baseDim - 10 + i;
+                // Explicit provenance row: index + source + status. A
+                // NOT_ACTIVE / STALE_CACHE value is visibly marked — never
+                // presented as a live model input.
+                const provBits = [];
+                if (idx !== '') provBits.push('idx ' + idx);
+                if (src) provBits.push(src);
+                if (fa && fa !== 'AVAILABLE') provBits.push(fa);
+                else if (fst) provBits.push(fst);
 
-                return '<div class="bg-darkBg/40 border border-borderClr/60 p-2.5 rounded-lg" title="' + escHtml(name) + ' (index ' + idx + ')">' +
+                const cardCls = (fa === 'STALE_CACHE' || fa === 'NOT_ACTIVE' || disabled)
+                    ? 'bg-darkBg/40 border border-amber-500/30 p-2.5 rounded-lg opacity-80'
+                    : 'bg-darkBg/40 border border-borderClr/60 p-2.5 rounded-lg';
+
+                return '<div class="' + cardCls + '" title="' + escHtml(name) + ' (index ' + (idx === '' ? '?' : idx) + ')">' +
 
                     '<div class="text-[9px] text-textMuted font-bold uppercase truncate">' + escHtml(name).replace(/_/g, ' ') + '</div>' +
 
@@ -617,7 +666,7 @@ function renderLiquidityPanel(state) {
 
                         '<span class="text-sm font-mono font-black ' + liqValueColor(v) + '">' + valStr + '</span>' +
 
-                        '<span class="text-[8px] text-textMuted font-mono">idx ' + idx + '</span>' +
+                        '<span class="text-[8px] text-textMuted font-mono">' + provBits.join(' · ') + '</span>' +
 
                     '</div>' +
 
@@ -3719,13 +3768,31 @@ function handleIncomingLiveTick(payload, opts) {
             })
             .catch(function () { /* integrity endpoint unavailable: cards stay '—' */ });
 
-        // Inference latency (real measured ms when available)
-
-        if (model.latency_ms != null) {
-
+        // Inference latency — honest staged breakdown (TASK latency forensics).
+        // The single 'Latency' number was ambiguous: it covered validate + scaler +
+        // tensor + debug copy + forward. Now the UI shows Model Forward separately
+        // from Feature Build / Preprocess / E2E (brief 3).
+        const lb = model.latency_breakdown || {};
+        const modelFwd = (lb.model_ms != null) ? lb.model_ms : model.model_forward_ms;
+        const featMs = (lb.feature_ms != null) ? lb.feature_ms : model.feature_ms;
+        const e2eMs = (lb.e2e_ms != null) ? lb.e2e_ms : model.e2e_ms;
+        const scalMs = lb.scaling_ms;
+        const tensMs = lb.tensor_ms;
+        const preprocMs = (scalMs != null && tensMs != null) ? (scalMs + tensMs) : null;
+        const infTotalMs = (modelFwd != null && featMs != null) ? (featMs + modelFwd) : null;
+        if (modelFwd != null) {
+            setTxt('model-inference-time', `${Number(modelFwd).toFixed(2)}ms`);
+            setTxt('latency-model-forward', `${Number(modelFwd).toFixed(2)} ms`);
+        } else if (model.latency_ms != null) {
             setTxt('model-inference-time', `${Number(model.latency_ms).toFixed(2)}ms`);
-
+            setTxt('latency-model-forward', `${Number(model.latency_ms).toFixed(2)} ms (legacy single-timer)`);
         }
+        setTxt('latency-feature', featMs != null ? `${Number(featMs).toFixed(2)} ms` : '--');
+        setTxt('latency-preprocess', preprocMs != null ? `${Number(preprocMs).toFixed(2)} ms` : '--');
+        setTxt('latency-inference-total', infTotalMs != null ? `${Number(infTotalMs).toFixed(2)} ms` : '--');
+        setTxt('latency-decision', lb.decision_ms != null ? `${Number(lb.decision_ms).toFixed(2)} ms` : '--');
+        setTxt('latency-e2e', e2eMs != null ? `${Number(e2eMs).toFixed(2)} ms` : '--');
+        setTxt('latency-queue', lb.queue_ms != null ? `${Number(lb.queue_ms).toFixed(2)} ms` : '--');
 
         if (payload.probs && payload.probs.available) {
 
@@ -10529,6 +10596,24 @@ async function loadIncidents() {
 
         if (badge) badge.textContent = (c.open ?? 0) + ' open';
 
+        // TASK-13: worker health display (spec 39)
+        const w = data.worker || {};
+        const wState = w.display_state || 'DISABLED';
+        const wEl = document.getElementById('inc-worker-state');
+        if (wEl) {
+            const wColor = {RUNNING: 'text-emerald-400', DEGRADED: 'text-amber-400', FAILED: 'text-rose-400', DISABLED: 'text-gray-400'}[wState] || 'text-gray-300';
+            wEl.className = 'text-xs font-bold ' + wColor;
+            wEl.textContent = wState + (w.cycle_count ? ' · cycles:' + w.cycle_count : '');
+        }
+        const wDetail = document.getElementById('inc-worker-detail');
+        if (wDetail) {
+            wDetail.textContent = (w.last_success ? 'last ok: ' + String(w.last_success).slice(5,19).replace('T',' ') : 'no success yet')
+                + (w.last_failure ? ' · last fail: ' + String(w.last_failure).slice(5,19).replace('T',' ') : '')
+                + (w.queue_size ? ' · queue: ' + w.queue_size : '')
+                + (w.incidents_created ? ' · created: ' + w.incidents_created : '')
+                + (w.incidents_deduplicated ? ' · dedup: ' + w.incidents_deduplicated : '');
+        }
+
         const resp2 = await fetch('/api/diagnostics/incidents?limit=50');
 
         const data2 = await resp2.json();
@@ -10741,4 +10826,63 @@ async function searchIncidents() {
 
     }
 
+}
+
+// =====================================================================
+// TASK-13: forensic probes + export (STEP-04/06/09)
+// =====================================================================
+async function runForensicProbe(kind) {
+    const resEl = document.getElementById('forensic-probe-results');
+    if (!resEl) return;
+    resEl.innerHTML = '<p class="text-xs text-textMuted">Running ' + kind + ' probe...</p>';
+    try {
+        const resp = await fetch('/api/diagnostics/forensics?kind=' + encodeURIComponent(kind));
+        const d = await resp.json();
+        if (!d.available) { resEl.innerHTML = '<p class="text-xs text-rose-400">Probe failed: ' + esc(d.error || '') + '</p>'; return; }
+        if (kind === 'timebase') {
+            const o = d.measured_offsets_seconds || {};
+            resEl.innerHTML = '<div class="border border-sky-500/30 rounded p-2 bg-darkBg/50 text-[11px]">' +
+                '<b class="text-sky-400">TIMEBASE</b> ' + esc(d.classification || '') +
+                ' · host→broker: <code>' + (o.host_to_broker_median ?? 'n/a') + 's</code>' +
+                ' · host→db: <code>' + (o.host_to_db ?? 'n/a') + 's</code>' +
+                ' · affected: ' + esc((d.affected_subsystems || []).join(', ')) +
+                '</div>';
+        } else {
+            const cls = d.classification_counts || {};
+            const zcls = d.zero_outcome_classification_counts || {};
+            resEl.innerHTML = '<div class="border border-amber-500/30 rounded p-2 bg-darkBg/50 text-[11px]">' +
+                '<b class="text-amber-400">ACCOUNTING AUDIT</b> checked=' + (d.checked_records ?? 0) +
+                ' · classification: ' + esc(JSON.stringify(cls)) +
+                ' · zero-outcomes: ' + esc(JSON.stringify(zcls)) +
+                ' · recovery candidates: ' + (d.recovery_candidate_count ?? 0) +
+                '</div>';
+        }
+    } catch (e) {
+        resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(String(e)) + '</p>';
+    }
+}
+
+async function exportIncident(kind) {
+    // Export uses the current detail incident id if visible, else the first open incident.
+    let id = '';
+    const detailEl = document.getElementById('incident-detail');
+    if (detailEl && !detailEl.classList.contains('hidden')) {
+        const m = detailEl.innerHTML.match(/Incident <code>([^<]+)<\/code>/);
+        if (m) id = m[1];
+    }
+    if (!id) {
+        try {
+            const resp = await fetch('/api/diagnostics/incidents?limit=1');
+            const d = await resp.json();
+            if (d.incidents && d.incidents.length) id = d.incidents[0].incident_id;
+        } catch (e) { /* fallthrough */ }
+    }
+    if (!id) { alert('No incident to export'); return; }
+    if (kind === 'report') {
+        const url = '/api/diagnostics/incidents/' + encodeURIComponent(id) + '/report';
+        window.open(url, '_blank');
+    } else {
+        const url = '/api/diagnostics/incidents/' + encodeURIComponent(id) + '/zip';
+        window.open(url, '_blank');
+    }
 }

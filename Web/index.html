@@ -985,8 +985,32 @@
                                                     <div id="model-schema" class="text-accentCyan font-bold truncate">—</div>
                                                 </div>
                                                 <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
-                                                    <div class="text-textMuted uppercase">Inference Time</div>
-                                                    <div id="model-inference-time" class="text-accentCyan font-bold truncate">—</div>
+                                                    <div class="text-textMuted uppercase">Model Forward</div>
+                                                    <div id="latency-model-forward" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Feature Build</div>
+                                                    <div id="latency-feature" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Preprocess</div>
+                                                    <div id="latency-preprocess" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Inference Total</div>
+                                                    <div id="latency-inference-total" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Decision</div>
+                                                    <div id="latency-decision" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">End-to-End</div>
+                                                    <div id="latency-e2e" class="text-accentCyan font-bold truncate">—</div>
+                                                </div>
+                                                <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
+                                                    <div class="text-textMuted uppercase">Queue</div>
+                                                    <div id="latency-queue" class="text-accentCyan font-bold truncate">—</div>
                                                 </div>
                                                 <div class="bg-darkBg/50 rounded px-2 py-1.5 border border-borderClr/40">
                                                     <div class="text-textMuted uppercase">Data Source</div>
@@ -2229,9 +2253,13 @@
                             <div class="text-[10px] uppercase tracking-widest text-textMuted">Availability</div>
                             <div id="liq-available" class="text-sm font-mono font-bold text-gray-200 mt-1">--</div>
                         </div>
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted">State Revision</div>
+                            <div id="liq-state-revision" class="text-sm font-mono font-bold text-gray-200 mt-1">--</div>
+                        </div>
                     </div>
 
-                    <div class="text-[10px] uppercase tracking-widest text-textMuted mb-2">Ten Liquidity Values (indices 60..69)</div>
+                    <div class="text-[10px] uppercase tracking-widest text-textMuted mb-2">Ten Liquidity Values (backend indices — canonical 60..69 when the 70D schema is active)</div>
                     <div id="liq-features-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2 mb-4">
                         <div class="text-textMuted italic text-xs col-span-5">No liquidity snapshot yet — waiting for the live engine (or the toggle above).</div>
                     </div>
@@ -2249,7 +2277,20 @@
                         <button onclick="loadIncidents()" class="px-3 py-1.5 rounded bg-accentCyan/10 text-accentCyan hover:bg-accentCyan/20 border border-accentCyan/30 transition">
                             <i class="fa-solid fa-rotate mr-1"></i>Refresh
                         </button>
+                        <button onclick="runForensicProbe('accounting')" class="px-3 py-1.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 transition">
+                            <i class="fa-solid fa-calculator mr-1"></i>Accounting Audit
+                        </button>
+                        <button onclick="runForensicProbe('timebase')" class="px-3 py-1.5 rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 transition">
+                            <i class="fa-solid fa-clock mr-1"></i>Timebase Probe
+                        </button>
+                        <button onclick="exportIncident('report')" class="px-3 py-1.5 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 transition">
+                            <i class="fa-solid fa-file-export mr-1"></i>Export Report
+                        </button>
+                        <button onclick="exportIncident('zip')" class="px-3 py-1.5 rounded bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/30 transition">
+                            <i class="fa-solid fa-file-zipper mr-1"></i>Evidence ZIP
+                        </button>
                     </div>
+                    <div id="forensic-probe-results" class="w-full mt-2"></div>
                 </div>
 
                 <!-- Severity summary -->
@@ -2270,6 +2311,15 @@
                         <p class="text-xs text-yellow-300 font-semibold">MEDIUM</p>
                         <p id="inc-summary-medium" class="text-3xl font-black text-yellow-400 mt-1">--</p>
                     </div>
+                </div>
+
+                <!-- Worker health (TASK-13 spec 39) -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-3">
+                    <div class="flex justify-between items-center">
+                        <p class="text-xs text-textMuted font-semibold">INCIDENT WORKER HEALTH</p>
+                        <span id="inc-worker-state" class="text-xs font-bold text-gray-400">DISABLED</span>
+                    </div>
+                    <p id="inc-worker-detail" class="text-[11px] text-textMuted mt-1 font-mono">no worker attached</p>
                 </div>
 
                 <!-- One-click trace / search -->
