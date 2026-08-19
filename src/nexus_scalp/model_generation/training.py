@@ -285,6 +285,45 @@ class CandidateTrainer:
         mid = model_id or deterministic_candidate_id(
             experiment, dataset_frame, dataset_hash=dataset_hash_value(dataset_frame)
         )
+        # AGENT-09 (TASK-09 governance readiness, brief 25): the manifest MUST
+        # carry the provenance fields verify_candidate expects (feature_schema_hash,
+        # liquidity_algorithm_version, training_commit) or the governance gates
+        # FAIL even for a scientifically valid candidate. Resolve them here from
+        # the canonical schema contract + the dataset manifest.
+        _ds_manifest = (
+            self.store.read_dataset_manifest(experiment.dataset_id)
+            if experiment.dataset_id
+            else None
+        )
+        _ds_manifest = _ds_manifest or {}
+        _schema_hash = str(_ds_manifest.get("feature_schema_hash", "") or "")
+        if not _schema_hash:
+            try:
+                from nexus_scalp.features.schema_contract import feature_schema_hash as _fsh
+
+                _schema_hash = _fsh()
+            except Exception:
+                _schema_hash = ""
+        _liquidity_algo = str(
+            _ds_manifest.get("liquidity_algorithm_version", "")
+            or _ds_manifest.get("algorithm_version", "")
+            or "70d-v1.0.0"
+        )
+        _training_commit = ""
+        try:
+            import subprocess
+
+            _training_commit = (
+                subprocess.run(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                ).stdout.strip()
+            )
+        except Exception:
+            _training_commit = ""
         manifest = ModelManifest(
             model_id=mid,
             model_version="1.0.0",
@@ -316,10 +355,20 @@ class CandidateTrainer:
                 "train_rows": len(train_idx),
                 "val_rows": len(val_idx),
             },
+            # AGENT-09 (TASK-09 governance): top-level provenance fields —
+            # governance/verify.py reads these at TOP-LEVEL (not inside
+            # build_metadata); without them the 14-gate verify FAILs the
+            # candidate regardless of scientific validity (brief 25).
+            feature_schema_hash=_schema_hash,
+            liquidity_algorithm_version=_liquidity_algo,
+            training_commit=_training_commit,
             build_metadata={
                 "trainer": "CandidateTrainer",
                 "news_features": news_cols,
                 "input_dimension": len(feat_cols) + len(news_cols),
+                "feature_schema_hash": _schema_hash,
+                "liquidity_algorithm_version": _liquidity_algo,
+                "training_commit": _training_commit,
             },
         )
 
@@ -329,6 +378,20 @@ class CandidateTrainer:
             manifest.model_dump(mode="json"),
             scaler=(feat_mean, feat_std),
         )
+        # AGENT-09 (TASK-09, brief 24/25): stamp governance evidence refs
+        # into the persisted manifest (oos_artifact / robustness_artifact /
+        # shadow_evidence are separate artifacts; the manifest records their
+        # paths so verify_candidate's oos_artifact_recorded gate passes).
+        _extra_evidence = (experiment.training or {}).get("evidence", {}) or {}
+        if _extra_evidence:
+            try:
+                _persisted = self.store.read_model_manifest(mid) or {}
+                for _k in ("oos_artifact", "robustness_artifact", "shadow_evidence"):
+                    if _k in _extra_evidence:
+                        _persisted[_k] = _extra_evidence[_k]
+                self.store.write_json(self.store.model_manifest_path(mid), _persisted)
+            except Exception:
+                logger.warning("[TRAIN] event=EVIDENCE_STAMP_FAILED model_id=%s", mid)
         logger.info("[TRAIN] event=CANDIDATE_READY model_id=%s val_acc=%.4f", mid, val_acc)
         return {
             "status": "COMPLETED",

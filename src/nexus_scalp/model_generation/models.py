@@ -327,6 +327,10 @@ class ModelManifest(BaseModel):
     #: validator to guarantee training==inference schema identity.
     feature_schema_hash: str = Field(default="")
     training_dataset_id: str = Field(default="")
+    # AGENT-09 (TASK-09 governance readiness, brief 25): provenance fields
+    # governance/verify.py reads at TOP-LEVEL. Additive + default-empty.
+    liquidity_algorithm_version: str = Field(default="")
+    training_commit: str = Field(default="")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     build_metadata: dict[str, Any] = Field(default_factory=dict)
 

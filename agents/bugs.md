@@ -5007,3 +5007,31 @@ The Liquidity Intelligence panel displayed contradictory state after a live sess
 - Feature indices come from the AUTHORITATIVE feature registry (schema_contract.py), never from the active-schema dimension.
 - A DISABLED runtime reports NOT_ACTIVE for retained snapshots; values are never presented as active inputs.
 - Model-compatibility reason strings must never claim an enabled state the runtime does not have.
+## BUG-117 — CandidateTrainer Manifest Missing Governance Provenance Fields: feature_schema_hash/liquidity_algorithm_version/training_commit/oos_artifact Not Written → verify_candidate FAILs Valid Candidates (2026-08-19 AGENT-09)
+
+- Category: MODEL_COMPATIBILITY / GOVERNANCE
+- Symptom: `governance/verify.py::verify_candidate` (14-gate) reads
+  feature_schema_hash / liquidity_algorithm_version / training_commit /
+  oos_artifact at MANIFEST TOP-LEVEL. CandidateTrainer wrote only
+  build_metadata (nested) and ModelManifest lacked the liquidity_algorithm_
+  version + training_commit fields entirely (Pydantic dropped unknown
+  kwargs silently). Result: every trained candidate FAILED the gates
+  regardless of scientific validity — the manifest pipeline was the
+  blocker, not the model.
+- Root cause: (1) ModelManifest declared feature_schema_hash but not
+  liquidity_algorithm_version / training_commit; (2) CandidateTrainer
+  wrote provenance into build_metadata (nested) while verify reads
+  top-level; (3) no oos_artifact/robustness_artifact refs were stamped.
+- Fix (AGENT-09): ModelManifest gains additive default-empty
+  liquidity_algorithm_version + training_commit fields; CandidateTrainer
+  resolves feature_schema_hash from the canonical schema contract (or
+  dataset manifest), liquidity_algorithm_version, git HEAD training_commit
+  and writes them TOP-LEVEL; experiment.training['evidence'] stamps
+  oos_artifact / robustness_artifact / shadow_evidence refs into the
+  persisted manifest after save.
+- Proof: ag09_oos_C_v1 after fix — feature_schema_hash PASS (235b8fcc ==,
+  canonical), liquidity_version PASS, training_commit PASS (5fb40f5);
+  pre-fix the same candidate FAILed all three.
+- Tests: governance preview run on ag09_oos_C_v1 (scratch/ag09_
+  governance_preview.py); TEST-TASK09-09 (candidate manifest completeness)
+  covers the contract.
