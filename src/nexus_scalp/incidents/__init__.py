@@ -25,6 +25,13 @@ code mutation. Containment is limited to explicitly safe advisory states.
 
 from __future__ import annotations
 
+from nexus_scalp.incidents.accounting import (
+    RECONSTRUCTION_ALGORITHM_VERSION,
+    ROOT_CAUSE_CLASSES,
+    ZERO_OUTCOME_CLASSES,
+    AccountingForensicsEngine,
+    build_accounting_divergence_artifact,
+)
 from nexus_scalp.incidents.correlator import (
     DEFAULT_WINDOWS_SEC,
     KNOWN_FAILURE_CLASSES,
@@ -79,6 +86,15 @@ from nexus_scalp.incidents.telegram import (
     DEFAULT_REPEAT_COOLDOWN_SEC,
     IncidentTelegramNotifier,
 )
+from nexus_scalp.incidents.telemetry import (
+    ENGINE_EVENT_MAP,
+    IncidentTelemetryCollector,
+    engine_event_to_telemetry,
+)
+from nexus_scalp.incidents.timebase import (
+    TimebaseProbe,
+    build_timebase_probe,
+)
 from nexus_scalp.incidents.trace import (
     broker_ledger_divergence,
     clock_skew,
@@ -108,12 +124,17 @@ __all__ = [
     "DEFAULT_INTERVAL_SEC",
     "DEFAULT_REPEAT_COOLDOWN_SEC",
     "DEFAULT_WINDOWS_SEC",
+    "ENGINE_EVENT_MAP",
     "INCIDENT_DDL",
     "KNOWN_FAILURE_CLASSES",
     "MAX_SAVES_PER_CYCLE",
     "PRODUCERS",
+    "RECONSTRUCTION_ALGORITHM_VERSION",
+    "ROOT_CAUSE_CLASSES",
     "SEVERITY_BY_CODE",
     "TRANSFORMATIONS",
+    "ZERO_OUTCOME_CLASSES",
+    "AccountingForensicsEngine",
     "BlastRadius",
     "BugLinkage",
     "CorrelationPattern",
@@ -129,6 +150,7 @@ __all__ = [
     "IncidentStatus",
     "IncidentStore",
     "IncidentTelegramNotifier",
+    "IncidentTelemetryCollector",
     "IncidentWorker",
     "LineageEngine",
     "LineageStep",
@@ -139,11 +161,15 @@ __all__ = [
     "RecoveryPlanner",
     "RootCauseConfidence",
     "TelemetryEvent",
+    "TimebaseProbe",
     "TimelineEvent",
     "ValueTrace",
     "broker_ledger_divergence",
+    "build_accounting_divergence_artifact",
     "build_simple_trace",
+    "build_timebase_probe",
     "clock_skew",
+    "engine_event_to_telemetry",
     "export_zip_bundle",
     "format_incident_worker_status",
     "incident_fingerprint",
