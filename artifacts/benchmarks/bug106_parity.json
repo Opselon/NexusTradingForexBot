@@ -1,0 +1,14 @@
+{
+  "commit": "WIP-bug106",
+  "rows_compared": 746,
+  "features": 70,
+  "ref_seconds": 79.621,
+  "fast_seconds": 15.593,
+  "speedup_x": 5.11,
+  "max_delta_feature": 0.0,
+  "max_delta_meta": 0.0,
+  "mismatched_cells_gt_1e9": 0,
+  "sample_mismatches": [],
+  "future_injection_max_delta": 0.0,
+  "parity": "EXACT"
+}
