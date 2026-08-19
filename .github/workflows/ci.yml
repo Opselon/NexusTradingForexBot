@@ -483,16 +483,17 @@ jobs:
           rm -rf ci-results
           mkdir -p ci-results/run-info ci-results/heavy
           suffix="-${{ github.run_number }}-${{ github.sha }}"
-          # Each arm artifact is artifacts/ci-results-<suite><suffix>/ci-results/.
-          # Move each arm's tree into a dedicated heavy/<suite>/ directory so
-          # per-arm run-info files never collide; the merged summary below then
-          # reflects ALL suites (heavy rows come from heavy/<suite>/run-info).
-          for d in artifacts/ci-results-*/ci-results; do
+          # download-artifact with merge-multiple OFF extracts each artifact's
+          # CONTENTS directly into artifacts/<artifact-name>/ (no ci-results/
+          # wrapper). Each arm's tree therefore lives at the artifact dir root.
+          for d in artifacts/ci-results-*/; do
             [ -d "$d" ] || continue
-            name="$(basename "$(dirname "$d")")"
+            name="$(basename "$d")"
             suite="${name%$suffix}"
             suite="${suite#ci-results-}"
-            cp -r "$d" "ci-results/heavy/$suite" 2>/dev/null || true
+            [ "$suite" = "quality" ] && dest="ci-results" || dest="ci-results/heavy/$suite"
+            mkdir -p "$dest"
+            cp -r "$d"*. "$dest"/ 2>/dev/null || true
             echo "merged arm: $suite"
           done
           find ci-results -type f | sort
