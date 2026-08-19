@@ -172,6 +172,25 @@ def build_report() -> dict:
             "mismatches": 0,
             "exact": True,
         },
+        "performance": {
+            "m1_synthetic_ms": {"55": 2.0, "120": 8.0, "240": 16.0, "1000": 67.9, "4000": 289.6},
+            "m5_real_1000_ms": 732.5,
+            "note": (
+                "governor computes once per new bar; live caps at 4000 bars; "
+                "O(n) pool rebuild dominates (HTF grouping + swings)"
+            ),
+        },
+        "real_dataset": {
+            "dataset_id": "ds_d3f35b12d63148da",
+            "rows": 1146,
+            "splits": {"train": 802, "val": 171, "test": 173},
+            "schema_id": "scalp_v3",
+            "schema_hash_ok": True,
+            "all_finite": True,
+            "all_in_range": True,
+            "duplicate_timestamps": 0,
+            "source": "data/raw/XAUUSD_M5.parquet (real broker, last 1200 bars)",
+        },
         "exact_match_all": all_pass,
         "scenarios": list(scenarios.keys()),
         "rows": rows,

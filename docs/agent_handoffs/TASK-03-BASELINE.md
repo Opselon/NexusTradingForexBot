@@ -103,3 +103,14 @@ pass `bars[0..i]`).
 - All 6 scenarios in the report: EXACT MATCH (tolerance 1e-12).
 - 84 tests across parity + liquidity + API suites pass.
 - Golden: `exact_match: true`, schema hash `235b8fccc96b7e0e`.
+
+## 6. Final state (after STEP-03/05/07)
+
+- Parity fix `all_bars[:i+1]` in both 60D + 70D dataset builders (HEAD).
+- `verify_70d_artifact` `.item()` fix + `feature_schema_hash` stamped into
+  the manifest by `build_70d_dataset`.
+- Real 70D dataset built + verified: `ds_d3f35b12d63148da` (1146 rows).
+- Real-data multi-timestamp parity: 25/25 EXACT (delta 0.0).
+- Performance: governor 16 ms @ 240 bars (M1), 68 ms @ 1000, 290 ms @ 4000;
+  real M5 733 ms @ 1000 (HTF bucket grouping dominates).
+- Full report: `docs/TASK-03-70D-PARITY-FINAL-REPORT.md`.
