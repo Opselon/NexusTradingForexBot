@@ -64,6 +64,104 @@ def verify_checksums_file(sums_file: Path, base_dir: Path | None = None) -> dict
     return {"valid": ok, "files": results}
 
 
+
+
+def _manifest_feature_schema(info: dict[str, Any]) -> str:
+    """Canonical active feature schema id (registry-derived, brief 37).
+
+    Precedence: stamped build-info feature_schema -> active schema id in
+    the registry -> scalar fallback.  Never invent a schema id.
+    """
+    stamped = str(info.get("feature_schema") or "").strip()
+    if stamped:
+        try:
+            from nexus_scalp.features.schema import FEATURE_SCHEMAS
+
+            FEATURE_SCHEMAS.resolve(stamped)
+            return stamped
+        except Exception:
+            pass
+    from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID
+
+    return ACTIVE_SCHEMA_ID
+
+
+def _manifest_feature_dimension(info: dict[str, Any]) -> int:
+    """Registered dimension of the manifest feature schema (0 when unknown)."""
+    sid = _manifest_feature_schema(info)
+    try:
+        from nexus_scalp.features.schema import FEATURE_SCHEMAS
+
+        return FEATURE_SCHEMAS.resolve(sid).dimension
+    except Exception:
+        return 0
+
+
+def _manifest_supported_model_schemas() -> list[str]:
+    """Every REGISTERED schema id — the set of model schemas this release
+    can load without conversion (brief 37: scalp_v1..scalp_v4 all included)."""
+    try:
+        from nexus_scalp.features.schema import FEATURE_SCHEMAS
+
+        return sorted(s.schema_id for s in FEATURE_SCHEMAS.list_schemas())
+    except Exception:
+        return ["scalp_v1"]
+
+
+def _manifest_db_schema_version(info: dict[str, Any]) -> int:
+    """Highest expected schema version across managed DB domains.
+
+    Falls back to the stamped build-info (db_schema_version) when the
+    migration registry is not importable in the build environment.
+    """
+    try:
+        from nexus_scalp.database.models import DatabaseDomain
+        from nexus_scalp.database.registry import expected_version_for_domain
+
+        return max(
+            expected_version_for_domain(d) for d in (
+                DatabaseDomain.AUDIT,
+                DatabaseDomain.NEWS,
+                DatabaseDomain.CANDLE_INTEL,
+            )
+        )
+    except Exception:
+        return int(info.get("db_schema_version") or 0)
+
+
+def _manifest_required_migrations() -> list[str]:
+    """All migration ids the release carries (ordered, brief 37)."""
+    try:
+        from nexus_scalp.database.models import DatabaseDomain
+        from nexus_scalp.database.registry import all_migration_ids
+
+        out: list[str] = []
+        for d in (
+            DatabaseDomain.AUDIT,
+            DatabaseDomain.NEWS,
+            DatabaseDomain.CANDLE_INTEL,
+        ):
+            out.extend(all_migration_ids(d))
+        return out
+    except Exception:
+        return []
+
+
+def _manifest_model_compatibility(info: dict[str, Any]) -> str:
+    """Human-readable model compatibility line (never hardcoded)."""
+    schemas = _manifest_supported_model_schemas()
+    return " / ".join(f"{s} ({_schema_dim(s)}D)" for s in schemas) or "none"
+
+
+def _schema_dim(schema_id: str) -> int:
+    try:
+        from nexus_scalp.features.schema import FEATURE_SCHEMAS
+
+        return FEATURE_SCHEMAS.resolve(schema_id).dimension
+    except Exception:
+        return 0
+
+
 def generate_manifest(
     artifacts: list[Path],
     out: Path,
@@ -103,8 +201,18 @@ def generate_manifest(
         "architecture": info.get("architecture") or platform.machine(),
         "build_mode": build_mode or info.get("build_mode") or "Release",
         "python_compatibility": "3.11.x",
-        "feature_schema": info.get("feature_schema", "scalp_v1"),
-        "model_compatibility": "scalp_v1 / 50D",
+        # Schema coverage (TASK-9): feature_schema derives from the CANONICAL
+        # registry (never hardcoded) — a future 70D release cannot silently
+        # drift the manifest; web_bundle_version + supported_model_schemas +
+        # db_schema_version + required_migrations make the manifest the
+        # release contract (brief section 37).
+        "feature_schema": _manifest_feature_schema(info),
+        "feature_schema_dimension": _manifest_feature_dimension(info),
+        "supported_model_schemas": _manifest_supported_model_schemas(),
+        "web_bundle_version": str(info.get("web_bundle_version") or ""),
+        "db_schema_version": _manifest_db_schema_version(info),
+        "required_migrations": _manifest_required_migrations(),
+        "model_compatibility": _manifest_model_compatibility(info),
         "installer_version": installer_version,
         "build_environment": {
             "os": platform.platform(),
