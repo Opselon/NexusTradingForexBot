@@ -79,9 +79,7 @@ class Shadow70Worker:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._run, name="shadow70-writer", daemon=True
-        )
+        self._thread = threading.Thread(target=self._run, name="shadow70-writer", daemon=True)
         self._thread.start()
 
     def stop(self, flush: bool = True) -> None:

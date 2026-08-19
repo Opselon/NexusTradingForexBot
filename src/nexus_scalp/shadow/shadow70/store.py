@@ -46,7 +46,9 @@ class Shadow70BackpressurePolicy:
 
     def record_drop(self) -> None:
         self.dropped_snapshots += 1
-        logger.warning("[SHADOW70] event=SHADOW_BACKPRESSURE", dropped_snapshots=self.dropped_snapshots)
+        logger.warning(
+            "[SHADOW70] event=SHADOW_BACKPRESSURE", dropped_snapshots=self.dropped_snapshots
+        )
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -244,7 +246,9 @@ class Shadow70Store(Shadow70Persistence):
     def save_observation(self, obs: Shadow70Observation) -> bool:
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return False
-        if self.backpressure.should_drop(getattr(self.audit_repo, "_queue", type("Q", (), {"qsize": lambda s: 0})()).qsize()):
+        if self.backpressure.should_drop(
+            getattr(self.audit_repo, "_queue", type("Q", (), {"qsize": lambda s: 0})()).qsize()
+        ):
             self.backpressure.record_drop()
             return False
         self.ensure_schema()
@@ -381,7 +385,9 @@ class Shadow70Store(Shadow70Persistence):
     # Reads (bounded, short-lived connections — API/worker only)
     # ------------------------------------------------------------------
 
-    def list_observations(self, limit: int = 200, disagreement_only: bool = False) -> list[dict[str, Any]]:
+    def list_observations(
+        self, limit: int = 200, disagreement_only: bool = False
+    ) -> list[dict[str, Any]]:
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return []
         bounded = max(1, min(int(limit), SHADOW70_MAX_READ))
@@ -410,9 +416,7 @@ class Shadow70Store(Shadow70Persistence):
     def latest_feature_health(self) -> list[dict[str, Any]]:
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
             return []
-        return self._query(
-            "SELECT * FROM shadow70_feature_health ORDER BY id DESC LIMIT 10;", ()
-        )
+        return self._query("SELECT * FROM shadow70_feature_health ORDER BY id DESC LIMIT 10;", ())
 
     def disagreement_counts(self) -> dict[str, int]:
         if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):

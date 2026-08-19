@@ -132,8 +132,7 @@ class Shadow70LoadValidator:
             return Shadow70LoadResult(
                 Shadow70LoadStatus.NO_VALIDATED_CANDIDATE,
                 failing_gate="CANDIDATE_EXISTS",
-                reason="No 70D candidate registered/validated (First Gate: "
-                "NO_VALIDATED_CANDIDATE)",
+                reason="No 70D candidate registered/validated (First Gate: NO_VALIDATED_CANDIDATE)",
             )
         c = contract
         # 1 MANIFEST
@@ -182,8 +181,7 @@ class Shadow70LoadValidator:
             return Shadow70LoadResult(
                 Shadow70LoadStatus.SHADOW_LOAD_FAILED,
                 "HASH_VALID",
-                f"artifact hash mismatch: manifest={c.artifact_hash} "
-                f"live={live_artifact_hash}",
+                f"artifact hash mismatch: manifest={c.artifact_hash} live={live_artifact_hash}",
                 c,
             )
         # 6 SCALER HASH
@@ -434,9 +432,7 @@ class Shadow70Runtime:
         if not report.ok:
             valid = False
             error_code = (
-                "SHADOW_STALE_FEATURES"
-                if self._looks_stale(report)
-                else "SHADOW_FEATURE_INVALID"
+                "SHADOW_STALE_FEATURES" if self._looks_stale(report) else "SHADOW_FEATURE_INVALID"
             )
             reason = "; ".join(report.reasons)[:400]
             self.feature_invalid += 1
@@ -598,9 +594,7 @@ class Shadow70Runtime:
         model_id = contract.model_id if contract else ""
         model_version = contract.model_version if contract else ""
         # deterministic identity (spec 13): snapshot_id | model_id | version | ts
-        ident = sha256_json(
-            f"{snapshot_id}|{model_id}|{model_version}|{timestamp.isoformat()}"
-        )
+        ident = sha256_json(f"{snapshot_id}|{model_id}|{model_version}|{timestamp.isoformat()}")
         liq10 = list(liquidity_features_10) if liquidity_features_10 else []
         return Shadow70Observation(
             observation_id=ident,

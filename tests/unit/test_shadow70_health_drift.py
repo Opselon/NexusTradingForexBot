@@ -159,8 +159,16 @@ def test_drift_never_auto_acts() -> None:
         d.update(vector70(liquidity=3.0))
     alerts = d.evaluate()
     assert isinstance(alerts, list)
-    assert all(a.severity in (DRIFT_SEVERITY_NORMAL, DRIFT_SEVERITY_WATCH,
-                              DRIFT_SEVERITY_WARNING, DRIFT_SEVERITY_CRITICAL) for a in alerts)
+    assert all(
+        a.severity
+        in (
+            DRIFT_SEVERITY_NORMAL,
+            DRIFT_SEVERITY_WATCH,
+            DRIFT_SEVERITY_WARNING,
+            DRIFT_SEVERITY_CRITICAL,
+        )
+        for a in alerts
+    )
     # no execution surface
     for attr in ("place", "order", "modify", "cancel"):
         assert not hasattr(d, attr)

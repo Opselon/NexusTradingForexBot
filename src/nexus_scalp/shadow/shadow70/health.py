@@ -187,8 +187,8 @@ class Shadow70FeatureHealthMonitor:
         self._buffers.append([float(v) for v in liq])
         self._stale_marks.append(bool(stale))
         if len(self._buffers) > self.window:
-            self._buffers = self._buffers[-self.window:]
-            self._stale_marks = self._stale_marks[-self.window:]
+            self._buffers = self._buffers[-self.window :]
+            self._stale_marks = self._stale_marks[-self.window :]
         return True
 
     def health(self) -> list[Shadow70FeatureHealth]:
@@ -197,7 +197,8 @@ class Shadow70FeatureHealthMonitor:
         n = len(self._buffers)
         if n == 0:
             return [
-                Shadow70FeatureHealth(name=name, index=i) for i, name in enumerate(LIQUIDITY_FEATURE_NAMES)
+                Shadow70FeatureHealth(name=name, index=i)
+                for i, name in enumerate(LIQUIDITY_FEATURE_NAMES)
             ]
         for i, name in enumerate(LIQUIDITY_FEATURE_NAMES):
             col = [b[i] for b in self._buffers]

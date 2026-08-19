@@ -376,3 +376,18 @@ Inference latency (CPU, batch 256, 20 batches):
 70D adds <1% parameters and NO latency regression (within noise; the input
 projection is the only difference). Full training-time/memory comparison is
 deferred to the real A/B/C run (identical budgets; §40/§42).
+
+## 7.4 REGIME COVERAGE FINDING (brief §23 — PROVEN LIMITATION)
+
+On the existing 50D/60D artifacts the `regime` column is **100% UNKNOWN**
+(99,946/99,946 rows). Consequence:
+
+- Regime analysis (TRENDING_MOMENTUM / RANGING_MEAN_REVERSION / UNKNOWN
+  per-bucket metrics) is NOT POSSIBLE on this dataset as-is.
+- The live `MarketRegimeClassifier` exists but requires tick-level inputs
+  (order flow / depth / tick velocity); the M5-bar dataset builder does not
+  populate it.
+- Any benchmark verdict MUST therefore be regime-agnostic or the dataset
+  builder must be extended (separate task) to carry real regime labels.
+- TEST-70D-MODEL-30 enforces: if a future dataset has real regimes, no single
+  regime may dominate >95% (else regime evidence is meaningless).
