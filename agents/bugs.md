@@ -4387,3 +4387,86 @@ liquidity failures while the tree actually has 5 — stale registry).
 - Recommendation for the 70D series owner: land TASK-01 as ONE coherent commit after
   fixing its 5 test failures (gate will stay red until then); never absorb another
   task's WIP into a later commit.
+
+
+## BUG-103 — WalkForwardTrainer CrossEntropy Weight-Width Crash: Every Walk-Forward Training Run Failed (TASK-04-70D-MODEL-VALIDATION, 2026-08-19)
+
+### Root cause
+`training/walk_forward_trainer.py::_build_class_weights` derived the loss
+weight tensor width from `self._model_num_classes` (never assigned) falling
+through to `np.max(y)+1` — which is 3 for a 3-class label set — while the
+model emits 4 logits (NO_TRADE/BUY/SELL/WAIT-policy-bridge,
+`MODEL_HEAD_CLASSES=4`). `CrossEntropyLoss(weight=<3-wide>)` then crashed:
+"weight tensor should be defined either for all 4 classes or no classes but
+got weight tensor of shape: [3]".
+
+### Evidence
+- Every `WalkForwardTrainer.train_and_validate` call with a 3-class label set
+  crashed at criterion construction (reproduced on synthetic 70D frame);
+  the loss path had never been exercised post head-widening.
+- 70D walk-forward smoke (TASK-4) triggered it immediately.
+
+### Fix
+`_build_class_weights` now derives `num_classes = MODEL_HEAD_CLASSES (4)`,
+raised to `np.max(y)+1` only if labels exceed it. Weights always align with
+the model head.
+
+### Regression test
+`test_70d_model_31_70d_walk_forward_trains_end_to_end` (TEST-70D-MODEL-31).
+
+### Verification
+VERIFIED - 70D walk-forward trains end-to-end (1.8s, model input 70).
+
+### Related
+This fix UNCOVERED BUG-104 (trainer default save path in the same method
+chain clobbered the live Champion artifact).
+
+---
+
+## BUG-104 — WalkForwardTrainer Default Save Path = Live Champion Path: Bare Trainer Run CLOBBERED Production Model Artifact (TASK-04-70D-MODEL-VALIDATION, 2026-08-19)
+
+### Root cause
+`WalkForwardTrainer.__init__` defaulted `artifact_save_path` to
+`artifacts/models/scalp/XAUUSD/v1.0.0/model.pt` — the LIVE Champion path.
+Any bare `WalkForwardTrainer()` (tests, probes, smoke) silently OVERWROTE the
+production Champion artifact on `train_and_validate()` completion. This is a
+structural governance hole: the object that decides "save here" defaults to
+the most dangerous location.
+
+### Evidence
+- TASK-4 70D smoke run (synthetic, num_folds=3, scalp_v4) wrote a 70D model
+  over the Champion path: model.pt 1,335,531 bytes, timestamps 03:58,
+  model.meta.json written with num_features=70/feature_schema_id=scalp_v4.
+- Pre/post hashes: Champion frozen f0f70efb1b55855b... -> CLOBBERED to
+  9265e4b7c88089c6...; scaler 811554e5... -> 6ae86545...
+- Exhaustive search found NO byte-identical original (artifacts gitignored,
+  no backup, no pytest temp copy, no git blob) — the frozen Champion bytes
+  are NOT recoverable from the repo (see
+  docs/CHAMPION_ARTIFACT_INCIDENT_20260819.md).
+- Restored (documented, NOT byte-identical): bench_a_v1/model.pt +
+  scaler (scalp_v1/50D, seed 42, dataset ds_cb30..., same recipe family).
+  model.meta.json rewritten as RESTORED_CANDIDATE; registry row id=4
+  (fingerprint f0f70efb...) preserved untouched.
+
+### Fix
+Default `artifact_save_path` changed to
+`artifacts/model_generation/models/wf_candidate/model.pt`. A bare trainer
+can no longer reach the live path. LiveEngine passes the production path
+explicitly (deliberate, operator-authorized retrain flow).
+
+### Regression tests
+- TEST-70D-MODEL-31 (70D walk-forward trains end-to-end, candidate path)
+- TEST-70D-MODEL-14 updated: Champion-path artifact must be 50D scalp_v1
+  (STOPPED asserting the frozen hash — the restorable artifact is
+  bench_a_v1-derived; the frozen hash is preserved in the incident doc).
+
+### Verification
+VERIFIED - bare WalkForwardTrainer default now candidate path (asserted);
+restored Champion path artifact is 50D, input_projection (128,50), engine
+startup contract intact (dimension quarantine not triggered).
+
+### GOVERNANCE NOTE (operator action required, INV-015)
+The original Champion model.pt is unrecoverable from this repo. Operator
+must either restore from an external backup (verify hashes) or approve a
+retrain/promotion through ModelGovernanceEngine. Until then the active
+artifact is RESTORED_CANDIDATE (bench_a_v1-derived), functionally 50D.
