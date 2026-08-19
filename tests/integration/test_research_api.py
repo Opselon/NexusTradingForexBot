@@ -221,6 +221,26 @@ class TestResearchAPI:
         assert isinstance(health["rejection_reasons"], dict)
         assert isinstance(health["eligible_samples"], int)
 
+    def test_research_health_error_is_generic(self, wired_engine, monkeypatch):
+        """CodeQL py/stack-trace-exposure (#66) regression: when the health
+        summary raises, the API response carries a STABLE generic error -
+        exception text/traceback stays server-side only."""
+        from nexus_scalp.research import store as research_store
+
+        def _boom(repo, **kw):
+            raise RuntimeError("SECRET_INTERNAL_RESEARCH_PATH")
+
+        monkeypatch.setattr(research_store, "research_health_summary", _boom)
+        repo, engine = wired_engine
+        app = create_app(engine)
+        client = TestClient(app)
+        resp = client.get("/api/research/health")
+        assert resp.status_code == 200
+        body_text = resp.text
+        assert "SECRET_INTERNAL_RESEARCH_PATH" not in body_text
+        assert "RuntimeError" not in body_text
+        assert "Traceback" not in body_text
+
     def test_self_heal_endpoint(self, wired_engine):
         repo, engine = wired_engine
         app = create_app(engine)

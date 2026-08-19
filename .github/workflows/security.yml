@@ -9,6 +9,9 @@ on:
     - cron: "0 6 * * 1"   # Every Monday at 06:00 UTC
   workflow_dispatch:
 
+# All third-party actions are pinned to immutable commit SHAs
+# (supply-chain hardening). Update deliberately, never via
+# floating tags.
 permissions:
   contents: read
   security-events: write
@@ -26,15 +29,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@f3712979fa5f215279b101dd0a2e3bdfb4353324
         with:
           languages: python
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@f3712979fa5f215279b101dd0a2e3bdfb4353324
 
   trivy:
     name: Trivy Vulnerability Scan
@@ -43,10 +46,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297
         with:
           scan-type: "fs"
           scan-ref: "."
@@ -55,7 +58,7 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@f3712979fa5f215279b101dd0a2e3bdfb4353324
         if: always()
         with:
           sarif_file: "trivy-results.sarif"

@@ -5155,3 +5155,68 @@ The Liquidity Intelligence panel displayed contradictory state after a live sess
   expectations exactly.
 - Files: Web/index.html, tests/unit/test_frontend_assets_phase14.py,
   agents/bugs.md.
+## BUG-121 — GitHub code-scanning residual batch: webfonts path-injection (62/63/67), debug-snapshot + research-health stack-trace exposure (84/66), incident-report clear-text storage (86)
+
+- Category: SECURITY / WEB · RESEARCH · INCIDENTS (GitHub CodeQL code-scanning)
+- Symptom: 6 open CodeQL alerts on main after the BUG-113 batch (16 closed):
+  py/path-injection x3 (webfonts route), py/stack-trace-exposure x2
+  (/api/debug/state sections + /api/research/health), py/clear-text-storage
+  x1 (incident reports). The prior umask fix (BUG-113 #77) moved the
+  clear-text alert from one write to the adjacent write (line 187) - the
+  payload itself still carried secret-shaped VALUES.
+- Root cause per SARIF flows:
+  - 62/63/67: server.py still USED the user-supplied font_name in path
+    expressions (split->join->resolve->startswith). The containment guard
+    was correct at runtime but CodeQL cannot prove sanitization across
+    those path construction points, so the tainted data-flow alert stays.
+    Fix-by-design: never build a path from user input at all - match the
+    request name against the webfonts directory LISTING (iterdir) and
+    return the found Path. No join, no resolve, no traversal surface.
+  - 84: debug_snapshot.py embedded `{exc}` / `str(exc)` into public
+    reason/config_error fields in 9 section handlers; the payload flows
+    into /api/debug/state responses (exception text, paths, SQL can leak
+    to the browser).
+  - 66: research/store.py research_health_summary returned `str(e)` in
+    the public health payload (dataset-audit error + fatal branch).
+  - 86: mask_secrets only redacted by KEY NAME (fragment match) plus
+    key=value regex; secret-shaped VALUES under innocent keys (notes,
+    evidence detail, log excerpts) passed through to incident JSON/MD
+    files on disk.
+- Fix:
+  - server.py serve_fa_webfont: iterate root.iterdir(), compare
+    candidate.name == requested basename, is_file() check -> 404/FileResponse.
+    Unused _Path import removed.
+  - debug_snapshot.py: module logger added; all 9 except-handlers now
+    emit logger.warning(error=str(exc)) SERVER-SIDE and return stable
+    codes (FEATURE_REGISTRY_UNAVAILABLE / MODEL_STATE_ERROR /
+    CONFIDENCE_ERROR / CONFIG_ERROR / POSITIONS_ERROR / EXIT_FORENSICS_ERROR /
+    LIQUIDITY_ERROR / DB_HEALTH_ERROR / SECTION_ERROR).
+  - research/store.py: audit-error and fatal-health branches log the real
+    exception and return generic DATASET_AUDIT_UNAVAILABLE /
+    HEALTH_SUMMARY_UNAVAILABLE markers.
+  - incidents/reports.py: _SECRET_VALUE_RE value-level redaction (JWT,
+    Telegram bot-token, sk/pk/ghp/xox/AKIA/AIza shapes, PEM private-key
+    header, 40/64-hex runs) applied inside mask_secrets for string values.
+- Behavior contract preserved: debug snapshot sections still return
+  available:False + stable reason; UI consumers unaffected; masking
+  keeps non-secret values intact; traversal/stale-alert 404 semantics
+  unchanged (basename-only narrowing, real fonts still served 200).
+- Tests: test_frontend_assets_phase14.py (11 new: traversal attempts 404,
+  unknown font 404, real font 200 binary, content-type not text/html);
+  test_debug_snapshot_phase20.py (2 new: raising-section -> stable code +
+  no exception text on the wire; reason codes are stable markers);
+  test_incident_response_task12.py (3 new: value-shape JWT/sk- masking,
+  bot-token shape, value-level redaction); tests/integration/
+  test_research_api.py (1 new: health error -> generic marker, no
+  traceback on wire).
+- Note: dependabot vulnerability alerts + automated security updates were
+  DISABLED at repo level (API returned 403 "Dependabot alerts are
+  disabled"); both enabled via PUT /vulnerability-alerts and
+  /automated-security-fixes (204). 0 open alerts after enablement.
+- Files: src/nexus_scalp/web/server.py, web/debug_snapshot.py,
+  incidents/reports.py, research/store.py, tests/unit/
+  test_frontend_assets_phase14.py, tests/unit/test_debug_snapshot_phase20.py,
+  tests/unit/test_incident_response_task12.py, tests/integration/
+  test_research_api.py, .github/workflows/{security,ci,docker,release}.yml
+  (SHA pinning), pyproject.toml (ruff exclude scratch/ + cleanup-hold),
+  agents/bugs.md.

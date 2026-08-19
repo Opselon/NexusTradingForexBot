@@ -34,8 +34,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.errors import new_request_id
 
+# ---------------------------------------------------------------------------
+logger = get_logger("nexus_scalp.web.debug_snapshot")
 # ---------------------------------------------------------------------------
 # Secrets / path hygiene
 # ---------------------------------------------------------------------------
@@ -106,9 +109,10 @@ def _feature_registry() -> dict[str, Any]:
             "rows": rows,
         }
     except Exception as exc:
+        logger.warning("debug_snapshot feature_registry error", error=str(exc))
         return {
             "available": False,
-            "reason": f"FEATURE_REGISTRY_UNAVAILABLE: {exc}",
+            "reason": "FEATURE_REGISTRY_UNAVAILABLE",
             "schema_id": None,
             "dimension": None,
             "schema_hash": None,
@@ -601,9 +605,10 @@ def _model_section(engine: Any) -> dict[str, Any]:
             or None,
         }
     except Exception as exc:
+        logger.warning("debug_snapshot model_state error", error=str(exc))
         out = {
             "available": False,
-            "reason": f"MODEL_STATE_ERROR: {exc}",
+            "reason": "MODEL_STATE_ERROR",
         }
     return out
 
@@ -685,7 +690,8 @@ def _confidence_section(engine: Any) -> dict[str, Any]:
             ],
         }
     except Exception as exc:
-        return {"available": False, "reason": f"CONFIDENCE_ERROR: {exc}"}
+        logger.warning("debug_snapshot confidence error", error=str(exc))
+        return {"available": False, "reason": "CONFIDENCE_ERROR"}
 
 
 def _policy_section(engine: Any) -> dict[str, Any]:
@@ -931,7 +937,8 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         out["max_account_drawdown_pct"] = float(cfg.risk.max_account_drawdown_pct)
         out["hard_max_lots"] = 10.0
     except Exception as exc:
-        out["config_error"] = str(exc)
+        logger.warning("debug_snapshot risk config error", error=str(exc))
+        out["config_error"] = "CONFIG_ERROR"
 
     # Account truth from the adapter snapshot.
     account: dict[str, Any] = {
@@ -1132,7 +1139,8 @@ def _positions_section(engine: Any) -> dict[str, Any]:
                 )
             out["positions"].append(pos)
     except Exception as exc:
-        out["reason"] = f"POSITIONS_ERROR: {exc}"
+        logger.warning("debug_snapshot positions error", error=str(exc))
+        out["reason"] = "POSITIONS_ERROR"
     return out
 
 
@@ -1216,7 +1224,8 @@ def _exit_section(engine: Any) -> dict[str, Any]:
                 entry["exit_candidates"] = candidates
             out["positions"].append(entry)
     except Exception as exc:
-        out["reason"] = f"EXIT_FORENSICS_ERROR: {exc}"
+        logger.warning("debug_snapshot exit forensics error", error=str(exc))
+        out["reason"] = "EXIT_FORENSICS_ERROR"
     return out
 
 
@@ -1232,7 +1241,8 @@ def _liquidity_section(engine: Any) -> dict[str, Any]:
         report = gov.report()
         return {"available": True, "report": report}
     except Exception as exc:
-        return {"available": False, "reason": f"LIQUIDITY_ERROR: {exc}"}
+        logger.warning("debug_snapshot liquidity error", error=str(exc))
+        return {"available": False, "reason": "LIQUIDITY_ERROR"}
 
 
 def _news_section(engine: Any) -> dict[str, Any]:
@@ -1404,10 +1414,11 @@ def _database_section(engine: Any) -> dict[str, Any]:
                 "health": "READY" if path.exists() else "MISSING",
             }
         except Exception as exc:
+            logger.warning("debug_snapshot db health error", error=str(exc))
             return {
                 "path": _mask_path(str(path)),
                 "health": "ERROR",
-                "reason": str(exc)[:200],
+                "reason": "DB_HEALTH_ERROR",
             }
 
     try:
@@ -1707,10 +1718,11 @@ def build_debug_snapshot(engine: Any, app_state: Any) -> dict[str, Any]:
             section["_section"] = name
             return section
         except Exception as exc:
+            logger.warning("debug_snapshot section error", section=name, error=str(exc))
             return {
                 "_section": name,
                 "available": False,
-                "reason": f"SECTION_ERROR: {exc}",
+                "reason": "SECTION_ERROR",
                 "correlation_id": new_request_id(),
             }
 

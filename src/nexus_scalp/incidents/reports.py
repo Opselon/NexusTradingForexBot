@@ -44,6 +44,23 @@ _SECRET_RE = re.compile(
     r"[\"']?[A-Za-z0-9_\-./+]{6,}[\"']?"
 )
 
+#: Secret-shaped *values* (spec 47, CodeQL py/clear-text-storage #86): JWTs,
+#: Telegram bot tokens, sk/pk/GitHub/Slack/AWS/Google API keys, PEM private-key
+#: headers and high-entropy hex runs. Redacted even when the surrounding key
+#: name does not look sensitive (evidence detail, note, log excerpt, any
+#: arbitrary string value in an incident payload).
+_SECRET_VALUE_RE = re.compile(
+    r"(?i)\b("
+    r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"  # JWT
+    r"|\d{6,}:[A-Za-z0-9_-]{30,}"  # Telegram bot token
+    r"|(?:sk|pk|ghp|gho|ghu|ghs|xox[baprs]-|AKIA)[A-Za-z0-9_-]{15,}"  # sk/GH/Slack/AWS
+    r"|AIza[0-9A-Za-z_-]{30,}"  # Google API key
+    r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"  # PEM private key header
+    r"|\b[0-9a-f]{40}\b"  # hex sha1-like high-entropy
+    r"|\b[0-9a-f]{64}\b"  # hex sha256-like high-entropy
+    r")\b"
+)
+
 
 def mask_secrets(value: Any) -> Any:
     """Recursively masks sensitive fields in any JSON-able structure (spec 47)."""
@@ -58,7 +75,13 @@ def mask_secrets(value: Any) -> Any:
     if isinstance(value, list):
         return [mask_secrets(v) for v in value]
     if isinstance(value, str):
-        return _SECRET_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", value)
+        redacted = _SECRET_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", value)
+        if _SECRET_VALUE_RE.search(redacted):
+            # Whole values that ARE secrets (JWT/bot-token/PEM/API-key shapes)
+            # are replaced outright; inline secret-shaped substrings inside
+            # longer text (notes, excerpts) are masked per-match.
+            return _SECRET_VALUE_RE.sub("[REDACTED]", redacted)
+        return redacted
     return value
 
 

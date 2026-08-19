@@ -138,9 +138,9 @@ jobs:
           try:
               with open(log_path, encoding="utf-8", errors="replace") as fh:
                   for line in fh:
-                      m = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)\s+(\d+)\s+(\d+)%", line)
+                      m = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", line)
                       if m:
-                          pct = float(m.group(3))
+                          pct = float(m.group(1))
           except Exception:
               pass
           status = "passed" if pct is not None else "errored"
@@ -180,10 +180,13 @@ jobs:
           detail = ""
           try:
               tree = ET.parse(junit)
-              attrs = tree.getroot().attrib
-              tests = int(attrs.get("tests", 0))
-              failures = int(attrs.get("failures", 0)) + int(attrs.get("errors", 0))
-              skipped = int(attrs.get("skipped", 0))
+              root = tree.getroot()
+              nodes = root.findall("testsuite") if root.tag == "testsuites" else [root]
+              tests = failures = skipped = 0
+              for node in nodes:
+                  tests += int(node.attrib.get("tests", 0) or 0)
+                  failures += int(node.attrib.get("failures", 0) or 0) + int(node.attrib.get("errors", 0) or 0)
+                  skipped += int(node.attrib.get("skipped", 0) or 0)
               detail = f"{tests} tests, {failures} failed, {skipped} skipped"
           except Exception:
               detail = "no junit.xml produced"
@@ -234,11 +237,16 @@ jobs:
           exit 0
 
       # -------- One canonical artifact per run --------
+      # On heavy runs (ci-tests / full dispatch) the aggregate job uploads the
+      # final canonical artifact under the base name; this quality upload uses a
+      # distinct -quality suffix so the two never collide (upload-artifact v4
+      # rejects duplicate names). On normal pushes this IS the run's artifact
+      # (aggregate does not run).
       - name: Upload CI results artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ci-results-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
+          name: ci-results-quality-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
           if-no-files-found: error
           retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
@@ -363,10 +371,13 @@ jobs:
           detail = ""
           try:
               tree = ET.parse(junit)
-              attrs = tree.getroot().attrib
-              tests = int(attrs.get("tests", 0))
-              failures = int(attrs.get("failures", 0)) + int(attrs.get("errors", 0))
-              skipped = int(attrs.get("skipped", 0))
+              root = tree.getroot()
+              nodes = root.findall("testsuite") if root.tag == "testsuites" else [root]
+              tests = failures = skipped = 0
+              for node in nodes:
+                  tests += int(node.attrib.get("tests", 0) or 0)
+                  failures += int(node.attrib.get("failures", 0) or 0) + int(node.attrib.get("errors", 0) or 0)
+                  skipped += int(node.attrib.get("skipped", 0) or 0)
               detail = f"{tests} tests, {failures} failed, {skipped} skipped"
           except Exception:
               detail = "no junit.xml produced"
@@ -444,14 +455,36 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true
+          # merge-multiple is intentionally OFF: each arm's ci-results/ tree
+          # must stay separate so per-arm run-info files (metadata/summary/
+          # manifest) never overwrite each other during aggregation.
 
       - name: Prepare canonical result structure
         run: |
           rm -rf ci-results
-          mkdir -p ci-results/run-info
-          cp -r artifacts/ci-results/. ci-results/ 2>/dev/null || true
+          mkdir -p ci-results/run-info ci-results/heavy
+          suffix="-${{ github.run_number }}-${{ github.sha }}"
+          # Each arm artifact is artifacts/ci-results-<suite><suffix>/ci-results/.
+          # Move each arm's tree into a dedicated heavy/<suite>/ directory so
+          # per-arm run-info files never collide; the merged summary below then
+          # reflects ALL suites (heavy rows come from heavy/<suite>/run-info).
+          for d in artifacts/ci-results-*/ci-results; do
+            [ -d "$d" ] || continue
+            name="$(basename "$(dirname "$d")")"
+            suite="${name%$suffix}"
+            suite="${suite#ci-results-}"
+            cp -r "$d" "ci-results/heavy/$suite" 2>/dev/null || true
+            echo "merged arm: $suite"
+          done
           find ci-results -type f | sort
+
+      - name: Regenerate merged summary + manifest
+        run: |
+          # Re-run the pipeline over the merged tree so summary.md/manifest.json/
+          # SHA256SUMS.txt reflect the WHOLE run (all suites), not the last arm.
+          python scripts/ci/make_ci_results.py summary ci-results || true
+          python scripts/ci/make_ci_results.py manifest ci-results || true
+          find ci-results/run-info -type f | sort
 
       - name: Upload canonical aggregate artifact
         uses: actions/upload-artifact@v4

@@ -555,3 +555,47 @@ Required tests: ruff check . (clean), ruff format --check . (clean),
        mypy src (clean), pytest tests/unit
 Status: VERIFIED
 ```
+```text
+CHANGE-ID: CHG-0024
+Agent: Hermes-SecurityAudit
+Role: GitHub Security & Quality audit engineer
+Task: TASK-SEC-AUDIT
+Scope: Residual GitHub code-scanning batch (BUG-121): webfonts route
+       rewritten to listing-match (no user input in path expressions),
+       debug_snapshot section handlers + research health return stable
+       error markers (exception detail server-side via logger), incident
+       reports gain value-level secret-shape redaction. All 4 workflow
+       files' third-party actions pinned to immutable commit SHAs
+       (trivy-action was on @master). Dependabot vulnerability alerts +
+       automated security updates enabled at repo level (were disabled).
+       ruff exclude added for scratch/ + _cleanup_hold_20260819 so
+       parallel-agent probe WIP cannot break CI. pip-audit on the venv:
+       no known vulnerabilities. No trading/risk/model code touched.
+Affected files: src/nexus_scalp/web/server.py, web/debug_snapshot.py,
+       incidents/reports.py, research/store.py, tests/unit/
+       test_frontend_assets_phase14.py (absorbed in 4f45a26),
+       test_debug_snapshot_phase20.py, test_incident_response_task12.py,
+       tests/integration/test_research_api.py, pyproject.toml,
+       .github/workflows/{security,ci,docker,release}.yml,
+       agents/{bugs,change_control}.md
+Affected functions/classes: serve_fa_webfont (server.py); 9 snapshot
+       section handlers + _safe (debug_snapshot.py); mask_secrets +
+       _SECRET_VALUE_RE (reports.py); research_health_summary
+       (research/store.py)
+Contracts touched: WEB_FONT_SERVING v2 (listing-match, 404 semantics
+       preserved), DEBUG_SNAPSHOT error contract (stable reason codes,
+       exception text removed from wire), INCIDENT_REPORT_MASKING v2
+       (value-level redaction), CI action pinning policy (SHA-only)
+Runtime paths touched: web webfont serving, /api/debug/state,
+       /api/research/health, incident report writes (all error paths
+       only - happy paths byte-identical)
+Owners affected: none (error-path contract changes only; UI reads
+       available/reason fields which remain)
+Risk: LOW. Error paths never change trading behavior; webfonts serves
+       the same 8 real files; masking only redacts secret shapes.
+Dependencies: none
+Required tests: ruff check . (clean), ruff format --check (clean on
+       src+tests+scripts), mypy src (clean), pytest unit + research API
+       (targeted suites), 153 tests in the 4 touched suites pass
+Status: VERIFIED
+```

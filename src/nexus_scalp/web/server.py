@@ -1542,25 +1542,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     @app.get("/vendor/webfonts/{font_name}")
     def serve_fa_webfont(font_name: str) -> FileResponse:
-        # CodeQL py/path-injection (#62): never trust the user-supplied font
-        # name. Take the basename, then NORMALIZE and verify containment
-        # inside the webfonts root so ".."/absolute/encoded traversal can
-        # never escape (normpath is the check that matters even after
-        # basename-splitting).
-        from pathlib import Path as _Path
-
+        # CodeQL py/path-injection (#62/#63/#67): never build a path from
+        # user input. Match the request against the directory listing of the
+        # webfonts root ONLY - no tainted value ever reaches a path
+        # expression (no joins, no resolvers, no traversal surface).
         from fastapi import HTTPException as _HTTPException
 
-        safe_name = str(font_name).replace("\\", "/").split("/")[-1]
-        if not safe_name or ".." in safe_name:
-            raise _HTTPException(status_code=404, detail="Not Found")
         root = (WEB_DIR / "vendor" / "webfonts").resolve()
-        path = _Path(root / safe_name).resolve()
-        if not str(path).startswith(str(root)):
+        want = str(font_name).replace("\\", "/").split("/")[-1]
+        found = next(
+            (candidate for candidate in root.iterdir() if candidate.name == want),
+            None,
+        )
+        if found is None or not found.is_file():
             raise _HTTPException(status_code=404, detail="Not Found")
-        if not path.exists():
-            raise _HTTPException(status_code=404, detail="Not Found")
-        return FileResponse(path)
+        return FileResponse(found)
 
     # REST APIs: System status
     @app.get("/api/status")

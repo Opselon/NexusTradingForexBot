@@ -303,7 +303,8 @@ def research_health_summary(
 
                 candidates_discovered = len(discover_candidates(ds.samples))
             except Exception as e:
-                audit = {"error": str(e)}
+                logger.error("[STRATEGY_RESEARCH] dataset audit failed", error=str(e))
+                audit = {"error": "DATASET_AUDIT_UNAVAILABLE"}
         out["eligible_samples"] = audit.get("eligible", 0)
         out["rejected_samples"] = audit.get("rejected", 0)
         out["zero_substituted"] = audit.get("zero_substituted", 0)
@@ -372,7 +373,9 @@ def research_health_summary(
         return out
     except Exception as e:
         logger.error("[STRATEGY_RESEARCH] health summary failed", error=str(e))
-        return {"available": False, "error": str(e)}
+        # CodeQL py/stack-trace-exposure (#66): exception detail stays
+        # server-side; the wire carries a stable, generic error marker.
+        return {"available": False, "error": "HEALTH_SUMMARY_UNAVAILABLE"}
 
 
 def self_heal_research(repo: AuditRepository, registry) -> int:
