@@ -82,30 +82,40 @@ from nexus_scalp.market_data.bar_aggregator import BarData
 SWEEP_ABS_MAX_BARS: int = 2000  # absolute cap: 2000 M5 bars = ~7 days
 
 
-def sweep_lookback(pools: list[Any], times: list[datetime], i: int) -> int:
+#: Prices for the nearest-pool lookback helper (post-sweep displacement
+#: anchor needs the sweep bar; the NEAREST pool is what the detector uses).
+def sweep_lookback(pools: list[Any], times: list[datetime], i: int, price: float) -> int:
     """Bars needed for detect_reactive_sweep at decision index i.
 
-    The detector reads from the nearest relevant pool's confirmed_at onward.
-    Return the number of trailing bars that must be passed so the earliest
-    usable confirmed pool is included (capped at SWEEP_ABS_MAX_BARS).
+    The detector only acts on the NEAREST relevant pool (by |price - pool|)
+    and scans bars from ITS confirmed_at onward. Return the trailing-bar
+    count covering that pool (capped at SWEEP_ABS_MAX_BARS).
     """
     if not pools or i < 0:
         return SWEEP_ABS_MAX_BARS
     decision = times[i]
-    earliest = None
+    nearest = None
+    best = None
     for p in pools:
-        if p.usable_at is not None and p.usable_at <= decision:
-            if earliest is None or p.confirmed_at < earliest:
-                earliest = p.confirmed_at
-    if earliest is None:
+        if p.usable_at is not None and p.usable_at <= decision and p.state != PoolState.CANDIDATE:
+            d = abs(p.price - price)
+            if best is None or d < best:
+                best = d
+                nearest = p
+    if nearest is None:
         return SWEEP_ABS_MAX_BARS
-    # index of the first bar with timestamp >= earliest
+    anchor = nearest.confirmed_at
     lo = 0
     for j in range(i, -1, -1):
-        if times[j] <= earliest:
+        if times[j] <= anchor:
             lo = j
             break
-    return min(SWEEP_ABS_MAX_BARS, max(1, i + 1 - lo))
+    bars_needed = i + 1 - lo
+    # the detector requires len(rel) >= 2 (rel = bars <= decision) and
+    # scans from ANY bar (only skipping < confirmed_at). Include at least
+    # 2 completed bars before decision even when confirmed_at == decision.
+    bars_needed = max(bars_needed, 2)
+    return min(SWEEP_ABS_MAX_BARS, bars_needed)
 
 # ---------------------------------------------------------------------------
 # Incremental session/daily pools
@@ -567,7 +577,7 @@ def compute_70d_frame_fast(
         confluence = liquidity_confluence(usable, decision_at=ts, atr=safe_atr)
         sweep_state, displacement = detect_reactive_sweep(
             usable,
-            all_bars[max(0, i + 1 - sweep_lookback(usable, times, i)) : i + 1],
+            all_bars[max(0, i + 1 - sweep_lookback(usable, times, i, float(b["close"]))) : i + 1],
             safe_atr,
             decision_at=ts,
         )
