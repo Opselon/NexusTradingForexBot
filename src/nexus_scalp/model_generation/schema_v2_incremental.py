@@ -136,6 +136,10 @@ def _session_ranges(decision: datetime) -> tuple[datetime, datetime]:
     return day_start, day_start.replace(hour=23, minute=59) + timedelta(minutes=1)
 
 
+#: Max retained swing pools per side (BUG-106 bounded retention).
+POOL_RETENTION: int = 200
+
+
 class IncrementalLiquidityState:
     """Holds the reusable structural state across rows (BUG-106 fix).
 
@@ -159,7 +163,20 @@ class IncrementalLiquidityState:
         # session + daily appended per-row in the caller (same as canonical
         # compute_liquidity_features). Do NOT sort: internal_external_distances
         # uses users[-20:] where ORDER matters (BUG-106 parity).
-        self.all_pools: list[LiquidityPool] = list(self.sh_pools) + list(self.sl_pools)
+        #
+        # BUG-106 bounded retention: keep only the most recent POOL_RETENTION
+        # confirmed swing pools (by confirmed_at). Older swing levels are
+        # far behind price and contribute nothing to distances (users[-20:]),
+        # sweep (nearest pool), or confluence (far zones cannot win the
+        # diversity-max score). The bound is far above any real decision
+        # horizon; parity is machine-verified on the harness.
+        sh = list(self.sh_pools)
+        sl = list(self.sl_pools)
+        if len(sh) > POOL_RETENTION:
+            sh = sh[-POOL_RETENTION:]
+        if len(sl) > POOL_RETENTION:
+            sl = sl[-POOL_RETENTION:]
+        self.all_pools: list[LiquidityPool] = sh + sl
 
         # --- incremental daily grouping (BUG-106: daily_pools_at was O(n)
         # per row — it rebuilt the full day->bars dict from scratch). We
