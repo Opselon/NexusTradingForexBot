@@ -36,10 +36,10 @@ def driver_available(config: DatabaseConfig) -> bool:
 
 
 __all__ = [
-    "DatabaseDriver",
     "DatabaseConfig",
-    "SQLiteDriver",
+    "DatabaseDriver",
     "PostgreSQLDriver",
-    "get_driver",
+    "SQLiteDriver",
     "driver_available",
+    "get_driver",
 ]

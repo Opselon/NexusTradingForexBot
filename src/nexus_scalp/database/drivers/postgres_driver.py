@@ -19,8 +19,8 @@ Driver responsibilities (portability contract):
 
 from __future__ import annotations
 
-import re
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig, build_postgres_url, mask_url_password
 from nexus_scalp.database.drivers.base import DatabaseDriver
@@ -272,6 +272,9 @@ class PostgreSQLDriver(DatabaseDriver):
             pass
 
     def execute(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> Any:
+        active_tx = getattr(self, "_active_tx_conn", None)
+        if conn is None and active_tx is not None:
+            conn = active_tx  # join the open transaction (no autocommit)
         own = conn is None
         c = conn or self.connect()
         try:
@@ -284,6 +287,9 @@ class PostgreSQLDriver(DatabaseDriver):
                 c.close()
 
     def executemany(self, sql: str, seq: Iterable[Sequence[Any]], conn: Any = None) -> None:
+        active_tx = getattr(self, "_active_tx_conn", None)
+        if conn is None and active_tx is not None:
+            conn = active_tx
         own = conn is None
         c = conn or self.connect()
         try:
@@ -302,7 +308,7 @@ class PostgreSQLDriver(DatabaseDriver):
             cur = c.execute(self.translate_sql(sql), tuple(args) if args else None)
             rows = cur.fetchall()
             names = [d.name for d in cur.description] if cur.description else []
-            return [dict(zip(names, r)) for r in rows]
+            return [dict(zip(names, r, strict=False)) for r in rows]
         finally:
             if own:
                 c.close()
@@ -316,7 +322,7 @@ class PostgreSQLDriver(DatabaseDriver):
             if row is None:
                 return None
             names = [d.name for d in cur.description] if cur.description else []
-            return dict(zip(names, row))
+            return dict(zip(names, row, strict=False))
         finally:
             if own:
                 c.close()
@@ -418,39 +424,6 @@ class PostgreSQLDriver(DatabaseDriver):
             if own:
                 c.close()
 
-    def upsert(self, table: str, row: dict[str, Any], conn: Any = None) -> None:
-        """ON CONFLICT (pk|unique, ...) DO UPDATE — portable REPLACE.
-
-        The conflict target is resolved from the table's primary key (or its
-        unique columns when no PK covers the inserted row), so SQLite
-        INSERT OR REPLACE semantics carry over to PostgreSQL.
-        """
-        own = conn is None
-        c = conn or self.connect()
-        try:
-            cols = list(row.keys())
-            if not cols:
-                return
-            placeholders = ",".join("%s" for _ in cols)
-            col_list = ",".join(cols)
-            sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
-            target = self._conflict_target(table, c, cols)
-            if target and any(t in cols for t in target):
-                updates = ",".join(f"{cn} = EXCLUDED.{cn}" for cn in cols if cn not in target)
-                if updates:
-                    sql += f" ON CONFLICT ({','.join(target)}) DO UPDATE SET {updates}"
-                else:
-                    sql += " ON CONFLICT DO NOTHING"
-            else:
-                # No usable conflict target: at least never corrupt (dup row
-                # would violate caller contracts; log + no-op on conflict).
-                sql += " ON CONFLICT DO NOTHING"
-            c.execute(sql, list(row.values()))
-            if own:
-                c.commit()
-        finally:
-            if own:
-                c.close()
 
     def insert_ignore(self, table: str, row: dict[str, Any], conn: Any = None) -> None:
         own = conn is None
@@ -473,12 +446,15 @@ class PostgreSQLDriver(DatabaseDriver):
 
     def begin(self, conn: Any = None) -> None:
         c = conn or self.connect()
+        if c is not None:
+            self._active_tx_conn = c
         c.execute("BEGIN")
 
     def commit(self, conn: Any = None) -> None:
         c = conn or getattr(self, "_last_auto_conn", None)
         if c is not None:
             c.commit()
+        self._active_tx_conn = None
 
     # -- metadata / health ------------------------------------------------
 

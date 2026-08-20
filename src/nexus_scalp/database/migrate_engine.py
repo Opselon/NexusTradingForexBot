@@ -20,10 +20,10 @@ Safety contract:
 
 from __future__ import annotations
 
-import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
 from nexus_scalp.database.ddl_port import port_create_table
@@ -32,8 +32,6 @@ from nexus_scalp.database.migrate_copier import (
     DEFAULT_BATCH_SIZE,
     MigrationError,
     copy_table,
-    ensure_checkpoint_table,
-    load_checkpoints,
 )
 
 #: Tables never migrated (internal / derived state that rebuilds itself).
@@ -206,6 +204,9 @@ class SqliteToPostgresMigrator:
         created: list[str] = []
         with self._pg_driver.connect() as conn:
             for t in tables:
+                # idempotent: never re-create an existing destination table
+                if self._pg_driver.table_exists(t, conn=conn):
+                    continue
                 # resolve CREATE TABLE from source sqlite_master
                 sql_row = self._src_driver.query(
                     "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",

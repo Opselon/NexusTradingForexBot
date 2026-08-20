@@ -18,7 +18,8 @@ Portability rules enforced by this boundary:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
 
@@ -64,16 +65,22 @@ class DatabaseDriver(ABC):
 
     # -- setup ------------------------------------------------------------
 
+    @abstractmethod
     def ensure_directory(self) -> None:
         """Create any filesystem prerequisite (SQLite parent dir)."""
+        raise NotImplementedError
 
+    @abstractmethod
     def configure_connection(self, conn: Any) -> None:
         """Per-connection provider tuning (SQLite PRAGMAs / PG session)."""
+        raise NotImplementedError
 
     # -- DDL --------------------------------------------------------------
 
+    @abstractmethod
     def create_table(self, table: str, ddl: str) -> None:
         """Execute a CREATE TABLE statement."""
+        raise NotImplementedError
 
     @abstractmethod
     def table_columns(self, table: str, conn: Any = None) -> list[dict[str, Any]]:
@@ -137,8 +144,10 @@ class DatabaseDriver(ABC):
     def database_version(self, conn: Any = None) -> str:
         """Server/engine version string."""
 
+    @abstractmethod
     def database_size_bytes(self) -> int | None:
         """Physical size when meaningful (None when not applicable)."""
+        raise NotImplementedError
 
     @abstractmethod
     def table_count(self, conn: Any = None) -> int:

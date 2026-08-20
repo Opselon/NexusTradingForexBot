@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Callable, Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
 from nexus_scalp.database.drivers import get_driver
@@ -132,7 +133,6 @@ def iter_table_batches(
     `order_col` must be the table's rowid/identity column; batches are cut by
     ``WHERE rowid > start_after ORDER BY rowid ASC LIMIT batch_size``.
     """
-    qmarks = ",".join("?" for _ in columns)
     conn = src_driver.connect(timeout=30.0)
     try:
         # Discover whether the table has a rowid (WITHOUT ROWID tables need
@@ -159,11 +159,8 @@ def iter_table_batches(
             where = f"{order_col} > ?"
             order_by = f"{order_col} ASC"
         col_list = ", ".join(columns)
-        sql = (
-            f"SELECT {col_list} FROM {table} "
-            f"WHERE {where} ORDER BY {order_by} LIMIT ?"
-        )
-        cursor = conn.execute(sql, [start_after, batch_size])
+        sql = f"SELECT {col_list} FROM {table} WHERE {where} ORDER BY {order_by}"
+        cursor = conn.execute(sql, [start_after])
         while True:
             rows = cursor.fetchmany(batch_size)
             if not rows:

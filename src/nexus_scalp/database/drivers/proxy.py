@@ -22,11 +22,11 @@ rolls back on exception WITHOUT closing the connection.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from nexus_scalp.database.drivers.base import DatabaseDriver
 from nexus_scalp.database.drivers.postgres_driver import (
-    PostgreSQLDriver,
     _translate_placeholders,
 )
 
@@ -56,7 +56,7 @@ class PortableCursor:
         if isinstance(row, dict):
             return row
         if self._names:
-            return dict(zip(self._names, row))
+            return dict(zip(self._names, row, strict=False))
         return dict(row)
 
     def fetchone(self) -> dict[str, Any] | None:
@@ -152,7 +152,7 @@ class PortableConnection:
             finally:
                 self._closed = True
 
-    def __enter__(self) -> "PortableConnection":
+    def __enter__(self) -> PortableConnection:
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:

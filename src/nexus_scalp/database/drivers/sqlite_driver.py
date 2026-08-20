@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
 from nexus_scalp.database.drivers.base import DatabaseDriver
