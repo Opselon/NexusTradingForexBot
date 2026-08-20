@@ -242,7 +242,6 @@ class TestDdlPorting:
         out = port_create_table(ddl)
         assert "WITHOUT ROWID" not in out
 
-
     def test_double_quoted_literal_becomes_single_quoted(self):
         from nexus_scalp.database.ddl_port import port_create_table
 
@@ -258,6 +257,7 @@ class TestDdlPorting:
         out = port_create_table(ddl)
         assert '"order_id"' in out, out
         assert '"symbol"' in out, out
+
 
 # ---------------------------------------------------------------------------
 # Migrator preview + safety

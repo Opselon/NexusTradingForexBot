@@ -270,9 +270,7 @@ def load_database_config(
                     # rows to a dict (service.py persists this key as json).
                     # Accept either shape: raw string (older rows) or dict.
                     parsed = (
-                        json.loads(pg_raw.value)
-                        if isinstance(pg_raw.value, str)
-                        else pg_raw.value
+                        json.loads(pg_raw.value) if isinstance(pg_raw.value, str) else pg_raw.value
                     )
                     if isinstance(parsed, dict):
                         pg = DatabaseConfig.from_dict(parsed, domain)

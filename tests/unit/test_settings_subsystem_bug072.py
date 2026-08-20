@@ -264,10 +264,18 @@ class TestSettingsServiceDatabasePortability:
         assert row is not None and row.value == "postgresql"
         svc.close()
 
-    def test_set_postgres_config_never_stores_password(self, db_path: Path, secret_root: Path) -> None:
+    def test_set_postgres_config_never_stores_password(
+        self, db_path: Path, secret_root: Path
+    ) -> None:
         svc = _svc(db_path, secret_root)
         result = svc.set_postgres_config(
-            {"host": "db.local", "port": 5432, "database": "nse_audit", "username": "nse_user", "password": "S3cret!"}
+            {
+                "host": "db.local",
+                "port": 5432,
+                "database": "nse_audit",
+                "username": "nse_user",
+                "password": "S3cret!",
+            }
         )
         assert result["success"] is True
         # password absent from the persisted settings row
@@ -286,7 +294,9 @@ class TestSettingsServiceDatabasePortability:
         assert svc.secrets.get_secret(PG_PASSWORD_SECRET_KEY) == "S3cret!"
         svc.close()
 
-    def test_postgres_password_set_false_when_absent(self, db_path: Path, secret_root: Path) -> None:
+    def test_postgres_password_set_false_when_absent(
+        self, db_path: Path, secret_root: Path
+    ) -> None:
         svc = _svc(db_path, secret_root)
         assert svc.postgres_password_set() is False
         svc.close()
