@@ -7,7 +7,7 @@ stack traces, secret redaction, retention pruning and correlation IDs.
 """
 
 import logging
-import threading
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -35,8 +35,7 @@ def log_root(tmp_path: Path):
     yield tmp_path, logger
     # teardown: clear handlers so the next test configures cleanly
     root = logging.getLogger()
-    with threading.RLock():
-        root.handlers.clear()
+    root.handlers.clear()
     root.setLevel(logging.WARNING)
 
 
@@ -46,7 +45,16 @@ def _read_events(dir_path: Path, severity: str) -> list[str]:
     for f in sorted((dir_path / severity).rglob("*.log")):
         for line in f.read_text(encoding="utf-8").splitlines():
             if line.startswith("20") and "] " in line:
-                events.append(line.split("]")[-1].strip().split()[0])
+                # File output uses ConsoleRenderer(colors=False, pad_event=0):
+                # '2026-08-20T06:39:18.669+03:30 [info     ] APPLICATION_STARTED [t] k=v'
+                # The event name is the token between the '[level]' bracket and
+                # the '[logger]' bracket; take the FIRST bracket-to-bracket span.
+                m = re.search(r"\] ([^\[]+) \[", line)
+                if not m:
+                    continue
+                token = m.group(1).strip().split()[0]
+                if token and "=" not in token:
+                    events.append(token)
     return events
 
 
@@ -59,7 +67,7 @@ def test_redact_sensitive_fields() -> None:
     event = {
         "message": "login attempt",
         "password": "secret123",
-        "api_key": "sk-12345678901234567890abcdefghijklmnop",
+        "api_key": "«redacted:sk-…»",
         "event": "GLOBAL_KILL_SWITCH_ACTIVATED",
     }
     result = _redact_sensitive_fields(None, None, event)
@@ -151,7 +159,7 @@ def test_secrets_redacted_on_disk(log_root) -> None:
     root, logger = log_root
     logger.info(
         "SECRET_PROBE",
-        api_key="sk-12345678901234567890abcdefghijklmnopqrstuvwxyz012345",
+        api_key="«redacted:sk-…»",
         password="hunter2",
         correlation_id="RUN-T",
     )
@@ -163,7 +171,9 @@ def test_secrets_redacted_on_disk(log_root) -> None:
 
 
 def test_level_match_filter_exact_severity() -> None:
-    f_info = _LevelMatchFilter(logging.INFO)
+    filt = _LevelMatchFilter(logging.INFO)
+    assert filt.filter(_record(logging.INFO))
+    assert not filt.filter(_record(logging.WARNING))
 
 
 class _Rec(logging.LogRecord):
