@@ -19,10 +19,13 @@ Design:
 from __future__ import annotations
 
 import html
+import http.client
 import json
 import logging
 import queue
 import re
+import socket
+import ssl
 import threading
 import time
 import urllib.error
@@ -53,11 +56,31 @@ TELEGRAM_SERIALIZATION_ERROR = "TELEGRAM_SERIALIZATION_ERROR"
 TELEGRAM_QUEUE_ERROR = "TELEGRAM_QUEUE_ERROR"
 TELEGRAM_WORKER_ERROR = "TELEGRAM_WORKER_ERROR"
 TELEGRAM_UNKNOWN_ERROR = "TELEGRAM_UNKNOWN_ERROR"
+TELEGRAM_DNS_BLOCKED = "TELEGRAM_DNS_BLOCKED"
 
 #: Non-retryable target-side rejections (4xx classes that never succeed on retry).
 _NON_RETRYABLE_API_CODES = {400, 401, 403, 404, 409, 420}
 _RETRYABLE_API_CODES = {429} | set(range(500, 600))
 _TIMEOUT_ERRORS = (TimeoutError, urllib.error.URLError)
+
+#: RFC 2544/6890 benchmark block — the classic DNS-poisoning answer.
+#: When api.telegram.org resolves here, the upstream resolver (ISP/router/
+#: MITM) is returning a blackhole and every Telegram HTTPS call will hang.
+_DNS_POISON_BLACKHOLE_RANGES: tuple[tuple[int, int], ...] = (
+    (0xC0000000, 0xC000FFFF),  # 192.0.0.0/24  (RFC 6890 TEST-NET-1)
+    (0xC6120000, 0xC613FFFF),  # 198.18.0.0/15 (RFC 2544 benchmarking)
+    (0xC6336400, 0xC63364FF),  # 198.51.100.0/24 (TEST-NET-2)
+    (0xCB007100, 0xCB0071FF),  # 203.0.113.0/24 (TEST-NET-3)
+    (0x7F000000, 0x7F0000FF),  # 127.0.0.0/8 localhost block
+)
+
+#: Known-good Telegram datacenter IPs (IPv4), used as a DNS-poison bypass.
+_TELEGRAM_FALLBACK_IPS: tuple[str, ...] = (
+    '149.154.167.220',
+    '149.154.167.222',
+    '149.154.175.50',
+    '91.108.56.130',
+)
 
 #: Worker state exposed via health_state() (spec §10).
 WORKER_READY = "READY"
@@ -259,6 +282,7 @@ class TelegramNotifier:
         self._worker_started_at: float | None = None
         self._worker_crash: str = ""
         self._worker_running = False
+        self._last_dns_poisoned = False
         # BUG-129: throttle the BLOCKED_NOT_CONFIGURED log (fires on every
         # send() attempt while Telegram is unconfigured; on a hot path that
         # produced ~13 spam warnings per second).
@@ -366,6 +390,7 @@ class TelegramNotifier:
             "failure_category": self._last_failure_category,
             "worker_started_at": _fmt_ts(self._worker_started_at),
             "worker_crash": self._worker_crash,
+            "dns_poisoned": self._last_dns_poisoned,
         }
 
     # =====================================================================
@@ -601,6 +626,111 @@ class TelegramNotifier:
                 cb_err,
             )
 
+    @staticmethod
+    def _is_blackhole_ip(ip: str) -> bool:
+        """True when the IP falls in a reserved benchmarking/blackhole range.
+
+        The classic DNS-poisoning answer for api.telegram.org is 198.18.x.x
+        (RFC 2544). 192.0.0.x / 198.51.100.x / 203.0.113.x (RFC 6890) and
+        127.0.0.x are equally suspicious for a public API host.
+        """
+        try:
+            packed = socket.inet_aton(ip)
+        except (OSError, ValueError):
+            return False
+        value = int.from_bytes(packed, "big")
+        return any(lo <= value <= hi for lo, hi in _DNS_POISON_BLACKHOLE_RANGES)
+
+    @staticmethod
+    def _split_api_url(url: str) -> tuple[str, str]:
+        """Split https://host/path -> (host, path)."""
+        try:
+            parsed = urllib.parse.urlsplit(url)
+            return parsed.hostname or "", parsed.path or "/"
+        except ValueError:
+            return "", "/"
+
+    def _should_bypass_dns(self, host: str) -> bool:
+        """True when the resolver is poisoned/blackholing the host.
+
+        Resolution failure also counts: connecting to a known-good
+        fallback IP beats hanging on a dead resolver.
+        """
+        try:
+            infos = socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM)
+        except OSError as exc:
+            logger.warning("[TELEGRAM_DNS] event=RESOLVE_FAILED host=%s error=%s", host, exc)
+            return True
+        if not infos:
+            return True
+        poisoned = any(
+            TelegramNotifier._is_blackhole_ip(info[4][0]) for info in infos
+        )
+        self._last_dns_poisoned = poisoned
+        return poisoned
+
+    def _direct_https_open(
+        self,
+        ip: str,
+        host: str,
+        path: str,
+        data: bytes | None,
+        method: str,
+        timeout: float,
+    ) -> Any:
+        """HTTPS request that connects to `ip` but keeps `host` for SNI +
+        Host header (the --resolve equivalent urllib lacks)."""
+        context = ssl.create_default_context()
+        raw_sock = socket.create_connection((ip, 443), timeout=timeout)
+        try:
+            tls_sock = context.wrap_socket(raw_sock, server_hostname=host)
+        except Exception:
+            raw_sock.close()
+            raise
+        conn = http.client.HTTPSConnection(host, timeout=timeout)
+        conn.sock = tls_sock
+        headers = {"Content-Type": "application/json"}
+        conn.request(method, path, body=data, headers=headers)
+        return conn.getresponse()
+
+    def _urlopen_with_dns_fallback(
+        self, url: str, data: bytes | None, method: str, timeout: float
+    ) -> Any:
+        """urlopen that bypasses DNS poisoning for Telegram endpoints.
+
+        When the system resolver returns a blackhole/rubbish answer for the
+        API host (or DNS is down entirely), connect to a known-good Telegram
+        IP while preserving SNI + Host for correct TLS. When DNS is healthy
+        the call is byte-for-byte the previous urllib behavior.
+        """
+        host, path = self._split_api_url(url)
+        if host and self._should_bypass_dns(host):
+            last_error: Exception | None = None
+            for ip in _TELEGRAM_FALLBACK_IPS:
+                try:
+                    logger.warning(
+                        "[TELEGRAM_DNS] event=DIRECT_IP_ATTEMPT host=%s ip=%s", host, ip
+                    )
+                    return self._direct_https_open(
+                        ip, host, path, data, method, timeout
+                    )
+                except Exception as exc:  # try next fallback IP
+                    last_error = exc
+                    logger.warning(
+                        "[TELEGRAM_DNS] event=DIRECT_IP_FAILED ip=%s error=%s", ip, exc
+                    )
+            if last_error is not None:
+                raise last_error
+        return urllib.request.urlopen(
+            urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method=method,
+            ),
+            timeout=timeout,
+        )
+
     def _send_msg_sync(self, record: NotificationRecord) -> dict[str, Any]:
         """One HTTP POST. Returns an outcome dict (never raises except network)."""
         header = f"<b>[{record.priority}]</b>"
@@ -644,13 +774,9 @@ class TelegramNotifier:
             payload["reply_to_message_id"] = record.reply_to_message_id
 
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            self._send_url,
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+        with self._urlopen_with_dns_fallback(
+            self._send_url, data=data, method="POST", timeout=self.timeout_seconds
+        ) as resp:
             http_status = resp.status
             body = resp.read()
         outcome = self._parse_response(http_status, body)
@@ -715,6 +841,9 @@ class TelegramNotifier:
 
     def _classify_exception(self, exc: Exception) -> tuple[str, bool]:
         if isinstance(exc, _TIMEOUT_ERRORS):
+            if self._last_dns_poisoned:
+                self._last_dns_poisoned = False
+                return TELEGRAM_DNS_BLOCKED, False
             return TELEGRAM_TIMEOUT, True
         if isinstance(exc, ConnectionError):
             return TELEGRAM_NETWORK_ERROR, True
@@ -737,8 +866,9 @@ class TelegramNotifier:
                 "safe_message": "bot token missing",
             }
         try:
-            req = urllib.request.Request(self._me_url, method="GET")
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+            with self._urlopen_with_dns_fallback(
+                self._me_url, data=None, method="GET", timeout=self.timeout_seconds
+            ) as resp:
                 http_status = resp.status
                 body = resp.read()
             parsed = json.loads(body.decode("utf-8", errors="replace"))
