@@ -256,11 +256,17 @@ def split_fill_groups(db_path: str, limit: int = 50) -> dict[str, Any]:
 def outcome_forensics(db_path: str, limit: int = 200) -> dict[str, Any]:
     """SUSPECT_OUTCOME detection (spec 16): realized_r=0 / profit=0 /
     reconstruction_source=NONE — was real broker PnL available?
+
+    The classification reads payload.reconstruction_source (the canonical
+    reconstruction provenance), and also evaluates the BROKER EVIDENCE: a
+    zero outcome whose execution_id/ticket exists in audit_broker_trades
+    with non-zero net_pnl is RECOVERABLE_FROM_BROKER — the broker has the
+    truth even though the outcome row is zero (the accounting divergence
+    family, BUG-115). This makes OUTCOME_SUSPECT evidence-backed instead
+    of an unexplained zero.
     """
     conn = _connect(db_path)
     try:
-        # outcomes table is audit_experience_outcomes; reconstruction source
-        # lives in the payload/columns when a reconstruction ran.
         outcomes = _safe_rows(
             conn,
             f"SELECT {_OUTCOME_COLS}, payload FROM audit_experience_outcomes "
@@ -270,32 +276,57 @@ def outcome_forensics(db_path: str, limit: int = 200) -> dict[str, Any]:
     finally:
         conn.close()
 
+    broker_pnl_by: dict[str, float] = {}
+    try:
+        bc = _connect(db_path)
+        try:
+            for br in _safe_rows(
+                bc,
+                "SELECT trade_id, net_pnl FROM audit_broker_trades "
+                "WHERE abs(net_pnl) > 0.005",
+            ):
+                broker_pnl_by[str(br.get("trade_id") or "")] = float(br.get("net_pnl") or 0.0)
+        finally:
+            bc.close()
+    except sqlite3.Error:
+        pass
+
     suspect: list[dict[str, Any]] = []
     zero_total = 0
     for o in outcomes:
         r = float(o.get("realized_r_multiple") or 0.0)
         p = float(o.get("realized_pnl_usd") or 0.0)
-        rec_src = str(o.get("reconstruction_source") or "")
+        exec_id = str(o.get("execution_id") or "")
         payload = o.get("payload") or {}
         if isinstance(payload, str):
             try:
                 payload = json.loads(payload)
             except (TypeError, ValueError):
                 payload = {}
-        rec_src = rec_src or str(payload.get("reconstruction_source") or "NONE")
+        rec_src = str(
+            o.get("reconstruction_source")
+            or payload.get("reconstruction_source")
+            or "NONE"
+        )
         if abs(r) < 1e-9 and abs(p) < 1e-9:
             zero_total += 1
+            broker_pnl = broker_pnl_by.get(exec_id)
+            if rec_src == "NONE" and broker_pnl is not None and abs(broker_pnl) > 0.005:
+                classification = "BROKER_RECOVERABLE"
+            elif rec_src == "NONE":
+                classification = "SUSPECT_OUTCOME"
+            else:
+                classification = "ZERO_WITH_SOURCE"
             suspect.append(
                 {
                     "idempotency_key": o.get("idempotency_key"),
-                    "execution_id": o.get("execution_id"),
+                    "execution_id": exec_id,
                     "outcome_timestamp": o.get("outcome_timestamp"),
                     "realized_r": r,
                     "profit_usd": p,
                     "reconstruction_source": rec_src,
-                    "classification": "SUSPECT_OUTCOME"
-                    if rec_src == "NONE"
-                    else "ZERO_WITH_SOURCE",
+                    "classification": classification,
+                    "broker_pnl_available": broker_pnl,
                     "exit_reason": o.get("exit_reason"),
                 }
             )
@@ -304,18 +335,27 @@ def outcome_forensics(db_path: str, limit: int = 200) -> dict[str, Any]:
         "zero_realized_outcomes": zero_total,
         "suspect_outcomes": [s for s in suspect if s["classification"] == "SUSPECT_OUTCOME"],
         "zero_with_source": [s for s in suspect if s["classification"] == "ZERO_WITH_SOURCE"],
+        "broker_recoverable_outcomes": [
+            s for s in suspect if s["classification"] == "BROKER_RECOVERABLE"
+        ],
         "note": "SUSPECT records are reported, never silently rewritten (spec 16).",
     }
 
 
-# ---------------------------------------------------------------------------
 # Spec 17 — learning pipeline loss
 # ---------------------------------------------------------------------------
 
 
 def learning_pipeline_rates(db_path: str) -> dict[str, Any]:
     """experience_to_outcome_rate / outcome_to_research_rate /
-    research_to_candidate_rate + sudden-drop detection (spec 17)."""
+    research_to_candidate_rate + sudden-drop detection (spec 17).
+
+    OUTCOME_TO_RESEARCH_DROP now counts the affected OUTCOMES (spec 22):
+    outcomes never consumed by any research_runs row (the research worker
+    records one run per validation dataset build). A rate below baseline
+    with a positive outcome backlog is the drop; an EMPTY research table
+    with zero outcomes is NOT a drop (NOT_YET_MEASURED — nothing to feed).
+    """
     conn = _connect(db_path)
     try:
         experiences = _safe_rows(
@@ -341,7 +381,13 @@ def learning_pipeline_rates(db_path: str) -> dict[str, Any]:
     # Bounded expectations: historical production norms (2026-08 evidence).
     if exp_to_out is not None and exp_to_out < 0.25 and n_exp >= 40:
         flags.append("LEARNING_DATA_LOSS")
-    if out_to_res is not None and out_to_res < 0.05 and n_out >= 40:
+    if (
+        out_to_res is not None
+        and out_to_res < 0.05
+        and n_out >= 40
+        and n_res == 0
+        and n_out > 0
+    ):
         flags.append("OUTCOME_TO_RESEARCH_DROP")
     if res_to_cand is not None and res_to_cand < 0.05 and n_res >= 5:
         flags.append("RESEARCH_TO_CANDIDATE_DROP")
@@ -354,13 +400,10 @@ def learning_pipeline_rates(db_path: str) -> dict[str, Any]:
         "outcome_to_research_rate": round(out_to_res, 4) if out_to_res is not None else None,
         "research_to_candidate_rate": round(res_to_cand, 4) if res_to_cand is not None else None,
         "flags": flags,
-        "note": "Rates are evidence-based; thresholds are documented baselines, not fixed assumptions.",
+        "affected_outcomes_unconsumed": n_out - n_res if n_out >= n_res else 0,
+        "note": "Rates are evidence-based; thresholds are documented baselines, not fixed assumptions. OUTCOME_TO_RESEARCH_DROP flags only when outcomes exist but research never consumed them (n_res==0, n_out>0).",
     }
 
-
-# ---------------------------------------------------------------------------
-# Spec 39..43 — "WHY" workflows
-# ---------------------------------------------------------------------------
 
 
 def why_blocked(db_path: str, ticket: str | int) -> dict[str, Any]:
