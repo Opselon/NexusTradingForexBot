@@ -289,10 +289,27 @@ def reconstruct_trades(
 
 
 def _epoch_utc(epoch_sec: int) -> datetime | None:
+    """Broker terminal epoch (server-local) -> real UTC.
+
+    MT5 history deals/orders report `time` as seconds since the UNIX
+    epoch in the SERVER timezone (this broker: GMT+3 / +180 min, see
+    providers.BROKER_SERVER_UTC_OFFSET_MINUTES). Converting the epoch
+    straight as UTC stored every broker timestamp 3h in the future:
+    broker entry 07:21Z vs ledger open 04:21Z for the same execution
+    (TIMEBASE_DIVERGENCE, INC-2026-7F6DE0C4, BUG-070 chain).
+    Subtract the configured server offset before stamping as UTC so
+    audit_broker_trades aligns with the canonical UTC ledger.
+    """
     if not epoch_sec:
         return None
     try:
-        return datetime.fromtimestamp(epoch_sec, tz=UTC)
+        from nexus_scalp.adapters.mt5.providers import (
+            BROKER_SERVER_UTC_OFFSET_MINUTES,
+        )
+
+        return datetime.fromtimestamp(
+            epoch_sec - BROKER_SERVER_UTC_OFFSET_MINUTES * 60, tz=UTC
+        )
     except (OverflowError, OSError, ValueError):
         return None
 
