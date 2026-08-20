@@ -45,6 +45,10 @@ from nexus_scalp.candle_intelligence import (
     CandleIntelligenceEngine,
     RegimeState,
 )
+
+# RUNTIME CONFIGURATION (hot reload): the authoritative runtime provider.
+# Consumers read the current immutable snapshot; live.yaml is bootstrap-only.
+from nexus_scalp.configuration import RuntimeConfigStore
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ActionType, ExecutionMode, OrderType
 from nexus_scalp.domain.models import (
@@ -117,10 +121,6 @@ from nexus_scalp.strategies.factory import (
     StrategyFactory,
 )
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
-
-# RUNTIME CONFIGURATION (hot reload): the authoritative runtime provider.
-# Consumers read the current immutable snapshot; live.yaml is bootstrap-only.
-from nexus_scalp.configuration import RuntimeConfigStore
 
 logger = get_logger("nexus_scalp.application.live_engine")
 
