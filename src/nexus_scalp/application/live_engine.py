@@ -206,6 +206,10 @@ class LiveEngine:
         self._last_hygiene_time: float = 0.0
         self._hygiene_worker: DatabaseHygieneWorker | None = None
         self._hygiene_mode = "AUDIT_ONLY"
+        # TASK-22: continuous runtime hygiene scheduler (config-driven cadence,
+        # first-run audit, consistency/index checks, quarantine + Telegram
+        # reports). Replaces the bare TASK-11 worker as the runtime driver.
+        self._hygiene_scheduler: Any = None
 
         # TASK-13: incident response worker (background, off tick path).
         # Lazy construction in run_loop so a DB failure at startup can never
@@ -1193,39 +1197,65 @@ class LiveEngine:
                     except Exception:
                         logger.error("Audit retention purge failed (isolated)")
 
-                # TASK-11: database hygiene cycle (throttled ~6h, AUDIT_ONLY
-                # first run, off the tick path via to_thread; never deletes
-                # unless the operator explicitly enabled SAFE_CLEAN).
-                if now_t - self._last_hygiene_time >= self._hygiene_interval_sec:
+                # TASK-11 + TASK-22: database hygiene cycle (config-driven
+                # cadence; AUDIT_ONLY first run, off the tick path via
+                # asyncio.to_thread; never deletes unless the operator enabled
+                # apply_deletes and execution mode is not LIVE).
+                if self._hygiene_scheduler is None and now_t - self._last_hygiene_time > 0:
+                    try:
+                        from nexus_scalp.hygiene.hygiene_runtime import (
+                            RuntimeCleanupScheduler,
+                            RuntimeHygieneSettings,
+                        )
+
+                        hyg_cfg = getattr(self.config, "database_hygiene", None) or {}
+                        hygs = RuntimeHygieneSettings.from_mapping(
+                            hyg_cfg.model_dump() if hasattr(hyg_cfg, "model_dump") else dict(hyg_cfg)
+                        )
+                        base_dir = getattr(self.config, "base_dir", None) or Path.cwd()
+                        self._hygiene_scheduler = RuntimeCleanupScheduler(
+                            repo_root=base_dir,
+                            settings=hygs,
+                            execution_mode=self._runtime_mode
+                            or str(getattr(self.config, "execution_mode", "PAPER") or "PAPER").upper(),
+                        )
+                    except Exception as hyg_init_err:
+                        logger.warning(
+                            "[DB_HYGIENE] event=INIT_FAILED (isolated)",
+                            error=str(hyg_init_err),
+                        )
+                if (
+                    self._hygiene_scheduler is not None
+                    and self._hygiene_scheduler.settings.enabled
+                    and now_t - self._last_hygiene_time
+                    >= self._hygiene_scheduler.light_interval_sec
+                ):
                     self._last_hygiene_time = now_t
                     try:
-                        if self._hygiene_worker is None:
-                            from nexus_scalp.hygiene import WorkerMode
-                            from nexus_scalp.hygiene.worker_runner import (
-                                DatabaseHygieneWorker,
-                            )
-
-                            exec_mode = str(
-                                getattr(self.config, "execution_mode", "PAPER") or "PAPER"
-                            ).upper()
-                            apply_deletes = (
-                                bool(getattr(self.config, "hygiene_apply_deletes", False))
-                                and exec_mode != "LIVE"
-                            )
-                            self._hygiene_worker = DatabaseHygieneWorker(
-                                repo_root=self.config.base_dir
-                                if hasattr(self.config, "base_dir")
-                                else Path.cwd(),
-                                mode=WorkerMode.AUDIT_ONLY
-                                if not apply_deletes
-                                else WorkerMode.SAFE_CLEAN,
-                                execution_mode=exec_mode,
-                                apply_deletes=apply_deletes,
-                            )
-                        await asyncio.to_thread(
-                            self._hygiene_worker.run_cycle,
-                            ["audit", "news", "candle_intel"],
+                        deep = self._hygiene_scheduler.is_deep_due(now_t)
+                        # Run the scheduler cycle on a thread; it owns the
+                        # worker + quarantine + consistency + reports.
+                        cyc = await asyncio.to_thread(
+                            self._hygiene_scheduler.run_cycle, deep=deep
                         )
+                        # Bounded Telegram REPORT (cooldown-gated, never spam).
+                        if self._hygiene_scheduler.settings.telegram_report and (
+                            self.notifier is not None and self.notifier.enabled
+                        ):
+                            tel = cyc.get("telemetry", {})
+                            if (
+                                not self._hygiene_scheduler._audit_done
+                                or self._hygiene_scheduler.is_telegram_due(now_t)
+                            ):
+                                from nexus_scalp.hygiene.report import (
+                                    build_telegram_report_text,
+                                )
+
+                                text = build_telegram_report_text(
+                                    tel, self._hygiene_scheduler._cycle_number
+                                )
+                                self.notifier.send(text, severity="INFO")
+                                self._hygiene_scheduler.mark_telegram_sent(now_t)
                     except Exception as hyg_err:
                         logger.warning(
                             "[DB_HYGIENE] event=CYCLE_FAILED (isolated)",
@@ -2194,21 +2224,57 @@ class LiveEngine:
             self._reinitialize_collapsed_model()
 
     # -------------------------
+    # Runtime configuration (hot reload)
+    # -------------------------
+
+    def _sync_runtime_config(self) -> None:
+        """Re-sync services against the CURRENT immutable snapshot.
+
+        Called once per tick (cheap attribute assignments) and on every
+        ConfigurationChanged event. All new evaluations use the new values.
+        """
+        snap = self.runtime_config.get_snapshot()
+        try:
+            self.signal_policy.algo_config = snap.to_algo_config()
+            self.order_manager.algo_config = snap.to_algo_config()
+            self.risk_engine.min_risk_reward_ratio = snap.min_risk_reward_ratio
+            self.risk_engine.min_rr_high_confidence = snap.algo.min_rr_high_confidence
+            self.risk_engine.high_confidence_threshold = snap.algo.high_confidence_threshold
+            self.risk_engine.max_allowed_lots = snap.max_allowed_lots
+            self.risk_engine.max_margin_usage_pct = snap.risk.max_margin_usage_pct
+            self.signal_policy.confidence_threshold = snap.confidence_threshold
+        except Exception:
+            logger.exception("[RUNTIME_CONFIG] service re-sync failed (isolated)")
+
+    def apply_runtime_update(
+        self,
+        updates: dict,
+        *,
+        source: str = "WEB_UI",
+        actor: str = "web",
+    ) -> Any:
+        """Apply a configuration update through the authoritative store.
+
+        Returns a ConfigurationApplyReport (success / persisted / applied /
+        version). The web layer and tests call this instead of rewriting
+        live.yaml and hand-patching fields.
+        """
+        report = self.runtime_config.apply(updates, source=source, actor=actor)
+        if report.success:
+            self._sync_runtime_config()
+        return report
+
+    # -------------------------
     # Hot-path tick pipeline
     # -------------------------
 
     def _process_tick_pipeline(self, tick: TickData, account: AccountInfo) -> None:
         try:
-            # Synchronize the live hot-swapped AlgoConfig on every single tick pulse
-            self.signal_policy.algo_config = self.config.algo
-            self.order_manager.algo_config = self.config.algo
-            self.risk_engine.min_risk_reward_ratio = self.config.algo.min_risk_reward_ratio
-            self.risk_engine.min_rr_high_confidence = getattr(
-                self.config.algo, "min_rr_high_confidence", 1.2
-            )
-            self.risk_engine.high_confidence_threshold = getattr(
-                self.config.algo, "high_confidence_threshold", 0.70
-            )
+            # RUNTIME CONFIGURATION: re-sync services each tick. This is
+            # cheap (two attribute assignments from an immutable snapshot)
+            # and guarantees a UI save is reflected on the very next
+            # evaluation without restarting or reading the DB per tick.
+            self._sync_runtime_config()
 
             is_new_bar = self.aggregator.process_tick(tick)
 
