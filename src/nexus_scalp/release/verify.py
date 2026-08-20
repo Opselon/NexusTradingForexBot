@@ -152,7 +152,7 @@ class ReleaseVerifier:
         repo_web = next(
             (
                 Path(c)
-                for c in (_os.environ.get("NEXUS_REPO_WEB_DIR"), str(Path("Web").resolve()))
+                for c in (_os.environ.get("NEXUS_REPO_WEB_DIR"),)
                 if c and (Path(c) / "app.js").exists()
             ),
             None,

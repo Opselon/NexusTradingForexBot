@@ -976,31 +976,122 @@ Local, isolated, database-backed candle-close analysis + trade-decision module a
 
 ---
 
-## 13. Configuration Architecture & Dynamic Propagation
+## 13. Configuration Architecture & Runtime Hot Reload (BUG-126)
 
-### ⚙️ Pydantic Configuration Flow (`src/nexus_scalp/configuration/config.py`)
+### ⚙️ AUTHORITATIVE RUNTIME CONFIGURATION (since 2026-08-20, BUG-126)
 
 ```text
-configs/base.yaml  +  ENV Variables
-           │
-           ▼
-AppConfig.load_config()
-           │
-           ▼
-AppConfig (Pydantic BaseSettings)
- ├── execution: ExecutionConfig
- ├── risk: RiskConfig
- ├── model: ModelConfig
- ├── mt5: MT5Config
- ├── telegram: TelegramConfig
- └── algo: AlgoConfig (Dynamic Quantitative Parameters)
-           │
-           ▼
-Tick Sync in LiveEngine._process_tick_pipeline():
-  - Synchronizes AlgoConfig to SignalPolicy, OrderManager, and RiskEngine on every tick pulse.
+UI (Tuner / Config UI)
+        │  PUT /api/algo/config · POST /api/config · POST /api/runtime-config/apply
+        ▼
+Configuration API  (web/server.py)
+        │
+        ▼
+Validation (typed bounds + cross-field, §30)
+        │
+        ▼
+Persistent Config Store  (settings DB — app_settings.db, PersistentConfigStore)
+        │
+        ▼
+Version N+1  (monotonic, RuntimeConfigStore)
+        │
+        ▼
+ConfigurationChanged  (ConfigChangeEvent bus)
+        │
+        ▼
+Runtime Config Snapshot — IMMUTABLE (frozen RuntimeConfiguration)
+        │  atomic swap (lock-free reads; old snapshot finishes in-flight work)
+        ▼
+Strategy · Risk · Execution · Rule Matrix · News · Model services
+        │  LiveEngine._sync_runtime_config() per tick + on every apply
+        ▼
+All NEW evaluations use the new snapshot (no restart, same PID)
 ```
 
-* **Hot-Swapping:** `AlgoConfig` parameters (such as `min_risk_reward_ratio`, `high_confidence_threshold`, `atr_sl_buffer_multiplier`) can be updated dynamically via REST API `POST /api/config/algo` without restarting the engine. 🟢 VERIFIED
+**SOURCE OF TRUTH:** `nexus_scalp/configuration/runtime_config.py` →
+`RuntimeConfigStore` + frozen `RuntimeConfiguration` snapshot. The settings DB
+(`application_settings` table) is the persistent store; the in-memory immutable
+snapshot is the runtime authority. `live.yaml` is **BOOTSTRAP / IMPORT / EXPORT /
+COMPATIBILITY ONLY** — never re-read by the engine after startup, never the hidden
+runtime authority (BUG-126 root cause).
+
+**Apply pipeline (§27):** REQUEST → VALIDATION (per-field bounds + cross-field
+`risk.risk_per_trade_pct <= risk.max_account_drawdown_pct`) → PERSISTENCE →
+VERSION++ → BUILD IMMUTABLE SNAPSHOT → PUBLISH `ConfigChangeEvent` → ATOMIC
+SWAP → CONFIRM (`ConfigurationApplyReport`: success / persisted / runtime_applied /
+version / correlation_id). Any failure rejects the WHOLE request — the last
+known-good snapshot stays active (never partial apply, §28/§69/§70).
+
+**Effective scopes (§55):** every setting declares NEXT_DECISION / NEXT_SIGNAL /
+NEXT_ORDER / ACTIVE_POSITION / NEXT_SESSION / RESTART_REQUIRED (see audit table
+below). Hot reload NEVER retroactively mutates open positions; the smallest safe
+scope is used.
+
+**Service re-sync:** `LiveEngine._sync_runtime_config()` re-syncs
+`signal_policy.algo_config`, `order_manager.algo_config`, `risk_engine`
+(min_risk_reward_ratio / min_rr_high_confidence / high_confidence_threshold /
+max_allowed_lots / max_margin_usage_pct / config risk section) and the feature
+engine SMC tunables (`_fvg_mitigation_sensitivity`, `_order_block_lookback_bars`)
+from the current snapshot — per tick (cheap assignments) and after every apply.
+`engine.apply_runtime_update(updates, source=...)` is the single entry point for
+web + tests.
+
+**Model artifact hot swap (§31/§32):** `LiveEngine.hot_swap_model(path)` loads +
+validates + warms the NEW bundle in isolation, computes a sha256 artifact hash,
+then swaps under `_bundle_lock` (in-flight inference finishes on the old bundle).
+On any failure the healthy model keeps serving (`MODEL_HOT_SWAP_FAILED` logged).
+
+**Telegram (§34):** changes route via `SettingsService.set_telegram` +
+SecureSecretStore (never live.yaml, BUG-072/080); the notifier is rebuilt only
+after the new credential set validates (`/api/settings/telegram` + config-route
+path). Secrets are masked everywhere (`mask_token`); never logged.
+
+**Boot (§59/§60):** AppConfig from live.yaml = bootstrap only; the settings DB is
+hydrated over it (restart persistence / crash recovery — last known-good
+returns); version continues monotonically across restarts.
+
+**Endpoints:**
+- `GET  /api/runtime-config` — effective runtime snapshot (what the engine
+  ACTUALLY uses, incl. configuration_version + diagnostics).
+- `GET  /api/runtime-config/diagnostics` — persistent_version vs runtime_version
+  vs live.yaml hash + mismatch flag.
+- `POST /api/runtime-config/apply` — unified apply `{"updates": {...}}`.
+- `POST /api/runtime-config/model-swap` — model artifact hot swap.
+- `PUT  /api/algo/config` — Algorithm Live Tuner save → runtime store +
+  live.yaml projection (export). Returns version + runtime_applied.
+- `POST /api/config` — execution/risk/model sections → runtime store;
+  telegram via settings service; live.yaml written as compatibility projection.
+
+**LIVE-TUNABLE PARAMETER MATRIX (§54/§81):**
+
+| Setting | Persistent | Validated | Versioned | Hot Reload | Runtime Consumer | Method Consumer | Effective Scope | Restart | Tested |
+|---|---|---|---|---|---|---|---|---|---|
+| algo.atr_sl_buffer_multiplier | ✅ settings DB | ✅ 0.5–4.0 | ✅ | ✅ | SignalPolicy, OrderManager, RiskEngine | SL buffer math (policy 585/606/929/1348, OM 2865) | NEXT_SIGNAL | no | ✅ |
+| algo.min_risk_reward_ratio | ✅ | ✅ 1.0–5.0 | ✅ | ✅ | SignalPolicy, RiskEngine | RR gate (policy 620/943/997/1360, risk 374) | NEXT_ORDER | no | ✅ |
+| algo.ai_zone_confidence_threshold | ✅ | ✅ 0.50–0.99 | ✅ | ✅ | SignalPolicy | zone-quality gate (policy 698/1292) | NEXT_SIGNAL | no | ✅ |
+| algo.fvg_mitigation_sensitivity | ✅ | ✅ 0.1–1.0 | ✅ | ✅ | ScalpFeatureEngine | FVG formation threshold (compute_from_bars) | NEXT_SIGNAL | no | ✅ |
+| algo.order_block_lookback_bars | ✅ | ✅ 10–100 | ✅ | ✅ | ScalpFeatureEngine | SMC swing scan window | NEXT_SIGNAL | no | ✅ |
+| execution.symbol / timeframe / magic_number | ✅ | ✅ | ✅ | ⚠️ runtime-applied but adapter restart needed | LiveEngine | — | RESTART_REQUIRED | yes | ◐ |
+| execution.max_slippage_points | ✅ | ✅ | ✅ | ✅ | OrderManager | slip checks | NEXT_ORDER | no | ◐ |
+| risk.max_account_drawdown_pct | ✅ | ✅ + cross-field | ✅ | ✅ | RiskEngine/engine stop logic | drawdown gate | NEXT_DECISION | no | ✅ |
+| risk.risk_per_trade_pct | ✅ | ✅ + cross-field | ✅ | ✅ | RiskEngine | `calculate_position_size` (424/549) | NEXT_ORDER | no | ✅ |
+| risk.max_concurrent_positions | ✅ | ✅ | ✅ | ✅ | RiskEngine | portfolio gate (300) | NEXT_ORDER | no | ◐ |
+| risk.max_spread_points | ✅ | ✅ | ✅ | ✅ | RiskEngine | spread gate (362) | NEXT_ORDER | no | ✅ |
+| risk.max_allowed_lots | ✅ | ✅ | ✅ | ✅ | RiskEngine | exposure clamp (max_allowed_lots) | NEXT_ORDER | no | ◐ |
+| risk.enforce_stop_loss | ✅ | ✅ | ✅ | ✅ | RiskEngine/OrderManager | stop enforcement | NEXT_ORDER | no | ◐ |
+| model.confidence_threshold | ✅ | ✅ 0–1 | ✅ | ✅ | SignalPolicy (via sync) | confidence gate | NEXT_SIGNAL | no | ◐ |
+| model.model_artifact_path | ✅ | ✅ | ✅ | ✅ hot swap | LiveEngine bundle | `hot_swap_model` | NEXT_SIGNAL | no | ◐ |
+| telegram.enabled / bot_token / admin_id | ✅ (secret store) | ✅ | ✅ | ✅ | TelegramNotifier rebuild | notifier swap | NEXT_SESSION | no | ◐ |
+
+**Tests:** `tests/unit/test_runtime_config_hot_reload.py` (§65/§68: same
+deterministic op before/after save → output changes, PID unchanged, event
+emitted, invalid/cross-field/unknown rejected, live.yaml file-edit does NOT
+change runtime, restart restores persisted values) +
+`tests/unit/test_runtime_engine_hot_reload.py` (RiskEngine spread/lot/RR gates,
+SignalPolicy SL buffer, FeatureEngine FVG/OB — all change with the snapshot).
+
+**BUG-126** (bugs.md) documents the full root-cause chain: live.yaml as hidden
+authority, decorative tuner fields with no consumers, startup-only copies.
 
 ---
 

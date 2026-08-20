@@ -59,7 +59,7 @@ jobs:
       - name: Telegram - release started
         continue-on-error: true
         run: |
-          python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" release-started --tag "${{ github.ref_name }}" || true
+          python scripts/ci/telegram_notify.py release-started --tag "${{ github.ref_name }}" || true
 
       - name: Scan for secrets in the tree
         shell: bash

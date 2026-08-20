@@ -493,7 +493,7 @@ jobs:
             suite="${suite#ci-results-}"
             case "$suite" in quality*) dest="ci-results" ;; *) dest="ci-results/heavy/$suite" ;; esac
             mkdir -p "$dest"
-            cp -r "$d"*. "$dest"/ 2>/dev/null || true
+            cp -r "$d"* "$dest"/ 2>/dev/null || true
             echo "merged arm: $suite"
           done
           find ci-results -type f | sort
