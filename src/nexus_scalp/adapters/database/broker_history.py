@@ -562,7 +562,8 @@ def sync_broker_history(
         "last_sync_to, last_synced_at, last_orders, last_deals, last_trades) "
         "VALUES (1, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET symbol=excluded.symbol, "
-        "last_sync_from=excluded.last_sync_from, last_sync_to=excluded.last_sync_to, "
+        "last_sync_from=MIN(audit_broker_history_meta.last_sync_from, "
+        "excluded.last_sync_from), last_sync_to=excluded.last_sync_to, "
         "last_synced_at=excluded.last_synced_at, last_orders=excluded.last_orders, "
         "last_deals=excluded.last_deals, last_trades=excluded.last_trades",
         (

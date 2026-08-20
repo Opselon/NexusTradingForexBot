@@ -111,7 +111,20 @@ class BrokerHistorySyncWorker:
             meta = None
 
         to_dt = datetime.now(UTC)
-        if meta and meta.get("last_sync_from"):
+        if meta and meta.get("last_sync_to"):
+            # Anchor on the last COMPLETED sync (inclusive watermark), not the
+            # first-ever window start: fetching from last_sync_to - overlap is
+            # the only correct incremental window. Using last_sync_from made
+            # every cycle re-fetch months and (combined with the meta upsert
+            # writing last_sync_from=excluded.last_sync_from) regressed the
+            # watermark, leaving newly-closed trades NEVER syncable until a
+            # full historical reset.
+            from_dt = datetime.fromisoformat(meta["last_sync_to"])
+            if from_dt.tzinfo is None:
+                from_dt = from_dt.replace(tzinfo=UTC)
+            from_dt = from_dt - timedelta(days=self.overlap_days)
+        elif meta and meta.get("last_sync_from"):
+            # Legacy row without a completed-to watermark: full re-fetch.
             from_dt = datetime.fromisoformat(meta["last_sync_from"])
             if from_dt.tzinfo is None:
                 from_dt = from_dt.replace(tzinfo=UTC)
