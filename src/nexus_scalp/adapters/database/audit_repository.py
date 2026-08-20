@@ -228,6 +228,7 @@ class AuditRepository:
                 reason TEXT,
                 latency REAL,
                 execution_mode TEXT,
+                execution_id TEXT,
                 timestamp TEXT NOT NULL
             );
             """
@@ -1498,6 +1499,7 @@ class AuditRepository:
         reason: str,
         latency: float = 0.0,
         execution_mode: str = "STANDARD",
+        execution_id: str | None = None,
     ) -> None:
         """Zero-latency async logging of order lifecycle events."""
         if not self._is_sqlite:
@@ -1505,8 +1507,8 @@ class AuditRepository:
 
         query = """
             INSERT INTO audit_orders
-            (ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode, execution_id, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         from datetime import UTC, datetime
 
@@ -1522,6 +1524,7 @@ class AuditRepository:
             reason,
             latency,
             execution_mode,
+            execution_id,
             datetime.now(UTC).isoformat(),
         )
 

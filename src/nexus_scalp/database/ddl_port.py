@@ -45,7 +45,6 @@ def port_create_table(ddl: str) -> str | None:
     m = re.match(r"\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([\"\w.]+)", ddl, re.I)
     if not m:
         return None
-    table = m.group(1)
     # locate the column block (first '(' to matching ')')
     start = ddl.find("(")
     if start == -1:

@@ -21,10 +21,10 @@ tests and CLI tools can pin the provider explicitly.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class DatabaseProvider(str, Enum):
+class DatabaseProvider(StrEnum):
     """Relational database providers supported by the persistence layer."""
 
     SQLITE = "sqlite"
@@ -39,7 +39,7 @@ class DatabaseProvider(str, Enum):
         return self is DatabaseProvider.POSTGRESQL
 
     @classmethod
-    def parse(cls, raw: str | None) -> "DatabaseProvider":
+    def parse(cls, raw: str | None) -> DatabaseProvider:
         """Parse a user/config value into a provider.
 
         Accepts the canonical names ``sqlite`` / ``postgresql`` plus the
@@ -58,7 +58,7 @@ class DatabaseProvider(str, Enum):
         return cls.SQLITE
 
     @classmethod
-    def from_url(cls, url: str) -> "DatabaseProvider":
+    def from_url(cls, url: str) -> DatabaseProvider:
         """Detect the provider from a SQLAlchemy-style URL prefix."""
         if not url:
             return cls.SQLITE

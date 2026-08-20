@@ -17,7 +17,8 @@ Security contract:
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from nexus_scalp.database.provider import DatabaseProvider
@@ -86,7 +87,7 @@ class DatabaseConfig:
     # -- constructors -----------------------------------------------------
 
     @classmethod
-    def for_sqlite(cls, domain: str, path: str = "", uri: str = "") -> "DatabaseConfig":
+    def for_sqlite(cls, domain: str, path: str = "", uri: str = "") -> DatabaseConfig:
         from nexus_scalp.database.provider import default_sqlite_path
 
         return cls(
@@ -110,7 +111,7 @@ class DatabaseConfig:
         migrate_on_startup: bool = True,
         pooling_enabled: bool = True,
         connect_timeout_sec: int = 10,
-    ) -> "DatabaseConfig":
+    ) -> DatabaseConfig:
         return cls(
             provider=DatabaseProvider.POSTGRESQL,
             domain=domain,
@@ -184,7 +185,7 @@ class DatabaseConfig:
         return out
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any] | None, domain: str = "audit") -> "DatabaseConfig":
+    def from_dict(cls, raw: dict[str, Any] | None, domain: str = "audit") -> DatabaseConfig:
         """Rebuild a config from persisted settings (see :meth:`to_dict`)."""
         if not raw:
             return cls.for_sqlite(domain)
@@ -252,7 +253,7 @@ def load_database_config(
         # Opening the settings DB is best-effort: a fresh environment (no
         # app_settings.db yet) must fall back to SQLite defaults silently.
         try:
-            db = SettingsDatabase(db_path=settings_db_path)
+            db = SettingsDatabase(db_path=Path(settings_db_path) if settings_db_path else None)
             prov = db.get(PROVIDER_SETTING_KEY)
             if prov and prov.value:
                 selected = DatabaseProvider.parse(prov.value)
