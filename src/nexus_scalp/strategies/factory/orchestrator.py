@@ -692,6 +692,7 @@ class StrategyFactory:
         family-select validation has the information it needs.
         """
         from nexus_scalp.research.candidates import StrategyCandidate
+        from nexus_scalp.research.models import CandidateLifecycle
 
         dsl = candidate.dsl.model_dump()
         strategy_id = candidate.candidate_id
@@ -712,7 +713,7 @@ class StrategyFactory:
             risk_assumptions=dsl.get("risk", {}),
             parent_strategy_ids=candidate.parent_ids,
             discovery_method=f"factory:{candidate.source.value.lower()}",
-            lifecycle="DISCOVERED",
+            lifecycle=CandidateLifecycle.DISCOVERED,
             discovery_evidence={
                 "source": "strategy_factory",
                 "definition_hash": candidate.definition_hash,

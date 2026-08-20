@@ -220,8 +220,8 @@ def memory_summary(
         ),
         "stagnation_count": stagnation,
         "operator_success": operator_success,
-        "diversity": round(
-            sum(s.diversity for s in summaries) / len(summaries), 4
+        "diversity": (
+            round(sum(s.diversity for s in summaries) / len(summaries), 4)
             if summaries
             else 0.0
         ),

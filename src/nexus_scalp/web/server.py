@@ -2727,7 +2727,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def db_manage_progress() -> dict[str, Any]:
         """Live migration progress (polled by the panel UI)."""
         try:
-            from nexus_scalp.database.migrate_engine import MigrationState
+            from nexus_scalp.database.models import MigrationState
 
             state = getattr(app.state, "db_migration_state", None)
             if state is None:

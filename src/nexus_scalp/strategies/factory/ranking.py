@@ -54,7 +54,10 @@ def _true(flag: Any) -> float:
 
 def strategy_error(entry: dict[str, Any]) -> str:
     """One-line error context for a strategy entry (used in explainability)."""
-    return str(entry.get("score") or {}).get("error", "")
+    score = entry.get("score") or {}
+    if isinstance(score, dict):
+        return str(score.get("error", ""))
+    return ""
 
 
 def score_components(
