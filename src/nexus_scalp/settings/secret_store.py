@@ -91,7 +91,7 @@ class _Dpapi:
         cls._ensure()
         blob = cls._blob(plaintext)  # kept alive for the whole call
         out = DATA_BLOB(0, None)
-        ok = cls._crypt32.CryptProtectData(
+        ok = cls._crypt32.CryptProtectData(  # type: ignore[attr-defined]
             ctypes.byref(blob),
             None,  # description
             None,  # optional entropy
@@ -113,7 +113,7 @@ class _Dpapi:
         cls._ensure()
         blob = cls._blob(ciphertext)
         out = DATA_BLOB(0, None)
-        ok = cls._crypt32.CryptUnprotectData(
+        ok = cls._crypt32.CryptUnprotectData(  # type: ignore[attr-defined]
             ctypes.byref(blob),
             None,
             None,  # entropy
