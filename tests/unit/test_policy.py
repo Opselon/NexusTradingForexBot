@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import torch
@@ -465,7 +465,6 @@ def test_execution_id_unique_across_evaluations():
     (two ticks one second apart -> two distinct trace ids)."""
     import copy
 
-    from datetime import timedelta
 
     policy = SignalPolicy()
     fv = copy.deepcopy(_make_feature_vector())
