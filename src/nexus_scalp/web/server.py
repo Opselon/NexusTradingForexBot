@@ -2489,6 +2489,22 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # GET /api/config
     @app.get("/api/config")
     def get_config() -> dict[str, Any]:
+        """Configuration form — reads the AUTHORITATIVE runtime snapshot
+        when the engine is up (live.yaml is only a bootstrap fallback)."""
+        engine = app.state.engine
+        store = getattr(engine, "runtime_config", None) if engine else None
+        if store is not None:
+            snap = store.get_snapshot()
+            cfg = snap.to_app_config()
+            raw_data = cfg.model_dump()
+            raw_data["configuration_version"] = snap.version
+            raw_data["runtime_applied"] = True
+            # telegram section is masked status only (secrets never plaintext)
+            tg = raw_data.get("telegram") or {}
+            tg["bot_token"] = snap.telegram.token_masked or ""
+            raw_data["telegram"] = tg
+            return raw_data
+        # Engine offline: bootstrap YAML fallback (diagnostic only)
         live_config_path = Path("configs/live.yaml")
         if not live_config_path.exists():
             live_config_path = Path("configs/base.yaml")
@@ -4866,7 +4882,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 from nexus_scalp.research.observability import _registry_blocked_reason
 
                 trace["blocked_reason"] = _registry_blocked_reason(engine.audit, entry)
-                from nexus_scalp.research.models import StrategyRegistryEntry
+                from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry
                 from nexus_scalp.research.registry import StrategyRegistry
 
                 reg = StrategyRegistry(engine.audit)
