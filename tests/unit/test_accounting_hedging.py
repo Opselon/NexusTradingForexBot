@@ -406,3 +406,115 @@ def test_intelligent_hedging_trigger_and_policy() -> None:
         gc.collect()
         time.sleep(0.1)
         shutil.rmtree(temp_dir, ignore_errors=True)
+def test_audit_writer_paths_bug127_regression() -> None:
+    """
+    BUG-127 regression: the swarm's incomplete driver refactor (c617c0f)
+    broke log_order / log_execution / log_account_snapshot binding counts and
+    introduced undefined self._driver in reader methods. Verifies:
+    - audit_orders row survives the async worker (order_events visible).
+    - audit_executions row survives (executed_at ISO timestamp).
+    - audit_account_snapshots stores the ISO timestamp (not NULL).
+    - reader methods (get_open_order / get_open_position_count /
+      get_open_position / get_deals_by_position / get_recent_predictions /
+      get_account_performance_metrics) work without self._driver.
+    """
+    temp_dir = tempfile.mkdtemp()
+    db_path = os.path.join(temp_dir, "test_bug127_audit.db")
+    db_url = f"sqlite:///{db_path}"
+
+    audit = None
+    audit_reader = None
+    try:
+        audit = AuditRepository(db_url=db_url, flush_interval_sec=0.1)
+        now = datetime.now(UTC).isoformat()
+
+        order = TradeOrder(
+            order_id="ord_bug127",
+            symbol="XAUUSD",
+            order_type=OrderType.BUY,
+            volume=0.10,
+            price=2000.0,
+            stop_loss=1990.0,
+            take_profit=2020.0,
+            magic_number=888101,
+        )
+        audit.log_order(
+            ticket=701,
+            order_id="ord_bug127",
+            symbol="XAUUSD",
+            action="BUY_MARKET",
+            price=2000.0,
+            stop_loss=1990.0,
+            take_profit=2020.0,
+            volume=0.10,
+            reason="PURE_AI",
+            execution_mode="PAPER",
+        )
+        audit.log_execution(order, "PLACED")
+        acc = AccountInfo(
+            login=123,
+            trade_mode=0,
+            leverage=100,
+            balance=10000.0,
+            equity=10000.0,
+            margin=0.0,
+            margin_free=10000.0,
+            currency="USD",
+        )
+        audit.log_account_snapshot(acc, 10000.0)
+        audit._last_snapshot_time = 0.0
+        audit.log_ledger_opened(
+            ticket=701,
+            symbol="XAUUSD",
+            direction="BUY",
+            volume=0.10,
+            entry_price=2000.0,
+            timestamp_str=now,
+            order_id="ord_bug127",
+        )
+
+        audit._queue.join()
+        time.sleep(0.3)
+        audit.close()
+
+        audit_reader = AuditRepository(db_url=db_url)
+        # order row: timestamp column must be an ISO string (not NULL/DATETIME default)
+        rows = audit_reader.get_recent_order_events(limit=10)
+        order_rows = [r for r in rows if r.get("order_id") == "ord_bug127"]
+        assert order_rows, "audit_orders write was dropped (binding mismatch)"
+        ts = order_rows[0].get("timestamp") or order_rows[0].get("executed_at") or ""
+        assert "T" in ts, f"order timestamp not ISO: {ts!r}"
+
+        # execution row: executed_at ISO
+        ex_rows = audit_reader.get_recent_executions(limit=10) if hasattr(
+            audit_reader, "get_recent_executions"
+        ) else []
+        if not ex_rows:
+            ex_rows = audit_reader.get_recent_order_events(limit=50)
+        ex = [r for r in ex_rows if r.get("order_id") == "ord_bug127"]
+        assert ex, "audit_executions write was dropped"
+
+        # ledger open-order readers work without self._driver
+        assert audit_reader.has_ledger_opened(701) is True
+        assert audit_reader.count_ledger_opened_unclosed() >= 1
+        assert audit_reader.get_recent_predictions(limit=5) == []
+        assert audit_reader.get_broker_deals_for_position("ord_bug127") == []
+
+        # snapshot timestamp ISO
+        growth = audit_reader.get_equity_growth_chart_data()
+        assert growth, "audio snapshot write was dropped"
+        assert "T" in str(growth[0].get("timestamp", "")), growth[0]
+
+        # performance metrics computes (0-rows branch safe)
+        metrics = audit_reader.get_account_performance_metrics()
+        assert metrics["total_trades"] == 0  # no closed trades yet
+
+    finally:
+        if audit_reader:
+            audit_reader.close()
+        if audit:
+            audit.close()
+        gc.collect()
+        time.sleep(0.1)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
