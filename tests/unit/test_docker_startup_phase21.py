@@ -95,11 +95,21 @@ def test_docker_02_expected_services(compose_services: dict) -> None:
     assert "redis" in compose_services, "redis service must exist"
 
 
-def test_docker_03_no_postgres_in_compose(compose_data: dict) -> None:
-    """The project persistence is SQLite; no postgres service may exist."""
+def test_docker_03_postgres_is_optional_profile(compose_data: dict) -> None:
+    """PostgreSQL (DATABASE PORTABILITY) must be profile-gated, not default.
+
+    The default `docker compose up -d` must stay SQLite-only: postgres may
+    exist as a service only behind the `postgres` compose profile so a plain
+    `up` never starts it.
+    """
     services = compose_data.get("services", {})
-    assert "postgres" not in services
-    assert "postgres" not in yaml.safe_dump(compose_data).lower()
+    pg = services.get("postgres")
+    if pg is None:
+        return  # acceptable: no postgres at all
+    assert "postgres" in pg.get("profiles", []), (
+        "postgres service must be profile-gated (profiles: [postgres])"
+    )
+    assert "postgres" not in pg.get("ports", []) or pg.get("ports"), "postgres may expose a port"
 
 
 def test_docker_04_core_env_has_bootstrap_vars(compose_services: dict) -> None:
