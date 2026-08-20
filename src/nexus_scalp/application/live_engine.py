@@ -2408,6 +2408,14 @@ class LiveEngine:
             if fe is not None:
                 fe._fvg_mitigation_sensitivity = snap.fvg_mitigation_sensitivity
                 fe._order_block_lookback_bars = snap.order_block_lookback_bars
+            # News worker cadence (live-tunable where applicable)
+            nw = getattr(self, "news_worker", None)
+            if nw is not None and snap.news.worker_interval_sec > 0:
+                nw.interval_sec = float(snap.news.worker_interval_sec)
+            # Rule matrix cache TTL (live-tunable)
+            rm = getattr(self, "rule_matrix", None)
+            if rm is not None and snap.rule_matrix.cache_ttl_seconds > 0:
+                rm.cache_ttl_seconds = float(snap.rule_matrix.cache_ttl_seconds)
         except Exception:
             logger.exception("[RUNTIME_CONFIG] service re-sync failed (isolated)")
 
