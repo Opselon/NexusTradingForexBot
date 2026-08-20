@@ -243,6 +243,22 @@ class TestDdlPorting:
         assert "WITHOUT ROWID" not in out
 
 
+    def test_double_quoted_literal_becomes_single_quoted(self):
+        from nexus_scalp.database.ddl_port import port_create_table
+
+        ddl = 'CREATE TABLE broker_orders (order_id INTEGER PRIMARY KEY, status TEXT DEFAULT "HOLD" NOT NULL)'
+        out = port_create_table(ddl)
+        assert "DEFAULT 'HOLD'" in out, out
+        assert 'DEFAULT "HOLD"' not in out
+
+    def test_double_quoted_identifier_preserved(self):
+        from nexus_scalp.database.ddl_port import port_create_table
+
+        ddl = 'CREATE TABLE t ("order_id" INTEGER PRIMARY KEY, "symbol" TEXT NOT NULL)'
+        out = port_create_table(ddl)
+        assert '"order_id"' in out, out
+        assert '"symbol"' in out, out
+
 # ---------------------------------------------------------------------------
 # Migrator preview + safety
 # ---------------------------------------------------------------------------
