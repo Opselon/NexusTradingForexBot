@@ -13,16 +13,16 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 import torch
 
 from nexus_scalp.configuration import RuntimeConfigStore
-from nexus_scalp.configuration.config import AppConfig, ModelConfig
-
-# Keep heavy imports function-local to avoid collection-time import chains
+from nexus_scalp.configuration.config import AlgoConfig, AppConfig, ModelConfig
+from nexus_scalp.domain.enums import ActionType
+from nexus_scalp.domain.models import AccountInfo, SymbolInfo, TickData, TradeProposal
 
 
 def _base_config() -> AppConfig:
@@ -83,46 +83,57 @@ class _MiniServices:
         )
 
 
-def _account() -> "AccountInfo":
+def _account() -> AccountInfo:
     from nexus_scalp.domain.models import AccountInfo
 
     return AccountInfo(
-        login=1, trade_mode=0, leverage=100, balance=10000.0,
-        equity=10000.0, margin=0.0, margin_free=10000.0,
+        login=1,
+        trade_mode=0,
+        leverage=100,
+        balance=10000.0,
+        equity=10000.0,
+        margin=0.0,
+        margin_free=10000.0,
     )
 
 
-def _symbol() -> "SymbolInfo":
+def _symbol() -> SymbolInfo:
     from nexus_scalp.domain.models import SymbolInfo
 
     return SymbolInfo(
-        symbol="XAUUSD", digits=2, point=0.01, tick_size=0.01,
-        tick_value=1.0, volume_min=0.01, volume_max=50.0,
-        volume_step=0.01, stops_level=10, freeze_level=0,
+        symbol="XAUUSD",
+        digits=2,
+        point=0.01,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=50.0,
+        volume_step=0.01,
+        stops_level=10,
+        freeze_level=0,
         trade_contract_size=100.0,
     )
 
 
-def _tick(bid: float, ask: float) -> "TickData":
+def _tick(bid: float, ask: float) -> TickData:
     from nexus_scalp.domain.models import TickData
 
     return TickData(
         symbol="XAUUSD",
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         bid=bid,
         ask=ask,
         volume=1.0,
     )
 
 
-def _proposal(action: str = "BUY_MARKET", rr: float = 5.0) -> "TradeProposal":
-    from nexus_scalp.domain.enums import ActionType
+def _proposal(action: str = "BUY_MARKET", rr: float = 5.0) -> TradeProposal:
     from nexus_scalp.domain.models import TradeProposal
 
     return TradeProposal(
         request_id="test_proposal",
         symbol="XAUUSD",
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         action=ActionType(action),
         confidence=0.9,
         proposed_entry=100.0,
@@ -149,8 +160,11 @@ class TestRiskEngineHotReload:
 
         # v1: max_spread=60 -> 80-pt spread REJECTED (no TradeOrder)
         order1 = svc.risk.evaluate_proposal(
-            proposal=proposal, account=_account(), symbol_info=symbol_info,
-            active_positions=[], current_tick=tick,
+            proposal=proposal,
+            account=_account(),
+            symbol_info=symbol_info,
+            active_positions=[],
+            current_tick=tick,
         )
         assert order1 is None  # blocked by the spread gate
 
@@ -161,8 +175,11 @@ class TestRiskEngineHotReload:
         assert svc.risk.config.max_spread_points == 100
 
         order2 = svc.risk.evaluate_proposal(
-            proposal=proposal, account=_account(), symbol_info=symbol_info,
-            active_positions=[], current_tick=tick,
+            proposal=proposal,
+            account=_account(),
+            symbol_info=symbol_info,
+            active_positions=[],
+            current_tick=tick,
         )
         assert order2 is not None  # 80 <= 100 -> passes the spread gate
         assert os.getpid() == pid
@@ -183,13 +200,22 @@ class TestRiskEngineHotReload:
         assert vol2 == pytest.approx(vol1 * 2.0)
 
     def test_min_rr_gate_changes_after_save(self) -> None:
+        import os as _os
+
         svc = _MiniServices(_base_config())
-        proposal_low_rr = _proposal(rr=1.5)  # below v1 gate 1.8
+        # confidence 0.5 (< high_confidence_threshold 0.70) so the NORMAL
+        # min_risk_reward_ratio gate applies (1.8), not the high-conf 1.2.
+        proposal_low_rr = _proposal(rr=1.5)
+        proposal_low_rr = proposal_low_rr.model_copy(update={"confidence": 0.5})
         tick = _tick(100.0, 100.02)
+        pid = _os.getpid()
 
         order1 = svc.risk.evaluate_proposal(
-            proposal=proposal_low_rr, account=_account(),
-            symbol_info=_symbol(), active_positions=[], current_tick=tick,
+            proposal=proposal_low_rr,
+            account=_account(),
+            symbol_info=_symbol(),
+            active_positions=[],
+            current_tick=tick,
         )
         assert order1 is None  # RR 1.5 < min 1.8 -> blocked
 
@@ -199,11 +225,14 @@ class TestRiskEngineHotReload:
         assert svc.risk.min_risk_reward_ratio == 1.2
 
         order2 = svc.risk.evaluate_proposal(
-            proposal=proposal_low_rr, account=_account(),
-            symbol_info=_symbol(), active_positions=[], current_tick=tick,
+            proposal=proposal_low_rr,
+            account=_account(),
+            symbol_info=_symbol(),
+            active_positions=[],
+            current_tick=tick,
         )
         assert order2 is not None  # RR 1.5 >= 1.2 -> passes
-        assert os.getpid() == pid  # noqa: F821 - defined above in scope
+        assert os.getpid() == pid
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +241,7 @@ class TestRiskEngineHotReload:
 
 
 class TestPolicyHotReload:
-    def _buy_proposal_with_buffer(self, algo: "AlgoConfig") -> float:
+    def _buy_proposal_with_buffer(self, algo: AlgoConfig) -> float:
         """Deterministic stop-loss geometry the policy uses for BUY entries."""
         return round(100.0 - 1.0 * algo.atr_sl_buffer_multiplier, 2)
 
@@ -248,7 +277,7 @@ class TestFeatureEngineHotReload:
         from nexus_scalp.market_data.bar_aggregator import BarData
 
         bars = []
-        t0 = datetime.now(timezone.utc)
+        t0 = datetime.now(UTC)
         for i in range(n):
             bars.append(
                 BarData(
@@ -280,7 +309,10 @@ class TestFeatureEngineHotReload:
         fv_loose = fe.compute_from_bars(bars, tick)
         # At minimum the computed depth must not be identical when the
         # threshold semantics differ (sensitivity directly scales it).
-        assert fv_as.fvg_depth == fv_loose.fvg_depth or fv_as.fvg_bullish_active != fv_loose.fvg_bullish_active
+        assert (
+            fv_as.fvg_depth == fv_loose.fvg_depth
+            or fv_as.fvg_bullish_active != fv_loose.fvg_bullish_active
+        )
         # And the engine attribute is what the hot path reads:
         assert fe._fvg_mitigation_sensitivity == 0.9
 
