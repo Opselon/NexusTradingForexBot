@@ -1582,7 +1582,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             plans = {}
             for db in ("audit", "news", "candle_intel"):
                 plans[db] = worker.plan_database(db)
-            return {"status": st, "plans": plans}
+            # TASK-22: runtime scheduler + quarantine + cycle telemetry.
+            runtime: dict[str, Any] = {"available": False}
+            quarantine: dict[str, Any] = {"available": False}
+            try:
+                from nexus_scalp.hygiene.hygiene_runtime import RuntimeCleanupScheduler
+                from nexus_scalp.hygiene.quarantine import QuarantineStore
+
+                sched = RuntimeCleanupScheduler(repo_root=base_dir)
+                runtime = {"available": True, **sched.status()}
+                quarantine = sched.quarantine.stats()
+                quarantine["available"] = True
+                quarantine["items"] = sched.quarantine.list(limit=20)
+            except Exception as _rt_err:
+                _log_err(_rt_err, "db hygiene runtime status failed", endpoint="/api/db/hygiene")
+            return {"status": st, "plans": plans, "runtime": runtime, "quarantine": quarantine}
         except Exception as exc:
             _log_err(exc, "db hygiene failed", endpoint="/api/db/hygiene")
             return {
@@ -3783,6 +3797,68 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         if snap is None:
             return {"available": False, "reason": f"SNAPSHOT_NOT_FOUND: {snapshot_id}"}
         return serialize_enums(snap)
+
+    @app.get("/api/debug/trace/{execution_id}")
+    def get_debug_trace(execution_id: str) -> dict[str, Any]:
+        """PHASE 13 forensic trace: one EXEC-... id across the whole pipeline.
+
+        Pure READ-ONLY join of audit_signals (the policy evaluation that
+        stamped the id) + audit_orders (dispatch rows whose reason embeds the
+        same id). Returns the full decision chain for one evaluation.
+        """
+        from nexus_scalp.adapters.database.settings_database import (
+            settings_db_path,
+        )
+
+        result: dict[str, Any] = {
+            "execution_id": execution_id,
+            "available": False,
+            "reason": "NO_AUDIT_DB",
+            "signal": None,
+            "orders": [],
+        }
+        db_path = None
+        try:
+            import sqlite3 as _sqlite3
+
+            from nexus_scalp.adapters.audit_db import get_default_audit_db_path
+
+            db_path = get_default_audit_db_path()
+            con = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            con.row_factory = _sqlite3.Row
+            try:
+                sig = None
+                rows = con.execute(
+                    "SELECT * FROM audit_signals ORDER BY generated_at DESC LIMIT 1"
+                ).fetchall()
+                # find by execution_id in payload (stamped historically via
+                # reason/request_id join) — primary column is reason_code; for
+                # pre-instrumentation rows join by request_id is not possible,
+                # so the endpoint returns signal rows whose payload contains
+                # the id and all dispatch rows whose reason embeds it.
+                sig_cols = [d[0] for d in con.execute("PRAGMA table_info(audit_signals)")]
+                if "execution_id" in sig_cols:
+                    sig = con.execute(
+                        "SELECT * FROM audit_signals WHERE execution_id = ? ORDER BY generated_at DESC LIMIT 5",
+                        (execution_id,),
+                    ).fetchall()
+                orders = con.execute(
+                    "SELECT * FROM audit_orders WHERE reason LIKE ? ORDER BY timestamp DESC LIMIT 5",
+                    (f"%{execution_id}%",),
+                ).fetchall()
+                result.update(
+                    {
+                        "available": True,
+                        "signal": [dict(r) for r in (sig or [])],
+                        "orders": [dict(r) for r in orders],
+                        "db_path": str(db_path),
+                    }
+                )
+            finally:
+                con.close()
+        except Exception as e:  # never fail the API for a trace lookup
+            result["reason"] = f"TRACE_LOOKUP_ERROR: {e}"
+        return serialize_enums(result)
 
     @app.get("/api/debug/compare")
     def get_debug_compare(a: str, b: str) -> dict[str, Any]:
