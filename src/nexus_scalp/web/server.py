@@ -7777,4 +7777,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     app.include_router(factory_router)
 
+    # =========================================================================
+    # DATABASE MANAGEMENT console (2026-08-20): SSMS-style explorer + SQL
+    # console + API keys. Provider-abstracted; serves SQLite now and
+    # PostgreSQL after the provider switch. Read-only by contract.
+    # =========================================================================
+    from nexus_scalp.web.db_console import router as db_console_router
+
+    app.include_router(db_console_router)
+
     return app

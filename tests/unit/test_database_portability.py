@@ -515,3 +515,254 @@ class TestCliApiSurface:
         js = (REPO_ROOT / "Web" / "app.js").read_text(encoding="utf-8")
         for fn in ("loadDbStatus", "switchDbProvider", "startDbMigration", "savePgConfig"):
             assert fn in js, f"missing JS function {fn}"
+
+
+# ---------------------------------------------------------------------------
+# DATABASE CONSOLE (Hermes-DBConsole 2026-08-20) — SSMS-style explorer + SQL
+# console + API keys. Provider-abstracted; read-only by contract.
+# ---------------------------------------------------------------------------
+class TestDbConsoleDatabases:
+    def test_list_databases_finds_all_domain_files(self):
+        from nexus_scalp.web.db_console import _list_databases
+
+        dbs = {d["name"]: d for d in _list_databases()}
+        for name in ("audit", "news", "candle_intel", "settings"):
+            assert name in dbs, f"missing database entry {name}"
+        assert dbs["audit"]["provider"] in ("sqlite", "postgresql")
+        assert dbs["audit"]["status"] in ("CONNECTED", "DISCONNECTED", "DRIVER_UNAVAILABLE: ")
+
+    def test_databases_endpoint_live(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        r = c.get("/api/db/console/databases")
+        body = r.json()
+        assert body["success"] is True
+        names = {d["name"] for d in body["databases"]}
+        assert {"audit", "news", "candle_intel", "settings"} <= names
+
+    def test_refresh_rescans(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        r = c.post("/api/db/console/refresh")
+        assert r.json()["success"] is True
+        assert r.json()["resynced"] is True
+
+    def test_rows_endpoint_paginated_and_capped(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import MAX_ROWS, router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        r = c.get(
+            "/api/db/console/rows",
+            params={"database": "audit", "table": "audit_ledger", "limit": 5, "offset": 0},
+        )
+        body = r.json()
+        assert body["success"] is True
+        assert len(body["rows"]) <= 5
+        assert isinstance(body["columns"], list)
+        # the guard: even a silly limit cannot exceed MAX_ROWS
+        r2 = c.get(
+            "/api/db/console/rows",
+            params={"database": "audit", "table": "audit_ledger", "limit": 999999},
+        )
+        assert len(r2.json()["rows"]) <= MAX_ROWS
+
+    def test_columns_endpoint(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        r = c.get("/api/db/console/columns", params={"database": "audit", "table": "audit_ledger"})
+        body = r.json()
+        assert body["success"] is True
+        assert any(col["name"] == "ticket" for col in body["columns"])
+        assert all("type" in col for col in body["columns"])
+
+
+class TestDbConsoleQueryGuard:
+    def test_select_allowed(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        r = c.post(
+            "/api/db/console/query",
+            json={"database": "audit", "sql": "SELECT COUNT(*) AS n FROM audit_ledger"},
+        )
+        body = r.json()
+        assert body["success"] is True
+        assert body["rows"][0]["n"] >= 0
+
+    def test_write_rejected(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        for bad in (
+            "DROP TABLE audit_ledger",
+            "INSERT INTO audit_ledger VALUES (1)",
+            "DELETE FROM audit_ledger",
+            "UPDATE audit_ledger SET x=1",
+        ):
+            r = c.post("/api/db/console/query", json={"database": "audit", "sql": bad})
+            body = r.json()
+            assert body["success"] is False, f"expected rejection for {bad}"
+            assert "read-only" in body["error"] or "not allowed" in body["error"]
+
+    def test_multi_statement_rejected(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        r = c.post(
+            "/api/db/console/query",
+            json={"database": "audit", "sql": "SELECT 1; DROP TABLE audit_ledger"},
+        )
+        assert r.json()["success"] is False
+
+    def test_quick_sql_top100(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        r = c.get(
+            "/api/db/console/quick",
+            params={"database": "audit", "table": "audit_ledger", "kind": "top100"},
+        )
+        body = r.json()
+        assert body["success"] is True
+        assert len(body.get("rows", [])) <= 100
+
+    def test_placeholder_translation_used_for_pg(self):
+        from nexus_scalp.web.db_console import _query_console_sql
+
+        assert (
+            _query_console_sql("SELECT * FROM t WHERE x = ?", "postgresql")
+            == "SELECT * FROM t WHERE x = %s"
+        )
+        assert (
+            _query_console_sql("SELECT * FROM t WHERE x = ?", "sqlite")
+            == "SELECT * FROM t WHERE x = ?"
+        )
+
+
+class TestDbConsoleApiKeys:
+    def test_apikey_set_list_delete(self, tmp_path, monkeypatch):
+        from nexus_scalp.settings.secret_store import SecureSecretStore
+        from nexus_scalp.web.db_console import _load_apikey_names
+
+        store_root = tmp_path / "secrets"
+        monkeypatch.setattr(SecureSecretStore, "root", store_root, raising=False)
+        store = SecureSecretStore()
+        store.set_secret("test_console_key", "sk-super-secret")
+        names = _load_apikey_names()
+        assert any(n["name"] == "test_console_key" and n["set"] for n in names)
+        # never the raw value
+        assert all("sk-super-secret" not in str(n) for n in names)
+        store.delete_secret("test_console_key")
+        assert not any(n["name"] == "test_console_key" for n in _load_apikey_names())
+
+    def test_apikey_endpoint_masks_and_rejects_bad_names(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from nexus_scalp.web.db_console import router
+
+        app = FastAPI()
+        app.include_router(router)
+        c = TestClient(app)
+        # bad name: slash
+        r = c.post("/api/db/console/apikey", json={"name": "bad/name", "value": "x"})
+        assert r.json()["success"] is False
+        # good name persists masked
+        r2 = c.post("/api/db/console/apikey", json={"name": "console_test_key", "value": "abc123"})
+        body2 = r2.json()
+        assert body2["success"] is True
+        assert body2["apikey"]["masked"].endswith("****")
+        assert "abc123" not in body2["apikey"]["masked"]
+        # cleanup
+        c.delete("/api/db/console/apikey/console_test_key")
+
+
+class TestDbConsoleUiSurface:
+    def test_ui_has_explorer_panel(self):
+        html = (REPO_ROOT / "Web" / "index.html").read_text(encoding="utf-8")
+        for frag in (
+            "db-console-dblist",
+            "db-console-tablelist",
+            "db-grid",
+            "db-sql-input",
+            "db-apikey-name",
+            "dbConsoleRefresh",
+            "DATABASE EXPLORER",
+        ):
+            assert frag in html, f"missing explorer fragment {frag}"
+
+    def test_ui_has_console_js(self):
+        js = (REPO_ROOT / "Web" / "app.js").read_text(encoding="utf-8")
+        for fn in (
+            "dbConsoleLoad",
+            "dbConsoleRefresh",
+            "dbPickDatabase",
+            "dbPickTable",
+            "dbReloadRows",
+            "dbRunQuery",
+            "dbQuickSql",
+            "loadDbApiKeys",
+            "dbApiKeySave",
+            "dbApiKeyDelete",
+            "dbRowsPrev",
+            "dbRowsNext",
+            "renderDbList",
+            "renderTableChips",
+            "renderGrid",
+            "dbConsoleFilter",
+        ):
+            assert fn in js, f"missing JS function {fn}"
+
+    def test_server_registers_console_router(self):
+        server_text = (REPO_ROOT / "src" / "nexus_scalp" / "web" / "server.py").read_text(
+            encoding="utf-8"
+        )
+        assert "db_console" in server_text
+        assert "app.include_router(db_console_router)" in server_text
+
+    def test_api_client_has_del(self):
+        client = (REPO_ROOT / "Web" / "api_client.js").read_text(encoding="utf-8")
+        assert "del(url, opts)" in client
