@@ -196,6 +196,11 @@ def mutate(
     except Exception:
         return None
 
+    # A mutation that produces no definition change is a NO-OP: reject it so
+    # the population never carries silent duplicates (spec 7 / 13).
+    if dsl_hash(dsl) == candidate.definition_hash:
+        return None
+
     # Re-validate the mutated DSL structurally before accepting.
     checks = [
         validate_schema(dsl),

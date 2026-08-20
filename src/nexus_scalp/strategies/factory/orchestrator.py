@@ -183,6 +183,12 @@ class StrategyFactory:
             {"event_id": _event_id(), "event_type": "LOOP_STOPPED", "message": "Kill switch engaged"},
         )
         self.loop_state = LoopState.STOPPED.value
+        # Persist the FINAL state (not the transient STOPPING) so a crash
+        # after stop never resumes into a half-stopped loop (spec 73).
+        set_loop_state(
+            self.audit_repo,
+            {"state": self.loop_state, "generation_id": self.current_generation_id},
+        )
         return True
 
     def loop_status(self) -> dict[str, Any]:
@@ -536,7 +542,17 @@ class StrategyFactory:
         candidate: FactoryCandidate,
         verdict: Any = None,
         lifecycle: str = "GENERATED",
+        preserve_structural: bool = False,
     ) -> None:
+        if preserve_structural:
+            # Keep the existing structural verdict from the first upsert
+            # (immutability: evaluation must not erase the validator result).
+            from nexus_scalp.strategies.factory.store import get_candidate_structural
+
+            existing = get_candidate_structural(self.audit_repo, candidate.candidate_id)
+            structural = existing if existing is not None else (verdict.model_dump() if verdict else None)
+        else:
+            structural = verdict.model_dump() if verdict else None
         upsert_candidate(
             self.audit_repo,
             {
@@ -549,7 +565,7 @@ class StrategyFactory:
                 "family": candidate.family.value,
                 "population_index": candidate.population_index,
                 "dsl": candidate.dsl.model_dump(),
-                "structural": verdict.model_dump() if verdict else None,
+                "structural": structural,
                 "lifecycle": lifecycle,
                 "failure_reasons": [verdict.failure_reason.value] if verdict and verdict.failure_reason else [],
                 "llm_response_id": candidate.llm_response_id,
@@ -605,6 +621,7 @@ class StrategyFactory:
                 candidate,
                 lifecycle=lifecycle,
                 verdict=None,
+                preserve_structural=True,
             )
             for reason in failed_reasons:
                 record_failure(
@@ -908,16 +925,25 @@ class StrategyFactory:
 
     def _candidate_from_row(self, row: dict[str, Any]) -> FactoryCandidate | None:
         try:
+            import json as _json
+
             from nexus_scalp.strategies.factory.dsl import canonicalize_dsl
 
-            dsl = canonicalize_dsl(row.get("dsl") or {})
+            raw_dsl = row.get("dsl") or {}
+            if isinstance(raw_dsl, str):
+                raw_dsl = _json.loads(raw_dsl) if raw_dsl.strip() else {}
+            dsl = canonicalize_dsl(raw_dsl)
+
+            raw_parents = row.get("parent_ids") or []
+            if isinstance(raw_parents, str):
+                raw_parents = _json.loads(raw_parents) if raw_parents.strip() else []
             return FactoryCandidate(
                 candidate_id=str(row.get("candidate_id", "")),
                 definition_hash=str(row.get("definition_hash", "")),
                 generation_id=str(row.get("generation_id", "")),
                 source=CandidateSource(str(row.get("source", "TEMPLATE"))),
                 operator=EvolutionOperator(str(row.get("operator", "NONE"))),
-                parent_ids=(row.get("parent_ids") or []),
+                parent_ids=raw_parents if isinstance(raw_parents, list) else [],
                 dsl=dsl,
                 family=StrategyFamily(str(row.get("family", "HYBRID"))),
                 population_index=int(row.get("population_index", 0) or 0),

@@ -414,6 +414,11 @@ def test_full_generation_cycle(audit_repo):
     flush(audit_repo)
     assert validation["passed"]  # G0 templates all valid now
     passed_ids = {c.candidate_id for c in validation["passed"]}
+    # Canonical dedup (spec 13): the population may contain definition
+    # duplicates (family-coverage extras); only unique strategies persist.
+    unique_persisted = len(
+        {c["candidate_id"] for c in list_candidates(audit_repo, generation_id=gen["generation_id"])}
+    )
 
     dataset = pipeline.dataset_builder.build()
     assert len(dataset.samples) > 0
@@ -430,7 +435,7 @@ def test_full_generation_cycle(audit_repo):
     summary = completion["summary"]
     assert summary["population"] >= 8
     assert summary["evaluated"] >= 1
-    assert summary["structurally_valid"] == len(passed_ids)
+    assert summary["structurally_valid"] == unique_persisted
     assert summary["failure_distribution"] != {}
     assert summary["diversity"] > 0.0
 
@@ -582,7 +587,23 @@ def test_factory_routes_registered():
     from nexus_scalp.web.server import create_app
 
     app = create_app(engine_ref=None)
-    paths = {getattr(r, "path", "") for r in app.routes}
+    paths: set[str] = set()
+
+    def _walk(routes, depth: int = 0):
+        for r in routes:
+            if type(r).__name__ == "_IncludedRouter":
+                try:
+                    _walk(r.effective_candidates(), depth + 1)
+                    continue
+                except Exception:
+                    pass
+            if hasattr(r, "routes") and getattr(r, "routes", None):
+                _walk(r.routes, depth + 1)
+            p = getattr(r, "path", "") or ""
+            if p:
+                paths.add(p)
+
+    _walk(app.routes)
     expected = {
         "/api/factory/status",
         "/api/factory/generations",

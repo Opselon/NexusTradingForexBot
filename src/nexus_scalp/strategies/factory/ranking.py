@@ -67,12 +67,28 @@ def score_components(
     robustness/score as dicts or None). All component values are bounded
     [0,1] and individually inspectable.
     """
+    import json as _json
+
+    def _decoded(value: Any) -> dict[str, Any]:
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        text_val = str(value).strip()
+        if text_val == "" or text_val.lower() in ("null", "none", "{}"):
+            return {}
+        try:
+            parsed = _json.loads(text_val)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+
     w = weights or WEIGHTS
-    score = entry.get("score") or {}
-    bt = entry.get("backtest") or {}
-    wf = entry.get("walkforward") or {}
-    oos = entry.get("oos") or {}
-    rob = entry.get("robustness") or {}
+    score = _decoded(entry.get("score"))
+    bt = _decoded(entry.get("backtest"))
+    wf = _decoded(entry.get("walkforward"))
+    oos = _decoded(entry.get("oos"))
+    rob = _decoded(entry.get("robustness"))
 
     research = _clamp(float(score.get("final_score", 0.0) or 0.0))
 
@@ -258,7 +274,24 @@ def feature_diversity(entries: list[dict[str, Any]]) -> float:
     all_features: set[str] = set()
     for e in entries:
         ctx = e.get("context_definition") or {}
+        if not isinstance(ctx, dict):
+            try:
+                import json as _json
+
+                ctx = _json.loads(str(ctx))
+            except Exception:
+                ctx = {}
         filters = ctx.get("filters") if isinstance(ctx, dict) else None
+        if not isinstance(filters, list):
+            dsl = e.get("dsl") or {}
+            if isinstance(dsl, str):
+                try:
+                    import json as _json
+
+                    dsl = _json.loads(str(dsl))
+                except Exception:
+                    dsl = {}
+            filters = dsl.get("filters") if isinstance(dsl, dict) else None
         if isinstance(filters, list):
             for f in filters:
                 if isinstance(f, dict) and f.get("feature"):

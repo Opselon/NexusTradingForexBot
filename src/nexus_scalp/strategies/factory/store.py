@@ -446,6 +446,40 @@ def list_runs(repo: AuditRepository, limit: int = 100) -> list[dict[str, Any]]:
         conn.close()
 
 
+def get_candidate_structural(repo: AuditRepository, candidate_id: str) -> dict[str, Any] | None:
+    """Reads the persisted structural verdict for one candidate.
+
+    Returns a decoded dict or None when absent. Used to preserve the
+    structural verdict across lifecycle updates (immutability).
+    """
+    import json as _json
+
+    conn = _conn(repo)
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT structural FROM factory_candidates WHERE candidate_id=?;", (candidate_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        raw = row["structural"]
+        if not raw:
+            return None
+        if isinstance(raw, dict):
+            return raw
+        text_val = str(raw).strip()
+        if text_val == "" or text_val.lower() in ("null", "none", "{}"):
+            return None
+        parsed = _json.loads(text_val)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception as e:
+        logger.error("[STRATEGY_FACTORY] get_candidate_structural failed", error=str(e))
+        return None
+    finally:
+        conn.close()
+
+
 def get_loop_state(repo: AuditRepository) -> dict[str, Any]:
     conn = _conn(repo)
     if conn is None:
@@ -512,6 +546,7 @@ def _row_safe(row: dict[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "emit_event",
+    "get_candidate_structural",
     "get_generation",
     "get_loop_state",
     "list_candidates",

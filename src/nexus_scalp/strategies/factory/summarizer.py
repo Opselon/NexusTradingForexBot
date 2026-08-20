@@ -89,7 +89,8 @@ def build_summary(
 
     from nexus_scalp.strategies.factory.ranking import population_diversity
 
-    diversity = population_diversity(registry_entries)
+    diversity_src = registry_entries or candidates
+    diversity = population_diversity(diversity_src)
 
     structurally_valid = sum(
         1 for c in candidates if _structural_passed(c)
