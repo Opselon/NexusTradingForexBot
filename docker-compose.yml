@@ -83,6 +83,33 @@ services:
         max-size: "5m"
         max-file: "2"
 
+  # ------------------------------------------------------------
+  # postgres — OPTIONAL PostgreSQL development database
+  # (DATABASE PORTABILITY, 2026-08-20)
+  # ------------------------------------------------------------
+  # Not started by default. Run with:
+  #     docker compose --profile postgres up -d postgres
+  # The application keeps SQLite as its default; this service exists so
+  # PostgreSQL mode/migrations/tests have a real target.
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    container_name: nexus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${NSE_PG_DATABASE:-nse_audit}
+      POSTGRES_USER: ${NSE_PG_USER:-nse_user}
+      POSTGRES_PASSWORD: ${NSE_PG_PASSWORD:-nse_password_dev}
+    volumes:
+      - nexus-postgres-data:/var/lib/postgresql/data
+    ports:
+      - "${NSE_PG_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NSE_PG_USER:-nse_user} -d ${NSE_PG_DATABASE:-nse_audit}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 networks:
   default:
     name: nexus-scalp-net
@@ -92,3 +119,4 @@ volumes:
   nexus-artifacts:
   nexus-data:
   redis-data:
+  nexus-postgres-data:
