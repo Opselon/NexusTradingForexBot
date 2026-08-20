@@ -280,6 +280,14 @@ port availability, **before** an expensive startup.
 - Docker Engine 24+ / Docker Desktop 4.x+ (Compose v2 plugin; `docker compose`
   subcommand). The repo pins no engine API features beyond standard Compose.
 
+### Slow/flaky networks (apt 500s / connection resets)
+
+The Dockerfile apt layers use `Acquire::Retries=5` and
+`Acquire::http::Timeout=60` to survive flaky public mirrors (observed on this
+host's proxied network — deb.debian.org 500s). If a build still fails on
+`apt-get`, just rerun `docker compose build core` (layers resume from cache),
+or pre-pull the base images (`docker pull python:3.11-slim redis:7-alpine`).
+
 ---
 
 ## 13. Developer workflow summary

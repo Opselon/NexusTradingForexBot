@@ -332,8 +332,9 @@ the canonical SQLite databases (no PostgreSQL), runs the migration gate, and
 exposes the dashboard at http://localhost:9090. Health/readiness is served at
 `/health` (READY/DEGRADED = healthy). Full reference: **`docs/docker.md`**
 (env contract, startup sequence, persistence, volumes, reset, backup,
-troubleshooting). Windows helpers: `scripts/start.ps1`, `scripts/doctor.ps1`,
-`scripts/reset-dev.ps1`, `scripts/backup-db.ps1`.
+troubleshooting — incl. slow-network/apt-retry notes). Windows helpers:
+`scripts/start.ps1`, `scripts/doctor.ps1`, `scripts/reset-dev.ps1`,
+`scripts/backup-db.ps1`.
 
 ---
 
