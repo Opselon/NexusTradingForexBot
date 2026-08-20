@@ -724,3 +724,34 @@ Status: VERIFIED
 **Invariants touched:** UPDATE PROTOCOL v2 (additive; all prior UPDATE PROTOCOL v1 semantics retained).
 **Tests:** TEST-UP-36..60 in tests/unit/test_release_update_phase17.py.
 **Risk:** additive; no change to LIVE-safety, backup, migration or rollback contracts.
+```text
+CHANGE-ID: CHG-0028
+Agent: Hermes-LogArchitect
+Role: Observability / Structured Logging Architecture Engineer
+Task: Master Structured Logging & Organized Log Storage brief
+Scope: Centralized severity-split date-organized logging engine
+       (src/nexus_scalp/observability/logging.py): logs/<severity>/YYYY/MM/
+       YYYY-MM-DD.log tree, ISO-8601+03:30 timestamps, stable event names +
+       category + NEXUS-* error codes, correlation/run/generation/strategy
+       context fields, daily + size rotation (part-NNN, zero-loss), per-severity
+       retention + hourly prune (archive never auto-deleted), key-based +
+       high-entropy redaction (BUG-121), ANSI-free plain-text error files with
+       full stack traces, process-wide write lock. Call sites: launcher,
+       LiveEngine.start(), train_model. Tests: tests/unit/test_logging.py
+       (14 tests: routing/stack/redaction/correlation/rotation/retention).
+Affected files: src/nexus_scalp/observability/logging.py (rewrite),
+       NexusTradingForexBot.py, src/nexus_scalp/application/live_engine.py,
+       src/cli/train_model.py, tests/unit/test_logging.py (rewrite),
+       docs/agent_handoffs/Hermes-LogArchitect-structured-logging.md
+Affected functions/classes: configure_logging (log_file_path now base dir +
+       retention_days), get_logger (unchanged), log_event (new),
+       bind_correlation_id (new), DatedRotatingFileHandler (new),
+       _LevelMatchFilter (new), _prune_old_logs (new)
+Contracts touched: OBSERVABILITY v2 (severity-split layout), INV-001 honored
+       (no sync I/O added to tick path beyond the existing throttled sink)
+Runtime paths touched: boot path (launcher/live_engine.start/train_model)
+Commits: 7c19a34, 208eebe, df5c1e2, efa2afa, 96d7c82 (local)
+Status: VERIFIED (14 tests PASS; acceptance run produced info/warning/error/
+       critical files with stacks, redaction, correlation; rotation zero-loss;
+       retention verified) -> READY_FOR_REVIEW
+```
