@@ -4162,6 +4162,18 @@ class LiveEngine:
             pass
 
     def _update_survival_state(self, account: AccountInfo, current_pos_count: int) -> None:
+        # RUNTIME CONFIG (BUG-132): the survival guard must use the SAME
+        # max_account_drawdown_pct the user sees / persists (runtime snapshot)
+        # -- NOT the bootstrap AppConfig default. A UI save to 95% never took
+        # effect here because self.config.risk stayed at the YAML default
+        # (2.0%), so a (post-withdrawal) drawdown >2% killed a live engine
+        # even though the persisted limit was 95%. The snapshot is
+        # authoritative; fall back to bootstrap only when detached.
+        store = getattr(self, "runtime_config", None)
+        if store is not None:
+            dd_limit_pct = float(store.get_snapshot().risk.max_account_drawdown_pct)
+        else:
+            dd_limit_pct = self.config.risk.max_account_drawdown_pct
         # Withdrawal adjustment heuristic retained
         if self._last_balance > 0.0:
             balance_delta = account.balance - self._last_balance
@@ -4192,10 +4204,7 @@ class LiveEngine:
 
         elif account.equity < self._peak_equity and self._peak_equity > 0:
             drawdown_pct = ((self._peak_equity - account.equity) / self._peak_equity) * 100.0
-            if (
-                drawdown_pct > (self.config.risk.max_account_drawdown_pct * 0.5)
-                and not self._survival_mode_active
-            ):
+            if drawdown_pct > (dd_limit_pct * 0.5) and not self._survival_mode_active:
                 self._survival_mode_active = True
                 logger.warning("SURVIVAL MODE ON", drawdown_pct=round(drawdown_pct, 2))
                 try:
@@ -4205,7 +4214,7 @@ class LiveEngine:
                 except Exception:
                     pass
 
-            if drawdown_pct > self.config.risk.max_account_drawdown_pct:
+            if drawdown_pct > dd_limit_pct:
                 logger.critical("MAX DRAWDOWN EXCEEDED; HALTING", dd_pct=round(drawdown_pct, 2))
                 try:
                     self.notifier.notify_kill_switch_activated(
