@@ -316,20 +316,30 @@ def make_incidents_app() -> typer.Typer:
                 {"error": str(exc)[:200]},
             )
 
-        result = corr.correlate(events)
+        # Dedupe against EXISTING incidents (spec 40/42): correlate with
+        # the store's current incidents so repeated scans merge into the
+        # SAME incident (stable fingerprint) instead of minting fresh
+        # INC-YYYY-XXXXXXXX ids every Refresh/scan.
+        existing = store.list_incidents(limit=500)
+        result = corr.correlate(events, existing)
         impact = ImpactAnalyzer(db_path=db)
         planner = RecoveryPlanner()
         created = 0
+        merged = 0
         for inc in result.incidents:
             inc.impact = impact.analyze(inc)
             inc.recovery_plan = planner.generate(inc)
             if write:
                 store.save(inc)
-                created += 1
+                if inc.incident_id in {i.incident_id for i in existing}:
+                    merged += 1
+                else:
+                    created += 1
         payload = {
             "scan": "read-only forensic baseline (spec 56)",
             "events": len(events),
             "new_incidents": result.new,
+            "merged_incidents": merged if write else 0,
             "incidents": [i.as_dict() for i in result.incidents],
             "persisted": created if write else 0,
             "note": "no trading/system mutation performed",
