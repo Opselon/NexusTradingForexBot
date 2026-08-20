@@ -74,6 +74,19 @@
 19. `intelligence/gate.py:15` — the WARN tier never changes the proposal
     (informational by design — documented, not a bug).
 
+## Delegated-worker findings — wave 3 (research/news/governance)
+
+20. `research/worker.py:194-206` — `tick()` returns False for BOTH throttled
+    and failed states; callers must inspect `last_error` to distinguish.
+21. `research/models.py:210-213` — `win_rate` divides wins by total_trades
+    (breakevens included in the denominator) — the Phase-16 denominator
+    discipline does not extend to the research score model.
+22. `research/leakage.py:68-92` — `validate_no_train_leakage` /
+    `backtest_properly_fit` are no-ops unless callers pass True
+    (contract documentation, not enforcement).
+23. `news/analysis/consensus.py:109` — dead `src.tier` expression inside an
+    else-branch where `src` is None (the ternary already guards).
+
 ## Technical debt
 
 - 4,000-bar cap and 900-bar chart window are constants (fine) but not
