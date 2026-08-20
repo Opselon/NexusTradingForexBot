@@ -66,10 +66,14 @@ def _atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14)
     n = len(high)
     if n < 2:
         return MIN_ATR
-    tr = np.empty(n - 1)
+    tr = np.empty(n - 1, dtype=np.float64)
     for i in range(1, n):
-        tr[i - 1] = max(high[i] - low[i], abs(high[i] - close[i - 1]), abs(low[i] - close[i - 1]))
-    return float(max(np.mean(tr[-period:]), MIN_ATR))
+        tr[i - 1] = max(
+            float(high[i]) - float(low[i]),
+            abs(float(high[i]) - float(close[i - 1])),
+            abs(float(low[i]) - float(close[i - 1])),
+        )
+    return float(max(float(np.mean(tr[-period:])), MIN_ATR))
 
 
 def _clip(v: float, lo: float, hi: float) -> float:
