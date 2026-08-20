@@ -905,3 +905,281 @@ def test_hyg_real_db_copy_plan_only(tmp_path: Path):
     res = worker.run_cycle(["audit"])
     assert res["databases"]["audit"]["verification"] == "SKIPPED_DRY_RUN"
     assert res["databases"]["audit"].get("deleted", {}) == {}
+
+# ---------------------------------------------------------------------------
+# TEST-HYG-37..48 (TASK-22): runtime hygiene engine — config scheduler,
+# first-run audit, quarantine, consistency rules, index health, dry-run,
+# protected data, non-blocking cadence.
+# ---------------------------------------------------------------------------
+
+
+def test_hyg37_scheduler_constructor_and_settings():
+    from nexus_scalp.hygiene.hygiene_runtime import (
+        RuntimeCleanupScheduler,
+        RuntimeHygieneSettings,
+    )
+
+    s = RuntimeCleanupScheduler(repo_root=tempfile.mkdtemp())
+    st = s.status()
+    assert st["enabled"] is True
+    assert st["dry_run"] is True
+    assert st["apply_deletes"] is False
+    assert st["light_interval_sec"] == 1800.0  # 30m default
+    assert st["deep_interval_sec"] == 21600.0  # 6h default
+    assert st["initial_audit_done"] is False
+    assert isinstance(s.settings, RuntimeHygieneSettings)
+
+
+def test_hyg38_scheduler_first_run_initial_audit(env):
+    from nexus_scalp.hygiene.hygiene_runtime import (
+        RuntimeCleanupScheduler,
+        RuntimeHygieneSettings,
+    )
+
+    repo, audit_path, news_path, candle_path = env
+    s = RuntimeCleanupScheduler(
+        repo_root=repo, settings=RuntimeHygieneSettings(dry_run=True)
+    )
+    assert (repo / "archive/_hygiene_state/initial_audit.json").exists() is False
+    res = s.run_cycle()
+    audit_file = repo / "archive/_hygiene_state/initial_audit.json"
+    assert audit_file.exists(), "initial audit must be persisted"
+    import json
+
+    audit = json.loads(audit_file.read_text(encoding="utf-8"))
+    assert audit["report_type"] == "DATABASE_HYGIENE_INITIAL_REPORT"
+    assert audit["totals"]["tables"] >= 1
+    assert "audit" in audit["per_database"]
+    # Second cycle must NOT re-run the audit.
+    s.run_cycle()
+    assert s.status()["initial_audit_done"] is True
+
+
+def test_hyg39_scheduler_cycle_telemetry(env):
+    from nexus_scalp.hygiene.hygiene_runtime import (
+        RuntimeCleanupScheduler,
+        RuntimeHygieneSettings,
+    )
+
+    repo, audit_path, news_path, candle_path = env
+    s = RuntimeCleanupScheduler(
+        repo_root=repo, settings=RuntimeHygieneSettings(dry_run=True)
+    )
+    res = s.run_cycle()
+    tel = res["telemetry"]
+    assert tel["cleanup_id"]
+    assert tel["mode"] == "AUDIT_ONLY"
+    assert tel["verification"] in ("PASS", "CHECK", "SKIPPED_DRY_RUN")
+    assert "records_scanned" in tel
+    assert tel["records_deleted"] == 0  # dry-run never deletes
+    assert res["cycle"] >= 1
+
+
+def test_hyg40_quarantine_store_roundtrip(env):
+    from nexus_scalp.hygiene.quarantine import QuarantineStore
+
+    repo, audit_path, news_path, candle_path = env
+    q = QuarantineStore(repo)
+    item = q.quarantine(
+        database="audit",
+        table="audit_ledger",
+        row_id=99,
+        row={"ticket": 99, "pnl": -5.0},
+        reason="missing relationship",
+        found_by="TEST-HYG-40",
+        cleanup_class="UNCERTAIN",
+        confidence="UNKNOWN",
+    )
+    assert item["status"] == "QUARANTINED"
+    # Dedupe: same (db, table, row_id) -> same quarantine_id.
+    item2 = q.quarantine(
+        database="audit", table="audit_ledger", row_id=99, reason="again"
+    )
+    assert item2["quarantine_id"] == item["quarantine_id"]
+    assert q.stats()["total"] == 1
+    # Restore returns the snapshot + mark.
+    restored = q.restore(item["quarantine_id"], notes="reviewed")
+    assert restored["status"] == "RESTORED"
+    assert restored["row"]["ticket"] == 99
+    # Events trail recorded.
+    lst = q.list(status="RESTORED")
+    assert len(lst) == 1
+
+
+def test_hyg41_consistency_rules_detect_violations(env):
+    from nexus_scalp.hygiene.consistency import (
+        ConsistencyRuleEngine,
+        findings_summary,
+    )
+
+    repo, audit_path, news_path, candle_path = env
+    conn = sqlite3.connect(str(audit_path))
+    # Break a rule: closed row with close_time < open_time (fixture uses ''
+    # for times, so set real ISO values first).
+    conn.execute(
+        "UPDATE audit_ledger SET open_time = '2026-08-01T10:00:00+00:00', "
+        "close_time = '2026-08-01T09:59:00+00:00' "
+        "WHERE ticket = 1 AND status = 'CLOSED'"
+    )
+    conn.commit()
+    eng = ConsistencyRuleEngine()
+    finds = eng.scan_audit(conn)
+    conn.close()
+    summary = findings_summary(finds)
+    assert summary["violations"] >= 1
+    rule = next(
+        (f for f in finds if f.rule_id == "TRADE-001" and f.status == "VIOLATION"), None
+    )
+    assert rule is not None
+    assert rule.offender_count >= 1
+    # Read-only proof: nothing changed on the DB.
+    conn = sqlite3.connect(str(audit_path))
+    n = conn.execute("SELECT COUNT(*) FROM audit_ledger").fetchone()[0]
+    conn.close()
+    assert n == 3
+
+
+def test_hyg42_index_health_report(env):
+    from nexus_scalp.hygiene.index_health import IndexHealthMonitor
+
+    repo, audit_path, news_path, candle_path = env
+    conn = sqlite3.connect(str(audit_path))
+    rep = IndexHealthMonitor(polling_mode=True).scan_database(conn, "audit")
+    conn.close()
+    assert rep["tables_scanned"] >= 1
+    assert "MISSING" in rep["summary"]
+    assert "DUPLICATE" in rep["summary"]
+    # Never creates schema (read-only check).
+    conn = sqlite3.connect(str(audit_path))
+    indexes = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%_ticket'"
+    ).fetchall()
+    conn.close()
+    assert len(indexes) == 0  # advisory only, nothing created
+
+
+def test_hyg43_scheduler_deep_cycle_index_report(env):
+    from nexus_scalp.hygiene.hygiene_runtime import (
+        RuntimeCleanupScheduler,
+        RuntimeHygieneSettings,
+    )
+
+    repo, audit_path, news_path, candle_path = env
+    s = RuntimeCleanupScheduler(
+        repo_root=repo, settings=RuntimeHygieneSettings(dry_run=True)
+    )
+    res = s.run_cycle(deep=True)
+    tel = res["telemetry"]
+    assert tel["deep_maintenance"] is True
+    ih = tel.get("index_health")
+    assert ih is not None
+    assert ih["report_type"] == "QUERY_HEALTH_REPORT"
+
+
+def test_hyg44_dry_run_never_deletes(env):
+    from nexus_scalp.hygiene.hygiene_runtime import (
+        RuntimeCleanupScheduler,
+        RuntimeHygieneSettings,
+    )
+
+    repo, audit_path, news_path, candle_path = env
+    digest_before = db_integrity_digest(str(audit_path))
+    s = RuntimeCleanupScheduler(
+        repo_root=repo,
+        settings=RuntimeHygieneSettings(dry_run=True, apply_deletes=False),
+    )
+    s.run_cycle()
+    assert db_integrity_digest(str(audit_path)) == digest_before
+    # Even a "cleanup" command with --dry-run must not delete.
+    s2 = RuntimeCleanupScheduler(
+        repo_root=repo,
+        settings=RuntimeHygieneSettings(dry_run=True, apply_deletes=False),
+    )
+    res = s2.run_cycle()
+    assert res["telemetry"]["records_deleted"] == 0
+
+
+def test_hyg45_protected_data_never_deleted_via_scheduler(env):
+    from nexus_scalp.hygiene.hygiene_runtime import (
+        RuntimeCleanupScheduler,
+        RuntimeHygieneSettings,
+    )
+
+    repo, audit_path, news_path, candle_path = env
+    # Even with apply_deletes + SAFE_CLEAN, financial/audit truth is protected
+    # by the executor gates (TASK-11 contract inherited).
+    s = RuntimeCleanupScheduler(
+        repo_root=repo,
+        settings=RuntimeHygieneSettings(dry_run=False, apply_deletes=True),
+        execution_mode="PAPER",
+    )
+    res = s.run_cycle()
+    deleted = res["telemetry"].get("deleted_by_table", {})
+    for tbl in (
+        "audit_ledger",
+        "audit_broker_trades",
+        "audit_experiences",
+        "audit_experience_outcomes",
+        "audit_orders",
+        "audit_executions",
+    ):
+        assert tbl not in deleted, f"{tbl} must never be scheduler-deleted"
+    conn = sqlite3.connect(str(audit_path))
+    assert conn.execute("SELECT COUNT(*) FROM audit_ledger").fetchone()[0] == 3
+    conn.close()
+
+
+def test_hyg46_scheduler_telegram_text_shape():
+    from nexus_scalp.hygiene.report import (
+        build_cycle_telemetry,
+        build_telegram_report_text,
+    )
+
+    tel = build_cycle_telemetry(
+        run_id="R1",
+        mode="AUDIT_ONLY",
+        started_at="2026-08-19T00:00:00+00:00",
+        duration_ms=4200,
+        rows_scanned=250000,
+        deleted={"cache": 152},
+        archived={"telemetry": 32},
+        quarantined=3,
+        errors=[],
+        verification="SUCCESS",
+    )
+    txt = build_telegram_report_text(tel, 152)
+    assert "Cycle: #152" in txt
+    assert "Scanned: 250,000 records" in txt
+    assert "Removed: 152" in txt
+    assert "Archived: 32" in txt
+    assert "Quarantined: 3" in txt
+    assert "Status: SUCCESS" in txt
+
+
+def test_hyg47_consistency_no_crash_on_unknown_schema(env):
+    from nexus_scalp.hygiene.consistency import ConsistencyRuleEngine
+
+    repo, audit_path, news_path, candle_path = env
+    conn = sqlite3.connect(str(audit_path))
+    conn.execute("CREATE TABLE totally_new_table (x TEXT)")
+    conn.commit()
+    eng = ConsistencyRuleEngine()
+    finds = eng.scan_audit(conn)  # must not raise
+    conn.close()
+    assert isinstance(finds, list)
+
+
+def test_hyg48_runtime_cleanup_budget_bounded(env):
+    from nexus_scalp.hygiene.hygiene_runtime import (
+        RuntimeCleanupScheduler,
+        RuntimeHygieneSettings,
+    )
+
+    repo, audit_path, news_path, candle_path = env
+    # Small batch override flows into executor; cycle completes without error.
+    s = RuntimeCleanupScheduler(
+        repo_root=repo,
+        settings=RuntimeHygieneSettings(dry_run=True, batch_size=50),
+    )
+    res = s.run_cycle()
+    assert "error" not in res["telemetry"]
