@@ -27,7 +27,6 @@ import pytest
 from nexus_scalp.configuration import RuntimeConfigStore
 from nexus_scalp.configuration.config import AlgoConfig, AppConfig, ModelConfig
 
-
 # ---------------------------------------------------------------------------
 # Deterministic calculation fixtures (the SAME operation before/after apply)
 # ---------------------------------------------------------------------------
@@ -64,8 +63,8 @@ def _empty_app_config() -> AppConfig:
 
 class TestEndToEndHotReload:
     def test_save_changes_deterministic_behavior_without_restart(self) -> None:
-        from nexus_scalp.settings import SettingsDatabase, SettingsService
         from nexus_scalp.configuration import PersistentConfigStore
+        from nexus_scalp.settings import SettingsDatabase, SettingsService
 
         tmp = tempfile.mkdtemp()
         svc = SettingsService(db=SettingsDatabase(Path(tmp) / "app_settings.db"))
@@ -179,9 +178,7 @@ class TestLiveYamlIsNotAuthoritative:
 
         # Simulate an EXTERNAL live.yaml edit (operator hand-edit)
         yaml_path = tmp_path / "live.yaml"
-        yaml_path.write_text(
-            "algo:\n  atr_sl_buffer_multiplier: 4.0\n", encoding="utf-8"
-        )
+        yaml_path.write_text("algo:\n  atr_sl_buffer_multiplier: 4.0\n", encoding="utf-8")
         # (No file watcher by design: live.yaml is NOT the runtime source.
         # A controlled import would route through store.apply() only.)
 
@@ -190,9 +187,7 @@ class TestLiveYamlIsNotAuthoritative:
         assert store.get_snapshot().atr_sl_buffer_multiplier == 1.5
 
         # A CONTROLLED IMPORT through the API does change runtime (and versions)
-        report = store.apply(
-            {"algo.atr_sl_buffer_multiplier": 4.0}, source="LIVE_YAML_IMPORT"
-        )
+        report = store.apply({"algo.atr_sl_buffer_multiplier": 4.0}, source="LIVE_YAML_IMPORT")
         assert report.success is True
         assert store.get_snapshot().atr_sl_buffer_multiplier == 4.0
         assert store.get_version() == v_before + 1
@@ -215,9 +210,7 @@ class TestRestartPersistence:
         persistent = PersistentConfigStore(svc)
 
         # First run: apply (persists into settings DB)
-        store1 = RuntimeConfigStore(
-            persistent=persistent, bootstrap=_empty_app_config()
-        )
+        store1 = RuntimeConfigStore(persistent=persistent, bootstrap=_empty_app_config())
         r = store1.apply({"algo.atr_sl_buffer_multiplier": 2.5, "risk.max_spread_points": 20})
         assert r.success
         assert store1.get_snapshot().atr_sl_buffer_multiplier == 2.5
@@ -225,9 +218,7 @@ class TestRestartPersistence:
         # 'Restart': a brand-new store over the SAME settings DB
         svc2 = SettingsService(db=SettingsDatabase(db_path))
         persistent2 = PersistentConfigStore(svc2)
-        store2 = RuntimeConfigStore(
-            persistent=persistent2, bootstrap=_empty_app_config()
-        )
+        store2 = RuntimeConfigStore(persistent=persistent2, bootstrap=_empty_app_config())
         # The persisted settings DB is authoritative at boot; version continues
         assert store2.get_snapshot().atr_sl_buffer_multiplier == 2.5
         assert store2.get_snapshot().max_spread_points == 20
@@ -243,7 +234,7 @@ class TestConfigDomains:
     def test_snapshot_is_immutable(self) -> None:
         store = RuntimeConfigStore(bootstrap=_empty_app_config())
         snap = store.get_snapshot()
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017 - frozen dataclass raises FrozenInstanceError
             snap.algo.atr_sl_buffer_multiplier = 3.0  # type: ignore[misc]
 
     def test_snapshot_to_flat_roundtrip(self) -> None:
