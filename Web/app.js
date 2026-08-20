@@ -11415,17 +11415,31 @@ async function runForensicProbe(kind) {
     if (!resEl) return;
     resEl.innerHTML = '<p class="text-xs text-textMuted">Running ' + kind + ' probe...</p>';
     try {
-        const resp = await fetch('/api/diagnostics/forensics?kind=' + encodeURIComponent(kind));
+        const ticketParam = '';
+        try { const ti = document.getElementById('incident-search-input'); if (ti && ti.value.trim() && !String(ti.value.trim()).toUpperCase().startsWith('INC-')) { ticketParam = '&ticket=' + encodeURIComponent(ti.value.trim()); } } catch (e) {}
+        const resp = await fetch('/api/diagnostics/forensics?kind=' + encodeURIComponent(kind) + ticketParam);
         const d = await resp.json();
         if (!d.available) { resEl.innerHTML = '<p class="text-xs text-rose-400">Probe failed: ' + esc(d.error || '') + '</p>'; return; }
         if (kind === 'timebase') {
             const o = d.measured_offsets_seconds || {};
-            resEl.innerHTML = '<div class="border border-sky-500/30 rounded p-2 bg-darkBg/50 text-[11px]">' +
+            let html = '<div class="border border-sky-500/30 rounded p-2 bg-darkBg/50 text-[11px]">' +
                 '<b class="text-sky-400">TIMEBASE</b> ' + esc(d.classification || '') +
-                ' · host→broker: <code>' + (o.host_to_broker_median ?? 'n/a') + 's</code>' +
+                ' · sync lag: <code>' + (d.sync_lag_seconds ?? 'n/a') + 's</code>' +
+                ' · data age: <code>' + (d.observed_data_age_seconds ?? 'n/a') + 's</code>' +
                 ' · host→db: <code>' + (o.host_to_db ?? 'n/a') + 's</code>' +
                 ' · affected: ' + esc((d.affected_subsystems || []).join(', ')) +
                 '</div>';
+            const ec = d.event_chain || {};
+            if (ec.source_time) {
+                html += '<div class="border border-sky-500/30 rounded p-2 bg-darkBg/50 text-[11px] mt-1 space-y-1">' +
+                    '<div><b class="text-sky-400">EVENT CHAIN</b> ' + esc(ec.source_component || '') + ' vs ' + esc(ec.comparison_component || '') + '</div>' +
+                    '<div>source: <code>' + esc(ec.source_time || '') + '</code> (' + esc(ec.source_timezone || '') + ')</div>' +
+                    '<div>normalized UTC: <code>' + esc(ec.normalized_utc || '') + '</code> · expected: <code>' + esc(ec.expected_time || '') + '</code></div>' +
+                    '<div>difference: <code>' + (ec.difference_ms ?? 'n/a') + ' ms</code> · rule: ' + esc(ec.normalization_rule || '') + '</div>' +
+                    (ec.normalization_note ? '<div class="text-amber-400">' + esc(ec.normalization_note) + '</div>' : '') +
+                    '</div>';
+            }
+            resEl.innerHTML = html;
         } else {
             const cls = d.classification_counts || {};
             const zcls = d.zero_outcome_classification_counts || {};

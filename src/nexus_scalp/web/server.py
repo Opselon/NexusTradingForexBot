@@ -1785,6 +1785,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     @app.get("/api/diagnostics/forensics")
     def get_diagnostics_forensics(
         kind: str = "accounting",
+        ticket: str = "",
     ) -> dict[str, Any]:
         """TASK-13 read-only forensic probes (spec 14/23).
 
@@ -1797,9 +1798,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             if kind == "timebase":
                 from nexus_scalp.incidents.timebase import TimebaseProbe
 
-                return serialize_enums(
-                    {"available": True, "kind": "timebase", **TimebaseProbe(db).run()}
-                )
+                probe = TimebaseProbe(db)
+                base = probe.run()
+                if ticket:
+                    base["event_chain"] = probe.probe_event(ticket)
+                return serialize_enums({"available": True, "kind": "timebase", **base})
+
             from nexus_scalp.incidents.accounting import AccountingForensicsEngine
 
             result = AccountingForensicsEngine(db).audit_zero_pnl_ledger(max_rows=50)
