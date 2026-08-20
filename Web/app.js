@@ -10944,3 +10944,44 @@ async function exportIncident(kind) {
         window.open(url, '_blank');
     }
 }
+
+// TASK-22: Database Health Panel (spec 17) — real backend data only.
+async function loadHealthPanel() {
+    const ids = ['dbh-scheduler', 'dbh-next', 'dbh-quarantined', 'dbh-audit'];
+    const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const planEl = document.getElementById('db-health-plan');
+    const errEl = document.getElementById('db-health-errors');
+    if (errEl) errEl.textContent = '';
+    try {
+        const res = await fetch('/api/db/hygiene');
+        const data = await res.json();
+        const runtime = data.runtime || {};
+        const q = data.quarantine || {};
+        setTxt('dbh-scheduler', runtime.available ? (runtime.worker_mode || 'NOT_STARTED') : 'UNAVAILABLE');
+        const nextIn = runtime.next_light_in_sec ?? null;
+        setTxt('dbh-next', nextIn === null ? '—' : Math.round(nextIn) + 's');
+        setTxt('dbh-quarantined', (q.total ?? 0) + ' item(s)');
+        setTxt('dbh-audit', runtime.initial_audit_done ? 'DONE' : 'PENDING');
+        if (planEl) {
+            const plans = data.plans || {};
+            const entries = Object.entries(plans);
+            if (!entries.length) { planEl.innerHTML = '<div class="text-textMuted italic">no plan data</div>'; }
+            else {
+                planEl.innerHTML = entries.map(([db, p]) => {
+                    const s = p.plan || {};
+                    return '<div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">' +
+                        '<span class="text-accentCyan font-bold">' + esc(db) + '</span><br/>' +
+                        'tables: ' + (s.tables_scanned ?? 0) +
+                        ' · rows: ' + (s.rows_scanned ?? 0) +
+                        ' · dups: ' + (s.duplicates_found ?? 0) +
+                        ' · orphans: ' + (s.orphans_found ?? 0) +
+                        ' · del candidates: ' + (s.delete_candidates ?? 0) +
+                        '</div>';
+                }).join('');
+            }
+        }
+    } catch (e) {
+        setTxt('dbh-scheduler', 'ERROR');
+        if (errEl) errEl.textContent = 'DB health load failed: ' + esc(String(e));
+    }
+}

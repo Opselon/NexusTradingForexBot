@@ -368,6 +368,39 @@
                                 <span class="text-textMuted block text-[9px] uppercase">Chart Age</span>
                                 <span id="diag-chart-age">—</span>
                             </div>
+                    <!-- TASK-22: DATABASE HEALTH PANEL (spec 17) -->
+                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-xl p-5">
+                        <div class="flex justify-between items-center mb-3 border-b border-borderClr/40 pb-2">
+                            <h4 class="text-sm font-bold text-white flex items-center">
+                                <i class="fa-solid fa-database mr-2 text-accentCyan"></i>
+                                Database Health &amp; Hygiene
+                            </h4>
+                            <button onclick="loadHealthPanel()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-2 py-1 rounded text-[10px] font-bold transition">
+                                <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                            </button>
+                        </div>
+                        <div id="db-health-summary" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] font-mono text-gray-300">
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">Scheduler</span>
+                                <span id="dbh-scheduler">—</span>
+                            </div>
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">Next Cycle</span>
+                                <span id="dbh-next">—</span>
+                            </div>
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">Quarantined</span>
+                                <span id="dbh-quarantined">—</span>
+                            </div>
+                            <div class="bg-darkBg/40 border border-borderClr/40 rounded p-2">
+                                <span class="text-textMuted block text-[9px] uppercase">Last Audit</span>
+                                <span id="dbh-audit">—</span>
+                            </div>
+                        </div>
+                        <div class="mt-3 text-[10px] uppercase tracking-widest text-textMuted mb-1">Cleanup Plan (read-only)</div>
+                        <div id="db-health-plan" class="grid grid-cols-1 md:grid-cols-3 gap-2 text-[10px] font-mono text-gray-300"></div>
+                        <div id="db-health-errors" class="mt-2 text-[10px] font-mono text-red-400"></div>
+                    </div>
                         </div>
                     </div>
                 </div>
