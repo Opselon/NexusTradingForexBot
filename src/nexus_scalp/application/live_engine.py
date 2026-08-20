@@ -118,6 +118,10 @@ from nexus_scalp.strategies.factory import (
 )
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
+# RUNTIME CONFIGURATION (hot reload): the authoritative runtime provider.
+# Consumers read the current immutable snapshot; live.yaml is bootstrap-only.
+from nexus_scalp.configuration import RuntimeConfigStore
+
 logger = get_logger("nexus_scalp.application.live_engine")
 
 
@@ -194,6 +198,13 @@ class LiveEngine:
         self.adapter = adapter
         self.audit = audit_repo or AuditRepository()
         self.force_fresh_model = bool(force_fresh_model)
+
+        # =====================================================================
+        # RUNTIME CONFIGURATION (hot reload core): the authoritative
+        # versioned provider. live.yaml is BOOTSTRAP-only; after startup the
+        # engine consumes the immutable snapshot (see _sync_runtime_config).
+        # =====================================================================
+        self.runtime_config = RuntimeConfigStore(bootstrap=config)
 
         # Audit retention purge (BUG-054): throttled to once per 6h, kicked via
         # asyncio.to_thread from the run loop, fully failure-isolated. Runs
