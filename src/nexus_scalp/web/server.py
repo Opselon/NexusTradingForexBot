@@ -1562,6 +1562,45 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def get_status() -> dict[str, Any]:
         return get_system_state()
 
+    # Docker/native health probe (DOCKER-REPAIR, 2026-08-20):
+    # * 200 with verdict READY or DEGRADED -> healthy
+    # * 200 with verdict NOT READY           -> degraded (dependencies missing,
+    #   e.g. model not yet provisioned) — used by the container healthcheck
+    # * 503                                   -> unhealthy (dependency check raised)
+    # Verdict semantics are the HealthEngine contract: READY requires
+    # SYSTEM/RUNTIME/CONFIGURATION/DATABASE/MODEL/FEATURE_SCHEMA all PASS;
+    # optional subsystems (NEWS/WORKERS/TELEGRAM/...) may be WARNING.
+    @app.get("/health")
+    def health_probe() -> dict[str, Any]:
+        try:
+            from nexus_scalp.release.health import HealthEngine
+
+            verdict, entries = HealthEngine().overall()
+            checks = [e.to_dict() for e in entries]
+            critical = [
+                e["category"] for e in checks if e.get("verdict") == "FAIL"
+            ]
+            if verdict == "NOT READY" or critical:
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "verdict": verdict,
+                        "checks": checks,
+                        "critical_failures": critical,
+                    },
+                )
+            return {
+                "status": "ok",
+                "verdict": verdict,
+                "checks": checks,
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail={"verdict": "UNHEALTHY", "error": str(exc)}
+            ) from exc
+
     # TASK-11: Database health / hygiene state (real backend data — never fake).
     @app.get("/api/db/hygiene")
     def get_db_hygiene() -> dict[str, Any]:
