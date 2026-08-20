@@ -379,8 +379,14 @@ class DigestResolver:
             digest, name = parts[0], parts[1].strip().lstrip("*")
             if len(digest) != 64:
                 continue
-            out[name] = digest.lower()
-            out[name.rsplit("/", 1)[-1]] = digest.lower()
+            digest = digest.lower()
+            for key in (name, name.rsplit("/", 1)[-1]):
+                if key in out and out[key] != digest:
+                    # Same payload listed twice with DIFFERENT digests
+                    # (duplicate line in one checksum file): fail safe.
+                    out[key] = "*CONFLICT*"
+                else:
+                    out[key] = digest
         return out
 
     @classmethod
@@ -416,6 +422,11 @@ class DigestResolver:
                 continue
             table = cls._parse_sha256sums(txt)
             hit = table.get(target_name) or table.get(base)
+            if hit == "*CONFLICT*":
+                decisions.append(
+                    f"checksum asset {ca.get('name')} lists {base} with CONFLICTING digests — fail safe"
+                )
+                continue
             if hit:
                 matches.append(hit)
                 decisions.append(f"digest found in checksum asset {ca.get('name')}")

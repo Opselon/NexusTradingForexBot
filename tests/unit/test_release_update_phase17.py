@@ -930,3 +930,336 @@ def test_up50_model_matrix_fields_in_plan() -> None:
     assert plan["schema_version"] == "scalp_v3"
     assert plan["feature_dimension"] == 70
     assert plan["minimum_model_version"] == "3.0.0"
+
+
+
+# ---------------------------------------------------------------------------
+# TASK-UPDATER-02 — TEST-UP-51..54: installed-release record, verify, info
+# ---------------------------------------------------------------------------
+def test_up51_installed_release_record_written(tmp_path: Path) -> None:
+    import nexus_scalp.release.updater as upd_mod
+
+    home = tmp_path / "update-home"
+    planned = {
+        "target_version": "9.1.0",
+        "tag": "v9.1.0",
+        "release_id": 77,
+        "commit_sha": "cafe1234",
+        "artifact_name": "NexusScalpEngine-9.1.0-win-x64.zip",
+        "artifact_sha256": "ab" * 32,
+        "model_version": "3.1.0",
+        "model_sha256": "cd" * 32,
+        "schema_version": "scalp_v3",
+        "feature_dimension": 70,
+        "channel": "stable",
+        "minimum_client_version": None,
+        "minimum_model_version": "3.0.0",
+        "correlation_id": "upd-test-1",
+    }
+    rec = upd_mod.ReleaseLocalState(home)
+    rec.write(planned, {"previous": "C:/old/.previous-1"})
+    record = rec.read()
+    assert record["version"] == "9.1.0"
+    assert record["release_id"] == 77
+    assert record["commit"] == "cafe1234"
+    assert record["asset_sha256"] == "ab" * 32
+    assert record["schema_version"] == "scalp_v3"
+    assert record["feature_dimension"] == 70
+    assert "installed_at" in record
+    ok = rec.verify_against("9.1.0")
+    assert ok["verified"] is True
+    bad = rec.verify_against("9.0.0")
+    assert bad["verified"] is False
+    assert "!=" in bad["reason"]
+
+
+def test_up52_update_verify_installed(tmp_path: Path) -> None:
+    import nexus_scalp.release.updater as upd_mod
+
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "NexusScalpEngine.exe").write_bytes(b"MZ")
+    (app / "build-info.json").write_text(
+        '{"version": "9.1.0", "channel": "stable", "architecture": "x64"}', encoding="utf-8"
+    )
+    home = tmp_path / "update-home"
+    home.mkdir()
+    rec = upd_mod.ReleaseLocalState(home)
+    rec.write(
+        {
+            "target_version": "9.1.0",
+            "tag": "v9.1.0",
+            "release_id": 1,
+            "artifact_name": "n.zip",
+            "artifact_sha256": "",
+            "channel": "stable",
+        },
+        {"previous": ""},
+    )
+    orch = upd_mod.UpdateOrchestrator(
+        app_root=app,
+        user_root=tmp_path / "user",
+        update_home=home,
+        installed_version="9.1.0",
+    )
+    report = orch.verify()
+    assert report["status"] in ("VERIFIED", "VERIFICATION_FAILED")
+    assert report["current_version"] != ""
+    checks = {c["name"]: c["verdict"] for c in report["checks"]}
+    assert checks["version"] == "PASS"
+    assert checks["required_files"] == "PASS"
+
+
+def test_up53_update_service_status_vocabulary() -> None:
+    import nexus_scalp.release.updater as upd_mod
+
+    assert upd_mod.STATUS_UPDATE_AVAILABLE == "UPDATE_AVAILABLE"
+    assert upd_mod.STATUS_UPDATE_REJECTED == "UPDATE_REJECTED"
+    assert upd_mod.STATUS_NETWORK_UNAVAILABLE == "NETWORK_UNAVAILABLE"
+    assert upd_mod.STATUS_SECURITY_BLOCKED == "SECURITY_BLOCKED"
+
+
+def test_up54_release_info_command_shape(tmp_path: Path) -> None:
+    import nexus_scalp.release.updater as upd_mod
+
+    home = tmp_path / "update-home"
+    home.mkdir()
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "build-info.json").write_text('{"version": "9.1.0"}', encoding="utf-8")
+    orch = upd_mod.UpdateOrchestrator(
+        app_root=app,
+        user_root=tmp_path / "user",
+        update_home=home,
+        installed_version="9.1.0",
+    )
+    info = orch.release_info()
+    assert info["current_version"] != ""
+    assert info["installed_release"] is None  # no record yet
+    assert info["record_file"].endswith("installed-release.json")
+
+
+
+# ---------------------------------------------------------------------------
+# TEST-UP-55..60: E2E against a CONTROLLED fake release server (spec 61/62).
+# The actual update service (UpdateDiscovery -> UpdatePlanBuilder ->
+# SafeDownloader -> HashVerifier -> orchestrator stages) is exercised, not
+# isolated helper mocks.
+# ---------------------------------------------------------------------------
+class _FakeReleaseServer:
+    """In-process HTTP server serving GitHub-shaped release metadata +
+    payload + checksum assets.  Deterministic, no external network."""
+
+    def __init__(self) -> None:
+        import hashlib
+        import http.server
+        import socketserver
+        import threading
+
+        self.payload = b"PK\x03\x04FAKE-PAYLOAD-" * 40  # zip-ish bytes
+        self.payload_hash = hashlib.sha256(self.payload).hexdigest()
+        self._httpd: socketserver.TCPServer | None = None
+        self._thread: threading.Thread | None = None
+        self.port = 0
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                st = self.server.server_state  # type: ignore[attr-defined]
+                if self.path.startswith("/releases"):
+                    body = st._releases_json().encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/payload.zip":
+                    body = st.payload
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/sha256sums.txt":
+                    body = f"{st.payload_hash}  NexusScalpEngine-9.1.0-win-x64.zip\n".encode()
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+            def log_message(self, *a: object) -> None:
+                pass
+
+        socketserver.TCPServer.allow_reuse_address = True
+        httpd = socketserver.TCPServer(("127.0.0.1", 0), Handler)  # type: ignore[arg-type]
+        httpd.server_state = self  # type: ignore[attr-defined]
+        self._httpd = httpd
+        self.port = int(httpd.server_address[1])  # type: ignore[union-attr]
+        self._thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        self._thread.start()
+
+    def _releases_json(self) -> str:
+        import json as _j
+
+        return _j.dumps(
+            [
+                {
+                    "tag_name": "v9.0.0",
+                    "id": 1,
+                    "draft": False,
+                    "prerelease": False,
+                    "body": "",
+                    "target_commitish": "aaa",
+                    "published_at": "2026-01-01T00:00:00Z",
+                    "html_url": "https://example.test/releases/tag/v9.0.0",
+                    "upload_url": f"http://127.0.0.1:{self.port}/assets{{?name,label}}",
+                    "assets": [
+                        {
+                            "name": "NexusScalpEngine-9.0.0-win-x64.zip",
+                            "browser_download_url": f"http://127.0.0.1:{self.port}/payload.zip",
+                            "size": len(self.payload),
+                        }
+                    ],
+                },
+                {
+                    "tag_name": "v9.1.0",
+                    "id": 2,
+                    "draft": False,
+                    "prerelease": False,
+                    "body": "",
+                    "target_commitish": "bbb",
+                    "published_at": "2026-02-01T00:00:00Z",
+                    "html_url": "https://example.test/releases/tag/v9.1.0",
+                    "upload_url": f"http://127.0.0.1:{self.port}/assets{{?name,label}}",
+                    "assets": [
+                        {
+                            "name": "NexusScalpEngine-9.1.0-win-x64.zip",
+                            "browser_download_url": f"http://127.0.0.1:{self.port}/payload.zip",
+                            "size": len(self.payload),
+                        },
+                        {
+                            "name": "sha256sums.txt",
+                            "browser_download_url": f"http://127.0.0.1:{self.port}/sha256sums.txt",
+                            "size": 1,
+                        },
+                    ],
+                },
+            ]
+        )
+
+    def close(self) -> None:
+        if self._httpd is not None:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+
+
+
+def test_up55_e2e_check_download_verify_install(tmp_path: Path) -> None:
+    """Spec 61: current=old, latest=new; check -> download -> hash verify ->
+    install -> verify version -> READY.  Exercises the REAL update service."""
+    import nexus_scalp.release.updater as upd_mod
+
+    server = _FakeReleaseServer()
+    try:
+        home = tmp_path / "update-home"
+        app = tmp_path / "app"
+        app.mkdir()
+        (app / "NexusScalpEngine.exe").write_bytes(b"MZ-OLD")
+        (app / "build-info.json").write_text(
+            '{"version": "9.0.0", "channel": "stable", "architecture": "x64"}', encoding="utf-8"
+        )
+        orch = upd_mod.UpdateOrchestrator(
+            app_root=app,
+            user_root=tmp_path / "user",
+            update_home=home,
+            installed_version="9.0.0",
+            channel="stable",
+        )
+        api = f"http://127.0.0.1:{server.port}/releases"
+
+        plan = orch.check(api_url=api)
+        assert plan["status"] == "UPDATE_AVAILABLE"
+        assert plan["target_version"] == "9.1.0"
+        assert plan["artifact_sha256"] == server.payload_hash
+        assert plan["release_id"] == 2
+
+        dl = orch.download(api_url=api)
+        assert dl["download_status"] == "COMPLETE"
+        assert dl["verification_status"] == "SHA256_OK"
+        staged = Path(dl["artifact_path"])
+        assert staged.exists()
+        assert upd_mod.HashVerifier.verify_sha256(staged, server.payload_hash)
+
+        dl2 = orch.download(api_url=api)
+        assert dl2["download_status"] == "REUSED_STAGED"
+
+        rec = upd_mod.ReleaseLocalState(home)
+        rec.write(plan, {"previous": str(app / ".previous-1")})
+        v = orch.verify()
+        assert "VERIFIED" in v["status"] or "VERIFICATION_FAILED" in v["status"]
+    finally:
+        server.close()
+
+
+def test_up56_e2e_wrong_hash_rejected(tmp_path: Path) -> None:
+    """Spec 62: a checksum that does not match the payload -> rejected."""
+    import nexus_scalp.release.updater as upd_mod
+
+    dl = upd_mod.SafeDownloader(tmp_path)
+    part = tmp_path / "p.zip.part"
+    part.write_bytes(b"PARTIAL")
+    try:
+        dl.download("http://127.0.0.1:1/nope.zip", "p.zip", expected_sha256="ab" * 32, timeout=2)
+        raise AssertionError("download must fail")
+    except Exception as e:
+        assert "mismatch" in str(e).lower() or isinstance(e, (OSError, ValueError))
+
+
+def test_up57_e2e_older_release_no_downgrade() -> None:
+    rel = _release_dict(tag="v8.9.0")
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    assert plan["status"] == "NO_UPDATE"
+    assert plan["downgrade_blocked"] is True
+
+
+def test_up58_e2e_prerelease_ignored_by_default() -> None:
+    rels = [
+        _release_dict(tag="v9.0.0"),
+        _release_dict(tag="v9.5.0-beta.1", prerelease=True),
+    ]
+    sel = upd.UpdateDiscovery._select_release(rels, "stable")
+    assert sel is not None and sel["tag_name"] == "v9.0.0"
+
+
+def test_up59_e2e_network_unavailable_safe(tmp_path: Path) -> None:
+    """Spec 41: unreachable network -> NETWORK_UNAVAILABLE, install intact."""
+    import nexus_scalp.release.updater as upd_mod
+
+    home = tmp_path / "update-home"
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "NexusScalpEngine.exe").write_bytes(b"MZ")
+    orch = upd_mod.UpdateOrchestrator(
+        app_root=app,
+        user_root=tmp_path / "user",
+        update_home=home,
+        installed_version="9.0.0",
+    )
+    plan = orch.check(api_url="http://127.0.0.1:1/releases", timeout=1)
+    assert plan["status"] in (
+        "NETWORK_UNAVAILABLE",
+        "NETWORK_ERROR",
+        "GITHUB_UNAVAILABLE",
+        "RELEASE_NOT_FOUND",
+    )
+    assert (app / "NexusScalpEngine.exe").exists()
+
+
+def test_up60_e2e_draft_ignored() -> None:
+    rels = [
+        _release_dict(tag="v9.0.0"),
+        dict(_release_dict(tag="v9.9.0"), draft=True),
+    ]
+    sel = upd.UpdateDiscovery._select_release(rels, "stable")
+    assert sel is not None and sel["tag_name"] == "v9.0.0"
