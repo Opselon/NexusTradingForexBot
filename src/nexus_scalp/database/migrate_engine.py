@@ -140,20 +140,64 @@ class SqliteToPostgresMigrator:
         """Financial precision watch-list per table (audit + broker + candle)."""
         return {
             "audit_ledger": [
-                "pnl", "commission", "swap", "gross_pnl_usd", "net_pnl_usd",
-                "mae", "mfe", "MAE_usd", "MFE_usd", "account_balance_after",
-                "account_equity_after", "drawdown_percent_after",
-                "exit_reason_confidence", "ai_confidence_at_open",
+                "pnl",
+                "commission",
+                "swap",
+                "gross_pnl_usd",
+                "net_pnl_usd",
+                "mae",
+                "mfe",
+                "MAE_usd",
+                "MFE_usd",
+                "account_balance_after",
+                "account_equity_after",
+                "drawdown_percent_after",
+                "exit_reason_confidence",
+                "ai_confidence_at_open",
             ],
             "audit_broker_trades": [
-                "gross_pnl", "commission", "swap", "fee", "net_pnl",
-                "entry_price", "exit_price", "volume",
+                "gross_pnl",
+                "commission",
+                "swap",
+                "fee",
+                "net_pnl",
+                "entry_price",
+                "exit_price",
+                "volume",
             ],
-            "audit_broker_deals": ["profit", "fee", "swap", "commission", "net_result", "price", "volume"],
-            "audit_broker_orders": ["price_open", "price_current", "price_stop_limit", "sl", "tp", "volume_initial", "volume_current"],
+            "audit_broker_deals": [
+                "profit",
+                "fee",
+                "swap",
+                "commission",
+                "net_result",
+                "price",
+                "volume",
+            ],
+            "audit_broker_orders": [
+                "price_open",
+                "price_current",
+                "price_stop_limit",
+                "sl",
+                "tp",
+                "volume_initial",
+                "volume_current",
+            ],
             "audit_account_snapshots": ["balance", "equity", "margin_free", "peak_equity"],
-            "audit_signals": ["confidence", "proposed_entry", "stop_loss", "take_profit", "htf_score", "smc_score"],
-            "audit_experience_outcomes": ["realized_pnl_usd", "realized_r_multiple", "mae_usd", "mfe_usd"],
+            "audit_signals": [
+                "confidence",
+                "proposed_entry",
+                "stop_loss",
+                "take_profit",
+                "htf_score",
+                "smc_score",
+            ],
+            "audit_experience_outcomes": [
+                "realized_pnl_usd",
+                "realized_r_multiple",
+                "mae_usd",
+                "mfe_usd",
+            ],
         }
         merged = dict(self.options.financial_tables or {})
         merged.update(_DEFAULT_FINANCIAL)
@@ -235,7 +279,9 @@ class SqliteToPostgresMigrator:
         return created
 
     # ------------------------------------------------------------- run
-    def run(self, on_progress: Callable[[str, int, int, int], None] | None = None) -> MigrationReport:
+    def run(
+        self, on_progress: Callable[[str, int, int, int], None] | None = None
+    ) -> MigrationReport:
         report = MigrationReport(
             source=self._src_driver.name,
             destination=self._pg_driver.name,
@@ -339,8 +385,12 @@ class SqliteToPostgresMigrator:
                 cols_to_check = financial.get(t, [])
                 for c in cols_to_check[:8]:
                     try:
-                        s1 = float(self._src_driver.scalar(f"SELECT COALESCE(SUM({c}),0) FROM {t}") or 0)
-                        s2 = float(self._pg_driver.scalar(f'SELECT COALESCE(SUM("{c}"),0) FROM "{t}"') or 0)
+                        s1 = float(
+                            self._src_driver.scalar(f"SELECT COALESCE(SUM({c}),0) FROM {t}") or 0
+                        )
+                        s2 = float(
+                            self._pg_driver.scalar(f'SELECT COALESCE(SUM("{c}"),0) FROM "{t}"') or 0
+                        )
                         if abs(s1 - s2) > max(0.01, abs(s1) * 1e-9):
                             problems.append(f"{t}.{c}: sum {s1} != {s2}")
                     except Exception:

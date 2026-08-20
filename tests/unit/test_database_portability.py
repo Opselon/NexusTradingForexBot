@@ -15,6 +15,7 @@ Covers the SQLite <-> PostgreSQL portability layer:
 PostgreSQL integration tests run only when NSE_PG_TEST_URL is set
 (or a local docker-compose PG is reachable) — skipped otherwise.
 """
+
 from __future__ import annotations
 
 import json
@@ -71,9 +72,12 @@ class TestProviderSelection:
         assert DatabaseProvider.from_url("") is DatabaseProvider.SQLITE
 
     def test_default_config_is_sqlite(self):
-        cfg = load_database_config("audit", settings_db_path=str(REPO_ROOT / "artifacts" / "audit.db"))
+        cfg = load_database_config(
+            "audit", settings_db_path=str(REPO_ROOT / "artifacts" / "audit.db")
+        )
         assert cfg.is_sqlite
         assert cfg.sqlite_path.endswith("audit.db")
+
 
 # ---------------------------------------------------------------------------
 # DatabaseConfig + secret store
@@ -87,8 +91,11 @@ class TestDatabaseConfig:
 
     def test_postgres_roundtrip_never_round_trips_password(self):
         cfg = DatabaseConfig.for_postgres(
-            domain="audit", host="db.internal", port=5432,
-            database="nse_audit", username="nse_user",
+            domain="audit",
+            host="db.internal",
+            port=5432,
+            database="nse_audit",
+            username="nse_user",
         )
         d = cfg.to_dict()
         assert "password" not in d
@@ -119,10 +126,13 @@ class TestDatabaseConfig:
             "NSE_DATABASE__PG_DATABASE": "my_db",
             "NSE_DATABASE__PG_USER": "my_user",
         }
-        cfg = load_database_config("audit", env=env, settings_db_path=str(tmp_path / "nonexistent.db"))
+        cfg = load_database_config(
+            "audit", env=env, settings_db_path=str(tmp_path / "nonexistent.db")
+        )
         assert cfg.is_postgresql
         assert cfg.host == "pg1" and cfg.port == 5433
         assert cfg.database == "my_db" and cfg.username == "my_user"
+
 
 # ---------------------------------------------------------------------------
 # Portable driver contract (SQLite real; PostgreSQL via translate)
@@ -133,7 +143,9 @@ class TestDriverContract:
         d = get_driver(cfg)
         conn = d.connect_shared()
         d.configure_connection(conn)
-        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, px REAL)")
+        conn.execute(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, px REAL)"
+        )
         d.upsert("t", {"name": "a", "px": 1.0}, conn=conn)
         d.upsert("t", {"name": "a", "px": 2.0}, conn=conn)
         rows = d.query("SELECT * FROM t", conn=conn)
@@ -145,14 +157,22 @@ class TestDriverContract:
         d.close()
 
     def test_placeholder_translation(self):
-        assert _translate_placeholders("a = ? AND b = 'what?' AND c = ?") == "a = %s AND b = 'what?' AND c = %s"
-        assert _translate_placeholders('SELECT "col?x" FROM t WHERE y=?') == 'SELECT "col?x" FROM t WHERE y=%s'
+        assert (
+            _translate_placeholders("a = ? AND b = 'what?' AND c = ?")
+            == "a = %s AND b = 'what?' AND c = %s"
+        )
+        assert (
+            _translate_placeholders('SELECT "col?x" FROM t WHERE y=?')
+            == 'SELECT "col?x" FROM t WHERE y=%s'
+        )
 
     def test_upsert_semantics_on_sqlite(self):
         cfg = DatabaseConfig.for_sqlite("audit", uri="file::memory:?cache=shared")
         d = get_driver(cfg)
         conn = d.connect_shared()
-        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, px REAL)")
+        conn.execute(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, px REAL)"
+        )
         d.insert_ignore("t", {"name": "x", "px": 1.0}, conn=conn)
         d.insert_ignore("t", {"name": "x", "px": 9.0}, conn=conn)
         assert d.scalar("SELECT COUNT(*) FROM t", conn=conn) == 1
@@ -177,6 +197,7 @@ class TestDriverContract:
         assert d.scalar("SELECT COUNT(*) FROM t", conn=conn) == 1  # rolled back
         conn.close()
         d.close()
+
 
 # ---------------------------------------------------------------------------
 # DDL porting
@@ -221,6 +242,7 @@ class TestDdlPorting:
         out = port_create_table(ddl)
         assert "WITHOUT ROWID" not in out
 
+
 # ---------------------------------------------------------------------------
 # Migrator preview + safety
 # ---------------------------------------------------------------------------
@@ -256,6 +278,7 @@ class TestMigratorPreview:
         with pytest.raises(ValueError):
             SqliteToPostgresMigrator(pg, pg, MigrationOptions())
 
+
 # ---------------------------------------------------------------------------
 # Health service
 # ---------------------------------------------------------------------------
@@ -273,6 +296,7 @@ class TestHealthService:
         ui = load_ui_config()
         assert ui["provider"] == "sqlite"
         assert ui["password_set"] is False
+
 
 # ---------------------------------------------------------------------------
 # PostgreSQL integration (skipped without NSE_PG_TEST_URL)
@@ -298,8 +322,12 @@ class TestPostgresCrud:
         from nexus_scalp.database.config import DatabaseConfig
 
         return DatabaseConfig.for_postgres(
-            domain="audit", host="localhost", port=5432,
-            database="nse_audit", username="nse_user", ssl_mode="",
+            domain="audit",
+            host="localhost",
+            port=5432,
+            database="nse_audit",
+            username="nse_user",
+            ssl_mode="",
         )
 
     def _ensure_pw(self):
@@ -391,15 +419,19 @@ class TestPostgresCrud:
         src_path = str(Path(tmp) / "src.db")
         conn = sqlite3.connect(src_path)
         conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, px REAL)")
-        conn.executemany("INSERT INTO t VALUES (?, ?, ?)",
-                         [(i, f"row-{i}", i * 1.5) for i in range(1, 101)])
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?, ?)", [(i, f"row-{i}", i * 1.5) for i in range(1, 101)]
+        )
         conn.commit()
         conn.close()
 
         src = DatabaseConfig.for_sqlite("audit", path=src_path)
         dst = DatabaseConfig.for_postgres(
-            domain="audit", host="localhost", port=5432,
-            database="nse_audit", username="nse_user",
+            domain="audit",
+            host="localhost",
+            port=5432,
+            database="nse_audit",
+            username="nse_user",
         )
         mig = SqliteToPostgresMigrator(src, dst, MigrationOptions(batch_size=17))
         mig._pg_driver.execute("DROP TABLE IF EXISTS t")

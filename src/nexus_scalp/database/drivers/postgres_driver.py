@@ -313,7 +313,9 @@ class PostgreSQLDriver(DatabaseDriver):
             if own:
                 c.close()
 
-    def query_one(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> dict[str, Any] | None:
+    def query_one(
+        self, sql: str, args: Sequence[Any] = (), conn: Any = None
+    ) -> dict[str, Any] | None:
         own = conn is None
         c = conn or self.connect()
         try:
@@ -348,7 +350,9 @@ class PostgreSQLDriver(DatabaseDriver):
         except Exception:
             return -1
 
-    def _conflict_target(self, table: str, conn: Any, cols: list[str]) -> tuple[list[str], bool] | None:
+    def _conflict_target(
+        self, table: str, conn: Any, cols: list[str]
+    ) -> tuple[list[str], bool] | None:
         """Best conflict target for an upsert row.
 
         Returns (target_columns, covers_row): PK columns when they are all
@@ -423,7 +427,6 @@ class PostgreSQLDriver(DatabaseDriver):
         finally:
             if own:
                 c.close()
-
 
     def insert_ignore(self, table: str, row: dict[str, Any], conn: Any = None) -> None:
         own = conn is None

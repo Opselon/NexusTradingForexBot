@@ -109,7 +109,9 @@ class DatabaseDriver(ABC):
         """SELECT rows as dicts."""
 
     @abstractmethod
-    def query_one(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> dict[str, Any] | None:
+    def query_one(
+        self, sql: str, args: Sequence[Any] = (), conn: Any = None
+    ) -> dict[str, Any] | None:
         """First row or None."""
 
     @abstractmethod

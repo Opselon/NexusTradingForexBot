@@ -33,9 +33,7 @@ class DatabaseHealthService:
         self.domains: tuple[str, ...] = ("audit", "news", "candle_intel")
 
     def resolve_config(self, domain: str) -> DatabaseConfig:
-        return load_database_config(
-            domain, settings_db_path=self.settings_db_path, env=None
-        )
+        return load_database_config(domain, settings_db_path=self.settings_db_path, env=None)
 
     def check_domain(self, domain: str) -> dict[str, Any]:
         """Health snapshot for one domain (never raises)."""
@@ -129,7 +127,9 @@ class DatabaseHealthService:
         """Health for all domains + the active provider summary."""
         domains = {d: self.check_domain(d) for d in self.domains}
         providers = {d["provider"] for d in domains.values() if d.get("connected")}
-        active = providers.pop() if len(providers) == 1 else (",".join(sorted(providers)) or "sqlite")
+        active = (
+            providers.pop() if len(providers) == 1 else (",".join(sorted(providers)) or "sqlite")
+        )
         healthy = all(d["health"] == "Healthy" for d in domains.values() if d.get("connected"))
         warn = any(d["health"] in {"Warning", "Error"} for d in domains.values())
         return {

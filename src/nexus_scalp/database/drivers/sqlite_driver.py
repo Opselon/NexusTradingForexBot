@@ -210,7 +210,9 @@ class SQLiteDriver(DatabaseDriver):
             if own:
                 c.close()
 
-    def query_one(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> dict[str, Any] | None:
+    def query_one(
+        self, sql: str, args: Sequence[Any] = (), conn: Any = None
+    ) -> dict[str, Any] | None:
         own = conn is None
         c = conn or self.connect()
         try:
@@ -281,11 +283,14 @@ class SQLiteDriver(DatabaseDriver):
             return None
 
     def table_count(self, conn: Any = None) -> int:
-        return int(self.scalar(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
-            "AND name NOT LIKE 'sqlite_%'",
-            conn=conn,
-        ) or 0)
+        return int(
+            self.scalar(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%'",
+                conn=conn,
+            )
+            or 0
+        )
 
     def row_count(self, table: str, conn: Any = None) -> int:
         return int(self.scalar(f"SELECT COUNT(*) FROM {table}", conn=conn) or 0)

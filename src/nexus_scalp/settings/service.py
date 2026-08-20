@@ -456,7 +456,27 @@ class SettingsService:
             "status": self.telegram_config_status(),
         }
 
-    # ------------------------------------------------------------ Migration
+    # ------------------------------------------------------------
+    # DATABASE PORTABILITY (SQLite <-> PostgreSQL) — provider + PG config
+    # ------------------------------------------------------------
+
+    def set_postgres_config(self, cfg: dict[str, Any]) -> None:
+        """Persist the PostgreSQL connection config (non-secret fields)."""
+        for key in ("host", "port", "database", "username", "ssl_mode"):
+            if key in cfg:
+                self.db.set(f"database.postgres.{key}", cfg[key], source="USER_SETTINGS")
+        pwd = cfg.get("password")
+        if pwd:
+            self.secrets.set_secret("database.postgres.password", str(pwd))
+
+    def postgres_password_set(self) -> bool:
+        """True when a PostgreSQL password has been stored in the secret store."""
+        return self.secrets.get_secret("database.postgres.password") is not None
+
+    def set_database_provider(self, provider: str) -> None:
+        """Persist the ACTIVE database provider (sqlite | postgresql)."""
+        self.db.set("database.provider", provider, source="USER_SETTINGS")
+
     def migrate_legacy_yaml(self, legacy: dict[str, Any]) -> dict[str, Any]:
         """Idempotent, restart-safe migration of live.yaml telegram secrets.
 

@@ -80,9 +80,19 @@ def load_checkpoints(pg_driver: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _save_checkpoint(pg_driver: Any, table: str, *, last_rowid: int, rows_copied: int,
-                     total_rows: int, status: str = "RUNNING", batch_size: int = 0,
-                     last_error: str = "", checksum: str = "", finish: bool = False) -> None:
+def _save_checkpoint(
+    pg_driver: Any,
+    table: str,
+    *,
+    last_rowid: int,
+    rows_copied: int,
+    total_rows: int,
+    status: str = "RUNNING",
+    batch_size: int = 0,
+    last_error: str = "",
+    checksum: str = "",
+    finish: bool = False,
+) -> None:
     """Upsert one checkpoint row (separate short transaction)."""
     from datetime import UTC, datetime
 
@@ -152,9 +162,7 @@ def iter_table_batches(
             cols = src_driver.table_columns(table)
             pks = [c["name"] for c in cols if c.get("pk")]
             if not pks:
-                raise MigrationError(
-                    f"table {table}: no rowid and no primary key — cannot migrate"
-                )
+                raise MigrationError(f"table {table}: no rowid and no primary key — cannot migrate")
             order_col = pks[0]
             where = f"{order_col} > ?"
             order_by = f"{order_col} ASC"
@@ -198,7 +206,12 @@ def copy_table(
 
     ensure_checkpoint_table(pg_driver)
     checkpoints = load_checkpoints(pg_driver)
-    cp = checkpoints.get(table) or {"last_rowid": 0, "rows_copied": 0, "total_rows": 0, "status": ""}
+    cp = checkpoints.get(table) or {
+        "last_rowid": 0,
+        "rows_copied": 0,
+        "total_rows": 0,
+        "status": "",
+    }
     if cp.get("status") == "COMPLETE" and not force_restart:
         return {
             "table": table,
@@ -219,13 +232,26 @@ def copy_table(
 
     total_rows = int(src_driver.row_count(table))
     if total_rows == 0:
-        _save_checkpoint(pg_driver, table, last_rowid=0, rows_copied=0, total_rows=0,
-                         status="COMPLETE", batch_size=batch_size)
+        _save_checkpoint(
+            pg_driver,
+            table,
+            last_rowid=0,
+            rows_copied=0,
+            total_rows=0,
+            status="COMPLETE",
+            batch_size=batch_size,
+        )
         return {"table": table, "status": "EMPTY", "rows_copied": 0, "duration_ms": 0.0}
 
-    _save_checkpoint(pg_driver, table, last_rowid=int(cp.get("last_rowid") or 0),
-                     rows_copied=int(cp.get("rows_copied") or 0), total_rows=total_rows,
-                     status="RUNNING", batch_size=batch_size)
+    _save_checkpoint(
+        pg_driver,
+        table,
+        last_rowid=int(cp.get("last_rowid") or 0),
+        rows_copied=int(cp.get("rows_copied") or 0),
+        total_rows=total_rows,
+        status="RUNNING",
+        batch_size=batch_size,
+    )
     rows_copied = int(cp.get("rows_copied") or 0)
     last_rowid = int(cp.get("last_rowid") or 0)
     batch_no = 0
@@ -249,7 +275,11 @@ def copy_table(
 
     try:
         for batch in iter_table_batches(
-            src_driver, table, col_names, batch_size=batch_size, order_col=order_col,
+            src_driver,
+            table,
+            col_names,
+            batch_size=batch_size,
+            order_col=order_col,
             start_after=last_rowid,
         ):
             batch_no += 1
@@ -263,19 +293,41 @@ def copy_table(
             last_rowid = max(last_rowid, batch_last)
             rows_copied += len(batch)
             chk = _checksum_for(batch)
-            _save_checkpoint(pg_driver, table, last_rowid=last_rowid, rows_copied=rows_copied,
-                             total_rows=total_rows, status="RUNNING", batch_size=batch_size,
-                             checksum=chk)
+            _save_checkpoint(
+                pg_driver,
+                table,
+                last_rowid=last_rowid,
+                rows_copied=rows_copied,
+                total_rows=total_rows,
+                status="RUNNING",
+                batch_size=batch_size,
+                checksum=chk,
+            )
             if on_progress:
                 on_progress(table, rows_copied, total_rows, batch_no)
     except Exception as exc:
-        _save_checkpoint(pg_driver, table, last_rowid=last_rowid, rows_copied=rows_copied,
-                         total_rows=total_rows, status="FAILED", batch_size=batch_size,
-                         last_error=str(exc))
+        _save_checkpoint(
+            pg_driver,
+            table,
+            last_rowid=last_rowid,
+            rows_copied=rows_copied,
+            total_rows=total_rows,
+            status="FAILED",
+            batch_size=batch_size,
+            last_error=str(exc),
+        )
         raise MigrationError(f"table {table} failed at batch {batch_no}: {exc}") from exc
 
-    _save_checkpoint(pg_driver, table, last_rowid=last_rowid, rows_copied=rows_copied,
-                     total_rows=total_rows, status="COMPLETE", batch_size=batch_size, finish=True)
+    _save_checkpoint(
+        pg_driver,
+        table,
+        last_rowid=last_rowid,
+        rows_copied=rows_copied,
+        total_rows=total_rows,
+        status="COMPLETE",
+        batch_size=batch_size,
+        finish=True,
+    )
     return {
         "table": table,
         "status": "COMPLETE",

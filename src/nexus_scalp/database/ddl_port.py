@@ -33,7 +33,11 @@ def port_column_type(declared: str) -> str:
     if "(" in name:
         name = name.split("(", 1)[0]
     mapped = _type_map().get(name)
-    return mapped or (name if name in {"DOUBLE PRECISION", "TIMESTAMPTZ", "BYTEA", "JSONB", "BIGSERIAL", "SERIAL"} else "TEXT")
+    return mapped or (
+        name
+        if name in {"DOUBLE PRECISION", "TIMESTAMPTZ", "BYTEA", "JSONB", "BIGSERIAL", "SERIAL"}
+        else "TEXT"
+    )
 
 
 def port_create_table(ddl: str) -> str | None:
@@ -106,10 +110,14 @@ def port_create_table(ddl: str) -> str | None:
         constraints = tokens[1] if len(tokens) > 1 else ""
         # INTEGER PRIMARY KEY AUTOINCREMENT / INTEGER PRIMARY KEY (rowid
         # alias) -> BIGSERIAL PRIMARY KEY; drop any AUTOINCREMENT suffix.
-        if coltype.upper() in {"INTEGER", "INT"} and re.match(r"PRIMARY\s+KEY\b", constraints, re.I):
+        if coltype.upper() in {"INTEGER", "INT"} and re.match(
+            r"PRIMARY\s+KEY\b", constraints, re.I
+        ):
             constraints = re.sub(r"AUTOINCREMENT", "", constraints, flags=re.I)
             constraints = re.sub(r"\bPRIMARY\s+KEY\b", "", constraints, flags=re.I).strip()
-            out_lines.append(f"{colname} BIGSERIAL PRIMARY KEY" + (f" {constraints}" if constraints else ""))
+            out_lines.append(
+                f"{colname} BIGSERIAL PRIMARY KEY" + (f" {constraints}" if constraints else "")
+            )
             continue
         ported = port_column_type(coltype)
         out_lines.append(f"{colname} {ported}" + (f" {constraints}" if constraints else ""))

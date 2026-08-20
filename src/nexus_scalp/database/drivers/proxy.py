@@ -84,10 +84,10 @@ def _rewrite_insert_or(sql: str, pk_cache: dict[str, list[str]]) -> tuple[str, s
     """
     upper = sql.upper().lstrip()
     if upper.startswith("INSERT OR IGNORE"):
-        rest = sql[sql.upper().find("INSERT OR IGNORE") + len("INSERT OR IGNORE"):]
+        rest = sql[sql.upper().find("INSERT OR IGNORE") + len("INSERT OR IGNORE") :]
         return ("INSERT " + rest, "ignore")
     if upper.startswith("INSERT OR REPLACE"):
-        rest = sql[sql.upper().find("INSERT OR REPLACE") + len("INSERT OR REPLACE"):]
+        rest = sql[sql.upper().find("INSERT OR REPLACE") + len("INSERT OR REPLACE") :]
         return ("INSERT " + rest, "replace")
     return (sql, "none")
 
@@ -115,7 +115,9 @@ class PortableConnection:
         psql, kind = _rewrite_insert_or(psql, self._pk_cache)
         params = tuple(args) if args is not None else ()
         if kind == "ignore":
-            cur = self._pg.execute(self._strip_semicolon(psql) + f" {_PG_NO_TARGET}", params or None)
+            cur = self._pg.execute(
+                self._strip_semicolon(psql) + f" {_PG_NO_TARGET}", params or None
+            )
         elif kind == "replace":
             cur = self._pg.execute(psql, params or None)
             # If the statement has no ON CONFLICT yet, add it.
