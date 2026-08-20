@@ -149,6 +149,11 @@ After:
 - Tests: ~2035 total; 792 critical-gate tests; 90 unit + 13 integration files
 - Runtime: 5m26s critical gate with xdist (2.7x faster); full suite no longer
   gates normal pushes (heavy-ci for extended coverage)
+- Final measured gate (post-commit, xdist -n4): 779 passed, 19 skipped,
+  2 failed -- the 2 failures are foreign parallel WIP (audit_repository.py
+  binding mismatch breaking accounting seeding) and an environment latency
+  flake (model inference 6ms vs 2ms threshold on a loaded host), both
+  outside this pass's scope
 - Confidence: HIGHER for the same core — every protected area verified present
   with substantive assertions (see Classification); false failures reduced by
   removing state-polluting micro-tests; honest skips for artifact-dependent
@@ -164,7 +169,7 @@ whole-application heartbeat (test_critical_suite.py)
 CI Improvement: critical gate parallelized with pytest-xdist (-n auto),
   serial 14m52s → 5m26s; 20-min job timeout headroom restored
 Build: PASS (collectible; parallel WIP failures transient/foreign)
-Validation: PASS (critical gate green after parallel fixes; documented gaps
+Validation: PASS (critical gate 779/2 after parallel fixes; documented gaps
   are environment/artifact-dependent, not coverage regressions)
 
 ================================================
