@@ -49,16 +49,60 @@ class ImpactAnalyzer:
         Every number is derived from observed rows; anything not measurable
         stays 0/None rather than being guessed (spec 25: no fabricated
         numbers).
+
+        Occurrence-aware (spec 22/25): when a db_path is available, the
+        per-family counts come from the occurrence engine (occurrences.py)
+        keyed by the incident's identity fields, so a scan-time incident is
+        never reported as '0 trades / 0 records' when real rows exist.
         """
+        occ_counts: dict[str, int | None] = {}
+        occ_semantics = "UNKNOWN_IMPACT"
+        occ_note = ""
+        if self.db_path:
+            try:
+                from nexus_scalp.incidents.occurrences import (
+                    attach_occurrence_evidence,
+                    count_families,
+                )
+
+                occ = count_families(incident, self.db_path)
+                occ_counts = occ["counts"] or {}
+                occ_semantics = occ.get("semantics") or "UNKNOWN_IMPACT"
+                attach_occurrence_evidence(incident, occ)
+                known = [
+                    (k, int(v))
+                    for k, v in occ_counts.items()
+                    if v is not None and int(v) > 0
+                ]
+                if known:
+                    occ_note = "occurrences: " + ", ".join(
+                        f"{k}={v}" for k, v in sorted(known)
+                    )
+            except Exception:
+                occ_semantics = "UNKNOWN_IMPACT"
+        occ_ledger = occ_counts.get("affected_ledger_records") or 0
+        occ_trades = occ_counts.get("affected_trades") or 0
+        occ_exec = occ_counts.get("affected_executions") or 0
+        occ_ord = occ_counts.get("affected_orders") or 0
+        occ_pos = occ_counts.get("affected_positions") or 0
+        occ_res = occ_counts.get("affected_research_records") or 0
+        if occ_semantics in ("ZERO_IMPACT", "MEASURED", "UNKNOWN_IMPACT"):
+            affected_record_count = max(int(occ_ledger), int(occ_pos), int(occ_exec))
+        else:
+            affected_record_count = len(incident.affected_records)
         imp = IncidentImpact(
-            affected_records=len(incident.affected_records),
-            affected_trades=len({r for r in incident.affected_records if str(r).isdigit()}),
+            affected_records=affected_record_count,
+            affected_trades=int(occ_trades),
             affected_models=len(incident.affected_models),
-            affected_research_runs=0,
+            affected_research_runs=int(occ_res),
             affected_ui_endpoints=_ui_endpoints_for(incident),
             affected_users=len(incident.affected_users),
             blast_radius=_classify_blast_radius(incident, affected_tables or []),
         )
+        if occ_semantics in ("ZERO_IMPACT", "MEASURED", "UNKNOWN_IMPACT"):
+            imp.notes.append(f"occurrence_semantics={occ_semantics}")
+            if occ_note:
+                imp.notes.append(occ_note)
         if incident.timeline:
             ts = [t.timestamp for t in incident.timeline if t.timestamp]
             if ts:
