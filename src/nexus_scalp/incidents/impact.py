@@ -69,21 +69,14 @@ class ImpactAnalyzer:
                 occ_counts = occ["counts"] or {}
                 occ_semantics = occ.get("semantics") or "UNKNOWN_IMPACT"
                 attach_occurrence_evidence(incident, occ)
-                known = [
-                    (k, int(v))
-                    for k, v in occ_counts.items()
-                    if v is not None and int(v) > 0
-                ]
-                if known:
-                    occ_note = "occurrences: " + ", ".join(
-                        f"{k}={v}" for k, v in sorted(known)
-                    )
+                occ_known = [(k, int(v)) for k, v in occ_counts.items() if v is not None and int(v) > 0]
+                if occ_known:
+                    occ_note = "occurrences: " + ", ".join(f"{k}={v}" for k, v in sorted(occ_known))
             except Exception:
                 occ_semantics = "UNKNOWN_IMPACT"
         occ_ledger = occ_counts.get("affected_ledger_records") or 0
         occ_trades = occ_counts.get("affected_trades") or 0
         occ_exec = occ_counts.get("affected_executions") or 0
-        occ_ord = occ_counts.get("affected_orders") or 0
         occ_pos = occ_counts.get("affected_positions") or 0
         occ_res = occ_counts.get("affected_research_records") or 0
         if occ_semantics in ("ZERO_IMPACT", "MEASURED", "UNKNOWN_IMPACT"):

@@ -42,7 +42,7 @@ def _connect(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def _count(conn: sqlite3.Connection, sql: str, args: tuple[Any, ...] = ()) -> int:
+def _count(conn: sqlite3.Connection, sql: str, args: tuple[Any, ...] | list[Any] = ()) -> int:
     try:
         row = conn.execute(sql, args).fetchone()
         return int(row[0]) if row and row[0] is not None else 0
@@ -94,7 +94,9 @@ def _match_sql(cols: str, identities: dict[str, list[str]]) -> tuple[str, list[A
             # CAST(? AS TEXT) so INTEGER-typed key columns (ticket INTEGER,
             # trade_id INTEGER) match TEXT identity values from incidents.
             # One OR per column (an IN over multiple columns is invalid SQL).
-            per_col = " OR ".join(f"CAST(? AS TEXT) = CAST({c.strip()} AS TEXT)" for c in cols.split(","))
+            per_col = " OR ".join(
+                f"CAST(? AS TEXT) = CAST({c.strip()} AS TEXT)" for c in cols.split(",")
+            )
             clauses.append(f"({per_col})")
             args.extend([v] * len(cols.split(",")))
     if not clauses:
@@ -129,9 +131,7 @@ def count_families(
     try:
         tables = {
             r["name"]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
 
         def fam(table: str, cols: str) -> int | None:
@@ -143,9 +143,7 @@ def count_families(
         counts: dict[str, int | None] = {
             "affected_ledger_records": fam("audit_ledger", "ticket, order_id"),
             "affected_trades": fam("audit_ledger", "ticket, order_id"),
-            "affected_outcomes": fam(
-                "audit_experience_outcomes", "execution_id, idempotency_key"
-            ),
+            "affected_outcomes": fam("audit_experience_outcomes", "execution_id, idempotency_key"),
             "affected_research_records": fam("research_runs", "run_id, strategy_id"),
         }
         counts["affected_orders"] = fam("audit_orders", "order_id, parent_order_id")
@@ -185,9 +183,7 @@ def pre_persistence_detection(incident: Incident, db_path: str) -> list[str]:
     try:
         tables = {
             r["name"]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         for table, col in (
             ("audit_ledger", "open_time"),
@@ -217,9 +213,7 @@ def pre_persistence_detection(incident: Incident, db_path: str) -> list[str]:
     return notes
 
 
-def attach_occurrence_evidence(
-    incident: Incident, result: dict[str, Any]
-) -> None:
+def attach_occurrence_evidence(incident: Incident, result: dict[str, Any]) -> None:
     """Appends the occurrence analysis as an immutable evidence item."""
     counts = result.get("counts", {})
     present = {k: v for k, v in counts.items() if v is not None}

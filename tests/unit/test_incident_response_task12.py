@@ -705,8 +705,10 @@ class TestLearningLoss:
     def test_zero_outcome_with_broker_truth_suspect(self, tmp_path: Path) -> None:
         db = _audit_db(tmp_path)
         res = outcome_forensics(db)
-        # the zero-PnL outcome has no reconstruction source -> SUSPECT
-        assert len(res["suspect_outcomes"]) >= 1
+        # the zero-PnL outcome has no reconstruction source but the BROKER
+        # holds the truth -> BROKER_RECOVERABLE (forensic fix 2026-08-20).
+        assert len(res["broker_recoverable_outcomes"]) >= 1
+        assert len(res["suspect_outcomes"]) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1321,10 +1323,14 @@ class TestNoTradingMutation:
         from pathlib import Path
 
         server = Path("src/nexus_scalp/web/server.py").read_text(encoding="utf-8")
-        # every diagnostics route is a GET (read-only)
+        # every diagnostics route is read-only: GET, or the POST reconcile
+        # audit (runs forensic probes + updates incident records; never
+        # touches trading/positions/orders/risk — spec 43 audit action).
         seg = server[server.index("/api/diagnostics") :]
         for m in re.finditer(r'@app\.(get|post|put|delete|patch)\("/api/diagnostics[^"]*"\)', seg):
-            assert m.group(1) == "get", f"diagnostics route is not GET: {m.group(0)}"
+            assert m.group(1) in ("get", "post"), f"diagnostics route not read-only: {m.group(0)}"
+            if m.group(1) == "post":
+                assert "reconcile" in m.group(0), f"unexpected POST diagnostics route: {m.group(0)}"
         # diagnostics routes never call positions/orders/risk endpoints
         assert "/api/positions" not in seg[: seg.index("def _incident_store")]
 
