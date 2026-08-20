@@ -326,6 +326,7 @@ def main() -> None:
             password=config.mt5.password,
             server=config.mt5.server,
             timeout=config.mt5.timeout_ms,
+            retries=config.mt5.retries,
         )
 
     # 6. Instantiate & Launch Live Trading Engine Event Loop Concurrently with Web Server

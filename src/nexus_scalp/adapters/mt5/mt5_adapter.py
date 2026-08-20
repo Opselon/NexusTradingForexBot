@@ -93,12 +93,14 @@ class DirectMT5Adapter(IMT5Port):
         server: str | None = None,
         path: str | None = None,
         timeout: int = 5000,
+        retries: int = 3,
     ) -> None:
         self._account = account
         self._password = password
         self._server = server
         self._path = path
         self._timeout = timeout
+        self._retries = max(1, int(retries))
         self._connected = False
         #: Real runtime connection state (never derived from config).
         self._conn_state = MT5ConnectionState()
@@ -138,19 +140,57 @@ class DirectMT5Adapter(IMT5Port):
             )
             return False
 
-        self._conn_state.set_state(MT5ConnectionState.CONNECTING, "initialize()")
-        init_kwargs: dict[str, object] = {"timeout": self._timeout}
-        if self._path:
-            init_kwargs["path"] = self._path
+        # BUG-130: resilient connect with bounded retries + backoff. A cold
+        # terminal launch or a transient Win32 IPC timeout (retcode -10005)
+        # must NOT kill the engine at startup; we retry with per-attempt
+        # structured telemetry so the console/UI can render progress.
+        import time as _time
 
-        if not mt5.initialize(**init_kwargs):
+        max_attempts = self._retries
+        last_err_code: Any = None
+        connected = False
+        for attempt in range(1, max_attempts + 1):
+            self._conn_state.set_state(
+                MT5ConnectionState.CONNECTING,
+                f"initialize() attempt {attempt}/{max_attempts}",
+            )
+            init_kwargs: dict[str, object] = {"timeout": self._timeout}
+            if self._path:
+                init_kwargs["path"] = self._path
+
+            if mt5.initialize(**init_kwargs):
+                connected = True
+                break
+
             err_code = mt5.last_error()
+            last_err_code = err_code
+            if attempt < max_attempts:
+                backoff_ms = 250 * attempt  # 250ms, 500ms, 750ms, ...
+                logger.warning(
+                    "[MT5_CONNECT] event=RETRY attempt=%s/%s retcode=%s "
+                    "backoff_ms=%s msg=terminal_initialize_failed",
+                    attempt,
+                    max_attempts,
+                    err_code,
+                    backoff_ms,
+                )
+                self._conn_state.set_state(
+                    MT5ConnectionState.CONNECTING,
+                    f"retry {attempt}/{max_attempts} (retcode {err_code})",
+                )
+                _time.sleep(backoff_ms / 1000.0)
+
+        if not connected:
             logger.error(
-                "Failed to initialize connection to MT5 terminal process. Retcode: %s", err_code
+                "Failed to initialize connection to MT5 terminal process after %s attempts. "
+                "Last retcode: %s",
+                max_attempts,
+                last_err_code,
             )
             self._connected = False
             self._conn_state.set_state(
-                MT5ConnectionState.TERMINAL_ERROR, f"initialize failed: {err_code}"
+                MT5ConnectionState.TERMINAL_ERROR,
+                f"initialize failed after {max_attempts} attempts: {last_err_code}",
             )
             return False
 

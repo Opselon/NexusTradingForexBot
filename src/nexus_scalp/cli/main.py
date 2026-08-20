@@ -1193,6 +1193,7 @@ def _run_engine(cfg: AppConfig, *, gateway: bool, port: int) -> None:
             password=cfg.mt5.password,
             server=cfg.mt5.server,
             timeout=cfg.mt5.timeout_ms,
+            retries=cfg.mt5.retries,
         )
     cfg.execution.mode = cfg.execution.mode
     engine = LiveEngine(config=cfg, adapter=adapter)

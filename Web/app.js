@@ -3392,7 +3392,14 @@ function setSystemBadge(state) {
 
     if (!badge) return;
 
-    if (state === 'active') {
+    if (state === 'connecting') {
+        // BUG-130: gradient animated "connecting" state — MetaTrader link /
+        // SSE stream is retrying (cold terminal, IPC timeout). Perfect UI/UX:
+        // the user SEES the retry progress, never a dead-looking badge.
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 animate-pulse mr-1.5"></span> CONNECTING';
+        badge.className = 'ml-3 text-xs px-2.5 py-0.5 rounded-full bg-gradient-to-r from-cyan-500/15 via-sky-500/15 to-blue-500/15 text-sky-300 border border-sky-500/40 flex items-center justify-center font-bold shadow-[0_0_12px_rgba(56,189,248,0.25)]';
+        sseRetryDelay = 1000;
+    } else if (state === 'active') {
 
         badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span> ACTIVE';
 
@@ -3437,6 +3444,8 @@ function startSSE() {
 
 
     // Connect to server Sent Events streaming endpoint
+
+    setSystemBadge('connecting');
 
     eventSource = new EventSource('/api/ticks/stream');
 
@@ -3787,6 +3796,47 @@ function handleIncomingLiveTick(payload, opts) {
     if (healthDetail && health.details) {
 
         healthDetail.textContent = health.details.engine || health.details.mt5 || '—';
+
+    }
+
+    // BUG-130: gradient MT5 connection pill in the IPC console header. The
+    // state comes from the real health snapshot (READY / DISCONNECTED /
+    // WAITING_TICK / STALE) so the user always sees live broker link status.
+    const mt5Pill = document.getElementById('mt5-connect-pill');
+
+    if (mt5Pill) {
+
+        const mState = String(health.subsystems?.mt5 || health.details?.mt5 || '').toUpperCase();
+
+        let pillTxt = 'MT5 ' + (mState.split(' ')[0] || '--');
+
+        let pillCls = 'px-2 py-1 rounded font-mono border ';
+
+        if (mState.includes('READY')) {
+
+            pillCls += 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 border-emerald-500/40';
+
+        } else if (mState.includes('DISCONNECT') || mState.includes('ERROR')) {
+
+            pillCls += 'bg-gradient-to-r from-rose-500/20 to-red-500/20 text-rose-300 border-rose-500/40';
+
+        } else if (mState.includes('WAITING') || mState.includes('STALE')) {
+
+            pillCls += 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border-amber-500/40';
+
+        } else if (mState.includes('CONNECT')) {
+
+            pillCls += 'bg-gradient-to-r from-cyan-500/25 via-sky-500/25 to-blue-500/25 text-sky-300 border-sky-500/40 animate-pulse shadow-[0_0_12px_rgba(56,189,248,0.3)]';
+
+        } else {
+
+            pillCls += 'bg-gradient-to-r from-darkBg to-panelBg text-textMuted border-borderClr/60';
+
+        }
+
+        mt5Pill.textContent = pillTxt;
+
+        mt5Pill.className = pillCls;
 
     }
 

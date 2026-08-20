@@ -196,6 +196,11 @@ class LiveEngine:
     ) -> None:
         self.config = config
         self.adapter = adapter
+        # BUG-130: pre-declare the order manager BEFORE any init section can
+        # fail. A construction exception mid-__init__ must never leave
+        # run_loop reaching for a missing attribute — the guard below treats
+        # None as "not ready yet" instead of crashing the reconciliation.
+        self.order_manager: OrderLifecycleManager | None = None
         if audit_repo is not None:
             self.audit = audit_repo
         else:
@@ -549,48 +554,6 @@ class LiveEngine:
             store=_strategy_store,
             provider=_factory_provider,
         )
-    def _build_factory_llm_provider(self) -> Any | None:
-        """Builds the (optional) Strategy Factory LLM provider from settings.
-
-        The API key is read from the OS-protected secret store (DPAPI on
-        Windows); base URL + model + temperature come from the settings DB.
-        Any failure -> None: the factory then uses the deterministic
-        generators (the LLM is an assisted source, never a requirement).
-        """
-        try:
-            from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
-
-            svc = getattr(self, "settings_service", None)
-            if svc is None:
-                return None
-            cfg = svc.get_factory_llm_config()
-            if not cfg.get("api_key") or not cfg.get("api_base_url") or not cfg.get("model"):
-                return None
-            return LLMGenerationProvider(
-                api_base_url=cfg["api_base_url"],
-                model=cfg["model"],
-                api_key=cfg["api_key"],
-                temperature=cfg.get("temperature", 0.7),
-                secret_store=svc.secrets,
-            )
-        except Exception as e:
-            logger.warning(
-                "[STRATEGY_FACTORY] LLM provider build failed (deterministic fallback)",
-                error=str(e),
-            )
-            return None
-
-    def _rebuild_factory_llm_provider(self) -> None:
-        """Hot-swaps the running factory provider after a web settings save."""
-        try:
-            if self.strategy_factory is None:
-                return
-            self.strategy_factory.provider = self._build_factory_llm_provider()
-            logger.info(
-                "[STRATEGY_FACTORY] factory provider hot-rebuilt",
-            )
-        except Exception as e:
-            logger.warning("[STRATEGY_FACTORY] provider hot-rebuild failed", error=str(e))
 
         self.strategy_factory_worker = AutonomousLoopWorker(
             factory=self.strategy_factory,
@@ -874,6 +837,49 @@ class LiveEngine:
             self._sync_champion_registry_state()
         except Exception:
             pass
+
+    def _build_factory_llm_provider(self) -> Any | None:
+        """Builds the (optional) Strategy Factory LLM provider from settings.
+
+        The API key is read from the OS-protected secret store (DPAPI on
+        Windows); base URL + model + temperature come from the settings DB.
+        Any failure -> None: the factory then uses the deterministic
+        generators (the LLM is an assisted source, never a requirement).
+        """
+        try:
+            from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
+
+            svc = getattr(self, "settings_service", None)
+            if svc is None:
+                return None
+            cfg = svc.get_factory_llm_config()
+            if not cfg.get("api_key") or not cfg.get("api_base_url") or not cfg.get("model"):
+                return None
+            return LLMGenerationProvider(
+                api_base_url=cfg["api_base_url"],
+                model=cfg["model"],
+                api_key=cfg["api_key"],
+                temperature=cfg.get("temperature", 0.7),
+                secret_store=svc.secrets,
+            )
+        except Exception as e:
+            logger.warning(
+                "[STRATEGY_FACTORY] LLM provider build failed (deterministic fallback)",
+                error=str(e),
+            )
+            return None
+
+    def _rebuild_factory_llm_provider(self) -> None:
+        """Hot-swaps the running factory provider after a web settings save."""
+        try:
+            if self.strategy_factory is None:
+                return
+            self.strategy_factory.provider = self._build_factory_llm_provider()
+            logger.info(
+                "[STRATEGY_FACTORY] factory provider hot-rebuilt",
+            )
+        except Exception as e:
+            logger.warning("[STRATEGY_FACTORY] provider hot-rebuild failed", error=str(e))
 
     def _register_active_model(self, model_path: Path, replaced: bool) -> None:
         """
@@ -1251,8 +1257,42 @@ class LiveEngine:
         """
         Main tick ingestion loop.
         """
-        if not self.adapter.connect():
-            logger.critical("MT5 connect() failed. Engine shutting down.")
+        # BUG-130: resilient MT5 startup connect. The adapter itself retries
+        # initialize() (bounded, backoff); here we additionally give a cold
+        # terminal up to 3 outer attempts so a transient IPC timeout
+        # (-10005) while the terminal is launching never kills the engine.
+        # Every attempt is surfaced to the console + Telegram so the operator
+        # SEES the retry in progress (perfect-UI-UX requirement).
+        import time as _time
+
+        mt5_connected = False
+        for attempt in range(1, 4):
+            logger.info(
+                "[MT5_CONNECT] event=ATTEMPT attempt=%s/3 msg=connecting_to_terminal",
+                attempt,
+            )
+            try:
+                mt5_connected = self.adapter.connect()
+            except Exception as conn_err:
+                logger.warning(
+                    "[MT5_CONNECT] event=EXCEPTION attempt=%s/3 msg=connect_raised error=%s",
+                    attempt,
+                    str(conn_err),
+                )
+                mt5_connected = False
+            if mt5_connected:
+                break
+            if attempt < 3:
+                wait_s = 1.5 * attempt
+                logger.warning(
+                    "[MT5_CONNECT] event=RETRY_ENGINE attempt=%s/3 msg=terminal_unavailable "                     "wait_s=%s — retrying...",
+                    attempt,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+
+        if not mt5_connected:
+            logger.critical("MT5 connect() failed after 3 attempts. Engine shutting down.")
             self.emit_incident_telemetry(
                 event_type="MT5_CONNECT_FAILED",
                 component="mt5",
@@ -1262,7 +1302,7 @@ class LiveEngine:
             try:
                 self.notifier.notify_error(
                     "MT5 Connectivity",
-                    "MT5 connect() failed. Engine shutting down.",
+                    "MT5 connect() failed after retries. Engine shutting down.",
                 )
             except Exception:
                 pass
@@ -1290,7 +1330,10 @@ class LiveEngine:
         # internal pending (or a broker order the engine never tracked) is
         # repaired before any new entry can be considered. Isolated.
         try:
-            rep = self.order_manager.reconcile_pending_state(
+            om = self.order_manager
+            if om is None:
+                raise RuntimeError("order_manager not constructed yet (startup ordering)")
+            rep = om.reconcile_pending_state(
                 symbol=symbol, current_tick=self.adapter.get_last_tick(symbol)
             )
             logger.info(
