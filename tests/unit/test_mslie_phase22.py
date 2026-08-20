@@ -8,26 +8,26 @@ determinism, feature vector contract, engine interface.
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime, timedelta
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 sys.path.insert(0, "src")
 
-from nexus_scalp.mslie import (  # noqa: E402
+from nexus_scalp.mslie import (
     MarketBias,
     MarketIntelligenceFeatureVectorV1,
     MarketStructureEngine,
     SweepState,
-    compute_regime_features,
-    detect_swings,
-    build_liquidity_map,
-    detect_sweep_events,
     assess_breakout_quality,
+    build_liquidity_map,
+    compute_regime_features,
     compute_smart_money_features,
+    detect_sweep_events,
+    detect_swings,
 )
-from nexus_scalp.mslie.models import LiquidityRank, ZoneSide  # noqa: E402
+from nexus_scalp.mslie.models import LiquidityRank, ZoneSide
 
 
 @dataclass
@@ -70,9 +70,17 @@ def _sweep_bars() -> list[_Bar]:
     bars = _make_bars(150, drift=0.0)
     # a sweep: dip below the recent low then reclaim hard
     last = bars[-1]
-    bars.append(_Bar(last.timestamp + timedelta(minutes=1), last.close, last.close + 0.5, 1980.0, 1985.0, 500))
-    bars.append(_Bar(bars[-1].timestamp + timedelta(minutes=1), 1985.0, 1995.0, 1984.0, 1993.0, 400))
-    bars.append(_Bar(bars[-1].timestamp + timedelta(minutes=1), 1993.0, 2005.0, 1992.0, 2002.0, 600))
+    bars.append(
+        _Bar(
+            last.timestamp + timedelta(minutes=1), last.close, last.close + 0.5, 1980.0, 1985.0, 500
+        )
+    )
+    bars.append(
+        _Bar(bars[-1].timestamp + timedelta(minutes=1), 1985.0, 1995.0, 1984.0, 1993.0, 400)
+    )
+    bars.append(
+        _Bar(bars[-1].timestamp + timedelta(minutes=1), 1993.0, 2005.0, 1992.0, 2002.0, 600)
+    )
     return bars
 
 
@@ -171,7 +179,12 @@ class TestLiquidityMap:
         highs, lows = detect_swings(bars, symbol="XAUUSD", timeframe="M1")
         zones = build_liquidity_map(bars, highs, lows, mid_price=bars[-1].close)
         for z in zones:
-            assert z.rank in (LiquidityRank.LOW, LiquidityRank.MEDIUM, LiquidityRank.HIGH, LiquidityRank.EXTREME)
+            assert z.rank in (
+                LiquidityRank.LOW,
+                LiquidityRank.MEDIUM,
+                LiquidityRank.HIGH,
+                LiquidityRank.EXTREME,
+            )
             assert 0.0 <= z.strength_score <= 100.0
             assert z.distance_from_price >= 0.0
 
@@ -206,7 +219,11 @@ class TestSweeps:
         events = detect_sweep_events(bars, zones, mid_price=bars[-1].close)
         assert len(events) >= 1
         ev = events[-1]
-        assert ev.after_event_state in (SweepState.REVERSAL, SweepState.CONTINUATION, SweepState.UNCERTAIN)
+        assert ev.after_event_state in (
+            SweepState.REVERSAL,
+            SweepState.CONTINUATION,
+            SweepState.UNCERTAIN,
+        )
         assert 0.0 <= ev.confidence <= 100.0
 
     def test_no_sweep_on_flat_market(self) -> None:
@@ -248,7 +265,13 @@ class TestBreakout:
         bars = _trending_bars()
         q = assess_breakout_quality(bars)
         if q is not None:
-            for v in (q.closing_strength, q.volume_support, q.momentum_support, q.retest_confirmation, q.structure_confirmation):
+            for v in (
+                q.closing_strength,
+                q.volume_support,
+                q.momentum_support,
+                q.retest_confirmation,
+                q.structure_confirmation,
+            ):
                 assert 0.0 <= v <= 1.0
 
 

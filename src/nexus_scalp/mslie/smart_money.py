@@ -14,8 +14,9 @@ Every value is finite and bounded. All computations are strictly causal
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -121,7 +122,7 @@ def compute_smart_money_features(
             continue
         impulse_dir = 1.0 if c[i] > o[i] else -1.0
         move_dir = 1.0 if c[i + 1] > o[i + 1] else -1.0
-        if impulse_dir != move_dir and move_dir != 0.0:
+        if move_dir not in (impulse_dir, 0.0):
             # opposite-color impulse before the move = order block
             ob_type = -move_dir
             ob_strength = _clip(

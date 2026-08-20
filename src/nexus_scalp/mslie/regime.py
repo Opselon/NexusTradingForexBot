@@ -15,10 +15,9 @@ last visible bar is the most recent COMPLETED bar (never the forming bar).
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -84,10 +83,10 @@ def _atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = ATR
     for i in range(1, n):
         tr[i - 1] = max(high[i] - low[i], abs(high[i] - close[i - 1]), abs(low[i] - close[i - 1]))
     if n - 1 < period:
-        return float(max(np.mean(tr), MIN_ATR))
+        return float(np.mean(tr)) if len(tr) else MIN_ATR
     # simple mean of the last `period` true ranges (deterministic, matches
     # the canonical mean-TR-14 semantics of the feature engine)
-    return float(max(np.mean(tr[-period:]), MIN_ATR))
+    return float(np.mean(tr[-period:]))
 
 
 def _clip(v: float, lo: float, hi: float) -> float:
@@ -176,7 +175,9 @@ def compute_regime_features(
     # compression: recent range shrinking vs the longer lookback
     half = max(5, look // 2)
     range_recent = float(np.mean(high[-half:] - low[-half:])) or MIN_ATR
-    range_prior = float(np.mean(high[-look:-half] - low[-look:-half])) if n >= look + half else range_recent
+    range_prior = (
+        float(np.mean(high[-look:-half] - low[-look:-half])) if n >= look + half else range_recent
+    )
     range_prior = range_prior or range_recent
     compression = _clip(1.0 - range_recent / max(range_prior, MIN_ATR), 0.0, 1.0)
 

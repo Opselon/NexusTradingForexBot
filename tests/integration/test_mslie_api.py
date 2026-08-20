@@ -8,15 +8,16 @@ stays fast and does not require torch/model artifacts.
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime, timedelta
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, "src")
 
-from nexus_scalp.mslie import MarketStructureEngine  # noqa: E402
+from nexus_scalp.mslie import MarketStructureEngine
 
 
 @dataclass

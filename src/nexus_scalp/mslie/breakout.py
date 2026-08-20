@@ -15,8 +15,9 @@ CAUSALITY: only bars closed at/before ``decision_at`` are visible (INV-008).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -111,8 +112,8 @@ def assess_breakout_quality(
     # ---- find the breakout bar ----------------------------------------------
     look = min(n, LOOKBACK)
     if breakout_level is None:
-        breakout_level = float(np.max(high[-look:])) if direction != "DOWN" else float(
-            np.min(low[-look:])
+        breakout_level = (
+            float(np.max(high[-look:])) if direction != "DOWN" else float(np.min(low[-look:]))
         )
     if direction is None:
         # auto: most recent close beyond the range high => up, below range
@@ -166,10 +167,9 @@ def assess_breakout_quality(
             if low[j] <= breakout_level + band and close[j] > breakout_level:
                 retest_confirmation = 1.0
                 break
-        else:
-            if high[j] >= breakout_level - band and close[j] < breakout_level:
-                retest_confirmation = 1.0
-                break
+        elif high[j] >= breakout_level - band and close[j] < breakout_level:
+            retest_confirmation = 1.0
+            break
     # partial credit: no retest yet but price stayed beyond the level
     if retest_confirmation == 0.0 and n - 1 - breakout_bar >= 1:
         stayed = True

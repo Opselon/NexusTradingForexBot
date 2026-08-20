@@ -866,3 +866,11 @@ test_database_portability (26), test_strategy_factory_phase22 (19), test_audit_d
 ruff check+format clean; mypy clean on all 7 files. Commit 318964e.
 Risk: LOW — additive; audit-queue fallback preserved; strategy_registry unchanged.
 
+## CHG-0030 — Market Structure & Liquidity Intelligence Engine (MSLIE): perception layer for AI models (2026-08-20 Hermes-MSLIE)
+
+Change: New `src/nexus_scalp/mslie/` package — a Market Perception Engine converting raw OHLC/volume/spread into structured intelligence: MarketIntelligenceFeatureVectorV1 (versioned contract), adaptive swing detection (ATR thresholds, volatility-adjusted window, volume confirmation, reaction strength, timeframe weight), BSL/SSL liquidity map ranked LOW/MEDIUM/HIGH/EXTREME, stop-hunt detector (pool + violation + rejection/acceptance + displacement + follow-through; REVERSAL/CONTINUATION/UNCERTAIN), breakout quality (real vs fake), smart-money features (OB/FVG/displacement/inducement/premium-discount), bounded multi-month MarketMemory. Wired: LiveEngine bar-close hook (pure numpy, no I/O, INV-001/INV-002), GET /api/mslie/status + /api/mslie/features, mslie section in /api/debug/state, Debug tab 'Market Intelligence Engine' panel.
+Scope: src/nexus_scalp/mslie/ (new), src/nexus_scalp/application/live_engine.py, src/nexus_scalp/web/server.py, src/nexus_scalp/web/debug_snapshot.py, Web/index.html, Web/app.js, tests/unit/test_mslie_phase22.py, tests/integration/test_mslie_api.py, scratch/mslie_validate.py
+Why: The platform lacked a market perception layer — AI models had no structured knowledge of where important highs/lows exist, where liquidity sits, whether stops were hunted, whether structure changed, or the market regime. The engine is advisory/observability-first; the decision stays with strategy models / ScalpNet / execution / risk.
+Migration: none — no DB changes, no feature-schema changes (INV-009 untouched: the 50D/70D contract is never altered).
+Verification: VERIFIED — 28 unit tests + 4 API integration tests + 38 debug-snapshot tests PASS; ruff/format/mypy clean; historical validation probe (3 regimes) PASS; node --check Web/app.js OK.
+Risk: LOW — pure perception, zero order authority, failure-isolated hooks; latency 10-20ms on 300 bars.

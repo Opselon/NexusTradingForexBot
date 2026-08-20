@@ -16,8 +16,9 @@ CAUSALITY: only bars closed at/before the decision timestamp are visible
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -115,47 +116,58 @@ def _equal_levels(
 ) -> list[tuple[float, str]]:
     """Finds equal-high / equal-low clusters (double tops/bottoms).
 
-    Returns ``(price, source_label)`` pairs — e.g. ("EQH", "DOUBLE_TOP").
+    Returns ``(price, source_label)`` pairs. A level qualifies ONLY when at
+    least two SEPARATED extremes (>= min_gap_bars apart) fall within the
+    tolerance band — adjacent-bar noise never counts.
     """
     tol = atr * EQUAL_TOLERANCE_ATR
     levels: list[tuple[float, str]] = []
     if side == "high":
-        candidates = [(float(high[i]), i) for i in range(len(high))]
-        candidates.sort(reverse=True)
+        vals = [(float(high[i]), i) for i in range(len(high))]
+        vals.sort(reverse=True)
         used: list[int] = []
-        for price, idx in candidates:
-            # cluster any other extreme within tolerance
-            cluster = [j for j, _ in enumerate(high) if abs(float(high[j]) - price) <= tol]
-            cluster = [j for j in cluster if j != idx]
-            if not cluster:
+        for price, idx in vals:
+            if idx in used:
                 continue
-            # double top requires bars reasonably separated
-            far = max(abs(j - idx) for j in cluster)
-            if far >= min_gap_bars:
-                if idx not in used:
-                    levels.append((price, "DOUBLE_TOP" if far >= min_gap_bars else "EQH"))
-                    used.append(idx)
-                    used.extend(cluster)
+            # distinct, separated cluster members (>= min_gap_bars from idx)
+            members = [
+                j
+                for j in range(len(high))
+                if abs(float(high[j]) - price) <= tol and abs(j - idx) >= min_gap_bars
+            ]
+            if not members:
+                continue
+            # keep only the highest-confidence member set: the cluster needs
+            # at least one far extreme; every used member is consumed so the
+            # same level is never double-emitted.
+            far_member = max(members, key=lambda j: abs(j - idx))
+            if abs(far_member - idx) >= min_gap_bars:
+                levels.append((price, "DOUBLE_TOP"))
+                used.append(idx)
+                used.extend(members)
         return levels
-    candidates = [(float(low[i]), i) for i in range(len(low))]
-    candidates.sort()
+    vals = [(float(low[i]), i) for i in range(len(low))]
+    vals.sort()
     used = []
-    for price, idx in candidates:
-        cluster = [j for j, _ in enumerate(low) if abs(float(low[j]) - price) <= tol]
-        cluster = [j for j in cluster if j != idx]
-        if not cluster:
+    for price, idx in vals:
+        if idx in used:
             continue
-        far = max(abs(j - idx) for j in cluster)
-        if far >= min_gap_bars and idx not in used:
-            levels.append((price, "DOUBLE_BOTTOM" if far >= min_gap_bars else "EQL"))
+        members = [
+            j
+            for j in range(len(low))
+            if abs(float(low[j]) - price) <= tol and abs(j - idx) >= min_gap_bars
+        ]
+        if not members:
+            continue
+        far_member = max(members, key=lambda j: abs(j - idx))
+        if abs(far_member - idx) >= min_gap_bars:
+            levels.append((price, "DOUBLE_BOTTOM"))
             used.append(idx)
-            used.extend(cluster)
+            used.extend(members)
     return levels
 
 
-def _tests_at_level(
-    high: np.ndarray, low: np.ndarray, price: float, side: str, atr: float
-) -> int:
+def _tests_at_level(high: np.ndarray, low: np.ndarray, price: float, side: str, atr: float) -> int:
     band = atr * TEST_PROXIMITY_ATR
     count = 0
     for i in range(len(high)):
@@ -243,7 +255,9 @@ def build_liquidity_map(
     # swing highs/lows (institutional levels from the adaptive detector)
     for s in swings_high:
         if s.timestamp <= decision_at:
-            raw.append((s.price, "SWING_HIGH", s.importance_score, _age_bars(s.timestamp, times), 0))
+            raw.append(
+                (s.price, "SWING_HIGH", s.importance_score, _age_bars(s.timestamp, times), 0)
+            )
     for s in swings_low:
         if s.timestamp <= decision_at:
             raw.append((s.price, "SWING_LOW", s.importance_score, _age_bars(s.timestamp, times), 0))
@@ -270,13 +284,16 @@ def build_liquidity_map(
 
     # ---- dedupe + aggregate into zones --------------------------------------
     tol = safe_atr * EQUAL_TOLERANCE_ATR
+
     # keyed by price bucket only (side is assigned at finalization against
     # the CURRENT price — BSL above, SSL below). A level's side must reflect
     # its position relative to today's price, not the price when it formed.
-    bucket_key = lambda price: round(price / max(tol, 1e-9))
+    def _bucket_key(price: float) -> int:
+        return round(price / max(tol, 1e-9))
+
     merged: dict[int, dict[str, Any]] = {}
     for raw_price, source, strength, age, _ in raw:
-        key = bucket_key(raw_price)
+        key = _bucket_key(raw_price)
         entry = merged.get(key)
         if entry is None:
             merged[key] = {

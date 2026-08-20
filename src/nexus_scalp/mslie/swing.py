@@ -24,8 +24,9 @@ CONFIRMED once bar ``i + confirm_window`` has closed (same discipline as the
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -100,7 +101,7 @@ def _volatility_adjusted_window(
     start = max(0, idx - 30)
     window_atr = float(np.mean(local_atr[start : idx + 1])) if idx > start else MIN_ATR
     ratio = _clip(window_atr / MIN_ATR, 0.5, 2.0)
-    window = int(round(base * (2.0 - ratio)))  # high ATR -> smaller window
+    window = round(base * (2.0 - ratio))  # high ATR -> smaller window
     return int(_clip(window, BASE_CONFIRM_WINDOW, MAX_CONFIRM_WINDOW))
 
 
@@ -178,11 +179,17 @@ def detect_swings(
         # minimum prominence to be structurally relevant.
         if is_high:
             prominence = float(high[i] - high[i - 1]) if i > 0 else 0.0
-            if prominence < MIN_SWING_ATR * safe_atr and (high[i] - close[i]) < MIN_SWING_ATR * safe_atr:
+            if (
+                prominence < MIN_SWING_ATR * safe_atr
+                and (high[i] - close[i]) < MIN_SWING_ATR * safe_atr
+            ):
                 continue
         else:
             prominence = float(low[i - 1] - low[i]) if i > 0 else 0.0
-            if prominence < MIN_SWING_ATR * safe_atr and (close[i] - low[i]) < MIN_SWING_ATR * safe_atr:
+            if (
+                prominence < MIN_SWING_ATR * safe_atr
+                and (close[i] - low[i]) < MIN_SWING_ATR * safe_atr
+            ):
                 continue
 
         # ---- strength score (0..100) ---------------------------------------
@@ -193,7 +200,9 @@ def detect_swings(
         else:
             rejection = float(high[i] - close[i]) / safe_atr
             reaction = float(close[i] - low[i]) / safe_atr
-        strength = 40.0 + 20.0 * _clip(rejection, 0.0, 2.0) / 2.0 + 10.0 * _clip(reaction, 0.0, 2.0) / 2.0
+        strength = (
+            40.0 + 20.0 * _clip(rejection, 0.0, 2.0) / 2.0 + 10.0 * _clip(reaction, 0.0, 2.0) / 2.0
+        )
         # volume confirmation (dimension 5)
         vol_ratio = _volume_ratio(volume, i)
         strength += 15.0 * _clip(vol_ratio - 1.0, 0.0, 1.0)
@@ -211,9 +220,8 @@ def detect_swings(
             if is_high:
                 if abs(float(high[j]) - price_level) <= band:
                     reaction_count += 1
-            else:
-                if abs(float(low[j]) - price_level) <= band:
-                    reaction_count += 1
+            elif abs(float(low[j]) - price_level) <= band:
+                reaction_count += 1
         reaction_count = max(0, reaction_count - 1)  # the pivot bar itself doesn't count
 
         # ---- importance score (0..100) --------------------------------------

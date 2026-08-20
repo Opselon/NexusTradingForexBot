@@ -18,8 +18,9 @@ bars have closed — never from the forming bar.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -40,9 +41,11 @@ REJECTION_RECLAIM_ATR: float = 0.20  # close back beyond this ATR band = rejecti
 FOLLOW_THROUGH_BARS: int = 3  # bars after the violation used for the verdict
 CONFIDENCE_FLOOR: float = 35.0  # below this the event is UNCERTAIN (no event)
 SWEEP_WINDOW_BARS: int = 12  # lookback for the latest sweep candidate
-MIN_POOL_DISTANCE_ATR: float = 0.5  # pools closer than this are "in play" —
+MIN_POOL_DISTANCE_ATR: float = 0.8  # pools closer than this are "in play" —
 #                                     already tested, not resting liquidity;
 #                                     a penetration of them is noise, not a hunt
+MIN_PENETRATION_ATR: float = 0.15  # penetration must be a decisive move
+#                                    (beyond the constant floor) to count
 
 
 # =============================================================================
@@ -136,9 +139,13 @@ def detect_sweep_events(
             if abs(pool_price - current_price) < MIN_POOL_DISTANCE_ATR * safe_atr:
                 continue
             if is_bsl:
-                penetrated = high[i] >= pool_price + PENETRATION_ATR * safe_atr
+                penetrated = (
+                    high[i] >= pool_price + max(PENETRATION_ATR, MIN_PENETRATION_ATR) * safe_atr
+                )
             else:
-                penetrated = low[i] <= pool_price - PENETRATION_ATR * safe_atr
+                penetrated = (
+                    low[i] <= pool_price - max(PENETRATION_ATR, MIN_PENETRATION_ATR) * safe_atr
+                )
             if not penetrated:
                 continue
 
@@ -166,10 +173,10 @@ def detect_sweep_events(
                 depth = float(pool_price - low[i]) / safe_atr
             depth = _clip(depth, 0.0, 3.0)
 
-            # ---- follow-through: bars after the violation -------------------
-            # reversal: rejection AND price closed back beyond the pool
-            # continuation: acceptance AND price stayed beyond the pool
-            follow = list(later)
+            # ---- follow-through verdict -----------------------------------
+            # rejection -> REVERSAL (price closed back beyond the pool);
+            # acceptance -> CONTINUATION (price stayed beyond the pool);
+            # neither -> UNCERTAIN.
             if rejection:
                 state = SweepState.REVERSAL
             elif acceptance:

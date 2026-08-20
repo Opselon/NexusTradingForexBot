@@ -28,8 +28,9 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 from nexus_scalp.mslie.breakout import assess_breakout_quality
 from nexus_scalp.mslie.liquidity_map import build_liquidity_map
@@ -67,7 +68,9 @@ class IMarketStructureEngine(Protocol):
     contract — never on the concrete implementation.
     """
 
-    def analyze_market(self, bars: Sequence[Any], *, decision_at: datetime | None = None) -> MarketIntelligenceFeatureVectorV1: ...
+    def analyze_market(
+        self, bars: Sequence[Any], *, decision_at: datetime | None = None
+    ) -> MarketIntelligenceFeatureVectorV1: ...
 
     def get_liquidity_map(self) -> tuple[LiquidityZone, ...]: ...
 
@@ -351,7 +354,9 @@ class MarketStructureEngine:
         sm = compute_smart_money_features(vis, decision_at=decision_at, atr=atr, mid_price=price)
 
         # ---- structure + bias + confidence ------------------------------------
-        structure, bias, confidence = _structure_verdict(regime, swings_high, swings_low, last_sweep)
+        structure, bias, confidence = _structure_verdict(
+            regime, swings_high, swings_low, last_sweep
+        )
 
         # ---- multi-month memory ------------------------------------------------
         atr_safe = max(atr if atr is not None else 0.0, 0.2)
@@ -468,9 +473,7 @@ class MarketStructureEngine:
                 },
                 "market_context": self._last_context.to_dict() if self._last_context else None,
                 "liquidity_map": [z.to_dict() for z in self._last_liquidity_map],
-                "last_sweep": (
-                    self._last_sweeps[-1].to_dict() if self._last_sweeps else None
-                ),
+                "last_sweep": (self._last_sweeps[-1].to_dict() if self._last_sweeps else None),
                 "feature_vector": vector.to_dict() if vector else None,
                 "algorithm_version": ALGORITHM_VERSION,
             }
