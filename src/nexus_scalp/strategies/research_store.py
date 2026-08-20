@@ -298,14 +298,16 @@ def config_for(provider: DatabaseProvider, workspace: str | None = None) -> Data
     # resolves the real URL (secret store) at connect time.  We keep the
     # host/db fields explicit so the driver can build the URL.
     if url.startswith("postgresql://"):
-        rest = url.split("://", 1)[1]
-        userhost, _, db = rest.partition("/")
-        user, _, hostport = userhost.partition(":")
-        host, _, port = hostport.partition(":")
-        cfg.host = host
-        cfg.port = int(port or 5432)
-        cfg.database = db or "nse_strategies"
-        cfg.username = user
+        # url_for_provider advertises the default values explicitly; parsing
+        # the placeholder string is brittle (the ":***@" password field
+        # corrupts host parsing), so set the defaults directly and let
+        # build_postgres_url inject the real password from the secret store.
+        from nexus_scalp.database.config import DEFAULT_PG_PORT
+
+        cfg.host = "localhost"
+        cfg.port = DEFAULT_PG_PORT
+        cfg.database = "nse_audit"
+        cfg.username = "nse_user"
     return cfg
 
 
