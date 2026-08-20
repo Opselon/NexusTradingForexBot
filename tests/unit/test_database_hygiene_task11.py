@@ -906,6 +906,7 @@ def test_hyg_real_db_copy_plan_only(tmp_path: Path):
     assert res["databases"]["audit"]["verification"] == "SKIPPED_DRY_RUN"
     assert res["databases"]["audit"].get("deleted", {}) == {}
 
+
 # ---------------------------------------------------------------------------
 # TEST-HYG-37..48 (TASK-22): runtime hygiene engine — config scheduler,
 # first-run audit, quarantine, consistency rules, index health, dry-run,
@@ -937,14 +938,11 @@ def test_hyg38_scheduler_first_run_initial_audit(env):
     )
 
     repo, audit_path, news_path, candle_path = env
-    s = RuntimeCleanupScheduler(
-        repo_root=repo, settings=RuntimeHygieneSettings(dry_run=True)
-    )
+    s = RuntimeCleanupScheduler(repo_root=repo, settings=RuntimeHygieneSettings(dry_run=True))
     assert (repo / "archive/_hygiene_state/initial_audit.json").exists() is False
-    res = s.run_cycle()
+    s.run_cycle()
     audit_file = repo / "archive/_hygiene_state/initial_audit.json"
     assert audit_file.exists(), "initial audit must be persisted"
-    import json
 
     audit = json.loads(audit_file.read_text(encoding="utf-8"))
     assert audit["report_type"] == "DATABASE_HYGIENE_INITIAL_REPORT"
@@ -962,9 +960,7 @@ def test_hyg39_scheduler_cycle_telemetry(env):
     )
 
     repo, audit_path, news_path, candle_path = env
-    s = RuntimeCleanupScheduler(
-        repo_root=repo, settings=RuntimeHygieneSettings(dry_run=True)
-    )
+    s = RuntimeCleanupScheduler(repo_root=repo, settings=RuntimeHygieneSettings(dry_run=True))
     res = s.run_cycle()
     tel = res["telemetry"]
     assert tel["cleanup_id"]
@@ -992,9 +988,7 @@ def test_hyg40_quarantine_store_roundtrip(env):
     )
     assert item["status"] == "QUARANTINED"
     # Dedupe: same (db, table, row_id) -> same quarantine_id.
-    item2 = q.quarantine(
-        database="audit", table="audit_ledger", row_id=99, reason="again"
-    )
+    item2 = q.quarantine(database="audit", table="audit_ledger", row_id=99, reason="again")
     assert item2["quarantine_id"] == item["quarantine_id"]
     assert q.stats()["total"] == 1
     # Restore returns the snapshot + mark.
@@ -1027,9 +1021,7 @@ def test_hyg41_consistency_rules_detect_violations(env):
     conn.close()
     summary = findings_summary(finds)
     assert summary["violations"] >= 1
-    rule = next(
-        (f for f in finds if f.rule_id == "TRADE-001" and f.status == "VIOLATION"), None
-    )
+    rule = next((f for f in finds if f.rule_id == "TRADE-001" and f.status == "VIOLATION"), None)
     assert rule is not None
     assert rule.offender_count >= 1
     # Read-only proof: nothing changed on the DB.
@@ -1065,9 +1057,7 @@ def test_hyg43_scheduler_deep_cycle_index_report(env):
     )
 
     repo, audit_path, news_path, candle_path = env
-    s = RuntimeCleanupScheduler(
-        repo_root=repo, settings=RuntimeHygieneSettings(dry_run=True)
-    )
+    s = RuntimeCleanupScheduler(repo_root=repo, settings=RuntimeHygieneSettings(dry_run=True))
     res = s.run_cycle(deep=True)
     tel = res["telemetry"]
     assert tel["deep_maintenance"] is True

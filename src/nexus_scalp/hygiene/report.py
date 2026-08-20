@@ -149,12 +149,8 @@ def build_query_health_report(index_reports: list[dict[str, Any]]) -> dict[str, 
         "generated_at": datetime.now(UTC).isoformat(),
         "findings_total": len(findings),
         "missing_indexes": [f["ref_sql"] for f in missing],
-        "duplicate_indexes": [
-            {"table": f["table"], "detail": f["detail"]} for f in duplicate
-        ],
-        "unused_indexes": [
-            {"table": f["table"], "detail": f["detail"]} for f in unused
-        ],
+        "duplicate_indexes": [{"table": f["table"], "detail": f["detail"]} for f in duplicate],
+        "unused_indexes": [{"table": f["table"], "detail": f["detail"]} for f in unused],
         "advice": (
             "CREATE INDEX statements are ADVISORY ONLY — schema changes go "
             "through the TASK-10 migration engine, never the runtime worker."
@@ -169,11 +165,9 @@ def build_telegram_report_text(telemetry: dict[str, Any], cycle_number: int) -> 
         "DATABASE HYGIENE REPORT",
         f"Cycle: #{cycle_number}",
         f"Scanned: {telemetry.get('records_scanned', 0):,} records",
-        f"Removed: {telemetry.get('records_deleted', 0):,} "
-        f"(cache/expired/stale)",
+        f"Removed: {telemetry.get('records_deleted', 0):,} (cache/expired/stale)",
         f"Archived: {telemetry.get('records_archived', 0):,} telemetry records",
-        f"Quarantined: {telemetry.get('records_quarantined', 0):,} "
-        f"suspicious records",
+        f"Quarantined: {telemetry.get('records_quarantined', 0):,} suspicious records",
         f"Duration: {telemetry.get('duration_ms', 0.0) / 1000.0:.1f}s",
         f"Mode: {telemetry.get('mode', 'AUDIT_ONLY')}",
         f"Status: {status}",
@@ -188,8 +182,7 @@ def build_telegram_initial_report_text(report: dict[str, Any]) -> str:
     totals = report.get("totals", {})
     lines = [
         "DATABASE HYGIENE INITIAL AUDIT",
-        f"Scanned: {totals.get('rows_scanned', 0):,} records / "
-        f"{totals.get('tables', 0)} tables",
+        f"Scanned: {totals.get('rows_scanned', 0):,} records / {totals.get('tables', 0)} tables",
         f"Duplicates: {totals.get('duplicates', 0)}",
         f"Orphans: {totals.get('orphans', 0)}",
         f"Retention candidates: {totals.get('retention_candidates', 0)}",

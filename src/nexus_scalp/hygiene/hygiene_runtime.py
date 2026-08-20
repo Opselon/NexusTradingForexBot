@@ -52,7 +52,7 @@ from nexus_scalp.hygiene.report import (
     persist_initial_audit,
 )
 from nexus_scalp.hygiene.state import HygieneStateStore
-from nexus_scalp.hygiene.worker_runner import DatabaseHygieneWorker, MANAGED_DATABASES
+from nexus_scalp.hygiene.worker_runner import MANAGED_DATABASES, DatabaseHygieneWorker
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class RuntimeHygieneSettings:
     telegram_min_interval_sec: int = 3600
 
     @classmethod
-    def from_mapping(cls, data: dict[str, Any] | None) -> "RuntimeHygieneSettings":
+    def from_mapping(cls, data: dict[str, Any] | None) -> RuntimeHygieneSettings:
         d = data or {}
         return cls(
             enabled=bool(d.get("enabled", True)),
@@ -108,9 +108,7 @@ class RuntimeCleanupScheduler:
         )
         self.worker: DatabaseHygieneWorker | None = None
         self.light_interval_sec = float(max(1, self.settings.interval_minutes) * 60)
-        self.deep_interval_sec = float(
-            max(1, self.settings.deep_maintenance_interval_hours) * 3600
-        )
+        self.deep_interval_sec = float(max(1, self.settings.deep_maintenance_interval_hours) * 3600)
         self._last_light = 0.0
         self._last_deep = 0.0
         self._last_telegram = 0.0
@@ -249,9 +247,7 @@ class RuntimeCleanupScheduler:
                 conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
                 conn.row_factory = sqlite3.Row
                 try:
-                    consistency[db_key] = findings_summary(
-                        self.consistency.scan(db_key, conn)
-                    )
+                    consistency[db_key] = findings_summary(self.consistency.scan(db_key, conn))
                     index_health[db_key] = self.index_health.scan_database(conn, db_key)
                 finally:
                     conn.close()
@@ -355,9 +351,7 @@ class RuntimeCleanupScheduler:
             "dry_run": self.settings.dry_run,
             "apply_deletes": self.settings.apply_deletes,
             "execution_mode": self.execution_mode,
-            "worker_mode": (
-                self.worker.mode.value if self.worker is not None else "NOT_STARTED"
-            ),
+            "worker_mode": (self.worker.mode.value if self.worker is not None else "NOT_STARTED"),
             "light_interval_sec": self.light_interval_sec,
             "deep_interval_sec": self.deep_interval_sec,
             "next_light_in_sec": round(self.next_light_in(now), 1),

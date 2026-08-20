@@ -156,8 +156,7 @@ class IndexHealthMonitor:
                     IndexFinding(
                         category="DUPLICATE",
                         table=table,
-                        detail=f"index '{idx['name']}' duplicates column set of "
-                        f"'{seen[key]}'",
+                        detail=f"index '{idx['name']}' duplicates column set of '{seen[key]}'",
                         columns=list(key),
                     )
                 )
@@ -171,10 +170,7 @@ class IndexHealthMonitor:
         # NOI relative to table rows suggests the index rarely narrows.
         # This is only an ADVISORY — never an auto-drop signal.
         try:
-            stat = {
-                (s[0], s[1])
-                for s in conn.execute("SELECT * FROM sqlite_stat1").fetchall()
-            }
+            stat = {(s[0], s[1]) for s in conn.execute("SELECT * FROM sqlite_stat1").fetchall()}
         except sqlite3.OperationalError:
             stat = set()
         if not stat:
@@ -206,7 +202,7 @@ class IndexHealthMonitor:
     ) -> dict[str, Any]:
         tables = [
             (name,)
-            for name, in conn.execute(
+            for (name,) in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' "
                 "AND name NOT LIKE 'sqlite_%' ORDER BY name"
             ).fetchall()

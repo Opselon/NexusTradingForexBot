@@ -373,7 +373,6 @@ def make_hygiene_app() -> typer.Typer:
         """
         from nexus_scalp.hygiene.hygiene_runtime import (
             RuntimeCleanupScheduler,
-            RuntimeHygieneSettings,
         )
 
         s = RuntimeCleanupScheduler(repo_root=_repo_root())

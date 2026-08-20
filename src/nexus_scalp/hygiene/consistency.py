@@ -31,7 +31,6 @@ Design notes:
 from __future__ import annotations
 
 import json
-import math
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -145,7 +144,11 @@ class ConsistencyRuleEngine:
         else:
             findings.append(
                 self._mk(
-                    "TRADE-001", "audit", "audit_ledger", [], "missing open_time/close_time cols",
+                    "TRADE-001",
+                    "audit",
+                    "audit_ledger",
+                    [],
+                    "missing open_time/close_time cols",
                     "",
                     status="NOT_APPLICABLE",
                 )
@@ -172,8 +175,15 @@ class ConsistencyRuleEngine:
             )
         else:
             findings.append(
-                self._mk("TRADE-002", "audit", "audit_ledger", [], "no volume col", "",
-                         status="NOT_APPLICABLE")
+                self._mk(
+                    "TRADE-002",
+                    "audit",
+                    "audit_ledger",
+                    [],
+                    "no volume col",
+                    "",
+                    status="NOT_APPLICABLE",
+                )
             )
 
         # TRADE-003: symbol exists (non-empty for executed rows)
@@ -197,8 +207,15 @@ class ConsistencyRuleEngine:
             )
         else:
             findings.append(
-                self._mk("TRADE-003", "audit", "audit_ledger", [], "no symbol col", "",
-                         status="NOT_APPLICABLE")
+                self._mk(
+                    "TRADE-003",
+                    "audit",
+                    "audit_ledger",
+                    [],
+                    "no symbol col",
+                    "",
+                    status="NOT_APPLICABLE",
+                )
             )
 
         # LEDGER-001: pnl finite for closed rows
@@ -222,15 +239,20 @@ class ConsistencyRuleEngine:
             )
         else:
             findings.append(
-                self._mk("LEDGER-001", "audit", "audit_ledger", [], "no pnl/status cols", "",
-                         status="NOT_APPLICABLE")
+                self._mk(
+                    "LEDGER-001",
+                    "audit",
+                    "audit_ledger",
+                    [],
+                    "no pnl/status cols",
+                    "",
+                    status="NOT_APPLICABLE",
+                )
             )
 
         # UNREAL-001: abandoned pending states (pending orders older than 14d)
         if {"status", "open_time"} <= cols:
-            cutoff = (
-                datetime.now(UTC) - __import__("datetime").timedelta(days=14)
-            ).isoformat()
+            cutoff = (datetime.now(UTC) - __import__("datetime").timedelta(days=14)).isoformat()
             try:
                 bad = conn.execute(
                     "SELECT ticket, status, open_time FROM audit_ledger "
@@ -251,16 +273,22 @@ class ConsistencyRuleEngine:
             )
         else:
             findings.append(
-                self._mk("UNREAL-001", "audit", "audit_ledger", [], "no status/open_time cols",
-                         "", status="NOT_APPLICABLE")
+                self._mk(
+                    "UNREAL-001",
+                    "audit",
+                    "audit_ledger",
+                    [],
+                    "no status/open_time cols",
+                    "",
+                    status="NOT_APPLICABLE",
+                )
             )
 
         # DATASET-001: experiences carry a sane decision timestamp
         if "decision_timestamp" in self._table_columns(conn, "audit_experiences"):
             try:
                 rows = conn.execute(
-                    "SELECT experience_id, decision_timestamp FROM audit_experiences "
-                    "LIMIT 400"
+                    "SELECT experience_id, decision_timestamp FROM audit_experiences LIMIT 400"
                 ).fetchall()
                 bad = []
                 for rid, ts in rows:
@@ -284,8 +312,13 @@ class ConsistencyRuleEngine:
         else:
             findings.append(
                 self._mk(
-                    "DATASET-001", "audit", "audit_experiences", [],
-                    "no decision_timestamp col", "", status="NOT_APPLICABLE"
+                    "DATASET-001",
+                    "audit",
+                    "audit_experiences",
+                    [],
+                    "no decision_timestamp col",
+                    "",
+                    status="NOT_APPLICABLE",
                 )
             )
 
@@ -311,8 +344,13 @@ class ConsistencyRuleEngine:
         else:
             findings.append(
                 self._mk(
-                    "DATASET-002", "audit", "audit_experience_outcomes", [],
-                    "no idempotency_key col", "", status="NOT_APPLICABLE"
+                    "DATASET-002",
+                    "audit",
+                    "audit_experience_outcomes",
+                    [],
+                    "no idempotency_key col",
+                    "",
+                    status="NOT_APPLICABLE",
                 )
             )
 
@@ -329,15 +367,33 @@ class ConsistencyRuleEngine:
             cols = self._table_columns(conn, table)
             if not cols:
                 findings.append(
-                    self._mk("DATASET-003", "candle_intel", table, [],
-                             "no table", "", status="NOT_APPLICABLE")
+                    self._mk(
+                        "DATASET-003",
+                        "candle_intel",
+                        table,
+                        [],
+                        "no table",
+                        "",
+                        status="NOT_APPLICABLE",
+                    )
                 )
                 continue
             # COUNT feature-like columns (exclude id/ts/symbol/timeframe/meta).
-            meta = {"id", "ts", "timestamp", "symbol", "timeframe", "created_at",
-                    "payload", "request_id", "source_id", "updated_at", "strategy_id"}
+            meta = {
+                "id",
+                "ts",
+                "timestamp",
+                "symbol",
+                "timeframe",
+                "created_at",
+                "payload",
+                "request_id",
+                "source_id",
+                "updated_at",
+                "strategy_id",
+            }
             feature_cols = [c for c in cols if c not in meta]
-            dim = declared_dim or self.feature_dimensions.get("scalp_v3", 70)
+            _ = declared_dim  # reserved: explicit dimension override
             # The candle cache stores arbitrary-width vectors; only flag when
             # the width is far from any declared schema (hard evidence of drift).
             known = set(self.feature_dimensions.values())
@@ -370,9 +426,7 @@ class ConsistencyRuleEngine:
             ts_col = "ts" if "ts" in cols else ("timestamp" if "timestamp" in cols else None)
             if ts_col:
                 try:
-                    rows = conn.execute(
-                        f"SELECT {ts_col} FROM {table} LIMIT 400"
-                    ).fetchall()
+                    rows = conn.execute(f"SELECT {ts_col} FROM {table} LIMIT 400").fetchall()
                     bad = []
                     for (ts,) in rows:
                         ep = _as_ts(ts)
@@ -394,8 +448,15 @@ class ConsistencyRuleEngine:
                 )
             else:
                 findings.append(
-                    self._mk("DATASET-004", "candle_intel", table, [], "no ts column", "",
-                             status="NOT_APPLICABLE")
+                    self._mk(
+                        "DATASET-004",
+                        "candle_intel",
+                        table,
+                        [],
+                        "no ts column",
+                        "",
+                        status="NOT_APPLICABLE",
+                    )
                 )
         return findings
 
@@ -431,8 +492,15 @@ class ConsistencyRuleEngine:
             )
         else:
             findings.append(
-                self._mk("NEWS-001", "news", "news_articles", [], "no published_at col", "",
-                         status="NOT_APPLICABLE")
+                self._mk(
+                    "NEWS-001",
+                    "news",
+                    "news_articles",
+                    [],
+                    "no published_at col",
+                    "",
+                    status="NOT_APPLICABLE",
+                )
             )
         return findings
 
@@ -471,9 +539,7 @@ class ConsistencyRuleEngine:
         offenders = []
         for row in bad_rows[:10]:
             if isinstance(row, (tuple, list)):
-                offenders.append(
-                    {f"col{i}": str(v) for i, v in enumerate(row)}
-                )
+                offenders.append({f"col{i}": str(v) for i, v in enumerate(row)})
             else:
                 offenders.append({"value": str(row)})
         return ConsistencyFinding(

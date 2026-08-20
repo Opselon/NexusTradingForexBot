@@ -234,14 +234,14 @@ class QuarantineStore:
         conn = self._connect()
         try:
             by_status: dict[str, int] = {}
-            for (s, n) in conn.execute(
+            for s, n in conn.execute(
                 "SELECT status, COUNT(*) FROM quarantine_items GROUP BY status"
             ).fetchall():
                 by_status[s] = int(n)
             by_table: dict[str, int] = {}
-            for (t, n) in conn.execute(
-                "SELECT \"database\" || '.' || \"table\", COUNT(*) "
-                "FROM quarantine_items GROUP BY \"database\", \"table\""
+            for t, n in conn.execute(
+                'SELECT "database" || \'.\' || "table", COUNT(*) '
+                'FROM quarantine_items GROUP BY "database", "table"'
             ).fetchall():
                 by_table[t] = int(n)
             return {
@@ -273,8 +273,7 @@ class QuarantineStore:
     @staticmethod
     def _event(conn: sqlite3.Connection, quarantine_id: str, action: str, detail: str) -> None:
         conn.execute(
-            "INSERT INTO quarantine_events (quarantine_id, action, detail, at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO quarantine_events (quarantine_id, action, detail, at) VALUES (?, ?, ?, ?)",
             (quarantine_id, action, detail or "", _now_iso()),
         )
 
