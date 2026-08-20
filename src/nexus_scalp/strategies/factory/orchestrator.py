@@ -109,12 +109,14 @@ class StrategyFactory:
         config: EvolutionConfig | None = None,
         provider: LLMGenerationProvider | None = None,
         symbols: list[str] | None = None,
+        notifier: Any | None = None,
     ) -> None:
         self.audit_repo = audit_repo
         self.research_pipeline = research_pipeline
         self.config = config or EvolutionConfig()
         self.provider = provider
         self.symbols = symbols or ["XAUUSD"]
+        self.notifier = notifier
         self.loop_state: str = LoopState.STOPPED.value
         self.current_generation_id: str = ""
         self._operator_stats: dict[str, dict[str, int]] = {}
@@ -235,8 +237,23 @@ class StrategyFactory:
                 "payload": {"population": population, "mode": mode},
             },
         )
+        self._send_telegram("GENERATION_STARTED", gen)
         self.current_generation_id = generation_id
         return gen
+
+    def _send_telegram(self, event_type: str, payload: dict[str, Any]) -> None:
+        """Routes a lifecycle event to Telegram through the engine notifier.
+
+        Bounded event types only (no per-candidate spam); never raises.
+        """
+        if self.notifier is None or not getattr(self.notifier, "enabled", False):
+            return
+        try:
+            from nexus_scalp.strategies.factory.telegram import send_factory_event
+
+            send_factory_event(self.notifier, event_type, payload)
+        except Exception as e:
+            logger.warning("[STRATEGY_FACTORY] telegram event failed (isolated)", error=str(e))
 
     def _next_generation_number(self) -> int:
         gens = list_generations(self.audit_repo, limit=MAX_GENERATIONS_READ)
@@ -797,6 +814,7 @@ class StrategyFactory:
                 "payload": summary.model_dump(),
             },
         )
+        self._send_telegram("GENERATION_COMPLETED", {"generation_id": generation_id, "summary": summary.model_dump()})
         return {"summary": summary.model_dump(), "ranked": ranked, "elite": elite}
 
     def _registry_rows_for_generation(
