@@ -44,6 +44,7 @@ BLOCK. Scaler dimension must equal feature dimension (SCALER_MISMATCH stops).
 | ACCOUNTING_SNAPSHOT | v1 | ACTIVE | accounting/ | web, telegram |
 | EXIT_CLASSIFICATION | v3 (evidence provenance) | ACTIVE | experience/outcome_recovery.py | ledger, accounting, telegram |
 | RESEARCH_RESULT | v1 | ACTIVE | research/ | registry, web |
+| RESEARCH_OBSERVABILITY | v1 | ACTIVE | research/evidence.py, research/observability.py | registry, web, worker |
 | UPDATE_SYSTEM | v1 | ACTIVE | release/updater.py, cli/main.py | installed users, release CI |
 | SHADOW_70D | v1 | ACTIVE | shadow/shadow70/ (TASK-05-70D-SHADOW) | web, research, drift | 
 | LIQUIDITY_RUNTIME | v2 (BUG-116 Liquidity UI contract fix) | ACTIVE | features/liquidity_runtime.py (LiquidityGovernor: real snapshot, ENABLED/DISABLED/DEGRADED/UNAVAILABLE, explicit feature_availability/calculation_status/source_status, registry-driven liquidity indices 60..69, wall-clock timestamps, state_revision, model compat NOT_APPLICABLE when disabled, 70D assembly) | web/server.py, live_engine.py, Web/ |

@@ -1531,6 +1531,8 @@ EXPERIENCE -> RESEARCH -> CANDIDATE -> BACKTEST -> WALK-FORWARD
 | `pipeline.py` | `ResearchPipeline` — orchestrates dataset → discovery → gates → score → registry. |
 | `worker.py` | `ResearchWorker` — isolated, restart-safe, idempotent background research loop. |
 | `store.py` | Bounded read facade for the research tables. |
+| `evidence.py` (TASK-21) | First-class observability contracts: `ResearchGate`, `ResearchRunSnapshot`, `ResearchEvent`, `EvidenceArtifact`, `OutcomeLineage`, `GateStatus` (PENDING/QUEUED/RUNNING/PASSED/FAILED/SKIPPED/BLOCKED/ERROR/CANCELLED), `RunStatus`, `WorkerHealth`, `FailureClass` (TECHNICAL vs RESEARCH vs DATA). `build_run_snapshot()` captures reproducibility fingerprint (spec 9/45/64). |
+| `observability.py` (TASK-21) | `ResearchObservabilityStore` — persistence facade for gates/events/evidence/snapshots + worker heartbeat (`beat()` + `worker_health()` HEALTHY/DEGRADED/STUCK/FAILED) + queue census + failure heatmap + family analytics + one-click `trace()`. In-memory gate cache makes start/finish async-queue-safe. |
 | `strategies/` (PHASE 15C) | Seedable built-in bar-based strategy engines: `base.py` (Strategy protocol + `StrategySignal` + content-addressed candidates), `ichimoku.py` (Ichimili "Final" + "Spaced" variants translated from Pine, pure signal generators, NO order authority), `seeder.py` (`seed_builtin_candidates()` — idempotent registry upserts that preserve existing validation results). Registered automatically; `builtin_candidates()` produces deterministic `StrategyCandidate`s for backtest/walk-forward/OOS like any discovered candidate. Worker step `seed` runs before dataset/discovery each cycle. |
 
 ### 🔒 Safety Contract (PHASE 09B)
@@ -1544,14 +1546,48 @@ EXPERIENCE -> RESEARCH -> CANDIDATE -> BACKTEST -> WALK-FORWARD
 - 50D (`scalp_v1`) works today; 60D/350D are supported at the schema/provenance
   layer via `feature_schema_id` + `feature_dimension` per candidate/registry row.
 
+### 🔍 Research Observability & Evidence Traceability (TASK-21, 2026-08-20)
+
+The Strategy Research Engine is a fully observable, phase-by-phase research
+laboratory. Every candidate has a complete, immutable, inspectable lifecycle:
+
+- **First-class gates**: `STATIC_VALIDATION → BACKTEST → WALK_FORWARD → OOS →
+  ROBUSTNESS → SCORING`, each a `research_gates` row with explicit status
+  (PENDING/QUEUED/RUNNING/PASSED/FAILED/SKIPPED/BLOCKED/ERROR/CANCELLED) and
+  `failure_class` (TECHNICAL vs RESEARCH vs DATA).
+- **Immutable runs**: each validation attempt gets a unique `RUN-…` id; runs are
+  append-only, never overwritten (spec 8/63 idempotency via research hash).
+- **Reproducibility**: `research_run_snapshots` captures strategy definition
+  hash, dataset id+hash, schema, model version, seed, config hash and engine
+  version at run start (spec 9/45).
+- **Persisted timeline**: every gate event lands in `research_events` (no fake
+  timestamps; ordered by insertion id).
+- **Evidence vault**: every gate stores an immutable `research_evidence`
+  artifact (content-hash addressed, `EV-…`).
+- **Blocked reasons explicit**: `_registry_blocked_reason()` resolves WHY a
+  DISCOVERED strategy has not moved (gate/status/reason/required).
+- **Registry invariants**: `StrategyRegistry.invariant_check()` — VALIDATED
+  requires ALL gates PASSED + score verdict VALIDATED; REJECTED requires a
+  failed gate (never the default for unprocessed strategies).
+- **Worker heartbeat**: `research_worker_heartbeat` + `worker_health()`
+  classification HEALTHY/DEGRADED/STUCK/FAILED (spec 29/30).
+- **Queue observability**: `queue_snapshot()` census + `api/research/queue`.
+- **No auto-promotion maintained**: VALIDATED never becomes ACTIVE
+  automatically (invariant verified by tests).
+
 ### 🗄️ New Canonical Tables (all in `audit.db`, SQLite WAL)
 
 - `strategy_registry` — enduring validation truth keyed by
   `(strategy_id, strategy_version)` UNIQUE; preserves backtest / walk-forward /
   OOS / robustness / score / confidence / lifecycle / lineage. Independent of
   the current model file (survives model rebuilds + schema-width changes).
-- `research_runs` — append-only record of every validation run (reproducibility).
+- `research_runs` — append-only record of every validation run (reproducibility); now carries status/run_outcome/snapshot_id/gates/completed_at (TASK-21).
 - `research_worker_state` — restart-safe worker checkpoint.
+- `research_gates` (TASK-21) — first-class gate rows (gate_id/strategy_id/run_id/gate_type/status/started/completed/duration/config_version/dataset_version/engine_version/result/failure_reason/failure_class/evidence_id/retryable/order_index).
+- `research_events` (TASK-21) — persisted gate timeline (event_type/message/payload/occurred_at; ordered by insertion id).
+- `research_evidence` (TASK-21) — immutable evidence vault (evidence_id/content_hash/kind/dataset_version/engine_version).
+- `research_run_snapshots` (TASK-21) — reproducibility fingerprint per run (strategy_definition_hash/dataset_hash/model_hash/random_seed/configuration_hash/research_hash).
+- `research_worker_heartbeat` (TASK-21) — worker heartbeat row feeding health classification.
 
 ### ⚙️ LiveEngine Wiring
 
@@ -1571,6 +1607,18 @@ EXPERIENCE -> RESEARCH -> CANDIDATE -> BACKTEST -> WALK-FORWARD
 | `/api/research/discover` | POST | Build dataset + bounded candidate discovery |
 | `/api/research/validate` | POST | Full gate chain for one candidate (never ACTIVE) |
 | `/api/research/self-heal` | POST | Rebuild derived research state |
+| `/api/research/detail/{strategy_id}` | GET | TASK-21 one-click trace: runs/gates/events/evidence/snapshot + blocked-reason + invariant |
+| `/api/research/trace` | GET | TASK-21 trace by strategy_id / research_run_id / gate_id / evidence_id |
+| `/api/research/gates` | GET | TASK-21 first-class gate list (status/reason/evidence/class) |
+| `/api/research/events` | GET | TASK-21 persisted gate timeline |
+| `/api/research/evidence` | GET | TASK-21 immutable evidence vault listing |
+| `/api/research/worker` | GET | TASK-21 worker heartbeat + health classification |
+| `/api/research/queue` | GET | TASK-21 gate queue census (queued/running/last-errors) |
+| `/api/research/analytics` | GET | TASK-21 failure heatmap + family analytics |
+| `/api/research/preflight` | GET | TASK-21 validation pre-flight (data/registry/candidate checks, never starts a run) |
+| `/api/research/retry-gate` | POST | TASK-21 safe retry of TECHNICAL/DATA failures (RESEARCH failures never retried) |
+| `/api/research/cancel` | POST | TASK-21 cancel a run -> CANCELLED (never FAILED), preserves completed gates |
+| `/api/research/diagnostics` | GET | TASK-21 final debug view: worker health/queue/heatmap/blocked gates |
 
 ### 🧪 Phase 09B Tests
 
@@ -1581,6 +1629,12 @@ EXPERIENCE -> RESEARCH -> CANDIDATE -> BACKTEST -> WALK-FORWARD
   scoring + small-sample protection, lifecycle, versioning immutability, safety
   (no RiskEngine/OrderManager/MT5), worker isolation/restart, and full-pipeline
   non-promotion to ACTIVE.
+- `tests/unit/test_research_observability_phase21.py` — 24 tests covering gate
+  creation/status lifecycle/failure-class, persisted timeline, evidence vault
+  immutability, append-only runs, reproducibility snapshots, blocked-reason
+  resolution, registry invariants (VALIDATED/REJECTED), worker heartbeat
+  HEALTHY/STUCK, queue census and end-to-end lifecycle (VALIDATED never ACTIVE,
+  rejection path, blocked path, one-click trace).
 - `tests/integration/test_research_api.py` — 7 tests covering LiveEngine wiring,
   summary/registry/discover/validate/self-heal endpoints, worker restart-safety
   and no-MT5/no-risk-engine exposure.
