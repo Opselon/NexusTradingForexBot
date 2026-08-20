@@ -484,7 +484,8 @@ class TestWorkerHeartbeat:
         obs = ResearchObservabilityStore(temp_audit_repo)
         # Old heartbeat (2 hours ago) -> STUCK
         import sqlite3
-        from datetime import UTC, datetime, timedelta as td
+        from datetime import UTC, datetime
+        from datetime import timedelta as td
 
         conn = sqlite3.connect(temp_audit_repo._db_path)
         conn.execute(

@@ -31,9 +31,9 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from nexus_scalp.database.config import (  # noqa: E402
     DatabaseConfig,
-    mask_url_password,
     build_postgres_url,
     load_database_config,
+    mask_url_password,
 )
 from nexus_scalp.database.drivers import get_driver  # noqa: E402
 from nexus_scalp.database.drivers.postgres_driver import _translate_placeholders  # noqa: E402
@@ -417,8 +417,8 @@ class TestPostgresCrud:
     def test_pg_health_service(self):
         self._ensure_pw()
         from nexus_scalp.database.config import DatabaseConfig
-        from nexus_scalp.database.health import DatabaseHealthService
         from nexus_scalp.database.drivers import get_driver
+        from nexus_scalp.database.health import DatabaseHealthService
 
         # DBHealth for a PG-configured domain resolves via settings; probe the
         # driver health directly here
@@ -557,8 +557,8 @@ class TestPostgresCrud:
     def test_pg_health_service(self):
         self._ensure_pw()
         from nexus_scalp.database.config import DatabaseConfig
-        from nexus_scalp.database.health import DatabaseHealthService
         from nexus_scalp.database.drivers import get_driver
+        from nexus_scalp.database.health import DatabaseHealthService
 
         # DBHealth for a PG-configured domain resolves via settings; probe the
         # driver health directly here

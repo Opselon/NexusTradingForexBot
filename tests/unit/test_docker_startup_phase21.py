@@ -187,6 +187,7 @@ def test_docker_11_health_payload_never_contains_plain_secrets() -> None:
 def test_docker_12_boot_env_maps_to_appconfig() -> None:
     """NSE_* double-underscore names map onto AppConfig (docker contract)."""
     import os
+
     from nexus_scalp.configuration.config import AppConfig
 
     old = {k: os.environ.get(k) for k in ("NSE_EXECUTION__SYMBOL", "NSE_RISK__RISK_PER_TRADE_PCT")}
