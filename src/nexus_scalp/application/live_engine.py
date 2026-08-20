@@ -287,6 +287,17 @@ class LiveEngine:
         # then blanked). Env overrides remain the diagnosis escape hatch.
         # =================================================================
         self.settings_service = load_settings_service()
+        # Attach the persistent store (settings DB) so runtime config
+        # versions and values persist across restarts (boot hydration).
+        try:
+            from nexus_scalp.configuration import PersistentConfigStore
+
+            self.runtime_config._persistent = PersistentConfigStore(self.settings_service)
+        except Exception as _pcs_err:
+            logger.warning(
+                "[RUNTIME_CONFIG] persistent store attach failed (non-fatal): %s",
+                _pcs_err,
+            )
         try:
             legacy: dict[str, Any] = {}
             legacy_path = Path("configs/live.yaml")
