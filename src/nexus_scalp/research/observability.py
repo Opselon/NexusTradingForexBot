@@ -83,6 +83,9 @@ class ResearchObservabilityStore:
 
     def __init__(self, audit_repo: AuditRepository) -> None:
         self.audit_repo = audit_repo
+        # In-memory gate cache: rows are written through the background
+        # queue, so finish/start must not depend on a synchronous DB read.
+        self._gates: dict[str, ResearchGate] = {}
 
     # ==================================================================
     # Gates
@@ -135,6 +138,7 @@ class ResearchObservabilityStore:
                 gate.order_index,
             ),
         )
+        self._gates[gate.gate_id] = gate
         return gate
 
     def start_gate(self, gate_id: str) -> ResearchGate | None:
@@ -159,6 +163,7 @@ class ResearchObservabilityStore:
                 gate_id,
             ),
         )
+        self._gates[gate_id] = updated
         return updated
 
     def finish_gate(
@@ -215,6 +220,7 @@ class ResearchObservabilityStore:
                 gate_id,
             ),
         )
+        self._gates[gate_id] = updated
         return updated
 
     def block_gate(
@@ -247,6 +253,7 @@ class ResearchObservabilityStore:
                 gate_id,
             ),
         )
+        self._gates[gate_id] = updated
         return updated
 
     def skip_gate(self, gate_id: str, reason: str = "") -> ResearchGate | None:
@@ -272,9 +279,13 @@ class ResearchObservabilityStore:
                 gate_id,
             ),
         )
+        self._gates[gate_id] = updated
         return updated
 
     def get_gate(self, gate_id: str) -> ResearchGate | None:
+        cached = self._gates.get(gate_id)
+        if cached is not None:
+            return cached
         if not self.audit_repo._is_sqlite:
             return None
         try:

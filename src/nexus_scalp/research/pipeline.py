@@ -676,11 +676,31 @@ class ResearchPipeline:
                 logger.error("[STRATEGY_RESEARCH] run record failed", error=str(e))
 
 
+def _static_validation_problems(candidate: StrategyCandidate) -> list[str]:
+    """Quality gate before expensive validation (spec 14).
+
+    Returns a list of problems when the candidate is malformed and should
+    fail BEFORE the backtest; empty list means the candidate passes.
+    """
+    problems: list[str] = []
+    ctx = candidate.context_definition or {}
+    if not ctx.get("symbol"):
+        problems.append("context_definition missing symbol")
+    if not ctx.get("fingerprint"):
+        problems.append("context_definition missing fingerprint")
+    if not candidate.entry_logic:
+        problems.append("empty entry_logic")
+    if not candidate.exit_logic:
+        problems.append("empty exit_logic")
+    if candidate.feature_dimension < 1:
+        problems.append(f"invalid feature_dimension {candidate.feature_dimension}")
+    return problems
+
 _INSERT_RUN_SQL = """
     INSERT INTO research_runs
     (run_id, dataset_id, strategy_id, strategy_version, executed_at, config,
      build_identity, result_summary, status, run_outcome, snapshot_id, gates,
      completed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(run_id) DO NOTHING;
 """
