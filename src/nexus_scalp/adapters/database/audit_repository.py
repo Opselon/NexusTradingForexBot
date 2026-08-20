@@ -57,10 +57,7 @@ class AuditRepository:
         if config is not None:
             # DATABASE PORTABILITY: the caller resolved the authoritative
             # DatabaseConfig (settings/env); derive the SQLite connect path.
-            try:
-                db_url = f"sqlite:///{config.sqlite_connect_path}"
-            except Exception:
-                db_url = db_url
+            db_url = f"sqlite:///{config.sqlite_connect_path}"
         self._db_url = db_url
         self._is_sqlite = db_url.startswith("sqlite")
         self._db_path = self._db_url.replace("sqlite:///", "") if self._is_sqlite else ""
