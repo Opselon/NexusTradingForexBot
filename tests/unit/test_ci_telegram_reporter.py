@@ -145,7 +145,17 @@ class TestChatIdResolution:
 
     def test_admin_id_fallback(self, tmp_path, monkeypatch):
         root = _build_results_tree(tmp_path / "res")
-        monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+        # Hermetic: kill EVERY chat-id source the reporter consults — including
+        # USER_ID, which the GitHub Actions runner exports globally
+        # (USER_ID=5094837833), so a non-hermetic test would silently read the
+        # runner's real chat id and fail on CI only (2026-08-20 commander fix).
+        for var in (
+            "TELEGRAM_CHAT_ID",
+            "NEXUS_TELEGRAM_CHAT_ID",
+            "USER_ID",
+            "NEXUS_TELEGRAM_ADMIN_ID",
+        ):
+            monkeypatch.delenv(var, raising=False)
         monkeypatch.setenv("NEXUS_TELEGRAM_ADMIN_ID", "12345")
         r = CITelegramReporter(root)
         assert r.chat_id == "12345"
@@ -169,8 +179,17 @@ class TestChatIdResolution:
 
     def test_no_chat_id_means_disabled_and_isolated(self, tmp_path, monkeypatch):
         root = _build_results_tree(tmp_path / "res")
-        monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
-        monkeypatch.delenv("NEXUS_TELEGRAM_ADMIN_ID", raising=False)
+        # Hermetic: clear USER_ID too — the GitHub runner exports it globally
+        # (USER_ID=5094837833), which the reporter reads as the LAST fallback
+        # chat id; without clearing it this test fails on CI but passes locally
+        # (2026-08-20 commander fix).
+        for var in (
+            "TELEGRAM_CHAT_ID",
+            "NEXUS_TELEGRAM_CHAT_ID",
+            "USER_ID",
+            "NEXUS_TELEGRAM_ADMIN_ID",
+        ):
+            monkeypatch.delenv(var, raising=False)
         r = CITelegramReporter(root)
         assert r.chat_id == ""
         result = r.notify_run_finished()  # must NOT raise, must return structured failure
