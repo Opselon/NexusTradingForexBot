@@ -2588,13 +2588,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def db_manage_test_connection(payload: dict[str, Any]) -> dict[str, Any]:
         """Test the PostgreSQL connection BEFORE migration (never persists)."""
         try:
-            import json
 
-            from nexus_scalp.database.config import DatabaseConfig, resolve_password
             from nexus_scalp.database.drivers import get_driver
 
             raw = dict(payload)
             password = raw.pop("password", None)
+            from nexus_scalp.database.config import DatabaseConfig
+
             cfg = DatabaseConfig.for_postgres(
                 domain="audit",
                 host=str(raw.get("host") or "localhost"),
@@ -2699,22 +2699,49 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 validate_checksums=bool(raw.get("validate_checksums", True)),
             )
             mig = SqliteToPostgresMigrator(src, dst, options)
-            # background thread: never block the web loop
-            result: dict[str, Any] = {}
-
+            # background thread: never block the web loop; progress/report
+            # land on app.state.db_migration_state for the poll endpoints.
             def _run() -> None:
                 try:
-                    report = mig.run()
-                    result["report"] = report.to_dict()
+                    state: dict[str, Any] = {
+                        "done": False,
+                        "progress": 0.0,
+                        "current_table": "",
+                        "rows_copied": 0,
+                        "total_rows": 0,
+                        "report": None,
+                    }
+                    app.state.db_migration_state = state
+
+                    def _on_progress(table: str, done_i: int, total: int, batch: int) -> None:
+                        state["current_table"] = table
+                        state["rows_copied"] = done_i
+                        state["total_rows"] = total
+                        state["progress"] = (done_i / total) if total else 0.0
+                        state["batch"] = batch
+
+                    try:
+                        report = mig.run(on_progress=_on_progress)
+                    except Exception as exc:
+                        import traceback
+
+                        state["report"] = {"status": "FAILED", "errors": [str(exc)], "trace": traceback.format_exc()[:2000]}
+                        state["done"] = True
+                        state["progress"] = 0.0
+                        return
+                    state["report"] = report.to_dict()
+                    state["done"] = True
+                    state["progress"] = 1.0
                     # switch active provider only when validation passed
                     if report.provider_switch_ready:
                         _settings_service().set_database_provider("postgresql")
-                        result["provider_switched"] = True
+                        state["provider_switched"] = True
                     else:
-                        result["provider_switched"] = False
+                        state["provider_switched"] = False
                 except Exception as exc:
-                    result["error"] = str(exc)
-                    result["provider_switched"] = False
+                    import traceback
+
+                    app.state.db_migration_state = {"done": True, "progress": 0.0, "report": {"status": "FAILED", "errors": [str(exc)], "trace": traceback.format_exc()[:2000]}}
 
             t = threading.Thread(target=_run, daemon=True, name="nse_db_migrate")
             t.start()
@@ -2727,7 +2754,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def db_manage_progress() -> dict[str, Any]:
         """Live migration progress (polled by the panel UI)."""
         try:
-            from nexus_scalp.database.models import MigrationState
 
             state = getattr(app.state, "db_migration_state", None)
             if state is None:
@@ -2761,8 +2787,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def db_manage_backup() -> dict[str, Any]:
         """WAL-consistent SQLite backup (streaming sqlite backup API)."""
         try:
-            import shutil
-            import time
 
             from nexus_scalp.database.config import DatabaseConfig
             from nexus_scalp.database.drivers import get_driver
