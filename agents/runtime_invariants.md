@@ -265,7 +265,7 @@ receiving 60D vectors only.
 - `report()` exposes the canonical contract (`liquidity_contract`) and `snapshot_coherence_revision` so the UI renders runtime/model dimensions, schemas, feature-order hashes, normalization and the snapshot epoch from ONE backend source.
 - Diagnostic reason strings: MODEL_INPUT_DIMENSION_MISMATCH / SCHEMA_VERSION_MISMATCH / MODEL_DIMENSION_EXCEEDS_RUNTIME / MODEL_TENSOR_DIMENSION_MISMATCH / NO_MODEL_METADATA(UNKNOWN) / SCHEMA_DIMENSION_MATCH(PASS). The generic LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE reason is removed.
 
-## INV-022 — Runtime database hygiene is continuous, config-driven, and never self-destructive (TASK-22-DB-HYGIENE-RUNTIME)
+## INV-023 — Runtime database hygiene is continuous, config-driven, and never self-destructive (TASK-22-DB-HYGIENE-RUNTIME)
 
 The database hygiene engine runs continuously while the application runs:
 scheduler cadence comes from the `database_hygiene` config section
