@@ -35,14 +35,24 @@ logger = get_logger("nexus_scalp.strategies.factory.provider")
 
 #: Secret-store key for the generation API key (same store as telegram).
 LLM_API_KEY_SECRET: str = "factory.llm_api_key"
+#: Settings DB key for the API base URL (NOT secret).
+LLM_BASE_URL_KEY: str = "factory.llm_base_url"
+#: Settings DB key for the model name (NOT secret).
+LLM_MODEL_KEY: str = "factory.llm_model"
+#: Settings DB key for the model temperature (NOT secret).
+LLM_TEMPERATURE_KEY: str = "factory.llm_temperature"
+
+#: Prompt template version — every candidate records which prompt version
+#: produced it (spec 86). Bump when the DSL grammar/prompt changes.
+PROMPT_VERSION: str = "factory-dsl-v2"
 
 #: Default openai-compatible endpoint suffix.
 _CHAT_COMPLETIONS_PATH = "/chat/completions"
 
 #: Hard request budget guards (spec 45 / 72).
 DEFAULT_MAX_REQUESTS_PER_GENERATION: int = 60
-DEFAULT_TIMEOUT_SEC: float = 45.0
-DEFAULT_MAX_TOKENS: int = 4096
+DEFAULT_TIMEOUT_SEC: float = 120.0
+DEFAULT_MAX_TOKENS: int = 8192
 
 #: JSON-schema-compatible shape the provider EXPECTS from the model. The
 #: response must be {"strategies": [ {dsl...}, ... ]}
@@ -89,7 +99,7 @@ class LLMGenerationProvider:
     provider_name: str = "openai-compatible"
     #: Prompt version — every candidate records which prompt version produced
     #: it (spec 86).
-    prompt_version: str = "factory-dsl-v1"
+    prompt_version: str = PROMPT_VERSION
 
     def __init__(
         self,
@@ -202,7 +212,13 @@ class LLMGenerationProvider:
             return []
 
         try:
-            data = resp.json()
+            body = resp.text
+            # Some compatible endpoints append SSE framing to the JSON body
+            # (e.g. "}data: [DONE]") — strip it before parsing.
+            marker = body.rfind("data: [DONE]")
+            if marker > 0:
+                body = body[:marker].rstrip()
+            data = json.loads(body)
         except Exception:
             self.usage.failures += 1
             self.usage.last_error = "BAD_JSON_RESPONSE"
@@ -247,15 +263,25 @@ class LLMGenerationProvider:
 
     @staticmethod
     def _try_parse(content: str) -> Any:
+        # Some compatible endpoints append SSE framing to the JSON body
+        # (e.g. "}data: [DONE]") — strip it before parsing.
+        text = content.strip()
+        marker = text.rfind("data: [DONE]")
+        if marker > 0:
+            text = text[:marker].rstrip()
         try:
-            return json.loads(content)
+            return json.loads(text)
         except (ValueError, TypeError):
             return None
 
     @staticmethod
     def _repair(content: str) -> str:
-        """Repair common LLM JSON artifacts (markdown fences, prose)."""
+        """Repair common LLM JSON artifacts (markdown fences, SSE trailing,
+        prose)."""
         text = content.strip()
+        marker = text.rfind("data: [DONE]")
+        if marker > 0:
+            text = text[:marker].rstrip()
         if text.startswith("```"):
             # strip ```json ... ```
             lines = text.splitlines()
@@ -273,42 +299,59 @@ class LLMGenerationProvider:
 
     def _build_messages(self, context: dict[str, Any], n: int) -> tuple[str, str]:
         feature_list = ", ".join(context.get("feature_ids") or [])
+        schema_fields = """{
+  "schema_version": "1.0",
+  "hypothesis": {
+    "statement": "one-sentence mechanism being hypothesized",
+    "market_mechanism": "economic/structural explanation",
+    "expected_regime": ["trending" | "ranging" | "high_volatility" | "low_volatility"],
+    "invalidation": ["condition that falsifies the thesis"],
+    "abstain_conditions": ["conditions under which the strategy must NOT trade"]
+  },
+  "family": "one of TREND_FOLLOWING, MEAN_REVERSION, BREAKOUT, REVERSAL, MOMENTUM, VOLATILITY_EXPANSION, VOLATILITY_CONTRACTION, LIQUIDITY_SWEEP, SESSION, MULTI_TIMEFRAME, HYBRID",
+  "market": {"symbols": ["XAUUSD"], "timeframes": ["M1"]},
+  "context": {"optional": "regime/session/volatility filters as objects"},
+  "setup": {"structure": "preconditions you look for before entry"},
+  "entry": {"logic": "entry logic name", "confirmation": ["feature_ids that confirm the entry"]},
+  "filters": [{"feature": "feature_id", "op": "gt|lt|between", "value": 0.0}],
+  "exit": {"mode": "fixed_rr|trailing|target|chandelier", "rr": 2.0},
+  "risk": {"risk_governance": "global"},
+  "constraints": {"no_future_data": true}
+}"""
         system = (
-            "You are a quantitative research scientist and strategy designer. "
-            "You produce STRATEGY HYPOTHESES in a structured DSL. Rules:\n"
-            "1. Only use features from the approved catalog. Never invent indicators.\n"
-            "2. Never claim or compute backtest performance. You propose; the engine measures.\n"
-            "3. Prefer simple, robust, generalizable structures over complex optimized ones.\n"
-            "4. Every strategy must state a hypothesis: market mechanism, expected regime, "
-            "invalidation and abstain conditions.\n"
-            '5. Return ONLY a JSON object: {"strategies": [ {dsl-object}, ... ]}. '
-            "No markdown, no prose.\n"
+            "You are a senior quantitative researcher designing rule-based scalping strategy "
+            "hypotheses for XAUUSD. You propose strategy HYPOTHESES only - you NEVER claim, "
+            "compute or predict performance. The engine measures everything.\n"
+            "HARD RULES:\n"
+            "1. Use ONLY features from the approved catalog below. NEVER invent indicators.\n"
+            "2. Every strategy MUST declare no_future_data: true - signals are computed on\n"
+            "   CLOSED bars only. Never reference the current forming bar's high/low/close.\n"
+            "3. Prefer simple, robust, generalizable logic over optimized complexity. A strategy\n"
+            "   that works out-of-sample with 20 trades beats a curve-fit 200-trade monster.\n"
+            "4. Stay within the complexity budget: at most 9 conditions, 6 distinct features.\n"
+            "5. Choose ONE strategy family per strategy and align the entry logic with it.\n"
+            "6. Your output is DATA. It will be validated by strict deterministic gates and any\n"
+            "   invalid strategy is rejected before it is ever tested.\n"
             f"Approved feature catalog ({len(context.get('feature_ids') or [])}): {feature_list}\n"
             f"Supported timeframes: {context.get('timeframes')}\n"
             f"Supported symbols: {context.get('symbols')}\n"
             f"Complexity limits: max conditions {context.get('max_conditions')}, "
             f"max features {context.get('max_features')}, max timeframes {context.get('max_timeframes')}\n"
-            "DSL schema: {schema_version, hypothesis:{statement,market_mechanism,expected_regime,"
-            "invalidation,abstain_conditions}, family, market:{symbols,timeframes}, context, setup, "
-            "entry:{logic,confirmation[]}, filters:[{feature,op,value}], exit:{mode}, risk, "
-            "constraints:{no_future_data:true}}\n"
-            "A strategy that performs spectacularly in-sample but fails out-of-sample is inferior "
-            "to a simpler strategy with stable OOS behavior."
+            f"DSL schema (JSON envelope): {schema_fields}\n"
+            'Return ONLY a JSON object: {"strategies": [ {dsl-object}, ... ]}. '
+            "No markdown, no prose, no code fences."
         )
-        user = "Generate exactly " + str(n) + " DISTINCT strategies.\n"
+        user = "Generate exactly " + str(n) + " DISTINCT strategies covering DIFFERENT families.\n"
         if context.get("research_memory"):
             user += (
-                "Research memory for the previous generations:\n"
-                + str(context["research_memory"])
-                + "\n"
+                "Research memory from previous generations (learn from it, do not repeat "
+                "what already failed):\n" + str(context["research_memory"]) + "\n"
             )
         if context.get("generation_objective"):
             user += "Generation objective: " + str(context["generation_objective"]) + "\n"
         user += (
-            "Diversity requirement: cover multiple strategy families; do NOT emit hundreds of "
-            "variations of one strategy. Output ONLY the JSON object."
+            "Important: do NOT emit dozens of near-identical variations of one strategy. "
+            "Diversify across families and mechanisms. Output ONLY the JSON object."
         )
         return system, user
-
-
 __all__ = ["LLM_API_KEY_SECRET", "LLMGenerationProvider", "ProviderUsage"]

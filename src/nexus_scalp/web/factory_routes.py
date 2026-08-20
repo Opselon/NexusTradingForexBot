@@ -245,6 +245,81 @@ def factory_memory(request: Request) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# LLM provider configuration (UI-controllable, hot-swappable, 2026-08-20)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/llm-config")
+def factory_llm_config_status(request: Request) -> dict[str, Any]:
+    """Safe status of the LLM provider config (never the raw API key)."""
+    try:
+        from nexus_scalp.settings import load_settings_service
+
+        engine = request.app.state.engine
+        svc = getattr(engine, "settings_service", None) if engine else None
+        svc = svc or load_settings_service()
+        status = svc.factory_llm_config_status()
+        factory = _factory(request)
+        provider_status = {}
+        if factory is not None and factory.provider is not None:
+            provider_status = {
+                "available": factory.provider.available(),
+                "model": factory.provider.model,
+                "base_url": factory.provider.api_base_url,
+                "prompt_version": factory.provider.prompt_version,
+                "usage": factory.provider.usage.snapshot(),
+            }
+        return serialize_enums(_ok({"status": status, "provider": provider_status}))
+    except Exception as e:
+        log_factory_error("/api/factory/llm-config", e)
+        return _err("INTERNAL_ERROR")
+
+
+@router.post("/llm-config")
+def factory_llm_config_save(request: Request, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Persist the LLM provider config (encrypted key) + hot-rebuild the
+    in-process factory provider. Never returns the API key."""
+    payload = payload or {}
+    try:
+        from nexus_scalp.settings import load_settings_service
+
+        engine = request.app.state.engine
+        svc = getattr(engine, "settings_service", None) if engine else None
+        svc = svc or load_settings_service()
+        result = svc.set_factory_llm_config(
+            api_key=str(payload.get("api_key") or "").strip() or None,
+            base_url=str(payload.get("base_url") or "").strip() or None,
+            model=str(payload.get("model") or "").strip() or None,
+            temperature=payload.get("temperature"),
+            actor="web",
+        )
+        # Hot-rebuild the running factory provider so changes apply without
+        # restart (mirrors the telegram notifier rebuild pattern).
+        factory = _factory(request)
+        if engine is not None and factory is not None:
+            from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
+
+            cfg = svc.get_factory_llm_config()
+            new_provider = LLMGenerationProvider(
+                api_base_url=cfg["api_base_url"],
+                model=cfg["model"],
+                api_key=cfg["api_key"],
+                temperature=cfg["temperature"],
+                secret_store=svc.secrets,
+            )
+            factory.provider = new_provider
+            logger.info(
+                "[STRATEGY_FACTORY] LLM provider hot-rebuilt",
+                configured=new_provider.available(),
+                model=new_provider.model,
+            )
+        return serialize_enums(_ok(result))
+    except Exception as e:
+        log_factory_error("/api/factory/llm-config save", e)
+        return _err("INTERNAL_ERROR")
+
+
+# ---------------------------------------------------------------------------
 # Generation control
 # ---------------------------------------------------------------------------
 

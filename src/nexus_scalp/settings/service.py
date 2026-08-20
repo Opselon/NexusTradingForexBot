@@ -51,6 +51,10 @@ MUTABILITY = {
     "telegram.enabled": HOT_RESTRICTED,
     "telegram.bot_token": SECRET,
     "telegram.admin_id": SECRET,
+    "factory.llm_api_key": SECRET,
+    "factory.llm_base_url": HOT_RESTRICTED,
+    "factory.llm_model": HOT_RESTRICTED,
+    "factory.llm_temperature": HOT_RESTRICTED,
     "execution.symbol": RESTART_REQUIRED,
     "execution.timeframe": RESTART_REQUIRED,
     "execution.mode": HOT_RESTRICTED,
@@ -76,6 +80,16 @@ TELEGRAM_TOKEN_KEY = "telegram.bot_token"
 TELEGRAM_ADMIN_KEY = "telegram.admin_id"
 TELEGRAM_ENABLED_KEY = "telegram.enabled"
 MIGRATION_FLAG_KEY = "telegram.migrated_from_yaml"
+
+# Strategy Factory LLM provider configuration (2026-08-20).
+# The API key is a SECRET and lives ONLY in the OS-protected secret store
+# (DPAPI on Windows); base URL / model / temperature are non-secret runtime
+# settings in the settings DB and are changeable from the web UI without
+# restart (hot-swapped onto the running factory provider).
+FACTORY_LLM_API_KEY = "factory.llm_api_key"
+FACTORY_LLM_BASE_URL = "factory.llm_base_url"
+FACTORY_LLM_MODEL = "factory.llm_model"
+FACTORY_LLM_TEMPERATURE = "factory.llm_temperature"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS application_settings (
@@ -454,6 +468,95 @@ class SettingsService:
             "success": True,
             "correlation_id": cid,
             "status": self.telegram_config_status(),
+        }
+
+    # ------------------------------------------------------------ Factory
+    # Strategy Factory LLM provider config (2026-08-20).
+    # ------------------------------------------------------------------
+    def factory_llm_config_status(self) -> dict[str, Any]:
+        """Truthful status WITHOUT exposing the API key."""
+        key = self.secrets.get_secret(FACTORY_LLM_API_KEY)
+        base = self.db.get(FACTORY_LLM_BASE_URL)
+        model = self.db.get(FACTORY_LLM_MODEL)
+        temp = self.db.get(FACTORY_LLM_TEMPERATURE)
+        return {
+            "configured": bool(key and base and model),
+            "api_key_present": bool(key),
+            "masked_api_key": _mask_token(key or ""),
+            "base_url": str(base.value) if base else "",
+            "model": str(model.value) if model else "",
+            "temperature": float(temp.value) if temp and temp.value is not None else 0.7,
+            "source": "SECURE_SECRET_STORE" if key else "NOT_CONFIGURED",
+            "state": self.state.state,
+        }
+
+    def get_factory_llm_config(self) -> dict[str, Any]:
+        """Return the full LLM runtime config (key included — used ONLY to
+        build the in-process provider; never serialized to the web)."""
+        return {
+            "api_base_url": str(
+                (self.db.get(FACTORY_LLM_BASE_URL).value if self.db.get(FACTORY_LLM_BASE_URL) else "") or ""
+            ),
+            "model": str(
+                (self.db.get(FACTORY_LLM_MODEL).value if self.db.get(FACTORY_LLM_MODEL) else "") or ""
+            ),
+            "api_key": self.secrets.get_secret(FACTORY_LLM_API_KEY) or "",
+            "temperature": float(
+                (self.db.get(FACTORY_LLM_TEMPERATURE).value if self.db.get(FACTORY_LLM_TEMPERATURE) else None)
+                or 0.7
+            ),
+        }
+
+    def set_factory_llm_config(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        actor: str = "web",
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist the LLM provider config. The API key goes to the secret
+        store (encrypted at rest); the rest to the settings DB. Returns the
+        safe status (never the key)."""
+        cid = correlation_id or new_correlation_id("factory")
+        if api_key is not None:
+            api_key = api_key.strip()
+            if api_key:
+                self.secrets.set_secret(FACTORY_LLM_API_KEY, api_key)
+            else:
+                self.secrets.delete_secret(FACTORY_LLM_API_KEY)
+        if base_url is not None:
+            self.db.set(
+                FACTORY_LLM_BASE_URL,
+                base_url.strip(),
+                source="USER_SETTINGS",
+                actor=actor,
+                correlation_id=cid,
+            )
+        if model is not None:
+            self.db.set(
+                FACTORY_LLM_MODEL,
+                model.strip(),
+                source="USER_SETTINGS",
+                actor=actor,
+                correlation_id=cid,
+            )
+        if temperature is not None:
+            bounded = max(0.0, min(float(temperature), 2.0))
+            self.db.set(
+                FACTORY_LLM_TEMPERATURE,
+                bounded,
+                value_type="float",
+                source="USER_SETTINGS",
+                actor=actor,
+                correlation_id=cid,
+            )
+        return {
+            "success": True,
+            "correlation_id": cid,
+            "status": self.factory_llm_config_status(),
         }
 
     # ------------------------------------------------------------ Migration

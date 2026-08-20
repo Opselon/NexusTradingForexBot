@@ -1,0 +1,105 @@
+cfg from settings: {'api_base_url': 'http://178.105.20.69:20128/v1', 'model': 'claude-opus-5', 'api_key': 'sk-73903...', 'temperature': 0.7}
+available: True
+---SYSTEM (first 500)---
+You are a senior quantitative researcher designing rule-based scalping strategy hypotheses for XAUUSD. You propose strategy HYPOTHESES only - you NEVER claim, compute or predict performance. The engine measures everything.
+HARD RULES:
+1. Use ONLY features from the approved catalog below. NEVER invent indicators.
+2. Every strategy MUST declare no_future_data: true - signals are computed on
+   CLOSED bars only. Never reference the current forming bar's high/low/close.
+3. Prefer simple, robust, gen
+---USER---
+Generate exactly 3 DISTINCT strategies covering DIFFERENT families.
+Generation objective: Produce diverse, robust, causally-clean strategy hypotheses.
+Important: do NOT emit dozens of near-identical variations of one strategy. Diversify across families and mechanisms. Output ONLY the JSON object.
+---CALL---
+returned 3 raw DSLs
+{
+ "schema_version": "1.0",
+ "hypothesis": {
+  "statement": "After an overextended move (RSI extreme), a bullish pinbar signals exhaustion and price reverts to the mean.",
+  "market_mechanism": "In scalping XAUUSD, sharp moves often overextend; pinbar indicates rejection at key levels, prompting a quick fade.",
+  "expected_regime": [
+   "ranging"
+  ],
+  "invalidation": [
+   "If price closes beyond the pinbar extreme, the reversal thesis fails."
+  ],
+  "abstain_conditions": [
+   "If is_doji indicates indecision, skip the trade."
+  ]
+ },
+ "market": {
+  "symbols": [
+   "XAUUSD"
+  ],
+  "timeframes": [
+   "M1"
+  ]
+ },
+ "context": {
+  "optional": "trade during high liquidity sessions only"
+ },
+ "setup": {
+  "structure": "Price has been declining for at least 3 bars and RSI is below 0.2"
+ },
+ "en
+---
+{
+ "schema_version": "1.0",
+ "hypothesis": {
+  "statement": "A bullish engulfing bar in the direction of existing momentum (consecutive up closes) signals continuation in a trend.",
+  "market_mechanism": "In gold trends, momentum persists; engulfing patterns show strong buyer control and attract follow-through.",
+  "expected_regime": [
+   "trending"
+  ],
+  "invalidation": [
+   "If momentum count flips negative, the trend assumption is broken."
+  ],
+  "abstain_conditions": [
+   "If norm_rsi is above 0.9, avoid chasing overbought conditions."
+  ]
+ },
+ "market": {
+  "symbols": [
+   "XAUUSD"
+  ],
+  "timeframes": [
+   "M5"
+  ]
+ },
+ "context": {
+  "optional": "trade only in direction of higher timeframe trend"
+ },
+ "setup": {
+  "structure": "Price has been making higher closes for at least 3 bar
+---
+{
+ "schema_version": "1.0",
+ "hypothesis": {
+  "statement": "A sudden expansion in ATR with a large-bodied candle breaking out of a tight range triggers a scalp in the breakout direction.",
+  "market_mechanism": "XAUUSD often compresses before expanding; a strong body with high ATR signals institutional participation and a potential breakout.",
+  "expected_regime": [
+   "high_volatility"
+  ],
+  "invalidation": [
+   "If the body_to_range_ratio is low, the breakout is false."
+  ],
+  "abstain_conditions": [
+   "If is_doji is true, skip because no directional body."
+  ]
+ },
+ "market": {
+  "symbols": [
+   "XAUUSD"
+  ],
+  "timeframes": [
+   "M15"
+  ]
+ },
+ "context": {
+  "optional": "trade only after a period of low ATR (compression)"
+ },
+ "setup": {
+  "structure": "ATR has been contracting for s
+---
+usage: {'requests': 1, 'failures': 0, 'prompt_tokens': 844, 'completion_tokens': 4288, 'total_tokens': 5132, 'estimated_cost_usd': 0.0103, 'last_latency_ms': 108085.1, 'total_latency_ms': 108085.1, 'last_error': ''}

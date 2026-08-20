@@ -325,7 +325,36 @@ class StrategyFactory:
         else:
             base = self._evolved_population(generation_id, population, memory)
 
-        return self._dedupe_population(base)
+        population = self._dedupe_population(base)
+        self._record_provider_usage()
+        return population
+
+    def _record_provider_usage(self) -> None:
+        """Persists the provider usage/cost ledger after a generation run."""
+        if self.provider is None or self.provider.usage is None:
+            return
+        try:
+            from nexus_scalp.strategies.factory.store import record_provider_usage
+
+            usage = self.provider.usage.snapshot()
+            record_provider_usage(
+                self._research_backend,
+                {
+                    "usage_id": f"u_{int(time.time())}",
+                    "generation_id": self.current_generation_id,
+                    "requests": usage.get("requests", 0),
+                    "failures": usage.get("failures", 0),
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                    "estimated_cost_usd": usage.get("estimated_cost_usd", 0.0),
+                    "last_latency_ms": usage.get("last_latency_ms", 0.0),
+                    "last_error": usage.get("last_error", ""),
+                    "created_at": _now().isoformat(),
+                },
+            )
+        except Exception as e:
+            logger.warning("[STRATEGY_FACTORY] provider usage record failed", error=str(e))
 
     def _generation_zero_population(
         self, generation_id: str, population: int
@@ -336,9 +365,119 @@ class StrategyFactory:
 
         candidates = generate_generation_zero(population, seed=RANDOM_SEED)
         candidates = [c.model_copy(update={"generation_id": generation_id}) for c in candidates]
+        # LLM-assisted slice (spec 6): the provider fills the LLM slot when
+        # configured; deterministic generators are ALWAYS the correctness base.
+        if self.provider is not None and self.provider.available():
+            llm = self._llm_candidates(generation_id, population)
+            candidates = self._merge_llm_slice(candidates, llm, population)
         # Family diversity injection: ensure all families present in G0.
         candidates = _ensure_family_coverage(candidates, generation_id)
         return candidates
+
+    def _merge_llm_slice(
+        self,
+        base: list[FactoryCandidate],
+        llm: list[FactoryCandidate],
+        population: int,
+    ) -> list[FactoryCandidate]:
+        """Replaces the LLM-sourced slice (source == LLM) of the deterministic
+        population with the provider-generated candidates.
+
+        The deterministic generators reserve the LLM slot (last ~30%); the
+        provider output REPLACES those placeholder candidates so the final
+        population keeps its size, every LLM candidate is content-addressed,
+        and the deterministic base is untouched (spec 6 / 13).
+        """
+        if not llm:
+            return base
+        out: list[FactoryCandidate] = []
+        llm_idx = 0
+        for c in base:
+            if c.source == CandidateSource.LLM and llm_idx < len(llm):
+                out.append(llm[llm_idx])
+                llm_idx += 1
+            else:
+                out.append(c)
+        # Overflow LLM candidates (provider returned more than the slot)
+        # are dropped: the population size is fixed by the caller.
+        return out[:population]
+
+    def _llm_candidates(self, generation_id: str, n: int) -> list[FactoryCandidate]:
+        """Requests `n` strategy DSLs from the configured LLM provider and
+        rehydrates them into content-addressed FactoryCandidates.
+
+        Provider output is UNTRUSTED DATA: every candidate still goes through
+        the full structural gate chain (validators) before any evaluation is
+        scheduled (spec 9 / 34 / 90). Never raises.
+        """
+        if self.provider is None or not self.provider.available():
+            return []
+        try:
+            raw_dsls = self.provider.generate_dsls(self._llm_prompt_context(), n)
+        except Exception as e:
+            logger.warning("[STRATEGY_FACTORY] LLM generation failed (isolated)", error=str(e))
+            return []
+        if not raw_dsls:
+            return []
+        from nexus_scalp.strategies.factory.dsl import canonicalize_dsl, candidate_id_from_hash, dsl_hash
+
+        out: list[FactoryCandidate] = []
+        for raw in raw_dsls:
+            try:
+                dsl = canonicalize_dsl(raw)
+            except Exception as e:
+                logger.warning("[STRATEGY_FACTORY] LLM DSL rejected (invalid schema)", error=str(e))
+                continue
+            digest = dsl_hash(dsl)
+            out.append(
+                FactoryCandidate(
+                    candidate_id=candidate_id_from_hash(digest),
+                    definition_hash=digest,
+                    generation_id=generation_id,
+                    source=CandidateSource.LLM,
+                    operator=EvolutionOperator.NONE,
+                    dsl=dsl,
+                    family=dsl.family,
+                    population_index=0,
+                )
+            )
+        return out
+
+    def _llm_prompt_context(self) -> dict[str, Any]:
+        """Builds the prompt context the LLM provider consumes.
+
+        Feature catalog is derived AT RUNTIME from the canonical 70D schema
+        contract — a generated strategy can never invent or change the
+        feature vector dimension (spec 10).
+        """
+        try:
+            from nexus_scalp.strategies.factory.dsl import feature_ids
+            from nexus_scalp.strategies.factory.summarizer import format_summary_for_prompt
+
+            feature_list = feature_ids()
+        except Exception:
+            feature_list = []
+        memory: dict[str, Any] = {}
+        try:
+            memory = self.build_memory()
+        except Exception:
+            memory = {}
+        cfg = self.config
+        context: dict[str, Any] = {
+            "feature_ids": feature_list,
+            "timeframes": ["M1", "M5", "M15", "M30", "H1", "H4", "D1"],
+            "symbols": self.symbols,
+            "max_conditions": cfg.max_conditions,
+            "max_features": cfg.max_features,
+            "max_timeframes": cfg.max_timeframes,
+            "generation_objective": "Produce diverse, robust, causally-clean strategy hypotheses.",
+        }
+        if memory:
+            try:
+                context["research_memory"] = format_summary_for_prompt(memory)
+            except Exception:
+                context["research_memory"] = memory
+        return context
 
     def _evolved_population(
         self, generation_id: str, population: int, memory: dict[str, Any] | None
