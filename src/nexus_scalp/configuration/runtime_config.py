@@ -853,7 +853,24 @@ class RuntimeConfigStore:
             result = build_runtime_configuration(version=start_version, source="SYSTEM_DEFAULTS")
         self._snapshot: RuntimeConfiguration = result.snapshot  # type: ignore[assignment]
         if persistent is not None:
-            persistent.set_config_version(self._snapshot.version)
+            # Boot hydration (§60 crash recovery / §68 restart persistence):
+            # the persisted settings DB is authoritative at startup — saved
+            # values are layered over the bootstrap, semantics unchanged.
+            persisted_values = persistent.get_all()
+            persisted_values.pop("rule_matrix.cache_ttl_seconds", None)
+            persisted_values.pop("telegram.enabled", None)
+            if persisted_values:
+                hyd = build_runtime_configuration(
+                    version=start_version + 1,
+                    base=self._snapshot,
+                    updates=persisted_values,
+                    source="PERSISTED_RESTORE",
+                )
+                if hyd.snapshot is not None:
+                    self._snapshot = hyd.snapshot
+                    persistent.set_config_version(self._snapshot.version)
+            else:
+                persistent.set_config_version(self._snapshot.version)
 
     # ------------------------------------------------------------ reads
     def get_snapshot(self) -> RuntimeConfiguration:
@@ -999,14 +1016,22 @@ class RuntimeConfigStore:
 
 
 def snapshot_to_flat(snap: RuntimeConfiguration) -> dict[str, Any]:
-    """Flatten a snapshot to `section.field` keys for the persistent store."""
+    """Flatten a snapshot to `section.field` keys for the persistent store.
+
+    Only keys the runtime builder understands are persisted (extra snapshot
+    observability fields such as model_version / hash / news tuning are NOT
+    persisted — the rebuild path would reject them as unknown).
+    """
     d = snap.to_dict()
     out: dict[str, Any] = {}
     for section in ("execution", "risk", "algo", "model", "news"):
         for key, value in d[section].items():
             if key == "effective_scope":
                 continue
-            out[f"{section}.{key}"] = value
+            flat_key = f"{section}.{key}"
+            if not _is_known_flat_key(flat_key):
+                continue
+            out[flat_key] = value
     out["telegram.enabled"] = d["telegram"]["enabled"]
     out["rule_matrix.cache_ttl_seconds"] = d["rule_matrix"]["cache_ttl_seconds"]
     return out
