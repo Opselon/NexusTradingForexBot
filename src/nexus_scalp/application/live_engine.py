@@ -779,7 +779,9 @@ class LiveEngine:
                 model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
                 feature_schema_id=self.FEATURE_SCHEMA_ID,
                 feature_dimension=self.FEATURE_DIM,
-                config_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+                config_version=str(
+                    getattr(self.runtime_config, "get_version", lambda: 0)()
+                ),
                 replaced=replaced,
             )
             self.experience_engine.set_provenance(provenance)
@@ -1107,7 +1109,9 @@ class LiveEngine:
                 model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
                 feature_schema_id=self.FEATURE_SCHEMA_ID,
                 feature_dimension=self.FEATURE_DIM,
-                config_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
+                config_version=str(
+                    getattr(self.runtime_config, "get_version", lambda: 0)()
+                ),
                 replaced=False,
             )
             iid = f"{self.model_registry.current.model_role.lower()}_{self.FEATURE_SCHEMA_ID}_{self.FEATURE_DIM}d"
