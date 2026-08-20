@@ -874,3 +874,12 @@ Why: The platform lacked a market perception layer — AI models had no structur
 Migration: none — no DB changes, no feature-schema changes (INV-009 untouched: the 50D/70D contract is never altered).
 Verification: VERIFIED — 28 unit tests + 4 API integration tests + 38 debug-snapshot tests PASS; ruff/format/mypy clean; historical validation probe (3 regimes) PASS; node --check Web/app.js OK.
 Risk: LOW — pure perception, zero order authority, failure-isolated hooks; latency 10-20ms on 300 bars.
+
+## CHG-0031 — DATABASE MANAGEMENT console: SSMS-style explorer, SQL console, API keys (2026-08-20 Hermes-DBConsole)
+
+Change: new provider-abstracted web console under /api/db/console/* — databases (all DB files incl. settings, provider/size/status), refresh (auto-sync new DBs), tables+row counts, columns, paginated rows (500-row cap), read-only SQL query (SELECT/EXPLAIN/WITH/PRAGMA/VALUES only, placeholder translation for psycopg, single-statement, bounded timeout), ready-made quick SQL, and named API keys backed by the OS SecureSecretStore (masked only, never plaintext; reserved names rejected). UI: Database Explorer tree + table chips + row grid + SQL console + API Keys panel under the existing DATABASE MANAGEMENT tab. Same driver contract serves SQLite now and PostgreSQL after the active provider switch.
+Scope: new src/nexus_scalp/web/db_console.py, src/nexus_scalp/web/server.py, Web/index.html, Web/app.js, Web/api_client.js (NX.api.del), tests/unit/test_database_portability.py (TestDbConsole*, 13 tests)
+Why: user brief — SSMS-like Database Management UI (tables + ready buttons below Migration Workflow, open/see databases and rows, execute DB commands, API KEYS), future-proof for PostgreSQL, auto-sync when new DBs are added.
+Migration: none — read-only surface; no schema change.
+Verification: VERIFIED — 42 passed/10 skipped in test_database_portability.py (1.34s), ruff+mypy clean, live TestClient probes on real artifacts DBs, node --check on both JS files.
+Risk: low — read-only; no hot-path changes.
