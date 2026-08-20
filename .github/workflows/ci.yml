@@ -120,10 +120,13 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          # Full suite (incl. integration, no browser E2E) runs in the
-          # 'heavy-ci' job on ci-tests or manual dispatch. This job stays
-          # fast on normal pushes: unit tests + coverage only.
-          pytest tests/unit/ \
+          # CRITICAL SUITE (default fast gate, 2026-08-20 test-reduction):
+          # the small high-signal regression net — see tests/critical_suite.txt.
+          # The huge historical suite was aggressively reduced (2335 -> ~1400
+          # tests) and is no longer the default CI gate (see heavy-ci for the
+          # surviving extended suites on ci-tests / manual dispatch).
+          readarray -t CRIT_FILES < tests/critical_suite.txt
+          pytest "${CRIT_FILES[@]}" \
                  --cov=src \
                  --cov-report=term-missing \
                  --cov-report=xml:"$CI_RESULTS_DIR/pytest/coverage.xml" \
