@@ -3126,3 +3126,82 @@ The following backlog details prioritized architectural and operational recommen
 ### 🔵 P3 — Nice-To-Have
 4. **Expand Playwright Web Visualizer E2E Test Coverage:**
    - Add automated Playwright interaction tests for rule matrix toggling and configuration updates.
+## 15n. Market Structure & Liquidity Intelligence Engine (MSLIE, 2026-08-20 Hermes-MSLIE)
+
+> A Market PERCEPTION layer - the "visual cortex" of the AI trading system.
+> Converts raw OHLC/volume/spread into structured machine-readable market
+> intelligence consumed by AI models. NOT a signal generator, NOT a trading
+> bot: the final decision always stays with strategy models / ScalpNet /
+> execution / risk engines. Holds NO adapter/order-manager/risk-engine
+> (INV-002), no DB on the tick path (INV-001), strict causality (INV-008),
+> and never alters the live 50D/70D feature contract (INV-009).
+
+### Package: `src/nexus_scalp/mslie/`
+
+| File | Responsibility |
+| :--- | :--- |
+| `models.py` | Frozen dataclass contracts: `MarketIntelligenceFeatureVectorV1` (versioned), `SwingPoint`, `LiquidityZone`, `LiquiditySweepEvent`, `MarketRegimeFeatures`, `BreakoutQuality`, `SmartMoneyFeatures`, `MarketMemoryLevel`, enums (SwingType/BrokenStatus/MarketBias/SweepState/LiquidityRank/ZoneSide). |
+| `regime.py` | `compute_regime_features` - trend_direction (-1..+1), trend_strength (ADX-like 0..100), volatility_state (0..1), ranging/expansion/compression probabilities (normalized). EMA-trend + ATR-based. |
+| `swing.py` | `detect_swings` - adaptive swings: volatility-adjusted pivot window, ATR prominence threshold, volume confirmation, historical reaction strength, timeframe weight, liquidity_created/taken, broken status. Every swing carries strength_score + importance_score (0..100). |
+| `liquidity_map.py` | `build_liquidity_map` - BSL/SSL zones from swing highs/lows, session highs/lows, double tops/bottoms (separated extremes required), range highs/lows; ranked LOW/MEDIUM/HIGH/EXTREME with age, tests, distance, probability-as-target. |
+| `sweep.py` | `detect_sweep_events` - stop-hunt detector: requires an existing pool >= 0.8 ATR from price + decisive penetration (>= 0.15 ATR) + rejection/acceptance in later bars + displacement + follow-through. Verdict REVERSAL/CONTINUATION/UNCERTAIN (+ confidence 0..100). Never classifies every wick as manipulation. |
+| `breakout.py` | `assess_breakout_quality` - REAL vs FAKE breakout: closing strength, volume, momentum, retest, structure; returns complementary probabilities. |
+| `smart_money.py` | `compute_smart_money_features` - OB type/strength, FVG count/strength, displacement, inducement, premium/discount position, last mitigated OB distance. |
+| `engine.py` | `MarketStructureEngine` + `IMarketStructureEngine` protocol + `MarketMemory` (bounded multi-month institutional-level memory with event history). Orchestrates the full pipeline and retains the latest vector/context/latency for the UI/API. |
+
+### Runtime wiring
+
+- LiveEngine constructs `mslie_engine` at boot (symbol from execution config) and runs
+  `analyze_market(completed_bars, decision_at=last_bar.timestamp, mid_price, atr)` on the
+  bar-close cadence in `_on_new_bar` (pure numpy, failure-isolated: `[MSLIE] event=BAR_FEED_FAILED`).
+- API: `GET /api/mslie/status` (engine status + market context + liquidity map + last sweep
+  + feature vector) and `GET /api/mslie/features` (full vector for developer mode). Standalone
+  fallback engine returns honest STANDBY/NO_MSLIE_VECTOR when the live engine has not computed.
+- Debug snapshot: `mslie` section in `/api/debug/state` (section key `mslie`, available flag).
+- UI: Debug tab "MARKET INTELLIGENCE ENGINE" panel - engine status chips, market context
+  (symbol/timeframe/regime/bias/structure/confidence), BSL/SSL liquidity map with strength/rank,
+  sweep detection block, breakout quality, smart-money grid, market-memory cards; JSON tree
+  viewer/snapshot download cover the feature-vector inspection requirements.
+- Determinism: same bars + same decision_at -> identical vector (verified).
+
+### Feature vector contract (`MarketIntelligenceFeatureVectorV1`)
+
+```json
+{ "version": "MarketIntelligenceFeatureVectorV1", "symbol": "XAUUSD",
+  "timeframe": "M1", "decision_at": "<iso>", "mid_price": 2450.0,
+  "regime": { "trend_direction": 1, "trend_strength": 82, "volatility_state": 0.64,
+    "ranging_probability": 0.1, "expansion_probability": 0.6, "compression_probability": 0.3 },
+  "structure": "BULLISH", "bias": "BULLISH", "structure_confidence": 76.0,
+  "nearest_buy_side_liquidity": { "price": 2455.2, "strength_score": 92, "rank": "HIGH", ... },
+  "nearest_sell_side_liquidity": { "price": 2428.5, "strength_score": 84, "rank": "MEDIUM", ... },
+  "liquidity_map": [...], "last_sweep_event": { "direction": "SELL_SIDE",
+    "confidence": 88.0, "after_event_state": "REVERSAL", ... },
+  "breakout_quality": { "real_breakout_probability": 0.72, "fake_breakout_probability": 0.28, ... },
+  "smart_money": { "order_block_type": 1.0, "fvg_count": 2, "premium_discount_position": 0.4, ... },
+  "memory": [...], "swing_count_high": 8, "swing_count_low": 9 }
+```
+
+- All values causal, finite, bounded; missing observations are None (never fabricated 0.0).
+- Advisory/observability-first: NOT wired into the live 70D tensor (that would change the
+  active feature contract - INV-009). Future model pipelines can consume the vector via
+  `/api/mslie/features` or by calling `MarketStructureEngine.generate_feature_vector()`.
+
+### Tests
+
+- `tests/unit/test_mslie_phase22.py` - 28 tests: regime (trending/ranging/insufficient
+  history/probability normalization/no-leakage), swings (detection/scores/no-leakage/ids),
+  liquidity map (sides/ranks/bounds/nearest-BSL-above-SSL-below), sweeps (detection/flat-market
+  rejection/chronology), breakout (complement/probability bounds), smart money (bounds/leakage),
+  engine (contract/interface/determinism/memory/latency/json-safety).
+- `tests/integration/test_mslie_api.py` - 4 tests: /api/mslie/status, /api/mslie/features,
+  NO_MSLIE_VECTOR honesty, debug snapshot mslie section.
+- Historical validation probe: `scratch/mslie_validate.py` (3 regimes: TRENDING/BULLISH,
+  RANGING/NEUTRAL, sweep series with SELL_SIDE REVERSAL) - probe assertions PASS; latency
+  10-20ms on 300 bars.
+
+### Known limits (carried forward)
+
+- Trend series with perfect monotonic drift yields 0 fractal swings (mathematically correct -
+  structure needs reversals to form pivots).
+- The feature vector is observation-first: wiring it into a live model requires a schema
+  decision (new feature block would be `mslie_v1` at indices 70..N under INV-009 discipline).
