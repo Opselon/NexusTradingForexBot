@@ -31,6 +31,7 @@ from pathlib import Path
 
 import pytest
 
+from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import (
     CANONICAL_FEATURE_DIMENSION,
@@ -43,10 +44,11 @@ from nexus_scalp.experience.models import (
     PositionBehavior,
     StrategyContext,
 )
-from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.research.dataset import ResearchDatasetBuilder
 from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
+from nexus_scalp.settings.secret_store import SecureSecretStore
+from nexus_scalp.settings.service import SettingsDatabase, SettingsService
 from nexus_scalp.strategies.factory.dsl import canonicalize_dsl
 from nexus_scalp.strategies.factory.models import (
     EvolutionConfig,
@@ -55,14 +57,12 @@ from nexus_scalp.strategies.factory.models import (
 )
 from nexus_scalp.strategies.factory.orchestrator import StrategyFactory
 from nexus_scalp.strategies.factory.provider import (
-    LLMGenerationProvider,
     PROMPT_VERSION,
+    LLMGenerationProvider,
     ProviderUsage,
 )
 from nexus_scalp.strategies.factory.store import provider_usage_total, record_provider_usage
 from nexus_scalp.strategies.factory.validators import validate_candidate
-from nexus_scalp.settings.secret_store import SecureSecretStore
-from nexus_scalp.settings.service import SettingsDatabase, SettingsService
 from nexus_scalp.strategies.research_store import StrategyResearchStore, default_config
 
 # ---------------------------------------------------------------------------

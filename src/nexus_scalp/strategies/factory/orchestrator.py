@@ -429,7 +429,11 @@ class StrategyFactory:
             return []
         if not raw_dsls:
             return []
-        from nexus_scalp.strategies.factory.dsl import canonicalize_dsl, candidate_id_from_hash, dsl_hash
+        from nexus_scalp.strategies.factory.dsl import (
+            candidate_id_from_hash,
+            canonicalize_dsl,
+            dsl_hash,
+        )
 
         out: list[FactoryCandidate] = []
         for raw in raw_dsls:

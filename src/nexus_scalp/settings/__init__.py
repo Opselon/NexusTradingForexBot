@@ -21,6 +21,10 @@ from nexus_scalp.settings.secret_store import (
     SecureSecretStore,
 )
 from nexus_scalp.settings.service import (
+    FACTORY_LLM_API_KEY,
+    FACTORY_LLM_BASE_URL,
+    FACTORY_LLM_MODEL,
+    FACTORY_LLM_TEMPERATURE,
     HOT_RESTRICTED,
     HOT_SAFE,
     INSTALLATION_ONLY,
@@ -36,10 +40,6 @@ from nexus_scalp.settings.service import (
     TELEGRAM_ADMIN_KEY,
     TELEGRAM_ENABLED_KEY,
     TELEGRAM_TOKEN_KEY,
-    FACTORY_LLM_API_KEY,
-    FACTORY_LLM_BASE_URL,
-    FACTORY_LLM_MODEL,
-    FACTORY_LLM_TEMPERATURE,
     SettingsDatabase,
     SettingsService,
     SettingsState,
@@ -49,6 +49,10 @@ from nexus_scalp.settings.service import (
 )
 
 __all__ = [
+    "FACTORY_LLM_API_KEY",
+    "FACTORY_LLM_BASE_URL",
+    "FACTORY_LLM_MODEL",
+    "FACTORY_LLM_TEMPERATURE",
     "HOT_RESTRICTED",
     "HOT_SAFE",
     "INSTALLATION_ONLY",
@@ -67,10 +71,6 @@ __all__ = [
     "TELEGRAM_ADMIN_KEY",
     "TELEGRAM_ENABLED_KEY",
     "TELEGRAM_TOKEN_KEY",
-    "FACTORY_LLM_API_KEY",
-    "FACTORY_LLM_BASE_URL",
-    "FACTORY_LLM_MODEL",
-    "FACTORY_LLM_TEMPERATURE",
     "SecretStoreError",
     "SecureSecretStore",
     "SettingValue",

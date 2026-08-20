@@ -254,6 +254,7 @@ def factory_llm_config_status(request: Request) -> dict[str, Any]:
     """Safe status of the LLM provider config (never the raw API key)."""
     try:
         from nexus_scalp.settings import load_settings_service
+        from nexus_scalp.web.server import serialize_enums
 
         engine = request.app.state.engine
         svc = getattr(engine, "settings_service", None) if engine else None
@@ -282,6 +283,7 @@ def factory_llm_config_save(request: Request, payload: dict[str, Any] | None = N
     payload = payload or {}
     try:
         from nexus_scalp.settings import load_settings_service
+        from nexus_scalp.web.server import serialize_enums
 
         engine = request.app.state.engine
         svc = getattr(engine, "settings_service", None) if engine else None
