@@ -554,6 +554,10 @@ class LiquidityGovernor:
                 pools=tuple(features_obj.pools),
             )
             latency_ms = (time.perf_counter() - started) * 1000.0
+            # Source normalization: accept both the SourceKind enum (canonical)
+            # and a plain string (tests/CLI probes) — normalize to the enum so
+            # the stored _source and the log line always carry a real value.
+            src = SourceKind(source) if isinstance(source, str) else source
             with self._lock:
                 self._last_snapshot = snap
                 now_mono = time.monotonic()
@@ -564,13 +568,13 @@ class LiquidityGovernor:
                 self._last_error = None
                 self._last_error_at = None
                 self._last_error_wall_at = None
-                if self._source != source:
+                if self._source != src:
                     self._source_changed_wall_at = now_wall
-                self._source = source
+                self._source = src
                 self._state_revision += 1
             logger.info(
                 "[LIQUIDITY] event=FEATURE_CALCULATION_OK source=%s latency_ms=%.2f bars=%d",
-                source.value,
+                src.value,
                 latency_ms,
                 len(bars),
             )
@@ -665,7 +669,9 @@ class LiquidityGovernor:
             status = self.status()
             causal = self.causal_state()
             source = (
-                self._source.value if self._source is not None else SourceKind.UNAVAILABLE.value
+                self._source.value
+                if self._source is not None
+                else SourceKind.UNAVAILABLE.value
             )
             # Explicit separation of the two orthogonal dimensions (BUG-110
             # contract): calculation_status = whether the last compute attempt
@@ -1032,7 +1038,9 @@ class LiquidityGovernor:
             liq_start = int(act.get("liquidity_indices", [60, 69])[0])
             indices = {n: liq_start + i for i, n in enumerate(LIQUIDITY_FEATURE_NAMES)}
             source = (
-                self._source.value if self._source is not None else SourceKind.UNAVAILABLE.value
+                self._source.value
+                if self._source is not None
+                else SourceKind.UNAVAILABLE.value
             )
             snap_ts = snap.decision_at.isoformat() if snap.decision_at else None
             return {

@@ -243,6 +243,16 @@ class AuditRepository:
             ON audit_orders (ticket, order_id)
             """
         )
+        # Migration guard: audit_orders created BEFORE execution_id existed
+        # keeps its old shape (CREATE TABLE IF NOT EXISTS never alters). The
+        # log_order/worker batch insert includes execution_id -> without this
+        # column the batch fails with "table audit_orders has no column named
+        # execution_id" and audit_orders silently stays empty (observed on
+        # 2026-08-20 local engine). Idempotent ADD COLUMN upgrade.
+        try:
+            conn.execute("ALTER TABLE audit_orders ADD COLUMN execution_id TEXT;")
+        except Exception:
+            pass
 
         # =====================================================================
         # INSTITUTIONAL FINANCIAL ACCOUNTING LEDGER (One autopsy row per trade)
