@@ -282,4 +282,5 @@ def test_70d_12_incompatible_engine_blocked_flag(api_env) -> None:
     resp = client.get("/api/liquidity/state")
     body = resp.json()
     assert body["model_compatibility"]["result"] == "BLOCK"
-    assert body["model_compatibility"]["reason"] == "LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE"
+    # scalp_v2 is a legacy family: the 70D contract rejects it by SCHEMA_VERSION
+    assert body["model_compatibility"]["reason"] == "SCHEMA_VERSION_MISMATCH"

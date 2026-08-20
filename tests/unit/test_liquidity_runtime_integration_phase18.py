@@ -52,11 +52,14 @@ from nexus_scalp.features.liquidity_engine import (
 )
 from nexus_scalp.features.liquidity_runtime import (
     DIMENSION_70D,
+    FEATURE_ORDER_HASH,
     SCHEMA_70D,
     LiquidityGovernor,
     LiquiditySnapshot,
     ModelCompatibility,
     build_70d_vector,
+    build_model_compatibility_contract,
+    model_schema_family,
     resolve_model_compatibility,
 )
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
@@ -296,13 +299,15 @@ def test_70d_11_toggle_hot_reload_updates_runtime_without_engine_restart() -> No
 
 
 def test_70d_12_incompatible_model_blocked() -> None:
-    # scalp_v2/60D model + 70D runtime -> BLOCK (LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE)
+    # scalp_v2/60D model + 70D runtime -> BLOCK (SCHEMA_VERSION_MISMATCH: legacy
+    # family is NOT part of the 70D contract, even at the wrong dimension)
     r = resolve_model_compatibility("scalp_v2", 60, SCHEMA_70D, 70)
     assert r["result"] == ModelCompatibility.BLOCK.value
-    assert r["reason"] == "LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE"
-    # scalp_v3/350D + 70D runtime -> BLOCK too
+    assert r["reason"] == "SCHEMA_VERSION_MISMATCH"
+    # scalp_v3/350D + 70D runtime -> BLOCK too (wider model)
     r2 = resolve_model_compatibility("scalp_v3", 350, SCHEMA_70D, 70)
     assert r2["result"] == ModelCompatibility.BLOCK.value
+    assert r2["reason"] == "MODEL_DIMENSION_EXCEEDS_RUNTIME"
 
 
 def test_70d_25_70d_model_rejects_60d_input() -> None:
@@ -785,7 +790,7 @@ def test_liq_ui_04_model_compatibility_not_applicable_when_disabled() -> None:
     gov2 = _bug111_governor_with_snapshot(enabled=True)
     mc2 = gov2.report()["model_compatibility"]
     assert mc2["result"] == "BLOCK"
-    assert mc2["reason"] == "LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE"
+    assert mc2["reason"] == "MODEL_INPUT_DIMENSION_MISMATCH"
 
 
 def test_liq_ui_05_last_update_is_wall_clock_not_monotonic_epoch() -> None:
@@ -881,3 +886,244 @@ def test_liq_ui_10_json_safe_payload() -> None:
     gov.set_enabled(False, actor="test")
     json.dumps(gov.report())
     json.dumps(gov.snapshot_payload())
+# ---------------------------------------------------------------------------
+# BUG-123 — Liquidity-enabled model compatibility: contract-based verdict,
+# precise reasons, REAL 70D proof artifact end-to-end, negative gates.
+# ---------------------------------------------------------------------------
+
+
+def _fake_engine_like(schema: str, dim: int, *, champion: Any = None) -> Any:
+    eng = SimpleNamespace(
+        FEATURE_SCHEMA_ID=schema,
+        FEATURE_DIM=dim,
+        model_registry=None,
+        champion_manager=champion,
+        _bundle=SimpleNamespace(artifact_path=None),
+    )
+    return eng
+
+
+class _ChampLike:
+    """ChampionManager surface: .champion_or_none() -> ChampionModel-like."""
+
+    def __init__(self, schema: str, dim: int, *, input_dim: int | None = None) -> None:
+        self._c = SimpleNamespace(
+            feature_schema_id=schema,
+            feature_dimension=dim,
+            model_id="champ_x",
+            model_version="9.9.9",
+            artifact_hash="abc123",
+            available=True,
+            info=SimpleNamespace(actual_input_dimension=input_dim),
+        )
+
+    def champion_or_none(self):
+        return self._c
+
+
+def test_liq_bug123_01_live_champion_50d_enabled_is_block_with_reason() -> None:
+    """THE reproduced production state (2026-08-19 UI): engine serves
+    scalp_v1/50D, liquidity ENABLED -> BLOCK with the PRECISE reason
+    MODEL_INPUT_DIMENSION_MISMATCH (and the diagnostic sidecar fields)."""
+    gov = LiquidityGovernor(enabled=True)
+    gov.bind_engine(_fake_engine_like("scalp_v1", 50))
+    mc = gov.model_compatibility()
+    assert mc["result"] == ModelCompatibility.BLOCK.value
+    assert mc["reason"] == "MODEL_INPUT_DIMENSION_MISMATCH"
+    assert mc["model_dimension"] == 50
+    assert mc["runtime_dimension"] == DIMENSION_70D
+    assert mc["runtime_schema_id"] == SCHEMA_70D
+    assert mc["runtime_feature_order_hash"] == FEATURE_ORDER_HASH
+    assert mc["model_schema_family"] == "ACTIVE"
+
+
+def test_liq_bug123_02_valid_70d_model_with_champion_is_pass() -> None:
+    gov = LiquidityGovernor(enabled=True)
+    gov.bind_engine(_fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70)))
+    mc = gov.model_compatibility()
+    assert mc["result"] == ModelCompatibility.PASS.value
+    assert mc["reason"] == "SCHEMA_DIMENSION_MATCH"
+    assert mc["model_input_dimension"] == 70
+    assert mc["feature_order"] == "PASS"
+    assert mc["model_hash"] == "abc123"
+    # canonical single descriptor: the flat dict IS the contract (INV-022)
+    assert mc.get("runtime_feature_order_hash") == FEATURE_ORDER_HASH
+
+
+def test_liq_bug123_03_disabled_is_not_applicable_regardless_of_model() -> None:
+    gov = LiquidityGovernor(enabled=False)
+    gov.bind_engine(_fake_engine_like("scalp_v1", 50))
+    mc = gov.model_compatibility()
+    assert mc["result"] == ModelCompatibility.NOT_APPLICABLE.value
+    assert mc["reason"] == "LIQUIDITY_DISABLED"
+
+
+def test_liq_bug123_04_72d_tensor_flagged_as_model_tensor_dimension_mismatch() -> None:
+    """BUG-114 pattern: manifest declares 70 but the neural input tensor is
+    72 -> BLOCK even when declared dimension matches."""
+    r = resolve_model_compatibility("scalp_v3", 70, SCHEMA_70D, 70, model_input_dimension=72)
+    assert r["result"] == ModelCompatibility.BLOCK.value
+    assert r["reason"] == "MODEL_TENSOR_DIMENSION_MISMATCH"
+
+
+def test_liq_bug123_05_wrong_schema_version_blocked() -> None:
+    """scalp_v2 renamed to 70D does not make it compatible: family OTHER -> BLOCK."""
+    r = resolve_model_compatibility("scalp_v2", 70, SCHEMA_70D, 70)
+    assert r["result"] == ModelCompatibility.BLOCK.value
+    assert r["reason"] == "SCHEMA_VERSION_MISMATCH"
+
+
+def test_liq_bug123_06_schema_family_classification() -> None:
+    assert model_schema_family("scalp_v1") == "ACTIVE"
+    assert model_schema_family("scalp_v3") == "70D_FAMILY"
+    assert model_schema_family("scalp_v4") == "70D_FAMILY"
+    assert model_schema_family("scalp_v2") == "OTHER"
+    assert model_schema_family(None) == "OTHER"
+    assert model_schema_family("scalp_liquidity_v1") == "OTHER"
+
+
+def test_liq_bug123_07_contract_descriptor_single_source() -> None:
+    gov = LiquidityGovernor(enabled=True)
+    gov.bind_engine(_fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70)))
+    rep = gov.report()
+    assert rep["liquidity_contract"]["feature_order_hash"] == FEATURE_ORDER_HASH
+    assert rep["liquidity_contract"]["schema_id"] == "scalp_v3"
+    assert rep["liquidity_contract"]["dimension"] == 70
+    contract = gov.compatibility_contract()
+    assert contract["runtime"]["dimension"] == 70
+    assert contract["model"]["dimension"] == 70
+    assert contract["compatibility"]["result"] == "PASS"
+
+
+def test_liq_bug123_08_revision_rendered_meaningful() -> None:
+    gov = LiquidityGovernor(enabled=True)
+    assert gov.report()["state_revision"] >= 0
+    gov.set_enabled(False, actor="test")
+    r2 = gov.report()
+    assert r2["state_revision"] == gov._state_revision
+    assert r2["snapshot_coherence_revision"] == r2["state_revision"]
+
+
+def test_liq_bug123_09_no_stale_compatibility_after_model_hot_swap() -> None:
+    """The compatibility verdict is recomputed from the CURRENT artifact
+    contract on every call (no stale cache)."""
+    gov = LiquidityGovernor(enabled=True)
+    gov.bind_engine(_fake_engine_like("scalp_v1", 50))
+    assert gov.model_compatibility()["result"] == "BLOCK"
+    # hot-swap: a 70D champion is now serving
+    gov.bind_engine(_fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70)))
+    assert gov.model_compatibility()["result"] == "PASS"
+
+
+def test_liq_bug123_10_report_hot_reload_recomputes() -> None:
+    gov = LiquidityGovernor(enabled=True)
+    gov.bind_engine(_fake_engine_like("scalp_v1", 50))
+    assert gov.report()["model_compatibility"]["result"] == "BLOCK"
+    gov.bind_engine(_fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70)))
+    assert gov.report()["model_compatibility"]["result"] == "PASS"
+
+
+def test_liq_bug123_11_unknown_model_never_guessed() -> None:
+    r = resolve_model_compatibility(None, None, SCHEMA_70D, 70)
+    assert r["result"] == ModelCompatibility.UNKNOWN.value
+    assert r["reason"] == "NO_MODEL_METADATA"
+
+
+# ---------------------------------------------------------------------------
+# REAL 70D artifact: compatibility PASS + inference through the repo's own
+# model runtime (LocalModelRuntime.predict / StateDict) — never simulated.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def real_70d_model_id() -> str:
+    path = Path("artifacts/model_generation/models/liq70_proof")
+    if not (path / "model.pt").exists() or not (path / "model.json").exists():
+        pytest.skip("BUG-123 proof artifact not built (run scratch/fix_70d_proof_artifact.py)")
+    return "liq70_proof"
+
+
+def test_liq_bug123_12_real_proof_artifact_compatible_with_70d_runtime(
+    real_70d_model_id: str,
+) -> None:
+    import json
+
+    from nexus_scalp.features.schema_contract import feature_schema_hash
+
+    mf = json.loads(
+        Path(f"artifacts/model_generation/models/{real_70d_model_id}/model.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert mf["feature_schema_id"] == "scalp_v3"
+    assert mf["feature_dimension"] == 70
+    assert mf["build_metadata"]["input_dimension"] == 70
+    assert mf["feature_schema_hash"] == feature_schema_hash()
+    r = resolve_model_compatibility(
+        mf["feature_schema_id"],
+        mf["feature_dimension"],
+        SCHEMA_70D,
+        DIMENSION_70D,
+        model_input_dimension=mf["build_metadata"]["input_dimension"],
+    )
+    assert r["result"] == ModelCompatibility.PASS.value
+    assert r["reason"] == "SCHEMA_DIMENSION_MATCH"
+
+
+def test_liq_bug123_13_real_70d_tensor_inference_succeeds(real_70d_model_id: str) -> None:
+    """A REAL 70D vector (50 base + 10 news + 10 liquidity) through the repo's
+    own LocalModelRuntime -> inference SUCCESS, probs sum to 1."""
+    from nexus_scalp.model_generation.runtime import LocalModelRuntime
+
+    rt = LocalModelRuntime().load(real_70d_model_id)
+    base50 = [0.0] * 50
+    base50[0] = 1.0
+    news10 = [0.0] * 10
+    liq10 = _liquidity_features(_steady_bars()).features
+    vec70 = build_70d_vector(base50, family_10=news10, liquidity_10=liq10)
+    assert len(vec70) == 70
+    assert all(math.isfinite(v) for v in vec70)
+    pred = rt.predict(vec70)
+    probs = pred["probabilities"]
+    assert len(probs) == 4
+    assert abs(sum(probs) - 1.0) < 1e-3
+    assert pred["argmax"] in (0, 1, 2, 3)
+
+
+def test_liq_bug123_14_real_50d_model_blocked_against_70d_runtime() -> None:
+    """NEGATIVE GATE: the served production champion (artifacts/models/.../
+    model.pt, a REAL 50D artifact) MUST be BLOCK against the 70D runtime —
+    proves the guard is real and was never weakened."""
+    path = Path("artifacts/models/scalp/XAUUSD/v1.0.0/model.pt")
+    if not path.exists():
+        pytest.skip("live 50D champion artifact not present")
+    import torch
+
+    sd = torch.load(path, map_location="cpu", weights_only=False)
+    tensor_dim = int(sd["input_projection.weight"].shape[1])
+    assert tensor_dim == 50  # the live champion IS 50D
+    r = resolve_model_compatibility("scalp_v1", 50, SCHEMA_70D, 70, model_input_dimension=tensor_dim)
+    assert r["result"] == ModelCompatibility.BLOCK.value
+    assert r["reason"] == "MODEL_INPUT_DIMENSION_MISMATCH"
+
+
+def test_liq_bug123_15_feature_order_hash_is_canonical() -> None:
+    from nexus_scalp.features.schema_contract import feature_schema_hash
+
+    assert feature_schema_hash() == "235b8fccc96b7e0e"
+    assert FEATURE_ORDER_HASH == feature_schema_hash()
+
+
+def test_liq_bug123_16_real_liquidity_values_fill_60_69() -> None:
+    gov = LiquidityGovernor(enabled=True)
+    bars = _steady_bars()
+    snap = gov.compute_from_engine(bars=bars, mid_price=float(bars[-1].close), atr=1.5)
+    payload = gov.snapshot_payload()
+    assert payload["dimension"] == 70
+    feats = payload["features"]
+    assert len(feats) == 10
+    for name, meta in feats.items():
+        assert meta["index"] == 60 + list(LIQUIDITY_FEATURE_NAMES).index(name)
+        assert meta["validity"] == "finite"
+        assert math.isfinite(meta["value"])
+
