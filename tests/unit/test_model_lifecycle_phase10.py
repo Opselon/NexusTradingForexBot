@@ -578,65 +578,122 @@ class TestCompatibility:
             feature_dimension=num_features,
         )
 
-    def test_bug118_champion_verified_logs_once_per_fingerprint(self, tmp_path, capsys):
+    @staticmethod
+    def _capture_champion_logs():
+        """Order-independent structlog capture (test_web_security pattern).
+
+        structlog's DEFAULT PrintLoggerFactory writes straight to stdout and
+        NEVER reaches stdlib handlers; once configure_logging() has run (any
+        earlier test), structlog routes through stdlib and the ConsoleRenderer
+        writes via a StreamHandler bound to the ORIGINAL sys.stdout, so capsys
+        misses it (order-dependent flake). configure_logging() first (idempotent)
+        then attach a capture handler to root + the named logger.
+        """
+        import logging
+
+        from nexus_scalp.observability.logging import configure_logging
+
+        root = logging.getLogger()
+        original_level = root.level
+        original_handlers = list(root.handlers)
+        configure_logging(log_to_file=False)
+
+        class _CaptureHandler(logging.Handler):
+            def __init__(self) -> None:
+                super().__init__(level=logging.DEBUG)
+                self.records: list[logging.LogRecord] = []
+
+            def emit(self, record: logging.LogRecord) -> None:
+                self.format(record)
+                self.records.append(record)
+
+        capture = _CaptureHandler()
+        root.setLevel(logging.DEBUG)
+        root.addHandler(capture)
+        # NOTE: do NOT also attach to the named logger — structlog stdlib
+        # routing emits to the logger's OWN handlers AND propagates to root,
+        # so a named handler would double-capture every record.
+        return capture, root, original_level, original_handlers
+
+    def test_bug118_champion_verified_logs_once_per_fingerprint(self, tmp_path):
         """Repeated champion_or_none() polls must NOT spam the log."""
+        import logging
+
         mgr = self._make_bug118_champion(tmp_path)
-        capsys.readouterr()  # drain any boot noise
+        capture, root, original_level, original_handlers = self._capture_champion_logs()
+        try:
+            first = mgr.champion_or_none()
+            assert first is not None
+            # 50 identical hot-path polls -> still exactly ONE log line
+            for _ in range(50):
+                assert mgr.champion_or_none() is first
+        finally:
+            root.removeHandler(capture)
+            root.setLevel(original_level)
+            root.handlers[:] = original_handlers
+        lines = [r.getMessage() for r in capture.records]
+        marker_hits = sum("CHAMPION VERIFIED" in line for line in lines)
+        assert marker_hits == 1, f"expected 1 log, got:\n{lines}"
 
-        first = mgr.champion_or_none()
-        assert first is not None
-        # 50 identical hot-path polls -> still exactly ONE log line
-        for _ in range(50):
-            assert mgr.champion_or_none() is first
-        out = capsys.readouterr().out
-        assert out.count("CHAMPION VERIFIED") == 1, f"expected 1 log, got:\n{out}"
-
-    def test_bug118_artifact_rewrite_reverifies_once(self, tmp_path, capsys):
+    def test_bug118_artifact_rewrite_reverifies_once(self, tmp_path):
         """A content rewrite (retrain/promotion) invalidates the cache and
         re-verifies, logging CHAMPION VERIFIED once for the new hash."""
-        mgr = self._make_bug118_champion(tmp_path)
-        import time
-
-        capsys.readouterr()  # drain boot noise
-        first = mgr.champion_or_none()
-        assert first is not None
-        # hot path cached: identical polls return the SAME instance, silent
-        assert mgr.champion_or_none() is first
-
-        # simulate retrain artifact rewrite: a NEW checkpoint overwrites the
-        # model file (new content hash + new mtime => new fingerprint)
+        import logging
         import os
+        import time
 
         import torch
 
         from nexus_scalp.models.scalp_net import ScalpNet
 
-        net = ScalpNet(num_features=50, num_classes=4)
-        with torch.no_grad():
-            for p in net.parameters():
-                p.add_(1e-3)  # different weights => different artifact hash
-        torch.save({k: v.clone() for k, v in net.state_dict().items()}, mgr.artifact_path)
-        time.sleep(0.01)
-        os.utime(mgr.artifact_path, None)
+        mgr = self._make_bug118_champion(tmp_path)
+        capture, root, original_level, original_handlers = self._capture_champion_logs()
+        try:
+            first = mgr.champion_or_none()
+            assert first is not None
+            # hot path cached: identical polls return the SAME instance, silent
+            assert mgr.champion_or_none() is first
 
-        second = mgr.champion_or_none()
-        assert second is not None
-        assert second is not first
-        out = capsys.readouterr().out
-        assert out.count("CHAMPION VERIFIED") == 2, (
-            f"expected 2 logs (initial+rewrite), got:\n{out}"
+            # simulate retrain artifact rewrite: a NEW checkpoint overwrites the
+            # model file (new content hash + new mtime => new fingerprint)
+            net = ScalpNet(num_features=50, num_classes=4)
+            with torch.no_grad():
+                for p in net.parameters():
+                    p.add_(1e-3)  # different weights => different artifact hash
+            torch.save({k: v.clone() for k, v in net.state_dict().items()}, mgr.artifact_path)
+            time.sleep(0.01)
+            os.utime(mgr.artifact_path, None)
+
+            second = mgr.champion_or_none()
+            assert second is not None
+            assert second is not first
+        finally:
+            root.removeHandler(capture)
+            root.setLevel(original_level)
+            root.handlers[:] = original_handlers
+        lines = [r.getMessage() for r in capture.records]
+        marker_hits = sum("CHAMPION VERIFIED" in line for line in lines)
+        assert marker_hits == 2, (
+            f"expected 2 logs (initial+rewrite), got:\n{lines}"
         )
 
-    def test_bug118_cold_start_none_memoized(self, tmp_path, capsys):
+    def test_bug118_cold_start_none_memoized(self, tmp_path):
         """Missing artifact returns None once; repeated polls stay silent."""
-        mgr = ChampionManager(artifact_path=str(tmp_path / "missing.pt"))
-        capsys.readouterr()  # drain boot noise
+        import logging
 
-        assert mgr.champion_or_none() is None
-        for _ in range(30):
+        mgr = ChampionManager(artifact_path=str(tmp_path / "missing.pt"))
+        capture, root, original_level, original_handlers = self._capture_champion_logs()
+        try:
             assert mgr.champion_or_none() is None
-        out = capsys.readouterr().out
-        assert out.count("Champion unavailable") == 1, f"expected 1 warning, got:\n{out}"
+            for _ in range(30):
+                assert mgr.champion_or_none() is None
+        finally:
+            root.removeHandler(capture)
+            root.setLevel(original_level)
+            root.handlers[:] = original_handlers
+        lines = [r.getMessage() for r in capture.records]
+        marker_hits = sum("Champion unavailable" in line for line in lines)
+        assert marker_hits == 1, f"expected 1 warning, got:\n{lines}"
 
     def test_bug118_force_reload_performs_fresh_verify(self, tmp_path):
         """force_reload=True bypasses the memo (startup/hot-swap contract)."""

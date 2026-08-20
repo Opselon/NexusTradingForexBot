@@ -46,6 +46,7 @@ import os
 import sqlite3
 import threading
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -625,3 +626,307 @@ def test_no_automatic_model_promotion_app_update(app_root: Path, user_root: Path
     assert plan["status"] == "UPDATE_AVAILABLE"
     # The plan must state model policy explicitly: app update never promotes models.
     assert "model" in json.dumps(plan).lower()
+
+# ---------------------------------------------------------------------------
+# TASK-UPDATER-02 (CHG-0027) — TEST-UP-36..50: release identity, draft/revoked,
+# include-prerelease, allow-downgrade, checksum-asset digest resolution,
+# retries, resume-hash, offline status, model/client matrix
+# ---------------------------------------------------------------------------
+def test_up36_release_identity_locked() -> None:
+    rel = _release_dict(tag="v9.1.0")
+    rel.update(
+        {
+            "id": 4242,
+            "target_commitish": "deadbeef1234",
+            "published_at": "2026-01-02T03:04:05Z",
+            "upload_url": "https://api.github.com/repos/Opselon/NexusTradingForexBot/releases/4242/assets{?name,label}",
+        }
+    )
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    assert plan["status"] == "UPDATE_AVAILABLE"
+    assert plan["release_id"] == 4242
+    assert plan["commit_sha"] == "deadbeef1234"
+    assert plan["published_at"] == "2026-01-02T03:04:05Z"
+    assert plan["upload_url"].endswith("assets{?name,label}")
+
+
+def test_up37_draft_release_never_eligible() -> None:
+    rel = _release_dict(tag="v9.9.9", digest=None)
+    rel["draft"] = True
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    assert plan["status"] == "NO_UPDATE"
+    assert any("DRAFT" in d for d in plan["decisions"])
+
+
+def test_up38_revoked_release_rejected_even_higher() -> None:
+    rel = _release_dict(tag="v9.9.9", digest=None)
+    rel["body"] = "This release is REVOKED because of a broken model package."
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    assert plan["status"] == "UPDATE_REJECTED"
+    assert any("REVOKED" in d for d in plan["decisions"])
+
+
+def test_up39_selection_skips_draft_and_revoked() -> None:
+    rels = [
+        _release_dict(tag="v9.0.0"),
+        dict(_release_dict(tag="v9.2.0"), draft=True),
+        dict(_release_dict(tag="v9.1.0")),
+        dict(_release_dict(tag="v9.3.0"), body="REVOKED broken model"),
+    ]
+    sel = upd.UpdateDiscovery._select_release(rels, channel="stable")
+    assert sel is not None
+    assert sel["tag_name"] == "v9.1.0"
+
+
+def test_up40_include_prerelease_flag() -> None:
+    rel = _release_dict(tag="v9.1.0-rc.1", prerelease=True)
+    assert upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)["status"] == "NO_UPDATE"
+    withpr = upd.UpdatePlanBuilder(installed_version="9.0.0", include_prerelease=True).build(rel)
+    assert withpr["status"] == "UPDATE_AVAILABLE"
+    sel = upd.UpdateDiscovery._select_release(
+        [_release_dict(tag="v9.1.0-rc.1", prerelease=True), _release_dict(tag="v9.0.0")],
+        channel="stable",
+        include_prerelease=True,
+    )
+    assert sel is not None and sel["tag_name"] == "v9.1.0-rc.1"
+
+
+def test_up41_allow_downgrade_gate() -> None:
+    rel = _release_dict(tag="v8.5.0")
+    blocked = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    assert blocked["status"] == "NO_UPDATE" and blocked["downgrade_blocked"] is True
+    allowed = upd.UpdatePlanBuilder(installed_version="9.0.0", allow_downgrade=True).build(rel)
+    assert allowed["status"] == "UPDATE_AVAILABLE"
+    assert any("OLD" in d for d in allowed["decisions"])
+
+
+def test_up42_offline_status_never_no_update() -> None:
+    err = upd.GitHubDiscoveryError("", "name or service not known: getaddrinfo failed")
+    assert upd.UpdateDiscovery.status_for_exception(err) == "NETWORK_UNAVAILABLE"
+    err2 = upd.GitHubDiscoveryError("", "The read operation timed out")
+    assert upd.UpdateDiscovery.status_for_exception(err2) == "NETWORK_UNAVAILABLE"
+
+
+def test_up43_minimum_client_version_matrix() -> None:
+    rel = _release_dict(tag="v9.1.0")
+    rel["minimum_client_version"] = "9.2.0"
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    assert plan["status"] == "INCOMPATIBLE"
+    assert any("matrix" in d or "client" in d for d in plan["decisions"])
+    ok = upd.UpdatePlanBuilder(installed_version="9.1.0").build(rel)
+    assert ok["status"] == "NO_UPDATE"  # same version — not an upgrade
+    ok2 = upd.UpdatePlanBuilder(installed_version="9.0.5").build(rel)
+    assert ok2["status"] == "INCOMPATIBLE"
+
+
+def test_up44_checksum_asset_digest_resolution(monkeypatch) -> None:
+    import hashlib
+    import urllib.request
+
+    digest = hashlib.sha256(b"payload-bytes").hexdigest()
+    rel = {
+        "tag_name": "v9.1.0",
+        "prerelease": False,
+        "draft": False,
+        "body": "",
+        "assets": [
+            {
+                "name": "NexusScalpEngine-9.1.0-win-x64.zip",
+                "browser_download_url": "https://example.test/payload.zip",
+                "size": 10,
+            },
+            {
+                "name": "sha256sums.txt",
+                "browser_download_url": "https://example.test/sha256sums.txt",
+                "size": 1,
+            },
+        ],
+    }
+
+    class _FakeResp:
+        def __init__(self, txt: str) -> None:
+            self._t = txt
+
+        def read(self) -> bytes:
+            return self._t.encode()
+
+        def __enter__(self) -> "_FakeResp":
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+    def fake_urlopen(req: Any, timeout: int | None = None) -> _FakeResp:  # type: ignore[no-untyped-def]
+        return _FakeResp(f"{digest}  NexusScalpEngine-9.1.0-win-x64.zip\n")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    assert plan["status"] == "UPDATE_AVAILABLE"
+    assert plan["artifact_sha256"] == digest
+
+
+def test_up45_ambiguous_checksum_failsafe(monkeypatch) -> None:
+    import urllib.request
+
+    rel = {
+        "tag_name": "v9.1.0",
+        "assets": [
+            {"name": "payload-a.zip", "browser_download_url": "https://e.test/a"},
+            {"name": "payload-b.zip", "browser_download_url": "https://e.test/b"},
+            {"name": "sha256sums.txt", "browser_download_url": "https://e.test/s"},
+        ],
+    }
+
+    class _FakeResp:
+        def __init__(self, txt: str) -> None:
+            self._t = txt
+
+        def read(self) -> bytes:
+            return self._t.encode()
+
+        def __enter__(self) -> "_FakeResp":
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+    def fake_urlopen(req: Any, timeout: int | None = None) -> _FakeResp:  # type: ignore[no-untyped-def]
+        return _FakeResp(f"{'ab'*32}  payload-a.zip\n{'cd'*32}  payload-a.zip\n")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    digest, decisions = upd.DigestResolver.resolve_from_release(rel, {"name": "payload-a.zip"})
+    assert digest is None  # conflicting digests for one payload -> fail safe (spec 11)
+    assert any("conflicting" in d for d in decisions)
+
+
+def test_up46_retry_on_transient_github(monkeypatch) -> None:
+    import urllib.error as urlerr
+
+    calls = {"n": 0}
+
+    class _FakeResp:
+        def read(self) -> bytes:
+            import json as _j
+
+            return _j.dumps([_release_dict(tag="v9.1.0", digest=None)]).encode()
+
+        def __enter__(self) -> "_FakeResp":
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+    def fake_urlopen(req: Any, timeout: int | None = None) -> _FakeResp:  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urlerr.HTTPError("https://api", 503, "unavailable", {}, None)
+        return _FakeResp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    out = upd.UpdateDiscovery.fetch_releases(max_retries=2)
+    assert calls["n"] == 2
+    assert out[0]["tag_name"] == "v9.1.0"
+
+
+def test_up47_retry_after_honored(monkeypatch) -> None:
+    import time
+
+    import urllib.error as urlerr
+
+    calls = {"n": 0}
+    slept = []
+
+    class _FakeResp:
+        def read(self) -> bytes:
+            import json as _j
+
+            return _j.dumps([]).encode()
+
+        def __enter__(self) -> "_FakeResp":
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+    class _Headers:
+        def get(self, k: str, d: str | None = None) -> str | None:
+            return "1" if k == "Retry-After" else d
+
+    def fake_urlopen(req: Any, timeout: int | None = None) -> _FakeResp:  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urlerr.HTTPError("https://api", 429, "rate limited", _Headers(), None)
+        return _FakeResp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
+    out = upd.UpdateDiscovery.fetch_releases(max_retries=2)
+    assert calls["n"] == 2
+    assert slept and slept[0] == 1  # Retry-After used verbatim
+
+
+def test_up48_digest_missing_blocks_plan() -> None:
+    rel = _release_dict(tag="v9.1.0", digest=None)
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    assert plan["status"] == "SECURITY_BLOCKED"
+    assert any("digest" in d.lower() for d in plan["decisions"])
+
+
+def test_up49_resume_hash_full_partial(tmp_path: Path) -> None:
+    import hashlib
+
+    import urllib.request
+
+    payload = b"RESUME-ME-" * 100
+    digest = hashlib.sha256(payload).hexdigest()
+    part = tmp_path / "payload.zip.part"
+    part.write_bytes(payload[:200])
+
+    class _FakeResp:
+        def __init__(self, data: bytes) -> None:
+            self._data = data
+
+        def read(self, n: int = -1) -> bytes:
+            if n < 0:
+                return self._data
+            chunk, self._data = self._data[:n], self._data[n:]
+            return chunk
+
+        def __enter__(self) -> "_FakeResp":
+            return self
+
+        def __exit__(self, *a: object) -> bool:
+            return False
+
+    def fake_urlopen(req: Any, timeout: int | None = None) -> _FakeResp:  # type: ignore[no-untyped-def]
+        return _FakeResp(payload[200:])
+
+    monkeypatch = None  # noqa: F841  (used via direct assignment below)
+    dl = upd.SafeDownloader(tmp_path)
+    orig = urllib.request.urlopen
+    urllib.request.urlopen = fake_urlopen  # type: ignore[assignment]
+    try:
+        final = dl.download(
+            "https://example.test/payload.zip", "payload.zip", expected_sha256=digest, timeout=5
+        )
+    finally:
+        urllib.request.urlopen = orig  # type: ignore[assignment]
+    assert final.exists()
+    assert hashlib.sha256(final.read_bytes()).hexdigest() == digest
+
+
+def test_up50_model_matrix_fields_in_plan() -> None:
+    rel = _release_dict(tag="v9.1.0")
+    rel["assets"][0]["release_manifest"] = {
+        "model_version": "3.1.0",
+        "model_sha256": "ab" * 32,
+        "schema_version": "scalp_v3",
+        "feature_dimension": 70,
+        "minimum_model_version": "3.0.0",
+    }
+    plan = upd.UpdatePlanBuilder(installed_version="9.0.0").build(rel)
+    assert plan["status"] == "UPDATE_AVAILABLE"
+    assert plan["model_version"] == "3.1.0"
+    assert plan["schema_version"] == "scalp_v3"
+    assert plan["feature_dimension"] == 70
+    assert plan["minimum_model_version"] == "3.0.0"

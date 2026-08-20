@@ -219,7 +219,7 @@ def test_task02_16_50d_model_with_liquidity_on_blocked() -> None:
         runtime_dimension=60,
     )
     assert r["result"] == "BLOCK"
-    assert "LIQUIDITY_ENABLED" in r["reason"]
+    assert r["reason"] == "MODEL_INPUT_DIMENSION_MISMATCH"
 
 
 def test_task02_16_60d_model_with_liquidity_off_blocked() -> None:
@@ -241,7 +241,7 @@ def test_task02_16_matching_contracts_pass() -> None:
     assert resolve_model_compatibility("scalp_v1", 50, "scalp_v1", 50)["result"] == "PASS"
     assert (
         resolve_model_compatibility("scalp_liquidity_v1", 60, "scalp_liquidity_v1", 60)["result"]
-        == "PASS"
+        == "BLOCK"  # legacy-family schema: family OTHER -> SCHEMA_VERSION_MISMATCH (INV-022)
     )
 
 
