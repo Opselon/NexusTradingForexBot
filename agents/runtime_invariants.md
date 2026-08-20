@@ -256,3 +256,37 @@ pad/truncate/substitute. Family missing -> explicit FEATURE_DISABLED (neutral bl
 FEATURE_UNAVAILABLE (block) - never fabricated. Schema metadata cached at construction; 
 no DB/file I/O on the per-tick path (INV-001). Legacy 60D (scalp_v2) models keep 
 receiving 60D vectors only.
+
+## INV-022 — Liquidity-enabled model compatibility is contract-based and recomputed from the current artifact (BUG-123)
+
+- The 70D runtime contract is the canonical scalp_v3 descriptor (schema_contract: SCHEMA_ID/DIMENSION/feature_schema_hash = 235b8fccc96b7e0e), bound by liquor_runtime constants (SCHEMA_70D/DIMENSION_70D/FEATURE_ORDER_HASH). No drift between governor and registry.
+- `resolve_model_compatibility` verdict = schema-FAMILY gate (ACTIVE=scalp_v1 / 70D_FAMILY=scalp_v3,scalp_v4 / OTHER) + declared-dimension gate + REAL tensor-width gate (build_metadata.input_dimension — a 72D-news artifact is NOT 70D even if the manifest declares 70) + canonical feature-order hash when the model provides one. Never pads, never truncates, never weakens the gate.
+- `LiquidityGovernor.model_compatibility()` reads the CURRENT model contract (model_registry.current -> ChampionManager champion -> engine attrs; tensor width from inspect_artifact) on EVERY call — no stale compatibility cache. Liquidity DISABLED => NOT_APPLICABLE(LIQUIDITY_DISABLED), never a liquidity-enabled incompatibility.
+- `report()` exposes the canonical contract (`liquidity_contract`) and `snapshot_coherence_revision` so the UI renders runtime/model dimensions, schemas, feature-order hashes, normalization and the snapshot epoch from ONE backend source.
+- Diagnostic reason strings: MODEL_INPUT_DIMENSION_MISMATCH / SCHEMA_VERSION_MISMATCH / MODEL_DIMENSION_EXCEEDS_RUNTIME / MODEL_TENSOR_DIMENSION_MISMATCH / NO_MODEL_METADATA(UNKNOWN) / SCHEMA_DIMENSION_MATCH(PASS). The generic LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE reason is removed.
+
+## INV-022 — Runtime database hygiene is continuous, config-driven, and never self-destructive (TASK-22-DB-HYGIENE-RUNTIME)
+
+The database hygiene engine runs continuously while the application runs:
+scheduler cadence comes from the `database_hygiene` config section
+(interval_minutes light / deep_maintenance_interval_hours deep), never
+hardcoded. Every cycle produces telemetry (cleanup_id, start, duration,
+scanned/deleted/archived/quarantined, errors). Invariants:
+
+1. Scheduled cleanup NEVER deletes unless `apply_deletes=true` AND
+   `dry_run=false` AND execution mode is not LIVE. Default dry_run=true.
+2. Deletes are bounded (batch_size, global budgets) and executed off the
+   tick path via asyncio.to_thread — a cleanup cycle can never block
+   trading (spec §13/§14).
+3. TIER-0/1/2/3/4 data (ledger, broker truth, experiences, outcomes,
+   research, model provenance) is NEVER auto-deleted; uncertain rows are
+   QUARANTINED (DataQuarantine: MOVE -> MARK -> REPORT), never dropped.
+4. The first-ever run performs the full DATABASE_HYGIENE_INITIAL_REPORT
+   (orphans, broken relations, impossible timestamps, invalid states,
+   duplicates, stale cache, abandoned jobs) and persists it under
+   artifacts/archive/_hygiene_state/initial_audit.json.
+5. Index health is ADVISORY ONLY: missing/duplicate/unused indices are
+   reported (QUERY_HEALTH_REPORT); schema changes go through the TASK-10
+   migration engine, never the runtime worker.
+6. Telegram hygiene reports are cooldown-gated (telegram_min_interval_sec)
+   — the engine never spams the operator for small cleanups.

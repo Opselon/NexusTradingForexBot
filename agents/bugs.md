@@ -5261,3 +5261,53 @@ partial file was opened.
 **Verification:** TEST-UP-36..60 (checksum-asset resolution incl. GitHub `algo=gzip` uploads
 endpoint, resume-hash correctness, draft/revoked exclusion, flags, exit codes, JSON contract).
 **Files:** src/nexus_scalp/release/updater.py, src/nexus_scalp/cli/main.py.
+
+## BUG-123 — Liquidity-Enabled Model Compatibility BLOCK Had a Generic Reason + No Model Contract Source: LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE hid the real 50D-vs-70D mismatch, and the verdict was computed from stale engine class attrs (2026-08-20 Hermes-LiquidityCompat)
+
+- **Status**: VERIFIED
+- **Severity**: HIGH
+- **Confidence**: HIGH
+- **Discovered**: Liquidity Intelligence BLOCK investigation (MASTER IMPLEMENTATION brief, 2026-08-20)
+- **Fixed**: 2026-08-20 (commits 76ac71f, a62b80e, b75d940, 774c5db)
+- **Verified**: tests/unit/test_liquidity_runtime_integration_phase18.py (test_liq_bug123_01..16), tests/integration/test_liquidity_api.py; real proof artifact artifacts/model_generation/models/liq70_proof (scalp_v3 70D, canonical hash 235b8fccc96b7e0e)
+
+### Affected Components
+- src/nexus_scalp/features/liquidity_runtime.py (resolve_model_compatibility, LiquidityGovernor.model_compatibility/_model_contract/compatibility_contract, report/contract sections)
+- Web/index.html + Web/app.js (Model Contract + Compatibility Reason cells, State Revision row)
+- tests/unit/test_liquidity_runtime_integration_phase18.py, tests/integration/test_liquidity_api.py
+
+### Problem
+The UI reported `BLOCK (LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE)` with: ENABLED + AVAILABLE + VALID + SUCCESS + 70D schema + 10 liquidity features — a generic reason that hides WHICH contract fails. The governor was evaluated against the engine's class-attribute schema (scalp_v1/50D — the ACTIVE live contract) vs the reserved scalp_v3/70D, a genuinely incompatible pair, but the reason string was opaque and carried no model artifact identity (no tensor width, no hash, no feature-order hash, no version).
+
+### Root Cause (CONFIRMED: real incompatibility)
+The 2026-08-19 UI state was NOT a false positive: the production champion serves scalp_v1/50D (artifacts/models/scalp/XAUUSD/v1.0.0/model.pt, input_projection.weight (128,50)); Liquidity Intelligence enabled demands the canonical scalp_v3 70D contract (features/schema_contract.py; feature_schema_hash 235b8fccc96b7e0e). A 50D model genuinely cannot consume a 70D vector. The compatibility detector was CORRECT but its report was too generic, its model contract came from stale engine class attributes, and it never articulated the CANONICAL runtime contract (feature-order hash, normalization, dtype, indices).
+
+### Fix
+1. **Contract-based compatibility engine** (`resolve_model_compatibility`): family gate (ACTIVE=scalp_v1 / 70D_FAMILY=scalp_v3,scalp_v4 / OTHER=legacies) + declared-dimension gate + REAL tensor-width gate (build_metadata.input_dimension; BUG-114 72D pattern) + canonical feature-order hash when the model provides one. Diagnostic reasons: MODEL_INPUT_DIMENSION_MISMATCH (50D model vs 70D runtime), SCHEMA_VERSION_MISMATCH (legacy family), MODEL_DIMENSION_EXCEEDS_RUNTIME, MODEL_TENSOR_DIMENSION_MISMATCH, NO_MODEL_METADATA (UNKNOWN), plus PASS + SCHEMA_DIMENSION_MATCH.
+2. **Model contract from the REAL artifact**: governor._model_contract() resolves model_registry.current -> ChampionManager champion (verifies tensors) -> engine class attrs; model_input_dimension from inspect_artifact.actual_input_dimension; artifact hash/version/id surfaced.
+3. **Canonical runtime contract**: report() gains `liquidity_contract` (schema_id/version/dimension/feature_order_hash/algorithm_version/liquidity_indices/base/family/normalization/dtype) + `snapshot_coherence_revision`; governor.compatibility_contract() exposes runtime+model sides.
+4. **UI**: Model Compatibility cell shows `PASS/BLOCK/UNKNOWN (reason)`; new Model Contract cell (model dim/schema/tensor vs runtime dim); new Compatibility Reason row with remediation action; State Revision row now renders the backend `state_revision` (was --).
+5. **No stale cache**: the verdict is recomputed from the CURRENT artifact contract on every call (~2Hz web polls re-read the champion fingerprint only; ChampionManager memoizes per artifact fingerprint per BUG-118).
+
+### Regression Tests
+- test_liq_bug123_01 reproduced production state: scalp_v1/50D + enabled -> BLOCK + MODEL_INPUT_DIMENSION_MISMATCH + diagnostic sidecars
+- test_liq_bug123_02 valid 70D champion -> PASS + feature_order PASS + tensor 70
+- test_liq_bug123_03 disabled -> NOT_APPLICABLE (LIQUIDITY_DISABLED) regardless of model
+- test_liq_bug123_04 72D tensor declared 70 -> MODEL_TENSOR_DIMENSION_MISMATCH
+- test_liq_bug123_05 legacy v2 renamed 70D -> SCHEMA_VERSION_MISMATCH
+- test_liq_bug123_06 schema family classification
+- test_liq_bug123_07 report liquidity_contract single source
+- test_liq_bug123_08 state_revision meaningful
+- test_liq_bug123_09/10 hot-swap: 50D->70D recomputes PASS (no stale cache)
+- test_liq_bug123_11 unknown model -> UNKNOWN (never guessed)
+- test_liq_bug123_12 REAL proof artifact (scalp_v3 70D, canonical hash) -> PASS
+- test_liq_bug123_13 REAL 70D tensor through LocalModelRuntime.predict -> inference SUCCESS
+- test_liq_bug123_14 REAL 50D production champion artifact -> BLOCK (guard real)
+- test_liq_bug123_15 feature order hash canonical 235b8fccc96b7e0e
+- test_liq_bug123_16 real liquidity snapshot payload fills 60..69
+
+### Architectural Lessons / Regression Guards
+- A compatibility verdict must name WHICH contract failed (dimension vs schema family vs tensor width vs feature-order hash), not a generic enabled-state reason.
+- Never evaluate model compatibility from stale engine class attributes alone — read the actual loaded model contract (champion artifact + tensor width).
+- The compatibility gate must be recomputed from the current model contract on every report (no stale cache); caching may key on artifact fingerprint (BUG-118).
+- scalp_v3 and scalp_v4 are the SAME 70D geometry family; exact-id-only checks create false BLOCKs.

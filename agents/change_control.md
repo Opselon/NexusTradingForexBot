@@ -755,3 +755,69 @@ Status: VERIFIED (14 tests PASS; acceptance run produced info/warning/error/
        critical files with stacks, redaction, correlation; rotation zero-loss;
        retention verified) -> READY_FOR_REVIEW
 ```
+
+CHANGE-ID: CHG-0019
+Agent: Hermes-LiquidityCompat
+Role: Liquidity-Model Compatibility Engineer
+Task: BUG-123 — contract-based model compatibility for Liquidity Intelligence
+Scope: liquidity_runtime.py (resolve_model_compatibility engine, governor
+       model contract + compatibility_contract + report contract sections),
+       Web UI (Model Contract/Reason cells, State Revision row), tests
+       (test_liq_bug123_01..16), proof artifact (liq70_proof scalp_v3 70D)
+Affected files: src/nexus_scalp/features/liquidity_runtime.py,
+       Web/index.html, Web/app.js (absorbed via parallel commit),
+       tests/unit/test_liquidity_runtime_integration_phase18.py,
+       tests/integration/test_liquidity_api.py,
+       scratch/fix_70d_proof_artifact.py (new artifact builder)
+Affected functions/classes: resolve_model_compatibility (contract engine),
+       model_schema_family, build_model_compatibility_contract,
+       LiquidityGovernor._model_contract/compatibility_contract/model_compatibility,
+       report() (liquidity_contract + snapshot_coherence_revision),
+       snapshot_payload (per-value normalization/validity)
+Contracts touched: LIQUIDITY_70D v1 (reason vocabulary + contract descriptor),
+       INV-022 (new), schema_contract reused
+Runtime paths touched: /api/liquidity/state, /api/liquidity/features,
+       /api/status liquidity section, Debug console liquidity section (all
+       derive from governor.report()); NO model inference path changed
+Owners affected: our liveness of the 70D candidate (TASK-04/05/09), UI
+       consumers of the reason string (docs/LIQUIDITY_UI_FORENSIC_*)
+Risk: LOW. The compatibility verdict for the CURRENT production champion
+       (50D) remains BLOCK (truthful); only the reason + contract detail
+       changed. No padding/truncation anywhere.
+Dependencies: schema_contract (canonical 70D), ChampionManager (BUG-118)
+Required tests: test_liq_bug123_01..16 (all pass; suites 73 passed)
+Status: VERIFIED
+
+```text
+CHANGE-ID: CHG-0029
+Agent: Hermes-DBHygiene
+Role: Database Hygiene / Runtime Data Integrity Engineer
+Task: TASK-22-DB-HYGIENE-RUNTIME
+Scope: Continuous runtime database hygiene engine on top of the TASK-11
+       worker. New hygiene/ modules: quarantine.py (DataQuarantine store,
+       MOVE->MARK->REPORT, restore/resolve, provenance), consistency.py
+       (read-only rule engine: trade/ledger/dataset/news validation),
+       index_health.py (missing/duplicate/unused index advisory +
+       QUERY_HEALTH_REPORT), report.py (DATABASE_HYGIENE_INITIAL_REPORT +
+       cycle telemetry + Telegram report text), hygiene_runtime.py
+       (RuntimeCleanupScheduler conductor: config cadence, first-run audit,
+       deep maintenance, telegram cooldown). Config: database_hygiene
+       section in configs/base.yaml + DatabaseHygieneConfig/RetentionsConfig.
+       Wiring: live_engine tick loop (scheduler replaces bare worker),
+       /api/db/hygiene (runtime + quarantine), CLI nexus db hygiene
+       health|cleanup --dry-run|--deep|quarantine, Web Database Health Panel
+       (fixes previously-dead loadHealthPanel button, BUG-119 pattern).
+Affected files: hygiene/{quarantine,consistency,index_health,report,
+       hygiene_runtime}.py, configuration/config.py, configs/base.yaml,
+       application/live_engine.py, cli/db_commands.py, web/server.py,
+       Web/{index.html,app.js}, tests/unit/test_database_hygiene_task11.py,
+       docs/agent_handoffs/Hermes-Hygiene-Runtime-TASK22.md
+Contracts touched: DATABASE_HYGIENE v2 (runtime scheduler + quarantine +
+       consistency + index health), RETENTION_POLICY v1 (unchanged)
+Risk: LOW (runtime cycles default dry_run=True; deletes require
+       apply_deletes + non-LIVE execution; schema changes still go through
+       TASK-10 migrations; index findings are advisory only)
+Dependencies: TASK-11 hygiene worker, TASK-10 migrations, TASK-12 telegram
+Required tests: TEST-HYG-37..48 (scheduler, first-run audit, quarantine,
+       consistency, index health, dry-run, protected data, telemetry, budget)
+Status: VERIFIED (49 tests in file PASS; ruff+format+mypy clean)

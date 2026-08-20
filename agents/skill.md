@@ -2693,9 +2693,25 @@ all finite, clipped `[-3, +3]` (value gate in `compute_from_engine`).
   or no snapshot (INV-009).
 - BUG-111: wall-clock (UTC epoch) timestamps for absolute values; monotonic
   ONLY for age deltas — the 1970-sentinel render bug.
-- Model compatibility: `BLOCK (LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE)`
-  when the serving model is 50D/60D while liquidity is enabled — the UI
-  shows this rather than a fake AVAILABLE.
+- Model compatibility (BUG-123, INV-022): contract-based verdict from
+  `resolve_model_compatibility` — schema-FAMILY gate (ACTIVE=scalp_v1 /
+  70D_FAMILY=scalp_v3,scalp_v4 / OTHER=legacy) + declared-dimension gate +
+  REAL tensor-width gate (build_metadata.input_dimension; a 72D-news artifact
+  is NOT 70D even if the manifest declares 70) + canonical feature-order
+  hash (235b8fccc96b7e0e) when the model provides one. Diagnostic reasons:
+  `MODEL_INPUT_DIMENSION_MISMATCH` (e.g. 50D champion vs 70D runtime —
+  the truthful 2026-08-19 state), `SCHEMA_VERSION_MISMATCH`, `
+  MODEL_DIMENSION_EXCEEDS_RUNTIME`, `MODEL_TENSOR_DIMENSION_MISMATCH`,
+  `NO_MODEL_METADATA` (UNKNOWN), `SCHEMA_DIMENSION_MATCH` (PASS). The model
+  contract is read from the CURRENT artifact (model_registry.current ->
+  ChampionManager champion incl. tensor width -> engine class attrs) on every
+  report — no stale compatibility cache. The 50D production champion stays
+  BLOCK truthfully until a validated scalp_v3 70D model is deployed
+  (governance promote with runtime_schema_id=scalp_v3). UI shows
+  PASS/BLOCK(reason) + Model Contract cells + State Revision row.
+  `report()` exposes `liquidity_contract` (schema/version/dimension/
+  feature_order_hash/algorithm_version/indices/normalization/dtype) and
+  `snapshot_coherence_revision` (coherent snapshot+verdict epoch).
 
 ### API + UI (TASK-2)
 
