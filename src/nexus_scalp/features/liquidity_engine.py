@@ -1095,6 +1095,7 @@ def detect_reactive_sweep(
     if nearest.usable_at > decision:
         return float(SweepState.NO_RELEVANT_LIQUIDITY), DEFAULT_DISPLACEMENT
     sweep_confirmed_bar: int | None = None
+    rel_arr = np.asarray(rel, dtype=np.int64)
     for i in rel:
         p = nearest
         # CAUSAL GATE: a bar before the pool's confirmation cannot touch it.
@@ -1103,15 +1104,16 @@ def detect_reactive_sweep(
         if p.side == PoolSide.BSL:
             pen = bool(highs[i] >= p.price)
             # rejection: a LATER bar closes back below the pool
-            later = [j for j in rel if j > i]
-            rej = any(closes[j] < p.price - atr * reclaim_fraction_atr for j in later)
+            # (vectorized suffix check — no O(k^2) list rebuilds per i)
+            later_mask = rel_arr > i
+            rej = bool((closes[rel_arr[later_mask]] < p.price - atr * reclaim_fraction_atr).any())
             if pen and rej:
                 sweep_confirmed_bar = i
                 break
         else:
             pen = bool(lows[i] <= p.price)
-            later = [j for j in rel if j > i]
-            rej = any(closes[j] > p.price + atr * reclaim_fraction_atr for j in later)
+            later_mask = rel_arr > i
+            rej = bool((closes[rel_arr[later_mask]] > p.price + atr * reclaim_fraction_atr).any())
             if pen and rej:
                 sweep_confirmed_bar = i
                 break
@@ -1127,12 +1129,13 @@ def detect_reactive_sweep(
         return float(SweepState.APPROACHING), DEFAULT_DISPLACEMENT
 
     # sweep confirmed at sweep_confirmed_bar
-    after = [j for j in rel if j > sweep_confirmed_bar]
-    if not after:
+    # (vectorized suffix slice — same elements as the old list rebuild)
+    after_idx = np.nonzero(rel_arr > sweep_confirmed_bar)[0]
+    if after_idx.size == 0:
         return float(SweepState.SWEPT), DEFAULT_DISPLACEMENT
     # displacement: from the sweep bar extreme (opposite side) to the close
     # of the 2nd bar after confirmation, in the rejection direction.
-    far = after[min(1, len(after) - 1)]
+    far = int(rel_arr[after_idx[min(1, after_idx.size - 1)]])
     if nearest.side == PoolSide.BSL:
         anchor = float(lows[sweep_confirmed_bar])  # low of the sweep bar
         disp = float(closes[far] - anchor)
