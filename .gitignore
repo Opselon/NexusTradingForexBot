@@ -548,4 +548,4 @@ installer/*.exe
 Thumbs.db
 ehthumbs.db
 desktop.ini
-$RECYCLE.BIN/
+$RECYCLE.BIN/archive/
