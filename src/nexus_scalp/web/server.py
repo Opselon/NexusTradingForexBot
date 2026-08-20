@@ -26,7 +26,6 @@ from pydantic import BaseModel
 from nexus_scalp.accounting import PeriodKind
 from nexus_scalp.accounting.aggregation import compute_advanced_metrics
 from nexus_scalp.accounting.worker import format_worker_status
-from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ActionType, ExecutionMode, OrderType
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.scalp_features import FEATURE_NAMES
