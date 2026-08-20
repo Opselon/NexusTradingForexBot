@@ -296,8 +296,12 @@ jobs:
               try:
                   with open(p, encoding="utf-8") as fh:
                       statuses[name] = json.load(fh).get("status", "skipped")
-              except Exception:
+              except FileNotFoundError:
                   statuses[name] = "errored"
+                  print(f"MISSING CHECK JSON: {p}")
+              except Exception as e:
+                  statuses[name] = "errored"
+                  print(f"UNREADABLE CHECK JSON: {p} -> {e}")
           failed = [k for k, v in statuses.items() if v in ("failed", "errored")]
           print(" | ".join(f"{k}={v}" for k, v in statuses.items()))
           if failed:

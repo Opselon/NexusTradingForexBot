@@ -406,7 +406,12 @@ def cmd_check(args: argparse.Namespace) -> int:
     """
     root = Path(args.root)
     (root / "run-info").mkdir(parents=True, exist_ok=True)
-    rc = int(args.rc)
+    try:
+        rc = int(args.rc)
+    except (TypeError, ValueError):
+        _write_check(root, args.check_name, "errored", "no rc captured (tool did not exit normally)", -1)
+        print(f"CHECK {args.check_name} rc=<empty> status=errored")
+        return 0
     status = "passed" if rc == 0 else "failed" if rc == 1 else "errored"
     detail = args.detail or ("passed" if rc == 0 else "failed (see artifact)")
     _write_check(root, args.check_name, status, detail, rc)
