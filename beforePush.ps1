@@ -24,7 +24,20 @@ $ErrorActionPreference = "Stop"
 # Configuration
 # -----------------------------------------------------------------------------
 $KeepRuns = 3
+# RAM-aware worker count (BUG-073 swarm lesson): each xdist worker loads
+# torch + polars (~500 MB). -n auto on an 8-core/16 GB box under parallel
+# agent load OOM-killed workers mid-run (exit -1 at ~78%). Cap workers by
+# available memory as well as cores: workers = min(cores, max(2, availGB/1.5)).
 $Cores = [Math]::Max(2, [Environment]::ProcessorCount)
+try {
+    $os = Get-CimInstance Win32_OperatingSystem
+    $availGB = [Math]::Round(($os.FreePhysicalMemory / 1MB), 1)
+    $MemCapped = [Math]::Max(2, [int][Math]::Floor($availGB / 1.5))
+    if ($MemCapped -lt $Cores) { $Cores = $MemCapped }
+    Write-Warn "RAM-aware workers: $Cores (avail $availGB GB)"
+} catch {
+    Write-Warn "RAM probe failed - using core count $Cores"
+}
 $LogRoot  = Join-Path (Get-Location) "artifacts\logs"
 $RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $RunDir   = Join-Path $LogRoot "beforepush_$RunStamp"
@@ -165,13 +178,27 @@ $mypyJob = Start-Job -ScriptBlock {
     Set-Content -Path "$log.exit" -Value $script:code
 } -ArgumentList $MyPyLog, $VenvPy, $RunRoot
 
+# Default gate = the CI-critical suite (tests/critical_suite.txt, ~792
+# tests, ~4-5 min with xdist). Pass -FullSuite to run ALL unit tests
+# (tests/unit/, ~1931 tests, ~20 min) - the pre-reduction legacy gate.
+$FullSuite = $args -contains "-FullSuite"
+if ($FullSuite) {
+    $PytestTarget = @("tests/unit/")
+    Write-Warn "FULL suite gate requested (all unit tests - slow, ~20 min)"
+} else {
+    $CritFiles = if (Test-Path "tests/critical_suite.txt") {
+        Get-Content "tests/critical_suite.txt" | Where-Object { $_ -notmatch '^\s*$' -and $_ -notmatch '^\s*#' }
+    } else { @("tests/unit/") }
+    $PytestTarget = $CritFiles
+    Write-Success "Critical-suite gate: $($PytestTarget.Count) files"
+}
 $pytestJob = Start-Job -ScriptBlock {
-    param($log, $cores, $venvPy, $runRoot)
+    param($log, $cores, $venvPy, $runRoot, $target)
     Set-Location -Path $runRoot
-    & $venvPy -m pytest tests/unit/ -n $cores --dist worksteal -q --tb=short *> $log
+    & $venvPy -m pytest @target -n $cores --dist worksteal -q --tb=short *> $log
     $script:code = $LASTEXITCODE
     Set-Content -Path "$log.exit" -Value $script:code
-} -ArgumentList $PyTestLog, $Cores, $VenvPy, $RunRoot
+} -ArgumentList $PyTestLog, $Cores, $VenvPy, $RunRoot, $PytestTarget
 
 # Wait for both
 Wait-Job $mypyJob, $pytestJob | Out-Null
