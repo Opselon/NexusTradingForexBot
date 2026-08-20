@@ -872,6 +872,40 @@ class RuntimeConfigStore:
             else:
                 persistent.set_config_version(self._snapshot.version)
 
+    def rehydrate(self, persistent: PersistentConfigStore) -> None:
+        """Attach a persistent store and re-hydrate from it (engine boot).
+
+        Used when the engine constructs the store before the settings
+        service exists; persisted values layer over the bootstrap snapshot
+        (restart persistence / crash recovery).
+        """
+        with self._lock:
+            self._persistent = persistent
+            persisted_values = persistent.get_all()
+            persisted_values.pop("rule_matrix.cache_ttl_seconds", None)
+            persisted_values.pop("telegram.enabled", None)
+            if not persisted_values:
+                persistent.set_config_version(self._snapshot.version)
+                return
+            hyd = build_runtime_configuration(
+                version=self._snapshot.version + 1,
+                base=self._snapshot,
+                updates=persisted_values,
+                source="PERSISTED_RESTORE",
+            )
+            if hyd.snapshot is not None:
+                self._snapshot = hyd.snapshot
+                persistent.set_config_version(self._snapshot.version)
+                logger.info(
+                    "[RUNTIME_CONFIG] rehydrated from persistent store version=%d",
+                    self._snapshot.version,
+                )
+            else:
+                logger.warning(
+                    "[RUNTIME_CONFIG] rehydrate rejected (keeping bootstrap): %s",
+                    "; ".join(hyd.errors),
+                )
+
     # ------------------------------------------------------------ reads
     def get_snapshot(self) -> RuntimeConfiguration:
         """Lock-free read returning the current immutable snapshot."""

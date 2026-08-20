@@ -288,11 +288,12 @@ class LiveEngine:
         # =================================================================
         self.settings_service = load_settings_service()
         # Attach the persistent store (settings DB) so runtime config
-        # versions and values persist across restarts (boot hydration).
+        # versions and values persist across restarts (boot hydration:
+        # persisted values layer over the bootstrap snapshot).
         try:
             from nexus_scalp.configuration import PersistentConfigStore
 
-            self.runtime_config._persistent = PersistentConfigStore(self.settings_service)
+            self.runtime_config.rehydrate(PersistentConfigStore(self.settings_service))
         except Exception as _pcs_err:
             logger.warning(
                 "[RUNTIME_CONFIG] persistent store attach failed (non-fatal): %s",
