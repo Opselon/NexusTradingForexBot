@@ -126,8 +126,17 @@ jobs:
           # tests) and is no longer the default CI gate (see heavy-ci for the
           # surviving extended suites on ci-tests / manual dispatch).
           readarray -t CRIT_FILES < tests/critical_suite.txt
-          pytest "${CRIT_FILES[@]}" \
-                 --cov=src \
+                    # Parallelized with pytest-xdist: serial gate measured about 15
+                    # minutes locally (torch import plus heavy model suites) and sat
+                    # close to the 20 minute job timeout.  The -n auto flag cut the
+                    # same gate to about 5.5 minutes on 4 workers.  pytest-cov emits a
+                    # single TOTAL line under xdist, so coverage parsing is unchanged.
+                    # The manifest is LF pinned via .gitattributes so CRLF cannot embed
+                    # carriage returns into every path and break collection.
+                    pytest "${CRIT_FILES[@]}" \
+                           -n auto \
+                           --dist loadgroup \
+                           --cov=src \
                  --cov-report=term-missing \
                  --cov-report=xml:"$CI_RESULTS_DIR/pytest/coverage.xml" \
                  --cov-report=html:"$CI_RESULTS_DIR/pytest/htmlcov" \

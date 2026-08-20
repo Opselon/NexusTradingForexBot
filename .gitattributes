@@ -3,6 +3,11 @@
 ###############################################################################
 * text=auto
 
+# Path-list manifests are consumed by readarray/`cat | tr` word-splitting:
+# CRLF conversion embeds \r into every path and breaks collection on Windows
+# working trees. Pin LF so every checkout (CI incl.) is LF.
+tests/critical_suite.txt text eol=lf
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #
