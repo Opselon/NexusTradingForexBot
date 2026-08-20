@@ -256,6 +256,9 @@ class LiveEngine:
         self._last_active_position_count: int = 0
         #: Broker-aware account snapshot cache (typed; refreshed off the hot path).
         self._account_snapshot: Any = None
+        #: Cached AccountInfo between 5s refreshes (avoids a per-tick RPC).
+        self._last_account_info: Any = None
+        self._last_account_refresh: float = 0.0
         #: Real runtime execution mode - updated from connection state, never
         #: blindly trusted from config (task section 8: mode must be real).
         self._runtime_mode: str = ""
@@ -1321,7 +1324,25 @@ class LiveEngine:
                         logger.info("[WATCHDOG] Tick stream quiet. MT5 connection remains active.")
                     self._last_tick_processed_time = time.time()
 
-                live_account = self.adapter.get_account_info()
+                # Account/tick refresh cadence: the account snapshot is
+                # refreshed at most every 5s (it is only used for position
+                # sizing / runtime mode / survival state — none of which need
+                # per-tick freshness), but the account info + last tick are
+                # needed for the decision loop. Between refreshes we reuse the
+                # last snapshot to avoid a per-tick remote RPC (~4ms at
+                # loopback, more over a real gateway).
+                _now = time.time()
+                if getattr(self, "_last_account_refresh", 0.0) + 5.0 < _now:
+                    try:
+                        live_account = self.adapter.get_account_info()
+                    except Exception:
+                        live_account = getattr(self, "_last_account_info", None)
+                    self._last_account_info = live_account
+                    self._last_account_refresh = _now
+                else:
+                    # Cache hit: reuse last successful account info (the tick
+                    # still advances every iteration).
+                    live_account = getattr(self, "_last_account_info", None)
                 tick = self.adapter.get_last_tick(symbol)
 
                 if live_account is None or tick is None:
