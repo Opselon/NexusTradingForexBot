@@ -44,7 +44,6 @@ from rich.table import Table
 from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.observability.logging import configure_logging, get_logger
 from nexus_scalp.ports.mt5_port import IMT5Port
 from nexus_scalp.web.server import create_app
