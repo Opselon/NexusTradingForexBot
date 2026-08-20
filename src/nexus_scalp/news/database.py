@@ -24,6 +24,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.database.config import DatabaseConfig, load_database_config
+from nexus_scalp.database.drivers import get_driver
+from nexus_scalp.database.drivers.proxy import PortableConnection
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.news.database")
@@ -237,9 +240,29 @@ class NewsDatabase:
     without touching trading history.
     """
 
-    def __init__(self, db_path: str | Path) -> None:
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        config: DatabaseConfig | None = None,
+    ) -> None:
+        """Provider-aware news store (DATABASE PORTABILITY).
+
+        `db_path` remains for backward compatibility (SQLite).  `config`
+        selects the provider explicitly (PostgreSQL support).  The store talks
+        to the database through the portable connection proxy so all existing
+        SQL call sites run unchanged on both providers.
+        """
+        self.db_path = Path(db_path) if db_path else None
+        if config is not None:
+            self._config = config
+        elif self.db_path is not None:
+            self._config = DatabaseConfig.for_sqlite("news", path=str(self.db_path))
+        else:
+            self._config = load_database_config("news")
+            self.db_path = Path(self._config.sqlite_connect_path) if self._config.is_sqlite else None
+        self._driver = get_driver(self._config)
+        if self._config.is_sqlite and self.db_path is not None:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.initialize_schema()
 
     # ------------------------------------------------------------------
@@ -251,8 +274,9 @@ class NewsDatabase:
         try:
             conn = self._connect()
             try:
-                conn.execute("PRAGMA journal_mode=WAL;")
-                conn.execute("PRAGMA synchronous=NORMAL;")
+                if self._config.is_sqlite:
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute("PRAGMA synchronous=NORMAL;")
                 for ddl in _SCHEMA_SQL:
                     conn.execute(ddl)
                 for idx in _INDEX_SQL:
@@ -269,10 +293,13 @@ class NewsDatabase:
         release/repair tooling."""
         return
 
-    def _connect(self, timeout: float = 5.0) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=timeout)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self, timeout: float = 5.0) -> Any:
+        """Portable connection (SQLite native; PostgreSQL proxied)."""
+        if self._config.is_sqlite:
+            conn = self._driver.connect(timeout=timeout)
+            conn.row_factory = sqlite3.Row
+            return conn
+        return PortableConnection(self._driver, timeout=timeout)
 
     @staticmethod
     def _now() -> str:

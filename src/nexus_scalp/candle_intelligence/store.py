@@ -23,6 +23,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.candle_intelligence.config import CandleIntelligenceConfig
+from nexus_scalp.database.config import DatabaseConfig, load_database_config
+from nexus_scalp.database.drivers import get_driver
+from nexus_scalp.database.drivers.proxy import PortableConnection
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.candle_intelligence.store")
@@ -284,10 +287,28 @@ class CandleIntelStore:
     #: memory flat under sustained load).
     RING_CAPACITY: int = 2000
 
-    def __init__(self, config: CandleIntelligenceConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: CandleIntelligenceConfig | None = None,
+        db_config: DatabaseConfig | None = None,
+    ) -> None:
+        """Provider-aware candle intelligence store (DATABASE PORTABILITY).
+
+        `config` carries the SQLite path as before; `db_config` selects the
+        provider explicitly (PostgreSQL).  SQLite remains the default.
+        """
         self.config = config or CandleIntelligenceConfig()
+        if db_config is not None:
+            self._config = db_config
+        elif not self.config.db_path:
+            self._config = load_database_config("candle_intel")
+            self.config.db_path = self._config.sqlite_connect_path
+        else:
+            self._config = DatabaseConfig.for_sqlite("candle_intel", path=self.config.db_path)
         self._db_path = self.config.db_path
-        os.makedirs(os.path.dirname(os.path.abspath(self._db_path)) or ".", exist_ok=True)
+        self._driver = get_driver(self._config)
+        if self._config.is_sqlite:
+            os.makedirs(os.path.dirname(os.path.abspath(self._db_path)) or ".", exist_ok=True)
 
         # In-memory fast path: per-table ring buffers + a shared write queue.
         self._rings: dict[str, deque[dict[str, Any]]] = {
@@ -302,8 +323,7 @@ class CandleIntelStore:
 
         # SQLite connection is OWNED by the worker thread only.
         self._conn: sqlite3.Connection | None = None
-        self._reader_conn = sqlite3.connect(self._db_path, timeout=15.0, check_same_thread=False)
-        self._reader_conn.row_factory = sqlite3.Row
+        self._reader_conn = self._connect_reader()
         self._init_schema()
         self._start_worker()
         logger.info(
@@ -311,12 +331,27 @@ class CandleIntelStore:
             db_path=self._db_path,
         )
 
+    def _connect_reader(self) -> Any:
+        """Portable reader connection (SQLite native; PostgreSQL proxied)."""
+        if self._config.is_sqlite:
+            conn = self._driver.connect(timeout=15.0)
+            conn.row_factory = sqlite3.Row
+            return conn
+        return PortableConnection(self._driver, timeout=15.0)
+
+    def _connect_writer(self) -> Any:
+        """Portable writer connection (worker thread)."""
+        if self._config.is_sqlite:
+            return self._driver.connect(timeout=15.0)
+        return PortableConnection(self._driver, timeout=15.0)
+
     def _init_schema(self) -> None:
         """Schema bootstrap on the reader connection (safe; worker uses same DB
         file, WAL allows concurrent access)."""
         with self._reader_conn:
-            self._reader_conn.execute("PRAGMA journal_mode = WAL;")
-            self._reader_conn.execute("PRAGMA synchronous = NORMAL;")
+            if self._config.is_sqlite:
+                self._reader_conn.execute("PRAGMA journal_mode = WAL;")
+                self._reader_conn.execute("PRAGMA synchronous = NORMAL;")
             for sql in _SCHEMAS.values():
                 self._reader_conn.execute(sql)
             for table in TABLES:
@@ -339,9 +374,10 @@ class CandleIntelStore:
     def _worker_loop(self) -> None:
         """Drains the write queue into SQLite in batched transactions."""
         try:
-            self._conn = sqlite3.connect(self._db_path, timeout=15.0)
-            self._conn.execute("PRAGMA journal_mode = WAL;")
-            self._conn.execute("PRAGMA synchronous = NORMAL;")
+            self._conn = self._connect_writer()
+            if self._config.is_sqlite:
+                self._conn.execute("PRAGMA journal_mode = WAL;")
+                self._conn.execute("PRAGMA synchronous = NORMAL;")
         except Exception as e:
             logger.error("[CANDLE_INTEL] writer conn failed", error=str(e))
             return
@@ -375,8 +411,11 @@ class CandleIntelStore:
         try:
             with self._conn:
                 for table, cols, vals in batch:
-                    qmarks = ", ".join("?" for _ in cols)
-                    sql = f"INSERT OR IGNORE INTO {table} ({', '.join(cols)}) VALUES ({qmarks})"
+                    sql_placeholders = self._driver.qmarks(len(cols))
+                    sql = (
+                        f"INSERT OR IGNORE INTO {table} ({', '.join(cols)}) "
+                        f"VALUES ({sql_placeholders})"
+                    )
                     self._conn.execute(sql, list(vals))
         except Exception as e:
             logger.error("[CANDLE_INTEL] batch flush failed", error=str(e))
@@ -494,6 +533,9 @@ class CandleIntelStore:
 
     def db_size_bytes(self) -> int:
         try:
+            if not self._config.is_sqlite:
+                size = self._driver.database_size_bytes()
+                return int(size or 0)
             return int(
                 self._reader_conn.execute("PRAGMA page_count").fetchone()[0]
                 * self._reader_conn.execute("PRAGMA page_size").fetchone()[0]
@@ -503,6 +545,8 @@ class CandleIntelStore:
 
     def integrity_ok(self) -> bool:
         try:
+            if not self._config.is_sqlite:
+                return self._driver.ping()
             row = self._reader_conn.execute("PRAGMA integrity_check").fetchone()
             return bool(row and row[0] == "ok")
         except Exception:
