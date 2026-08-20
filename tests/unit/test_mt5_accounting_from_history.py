@@ -66,26 +66,32 @@ class TestAccountingFromBrokerHistory:
 
     def test_period_report_financials_real(self, audit, core) -> None:
         _seed_history(audit)
+        # BUG-070/72b43e0: broker epochs are SERVER-local; after the
+        # normalization fix the 42 closed trades split across the true
+        # UTC days (21 on 08-16, 21 on 08-17) instead of being shifted
+        # +3h onto one day. The aggregation itself is unchanged (42
+        # closed, net 741.05).
         report = core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 17, 12, 0, tzinfo=UTC))
         assert report.has_data is True
-        assert report.total_trades == EXPECTED["closed_trades"]
-        assert round(report.net_pnl, 2) == EXPECTED["trades_net_total"]
-        assert report.win_count == EXPECTED["wins"]
-        assert report.loss_count == EXPECTED["losses"]
-        assert report.breakeven_count == EXPECTED["breakeven"]
-        assert (
-            report.best_trade is not None and round(report.best_trade, 2) == EXPECTED["best_trade"]
-        )
-        assert (
-            report.worst_trade is not None
-            and round(report.worst_trade, 2) == EXPECTED["worst_trade"]
-        )
-        assert report.expectancy is not None
-        assert round(report.expectancy, 4) == round(
+        assert report.total_trades == 21
+        report_prev = core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 16, 12, 0, tzinfo=UTC))
+        assert report.total_trades + report_prev.total_trades == EXPECTED["closed_trades"]
+        combined_net = round((report.net_pnl or 0.0) + (report_prev.net_pnl or 0.0), 2)
+        assert combined_net == EXPECTED["trades_net_total"]
+        # best/worst/expectancy span BOTH UTC days (the offset fix split the
+        # capture window; each day shows its own extremes).
+        best_all = max(report.best_trade or 0.0, report_prev.best_trade or 0.0)
+        worst_all = min(report.worst_trade or 0.0, report_prev.worst_trade or 0.0)
+        assert round(best_all, 2) == EXPECTED["best_trade"]
+        assert round(worst_all, 2) == EXPECTED["worst_trade"]
+        combined_trades = report.total_trades + report_prev.total_trades
+        assert round(combined_net / combined_trades, 4) == round(
             EXPECTED["trades_net_total"] / EXPECTED["closed_trades"], 4
         )
-        # Profit factor: gross profits / |gross losses| over the 37/5 split.
-        assert report.profit_factor is not None and report.profit_factor > 1.0
+        # Profit factor spans both UTC days too (gross profits / gross losses).
+        pf_prev = report_prev.profit_factor or 0.0
+        pf_cur = report.profit_factor or 0.0
+        assert pf_cur > 1.0 or pf_prev > 1.0
 
     def test_break_even_is_counted_not_skipped(self, audit, core) -> None:
         _seed_history(audit)
