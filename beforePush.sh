@@ -62,11 +62,31 @@ fi
 # -----------------------------------------------------------------------------
 # 4. PYTEST UNIT & INTEGRATION TESTS
 # -----------------------------------------------------------------------------
-write_step "4/4: Running Unit Tests & Generating Coverage..."
-if pytest tests/unit/ -q --tb=short; then
-    write_success "All tests passed successfully!"
+write_step "4/4: Running Critical-Suite Tests & Generating Coverage..."
+# Default gate = the CI-critical suite (tests/critical_suite.txt, ~792 tests,
+# ~2-4 min with xdist). Pass -FullSuite to run ALL unit tests (the slow
+# legacy gate). Mirrors beforePush.ps1 semantics.
+if [[ "$*" == *"-FullSuite"* ]]; then
+    write_step "4/4b: FULL suite gate requested (all unit tests - slow)"
+    if pytest tests/unit/ -q --tb=short; then
+        write_success "All tests passed successfully!"
+    else
+        write_failure "One or more pytest test cases failed."
+    fi
 else
-    write_failure "One or more pytest test cases failed."
+    CRIT_FILES=()
+    while IFS= read -r line; do
+        case "$line" in ''|\#*) continue ;; esac
+        CRIT_FILES+=("$line")
+    done < tests/critical_suite.txt
+    if [ ${#CRIT_FILES[@]} -eq 0 ]; then
+        CRIT_FILES=("tests/unit/")
+    fi
+    if pytest "${CRIT_FILES[@]}" -n auto --dist worksteal -q --tb=short; then
+        write_success "All critical-suite tests passed successfully!"
+    else
+        write_failure "One or more critical-suite test cases failed."
+    fi
 fi
 
 # -----------------------------------------------------------------------------
