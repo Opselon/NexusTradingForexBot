@@ -567,16 +567,64 @@ def _update_orchestrator() -> rupdater.UpdateOrchestrator:
     )
 
 
-def _update_json_exit(report: dict[str, Any], json_mode: bool) -> int:
-    """Emit the update report and map it to the exit-code contract."""
+def _update_exit_code(report: dict[str, Any]) -> int:
+    """Stable exit-code mapping for update commands (spec 36, additive).
+
+    0 SUCCESS (COMPLETED / NO_UPDATE / ROLLED_BACK / FAILED_SAFE / IDLE)
+    1 runtime/validation failure
+    4 release verification failure (SHA256 / manifest / tamper)
+    5 update not applicable / network / incompatible / security
+    8 rollback
+    """
     status = str(report.get("status") or report.get("state") or "")
     ok_states = ("COMPLETED", "NO_UPDATE", "ROLLED_BACK", "FAILED_SAFE", "IDLE")
-    code = xc.EXIT_OK if status in ok_states else xc.EXIT_UPDATE
+    if status in ok_states:
+        return xc.EXIT_OK
+    if status == "ROLLED_BACK":
+        return xc.EXIT_OK
+    if report.get("error_code") in ("SHA256_MISMATCH",) or "verification" in status.lower():
+        return xc.EXIT_UPDATE
+    if status in ("UPDATE_VERIFICATION_FAILED",):
+        return xc.EXIT_UPDATE
+    if status in ("RELEASE_NOT_FOUND", "NETWORK_UNAVAILABLE", "NETWORK_ERROR",
+                  "GITHUB_UNAVAILABLE", "INCOMPATIBLE", "SECURITY_BLOCKED",
+                  "UPDATE_REJECTED", "FAILED", "UPDATE_IN_PROGRESS",
+                  "UPDATE_BLOCKED_WHILE_LIVE", "UPDATE_AVAILABLE"):
+        return xc.EXIT_UPDATE
+    return xc.EXIT_UPDATE
+
+
+def _update_json_exit(report: dict[str, Any], json_mode: bool, code: int | None = None) -> int:
+    """Emit the update report and raise the mapped exit code."""
+    code = code if code is not None else _update_exit_code(report)
     if json_mode:
         report = dict(report)
         report["exit_code"] = code
         _emit(report, True)
     raise typer.Exit(code)
+
+
+def _update_human_check(report: dict[str, Any]) -> None:
+    """Human-readable update-check output (spec 2/34)."""
+    print("Nexus Client Updater")
+    print(f"  Current version : {report.get('current_version')}")
+    print(f"  Latest release  : {report.get('target_version')}")
+    print(f"  Release tag     : {report.get('tag') or '—'}")
+    if report.get("commit_sha"):
+        print(f"  Commit SHA      : {report['commit_sha']}")
+    if report.get("published_at"):
+        print(f"  Published at    : {report['published_at']}")
+    print(f"  Platform        : {report.get('platform')}")
+    print(f"  Architecture    : {report.get('architecture')}")
+    if report.get("artifact_name"):
+        print(f"  Asset           : {report['artifact_name']}")
+    if report.get("model_version"):
+        print(f"  Model version   : {report['model_version']}")
+    if report.get("schema_version"):
+        print(f"  Model schema    : {report['schema_version']}")
+    print(f"  Status          : {report.get('status')}")
+    for d in report.get("decisions", []):
+        print(f"    - {d}")
 
 
 @app.command("update")
@@ -598,34 +646,102 @@ def update_cmd(
         False, "--yes", help="Skip interactive prompts (never bypasses security checks)."
     ),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    include_prerelease: bool = typer.Option(
+        False, "--include-prerelease", help="Allow pre-releases on the stable channel (explicit opt-in)."
+    ),
+    allow_downgrade: bool = typer.Option(
+        False, "--allow-downgrade", help="Permit an explicitly-requested downgrade (compatibility still verified)."
+    ),
+    force_refresh: bool = typer.Option(
+        False, "--force-refresh", help="Bypass cached release metadata; query GitHub fresh (spec 18/40)."
+    ),
+    fresh: bool = typer.Option(
+        False, "--force-refresh", help="Bypass cached release metadata; query GitHub fresh."
+    ),
 ) -> None:
     """Check, download, verify, install and health-check the newest release.
 
     nexus update            : run the full safe update flow
     nexus update check      : discovery only (never fabricates latest)
+    nexus update latest     : authoritative fresh latest (bypasses cache, spec 19)
+    nexus update download   : check + download + verify to staging (not installed)
+    nexus update install    : install the staged/latest package
+    nexus update verify     : verify the INSTALLED client (no download)
     nexus update status     : observable state machine + crash recovery
     nexus update history    : persisted update log
     nexus update rollback   : restore the prior application (user data intact)
     nexus update doctor     : verify github/disk/mode/db/config/process/lock
     """
-    # Offline manifest mode (build pipeline / tests): keep legacy behavior.
+    # Offline manifest mode (build pipeline / tests): routed through the
+    # SAME discovery/plan core (no duplicate update implementation, spec 55).
     if manifest is not None:
         info = get_version_info()
         available = rupdate.load_available_releases(manifest)
-        plan = rupdate.UpdateEngine(architecture=info.get("architecture"), channel=channel).plan(
-            current_version=info["version"], available=available
-        )
-        plan_json = plan.to_dict()
-        plan_json["status"] = "UPDATE_AVAILABLE" if plan.ready else "NO_UPDATE"
-        plan_json["channel"] = channel
-        _update_json_exit(plan_json, json_mode)
+        if isinstance(available, dict):
+            available = {"assets": available.get("assets") or [],
+                         "tag_name": available.get("tag_name") or f"v{info['version']}",
+                         "prerelease": bool(available.get("prerelease")),
+                         "body": str(available.get("body") or ""),}
+        plan = rupdater.UpdatePlanBuilder(
+            installed_version=info["version"],
+            channel=channel,
+            architecture=info.get("architecture"),
+            installed_commit=info.get("commit"),
+            include_prerelease=include_prerelease,
+            allow_downgrade=allow_downgrade,
+        ).build(available)
+        plan["channel"] = channel
+        _update_json_exit(plan, json_mode)
         return
 
     orch = _update_orchestrator()
 
     if subcommand == "check":
-        report = orch.check()
+        report = orch.check(
+            include_prerelease=include_prerelease,
+            allow_downgrade=allow_downgrade,
+        )
         report["dry_run"] = True
+        report["force_refresh"] = force_refresh
+        if not json_mode:
+            _update_human_check(report)
+        _update_json_exit(report, json_mode)
+        return
+    if subcommand == "latest":
+        report = orch.latest(
+            include_prerelease=include_prerelease,
+        )
+        report["force_refresh"] = True  # latest ALWAYS bypasses cache (spec 19)
+        if not json_mode:
+            _update_human_check(report)
+        _update_json_exit(report, json_mode)
+        return
+    if subcommand == "download":
+        report = orch.download(include_prerelease=include_prerelease)
+        report["force_refresh"] = force_refresh
+        if not json_mode:
+            if report.get("artifact_path"):
+                print("Nexus Client Updater — DOWNLOAD")
+                print(f"  Current version : {report.get('current_version')}")
+                print(f"  Target version  : {report.get('target_version')}")
+                print(f"  Asset           : {report.get('artifact_name')}")
+                print(f"  SHA256          : PASS")
+                print(f"  Staged at       : {report.get('artifact_path')}")
+                print("  Update          : STAGED_READY")
+            else:
+                print("Nexus Client Updater — DOWNLOAD")
+                print(f"  Status          : {report.get('status')}")
+                for d in report.get("decisions", []):
+                    print(f"    - {d}")
+        _update_json_exit(report, json_mode)
+        return
+    if subcommand == "verify":
+        report = orch.verify()
+        if not json_mode:
+            for c in report.get("checks", []):
+                style = "green" if c["verdict"] == "PASS" else "red"
+                print(f"[{style}]{c['verdict']:8}[/{style}] {c['name']:24} {c['detail']}")
+            print(f"\nVerify       : {report.get('status')}")
         _update_json_exit(report, json_mode)
         return
     if subcommand == "status":
@@ -673,9 +789,19 @@ def update_cmd(
             console.print(f"\nOverall: [bold]{report['overall']}[/bold]")
         raise typer.Exit(xc.EXIT_OK if report["overall"] == "READY" else xc.EXIT_UPDATE)
 
-    if subcommand not in (None, "run", "install", "apply"):
+    if subcommand == "install":
+        report = orch.install(
+            yes=yes,
+            force=force,
+            allow_downgrade=allow_downgrade,
+        )
+        _update_json_exit(report, json_mode)
+        return
+
+    if subcommand not in (None, "run", "apply"):
         raise typer.BadParameter(
-            f"unknown update subcommand '{subcommand}' — use check|status|history|rollback|doctor"
+            f"unknown update subcommand '{subcommand}' — use "
+            "check|latest|download|install|verify|status|history|rollback|doctor"
         )
 
     if dry_run:
@@ -706,8 +832,65 @@ def update_cmd(
             xc.EXIT_OK if report.get("status") == "UPDATE_AVAILABLE" else xc.EXIT_UPDATE
         )
 
-    report = orch.run(yes=yes, force=force, on_event=None)
+    def _human_event(state: str, detail: str) -> None:
+        if state in ("DOWNLOADING", "VERIFYING", "BACKING_UP", "MIGRATING",
+                     "INSTALLING", "VERIFYING_INSTALL", "HEALTH_CHECK", "COMPLETED",
+                     "QUIESCING", "REDIRECTING", "ROLLED_BACK", "ROLLING_BACK"):
+            print(f"  {state.replace('_', ' ').title()}... {detail}")
+
+    report = orch.run(yes=yes, force=force, on_event=_human_event)
+    if not json_mode:
+        print(f"\n  Current        : {report.get('current_version')}")
+        print(f"  Target         : {report.get('target_version')}")
+        print(f"  Status         : {report.get('status')}")
+        if report.get("health_status"):
+            print(f"  Client health  : {report['health_status']}")
+        if report.get("error_message"):
+            print(f"  Error          : {report['error_message']}")
+        if report.get("rollback_completed"):
+            print("  Rollback       : COMPLETED — previous version restored")
     _update_json_exit(report, json_mode)
+
+
+@app.command("release")
+def release_cmd(
+    subcommand: str = typer.Argument(None, help="info — release metadata of the installed client"),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """Release metadata of the installed client (spec 38).
+
+    nexus release info : show the release record associated with the
+    installed client (version, tag, commit, asset hash, model, schema).
+    """
+    if subcommand not in (None, "info"):
+        raise typer.BadParameter("unknown release subcommand — use info")
+    report = _update_orchestrator().release_info()
+    if json_mode:
+        report["exit_code"] = xc.EXIT_OK
+        _emit(report, True)
+    else:
+        inst = report.get("installed_release") or {}
+        print("Nexus Client Release Info")
+        print(f"  Current version    : {report.get('current_version')}")
+        print(f"  Current commit     : {report.get('current_commit') or 'n/a'}")
+        print(f"  Channel            : {report.get('channel')}")
+        print(f"  Architecture       : {report.get('architecture')}")
+        if inst:
+            print(f"  Installed release  : v{inst.get('version')}")
+            print(f"  Release tag        : {inst.get('tag')}")
+            print(f"  Commit             : {inst.get('commit') or 'n/a'}")
+            print(f"  Asset              : {inst.get('asset_name')}")
+            print(f"  Asset SHA256       : {str(inst.get('asset_sha256') or '')[:16]}…")
+            if inst.get("model_version"):
+                print(f"  Model version      : {inst['model_version']}")
+            if inst.get("schema_version"):
+                print(f"  Model schema       : {inst['schema_version']}")
+            if inst.get("feature_dimension"):
+                print(f"  Feature dimension  : {inst['feature_dimension']}")
+            print(f"  Installed at       : {inst.get('installed_at')}")
+        else:
+            print("  Installed release  : none recorded yet")
+    raise typer.Exit(xc.EXIT_OK)
 
 
 # ---------------------------------------------------------------------------
