@@ -369,8 +369,8 @@ class DigestResolver:
         """Parse sha256sum-format: '<hex>  <name>' per line.
         Path-relative names are indexed; base names also indexed."""
         out: dict[str, str] = {}
-        for line in text.splitlines():
-            line = line.strip()
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
             parts = line.split(None, 1)
@@ -849,6 +849,7 @@ class SafeDownloader:
         expected_sha256: str | None = None,
         timeout: int = 300,
         chunk_size: int = 1024 * 1024,
+        max_retries: int = 3,
     ) -> Path:
         part = self.cache_dir / f"{dest_name}.part"
         headers = {"User-Agent": UpdateDiscovery.USER_AGENT}
