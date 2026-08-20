@@ -58,12 +58,8 @@ from nexus_scalp.features.liquidity_engine import (
 )
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.features.schema_contract import (
-    DIMENSION as CANONICAL_70D_DIMENSION,
-)
-from nexus_scalp.features.schema_contract import (
     SCHEMA_ID as CANONICAL_70D_SCHEMA_ID,
-)
-from nexus_scalp.features.schema_contract import (
+    DIMENSION as CANONICAL_70D_DIMENSION,
     feature_schema_hash,
 )
 from nexus_scalp.observability.logging import get_logger
@@ -564,14 +560,13 @@ class LiquidityGovernor:
                 self._last_error = None
                 self._last_error_at = None
                 self._last_error_wall_at = None
-                src_kind = SourceKind(source) if isinstance(source, str) else source
-                if self._source != src_kind:
+                if self._source != source:
                     self._source_changed_wall_at = now_wall
-                self._source = src_kind
+                self._source = source
                 self._state_revision += 1
             logger.info(
                 "[LIQUIDITY] event=FEATURE_CALCULATION_OK source=%s latency_ms=%.2f bars=%d",
-                src_kind.value,
+                source.value,
                 latency_ms,
                 len(bars),
             )
