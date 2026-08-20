@@ -1457,6 +1457,10 @@
                                 <button onclick="saveFactoryLlmConfig()" class="bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan border border-accentCyan/30 rounded px-3 py-1.5 text-xs font-bold transition">
                                     <i class="fa-solid fa-floppy-disk mr-1"></i> Save & Reload
                                 </button>
+                                <button onclick="clearFactoryLlmKey()" title="Remove the stored API key (provider falls back to deterministic)"
+                                        class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded px-3 py-1.5 text-xs font-bold transition">
+                                    <i class="fa-solid fa-key"></i> Clear Key
+                                </button>
                                 <button onclick="loadFactoryLlmConfig()" title="Reload current config (key stays secret)"
                                         class="bg-darkBg hover:bg-borderClr border border-borderClr text-textMuted hover:text-white rounded px-3 py-1.5 text-xs font-bold transition">
                                     <i class="fa-solid fa-rotate"></i>

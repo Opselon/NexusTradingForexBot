@@ -309,6 +309,7 @@ def factory_llm_config_save(
             temperature=payload.get("temperature"),
             request_timeout_sec=payload.get("request_timeout_sec"),
             max_requests_per_generation=payload.get("max_requests_per_generation"),
+            clear_api_key=bool(payload.get("clear_api_key", False)),
             actor="web",
         )
         # Hot-rebuild the running factory provider so changes apply without

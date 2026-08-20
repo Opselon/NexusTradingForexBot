@@ -566,6 +566,7 @@ class SettingsService:
         temperature: float | None = None,
         request_timeout_sec: float | None = None,
         max_requests_per_generation: int | None = None,
+        clear_api_key: bool = False,
         actor: str = "web",
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
@@ -573,12 +574,18 @@ class SettingsService:
         store (encrypted at rest); the rest to the settings DB. Returns the
         safe status (never the key)."""
         cid = correlation_id or new_correlation_id("factory")
-        if api_key is not None:
+        # API key semantics (BUG-131 prod fix): the web UI never echoes the
+        # stored key back into the DOM, so a save ALWAYS carries api_key="".
+        # Empty string must therefore mean "keep the existing secret" — only
+        # an EXPLICIT clear_api_key=True deletes it. Before this fix, any UI
+        # save wiped the user's real key -> provider hot-rebuild failed ->
+        # "LLM config save failed: INTERNAL_ERROR".
+        if clear_api_key:
+            self.secrets.delete_secret(FACTORY_LLM_API_KEY)
+        elif api_key:
             api_key = api_key.strip()
             if api_key:
                 self.secrets.set_secret(FACTORY_LLM_API_KEY, api_key)
-            else:
-                self.secrets.delete_secret(FACTORY_LLM_API_KEY)
         if base_url is not None:
             self.db.set(
                 FACTORY_LLM_BASE_URL,

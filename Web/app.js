@@ -11942,6 +11942,22 @@ async function saveFactoryLlmConfig() {
     }
 }
 
+async function clearFactoryLlmKey() {
+    if (!confirm('Remove the stored LLM API key? The factory falls back to deterministic generation until you set a new key.')) return;
+    try {
+        const res = await NX.api.post('/api/factory/llm-config', { clear_api_key: true }, { component: 'StrategyFactory', action: 'LLM_CLEAR_KEY' });
+        const data = res.data ?? res;
+        if (data.available) {
+            await Promise.all([loadFactoryLlmConfig(), loadFactoryStatus()]);
+        } else {
+            alert('Clear key failed: ' + (data.reason ?? 'UNKNOWN'));
+        }
+    } catch (err) {
+        console.warn('factory llm clear key failed', err);
+        alert('Clear key error — see console');
+    }
+}
+
 // startup: load factory status along with the other panels
 setInterval(() => {
     const tab = document.querySelector('#tab-factory');
