@@ -133,9 +133,15 @@ def broker_ledger_divergence(db_path: str, window_days: int = 90) -> dict[str, A
 def clock_skew(db_path: str) -> dict[str, Any]:
     """Measures observed timebase divergence (spec 14).
 
-    Compares broker server timestamps (audit_broker_trades.entry_time /
-    exit_time) against host-UTC now. Does NOT assume a fixed 3-hour offset —
-    the actual evidence defines the skew.
+    Two DISTINCT measurements are reported so a stale-data age is never
+    mistaken for a live clock bug (TIME-1):
+      - sync_lag_seconds: host-UTC now minus the LATEST broker sync time
+        (audit_broker_trades.synced_at). A large value = the sync worker
+        has not run recently, NOT a clock defect.
+      - observed_data_age_seconds: age of stored entry/exit timestamps
+        (reported separately, never treated as clock skew).
+    TIMEBASE_DIVERGENCE is raised ONLY on sync_lag > 300s (evidence: an
+    unhealthy broker sync cadence).
     """
     conn = _connect(db_path)
     try:
@@ -151,27 +157,30 @@ def clock_skew(db_path: str) -> dict[str, Any]:
     finally:
         conn.close()
 
-    offsets: list[float] = []
     now_utc = datetime.now(UTC)
+    sync_lags: list[float] = []
+    data_ages: list[float] = []
     for r in rows:
+        sync = _parse_ts(str(r.get("synced_at") or ""))
+        if sync is not None:
+            sync_lags.append((now_utc - sync).total_seconds())
         for col in ("entry_time", "exit_time"):
-            raw = str(r.get(col) or "")
-            if not raw:
-                continue
-            ts = _parse_ts(raw)
-            if ts is None:
-                continue
-            offsets.append((ts - now_utc).total_seconds())
-    skew = sum(offsets) / len(offsets) if offsets else None
+            ts = _parse_ts(str(r.get(col) or ""))
+            if ts is not None:
+                data_ages.append((now_utc - ts).total_seconds())
+    sync_lag = sum(sync_lags) / len(sync_lags) if sync_lags else None
+    data_age = sum(data_ages) / len(data_ages) if data_ages else None
+    divergence = bool(sync_lag is not None and abs(sync_lag) > 300)
     return {
-        "observed_skew_seconds": round(skew, 1) if skew is not None else None,
-        "samples": len(offsets),
+        "observed_skew_seconds": round(sync_lag, 1) if sync_lag is not None else None,
+        "sync_lag_seconds": round(sync_lag, 1) if sync_lag is not None else None,
+        "observed_data_age_seconds": round(data_age, 1) if data_age is not None else None,
+        "samples": len(sync_lags),
         "host_now_utc": now_utc.isoformat(),
         "sample_window": (rows[0].get("synced_at") if rows else None),
-        "divergence": "TIMEBASE_DIVERGENCE"
-        if skew is not None and abs(skew) > 300
-        else "IN_BOUNDS",
-        "note": "MT5 epochs are SERVER-LOCAL (broker GMT+3, BUG-070) — skew must be measured, never assumed.",
+        "divergence": "TIMEBASE_DIVERGENCE" if divergence else "IN_BOUNDS",
+        "measurement": "sync_lag vs host UTC (data age reported separately; never treated as clock skew)",
+        "note": "MT5 epochs are SERVER-LOCAL (broker GMT+3, BUG-070) — stored broker times must be normalized to UTC at sync; skew is measured, never assumed.",
     }
 
 
@@ -210,6 +219,7 @@ def split_fill_groups(db_path: str, limit: int = 50) -> dict[str, Any]:
             conn,
             f"SELECT {_BROKER_COLS} FROM audit_broker_trades "
             "WHERE master_order_id != '' AND master_order_id IS NOT NULL "
+            "AND master_order_id != '0' "
             "ORDER BY master_order_id, trade_id LIMIT 10000",
         )
     finally:
@@ -218,6 +228,8 @@ def split_fill_groups(db_path: str, limit: int = 50) -> dict[str, Any]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for r in rows:
         key = str(r.get("master_order_id"))
+        if not key or key in ("0", "None"):
+            continue
         groups.setdefault(key, []).append(r)
     families = [g for g in groups.values() if len(g) > 1]
     return {
