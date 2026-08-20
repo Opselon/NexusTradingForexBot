@@ -5397,3 +5397,52 @@ Classification: E) STRATEGY FILTER + D) CONFIDENCE BLOCK (+ process-down).
 **Verification:** `docker compose config --quiet` OK; 21 tests passed; ruff/mypy clean on
  edited lines; end-to-end container verification (clean start, restart persistence,
  config-error clarity) is the acceptance gate for this task.
+
+## BUG-126 — UI-Saved Configuration Values Did Not Reach Runtime Methods (Hot-Reload Detachment, 2026-08-20 Hermes-RuntimeConfig)
+
+**Impact:** "Save Changes" in the Algorithm Live Tuner and the Configuration Engine rewrote
+`configs/live.yaml` and hand-patched 2-3 engine fields, but several saved values were
+DETACHED from runtime behavior: `algo.fvg_mitigation_sensitivity` and
+`algo.order_block_lookback_bars` had NO runtime consumer at all (FVG threshold was
+hardcoded `0.20*ATR`, OB scan always used full history); risk/execution fields were copied
+into `RiskEngine` at constructor time; `POST /api/config` re-parsed YAML and replaced
+`engine.config` wholesale instead of applying atomically; GET endpoints read YAML instead
+of runtime truth. Result: the UI showed the new value but the engine method used the old
+one until restart (if ever).
+
+**Root cause:** live.yaml was the hidden runtime authority. Saves persisted to YAML and only
+selectively propagated; there was no versioning, no ConfigurationChanged event, no atomic
+snapshot swap, and no validation gate on the write path; tuner fields without consumers
+were silently decorative.
+
+**Fix (runtime configuration architecture):**
+- New `nexus_scalp/configuration/runtime_config.py`: `RuntimeConfigStore` (lock-free
+  immutable snapshot reads, atomic swap, monotonic version, `ConfigChangeEvent` bus),
+  frozen `RuntimeConfiguration` domain groups (Execution/Risk/Algorithm/Model/Telemetry/
+  News/RuleMatrix), `PersistentConfigStore` (settings-DB backed), apply pipeline
+  validate -> persist -> version++ -> ConfigurationChanged -> atomic swap -> confirm.
+- `LiveEngine` owns a `RuntimeConfigStore` (bootstrapped from AppConfig; live.yaml NOT
+  re-read after boot); `_sync_runtime_config()` re-syncs policy/order-manager/risk-engine/
+  feature-engine from the snapshot each tick AND after every apply.
+- UI save paths (`PUT /api/algo/config`, `POST /api/config`) route through
+  `engine.apply_runtime_update()`; live.yaml is now a PROJECTION (export/compat), never
+  authoritative; secrets still via SecureSecretStore (BUG-072/080).
+- `POST /api/runtime-config/apply` unified apply; `GET /api/runtime-config` effective
+  view + `/diagnostics` (persistent vs runtime vs live.yaml mismatch).
+- Boot hydration: persisted settings DB layered over bootstrap at startup (restart
+  persistence / crash recovery).
+- `ScalpFeatureEngine` now consumes live `fvg_mitigation_sensitivity` (FVG gap threshold)
+  and `order_block_lookback_bars` (swing scan window) — the previously-decorative tuners.
+- Model artifact path hot-swap (`LiveEngine.hot_swap_model`): load-validate-warm-atomic
+  swap under the bundle lock; old model stays serving on any failure.
+
+**Regression guards:** `tests/unit/test_runtime_config_hot_reload.py` (§65/§68 end-to-end:
+  same deterministic op before/after save changes output, no restart, same PID,
+  ConfigurationChanged emitted, invalid/cross-field/unknown rejected keeping last
+  known-good, live.yaml file edit does NOT change runtime, restart restores persisted
+  values); `tests/unit/test_runtime_engine_hot_reload.py` (RiskEngine spread gate + lot
+  sizing + min-RR gate, SignalPolicy SL buffer, FeatureEngine FVG/OB — all change with
+  the snapshot, same PID).
+
+**Verification:** 16 newly-added tests pass; ruff clean on changed files; commits
+  7e68f43, eeb8add, 62cddf8, eb31ed7, 32547e9, b26e399, 1bca29f, 19a95c8, ff00c38.

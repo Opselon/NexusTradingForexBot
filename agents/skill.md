@@ -68,10 +68,11 @@
 15k. [Adaptive Model Intelligence — 60D Challenger Path (TASK-5)](#15k-adaptive-model-intelligence--60d-challenger-path--continuous-learning-forensics-task-5-2026-08-18)
 15m. [Liquidity Intelligence & 70D Canonical Tensor Contract (TASK-01..07)](#15m-liquidity-intelligence--70d-canonical-tensor-contract-task-0107-2026-08-19)
 15. [Known Engineering Pitfalls & Invariants](#15-known-engineering-pitfalls--invariants)
-16. [Testing & CI/CD Pipeline Audit](#16-testing--cicd-pipeline-audit)
-17. [Documentation vs. Reality Audit Matrix](#17-documentation-vs-reality-audit-matrix)
-18. [Code Inventory & Active Wrappers](#18-code-inventory--active-wrappers)
-19. [Prioritized Engineering Recommendations (P0-P3)](#19-prioritized-engineering-recommendations-p0-p3)
+16. [Docker Runtime & Startup Contract](#16-docker-runtime--startup-contract-docker-repair-2026-08-20)
+17. [Testing & CI/CD Pipeline Audit](#17-testing--cicd-pipeline-audit)
+18. [Documentation vs. Reality Audit Matrix](#18-documentation-vs-reality-audit-matrix)
+19. [Code Inventory & Active Wrappers](#19-code-inventory--active-wrappers)
+20. [Prioritized Engineering Recommendations (P0-P3)](#20-prioritized-engineering-recommendations-p0-p3)
 
 ---
 
@@ -135,8 +136,8 @@ NexusTradingForexBot/
 │   ├── base.yaml                      # 🟢 Default base settings
 │   └── live.yaml.example              # 🟢 Example live runtime configuration
 ├── docker/                            # Containerization Scripts
-│   ├── entrypoint.sh                  # 🟢 Container entrypoint script
-│   └── healthcheck.sh                 # 🟢 Container health check script
+│   ├── entrypoint.sh                  # 🟢 Container entrypoint (env-validate → bootstrap → db migrate gate → exec)
+│   └── healthcheck.sh                 # 🟢 Container health check (GET /health verdict READY|DEGRADED)
 ├── src/
 │   ├── cli/
 │   │   └── train_model.py             # 🟢 CLI Training Script (50D contract aligned)
@@ -242,7 +243,10 @@ NexusTradingForexBot/
 ├── tests/                             # Pytest Verification Suite
 │   ├── integration/                   # 🟢 End-to-End Pipeline & DB Integration Tests
 │   └── unit/                          # 🟢 Unit Tests across Subsystems
-├── Dockerfile                         # 🟢 Production Multi-stage Docker Container
+├── .env.example                     # 🟢 Environment contract (safe dev defaults, no secrets)
+├── .dockerignore                    # 🟢 Build-context exclusions
+├── docker-compose.yml               # 🟢 Canonical compose stack: core + redis (SQLite, no postgres)
+├── Dockerfile                       # 🟢 Multi-stage non-root container (builder → runtime)
 ├── main.py                            # 🟢 Root Python Entrypoint Redirect
 ├── NexusTradingForexBot.py            # 🟢 Legacy Script Entrypoint Redirect
 ├── pyproject.toml                     # 🟢 Project Build Metadata & Dependencies
@@ -2741,7 +2745,68 @@ all finite, clipped `[-3, +3]` (value gate in `compute_from_engine`).
 - Engine start/stop: `POST /api/engine/toggle` runs/stops the loop
   in-process (asyncio task); stop sets `_running=False` (graceful).
 
-## 16. Known Engineering Pitfalls & Invariants
+## 16. Docker Runtime & Startup Contract (DOCKER-REPAIR, 2026-08-20)
+
+**Full canonical reference: `docs/docker.md`. Entrypoint/healthcheck:
+`docker/`. Compose: `docker-compose.yml`. Env contract: `.env.example`.
+
+### Architecture (single stack, SQLite-authoritative)
+- `docker compose up -d` starts exactly TWO services: **core** (engine +
+  Web UI + REST API + research/training/news/shadow workers, all internally
+  gated) and **redis** (internal telemetry/cache; never exposed to host).
+- **There is NO PostgreSQL**: persistence is per-domain SQLite
+  (`artifacts/{audit,news,candle_intel}.db` + settings DB). Postgres was
+  removed (nothing in `src/` consumed it — BUG-125). Do NOT re-add it.
+- Volumes: `nexus-artifacts` → `/app/artifacts` (DBs, models, research),
+  `nexus-data` → `/app/data`, `redis-data` → `/data`. `docker compose down`
+  preserves data; only `down -v` / `scripts/reset-dev.ps1` destroys it
+  (reset script asks for `YES`).
+
+### Startup sequence (entrypoint)
+`env validation (mode/port/required vars; NSE_EXECUTION__MODE=LIVE rejected —
+containers have no MT5) -> dir bootstrap -> canonical db migrate gate
+(nexus db migrate --workspace /app, same TASK-10 engine) -> startup summary ->
+exec engine (true exit code, no `|| true`)`. Migration failure = container
+stays unhealthy; never pretend READY.
+
+### Environment contract
+- `AppConfig` is pydantic-settings with `env_prefix="NSE_"`, delimiter `__`:
+  `NSE_EXECUTION__MODE` → `execution.mode`, `NSE_MODEL__MODEL_ARTIFACT_PATH`
+  → `model.model_artifact_path`. Compose passes exactly these names.
+- `NSE_WEB_HOST` (default 127.0.0.1 outside containers) / `NSE_WEB_PORT`
+  (default 9090) / `NSE_LOG_LEVEL` (default INFO) are wired in
+  `cli/main.py::_start_web_and_engine` (uvicorn bind + configure_logging).
+- No secrets in `.env.example` / compose / image. Telegram credentials live
+  in the settings secure store; env override `NEXUS_TELEGRAM_BOT_TOKEN`.
+- `live.yaml` in the container is a bootstrap surface (image ships
+  `base.yaml` + `live.yaml.example`); the runtime settings DB remains the
+  authoritative configuration store. Docker does NOT reintroduce it.
+
+### Health / readiness
+- `GET /health` (web/server.py) runs the canonical `HealthEngine` (same as
+  `nexus doctor`): 200 with verdict `READY`|`DEGRADED`; 503 `NOT READY`
+  (critical category FAIL — e.g. model missing) or `UNHEALTHY`.
+- `docker/healthcheck.sh`: process alive → `/health` reachable → verdict
+  ∈ {READY, DEGRADED}. Never blind `sleep`; start_period 10s.
+
+### Model path
+Container paths only: `NSE_MODEL__MODEL_ARTIFACT_PATH=artifacts/models/...`
+(relative to /app). Never Windows paths in Docker configs.
+
+### Dev workflow
+`cp .env.example .env` → `scripts/doctor.ps1` (host pre-flight) →
+`docker compose up -d --build` → `docker compose ps` →
+`docker compose logs -f core` → `docker compose down`. Reset:
+`scripts/reset-dev.ps1`. Backup: `scripts/backup-db.ps1`.
+Windows/POSIX wrappers (`start.ps1`/`start.sh`) are thin and share the same
+compose single source of truth.
+
+### Tests
+`tests/unit/test_docker_startup_phase21.py` TEST-DOCKER-01..12 — compose
+contract, .env contract + no-secrets, Dockerfile shape, HealthEngine
+verdicts, NSE_*→AppConfig mapping. Keep them green on docker changes.
+
+## 17. Known Engineering Pitfalls & Invariants
 
 If you are an AI coding agent making changes to this repository in the future, **memorize these active engineering rules and constraints**:
 
@@ -2826,7 +2891,7 @@ If you are an AI coding agent making changes to this repository in the future, *
 
 ---
 
-## 17. Testing & CI/CD Pipeline Audit
+## 18. Testing & CI/CD Pipeline Audit
 
 ### 🧪 Test Suite Structure
 

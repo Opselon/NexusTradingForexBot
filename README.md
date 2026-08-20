@@ -307,12 +307,31 @@ tests/             Unit + integration suites (tests/unit, tests/integration, tes
 Web/               Control Center UI (index.html, app.js, styles.css)
 agents/            Agent architecture docs, bug ledger, contracts, taskboard
 docs/              Deep technical documentation (release, migrations, 70D series, forensics)
-configs/           base.yaml · live.yaml · live.yaml.example
-scripts/           Build/release scripts (scripts/build/), quality gates
+configs/           base.yaml · live.yaml.example
+scripts/           Build/release scripts (scripts/build/), quality gates, docker wrappers (start/doctor/reset/backup)
 pics/              Screenshots
-docker/            Dockerfile · entrypoint.sh · healthcheck.sh · docker-compose.yml
+docker/            entrypoint.sh · healthcheck.sh
+docker-compose.yml  Core + redis stack (SQLite; no postgres) — see docs/docker.md
+.env.example       Environment contract (safe defaults, no secrets)
 scratch/           One-off diagnostic probes (not part of the application)
 ```
+
+---
+
+## 🐳 Docker quick start
+
+```bash
+cp .env.example .env       # optional — safe defaults exist
+docker compose up -d --build
+```
+
+The stack starts the engine + Web UI/API in container-safe **PAPER** mode with
+the canonical SQLite databases (no PostgreSQL), runs the migration gate, and
+exposes the dashboard at http://localhost:9090. Health/readiness is served at
+`/health` (READY/DEGRADED = healthy). Full reference: **`docs/docker.md`**
+(env contract, startup sequence, persistence, volumes, reset, backup,
+troubleshooting). Windows helpers: `scripts/start.ps1`, `scripts/doctor.ps1`,
+`scripts/reset-dev.ps1`, `scripts/backup-db.ps1`.
 
 ---
 
