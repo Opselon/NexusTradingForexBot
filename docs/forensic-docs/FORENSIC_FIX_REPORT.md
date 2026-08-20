@@ -83,4 +83,18 @@ Also verified and kept (no change needed):
 | c4b82b3 | Hermes-Forensic-01: add BUG-127 audit writer-path + reader regression test |
 | (next) | ledger + format commit, then this report + push |
 
-Final push details: see Terminal/GitHub status block at the end of the report (appended after push).
+## Push & verification (final)
+
+- Pushed to origin/main: `ee3c19e..e72a88d` (push rc=0).
+- Remote HEAD == local HEAD == `e72a88d` (verified via git fetch + rev-parse, IN SYNC).
+- All 4 fixed files verified identical between my commit (3e145c4) and the pushed tip;
+  audit_repository binding counts re-verified against `origin/main` content
+  (audit_orders 12/12, audit_executions 8/8, snapshots 5/5; zero `_driver` refs).
+- Full tests/unit run: ~2,250 passed, 12 failures/errors — all 12 are FOREIGN
+  parallel-agent suites (test_mt5_status_endpoint collection interaction +
+  test_database_portability shared in-memory DB name collision +
+  test_docker_startup docker-compose conflict). Each failed file passes in
+  isolation (verified); NONE of the failures touch this pass's files.
+- Focused suites: 100 passed (accounting_core + accounting_hedging +
+  risk_engine + scalp_features_forensic + walk_forward_trainer + live_state_contract).
+- ruff check PASS; ruff format PASS; mypy src PASS.
