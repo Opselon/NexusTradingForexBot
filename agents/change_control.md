@@ -830,3 +830,12 @@ Why: Forensic audit found NO positions opened (stacked filter deadlock). The tra
 Migration: none (additive optional field; DB schema unchanged; reason-string embeds the id).
 Verification: VERIFIED — 12 policy/domain tests + 38 debug-snapshot tests PASS; live probe `[EXEC_TRACE] execution_id=EXEC-20260820-002033-d783c9 action=NO_TRADE blocked_by=ASYMMETRIC_RR_LIMIT stage=STANDARD_EVAL`.
 Risk: minimal — observability only; no decision/behavior change.
+
+## CHG-0029 — Stash reconciliation: DB-portability settings canonicalization + logging-test fix + DDL literal porting (2026-08-20 Hermes-StashMerge)
+
+Change: (1) settings/service.py set_postgres_config/set_database_provider canonicalized to PG_CONFIG_SETTING_KEY json row + PG_PASSWORD_SECRET_KEY secret-store + provider/domain fields, aligned with database/config.py readers (verified end-to-end load_database_config -> resolve_password); (2) database/config.py load_database_config accepts dict OR string for the persisted json row; (3) ddl_port.py normalizes SQLite double-quoted string literals to single-quoted for PG (identifiers preserved); (4) test_logging.py event-name parser fixed (was asserting wrong token from the severity-split renderer).
+Scope: src/nexus_scalp/settings/service.py, src/nexus_scalp/database/config.py, src/nexus_scalp/database/ddl_port.py, tests/unit/test_logging.py, tests/unit/test_settings_subsystem_bug072.py, tests/unit/test_database_portability.py
+Why: HEAD persisted PG config per-key (database.postgres.*) while config.py/health.py read the canonical key — `nexus db postgres set` data was never consumed (host fell back to localhost). test_logging had 4 failing routing tests from an outdated token split. Ported DDL could break under PG for double-quoted literals.
+Migration: none — old per-key rows are ignored (fresh write required), matching prior behavior; no DB schema change.
+Verification: VERIFIED — end-to-end probe (set -> load -> resolve password == S3cret!), test_settings_subsystem_bug072 22 passed, test_database_portability TestDdlPorting 7 passed, test_logging 13 passed; ruff + mypy clean.
+Risk: low — additive alignment; heuristic literal classifier documented; settings writes are CLI/API only (not hot path).

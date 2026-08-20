@@ -314,3 +314,7 @@ training_dataset_id.
 - docs/ci-secrets.md documents secret NAMES/purpose/location (values never).
 - scripts/ci/make_ci_results.py: authoritative CI results pipeline,
   adopted from parallel agent, verified end-to-end locally.
+- 2026-08-20 stash reconciliation (TASK-STASH-MERGE-01): all 4 stashes resolved
+  (2f80285, e813340, eea33a7, + 6ab3c9b, b29280d); stash salvages archived to
+  archive/stash-salvage-20260820/ (git-ignored); DB-portability settings chain now
+  canonical (service -> PG_CONFIG_SETTING_KEY -> config.py); 0 stashes remain.
