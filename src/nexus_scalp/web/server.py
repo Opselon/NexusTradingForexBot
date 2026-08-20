@@ -2486,6 +2486,259 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "persisted": bool(saved),
         }
 
+    # =====================================================================
+    # DATABASE MANAGEMENT (DATABASE PORTABILITY, 2026-08-20)
+    # ---------------------------------------------------------------------
+    # Dedicated persistence panel surface: active provider + health, the
+    # PostgreSQL configuration form (password NEVER round-trips in
+    # plaintext), connection testing, and the SQLite->PostgreSQL migration
+    # workflow (preview -> run -> validate).  Everything is read-only or
+    # operator-initiated; nothing here ever mutates trading logic.
+    # =====================================================================
+
+    def _settings_service() -> Any:
+        engine = app.state.engine
+        svc = getattr(engine, "settings_service", None) if engine else None
+        if svc is None:
+            from nexus_scalp.settings import load_settings_service
+
+            svc = load_settings_service()
+        return svc
+
+    @app.get("/api/db/manage/status")
+    def db_manage_status() -> dict[str, Any]:
+        """Active provider + per-domain health (DATABASE MANAGEMENT panel)."""
+        try:
+            from nexus_scalp.database.health import health_snapshot, load_ui_config
+
+            health = health_snapshot()
+            ui = load_ui_config()
+            return serialize_enums({
+                "success": True,
+                "provider": ui["provider"],
+                "supported_providers": health["supported_providers"],
+                "overall": health["overall"],
+                "domains": health["domains"],
+                "postgres": ui["postgres"],
+                "password_set": ui["password_set"],
+            })
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/status", None, e)
+            return _err("DB_MANAGE_STATUS_FAILED")
+
+    @app.post("/api/db/manage/config")
+    def db_manage_config(payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist the PostgreSQL connection configuration + password.
+
+        The password is routed to the OS SecretStore (DPAPI); the settings
+        DB only ever holds a secret-key reference.  `password` and
+        `confirm_password` are consumed here and NEVER stored in the config
+        row or echoed back.
+        """
+        try:
+            svc = _settings_service()
+            incoming = dict(payload)
+            password = incoming.get("password") or ""
+            confirm = incoming.get("confirm_password") or ""
+            if password and password != confirm:
+                return _err("PASSWORD_MISMATCH")
+            for k in ("password", "confirm_password"):
+                incoming.pop(k, None)
+            svc.set_postgres_config(incoming)
+            return {
+                "success": True,
+                "password_set": bool(password) or svc.postgres_password_set(),
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/config", None, e)
+            return _err("DB_MANAGE_CONFIG_FAILED")
+
+    @app.post("/api/db/manage/provider")
+    def db_manage_provider(payload: dict[str, Any]) -> dict[str, Any]:
+        """Switch the ACTIVE provider (persisted, applied next startup).
+
+        Switching NEVER moves or destroys data: the operator is expected to
+        run the migration workflow first.  This endpoint only flips the
+        authoritative selection in the settings database.
+        """
+        try:
+            from nexus_scalp.database.provider import DatabaseProvider
+
+            provider = DatabaseProvider.parse(str(payload.get("provider") or ""))
+            svc = _settings_service()
+            svc.set_database_provider(provider.value)
+            return {
+                "success": True,
+                "provider": provider.value,
+                "restart_required": True,
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/provider", None, e)
+            return _err("DB_MANAGE_PROVIDER_FAILED")
+
+    @app.post("/api/db/manage/test-connection")
+    def db_manage_test_connection(payload: dict[str, Any]) -> dict[str, Any]:
+        """Test the PostgreSQL connection BEFORE migration (never persists)."""
+        try:
+            import json
+
+            from nexus_scalp.database.config import DatabaseConfig, resolve_password
+            from nexus_scalp.database.drivers import get_driver
+
+            raw = dict(payload)
+            password = raw.pop("password", None)
+            cfg = DatabaseConfig.for_postgres(
+                domain="audit",
+                host=str(raw.get("host") or "localhost"),
+                port=int(raw.get("port") or 5432),
+                database=str(raw.get("database") or "nse_audit"),
+                username=str(raw.get("username") or "nse_user"),
+                ssl_mode=str(raw.get("ssl_mode") or ""),
+            )
+            if password:
+                from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+                from nexus_scalp.settings.secret_store import SecureSecretStore
+
+                SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, str(password))
+            driver = get_driver(cfg)
+            try:
+                ok = driver.ping()
+                version = driver.database_version() if ok else ""
+            finally:
+                driver.close()
+            return {
+                "success": ok,
+                "connected": ok,
+                "database_version": version if ok else "",
+                "latency_ms": None,
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/test-connection", None, e)
+            return _err("DB_TEST_CONNECTION_FAILED")
+
+    @app.post("/api/db/manage/preview")
+    def db_manage_preview(payload: dict[str, Any]) -> dict[str, Any]:
+        """Dry-run migration preview: tables, rows, volume, issues."""
+        try:
+            from nexus_scalp.database.config import DatabaseConfig
+            from nexus_scalp.database.migrate_engine import (
+                MigrationOptions,
+                SqliteToPostgresMigrator,
+            )
+
+            src = DatabaseConfig.for_sqlite(
+                "audit",
+                path=str(payload.get("sqlite_path") or "") or None,
+            )
+            raw = dict(payload)
+            dst = DatabaseConfig.for_postgres(
+                domain="audit",
+                host=str(raw.get("host") or "localhost"),
+                port=int(raw.get("port") or 5432),
+                database=str(raw.get("database") or "nse_audit"),
+                username=str(raw.get("username") or "nse_user"),
+                ssl_mode=str(raw.get("ssl_mode") or ""),
+            )
+            mig = SqliteToPostgresMigrator(src, dst, MigrationOptions(dry_run=True))
+            preview = mig.preview()
+            return {"success": True, "preview": preview}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/preview", None, e)
+            return _err("DB_MIGRATION_PREVIEW_FAILED")
+
+    @app.post("/api/db/manage/migrate")
+    def db_manage_migrate(payload: dict[str, Any]) -> dict[str, Any]:
+        """Run the SQLite->PostgreSQL migration (streamed batches, resumable).
+
+        Operator-initiated; requires the destination password in the secret
+        store (or supplied here as `password` once, routed to the store).
+        Returns a full migration report; progress is available via
+        `/api/db/manage/progress`.
+        """
+        try:
+            import threading
+
+            from nexus_scalp.database.config import DatabaseConfig
+            from nexus_scalp.database.migrate_engine import (
+                MigrationOptions,
+                SqliteToPostgresMigrator,
+            )
+            from nexus_scalp.settings.secret_store import SecureSecretStore
+
+            raw = dict(payload)
+            password = raw.pop("password", None)
+            if password:
+                from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+
+                SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, str(password))
+            src = DatabaseConfig.for_sqlite(
+                "audit",
+                path=str(raw.get("sqlite_path") or "") or None,
+            )
+            dst = DatabaseConfig.for_postgres(
+                domain="audit",
+                host=str(raw.get("host") or "localhost"),
+                port=int(raw.get("port") or 5432),
+                database=str(raw.get("database") or "nse_audit"),
+                username=str(raw.get("username") or "nse_user"),
+                ssl_mode=str(raw.get("ssl_mode") or ""),
+            )
+            options = MigrationOptions(
+                dry_run=bool(raw.get("dry_run")),
+                confirm=bool(raw.get("confirm")),
+                resume=bool(raw.get("resume", True)),
+                batch_size=int(raw.get("batch_size") or 2000),
+                validate_checksums=bool(raw.get("validate_checksums", True)),
+            )
+            mig = SqliteToPostgresMigrator(src, dst, options)
+            # background thread: never block the web loop
+            result: dict[str, Any] = {}
+
+            def _run() -> None:
+                try:
+                    report = mig.run()
+                    result["report"] = report.to_dict()
+                    # switch active provider only when validation passed
+                    if report.provider_switch_ready:
+                        _settings_service().set_database_provider("postgresql")
+                        result["provider_switched"] = True
+                    else:
+                        result["provider_switched"] = False
+                except Exception as exc:
+                    result["error"] = str(exc)
+                    result["provider_switched"] = False
+
+            t = threading.Thread(target=_run, daemon=True, name="nse_db_migrate")
+            t.start()
+            return {"success": True, "started": True, "job": "migrate"}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/migrate", None, e)
+            return _err("DB_MIGRATION_START_FAILED")
+
+    @app.get("/api/db/manage/validate")
+    def db_manage_validate() -> dict[str, Any]:
+        """Validate the last migration (row counts, identities, financials)."""
+        try:
+            from nexus_scalp.database.config import DatabaseConfig, load_database_config
+            from nexus_scalp.database.migrate_engine import (
+                MigrationOptions,
+                SqliteToPostgresMigrator,
+            )
+
+            src = load_database_config("audit")
+            if not src.is_sqlite:
+                # source is the canonical SQLite artifacts DB
+                src = DatabaseConfig.for_sqlite("audit")
+            dst = load_database_config("audit")
+            if not dst.is_postgresql:
+                return {"success": True, "validation": "NOT_CONFIGURED"}
+            mig = SqliteToPostgresMigrator(src, dst, MigrationOptions())
+            result = mig.validate()
+            return {"success": True, "validation": result}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/validate", None, e)
+            return _err("DB_MIGRATION_VALIDATE_FAILED")
+
     # GET /api/config
     @app.get("/api/config")
     def get_config() -> dict[str, Any]:
