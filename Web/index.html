@@ -128,6 +128,12 @@
                 <span id="incident-nav-badge" class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">--</span>
             </button>
 
+            <button onclick="switchTab('tab-database', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                <i class="fa-solid fa-database text-lg w-5 text-teal-400"></i>
+                <span>Database Management</span>
+                <span id="db-nav-state" class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30">--</span>
+            </button>
+
             <div class="pt-6 border-t border-borderClr mt-auto space-y-4">
                 <div class="bg-darkBg/60 p-3 rounded-lg border border-borderClr">
                     <p class="text-xs text-textMuted font-semibold mb-2 flex items-center justify-between">
@@ -2627,6 +2633,138 @@
 
                 <!-- Incident detail -->
                 <div id="incident-detail" class="hidden bg-panelBg border border-borderClr rounded-xl p-4 space-y-3"></div>
+            </section>
+
+            <!-- TAB 14: DATABASE MANAGEMENT (DATABASE PORTABILITY) -->
+            <section id="tab-database" class="tab-content hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-md font-bold text-white flex items-center">
+                        <i class="fa-solid fa-database mr-2 text-teal-400"></i>
+                        DATABASE MANAGEMENT
+                    </h2>
+                    <div class="flex items-center gap-2 text-xs">
+                        <button onclick="loadDbStatus()" class="px-3 py-1.5 rounded bg-accentCyan/10 text-accentCyan hover:bg-accentCyan/20 border border-accentCyan/30 transition">
+                            <i class="fa-solid fa-rotate mr-1"></i>Refresh Status
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Current Database -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
+                        <h3 class="text-sm font-bold text-white mb-3"><i class="fa-solid fa-circle-info mr-2 text-accentCyan"></i>Current Database</h3>
+                        <div id="db-current" class="space-y-2 text-xs font-mono text-gray-300">
+                            <div>Provider: <span id="db-current-provider" class="text-white font-bold">--</span></div>
+                            <div>Status: <span id="db-current-status" class="text-white font-bold">--</span></div>
+                            <div>Database: <span id="db-current-name">--</span></div>
+                            <div>Server: <span id="db-current-server">--</span></div>
+                            <div>Schema Version: <span id="db-current-schema">--</span></div>
+                            <div>Health: <span id="db-current-health">--</span></div>
+                            <div>Latency: <span id="db-current-latency">--</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Provider Switch -->
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
+                        <h3 class="text-sm font-bold text-white mb-3"><i class="fa-solid fa-right-left mr-2 text-teal-300"></i>Provider Switch</h3>
+                        <div class="space-y-3 text-xs">
+                            <div>
+                                <label class="block text-gray-400 mb-1">Active Provider</label>
+                                <select id="db-provider-select" class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-sm text-white">
+                                    <option value="sqlite">SQLite (local / default)</option>
+                                    <option value="postgresql">PostgreSQL (scalable / production)</option>
+                                </select>
+                            </div>
+                            <button onclick="switchDbProvider()" class="w-full px-3 py-1.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 transition">
+                                <i class="fa-solid fa-power-off mr-1"></i>Switch Active Provider
+                            </button>
+                            <p class="text-[10px] text-gray-500">Switching the provider does NOT move data. Run the migration workflow first, then switch.</p>
+                        </div>
+                    </div>
+
+                    <!-- PostgreSQL Configuration -->
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
+                        <h3 class="text-sm font-bold text-white mb-3"><i class="fa-solid fa-server mr-2 text-sky-300"></i>PostgreSQL Configuration</h3>
+                        <div class="space-y-2 text-xs">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-gray-400 mb-1">Host</label>
+                                    <input id="pg-host" type="text" value="localhost" class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-sm text-white">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 mb-1">Port</label>
+                                    <input id="pg-port" type="number" value="5432" class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-sm text-white">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-gray-400 mb-1">Database</label>
+                                    <input id="pg-database" type="text" value="nse_audit" class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-sm text-white">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 mb-1">Username</label>
+                                    <input id="pg-user" type="text" value="nse_user" class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-sm text-white">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-gray-400 mb-1">Password</label>
+                                    <input id="pg-password" type="password" placeholder="••••••••" class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-sm text-white">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 mb-1">SSL Mode</label>
+                                    <select id="pg-sslmode" class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-sm text-white">
+                                        <option value="">disable</option>
+                                        <option value="prefer">prefer</option>
+                                        <option value="require">require</option>
+                                        <option value="verify-ca">verify-ca</option>
+                                        <option value="verify-full">verify-full</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex gap-2 mt-2">
+                                <button onclick="testDbConnection()" class="flex-1 px-3 py-1.5 rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 transition">
+                                    <i class="fa-solid fa-plug mr-1"></i>Test Connection
+                                </button>
+                                <button onclick="savePgConfig()" class="flex-1 px-3 py-1.5 rounded bg-accentCyan/10 text-accentCyan hover:bg-accentCyan/20 border border-accentCyan/30 transition">
+                                    <i class="fa-solid fa-floppy-disk mr-1"></i>Save Config
+                                </button>
+                            </div>
+                            <div id="db-test-result" class="text-[10px] font-mono text-gray-400 mt-1"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Migration Workflow -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-4 shadow-xl">
+                    <h3 class="text-sm font-bold text-white mb-3"><i class="fa-solid fa-arrow-right-arrow-left mr-2 text-emerald-300"></i>Migration Workflow (SQLite &#8594; PostgreSQL)</h3>
+                    <div class="flex flex-wrap gap-2 text-xs items-center">
+                        <button onclick="previewDbMigration()" class="px-3 py-1.5 rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 transition">
+                            <i class="fa-solid fa-magnifying-glass mr-1"></i>Preview Migration
+                        </button>
+                        <button onclick="startDbMigration()" class="px-3 py-1.5 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 transition">
+                            <i class="fa-solid fa-play mr-1"></i>Start Migration
+                        </button>
+                        <button onclick="validateDbMigration()" class="px-3 py-1.5 rounded bg-teal-500/10 text-teal-400 hover:bg-teal-500/20 border border-teal-500/30 transition">
+                            <i class="fa-solid fa-check-double mr-1"></i>Validate Migration
+                        </button>
+                        <button onclick="runDbBackup()" class="px-3 py-1.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 transition">
+                            <i class="fa-solid fa-hard-drive mr-1"></i>Backup SQLite
+                        </button>
+                    </div>
+                    <div id="db-preview" class="mt-3 text-xs font-mono text-gray-300 space-y-1"></div>
+                    <div id="db-progress" class="mt-3 hidden">
+                        <div class="flex justify-between text-xs text-gray-400 mb-1">
+                            <span id="db-progress-label">Migration Progress</span>
+                            <span id="db-progress-pct">0%</span>
+                        </div>
+                        <div class="w-full bg-darkBg rounded h-2 overflow-hidden">
+                            <div id="db-progress-bar" class="bg-emerald-500 h-2 transition-all" style="width:0%"></div>
+                        </div>
+                        <div id="db-progress-detail" class="mt-1 text-[10px] text-gray-500"></div>
+                    </div>
+                    <div id="db-report" class="mt-3 text-xs font-mono text-gray-300 space-y-1"></div>
+                </div>
             </section>
 
         </main>
