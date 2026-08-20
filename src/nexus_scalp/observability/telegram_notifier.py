@@ -76,10 +76,10 @@ _DNS_POISON_BLACKHOLE_RANGES: tuple[tuple[int, int], ...] = (
 
 #: Known-good Telegram datacenter IPs (IPv4), used as a DNS-poison bypass.
 _TELEGRAM_FALLBACK_IPS: tuple[str, ...] = (
-    '149.154.167.220',
-    '149.154.167.222',
-    '149.154.175.50',
-    '91.108.56.130',
+    "149.154.167.220",
+    "149.154.167.222",
+    "149.154.175.50",
+    "91.108.56.130",
 )
 
 #: Worker state exposed via health_state() (spec §10).
@@ -663,9 +663,7 @@ class TelegramNotifier:
             return True
         if not infos:
             return True
-        poisoned = any(
-            TelegramNotifier._is_blackhole_ip(info[4][0]) for info in infos
-        )
+        poisoned = any(TelegramNotifier._is_blackhole_ip(str(info[4][0])) for info in infos)
         self._last_dns_poisoned = poisoned
         return poisoned
 
@@ -708,17 +706,11 @@ class TelegramNotifier:
             last_error: Exception | None = None
             for ip in _TELEGRAM_FALLBACK_IPS:
                 try:
-                    logger.warning(
-                        "[TELEGRAM_DNS] event=DIRECT_IP_ATTEMPT host=%s ip=%s", host, ip
-                    )
-                    return self._direct_https_open(
-                        ip, host, path, data, method, timeout
-                    )
+                    logger.warning("[TELEGRAM_DNS] event=DIRECT_IP_ATTEMPT host=%s ip=%s", host, ip)
+                    return self._direct_https_open(ip, host, path, data, method, timeout)
                 except Exception as exc:  # try next fallback IP
                     last_error = exc
-                    logger.warning(
-                        "[TELEGRAM_DNS] event=DIRECT_IP_FAILED ip=%s error=%s", ip, exc
-                    )
+                    logger.warning("[TELEGRAM_DNS] event=DIRECT_IP_FAILED ip=%s error=%s", ip, exc)
             if last_error is not None:
                 raise last_error
         return urllib.request.urlopen(

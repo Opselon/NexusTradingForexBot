@@ -8,6 +8,7 @@ callbacks, HTML escaping, truncation, and thread-replying integration.
 from __future__ import annotations
 
 import datetime
+import socket
 import threading
 import time
 from unittest.mock import MagicMock, patch
@@ -333,3 +334,93 @@ def test_telegram_notifier_distinct_messages_not_conflated(
     second = notifier.send("Daily report 2026-08-20 pnl=+42.10 trades=12")
     assert first == 201
     assert second == 201
+
+
+class TestDnsPoisonBypass:
+    """2026-08-20: TELEGRAM_DNS_BLOCKED / DNS-poison blackhole bypass.
+
+    A poisoned resolver answers api.telegram.org with 198.18.x.x (RFC 2544
+    benchmark block). The notifier must (a) detect the blackhole, (b) fall
+    back to known-good Telegram datacenter IPs with SNI preserved, and
+    (c) surface TELEGRAM_DNS_BLOCKED instead of a blind timeout.
+    """
+
+    @staticmethod
+    def _poisoned_getaddrinfo(*_a, **_k):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.141.205", 443))]
+
+    def test_blackhole_ip_detection(self) -> None:
+        assert TelegramNotifier._is_blackhole_ip("198.18.141.205") is True
+        assert TelegramNotifier._is_blackhole_ip("198.19.0.1") is True
+        assert TelegramNotifier._is_blackhole_ip("192.0.0.1") is True
+        assert TelegramNotifier._is_blackhole_ip("198.51.100.7") is True
+        assert TelegramNotifier._is_blackhole_ip("203.0.113.9") is True
+        assert TelegramNotifier._is_blackhole_ip("127.0.0.1") is True
+        assert TelegramNotifier._is_blackhole_ip("149.154.167.220") is False
+        assert TelegramNotifier._is_blackhole_ip("not-an-ip") is False
+
+    def test_should_bypass_dns_flag(self, notifier: TelegramNotifier) -> None:
+        with patch("socket.getaddrinfo", side_effect=self._poisoned_getaddrinfo):
+            assert notifier._should_bypass_dns("api.telegram.org") is True
+            assert notifier._last_dns_poisoned is True
+
+    def test_no_bypass_on_healthy_dns(self, notifier: TelegramNotifier) -> None:
+        with patch(
+            "socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("149.154.167.220", 443))],
+        ):
+            assert notifier._should_bypass_dns("api.telegram.org") is False
+            assert notifier._last_dns_poisoned is False
+
+    def test_urlopen_fallback_uses_direct_ip_sni_preserved(
+        self, notifier: TelegramNotifier
+    ) -> None:
+        captured = {}
+
+        def fake_direct(ip, host, path, data, method, timeout):
+            captured.update(ip=ip, host=host, path=path, method=method)
+
+            class FakeResp:
+                status = 200
+
+                def read(self):
+                    return b'{"ok": true}'
+
+            return FakeResp()
+
+        with (
+            patch("socket.getaddrinfo", side_effect=self._poisoned_getaddrinfo),
+            patch.object(TelegramNotifier, "_direct_https_open", side_effect=fake_direct),
+        ):
+            resp = notifier._urlopen_with_dns_fallback(
+                "https://api.telegram.org/botX/sendMessage", b"{}", "POST", 5.0
+            )
+        assert resp.status == 200
+        assert (
+            captured["ip"]
+            in __import__(
+                "nexus_scalp.observability.telegram_notifier", fromlist=["_TELEGRAM_FALLBACK_IPS"]
+            )._TELEGRAM_FALLBACK_IPS
+        )
+        assert captured["host"] == "api.telegram.org"
+        assert captured["path"] == "/botX/sendMessage"
+        assert captured["method"] == "POST"
+
+    def test_timeout_after_poison_classified_dns_blocked(self, notifier: TelegramNotifier) -> None:
+        notifier._last_dns_poisoned = True
+        category, retryable = notifier._classify_exception(TimeoutError("handshake timed out"))
+        assert category == "TELEGRAM_DNS_BLOCKED"
+        assert retryable is False
+
+    def test_timeout_without_poison_still_timeout(self, notifier: TelegramNotifier) -> None:
+        notifier._last_dns_poisoned = False
+        category, retryable = notifier._classify_exception(TimeoutError("plain timeout"))
+        assert category == "TELEGRAM_TIMEOUT"
+        assert retryable is True
+
+    def test_health_state_exposes_dns_poisoned(self, notifier: TelegramNotifier) -> None:
+        notifier._last_dns_poisoned = True
+        health = notifier.health_state()
+        assert health.get("dns_poisoned") is True
+        notifier._last_dns_poisoned = False
+        assert notifier.health_state().get("dns_poisoned") is False
