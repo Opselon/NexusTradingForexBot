@@ -57,6 +57,23 @@
   SERVER" unconditionally for the PAPER adapter too (paper fills also
   print this line) — cosmetic, could confuse log readers.
 
+## Delegated-worker findings (harvested from wave-1 summaries)
+
+14. `accounting/core.py:516` — `equity_curve` renders `snap.floating_pnl or 0.0`
+    (a synthesized 0.0 in chart payloads). Minor + intentional rendering
+    default, but it brushes the no-synthetic-numbers rule — consider None.
+15. `reporting/__init__.py` — `classify_session`/`compare_periods` defined in
+    insights.py are absent from `__all__` (public-surface drift vs engine.py
+    which imports them by path).
+16. `experience/retriever.py` — context fingerprinting uses its own substring
+    rules (drift risk vs the canonical keys).
+17. `intelligence.py:406` — hardcodes `timeframe="M1"` for a history read
+    (symbols with another native timeframe would mis-read).
+18. `experience/quality.py:306/400` — exit-reason matching is substring-based
+    (a reason-code taxonomy change silently widens matches).
+19. `intelligence/gate.py:15` — the WARN tier never changes the proposal
+    (informational by design — documented, not a bug).
+
 ## Technical debt
 
 - 4,000-bar cap and 900-bar chart window are constants (fine) but not
