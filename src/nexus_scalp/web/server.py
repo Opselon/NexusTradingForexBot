@@ -26,6 +26,11 @@ from pydantic import BaseModel
 
 from nexus_scalp.accounting import PeriodKind
 from nexus_scalp.accounting.aggregation import compute_advanced_metrics
+from nexus_scalp.accounting.market_calendar import (
+    current_trading_day,
+    market_state,
+    probe_server_time,
+)
 from nexus_scalp.accounting.worker import format_worker_status
 from nexus_scalp.domain.enums import ActionType, ExecutionMode, OrderType
 from nexus_scalp.domain.models import TickData
@@ -4780,7 +4785,42 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=f"Unknown period kind: {kind}") from None
         try:
             report = core.period_report(enum_kind)
-            return {"available": True, "period": report.to_dict()}
+            payload: dict[str, Any] = {"available": True, "period": report.to_dict()}
+            # BUG-134: smart market context (broker server day + open/closed).
+            engine = app.state.engine
+            adapter = getattr(engine, "adapter", None) if engine else None
+            server_now = probe_server_time(adapter) if adapter is not None else None
+            server_time = None
+            if server_now is not None:
+                from datetime import UTC as _UTC
+
+                server_time = datetime.fromtimestamp(server_now, _UTC)
+            tick_age = None
+            if adapter is not None and hasattr(adapter, "get_broker_tick"):
+                try:
+                    exec_cfg = (
+                        getattr(getattr(engine, "config", None), "execution", None)
+                        if engine is not None
+                        else None
+                    )
+                    symbol = (
+                        getattr(exec_cfg, "symbol", None) if exec_cfg is not None else None
+                    ) or "XAUUSD"
+                    tk = adapter.get_broker_tick(symbol)
+                    if tk.available and tk.time_utc is not None:
+                        tick_age = max(0.0, (datetime.now(UTC) - tk.time_utc).total_seconds())
+                except Exception:
+                    tick_age = None
+            ms = market_state(server_time, last_tick_age_sec=tick_age)
+            payload["market"] = {
+                "state": ms["state"],
+                "last_tick_age_sec": ms["last_tick_age_sec"],
+                "next_open_iso": ms["next_open_iso"],
+                "reason": ms["reason"],
+                "server_day": current_trading_day(server_time),
+                "server_time_utc": server_time.isoformat() if server_time else None,
+            }
+            return payload
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Period report failed"})
             return _err("INTERNAL_ERROR")
