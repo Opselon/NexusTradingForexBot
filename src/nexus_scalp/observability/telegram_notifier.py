@@ -259,6 +259,11 @@ class TelegramNotifier:
         self._worker_started_at: float | None = None
         self._worker_crash: str = ""
         self._worker_running = False
+        # BUG-129: throttle the BLOCKED_NOT_CONFIGURED log (fires on every
+        # send() attempt while Telegram is unconfigured; on a hot path that
+        # produced ~13 spam warnings per second).
+        self._last_blocked_log_time: float = 0.0
+        self._blocked_log_count: int = 0
 
         self.start_worker()
 
@@ -382,13 +387,22 @@ class TelegramNotifier:
         observable via logs + health_state() — never a bare silent None.
         """
         if not self.enabled:
-            logger.warning(
-                "[TELEGRAM] event=BLOCKED_NOT_CONFIGURED severity=%s reason=BOT_TOKEN_OR_ADMIN_MISSING "
-                "notification_id=%s correlation_id=%s",
-                severity,
-                new_correlation_id("notif"),
-                correlation_id or "-",
-            )
+            # Rate-limited log: a hot-path caller (e.g. per-tick position
+            # eval) must never spam WARNING lines while Telegram is simply
+            # not configured. First occurrence logs immediately, then at most
+            # once per 60s (BUG-129).
+            now_log = time.time()
+            self._blocked_log_count += 1
+            if (now_log - self._last_blocked_log_time) >= 60.0:
+                self._last_blocked_log_time = now_log
+                logger.warning(
+                    "[TELEGRAM] event=BLOCKED_NOT_CONFIGURED severity=%s reason=BOT_TOKEN_OR_ADMIN_MISSING "
+                    "notification_id=%s correlation_id=%s blocked_since_start=%d",
+                    severity,
+                    new_correlation_id("notif"),
+                    correlation_id or "-",
+                    self._blocked_log_count,
+                )
             self._failed_count += 1
             self._last_failure = time.time()
             self._last_failure_category = TELEGRAM_CONFIG_ERROR

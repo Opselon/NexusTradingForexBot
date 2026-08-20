@@ -5418,35 +5418,38 @@ class OrderLifecycleManager:
 
             # -----------------------------------------------------------------
             # Phase 15: structured exit-evaluation log (state-change driven).
-            # Emitted once per arbitration verdict per ticket; the 3s telemetry
-            # cadence still applies so a repeating HOLD does not flood the log.
+            # Emitted at most once per 3s per ticket (BUG-129): a repeating
+            # HOLD verdict must never flood the log. Shares the SAME throttle
+            # as the INSTITUTIONAL TELEMETRY block above so they stay aligned.
             # -----------------------------------------------------------------
-            try:
-                mae_p = smart_metrics.get("mae_to_atr_ratio", 0.0)
-                mfe_p = smart_metrics.get("mfe_to_atr_ratio", 0.0)
-                logger.info(
-                    "[POSITION_EXIT_EVAL]",
-                    ticket=ticket,
-                    pnl=round(float(pos.profit), 2),
-                    hold_score=int(hold_score),
-                    reversal_prob=round(float(evidence.get("adverse_score", 0.0)), 3),
-                    continuation_prob=round(float(evidence.get("continuation_score", 0.0)), 3),
-                    recovery_prob=round(float(evidence.get("recovery_score", 0.0)), 3),
-                    regime=self._current_regime_str(regime_state, ticket) or "UNKNOWN",
-                    entry_regime=self._entry_regimes.get(ticket, ""),
-                    elapsed_sec=round(holding_duration, 1),
-                    mae_atr=round(float(mae_p), 3),
-                    mfe_atr=round(float(mfe_p), 3),
-                    state=debounced_state.value,
-                    decision=action,
-                    reason=scenario,
-                )
-            except Exception as log_err:
-                logger.debug(
-                    "[POSITION_EXIT_EVAL] log skipped (isolated)",
-                    ticket=ticket,
-                    error=str(log_err),
-                )
+            if (current_time - self._last_telemetry_time.get(ticket, 0.0)) >= 3.0:
+                self._last_telemetry_time[ticket] = current_time
+                try:
+                    mae_p = smart_metrics.get("mae_to_atr_ratio", 0.0)
+                    mfe_p = smart_metrics.get("mfe_to_atr_ratio", 0.0)
+                    logger.info(
+                        "[POSITION_EXIT_EVAL]",
+                        ticket=ticket,
+                        pnl=round(float(pos.profit), 2),
+                        hold_score=int(hold_score),
+                        reversal_prob=round(float(evidence.get("adverse_score", 0.0)), 3),
+                        continuation_prob=round(float(evidence.get("continuation_score", 0.0)), 3),
+                        recovery_prob=round(float(evidence.get("recovery_score", 0.0)), 3),
+                        regime=self._current_regime_str(regime_state, ticket) or "UNKNOWN",
+                        entry_regime=self._entry_regimes.get(ticket, ""),
+                        elapsed_sec=round(holding_duration, 1),
+                        mae_atr=round(float(mae_p), 3),
+                        mfe_atr=round(float(mfe_p), 3),
+                        state=debounced_state.value,
+                        decision=action,
+                        reason=scenario,
+                    )
+                except Exception as log_err:
+                    logger.debug(
+                        "[POSITION_EXIT_EVAL] log skipped (isolated)",
+                        ticket=ticket,
+                        error=str(log_err),
+                    )
 
             # If the arbitrated decision is a CLOSE initiated by the Adaptive Protection Engine,
             # save the exit mechanism to be written to the financial ledger autopsy
