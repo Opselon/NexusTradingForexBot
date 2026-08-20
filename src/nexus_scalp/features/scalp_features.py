@@ -876,7 +876,11 @@ class ScalpFeatureEngine:
         _last_sl_idx, last_sl_val = swing_lows[-1]
 
         # 2. 50% Impulse Equilibrium
-        last_sl_val + 0.50 * (last_sh_val - last_sl_val)
+        # NOTE: the 50% impulse-equilibrium midpoint is NOT a standalone
+        # feature; the equilibrium ratio is captured by
+        # `ob_equilibrium_ratio` (below) via the order-block price. The
+        # bare expression was computed-and-discarded (dead code) - removed
+        # in the forensic fix pass (2026-08-20). No behavior change.
 
         # 3. OB calculations
         ob_price = (highs[-2] + lows[-2]) / 2.0
