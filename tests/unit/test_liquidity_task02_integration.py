@@ -422,12 +422,18 @@ def test_task02_15_golden_snapshot_parity(tmp_path) -> None:
     )
     if not golden_path.exists():
         pytest.skip("golden liquidity reference not generated")
+    # The reference recomputation needs the real M1 dataset; on a fresh
+    # checkout (CI) the parquet is absent even when the golden file exists.
+    # Skip instead of crashing (FileNotFoundError on data/raw - run-209).
+    parquet_path = Path(__file__).resolve().parents[2] / "data" / "raw" / "XAUUSD_M1.parquet"
+    if not parquet_path.exists():
+        pytest.skip("real XAUUSD_M1 parquet not present (built offline)")
     golden = json.loads(golden_path.read_text(encoding="utf-8"))
     assert golden["algorithm_version"] == "scalp_liquidity_v1.0.0"
     assert golden["schema_id"] == "scalp_liquidity_v1"
     assert golden["dimension"] == 60
 
-    df = pl.read_parquet("data/raw/XAUUSD_M1.parquet").sort("time_utc")
+    df = pl.read_parquet(parquet_path).sort("time_utc")
     bars = []
     for row in df.iter_rows(named=True):
         ts = row["time_utc"]
