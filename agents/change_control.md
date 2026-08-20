@@ -839,3 +839,30 @@ Why: HEAD persisted PG config per-key (database.postgres.*) while config.py/heal
 Migration: none — old per-key rows are ignored (fresh write required), matching prior behavior; no DB schema change.
 Verification: VERIFIED — end-to-end probe (set -> load -> resolve password == S3cret!), test_settings_subsystem_bug072 22 passed, test_database_portability TestDdlPorting 7 passed, test_logging 13 passed; ruff + mypy clean.
 Risk: low — additive alignment; heuristic literal classifier documented; settings writes are CLI/API only (not hot path).
+
+## CHG-0030 — Isolated strategy research store (SQLite+PostgreSQL) (2026-08-20 Hermes-StrategyIsolation)
+
+Change: generated-strategy research memory moved OUT of the audit DB into a dedicated portable store.
+(1) NEW src/nexus_scalp/strategies/research_store.py — StrategyResearchStore over the DatabaseDriver
+abstraction (SQLite artifacts/strategies.db default, PostgreSQL via NSE_PG_TEST_URL / config): 8 tables
+(7 factory tables + strategy_research_meta), provider-portable DDL via ddl_port.port_create_table,
+idempotent ensure_schema, explicit-commit writes (driver auto-commit gap: SQLite execute/upsert without
+an explicit connection rolls back silently — verified). (2) factory/store.py dual-backend dispatch: every
+function accepts either AuditRepository (legacy audit queue) or StrategyResearchStore (isolated);
+_resolve_backend duck-types on 'driver'. (3) factory/orchestrator.py StrategyFactory gains store= param +
+_research_backend property; 27 store-function call sites route through it; strategy_registry reads stay on
+the audit repo (shared validation truth). (4) live_engine.py opens the isolated store at startup
+(fallback to audit queue on failure); factory wired with store=_strategy_store. (5) factory_routes.py UI
+reads through factory._research_backend. (6) provider.py 'strategies' domain registered.
+Scope: new src/nexus_scalp/strategies/research_store.py, new tests/unit/test_strategy_research_store.py,
+src/nexus_scalp/strategies/factory/store.py, orchestrator.py, src/nexus_scalp/application/live_engine.py,
+src/nexus_scalp/web/factory_routes.py, src/nexus_scalp/database/provider.py
+Why: generated strategies are research memory, not trade truth — they must not grow inside the live audit
+path. Audit DB stays small/fast for order/signal/ledger truth. Same store code runs on SQLite and PG.
+Migration: none for existing DBs — audit_orders execution_id column already migrated by 474f7f2
+(verified in error-log forensics: errors stopped at 09:50, engine restarted 09:59/10:04 on fixed code).
+Verification: VERIFIED — 74 passed / 13 skipped (PG arm) across test_strategy_research_store (21),
+test_database_portability (26), test_strategy_factory_phase22 (19), test_audit_db_growth_bug054 (12);
+ruff check+format clean; mypy clean on all 7 files. Commit 318964e.
+Risk: LOW — additive; audit-queue fallback preserved; strategy_registry unchanged.
+
