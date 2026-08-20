@@ -10898,37 +10898,57 @@ async function searchIncidents() {
 
     try {
 
-        const resp = await fetch('/api/diagnostics/search?query=' + encodeURIComponent(q) + '&limit=20');
+        const resp = await fetch('/api/diagnostics/trace?query=' + encodeURIComponent(q));
 
         const data = await resp.json();
 
-        const incidents = data.incidents || [];
+        const tr = (data.trace || {});
 
-        if (!incidents.length) {
+        if (tr.missing_link) {
 
-            resEl.innerHTML = '<p class="text-xs text-amber-400">No incidents found for "' + esc(q) + '".</p>';
+            resEl.innerHTML = '<div class="border border-amber-500/30 rounded p-2 bg-darkBg/50 text-[11px]">' +
+
+                '<b class="text-amber-400">TRACE</b> missing link: <code>' + esc(tr.missing_link) + '</code>' +
+
+                ' — ' + esc(tr.reason || '') +
+
+                (tr.last_known_node ? ' (last known: ' + esc(String(tr.last_known_node)) + ')' : '') +
+
+                '</div>';
+
+        } else if (tr.kind === 'incident') {
+
+            const rc = tr.root_cause || {};
+
+            resEl.innerHTML = '<div class="border border-borderClr rounded p-2 bg-darkBg/50 text-[11px] space-y-1">' +
+
+                '<div><b class="text-accentCyan">INCIDENT ' + esc(tr.query) + '</b> — ' + esc((tr.incident||{}).severity || '') + '/' + esc((tr.incident||{}).status || '') + '</div>' +
+
+                '<div>root cause: <b>' + esc(rc.status || 'UNKNOWN') + '</b> — ' + esc(rc.statement || '') + ' (evidence: ' + (rc.evidence_count || 0) + ')</div>' +
+
+                '<div>affected records: ' + (tr.affected_entities && tr.affected_entities.affected_records ? tr.affected_entities.affected_records.length : 0) + '</div>' +
+
+                '<div>lineage downstream: ' + ((tr.lineage && tr.lineage.downstream) ? tr.lineage.downstream.length : 0) + ' nodes</div>' +
+
+                '</div>';
 
         } else {
 
-            resEl.innerHTML = '';
+            let html = '<div class="border border-borderClr rounded p-2 bg-darkBg/50 text-[11px] space-y-1">';
 
-            incidents.forEach(inc => {
+            html += '<div><b class="text-accentCyan">TRACE ' + esc(q) + '</b> (' + esc(tr.kind || 'object') + ')</div>';
 
-                const row = document.createElement('div');
+            html += '<div>ledger: ' + (tr.ledger ? 'found' : '—') + ' · broker position: ' + (tr.broker_position ? 'found' : '—') + '</div>';
 
-                row.className = 'border border-borderClr rounded p-2 bg-darkBg/50 cursor-pointer';
+            html += '<div>outcome: ' + (tr.outcome ? 'found' : '—') + ' · experience: ' + (tr.experience ? 'found' : '—') + '</div>';
 
-                row.onclick = () => showIncidentDetail(inc.incident_id);
+            html += (tr.model_id ? '<div>model: <code>' + esc(tr.model_id) + '</code></div>' : '');
 
-                row.innerHTML = '<span class="font-mono text-[11px] font-bold">' + esc(inc.incident_id) + '</span> ' +
+            html += (tr.research_runs && tr.research_runs.length ? '<div>research runs: ' + tr.research_runs.length + '</div>' : '');
 
-                    '<span class="text-[10px] text-orange-300">' + inc.severity + '</span> ' +
+            html += '</div>';
 
-                    '<span class="text-[11px]">' + esc(inc.operation||'') + '</span> @ <code class="text-[11px] text-accentCyan">' + esc(inc.component||'') + '</code>';
-
-                resEl.appendChild(row);
-
-            });
+            resEl.innerHTML = html;
 
         }
 

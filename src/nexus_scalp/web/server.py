@@ -1886,6 +1886,25 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             _log_err(exc, "incident search failed", endpoint="/api/diagnostics/search")
             return _err("INTERNAL_ERROR")
 
+    @app.get("/api/diagnostics/trace")
+    def get_diagnostics_trace(query: str = "") -> dict[str, Any]:
+        """One-Click Trace (spec 24/25/26): resolve incident_id / ticket /
+        execution_id / order_id / position_id / model_id / research_run_id
+        into its full lineage. Never fabricates links: missing hops are
+        reported with missing_link + reason + last_known_node.
+        """
+        if not query.strip():
+            return {"available": True, "trace": {"kind": "unknown", "reason": "empty query"}}
+        try:
+            from nexus_scalp.incidents.trace_lineage import trace_lineage
+
+            store = _incident_store()
+            result = trace_lineage(db_path_for_audit(), query, store=store)
+            return serialize_enums({"available": True, "query": query, "trace": result})
+        except Exception as exc:
+            _log_err(exc, "trace failed", endpoint="/api/diagnostics/trace")
+            return _err("INTERNAL_ERROR")
+
     @app.get("/api/rules")
     def get_trading_rules() -> list[dict[str, Any]]:
         engine = app.state.engine
