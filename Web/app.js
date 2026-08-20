@@ -591,6 +591,48 @@ function renderLiquidityPanel(state) {
 
     }
 
+    // BUG-123: model contract diagnostics — runtime/model dimension, schemas,
+    // feature-order hash, normalization. Rendered from the backend payload only.
+    const contract = state.liquidity_contract || {};
+
+    const mcModel = document.getElementById('liq-model-contract');
+
+    if (mcModel) {
+
+        const rt = (contract && contract.dimension) ? contract.dimension : null;
+
+        const md = (mc && mc.model_dimension != null) ? mc.model_dimension : null;
+
+        const ms = (mc && mc.model_schema_id) ? mc.model_schema_id : '?';
+
+        const mih = (mc && mc.model_input_dimension != null) ? mc.model_input_dimension : null;
+
+        const bits = [];
+
+        if (md != null) bits.push('model ' + md + 'D (' + ms + (mih != null ? ' / tensor ' + mih + 'D' : '') + ')');
+
+        if (rt != null) bits.push('runtime ' + rt + 'D');
+
+        mcModel.textContent = bits.join(' \u00b7 ') || '--';
+
+    }
+
+    const mcReason = document.getElementById('liq-model-compat-reason');
+
+    if (mcReason) {
+
+        let reasonTxt = mc.reason || '';
+
+        if (mc.action) reasonTxt += ' \u2026 ' + mc.action;
+
+        mcReason.textContent = reasonTxt || '--';
+
+        mcReason.className = 'text-[10px] font-mono mt-1 ' + (res === 'BLOCK' ? 'text-rose-400' : (res === 'PASS' ? 'text-emerald-400' : 'text-gray-300'));
+
+    }
+
+    setText('liq-state-revision', state.state_revision != null ? '# ' + state.state_revision : '--');
+
 
 
     const btn = document.getElementById('liq-toggle-btn');
@@ -5689,7 +5731,9 @@ async function saveAlgoTuner() {
 
         if (result.ok && result.body.success) {
 
-            alert("Dynamic Algorithm thresholds successfully updated & hot-swapped!");
+            const v = result.body.configuration_version ?? result.body.runtime_version ?? '?';
+
+            alert(`Dynamic Algorithm thresholds APPLIED (configuration v${v}) — runtime hot-reloaded, no restart.`);
 
         } else {
 
@@ -5773,7 +5817,17 @@ async function saveConfiguration() {
 
         if (result.ok && result.body.success) {
 
-            alert("Configuration successfully saved and dynamically hot-reloaded into engine!");
+            const v = result.body.configuration_version ?? result.body.runtime_version ?? '?';
+
+            if (result.body.runtime_applied === false) {
+
+                alert('Configuration saved (v' + v + ') but NOT applied to the running engine: ' + (result.body.reason || 'engine offline'));
+
+            } else {
+
+                alert(`Configuration saved & APPLIED at runtime (configuration v${v}) — hot reload, no restart.`);
+
+            }
 
         } else {
 
