@@ -1263,7 +1263,7 @@ class LiveEngine:
         # (-10005) while the terminal is launching never kills the engine.
         # Every attempt is surfaced to the console + Telegram so the operator
         # SEES the retry in progress (perfect-UI-UX requirement).
-        import time as _time
+        import time as _time  # noqa: F401 - reserved for backoff timing telemetry
 
         mt5_connected = False
         for attempt in range(1, 4):
