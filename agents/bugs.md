@@ -5649,3 +5649,63 @@ local proxy needs >120s) + factory.llm_max_requests_per_generation (default 60).
 orchestrator logs [STRATEGY_FACTORY] GENERATION_STARTED/GENERATED/VALIDATED/
 BACKTESTED/COMPLETED to the console. LIVE VERIFIED: real stored key generated a
 REVERSAL DSL in 24.8s (2301 tokens, 0 failures). Commits 1fa2fd2 + 6f20a52.
+## BUG-132 — Max-drawdown survival guard ignored the persisted UI limit; halted a LIVE engine at 15.94% (2026-08-21 Hermes-SurvivalGuard)
+
+### Symptoms
+- Engine booted LIVE 2026-08-21 00:17:56, then at 00:18:01 logged CRITICAL
+  "MAX DRAWDOWN EXCEEDED; HALTING dd_pct=15.94" and shut down cleanly
+  (workers STOP, MT5 IPC closed, audit flush).
+- Post-halt warnings in the UI/console: "Failed to fetch account info from
+  MT5 ... adapter not connected", "accounting not load true history of trades"
+  — downstream symptoms of the halt, NOT accounting bugs.
+- The user expected the engine to keep running; the daily report + shutdown
+  arrived in Telegram without an obvious crash.
+
+### Root cause
+- `LiveEngine._update_survival_state` compared drawdown against
+  `self.config.risk.max_account_drawdown_pct` — the BOOTSTRAP AppConfig
+  (YAML default 2.0%/2.5%), NOT the authoritative runtime snapshot.
+- The UI/persisted value in the settings DB was `risk.max_account_drawdown_pct
+  = 95.0` (WEB_CONFIG, 7 writes on 08-20) and was rehydrated into the runtime
+  store at boot ("rehydrated from persistent store version=2") — every other
+  risk gate (risk_engine.config via _sync_runtime_config) used the snapshot.
+  The survival guard alone read the stale bootstrap.
+- Hence drawdown 15.94% (equity 33288.22 vs ATH 41865.53 on 08-17, before
+  the 08-17 withdrawal) tripped the 2.0% bootstrap ceiling.
+
+### Evidence chain (all verified)
+- audit_account_snapshots: peak 41865.53 (08-17 04:36), balance drops on
+  08-17 05:19 to 37268 (withdrawal), final 33288.22 (08-20 20:48);
+  peak_equity persisted 39601.37 (withdrawal-adjusted).
+- settings DB: risk.max_account_drawdown_pct = '95.0' source=WEB_CONFIG.
+- boot log: [RUNTIME_CONFIG] rehydrated from persistent store version=2;
+  [MODE] runtime_mode=LIVE.
+- code: _update_survival_state read self.config.risk (bootstrap).
+
+### Fix (commit a60cb9e)
+- `_update_survival_state` now reads
+  `runtime_config.get_snapshot().risk.max_account_drawdown_pct` (the value
+  the UI shows/persists and every other risk gate uses); falls back to
+  bootstrap only when the store is detached. Survival-mode threshold
+  (limit*0.5) also follows the snapshot.
+
+### Verification
+- 5 new unit tests tests/unit/test_survival_drawdown_runtime_bug132.py
+  (persisted-95 no-halt / 2.0 halt / 5 halt / 30 survival-only / detached
+  fallback) — all pass; runtime_config + runtime_engine hot-reload suites
+  (17) pass; ruff/mypy/py_compile clean.
+- Focused 3-case guard probe run before the tests: dd=95 no halt,
+  dd=2 halt, dd=30 survival-only.
+
+### Lessons for swarm
+- ANY engine guard reading `self.config.*` in a hot path is a candidate
+  bootstrap-mismatch bug — always route through the runtime snapshot the
+  way _sync_runtime_config does.
+- After an account withdrawal, the ATH-based drawdown can be > the limit
+  even with zero losses since the peak; the withdrawal heuristic only
+  shifts peak once per snapshot tick when balance drops >2% with no
+  concurrent close — a large single withdrawal (e.g. 08-17 05:19) was
+  captured, but the 08-21 reboot restored the PRE-withdrawal peak in
+  some paths. Consider a manual peak re-baseline after balance events.
+- The "adapter not connected" warning at shutdown is EXPECTED (adapter
+  closed during graceful stop); don't chase it as an accounting bug.
