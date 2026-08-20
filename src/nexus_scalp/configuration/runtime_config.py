@@ -552,6 +552,8 @@ _VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "execution.max_slippage_points": lambda v: isinstance(v, int) and int(v) >= 0,
     "execution.symbol": lambda v: isinstance(v, str) and bool(v.strip()),
     "execution.timeframe": lambda v: isinstance(v, str) and bool(v.strip()),
+    "execution.mode": lambda v: isinstance(v, str) and v.strip().upper()
+    in ("LIVE", "PAPER", "SHADOW", "SIMULATION", "NO_OP"),
     "model.confidence_threshold": lambda v: isinstance(v, (int, float)) and 0.0 <= float(v) <= 1.0,
     "model.model_artifact_path": lambda v: isinstance(v, str) and bool(v.strip()),
     "model.liquidity_features_enabled": lambda v: isinstance(v, bool),

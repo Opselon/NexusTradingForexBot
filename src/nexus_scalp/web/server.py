@@ -2464,6 +2464,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             source="USER_SETTINGS",
             actor="web",
         )
+        # RUNTIME CONFIGURATION: execution.mode is a persisted runtime value.
+        # Route through the versioned store so the snapshot/version/event
+        # stay consistent (the engine boot reads the settings DB anyway).
+        if hasattr(engine, "runtime_config"):
+            engine.runtime_config.apply(
+                {"execution.mode": wanted}, source="WEB_ENGINE_MODE", actor="web"
+            )
         # Apply the mode truthfully: refresh runtime derivation while
         # preserving the real connection state (never fake LIVE).
         if hasattr(engine, "_update_runtime_mode"):
