@@ -5761,3 +5761,45 @@ REVERSAL DSL in 24.8s (2301 tokens, 0 failures). Commits 1fa2fd2 + 6f20a52.
   events + halts leave accounting stale until the next boot.
 - Engine ledger tickets vs broker deal tickets can differ; identity is the
   broker ticket; do not join on the engine's own ticket.
+## BUG-134 — UI '1 Day' showed the previous UTC day + no market-state signal (2026-08-21 Hermes-MarketCalendar)
+
+### Symptoms
+- At 01:00 IST (2026-08-21) the Account Performance panel with '1 Day' selected
+  showed the report for key 2026-08-20 -> "details from last day" to the user,
+  even though the report was CORRECT for the canonical UTC day.
+- Market closed (gold weekend / tick age >90 min) with no visible indicator;
+  the panel looked stale rather than "market closed".
+
+### Root causes
+1. Period boundaries are canonically UTC [00:00,00:00) (correct, one
+   definition for the whole system). For an Iranian user (UTC+3:30) the UTC
+   day is NOT the local day, so the header label "2026-08-20" appeared to be
+   yesterday when the local date was 08-21 01:00.
+2. No market-state signal existed anywhere: the UI could not distinguish
+   "nothing happened because market closed" from a stale/empty panel.
+
+### Fix (commits 4e6beed + ef251ef)
+- New src/nexus_scalp/accounting/market_calendar.py (pure, adapter-driven):
+  probe_server_time(adapter) via MT5 tick time; market_state() -> OPEN /
+  CLOSED / WEEKEND / PAUSED / UNKNOWN + next_open_iso + reason;
+  current_trading_day() = the BROKER-server date for the '1 Day' key;
+  day_bounds_utc().
+- /api/account/performance/{kind} now returns top-level 'market'
+  {state,last_tick_age_sec,next_open_iso,reason,server_day,server_time_utc}.
+- UI: 'broker day YYYY-MM-DD' title (DAY) + 'market ...' chip; dims nothing;
+  DOM contract clean.
+
+### Verification
+- 9 new unit tests (test_market_calendar_bug134.py) — all pass; ruff/mypy/
+  py_compile clean; integration accounting API (15) pass; frontend assets
+  (41) pass; node --check app.js OK.
+- LIVE MT5 probe: server tick (broker->UTC) 2026-08-20T19:59:59Z, age 5580s
+  -> market_state CLOSED (correct for the weekend).
+
+### Lessons for swarm
+- The broker SERVER time is the authority for "today" and market state;
+  wall-clock UTC mislabels periods for users in non-UTC timezones.
+- MT5 Python lacks a clean per-symbol session table; the standard gold
+  Fri 22:00 UTC - Sun 21:00 UTC weekend rule + tick freshness is the
+  pragmatic approximation (documented in the module).
+- Period CONTENT stays UTC-canonical; only the LABEL/context is UI-localized.
