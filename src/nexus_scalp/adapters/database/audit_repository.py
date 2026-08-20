@@ -901,6 +901,131 @@ class AuditRepository:
             );
             """
         )
+# =====================================================================
+        # STRATEGY FACTORY research memory (2026-08-20) — append-only records.
+        # The factory ORCHESTRATES generation/evolution over the research
+        # pipeline; these tables hold the research memory itself.
+        # =====================================================================
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS factory_generations (
+                generation_id TEXT PRIMARY KEY,
+                number INTEGER NOT NULL,
+                mode TEXT DEFAULT 'MANUAL',
+                parent_generation TEXT DEFAULT '',
+                population_target INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                completed_at TEXT DEFAULT NULL,
+                status TEXT DEFAULT 'PENDING',
+                config TEXT DEFAULT '{}'
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS factory_candidates (
+                candidate_id TEXT PRIMARY KEY,
+                definition_hash TEXT NOT NULL,
+                generation_id TEXT NOT NULL,
+                source TEXT DEFAULT 'TEMPLATE',
+                operator TEXT DEFAULT 'NONE',
+                parent_ids TEXT DEFAULT '[]',
+                family TEXT DEFAULT 'HYBRID',
+                population_index INTEGER DEFAULT 0,
+                dsl TEXT DEFAULT '{}',
+                structural TEXT DEFAULT '{}',
+                lifecycle TEXT DEFAULT 'GENERATED',
+                failure_reasons TEXT DEFAULT '[]',
+                llm_response_id TEXT DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS factory_failures (
+                failure_id TEXT PRIMARY KEY,
+                candidate_id TEXT NOT NULL,
+                strategy_id TEXT DEFAULT '',
+                generation_id TEXT DEFAULT '',
+                stage TEXT DEFAULT 'DSL_VALIDATION',
+                reason TEXT DEFAULT '',
+                detail TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS factory_events (
+                event_id TEXT PRIMARY KEY,
+                generation_id TEXT DEFAULT '',
+                candidate_id TEXT DEFAULT '',
+                event_type TEXT NOT NULL,
+                message TEXT DEFAULT '',
+                payload TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS factory_runs (
+                run_id TEXT PRIMARY KEY,
+                generation_id TEXT DEFAULT '',
+                strategy_id TEXT DEFAULT '',
+                experiment_kind TEXT DEFAULT 'GENERATE',
+                executed_at TEXT NOT NULL,
+                config TEXT DEFAULT '{}',
+                result_summary TEXT DEFAULT '{}'
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS factory_provider_usage (
+                usage_id TEXT PRIMARY KEY,
+                generation_id TEXT DEFAULT '',
+                requests INTEGER DEFAULT 0,
+                failures INTEGER DEFAULT 0,
+                prompt_tokens INTEGER DEFAULT 0,
+                completion_tokens INTEGER DEFAULT 0,
+                total_tokens INTEGER DEFAULT 0,
+                estimated_cost_usd REAL DEFAULT 0.0,
+                last_latency_ms REAL DEFAULT 0.0,
+                last_error TEXT DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS factory_loop_state (
+                scope TEXT PRIMARY KEY,
+                state TEXT DEFAULT 'STOPPED',
+                generation_id TEXT DEFAULT '',
+                checkpoint TEXT DEFAULT '{}',
+                updated_at TEXT DEFAULT '',
+                last_error TEXT DEFAULT ''
+            );
+            """
+        )
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_factory_cand_gen ON factory_candidates(generation_id, population_index);"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_factory_cand_hash ON factory_candidates(definition_hash);"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_factory_fail_gen ON factory_failures(generation_id);"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_factory_events_gen ON factory_events(generation_id, created_at);"
+            )
+        except Exception:
+            pass
+
 
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_lifecycle_ticket "
