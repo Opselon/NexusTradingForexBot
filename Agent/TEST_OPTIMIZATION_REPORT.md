@@ -154,6 +154,17 @@ After:
   binding mismatch breaking accounting seeding) and an environment latency
   flake (model inference 6ms vs 2ms threshold on a loaded host), both
   outside this pass's scope
+- Re-verified by Hermes-TestOpt sweep 2026-08-20 (independent run, serial,
+  all 37 manifest files): 779 passed, 0 failed, 17 skipped (~2.6% skip,
+  artifact-dependent ONLY: 50D/70D model artifacts + champion not present
+  on this host). This matches the CI default gate exactly (796 collected);
+  failures that appeared in earlier full-suite runs (research pipeline
+  E2E, htf_warmup, up45, incident task12, schema_70d) were traced to
+  transient parallel-agent edits in server.py/live_engine.py/updater.py —
+  each passes in isolation after the swarm commits landed; the research
+  pipeline fixture (build_candidate) gained symbol+exit_logic to align
+  with the TASK-4 static-validation contract (spec 14) and now exercises
+  the full VALIDATED path (backtest 64 trades -> OOS PASS -> score 0.85)
 - Confidence: HIGHER for the same core — every protected area verified present
   with substantive assertions (see Classification); false failures reduced by
   removing state-polluting micro-tests; honest skips for artifact-dependent
@@ -169,7 +180,8 @@ whole-application heartbeat (test_critical_suite.py)
 CI Improvement: critical gate parallelized with pytest-xdist (-n auto),
   serial 14m52s → 5m26s; 20-min job timeout headroom restored
 Build: PASS (collectible; parallel WIP failures transient/foreign)
-Validation: PASS (critical gate 779/2 after parallel fixes; documented gaps
-  are environment/artifact-dependent, not coverage regressions)
+Validation: PASS (critical gate re-verified 779/0/17 on this host,
+  2026-08-20; residual skips are artifact-dependent, not coverage
+  regressions)
 
 ================================================
