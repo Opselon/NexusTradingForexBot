@@ -126,7 +126,12 @@ def train(
     ] = 0.35,
 ) -> None:
     """Executes the complete End-to-End Training Pipeline."""
-    configure_logging(log_level="INFO", json_format=False, log_to_file=True)
+    configure_logging(
+        log_level="INFO",
+        json_format=False,
+        log_to_file=True,
+        log_file_path=Path("logs"),
+    )
 
     logger.info(
         "Starting End-to-End ScalpNet Pipeline",

@@ -749,7 +749,12 @@ class LiveEngine:
         """
         Synchronous entrypoint.
         """
-        configure_logging(log_level="INFO", json_format=False, log_to_file=True)
+        configure_logging(
+            log_level="INFO",
+            json_format=False,
+            log_to_file=True,
+            log_file_path=Path("logs"),
+        )
         logger.info(
             "Initializing Live Engine",
             symbol=self.config.execution.symbol,
