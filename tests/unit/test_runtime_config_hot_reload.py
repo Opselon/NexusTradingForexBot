@@ -224,6 +224,37 @@ class TestRestartPersistence:
         assert store2.get_snapshot().max_spread_points == 20
         assert store2.get_version() > store1.get_version()
 
+    def test_unknown_settings_owned_keys_do_not_break_rehydrate(self, tmp_path: Path) -> None:
+        """BUG-130: settings-owned keys (factory.llm_*, database.*) must not
+        reject the whole rehydrate batch at boot — the boot warning
+        'rehydrate rejected: unknown configuration key' must never appear."""
+        import logging
+
+        from nexus_scalp.settings import SettingsDatabase, SettingsService
+
+        db_path = tmp_path / "app_settings_unknown.db"
+        svc = SettingsService(db=SettingsDatabase(db_path))
+        # Simulate sibling subsystems persisting their OWN settings through
+        # the REAL service APIs (factory LLM + PostgreSQL database provider):
+        svc.set_factory_llm_config(
+            base_url="https://llm.example/v1", model="claude-opus-5", temperature=0.7
+        )
+        svc.set_database_provider("postgresql")
+        svc.set_postgres_config({"host": "localhost", "port": 5432, "domain": "audit"})
+
+        from nexus_scalp.configuration import PersistentConfigStore
+
+        persistent = PersistentConfigStore(svc)
+        # get_all must NOT surface settings-owned keys as runtime updates
+        all_vals = persistent.get_all()
+        assert "factory.llm_base_url" not in all_vals
+        assert "database.provider" not in all_vals
+
+        # Full boot rehydrate must succeed against the honest settings DB
+        store = RuntimeConfigStore(persistent=persistent, bootstrap=_empty_app_config())
+        assert store.get_snapshot().risk_per_trade_pct == 1.0  # bootstrap default kept
+        assert store.get_version() >= 1
+
 
 # ---------------------------------------------------------------------------
 # §64/§66 — config domains + atomicity + versioning

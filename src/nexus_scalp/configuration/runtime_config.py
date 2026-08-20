@@ -498,11 +498,20 @@ class PersistentConfigStore:
 
     # ---- values -------------------------------------------------------
     def get_all(self) -> dict[str, Any]:
-        """All persisted, typed, non-secret values keyed `section.field`."""
+        """All persisted, typed, non-secret values keyed `section.field`.
+
+        Keys the runtime snapshot does not model (settings-service-owned
+        domains such as ``factory.llm_*`` / ``database.*``) are EXCLUDED:
+        they are not runtime-config and rehydrating them as updates would
+        reject the whole batch (BUG-130: 'rehydrate rejected (keeping
+        bootstrap): unknown configuration key' warning at every boot).
+        """
         out: dict[str, Any] = {}
         for key, sv in self._db.all().items():
             if key.startswith("telegram.") and key != "telegram.enabled":
                 continue  # secrets via SecureSecretStore only
+            if not _is_known_flat_key(key):
+                continue  # settings-owned key, not a runtime-config field
             out[key] = sv.value
         return out
 

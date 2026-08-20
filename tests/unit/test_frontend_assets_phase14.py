@@ -144,7 +144,11 @@ class TestLocalAssetsServed:
         for ref in re.findall(r'<script src="([^"]+)"', html):
             if ref.startswith(("http", "//")):
                 continue
-            assert (WEB_DIR / ref).exists(), f"script src references missing file: {ref}"
+            # Strip cache-bust query strings (e.g. app.js?v=20260820b) — the
+            # version suffix is a browser cache-bust, the FILE itself is the
+            # part that must exist (BUG-130 test fix for 474f7f2 cache-bust).
+            file_ref = ref.split("?", 1)[0]
+            assert (WEB_DIR / file_ref).exists(), f"script src references missing file: {ref}"
 
     def test_color_css_url_assets_exist(self) -> None:
         """FontAwesome CSS url() references resolve to real local files."""
