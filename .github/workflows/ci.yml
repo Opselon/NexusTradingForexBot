@@ -112,6 +112,9 @@ jobs:
           rc=$?
           { echo "MYPY_RC=$rc"; } >> "$GITHUB_ENV"
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" mypy "$rc" "type errors found (see mypy/)" || true
+          if [ "$rc" -ne 0 ]; then
+            grep -E 'error:' "$CI_RESULTS_DIR/mypy/mypy.txt" | head -10 | sed 's/^/::error::/' || true
+          fi
           exit 0
 
       # -------- Pytest + coverage (own directory; junit.xml + log + cobertura) --------
