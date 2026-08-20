@@ -364,6 +364,74 @@ def make_hygiene_app() -> typer.Typer:
         res = w.run_cycle(targets)
         _hygiene_emit(res, json_mode, "DATABASE HYGIENE RUN")
 
+    @app.command("health")
+    def hygiene_health(
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """Database Health Panel (TASK-22): runtime scheduler status + quarantine
+        + last cycle telemetry. Read-only.
+        """
+        from nexus_scalp.hygiene.hygiene_runtime import (
+            RuntimeCleanupScheduler,
+            RuntimeHygieneSettings,
+        )
+
+        s = RuntimeCleanupScheduler(repo_root=_repo_root())
+        payload: dict[str, Any] = {"scheduler": s.status()}
+        run_rows = s.state_store.list_runs(limit=5)
+        payload["recent_runs"] = run_rows
+        payload["quarantine"] = s.quarantine.stats()
+        _hygiene_emit(payload, json_mode, "DATABASE HEALTH PANEL (TASK-22)")
+
+    @app.command("cleanup")
+    def hygiene_cleanup(
+        dry_run: bool = typer.Option(True, "--dry-run", help="No changes applied."),
+        deep: bool = typer.Option(False, "--deep", help="Deep maintenance cycle."),
+        apply: bool = typer.Option(False, "--apply", help="Apply SAFE_CLEAN deletes."),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """One runtime cleanup cycle (TASK-22). Safe defaults: dry-run only."""
+        from nexus_scalp.hygiene.hygiene_runtime import (
+            RuntimeCleanupScheduler,
+            RuntimeHygieneSettings,
+        )
+
+        settings = RuntimeHygieneSettings(
+            dry_run=dry_run or not apply,
+            apply_deletes=apply and not dry_run,
+        )
+        s = RuntimeCleanupScheduler(repo_root=_repo_root(), settings=settings)
+        res = s.run_cycle(deep=deep)
+        _hygiene_emit(
+            {"cycle": res["cycle"], "telemetry": res["telemetry"], "result": res["result"]},
+            json_mode,
+            "DATABASE CLEANUP CYCLE (TASK-22)",
+        )
+
+    @app.command("quarantine")
+    def hygiene_quarantine(
+        status: str = typer.Option(
+            "", "--status", help="QUARANTINED|RESTORED|RESOLVED_DELETED|EXTERMINATED (default: all)"
+        ),
+        limit: int = typer.Option(50, "--limit", help="Rows to show."),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """List quarantined records (TASK-22 spec §9)."""
+        from nexus_scalp.hygiene.quarantine import QuarantineStore
+
+        q = QuarantineStore(_repo_root())
+        items = q.list(status=status or None, limit=limit)
+        if json_mode:
+            print(json.dumps(items, ensure_ascii=False, indent=2, default=str))
+            return
+        print("DATA QUARANTINE (TASK-22)")
+        for it in items:
+            print(
+                f"  {it.get('quarantine_id', '')} {it.get('database', '')}.{it.get('table', '')} "
+                f"row_id={it.get('row_id', '')} status={it.get('status', '')} "
+                f"reason={it.get('reason', '')[:60]}"
+            )
+
     @app.command("pause")
     def hygiene_pause(json_mode: bool = typer.Option(False, "--json")) -> None:
         w = _hygiene_worker("AUDIT_ONLY", False)
