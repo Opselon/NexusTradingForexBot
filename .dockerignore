@@ -1,0 +1,59 @@
+# Build context exclusions — keep the image small and the cache warm.
+# NOTE: model artifacts under artifacts/models are deliberately INCLUDED
+# (they are not ignored below) so developer models can be baked/mounted.
+
+# VCS
+.git
+.gitignore
+.gitattributes
+.github
+
+# Python build/cache
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+.venv
+venv
+
+# Node / frontend build
+node_modules
+Web/node_modules
+
+# Local secrets — never ship
+.env
+.env.*
+
+# Runtime data (try to ignore everything except tracked reference data)
+artifacts/audit.db*
+artifacts/news.db*
+artifacts/candle_intel.db*
+artifacts/logs
+artifacts/forensics
+artifacts/benchmarks
+artifacts/validation
+artifacts/model_generation/datasets
+data/
+logs/
+scratch/
+archive/
+release/
+ci-results/
+installer/
+_dummy_release/
+_cleanup_hold_*
+
+# IDEs / OS
+.vscode
+.idea
+.vs
+.DS_Store
+Thumbs.db
+
+# Keep: configs/ (base.yaml, live.yaml.example), docker/, Web/, src/,
+# tests/ (for CI-only builds), requirements.txt, pyproject.toml,
+# artifacts/models/** (model artifacts stay mountable/bakeable)

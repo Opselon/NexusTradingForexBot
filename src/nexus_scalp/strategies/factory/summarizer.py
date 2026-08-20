@@ -92,7 +92,7 @@ def build_summary(
     diversity = population_diversity(registry_entries)
 
     structurally_valid = sum(
-        1 for c in candidates if (c.get("structural") or {}).get("passed")
+        1 for c in candidates if _structural_passed(c)
     )
 
     return GenerationSummary(
@@ -126,6 +126,29 @@ def build_summary(
 
 def score_verdict(entry: dict[str, Any]) -> str:
     return str((entry.get("score") or {}).get("verdict", "UNKNOWN"))
+
+
+def _structural_passed(candidate: dict[str, Any]) -> bool:
+    """True when a factory_candidates row's structural verdict passed.
+
+    The store returns the `structural` column as raw JSON text; decode
+    defensively ('{}' / '' / 'null' => not passed).
+    """
+    import json as _json
+
+    raw = candidate.get("structural")
+    if not raw:
+        return False
+    if isinstance(raw, dict):
+        return bool(raw.get("passed"))
+    text = str(raw).strip()
+    if text == "" or text.lower() in ("null", "none", "{}"):
+        return False
+    try:
+        parsed = _json.loads(text)
+        return bool(parsed.get("passed")) if isinstance(parsed, dict) else False
+    except Exception:
+        return False
 
 
 def memory_summary(

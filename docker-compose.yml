@@ -1,47 +1,94 @@
-version: '3.8'
-
 services:
-  scalp-core:
+  # ============================================================
+  # Nexus Scalp Engine — Docker Compose (canonical dev/ops stack)
+  # ============================================================
+  # Default `docker compose up -d` starts the minimum viable healthy
+  # project: the Nexus core (engine + Web UI + API) in container-safe
+  # PAPER mode with an internal Redis for telemetry/cache and persistent
+  # volumes for the SQLite databases and model/research artifacts.
+  #
+  # There is NO PostgreSQL dependency: the project's authoritative
+  # persistence is per-domain SQLite (artifacts/audit.db, news.db,
+  # candle_intel.db) plus the settings DB. The old postgres service was a
+  # dead end (nothing in src/ ever connected to it) and has been removed.
+  #
+  # Runtime configuration remains authoritative (settings DB + YAML). The
+  # environment variables declared here are BOOTSTRAP/DEVELOPMENT knobs
+  # only — see .env.example and docs/docker.md for the full contract.
+  # ============================================================
+
+  # ------------------------------------------------------------
+  # core — the engine + Web UI + REST API (single container)
+  # ------------------------------------------------------------
+  core:
     build:
       context: .
       dockerfile: Dockerfile
+    image: nexus-scalp-engine:local
     container_name: nexus-scalp-core
     restart: unless-stopped
     user: "10001:10001"
     environment:
-      - NSE_EXECUTION__MODE=PAPER
-      - NSE_EXECUTION__SYMBOL=EURUSD
-      - NSE_RISK__MAX_ACCOUNT_DRAWDOWN_PCT=2.0
-      - NSE_RISK__RISK_PER_TRADE_PCT=0.5
-      - NSE_AUDIT_DB_URL=postgresql://nse_user:nse_password@postgres:5432/nse_audit
+      NSE_EXECUTION__MODE: ${NSE_EXECUTION__MODE:-PAPER}
+      NSE_EXECUTION__SYMBOL: ${NSE_EXECUTION__SYMBOL:-XAUUSD}
+      NSE_MODEL__MODEL_ARTIFACT_PATH: ${NSE_MODEL__MODEL_ARTIFACT_PATH:-artifacts/models/scalp/XAUUSD/v1.0.0/model.pt}
+      NSE_RISK__MAX_ACCOUNT_DRAWDOWN_PCT: ${NSE_RISK__MAX_ACCOUNT_DRAWDOWN_PCT:-2.0}
+      NSE_RISK__RISK_PER_TRADE_PCT: ${NSE_RISK__RISK_PER_TRADE_PCT:-0.5}
+      NSE_NEWS__ENABLED: ${NSE_NEWS__ENABLED:-true}
+      NSE_TELEGRAM__ENABLED: ${NSE_TELEGRAM__ENABLED:-false}
+      NSE_LOG_LEVEL: ${NSE_LOG_LEVEL:-INFO}
+      TZ: ${TZ:-UTC}
+      # Containerized engine always binds the API to all interfaces.
+      NSE_WEB_HOST: 0.0.0.0
+      NSE_WEB_PORT: ${NSE_WEB_PORT:-9090}
     volumes:
-      - scalp-data:/app/data
-      - scalp-artifacts:/app/artifacts
+      - nexus-artifacts:/app/artifacts
+      - nexus-data:/app/data
     ports:
-      - "9090:9090"
+      - "${NSE_WEB_PORT:-9090}:9090"
     depends_on:
-      postgres:
+      redis:
         condition: service_healthy
-
-  postgres:
-    image: postgres:16-alpine
-    container_name: nexus-postgres-audit
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: nse_audit
-      POSTGRES_USER: nse_user
-      POSTGRES_PASSWORD: nse_password
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nse_user -d nse_audit"]
-      interval: 5s
+      test: ["CMD", "/app/docker/healthcheck.sh"]
+      interval: 15s
       timeout: 5s
-      retries: 5
+      start_period: 10s
+      retries: 6
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ------------------------------------------------------------
+  # redis — internal telemetry/cache (never exposed to the host)
+  # ------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: nexus-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+networks:
+  default:
+    name: nexus-scalp-net
+    driver: bridge
 
 volumes:
-  scalp-data:
-  scalp-artifacts:
-  postgres-data:
+  nexus-artifacts:
+  nexus-data:
+  redis-data:

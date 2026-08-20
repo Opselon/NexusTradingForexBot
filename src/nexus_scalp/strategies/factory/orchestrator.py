@@ -129,7 +129,7 @@ class StrategyFactory:
         """Starts the autonomous loop control state (persisted)."""
         if self.loop_state in (LoopState.RUNNING.value, LoopState.STARTING.value):
             return False
-        self.loop_state = LoopState.STARTING.value
+        self.loop_state = LoopState.RUNNING.value
         self._kill_requested = False
         set_loop_state(
             self.audit_repo,
@@ -661,6 +661,7 @@ class StrategyFactory:
 
         dsl = candidate.dsl.model_dump()
         strategy_id = candidate.candidate_id
+        symbols = dsl.get("market", {}).get("symbols") or self.symbols
         return StrategyCandidate(
             strategy_id=strategy_id,
             strategy_version="",
@@ -669,6 +670,7 @@ class StrategyFactory:
             context_definition={
                 "dsl": dsl,
                 "family": candidate.family.value,
+                "symbol": symbols[0] if symbols else "XAUUSD",
                 "fingerprint": f"{candidate.family.value}|{dsl.get('market', {}).get('timeframes', ['M1'])[0]}",
             },
             entry_logic=dsl.get("entry", {}),
@@ -752,6 +754,8 @@ class StrategyFactory:
 
     def complete_generation(self, generation_id: str) -> dict[str, Any]:
         """Finalizes a generation: ranking + elite + summary + memory."""
+        import json as _json
+
         gen = get_generation(self.audit_repo, generation_id) or {}
         candidates = list_candidates(self.audit_repo, generation_id=generation_id, limit=2000)
         registry_entries = self._registry_rows_for_generation(candidates)
@@ -767,13 +771,19 @@ class StrategyFactory:
             : self.config.elite_size
         ]
 
+        raw_config = gen.get("config") or {}
+        if isinstance(raw_config, str):
+            try:
+                raw_config = _json.loads(raw_config) if raw_config.strip() else {}
+            except Exception:
+                raw_config = {}
         upsert_generation(
             self.audit_repo,
             {
                 **gen,
                 "status": "COMPLETED",
                 "completed_at": _now().isoformat(),
-                "config": {**(gen.get("config") or {}), "summary": summary.model_dump()},
+                "config": {**raw_config, "summary": summary.model_dump()},
             },
         )
         self._last_run_summary = summary.model_dump()
@@ -793,13 +803,15 @@ class StrategyFactory:
         self, candidates: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         """Registry rows for the strategies evaluated in this generation."""
-        from nexus_scalp.research.store import list_registry, get_registry_entry
+        import json as _json
+
+        from nexus_scalp.research.store import get_registry_entry
 
         rows: list[dict[str, Any]] = []
         for c in candidates:
             entry = get_registry_entry(self.audit_repo, c.get("candidate_id", ""))
             if entry is not None:
-                rows.append(entry)
+                rows.append(_decode_registry_row(entry))
         return rows
 
     def build_memory(self) -> dict[str, Any]:
@@ -896,6 +908,35 @@ class StrategyFactory:
         except Exception as e:
             logger.warning("[STRATEGY_FACTORY] row rehydrate failed", error=str(e))
             return None
+
+
+def _decode_registry_row(entry: dict[str, Any]) -> dict[str, Any]:
+    """Decodes JSON-text columns of a raw registry row into nested dicts.
+
+    store.get_registry_entry returns raw TEXT columns ('backtest', 'score',
+    ...) for UI safety; the factory summarizer/ranking need the decoded
+    objects. Unknown/empty -> {} (canonical empty, BUG-075 discipline).
+    """
+    import json as _json
+
+    out = dict(entry)
+    for col in ("backtest", "walkforward", "oos", "robustness", "score", "context_definition", "parent_strategy_ids"):
+        raw = out.get(col)
+        if raw is None:
+            out[col] = {}
+            continue
+        if isinstance(raw, dict):
+            continue
+        text = str(raw).strip()
+        if text == "" or text.lower() in ("null", "none"):
+            out[col] = {} if col != "parent_strategy_ids" else []
+            continue
+        try:
+            parsed = _json.loads(text)
+            out[col] = parsed if isinstance(parsed, (dict, list)) else {}
+        except Exception:
+            out[col] = {}
+    return out
 
 
 def _ensure_family_coverage(

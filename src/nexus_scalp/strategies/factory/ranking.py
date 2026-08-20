@@ -241,11 +241,14 @@ def family_diversity(entries: list[dict[str, Any]]) -> float:
         fam = str(e.get("family", "HYBRID")) or "HYBRID"
         counts[fam] = counts.get(fam, 0) + 1
     n = len(entries)
+    distinct = len(counts)
+    if distinct <= 1:
+        return 0.0
     entropy = 0.0
     for c in counts.values():
         p = c / n
         entropy -= p * math.log(p) if p > 0 else 0.0
-    return _clamp(entropy / math.log(max(1, len(counts))))
+    return _clamp(entropy / math.log(distinct))
 
 
 def feature_diversity(entries: list[dict[str, Any]]) -> float:
