@@ -133,33 +133,37 @@ def iter_table_batches(
     ``WHERE rowid > start_after ORDER BY rowid ASC LIMIT batch_size``.
     """
     qmarks = ",".join("?" for _ in columns)
-    sql = (
-        f"SELECT {qmarks} FROM {table} "
-        f"WHERE rowid > ? ORDER BY rowid ASC LIMIT ?"
-    )
-    args: list[Any] = []
     conn = src_driver.connect(timeout=30.0)
     try:
-        # First: discover if the table has rowid at all (WITHOUT ROWID tables
-        # need the identity column itself as the cursor).
-        cur = conn.execute(f"SELECT rowid FROM {table} LIMIT 1")
-        has_rowid = cur.fetchone() is not None
-        cur.close()
-    except Exception:
-        has_rowid = False
-    if not has_rowid:
-        # WITHOUT ROWID table: cursor on the primary key column(s).
-        cols = src_driver.table_columns(table)
-        pks = [c["name"] for c in cols if c.get("pk")]
-        if not pks:
-            raise MigrationError(f"table {table}: no rowid and no primary key — cannot migrate")
-        order_col = pks[0]
+        # Discover whether the table has a rowid (WITHOUT ROWID tables need
+        # the identity column itself as the cursor).
+        has_rowid = True
+        try:
+            cur = conn.execute(f"SELECT rowid FROM {table} LIMIT 1")
+            has_rowid = cur.fetchone() is not None
+            cur.close()
+        except Exception:
+            has_rowid = False
+        if has_rowid:
+            order_col = "rowid"
+            where = "rowid > ?"
+            order_by = "rowid ASC"
+        else:
+            cols = src_driver.table_columns(table)
+            pks = [c["name"] for c in cols if c.get("pk")]
+            if not pks:
+                raise MigrationError(
+                    f"table {table}: no rowid and no primary key — cannot migrate"
+                )
+            order_col = pks[0]
+            where = f"{order_col} > ?"
+            order_by = f"{order_col} ASC"
+        col_list = ", ".join(columns)
         sql = (
-            f"SELECT {qmarks} FROM {table} WHERE {order_col} > ? "
-            f"ORDER BY {order_col} ASC LIMIT ?"
+            f"SELECT {col_list} FROM {table} "
+            f"WHERE {where} ORDER BY {order_by} LIMIT ?"
         )
-    try:
-        cursor = conn.execute(sql, args + [start_after, batch_size])
+        cursor = conn.execute(sql, [start_after, batch_size])
         while True:
             rows = cursor.fetchmany(batch_size)
             if not rows:

@@ -928,6 +928,7 @@ class OrderLifecycleManager:
                     reason=f"dispatch_order {action.value} | exec={getattr(decision, 'execution_id', '') or ''}",
                     latency=0.012,
                     execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
+                    execution_id=getattr(decision, "execution_id", None),
                 )
             return ticket > 0
 
@@ -970,6 +971,7 @@ class OrderLifecycleManager:
                     reason=f"dispatch_order pending {action.value} | exec={getattr(decision, 'execution_id', '') or ''}",
                     latency=0.011,
                     execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
+                    execution_id=getattr(decision, "execution_id", None),
                 )
             else:
                 logger.error(

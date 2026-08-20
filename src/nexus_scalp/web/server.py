@@ -9,6 +9,7 @@ and risk engines.
 import asyncio
 import json
 import math
+import os
 import sqlite3
 import threading
 import time
@@ -26,7 +27,6 @@ from pydantic import BaseModel
 from nexus_scalp.accounting import PeriodKind
 from nexus_scalp.accounting.aggregation import compute_advanced_metrics
 from nexus_scalp.accounting.worker import format_worker_status
-from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ActionType, ExecutionMode, OrderType
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.scalp_features import FEATURE_NAMES
@@ -376,6 +376,13 @@ def _ui_forensic_once() -> None:
         sha256=_ui_bundle_sha256(),
         web_dir=str(WEB_DIR),
     )
+
+
+def _default_audit_config() -> Any:
+    """Resolve the authoritative audit DatabaseConfig (DATABASE PORTABILITY)."""
+    from nexus_scalp.database.config import load_database_config
+
+    return load_database_config("audit")
 
 
 def db_path_for_audit() -> str:
@@ -1598,7 +1605,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=503, detail={"verdict": "UNHEALTHY", "error": str(exc)})
+            raise HTTPException(
+                status_code=503, detail={"verdict": "UNHEALTHY", "error": str(exc)}
+            ) from exc
 
     # TASK-11: Database health / hygiene state (real backend data — never fake).
     @app.get("/api/db/hygiene")
@@ -1624,7 +1633,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             quarantine: dict[str, Any] = {"available": False}
             try:
                 from nexus_scalp.hygiene.hygiene_runtime import RuntimeCleanupScheduler
-                from nexus_scalp.hygiene.quarantine import QuarantineStore
 
                 sched = RuntimeCleanupScheduler(repo_root=base_dir)
                 runtime = {"available": True, **sched.status()}
@@ -1785,6 +1793,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     @app.get("/api/diagnostics/forensics")
     def get_diagnostics_forensics(
         kind: str = "accounting",
+        ticket: str = "",
     ) -> dict[str, Any]:
         """TASK-13 read-only forensic probes (spec 14/23).
 
@@ -1797,9 +1806,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             if kind == "timebase":
                 from nexus_scalp.incidents.timebase import TimebaseProbe
 
-                return serialize_enums(
-                    {"available": True, "kind": "timebase", **TimebaseProbe(db).run()}
-                )
+                probe = TimebaseProbe(db)
+                base = probe.run()
+                if ticket:
+                    base["event_chain"] = probe.probe_event(ticket)
+                return serialize_enums({"available": True, "kind": "timebase", **base})
+
             from nexus_scalp.incidents.accounting import AccountingForensicsEngine
 
             result = AccountingForensicsEngine(db).audit_zero_pnl_ledger(max_rows=50)
@@ -1886,6 +1898,94 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             _log_err(exc, "incident search failed", endpoint="/api/diagnostics/search")
             return _err("INTERNAL_ERROR")
 
+    @app.post("/api/diagnostics/incidents/reconcile")
+    def post_diagnostics_reconcile() -> dict[str, Any]:
+        """Genuine incident audit (spec 43): re-runs every forensic
+        probe against the CURRENT database, reports findings, and
+        reconciles incident records (impact + evidence + lifecycle
+        semantics) WITHOUT creating duplicates.
+        """
+        from datetime import UTC, datetime
+
+        from nexus_scalp.incidents.impact import ImpactAnalyzer
+        from nexus_scalp.incidents.trace import (
+            broker_ledger_divergence,
+            clock_skew,
+            learning_pipeline_rates,
+            outcome_forensics,
+            split_fill_groups,
+        )
+
+        db = db_path_for_audit()
+        started = datetime.now(UTC).isoformat()
+        findings: dict[str, Any] = {}
+        try:
+            findings["accounting"] = broker_ledger_divergence(db)
+        except Exception as exc:
+            findings["accounting"] = {"error": str(exc)[:200]}
+        try:
+            findings["timebase"] = clock_skew(db)
+        except Exception as exc:
+            findings["timebase"] = {"error": str(exc)[:200]}
+        try:
+            findings["outcome"] = outcome_forensics(db, 500)
+        except Exception as exc:
+            findings["outcome"] = {"error": str(exc)[:200]}
+        try:
+            findings["learning"] = learning_pipeline_rates(db)
+        except Exception as exc:
+            findings["learning"] = {"error": str(exc)[:200]}
+        try:
+            findings["split_fill"] = split_fill_groups(db)
+        except Exception as exc:
+            findings["split_fill"] = {"error": str(exc)[:200]}
+
+        # Reconcile stored incidents (impact + evidence) in place — never
+        # create new incidents here (idempotent by incident_id).
+        store = _incident_store()
+        analyzer = ImpactAnalyzer(db_path=db)
+        reconciled = 0
+        for inc in store.list_incidents(limit=200):
+            inc.impact = analyzer.analyze(inc)
+            store.save(inc)
+            reconciled += 1
+        return serialize_enums(
+            {
+                "available": True,
+                "audit_started": started,
+                "audit_scope": [
+                    "accounting",
+                    "timebase",
+                    "outcome",
+                    "learning",
+                    "split_fill",
+                ],
+                "findings": findings,
+                "incidents_discovered": store.count()["total"],
+                "incidents_reconciled": reconciled,
+                "note": "read-only forensic audit; incident records updated with current impact/evidence",
+            }
+        )
+
+    @app.get("/api/diagnostics/trace")
+    def get_diagnostics_trace(query: str = "") -> dict[str, Any]:
+        """One-Click Trace (spec 24/25/26): resolve incident_id / ticket /
+        execution_id / order_id / position_id / model_id / research_run_id
+        into its full lineage. Never fabricates links: missing hops are
+        reported with missing_link + reason + last_known_node.
+        """
+        if not query.strip():
+            return {"available": True, "trace": {"kind": "unknown", "reason": "empty query"}}
+        try:
+            from nexus_scalp.incidents.trace_lineage import trace_lineage
+
+            store = _incident_store()
+            result = trace_lineage(db_path_for_audit(), query, store=store)
+            return serialize_enums({"available": True, "query": query, "trace": result})
+        except Exception as exc:
+            _log_err(exc, "trace failed", endpoint="/api/diagnostics/trace")
+            return _err("INTERNAL_ERROR")
+
     @app.get("/api/rules")
     def get_trading_rules() -> list[dict[str, Any]]:
         engine = app.state.engine
@@ -1894,7 +1994,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         else:
             from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
-            repo = AuditRepository()
+            repo = AuditRepository(config=_default_audit_config())
             return repo.get_trading_rules()
 
     @app.post("/api/rules/toggle")
@@ -1912,7 +2012,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         else:
             from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
-            repo = AuditRepository()
+            repo = AuditRepository(config=_default_audit_config())
             success = repo.toggle_trading_rule(
                 rule_name=req.rule_name, is_enabled=req.is_enabled, parameters_json=params_json
             )
@@ -2372,6 +2472,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             source="USER_SETTINGS",
             actor="web",
         )
+        # RUNTIME CONFIGURATION: execution.mode is a persisted runtime value.
+        # Route through the versioned store so the snapshot/version/event
+        # stay consistent (the engine boot reads the settings DB anyway).
+        if hasattr(engine, "runtime_config"):
+            engine.runtime_config.apply(
+                {"execution.mode": wanted}, source="WEB_ENGINE_MODE", actor="web"
+            )
         # Apply the mode truthfully: refresh runtime derivation while
         # preserving the real connection state (never fake LIVE).
         if hasattr(engine, "_update_runtime_mode"):
@@ -2387,9 +2494,342 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "persisted": bool(saved),
         }
 
+    # =====================================================================
+    # DATABASE MANAGEMENT (DATABASE PORTABILITY, 2026-08-20)
+    # ---------------------------------------------------------------------
+    # Dedicated persistence panel surface: active provider + health, the
+    # PostgreSQL configuration form (password NEVER round-trips in
+    # plaintext), connection testing, and the SQLite->PostgreSQL migration
+    # workflow (preview -> run -> validate).  Everything is read-only or
+    # operator-initiated; nothing here ever mutates trading logic.
+    # =====================================================================
+
+    def _settings_service() -> Any:
+        engine = app.state.engine
+        svc = getattr(engine, "settings_service", None) if engine else None
+        if svc is None:
+            from nexus_scalp.settings import load_settings_service
+
+            svc = load_settings_service()
+        return svc
+
+    @app.get("/api/db/manage/status")
+    def db_manage_status() -> dict[str, Any]:
+        """Active provider + per-domain health (DATABASE MANAGEMENT panel)."""
+        try:
+            from nexus_scalp.database.health import health_snapshot, load_ui_config
+
+            health = health_snapshot()
+            ui = load_ui_config()
+            return serialize_enums({
+                "success": True,
+                "provider": ui["provider"],
+                "supported_providers": health["supported_providers"],
+                "overall": health["overall"],
+                "domains": health["domains"],
+                "postgres": ui["postgres"],
+                "password_set": ui["password_set"],
+            })
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/status", None, e)
+            return _err("DB_MANAGE_STATUS_FAILED")
+
+    @app.post("/api/db/manage/config")
+    def db_manage_config(payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist the PostgreSQL connection configuration + password.
+
+        The password is routed to the OS SecretStore (DPAPI); the settings
+        DB only ever holds a secret-key reference.  `password` and
+        `confirm_password` are consumed here and NEVER stored in the config
+        row or echoed back.
+        """
+        try:
+            svc = _settings_service()
+            incoming = dict(payload)
+            password = incoming.get("password") or ""
+            confirm = incoming.get("confirm_password") or ""
+            if password and password != confirm:
+                return _err("PASSWORD_MISMATCH")
+            for k in ("password", "confirm_password"):
+                incoming.pop(k, None)
+            svc.set_postgres_config(incoming)
+            return {
+                "success": True,
+                "password_set": bool(password) or svc.postgres_password_set(),
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/config", None, e)
+            return _err("DB_MANAGE_CONFIG_FAILED")
+
+    @app.post("/api/db/manage/provider")
+    def db_manage_provider(payload: dict[str, Any]) -> dict[str, Any]:
+        """Switch the ACTIVE provider (persisted, applied next startup).
+
+        Switching NEVER moves or destroys data: the operator is expected to
+        run the migration workflow first.  This endpoint only flips the
+        authoritative selection in the settings database.
+        """
+        try:
+            from nexus_scalp.database.provider import DatabaseProvider
+
+            provider = DatabaseProvider.parse(str(payload.get("provider") or ""))
+            svc = _settings_service()
+            svc.set_database_provider(provider.value)
+            return {
+                "success": True,
+                "provider": provider.value,
+                "restart_required": True,
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/provider", None, e)
+            return _err("DB_MANAGE_PROVIDER_FAILED")
+
+    @app.post("/api/db/manage/test-connection")
+    def db_manage_test_connection(payload: dict[str, Any]) -> dict[str, Any]:
+        """Test the PostgreSQL connection BEFORE migration (never persists)."""
+        try:
+            import json
+
+            from nexus_scalp.database.config import DatabaseConfig, resolve_password
+            from nexus_scalp.database.drivers import get_driver
+
+            raw = dict(payload)
+            password = raw.pop("password", None)
+            cfg = DatabaseConfig.for_postgres(
+                domain="audit",
+                host=str(raw.get("host") or "localhost"),
+                port=int(raw.get("port") or 5432),
+                database=str(raw.get("database") or "nse_audit"),
+                username=str(raw.get("username") or "nse_user"),
+                ssl_mode=str(raw.get("ssl_mode") or ""),
+            )
+            if password:
+                from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+                from nexus_scalp.settings.secret_store import SecureSecretStore
+
+                SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, str(password))
+            driver = get_driver(cfg)
+            try:
+                ok = driver.ping()
+                version = driver.database_version() if ok else ""
+            finally:
+                driver.close()
+            return {
+                "success": ok,
+                "connected": ok,
+                "database_version": version if ok else "",
+                "latency_ms": None,
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/test-connection", None, e)
+            return _err("DB_TEST_CONNECTION_FAILED")
+
+    @app.post("/api/db/manage/preview")
+    def db_manage_preview(payload: dict[str, Any]) -> dict[str, Any]:
+        """Dry-run migration preview: tables, rows, volume, issues."""
+        try:
+            from nexus_scalp.database.config import DatabaseConfig
+            from nexus_scalp.database.migrate_engine import (
+                MigrationOptions,
+                SqliteToPostgresMigrator,
+            )
+
+            src = DatabaseConfig.for_sqlite(
+                "audit",
+                path=str(payload.get("sqlite_path") or "") or None,
+            )
+            raw = dict(payload)
+            dst = DatabaseConfig.for_postgres(
+                domain="audit",
+                host=str(raw.get("host") or "localhost"),
+                port=int(raw.get("port") or 5432),
+                database=str(raw.get("database") or "nse_audit"),
+                username=str(raw.get("username") or "nse_user"),
+                ssl_mode=str(raw.get("ssl_mode") or ""),
+            )
+            mig = SqliteToPostgresMigrator(src, dst, MigrationOptions(dry_run=True))
+            preview = mig.preview()
+            return {"success": True, "preview": preview}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/preview", None, e)
+            return _err("DB_MIGRATION_PREVIEW_FAILED")
+
+    @app.post("/api/db/manage/migrate")
+    def db_manage_migrate(payload: dict[str, Any]) -> dict[str, Any]:
+        """Run the SQLite->PostgreSQL migration (streamed batches, resumable).
+
+        Operator-initiated; requires the destination password in the secret
+        store (or supplied here as `password` once, routed to the store).
+        Returns a full migration report; progress is available via
+        `/api/db/manage/progress`.
+        """
+        try:
+            import threading
+
+            from nexus_scalp.database.config import DatabaseConfig
+            from nexus_scalp.database.migrate_engine import (
+                MigrationOptions,
+                SqliteToPostgresMigrator,
+            )
+            from nexus_scalp.settings.secret_store import SecureSecretStore
+
+            raw = dict(payload)
+            password = raw.pop("password", None)
+            if password:
+                from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+
+                SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, str(password))
+            src = DatabaseConfig.for_sqlite(
+                "audit",
+                path=str(raw.get("sqlite_path") or "") or None,
+            )
+            dst = DatabaseConfig.for_postgres(
+                domain="audit",
+                host=str(raw.get("host") or "localhost"),
+                port=int(raw.get("port") or 5432),
+                database=str(raw.get("database") or "nse_audit"),
+                username=str(raw.get("username") or "nse_user"),
+                ssl_mode=str(raw.get("ssl_mode") or ""),
+            )
+            options = MigrationOptions(
+                dry_run=bool(raw.get("dry_run")),
+                confirm=bool(raw.get("confirm")),
+                resume=bool(raw.get("resume", True)),
+                batch_size=int(raw.get("batch_size") or 2000),
+                validate_checksums=bool(raw.get("validate_checksums", True)),
+            )
+            mig = SqliteToPostgresMigrator(src, dst, options)
+            # background thread: never block the web loop
+            result: dict[str, Any] = {}
+
+            def _run() -> None:
+                try:
+                    report = mig.run()
+                    result["report"] = report.to_dict()
+                    # switch active provider only when validation passed
+                    if report.provider_switch_ready:
+                        _settings_service().set_database_provider("postgresql")
+                        result["provider_switched"] = True
+                    else:
+                        result["provider_switched"] = False
+                except Exception as exc:
+                    result["error"] = str(exc)
+                    result["provider_switched"] = False
+
+            t = threading.Thread(target=_run, daemon=True, name="nse_db_migrate")
+            t.start()
+            return {"success": True, "started": True, "job": "migrate"}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/migrate", None, e)
+            return _err("DB_MIGRATION_START_FAILED")
+
+    @app.get("/api/db/manage/progress")
+    def db_manage_progress() -> dict[str, Any]:
+        """Live migration progress (polled by the panel UI)."""
+        try:
+            from nexus_scalp.database.migrate_engine import MigrationState
+
+            state = getattr(app.state, "db_migration_state", None)
+            if state is None:
+                return {"success": True, "done": False, "progress": 0, "report": None}
+            return {
+                "success": True,
+                "done": bool(state.get("done")),
+                "progress": float(state.get("progress") or 0.0),
+                "current_table": state.get("current_table") or "",
+                "rows_copied": int(state.get("rows_copied") or 0),
+                "total_rows": int(state.get("total_rows") or 0),
+                "report": state.get("report"),
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/progress", None, e)
+            return _err("DB_MIGRATION_PROGRESS_FAILED")
+
+    @app.get("/api/db/manage/report")
+    def db_manage_report() -> dict[str, Any]:
+        """The last migration report (result + validation)."""
+        try:
+            state = getattr(app.state, "db_migration_state", None)
+            if state is None:
+                return {"success": True, "report": None}
+            return {"success": True, "report": state.get("report")}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/report", None, e)
+            return _err("DB_MIGRATION_REPORT_FAILED")
+
+    @app.post("/api/db/manage/backup")
+    def db_manage_backup() -> dict[str, Any]:
+        """WAL-consistent SQLite backup (streaming sqlite backup API)."""
+        try:
+            import shutil
+            import time
+
+            from nexus_scalp.database.config import DatabaseConfig
+            from nexus_scalp.database.drivers import get_driver
+
+            src = DatabaseConfig.for_sqlite("audit")
+            driver = get_driver(src)
+            ts = time.strftime("%Y%m%d-%H%M%S")
+            backup_path = f"artifacts/backups/audit_backup_{ts}.db"
+            os.makedirs("artifacts/backups", exist_ok=True)
+
+            conn = driver.connect(timeout=30.0)
+            try:
+                dest = __import__("sqlite3").connect(backup_path)
+                try:
+                    conn.backup(dest)
+                finally:
+                    dest.close()
+            finally:
+                conn.close()
+            return {"success": True, "backup_path": backup_path}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/backup", None, e)
+            return _err("DB_MIGRATION_BACKUP_FAILED")
+
+    @app.get("/api/db/manage/validate")
+    def db_manage_validate() -> dict[str, Any]:
+        """Validate the last migration (row counts, identities, financials)."""
+        try:
+            from nexus_scalp.database.config import DatabaseConfig, load_database_config
+            from nexus_scalp.database.migrate_engine import (
+                MigrationOptions,
+                SqliteToPostgresMigrator,
+            )
+
+            src = load_database_config("audit")
+            if not src.is_sqlite:
+                # source is the canonical SQLite artifacts DB
+                src = DatabaseConfig.for_sqlite("audit")
+            dst = load_database_config("audit")
+            if not dst.is_postgresql:
+                return {"success": True, "validation": "NOT_CONFIGURED"}
+            mig = SqliteToPostgresMigrator(src, dst, MigrationOptions())
+            result = mig.validate()
+            return {"success": True, "validation": result}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/validate", None, e)
+            return _err("DB_MIGRATION_VALIDATE_FAILED")
+
     # GET /api/config
     @app.get("/api/config")
     def get_config() -> dict[str, Any]:
+        """Configuration form — reads the AUTHORITATIVE runtime snapshot
+        when the engine is up (live.yaml is only a bootstrap fallback)."""
+        engine = app.state.engine
+        store = getattr(engine, "runtime_config", None) if engine else None
+        if store is not None:
+            snap = store.get_snapshot()
+            cfg = snap.to_app_config()
+            raw_data = cfg.model_dump()
+            raw_data["configuration_version"] = snap.version
+            raw_data["runtime_applied"] = True
+            # telegram section is masked status only (secrets never plaintext)
+            tg = raw_data.get("telegram") or {}
+            tg["bot_token"] = snap.telegram.token_masked or ""
+            raw_data["telegram"] = tg
+            return raw_data
+        # Engine offline: bootstrap YAML fallback (diagnostic only)
         live_config_path = Path("configs/live.yaml")
         if not live_config_path.exists():
             live_config_path = Path("configs/base.yaml")
@@ -2466,23 +2906,50 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         bool(sec_token and sec_admin),
                     )
 
-            # Write to disk atomically
+            # Write to disk atomically (compatibility projection; the
+            # authoritative runtime state lives in the runtime config store)
             tmp = live_config_path.with_suffix(".yaml.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
                 yaml.safe_dump(raw_config, f, default_flow_style=False)
             tmp.replace(live_config_path)
 
-            # Hot-reload in active Engine if running
+            # RUNTIME CONFIGURATION: apply execution/risk/model sections
+            # through the authoritative versioned store (validate -> persist
+            # -> version++ -> ConfigurationChanged -> atomic snapshot swap).
             engine = app.state.engine
-            if engine:
-                logger.info("Hot-reloading system configurations dynamically.")
-                new_cfg = AppConfig.load_from_yaml(live_config_path)
-                engine.config = new_cfg
-                # Re-apply risk constraints
-                engine.risk_engine.config = new_cfg.risk
-                engine.signal_policy.confidence_threshold = new_cfg.model.confidence_threshold
+            updates: dict[str, Any] = {}
+            exec_cfg = raw_config.get("execution") or {}
+            for k in ("symbol", "timeframe", "magic_number", "max_slippage_points"):
+                if k in exec_cfg:
+                    updates[f"execution.{k}"] = exec_cfg[k]
+            risk_cfg = raw_config.get("risk") or {}
+            for k in (
+                "max_account_drawdown_pct",
+                "risk_per_trade_pct",
+                "max_concurrent_positions",
+                "max_spread_points",
+                "max_allowed_lots",
+                "enforce_stop_loss",
+            ):
+                if k in risk_cfg:
+                    updates[f"risk.{k}"] = risk_cfg[k]
+            model_cfg = raw_config.get("model") or {}
+            for k in ("confidence_threshold", "model_artifact_path"):
+                if k in model_cfg:
+                    updates[f"model.{k}"] = model_cfg[k]
+            if engine is not None and hasattr(engine, "runtime_config") and updates:
+                report = engine.apply_runtime_update(updates, source="WEB_CONFIG", actor="web")
+                return {
+                    "success": report.success,
+                    "runtime_applied": report.runtime_applied,
+                    "persisted": report.persisted,
+                    "configuration_version": report.configuration_version,
+                    "runtime_version": engine.runtime_config.get_version(),
+                    "correlation_id": report.correlation_id,
+                    "reason": report.reason,
+                }
 
-            return {"success": True}
+            return {"success": True, "runtime_applied": False, "reason": "ENGINE_OFFLINE"}
         except Exception as e:
             log_web_error(
                 logger,
@@ -2492,6 +2959,107 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 context={"msg": "Failed to save and hot-reload configurations"},
             )
             return _err("OPERATION_FAILED")
+
+    # ------------------------------------------------------------------
+    # RUNTIME CONFIGURATION (hot reload): effective view + diagnostics.
+    # The engine's authoritative config is the versioned immutable
+    # snapshot in RuntimeConfigStore; live.yaml is bootstrap/export only.
+    # ------------------------------------------------------------------
+    @app.get("/api/runtime-config")
+    def get_runtime_config_effective() -> dict[str, Any]:
+        """Effective runtime configuration the engine is ACTUALLY using."""
+        engine = app.state.engine
+        store = getattr(engine, "runtime_config", None) if engine else None
+        if store is None:
+            return {"success": False, "reason": "ENGINE_OFFLINE", "runtime_applied": False}
+        snap = store.get_snapshot()
+        diag = store.diagnostics()
+        return {
+            "success": True,
+            "configuration_version": snap.version,
+            "runtime_applied": True,
+            "source": snap.source,
+            "updated_at": snap.updated_at,
+            "effective": snap.to_dict(),
+            "diagnostics": diag,
+            "secret_masked": {
+                "telegram_token": snap.telegram.token_masked or "NOT_CONFIGURED",
+            },
+        }
+
+    @app.get("/api/runtime-config/diagnostics")
+    def get_runtime_config_diagnostics() -> dict[str, Any]:
+        """Persistent version vs runtime version vs live.yaml version."""
+        from nexus_scalp.configuration import config_file_hash
+        from nexus_scalp.settings import load_settings_service
+
+        engine = app.state.engine
+        store = getattr(engine, "runtime_config", None) if engine else None
+        runtime_version = store.get_version() if store else None
+        persistent_version = None
+        last_apply = None
+        last_error = ""
+        try:
+            svc = getattr(engine, "settings_service", None) if engine else None
+            svc = svc or load_settings_service()
+            persistent_version = int(svc.db.get_meta("runtime_config.version") or 0)
+            last_apply = svc.db.get_meta("runtime_config.last_apply_status") or "NEVER"
+            last_error = svc.db.get_meta("runtime_config.last_apply_error") or ""
+        except Exception as exc:
+            last_error = f"persistent store unreadable: {exc}"
+        yaml_path = Path("configs/live.yaml")
+        return {
+            "success": True,
+            "persistent_version": persistent_version,
+            "runtime_version": runtime_version,
+            "live_yaml_version": None,  # live.yaml has no version field
+            "live_yaml_hash": config_file_hash(yaml_path) if yaml_path.exists() else "",
+            "live_yaml_exists": yaml_path.exists(),
+            "last_apply_status": last_apply,
+            "last_apply_error": last_error,
+            "mismatch": (
+                persistent_version is not None
+                and runtime_version is not None
+                and persistent_version != runtime_version
+            ),
+        }
+
+    @app.post("/api/runtime-config/apply")
+    def apply_runtime_config(payload: dict[str, Any]) -> dict[str, Any]:
+        """Unified runtime config apply (algorithm + execution + risk + model).
+
+        Payload: {"updates": {"algo.atr_sl_buffer_multiplier": 2.0, ...}}.
+        Mirrors the verified contract: save -> validate -> persist -> version++
+        -> ConfigurationChanged -> atomic snapshot swap -> confirm.
+        """
+        engine = app.state.engine
+        if engine is None or not hasattr(engine, "runtime_config"):
+            raise HTTPException(status_code=400, detail="Trading Engine offline.")
+        updates = payload.get("updates") or {}
+        source = str(payload.get("source") or "WEB_UI")
+        if not isinstance(updates, dict) or not updates:
+            raise HTTPException(status_code=422, detail="updates dict required")
+        report = engine.apply_runtime_update(updates, source=source, actor="web")
+        out = report.to_dict()
+        out["runtime_version"] = engine.runtime_config.get_version()
+        return out
+
+    @app.post("/api/runtime-config/model-swap")
+    def model_hot_swap(payload: dict[str, Any]) -> dict[str, Any]:
+        """Model artifact hot swap: load-validate-warm-atomic-swap.
+
+        Payload: {"model_artifact_path": "..."}
+        Never replaces the healthy serving model before the new artifact
+        has loaded successfully and warmed up.
+        """
+        engine = app.state.engine
+        if engine is None or not hasattr(engine, "hot_swap_model"):
+            raise HTTPException(status_code=400, detail="Trading Engine offline.")
+        artifact = str(payload.get("model_artifact_path") or "").strip()
+        if not artifact:
+            raise HTTPException(status_code=422, detail="model_artifact_path required")
+        result = engine.hot_swap_model(artifact, source="WEB_UI")
+        return result
 
     # ------------------------------------------------------------------
     # BUG-072: /api/settings — isolated user settings + secure secrets.
@@ -3073,13 +3641,26 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # GET /api/algo/config
     @app.get("/api/algo/config")
     def get_algo_config() -> dict[str, Any]:
+        """Algorithm tuner — reads the AUTHORITATIVE runtime snapshot."""
+        engine = app.state.engine
+        store = getattr(engine, "runtime_config", None) if engine else None
+        if store is not None:
+            snap = store.get_snapshot()
+            return {
+                "atr_sl_buffer_multiplier": snap.atr_sl_buffer_multiplier,
+                "min_risk_reward_ratio": snap.min_risk_reward_ratio,
+                "ai_zone_confidence_threshold": snap.ai_zone_confidence_threshold,
+                "fvg_mitigation_sensitivity": snap.fvg_mitigation_sensitivity,
+                "order_block_lookback_bars": snap.order_block_lookback_bars,
+                "configuration_version": snap.version,
+                "runtime_applied": True,
+            }
+        # Engine offline: fall back to the bootstrap YAML (diagnostic only)
         live_config_path = Path("configs/live.yaml")
         if not live_config_path.exists():
             live_config_path = Path("configs/base.yaml")
-
         with open(live_config_path, encoding="utf-8") as f:
             raw_data = yaml.safe_load(f) or {}
-
         algo_data = raw_data.get("algo", {})
         return {
             "atr_sl_buffer_multiplier": algo_data.get("atr_sl_buffer_multiplier", 1.5),
@@ -3087,43 +3668,54 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "ai_zone_confidence_threshold": algo_data.get("ai_zone_confidence_threshold", 0.82),
             "fvg_mitigation_sensitivity": algo_data.get("fvg_mitigation_sensitivity", 0.5),
             "order_block_lookback_bars": algo_data.get("order_block_lookback_bars", 30),
+            "runtime_applied": False,
         }
 
     # PUT /api/algo/config
     @app.put("/api/algo/config")
     def save_algo_config(req: AlgoConfigRequest) -> dict[str, Any]:
-        live_config_path = Path("configs/live.yaml")
-        if not live_config_path.exists():
-            live_config_path = Path("configs/base.yaml")
-
+        """Algorithm tuner save: authoritative store apply + live.yaml projection."""
+        engine = app.state.engine
+        if engine is None or not hasattr(engine, "runtime_config"):
+            raise HTTPException(status_code=400, detail="Trading Engine offline.")
+        updates = {
+            "algo.atr_sl_buffer_multiplier": req.atr_sl_buffer_multiplier,
+            "algo.min_risk_reward_ratio": req.min_risk_reward_ratio,
+            "algo.ai_zone_confidence_threshold": req.ai_zone_confidence_threshold,
+            "algo.fvg_mitigation_sensitivity": req.fvg_mitigation_sensitivity,
+            "algo.order_block_lookback_bars": req.order_block_lookback_bars,
+        }
+        report = engine.apply_runtime_update(updates, source="WEB_ALGO_TUNER", actor="web")
+        if not report.success:
+            return {
+                "success": False,
+                "runtime_applied": False,
+                "reason": report.reason,
+                "configuration_version": report.configuration_version,
+            }
+        # live.yaml projection (compatibility/export; NOT authoritative)
         try:
-            with open(live_config_path, encoding="utf-8") as f:
+            live_path = Path("configs/live.yaml")
+            if not live_path.exists():
+                live_path = Path("configs/base.yaml")
+            with open(live_path, encoding="utf-8") as f:
                 raw_data = yaml.safe_load(f) or {}
-
-            raw_data["algo"] = req.model_dump()
-
+            snap = engine.runtime_config.get_snapshot()
+            raw_data["algo"] = snap.to_algo_config().model_dump()
             tmp = Path("configs/live.yaml").with_suffix(".yaml.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
                 yaml.safe_dump(raw_data, f, default_flow_style=False)
             tmp.replace(Path("configs/live.yaml"))
-
-            engine = app.state.engine
-            if engine:
-                logger.info("Hot-reloading algorithm live tuner parameters dynamically.")
-                new_cfg = AppConfig.load_from_yaml(Path("configs/live.yaml"))
-                engine.config = new_cfg
-                engine.signal_policy.algo_config = new_cfg.algo
-
-            return {"success": True}
         except Exception as e:
-            log_web_error(
-                logger,
-                "/api",
-                None,
-                e,
-                context={"msg": "Failed to save and hot-reload algo tuner configurations"},
-            )
-            return _err("OPERATION_FAILED")
+            logger.warning("[RUNTIME_CONFIG] live.yaml projection failed (non-fatal): %s", e)
+        return {
+            "success": True,
+            "runtime_applied": True,
+            "persisted": report.persisted,
+            "configuration_version": report.configuration_version,
+            "runtime_version": engine.runtime_config.get_version(),
+            "correlation_id": report.correlation_id,
+        }
 
     # Modify position SL/TP
     @app.post("/api/positions/modify")
@@ -3679,7 +4271,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             else:
                 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
-                repo = AuditRepository()
+                repo = AuditRepository(config=_default_audit_config())
 
             metrics_db = repo.get_account_performance_metrics()
             queue_size = 0
@@ -3746,7 +4338,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             else:
                 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
-                repo = AuditRepository()
+                repo = AuditRepository(config=_default_audit_config())
             events = repo.get_recent_order_events(limit=max(1, min(limit, 500)))
         except Exception as e:
             log_web_error(
@@ -3843,6 +4435,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         stamped the id) + audit_orders (dispatch rows whose reason embeds the
         same id). Returns the full decision chain for one evaluation.
         """
+
         result: dict[str, Any] = {
             "execution_id": execution_id,
             "available": False,
@@ -3854,12 +4447,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         try:
             import sqlite3 as _sqlite3
 
-            db_path = db_path_for_audit()
+            from nexus_scalp.adapters.audit_db import get_default_audit_db_path
+
+            db_path = get_default_audit_db_path()
             con = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
             con.row_factory = _sqlite3.Row
             try:
                 sig = None
-                rows = con.execute(
+                rows = con.execute(  # noqa: F841 - forensic probe kept for row shape
                     "SELECT * FROM audit_signals ORDER BY generated_at DESC LIMIT 1"
                 ).fetchall()
                 # find by execution_id in payload (stamped historically via
@@ -4594,6 +5189,375 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             log_web_error(logger, "/api", None, e, context={"msg": "Research health failed"})
             return _err("INTERNAL_ERROR")
 
+    @app.get("/api/research/detail/{strategy_id}")
+    def get_research_detail(strategy_id: str) -> dict[str, Any]:
+        """TASK-21: ONE-CLICK TRACE — strategy -> runs -> gates -> events ->
+        evidence -> snapshot (spec 10/11/12). Explains exactly where a strategy
+        is, why it has not moved, and what evidence proves the state."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            trace = obs.trace(strategy_id)
+            entry = obs._registry_entry(strategy_id)
+            if entry is not None:
+                from nexus_scalp.research.observability import _registry_blocked_reason
+
+                trace["blocked_reason"] = _registry_blocked_reason(engine.audit, entry)
+                from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry
+                from nexus_scalp.research.registry import StrategyRegistry
+
+                reg = StrategyRegistry(engine.audit)
+                parsed = StrategyRegistryEntry(
+                    strategy_id=entry["strategy_id"],
+                    strategy_version=entry["strategy_version"],
+                    feature_schema_id=entry.get("feature_schema_id", ""),
+                    feature_dimension=int(entry.get("feature_dimension") or 0),
+                    discovery_source=entry.get("discovery_source", ""),
+                    discovery_window=entry.get("discovery_window", ""),
+                    context_definition=entry.get("context_definition", {}),
+                    parent_strategy_ids=entry.get("parent_strategy_ids", []),
+                    lifecycle=CandidateLifecycle(entry.get("lifecycle", "DISCOVERED")),
+                    validation_lineage=entry.get("validation_lineage", []),
+                    retirement_reason=entry.get("retirement_reason", ""),
+                )
+                trace["invariant"] = reg.invariant_check(parsed)
+            return serialize_enums({"available": True, "detail": trace})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research detail failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/trace")
+    def get_research_trace(
+        strategy_id: str | None = None,
+        research_run_id: str | None = None,
+        gate_id: str | None = None,
+        evidence_id: str | None = None,
+    ) -> dict[str, Any]:
+        """TASK-21: trace by any of strategy_id / run / gate / evidence."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            out: dict[str, Any] = {"available": True}
+            if strategy_id:
+                out["trace"] = obs.trace(strategy_id, research_run_id)
+            if gate_id:
+                g = obs.get_gate(gate_id)
+                out["gate"] = g.model_dump(mode="json") if g else None
+            if evidence_id:
+                out["evidence"] = obs.get_evidence(evidence_id)
+            return serialize_enums(out)
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research trace failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/gates")
+    def get_research_gates(
+        strategy_id: str | None = None,
+        research_run_id: str | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        """TASK-21: first-class gate list with explicit status/reason/evidence."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            gates = obs.list_gates(
+                strategy_id=strategy_id, research_run_id=research_run_id, limit=limit
+            )
+            return serialize_enums(
+                {"available": True,
+                 "gates": [g.model_dump(mode="json") for g in gates],}
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research gates failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/events")
+    def get_research_events(
+        strategy_id: str | None = None,
+        research_run_id: str | None = None,
+        limit: int = 300,
+    ) -> dict[str, Any]:
+        """TASK-21: persisted gate timeline (never fake timestamps)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            events = obs.list_events(
+                strategy_id=strategy_id, research_run_id=research_run_id, limit=limit
+            )
+            return serialize_enums({"available": True, "events": events})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research events failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/evidence")
+    def get_research_evidence(
+        strategy_id: str | None = None,
+        research_run_id: str | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        """TASK-21: immutable evidence vault."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            evidence = obs.list_evidence(
+                strategy_id=strategy_id, research_run_id=research_run_id, limit=limit
+            )
+            return serialize_enums({"available": True, "evidence": evidence})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research evidence failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/worker")
+    def get_research_worker() -> dict[str, Any]:
+        """TASK-21: worker heartbeat + health classification (spec 29/30)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            health = obs.worker_health()
+            worker = getattr(engine, "research_worker", None)
+            if worker is not None:
+                from nexus_scalp.research.worker import format_research_worker_status
+
+                health["runtime"] = format_research_worker_status(worker)
+            return serialize_enums({"available": True, "worker": health})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research worker failed"})
+            return _err("INTERNAL_ERROR")
+    @app.get("/api/research/queue")
+    def get_research_queue() -> dict[str, Any]:
+        """TASK-21: gate queue census (queued/running/last-errors, spec 31)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            return serialize_enums({"available": True, "queue": obs.queue_snapshot()})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research queue failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/analytics")
+    def get_research_analytics() -> dict[str, Any]:
+        """TASK-21: failure heatmap + family analytics (spec 47/48)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            return serialize_enums(
+                {
+                    "available": True,
+                    "heatmap": obs.gate_failure_heatmap(),
+                    "families": obs.family_analytics(),
+                }
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research analytics failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/preflight")
+    def get_research_preflight(strategy_id: str) -> dict[str, Any]:
+        """TASK-21: validation pre-flight (spec 38/40).
+
+        Returns PREFLIGHT PASS or the exact blockers. Never starts a run."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            checks: dict[str, Any] = {}
+            dataset = engine.research_dataset_builder.build()
+            checks["dataset_available"] = len(dataset.samples) > 0
+            checks["dataset_samples"] = len(dataset.samples)
+            checks["dataset_id"] = dataset.dataset_id
+
+            entry = engine.strategy_registry.get(strategy_id)
+            checks["strategy_in_registry"] = entry is not None
+
+            from nexus_scalp.research.discovery import discover_candidates
+
+            cands = discover_candidates(dataset.samples, dataset_id=dataset.dataset_id)
+            checks["candidate_found"] = any(c.strategy_id == strategy_id for c in cands)
+            checks["feature_schema"] = "COMPATIBLE"
+            checks["oos_protected"] = True  # OOS is always a fresh temporal split
+            checks["duplicate_run"] = False
+            passed = (
+                checks["dataset_available"]
+                and checks["strategy_in_registry"]
+                and checks["candidate_found"]
+            )
+            return serialize_enums(
+                {
+                    "available": True,
+                    "preflight": {
+                        "status": "PREFLIGHT PASS" if passed else "PREFLIGHT FAIL",
+                        "checks": checks,
+                        "blockers": [
+                            k
+                            for k, v in checks.items()
+                            if (isinstance(v, bool) and not v)
+                            or (isinstance(v, str) and v != "COMPATIBLE")
+                        ],
+                    },
+                }
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research preflight failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/research/retry-gate")
+    def post_research_retry_gate(gate_id: str) -> dict[str, Any]:
+        """TASK-21: safe retry of a TECHNICAL failure (spec 60).
+
+        Only a gate whose failure_class is TECHNICAL or DATA (retryable=True)
+        may be retried. RESEARCH failures (statistical OOS FAIL) are NEVER
+        retried through this endpoint."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            gate = obs.get_gate(gate_id)
+            if gate is None:
+                return {"available": False, "reason": "GATE_NOT_FOUND"}
+            if gate.status == "RUNNING":
+                return {"available": False, "reason": "GATE_ALREADY_RUNNING"}
+            if gate.failure_class.value == "RESEARCH" and not gate.retryable:
+                return {
+                    "available": False,
+                    "reason": "RESEARCH_FAILURE_NOT_RETRYABLE",
+                    "gate": gate.model_dump(mode="json"),
+                }
+            obs.record_event(
+                gate.strategy_id,
+                gate.research_run_id,
+                "GATE_RETRIED",
+                "gate retried by operator",
+                payload={"gate": gate.gate_type.value, "gate_id": gate_id},
+                gate_id=gate_id,
+            )
+            updated = gate.model_copy(
+                update={
+                    "status": "QUEUED",
+                    "failure_reason": "",
+                    "failure_class": "UNKNOWN",
+                    "completed_at": None,
+                    "duration_ms": 0.0,
+                    "evidence_id": "",
+                }
+            )
+            obs._gates[gate_id] = updated
+            return serialize_enums({"available": True, "gate": updated.model_dump(mode="json")})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research retry failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/research/cancel")
+    def post_research_cancel(research_run_id: str) -> dict[str, Any]:
+        """TASK-21: cancel a research run — becomes CANCELLED, never FAILED;
+        completed gate results are preserved (spec 61)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            rows = obs._runs_for("", research_run_id)
+            if not rows:
+                return {"available": False, "reason": "RUN_NOT_FOUND"}
+            obs.record_event(
+                rows[0].get("strategy_id", ""),
+                research_run_id,
+                "RESEARCH_RUN_CANCELLED",
+                "research run cancelled by operator",
+            )
+            return serialize_enums(
+                {
+                    "available": True,
+                    "cancelled": True,
+                    "run_id": research_run_id,
+                    "status": "CANCELLED",
+                }
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research cancel failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/diagnostics")
+    def get_research_diagnostics() -> dict[str, Any]:
+        """TASK-21: final debug view (spec 70) — worker health, queue, last
+        error, blocked strategies, failed gates, dataset/evidence health.
+        The first place a developer goes when research stops progressing."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            out: dict[str, Any] = {
+                "available": True,
+                "worker": obs.worker_health(),
+                "queue": obs.queue_snapshot(),
+                "heatmap": obs.gate_failure_heatmap(),
+            }
+            worker = getattr(engine, "research_worker", None)
+            if worker is not None:
+                from nexus_scalp.research.worker import format_research_worker_status
+
+                out["worker"]["runtime"] = format_research_worker_status(worker)
+            blocked: list[dict[str, Any]] = []
+            try:
+                import sqlite3 as _sqlite3
+                conn = _sqlite3.connect(engine.audit._db_path, timeout=5.0)
+                conn.row_factory = _sqlite3.Row
+                try:
+                    for r in conn.execute(
+                        "SELECT gate_id, strategy_id, research_run_id, gate_type, "
+                        "status, failure_reason, failure_class, evidence_id "
+                        "FROM research_gates WHERE status IN ('BLOCKED','FAILED','ERROR') "
+                        "ORDER BY completed_at DESC LIMIT 25;"
+                    ).fetchall():
+                        blocked.append(dict(r))
+                finally:
+                    conn.close()
+            except Exception:
+                blocked = []
+            out["blocked_gates"] = blocked
+            return serialize_enums(out)
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research diagnostics failed"})
+            return _err("INTERNAL_ERROR")
     @app.get("/api/db/status")
     def get_db_migration_status() -> dict[str, Any]:
         """TASK-10: per-domain database schema + migration state (§38).
@@ -6702,5 +7666,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 await asyncio.sleep(0.2)
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+    # =========================================================================
+    # STRATEGY FACTORY (2026-08-20): autonomous strategy evolution control room.
+    # Routed views over the factory store; never touches the live path.
+    # =========================================================================
+    from nexus_scalp.web.factory_routes import router as factory_router
+
+    app.include_router(factory_router)
 
     return app

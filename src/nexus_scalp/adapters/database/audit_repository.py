@@ -47,12 +47,20 @@ class AuditRepository:
     def __init__(
         self,
         db_url: str = "sqlite:///artifacts/audit.db",
+        config: Any = None,
         flush_interval_sec: float = 1.0,
         signal_retention_days: float = 7.0,
         moving_retention_days: float = 3.0,
         telemetry_retention_days: float = 13.0,
         purge_batch_size: int = 500,
     ) -> None:
+        if config is not None:
+            # DATABASE PORTABILITY: the caller resolved the authoritative
+            # DatabaseConfig (settings/env); derive the SQLite connect path.
+            try:
+                db_url = f"sqlite:///{config.sqlite_connect_path}"
+            except Exception:
+                db_url = db_url
         self._db_url = db_url
         self._is_sqlite = db_url.startswith("sqlite")
         self._db_path = self._db_url.replace("sqlite:///", "") if self._is_sqlite else ""

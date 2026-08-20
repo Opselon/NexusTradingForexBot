@@ -342,8 +342,56 @@ class PostgreSQLDriver(DatabaseDriver):
         except Exception:
             return -1
 
+    def _conflict_target(self, table: str, conn: Any, cols: list[str]) -> tuple[list[str], bool] | None:
+        """Best conflict target for an upsert row.
+
+        Returns (target_columns, covers_row): PK columns when they are all
+        present in the row, else the unique columns present in the row, else
+        None.  Cached per table (PK layout + unique columns).
+        """
+        cached = getattr(self, "_conflict_cache", None)
+        if cached is None:
+            cached = {}
+            self._conflict_cache = cached
+        if table not in cached:
+            pks: list[str] = []
+            uniques: list[str] = []
+            try:
+                for col in self.table_columns(table, conn=conn):
+                    if col.get("pk"):
+                        pks.append(str(col["name"]))
+            except Exception:
+                pass
+            try:
+                rows = conn.execute(
+                    "SELECT kcu.column_name FROM information_schema.table_constraints tc "
+                    "JOIN information_schema.key_column_usage kcu "
+                    "  ON tc.constraint_name = kcu.constraint_name "
+                    "WHERE tc.table_name = %s AND tc.constraint_type = 'UNIQUE' "
+                    "ORDER BY kcu.ordinal_position",
+                    (table,),
+                ).fetchall()
+                uniques = [r[0] for r in rows]
+            except Exception:
+                pass
+            cached[table] = (pks, uniques)
+        pks, uniques = cached[table]
+        if pks and all(p in cols for p in pks):
+            return (pks, True)
+        present_unique = [u for u in uniques if u in cols]
+        if present_unique:
+            return (present_unique, True)
+        if pks:
+            return (pks, False)
+        return None
+
     def upsert(self, table: str, row: dict[str, Any], conn: Any = None) -> None:
-        """ON CONFLICT (pk, ...) DO UPDATE — requires a PK/unique key."""
+        """ON CONFLICT (pk|unique, ...) DO UPDATE — portable REPLACE.
+
+        The conflict target is resolved from the table's primary key (or its
+        unique columns when no PK covers the inserted row), so SQLite
+        INSERT OR REPLACE semantics carry over to PostgreSQL.
+        """
         own = conn is None
         c = conn or self.connect()
         try:
@@ -353,17 +401,49 @@ class PostgreSQLDriver(DatabaseDriver):
             placeholders = ",".join("%s" for _ in cols)
             col_list = ",".join(cols)
             sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
-            pks = [col for col in self.table_columns(table, conn=c) if col.get("pk")]
-            if pks:
-                pk_names = [p["name"] for p in pks]
-                if any(pn in cols for pn in pk_names):
-                    updates = ",".join(f"{cn} = EXCLUDED.{cn}" for cn in cols if cn not in pk_names)
-                    if updates:
-                        sql += f" ON CONFLICT ({','.join(pk_names)}) DO UPDATE SET {updates}"
-                    else:
-                        sql += " ON CONFLICT DO NOTHING"
+            hit = self._conflict_target(table, c, cols)
+            if hit:
+                target, _in_row = hit
+                updates = ",".join(f"{cn} = EXCLUDED.{cn}" for cn in cols if cn not in target)
+                if updates:
+                    sql += f" ON CONFLICT ({','.join(target)}) DO UPDATE SET {updates}"
+                else:
+                    sql += " ON CONFLICT DO NOTHING"
             else:
-                # No PK: emulate replace with delete+insert (rare guard).
+                sql += " ON CONFLICT DO NOTHING"
+            c.execute(sql, list(row.values()))
+            if own:
+                c.commit()
+        finally:
+            if own:
+                c.close()
+
+    def upsert(self, table: str, row: dict[str, Any], conn: Any = None) -> None:
+        """ON CONFLICT (pk|unique, ...) DO UPDATE — portable REPLACE.
+
+        The conflict target is resolved from the table's primary key (or its
+        unique columns when no PK covers the inserted row), so SQLite
+        INSERT OR REPLACE semantics carry over to PostgreSQL.
+        """
+        own = conn is None
+        c = conn or self.connect()
+        try:
+            cols = list(row.keys())
+            if not cols:
+                return
+            placeholders = ",".join("%s" for _ in cols)
+            col_list = ",".join(cols)
+            sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
+            target = self._conflict_target(table, c, cols)
+            if target and any(t in cols for t in target):
+                updates = ",".join(f"{cn} = EXCLUDED.{cn}" for cn in cols if cn not in target)
+                if updates:
+                    sql += f" ON CONFLICT ({','.join(target)}) DO UPDATE SET {updates}"
+                else:
+                    sql += " ON CONFLICT DO NOTHING"
+            else:
+                # No usable conflict target: at least never corrupt (dup row
+                # would violate caller contracts; log + no-op on conflict).
                 sql += " ON CONFLICT DO NOTHING"
             c.execute(sql, list(row.values()))
             if own:
