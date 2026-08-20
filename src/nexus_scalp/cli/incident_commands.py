@@ -205,7 +205,13 @@ def make_incidents_app() -> typer.Typer:
         events: list[TelemetryEvent] = []
         now = datetime.now(UTC)
 
-        def ev(event_type: str, error_code: str, component: str, payload: dict[str, Any]) -> None:
+        def ev(
+            event_type: str,
+            error_code: str,
+            component: str,
+            payload: dict[str, Any],
+            affected_records: list[str] | None = None,
+        ) -> None:
             events.append(
                 TelemetryEvent(
                     timestamp=now,
@@ -213,6 +219,7 @@ def make_incidents_app() -> typer.Typer:
                     component=component,
                     error_code=error_code,
                     payload=payload,
+                    ticket=str(affected_records[0]) if affected_records else "",
                     source=EventSource.DATABASE,
                 )
             )
@@ -221,6 +228,11 @@ def make_incidents_app() -> typer.Typer:
         try:
             div = broker_ledger_divergence(db)
             if div["divergence_count"]:
+                div_tickets = [
+                    str(m.get("ticket", ""))
+                    for m in div.get("pnl_divergences", [])[:200]
+                    if m.get("ticket")
+                ]
                 ev(
                     "ACCOUNTING_DIVERGENCE",
                     "ACCOUNTING_DIVERGENCE",
@@ -228,7 +240,9 @@ def make_incidents_app() -> typer.Typer:
                     {
                         "divergences": div["divergence_count"],
                         "checked": div["checked_broker_trades"],
+                        "first_tickets": div_tickets[:20],
                     },
+                    affected_records=div_tickets,
                 )
             # NOTE: unmapped broker trades are the documented EXPECTED orphan
             # class (pre-BUG-045 migration-era gap, TASK-11 handoff) — NOT an
@@ -253,12 +267,14 @@ def make_incidents_app() -> typer.Typer:
 
         try:
             of = outcome_forensics(db)
-            if of["suspect_outcomes"]:
+            suspect_all = of["suspect_outcomes"] + of.get("broker_recoverable_outcomes", []) + of["zero_with_source"]
+            if suspect_all:
                 ev(
                     "OUTCOME_SUSPECT",
                     "OUTCOME_SUSPECT",
                     "ledger",
                     {"suspect": len(of["suspect_outcomes"]), "zero": of["zero_realized_outcomes"]},
+                    affected_records=[str(s.get("execution_id") or "") for s in suspect_all if s.get("execution_id")][:200],
                 )
         except Exception as exc:
             ev("OUTCOME_SCAN_FAILED", "OUTCOME_DISCARDED", "learning", {"error": str(exc)[:200]})
@@ -273,7 +289,8 @@ def make_incidents_app() -> typer.Typer:
                     {
                         k: lpr[k]
                         for k in ("experiences", "outcomes", "research_samples", "candidates")
-                    },
+                    }
+                    | {"affected_outcomes_unconsumed": lpr.get("affected_outcomes_unconsumed")},
                 )
         except Exception as exc:
             ev("LEARNING_SCAN_FAILED", "LEARNING_DATA_LOSS", "learning", {"error": str(exc)[:200]})
@@ -281,11 +298,15 @@ def make_incidents_app() -> typer.Typer:
         try:
             sfg = split_fill_groups(db)
             if sfg["split_fill_families"]:
+                sf_tickets: list[str] = []
+                for fam in sfg.get("families", []):
+                    sf_tickets.extend(str(t) for t in fam.get("tickets", []) if t)
                 ev(
                     "SPLIT_FILL_GROUPING",
                     "SPLIT_FILL_GROUPING",
                     "execution",
                     {"families": sfg["split_fill_families"], "tickets": sfg["tickets_in_families"]},
+                    affected_records=sf_tickets[:200],
                 )
         except Exception as exc:
             ev(
