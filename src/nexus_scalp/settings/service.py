@@ -456,27 +456,7 @@ class SettingsService:
             "status": self.telegram_config_status(),
         }
 
-    # ------------------------------------------------------------
-    # DATABASE PORTABILITY (SQLite <-> PostgreSQL) — provider + PG config
-    # ------------------------------------------------------------
-
-    def set_postgres_config(self, cfg: dict[str, Any]) -> None:
-        """Persist the PostgreSQL connection config (non-secret fields)."""
-        for key in ("host", "port", "database", "username", "ssl_mode"):
-            if key in cfg:
-                self.db.set(f"database.postgres.{key}", cfg[key], source="USER_SETTINGS")
-        pwd = cfg.get("password")
-        if pwd:
-            self.secrets.set_secret("database.postgres.password", str(pwd))
-
-    def postgres_password_set(self) -> bool:
-        """True when a PostgreSQL password has been stored in the secret store."""
-        return self.secrets.get_secret("database.postgres.password") is not None
-
-    def set_database_provider(self, provider: str) -> None:
-        """Persist the ACTIVE database provider (sqlite | postgresql)."""
-        self.db.set("database.provider", provider, source="USER_SETTINGS")
-
+    # ------------------------------------------------------------ Migration
     def migrate_legacy_yaml(self, legacy: dict[str, Any]) -> dict[str, Any]:
         """Idempotent, restart-safe migration of live.yaml telegram secrets.
 
@@ -549,6 +529,57 @@ class SettingsService:
         except Exception as exc:  # pragma: no cover - fs edge
             logger.error("[SETTINGS] legacy YAML blank failed (non-fatal): %s", exc)
             return False
+
+    # ------------------------------------------------------------ Database portability
+    def set_postgres_config(self, cfg: dict[str, Any], actor: str = "cli") -> dict[str, Any]:
+        """Persist the PostgreSQL connection config (password NEVER stored here).
+
+        The optional password is routed to the OS SecretStore; the settings DB
+        holds only a non-secret JSON config with a secret-key reference.
+        """
+        from nexus_scalp.database.config import (
+            PG_CONFIG_SETTING_KEY,
+            PG_PASSWORD_SECRET_KEY,
+        )
+
+        payload: dict[str, Any] = {k: v for k, v in cfg.items() if k != "password"}
+        # database/config.py:from_dict expects a provider field; without it the
+        # persisted JSON config resolves as sqlite and the PG host/port are lost.
+        payload.setdefault("provider", "postgresql")
+        payload.setdefault("domain", "audit")
+        password = str(cfg.get("password") or "")
+        if password:
+            self.secrets.set_secret(PG_PASSWORD_SECRET_KEY, password)
+            payload["password_secret"] = PG_PASSWORD_SECRET_KEY
+        safe_cfg = dict(payload)
+        safe_cfg.pop("password_secret", None)
+        self.db.set(
+            PG_CONFIG_SETTING_KEY,
+            safe_cfg,
+            value_type="json",
+            source="USER_SETTINGS",
+            actor=actor,
+        )
+        return {"success": True, "persisted": True}
+
+    def postgres_password_set(self) -> bool:
+        """True when the PostgreSQL password exists in the OS secret store."""
+        from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+
+        return self.secrets.has_secret(PG_PASSWORD_SECRET_KEY)
+
+    def set_database_provider(self, provider: str, actor: str = "cli") -> dict[str, Any]:
+        """Persist the ACTIVE database provider (takes effect next startup)."""
+        from nexus_scalp.database.config import PROVIDER_SETTING_KEY
+
+        self.db.set(
+            PROVIDER_SETTING_KEY,
+            provider,
+            value_type="str",
+            source="USER_SETTINGS",
+            actor=actor,
+        )
+        return {"success": True, "provider": provider, "restart_required": True}
 
     # ------------------------------------------------------------ Provenance
     def provenance(self) -> dict[str, Any]:
