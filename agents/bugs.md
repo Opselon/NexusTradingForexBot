@@ -5637,3 +5637,15 @@ Registry JSON columns are TEXT — decode before `.get()`.
   WEB_CONFIG rows (UI checkbox state) — not the notifier.
 - api.telegram.org resolving into 198.18/15 or 192.0.0/24 == DNS poisoning;
   verify with `curl --resolve api.telegram.org:443:149.154.167.220 getMe`.
+
+### BUG-131 addendum (Hermes-ErrorFix, 2026-08-21) — Strategy Factory LLM live configuration
+The Factory tab now lets you set an OpenAI-compatible endpoint + API key from the
+UI (Base URL / API Key / Model / Temperature / Timeout / Max Req) and hot-reloads
+the running factory provider via POST /api/factory/llm-config. PROMPT_VERSION v3
+teaches the model the exact engine pipeline (GENERATE -> VALIDATE -> BACKTEST ->
+WALK-FORWARD -> OOS -> ROBUSTNESS -> SCORE -> RANK -> ELITE -> EVOLVE). New
+settings keys: factory.llm_request_timeout_sec (default 300, claude-opus-5 via
+local proxy needs >120s) + factory.llm_max_requests_per_generation (default 60).
+orchestrator logs [STRATEGY_FACTORY] GENERATION_STARTED/GENERATED/VALIDATED/
+BACKTESTED/COMPLETED to the console. LIVE VERIFIED: real stored key generated a
+REVERSAL DSL in 24.8s (2301 tokens, 0 failures). Commits 1fa2fd2 + 6f20a52.
