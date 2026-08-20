@@ -262,8 +262,13 @@ class TestSettingsServiceDatabasePortability:
     def test_set_postgres_config_never_stores_password(
         self, db_path: Path, secret_root: Path
     ) -> None:
+        from nexus_scalp.database.config import (
+            PG_CONFIG_SETTING_KEY,
+            PG_PASSWORD_SECRET_KEY,
+        )
+
         svc = _svc(db_path, secret_root)
-        result = svc.set_postgres_config(
+        svc.set_postgres_config(
             {
                 "host": "db.local",
                 "port": 5432,
@@ -272,14 +277,11 @@ class TestSettingsServiceDatabasePortability:
                 "password": "S3cret!",
             }
         )
-        for key, expected in (
-            ("database.postgres.host", "db.local"),
-            ("database.postgres.port", 5432),
-        ):
-            row = svc.db.get(key)
-            assert row is not None and row.value == expected, key
+        row = svc.db.get(PG_CONFIG_SETTING_KEY)
+        assert row is not None and row.value["host"] == "db.local"
+        assert row.value.get("password") is None
         assert svc.postgres_password_set() is True
-        assert svc.secrets.get_secret("database.postgres.password") == "S3cret!"
+        assert svc.secrets.get_secret(PG_PASSWORD_SECRET_KEY) == "S3cret!"
         svc.close()
 
     def test_postgres_password_set_false_when_absent(
@@ -290,11 +292,13 @@ class TestSettingsServiceDatabasePortability:
         svc.close()
 
     def test_config_roundtrip_reload(self, db_path: Path, secret_root: Path) -> None:
+        from nexus_scalp.database.config import PG_CONFIG_SETTING_KEY
+
         svc = _svc(db_path, secret_root)
         svc.set_postgres_config({"host": "h", "port": 5433, "database": "d", "username": "u"})
         svc.close()
         svc2 = _svc(db_path, secret_root)
-        row = svc2.db.get("database.postgres.host")
-        assert row is not None and row.value == "h"
+        row = svc2.db.get(PG_CONFIG_SETTING_KEY)
+        assert row is not None and "host" in row.value and row.value["host"] == "h"
         assert svc2.postgres_password_set() is False  # no password was ever given
         svc2.close()
