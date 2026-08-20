@@ -1245,6 +1245,24 @@ def _liquidity_section(engine: Any) -> dict[str, Any]:
         return {"available": False, "reason": "LIQUIDITY_ERROR"}
 
 
+def _mslie_section(engine: Any) -> dict[str, Any]:
+    """MARKET INTELLIGENCE ENGINE (MSLIE brief): perception-layer status.
+
+    Pure read of the engine's latest MarketIntelligenceFeatureVectorV1 +
+    debug status. Never recomputes features here (the engine is the
+    producer); never fabricates values when the engine has not run yet.
+    """
+    try:
+        ms = getattr(engine, "mslie_engine", None) if engine else None
+        if ms is None:
+            return {"available": False, "reason": "MSLIE_ENGINE_NOT_ATTACHED"}
+        status = ms.get_debug_status()
+        return {"available": True, **status}
+    except Exception as exc:
+        logger.warning("debug_snapshot mslie error", error=str(exc))
+        return {"available": False, "reason": "MSLIE_ERROR"}
+
+
 def _news_section(engine: Any) -> dict[str, Any]:
     """NEWS INTELLIGENCE (brief 11): canonical context + which news-derived
     dimensions are active in the model (news 10D at 50..59)."""
@@ -1743,7 +1761,8 @@ def build_debug_snapshot(engine: Any, app_state: Any) -> dict[str, Any]:
         "positions": _safe(lambda: _positions_section(engine), "positions"),
         "exit": _safe(lambda: _exit_section(engine), "exit"),
         "liquidity": _safe(lambda: _liquidity_section(engine), "liquidity"),
-        "news": _safe(lambda: _news_section(engine), "news"),
+                "mslie": _safe(lambda: _mslie_section(engine), "mslie"),
+                "news": _safe(lambda: _news_section(engine), "news"),
         "workers": _safe(lambda: _workers_section(engine), "workers"),
         "database": _safe(lambda: _database_section(engine), "database"),
         "caches": _safe(lambda: _cache_section(engine), "caches"),

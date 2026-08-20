@@ -7255,6 +7255,69 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
         return LiquidityGovernor(enabled=False)
 
+    # =========================================================================
+    # MSLIE: MARKET STRUCTURE & LIQUIDITY INTELLIGENCE API (read-only)
+    # -------------------------------------------------------------------------
+    # Market perception layer — regime/swings/liquidity map/sweeps/breakout/
+    # smart-money. The UI is a pure renderer of backend state; nothing here
+    # mutates execution, risk or the feature contract (INV-002/INV-009).
+    # =========================================================================
+
+    def _mslie_engine() -> Any:
+        engine = app.state.engine
+        ms = getattr(engine, "mslie_engine", None) if engine is not None else None
+        if ms is not None:
+            return ms
+        from nexus_scalp.mslie import MarketStructureEngine
+
+        return MarketStructureEngine(symbol="XAUUSD", timeframe="M1")
+
+    @app.get("/api/mslie/status")
+    def get_mslie_status() -> dict[str, Any]:
+        """Canonical MSLIE status: engine status, market context, liquidity
+        map, last sweep and the feature vector (real values only)."""
+        try:
+            ms = _mslie_engine()
+            return {"success": True, **ms.get_debug_status()}
+        except Exception as e:
+            log_web_error(
+                logger,
+                "/api/mslie/status",
+                None,
+                e,
+                context={"msg": "MSLIE status introspection failed"},
+            )
+            return {
+                "success": False,
+                "available": False,
+                "status": "UNAVAILABLE",
+                "reason": "MSLIE_STATE_ERROR",
+            }
+
+    @app.get("/api/mslie/features")
+    def get_mslie_features() -> dict[str, Any]:
+        """The full MarketIntelligenceFeatureVectorV1 (developer mode:
+        inspect model input, copy JSON, export snapshot)."""
+        try:
+            ms = _mslie_engine()
+            vector = ms.generate_feature_vector()
+            if vector is None:
+                return {
+                    "success": True,
+                    "available": False,
+                    "reason": "NO_MSLIE_VECTOR",
+                }
+            return {"success": True, "available": True, "vector": vector.to_dict()}
+        except Exception as e:
+            log_web_error(
+                logger,
+                "/api/mslie/features",
+                None,
+                e,
+                context={"msg": "MSLIE features introspection failed"},
+            )
+            return {"success": False, "available": False, "reason": "MSLIE_FEATURES_ERROR"}
+
     @app.get("/api/liquidity/state")
     def get_liquidity_state() -> dict[str, Any]:
         """Canonical liquidity status: enabled/available/status/source/latency/

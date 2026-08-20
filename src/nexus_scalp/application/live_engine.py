@@ -539,6 +539,7 @@ class LiveEngine:
                 error=str(_store_err),
             )
             _strategy_store = None
+        _factory_provider = self._build_factory_llm_provider()
         self.strategy_factory = StrategyFactory(
             audit_repo=self.audit,
             research_pipeline=self.research_pipeline,
@@ -546,7 +547,51 @@ class LiveEngine:
             symbols=[str(self.config.execution.symbol or "XAUUSD")],
             notifier=getattr(self, "notifier", None),
             store=_strategy_store,
+            provider=_factory_provider,
         )
+    def _build_factory_llm_provider(self) -> Any | None:
+        """Builds the (optional) Strategy Factory LLM provider from settings.
+
+        The API key is read from the OS-protected secret store (DPAPI on
+        Windows); base URL + model + temperature come from the settings DB.
+        Any failure -> None: the factory then uses the deterministic
+        generators (the LLM is an assisted source, never a requirement).
+        """
+        try:
+            from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
+
+            svc = getattr(self, "settings_service", None)
+            if svc is None:
+                return None
+            cfg = svc.get_factory_llm_config()
+            if not cfg.get("api_key") or not cfg.get("api_base_url") or not cfg.get("model"):
+                return None
+            return LLMGenerationProvider(
+                api_base_url=cfg["api_base_url"],
+                model=cfg["model"],
+                api_key=cfg["api_key"],
+                temperature=cfg.get("temperature", 0.7),
+                secret_store=svc.secrets,
+            )
+        except Exception as e:
+            logger.warning(
+                "[STRATEGY_FACTORY] LLM provider build failed (deterministic fallback)",
+                error=str(e),
+            )
+            return None
+
+    def _rebuild_factory_llm_provider(self) -> None:
+        """Hot-swaps the running factory provider after a web settings save."""
+        try:
+            if self.strategy_factory is None:
+                return
+            self.strategy_factory.provider = self._build_factory_llm_provider()
+            logger.info(
+                "[STRATEGY_FACTORY] factory provider hot-rebuilt",
+            )
+        except Exception as e:
+            logger.warning("[STRATEGY_FACTORY] provider hot-rebuild failed", error=str(e))
+
         self.strategy_factory_worker = AutonomousLoopWorker(
             factory=self.strategy_factory,
             max_generations=EvolutionConfig().max_generations,

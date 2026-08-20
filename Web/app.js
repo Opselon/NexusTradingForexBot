@@ -2557,6 +2557,7 @@ function renderDebugSnapshot(d) {
     renderDebugPositions(d.positions);
     renderDebugExit(d.exit);
     renderDebugLiquidity(d.liquidity);
+    renderDebugMslie(d.mslie);
     renderDebugNews(d.news);
     renderDebugWorkers(d.workers);
     renderDebugDatabase(d.database);
@@ -2899,6 +2900,96 @@ function renderDebugExit(ex) {
     body.innerHTML = html;
 }
 
+
+function renderDebugMslie(ms) {
+    const body = document.getElementById('debug-mslie-body');
+    if (!body) return;
+    if (!ms || !ms.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(ms && ms.reason) || 'Market Intelligence Engine unavailable.'}</div>`; return; }
+    const es = ms.engine_status || {};
+    const ctx = ms.market_context || {};
+    const ctxRegime = (ctx.regime || {});
+    const zones = ms.liquidity_map || [];
+    const sweep = ms.last_sweep || null;
+    const fv = ms.feature_vector || {};
+    const fvRegime = (fv.regime || {});
+    const sm = (fv.smart_money || {});
+    const bq = (fv.breakout_quality || {});
+    const memory = fv.memory || [];
+    let html = `<div class="flex flex-wrap gap-2 mb-2">
+        ${debugStatusChip('STRUCTURE ENGINE', es.market_structure_engine || 'STANDBY', es.market_structure_engine === 'ONLINE' ? 'PASS' : 'WARN')}
+        ${debugStatusChip('LIQUIDITY ENGINE', es.liquidity_engine || 'STANDBY', es.liquidity_engine === 'ACTIVE' ? 'PASS' : 'WARN')}
+        ${debugStatusChip('FEATURE GEN', es.feature_generator || 'IDLE', es.feature_generator === 'RUNNING' ? 'PASS' : 'WARN')}
+        ${debugStatusChip('STATUS', ms.status || 'UNKNOWN', ms.status)}
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 mb-2 text-[10px]">
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Last Update</div><div class="text-accentCyan font-black">${debugFmt(es.last_update)}</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Latency</div><div class="text-accentGold font-black">${debugFmt(es.latency_ms)}ms</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Computes</div><div class="text-accentCyan font-black">${debugFmt(es.compute_count)}</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Symbol</div><div class="text-accentCyan font-black">${debugFmt(ctx.symbol)}</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Timeframe</div><div class="text-accentCyan font-black">${debugFmt(ctx.timeframe)}</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Regime</div><div class="text-accentCyan font-black">${debugFmt(ctxRegime.regime_label)}</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Bias</div><div class="${debugTone(ctx.bias).text} font-black">${debugFmt(ctx.bias)}</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Structure</div><div class="text-accentCyan font-black">${debugFmt(ctx.structure)}</div></div>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2 text-[10px]">
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Trend Dir</div><div class="text-accentCyan font-black">${debugFmt(fvRegime.trend_direction)}</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Trend Strength</div><div class="text-accentCyan font-black">${debugFmt(fvRegime.trend_strength)}</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Volatility</div><div class="text-accentGold font-black">${debugFmt(fvRegime.volatility_state)}</div></div>
+        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2"><div class="text-textMuted">Confidence</div><div class="text-accentCyan font-black">${debugFmt(ctx.confidence)}%</div></div>
+    </div>`;
+    // Liquidity map
+    if (zones.length) {
+        const bsl = zones.find(z => z.side === 'BUY_SIDE');
+        const ssl = zones.find(z => z.side === 'SELL_SIDE');
+        html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2 text-[10px]">
+            <div class="bg-darkBg/40 border border-emerald-500/30 rounded-lg p-2"><div class="text-emerald-400 font-black">BUY SIDE (BSL)</div><div class="text-accentCyan text-base font-black mt-1">${bsl ? debugFmt(bsl.price, 2) : '--'}</div><div class="text-textMuted">Strength ${bsl ? debugFmt(bsl.strength_score) : '--'} · Rank ${bsl ? debugFmt(bsl.rank) : '--'} · Tests ${bsl ? debugFmt(bsl.number_of_tests) : '--'}</div></div>
+            <div class="bg-darkBg/40 border border-rose-500/30 rounded-lg p-2"><div class="text-rose-400 font-black">SELL SIDE (SSL)</div><div class="text-accentCyan text-base font-black mt-1">${ssl ? debugFmt(ssl.price, 2) : '--'}</div><div class="text-textMuted">Strength ${ssl ? debugFmt(ssl.strength_score) : '--'} · Rank ${ssl ? debugFmt(ssl.rank) : '--'} · Tests ${ssl ? debugFmt(ssl.number_of_tests) : '--'}</div></div>
+        </div>`;
+    }
+    // Sweep detection
+    if (sweep) {
+        const tone = sweep.after_event_state === 'REVERSAL' ? 'PASS' : (sweep.after_event_state === 'CONTINUATION' ? 'WARN' : 'INFO');
+        html += `<div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2 mb-2">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted">Last Sweep Event</div>
+            <div class="flex flex-wrap gap-3 mt-1 items-center">
+                <span class="text-amber-300 font-black">${debugFmt(sweep.direction)} LIQUIDITY SWEEP</span>
+                ${debugStatusChip('CONFIDENCE', debugFmt(sweep.confidence) + '%', tone)}
+                ${debugStatusChip('STATE', sweep.after_event_state, tone)}
+                <span class="text-textMuted">Pool ${debugFmt(sweep.pool_price, 2)} · Type ${debugFmt(sweep.liquidity_type)} · Depth ${debugFmt(sweep.sweep_strength)}σ</span>
+            </div>
+        </div>`;
+    }
+    // Breakout quality
+    if (bq.real_breakout_probability !== undefined) {
+        html += `<div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2 mb-2">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted">Breakout Quality</div>
+            <div class="flex flex-wrap gap-2 mt-1">
+                ${debugStatusChip('REAL', debugFmt(bq.real_breakout_probability), bq.real_breakout_probability >= 0.6 ? 'PASS' : 'INFO')}
+                ${debugStatusChip('FAKE/TRAP', debugFmt(bq.fake_breakout_probability), bq.fake_breakout_probability >= 0.6 ? 'WARN' : 'INFO')}
+                <span class="text-textMuted">close ${debugFmt(bq.closing_strength)} · vol ${debugFmt(bq.volume_support)} · mom ${debugFmt(bq.momentum_support)} · retest ${debugFmt(bq.retest_confirmation)}</span>
+            </div>
+        </div>`;
+    }
+    // Smart money
+    html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2 text-[10px]">
+        ${debugKV('OB Type', sm.order_block_type)}${debugKV('OB Strength', sm.order_block_strength)}${debugKV('FVG Count', sm.fvg_count)}${debugKV('FVG σ', sm.fvg_strength)}
+        ${debugKV('Displacement σ', sm.displacement_strength)}${debugKV('Inducement', sm.inducement_levels)}${debugKV('Premium/Discount', sm.premium_discount_position)}${debugKV('Last OB σ', sm.last_mitigated_order_block)}
+    </div>`;
+    // Memory
+    if (memory.length) {
+        html += `<div class="mt-2 pt-2 border-t border-borderClr/60">
+            <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Market Memory (${memory.length} institutional levels)</div>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 text-[10px]">
+                ${memory.map(m => `<div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-2">
+                    <div class="flex justify-between"><span class="text-accentCyan font-black">${debugFmt(m.level, 2)}</span><span class="text-textMuted">${debugFmt(m.created)}</span></div>
+                    <div class="text-textMuted">touches ${debugFmt(m.touch_count)} · ${m.events.slice(-3).join(' · ')}</div>
+                </div>`).join('')}
+            </div>
+        </div>`;
+    }
+    html += `<div class="mt-2 text-[10px] text-textMuted">swings H/L ${debugFmt(fv.swing_count_high)}/${debugFmt(fv.swing_count_low)} · vector ${debugFmt(fv.version)} · algo ${debugFmt(ms.algorithm_version)}</div>`;
+    body.innerHTML = html;
+}
 
 function renderDebugLiquidity(lq) {
     const body = document.getElementById('debug-liquidity-body');
