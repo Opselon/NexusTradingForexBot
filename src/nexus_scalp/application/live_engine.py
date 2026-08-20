@@ -100,6 +100,12 @@ from nexus_scalp.research.dataset import ResearchDatasetBuilder
 from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.worker import ResearchWorker
+from nexus_scalp.strategies.factory import (
+    AutonomousLoopWorker,
+    EvolutionConfig,
+    LLMGenerationProvider,
+    StrategyFactory,
+)
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.settings import (
     load_settings_service,
@@ -456,9 +462,14 @@ class LiveEngine:
         # =====================================================================
         self.strategy_registry = StrategyRegistry(audit_repo=self.audit)
         self.research_dataset_builder = ResearchDatasetBuilder(ledger=self.experience_ledger)
+        # TASK-21: research observability facade (gates/events/evidence/snapshots).
+        from nexus_scalp.research.observability import ResearchObservabilityStore
+
+        self.research_observability = ResearchObservabilityStore(audit_repo=self.audit)
         self.research_pipeline = ResearchPipeline(
             dataset_builder=self.research_dataset_builder,
             registry=self.strategy_registry,
+            observability=self.research_observability,
         )
         self.research_worker = ResearchWorker(
             audit_repo=self.audit,
@@ -467,6 +478,28 @@ class LiveEngine:
             interval_sec=60.0,
         )
         self._research_worker_started: bool = False
+
+        # =====================================================================
+        # STRATEGY FACTORY: AUTONOMOUS STRATEGY EVOLUTION / RESEARCH LOOP
+        # ---------------------------------------------------------------------
+        # Orchestrates candidate generation -> structural validation ->
+        # authoritative research pipeline (backtest/WF/OOS/robustness) ->
+        # ranking -> elite selection -> evolution. Runs OFF the tick path via
+        # asyncio.to_thread(); persistence goes through the audit queue. It
+        # NEVER places orders and NEVER promotes to ACTIVE automatically.
+        # =====================================================================
+        self.strategy_factory = StrategyFactory(
+            audit_repo=self.audit,
+            research_pipeline=self.research_pipeline,
+            config=EvolutionConfig(),
+            symbols=[str(self.config.execution.symbol or "XAUUSD")],
+        )
+        self.strategy_factory_worker = AutonomousLoopWorker(
+            factory=self.strategy_factory,
+            max_generations=EvolutionConfig().max_generations,
+            target_elite_count=EvolutionConfig().target_elite_count,
+        )
+        self._factory_worker_started: bool = False
 
         # =====================================================================
         # PHASE 10: CONTROLLED MODEL TRAINING & CHALLENGER ENGINE
@@ -1096,6 +1129,7 @@ class LiveEngine:
         # OFFLINE / BACKGROUND (dataset rebuild, discovery, validation gates).
         # Fully isolated: it can never stop trading and never places orders.
         self._start_research_worker()
+        self._start_factory_worker()
 
         # PHASE 10: start the controlled training worker. Heavy training runs
         # ONLY in worker threads, never in the tick pipeline; fully isolated.
@@ -1437,6 +1471,12 @@ class LiveEngine:
         # PHASE 09B: stop the strategy research worker (isolated).
         try:
             await self._stop_research_worker()
+        except Exception:
+            pass
+
+        # STRATEGY FACTORY: stop the autonomous loop worker (kill switch).
+        try:
+            await self._stop_factory_worker()
         except Exception:
             pass
 
@@ -1803,6 +1843,24 @@ class LiveEngine:
             logger.error("[RESEARCH_WORKER] event=START status=FAILED", error=str(err))
             self._research_worker_started = False
 
+    def _start_factory_worker(self) -> None:
+        """Starts the autonomous strategy-factory worker (idempotent).
+
+        The loop starts in STOPPED control state; the operator drives it via
+        the Strategy Factory UI/API (start/pause/resume/stop). Autonomous mode
+        never starts itself on boot — generation is operator-triggered.
+        """
+        if self._factory_worker_started:
+            return
+        self._factory_worker_started = True
+        try:
+            # Recovery probe: if an autonomous loop was mid-generation before
+            # restart, surface the persisted state (operator resumes manually).
+            self.strategy_factory_worker.recover()
+        except Exception as err:
+            logger.error("[STRATEGY_FACTORY] event=START status=FAILED", error=str(err))
+            self._factory_worker_started = False
+
     def _start_training_worker(self) -> None:
         """Starts the controlled training worker (idempotent)."""
         if self._training_worker_started:
@@ -1963,6 +2021,18 @@ class LiveEngine:
             self.research_worker.stop()
         except Exception as err:
             logger.error("[RESEARCH_WORKER] event=STOP status=FAILED", error=str(err))
+
+    async def _stop_factory_worker(self) -> None:
+        """Stops the strategy-factory worker (idempotent, never raises).
+
+        The kill switch (spec 106) prevents new generations / LLM requests;
+        historical research rows are never corrupted.
+        """
+        self._factory_worker_started = False
+        try:
+            self.strategy_factory_worker.stop()
+        except Exception as err:
+            logger.error("[STRATEGY_FACTORY] event=STOP status=FAILED", error=str(err))
 
     async def _startup_experience_self_heal(self) -> None:
         """
