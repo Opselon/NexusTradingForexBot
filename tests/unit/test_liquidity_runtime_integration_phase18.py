@@ -40,6 +40,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -886,6 +887,8 @@ def test_liq_ui_10_json_safe_payload() -> None:
     gov.set_enabled(False, actor="test")
     json.dumps(gov.report())
     json.dumps(gov.snapshot_payload())
+
+
 # ---------------------------------------------------------------------------
 # BUG-123 — Liquidity-enabled model compatibility: contract-based verdict,
 # precise reasons, REAL 70D proof artifact end-to-end, negative gates.
@@ -939,7 +942,9 @@ def test_liq_bug123_01_live_champion_50d_enabled_is_block_with_reason() -> None:
 
 def test_liq_bug123_02_valid_70d_model_with_champion_is_pass() -> None:
     gov = LiquidityGovernor(enabled=True)
-    gov.bind_engine(_fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70)))
+    gov.bind_engine(
+        _fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70))
+    )
     mc = gov.model_compatibility()
     assert mc["result"] == ModelCompatibility.PASS.value
     assert mc["reason"] == "SCHEMA_DIMENSION_MATCH"
@@ -984,7 +989,9 @@ def test_liq_bug123_06_schema_family_classification() -> None:
 
 def test_liq_bug123_07_contract_descriptor_single_source() -> None:
     gov = LiquidityGovernor(enabled=True)
-    gov.bind_engine(_fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70)))
+    gov.bind_engine(
+        _fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70))
+    )
     rep = gov.report()
     assert rep["liquidity_contract"]["feature_order_hash"] == FEATURE_ORDER_HASH
     assert rep["liquidity_contract"]["schema_id"] == "scalp_v3"
@@ -1011,7 +1018,9 @@ def test_liq_bug123_09_no_stale_compatibility_after_model_hot_swap() -> None:
     gov.bind_engine(_fake_engine_like("scalp_v1", 50))
     assert gov.model_compatibility()["result"] == "BLOCK"
     # hot-swap: a 70D champion is now serving
-    gov.bind_engine(_fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70)))
+    gov.bind_engine(
+        _fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70))
+    )
     assert gov.model_compatibility()["result"] == "PASS"
 
 
@@ -1019,7 +1028,9 @@ def test_liq_bug123_10_report_hot_reload_recomputes() -> None:
     gov = LiquidityGovernor(enabled=True)
     gov.bind_engine(_fake_engine_like("scalp_v1", 50))
     assert gov.report()["model_compatibility"]["result"] == "BLOCK"
-    gov.bind_engine(_fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70)))
+    gov.bind_engine(
+        _fake_engine_like("scalp_v3", 70, champion=_ChampLike("scalp_v3", 70, input_dim=70))
+    )
     assert gov.report()["model_compatibility"]["result"] == "PASS"
 
 
@@ -1102,7 +1113,9 @@ def test_liq_bug123_14_real_50d_model_blocked_against_70d_runtime() -> None:
     sd = torch.load(path, map_location="cpu", weights_only=False)
     tensor_dim = int(sd["input_projection.weight"].shape[1])
     assert tensor_dim == 50  # the live champion IS 50D
-    r = resolve_model_compatibility("scalp_v1", 50, SCHEMA_70D, 70, model_input_dimension=tensor_dim)
+    r = resolve_model_compatibility(
+        "scalp_v1", 50, SCHEMA_70D, 70, model_input_dimension=tensor_dim
+    )
     assert r["result"] == ModelCompatibility.BLOCK.value
     assert r["reason"] == "MODEL_INPUT_DIMENSION_MISMATCH"
 
@@ -1117,7 +1130,7 @@ def test_liq_bug123_15_feature_order_hash_is_canonical() -> None:
 def test_liq_bug123_16_real_liquidity_values_fill_60_69() -> None:
     gov = LiquidityGovernor(enabled=True)
     bars = _steady_bars()
-    snap = gov.compute_from_engine(bars=bars, mid_price=float(bars[-1].close), atr=1.5)
+    gov.compute_from_engine(bars=bars, mid_price=float(bars[-1].close), atr=1.5)
     payload = gov.snapshot_payload()
     assert payload["dimension"] == 70
     feats = payload["features"]
@@ -1126,4 +1139,3 @@ def test_liq_bug123_16_real_liquidity_values_fill_60_69() -> None:
         assert meta["index"] == 60 + list(LIQUIDITY_FEATURE_NAMES).index(name)
         assert meta["validity"] == "finite"
         assert math.isfinite(meta["value"])
-

@@ -232,7 +232,8 @@ def test_task02_16_60d_model_with_liquidity_off_blocked() -> None:
         runtime_dimension=50,
     )
     assert r["result"] == "BLOCK"
-    assert r["reason"] == "MODEL_DIMENSION_EXCEEDS_RUNTIME"
+    # legacy-family schema (scalp_liquidity_v1) -> family gate -> SCHEMA_VERSION_MISMATCH
+    assert r["reason"] == "SCHEMA_VERSION_MISMATCH"
 
 
 def test_task02_16_matching_contracts_pass() -> None:
