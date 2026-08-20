@@ -72,7 +72,15 @@ STATUS_INCOMPATIBLE = "INCOMPATIBLE"
 STATUS_SECURITY_BLOCKED = "SECURITY_BLOCKED"
 STATUS_GITHUB_UNAVAILABLE = "GITHUB_UNAVAILABLE"
 STATUS_DIRECT_UPDATE_UNSUPPORTED = "DIRECT_UPDATE_UNSUPPORTED"
+STATUS_UPDATE_REJECTED = "UPDATE_REJECTED"
+STATUS_NETWORK_UNAVAILABLE = "NETWORK_UNAVAILABLE"
 STATUS_UNKNOWN = "UNKNOWN"
+
+#: Update failure-stage vocabulary (CLI diagnostics, spec 36/59).
+STAGE_DOWNLOAD = "Download"
+STAGE_VERIFY = "Verify"
+STAGE_INSTALL = "Install"
+STAGE_STARTUP = "Startup"
 
 #: Roadmap of the update state machine (section 26) — every transition persists.
 STATE_IDLE = "IDLE"
@@ -118,6 +126,15 @@ _SOURCE_ASSET_RE = re.compile(
     r"(^|[-_.])(source|src)([-_.]|$)|\.tar(\.gz|\.bz2|\.xz)?$|main\.zip$", re.I
 )
 
+#: Checksum-asset name shapes published alongside payloads (spec 12).
+_CHECKSUM_ASSET_RE = re.compile(
+    r"sha256sums?\.txt$|sha256\.txt$|\.sha256$|checksums?\.txt$|digests?\.txt$", re.I
+)
+
+#: Revocation markers in release body/notes (spec 47). A release explicitly
+#: marked revoked must NEVER install, even if newer.
+_REVOKED_MARKER_RE = re.compile(r"(?i)\b(REVOKED|REVOKE)\b")
+
 
 # ---------------------------------------------------------------------------
 # Semantic versioning
@@ -154,6 +171,9 @@ class UpdateDiscovery:
     DEFAULT_API = "https://api.github.com/repos/Opselon/NexusTradingForexBot/releases"
     USER_AGENT = "NexusScalpEngine-Update/9.x"
 
+    #: Transient HTTP codes retried with exponential backoff (spec 16).
+    _RETRYABLE_CODES = frozenset({"408", "429", "500", "502", "503", "504"})
+
     @classmethod
     def fetch_releases(
         cls,
@@ -161,6 +181,7 @@ class UpdateDiscovery:
         api_url: str | None = None,
         timeout: int = 20,
         user_agent: str | None = None,
+        max_retries: int = 3,
     ) -> list[dict[str, Any]]:
         """GET the releases list.  Raises GitHubDiscoveryError on ANY failure.
 
@@ -168,57 +189,116 @@ class UpdateDiscovery:
         which must surface as RELEASE_NOT_FOUND, never as "latest == current".
         """
         url = api_url or cls.DEFAULT_API
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": user_agent or cls.USER_AGENT,
-                "Accept": "application/vnd.github+json",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read()
-        except urllib.error.HTTPError as e:
-            retry_after = None
+        last_err: GitHubDiscoveryError | None = None
+        attempt = 0
+        while attempt <= max_retries:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": user_agent or cls.USER_AGENT,
+                    "Accept": "application/vnd.github+json",
+                },
+            )
             try:
-                retry_after = int(e.headers.get("Retry-After", ""))
-            except (TypeError, ValueError):
-                pass
-            raise GitHubDiscoveryError(
-                str(e.code), e.reason or str(e), retry_after=retry_after
-            ) from e
-        except urllib.error.URLError as e:
-            raise GitHubDiscoveryError("", str(e.reason or e)) from e
-        except TimeoutError as e:
-            raise GitHubDiscoveryError("", "timeout contacting GitHub") from e
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError) as e:
-            raise GitHubDiscoveryError("", f"invalid JSON from GitHub: {e}") from e
-        if not isinstance(data, list):
-            # GitHub returns a dict for repo-level errors (e.g. 403 abuse).
-            msg = str(data.get("message", "unexpected GitHub payload"))[:200]
-            raise GitHubDiscoveryError("", msg)
-        return data
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw = resp.read()
+            except urllib.error.HTTPError as e:
+                retry_after = None
+                try:
+                    retry_after = int(e.headers.get("Retry-After", ""))
+                except (TypeError, ValueError):
+                    pass
+                last_err = GitHubDiscoveryError(
+                    str(e.code), e.reason or str(e), retry_after=retry_after
+                )
+                if str(e.code) in cls._RETRYABLE_CODES and attempt < max_retries:
+                    delay = retry_after if retry_after is not None else min(2 ** attempt * 2, 30)
+                    time.sleep(delay)
+                    attempt += 1
+                    continue
+                raise last_err
+            except urllib.error.URLError as e:
+                last_err = GitHubDiscoveryError("", str(e.reason or e))
+                if attempt < max_retries:
+                    time.sleep(min(2 ** attempt * 2, 30))
+                    attempt += 1
+                    continue
+                raise last_err
+            except TimeoutError as e:
+                last_err = GitHubDiscoveryError("", "timeout contacting GitHub")
+                if attempt < max_retries:
+                    time.sleep(min(2 ** attempt * 2, 30))
+                    attempt += 1
+                    continue
+                raise last_err
+            try:
+                data = json.loads(raw.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError) as e:
+                raise GitHubDiscoveryError("", f"invalid JSON from GitHub: {e}") from e
+            if not isinstance(data, list):
+                # GitHub returns a dict for repo-level errors (e.g. 403 abuse).
+                msg = str(data.get("message", "unexpected GitHub payload"))[:200]
+                raise GitHubDiscoveryError("", msg)
+            return data
+        assert last_err is not None
+        raise last_err
 
     @classmethod
-    def _select_release(cls, releases: list[dict[str, Any]], channel: str) -> dict[str, Any] | None:
-        """Highest semantically-versioned release for the channel.
+    def _is_revoked(cls, release: dict[str, Any]) -> bool:
+        """True when the release explicitly marks itself revoked (spec 47)."""
+        body = " ".join(str(release.get(k) or "") for k in ("body", "body_text", "name"))
+        return bool(_REVOKED_MARKER_RE.search(body))
 
-        stable refuses prereleases; beta/nightly may take them.
+    @classmethod
+    def _select_release(
+        cls,
+        releases: list[dict[str, Any]],
+        channel: str,
+        *,
+        include_prerelease: bool = False,
+    ) -> dict[str, Any] | None:
+        """Highest semantically-versioned eligible release for the channel.
+
+        Eligibility (spec 4/6/47): not draft, not revoked, valid semver tag,
+        at least one asset.  stable refuses prereleases unless explicitly
+        requested; beta/nightly may take them.
         """
         best: dict[str, Any] | None = None
         best_tag: tuple[int, int, int] | None = None
         for rel in releases:
+            if rel.get("draft"):
+                continue
+            if cls._is_revoked(rel):
+                continue
             tag = str(rel.get("tag_name", "")).lstrip("v")
             parsed = parse_version(tag)
             if parsed is None or not rel.get("assets"):
                 continue
-            if channel == "stable" and rel.get("prerelease"):
+            if channel == "stable" and rel.get("prerelease") and not include_prerelease:
                 continue
             if best_tag is None or parsed > best_tag:
                 best, best_tag = rel, parsed
         return best
+
+    @classmethod
+    def release_identity(cls, release: dict[str, Any]) -> dict[str, Any]:
+        """Lock the EXACT release identity before any download (spec 7)."""
+        return {
+            "release_id": release.get("id"),
+            "tag": str(release.get("tag_name", "")),
+            "version": str(release.get("tag_name", "")).lstrip("v"),
+            "commit_sha": str(
+                release.get("target_commitish") or release.get("commit") or ""
+            ),
+            "published_at": str(
+                release.get("published_at") or release.get("created_at") or ""
+            ),
+            "draft": bool(release.get("draft")),
+            "prerelease": bool(release.get("prerelease")),
+            "revoked": cls._is_revoked(release),
+            "release_notes_url": str(release.get("html_url") or ""),
+            "upload_url": str(release.get("upload_url") or ""),
+        }
 
     @classmethod
     def status_for_exception(cls, err: GitHubDiscoveryError) -> str:
@@ -231,7 +311,9 @@ class UpdateDiscovery:
             return STATUS_GITHUB_UNAVAILABLE
         if err.code:
             return STATUS_NETWORK_ERROR
-        return STATUS_NETWORK_ERROR
+        # No HTTP code: connection refused / DNS / timeout.  This means
+        # the network (or GitHub) is unreachable — NEVER "no update" (spec 41).
+        return STATUS_NETWORK_UNAVAILABLE
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +333,137 @@ class HashVerifier:
     @staticmethod
     def sha256_bytes(data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
+
+
+class DigestResolver:
+    """Resolves the authoritative SHA-256 digest of a release asset.
+
+    GitHub release asset metadata carries NO checksum, so the digest must
+    come from a checksum asset published ALONGSIDE the payload (spec 12).
+    Resolution order (spec 44/46):
+
+        1. Asset-level ``digest_sha256``/``sha256`` metadata (test feeds).
+        2. A checksum asset of THIS release (sha256sums.txt / sha256.txt /
+           *.sha256 / checksums.txt / digests.txt), parsed sha256sum-format;
+           the payload lookup must be unique — ambiguous FAIL SAFE (spec 11).
+        3. ``release_manifest`` embedded in asset metadata (build feed).
+
+    A release with no resolvable digest stays SECURITY_BLOCKED (invariant 1).
+    """
+
+    @classmethod
+    def _looks_like_checksum_asset(cls, name: str) -> bool:
+        return bool(_CHECKSUM_ASSET_RE.search(name))
+
+    @classmethod
+    def _fetch_checksum_text(cls, asset: dict[str, Any], timeout: int = 60) -> str:
+        url = asset.get("browser_download_url") or asset.get("url")
+        if not url:
+            return ""
+        req = urllib.request.Request(url, headers={"User-Agent": UpdateDiscovery.USER_AGENT})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+
+    @classmethod
+    def _parse_sha256sums(cls, text: str) -> dict[str, str]:
+        """Parse sha256sum-format: '<hex>  <name>' per line.
+        Path-relative names are indexed; base names also indexed."""
+        out: dict[str, str] = {}
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(None, 1)
+            if len(parts) != 2:
+                continue
+            digest, name = parts[0], parts[1].strip().lstrip("*")
+            if len(digest) != 64:
+                continue
+            out[name] = digest.lower()
+            out[name.rsplit("/", 1)[-1]] = digest.lower()
+        return out
+
+    @classmethod
+    def resolve_from_release(
+        cls,
+        release: dict[str, Any],
+        asset: dict[str, Any],
+        *,
+        timeout: int = 60,
+    ) -> tuple[str | None, list[str]]:
+        """Return (digest_or_None, decisions).  Ambiguity -> (None, ...)."""
+        decisions: list[str] = []
+        inline = str(asset.get("digest_sha256") or asset.get("sha256") or "").strip()
+        if inline:
+            decisions.append("digest from asset metadata")
+            return inline.lower(), decisions
+        checksum_assets = [
+            a
+            for a in release.get("assets", [])
+            if cls._looks_like_checksum_asset(str(a.get("name", "")))
+        ]
+        if not checksum_assets:
+            decisions.append("no checksum asset published for this release")
+            return None, decisions
+        target_name = str(asset.get("name", ""))
+        base = target_name.rsplit("/", 1)[-1]
+        matches: list[str] = []
+        for ca in checksum_assets:
+            try:
+                txt = cls._fetch_checksum_text(ca, timeout=timeout)
+            except Exception as e:
+                decisions.append(f"checksum asset {ca.get('name')} unreadable: {e}")
+                continue
+            table = cls._parse_sha256sums(txt)
+            hit = table.get(target_name) or table.get(base)
+            if hit:
+                matches.append(hit)
+                decisions.append(f"digest found in checksum asset {ca.get('name')}")
+        if not matches:
+            decisions.append("checksum assets present but payload not listed")
+            return None, decisions
+        uniq = sorted(set(matches))
+        if len(uniq) != 1:
+            decisions.append(
+                f"conflicting digests across checksum assets ({len(uniq)} values) — fail safe"
+            )
+            return None, decisions
+        return uniq[0], decisions
+
+    @classmethod
+    def resolve_from_upload_url(
+        cls,
+        upload_url: str,
+        asset: dict[str, Any],
+        *,
+        timeout: int = 60,
+    ) -> tuple[str | None, list[str]]:
+        """GitHub uploads endpoint fallback (spec 46).
+        Derives the release-assets API URL from upload_url and re-resolves."""
+        decisions: list[str] = []
+        if "{?name,label}" not in upload_url:
+            return None, decisions
+        api_assets = upload_url.split("{", 1)[0]  # .../releases/123/assets
+        try:
+            assets = cls._release_assets_json(api_assets, timeout=timeout)
+        except Exception as e:
+            decisions.append(f"release assets API unreadable: {e}")
+            return None, decisions
+        if not isinstance(assets, list):
+            return None, decisions
+        return cls.resolve_from_release({"assets": assets, "body": ""}, asset, timeout=timeout)
+
+    @classmethod
+    def _release_assets_json(cls, url: str, timeout: int = 20) -> Any:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": UpdateDiscovery.USER_AGENT,
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
 
 
 class ManifestVerifier:
@@ -388,11 +601,15 @@ class UpdatePlanBuilder:
         channel: str = DEFAULT_CHANNEL,
         architecture: str | None = None,
         installed_commit: str | None = None,
+        include_prerelease: bool = False,
+        allow_downgrade: bool = False,
     ) -> None:
         self.installed_version = installed_version
         self.channel = channel if channel in SUPPORTED_CHANNELS else DEFAULT_CHANNEL
         self.architecture = architecture or _machine_arch()
         self.installed_commit = installed_commit
+        self.include_prerelease = include_prerelease
+        self.allow_downgrade = allow_downgrade
 
     def build(self, release: dict[str, Any] | None) -> dict[str, Any]:
         decisions: list[str] = []
@@ -429,14 +646,30 @@ class UpdatePlanBuilder:
             return base
 
         # 1. channel policy (never silently switch a stable user to beta/nightly)
-        if self.channel == "stable" and release.get("prerelease"):
+        if self.channel == "stable" and release.get("prerelease") and not self.include_prerelease:
             decisions.append(
-                f"{release.get('tag_name')} is a pre-release; stable channel refuses it"
+                f"{release.get('tag_name')} is a pre-release; stable channel refuses it "
+                "(use --include-prerelease to opt in explicitly)"
             )
             base["status"] = STATUS_NO_UPDATE
             return base
 
-        # 2. version identity
+        # 2. exact release identity locked BEFORE any download (spec 7)
+        identity = UpdateDiscovery.release_identity(release)
+        if identity["draft"]:
+            decisions.append("release is a DRAFT — never eligible")
+            base["status"] = STATUS_NO_UPDATE
+            return base
+        if identity["revoked"]:
+            decisions.append(
+                f"release {identity['tag']} is explicitly marked REVOKED — never installs, "
+                "even though it is newer (spec section 47)"
+            )
+            base["status"] = STATUS_UPDATE_REJECTED
+            return base
+        base.update(identity)
+
+        # 3. version identity
         tag = str(release.get("tag_name", "")).lstrip("v")
         if not tag:
             decisions.append("release descriptor missing tag_name")
@@ -448,12 +681,18 @@ class UpdatePlanBuilder:
             base["status"] = STATUS_INCOMPATIBLE
             return base
         if cmp < 0:
+            if not self.allow_downgrade:
+                decisions.append(
+                    f"target {tag} is OLDER than installed {self.installed_version} — "
+                    "downgrade blocked unless --allow-downgrade is explicit"
+                )
+                base["status"] = STATUS_NO_UPDATE
+                base["downgrade_blocked"] = True
+                return base
             decisions.append(
-                f"target {tag} is OLDER than installed {self.installed_version} — downgrade blocked"
+                f"target {tag} is OLDER than installed {self.installed_version} — "
+                "--allow-downgrade explicit opt-in accepted; compatibility still verified"
             )
-            base["status"] = STATUS_NO_UPDATE
-            base["downgrade_blocked"] = True
-            return base
         if cmp == 0:
             decisions.append(f"already at {self.installed_version}; no newer release")
             base["status"] = STATUS_NO_UPDATE
@@ -497,10 +736,16 @@ class UpdatePlanBuilder:
         base["artifact_size"] = asset.get("size")
         base["release_notes_url"] = release.get("html_url")
 
-        # 6. digest requirement (section 10: hash ABOVE everything else)
-        digest = asset.get("digest_sha256") or asset.get("sha256")
+        # 6. digest resolution (spec 10/12: hash ABOVE everything else).
+        #    GitHub asset metadata carries NO checksum — the digest MUST
+        #    come from a published checksum asset / manifest (BUG-122).
+        digest, digest_decisions = DigestResolver.resolve_from_release(release, asset)
+        decisions.extend(digest_decisions)
         if not digest:
-            decisions.append("release asset lacks a SHA-256 digest — update will refuse")
+            decisions.append(
+                "release asset lacks a resolvable SHA-256 digest — update will refuse "
+                "(no silent fallback, spec section 66)"
+            )
             base["status"] = STATUS_SECURITY_BLOCKED
             return base
         base["artifact_sha256"] = str(digest).lower()
@@ -513,6 +758,25 @@ class UpdatePlanBuilder:
         base["migration_required"] = bool(
             manifest.get("database_schema") or manifest.get("config_schema")
         )
+
+        # 8. model/client compatibility tuple (spec 48/49).
+        min_client = str(release.get("minimum_client_version") or "")
+        min_model = str(
+            release.get("minimum_model_version") or manifest.get("minimum_model_version") or ""
+        )
+        base["minimum_client_version"] = min_client or None
+        base["minimum_model_version"] = min_model or None
+        base["model_version"] = manifest.get("model_version")
+        base["model_sha256"] = manifest.get("model_sha256")
+        base["schema_version"] = manifest.get("schema_version")
+        base["feature_dimension"] = manifest.get("feature_dimension")
+        if min_client and compare_versions(self.installed_version, min_client) == -1:
+            decisions.append(
+                f"release requires client >= {min_client}; installed "
+                f"{self.installed_version} — model/client matrix gate"
+            )
+            base["status"] = STATUS_INCOMPATIBLE
+            return base
 
         decisions.append(f"release {tag} offers {base['artifact_name']} for {self.architecture}")
         decisions.append("SHA-256 + release manifest will be verified before install")
@@ -587,20 +851,40 @@ class SafeDownloader:
         chunk_size: int = 1024 * 1024,
     ) -> Path:
         part = self.cache_dir / f"{dest_name}.part"
-        h = hashlib.sha256()
         headers = {"User-Agent": UpdateDiscovery.USER_AGENT}
-        if part.exists() and part.stat().st_size > 0:
-            headers["Range"] = f"bytes={part.stat().st_size}-"
+        existing = part.stat().st_size if part.exists() else 0
+        if existing > 0:
+            headers["Range"] = f"bytes={existing}-"
         req = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                mode = "ab" if part.exists() else "wb"
-                with open(part, mode) as f:
-                    while block := resp.read(chunk_size):
-                        f.write(block)
-                        h.update(block)
-        except Exception:
-            raise
+        attempt = 0
+        while True:
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    # Resume-safe hash: the hasher must cover the ALREADY
+                    # downloaded bytes too, or a resumed file always fails
+                    # verification and the partial is discarded (BUG-122).
+                    h = hashlib.sha256()
+                    if existing > 0:
+                        with open(part, "rb") as pf:
+                            while block := pf.read(chunk_size):
+                                h.update(block)
+                    mode = "ab" if existing > 0 else "wb"
+                    with open(part, mode) as f:
+                        while block := resp.read(chunk_size):
+                            f.write(block)
+                            h.update(block)
+                break
+            except (urllib.error.URLError, TimeoutError) as e:
+                if attempt >= max_retries:
+                    raise
+                attempt += 1
+                time.sleep(min(2 ** attempt * 2, 30))
+                existing = part.stat().st_size if part.exists() else 0
+                headers = {"User-Agent": UpdateDiscovery.USER_AGENT}
+                if existing > 0:
+                    headers["Range"] = f"bytes={existing}-"
+                req = urllib.request.Request(url, headers=headers)
+                continue
         final = self.cache_dir / dest_name
         if expected_sha256 and not HashVerifier.verify_sha256(part, expected_sha256):
             part.unlink(missing_ok=True)
