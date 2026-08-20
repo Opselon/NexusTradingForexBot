@@ -180,13 +180,18 @@ def build_candidate(strategy_id: str = "STRAT-OBS-0001") -> StrategyCandidate:
             "volatility_regime": "NORMAL",
             "trend_state": "BULLISH",
         },
-        entry_logic={"direction": "directional", "context": "XAUUSD|M1|LONDON|RANGING_MEAN_REVERSION|NORMAL|BULLISH"},
+        entry_logic={
+            "direction": "directional",
+            "context": "XAUUSD|M1|LONDON|RANGING_MEAN_REVERSION|NORMAL|BULLISH",
+        },
         exit_logic={"mode": "SL_TP", "risk_model": "fixed_stop"},
     )
     return c.model_copy(update={"strategy_version": c.canonical_version()})
 
 
-def make_obs_fixture(repo) -> tuple[ResearchDatasetBuilder, StrategyRegistry, ResearchPipeline, ResearchObservabilityStore]:
+def make_obs_fixture(
+    repo,
+) -> tuple[ResearchDatasetBuilder, StrategyRegistry, ResearchPipeline, ResearchObservabilityStore]:
     ledger = ExperienceLedger(audit_repo=repo)
     seed_experiences(ledger, repo, 46, positive=True)
     builder = ResearchDatasetBuilder(ledger=ledger)
@@ -194,6 +199,7 @@ def make_obs_fixture(repo) -> tuple[ResearchDatasetBuilder, StrategyRegistry, Re
     obs = ResearchObservabilityStore(repo)
     pipe = ResearchPipeline(dataset_builder=builder, registry=reg, observability=obs)
     return builder, reg, pipe, obs
+
 
 # =============================================================================
 # GATES + EVENTS + EVIDENCE + RUNS + SNAPSHOT
@@ -333,18 +339,12 @@ class TestEvidenceVault:
 
     def test_evidence_immutable_hash(self, temp_audit_repo):
         ResearchObservabilityStore(temp_audit_repo)
-        art = EvidenceArtifact.create(
-            "S", "RUN-H", EvidenceKind.BACKTEST_RESULT, {"trades": 10}
-        )
-        art2 = EvidenceArtifact.create(
-            "S", "RUN-H", EvidenceKind.BACKTEST_RESULT, {"trades": 10}
-        )
+        art = EvidenceArtifact.create("S", "RUN-H", EvidenceKind.BACKTEST_RESULT, {"trades": 10})
+        art2 = EvidenceArtifact.create("S", "RUN-H", EvidenceKind.BACKTEST_RESULT, {"trades": 10})
         assert art.evidence_id == art2.evidence_id  # deterministic content address
         assert art.content_hash == stable_digest({"trades": 10})
         # Different content -> different address
-        art3 = EvidenceArtifact.create(
-            "S", "RUN-H", EvidenceKind.BACKTEST_RESULT, {"trades": 11}
-        )
+        art3 = EvidenceArtifact.create("S", "RUN-H", EvidenceKind.BACKTEST_RESULT, {"trades": 11})
         assert art3.evidence_id != art.evidence_id
 
 
@@ -387,16 +387,10 @@ class TestReproducibilitySnapshot:
 
     def test_snapshot_deterministic(self, temp_audit_repo):
         ResearchObservabilityStore(temp_audit_repo)
-        s1 = build_run_snapshot(
-            "S1", "v1", {"ctx": {"a": 1}}, None, random_seed=42
-        )
-        s2 = build_run_snapshot(
-            "S1", "v1", {"ctx": {"a": 1}}, None, random_seed=42
-        )
+        s1 = build_run_snapshot("S1", "v1", {"ctx": {"a": 1}}, None, random_seed=42)
+        s2 = build_run_snapshot("S1", "v1", {"ctx": {"a": 1}}, None, random_seed=42)
         assert s1.fingerprint() == s2.fingerprint()
-        s3 = build_run_snapshot(
-            "S1", "v1", {"ctx": {"a": 2}}, None, random_seed=42
-        )
+        s3 = build_run_snapshot("S1", "v1", {"ctx": {"a": 2}}, None, random_seed=42)
         assert s3.fingerprint() != s1.fingerprint()
 
 
@@ -562,7 +556,9 @@ class TestEndToEnd:
         # be validated; the system explains it rather than pretending.
         obs = ResearchObservabilityStore(temp_audit_repo)
         obs.record_event(
-            "STRAT-EMPTY", "RUN-EMPTY", "STRATEGY_BLOCKED",
+            "STRAT-EMPTY",
+            "RUN-EMPTY",
+            "STRATEGY_BLOCKED",
             "no research dataset available",
             payload={"required": "min 8 closed outcomes"},
         )

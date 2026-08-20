@@ -144,7 +144,11 @@ class StrategyFactory:
         )
         emit_event(
             self.audit_repo,
-            {"event_id": _event_id(), "event_type": "LOOP_PAUSED", "message": "Autonomous loop paused"},
+            {
+                "event_id": _event_id(),
+                "event_type": "LOOP_PAUSED",
+                "message": "Autonomous loop paused",
+            },
         )
         return True
 
@@ -158,7 +162,11 @@ class StrategyFactory:
         )
         emit_event(
             self.audit_repo,
-            {"event_id": _event_id(), "event_type": "LOOP_RESUMED", "message": "Autonomous loop resumed"},
+            {
+                "event_id": _event_id(),
+                "event_type": "LOOP_RESUMED",
+                "message": "Autonomous loop resumed",
+            },
         )
         return True
 
@@ -174,7 +182,11 @@ class StrategyFactory:
         )
         emit_event(
             self.audit_repo,
-            {"event_id": _event_id(), "event_type": "LOOP_STOPPED", "message": "Kill switch engaged"},
+            {
+                "event_id": _event_id(),
+                "event_type": "LOOP_STOPPED",
+                "message": "Kill switch engaged",
+            },
         )
         self.loop_state = LoopState.STOPPED.value
         # Persist the FINAL state (not the transient STOPPING) so a crash
@@ -205,7 +217,9 @@ class StrategyFactory:
     ) -> dict[str, Any]:
         """Creates and persists a new generation (population shell)."""
         cfg = self.config
-        population = max(1, min(int(size or cfg.generation_size), cfg.max_candidates_per_generation))
+        population = max(
+            1, min(int(size or cfg.generation_size), cfg.max_candidates_per_generation)
+        )
         number = self._next_generation_number()
         generation_id = f"G{number}"
         gen = {
@@ -305,9 +319,8 @@ class StrategyFactory:
         from nexus_scalp.strategies.factory.dsl import generate_generation_zero
 
         candidates = generate_generation_zero(population, seed=RANDOM_SEED)
-        # (The generation_id stamping loop was dead code: it discarded its
-        #  result; _ensure_family_coverage below re-stamps nothing. Generation
-        #  ids are assigned at registration. Removed for PLW2901.)
+        candidates = [c.model_copy(update={"generation_id": generation_id}) for c in candidates]
+        # Family diversity injection: ensure all families present in G0.
         candidates = _ensure_family_coverage(candidates, generation_id)
         return candidates
 
@@ -545,7 +558,9 @@ class StrategyFactory:
             from nexus_scalp.strategies.factory.store import get_candidate_structural
 
             existing = get_candidate_structural(self.audit_repo, candidate.candidate_id)
-            structural = existing if existing is not None else (verdict.model_dump() if verdict else None)
+            structural = (
+                existing if existing is not None else (verdict.model_dump() if verdict else None)
+            )
         else:
             structural = verdict.model_dump() if verdict else None
         upsert_candidate(
@@ -562,10 +577,12 @@ class StrategyFactory:
                 "dsl": candidate.dsl.model_dump(),
                 "structural": structural,
                 "lifecycle": lifecycle,
-                "failure_reasons": [verdict.failure_reason.value] if verdict and verdict.failure_reason else [],
+                "failure_reasons": [verdict.failure_reason.value]
+                if verdict and verdict.failure_reason
+                else [],
                 "llm_response_id": candidate.llm_response_id,
                 "created_at": candidate.created_at.isoformat(),
-            }
+            },
         )
 
     def _persist_failure(self, candidate: FactoryCandidate, verdict: Any) -> None:
@@ -577,10 +594,12 @@ class StrategyFactory:
                 "strategy_id": candidate.candidate_id,
                 "generation_id": candidate.generation_id,
                 "stage": verdict.stage.value,
-                "reason": verdict.failure_reason.value if verdict.failure_reason else "INVALID_SCHEMA",
+                "reason": verdict.failure_reason.value
+                if verdict.failure_reason
+                else "INVALID_SCHEMA",
                 "detail": {"message": verdict.reasons, **verdict.details},
                 "created_at": _now().isoformat(),
-            }
+            },
         )
 
     def evaluate_candidate(
@@ -609,7 +628,6 @@ class StrategyFactory:
             score = result.get("score") or {}
             oos = result.get("oos") or {}
             rob = result.get("robustness") or {}
-            result.get("walkforward") or {}
 
             failed_reasons = self._derived_failure_reasons(result, candidate)
             self._persist_candidate(
@@ -636,7 +654,7 @@ class StrategyFactory:
                             "trades": (result.get("backtest") or {}).get("total_trades", 0),
                         },
                         "created_at": _now().isoformat(),
-                    }
+                    },
                 )
 
             self._tally_operator_survival(candidate, lifecycle)
@@ -718,7 +736,9 @@ class StrategyFactory:
             },
         )
 
-    def _derived_failure_reasons(self, result: dict[str, Any], candidate: FactoryCandidate) -> list[str]:
+    def _derived_failure_reasons(
+        self, result: dict[str, Any], candidate: FactoryCandidate
+    ) -> list[str]:
         """Maps the pipeline result to structured failure reasons (spec 23)."""
         reasons: list[str] = []
         score = result.get("score") or {}
@@ -827,7 +847,10 @@ class StrategyFactory:
                 "payload": summary.model_dump(),
             },
         )
-        self._send_telegram("GENERATION_COMPLETED", {"generation_id": generation_id, "summary": summary.model_dump()})
+        self._send_telegram(
+            "GENERATION_COMPLETED",
+            {"generation_id": generation_id, "summary": summary.model_dump()},
+        )
         return {"summary": summary.model_dump(), "ranked": ranked, "elite": elite}
 
     def _registry_rows_for_generation(
@@ -849,7 +872,7 @@ class StrategyFactory:
         gens = list_generations(self.audit_repo, limit=50)
         summaries: list[Any] = []
         for g in gens:
-            cfg = (g.get("config") or {})
+            cfg = g.get("config") or {}
             s = cfg.get("summary")
             if s:
                 summaries.append(s)
@@ -903,11 +926,7 @@ class StrategyFactory:
         if not gen:
             return {"status": "NOT_FOUND"}
         candidates = list_candidates(self.audit_repo, generation_id=generation_id, limit=2000)
-        pending = [
-            c
-            for c in candidates
-            if c.get("lifecycle") in ("GENERATED", None, "")
-        ]
+        pending = [c for c in candidates if c.get("lifecycle") in ("GENERATED", None, "")]
         dataset = self._build_dataset()
         resumed = 0
         for c in pending:
@@ -959,7 +978,15 @@ def _decode_registry_row(entry: dict[str, Any]) -> dict[str, Any]:
     import json as _json
 
     out = dict(entry)
-    for col in ("backtest", "walkforward", "oos", "robustness", "score", "context_definition", "parent_strategy_ids"):
+    for col in (
+        "backtest",
+        "walkforward",
+        "oos",
+        "robustness",
+        "score",
+        "context_definition",
+        "parent_strategy_ids",
+    ):
         raw = out.get(col)
         if raw is None:
             out[col] = {}

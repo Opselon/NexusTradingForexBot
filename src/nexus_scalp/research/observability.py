@@ -75,6 +75,8 @@ def _connect(repo: AuditRepository) -> sqlite3.Connection:
     conn = sqlite3.connect(repo._db_path, timeout=5.0)
     conn.row_factory = sqlite3.Row
     return conn
+
+
 class ResearchObservabilityStore:
     """Bounded persistence facade over the research observability tables."""
 
@@ -803,9 +805,7 @@ class ResearchObservabilityStore:
                     total += int(r["c"])
                 out["total_failures"] = total
                 reasons: dict[str, int] = {}
-                for r in conn.execute(
-                    "SELECT result_summary FROM research_runs;"
-                ).fetchall():
+                for r in conn.execute("SELECT result_summary FROM research_runs;").fetchall():
                     s = _read_json(r[0])
                     lc = s.get("lifecycle", "")
                     if lc == "REJECTED":
@@ -908,9 +908,18 @@ class ResearchObservabilityStore:
             if row is None:
                 return None
             out = dict(row)
-            for col in ("backtest", "walkforward", "oos", "robustness", "score",
-                        "context_definition", "parent_strategy_ids",
-                        "validation_lineage", "retirement_reason", "discovery_evidence"):
+            for col in (
+                "backtest",
+                "walkforward",
+                "oos",
+                "robustness",
+                "score",
+                "context_definition",
+                "parent_strategy_ids",
+                "validation_lineage",
+                "retirement_reason",
+                "discovery_evidence",
+            ):
                 out[col] = _read_json(out.get(col))
             return out
         except Exception as e:

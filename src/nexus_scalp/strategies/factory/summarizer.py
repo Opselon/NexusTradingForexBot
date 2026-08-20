@@ -65,7 +65,7 @@ def build_summary(
 
     failure_dist: dict[str, int] = {}
     for c in candidates:
-        for fr in (c.get("failure_reasons") or []):
+        for fr in c.get("failure_reasons") or []:
             failure_dist[str(fr)] = failure_dist.get(str(fr), 0) + 1
 
     feature_dist: dict[str, int] = {}
@@ -92,9 +92,7 @@ def build_summary(
     diversity_src = registry_entries or candidates
     diversity = population_diversity(diversity_src)
 
-    structurally_valid = sum(
-        1 for c in candidates if _structural_passed(c)
-    )
+    structurally_valid = sum(1 for c in candidates if _structural_passed(c))
 
     return GenerationSummary(
         generation_id=str(generation.get("generation_id", "")),
@@ -162,12 +160,12 @@ def memory_summary(
     the next generation's planner / LLM prompt consumes."""
     top = sorted(
         all_entries,
-        key=lambda e: (float((e.get("score") or {}).get("final_score", 0.0) or 0.0)),
+        key=lambda e: float((e.get("score") or {}).get("final_score", 0.0) or 0.0),
         reverse=True,
     )[:5]
     worst = sorted(
         all_entries,
-        key=lambda e: (float((e.get("score") or {}).get("final_score", 0.0) or 0.0)),
+        key=lambda e: float((e.get("score") or {}).get("final_score", 0.0) or 0.0),
     )[:5]
 
     common_failures: list[dict[str, Any]] = []
@@ -221,9 +219,7 @@ def memory_summary(
         "stagnation_count": stagnation,
         "operator_success": operator_success,
         "diversity": (
-            round(sum(s.diversity for s in summaries) / len(summaries), 4)
-            if summaries
-            else 0.0
+            round(sum(s.diversity for s in summaries) / len(summaries), 4) if summaries else 0.0
         ),
         "complexity_trend": [
             {"generation": s.number, "avg_score": s.avg_score, "diversity": s.diversity}
@@ -252,7 +248,9 @@ def format_summary_for_prompt(memory: dict[str, Any]) -> str:
             lines.append(f"  {f.get('reason')} x{f.get('count')}")
     sf = memory.get("successful_features") or {}
     if sf:
-        lines.append("SUCCESSFUL FEATURES: " + ", ".join(f"{k}={v}" for k, v in list(sf.items())[:6]))
+        lines.append(
+            "SUCCESSFUL FEATURES: " + ", ".join(f"{k}={v}" for k, v in list(sf.items())[:6])
+        )
     ff = memory.get("failed_features") or {}
     if ff:
         lines.append("FAILED FEATURES: " + ", ".join(f"{k}={v}" for k, v in list(ff.items())[:6]))

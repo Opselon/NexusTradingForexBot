@@ -282,8 +282,7 @@ def outcome_forensics(db_path: str, limit: int = 200) -> dict[str, Any]:
         try:
             for br in _safe_rows(
                 bc,
-                "SELECT trade_id, net_pnl FROM audit_broker_trades "
-                "WHERE abs(net_pnl) > 0.005",
+                "SELECT trade_id, net_pnl FROM audit_broker_trades WHERE abs(net_pnl) > 0.005",
             ):
                 broker_pnl_by[str(br.get("trade_id") or "")] = float(br.get("net_pnl") or 0.0)
         finally:
@@ -304,9 +303,7 @@ def outcome_forensics(db_path: str, limit: int = 200) -> dict[str, Any]:
             except (TypeError, ValueError):
                 payload = {}
         rec_src = str(
-            o.get("reconstruction_source")
-            or payload.get("reconstruction_source")
-            or "NONE"
+            o.get("reconstruction_source") or payload.get("reconstruction_source") or "NONE"
         )
         if abs(r) < 1e-9 and abs(p) < 1e-9:
             zero_total += 1
@@ -381,13 +378,7 @@ def learning_pipeline_rates(db_path: str) -> dict[str, Any]:
     # Bounded expectations: historical production norms (2026-08 evidence).
     if exp_to_out is not None and exp_to_out < 0.25 and n_exp >= 40:
         flags.append("LEARNING_DATA_LOSS")
-    if (
-        out_to_res is not None
-        and out_to_res < 0.05
-        and n_out >= 40
-        and n_res == 0
-        and n_out > 0
-    ):
+    if out_to_res is not None and out_to_res < 0.05 and n_out >= 40 and n_res == 0 and n_out > 0:
         flags.append("OUTCOME_TO_RESEARCH_DROP")
     if res_to_cand is not None and res_to_cand < 0.05 and n_res >= 5:
         flags.append("RESEARCH_TO_CANDIDATE_DROP")
@@ -403,7 +394,6 @@ def learning_pipeline_rates(db_path: str) -> dict[str, Any]:
         "affected_outcomes_unconsumed": n_out - n_res if n_out >= n_res else 0,
         "note": "Rates are evidence-based; thresholds are documented baselines, not fixed assumptions. OUTCOME_TO_RESEARCH_DROP flags only when outcomes exist but research never consumed them (n_res==0, n_out>0).",
     }
-
 
 
 def why_blocked(db_path: str, ticket: str | int) -> dict[str, Any]:

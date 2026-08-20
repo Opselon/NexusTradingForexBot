@@ -295,9 +295,7 @@ def build_run_snapshot(
         try:
             samples = getattr(dataset, "samples", []) or []
             keys = sorted(getattr(s, "idempotency_key", "") for s in samples)
-            dataset_hash = stable_digest(
-                {"dataset_id": dataset_version, "sample_keys": keys}
-            )
+            dataset_hash = stable_digest({"dataset_id": dataset_version, "sample_keys": keys})
         except Exception:
             dataset_hash = ""
 
@@ -415,4 +413,6 @@ class OutcomeLineage(BaseModel):
     evidence_ref: str = Field(default="")
     broker_trade_id: str = Field(default="")
     reconstructed: bool = Field(default=False)
-    repair_state: str = Field(default="UNTOUCHED")  # UNTOUCHED/REPAIRED/ALREADY_VALID/NO_BROKER/AMBIGUOUS/FAILED
+    repair_state: str = Field(
+        default="UNTOUCHED"
+    )  # UNTOUCHED/REPAIRED/ALREADY_VALID/NO_BROKER/AMBIGUOUS/FAILED

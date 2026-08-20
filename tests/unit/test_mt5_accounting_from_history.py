@@ -74,7 +74,9 @@ class TestAccountingFromBrokerHistory:
         report = core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 17, 12, 0, tzinfo=UTC))
         assert report.has_data is True
         assert report.total_trades == 21
-        report_prev = core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 16, 12, 0, tzinfo=UTC))
+        report_prev = core.period_report(
+            PeriodKind.DAY, at=datetime(2026, 8, 16, 12, 0, tzinfo=UTC)
+        )
         assert report.total_trades + report_prev.total_trades == EXPECTED["closed_trades"]
         combined_net = round((report.net_pnl or 0.0) + (report_prev.net_pnl or 0.0), 2)
         assert combined_net == EXPECTED["trades_net_total"]

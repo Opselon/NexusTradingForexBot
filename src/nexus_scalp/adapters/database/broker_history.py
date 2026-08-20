@@ -307,9 +307,7 @@ def _epoch_utc(epoch_sec: int) -> datetime | None:
             BROKER_SERVER_UTC_OFFSET_MINUTES,
         )
 
-        return datetime.fromtimestamp(
-            epoch_sec - BROKER_SERVER_UTC_OFFSET_MINUTES * 60, tz=UTC
-        )
+        return datetime.fromtimestamp(epoch_sec - BROKER_SERVER_UTC_OFFSET_MINUTES * 60, tz=UTC)
     except (OverflowError, OSError, ValueError):
         return None
 

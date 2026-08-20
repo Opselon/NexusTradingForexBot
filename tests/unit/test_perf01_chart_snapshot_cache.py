@@ -217,9 +217,7 @@ def test_perf01_new_bar_republishes() -> None:
     eng._publish()
     n_calls = len(eng.server_state.calls)
     # Simulate a bar close: last completed bar advances.
-    eng.aggregator._completed.append(
-        _make_bars(61)[-1]
-    )  # a real BarData with a later timestamp
+    eng.aggregator._completed.append(_make_bars(61)[-1])  # a real BarData with a later timestamp
     eng._publish()
     assert len(eng.server_state.calls) == n_calls + 1
 

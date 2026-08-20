@@ -33,14 +33,14 @@ from nexus_scalp.strategies.factory.models import (
 #: Documented selection weights (spec 22 / 107). Each is a bounded [0,1]
 #: contribution to the selection score.
 WEIGHTS: dict[str, float] = {
-    "research_score": 0.35,    # validated deterministic research score
-    "oos": 0.15,               # OOS quality (pass + low degradation)
-    "robustness": 0.15,        # robustness pass + low max degradation
-    "consistency": 0.10,       # walk-forward pass fraction
-    "complexity": 0.10,        # 1.0 = simple, 0.0 = at budget
-    "sample": 0.05,            # sample-size confidence
-    "regime": 0.05,            # regime coverage
-    "drawdown": 0.05,          # 1.0 = low drawdown
+    "research_score": 0.35,  # validated deterministic research score
+    "oos": 0.15,  # OOS quality (pass + low degradation)
+    "robustness": 0.15,  # robustness pass + low max degradation
+    "consistency": 0.10,  # walk-forward pass fraction
+    "complexity": 0.10,  # 1.0 = simple, 0.0 = at budget
+    "sample": 0.05,  # sample-size confidence
+    "regime": 0.05,  # regime coverage
+    "drawdown": 0.05,  # 1.0 = low drawdown
 }
 
 
@@ -190,8 +190,6 @@ def explain_rank(entry: dict[str, Any], position: int) -> dict[str, Any]:
 def dimension_score(entry: dict[str, Any], dimension: RankDimension) -> float:
     comps = score_components(entry)
     bt = entry.get("backtest") or {}
-    entry.get("oos") or {}
-    entry.get("score") or {}
     if dimension == RankDimension.OVERALL:
         return comps["total"] if "total" in comps else selection_score(entry)["total"]
     if dimension == RankDimension.OOS:
@@ -260,7 +258,9 @@ def family_diversity(entries: list[dict[str, Any]]) -> float:
         return 0.0
     counts: dict[str, int] = {}
     for e in entries:
-        fam = str(e.get("family", "") or (e.get("context_definition") or {}).get("family", "") or "HYBRID")
+        fam = str(
+            e.get("family", "") or (e.get("context_definition") or {}).get("family", "") or "HYBRID"
+        )
         counts[fam] = counts.get(fam, 0) + 1
     n = len(entries)
     distinct = len(counts)

@@ -148,7 +148,11 @@ def send_factory_event(
         text = build_failure_alert(payload)
         severity = "ERROR"
     elif event_type in ("LOOP_PAUSED", "LOOP_RESUMED"):
-        text = "⏸️ <b>Autonomous loop paused</b>" if event_type == "LOOP_PAUSED" else "▶️ <b>Autonomous loop resumed</b>"
+        text = (
+            "⏸️ <b>Autonomous loop paused</b>"
+            if event_type == "LOOP_PAUSED"
+            else "▶️ <b>Autonomous loop resumed</b>"
+        )
     else:
         # DEPLOYMENT_GATE and others: generic structured line.
         lines = [f"⚠️ <b>{_esc(event_type)}</b>"]

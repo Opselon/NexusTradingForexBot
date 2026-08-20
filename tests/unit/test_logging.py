@@ -62,6 +62,7 @@ def _read_events(dir_path: Path, severity: str) -> list[str]:
 # Redaction
 # ---------------------------------------------------------------------------
 
+
 def test_redact_sensitive_fields() -> None:
     """Password/token keys and high-entropy values are redacted."""
     event = {
@@ -88,6 +89,7 @@ def test_timestamp_now_iso_with_tz() -> None:
 # ---------------------------------------------------------------------------
 # Severity routing
 # ---------------------------------------------------------------------------
+
 
 def test_info_routes_to_info_file(log_root) -> None:
     root, logger = log_root

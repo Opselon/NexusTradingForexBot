@@ -265,11 +265,7 @@ class StrategyRegistry:
                 or (entry.score is not None and entry.score.verdict == "REJECTED")
                 or (entry.backtest is not None and entry.backtest.total_trades == 0)
             )
-            ran_any = (
-                entry.backtest is not None
-                or entry.oos is not None
-                or entry.score is not None
-            )
+            ran_any = entry.backtest is not None or entry.oos is not None or entry.score is not None
             if not gate_failed and not ran_any:
                 problems.append("REJECTED without any failed gate or validation attempt")
         return {

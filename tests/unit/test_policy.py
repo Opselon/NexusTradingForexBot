@@ -465,7 +465,6 @@ def test_execution_id_unique_across_evaluations():
     (two ticks one second apart -> two distinct trace ids)."""
     import copy
 
-
     policy = SignalPolicy()
     fv = copy.deepcopy(_make_feature_vector())
     t1 = _make_tick()

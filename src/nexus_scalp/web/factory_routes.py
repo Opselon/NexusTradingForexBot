@@ -102,7 +102,9 @@ def factory_generations(request: Request, limit: int = 20) -> dict[str, Any]:
         from nexus_scalp.strategies.factory.store import list_generations
         from nexus_scalp.web.server import serialize_enums
 
-        return serialize_enums(_ok({"generations": list_generations(factory.audit_repo, limit=limit)}))
+        return serialize_enums(
+            _ok({"generations": list_generations(factory.audit_repo, limit=limit)})
+        )
     except Exception as e:
         log_factory_error("/api/factory/generations", e)
         return _err("INTERNAL_ERROR")
@@ -128,8 +130,12 @@ def factory_generation(request: Request, generation_id: str) -> dict[str, Any]:
             _ok(
                 {
                     "generation": gen,
-                    "candidates": list_candidates(factory.audit_repo, generation_id=generation_id, limit=2000),
-                    "failures": list_failures(factory.audit_repo, generation_id=generation_id, limit=200),
+                    "candidates": list_candidates(
+                        factory.audit_repo, generation_id=generation_id, limit=2000
+                    ),
+                    "failures": list_failures(
+                        factory.audit_repo, generation_id=generation_id, limit=200
+                    ),
                 }
             )
         )
@@ -140,7 +146,10 @@ def factory_generation(request: Request, generation_id: str) -> dict[str, Any]:
 
 @router.get("/candidates")
 def factory_candidates(
-    request: Request, generation_id: str | None = None, lifecycle: str | None = None, limit: int = 200
+    request: Request,
+    generation_id: str | None = None,
+    lifecycle: str | None = None,
+    limit: int = 200,
 ) -> dict[str, Any]:
     factory = _factory(request)
     if factory is None:
@@ -159,7 +168,9 @@ def factory_candidates(
 
 
 @router.get("/events")
-def factory_events(request: Request, generation_id: str | None = None, limit: int = 200) -> dict[str, Any]:
+def factory_events(
+    request: Request, generation_id: str | None = None, limit: int = 200
+) -> dict[str, Any]:
     factory = _factory(request)
     if factory is None:
         return _err("FACTORY_UNAVAILABLE")
@@ -175,7 +186,9 @@ def factory_events(request: Request, generation_id: str | None = None, limit: in
 
 
 @router.get("/failures")
-def factory_failures(request: Request, generation_id: str | None = None, limit: int = 200) -> dict[str, Any]:
+def factory_failures(
+    request: Request, generation_id: str | None = None, limit: int = 200
+) -> dict[str, Any]:
     factory = _factory(request)
     if factory is None:
         return _err("FACTORY_UNAVAILABLE")
@@ -191,7 +204,9 @@ def factory_failures(request: Request, generation_id: str | None = None, limit: 
 
 
 @router.get("/ranking")
-def factory_ranking(request: Request, dimension: str = "OVERALL", limit: int = 50) -> dict[str, Any]:
+def factory_ranking(
+    request: Request, dimension: str = "OVERALL", limit: int = 50
+) -> dict[str, Any]:
     """Ranked registry survivors by dimension (spec 53)."""
     factory = _factory(request)
     if factory is None:
@@ -249,7 +264,9 @@ def factory_generate(request: Request, payload: dict[str, Any] | None = None) ->
     mode = str(payload.get("mode", "MANUAL")).upper()
     try:
         gen = factory.create_generation(size=int(size) if size else None, mode=mode)
-        population = factory.generate_population(gen["generation_id"], size=int(size) if size else None)
+        population = factory.generate_population(
+            gen["generation_id"], size=int(size) if size else None
+        )
         validation = factory.validate_population(population)
         from nexus_scalp.web.server import serialize_enums
 

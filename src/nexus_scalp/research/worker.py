@@ -182,7 +182,8 @@ class ResearchWorker:
             self.last_cycle_duration = time.perf_counter() - started
             self.last_error = ""
             self._emit_heartbeat(
-                status="RUNNING", last_action="cycle_complete",
+                status="RUNNING",
+                last_action="cycle_complete",
                 last_cycle_duration_ms=round(self.last_cycle_duration * 1000.0, 1),
             )
             logger.info(
@@ -330,7 +331,6 @@ class ResearchWorker:
         self._candidates = []
         return validated > 0
 
-
     def _emit_heartbeat(
         self,
         *,
@@ -350,9 +350,7 @@ class ResearchWorker:
             store = ResearchObservabilityStore(self.audit_repo)
             store.beat(
                 cycle_count=self.cycle_count,
-                last_cycle_start=self.last_cycle_start.isoformat()
-                if self.last_cycle_start
-                else "",
+                last_cycle_start=self.last_cycle_start.isoformat() if self.last_cycle_start else "",
                 last_cycle_duration_ms=last_cycle_duration_ms,
                 last_action=last_action,
                 current_strategy=getattr(self, "_current_strategy", ""),

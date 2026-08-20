@@ -673,9 +673,7 @@ class TestCompatibility:
             root.handlers[:] = original_handlers
         lines = [r.getMessage() for r in capture.records]
         marker_hits = sum("CHAMPION VERIFIED" in line for line in lines)
-        assert marker_hits == 2, (
-            f"expected 2 logs (initial+rewrite), got:\n{lines}"
-        )
+        assert marker_hits == 2, f"expected 2 logs (initial+rewrite), got:\n{lines}"
 
     def test_bug118_cold_start_none_memoized(self, tmp_path):
         """Missing artifact returns None once; repeated polls stay silent."""

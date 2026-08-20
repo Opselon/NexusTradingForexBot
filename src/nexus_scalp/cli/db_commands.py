@@ -95,14 +95,20 @@ def make_portability_app() -> typer.Typer:
     app = typer.Typer(help="DATABASE PORTABILITY: provider status, config, migration.")
 
     @app.command("status")
-    def portability_status(json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON.")):
+    def portability_status(
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ):
         """Active provider + per-domain health snapshot."""
         from nexus_scalp.database.health import health_snapshot, load_ui_config
 
         health = health_snapshot()
         ui = load_ui_config()
-        payload = {"provider": ui["provider"], "supported_providers": health["supported_providers"],
-                   "overall": health["overall"], "domains": health["domains"]}
+        payload = {
+            "provider": ui["provider"],
+            "supported_providers": health["supported_providers"],
+            "overall": health["overall"],
+            "domains": health["domains"],
+        }
         _emit(payload, json_mode, plain_title="DATABASE PORTABILITY STATUS")
 
     @app.command("config")
@@ -112,20 +118,31 @@ def make_portability_app() -> typer.Typer:
         database: str = typer.Option("nse_audit", "--database", help="PostgreSQL database name."),
         username: str = typer.Option("nse_user", "--username", help="PostgreSQL role."),
         ssl_mode: str = typer.Option("", "--ssl-mode", help="PostgreSQL SSL mode."),
-        password: str = typer.Option("", "--password", help="PostgreSQL password (stored in the OS secret store)."),
+        password: str = typer.Option(
+            "", "--password", help="PostgreSQL password (stored in the OS secret store)."
+        ),
         json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
     ) -> None:
         """Save the PostgreSQL connection configuration + password (secret store)."""
         from nexus_scalp.settings.service import load_settings_service
 
         svc = load_settings_service()
-        cfg = {"host": host, "port": port, "database": database, "username": username,
-               "ssl_mode": ssl_mode}
+        cfg = {
+            "host": host,
+            "port": port,
+            "database": database,
+            "username": username,
+            "ssl_mode": ssl_mode,
+        }
         if password:
             cfg["password"] = password
         svc.set_postgres_config(cfg)
-        payload = {"success": True, "provider": "postgresql", "configured": True,
-                   "password_set": svc.postgres_password_set()}
+        payload = {
+            "success": True,
+            "provider": "postgresql",
+            "configured": True,
+            "password_set": svc.postgres_password_set(),
+        }
         _emit(payload, json_mode, plain_title="POSTGRESQL CONFIG SAVED")
 
     @app.command("switch")
@@ -145,10 +162,12 @@ def make_portability_app() -> typer.Typer:
 
     @app.command("test-connection")
     def portability_test(
-        host: str = typer.Option("localhost", "--host"), port: int = typer.Option(5432, "--port"),
+        host: str = typer.Option("localhost", "--host"),
+        port: int = typer.Option(5432, "--port"),
         database: str = typer.Option("nse_audit", "--database"),
         username: str = typer.Option("nse_user", "--username"),
-        password: str = typer.Option("", "--password"), ssl_mode: str = typer.Option("", "--ssl-mode"),
+        password: str = typer.Option("", "--password"),
+        ssl_mode: str = typer.Option("", "--ssl-mode"),
         json_mode: bool = typer.Option(False, "--json"),
     ) -> None:
         """Test the PostgreSQL connection."""
@@ -160,13 +179,22 @@ def make_portability_app() -> typer.Typer:
             from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
 
             SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, password)
-        cfg = DatabaseConfig.for_postgres(domain="audit", host=host, port=port,
-                                          database=database, username=username, ssl_mode=ssl_mode)
+        cfg = DatabaseConfig.for_postgres(
+            domain="audit",
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            ssl_mode=ssl_mode,
+        )
         driver = get_driver(cfg)
         try:
             ok = driver.ping()
-            payload = {"success": ok, "connected": ok,
-                       "database_version": driver.database_version() if ok else ""}
+            payload = {
+                "success": ok,
+                "connected": ok,
+                "database_version": driver.database_version() if ok else "",
+            }
         finally:
             driver.close()
         _emit(payload, json_mode, plain_title="POSTGRESQL CONNECTION TEST")
@@ -187,8 +215,12 @@ def make_portability_app() -> typer.Typer:
         json_mode: bool = typer.Option(False, "--json"),
     ) -> None:
         """Run the SQLite->PostgreSQL migration (streamed, resumable)."""
-        payload = {"dry_run": dry_run, "confirm": confirm, "batch_size": batch_size,
-                   "resume": resume}
+        payload = {
+            "dry_run": dry_run,
+            "confirm": confirm,
+            "batch_size": batch_size,
+            "resume": resume,
+        }
         mig = _portability_migrator(payload)
         report = mig.run()
         _emit(report.to_dict(), json_mode, plain_title="MIGRATION RESULT")
@@ -237,13 +269,18 @@ def make_portability_migrator(payload: dict[str, Any]) -> Any:
 
     src = DatabaseConfig.for_sqlite("audit", path=str(payload.get("sqlite_path") or "") or None)
     dst = DatabaseConfig.for_postgres(
-        domain="audit", host=str(payload.get("host") or "localhost"),
-        port=int(payload.get("port") or 5432), database=str(payload.get("database") or "nse_audit"),
-        username=str(payload.get("username") or "nse_user"), ssl_mode=str(payload.get("ssl_mode") or ""),
+        domain="audit",
+        host=str(payload.get("host") or "localhost"),
+        port=int(payload.get("port") or 5432),
+        database=str(payload.get("database") or "nse_audit"),
+        username=str(payload.get("username") or "nse_user"),
+        ssl_mode=str(payload.get("ssl_mode") or ""),
     )
     options = MigrationOptions(
-        dry_run=bool(payload.get("dry_run")), confirm=bool(payload.get("confirm")),
-        resume=bool(payload.get("resume", True)), batch_size=int(payload.get("batch_size") or 2000),
+        dry_run=bool(payload.get("dry_run")),
+        confirm=bool(payload.get("confirm")),
+        resume=bool(payload.get("resume", True)),
+        batch_size=int(payload.get("batch_size") or 2000),
         validate_checksums=bool(payload.get("validate_checksums", True)),
     )
     return SqliteToPostgresMigrator(src, dst, options)
@@ -251,6 +288,7 @@ def make_portability_migrator(payload: dict[str, Any]) -> Any:
 
 def _portability_migrator(payload: dict[str, Any]) -> Any:
     return make_portability_migrator(payload)
+
 
 def make_db_app(
     workspace: Path | None = None,

@@ -64,7 +64,10 @@ _FAMILY_TEMPLATES: dict[StrategyFamily, dict[str, Any]] = {
     },
     StrategyFamily.MEAN_REVERSION: {
         "context": {"volatility_filter": {"use": True}, "range_state": {"use": True}},
-        "entry": {"logic": "overshoot_reversion", "confirmation": ["extreme_sig", "rapid_reversal_spike_val"]},
+        "entry": {
+            "logic": "overshoot_reversion",
+            "confirmation": ["extreme_sig", "rapid_reversal_spike_val"],
+        },
         "filters": [{"feature": "norm_rsi", "op": "lt", "value": -0.5}],
         "exit": {"mode": "target", "rr": 2.0},
     },
@@ -76,31 +79,46 @@ _FAMILY_TEMPLATES: dict[StrategyFamily, dict[str, Any]] = {
     },
     StrategyFamily.REVERSAL: {
         "context": {"htf_bias": {"use": True}, "session_filter": {"use": True}},
-        "entry": {"logic": "exhaustion_reversal", "confirmation": ["pinbar_sig", "norm_displacement"]},
+        "entry": {
+            "logic": "exhaustion_reversal",
+            "confirmation": ["pinbar_sig", "norm_displacement"],
+        },
         "filters": [{"feature": "upper_wick_ratio", "op": "gt", "value": 0.5}],
         "exit": {"mode": "target", "rr": 2.0},
     },
     StrategyFamily.MOMENTUM: {
         "context": {"trend_state": {"use": True}, "volatility_filter": {"use": True}},
-        "entry": {"logic": "momentum_continuation", "confirmation": ["consecutive_momentum_count", "tk_cross_signal"]},
+        "entry": {
+            "logic": "momentum_continuation",
+            "confirmation": ["consecutive_momentum_count", "tk_cross_signal"],
+        },
         "filters": [{"feature": "lag_1_log_return", "op": "gt", "value": 0.0}],
         "exit": {"mode": "chandelier", "factor": 3.0},
     },
     StrategyFamily.VOLATILITY_EXPANSION: {
         "context": {"volatility_filter": {"use": True}},
-        "entry": {"logic": "volatility_expansion_break", "confirmation": ["norm_displacement", "breakout_sig"]},
+        "entry": {
+            "logic": "volatility_expansion_break",
+            "confirmation": ["norm_displacement", "breakout_sig"],
+        },
         "filters": [{"feature": "lag_1_atr_ratio", "op": "gt", "value": 0.3}],
         "exit": {"mode": "fixed_rr", "rr": 2.0},
     },
     StrategyFamily.VOLATILITY_CONTRACTION: {
         "context": {"volatility_filter": {"use": True}},
-        "entry": {"logic": "squeeze_break", "confirmation": ["price_compression_flag_ratio", "breakout_sig"]},
+        "entry": {
+            "logic": "squeeze_break",
+            "confirmation": ["price_compression_flag_ratio", "breakout_sig"],
+        },
         "filters": [{"feature": "price_compression_flag_ratio", "op": "gt", "value": 0.5}],
         "exit": {"mode": "target", "rr": 2.0},
     },
     StrategyFamily.LIQUIDITY_SWEEP: {
         "context": {"liquidity": {"use": True}, "session_filter": {"use": True}},
-        "entry": {"logic": "liquidity_sweep_reversal", "confirmation": ["liquidity_sweep_signal", "stop_hunt_depth"]},
+        "entry": {
+            "logic": "liquidity_sweep_reversal",
+            "confirmation": ["liquidity_sweep_signal", "stop_hunt_depth"],
+        },
         "filters": [{"feature": "liquidity_sweep_state", "op": "eq", "value": 1.0}],
         "exit": {"mode": "target", "rr": 2.5},
     },
@@ -112,7 +130,10 @@ _FAMILY_TEMPLATES: dict[StrategyFamily, dict[str, Any]] = {
     },
     StrategyFamily.MULTI_TIMEFRAME: {
         "context": {"htf_bias": {"use": True}, "timeframes": ["M1", "H1"]},
-        "entry": {"logic": "htf_aligned_entry", "confirmation": ["htf_h4_trend", "htf_h1_momentum"]},
+        "entry": {
+            "logic": "htf_aligned_entry",
+            "confirmation": ["htf_h4_trend", "htf_h1_momentum"],
+        },
         "filters": [{"feature": "dist_to_ema_50", "op": "gt", "value": 0.0}],
         "exit": {"mode": "trailing", "factor": 1.8},
     },
@@ -122,7 +143,10 @@ _FAMILY_TEMPLATES: dict[StrategyFamily, dict[str, Any]] = {
             "volatility_filter": {"use": True},
             "session_filter": {"use": True},
         },
-        "entry": {"logic": "combined_conditions", "confirmation": ["choch_sig", "consecutive_momentum_count"]},
+        "entry": {
+            "logic": "combined_conditions",
+            "confirmation": ["choch_sig", "consecutive_momentum_count"],
+        },
         "filters": [{"feature": "lag_1_atr_ratio", "op": "gt", "value": 0.0}],
         "exit": {"mode": "trailing", "factor": 2.0},
     },
@@ -405,7 +429,11 @@ def generate_random_candidates(
         n_filters = rng.randint(1, 4)
         chosen = rng.sample(base_ids, min(n_filters, len(base_ids)))
         filters = [
-            {"feature": f, "op": rng.choice(["gt", "lt"]), "value": round(rng.uniform(-0.5, 0.5), 2)}
+            {
+                "feature": f,
+                "op": rng.choice(["gt", "lt"]),
+                "value": round(rng.uniform(-0.5, 0.5), 2),
+            }
             for f in chosen
         ]
         tf = rng.choice(SUPPORTED_TIMEFRAMES[:5])
@@ -454,9 +482,7 @@ def generate_generation_zero(
     dsls += generate_random_candidates(n_rnd, seed=seed)
     # LLM slice: if no provider is active the orchestrator substitutes more
     # templates (caller-side); here we leave the slot unfilled deterministically.
-    dsls += generate_template_candidates(
-        n_llm_slot, seed=seed + 5
-    )  # placeholder source TEMPLATE
+    dsls += generate_template_candidates(n_llm_slot, seed=seed + 5)  # placeholder source TEMPLATE
 
     candidates: list[FactoryCandidate] = []
     generation_id = "G0"

@@ -69,7 +69,9 @@ class ImpactAnalyzer:
                 occ_counts = occ["counts"] or {}
                 occ_semantics = occ.get("semantics") or "UNKNOWN_IMPACT"
                 attach_occurrence_evidence(incident, occ)
-                occ_known = [(k, int(v)) for k, v in occ_counts.items() if v is not None and int(v) > 0]
+                occ_known = [
+                    (k, int(v)) for k, v in occ_counts.items() if v is not None and int(v) > 0
+                ]
                 if occ_known:
                     occ_note = "occurrences: " + ", ".join(f"{k}={v}" for k, v in sorted(occ_known))
             except Exception:
