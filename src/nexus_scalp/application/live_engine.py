@@ -255,7 +255,11 @@ class LiveEngine:
         # Buffers / engines
         symbol = config.execution.symbol
         self.aggregator = BarAggregator(symbol=symbol, timeframe_minutes=1)
-        self.feature_engine = ScalpFeatureEngine(symbol=symbol)
+        self.feature_engine = ScalpFeatureEngine(
+            symbol=symbol,
+            fvg_mitigation_sensitivity=config.algo.fvg_mitigation_sensitivity,
+            order_block_lookback_bars=config.algo.order_block_lookback_bars,
+        )
 
         # Module 1: Market Regime Engine (init hardening)
         self.regime_classifier = self._init_regime_classifier(symbol=symbol)
@@ -2248,6 +2252,11 @@ class LiveEngine:
             self.risk_engine.max_allowed_lots = snap.max_allowed_lots
             self.risk_engine.max_margin_usage_pct = snap.risk.max_margin_usage_pct
             self.signal_policy.confidence_threshold = snap.confidence_threshold
+            # Live SMC tunables: FVG mitigation depth + OB scan lookback
+            fe = getattr(self, "feature_engine", None)
+            if fe is not None:
+                fe._fvg_mitigation_sensitivity = snap.fvg_mitigation_sensitivity
+                fe._order_block_lookback_bars = snap.order_block_lookback_bars
         except Exception:
             logger.exception("[RUNTIME_CONFIG] service re-sync failed (isolated)")
 

@@ -467,8 +467,17 @@ class ScalpFeatureEngine:
     Candle Anatomy, Session, Lag, ICT, Ichimoku, and true Multi-Timeframe Context.
     """
 
-    def __init__(self, symbol: str = "XAUUSD") -> None:
+    def __init__(
+        self,
+        symbol: str = "XAUUSD",
+        fvg_mitigation_sensitivity: float = 0.5,
+        order_block_lookback_bars: int = 30,
+    ) -> None:
         self.symbol = symbol
+        # Live-tunable SMC parameters (hot reload): synchronized from the
+        # runtime configuration snapshot by the engine each tick.
+        self._fvg_mitigation_sensitivity = float(fvg_mitigation_sensitivity)
+        self._order_block_lookback_bars = int(order_block_lookback_bars)
 
     def validate_and_fallback(
         self,
@@ -643,8 +652,12 @@ class ScalpFeatureEngine:
         lag_1_clv = float(((closes[-2] - lows[-2]) - (highs[-2] - closes[-2])) / bar_range_lag1)
 
         # 6. Group 5: ICT Signals & Microstructure
-        fvg_bullish = bool((lows[-1] - highs[-3]) > (safe_atr * 0.20))
-        fvg_bearish = bool((lows[-3] - highs[-1]) > (safe_atr * 0.20))
+        # FVG formation threshold scaled by the live-tunable sensitivity
+        # (algo.fvg_mitigation_sensitivity, hot-reloaded): a larger
+        # sensitivity requires a deeper gap before an FVG registers.
+        fvg_min_gap = safe_atr * getattr(self, "_fvg_mitigation_sensitivity", 0.5)
+        fvg_bullish = bool((lows[-1] - highs[-3]) > fvg_min_gap)
+        fvg_bearish = bool((lows[-3] - highs[-1]) > fvg_min_gap)
         fvg_depth = (
             float((lows[-1] - highs[-3]) / safe_atr)
             if fvg_bullish
@@ -841,16 +854,18 @@ class ScalpFeatureEngine:
             htf_h4_atr_ratio = 1.0
 
         # --- SMC ALGORITHMIC FEATURES EXTRACTOR ---
-        # 1. Swing Highs & Swing Lows
+        # 1. Swing Highs & Swing Lows (scan window = live OB lookback bars)
+        ob_lookback = int(getattr(self, "_order_block_lookback_bars", 30))
+        scan_bars = completed_bars[-ob_lookback:] if ob_lookback > 0 else completed_bars
         swing_highs = []
         swing_lows = []
-        for i in range(5, len(completed_bars) - 5):
-            window_highs = [b.high for b in completed_bars[i - 5 : i + 6]]
-            window_lows = [b.low for b in completed_bars[i - 5 : i + 6]]
-            if completed_bars[i].high == max(window_highs):
-                swing_highs.append((i, completed_bars[i].high))
-            if completed_bars[i].low == min(window_lows):
-                swing_lows.append((i, completed_bars[i].low))
+        for i in range(5, len(scan_bars) - 5):
+            window_highs = [b.high for b in scan_bars[i - 5 : i + 6]]
+            window_lows = [b.low for b in scan_bars[i - 5 : i + 6]]
+            if scan_bars[i].high == max(window_highs):
+                swing_highs.append((i, scan_bars[i].high))
+            if scan_bars[i].low == min(window_lows):
+                swing_lows.append((i, scan_bars[i].low))
 
         if not swing_highs:
             swing_highs = [(len(completed_bars) - 25, float(np.max(highs)))]
