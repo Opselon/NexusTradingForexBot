@@ -712,7 +712,7 @@ Status: VERIFIED
 ```
 ## CHG-0027 — Client CLI Update Engine v2: exact-release identity, checksum-asset digests, stage-differentiated commands (TASK-UPDATER-02, 2026-08-20)
 
-**Status:** IMPLEMENTING
+**Status:** VERIFIED
 **Agent:** Hermes-UpdateCLI
 **Scope:** src/nexus_scalp/release/updater.py, src/nexus_scalp/cli/main.py, docs/RELEASE.md, tests/unit/test_release_update_phase17.py
 **Change:**
