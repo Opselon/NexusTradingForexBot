@@ -66,17 +66,36 @@ def port_create_table(ddl: str) -> str | None:
     body = ddl[start + 1 : end]
     tail = ddl[end + 1 :]
 
-    lines = [ln.strip() for ln in body.split("\n") if ln.strip()]
+    def _split_columns(body: str) -> list[str]:
+        chunks: list[str] = []
+        cur: list[str] = []
+        depth = 0
+        for ch in body:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth = max(0, depth - 1)
+            if ch == "," and depth == 0:
+                chunks.append("".join(cur).strip())
+                cur = []
+            else:
+                cur.append(ch)
+        if cur:
+            chunks.append("".join(cur).strip())
+        return chunks
+
     out_lines: list[str] = []
-    for ln in lines:
-        stripped = ln.rstrip(",")
+    for ln in _split_columns(body):
+        stripped = ln.rstrip(",").strip()
+        if not stripped:
+            continue
         upper = stripped.upper()
         # table-level constraint lines pass through
         if upper.startswith(("PRIMARY KEY", "UNIQUE", "FOREIGN KEY", "CHECK", "CONSTRAINT")):
             out_lines.append(stripped)
             continue
         # column-level: name + type + constraints
-        mcol = re.match(r'(["\w]+)\s+(.+)$', stripped)
+        mcol = re.match(r'(["\w.]+)\s+(.+)$', stripped)
         if not mcol:
             out_lines.append(stripped)
             continue
