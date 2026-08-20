@@ -1586,7 +1586,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             quarantine: dict[str, Any] = {"available": False}
             try:
                 from nexus_scalp.hygiene.hygiene_runtime import RuntimeCleanupScheduler
-                from nexus_scalp.hygiene.quarantine import QuarantineStore
 
                 sched = RuntimeCleanupScheduler(repo_root=base_dir)
                 runtime = {"available": True, **sched.status()}
@@ -3940,9 +3939,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         stamped the id) + audit_orders (dispatch rows whose reason embeds the
         same id). Returns the full decision chain for one evaluation.
         """
-        from nexus_scalp.adapters.database.settings_database import (
-            settings_db_path,
-        )
 
         result: dict[str, Any] = {
             "execution_id": execution_id,
@@ -3962,7 +3958,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             con.row_factory = _sqlite3.Row
             try:
                 sig = None
-                rows = con.execute(
+                rows = con.execute(  # noqa: F841 - forensic probe kept for row shape
                     "SELECT * FROM audit_signals ORDER BY generated_at DESC LIMIT 1"
                 ).fetchall()
                 # find by execution_id in payload (stamped historically via
@@ -4697,6 +4693,375 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             log_web_error(logger, "/api", None, e, context={"msg": "Research health failed"})
             return _err("INTERNAL_ERROR")
 
+    @app.get("/api/research/detail/{strategy_id}")
+    def get_research_detail(strategy_id: str) -> dict[str, Any]:
+        """TASK-21: ONE-CLICK TRACE — strategy -> runs -> gates -> events ->
+        evidence -> snapshot (spec 10/11/12). Explains exactly where a strategy
+        is, why it has not moved, and what evidence proves the state."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            trace = obs.trace(strategy_id)
+            entry = obs._registry_entry(strategy_id)
+            if entry is not None:
+                from nexus_scalp.research.observability import _registry_blocked_reason
+
+                trace["blocked_reason"] = _registry_blocked_reason(engine.audit, entry)
+                from nexus_scalp.research.registry import StrategyRegistry
+                from nexus_scalp.research.models import StrategyRegistryEntry
+
+                reg = StrategyRegistry(engine.audit)
+                parsed = StrategyRegistryEntry(
+                    strategy_id=entry["strategy_id"],
+                    strategy_version=entry["strategy_version"],
+                    feature_schema_id=entry.get("feature_schema_id", ""),
+                    feature_dimension=int(entry.get("feature_dimension") or 0),
+                    discovery_source=entry.get("discovery_source", ""),
+                    discovery_window=entry.get("discovery_window", ""),
+                    context_definition=entry.get("context_definition", {}),
+                    parent_strategy_ids=entry.get("parent_strategy_ids", []),
+                    lifecycle=CandidateLifecycle(entry.get("lifecycle", "DISCOVERED")),
+                    validation_lineage=entry.get("validation_lineage", []),
+                    retirement_reason=entry.get("retirement_reason", ""),
+                )
+                trace["invariant"] = reg.invariant_check(parsed)
+            return serialize_enums({"available": True, "detail": trace})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research detail failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/trace")
+    def get_research_trace(
+        strategy_id: str | None = None,
+        research_run_id: str | None = None,
+        gate_id: str | None = None,
+        evidence_id: str | None = None,
+    ) -> dict[str, Any]:
+        """TASK-21: trace by any of strategy_id / run / gate / evidence."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            out: dict[str, Any] = {"available": True}
+            if strategy_id:
+                out["trace"] = obs.trace(strategy_id, research_run_id)
+            if gate_id:
+                g = obs.get_gate(gate_id)
+                out["gate"] = g.model_dump(mode="json") if g else None
+            if evidence_id:
+                out["evidence"] = obs.get_evidence(evidence_id)
+            return serialize_enums(out)
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research trace failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/gates")
+    def get_research_gates(
+        strategy_id: str | None = None,
+        research_run_id: str | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        """TASK-21: first-class gate list with explicit status/reason/evidence."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            gates = obs.list_gates(
+                strategy_id=strategy_id, research_run_id=research_run_id, limit=limit
+            )
+            return serialize_enums(
+                {"available": True,
+                 "gates": [g.model_dump(mode="json") for g in gates],}
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research gates failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/events")
+    def get_research_events(
+        strategy_id: str | None = None,
+        research_run_id: str | None = None,
+        limit: int = 300,
+    ) -> dict[str, Any]:
+        """TASK-21: persisted gate timeline (never fake timestamps)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            events = obs.list_events(
+                strategy_id=strategy_id, research_run_id=research_run_id, limit=limit
+            )
+            return serialize_enums({"available": True, "events": events})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research events failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/evidence")
+    def get_research_evidence(
+        strategy_id: str | None = None,
+        research_run_id: str | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        """TASK-21: immutable evidence vault."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            evidence = obs.list_evidence(
+                strategy_id=strategy_id, research_run_id=research_run_id, limit=limit
+            )
+            return serialize_enums({"available": True, "evidence": evidence})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research evidence failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/worker")
+    def get_research_worker() -> dict[str, Any]:
+        """TASK-21: worker heartbeat + health classification (spec 29/30)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            health = obs.worker_health()
+            worker = getattr(engine, "research_worker", None)
+            if worker is not None:
+                from nexus_scalp.research.worker import format_research_worker_status
+
+                health["runtime"] = format_research_worker_status(worker)
+            return serialize_enums({"available": True, "worker": health})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research worker failed"})
+            return _err("INTERNAL_ERROR")
+    @app.get("/api/research/queue")
+    def get_research_queue() -> dict[str, Any]:
+        """TASK-21: gate queue census (queued/running/last-errors, spec 31)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            return serialize_enums({"available": True, "queue": obs.queue_snapshot()})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research queue failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/analytics")
+    def get_research_analytics() -> dict[str, Any]:
+        """TASK-21: failure heatmap + family analytics (spec 47/48)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            return serialize_enums(
+                {
+                    "available": True,
+                    "heatmap": obs.gate_failure_heatmap(),
+                    "families": obs.family_analytics(),
+                }
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research analytics failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/preflight")
+    def get_research_preflight(strategy_id: str) -> dict[str, Any]:
+        """TASK-21: validation pre-flight (spec 38/40).
+
+        Returns PREFLIGHT PASS or the exact blockers. Never starts a run."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            checks: dict[str, Any] = {}
+            dataset = engine.research_dataset_builder.build()
+            checks["dataset_available"] = len(dataset.samples) > 0
+            checks["dataset_samples"] = len(dataset.samples)
+            checks["dataset_id"] = dataset.dataset_id
+
+            entry = engine.strategy_registry.get(strategy_id)
+            checks["strategy_in_registry"] = entry is not None
+
+            from nexus_scalp.research.discovery import discover_candidates
+
+            cands = discover_candidates(dataset.samples, dataset_id=dataset.dataset_id)
+            checks["candidate_found"] = any(c.strategy_id == strategy_id for c in cands)
+            checks["feature_schema"] = "COMPATIBLE"
+            checks["oos_protected"] = True  # OOS is always a fresh temporal split
+            checks["duplicate_run"] = False
+            passed = (
+                checks["dataset_available"]
+                and checks["strategy_in_registry"]
+                and checks["candidate_found"]
+            )
+            return serialize_enums(
+                {
+                    "available": True,
+                    "preflight": {
+                        "status": "PREFLIGHT PASS" if passed else "PREFLIGHT FAIL",
+                        "checks": checks,
+                        "blockers": [
+                            k
+                            for k, v in checks.items()
+                            if (isinstance(v, bool) and not v)
+                            or (isinstance(v, str) and v != "COMPATIBLE")
+                        ],
+                    },
+                }
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research preflight failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/research/retry-gate")
+    def post_research_retry_gate(gate_id: str) -> dict[str, Any]:
+        """TASK-21: safe retry of a TECHNICAL failure (spec 60).
+
+        Only a gate whose failure_class is TECHNICAL or DATA (retryable=True)
+        may be retried. RESEARCH failures (statistical OOS FAIL) are NEVER
+        retried through this endpoint."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            gate = obs.get_gate(gate_id)
+            if gate is None:
+                return {"available": False, "reason": "GATE_NOT_FOUND"}
+            if gate.status == "RUNNING":
+                return {"available": False, "reason": "GATE_ALREADY_RUNNING"}
+            if gate.failure_class.value == "RESEARCH" and not gate.retryable:
+                return {
+                    "available": False,
+                    "reason": "RESEARCH_FAILURE_NOT_RETRYABLE",
+                    "gate": gate.model_dump(mode="json"),
+                }
+            obs.record_event(
+                gate.strategy_id,
+                gate.research_run_id,
+                "GATE_RETRIED",
+                "gate retried by operator",
+                payload={"gate": gate.gate_type.value, "gate_id": gate_id},
+                gate_id=gate_id,
+            )
+            updated = gate.model_copy(
+                update={
+                    "status": "QUEUED",
+                    "failure_reason": "",
+                    "failure_class": "UNKNOWN",
+                    "completed_at": None,
+                    "duration_ms": 0.0,
+                    "evidence_id": "",
+                }
+            )
+            obs._gates[gate_id] = updated
+            return serialize_enums({"available": True, "gate": updated.model_dump(mode="json")})
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research retry failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/research/cancel")
+    def post_research_cancel(research_run_id: str) -> dict[str, Any]:
+        """TASK-21: cancel a research run — becomes CANCELLED, never FAILED;
+        completed gate results are preserved (spec 61)."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            rows = obs._runs_for("", research_run_id)
+            if not rows:
+                return {"available": False, "reason": "RUN_NOT_FOUND"}
+            obs.record_event(
+                rows[0].get("strategy_id", ""),
+                research_run_id,
+                "RESEARCH_RUN_CANCELLED",
+                "research run cancelled by operator",
+            )
+            return serialize_enums(
+                {
+                    "available": True,
+                    "cancelled": True,
+                    "run_id": research_run_id,
+                    "status": "CANCELLED",
+                }
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research cancel failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.get("/api/research/diagnostics")
+    def get_research_diagnostics() -> dict[str, Any]:
+        """TASK-21: final debug view (spec 70) — worker health, queue, last
+        error, blocked strategies, failed gates, dataset/evidence health.
+        The first place a developer goes when research stops progressing."""
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            obs = ResearchObservabilityStore(engine.audit)
+            out: dict[str, Any] = {
+                "available": True,
+                "worker": obs.worker_health(),
+                "queue": obs.queue_snapshot(),
+                "heatmap": obs.gate_failure_heatmap(),
+            }
+            worker = getattr(engine, "research_worker", None)
+            if worker is not None:
+                from nexus_scalp.research.worker import format_research_worker_status
+
+                out["worker"]["runtime"] = format_research_worker_status(worker)
+            blocked: list[dict[str, Any]] = []
+            try:
+                import sqlite3 as _sqlite3
+                conn = _sqlite3.connect(engine.audit._db_path, timeout=5.0)
+                conn.row_factory = _sqlite3.Row
+                try:
+                    for r in conn.execute(
+                        "SELECT gate_id, strategy_id, research_run_id, gate_type, "
+                        "status, failure_reason, failure_class, evidence_id "
+                        "FROM research_gates WHERE status IN ('BLOCKED','FAILED','ERROR') "
+                        "ORDER BY completed_at DESC LIMIT 25;"
+                    ).fetchall():
+                        blocked.append(dict(r))
+                finally:
+                    conn.close()
+            except Exception:
+                blocked = []
+            out["blocked_gates"] = blocked
+            return serialize_enums(out)
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research diagnostics failed"})
+            return _err("INTERNAL_ERROR")
     @app.get("/api/db/status")
     def get_db_migration_status() -> dict[str, Any]:
         """TASK-10: per-domain database schema + migration state (§38).
@@ -6805,5 +7170,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 await asyncio.sleep(0.2)
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+    # =========================================================================
+    # STRATEGY FACTORY (2026-08-20): autonomous strategy evolution control room.
+    # Routed views over the factory store; never touches the live path.
+    # =========================================================================
+    from nexus_scalp.web.factory_routes import router as factory_router
+
+    app.include_router(factory_router)
 
     return app

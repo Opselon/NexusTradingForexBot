@@ -100,12 +100,6 @@ from nexus_scalp.research.dataset import ResearchDatasetBuilder
 from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.worker import ResearchWorker
-from nexus_scalp.strategies.factory import (
-    AutonomousLoopWorker,
-    EvolutionConfig,
-    LLMGenerationProvider,
-    StrategyFactory,
-)
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.settings import (
     load_settings_service,
@@ -117,6 +111,11 @@ from nexus_scalp.shadow.store import ShadowStore
 from nexus_scalp.shadow.worker import ShadowWorker
 from nexus_scalp.signals.policy import SignalPolicy
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
+from nexus_scalp.strategies.factory import (
+    AutonomousLoopWorker,
+    EvolutionConfig,
+    StrategyFactory,
+)
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
 logger = get_logger("nexus_scalp.application.live_engine")

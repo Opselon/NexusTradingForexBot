@@ -176,10 +176,15 @@ class ResearchWorker:
         self.cycle_count += 1
         self.last_cycle_start = datetime.now(UTC)
         started = time.perf_counter()
+        self._emit_heartbeat(status="RUNNING", last_action="cycle_start")
         try:
             self.last_work_done = self._refresh_once()
             self.last_cycle_duration = time.perf_counter() - started
             self.last_error = ""
+            self._emit_heartbeat(
+                status="RUNNING", last_action="cycle_complete",
+                last_cycle_duration_ms=round(self.last_cycle_duration * 1000.0, 1),
+            )
             logger.info(
                 "[RESEARCH_WORKER] event=UPDATE",
                 cycle=self.cycle_count,
@@ -191,6 +196,7 @@ class ResearchWorker:
             self.last_cycle_duration = time.perf_counter() - started
             self.last_error = str(err)
             self.last_work_done = False
+            self._emit_heartbeat(status="FAILED", last_action="cycle_failed", last_error=str(err))
             logger.error(
                 "[RESEARCH_WORKER] event=FAILURE",
                 cycle=self.cycle_count,
@@ -323,6 +329,41 @@ class ResearchWorker:
                 )
         self._candidates = []
         return validated > 0
+
+
+    def _emit_heartbeat(
+        self,
+        *,
+        status: str = "RUNNING",
+        last_action: str = "",
+        last_cycle_duration_ms: float = 0.0,
+        last_error: str = "",
+    ) -> None:
+        """Writes one worker heartbeat row (TASK-21 observability, spec 29/30).
+
+        Never raises: a beat is best-effort telemetry. The row feeds the
+        /api/research/worker health classifier (HEALTHY/DEGRADED/STUCK/FAILED).
+        """
+        try:
+            from nexus_scalp.research.observability import ResearchObservabilityStore
+
+            store = ResearchObservabilityStore(self.audit_repo)
+            store.beat(
+                cycle_count=self.cycle_count,
+                last_cycle_start=self.last_cycle_start.isoformat()
+                if self.last_cycle_start
+                else "",
+                last_cycle_duration_ms=last_cycle_duration_ms,
+                last_action=last_action,
+                current_strategy=getattr(self, "_current_strategy", ""),
+                current_gate=getattr(self, "_current_gate", ""),
+                queued_jobs=getattr(self, "_queued_jobs", 0),
+                failed_jobs=getattr(self, "_failed_jobs", 0),
+                last_error=last_error or self.last_error,
+                status=status,
+            )
+        except Exception as e:
+            logger.debug("[RESEARCH_WORKER] heartbeat skipped", error=str(e))
 
 
 def format_research_worker_status(worker: ResearchWorker) -> dict[str, Any]:
