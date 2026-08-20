@@ -11963,3 +11963,264 @@ async function switchDbProvider() {
 
 // initialize on load
 document.addEventListener('DOMContentLoaded', () => { setTimeout(loadDbStatus, 500); });
+
+// ===========================================================================
+// DATABASE EXPLORER + SQL CONSOLE + API KEYS (Hermes-DBConsole 2026-08-20)
+// SSMS-style management: ALL database files -> tables -> columns -> rows.
+// Provider-abstracted through /api/db/console/* — SQLite now, PostgreSQL
+// after the active provider switch. Read-only query console.
+// ===========================================================================
+
+const dbC = {
+  database: null,
+  table: null,
+  tables: [],
+  offset: 0,
+  perPage: 100,
+  _lastDatabases: [],
+};
+
+function dbEl(id) { return document.getElementById(id); }
+function dbSet(id, text) { const el = dbEl(id); if (el) el.textContent = text; }
+function dbEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function dbFmt(v) {
+  if (v == null) return '<span class="text-gray-600">NULL</span>';
+  const s = String(v);
+  if (typeof v === 'object') return '<span class="text-purple-300">' + dbEsc(JSON.stringify(v)) + '</span>';
+  if (typeof v === 'number') return '<span class="text-amber-300">' + dbEsc(s) + '</span>';
+  return dbEsc(s);
+}
+
+async function dbConsoleRefresh() {
+  try {
+    const r = await NX.api.get('/api/db/console/databases', { component: 'DatabaseManagement', action: 'CONSOLE_DATABASES' });
+    const data = r.body || r;
+    if (!data.success) throw new Error(data.error || 'failed');
+    dbC.tables = [];
+    dbC.table = null;
+    dbSet('db-console-dbcount', '(' + data.databases.length + ')');
+    dbSet('db-console-breadcrumb', 'No database selected');
+    renderDbList(data.databases);
+    renderTableChips([]);
+    renderGrid(null, []);
+    dbSet('db-grid-status', 'Rescanned ' + new Date().toLocaleTimeString());
+    dbSet('db-table-count', '');
+  } catch (err) {
+    console.warn('db console refresh failed', err);
+    dbSet('db-console-dbcount', 'ERR');
+  }
+}
+
+function renderDbList(databases) {
+  const wrap = dbEl('db-console-dblist');
+  if (!wrap) return;
+  const filter = (dbEl('db-console-filter')?.value || '').toLowerCase();
+  const list = (databases || []).filter(d => !filter || (d.name + ' ' + (d.database || '')).toLowerCase().includes(filter));
+  if (!list.length) { wrap.innerHTML = '<div class="text-[10px] text-gray-600">No databases match.</div>'; return; }
+  wrap.innerHTML = list.map(d => {
+    const size = d.size_bytes != null ? (d.size_bytes / 1024 / 1024).toFixed(1) + ' MB' : '—';
+    const dot = d.status === 'CONNECTED' ? 'text-emerald-400' : (d.status === 'MISSING' ? 'text-gray-600' : 'text-red-400');
+    const active = dbC.database === d.name ? 'border-accentCyan bg-accentCyan/10' : 'border-transparent hover:border-borderClr';
+    return '<button onclick="dbPickDatabase(\'' + d.name + '\')" class="w-full text-left px-2 py-1.5 rounded border ' + active + ' transition">' +
+      '<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full ' + dot + '"></span>' +
+      '<span class="font-bold text-white text-[11px]">' + dbEsc(d.name) + '</span>' +
+      '<span class="text-[9px] text-gray-500 font-mono ml-auto">' + dbEsc(d.provider) + '</span></div>' +
+      '<div class="text-[9px] text-gray-500 font-mono pl-3.5">' + dbEsc(d.database || d.server || '') + ' · ' + size + '</div>' +
+      '</button>';
+  }).join('');
+}
+
+function dbConsoleFilter() { renderDbList(dbC._lastDatabases || []); }
+
+async function dbConsoleLoad() {
+  try {
+    const r = await NX.api.get('/api/db/console/databases', { component: 'DatabaseManagement', action: 'CONSOLE_DATABASES' });
+    const data = r.body || r;
+    if (!data.success) throw new Error(data.error || 'failed');
+    dbC._lastDatabases = data.databases || [];
+    dbSet('db-console-dbcount', '(' + data.databases.length + ')');
+    renderDbList(dbC._lastDatabases);
+    await loadDbApiKeys();
+  } catch (err) {
+    console.warn('db console load failed', err);
+  }
+}
+
+async function dbPickDatabase(name) {
+  dbC.database = name;
+  dbC.table = null;
+  dbC.offset = 0;
+  dbSet('db-console-breadcrumb', name.toUpperCase());
+  renderDbList(dbC._lastDatabases);
+  dbSet('db-table-count', 'loading tables…');
+  try {
+    const r = await NX.api.get('/api/db/console/tables', { database: name, component: 'DatabaseManagement', action: 'CONSOLE_TABLES' });
+    const data = r.body || r;
+    if (!data.success) throw new Error(data.error || 'failed');
+    dbC.tables = data.tables || [];
+    dbSet('db-table-count', '(' + dbC.tables.length + ' tables)');
+    renderTableChips(dbC.tables);
+    renderGrid(null, []);
+    dbSet('db-rows-offset', '');
+    if (dbC.tables.length) dbPickTable(dbC.tables[0].name);
+  } catch (err) {
+    console.warn('db tables failed', err);
+    dbSet('db-table-count', 'ERR');
+  }
+}
+
+function renderTableChips(tables) {
+  const wrap = dbEl('db-console-tablelist');
+  if (!wrap) return;
+  wrap.innerHTML = (tables || []).map(t => {
+    const rows = t.rows != null ? t.rows.toLocaleString() : '?';
+    const active = dbC.table === t.name ? 'bg-accentCyan/20 border-accentCyan text-white' : 'bg-darkBg border-borderClr text-gray-300 hover:border-accentCyan';
+    return '<button onclick="dbPickTable(\'' + t.name.replace(/'/g, "\\'") + '\')" class="px-2 py-1 rounded border ' + active + ' transition text-[10px] font-mono" title="' + dbEsc(t.name) + '">' +
+      dbEsc(t.name) + ' <span class="text-gray-500">(' + rows + ')</span></button>';
+  }).join('') || '<span class="text-[10px] text-gray-600">No tables.</span>';
+}
+
+async function dbPickTable(name) {
+  dbC.table = name;
+  dbC.offset = 0;
+  renderTableChips(dbC.tables);
+  await dbReloadRows();
+}
+
+async function dbReloadRows() {
+  if (!dbC.table) return;
+  dbC.perPage = parseInt(dbEl('db-rows-perpage')?.value || '100', 10);
+  dbSet('db-grid-status', 'loading…');
+  try {
+    const params = { database: dbC.database, table: dbC.table, limit: dbC.perPage, offset: dbC.offset };
+    const r = await NX.api.get('/api/db/console/rows', Object.assign(params, { component: 'DatabaseManagement', action: 'CONSOLE_ROWS' }));
+    const data = r.body || r;
+    if (!data.success) throw new Error(data.error || 'failed');
+    renderGrid(data.columns || [], data.rows || []);
+    dbSet('db-grid-status', 'rows ' + (data.offset || 0) + '–' + ((data.offset || 0) + (data.rows || []).length) + ' (' + dbC.perPage + '/page)');
+    dbSet('db-rows-offset', 'offset ' + (data.offset || 0));
+  } catch (err) {
+    console.warn('db rows failed', err);
+    dbSet('db-grid-status', 'ERR ' + (err.message || ''));
+  }
+}
+
+function renderGrid(columns, rows) {
+  const head = dbEl('db-grid-head');
+  const body = dbEl('db-grid-body');
+  if (!head || !body) return;
+  if (!columns || !columns.length) {
+    head.innerHTML = '';
+    body.innerHTML = '<tr><td class="px-3 py-4 text-center text-gray-600">Select a database and a table to browse rows.</td></tr>';
+    return;
+  }
+  head.innerHTML = '<tr>' + columns.map(c => '<th class="px-2 py-1.5 text-left text-[10px] font-bold text-cyan-300 bg-panelBg border-b border-borderClr whitespace-nowrap">' + dbEsc(c) + '</th>').join('') + '</tr>';
+  if (!rows || !rows.length) {
+    body.innerHTML = '<tr><td colspan="' + columns.length + '" class="px-3 py-4 text-center text-gray-600">No rows.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(row =>
+    '<tr class="hover:bg-accentCyan/5">' + columns.map(c =>
+      '<td class="px-2 py-1 border-b border-borderClr/40 whitespace-nowrap max-w-xs overflow-hidden text-ellipsis">' + dbFmt(row[c]) + '</td>'
+    ).join('') + '</tr>'
+  ).join('');
+}
+
+function dbRowsPrev() {
+  if (dbC.offset <= 0) return;
+  dbC.offset = Math.max(0, dbC.offset - dbC.perPage);
+  dbReloadRows();
+}
+
+function dbRowsNext() {
+  dbC.offset += dbC.perPage;
+  dbReloadRows();
+}
+
+// ---- ready-made SQL buttons (SSMS-style quick tasks) ----
+function dbSelectedTable() { return dbC.table || (dbC.tables && dbC.tables[0] && dbC.tables[0].name) || ''; }
+
+async function dbQuickSql(kind) {
+  const table = dbSelectedTable();
+  if (!table) { dbSet('db-sql-result', 'Select a table first (click it in the explorer).'); return; }
+  let sql = '';
+  if (kind === 'top100') sql = 'SELECT * FROM "' + table + '" ORDER BY rowid LIMIT 100';
+  else if (kind === 'count') sql = 'SELECT COUNT(*) AS row_count FROM "' + table + '"';
+  else if (kind === 'recent') sql = 'SELECT * FROM "' + table + '" ORDER BY rowid DESC LIMIT 100';
+  else if (kind === 'schema') sql = 'SELECT sql FROM sqlite_master WHERE type=\'table\' AND name=\'' + table + '\'';
+  else if (kind === 'integrity') sql = 'PRAGMA integrity_check';
+  if (dbEl('db-sql-input')) dbEl('db-sql-input').value = sql;
+  await dbRunQuery();
+}
+
+async function dbRunQuery() {
+  const sql = (dbEl('db-sql-input')?.value || '').trim();
+  const database = dbC.database || 'audit';
+  if (!sql) { dbSet('db-sql-result', 'Enter a SQL query.'); return; }
+  dbSet('db-sql-result', 'Running…');
+  try {
+    const r = await NX.api.post('/api/db/console/query', { database, sql }, { component: 'DatabaseManagement', action: 'CONSOLE_QUERY' });
+    const data = r.body || r;
+    if (!data.success) { dbSet('db-sql-result', 'Query rejected: ' + (data.error || '')); return; }
+    if (!data.columns || !data.columns.length) {
+      dbSet('db-sql-result', 'Done — ' + (data.rows_returned || 0) + ' rows returned.');
+      return;
+    }
+    renderGrid(data.columns, data.rows);
+    dbSet('db-grid-status', 'SQL · ' + (data.rows || []).length + ' rows' + (data.truncated ? ' (truncated at ' + data.rows.length + ')' : ''));
+    dbSet('db-sql-result', 'SQL OK — ' + (data.rows || []).length + ' rows' + (data.truncated ? ' (result limited to ' + (data.rows || []).length + ' rows)' : '') + ' · ' + new Date().toLocaleTimeString());
+  } catch (err) {
+    console.warn('db query failed', err);
+    dbSet('db-sql-result', 'Query failed: ' + (err.message || ''));
+  }
+}
+
+// ---- API keys ----
+async function loadDbApiKeys() {
+  try {
+    const r = await NX.api.get('/api/db/console/apikeys', { component: 'DatabaseManagement', action: 'CONSOLE_APIKEYS' });
+    const data = r.body || r;
+    const wrap = dbEl('db-apikey-list');
+    if (!wrap) return;
+    if (!data.success) { wrap.innerHTML = '<div class="text-red-400">unavailable</div>'; return; }
+    const keys = data.apikeys || [];
+    wrap.innerHTML = keys.length
+      ? keys.map(k => '<div class="flex items-center gap-1">' +
+          '<span class="text-emerald-400">●</span>' + dbEsc(k.masked || k.name) +
+          '<span class="text-gray-600">(' + (k.set ? 'set' : 'empty') + ')</span></div>').join('')
+      : '<div class="text-gray-600">No API keys stored.</div>';
+  } catch (err) {
+    console.warn('apikeys failed', err);
+  }
+}
+
+async function dbApiKeySave() {
+  const name = (dbEl('db-apikey-name')?.value || '').trim();
+  const value = dbEl('db-apikey-value')?.value || '';
+  if (!name) { alert('Enter a key name.'); return; }
+  try {
+    const r = await NX.api.post('/api/db/console/apikey', { name, value }, { component: 'DatabaseManagement', action: 'CONSOLE_APIKEY_SAVE' });
+    const data = r.body || r;
+    if (!data.success) { alert('Save failed: ' + (data.error || '')); return; }
+    if (dbEl('db-apikey-value')) dbEl('db-apikey-value').value = '';
+    await loadDbApiKeys();
+  } catch (err) { console.warn('apikey save failed', err); alert('Save failed'); }
+}
+
+async function dbApiKeyDelete() {
+  const name = (dbEl('db-apikey-name')?.value || '').trim();
+  if (!name) { alert('Enter the key name to delete.'); return; }
+  if (!confirm('Delete API key "' + name + '"? This cannot be undone.')) return;
+  try {
+    const r = await NX.api.del('/api/db/console/apikey/' + encodeURIComponent(name), { component: 'DatabaseManagement', action: 'CONSOLE_APIKEY_DELETE' });
+    const data = r && (r.body || r);
+    if (!data || !data.success) { alert('Delete failed: ' + ((data && data.error) || 'unknown')); return; }
+    if (dbEl('db-apikey-name')) dbEl('db-apikey-name').value = '';
+    await loadDbApiKeys();
+  } catch (err) { console.warn('apikey delete failed', err); alert('Delete failed'); }
+}
+
+// load explorer + api keys on startup
+document.addEventListener('DOMContentLoaded', () => { setTimeout(dbConsoleLoad, 800); });

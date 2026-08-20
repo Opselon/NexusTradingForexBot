@@ -2777,6 +2777,118 @@
                     </div>
                     <div id="db-report" class="mt-3 text-xs font-mono text-gray-300 space-y-1"></div>
                 </div>
+
+                <!-- ====================================================================
+                     DATABASE EXPLORER + SQL CONSOLE + API KEYS (Hermes-DBConsole)
+                     SSMS-style: list ALL database files -> tables -> columns -> rows.
+                     Provider-abstracted backend: works for SQLite now, PostgreSQL
+                     after the active provider switch (same endpoints/driver contract).
+                     ==================================================================== -->
+                <div class="flex justify-between items-center mt-6">
+                    <h3 class="text-sm font-bold text-white flex items-center">
+                        <i class="fa-solid fa-magnifying-glass mr-2 text-cyan-300"></i>Database Explorer <span class="ml-2 text-[10px] font-mono text-gray-500">(all database files — auto-syncs when new DBs are added)</span>
+                    </h3>
+                    <button onclick="dbConsoleRefresh()" class="px-3 py-1.5 rounded bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 border border-cyan-500/30 transition text-xs">
+                        <i class="fa-solid fa-rotate mr-1"></i>Rescan DB Files
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <!-- Database List -->
+                    <div class="bg-darkBg/50 border border-borderClr rounded-lg p-3">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fa-solid fa-database text-teal-400"></i>
+                            <span class="text-xs font-bold text-white">DATABASES</span>
+                            <span id="db-console-dbcount" class="text-[10px] text-gray-500"></span>
+                        </div>
+                        <input id="db-console-filter" type="text" placeholder="Search database / table..." oninput="dbConsoleFilter()"
+                               class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-xs text-white mb-2">
+                        <div id="db-console-dblist" class="space-y-1 max-h-56 overflow-y-auto pr-1"></div>
+                        <div class="text-[10px] text-gray-600 mt-2">Click a database to load its tables. Click a table to browse rows.</div>
+                    </div>
+
+                    <!-- Tables + Rows -->
+                    <div class="lg:col-span-2 bg-darkBg/50 border border-borderClr rounded-lg p-3">
+                        <div class="flex items-center gap-2 mb-2 flex-wrap">
+                            <i class="fa-solid fa-table text-sky-400"></i>
+                            <span id="db-console-breadcrumb" class="text-xs font-bold text-white">No database selected</span>
+                            <span id="db-table-count" class="text-[10px] text-gray-500"></span>
+                            <span class="flex-1"></span>
+                            <span id="db-grid-status" class="text-[10px] font-mono text-gray-500"></span>
+                        </div>
+                        <div id="db-console-tablelist" class="flex flex-wrap gap-1.5 mb-3 max-h-28 overflow-y-auto"></div>
+                        <div id="db-grid-wrap" class="overflow-auto max-h-96 border border-borderClr rounded">
+                            <table id="db-grid" class="w-full text-[11px] font-mono">
+                                <thead id="db-grid-head" class="sticky top-0 bg-panelBg"></thead>
+                                <tbody id="db-grid-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="flex items-center gap-2 mt-2 text-xs">
+                            <button onclick="dbRowsPrev()" class="px-2 py-1 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan transition">&#8592; Prev</button>
+                            <button onclick="dbRowsNext()" class="px-2 py-1 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan transition">Next &#8594;</button>
+                            <span id="db-rows-offset" class="text-[10px] text-gray-500 font-mono"></span>
+                            <span class="flex-1"></span>
+                            <select id="db-rows-perpage" onchange="dbReloadRows()" class="bg-darkBg border border-borderClr rounded px-1 py-1 text-[10px] text-white">
+                                <option value="50">50 rows</option>
+                                <option value="100" selected>100 rows</option>
+                                <option value="250">250 rows</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ready-Made SQL Buttons -->
+                <div class="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div class="lg:col-span-2 bg-panelBg border border-borderClr rounded-xl p-4">
+                        <div class="flex items-center gap-2 mb-2 flex-wrap">
+                            <i class="fa-solid fa-terminal text-amber-300"></i>
+                            <span class="text-sm font-bold text-white">SQL Console</span>
+                            <span class="text-[10px] text-gray-500 font-mono">SELECT / EXPLAIN / WITH / PRAGMA only — read-only</span>
+                        </div>
+                        <textarea id="db-sql-input" rows="4" spellcheck="false"
+                                  placeholder="SELECT * FROM audit_ledger ORDER BY rowid DESC LIMIT 100"
+                                  class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-white resize-y"></textarea>
+                        <div class="flex flex-wrap gap-2 mt-2 text-xs">
+                            <button onclick="dbRunQuery()" class="px-3 py-1.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 transition font-semibold">
+                                <i class="fa-solid fa-play mr-1"></i>Run Query
+                            </button>
+                            <button onclick="dbQuickSql('top100')" class="px-3 py-1.5 rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 transition">TOP 100 rows</button>
+                            <button onclick="dbQuickSql('count')" class="px-3 py-1.5 rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 transition">COUNT(*)</button>
+                            <button onclick="dbQuickSql('recent')" class="px-3 py-1.5 rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 transition">Recent 100</button>
+                            <button onclick="dbQuickSql('schema')" class="px-3 py-1.5 rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 transition">Schema DDL</button>
+                            <button onclick="dbQuickSql('integrity')" class="px-3 py-1.5 rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 transition">Integrity check</button>
+                        </div>
+                        <div id="db-sql-result" class="mt-2 text-[11px] font-mono text-gray-300"></div>
+                    </div>
+
+                    <!-- API Keys -->
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fa-solid fa-key text-emerald-300"></i>
+                            <span class="text-sm font-bold text-white">API Keys</span>
+                        </div>
+                        <div class="space-y-2 text-xs">
+                            <div>
+                                <label class="block text-gray-400 mb-1">Key Name</label>
+                                <input id="db-apikey-name" type="text" placeholder="e.g. news_api" class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-sm text-white">
+                            </div>
+                            <div>
+                                <label class="block text-gray-400 mb-1">Key Value</label>
+                                <input id="db-apikey-value" type="password" placeholder="••••••••" class="w-full bg-darkBg border border-borderClr rounded px-2 py-1.5 text-sm text-white">
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="dbApiKeySave()" class="flex-1 px-3 py-1.5 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 transition">
+                                    <i class="fa-solid fa-floppy-disk mr-1"></i>Save Key
+                                </button>
+                                <button onclick="dbApiKeyDelete()" class="px-3 py-1.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 transition">
+                                    <i class="fa-solid fa-trash mr-1"></i>Delete
+                                </button>
+                            </div>
+                            <div class="text-[10px] text-gray-600">Stored encrypted in the OS secret store — the UI only ever shows a masked prefix.</div>
+                            <div id="db-apikey-list" class="text-[10px] font-mono text-gray-400 space-y-1 max-h-24 overflow-y-auto"></div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
         </main>

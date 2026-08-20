@@ -71,6 +71,9 @@ window.NX = window.NX || {};
     put(url, body, opts) {
       return request(url, Object.assign({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }, opts));
     },
+    del(url, opts) {
+      return request(url, Object.assign({ method: 'DELETE' }, opts));
+    },
     // User-facing error presentation: shows request_id so the operator can
     // correlate with the server log.
     msg(result, fallback) {
