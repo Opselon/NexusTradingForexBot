@@ -1519,6 +1519,58 @@
                     </div>
                 </div>
 
+                <!-- Factory debug console + metrics (BUG-131b: live endpoint results) -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                    <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-4">
+                        <div>
+                            <h3 class="text-md font-bold text-white flex items-center">
+                            <i class="fa-solid fa-terminal mr-2 text-emerald-400"></i>
+                            Factory Console — live endpoint results
+                            </h3>
+                            <p class="text-xs text-textMuted mt-1">
+                            Every generate/loop/save call result, error and warning lands here (newest at bottom). Debug without the browser devtools.
+                            </p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span id="factory-console-stats" class="text-[10px] font-mono text-textMuted">ok:0 warn:0 err:0</span>
+                            <button onclick="factoryConsoleClear()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-textMuted hover:text-white px-2.5 py-1 rounded text-[10px] font-bold transition uppercase">
+                                <i class="fa-solid fa-eraser mr-1"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                    <div id="factory-console-body" class="bg-black/60 border border-borderClr/60 rounded-lg p-3 font-mono text-[11px] leading-relaxed h-[220px] overflow-y-auto space-y-0.5">
+                        <div class="text-textMuted italic font-sans">Console idle. Click Generate / Start Loop / Save to see live results.</div>
+                    </div>
+                </div>
+
+                <!-- Metrics strip (live counts from the backend) -->
+                <div class="grid grid-cols-2 lg:grid-cols-6 gap-3">
+                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Generations</div>
+                        <div id="factory-metric-generations" class="text-lg font-black font-mono text-accentCyan">--</div>
+                    </div>
+                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Candidates Generated</div>
+                        <div id="factory-metric-generated" class="text-lg font-black font-mono text-accentCyan">--</div>
+                    </div>
+                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Validated</div>
+                        <div id="factory-metric-validated" class="text-lg font-black font-mono text-accentGreen">--</div>
+                    </div>
+                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Rejected</div>
+                        <div id="factory-metric-rejected" class="text-lg font-black font-mono text-accentRed">--</div>
+                    </div>
+                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Provider Req</div>
+                        <div id="factory-metric-requests" class="text-lg font-black font-mono text-accentGold">--</div>
+                    </div>
+                    <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Provider Err</div>
+                        <div id="factory-metric-provider-errors" class="text-lg font-black font-mono text-accentRed">--</div>
+                    </div>
+                </div>
+
                 <!-- Failure analysis + candidate browsing -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">

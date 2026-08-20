@@ -11686,10 +11686,58 @@ async function loadHealthPanel() {
 // STRATEGY FACTORY (2026-08-20) — autonomous strategy evolution control room
 // ===========================================================================
 
+// BUG-131b: NX.api returns {ok,status,body,request_id} — the old
+// `res.data ?? res` pattern never saw .available (undefined -> every factory
+// call reported UNAVAILABLE/UNKNOWN even when the backend succeeded).
+function factoryRes(res, fallback) {
+    if (res && res.ok && res.body && typeof res.body === 'object') return res.body;
+    if (res && res.body && typeof res.body === 'object') return res.body;
+    return fallback || { available: false, reason: (res && res.error && res.error.message) || 'UNKNOWN' };
+}
+
+// Realtime factory console: every endpoint result (success + error + warning)
+// is appended to the on-tab console with a colored row so debugging is easy.
+const factoryLogBuffer = [];
+function factoryLog(level, text, meta) {
+    const line = { ts: new Date().toISOString().substring(11, 19), level: level || 'info', text: String(text || ''), meta: meta || null };
+    factoryLogBuffer.push(line);
+    if (factoryLogBuffer.length > 300) factoryLogBuffer.shift();
+    const el = document.getElementById('factory-console-body');
+    if (el) {
+        const row = document.createElement('div');
+        const pal = { info: 'text-sky-300', ok: 'text-emerald-300', warn: 'text-amber-300', error: 'text-rose-300' };
+        const cls = pal[level] || 'text-gray-300';
+        row.className = 'text-[10px] font-mono ' + cls + ' whitespace-pre-wrap break-all';
+        row.textContent = '[' + line.ts + '] ' + line.text;
+        el.appendChild(row);
+        while (el.childElementCount > 250) el.removeChild(el.firstElementChild);
+        el.scrollTop = el.scrollHeight;
+    }
+    if (level === 'error') console.warn('[FACTORY] ' + text);
+    else console.log('[FACTORY] ' + text);
+    updateFactoryConsoleStats();
+}
+
+function updateFactoryConsoleStats() {
+    const el = document.getElementById('factory-console-stats');
+    if (!el) return;
+    const ok = factoryLogBuffer.filter(l => l.level === 'ok' || l.level === 'info').length;
+    const warn = factoryLogBuffer.filter(l => l.level === 'warn').length;
+    const err = factoryLogBuffer.filter(l => l.level === 'error').length;
+    el.textContent = 'ok:' + ok + ' warn:' + warn + ' err:' + err;
+}
+
+function factoryConsoleClear() {
+    factoryLogBuffer.length = 0;
+    const el = document.getElementById('factory-console-body');
+    if (el) el.innerHTML = '<div class="text-textMuted italic font-sans">Console cleared.</div>';
+    updateFactoryConsoleStats();
+}
+
 async function loadFactoryStatus() {
     try {
         const res = await NX.api.get('/api/factory/status', { component: 'StrategyFactory', action: 'STATUS' });
-        const data = res.data ?? res;
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
         if (!data.available) {
             document.getElementById('factory-loop-state').textContent = 'UNAVAILABLE';
             return;
@@ -11702,6 +11750,23 @@ async function loadFactoryStatus() {
         const usage = data.provider_usage ?? {};
         document.getElementById('factory-llm-cost').textContent = '$' + (usage.estimated_cost_usd ?? 0).toFixed(4);
         document.getElementById('factory-llm-requests').textContent = usage.requests ?? 0;
+
+        // Metrics strip
+        const genList = data.generations ?? [];
+        const genTotals = genList.reduce((acc, g) => {
+            const cfg = typeof g.config === 'string' ? safeParse(g.config) : (g.config || {});
+            const s = cfg.summary || {};
+            acc.generated += s.generated || 0;
+            acc.valid += s.validated || 0;
+            acc.rej += s.rejected || 0;
+            return acc;
+        }, { generated: 0, valid: 0, rej: 0 });
+        setText('factory-metric-generations', String(gens.length));
+        setText('factory-metric-generated', String(genTotals.generated));
+        setText('factory-metric-validated', String(genTotals.valid));
+        setText('factory-metric-rejected', String(genTotals.rej));
+        setText('factory-metric-requests', String(usage.requests ?? 0));
+        setText('factory-metric-provider-errors', String(usage.failures ?? 0));
 
         // operator stats
         const ops = loop.operator_stats ?? {};
@@ -11734,7 +11799,7 @@ async function loadFactoryStatus() {
 
         await Promise.all([loadFactoryEvents(), loadFactoryFailures(), loadFactoryRanking(), loadFactoryLlmConfig()]);
     } catch (err) {
-        console.warn('factory status failed', err);
+        factoryLog('error', 'loadFactoryStatus: ' + String(err && err.message || err));
         document.getElementById('factory-loop-state').textContent = 'ERROR';
     }
 }
@@ -11746,7 +11811,7 @@ function safeParse(text) {
 async function loadFactoryEvents() {
     try {
         const res = await NX.api.get('/api/factory/events?limit=50', { component: 'StrategyFactory', action: 'EVENTS' });
-        const data = res.data ?? res;
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
         const events = data.events ?? [];
         const box = document.getElementById('factory-events');
         if (!events.length) {
@@ -11765,7 +11830,7 @@ async function loadFactoryEvents() {
 async function loadFactoryFailures() {
     try {
         const res = await NX.api.get('/api/factory/failures?limit=50', { component: 'StrategyFactory', action: 'FAILURES' });
-        const data = res.data ?? res;
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
         const failures = data.failures ?? [];
         const box = document.getElementById('factory-failures');
         if (!failures.length) {
@@ -11784,7 +11849,7 @@ async function loadFactoryFailures() {
 async function loadFactoryRanking() {
     try {
         const res = await NX.api.get('/api/factory/ranking?dimension=OVERALL&limit=20', { component: 'StrategyFactory', action: 'RANKING' });
-        const data = res.data ?? res;
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
         const ranked = data.ranked ?? [];
         const box = document.getElementById('factory-ranking');
         if (!ranked.length) {
@@ -11809,16 +11874,20 @@ async function factoryGenerate() {
     btn.textContent = 'Generating…';
     try {
         const res = await NX.api.post('/api/factory/generate', { size, mode }, { component: 'StrategyFactory', action: 'GENERATE' });
-        const data = res.data ?? res;
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
         if (data.available) {
+            factoryLog('ok', 'Generate ' + (data.generation && data.generation.generation_id) +
+                ' -> population ' + data.population + ' | structurally valid ' + data.passed +
+                ' | rejected ' + data.failed + ' | status ' + (data.status || ''));
             alert(`Generation ${data.generation?.generation_id} created:\nPopulation: ${data.population}\nStructurally valid: ${data.passed}\nRejected: ${data.failed}`);
             await loadFactoryStatus();
         } else {
+            factoryLog('error', 'Generate failed: ' + (data.reason ?? 'UNKNOWN'));
             alert('Generation failed: ' + (data.reason ?? 'UNKNOWN'));
         }
     } catch (err) {
-        console.warn('factory generate failed', err);
-        alert('Generation error — see console');
+        factoryLog('error', 'Generate threw: ' + String(err && err.message || err));
+        alert('Generation error — see Factory console below');
     } finally {
         btn.disabled = false;
         btn.textContent = 'Generate';
@@ -11828,10 +11897,11 @@ async function factoryGenerate() {
 async function factoryLoopStart() {
     try {
         const res = await NX.api.post('/api/factory/loop/start', {}, { component: 'StrategyFactory', action: 'LOOP_START' });
-        const data = res.data ?? res;
-        if (data.available) document.getElementById('factory-loop-state').textContent = 'RUNNING';
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
+        if (data.available) { factoryLog('ok', 'Loop STARTED'); document.getElementById('factory-loop-state').textContent = 'RUNNING'; }
+        else factoryLog('error', 'Loop start failed: ' + (data.reason || 'UNKNOWN'));
         await loadFactoryStatus();
-    } catch (err) { console.warn('loop start failed', err); }
+    } catch (err) { factoryLog('error', 'Loop start threw: ' + String(err && err.message || err)); }
 }
 
 async function factoryLoopPause() {
@@ -11862,7 +11932,7 @@ async function factoryLoopStop() {
 async function loadFactoryLlmConfig() {
     try {
         const res = await NX.api.get('/api/factory/llm-config', { component: 'StrategyFactory', action: 'LLM_STATUS' });
-        const data = res.data ?? res;
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
         if (!data.available) {
             setFactoryLlmStatus(false, data.reason || 'UNAVAILABLE');
             return;
@@ -11927,7 +11997,7 @@ async function saveFactoryLlmConfig() {
     };
     try {
         const res = await NX.api.post('/api/factory/llm-config', payload, { component: 'StrategyFactory', action: 'LLM_SAVE' });
-        const data = res.data ?? res;
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
         if (data.available) {
             document.getElementById('factory-llm-apikey').value = '';
             await Promise.all([loadFactoryLlmConfig(), loadFactoryStatus()]);
@@ -11946,7 +12016,7 @@ async function clearFactoryLlmKey() {
     if (!confirm('Remove the stored LLM API key? The factory falls back to deterministic generation until you set a new key.')) return;
     try {
         const res = await NX.api.post('/api/factory/llm-config', { clear_api_key: true }, { component: 'StrategyFactory', action: 'LLM_CLEAR_KEY' });
-        const data = res.data ?? res;
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
         if (data.available) {
             await Promise.all([loadFactoryLlmConfig(), loadFactoryStatus()]);
         } else {

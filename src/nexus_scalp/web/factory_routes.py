@@ -364,6 +364,18 @@ def factory_generate(request: Request, payload: dict[str, Any] | None = None) ->
             gen["generation_id"], size=int(size) if size else None
         )
         validation = factory.validate_population(population)
+        provider = getattr(factory, "provider", None)
+        source = "LLM" if provider is not None and provider.available() else "DETERMINISTIC"
+        logger.info(
+            "[STRATEGY_FACTORY] event=GENERATE_OK generation_id=%s population=%s "
+            "passed=%s failed=%s source=%s request_id=%s",
+            gen["generation_id"],
+            len(population),
+            len(validation["passed"]),
+            len(validation["failed"]),
+            source,
+            request.headers.get("x-request-id", "-"),
+        )
         from nexus_scalp.web.server import serialize_enums
 
         return serialize_enums(
@@ -374,11 +386,17 @@ def factory_generate(request: Request, payload: dict[str, Any] | None = None) ->
                     "passed": len(validation["passed"]),
                     "failed": len(validation["failed"]),
                     "status": "GENERATED",
+                    "source": source,
                 }
             )
         )
     except Exception as e:
         log_factory_error("/api/factory/generate", e)
+        logger.error(
+            "[STRATEGY_FACTORY] event=GENERATE_FAILED generation_id=error=%s request_id=%s",
+            str(e),
+            request.headers.get("x-request-id", "-"),
+        )
         return _err("INTERNAL_ERROR")
 
 
