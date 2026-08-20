@@ -5709,3 +5709,55 @@ REVERSAL DSL in 24.8s (2301 tokens, 0 failures). Commits 1fa2fd2 + 6f20a52.
   some paths. Consider a manual peak re-baseline after balance events.
 - The "adapter not connected" warning at shutdown is EXPECTED (adapter
   closed during graceful stop); don't chase it as an accounting bug.
+## BUG-133 — Broker-history sync stopped advancing: window anchored on last_sync_from + meta regressed (2026-08-21 Hermes-HistorySync)
+
+### Symptoms
+- audit_broker_deals/trades last advanced 2026-08-20 17:49 UTC while the
+  engine traded until 20:48 UTC. UI/accounting showed stale numbers,
+  "not re-synced with real MT5 data".
+- 08-21 00:18 boot fetched deals=7542 orders=9666 but inserted=0
+  (duplicates=17208) and audit_broker_history_meta.last_sync_from had
+  REGRESSED to 2026-05-08 (was 2026-05-11/05-12 on earlier cycles).
+
+### Root causes
+1. _sync_once computed the fetch window from meta.last_sync_from (the
+   FIRST-ever window start) instead of last_sync_to — every cycle re-fetched
+   months instead of the incremental tail; combined with (2) the closure
+   deals never made it in.
+2. The meta upsert `last_sync_from=excluded.last_sync_from` overwrote the
+   historical start each cycle (observed regression 05-12 -> 05-11 -> 05-08),
+   so even the "re-fetch everything" path started later than the true
+   beginning, and the incremental window never covered the newest closes.
+3. The engine also HALTED (BUG-132) at 00:18:01 — before the next 300s
+   history-sync tick could fire, so no further sync ever ran that session.
+
+### Evidence
+- Live MT5 probe: the "missing" closes ARE in broker history as NSE_CLOSE
+  deals (deal tickets 152368401952..152368445393; order/position ids
+  152515105672/137147/149362 = the engine ledger tickets; deal times
+  21:17-21:25 UTC == ledger 18:17-18:25 + 3h GMT+3 offset, BUG-070 family).
+- audit_broker_history_meta: last_sync_to=2026-08-20T21:07:48 (a LATER sync
+  recorded), last_sync_from=2026-05-08T17:03:44 (regressed).
+
+### Fix (commit a2628e2)
+- _sync_once: `from = meta.last_sync_to - overlap_days` (fallback legacy
+  last_sync_from; else initial 14d).
+- Meta upsert: `last_sync_from=MIN(existing, excluded)` — earliest start
+  preserved; last_sync_to advances.
+- Live DB repair: last_sync_to -> 2026-08-20T17:45 so the next boot fetches
+  17:45..now and pulls the missing closes.
+
+### Verification
+- 4 new unit tests (test_broker_history_sync_watermark_bug133.py) all pass
+  (window on last_sync_to / legacy fallback / initial / meta MIN).
+- Existing mt5 history + accounting suites (16) pass; ruff/mypy/py_compile
+  clean. Window logic exercised live (fetch from 2026-08-19T17:45..now).
+
+### Lessons for swarm
+- ANY watermark/incremental sync must anchor on the LAST COMPLETED boundary
+  (last_sync_to), never the first-ever start, and the metadata upsert must be
+  monotonic. Check `git log -S last_sync_from` for regressions.
+- After a halt (BUG-132) the 300s sync never fires again — account balance
+  events + halts leave accounting stale until the next boot.
+- Engine ledger tickets vs broker deal tickets can differ; identity is the
+  broker ticket; do not join on the engine's own ticket.
