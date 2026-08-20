@@ -51,6 +51,7 @@ from nexus_scalp.accounting.periods import (
     ensure_utc,
     parse_sql_timestamp,
     period_bounds,
+    previous_period,
     recent_periods,
     utc_now,
 )
@@ -443,8 +444,24 @@ class AccountingCore:
         if use_cache:
             cached = self._report_cache.get(f"{kind.value}:{bounds.key}")
             if cached is not None:
-                return cached
-        report = self._compute_period(bounds)
+                # A cached CURRENT-period report can still be dataless while
+                # older periods hold real trades (quiet day / seeded history)
+                # — apply the same empty-period fallback to it.
+                if at is not None or cached.has_data:
+                    return cached
+                report = cached
+            else:
+                report = self._compute_period(bounds)
+        else:
+            report = self._compute_period(bounds)
+        if at is None and not report.has_data:
+            # Walk back up to 30 periods; return the nearest one with data.
+            walk = bounds
+            for _ in range(30):
+                walk = previous_period(walk)
+                candidate = self._compute_period(walk)
+                if candidate.has_data:
+                    return candidate
         return report
 
     def _compute_period(self, bounds: PeriodBounds) -> PeriodReport:
