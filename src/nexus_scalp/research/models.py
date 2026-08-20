@@ -360,8 +360,15 @@ class ResearchRun(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     build_identity: str = Field(default="")
     result_summary: dict[str, Any] = Field(default_factory=dict)
+    completed_at: datetime | None = Field(default=None)
+    status: str = Field(default="QUEUED")  # QUEUED|RUNNING|COMPLETED|FAILED|CANCELLED|BLOCKED
+    run_outcome: str = Field(default="INCONCLUSIVE")  # VALIDATED|REJECTED|INCONCLUSIVE
+    snapshot_id: str = Field(default="")
+    gates: list[str] = Field(default_factory=list)  # gate_ids of this run
 
-    @field_validator("executed_at")
+    @field_validator("executed_at", "completed_at")
     @classmethod
-    def _utc(cls, v: datetime) -> datetime:
+    def _utc(cls, v: datetime | None) -> datetime | None:
+        if v is None:
+            return None
         return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)

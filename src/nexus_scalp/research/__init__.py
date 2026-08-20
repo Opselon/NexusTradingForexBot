@@ -45,6 +45,22 @@ from nexus_scalp.research.backtest import BacktestEngine
 from nexus_scalp.research.candidates import StrategyCandidate
 from nexus_scalp.research.dataset import ResearchDatasetBuilder
 from nexus_scalp.research.discovery import discover_candidates
+from nexus_scalp.research.evidence import (
+    EvidenceArtifact,
+    EvidenceKind,
+    FailureClass,
+    GateStatus,
+    GateType,
+    ResearchEvent,
+    ResearchGate,
+    ResearchRunSnapshot,
+    RunOutcome,
+    RunStatus,
+    WorkerHealth,
+    build_run_snapshot,
+    stable_digest,
+)
+from nexus_scalp.research.observability import ResearchObservabilityStore
 from nexus_scalp.research.lifecycle import (
     LifecycleError,
     approve_for_live,
@@ -82,6 +98,20 @@ __all__ = [
     "OOSResult",
     "ResearchDataset",
     "ResearchDatasetBuilder",
+    "ResearchObservabilityStore",
+    "ResearchGate",
+    "ResearchEvent",
+    "ResearchRunSnapshot",
+    "EvidenceArtifact",
+    "EvidenceKind",
+    "FailureClass",
+    "GateStatus",
+    "GateType",
+    "RunOutcome",
+    "RunStatus",
+    "WorkerHealth",
+    "build_run_snapshot",
+    "stable_digest",
     "ResearchPipeline",
     "ResearchRun",
     "ResearchSample",
