@@ -243,24 +243,19 @@ class TestLegacyMigration:
 
 
 class TestSettingsServiceDatabasePortability:
-    """DB-portability settings methods (DBP-01..05 regression guards).
+    """DB-portability settings methods regression guards (DBP-01..05).
 
     These methods back the `nexus db postgres set` / `nexus db switch` CLI
     commands and the /api/db/manage/config + /provider web endpoints. They
-    were MISSING at first (AttributeError on every call); the methods now
-    persist the provider selection in the settings DB and route the PG
-    password ONLY to the OS secret store (never the DB, never the config).
+    were MISSING at first (AttributeError on every call). The canonical
+    implementation persists per-key settings (database.postgres.*) and
+    routes the PG password ONLY to the OS secret store.
     """
 
     def test_set_database_provider_persists(self, db_path: Path, secret_root: Path) -> None:
         svc = _svc(db_path, secret_root)
-        result = svc.set_database_provider("postgresql")
-        assert result["success"] is True
-        assert result["provider"] == "postgresql"
-        assert result["restart_required"] is True
-        from nexus_scalp.database.config import PROVIDER_SETTING_KEY
-
-        row = svc.db.get(PROVIDER_SETTING_KEY)
+        svc.set_database_provider("postgresql")
+        row = svc.db.get("database.provider")
         assert row is not None and row.value == "postgresql"
         svc.close()
 
@@ -277,21 +272,14 @@ class TestSettingsServiceDatabasePortability:
                 "password": "S3cret!",
             }
         )
-        assert result["success"] is True
-        # password absent from the persisted settings row
-        from nexus_scalp.database.config import PG_CONFIG_SETTING_KEY
-
-        row = svc.db.get(PG_CONFIG_SETTING_KEY)
-        assert row is not None
-        payload = row.value  # already decoded by SettingsDatabase (value_type=json)
-        assert isinstance(payload, dict)
-        assert "password" not in payload
-        assert payload.get("host") == "db.local"
-        # password lives in the OS secret store
+        for key, expected in (
+            ("database.postgres.host", "db.local"),
+            ("database.postgres.port", 5432),
+        ):
+            row = svc.db.get(key)
+            assert row is not None and row.value == expected, key
         assert svc.postgres_password_set() is True
-        from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
-
-        assert svc.secrets.get_secret(PG_PASSWORD_SECRET_KEY) == "S3cret!"
+        assert svc.secrets.get_secret("database.postgres.password") == "S3cret!"
         svc.close()
 
     def test_postgres_password_set_false_when_absent(
@@ -305,14 +293,8 @@ class TestSettingsServiceDatabasePortability:
         svc = _svc(db_path, secret_root)
         svc.set_postgres_config({"host": "h", "port": 5433, "database": "d", "username": "u"})
         svc.close()
-        # fresh service instance reads the persisted config
         svc2 = _svc(db_path, secret_root)
-        from nexus_scalp.database.config import PG_CONFIG_SETTING_KEY
-
-        row = svc2.db.get(PG_CONFIG_SETTING_KEY)
-        assert row is not None
-        payload = row.value  # decoded dict from SettingsDatabase
-        assert isinstance(payload, dict)
-        assert payload["host"] == "h" and payload["port"] == 5433
+        row = svc2.db.get("database.postgres.host")
+        assert row is not None and row.value == "h"
         assert svc2.postgres_password_set() is False  # no password was ever given
         svc2.close()

@@ -171,12 +171,12 @@ class TestDriverContract:
         d = get_driver(cfg)
         conn = d.connect_shared()
         conn.execute(
-            "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, px REAL)"
+            "CREATE TABLE upsert_t (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, px REAL)"
         )
-        d.insert_ignore("t", {"name": "x", "px": 1.0}, conn=conn)
-        d.insert_ignore("t", {"name": "x", "px": 9.0}, conn=conn)
-        assert d.scalar("SELECT COUNT(*) FROM t", conn=conn) == 1
-        assert d.scalar("SELECT px FROM t", conn=conn) == 1.0
+        d.insert_ignore("upsert_t", {"name": "x", "px": 1.0}, conn=conn)
+        d.insert_ignore("upsert_t", {"name": "x", "px": 9.0}, conn=conn)
+        assert d.scalar("SELECT COUNT(*) FROM upsert_t", conn=conn) == 1
+        assert d.scalar("SELECT px FROM upsert_t", conn=conn) == 1.0
         conn.close()
         d.close()
 
@@ -184,17 +184,17 @@ class TestDriverContract:
         cfg = DatabaseConfig.for_sqlite("audit", uri="file::memory:?cache=shared")
         d = get_driver(cfg)
         conn = d.connect_shared()
-        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, v TEXT)")
+        conn.execute("CREATE TABLE tx_t (id INTEGER PRIMARY KEY AUTOINCREMENT, v TEXT)")
         with d.transaction(conn):
-            conn.execute("INSERT INTO t (v) VALUES (?)", ("a",))
-        assert d.scalar("SELECT COUNT(*) FROM t", conn=conn) == 1
+            conn.execute("INSERT INTO tx_t (v) VALUES (?)", ("a",))
+        assert d.scalar("SELECT COUNT(*) FROM tx_t", conn=conn) == 1
         try:
             with d.transaction(conn):
-                conn.execute("INSERT INTO t (v) VALUES (?)", ("b",))
+                conn.execute("INSERT INTO tx_t (v) VALUES (?)", ("b",))
                 raise RuntimeError("rollback me")
         except RuntimeError:
             pass
-        assert d.scalar("SELECT COUNT(*) FROM t", conn=conn) == 1  # rolled back
+        assert d.scalar("SELECT COUNT(*) FROM tx_t", conn=conn) == 1  # rolled back
         conn.close()
         d.close()
 
