@@ -323,10 +323,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [integration, e2e, research-backtest, model-validation]
+        suite: [integration, e2e, database-provider, research-backtest, model-validation]
 
     env:
       CI_RESULTS_DIR: ci-results
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: nse_audit
+          POSTGRES_USER: nse_user
+          POSTGRES_PASSWORD: nse_password_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nse_user -d nse_audit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout repository
@@ -363,6 +378,13 @@ jobs:
               pip install playwright
               python -m playwright install --with-deps chromium
               pytest tests/integration/test_playwright_e2e.py \
+                --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
+              ;;
+            database-provider)
+              # DATABASE PORTABILITY: provider matrix suite against a REAL
+              # PostgreSQL service (SQLite always; PG via NSE_PG_TEST_URL).
+              NSE_PG_TEST_URL="postgresql://nse_user:nse_password_dev@localhost:5432/nse_audit" \
+                pytest tests/unit/test_database_portability.py \
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
             research-backtest)
