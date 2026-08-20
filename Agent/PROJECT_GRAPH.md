@@ -63,9 +63,13 @@ Market Data ──► Processing ──► Feature Engineering ──► 70D Fea
 - **Payloads:** ticks, OHLCV rate history (`copy_rates_*`), account info,
   positions, orders, history deals, broker-native calc (`order_calc_*`).
 - **Broker-aware provider layer** (`adapters/mt5/providers.py`, Phase 14):
-  every snapshot carries SOURCE / TIMESTAMP / STATE VERSION / FRESHNESS /
-  PROVENANCE / ERROR STATE. `run_mt5_call()` wraps every call with structured
-  `[MT5_CALL]` diagnostics; failure is NEVER silent.
+  typed snapshots with provenance (`AccountSnapshot`, `SymbolSnapshot`,
+  `BrokerTickSnapshot`, `PositionSnapshot`, `OrderSnapshot`,
+  `HistoryOrderSnapshot`, `DealSnapshot`, `RateBarSnapshot`,
+  `TickHistorySnapshot`, `BrokerCalcSnapshot`) — every snapshot carries
+  SOURCE / TIMESTAMP / STATE VERSION / FRESHNESS / PROVENANCE / ERROR STATE.
+  `run_mt5_call()` wraps every call with structured `[MT5_CALL]` diagnostics;
+  failure is NEVER silent.
 - **Timebase:** MT5 epochs are SERVER-LOCAL (broker GMT+3, NOT UTC — BUG-070);
   `normalize_utc()` in providers.py converts datetime/numpy/Polars/ISO/naive
   safely (BUG-044-safe).
@@ -121,6 +125,110 @@ dataset, replay, training, inference, and live (INV-020):
   70D is the canonical RESEARCH/dataset schema. Never pad/truncate/substitute
   a vector (INV-009, INV-020).
 
+
+### 1.4b 70D Master Feature Vector — full per-dimension specification
+
+Every dimension documented with: Feature ID, Name, Category, Purpose, Input
+Source, Calculation Logic, Trading Meaning, Impact on Decision, Failure Risk.
+
+**Base block 0..49** (canonical `FEATURE_NAMES`, symbol XAUUSD M1):
+
+| Idx | Name | Category | Logic (verified) | Meaning | Failure risk |
+| :---: | :--- | :--- | :--- | :--- | :--- |
+| 0 | upper_wick_ratio | Candle | (High − max(O,C))/range, range=max(H−L,0.01), [0,1]→clip | seller rejection | extreme wicks |
+| 1 | lower_wick_ratio | Candle | (min(O,C) − Low)/range | buyer rejection | low |
+| 2 | body_to_range_ratio | Candle | \|O−C\|/range | directional strength | low |
+| 3 | is_doji | Candle | 1.0 if body_ratio ≤ 0.12 | indecision | low |
+| 4 | pinbar_sig | Candle | hammer min(2,lw*2) / star max(−2,−uw*2) | reversal bias | false pins |
+| 5 | engulfing_sig | Candle | bull min(2,1+body_ratio) / bear −(1+body_ratio) | impulse bias | low |
+| 6 | close_location_value | Candle | ((C−L)−(H−C))/range ∈ [−1,1] | close sentiment | low |
+| 7 | consecutive_momentum_count | Momentum | clip((count*dir)/5,−1,1) over 10 bars | sustained push | trend exhaustion |
+| 8 | norm_displacement | Momentum | (mid − last_close)/max(ATR14,0.20) | impulse/extension | low |
+| 9 | rapid_reversal_spike_val | Momentum | 1 if \|disp\|>0.6ATR and disp*logret<0 | trapped move | low |
+| 10 | dist_to_swing_high_20 | Structure | (max(H[-20:-1]) − mid)/ATR | resistance proximity | stale swing |
+| 11 | dist_to_swing_low_20 | Structure | (mid − min(L[-20:-1]))/ATR | support proximity | stale swing |
+| 12 | price_compression_flag_ratio | Structure | clip(range5/range20, 0, 2) | squeeze | low |
+| 13 | extreme_sig | Structure | +1 if range_pos≥0.95, −1 if ≤0.05 (50-bar) | exhaustion | trend extremes |
+| 14 | stop_hunt_depth | Liquidity | penetration depth / ATR | engineered hunt | low |
+| 15 | liquidity_sweep_signal | Liquidity | +1 low reclaim / −1 high reject | fakeout confirm | low |
+| 16 | session_tokyo | Session | 0≤UTC h<8 | session context | tz (BUG-070) |
+| 17 | session_london | Session | 7≤h<15 | session context | tz |
+| 18 | session_ny | Session | 13≤h<21 | session context | tz |
+| 19 | session_overlap_london_ny | Session | 13≤h<15 | overlap | tz |
+| 20-22 | lag_1/2/3_log_return | Return | ln(C[-n-1]/C[-n-2])*100, clip | return memory | low |
+| 23 | lag_1_atr_ratio | Volatility | TR_lag1/ATR | vol change | low |
+| 24 | lag_1_volume_z | Volume | (V[-2]−mean(V[-21:-1]))/std | volume impulse | tick-volume |
+| 25 | lag_1_clv | Volume | CLV of prior bar ∈ [−1,1] | absorption | low |
+| 26 | fvg_sig | SMC/FVG | (L[-1]−H[-3])/ATR bull, −(L[-3]−H[-1])/ATR bear, 0.20ATR gate | imbalance magnet | gap fill fast |
+| 27 | order_block_type | SMC/OB | +1/−1/0 × vol-strength | institutional zone | OB mislabel |
+| 28 | choch_sig | SMC | +1/−1 CHoCH (EMA20/50 + 20-bar swing) | structure shift | range noise |
+| 29 | breakout_sig | Price action | +1 mid>H[-1], −1 mid<L[-1] | break momentum | false break |
+| 30 | norm_tk_diff | Ichimoku | (Tenkan−Kijun)/ATR | TK spread | low |
+| 31 | tk_cross_signal | Ichimoku | +1/−1 cross | swing bias | whipsaw |
+| 32 | kumo_sig | Ichimoku | +1 above / −1 below cloud | trend filter | low |
+| 33 | norm_kumo_width | Ichimoku | (SpanA−SpanB)/ATR | cloud thickness | low |
+| 34 | norm_rsi | Oscillator | (RSI14−50)/16.66 — divisor 16.66 in CODE (BUG-082) | OB/OS | RSI extremes |
+| 35 | dist_to_ema_21 | Trend | (mid−EMA21)/ATR, EMA seed=first, alpha=2/(n+1) | pullback | low |
+| 36 | dist_to_ema_50 | Trend | (mid−EMA50)/ATR | macro pullback | low |
+| 37 | cross_asset_z_score | Cross-asset | rolling 20-bar z with current tick | deviation | correlation shift |
+| 38 | norm_dist_to_tenkan | Ichimoku | (Tenkan−Kijun)/(2*ATR) — exact negation of 39 | Tenkan dist | low |
+| 39 | norm_dist_to_kijun | Ichimoku | (Kijun−Tenkan)/(2*ATR) | Kijun dist | −1.0 corr w/ 38 |
+| 40 | htf_h4_trend | HTF | EMA3 of H4 closes +1/−1 | H4 filter | warmup |
+| 41 | htf_h1_momentum | HTF | (H1_close[-1]−H1_close[-2])/ATR | H1 momentum | warmup |
+| 42 | htf_m30_structure | HTF | EMA5 of M30 closes +1/−1 | M30 structure | warmup |
+| 43 | htf_m15_confirmation | HTF | engulfing + close-vs-open on last 2 M15 | M15 confirm | warmup |
+| 44 | support_zone_dist | S/R | (mid−nearest_support)/ATR, fractal win 3, 50 bars | support prox | low |
+| 45 | resistance_zone_dist | S/R | (nearest_resistance−mid)/ATR | resistance prox | low |
+| 46 | feat_ob_valid_bos | SMC | 1.0 OB BOS, 0.5 CHoCH/break | OB validity | low |
+| 47 | feat_ob_equilibrium_ratio | SMC | (ob_price−last_sl)/(last_sh−last_sl), clip [0,1] | OB equilibrium | low |
+| 48 | feat_ob_liquidity_swept | SMC | 1.0 sweep confirmed | OB swept | low |
+| 49 | feat_ob_fib_50_60_alignment | SMC | clip(1−\|eq_ratio−0.55\|/0.35, 0, 1) | fib band | low |
+
+Verified forensic facts: all 50 dims passed 7 fixtures × 50 = 350/350, determinism
+×100 PASS, causality T-1 PASS, dataset/live replay parity PASS, float32
+model-input roundtrip err ≤ 8.6e-8. `norm_rsi` divisor is 16.66 (not 25 — the
+historical docs table was wrong, BUG-082). feat_38/feat_39 are exact negations
+(corr −1.0 over 215 stored experiences). NO MACD/BB/ADX/OBV/VWAP exist in the
+50D — the historical docs claimed them; the executable FEATURE_NAMES is truth.
+
+**News block 50..59** (`news_context_v1` fields 0..8 + news_state idx 10):
+
+| Idx | Name | Category | Logic | Trading meaning | Failure risk |
+| :---: | :--- | :--- | :--- | :--- | :--- |
+| 50 | active_high_impact_events | News state | count of live high-impact events | event pressure | stale cache → 0.0 |
+| 51 | xauusd_relevance | News relevance | keyword/entity scoring | gold catalyst | local-only fallback |
+| 52 | usd_relevance | News relevance | keyword/entity scoring | USD driver | same |
+| 53 | bullish_pressure | News sentiment | tier-weighted consensus | +gold | bounded ≤ +0.05 |
+| 54 | bearish_pressure | News sentiment | tier-weighted consensus | −gold | bounded ≤ −0.10 |
+| 55 | conflict_score | News quality | consensus variance | unreliable info | bounded |
+| 56 | novelty | News quality | NEW=0…STALE=4 | fresh vs recycled | deterministic |
+| 57 | freshness | News quality | decay half-lives BREAKING/MACRO/POLICY/STRUCTURAL | relevance | fixed constants |
+| 58 | confidence | News quality | source trust × importance | certainty | LOCAL/API/COMBINED/FAILED |
+| 59 | news_state | News state | NORMAL=0…STALE=5 | event phase | missing → 0.0 |
+
+Causality: only events published at/before sample T enter; events postdating the
+dataset → zero vector → NEWS_INCONCLUSIVE_NO_OVERLAP (never fabricated).
+
+**Liquidity block 60..69** (canonical order — the brief's "63 eqh_strength"
+example is WRONG; trust `schema_contract.LIQUIDITY_10D_NAMES`):
+
+| Idx | Name | Category | Logic (verified from LIQUIDITY_FEATURE_DOC) | Missing default | Failure risk |
+| :---: | :--- | :--- | :--- | :--- | :--- |
+| 60 | bsl_distance_atr | Liquidity BSL | (L−P)/ATR, nearest CONFIRMED buy-side level above (swing highs/EQH/PDH/PWH/session/HTF) | 3.0 (far) | stale pools |
+| 61 | ssl_distance_atr | Liquidity SSL | (P−L)/ATR, nearest CONFIRMED sell-side below | 3.0 | stale pools |
+| 62 | eqh_strength | Liquidity EQH | cluster \|h_a−h_b\| ≤ ATR*EQH_TOLERANCE_ATR; strength=f(touch,closeness,recency,diversity), softmax [0,1] | 0.0 | low |
+| 63 | eql_strength | Liquidity EQL | mirror on lows | 0.0 | low |
+| 64 | htf_liquidity_score | Liquidity HTF | signed Σ(proximity×importance×confidence) over H1/H4/D1 confirmed pools; tanh→(−1,1)×3 | 0.0 | forming buckets excluded |
+| 65 | internal_liquidity_distance | Liquidity range | nearest confirmed pool inside active range / ATR | 3.0 | low |
+| 66 | external_liquidity_distance | Liquidity range | nearest confirmed pool outside range / ATR | 3.0 | low |
+| 67 | liquidity_confluence | Liquidity confluence | cluster pools within CONFLUENCE_CUTOFF_ATR×ATR; unique-source cap (1+ln(diversity)), clip [0,3] | 0.0 | source-diversity |
+| 68 | liquidity_sweep_state | Liquidity sweep | SweepState encoding over last 3 completed bars (signed {−2..+3}) | 0.0 | confirm after close |
+| 69 | post_sweep_displacement | Liquidity sweep | displacement from sweep bar to 2nd close after confirm / ATR (sign=rejection) | 0.0 | bars after confirm only |
+
+Anti-leakage: bars timestamp > decision_at invisible; ±5-bar fractal
+confirmation (SWING_CONFIRM_BARS); pool lifecycle CANDIDATE→CONFIRMED→
+(usable_at ≤ decision). All values finite, clipped [−3,+3] centrally.
+
 ### 1.5 AI Decision Engine
 - `models/scalp_net.py` — `ScalpNet` dual-path PyTorch net: 2D MLP snapshot
   path + 3D TCN/self-attention temporal path. Input `(B, 50)`, output 4 logits
@@ -159,17 +267,24 @@ dataset, replay, training, inference, and live (INV-020):
 ### 1.6 Risk Engine
 - `risk/risk_engine.py` — `RiskEngine`: dynamic lot sizing cascade:
   Raw Risk = Equity × Risk% → Raw Volume = Risk/(SL pts × tick value) →
-  floor to broker volume_step → clamp to account tier caps (equity <$100:
-  0.02 lots; <$1k: 0.5; <$10k: 2.0; ≥$10k: 10.0) → free-margin clamp
-  (margin ≤ 20% of free margin) → final volume.
+  floor to broker volume_step → clamp to account tier caps
+  (VERIFIED from code: equity <$100: 0.02 lots; <$1k: 0.10; <$10k: 1.00;
+  ≥$10k: min(10.0, volume_max); NOTE: older docs said 0.5/2.0 -- code wins)
+  → free-margin clamp (margin ≤ max_margin_usage_pct, default 10% of
+  free margin) → final volume.
 - **INV-003:** RiskEngine is the authoritative risk boundary — every entry
   proposal passes `calculate_dynamic_volume()`.
 
 ### 1.7 Execution Engine
 - `execution/order_manager.py` — `OrderLifecycleManager`, the authoritative
-  order + position lifecycle owner. 60-scenario router, 11 explicit position
-  states (PROPOSED → SUBMITTED → OPEN → {IN_DRAWDOWN, PROFIT_PROTECTION,
-  TRAILING, REVERSAL_PENDING, RECOVERY_LOCKED, PARTIAL_CLOSED} → CLOSED).
+  order + position lifecycle owner. 60-scenario router (skill.md inventory), 11 explicit in-trade
+  position states -- CODE-VERIFIED enum names (order_manager.py PositionState):
+  PROFIT_UNPROTECTED / PROFIT_PROTECTED / PROFIT_TRAILING /
+  PROFIT_GIVEBACK_WARNING / PROFIT_GIVEBACK_CRITICAL / LOSS_EARLY /
+  LOSS_RECOVERY_CANDIDATE / LOSS_RECOVERY_CONFIRMED / LOSS_RECOVERY_FAILING /
+  LOSS_EXIT_PRESSURE / LOSS_HARD_EXIT. (Older docs drew PROPOSED/SUBMITTED/OPEN
+  -- those exist in the order flow; the in-trade manager uses the PROFIT_*/LOSS_*
+  machine. See also section 5.2.)
 - **INV-004:** enforces `HARD_MAX_LOTS = 10.0` (absolute clamp in
   `_clamp_volume()`) and `MAX_TOTAL_EXPOSURE = 1`.
 - Circuit breaker: 3 consecutive broker rejections → `SystemHealth.SAFE_MODE`,
@@ -538,24 +653,7 @@ commission, swap, volume, deal_ids); partial closes merge, never double-count
 
 ---
 
-## 4. Credits & Maintenance
-
-- **Canonical architecture map:** `agents/skill.md` (forensic badges, §1-§20).
-- **Bug forensics:** `agents/bugs.md` — append (never rewrite) after real bugs.
-- **Invariants:** `agents/runtime_invariants.md` — INV-001..021.
-- **Contracts:** `agents/contracts.md` — additive only.
-- **Change/task/state registries:** `agents/change_control.md` (CHG-NNNN),
-  `agents/taskboard.md` (TASK-NNN, claim before starting), 
-  `agents/repository_state.md`, `agents/locks.yaml`, `agents/decisions/`.
-- **Dependency map:** `docs/architecture/dependency-map.md`.
-- **Companion agent files:** `Agent/AGENT_REASONING_PROTOCOL.md` (operating
-  manual), `Agent/ARCHITECTURE_CONTRACT.md` (the laws).
-- When any graph in this file disagrees with `agents/skill.md` or the code,
-  the CODE wins; update this file and classify the claim with the forensic
-  badge system from skill.md §2.
----
-
-## 3. Algorithm Graph
+## 4. Algorithm Graphs (connected view)
 
 ### 3.1 Market Analysis Layer (algorithms as connected graph)
 
@@ -633,7 +731,7 @@ ScalpNet (2D MLP path for snapshots; 3D causal TCN + self-attention for sequence
 
 ---
 
-## 4. Risk Management Graph
+## 5. Risk Management Graph
 
 ### 4.1 Risk decision tree (canonical -- risk/risk_engine.py + execution/order_manager.py)
 
@@ -698,7 +796,7 @@ hold_score = 100 - (80 * ratio^1.5) [convex drawdown penalty, cap 80] - time dec
 
 ---
 
-## 5. Execution Pipeline Graph
+## 6. Execution Pipeline Graph
 
 ### 5.1 Canonical execution flow
 
@@ -710,7 +808,7 @@ Validation -- schema/sanity: action != NO_TRADE, entry/sl/tp sane,
               confidence >= threshold, no pending-lock violation
       |
       v
-Risk Check -- calculate_dynamic_volume + _clamp_volume (see section 4)
+Risk Check -- calculate_dynamic_volume + _clamp_volume (see section 5)
               MAX_TOTAL_EXPOSURE guard, pending-order lock (30s / 1.0xATR)
       |
       v
@@ -785,7 +883,7 @@ uses the PROFIT_*/LOSS_* state machine.
 
 ---
 
-## 6. Learning / Research Graph
+## 7. Learning / Research Graph
 
 ### 6.1 Canonical learning loop
 
@@ -870,7 +968,7 @@ splits/labels/purge/embargo/friction -- never on point estimates at low n.
 
 ---
 
-## 7. Agent Understanding Layer
+## 8. Agent Understanding Layer
 
 ### 7.1 Agent Mental Model
 
@@ -953,7 +1051,7 @@ If you are an AI agent entering this project, understand these principles FIRST:
 
 ---
 
-## 8. Dependency Graph
+## 9. Dependency Graph
 
 ### 8.1 Module dependency graph (verified direction)
 
@@ -1016,7 +1114,7 @@ Telemetry:   every stage -> AuditRepository worker queue -> SQLite WAL
 
 ---
 
-## 9. Algorithm Explanation Standard
+## 10. Algorithm Explanation Standard
 
 Every major algorithm in NSE, documented in the standard template:
 
@@ -1152,14 +1250,14 @@ Every major algorithm in NSE, documented in the standard template:
 
 ---
 
-## 10. Documentation Quality Rules (maintenance contract)
+## 11. Documentation Quality Rules (maintenance contract)
 
 This file must stay:
 
 - **Extremely detailed** — every module, algorithm and data flow above is
   grounded in executable code or `agents/skill.md`, NOT imagined.
 - **Clear for senior engineers** — exact file paths, constants, invariants.
-- **Clear for AI agents** — section 7 (Agent Mental Model) is the entry point;
+- **Clear for AI agents** — section 8 (Agent Mental Model) is the entry point;
   the graphs are ASCII so any tool can parse them.
 - **Free of unnecessary complexity** — each node explains why it exists.
 - **Based on actual repository architecture** — verified 2026-08-20 against:
@@ -1171,7 +1269,7 @@ This file must stay:
 
 **Update rules:**
 
-1. When the 70D geometry changes → update section 2 + the schema hash; the
+1. When the 70D geometry changes → update section 1.4 + the schema hash; the
    hash is the contract fingerprint.
 2. When a new phase/subsystem lands → add it to the layer map (section 0),
    master graph (1), algorithm standard (9) and dependency graph (8) in the
@@ -1185,14 +1283,32 @@ This file must stay:
 
 ---
 
+## 12. Credits & Maintenance
+
+- **Canonical architecture map:** `agents/skill.md` (forensic badges, §1-§20).
+- **Bug forensics:** `agents/bugs.md` — append (never rewrite) after real bugs.
+- **Invariants:** `agents/runtime_invariants.md` — INV-001..021.
+- **Contracts:** `agents/contracts.md` — additive only.
+- **Change/task/state registries:** `agents/change_control.md` (CHG-NNNN),
+  `agents/taskboard.md` (TASK-NNN, claim before starting), 
+  `agents/repository_state.md`, `agents/locks.yaml`, `agents/decisions/`.
+- **Dependency map:** `docs/architecture/dependency-map.md`.
+- **Companion agent files:** `Agent/AGENT_REASONING_PROTOCOL.md` (operating
+  manual), `Agent/ARCHITECTURE_CONTRACT.md` (the laws).
+- When any graph in this file disagrees with `agents/skill.md` or the code,
+  the CODE wins; update this file and classify the claim with the forensic
+  badge system from skill.md §2.
+---
+
+
 ## Appendix A. Verification record
 
 | Check | Result |
 | :--- | :--- |
-| Every major module represented (domain/ports/adapters/features/models/training/signals/risk/execution/application/web/observability/experience/intelligence/research/model_lifecycle/governance/shadow/news/accounting/settings/release/hygiene/incidents/strategies/candle_intelligence) | PASS — layer map section 0 + dependency graph section 8 |
-| Every important algorithm explained in standard template | PASS — 10 algorithms in section 9 (labeler, walk-forward trainer, ScalpNet, rule matrix, policy/SMC, risk, order manager, liquidity engine, news gate, research pipeline) |
-| Data flows understandable end-to-end | PASS — master graph 1.1/1.2 + tick hot-path 1.3 + execution 5 + learning 6 |
-| A new AI agent can navigate the project using only this file | PASS — section 7 (agent mental model + navigation table) |
+| Every major module represented (domain/ports/adapters/features/models/training/signals/risk/execution/application/web/observability/experience/intelligence/research/model_lifecycle/governance/shadow/news/accounting/settings/release/hygiene/incidents/strategies/candle_intelligence) | PASS — layer map section 1 + dependency graph section 9 |
+| Every important algorithm explained in standard template | PASS — 10 algorithms in section 10 (labeler, walk-forward trainer, ScalpNet, rule matrix, policy/SMC, risk, order manager, liquidity engine, news gate, research pipeline) |
+| Data flows understandable end-to-end | PASS — master graph 1 + execution 6 + learning 7 |
+| A new AI agent can navigate the project using only this file | PASS — section 8 (agent mental model + navigation table) |
 | Reviewed against agents/skill.md | PASS — every claim cross-checked; discrepancies resolved CODE-wins (tier caps 0.10/1.00 vs docs 0.50/2.00; 11-state taxonomy PROFIT_*/LOSS_*; RSI divisor 16.66) |
-| All 70 dimensions documented (50 base + 10 news + 10 liquidity) | PASS — section 2.1 (50), 2.2 (10), 2.3 (10) |
+| All 70 dimensions documented (50 base + 10 news + 10 liquidity) | PASS — section 1.4b (50+10+10) |
 | Constants verified from code | HARD_MAX_LOTS=10.0, MAX_TOTAL_EXPOSURE=1, tier caps, S01-S13, 32 rules, 4000-bar cap, ATR period default, hold-score formula, news gate bounds ±0.05/0.10, 3-class labels vs 4-logit head, warmup gate, circuit breaker (3 rejections), pending lock 30s/1.0xATR |
