@@ -2413,6 +2413,20 @@ class LiveEngine:
             self.risk_engine.high_confidence_threshold = snap.algo.high_confidence_threshold
             self.risk_engine.max_allowed_lots = snap.max_allowed_lots
             self.risk_engine.max_margin_usage_pct = snap.risk.max_margin_usage_pct
+            # RiskConfig section: rebuild immutably so risk gates (spread,
+            # lot, drawdown, concurrent positions, enforce SL) read the new
+            # snapshot on the next evaluation (never partial field edits).
+            self.risk_engine.config = self.risk_engine.config.model_copy(
+                update={
+                    "max_spread_points": snap.max_spread_points,
+                    "risk_per_trade_pct": snap.risk_per_trade_pct,
+                    "max_account_drawdown_pct": snap.max_account_drawdown_pct,
+                    "max_concurrent_positions": snap.max_concurrent_positions,
+                    "max_allowed_lots": snap.max_allowed_lots,
+                    "enforce_stop_loss": snap.enforce_stop_loss,
+                    "max_margin_usage_pct": snap.risk.max_margin_usage_pct,
+                }
+            )
             self.signal_policy.confidence_threshold = snap.confidence_threshold
             # Live SMC tunables: FVG mitigation depth + OB scan lookback
             fe = getattr(self, "feature_engine", None)
