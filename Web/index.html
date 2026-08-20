@@ -1411,6 +1411,61 @@
                         </div>
                     </div>
 
+                    <!-- LLM Provider config (realtime assisted generation) -->
+                    <div class="bg-darkBg/40 border border-accentCyan/25 rounded-lg p-4 mb-4">
+                        <div class="flex justify-between items-center mb-3">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-accentCyan font-sans">LLM Provider — assisted generation (optional)</div>
+                                <p class="text-[11px] text-textMuted mt-0.5">
+                                    Set an OpenAI-compatible endpoint + API key (e.g. http://178.105.20.69:20128/v1). When configured, each generation is assisted by your local AI model; otherwise deterministic generators are used.
+                                </p>
+                            </div>
+                            <span id="factory-llm-status" class="text-[10px] font-black px-2 py-1 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">UNKNOWN</span>
+                        </div>
+                        <div class="grid grid-cols-1 lg:grid-cols-7 gap-3 items-end">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Base URL</div>
+                                <input id="factory-llm-baseurl" type="text" spellcheck="false" placeholder="http://178.105.20.69:20128/v1"
+                                       class="w-full bg-darkBg/60 border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50"/>
+                            </div>
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">API Key (token)</div>
+                                <input id="factory-llm-apikey" type="password" spellcheck="false" placeholder="sk-..."
+                                       class="w-full bg-darkBg/60 border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50"/>
+                            </div>
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Model</div>
+                                <input id="factory-llm-model" type="text" spellcheck="false" placeholder="claude-opus-5"
+                                       class="w-full bg-darkBg/60 border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50"/>
+                            </div>
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Temperature</div>
+                                <input id="factory-llm-temperature" type="number" min="0" max="2" step="0.1" value="0.7"
+                                       class="w-full bg-darkBg/60 border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50"/>
+                            </div>
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Timeout (sec)</div>
+                                <input id="factory-llm-timeout" type="number" min="10" step="10" value="300"
+                                       class="w-full bg-darkBg/60 border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50"/>
+                            </div>
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-textMuted mb-1">Max Req/Gen</div>
+                                <input id="factory-llm-maxreq" type="number" min="1" step="1" value="60"
+                                       class="w-full bg-darkBg/60 border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50"/>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="saveFactoryLlmConfig()" class="bg-accentCyan/10 hover:bg-accentCyan/20 text-accentCyan border border-accentCyan/30 rounded px-3 py-1.5 text-xs font-bold transition">
+                                    <i class="fa-solid fa-floppy-disk mr-1"></i> Save & Reload
+                                </button>
+                                <button onclick="loadFactoryLlmConfig()" title="Reload current config (key stays secret)"
+                                        class="bg-darkBg hover:bg-borderClr border border-borderClr text-textMuted hover:text-white rounded px-3 py-1.5 text-xs font-bold transition">
+                                    <i class="fa-solid fa-rotate"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="factory-llm-detail" class="text-[10px] font-mono text-textMuted mt-2">Provider not configured yet.</div>
+                    </div>
+
                     <!-- Live progress -->
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">

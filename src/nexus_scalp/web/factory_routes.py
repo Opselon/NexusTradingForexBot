@@ -77,11 +77,23 @@ def factory_status(request: Request) -> dict[str, Any]:
         )
 
         worker = _worker(request)
+        provider = getattr(factory, "provider", None)
         payload = {
             "loop": factory.loop_status(),
             "generations": list_generations(factory._research_backend, limit=20),
             "provider_usage": provider_usage_total(factory._research_backend),
             "config": factory.config.model_dump(),
+            "provider": (
+                {
+                    "available": bool(provider.available()),
+                    "model": provider.model,
+                    "base_url": provider.api_base_url,
+                    "prompt_version": provider.prompt_version,
+                    "usage": provider.usage.snapshot(),
+                }
+                if provider is not None
+                else {"available": False}
+            ),
         }
         if worker is not None:
             payload["worker"] = worker.status()
@@ -295,6 +307,8 @@ def factory_llm_config_save(
             base_url=str(payload.get("base_url") or "").strip() or None,
             model=str(payload.get("model") or "").strip() or None,
             temperature=payload.get("temperature"),
+            request_timeout_sec=payload.get("request_timeout_sec"),
+            max_requests_per_generation=payload.get("max_requests_per_generation"),
             actor="web",
         )
         # Hot-rebuild the running factory provider so changes apply without
@@ -310,6 +324,8 @@ def factory_llm_config_save(
                 api_key=cfg["api_key"],
                 temperature=cfg["temperature"],
                 secret_store=svc.secrets,
+                request_timeout_sec=cfg.get("request_timeout_sec", 300.0),
+                max_requests_per_generation=cfg.get("max_requests_per_generation", 60),
             )
             factory.provider = new_provider
             logger.info(

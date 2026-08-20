@@ -861,6 +861,8 @@ class LiveEngine:
                 api_key=cfg["api_key"],
                 temperature=cfg.get("temperature", 0.7),
                 secret_store=svc.secrets,
+                request_timeout_sec=cfg.get("request_timeout_sec", 300.0),
+                max_requests_per_generation=cfg.get("max_requests_per_generation", 60),
             )
         except Exception as e:
             logger.warning(

@@ -44,7 +44,7 @@ LLM_TEMPERATURE_KEY: str = "factory.llm_temperature"
 
 #: Prompt template version — every candidate records which prompt version
 #: produced it (spec 86). Bump when the DSL grammar/prompt changes.
-PROMPT_VERSION: str = "factory-dsl-v2"
+PROMPT_VERSION: str = "factory-dsl-v3"
 
 #: Default openai-compatible endpoint suffix.
 _CHAT_COMPLETIONS_PATH = "/chat/completions"
@@ -298,7 +298,20 @@ class LLMGenerationProvider:
     # ------------------------------------------------------------------
 
     def _build_messages(self, context: dict[str, Any], n: int) -> tuple[str, str]:
+        """Builds the LONG structured generation prompt (prompt v3).
+
+        The prompt teaches the model the EXACT post-generation pipeline the
+        engine runs on every candidate: GENERATE -> VALIDATE -> BACKTEST ->
+        WALK-FORWARD -> OOS -> ROBUSTNESS -> SCORE -> RANK -> ELITE -> EVOLVE.
+        The model proposes HYPOTHESES only; the engine measures everything
+        (spec 34/35/69/70/83/86).
+        """
         feature_list = ", ".join(context.get("feature_ids") or [])
+        timeframes = ", ".join(context.get("timeframes") or [])
+        symbols = ", ".join(context.get("symbols") or [])
+        max_cond = context.get("max_conditions", 9)
+        max_feat = context.get("max_features", 6)
+        max_tf = context.get("max_timeframes", 1)
         schema_fields = """{
   "schema_version": "1.0",
   "hypothesis": {
@@ -321,22 +334,50 @@ class LLMGenerationProvider:
         system = (
             "You are a senior quantitative researcher designing rule-based scalping strategy "
             "hypotheses for XAUUSD. You propose strategy HYPOTHESES only - you NEVER claim, "
-            "compute or predict performance. The engine measures everything.\n"
+            "compute or predict performance. The engine measures everything through a "
+            "deterministic pipeline.\n"
+            "\n"
+            "ENGINE PIPELINE (every candidate goes through ALL stages, in order):\n"
+            "  1. GENERATE - you (or the deterministic generators) propose raw DSL hypotheses.\n"
+            "  2. VALIDATE - hard structural gates: schema, symbols/timeframes, feature "
+            "existence, causality (no_future_data), complexity budget, canonical dedup. "
+            "Any failure here REJECTS the candidate before it is ever tested.\n"
+            "  3. BACKTEST - deterministic backtest over historical bars.\n"
+            "  4. WALK-FORWARD - rolling window evaluation (train/validate/roll).\n"
+            "  5. OOS - out-of-sample evaluation on data never seen during tuning.\n"
+            "  6. ROBUSTNESS - stability under parameter/sample perturbation.\n"
+            "  7. SCORE - weighted selection score across research/oos/robustness/"
+            "consistency/complexity/sample/regime/drawdown dimensions.\n"
+            "  8. RANK - 9 rank dimensions with explainable components.\n"
+            "  9. ELITE - only VALIDATED candidates with final_score >= 0.60 enter the "
+            "elite pool (bounded by elite_size).\n"
+            " 10. EVOLVE - the next generation preserves elites and mutates/crosses/"
+            "explores around them.\n"
+            "\n"
             "HARD RULES:\n"
             "1. Use ONLY features from the approved catalog below. NEVER invent indicators.\n"
-            "2. Every strategy MUST declare no_future_data: true - signals are computed on\n"
-            "   CLOSED bars only. Never reference the current forming bar's high/low/close.\n"
-            "3. Prefer simple, robust, generalizable logic over optimized complexity. A strategy\n"
-            "   that works out-of-sample with 20 trades beats a curve-fit 200-trade monster.\n"
-            "4. Stay within the complexity budget: at most 9 conditions, 6 distinct features.\n"
+            "2. Every strategy MUST declare no_future_data: true - signals are computed on "
+            "CLOSED bars only. Never reference the current forming bar high/low/close.\n"
+            "3. Prefer simple, robust, generalizable logic over optimized complexity. A "
+            "strategy with 20 out-of-sample trades and clean robustness beats a curve-fit "
+            "200-trade monster.\n"
+            "4. Stay within the complexity budget: at most "
+            + str(max_cond)
+            + " conditions, "
+            + str(max_feat)
+            + " distinct features, "
+            + str(max_tf)
+            + " timeframe(s).\n"
             "5. Choose ONE strategy family per strategy and align the entry logic with it.\n"
-            "6. Your output is DATA. It will be validated by strict deterministic gates and any\n"
-            "   invalid strategy is rejected before it is ever tested.\n"
+            "6. Your output is DATA. It will be validated by strict deterministic gates and "
+            "any invalid strategy is rejected before it is ever tested.\n"
+            "7. Diversify: cover DIFFERENT families and mechanisms - do not emit near-identical "
+            "variations of a single idea.\n"
             f"Approved feature catalog ({len(context.get('feature_ids') or [])}): {feature_list}\n"
-            f"Supported timeframes: {context.get('timeframes')}\n"
-            f"Supported symbols: {context.get('symbols')}\n"
-            f"Complexity limits: max conditions {context.get('max_conditions')}, "
-            f"max features {context.get('max_features')}, max timeframes {context.get('max_timeframes')}\n"
+            f"Supported timeframes: {timeframes}\n"
+            f"Supported symbols: {symbols}\n"
+            f"Complexity limits: max conditions {max_cond}, max features {max_feat}, "
+            f"max timeframes {max_tf}\n"
             f"DSL schema (JSON envelope): {schema_fields}\n"
             'Return ONLY a JSON object: {"strategies": [ {dsl-object}, ... ]}. '
             "No markdown, no prose, no code fences."

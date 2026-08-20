@@ -55,6 +55,8 @@ MUTABILITY = {
     "factory.llm_base_url": HOT_RESTRICTED,
     "factory.llm_model": HOT_RESTRICTED,
     "factory.llm_temperature": HOT_RESTRICTED,
+    "factory.llm_request_timeout_sec": HOT_RESTRICTED,
+    "factory.llm_max_requests_per_generation": HOT_RESTRICTED,
     "execution.symbol": RESTART_REQUIRED,
     "execution.timeframe": RESTART_REQUIRED,
     "execution.mode": HOT_RESTRICTED,
@@ -90,6 +92,12 @@ FACTORY_LLM_API_KEY = "factory.llm_api_key"
 FACTORY_LLM_BASE_URL = "factory.llm_base_url"
 FACTORY_LLM_MODEL = "factory.llm_model"
 FACTORY_LLM_TEMPERATURE = "factory.llm_temperature"
+#: BUG-131: slow local-model endpoints need a generous per-request timeout
+#: (claude-opus-5 through a local proxy routinely exceeds 120s on long
+#: structured prompts). Also bounds how many provider calls one generation
+#: may issue (request budget guard).
+FACTORY_LLM_REQUEST_TIMEOUT = "factory.llm_request_timeout_sec"
+FACTORY_LLM_MAX_REQUESTS = "factory.llm_max_requests_per_generation"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS application_settings (
@@ -486,6 +494,14 @@ class SettingsService:
             "base_url": str(base.value) if base else "",
             "model": str(model.value) if model else "",
             "temperature": float(temp.value) if temp and temp.value is not None else 0.7,
+            "request_timeout_sec": float(
+                (self.db.get(FACTORY_LLM_REQUEST_TIMEOUT).value if self.db.get(FACTORY_LLM_REQUEST_TIMEOUT) else None)
+                or 300.0
+            ),
+            "max_requests_per_generation": int(
+                (self.db.get(FACTORY_LLM_MAX_REQUESTS).value if self.db.get(FACTORY_LLM_MAX_REQUESTS) else None)
+                or 60
+            ),
             "source": "SECURE_SECRET_STORE" if key else "NOT_CONFIGURED",
             "state": self.state.state,
         }
@@ -515,6 +531,22 @@ class SettingsService:
                 )
                 or 0.7
             ),
+            "request_timeout_sec": float(
+                (
+                    self.db.get(FACTORY_LLM_REQUEST_TIMEOUT).value
+                    if self.db.get(FACTORY_LLM_REQUEST_TIMEOUT)
+                    else None
+                )
+                or 300.0
+            ),
+            "max_requests_per_generation": int(
+                (
+                    self.db.get(FACTORY_LLM_MAX_REQUESTS).value
+                    if self.db.get(FACTORY_LLM_MAX_REQUESTS)
+                    else None
+                )
+                or 60
+            ),
         }
 
     def set_factory_llm_config(
@@ -524,6 +556,8 @@ class SettingsService:
         base_url: str | None = None,
         model: str | None = None,
         temperature: float | None = None,
+        request_timeout_sec: float | None = None,
+        max_requests_per_generation: int | None = None,
         actor: str = "web",
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
@@ -559,6 +593,24 @@ class SettingsService:
                 FACTORY_LLM_TEMPERATURE,
                 bounded,
                 value_type="float",
+                source="USER_SETTINGS",
+                actor=actor,
+                correlation_id=cid,
+            )
+        if request_timeout_sec is not None:
+            self.db.set(
+                FACTORY_LLM_REQUEST_TIMEOUT,
+                max(10.0, float(request_timeout_sec)),
+                value_type="float",
+                source="USER_SETTINGS",
+                actor=actor,
+                correlation_id=cid,
+            )
+        if max_requests_per_generation is not None:
+            self.db.set(
+                FACTORY_LLM_MAX_REQUESTS,
+                max(1, int(max_requests_per_generation)),
+                value_type="int",
                 source="USER_SETTINGS",
                 actor=actor,
                 correlation_id=cid,

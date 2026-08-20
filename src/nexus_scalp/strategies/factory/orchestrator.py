@@ -1092,8 +1092,27 @@ class StrategyFactory:
             return {"status": "CANCELLED", "reason": "kill switch"}
         gen = self.create_generation(size=size, mode="MANUAL")
         generation_id = gen["generation_id"]
+        logger.info(
+            "[STRATEGY_FACTORY] event=GENERATION_STARTED generation_id=%s size=%s "
+            "mode=MANUAL source=%s",
+            generation_id,
+            size,
+            "LLM" if (self.provider is not None and self.provider.available()) else "DETERMINISTIC",
+        )
         population = self.generate_population(generation_id, size=size, memory=memory)
+        logger.info(
+            "[STRATEGY_FACTORY] event=GENERATED generation_id=%s population=%s",
+            generation_id,
+            len(population),
+        )
         validation = self.validate_population(population)
+        logger.info(
+            "[STRATEGY_FACTORY] event=VALIDATED generation_id=%s passed=%s rejected=%s "
+            "structural_gates=ENFORCED",
+            generation_id,
+            len(validation["passed"]),
+            len(validation.get("rejected", [])),
+        )
 
         dataset = self._build_dataset()
         evaluated = 0
@@ -1103,7 +1122,20 @@ class StrategyFactory:
             self.evaluate_candidate(candidate, dataset)
             evaluated += 1
 
+        logger.info(
+            "[STRATEGY_FACTORY] event=BACKTESTED generation_id=%s evaluated=%s "
+            "pipeline=BACKTEST+WALKFORWARD+OOS+ROBUSTNESS",
+            generation_id,
+            evaluated,
+        )
         completion = self.complete_generation(generation_id)
+        logger.info(
+            "[STRATEGY_FACTORY] event=COMPLETED generation_id=%s evaluated=%s elite=%s status=%s",
+            generation_id,
+            evaluated,
+            completion.get("elite_count", completion.get("elite", 0)),
+            completion.get("status", "COMPLETED"),
+        )
         completion["generation_id"] = generation_id
         completion["evaluated"] = evaluated
         completion["population"] = len(population)

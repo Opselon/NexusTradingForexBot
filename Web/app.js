@@ -11732,7 +11732,7 @@ async function loadFactoryStatus() {
             genBox.innerHTML = '<div class="text-textMuted italic">No generations yet.</div>';
         }
 
-        await Promise.all([loadFactoryEvents(), loadFactoryFailures(), loadFactoryRanking()]);
+        await Promise.all([loadFactoryEvents(), loadFactoryFailures(), loadFactoryRanking(), loadFactoryLlmConfig()]);
     } catch (err) {
         console.warn('factory status failed', err);
         document.getElementById('factory-loop-state').textContent = 'ERROR';
@@ -11854,6 +11854,92 @@ async function factoryLoopStop() {
         document.getElementById('factory-loop-state').textContent = 'STOPPED';
         await loadFactoryStatus();
     } catch (err) { console.warn('loop stop failed', err); }
+}
+
+// ---------------------------------------------------------------------------
+// LLM Provider config (BUG-131): set OpenAI-compatible endpoint + key from UI.
+// ---------------------------------------------------------------------------
+async function loadFactoryLlmConfig() {
+    try {
+        const res = await NX.api.get('/api/factory/llm-config', { component: 'StrategyFactory', action: 'LLM_STATUS' });
+        const data = res.data ?? res;
+        if (!data.available) {
+            setFactoryLlmStatus(false, data.reason || 'UNAVAILABLE');
+            return;
+        }
+        const st = data.status ?? {};
+        const prov = data.provider ?? {};
+        const baseEl = document.getElementById('factory-llm-baseurl');
+        const modelEl = document.getElementById('factory-llm-model');
+        const tempEl = document.getElementById('factory-llm-temperature');
+        // Never echo a stored key back into the DOM (secret stays in the
+        // backend secret store); the field stays blank until the user types.
+        if (baseEl && st.base_url) baseEl.value = st.base_url;
+        if (modelEl && st.model) modelEl.value = st.model;
+        if (tempEl && st.temperature != null) tempEl.value = st.temperature;
+        const timeoutEl = document.getElementById('factory-llm-timeout');
+        if (timeoutEl && st.request_timeout_sec != null) timeoutEl.value = st.request_timeout_sec;
+        const maxreqEl = document.getElementById('factory-llm-maxreq');
+        if (maxreqEl && st.max_requests_per_generation != null) maxreqEl.value = st.max_requests_per_generation;
+        const cfgReady = Boolean(st.base_url && st.model && st.api_key_set);
+        const provReady = Boolean(prov.available);
+        setFactoryLlmStatus(cfgReady && provReady,
+            (cfgReady ? 'CONFIGURED' : 'NOT CONFIGURED') +
+            (provReady ? ' · provider READY' : (cfgReady ? ' · provider not built yet' : ' · key missing')));
+        const detail = document.getElementById('factory-llm-detail');
+        if (detail) {
+            detail.textContent = 'prompt=' + (prov.prompt_version || st.prompt_version || '--') +
+                ' · model=' + (prov.model || st.model || '--') +
+                ' · base=' + (prov.base_url || st.base_url || '--') +
+                ' · usage=' + (prov.usage ? prov.usage.requests + ' req · $' + (prov.usage.estimated_cost_usd ?? 0).toFixed(4) : '0 req') +
+                (st.api_key_set ? ' · key: SET (hidden)' : ' · key: NOT SET');
+        }
+    } catch (err) {
+        console.warn('factory llm config load failed', err);
+        setFactoryLlmStatus(false, 'ERROR');
+    }
+}
+
+function setFactoryLlmStatus(ok, text) {
+    const el = document.getElementById('factory-llm-status');
+    if (!el) return;
+    el.textContent = text || (ok ? 'OK' : 'UNKNOWN');
+    const okTxt = String(text || '').toUpperCase();
+    if (okTxt.includes('READY') || okTxt.includes('CONFIGURED')) {
+        el.className = 'text-[10px] font-black px-2 py-1 rounded bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 border border-emerald-500/40';
+    } else if (okTxt.includes('NOT CONFIGURED') || okTxt.includes('KEY MISSING')) {
+        el.className = 'text-[10px] font-black px-2 py-1 rounded bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/40';
+    } else {
+        el.className = 'text-[10px] font-black px-2 py-1 rounded bg-gradient-to-r from-rose-500/20 to-red-500/20 text-rose-300 border border-rose-500/40';
+    }
+}
+
+async function saveFactoryLlmConfig() {
+    const btn = event.target.closest('button');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    const payload = {
+        base_url: document.getElementById('factory-llm-baseurl').value.trim(),
+        api_key: document.getElementById('factory-llm-apikey').value.trim(),
+        model: document.getElementById('factory-llm-model').value.trim(),
+        temperature: parseFloat(document.getElementById('factory-llm-temperature').value || '0.7'),
+        request_timeout_sec: parseFloat(document.getElementById('factory-llm-timeout').value || '300'),
+        max_requests_per_generation: parseInt(document.getElementById('factory-llm-maxreq').value || '60', 10),
+    };
+    try {
+        const res = await NX.api.post('/api/factory/llm-config', payload, { component: 'StrategyFactory', action: 'LLM_SAVE' });
+        const data = res.data ?? res;
+        if (data.available) {
+            document.getElementById('factory-llm-apikey').value = '';
+            await Promise.all([loadFactoryLlmConfig(), loadFactoryStatus()]);
+        } else {
+            alert('LLM config save failed: ' + (data.reason ?? 'UNKNOWN'));
+        }
+    } catch (err) {
+        console.warn('factory llm config save failed', err);
+        alert('LLM config save error — see console');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Save & Reload'; }
+    }
 }
 
 // startup: load factory status along with the other panels
