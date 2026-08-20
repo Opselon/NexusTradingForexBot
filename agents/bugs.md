@@ -5371,3 +5371,29 @@ Classification: E) STRATEGY FILTER + D) CONFIDENCE BLOCK (+ process-down).
 - Investigate the ~03:00 IST exit (daily maintenance/scheduler/watchdog).
 - Do NOT lower confidence gates to force trades (2026-08-18 $-4.7k regime).
 - Full report: agents/forensic_reports/2026-08-20_execution_forensic_no_positions.md
+## BUG-125 — Docker Compose Declared a PostgreSQL Service That No Code Consumed + No Readiness Probe (2026-08-20 Hermes-DockerRepair)
+
+**Impact:** `docker compose up` started a dead `postgres` service (nothing in `src/` ever
+ connected to PostgreSQL; persistence is per-domain SQLite) and pulled `postgres:16-alpine`
+ for nothing; the Docker healthcheck ran `nexus doctor` on a cold spawn with no true
+ readiness signal; the Dockerfile CMD referenced untracked `configs/live.yaml` while the
+ image ships only `base.yaml`/`live.yaml.example`; no `.env`/`.env.example` contract existed;
+ `NSE_WEB_HOST`/`NSE_WEB_PORT`/`NSE_LOG_LEVEL` were documented in compose but dead in the CLI.
+
+**Root cause:** Docker layer predated the canonical runtime-configuration architecture and
+ was never integrated with `nexus doctor`/`nexus db`/start semantics.
+
+**Fix:** single `core`+`redis` compose stack; postgres service removed; multi-stage non-root
+ Dockerfile; entrypoint does env validation (LIVE rejected in containers), dir bootstrap,
+ canonical `nexus db migrate --workspace /app` gate, then `exec` (true exit code);
+ healthcheck polls `GET /health` (HealthEngine verdict READY/DEGRADED = healthy, 503 otherwise);
+ `/health` endpoint added; `NSE_WEB_HOST`/`NSE_WEB_PORT`/`NSE_LOG_LEVEL` wired into the CLI;
+ `.env.example` + `.dockerignore` + `docs/docker.md` + Windows/POSIX wrappers created.
+
+**Regression guards:** `tests/unit/test_docker_startup_phase21.py` TEST-DOCKER-01..12 (compose
+ contract, .env contract + no-secrets, Dockerfile shape, HealthEngine verdict semantics,
+ NSE_* env -> AppConfig mapping).
+
+**Verification:** `docker compose config --quiet` OK; 21 tests passed; ruff/mypy clean on
+ edited lines; end-to-end container verification (clean start, restart persistence,
+ config-error clarity) is the acceptance gate for this task.
