@@ -126,6 +126,43 @@ class TimebaseProbe:
             pass
         return offsets, deal_offsets
 
+    def probe_event(self, ticket: str | int | None = None) -> dict[str, Any]:
+        """Per-event timebase forensic probe (spec 14/15): resolves the
+        exact timestamp chain for a ticket/execution/order — raw broker
+        time, normalized UTC (stored), ledger UTC, offset and the
+        normalization rule applied at sync. Returns the conversion chain
+        for the Timebase Probe UI.
+        """
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        conn.row_factory = sqlite3.Row
+        try:
+            broker = None
+            ledger = None
+            if ticket:
+                try:
+                    broker = conn.execute(
+                        "SELECT trade_id, entry_time, exit_time, synced_at, source "
+                        "FROM audit_broker_trades WHERE trade_id=? OR position_id=? "
+                        "ORDER BY synced_at DESC LIMIT 1",
+                        (str(ticket), str(ticket)),
+                    ).fetchone()
+                except sqlite3.Error:
+                    broker = None
+                try:
+                    ledger = conn.execute(
+                        "SELECT ticket, open_time, close_time FROM audit_ledger "
+                        "WHERE ticket=? OR order_id=? LIMIT 1",
+                        (str(ticket), str(ticket)),
+                    ).fetchone()
+                except sqlite3.Error:
+                    ledger = None
+            return timebase_event_chain(
+                broker=dict(broker) if broker else None,
+                ledger=dict(ledger) if ledger else None,
+            )
+        finally:
+            conn.close()
+
     def _latest_log_timestamp(self) -> datetime | None:
         """Latest structured log file mtime (best-effort, read-only)."""
         import glob
@@ -182,6 +219,63 @@ class TimebaseProbe:
         return affected
 
 
+def timebase_event_chain(
+    *,
+    broker: dict[str, Any] | None = None,
+    ledger: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Exposes the timestamp conversion chain for one event (spec 15):
+
+    source_time       raw broker server-local value as stored
+    normalized_utc    the stored UTC representation (post normalization)
+    expected_time     ledger UTC for the same execution (canonical clock)
+    difference_ms     broker-vs-ledger delta after normalization
+    source_component  audit_broker_trades / audit_ledger
+    normalization_rule brokers.BROKER_SERVER_UTC_OFFSET_MINUTES applied at
+                       sync (BUG-070); ``naive_fromtimestamp`` marks rows
+                       written before the fix (3h future shift).
+    """
+    from nexus_scalp.adapters.mt5.providers import (
+        BROKER_SERVER_UTC_OFFSET_MINUTES,
+    )
+
+    chain: dict[str, Any] = {
+        "source_component": None,
+        "comparison_component": None,
+        "source_time": None,
+        "source_timezone": "broker-server-local (GMT+3)",
+        "normalized_utc": None,
+        "expected_time": None,
+        "difference_ms": None,
+        "normalization_rule": f"subtract {BROKER_SERVER_UTC_OFFSET_MINUTES} min at sync (BUG-070)",
+    }
+    if broker and (broker.get("entry_time") or broker.get("exit_time")):
+        raw_t = str(broker.get("exit_time") or broker.get("entry_time") or "")
+        chain["source_component"] = "audit_broker_trades"
+        chain["source_time"] = raw_t
+        chain["normalized_utc"] = raw_t
+        if raw_t.endswith("+00:00"):
+            raw_parts = raw_t[:-6]
+            from datetime import timedelta
+
+            naive = datetime.fromisoformat(raw_parts)
+            shifted = (naive - timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)).isoformat()
+            chain["pre_fix_raw_value"] = shifted + "+00:00"
+            chain["normalization_note"] = (
+                "stored +00:00 row: pre-fix naive fromtimestamp(epoch, UTC) wrote "
+                "GMT+3 as UTC (3h future). New rows store the corrected UTC."
+            )
+    if ledger and (ledger.get("open_time") or ledger.get("close_time")):
+        chain["comparison_component"] = "audit_ledger"
+        chain["expected_time"] = str(ledger.get("close_time") or ledger.get("open_time") or "")
+    if chain["normalized_utc"] and chain["expected_time"]:
+        a = _parse_ts(chain["normalized_utc"])
+        b = _parse_ts(chain["expected_time"])
+        if a is not None and b is not None:
+            chain["difference_ms"] = round((a - b).total_seconds() * 1000.0, 1)
+    return chain
+
+
 def build_timebase_probe(db_path: str, out_path: str | Path) -> dict[str, Any]:
     """Runs the probe and writes artifacts/forensics/timebase_probe.json."""
     probe = TimebaseProbe(db_path)
@@ -195,4 +289,5 @@ def build_timebase_probe(db_path: str, out_path: str | Path) -> dict[str, Any]:
 __all__ = [
     "TimebaseProbe",
     "build_timebase_probe",
+    "timebase_event_chain",
 ]
