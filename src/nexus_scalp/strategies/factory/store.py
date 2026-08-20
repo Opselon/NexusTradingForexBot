@@ -3,6 +3,16 @@ Strategy Factory — Persistence Store
 ====================================
 STRATEGY FACTORY (2026-08-20).
 
+Backend dispatch (2026-08-20, ISOLATED STRATEGY DB):
+-----------------------------------------------
+Every function in this module accepts EITHER an ``AuditRepository`` (legacy
+behavior: rows go through the audit background queue into the audit DB) OR a
+:class:`nexus_scalp.strategies.research_store.StrategyResearchStore`
+(isolated strategy DB — SQLite ``artifacts/strategies.db`` or PostgreSQL).
+The ``_resolve_backend`` helper picks the implementation, so callers
+(orchestrator, web routes) keep the same call signature while the factory
+can be pointed at the isolated store via ``StrategyFactory(store=...)``.
+
 All factory research memory is persisted through the SAME AuditRepository
 background queue as the research layer (spec 38 / 41 / 74 / 75). Tables:
 
@@ -61,12 +71,30 @@ def _conn(repo: AuditRepository) -> sqlite3.Connection | None:
         return None
 
 
+def _resolve_backend(repo_or_store: Any) -> str:
+    """Return the write/read backend for a call.
+
+    ``store`` = isolated StrategyResearchStore (driver attribute);
+    ``audit`` = AuditRepository (legacy background-queue path).
+    """
+    if repo_or_store is not None and hasattr(repo_or_store, "driver"):
+        return "store"
+    return "audit"
+
+
+def _is_store_backend(repo_or_store: Any) -> bool:
+    return _resolve_backend(repo_or_store) == "store"
+
+
 # ---------------------------------------------------------------------------
 # Writes (through the audit background queue — never blocks the live path)
 # ---------------------------------------------------------------------------
 
 
-def upsert_generation(repo: AuditRepository, generation: dict[str, Any]) -> bool:
+def upsert_generation(repo: Any, generation: dict[str, Any]) -> bool:
+    """Upsert a generation row — audit queue (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.upsert_generation(generation)
     if not repo._is_sqlite:
         return False
     sql = """
@@ -101,7 +129,10 @@ def upsert_generation(repo: AuditRepository, generation: dict[str, Any]) -> bool
         return False
 
 
-def upsert_candidate(repo: AuditRepository, candidate: dict[str, Any]) -> bool:
+def upsert_candidate(repo: Any, candidate: dict[str, Any]) -> bool:
+    """Upsert a candidate row — audit queue (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.upsert_candidate(candidate)
     if not repo._is_sqlite:
         return False
     sql = """
@@ -143,7 +174,10 @@ def upsert_candidate(repo: AuditRepository, candidate: dict[str, Any]) -> bool:
         return False
 
 
-def record_failure(repo: AuditRepository, failure: dict[str, Any]) -> bool:
+def record_failure(repo: Any, failure: dict[str, Any]) -> bool:
+    """Record a factory failure — audit queue (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.record_failure(failure)
     if not repo._is_sqlite:
         return False
     sql = """
@@ -175,7 +209,10 @@ def record_failure(repo: AuditRepository, failure: dict[str, Any]) -> bool:
         return False
 
 
-def emit_event(repo: AuditRepository, event: dict[str, Any]) -> bool:
+def emit_event(repo: Any, event: dict[str, Any]) -> bool:
+    """Emit a factory event — audit queue (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.emit_event(event)
     if not repo._is_sqlite:
         return False
     sql = """
@@ -206,7 +243,10 @@ def emit_event(repo: AuditRepository, event: dict[str, Any]) -> bool:
         return False
 
 
-def record_run(repo: AuditRepository, run: dict[str, Any]) -> bool:
+def record_run(repo: Any, run: dict[str, Any]) -> bool:
+    """Record a research run — audit queue (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.record_run(run)
     if not repo._is_sqlite:
         return False
     sql = """
@@ -237,7 +277,10 @@ def record_run(repo: AuditRepository, run: dict[str, Any]) -> bool:
         return False
 
 
-def record_provider_usage(repo: AuditRepository, usage: dict[str, Any]) -> bool:
+def record_provider_usage(repo: Any, usage: dict[str, Any]) -> bool:
+    """Record LLM provider usage — audit queue (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.record_provider_usage(usage)
     if not repo._is_sqlite:
         return False
     sql = """
@@ -273,7 +316,10 @@ def record_provider_usage(repo: AuditRepository, usage: dict[str, Any]) -> bool:
         return False
 
 
-def set_loop_state(repo: AuditRepository, loop: dict[str, Any]) -> bool:
+def set_loop_state(repo: Any, loop: dict[str, Any]) -> bool:
+    """Persist loop control state — audit queue (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.set_loop_state(loop)
     if not repo._is_sqlite:
         return False
     sql = """
@@ -311,7 +357,10 @@ def set_loop_state(repo: AuditRepository, loop: dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def get_generation(repo: AuditRepository, generation_id: str) -> dict[str, Any] | None:
+def get_generation(repo: Any, generation_id: str) -> dict[str, Any] | None:
+    """Read one generation — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.get_generation(generation_id)
     conn = _conn(repo)
     if conn is None:
         return None
@@ -327,7 +376,10 @@ def get_generation(repo: AuditRepository, generation_id: str) -> dict[str, Any] 
         conn.close()
 
 
-def list_generations(repo: AuditRepository, limit: int = 50) -> list[dict[str, Any]]:
+def list_generations(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
+    """List generations — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.list_generations(limit=limit)
     conn = _conn(repo)
     if conn is None:
         return []
@@ -345,11 +397,14 @@ def list_generations(repo: AuditRepository, limit: int = 50) -> list[dict[str, A
 
 
 def list_candidates(
-    repo: AuditRepository,
+    repo: Any,
     generation_id: str | None = None,
     lifecycle: str | None = None,
     limit: int = 200,
 ) -> list[dict[str, Any]]:
+    """List candidates — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.list_candidates(generation_id=generation_id, lifecycle=lifecycle, limit=limit)
     conn = _conn(repo)
     if conn is None:
         return []
@@ -378,10 +433,13 @@ def list_candidates(
 
 
 def list_failures(
-    repo: AuditRepository,
+    repo: Any,
     generation_id: str | None = None,
     limit: int = 200,
 ) -> list[dict[str, Any]]:
+    """List failures — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.list_failures(candidate_id=generation_id, limit=limit)
     conn = _conn(repo)
     if conn is None:
         return []
@@ -404,10 +462,13 @@ def list_failures(
 
 
 def list_events(
-    repo: AuditRepository,
+    repo: Any,
     generation_id: str | None = None,
     limit: int = 200,
 ) -> list[dict[str, Any]]:
+    """List events — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.list_events(generation_id=generation_id, limit=limit)
     conn = _conn(repo)
     if conn is None:
         return []
@@ -429,7 +490,10 @@ def list_events(
         conn.close()
 
 
-def list_runs(repo: AuditRepository, limit: int = 100) -> list[dict[str, Any]]:
+def list_runs(repo: Any, limit: int = 100) -> list[dict[str, Any]]:
+    """List research runs — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.list_runs(limit=limit)
     conn = _conn(repo)
     if conn is None:
         return []
@@ -446,12 +510,15 @@ def list_runs(repo: AuditRepository, limit: int = 100) -> list[dict[str, Any]]:
         conn.close()
 
 
-def get_candidate_structural(repo: AuditRepository, candidate_id: str) -> dict[str, Any] | None:
+def get_candidate_structural(repo: Any, candidate_id: str) -> dict[str, Any] | None:
     """Reads the persisted structural verdict for one candidate.
 
     Returns a decoded dict or None when absent. Used to preserve the
     structural verdict across lifecycle updates (immutability).
     """
+    if _is_store_backend(repo):
+        out = repo.get_candidate_structural(candidate_id)
+        return out or None
     import json as _json
 
     conn = _conn(repo)
@@ -480,7 +547,10 @@ def get_candidate_structural(repo: AuditRepository, candidate_id: str) -> dict[s
         conn.close()
 
 
-def get_loop_state(repo: AuditRepository) -> dict[str, Any]:
+def get_loop_state(repo: Any) -> dict[str, Any]:
+    """Read loop control state — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.get_loop_state()
     conn = _conn(repo)
     if conn is None:
         return {"state": "STOPPED"}
@@ -496,7 +566,10 @@ def get_loop_state(repo: AuditRepository) -> dict[str, Any]:
         conn.close()
 
 
-def provider_usage_total(repo: AuditRepository) -> dict[str, Any]:
+def provider_usage_total(repo: Any) -> dict[str, Any]:
+    """Aggregate LLM provider usage — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.provider_usage_total()
     conn = _conn(repo)
     if conn is None:
         return {"requests": 0, "estimated_cost_usd": 0.0}

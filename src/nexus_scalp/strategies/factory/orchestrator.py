@@ -104,8 +104,15 @@ class StrategyFactory:
         provider: LLMGenerationProvider | None = None,
         symbols: list[str] | None = None,
         notifier: Any | None = None,
+        store: Any | None = None,
     ) -> None:
         self.audit_repo = audit_repo
+        # Isolated strategy research store (2026-08-20): generated-
+        # strategy memory lives in its OWN database (artifacts/
+        # strategies.db / PostgreSQL), never in the audit DB. When no
+        # store is injected, the factory falls back to the audit-repo
+        # background queue (legacy behavior).
+        self.store: Any = store
         self.research_pipeline = research_pipeline
         self.config = config or EvolutionConfig()
         self.provider = provider
@@ -116,6 +123,15 @@ class StrategyFactory:
         self._operator_stats: dict[str, dict[str, int]] = {}
         self._last_run_summary: dict[str, Any] = {}
         self._kill_requested = False
+
+    @property
+    def _research_backend(self) -> Any:
+        """Persistence backend for factory research memory.
+
+        Returns the isolated strategy research store when injected, else the
+        audit repository (legacy background-queue path).
+        """
+        return self.store if self.store is not None else self.audit_repo
 
     # ------------------------------------------------------------------
     # Control plane (spec 73)
@@ -128,7 +144,7 @@ class StrategyFactory:
         self.loop_state = LoopState.RUNNING.value
         self._kill_requested = False
         set_loop_state(
-            self.audit_repo,
+            self._research_backend,
             {"state": self.loop_state, "generation_id": self.current_generation_id},
         )
         return True
@@ -139,11 +155,11 @@ class StrategyFactory:
             return False
         self.loop_state = LoopState.PAUSED.value
         set_loop_state(
-            self.audit_repo,
+            self._research_backend,
             {"state": self.loop_state, "generation_id": self.current_generation_id},
         )
         emit_event(
-            self.audit_repo,
+            self._research_backend,
             {
                 "event_id": _event_id(),
                 "event_type": "LOOP_PAUSED",
@@ -157,11 +173,11 @@ class StrategyFactory:
             return False
         self.loop_state = LoopState.RUNNING.value
         set_loop_state(
-            self.audit_repo,
+            self._research_backend,
             {"state": self.loop_state, "generation_id": self.current_generation_id},
         )
         emit_event(
-            self.audit_repo,
+            self._research_backend,
             {
                 "event_id": _event_id(),
                 "event_type": "LOOP_RESUMED",
@@ -177,11 +193,11 @@ class StrategyFactory:
         self.loop_state = LoopState.STOPPING.value
         self._kill_requested = True
         set_loop_state(
-            self.audit_repo,
+            self._research_backend,
             {"state": self.loop_state, "generation_id": self.current_generation_id},
         )
         emit_event(
-            self.audit_repo,
+            self._research_backend,
             {
                 "event_id": _event_id(),
                 "event_type": "LOOP_STOPPED",
@@ -192,7 +208,7 @@ class StrategyFactory:
         # Persist the FINAL state (not the transient STOPPING) so a crash
         # after stop never resumes into a half-stopped loop (spec 73).
         set_loop_state(
-            self.audit_repo,
+            self._research_backend,
             {"state": self.loop_state, "generation_id": self.current_generation_id},
         )
         return True
@@ -240,9 +256,9 @@ class StrategyFactory:
                 "elite_size": cfg.elite_size,
             },
         }
-        upsert_generation(self.audit_repo, gen)
+        upsert_generation(self._research_backend, gen)
         emit_event(
-            self.audit_repo,
+            self._research_backend,
             {
                 "event_id": _event_id(),
                 "generation_id": generation_id,
@@ -270,7 +286,7 @@ class StrategyFactory:
             logger.warning("[STRATEGY_FACTORY] telegram event failed (isolated)", error=str(e))
 
     def _next_generation_number(self) -> int:
-        gens = list_generations(self.audit_repo, limit=MAX_GENERATIONS_READ)
+        gens = list_generations(self._research_backend, limit=MAX_GENERATIONS_READ)
         numbers = [int(g.get("number", 0)) for g in gens]
         return (max(numbers) + 1) if numbers else 1
 
@@ -296,11 +312,11 @@ class StrategyFactory:
         """
         cfg = self.config
         population = size or cfg.generation_size
-        gen = get_generation(self.audit_repo, generation_id) or {}
+        gen = get_generation(self._research_backend, generation_id) or {}
         number = int(gen.get("number", 0))
 
         upsert_generation(
-            self.audit_repo,
+            self._research_backend,
             {**gen, "status": "RUNNING"},
         )
 
@@ -534,7 +550,7 @@ class StrategyFactory:
                 self._persist_candidate(candidate, verdict=verdict, lifecycle="REJECTED")
                 self._persist_failure(candidate, verdict)
         emit_event(
-            self.audit_repo,
+            self._research_backend,
             {
                 "event_id": _event_id(),
                 "generation_id": self.current_generation_id,
@@ -557,14 +573,14 @@ class StrategyFactory:
             # (immutability: evaluation must not erase the validator result).
             from nexus_scalp.strategies.factory.store import get_candidate_structural
 
-            existing = get_candidate_structural(self.audit_repo, candidate.candidate_id)
+            existing = get_candidate_structural(self._research_backend, candidate.candidate_id)
             structural = (
                 existing if existing is not None else (verdict.model_dump() if verdict else None)
             )
         else:
             structural = verdict.model_dump() if verdict else None
         upsert_candidate(
-            self.audit_repo,
+            self._research_backend,
             {
                 "candidate_id": candidate.candidate_id,
                 "definition_hash": candidate.definition_hash,
@@ -587,7 +603,7 @@ class StrategyFactory:
 
     def _persist_failure(self, candidate: FactoryCandidate, verdict: Any) -> None:
         record_failure(
-            self.audit_repo,
+            self._research_backend,
             {
                 "failure_id": f"fail_{uuid.uuid4().hex[:16]}",
                 "candidate_id": candidate.candidate_id,
@@ -638,7 +654,7 @@ class StrategyFactory:
             )
             for reason in failed_reasons:
                 record_failure(
-                    self.audit_repo,
+                    self._research_backend,
                     {
                         "failure_id": f"fail_{uuid.uuid4().hex[:16]}",
                         "candidate_id": candidate.candidate_id,
@@ -659,7 +675,7 @@ class StrategyFactory:
 
             self._tally_operator_survival(candidate, lifecycle)
             emit_event(
-                self.audit_repo,
+                self._research_backend,
                 {
                     "event_id": _event_id(),
                     "generation_id": candidate.generation_id,
@@ -683,7 +699,7 @@ class StrategyFactory:
             )
             self._persist_candidate(candidate, lifecycle="FAILED")
             record_failure(
-                self.audit_repo,
+                self._research_backend,
                 {
                     "failure_id": f"fail_{uuid.uuid4().hex[:16]}",
                     "candidate_id": candidate.candidate_id,
@@ -806,8 +822,10 @@ class StrategyFactory:
         """Finalizes a generation: ranking + elite + summary + memory."""
         import json as _json
 
-        gen = get_generation(self.audit_repo, generation_id) or {}
-        candidates = list_candidates(self.audit_repo, generation_id=generation_id, limit=2000)
+        gen = get_generation(self._research_backend, generation_id) or {}
+        candidates = list_candidates(
+            self._research_backend, generation_id=generation_id, limit=2000
+        )
         registry_entries = self._registry_rows_for_generation(candidates)
         summary = build_summary(
             gen,
@@ -828,7 +846,7 @@ class StrategyFactory:
             except Exception:
                 raw_config = {}
         upsert_generation(
-            self.audit_repo,
+            self._research_backend,
             {
                 **gen,
                 "status": "COMPLETED",
@@ -838,7 +856,7 @@ class StrategyFactory:
         )
         self._last_run_summary = summary.model_dump()
         emit_event(
-            self.audit_repo,
+            self._research_backend,
             {
                 "event_id": _event_id(),
                 "generation_id": generation_id,
@@ -869,7 +887,7 @@ class StrategyFactory:
 
     def build_memory(self) -> dict[str, Any]:
         """Structured evolution memory from all completed generations."""
-        gens = list_generations(self.audit_repo, limit=50)
+        gens = list_generations(self._research_backend, limit=50)
         summaries: list[Any] = []
         for g in gens:
             cfg = g.get("config") or {}
@@ -922,10 +940,12 @@ class StrategyFactory:
     def resume_generation(self, generation_id: str) -> dict[str, Any]:
         """Crash recovery: reloads a PENDING/RUNNING generation and continues
         evaluating the candidates that have no recorded evaluation (spec 74)."""
-        gen = get_generation(self.audit_repo, generation_id) or {}
+        gen = get_generation(self._research_backend, generation_id) or {}
         if not gen:
             return {"status": "NOT_FOUND"}
-        candidates = list_candidates(self.audit_repo, generation_id=generation_id, limit=2000)
+        candidates = list_candidates(
+            self._research_backend, generation_id=generation_id, limit=2000
+        )
         pending = [c for c in candidates if c.get("lifecycle") in ("GENERATED", None, "")]
         dataset = self._build_dataset()
         resumed = 0

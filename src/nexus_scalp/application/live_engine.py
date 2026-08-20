@@ -520,12 +520,32 @@ class LiveEngine:
         # asyncio.to_thread(); persistence goes through the audit queue. It
         # NEVER places orders and NEVER promotes to ACTIVE automatically.
         # =====================================================================
+        # Generated-strategy research memory lives in an ISOLATED store
+        # (artifacts/strategies.db on SQLite, or PostgreSQL) — never in
+        # the audit DB. The factory falls back to the audit queue only
+        # when the isolated store cannot be opened.
+        _strategy_store: Any = None
+        try:
+            from nexus_scalp.strategies.research_store import open_store
+
+            _strategy_store = open_store()
+            logger.info(
+                "[STRATEGY_FACTORY] isolated research store ready",
+                provider=_strategy_store.config.provider.value,
+            )
+        except Exception as _store_err:
+            logger.warning(
+                "[STRATEGY_FACTORY] isolated store unavailable, using audit queue",
+                error=str(_store_err),
+            )
+            _strategy_store = None
         self.strategy_factory = StrategyFactory(
             audit_repo=self.audit,
             research_pipeline=self.research_pipeline,
             config=EvolutionConfig(),
             symbols=[str(self.config.execution.symbol or "XAUUSD")],
             notifier=getattr(self, "notifier", None),
+            store=_strategy_store,
         )
         self.strategy_factory_worker = AutonomousLoopWorker(
             factory=self.strategy_factory,
@@ -669,6 +689,31 @@ class LiveEngine:
             pass  # settings DB absent -> keep config default, never crash boot
         self.liquidity_governor = LiquidityGovernor(enabled=liq_enabled, settings_service=liq_svc)
         self.liquidity_governor.bind_engine(self)
+        # ---------------------------------------------------------------------
+        # MSLIE (Market Structure & Liquidity Intelligence Engine): market
+        # PERCEPTION layer. Consumes the same completed bars the feature
+        # engine uses and produces the MarketIntelligenceFeatureVectorV1
+        # (regime, swing structure, liquidity map, sweep events, breakout
+        # quality, smart money) for AI models / debug UI. PURE perception:
+        # no adapter, no order manager, no risk engine (INV-002), no DB on
+        # the tick path (INV-001), strict causality (INV-008). Never alters
+        # the live 50D/70D feature contract (INV-009).
+        # =====================================================================
+        try:
+            from nexus_scalp.mslie import MarketStructureEngine
+
+            exec_cfg = getattr(config, "execution", None)
+            self.mslie_engine = MarketStructureEngine(
+                symbol=getattr(exec_cfg, "symbol", "XAUUSD") or "XAUUSD",
+                timeframe="M1",
+            )
+        except Exception as ms_exc:
+            logger.warning(
+                "[MSLIE] event=CONSTRUCT_FAILED error=%s (perception layer disabled; trading unaffected)",
+                ms_exc,
+            )
+            self.mslie_engine = None
+        self._last_mslie_vector: Any | None = None
         self._last_news_gate: Any | None = None
         if self._news_enabled:
             try:
@@ -3358,6 +3403,30 @@ class LiveEngine:
                 self._last_candle_decision = out.to_dict() if out else None
             except Exception as ci_err:
                 logger.error("[CANDLE_INTEL] bar feed failed (isolated)", error=str(ci_err))
+
+        # ---------------------------------------------------------------------
+        # MSLIE: market perception on the bar-close cadence (pure numpy, no
+        # I/O, no DB — INV-001). The engine produces the structured
+        # MarketIntelligenceFeatureVectorV1 for the debug UI / AI models.
+        # Failure is isolated: perception can never disturb the tick path.
+        # =====================================================================
+        ms = getattr(self, "mslie_engine", None)
+        if ms is not None:
+            try:
+                completed_bars = self.aggregator.get_completed_bars()
+                if completed_bars:
+                    vector = ms.analyze_market(
+                        completed_bars,
+                        decision_at=last_bar.timestamp,
+                        mid_price=float(tick.bid),
+                        atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
+                    )
+                    self._last_mslie_vector = vector
+            except Exception as ms_err:
+                logger.warning(
+                    "[MSLIE] event=BAR_FEED_FAILED error=%s (isolated; trading unaffected)",
+                    ms_err,
+                )
 
         x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
         # TASK-6: capture the canonical reference vector for feature parity

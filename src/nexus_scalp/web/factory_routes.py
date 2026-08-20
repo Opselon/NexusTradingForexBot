@@ -79,8 +79,8 @@ def factory_status(request: Request) -> dict[str, Any]:
         worker = _worker(request)
         payload = {
             "loop": factory.loop_status(),
-            "generations": list_generations(factory.audit_repo, limit=20),
-            "provider_usage": provider_usage_total(factory.audit_repo),
+            "generations": list_generations(factory._research_backend, limit=20),
+            "provider_usage": provider_usage_total(factory._research_backend),
             "config": factory.config.model_dump(),
         }
         if worker is not None:
@@ -103,7 +103,7 @@ def factory_generations(request: Request, limit: int = 20) -> dict[str, Any]:
         from nexus_scalp.web.server import serialize_enums
 
         return serialize_enums(
-            _ok({"generations": list_generations(factory.audit_repo, limit=limit)})
+            _ok({"generations": list_generations(factory._research_backend, limit=limit)})
         )
     except Exception as e:
         log_factory_error("/api/factory/generations", e)
@@ -123,7 +123,7 @@ def factory_generation(request: Request, generation_id: str) -> dict[str, Any]:
         )
         from nexus_scalp.web.server import serialize_enums
 
-        gen = get_generation(factory.audit_repo, generation_id)
+        gen = get_generation(factory._research_backend, generation_id)
         if gen is None:
             return _err("GENERATION_NOT_FOUND")
         return serialize_enums(
@@ -131,10 +131,10 @@ def factory_generation(request: Request, generation_id: str) -> dict[str, Any]:
                 {
                     "generation": gen,
                     "candidates": list_candidates(
-                        factory.audit_repo, generation_id=generation_id, limit=2000
+                        factory._research_backend, generation_id=generation_id, limit=2000
                     ),
                     "failures": list_failures(
-                        factory.audit_repo, generation_id=generation_id, limit=200
+                        factory._research_backend, generation_id=generation_id, limit=200
                     ),
                 }
             )
@@ -159,7 +159,7 @@ def factory_candidates(
         from nexus_scalp.web.server import serialize_enums
 
         rows = list_candidates(
-            factory.audit_repo, generation_id=generation_id, lifecycle=lifecycle, limit=limit
+            factory._research_backend, generation_id=generation_id, lifecycle=lifecycle, limit=limit
         )
         return serialize_enums(_ok({"candidates": rows}))
     except Exception as e:
@@ -178,7 +178,7 @@ def factory_events(
         from nexus_scalp.strategies.factory.store import list_events
         from nexus_scalp.web.server import serialize_enums
 
-        rows = list_events(factory.audit_repo, generation_id=generation_id, limit=limit)
+        rows = list_events(factory._research_backend, generation_id=generation_id, limit=limit)
         return serialize_enums(_ok({"events": rows}))
     except Exception as e:
         log_factory_error("/api/factory/events", e)
@@ -196,7 +196,7 @@ def factory_failures(
         from nexus_scalp.strategies.factory.store import list_failures
         from nexus_scalp.web.server import serialize_enums
 
-        rows = list_failures(factory.audit_repo, generation_id=generation_id, limit=limit)
+        rows = list_failures(factory._research_backend, generation_id=generation_id, limit=limit)
         return serialize_enums(_ok({"failures": rows}))
     except Exception as e:
         log_factory_error("/api/factory/failures", e)
@@ -295,7 +295,7 @@ def factory_evaluate(request: Request, candidate_id: str) -> dict[str, Any]:
     try:
         from nexus_scalp.strategies.factory.store import list_candidates
 
-        rows = list_candidates(factory.audit_repo, limit=500)
+        rows = list_candidates(factory._research_backend, limit=500)
         row = next((c for c in rows if c.get("candidate_id") == candidate_id), None)
         if row is None:
             return _err("CANDIDATE_NOT_FOUND")
