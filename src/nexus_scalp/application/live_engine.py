@@ -2449,10 +2449,13 @@ class LiveEngine:
             nw = getattr(self, "news_worker", None)
             if nw is not None and snap.news.worker_interval_sec > 0:
                 nw.interval_sec = float(snap.news.worker_interval_sec)
-            # Rule matrix cache TTL (live-tunable)
+            # Rule matrix cache TTL (live-tunable; the engine uses
+            # refresh_cache(force) with the TTL as a default — the attr
+            # is set when the engine reads it each refresh)
             rm = getattr(self, "rule_matrix", None)
             if rm is not None and snap.rule_matrix.cache_ttl_seconds > 0:
-                rm.cache_ttl_seconds = float(snap.rule_matrix.cache_ttl_seconds)
+                if hasattr(rm, "cache_ttl_seconds"):
+                    rm.cache_ttl_seconds = float(snap.rule_matrix.cache_ttl_seconds)
         except Exception:
             logger.exception("[RUNTIME_CONFIG] service re-sync failed (isolated)")
 
