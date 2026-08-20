@@ -1,0 +1,7 @@
+# tests/unit/test_model_generation_phase13.py
+
+- GUARDS: PHASE 13 Model Generation migration — behavioral suite (spec 43, no dummy assertions): legacy ScalpNet loads as classified baseline; artifact-first flow (manifest, hash, corruption/schema/label mismatch rejection); deterministic datasets with provenance/temporal split/purge/embargo/news; 3-class label contract; validation gates (OOS, robustness, regime, ablation); runtime loads without DB; atomic swap preserves the old champion; replay reproducible + drift detectable; training cannot overwrite champion; challenger cannot execute MT5; concurrent-experiment limits; artifact-store traversal rejected; NaN/Inf fail training.
+- KEY ASSERTIONS:
+  - `test_07_corrupted_artifact_rejected`; `test_38_atomic_swap_preserves_old`; `test_41_training_cannot_overwrite_champion`; `test_42_challenger_cannot_execute_mt5`; `test_board_path_traversal_rejected`; `test_mg16_champion_cannot_be_overwritten_by_candidate_trainer`; `test_mg28_challenger_shadow_no_orders`; `test_mg29_champion_rollback_remains_available` (162 asserts).
+- PITFALLS IT ENCODES: artifact integrity gates (hash/schema/label) are the load-time firewall; training and champion selection are strictly separated; the artifact board API refuses path traversal.
+- NOTES: Largest assert count in the slice (162); Task-5 60D + Task-6 governance sub-suites folded in; pairs with integration test_model_generation.py.

@@ -1,0 +1,28 @@
+# src/nexus_scalp/accounting/models.py
+
+- PURPOSE: Canonical frozen value objects for the accounting + performance intelligence core — the single shape every consumer reads (TradeRecord, PeriodReport, DrawdownReport, LiveAccountState, ...) plus the enums that classify exits and outcomes.
+- ARCHITECTURE LAYER: Application / Domain-boundary value objects (frozen, transportable). Not Pydantic (unlike the frozen domain models elsewhere): the accounting core builds them directly from SQLite rows for speed.
+- RESPONSIBILITY: Encode the honesty rules in types: every metric that cannot be derived from stored evidence is `None`; `TradeRecord.outcome` derives from net PnL alone while `exit_classification`/`risk_free_state` stay independent; every record carries the identity chain (ticket → order/request → experience → strategy → model) so accounting and Experience Intelligence join without inventing ids.
+- DEPENDENCIES:
+  - `dataclasses.dataclass, field` → value objects with defaults.
+  - `datetime.datetime` → timestamps.
+  - `enum.StrEnum` → classification enums.
+  - `accounting.periods.PeriodKind` → report granularity.
+- CONNECTS TO: `normalize.py` (builds TradeRecord), `aggregation.py` (consumes both), `core.py` (all methods), `reporting/engine.py` (mirrors PeriodReport into PerformanceSection), `reporting/insights.py`, REST layer (`to_dict()`).
+- KEY CONCEPTS:
+  - `ExitClassification` (line 29): TAKE_PROFIT / INITIAL_STOP / BREAKEVEN_STOP / TRAILING_STOP / MANUAL_EXIT / EMERGENCY_EXIT / STRATEGY_EXIT / PARTIAL_CLOSE / OTHER_EXIT / UNKNOWN. BREAKEVEN and TRAILING are deliberately distinct from INITIAL — all three are stop-outs but represent very different management quality. `is_stop_exit` (line 50) groups the three protective-stop flavours. With REALIZED money defining outcomes, moves to breakeven are still stop-outs, so a breakeven stop must never be silently reclassified as a win.
+  - `TradeOutcome` (line 59): WIN/LOSS/BREAKEVEN from `normalize.classify_outcome(net_pnl)` — realized money only.
+  - `LossAttribution` (line 67): UNKNOWN is a first-class answer — when evidence cannot separate strategy vs execution failure, saying so beats blaming the strategy by default.
+  - `AccountSnapshot` (line 88): point-in-time account state; `floating_pnl`, `margin`, `margin_level`, `peak_balance`, `realized_pnl` are optional because older rows predate those columns — reporting must degrade to "unavailable" rather than impute zeros. `drawdown_pct` property (line 113) clamps to >= 0.0.
+  - `TradeRecord` (line 120): the canonical closed-trade shape. `net_pnl` is authoritative, computed exactly once in `normalize_trade_row`. `realized_r`/`risk_usd` are None when the risk basis cannot be reconstructed (no initial stop or no USD/point conversion) — a 0.0 R would be indistinguishable from a genuine scratch. `mfe_r`/`mae_r` properties (lines 181-192) divide absolute USD excursion by `risk_usd` and return None when risk is unknown. Identity fields (experience_id, strategy_id, model_id, feature_schema_id/dimension, lines 167-173) are empty when unlinked.
+  - `PeriodReport` (line 195): aggregated performance for one canonical period; money fields are real sums, ratio/expectancy fields are None when the sample cannot support them (dashboard renders "n/a"). Phase-16 reconciliation contract (lines 236-268): `win_rate` (decided denominator) + `loss_rate_decided` + `win_rate_all`/`loss_rate_all` (all-trades denominator, breakeven-inclusive) + `pnl_weighted_win_rate` + explicit `win_rate_denominator` label, so a "9% win rate" can be audited at a glance; `expectancy_breakeven_incl`/`avg_pnl_per_decided` share the same denominators so wins+losses+breakevens == total_trades; `stop_loss_share`/`avg_loss_r` (loss-persistence intelligence, lines 260-268). `to_dict()` (line 283) rounds for transport, preserving None via `_round_opt`.
+  - `DrawdownReport` (line 335): canonical drawdown state — ONE methodology (peak-to-trough on equity snapshots, percent of peak), used by dashboard, API and reports alike; includes durations, recovery_pct, in_drawdown.
+  - `LiveAccountState` (line 379): `available=False` means the adapter could not be read; consumers MUST render an explicit unavailable state — there is no synthetic fallback balance. `error` carries the failure text.
+  - `StrategyContribution` (line 423): per-strategy accounting contribution with `loss_share` (share of total account loss, 0..1), lifecycle/confidence copied from Strategy Intelligence registry (never recomputed in accounting).
+  - `TradeForensicTrace` (line 473): full forensic reconstruction of one closed trade; every section is populated only from what actually exists; missing links are surfaced in `notes` as real gaps, not rendering bugs.
+  - `_round_opt` (line 522): rounds a float for transport, preserving None as a real "unavailable".
+- HOT PATH / PERFORMANCE: Frozen dataclasses with `__dict__`-based copy in `_attach_identity` (core.py:413-424) — one flat dict rebuild per attributed trade; acceptable at 20k-row ceilings. No caching inside models.
+- EDGE CASES & PITFALLS:
+  - `PeriodReport` has NON-frozen `@dataclass` (line 195) because `aggregate_period` mutates it field-by-field; all others are frozen.
+  - `TradeRecord.mfe_r` uses `if not self.risk_usd` (line 183), i.e. None AND 0.0 both mean "no risk known" — fine since risk_usd is never legitimately 0.
+  - `balance_after`/`equity_after` use `_f(...) or None` (normalize.py:274-275) so a stored 0.0 becomes None — 0.0 is treated as "not recorded".

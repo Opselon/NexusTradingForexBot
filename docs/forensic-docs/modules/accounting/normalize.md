@@ -1,0 +1,26 @@
+# src/nexus_scalp/accounting/normalize.py
+
+- PURPOSE: The ONE place a raw `audit_ledger` row becomes canonical accounting truth — net PnL is computed here exactly once and every downstream consumer reads the resulting `TradeRecord`, never re-deriving money themselves.
+- ARCHITECTURE LAYER: Application (pure transformation; called by AccountingCore and the worker refresh path).
+- RESPONSIBILITY: Row→TradeRecord normalization: schema-drift-tolerant column reads, exit-mechanism classification (with SL-geometry refinement), outcome from realized money, risk reconstruction (risk_usd/realized_r), all timestamp parsing.
+- DEPENDENCIES:
+  - `accounting.models` → `ExitClassification`, `TradeOutcome`, `TradeRecord`.
+  - `accounting.periods.parse_sql_timestamp` → tolerant UTC timestamp parse.
+- CONNECTS TO: `AccountingCore.load_trades` (every fetched row), `trade_trace` (single-row path), and via re-export from `accounting/__init__.py` to any consumer needing the classifier. Persisted `net_pnl_usd` from `log_ledger_closed` is trusted when present because it already applied the same rule.
+- KEY CONCEPTS:
+  - Two rules drive everything (docstring lines 1-16): (1) WIN/LOSS IS DECIDED BY MONEY — a breakeven-moved stop is still a stop-out, never a win; `outcome` derives from net PnL only while `exit_classification`/`risk_free_state` stay independently visible; (2) NO IMPUTED NUMBERS — when the risk basis cannot be reconstructed, `realized_r`/`risk_usd` are None rather than 0.0.
+  - `BREAKEVEN_USD_EPSILON = 0.01` (line 30): net PnL inside ±1 cent counts as a scratch, not a win or loss.
+  - `_MECHANISM_MAP` (line 34): raw `ExitMechanism` values → canonical classification; stop mechanisms are further refined by `_classify_stop` using actual SL geometry. `AI_REVERSAL_EXIT`, `HOLD_SCORE_DECAY`, `SYSTEM_CLOSE`, `RECONCILIATION_CLOSE`, `BROKER_CLOSE` all fold to STRATEGY_EXIT.
+  - `_f` / `_s` (lines 51-68): read the first present numeric/text column among aliases, tolerating schema drift without raising.
+  - `_classify_stop` (line 75): distinguishes INITIAL / BREAKEVEN / TRAILING stop-outs from SL geometry. A stop that never moved → INITIAL; a stop parked (within tolerance) at entry → BREAKEVEN; a stop pushed strictly beyond entry in the favourable direction → TRAILING; a modified stop still at a loss relative to entry is a tightened protective stop → TRAILING (lines 107-108). All three look identical in PnL terms but represent very different management quality.
+  - `classify_exit` (line 112): returns (classification, risk_free_state). Tolerance is scaled off the risk distance (2% of `|entry - initial_sl|`, floor 1e-6) so gold (2 digits) and FX (5 digits) both behave without hard-coding a point size. `risk_free_state` is a flag OR a geometric inference (was modified AND final SL >= entry within tolerance). Unknown-but-present mechanisms stay visible as OTHER_EXIT; missing mechanism falls back to status "PARTIAL" → PARTIAL_CLOSE else UNKNOWN.
+  - `classify_outcome` (line 171): wins/losses/breakevens from the net PnL band.
+  - `_value_per_point` (line 180): derives USD per price point from the stored `MAE_usd/mae` (or MFE pair) excursion ratios — no symbol specs needed at report time; None when neither pair is usable.
+  - `reconstruct_risk` (line 196): needs an initial stop AND a usable point value; returns (None, None) otherwise so R statistics exclude the trade instead of averaging in a fabricated zero.
+  - `normalize_trade_row` (line 219): the canonical path. `net = gross - abs(commission) - swap` (both costs) unless a non-zero `net_pnl_usd` is persisted (lines 232-236). Note the persisted-net check requires `abs(persisted) > 1e-12` — a stored 0.0 is treated as missing and recomputed, consistent with the "0.0 means not recorded" convention. Everything else is column-mapped with alias fallbacks; `balance_after`/`equity_after` use `_f(...) or None` so a stored 0.0 becomes None.
+- HOT PATH / PERFORMANCE: Called once per ledger row inside bounded loads (MAX_TRADE_ROWS=20k); pure Python, no I/O. `_f`/`_s` do small dict walks — fine at this scale.
+- EDGE CASES & PITFALLS:
+  - `int(_f(row, "was_sl_modified"))` (line 126): bool(int(...)) — a missing column defaults to 0 via `_f`'s default, fine; but a stored "true"/"False" string would raise (schema stores ints).
+  - `_f` default 0.0 means `entry_price`, `initial_sl` etc. read 0.0 when absent and `_classify_stop` guards with `<= 0.0` checks (lines 95-98) — correct, but a genuine 0 price is indistinguishable from missing.
+  - `direction` "0" counts as LONG (line 72) — legacy numeric direction encoding tolerated.
+  - The persisted-net trust (line 233) is a potential divergence surface: if any other writer ever persisted `net_pnl_usd` with a different sign convention, it would win over the local recomputation. Currently only `log_ledger_closed` writes it, with the same rule.

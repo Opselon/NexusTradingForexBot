@@ -1,0 +1,27 @@
+# src/nexus_scalp/reporting/telegram_format.py
+
+- PURPOSE: Telegram HTML formatter for the daily performance intelligence report — consumes the structured `ReportContainer` contract ONLY (numbers are never re-derived here) and produces the compact daily summary (MESSAGE 1) and the deep forensic intelligence message (MESSAGE 2/3).
+- ARCHITECTURE LAYER: Application (presentation; read-only over the report contract).
+- RESPONSIBILITY: Deterministic rendering of every report section into Telegram HTML (`parse_mode=HTML` entities — the notifier renders HTML); extremely long reports are split deterministically by the caller.
+- DEPENDENCIES:
+  - `html` → `html.escape` for entity-safe output.
+  - `reporting.models.ReportContainer` → the contract (type-hinted; the callers also pass sections via `report.performance`, `report.account`, `report.r`, `report.drawdown`, `report.health_score`, etc.).
+- CONNECTS TO: The Telegram notifier wiring (daily cron / API endpoint), which calls `format_telegram_daily(report)` then `format_deep_report(report)` and splits the deep message if needed. Nothing reads the formatted output programmatically.
+- KEY CONCEPTS:
+  - Formatting helpers (lines 22-69): `_esc` (None → "n/a", HTML-escaped), `_fmt_usd` (2 decimals with commas), `_fmt_pct`, `_fmt_r` (signed, "+1.23R"), `_fmt_ratio`, `_fmt_hold` (hours/minutes/seconds humanization), `_bar` (deterministic █/░ bar for a clamped 0..1 fraction — dots-only when None).
+  - `format_telegram_daily` (line 72): MESSAGE 1 — account (balance/equity/floating/realized/drawdown/free margin), performance (trades/wins/losses/BE, win rate decided + all, net PnL, PF, expectancy, avg R, avg win/loss, payoff, median), risk (avg risk, total risk, avg MAE/MFE, MFE capture, max DD windowed + period DD + recovery), hold/exits (best/worst exit, stop-loss share), strategy intelligence (best/worst strategy by expectancy, evidence-gated — strategies below DO_NOT_RANK are reported as "below sample floor", line 269-274), model funnel lines, execution, news, top loss/profit drivers, trend line with period-compare deltas, account health with component split and evidence level.
+  - `format_deep_report` (line 157): MESSAGE 2/3 — distribution (avg/median win/loss, payoff, PF), R-multiple (avg/median/win/loss/best/worst/R std/coverage with n), excursion (MAE/MFE USD+R, capture, giveback), holding (avg/median/win/loss), exits, streaks (max win/loss + current), strategies (top 8), regimes (top 8), sessions, behavioral state-flags census, anomalies, period compare, insights (icon per kind), and the full health score with rationale lines.
+  - Section line builders (`_best_exit`/`_worst_exit`, line 245-262): best = max over POSITIVE net PnL groups ("none profitable" when none positive); worst = min over NEGATIVE groups. Exit groups come from engine already sorted by count.
+  - `_model_lines` (line 288): intent_total = executed + all rejection classes (line 292-299) so "Exec/Intent" and "Exec/All" read alongside the raw rejection numbers; note `prediction_to_execution_rate` is rendered as Exec/Intent.
+  - `_execution_lines` (line 315): fill ratio, avg/worst latency in ms, rejections/cancellations — guarded by `e.has_data`.
+  - `_behavioral_lines` (line 451) / `_anomaly_lines` (line 476): explicit NO_DATA / NOT_ANALYZED / ANALYZING / ANALYSIS_FAILED states render as "no canonical analysis exists", INSUFFICIENT_EVIDENCE as its own branch — a truthful state machine on screen, never "zero flags" by silence.
+  - `_compare_lines` (line 492): "current vs previous" deltas with explicit trade counts.
+  - `_insight_lines` (line 506): emoji per kind (WARNING ⚠️, POSITIVE ✅, SUMMARY 📊, INFO 📌).
+- HOT PATH / PERFORMANCE: O(sections) string joins, run twice per report; trivial.
+- EDGE CASES & PITFALLS:
+  - `_bar` is defined but never called anywhere in this module (dead code — no current caller renders a bar).
+  - `format_telegram_daily` line 115: `_fmt_pct(report.excursion.mfe_capture_ratio * 100.0, 0) if report.excursion.mfe_capture_ratio is not None else 'n/a'` — the None-guard is a pattern repeated inline in several places (lines 115, 124, 181-183-190, 469) while the `_fmt_*` helpers already map None → "n/a"; the double None-handling is redundant but harmless.
+  - Same pattern in deep report lines 181-183 and 190: R std and coverage/mfe capture guard inline instead of relying on `_fmt_pct(None)`.
+  - `_best_exit`/`_worst_exit` substrings only the exit type; `_strategy_lines` truncates ids to 24 chars, `_deep_strategy_lines` to 26 — ids rendered truncated are NOT the full registry id (acceptable for chat, but forensics must read the JSON contract for the full id).
+  - HTML escaping is applied via `_esc` on every dynamic string except the fixed emoji/labels — `report.period_kind` and `_trend_line` fallbacks are escaped where interpolated; no unescaped user/DB text was found.
+  - `_fmt_pct` renders `f"{value:.2f}%"` — for negative drawdown deltas this can print "-5.00%" (period-compare drawdown delta) which reads as an improvement but is a raw delta; consumers of the rendered text must know deltas are signed.

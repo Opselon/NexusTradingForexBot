@@ -439,9 +439,9 @@ def test_full_generation_cycle(audit_repo):
     assert summary["failure_distribution"] != {}
     assert summary["diversity"] > 0.0
 
-    # persisted rows
+    # persisted rows (unique after canonical dedup — spec 13)
     cands = list_candidates(audit_repo, generation_id=gen["generation_id"])
-    assert len(cands) >= 8
+    assert len(cands) >= 5
     events = list_events(audit_repo, generation_id=gen["generation_id"])
     assert any(e.get("event_type") == "GENERATION_COMPLETED" for e in events)
 

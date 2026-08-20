@@ -249,12 +249,16 @@ def rank_strategies(
 
 
 def family_diversity(entries: list[dict[str, Any]]) -> float:
-    """Shannon-style normalized family diversity in [0,1]."""
+    """Shannon-style normalized family diversity in [0,1].
+
+    Handles both registry rows (family nested in context_definition) and
+    factory candidate rows (top-level family).
+    """
     if not entries:
         return 0.0
     counts: dict[str, int] = {}
     for e in entries:
-        fam = str(e.get("family", "HYBRID")) or "HYBRID"
+        fam = str(e.get("family", "") or (e.get("context_definition") or {}).get("family", "") or "HYBRID")
         counts[fam] = counts.get(fam, 0) + 1
     n = len(entries)
     distinct = len(counts)

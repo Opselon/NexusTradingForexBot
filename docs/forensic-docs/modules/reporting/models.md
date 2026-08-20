@@ -1,0 +1,37 @@
+# src/nexus_scalp/reporting/models.py
+
+- PURPOSE: The report JSON contract — every section of the daily performance intelligence report as a frozen (except where noted) dataclass so the contract is auditable and serializable; Telegram formatting consumes these objects and numbers are NEVER re-derived in string code.
+- ARCHITECTURE LAYER: Application (report contract value objects; read-only enrichment over accounting truth).
+- RESPONSIBILITY: Define all section shapes: SnapshotBlock, PerformanceSection, DistributionSection, RSection, ExcursionSection, HoldingSection, ExitGroup, StreakSection, RiskSection, DrawdownSection, StrategyGroup, RegimeGroup, SessionGroup, ModelSection, ExecutionSection, NewsSection, BehavioralSection, AnomalyStateSection, LossDriversSection, ProfitDriversSection, PeriodCompareSection, AnomalyItem, InsightItem, HealthScoreSection, ReportContainer — plus EvidenceLevel and TrendClassification enums.
+- DEPENDENCIES:
+  - `dataclasses.dataclass, field` → frozen value objects (with dict defaults for map fields).
+  - `enum.StrEnum` → EvidenceLevel, TrendClassification.
+  - `typing.Any` → to_dict typing.
+- CONNECTS TO: `engine.py` builds every section; `insights.py` consumes performance/r/execution/strategies/streaks/excursion/exits/model/drawdown for anomalies, health and insights; `telegram_format.py` renders the contract to HTML messages; REST layer serializes via `to_dict()`.
+- KEY CONCEPTS:
+  - Honesty rule (docstring lines 8-10): all None values mean "cannot be derived from stored evidence" — render as n/a, never as 0.0-placeholder. `_r()` (line 793) enforces it at serialization: None stays None.
+  - `EvidenceLevel` (line 19) / `TrendClassification` (line 28): the deterministic labels used across insights and format.
+  - `SnapshotBlock` (line 37): one coherent accounting snapshot; `drawdown_pct` is the PERIOD drawdown (peak-to-trough within the report window — TASK-1 distinction documented in engine._stage_snapshot).
+  - `PerformanceSection` (line 71): mirrors the canonical PeriodReport exactly (task: preserve truth) — includes the Phase-16 reconciled rate family (win_rate, win_rate_all, loss_rate_decided, cost_drag_pct, stop_loss_share).
+  - `DistributionSection` (line 133): win/loss medians + skews (skew from engine._skew), payoff, PF, both expectancies.
+  - `RSection` (line 163): R-multiple statistics with `coverage_ratio` (r_sample/total) and `sample_count` so thin R evidence is visible.
+  - `ExcursionSection` (line 191): MAE/MFE USD + R averages, portfolio-level `mfe_capture_ratio`, `avg_giveback_usd`. Distinct semantics from per-trade retention metrics in accounting/retention.py (documented in engine._stage_excursion).
+  - `HoldingSection` (line 215), `ExitGroup` (line 235), `StreakSection` (line 255): hold stats, per-exit census (win_rate over decided only), streak state (current streak type NONE for 0).
+  - `RiskSection` (line 273): reporting-only risk utilisation — never changes RiskEngine (explicit docstring).
+  - `DrawdownSection` (line 299): carries BOTH the historical window max (`max_drawdown_pct` + `drawdown_window` label, "90D") AND `period_drawdown_pct` — the TASK-1 fix that two different drawdown concepts share one label (see engine._stage_drawdown).
+  - Group sections (`StrategyGroup` line 335, `RegimeGroup` line 373, `SessionGroup` line 405): per-dimension attribution with evidence labels; StrategyGroup keeps `confidence`/`lifecycle_state` fields but engine currently fills them as None/"" (engine.py:733-734) — the registry-backed values are not propagated here (see issues).
+  - `ModelSection` (line 427): decision funnel — prediction_count, avg probabilities, `prediction_to_execution_rate` (executed/execution intents) vs `prediction_to_trade_rate` (executed/ALL predictions, TASK-1 label fix), rejection buckets, has_data.
+  - `ExecutionSection` (line 471): fill_ratio (TASK-1: broker acceptances per dispatch attempt), latency, rejections/cancellations.
+  - `NewsSection` (line 499): news-active vs inactive trade counts/PnL — provenance only, no causality claims (docstring).
+  - `BehavioralSection` (line 523): truthful state machine NOT_ANALYZED/ANALYZING/ANALYSIS_FAILED/INSUFFICIENT_EVIDENCE/CLEAR/FLAGS_FOUND; `has_data` True as soon as ANY analysis ran — a CLEAR zero-flag result is real data.
+  - `AnomalyStateSection` (line 560): same truthful-state discipline — never "none detected" by silence.
+  - `LossDriversSection`/`ProfitDriversSection` (lines 588/610): top loss/profit drivers keyed by strategy with 5-driver detail lists.
+  - `PeriodCompareSection` (line 632): current vs previous deltas with explicit labels and `has_data`.
+  - `AnomalyItem` (line 664), `InsightItem` (line 684): value/threshold + kind for the deterministic analyses.
+  - `HealthScoreSection` (line 695): 4×25 components + rationale strings.
+  - `ReportContainer` (line 719): the complete report — all sections, `trend` + `evidence` default to INSUFFICIENT_DATA/DO_NOT_RANK, `to_dict()` (line 756) recursively serializes.
+- HOT PATH / PERFORMANCE: Frozen dataclasses; `to_dict()` is O(sections); iterated at most once per report generation.
+- EDGE CASES & PITFALLS:
+  - `PerformanceSection.median_trade`/`median_win`/`median_loss` exist in the contract but engine._stage_performance ALWAYS sets them to None (engine.py:463-465) — the medians are computed (for wins/losses) only in DistributionSection.
+  - `ModelSection.prediction_to_win_rate` is always None (engine.py:915-927) — the comment says "reuse period perf" but no win-rate is actually computed; a reserved-but-unfilled contract field.
+  - All dataclasses here are frozen; list/map sections use `field(default_factory=...)` so defaults are never shared mutable state. InsightItem (line 684) and AnomalyItem (line 664) are also frozen despite carrying per-instance text/list data.
