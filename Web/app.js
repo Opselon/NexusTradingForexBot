@@ -11722,3 +11722,153 @@ setInterval(() => {
         loadFactoryStatus();
     }
 }, 10000);
+
+// ===========================================================================
+// DATABASE MANAGEMENT PANEL (DATABASE PORTABILITY, 2026-08-20)
+// Provider status, PostgreSQL config, and the SQLite->PostgreSQL migration
+// workflow.  All network calls go through NX.api; passwords are sent once
+// to the backend and never stored in DOM/localStorage.
+// ===========================================================================
+
+function _dbEl(id) { return document.getElementById(id); }
+
+function dbSet(id, text) { const el = _dbEl(id); if (el) el.textContent = text; }
+
+async function loadDbStatus() {
+  try {
+    const r = await NX.api.get('/api/db/manage/status', { component: 'DatabaseManagement', action: 'STATUS' });
+    const data = r.success ? r : await r.json?.() ?? r;
+    if (!data.success) throw new Error('status failed');
+    dbSet('db-current-provider', String(data.provider || 'sqlite').toUpperCase());
+    dbSet('db-current-status', data.overall || '--');
+    const aud = data.domains && data.domains.audit || {};
+    dbSet('db-current-name', aud.database || '--');
+    dbSet('db-current-server', aud.server || '--');
+    dbSet('db-current-schema', String(aud.schema_version ?? '--'));
+    dbSet('db-current-health', aud.health || '--');
+    dbSet('db-current-latency', aud.latency_ms != null ? aud.latency_ms + ' ms' : '--');
+    dbSet('db-nav-state', String(data.provider || 'sqlite').toUpperCase());
+    const sel = _dbEl('db-provider-select');
+    if (sel) sel.value = data.provider || 'sqlite';
+    return data;
+  } catch (err) {
+    console.warn('db status failed', err);
+    dbSet('db-nav-state', 'ERR');
+  }
+}
+
+function pgPayload(extra) {
+  const g = (id) => _dbEl(id) ? _dbEl(id).value : '';
+  return Object.assign({
+    host: g('pg-host') || 'localhost',
+    port: parseInt(g('pg-port') || '5432', 10),
+    database: g('pg-database') || 'nse_audit',
+    username: g('pg-user') || 'nse_user',
+    ssl_mode: g('pg-sslmode') || '',
+    password: g('pg-password') || '',
+    confirm_password: g('pg-password') || '',
+  }, extra || {});
+}
+
+async function savePgConfig() {
+  try {
+    const r = await NX.api.post('/api/db/manage/config', pgPayload(), { component: 'DatabaseManagement', action: 'SAVE_CONFIG' });
+    const data = r.success ? r : await r.json?.() ?? r;
+    _dbEl('pg-password').value = '';
+    dbSet('db-test-result', data.success ? 'Configuration saved (password stored securely).' : 'Save failed: ' + JSON.stringify(data));
+    await loadDbStatus();
+  } catch (err) { console.warn('save pg config failed', err); dbSet('db-test-result', 'Save failed'); }
+}
+
+async function testDbConnection() {
+  try {
+    dbSet('db-test-result', 'Testing connection...');
+    const r = await NX.api.post('/api/db/manage/test-connection', pgPayload(), { component: 'DatabaseManagement', action: 'TEST_CONNECTION' });
+    const data = r.success ? r : await r.json?.() ?? r;
+    dbSet('db-test-result', data.connected ? 'Connected: ' + (data.database_version || '') : 'Connection failed.');
+  } catch (err) { console.warn('test connection failed', err); dbSet('db-test-result', 'Connection failed'); }
+}
+
+async function previewDbMigration() {
+  try {
+    dbSet('db-preview', 'Analyzing source...');
+    const r = await NX.api.post('/api/db/manage/preview', pgPayload(), { component: 'DatabaseManagement', action: 'PREVIEW' });
+    const data = r.success ? r : await r.json?.() ?? r;
+    if (!data.success) { dbSet('db-preview', 'Preview failed.'); return; }
+    const p = data.preview || {};
+    const lines = [
+      'SOURCE: ' + (p.source || 'sqlite') + '  ->  DESTINATION: ' + (p.destination || 'postgresql'),
+      'TABLES: ' + p.tables + '   ROWS: ' + p.rows + '   EST. VOLUME: ' + (p.estimated_volume_bytes != null ? Math.round(p.estimated_volume_bytes / 1024 / 1024) + ' MB' : 'n/a'),
+      'ISSUES: ' + ((p.issues || []).join('; ') || 'none'),
+    ];
+    const details = Object.entries(p.table_details || {}).slice(0, 12).map(([t, v]) => t + ' (' + v.rows + ' rows)').join('  ');
+    dbSet('db-preview', lines.join('\n') + '\n' + details);
+  } catch (err) { console.warn('preview failed', err); dbSet('db-preview', 'Preview failed'); }
+}
+
+async function startDbMigration() {
+  if (!confirm('Start SQLite -> PostgreSQL migration? This copies all data in streamed batches and does NOT delete the SQLite source. Continue?')) return;
+  try {
+    dbSet('db-report', 'Migration started...');
+    const r = await NX.api.post('/api/db/manage/migrate', pgPayload({ confirm: true }), { component: 'DatabaseManagement', action: 'MIGRATE' });
+    const data = r.success ? r : await r.json?.() ?? r;
+    if (!data.success) { dbSet('db-report', 'Migration start failed.'); return; }
+    // poll progress
+    const t0 = Date.now();
+    const poll = setInterval(async () => {
+      try {
+        const pr = await NX.api.get('/api/db/manage/progress', { component: 'DatabaseManagement', action: 'PROGRESS' });
+        const pdata = pr.success ? pr : await pr.json?.() ?? pr;
+        const rep = pdata.report || {};
+        if (pdata.done) {
+          clearInterval(poll);
+          const lines = [
+            'STATUS: ' + (rep.status || '--'),
+            'VALIDATION: ' + (rep.validation || '--'),
+            'TABLES MIGRATED: ' + (rep.tables_migrated || 0),
+            'ROWS MIGRATED: ' + (rep.rows_migrated || 0),
+            'ERRORS: ' + ((rep.errors || []).join('; ') || 'none'),
+          ];
+          dbSet('db-report', lines.join('\n'));
+          await loadDbStatus();
+        } else {
+          dbSet('db-progress-pct', Math.round((pdata.progress || 0) * 100) + '%');
+          _dbEl('db-progress-bar').style.width = Math.round((pdata.progress || 0) * 100) + '%';
+          dbSet('db-progress-detail', (pdata.current_table || '') + ' ' + (pdata.rows_copied || 0) + ' / ' + (pdata.total_rows || 0) + ' rows');
+        }
+      } catch (err) { console.warn('migration progress poll failed', err); }
+    }, 1500);
+  } catch (err) { console.warn('start migration failed', err); dbSet('db-report', 'Migration start failed'); }
+}
+
+async function validateDbMigration() {
+  try {
+    const r = await NX.api.get('/api/db/manage/validate', { component: 'DatabaseManagement', action: 'VALIDATE' });
+    const data = r.success ? r : await r.json?.() ?? r;
+    dbSet('db-report', 'VALIDATION: ' + (data.validation || 'n/a'));
+  } catch (err) { console.warn('validate failed', err); dbSet('db-report', 'Validation failed'); }
+}
+
+async function runDbBackup() {
+  if (!confirm('Backup the SQLite audit database (WAL-consistent snapshot copy)? Continue?')) return;
+  try {
+    const r = await NX.api.post('/api/db/manage/backup', {}, { component: 'DatabaseManagement', action: 'BACKUP' });
+    const data = r.success ? r : await r.json?.() ?? r;
+    dbSet('db-report', data.success ? 'Backup created: ' + (data.backup_path || '') : 'Backup failed.');
+  } catch (err) { console.warn('backup failed', err); dbSet('db-report', 'Backup failed'); }
+}
+
+async function switchDbProvider() {
+  const sel = _dbEl('db-provider-select');
+  const provider = sel ? sel.value : 'sqlite';
+  if (!confirm('Set the ACTIVE provider to ' + provider.toUpperCase() + '? This takes effect on the next application start. Continue?')) return;
+  try {
+    const r = await NX.api.post('/api/db/manage/provider', { provider }, { component: 'DatabaseManagement', action: 'SWITCH' });
+    const data = r.success ? r : await r.json?.() ?? r;
+    dbSet('db-test-result', data.success ? 'Provider set to ' + data.provider.toUpperCase() + ' — restart required.' : 'Switch failed.');
+    await loadDbStatus();
+  } catch (err) { console.warn('switch provider failed', err); dbSet('db-test-result', 'Switch failed'); }
+}
+
+// initialize on load
+document.addEventListener('DOMContentLoaded', () => { setTimeout(loadDbStatus, 500); });
