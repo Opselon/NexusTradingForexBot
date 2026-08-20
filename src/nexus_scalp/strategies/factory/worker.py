@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import time
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
@@ -33,7 +32,6 @@ from nexus_scalp.strategies.factory.orchestrator import StrategyFactory
 from nexus_scalp.strategies.factory.store import (
     emit_event,
     get_loop_state,
-    list_generations,
     set_loop_state,
 )
 

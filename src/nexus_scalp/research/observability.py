@@ -28,16 +28,13 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.evidence import (
     EvidenceArtifact,
-    EvidenceKind,
     FailureClass,
     GateStatus,
     GateType,
     ResearchEvent,
     ResearchGate,
     ResearchRunSnapshot,
-    RunStatus,
     WorkerHealth,
-    stable_digest,
 )
 
 logger = get_logger("nexus_scalp.research.observability")
@@ -78,6 +75,8 @@ def _connect(repo: AuditRepository) -> sqlite3.Connection:
     conn = sqlite3.connect(repo._db_path, timeout=5.0)
     conn.row_factory = sqlite3.Row
     return conn
+
+
 class ResearchObservabilityStore:
     """Bounded persistence facade over the research observability tables."""
 
@@ -806,9 +805,7 @@ class ResearchObservabilityStore:
                     total += int(r["c"])
                 out["total_failures"] = total
                 reasons: dict[str, int] = {}
-                for r in conn.execute(
-                    "SELECT result_summary FROM research_runs;"
-                ).fetchall():
+                for r in conn.execute("SELECT result_summary FROM research_runs;").fetchall():
                     s = _read_json(r[0])
                     lc = s.get("lifecycle", "")
                     if lc == "REJECTED":
@@ -854,7 +851,7 @@ class ResearchObservabilityStore:
                         bucket["scores"].append(float(fs))
             finally:
                 conn.close()
-            for fam, bucket in out["families"].items():
+            for _fam, bucket in out["families"].items():
                 scores = bucket["scores"]
                 bucket["avg_score"] = round(sum(scores) / len(scores), 3) if scores else None
                 bucket["best_score"] = round(max(scores), 3) if scores else None
@@ -911,9 +908,18 @@ class ResearchObservabilityStore:
             if row is None:
                 return None
             out = dict(row)
-            for col in ("backtest", "walkforward", "oos", "robustness", "score",
-                        "context_definition", "parent_strategy_ids",
-                        "validation_lineage", "retirement_reason", "discovery_evidence"):
+            for col in (
+                "backtest",
+                "walkforward",
+                "oos",
+                "robustness",
+                "score",
+                "context_definition",
+                "parent_strategy_ids",
+                "validation_lineage",
+                "retirement_reason",
+                "discovery_evidence",
+            ):
                 out[col] = _read_json(out.get(col))
             return out
         except Exception as e:
@@ -1081,7 +1087,7 @@ def _registry_blocked_reason(
                         "current_gate": gt,
                         "status": st,
                         "reason": str(row["failure_reason"] or ""),
-                        "required": str((_read_json(row["result"]).get("required") or "")),
+                        "required": str(_read_json(row["result"]).get("required") or ""),
                     }
                 )
                 return blocker

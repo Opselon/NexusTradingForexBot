@@ -259,7 +259,9 @@ class NewsDatabase:
             self._config = DatabaseConfig.for_sqlite("news", path=str(self.db_path))
         else:
             self._config = load_database_config("news")
-            self.db_path = Path(self._config.sqlite_connect_path) if self._config.is_sqlite else None
+            self.db_path = (
+                Path(self._config.sqlite_connect_path) if self._config.is_sqlite else None
+            )
         self._driver = get_driver(self._config)
         if self._config.is_sqlite and self.db_path is not None:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)

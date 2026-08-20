@@ -117,10 +117,7 @@ class SignalPolicy:
         # joinable by a single EXEC-... key. Observability only (INV-018) —
         # never influences a decision.
         now_exec = current_tick.timestamp
-        execution_id = (
-            f"EXEC-{now_exec:%Y%m%d}-{now_exec:%H%M%S}-"
-            f"{uuid.uuid4().hex[:6]}"
-        )
+        execution_id = f"EXEC-{now_exec:%Y%m%d}-{now_exec:%H%M%S}-{uuid.uuid4().hex[:6]}"
         # Authoritative Regime Guardian Gate early in evaluation pipeline
         is_guardian_active = False
         if regime_state is not None:
@@ -1467,12 +1464,8 @@ class SignalPolicy:
                 stage=final_proposal.decision_stage,
                 blocked_by=final_proposal.blocked_by,
                 reason=final_proposal.reason_code,
-                conf_before=float(
-                    final_proposal.confidence_before_filters or 0.0
-                ),
-                conf_after=float(
-                    final_proposal.confidence_after_filters or 0.0
-                ),
+                conf_before=float(final_proposal.confidence_before_filters or 0.0),
+                conf_after=float(final_proposal.confidence_after_filters or 0.0),
                 regime=str(final_proposal.regime or ""),
             )
 

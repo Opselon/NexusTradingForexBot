@@ -52,11 +52,11 @@ class GenerationMode(StrEnum):
 class CandidateSource(StrEnum):
     """Where a candidate definition came from."""
 
-    TEMPLATE = "TEMPLATE"          # deterministic template exploration
-    DIVERSITY = "DIVERSITY"        # feature-combination exploration
-    REGIME = "REGIME_SPECIALIST"   # regime-specific deterministic construction
+    TEMPLATE = "TEMPLATE"  # deterministic template exploration
+    DIVERSITY = "DIVERSITY"  # feature-combination exploration
+    REGIME = "REGIME_SPECIALIST"  # regime-specific deterministic construction
     RANDOM = "RANDOM_EXPLORATION"  # controlled random exploration
-    LLM = "LLM"                    # external model provider (assisted mode)
+    LLM = "LLM"  # external model provider (assisted mode)
     MUTATION = "MUTATION"
     CROSSOVER = "CROSSOVER"
     REPAIR = "REPAIR"

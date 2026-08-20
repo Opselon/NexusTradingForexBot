@@ -267,14 +267,22 @@ def make_incidents_app() -> typer.Typer:
 
         try:
             of = outcome_forensics(db)
-            suspect_all = of["suspect_outcomes"] + of.get("broker_recoverable_outcomes", []) + of["zero_with_source"]
+            suspect_all = (
+                of["suspect_outcomes"]
+                + of.get("broker_recoverable_outcomes", [])
+                + of["zero_with_source"]
+            )
             if suspect_all:
                 ev(
                     "OUTCOME_SUSPECT",
                     "OUTCOME_SUSPECT",
                     "ledger",
                     {"suspect": len(of["suspect_outcomes"]), "zero": of["zero_realized_outcomes"]},
-                    affected_records=[str(s.get("execution_id") or "") for s in suspect_all if s.get("execution_id")][:200],
+                    affected_records=[
+                        str(s.get("execution_id") or "")
+                        for s in suspect_all
+                        if s.get("execution_id")
+                    ][:200],
                 )
         except Exception as exc:
             ev("OUTCOME_SCAN_FAILED", "OUTCOME_DISCARDED", "learning", {"error": str(exc)[:200]})

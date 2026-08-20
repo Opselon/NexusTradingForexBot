@@ -49,6 +49,7 @@ from nexus_scalp.hygiene.worker_runner import (
 # fixtures
 # ---------------------------------------------------------------------------
 
+
 def _mk_audit_db(path: Path) -> sqlite3.Connection:
     """Builds a small audit.db-shaped database with the tables we test."""
     conn = sqlite3.connect(str(path))
@@ -170,6 +171,7 @@ def _mk_audit_db(path: Path) -> sqlite3.Connection:
     conn.commit()
     return conn
 
+
 def _mk_news_db(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.executescript(
@@ -217,6 +219,7 @@ def _mk_news_db(path: Path) -> sqlite3.Connection:
     conn.commit()
     return conn
 
+
 def _mk_candle_db(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.executescript(
@@ -237,6 +240,7 @@ def _mk_candle_db(path: Path) -> sqlite3.Connection:
     conn.commit()
     return conn
 
+
 @pytest.fixture()
 def env(tmp_path: Path):
     """Creates repo-shaped tmp dir + 3 fixture DBs + worker."""
@@ -254,9 +258,11 @@ def env(tmp_path: Path):
     c.close()
     return repo, audit_path, news_path, candle_path
 
+
 # ---------------------------------------------------------------------------
 # TEST-HYG-01..07: non-destructive defaults + protection
 # ---------------------------------------------------------------------------
+
 
 def test_hyg01_dry_run_makes_zero_mutation(env):
     repo, audit_path, news_path, candle_path = env
@@ -268,6 +274,7 @@ def test_hyg01_dry_run_makes_zero_mutation(env):
     assert db["verification"] == "SKIPPED_DRY_RUN"
     assert db.get("deleted", {}) == {}
     assert db_integrity_digest(str(audit_path)) == digest_before
+
 
 def test_hyg02_exact_duplicate_detection(env):
     repo, audit_path, news_path, candle_path = env
@@ -283,6 +290,7 @@ def test_hyg02_exact_duplicate_detection(env):
     unknown = [d for d in dups if d.confidence == Confidence.UNKNOWN]
     assert len(unknown) == 1
 
+
 def test_hyg03_split_fill_is_not_duplicate(env):
     repo, audit_path, news_path, candle_path = env
     conn = sqlite3.connect(str(audit_path))
@@ -295,6 +303,7 @@ def test_hyg03_split_fill_is_not_duplicate(env):
     assert family[0].confidence == Confidence.NOT_DUPLICATE
     assert "PROTECTED" in family[0].detail
     assert all(f.confidence != Confidence.EXACT_DUPLICATE for f in finds)
+
 
 def test_hyg04_financial_row_never_deleted_automatically(env):
     repo, audit_path, news_path, candle_path = env
@@ -311,6 +320,7 @@ def test_hyg04_financial_row_never_deleted_automatically(env):
     conn = sqlite3.connect(str(audit_path))
     assert conn.execute("SELECT COUNT(*) FROM audit_ledger").fetchone()[0] == 3
     conn.close()
+
 
 def test_hyg05_migration_history_never_deleted(env):
     repo, audit_path, news_path, candle_path = env
@@ -351,6 +361,7 @@ def test_hyg05_migration_history_never_deleted(env):
     assert _protected_digest(str(audit_path)) == digest_before
     conn.close()
 
+
 def test_hyg06_research_evidence_preserved(env):
     repo, audit_path, news_path, candle_path = env
     worker = DatabaseHygieneWorker(
@@ -363,6 +374,7 @@ def test_hyg06_research_evidence_preserved(env):
     conn = sqlite3.connect(str(audit_path))
     assert conn.execute("SELECT COUNT(*) FROM trade_autopsies").fetchone()[0] == 1
     conn.close()
+
 
 def test_hyg07_model_provenance_preserved(env):
     repo, audit_path, news_path, candle_path = env
@@ -398,9 +410,11 @@ def test_hyg07_model_provenance_preserved(env):
     worker.run_cycle(["audit"])
     assert _digest(str(audit_path)) == digest
 
+
 # ---------------------------------------------------------------------------
 # TEST-HYG-08..13: cleanup classes + archive
 # ---------------------------------------------------------------------------
+
 
 def test_hyg08_expired_cache_cleanup(env):
     repo, audit_path, news_path, candle_path = env
@@ -420,6 +434,7 @@ def test_hyg08_expired_cache_cleanup(env):
     cnd = res["databases"]["candle_intel"].get("deleted", {})
     assert cnd.get("candles", 0) == 10
 
+
 def test_hyg10_orphan_detection(env):
     repo, audit_path, news_path, candle_path = env
     conn = sqlite3.connect(str(audit_path))
@@ -432,6 +447,7 @@ def test_hyg10_orphan_detection(env):
         for o in orphs
         if o["ref_key"] == 1
     )
+
 
 def test_hyg12_archive_before_delete(env):
     repo, audit_path, news_path, candle_path = env
@@ -451,6 +467,7 @@ def test_hyg12_archive_before_delete(env):
     assert "h1-dup" not in hashes  # duplicate removed
     assert "h2" in hashes  # ambiguous kept
 
+
 def test_hyg13_archive_checksum_verified(env):
     repo, audit_path, news_path, candle_path = env
     am = ArchiveManager(repo)
@@ -467,9 +484,11 @@ def test_hyg13_archive_checksum_verified(env):
     p.write_bytes(p.read_bytes() + b"junk")
     assert am.verify_archive(man) is False
 
+
 # ---------------------------------------------------------------------------
 # TEST-HYG-14..18: journal / invariants / WAL
 # ---------------------------------------------------------------------------
+
 
 def test_hyg15_financial_aggregate_unchanged(env):
     repo, audit_path, news_path, candle_path = env
@@ -486,6 +505,7 @@ def test_hyg15_financial_aggregate_unchanged(env):
     for k in before:
         assert abs(after[k] - before[k]) < 1e-6, f"{k} changed: {before[k]} -> {after[k]}"
 
+
 def test_hyg16_research_lineage_unchanged(env):
     repo, audit_path, news_path, candle_path = env
     worker = DatabaseHygieneWorker(
@@ -498,6 +518,7 @@ def test_hyg16_research_lineage_unchanged(env):
     assert conn.execute("SELECT COUNT(*) FROM audit_experience_outcomes").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM trade_autopsies").fetchone()[0] == 1
     conn.close()
+
 
 # ---------------------------------------------------------------------------
 # TEST-HYG-19..23: budget / hot path / confidence / legacy
@@ -521,4 +542,3 @@ def test_hyg16_research_lineage_unchanged(env):
 # first-run audit, quarantine, consistency rules, index health, dry-run,
 # protected data, non-blocking cadence.
 # ---------------------------------------------------------------------------
-

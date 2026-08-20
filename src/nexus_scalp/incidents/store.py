@@ -822,8 +822,8 @@ def classify_root_cause(
 
 __all__ = [
     "INCIDENT_DDL",
-    "IncidentStore",
-    "row_to_incident",
     "IncidentLifecycle",
+    "IncidentStore",
     "classify_root_cause",
+    "row_to_incident",
 ]

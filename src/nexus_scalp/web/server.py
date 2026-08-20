@@ -1585,9 +1585,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
             verdict, entries = HealthEngine().overall()
             checks = [e.to_dict() for e in entries]
-            critical = [
-                e["category"] for e in checks if e.get("verdict") == "FAIL"
-            ]
+            critical = [e["category"] for e in checks if e.get("verdict") == "FAIL"]
             if verdict == "NOT READY" or critical:
                 raise HTTPException(
                     status_code=503,
@@ -2521,15 +2519,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
             health = health_snapshot()
             ui = load_ui_config()
-            return serialize_enums({
-                "success": True,
-                "provider": ui["provider"],
-                "supported_providers": health["supported_providers"],
-                "overall": health["overall"],
-                "domains": health["domains"],
-                "postgres": ui["postgres"],
-                "password_set": ui["password_set"],
-            })
+            return serialize_enums(
+                {
+                    "success": True,
+                    "provider": ui["provider"],
+                    "supported_providers": health["supported_providers"],
+                    "overall": health["overall"],
+                    "domains": health["domains"],
+                    "postgres": ui["postgres"],
+                    "password_set": ui["password_set"],
+                }
+            )
         except Exception as e:
             log_web_error(logger, "/api/db/manage/status", None, e)
             return _err("DB_MANAGE_STATUS_FAILED")
@@ -2588,7 +2588,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def db_manage_test_connection(payload: dict[str, Any]) -> dict[str, Any]:
         """Test the PostgreSQL connection BEFORE migration (never persists)."""
         try:
-
             from nexus_scalp.database.drivers import get_driver
 
             raw = dict(payload)
@@ -2699,6 +2698,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 validate_checksums=bool(raw.get("validate_checksums", True)),
             )
             mig = SqliteToPostgresMigrator(src, dst, options)
+
             # background thread: never block the web loop; progress/report
             # land on app.state.db_migration_state for the poll endpoints.
             def _run() -> None:
@@ -2725,7 +2725,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     except Exception as exc:
                         import traceback
 
-                        state["report"] = {"status": "FAILED", "errors": [str(exc)], "trace": traceback.format_exc()[:2000]}
+                        state["report"] = {
+                            "status": "FAILED",
+                            "errors": [str(exc)],
+                            "trace": traceback.format_exc()[:2000],
+                        }
                         state["done"] = True
                         state["progress"] = 0.0
                         return
@@ -2741,7 +2745,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 except Exception as exc:
                     import traceback
 
-                    app.state.db_migration_state = {"done": True, "progress": 0.0, "report": {"status": "FAILED", "errors": [str(exc)], "trace": traceback.format_exc()[:2000]}}
+                    app.state.db_migration_state = {
+                        "done": True,
+                        "progress": 0.0,
+                        "report": {
+                            "status": "FAILED",
+                            "errors": [str(exc)],
+                            "trace": traceback.format_exc()[:2000],
+                        },
+                    }
 
             t = threading.Thread(target=_run, daemon=True, name="nse_db_migrate")
             t.start()
@@ -2754,7 +2766,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def db_manage_progress() -> dict[str, Any]:
         """Live migration progress (polled by the panel UI)."""
         try:
-
             state = getattr(app.state, "db_migration_state", None)
             if state is None:
                 return {"success": True, "done": False, "progress": 0, "report": None}
@@ -2787,7 +2798,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def db_manage_backup() -> dict[str, Any]:
         """WAL-consistent SQLite backup (streaming sqlite backup API)."""
         try:
-
             from nexus_scalp.database.config import DatabaseConfig
             from nexus_scalp.database.drivers import get_driver
 
@@ -5300,8 +5310,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 strategy_id=strategy_id, research_run_id=research_run_id, limit=limit
             )
             return serialize_enums(
-                {"available": True,
-                 "gates": [g.model_dump(mode="json") for g in gates],}
+                {
+                    "available": True,
+                    "gates": [g.model_dump(mode="json") for g in gates],
+                }
             )
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Research gates failed"})
@@ -5371,6 +5383,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Research worker failed"})
             return _err("INTERNAL_ERROR")
+
     @app.get("/api/research/queue")
     def get_research_queue() -> dict[str, Any]:
         """TASK-21: gate queue census (queued/running/last-errors, spec 31)."""
@@ -5563,6 +5576,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             blocked: list[dict[str, Any]] = []
             try:
                 import sqlite3 as _sqlite3
+
                 conn = _sqlite3.connect(engine.audit._db_path, timeout=5.0)
                 conn.row_factory = _sqlite3.Row
                 try:
@@ -5582,6 +5596,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Research diagnostics failed"})
             return _err("INTERNAL_ERROR")
+
     @app.get("/api/db/status")
     def get_db_migration_status() -> dict[str, Any]:
         """TASK-10: per-domain database schema + migration state (§38).
@@ -7690,7 +7705,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 await asyncio.sleep(0.2)
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
-
 
     # =========================================================================
     # STRATEGY FACTORY (2026-08-20): autonomous strategy evolution control room.

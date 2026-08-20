@@ -47,10 +47,7 @@ def _first(conn: sqlite3.Connection, sql: str, args: tuple[Any, ...] = ()) -> di
 
 
 def _tables(conn: sqlite3.Connection) -> set[str]:
-    return {
-        r["name"]
-        for r in _rows(conn, "SELECT name FROM sqlite_master WHERE type='table'")
-    }
+    return {r["name"] for r in _rows(conn, "SELECT name FROM sqlite_master WHERE type='table'")}
 
 
 def _trace_ticket_or_execution(
@@ -118,9 +115,7 @@ def _trace_ticket_or_execution(
     return node
 
 
-def _trace_incident(
-    db_path: str, store: IncidentStore, incident_id: str
-) -> dict[str, Any]:
+def _trace_incident(db_path: str, store: IncidentStore, incident_id: str) -> dict[str, Any]:
     inc: Incident | None = store.get(incident_id)
     if inc is None:
         return {
@@ -186,10 +181,10 @@ def _trace_model(conn: sqlite3.Connection, table_names: set[str], model_id: str)
         {str(e.get("strategy_id") or "") for e in node["experiences"] if e.get("strategy_id")}
     )
     if strategy_ids and "research_runs" in table_names:
+        placeholders = ",".join("?" * len(strategy_ids))
         node["research_runs"] = _rows(
             conn,
-            "SELECT * FROM research_runs WHERE strategy_id IN (%s) ORDER BY executed_at DESC LIMIT 10"
-            % ",".join("?" * len(strategy_ids)),
+            f"SELECT * FROM research_runs WHERE strategy_id IN ({placeholders}) ORDER BY executed_at DESC LIMIT 10",
             tuple(strategy_ids),
         )
     if not node["model_registry"] and not node["experiences"]:
@@ -245,7 +240,9 @@ def trace_lineage(db_path: str, query: str, store: IncidentStore | None = None) 
         if q.lower().startswith(("run_", "ds_")):
             return _trace_research_run(conn, names, q)
         if not q.isdigit() and not q.startswith("exp_"):
-            exp = _first(conn, "SELECT model_id FROM audit_experiences WHERE model_id=? LIMIT 1", (q,))
+            exp = _first(
+                conn, "SELECT model_id FROM audit_experiences WHERE model_id=? LIMIT 1", (q,)
+            )
             if exp:
                 return _trace_model(conn, names, q)
         return _trace_ticket_or_execution(conn, names, q)
@@ -254,8 +251,8 @@ def trace_lineage(db_path: str, query: str, store: IncidentStore | None = None) 
 
 
 __all__ = [
-    "trace_lineage",
     "_trace_model",
     "_trace_research_run",
     "_trace_ticket_or_execution",
+    "trace_lineage",
 ]

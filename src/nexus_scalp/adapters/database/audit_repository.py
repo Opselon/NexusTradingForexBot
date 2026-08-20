@@ -907,7 +907,7 @@ class AuditRepository:
             );
             """
         )
-# =====================================================================
+        # =====================================================================
         # STRATEGY FACTORY research memory (2026-08-20) — append-only records.
         # The factory ORCHESTRATES generation/evolution over the research
         # pipeline; these tables hold the research memory itself.
@@ -1031,7 +1031,6 @@ class AuditRepository:
             )
         except Exception:
             pass
-
 
         for index_sql in (
             "CREATE INDEX IF NOT EXISTS idx_lifecycle_ticket "
@@ -1253,9 +1252,7 @@ class AuditRepository:
             ("completed_at", "TEXT"),
         ]:
             try:
-                conn.execute(
-                    f"ALTER TABLE research_runs ADD COLUMN {col_def[0]} {col_def[1]};"
-                )
+                conn.execute(f"ALTER TABLE research_runs ADD COLUMN {col_def[0]} {col_def[1]};")
             except Exception:
                 pass
         try:

@@ -26,13 +26,12 @@ from typing import Any
 from nexus_scalp.strategies.factory.dsl import (
     DEFAULT_SYMBOLS,
     SUPPORTED_TIMEFRAMES,
-    dsl_hash,
     feature_catalog_index,
 )
 from nexus_scalp.strategies.factory.models import (
     FactoryCandidate,
-    FailureReason,
     FactoryStage,
+    FailureReason,
     StrategyDsl,
     ValidationVerdict,
 )
@@ -111,7 +110,9 @@ def validate_schema(
     syms = market.get("symbols") or []
     tfs = market.get("timeframes") or []
     if not syms:
-        return _verdict(False, FactoryStage.DSL_VALIDATION, FailureReason.INVALID_SCHEMA, "No symbols")
+        return _verdict(
+            False, FactoryStage.DSL_VALIDATION, FailureReason.INVALID_SCHEMA, "No symbols"
+        )
     bad_syms = [s for s in syms if s not in symbols]
     if bad_syms:
         return _verdict(
@@ -122,7 +123,9 @@ def validate_schema(
             {"unsupported": bad_syms},
         )
     if not tfs:
-        return _verdict(False, FactoryStage.DSL_VALIDATION, FailureReason.INVALID_SCHEMA, "No timeframes")
+        return _verdict(
+            False, FactoryStage.DSL_VALIDATION, FailureReason.INVALID_SCHEMA, "No timeframes"
+        )
     bad_tfs = [t for t in tfs if t not in timeframes]
     if bad_tfs:
         return _verdict(
@@ -152,7 +155,9 @@ def validate_schema(
     filters = raw.get("filters") or []
     for f in filters:
         if not isinstance(f, dict):
-            return _verdict(False, FactoryStage.DSL_VALIDATION, FailureReason.INVALID_SCHEMA, "Malformed filter")
+            return _verdict(
+                False, FactoryStage.DSL_VALIDATION, FailureReason.INVALID_SCHEMA, "Malformed filter"
+            )
         if f.get("op") not in _APPROVED_OPS:
             return _verdict(
                 False,
@@ -210,7 +215,14 @@ def validate_causality(dsl: StrategyDsl) -> ValidationVerdict:
     """
     raw_bytes = dsl.model_dump(mode="json")
     raw = repr(raw_bytes).lower()
-    forbidden = ["future_bars", "next_bar", "future_open", "future_close", "future_high", "future_low"]
+    forbidden = [
+        "future_bars",
+        "next_bar",
+        "future_open",
+        "future_close",
+        "future_high",
+        "future_low",
+    ]
     hits = [f for f in forbidden if f in raw]
     if hits:
         return _verdict(
@@ -221,7 +233,9 @@ def validate_causality(dsl: StrategyDsl) -> ValidationVerdict:
             {"forbidden": hits},
         )
 
-    constraints = (dsl.constraints or {}).get("completed_bars_only", dsl.constraints.get("no_future_data"))
+    constraints = (dsl.constraints or {}).get(
+        "completed_bars_only", dsl.constraints.get("no_future_data")
+    )
     if not constraints and not dsl.hypothesis.get("completed_bars_only"):
         # Templates always set no_future_data=True; an LLM candidate omitting
         # it is REJECTED rather than assumed safe (spec 15).
@@ -322,7 +336,9 @@ def validate_candidate(
             f"Duplicate candidate (hash {candidate.definition_hash[:12]}…)",
             {"definition_hash": candidate.definition_hash},
         )
-    return _verdict(True, FactoryStage.DSL_VALIDATION, details={"definition_hash": candidate.definition_hash})
+    return _verdict(
+        True, FactoryStage.DSL_VALIDATION, details={"definition_hash": candidate.definition_hash}
+    )
 
 
 __all__ = [

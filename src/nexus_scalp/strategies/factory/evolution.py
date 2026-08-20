@@ -41,7 +41,6 @@ from nexus_scalp.strategies.factory.models import (
     StrategyFamily,
 )
 from nexus_scalp.strategies.factory.validators import (
-    validate_candidate,
     validate_complexity,
     validate_features,
     validate_schema,
@@ -77,7 +76,11 @@ def _mutate_add_filter(
         return raw
     chosen = rng.choice(candidates)
     filters.append(
-        {"feature": chosen, "op": rng.choice(["gt", "lt"]), "value": round(rng.uniform(-0.3, 0.3), 2)}
+        {
+            "feature": chosen,
+            "op": rng.choice(["gt", "lt"]),
+            "value": round(rng.uniform(-0.3, 0.3), 2),
+        }
     )
     raw["filters"] = filters
     return raw
@@ -107,7 +110,11 @@ def _mutate_replace_indicator(
 
 def _mutate_change_threshold(raw: dict[str, Any], rng: random.Random) -> dict[str, Any]:
     filters = list(raw.get("filters", []))
-    mutable = [i for i, f in enumerate(filters) if isinstance(f, dict) and isinstance(f.get("value"), (int, float))]
+    mutable = [
+        i
+        for i, f in enumerate(filters)
+        if isinstance(f, dict) and isinstance(f.get("value"), (int, float))
+    ]
     if not mutable:
         return raw
     idx = rng.choice(mutable)
@@ -307,7 +314,9 @@ def crossover(
             break
     child_raw["filters"] = filters
 
-    child_raw["exit"] = dict(b_raw.get("exit") or a_raw.get("exit") or {"mode": "fixed_rr", "rr": 2.0})
+    child_raw["exit"] = dict(
+        b_raw.get("exit") or a_raw.get("exit") or {"mode": "fixed_rr", "rr": 2.0}
+    )
     child_raw["risk"] = dict(a_raw.get("risk") or {})
     child_raw["constraints"] = {
         **(a_raw.get("constraints") or {}),
@@ -426,7 +435,11 @@ def adapt_probabilities(
     out = {k: max(0.0, min(1.0, float(base.get(k, 0.0)))) for k in keys}
 
     total_ok = sum(operator_success.values()) or 1.0
-    for op, prob_key in (("MUTATION", "mutation_rate"), ("CROSSOVER", "crossover_rate"), ("RANDOM", "exploration_rate")):
+    for op, prob_key in (
+        ("MUTATION", "mutation_rate"),
+        ("CROSSOVER", "crossover_rate"),
+        ("RANDOM", "exploration_rate"),
+    ):
         rate = operator_success.get(op, 0.0) / total_ok
         expected = 1.0 / 3.0
         delta = (rate - expected) * 0.05

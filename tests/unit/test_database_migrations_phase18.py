@@ -56,9 +56,11 @@ import pytest
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
     return tmp_path / "test.db"
+
 
 def _sqlite(path: Path, sql: str, args: tuple = ()) -> None:
     con = sqlite3.connect(path)
@@ -68,12 +70,14 @@ def _sqlite(path: Path, sql: str, args: tuple = ()) -> None:
     finally:
         con.close()
 
+
 def _count(path: Path, table: str) -> int:
     con = sqlite3.connect(path)
     try:
         return con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
     finally:
         con.close()
+
 
 def _tables(path: Path) -> set[str]:
     con = sqlite3.connect(path)
@@ -83,6 +87,7 @@ def _tables(path: Path) -> set[str]:
     finally:
         con.close()
 
+
 def _columns(path: Path, table: str) -> set[str]:
     con = sqlite3.connect(path)
     try:
@@ -90,6 +95,7 @@ def _columns(path: Path, table: str) -> set[str]:
         return {r[1] for r in rows}
     finally:
         con.close()
+
 
 def _indexes(path: Path, table: str | None = None) -> set[str]:
     con = sqlite3.connect(path)
@@ -104,9 +110,11 @@ def _indexes(path: Path, table: str | None = None) -> set[str]:
     finally:
         con.close()
 
+
 # ---------------------------------------------------------------------------
 # TEST-DBM-01 — fresh DB reaches current schema
 # ---------------------------------------------------------------------------
+
 
 class TestFreshDb:
     def test_fresh_db_reaches_current_schema(self, db_path: Path) -> None:
@@ -121,9 +129,11 @@ class TestFreshDb:
         # Version recorded.
         assert eng.current_version() == eng.expected_version()
 
+
 # ---------------------------------------------------------------------------
 # TEST-DBM-02 — legacy DB baseline detected
 # ---------------------------------------------------------------------------
+
 
 class TestLegacyBaseline:
     def test_legacy_baseline_detected(self, db_path: Path) -> None:
@@ -140,9 +150,11 @@ class TestLegacyBaseline:
         assert _count(db_path, "audit_ledger") == 1
         assert _count(db_path, "schema_migrations") >= 1
 
+
 # ---------------------------------------------------------------------------
 # TEST-DBM-03/04 — old schema upgrades / chain
 # ---------------------------------------------------------------------------
+
 
 class TestUpgrade:
     def test_old_schema_upgrades_automatically(self, db_path: Path) -> None:
@@ -183,9 +195,11 @@ class TestUpgrade:
         ids = [r[0] for r in rows]
         assert ids == sorted(ids)
 
+
 # ---------------------------------------------------------------------------
 # TEST-DBM-05 — idempotency
 # ---------------------------------------------------------------------------
+
 
 class TestIdempotency:
     def test_migration_idempotent(self, db_path: Path) -> None:
@@ -200,9 +214,11 @@ class TestIdempotency:
         assert before == after  # no duplicate indexes
         assert _count(db_path, "schema_migrations") == eng.migration_count()
 
+
 # ---------------------------------------------------------------------------
 # TEST-DBM-06/07 — index migration
 # ---------------------------------------------------------------------------
+
 
 class TestIndexMigration:
     def test_index_migration_creates_expected_index(self, db_path: Path) -> None:
@@ -234,9 +250,11 @@ class TestIndexMigration:
         names = [n for n in _indexes(db_path, "audit_orders") if n == "idx_orders_ticket"]
         assert len(names) == 1
 
+
 # ---------------------------------------------------------------------------
 # TEST-DBM-08/09 — column / table migration
 # ---------------------------------------------------------------------------
+
 
 class TestSchemaEvolution:
     def test_missing_column_is_migrated(self, db_path: Path) -> None:
@@ -263,9 +281,11 @@ class TestSchemaEvolution:
         # Old data survives.
         assert _count(db_path, "old_table") == 0
 
+
 # ---------------------------------------------------------------------------
 # TEST-DBM-10/11/12 — history, checksum, tamper
 # ---------------------------------------------------------------------------
+
 
 class TestHistoryAndChecksum:
     def test_migration_history_recorded(self, db_path: Path) -> None:
@@ -313,9 +333,11 @@ class TestHistoryAndChecksum:
         status = eng.status()
         assert status["tamper_detected"] is True
 
+
 # ---------------------------------------------------------------------------
 # TEST-DBM-13/14/15 — failure visibility / rollback / recovery
 # ---------------------------------------------------------------------------
+
 
 class TestFailureAndRollback:
     def test_migration_failure_is_visible(self, db_path: Path) -> None:
@@ -358,9 +380,11 @@ class TestFailureAndRollback:
         eng.migrate()
         assert eng.current_version() == 1
 
+
 # ---------------------------------------------------------------------------
 # TEST-DBM-16 — migration lock prevents concurrency
 # ---------------------------------------------------------------------------
+
 
 class TestLock:
     def test_lock_prevents_concurrency(self, db_path: Path) -> None:
@@ -374,6 +398,7 @@ class TestLock:
                 "DB_MIGRATION_IN_PROGRESS",
                 "DB_BLOCKED",
             )
+
 
 # ---------------------------------------------------------------------------
 # TEST-DBM-17 — restart during migration recovers
@@ -418,4 +443,3 @@ class TestLock:
 # ---------------------------------------------------------------------------
 # TEST-DBM-26/27/32 — startup gate / update integration / API status
 # ---------------------------------------------------------------------------
-

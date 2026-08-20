@@ -281,7 +281,7 @@ class LLMGenerationProvider:
             "3. Prefer simple, robust, generalizable structures over complex optimized ones.\n"
             "4. Every strategy must state a hypothesis: market mechanism, expected regime, "
             "invalidation and abstain conditions.\n"
-            "5. Return ONLY a JSON object: {\"strategies\": [ {dsl-object}, ... ]}. "
+            '5. Return ONLY a JSON object: {"strategies": [ {dsl-object}, ... ]}. '
             "No markdown, no prose.\n"
             f"Approved feature catalog ({len(context.get('feature_ids') or [])}): {feature_list}\n"
             f"Supported timeframes: {context.get('timeframes')}\n"
@@ -297,9 +297,11 @@ class LLMGenerationProvider:
         )
         user = "Generate exactly " + str(n) + " DISTINCT strategies.\n"
         if context.get("research_memory"):
-            user += "Research memory for the previous generations:\n" + str(
-                context["research_memory"]
-            ) + "\n"
+            user += (
+                "Research memory for the previous generations:\n"
+                + str(context["research_memory"])
+                + "\n"
+            )
         if context.get("generation_objective"):
             user += "Generation objective: " + str(context["generation_objective"]) + "\n"
         user += (
@@ -309,4 +311,4 @@ class LLMGenerationProvider:
         return system, user
 
 
-__all__ = ["LLMGenerationProvider", "ProviderUsage", "LLM_API_KEY_SECRET"]
+__all__ = ["LLM_API_KEY_SECRET", "LLMGenerationProvider", "ProviderUsage"]

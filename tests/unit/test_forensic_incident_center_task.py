@@ -281,6 +281,7 @@ class TestOccurrenceImpact:
         assert any("MEASURED" in n for n in imp.as_dict()["notes"])
         assert len(inc.evidence) == 1  # occurrence evidence attached
 
+
 # ---------------------------------------------------------------------------
 # TEST-FORENSIC-05 — outcome forensics broker evidence
 # ---------------------------------------------------------------------------
@@ -292,9 +293,7 @@ class TestOutcomeForensicsBrokerEvidence:
         res = outcome_forensics(db, 100)
         # The fixture outcome is zero PnL and the broker row holds +41.0.
         recoverable = res["broker_recoverable_outcomes"]
-        assert any(
-            s.get("execution_id") == "152487837184" for s in recoverable
-        ), recoverable
+        assert any(s.get("execution_id") == "152487837184" for s in recoverable), recoverable
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +399,10 @@ class TestTimebaseEventChain:
                 "entry_time": "2026-08-17T08:38:44+00:00",
                 "exit_time": "2026-08-17T08:38:44+00:00",
             },
-            ledger={"open_time": "2026-08-17T05:38:44+00:00", "close_time": "2026-08-17T05:38:44+00:00"},
+            ledger={
+                "open_time": "2026-08-17T05:38:44+00:00",
+                "close_time": "2026-08-17T05:38:44+00:00",
+            },
         )
         assert chain["source_component"] == "audit_broker_trades"
         assert chain["normalization_note"]

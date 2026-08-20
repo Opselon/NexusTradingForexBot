@@ -291,7 +291,10 @@ def test_complexity_budget_enforced(audit_repo):
     from nexus_scalp.strategies.factory.validators import validate_candidate
 
     dsl = dsl_with_feature("norm_rsi")
-    filters = [{"feature": f, "op": "gt", "value": 0.0} for f in ("norm_rsi", "norm_rsi", "norm_rsi", "norm_rsi", "norm_rsi")]
+    filters = [
+        {"feature": f, "op": "gt", "value": 0.0}
+        for f in ("norm_rsi", "norm_rsi", "norm_rsi", "norm_rsi", "norm_rsi")
+    ]
     dsl = dsl.model_copy(update={"filters": filters})
     cand = make_candidate(dsl)
     verdict = validate_candidate(cand, budgets={"max_conditions": 3})
@@ -358,7 +361,10 @@ def test_mutation_preserves_validity(audit_repo):
 
     dsl = generate_template_candidates(1)[0]
     base = make_candidate(dsl)
-    results = [mutate(base, action=a) for a in ("add_filter", "remove_filter", "change_threshold", "change_timeframe", "simplify")]
+    results = [
+        mutate(base, action=a)
+        for a in ("add_filter", "remove_filter", "change_threshold", "change_timeframe", "simplify")
+    ]
     mutants = [m for m in results if m is not None]
     assert len(mutants) >= 3  # most mutations viable
     for m in mutants:
@@ -372,7 +378,9 @@ def test_crossover_merges_parents(audit_repo):
     from nexus_scalp.strategies.factory.dsl import generate_template_candidates
     from nexus_scalp.strategies.factory.evolution import crossover
 
-    dsls = generate_template_candidates(5, families=[StrategyFamily.TREND_FOLLOWING, StrategyFamily.MEAN_REVERSION])
+    dsls = generate_template_candidates(
+        5, families=[StrategyFamily.TREND_FOLLOWING, StrategyFamily.MEAN_REVERSION]
+    )
     a = make_candidate(dsls[0], idx=0)
     b = make_candidate(dsls[1], idx=1)
     child = crossover(a, b)
