@@ -2429,23 +2429,50 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         bool(sec_token and sec_admin),
                     )
 
-            # Write to disk atomically
+            # Write to disk atomically (compatibility projection; the
+            # authoritative runtime state lives in the runtime config store)
             tmp = live_config_path.with_suffix(".yaml.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
                 yaml.safe_dump(raw_config, f, default_flow_style=False)
             tmp.replace(live_config_path)
 
-            # Hot-reload in active Engine if running
+            # RUNTIME CONFIGURATION: apply execution/risk/model sections
+            # through the authoritative versioned store (validate -> persist
+            # -> version++ -> ConfigurationChanged -> atomic snapshot swap).
             engine = app.state.engine
-            if engine:
-                logger.info("Hot-reloading system configurations dynamically.")
-                new_cfg = AppConfig.load_from_yaml(live_config_path)
-                engine.config = new_cfg
-                # Re-apply risk constraints
-                engine.risk_engine.config = new_cfg.risk
-                engine.signal_policy.confidence_threshold = new_cfg.model.confidence_threshold
+            updates: dict[str, Any] = {}
+            exec_cfg = raw_config.get("execution") or {}
+            for k in ("symbol", "timeframe", "magic_number", "max_slippage_points"):
+                if k in exec_cfg:
+                    updates[f"execution.{k}"] = exec_cfg[k]
+            risk_cfg = raw_config.get("risk") or {}
+            for k in (
+                "max_account_drawdown_pct",
+                "risk_per_trade_pct",
+                "max_concurrent_positions",
+                "max_spread_points",
+                "max_allowed_lots",
+                "enforce_stop_loss",
+            ):
+                if k in risk_cfg:
+                    updates[f"risk.{k}"] = risk_cfg[k]
+            model_cfg = raw_config.get("model") or {}
+            for k in ("confidence_threshold", "model_artifact_path"):
+                if k in model_cfg:
+                    updates[f"model.{k}"] = model_cfg[k]
+            if engine is not None and hasattr(engine, "runtime_config") and updates:
+                report = engine.apply_runtime_update(updates, source="WEB_CONFIG", actor="web")
+                return {
+                    "success": report.success,
+                    "runtime_applied": report.runtime_applied,
+                    "persisted": report.persisted,
+                    "configuration_version": report.configuration_version,
+                    "runtime_version": engine.runtime_config.get_version(),
+                    "correlation_id": report.correlation_id,
+                    "reason": report.reason,
+                }
 
-            return {"success": True}
+            return {"success": True, "runtime_applied": False, "reason": "ENGINE_OFFLINE"}
         except Exception as e:
             log_web_error(
                 logger,
@@ -2455,6 +2482,90 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 context={"msg": "Failed to save and hot-reload configurations"},
             )
             return _err("OPERATION_FAILED")
+
+    # ------------------------------------------------------------------
+    # RUNTIME CONFIGURATION (hot reload): effective view + diagnostics.
+    # The engine's authoritative config is the versioned immutable
+    # snapshot in RuntimeConfigStore; live.yaml is bootstrap/export only.
+    # ------------------------------------------------------------------
+    @app.get("/api/runtime-config")
+    def get_runtime_config_effective() -> dict[str, Any]:
+        """Effective runtime configuration the engine is ACTUALLY using."""
+        engine = app.state.engine
+        store = getattr(engine, "runtime_config", None) if engine else None
+        if store is None:
+            return {"success": False, "reason": "ENGINE_OFFLINE", "runtime_applied": False}
+        snap = store.get_snapshot()
+        diag = store.diagnostics()
+        return {
+            "success": True,
+            "configuration_version": snap.version,
+            "runtime_applied": True,
+            "source": snap.source,
+            "updated_at": snap.updated_at,
+            "effective": snap.to_dict(),
+            "diagnostics": diag,
+            "secret_masked": {
+                "telegram_token": snap.telegram.token_masked or "NOT_CONFIGURED",
+            },
+        }
+
+    @app.get("/api/runtime-config/diagnostics")
+    def get_runtime_config_diagnostics() -> dict[str, Any]:
+        """Persistent version vs runtime version vs live.yaml version."""
+        from nexus_scalp.configuration import config_file_hash
+        from nexus_scalp.settings import load_settings_service
+
+        engine = app.state.engine
+        store = getattr(engine, "runtime_config", None) if engine else None
+        runtime_version = store.get_version() if store else None
+        persistent_version = None
+        last_apply = None
+        last_error = ""
+        try:
+            svc = getattr(engine, "settings_service", None) if engine else None
+            svc = svc or load_settings_service()
+            persistent_version = int(svc.db.get_meta("runtime_config.version") or 0)
+            last_apply = svc.db.get_meta("runtime_config.last_apply_status") or "NEVER"
+            last_error = svc.db.get_meta("runtime_config.last_apply_error") or ""
+        except Exception as exc:
+            last_error = f"persistent store unreadable: {exc}"
+        yaml_path = Path("configs/live.yaml")
+        return {
+            "success": True,
+            "persistent_version": persistent_version,
+            "runtime_version": runtime_version,
+            "live_yaml_version": None,  # live.yaml has no version field
+            "live_yaml_hash": config_file_hash(yaml_path) if yaml_path.exists() else "",
+            "live_yaml_exists": yaml_path.exists(),
+            "last_apply_status": last_apply,
+            "last_apply_error": last_error,
+            "mismatch": (
+                persistent_version is not None
+                and runtime_version is not None
+                and persistent_version != runtime_version
+            ),
+        }
+
+    @app.post("/api/runtime-config/apply")
+    def apply_runtime_config(payload: dict[str, Any]) -> dict[str, Any]:
+        """Unified runtime config apply (algorithm + execution + risk + model).
+
+        Payload: {"updates": {"algo.atr_sl_buffer_multiplier": 2.0, ...}}.
+        Mirrors the verified contract: save -> validate -> persist -> version++
+        -> ConfigurationChanged -> atomic snapshot swap -> confirm.
+        """
+        engine = app.state.engine
+        if engine is None or not hasattr(engine, "runtime_config"):
+            raise HTTPException(status_code=400, detail="Trading Engine offline.")
+        updates = payload.get("updates") or {}
+        source = str(payload.get("source") or "WEB_UI")
+        if not isinstance(updates, dict) or not updates:
+            raise HTTPException(status_code=422, detail="updates dict required")
+        report = engine.apply_runtime_update(updates, source=source, actor="web")
+        out = report.to_dict()
+        out["runtime_version"] = engine.runtime_config.get_version()
+        return out
 
     # ------------------------------------------------------------------
     # BUG-072: /api/settings — isolated user settings + secure secrets.
@@ -3036,13 +3147,26 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # GET /api/algo/config
     @app.get("/api/algo/config")
     def get_algo_config() -> dict[str, Any]:
+        """Algorithm tuner — reads the AUTHORITATIVE runtime snapshot."""
+        engine = app.state.engine
+        store = getattr(engine, "runtime_config", None) if engine else None
+        if store is not None:
+            snap = store.get_snapshot()
+            return {
+                "atr_sl_buffer_multiplier": snap.atr_sl_buffer_multiplier,
+                "min_risk_reward_ratio": snap.min_risk_reward_ratio,
+                "ai_zone_confidence_threshold": snap.ai_zone_confidence_threshold,
+                "fvg_mitigation_sensitivity": snap.fvg_mitigation_sensitivity,
+                "order_block_lookback_bars": snap.order_block_lookback_bars,
+                "configuration_version": snap.version,
+                "runtime_applied": True,
+            }
+        # Engine offline: fall back to the bootstrap YAML (diagnostic only)
         live_config_path = Path("configs/live.yaml")
         if not live_config_path.exists():
             live_config_path = Path("configs/base.yaml")
-
         with open(live_config_path, encoding="utf-8") as f:
             raw_data = yaml.safe_load(f) or {}
-
         algo_data = raw_data.get("algo", {})
         return {
             "atr_sl_buffer_multiplier": algo_data.get("atr_sl_buffer_multiplier", 1.5),
@@ -3050,43 +3174,54 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "ai_zone_confidence_threshold": algo_data.get("ai_zone_confidence_threshold", 0.82),
             "fvg_mitigation_sensitivity": algo_data.get("fvg_mitigation_sensitivity", 0.5),
             "order_block_lookback_bars": algo_data.get("order_block_lookback_bars", 30),
+            "runtime_applied": False,
         }
 
     # PUT /api/algo/config
     @app.put("/api/algo/config")
     def save_algo_config(req: AlgoConfigRequest) -> dict[str, Any]:
-        live_config_path = Path("configs/live.yaml")
-        if not live_config_path.exists():
-            live_config_path = Path("configs/base.yaml")
-
+        """Algorithm tuner save: authoritative store apply + live.yaml projection."""
+        engine = app.state.engine
+        if engine is None or not hasattr(engine, "runtime_config"):
+            raise HTTPException(status_code=400, detail="Trading Engine offline.")
+        updates = {
+            "algo.atr_sl_buffer_multiplier": req.atr_sl_buffer_multiplier,
+            "algo.min_risk_reward_ratio": req.min_risk_reward_ratio,
+            "algo.ai_zone_confidence_threshold": req.ai_zone_confidence_threshold,
+            "algo.fvg_mitigation_sensitivity": req.fvg_mitigation_sensitivity,
+            "algo.order_block_lookback_bars": req.order_block_lookback_bars,
+        }
+        report = engine.apply_runtime_update(updates, source="WEB_ALGO_TUNER", actor="web")
+        if not report.success:
+            return {
+                "success": False,
+                "runtime_applied": False,
+                "reason": report.reason,
+                "configuration_version": report.configuration_version,
+            }
+        # live.yaml projection (compatibility/export; NOT authoritative)
         try:
-            with open(live_config_path, encoding="utf-8") as f:
+            live_path = Path("configs/live.yaml")
+            if not live_path.exists():
+                live_path = Path("configs/base.yaml")
+            with open(live_path, encoding="utf-8") as f:
                 raw_data = yaml.safe_load(f) or {}
-
-            raw_data["algo"] = req.model_dump()
-
+            snap = engine.runtime_config.get_snapshot()
+            raw_data["algo"] = snap.to_algo_config().model_dump()
             tmp = Path("configs/live.yaml").with_suffix(".yaml.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
                 yaml.safe_dump(raw_data, f, default_flow_style=False)
             tmp.replace(Path("configs/live.yaml"))
-
-            engine = app.state.engine
-            if engine:
-                logger.info("Hot-reloading algorithm live tuner parameters dynamically.")
-                new_cfg = AppConfig.load_from_yaml(Path("configs/live.yaml"))
-                engine.config = new_cfg
-                engine.signal_policy.algo_config = new_cfg.algo
-
-            return {"success": True}
         except Exception as e:
-            log_web_error(
-                logger,
-                "/api",
-                None,
-                e,
-                context={"msg": "Failed to save and hot-reload algo tuner configurations"},
-            )
-            return _err("OPERATION_FAILED")
+            logger.warning("[RUNTIME_CONFIG] live.yaml projection failed (non-fatal): %s", e)
+        return {
+            "success": True,
+            "runtime_applied": True,
+            "persisted": report.persisted,
+            "configuration_version": report.configuration_version,
+            "runtime_version": engine.runtime_config.get_version(),
+            "correlation_id": report.correlation_id,
+        }
 
     # Modify position SL/TP
     @app.post("/api/positions/modify")

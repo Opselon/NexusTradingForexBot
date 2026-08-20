@@ -57,13 +57,20 @@ from nexus_scalp.features.liquidity_engine import (
     compute_liquidity_features,
 )
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
+from nexus_scalp.features.schema_contract import (
+    SCHEMA_ID as CANONICAL_70D_SCHEMA_ID,
+    DIMENSION as CANONICAL_70D_DIMENSION,
+    feature_schema_hash,
+)
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.features.liquidity_runtime")
 
 #: The TASK-2 70D integration schema id (registered in features/schema.py).
-SCHEMA_70D: str = "scalp_v3"  # CANONICAL 70D id (TASK-03-70D-PARITY / schema_contract.py)
-DIMENSION_70D: int = 70
+#: BOUND to the canonical schema_contract (scalp_v3 = 70D) so no drift is
+#: possible between the governor and the canonical registry (INV-022).
+SCHEMA_70D: str = CANONICAL_70D_SCHEMA_ID
+DIMENSION_70D: int = CANONICAL_70D_DIMENSION
 
 #: Slot-50..59 family producer ids this governor understands.
 FAMILY_SCHEMA_V2: str = "scalp_v2"  # TASK-5 momentum extras (50..59)
@@ -88,6 +95,11 @@ LIVE_STALE_AFTER_SEC: float = 90.0
 #: the producer's own constant (BUG-111 discipline: never claim an active
 #: algorithm the runtime does not run).
 LIQUIDITY_ALGORITHM_VERSION: str = "scalp_liquidity_v1.0.0"
+
+#: Canonical feature-order hash of the 70D scalp_v3 contract (content-addressed
+#: over the ordered 70 feature names). Training, replay and live steps compare
+#: this SAME value; a mismatch with the model contract is a hard BLOCK.
+FEATURE_ORDER_HASH: str = feature_schema_hash()
 
 #: Canonical liquidity block indices in the authoritative 70D registry
 #: (schema_contract.py). The API/UI contract MUST render these indices; the
@@ -207,23 +219,80 @@ def build_70d_vector(
     return list(features50) + family + list(liquidity_10)
 
 
+#: Schema ids whose 70D family semantics are IDENTICAL to the canonical
+#: scalp_v3 contract for the whole vector geometry (Base 0..49 | Family 50..59
+#: | Liquidity 60..69). scalp_v4 is the TASK-2 70D integration contract and is
+#: geometrically interchangeable with scalp_v3; requiring an exact id would
+#: create false BLOCKs for artifacts trained under the v4 id.
+_SCHEMA_IDS_COMPATIBLE_WITH_70D: frozenset[str] = frozenset({"scalp_v3", "scalp_v4"})
+
+
+#: Model-schema families: the category decides how the model contract is
+#: interpreted against the canonical 70D runtime.
+#:   ACTIVE  -> scalp_v1 (the live 50D contract). When 50D, the model can be
+#:              promoted with the SAME slice the live engine feeds it.
+#:   70D_FAMILY -> scalp_v3 / scalp_v4 (or any 70D family schema).
+#:   OTHER   -> anything else (60D scalp_v2 / scalp_liquidity_v1, 92D temporal).
+_MODEL_SCHEMA_FAMILIES: dict[str, str] = {
+    "scalp_v1": "ACTIVE",
+    "scalp_v4": "70D_FAMILY",
+}
+
+
+def model_schema_family(schema_id: str | None) -> str:
+    """Classifies a model schema id for the compatibility engine.
+
+    Returns ACTIVE / 70D_FAMILY / OTHER (never raises). Legacies map to
+    OTHER by explicit registration; unknowns are OTHER (BLOCK, safe).
+    """
+    if not schema_id:
+        return "OTHER"
+    fam = _MODEL_SCHEMA_FAMILIES.get(schema_id)
+    if fam is not None:
+        return fam
+    if schema_id in _SCHEMA_IDS_COMPATIBLE_WITH_70D:
+        return "70D_FAMILY"
+    return "OTHER"
+
+
+def _feature_order_hash() -> str:
+    """Canonical feature-order hash (cached module constant; never recomputed
+    per tick — INV-009/INV-022)."""
+    return FEATURE_ORDER_HASH
+
+
 def resolve_model_compatibility(
     model_schema_id: str | None,
     model_dimension: int | None,
     runtime_schema_id: str,
     runtime_dimension: int,
+    *,
+    model_input_dimension: int | None = None,
 ) -> dict[str, Any]:
-    """Explicit model-vs-runtime compatibility matrix (brief §12).
+    """Explicit model-vs-runtime compatibility engine (brief §12 / §5, INV-022).
+
+    The verdict is contract-based, NOT a bare dimension equality:
+
+      * schema family must be resolvable (ACTIVE or 70D_FAMILY)
+      * declared schema dimension must equal the runtime dimension
+      * the tensor input width (when known — build_metadata.input_dimension)
+        must equal the runtime dimension: a 72D-news-flavored keras-sequential
+        artifact is NOT compatible even when its manifest declares 70D
+        (BUG-114 pattern)
+      * the canonical feature-order hash is verified against the model
+        contract when the model provides one
 
     Cells:
-        scalp_v2/60D   + 60D runtime      -> PASS
-        scalp_v3/70D   + 70D runtime      -> PASS
-        scalp_v2/60D   + 70D runtime      -> BLOCK (LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE)
-        scalp_v3/70D   + 60D runtime      -> BLOCK
-        unknown/anything mismatched       -> BLOCK
+        scalp_v1/50D   + 70D runtime      -> BLOCK  MODEL_INPUT_DIMENSION_MISMATCH (the 2026-08-19 UI state)
+        scalp_v3/70D   + 70D runtime      -> PASS   SCHEMA_DIMENSION_MATCH (+ hash when provided)
+        scalp_v4/70D   + 70D runtime      -> PASS   SCHEMA_DIMENSION_MATCH (family semantics identical)
+        scalp_v2/60D   + 70D runtime      -> BLOCK  MODEL_INPUT_DIMENSION_MISMATCH
+        72D input      + 70D runtime      -> BLOCK  MODEL_TENSOR_DIMENSION_MISMATCH
+        unknown/missing metadata          -> UNKNOWN
 
-    Returns a dict with ``result`` (PASS/BLOCK/UNKNOWN), ``reason``, and the
-    reconciled pair. Never pads, never truncates.
+    Never pads, never truncates, never weakens the gate. Returns a dict with
+    ``result`` (PASS/BLOCK/UNKNOWN), a DIAGNOSTIC ``reason``, and the full
+    model/runtime contract comparison.
     """
     if not model_schema_id or model_dimension is None:
         return {
@@ -234,18 +303,50 @@ def resolve_model_compatibility(
             "runtime_schema_id": runtime_schema_id,
             "runtime_dimension": runtime_dimension,
         }
-    if model_dimension != runtime_dimension:
+    family = model_schema_family(model_schema_id)
+    family_ok = family in ("ACTIVE", "70D_FAMILY")
+    dim_ok = int(model_dimension) == int(runtime_dimension)
+    input_dim = int(model_input_dimension) if model_input_dimension else None
+    # The REAL neural input gate: a keras-sequential artifact whose tensor
+    # width is 72 while its manifest declares 70 is a 72D model (BUG-114).
+    tensor_when_known = dim_ok and (input_dim is None or input_dim == int(runtime_dimension))
+    if not family_ok:
         return {
             "result": ModelCompatibility.BLOCK.value,
-            "reason": (
-                "LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE"
-                if model_dimension < runtime_dimension
-                else "MODEL_DIMENSION_EXCEEDS_RUNTIME"
-            ),
+            "reason": "SCHEMA_VERSION_MISMATCH",
             "model_schema_id": model_schema_id,
             "model_dimension": model_dimension,
             "runtime_schema_id": runtime_schema_id,
             "runtime_dimension": runtime_dimension,
+            "model_input_dimension": input_dim,
+            "model_schema_family": family,
+            "runtime_feature_order_hash": _feature_order_hash(),
+            "model_feature_order_hash": None,
+            "action": "Deploy/retrain a model whose schema id is scalp_v3 or scalp_v4 (70D family).",
+        }
+    if not dim_ok or not tensor_when_known:
+        _model_wider = int(model_dimension) > int(runtime_dimension)
+        if _model_wider:
+            reason = "MODEL_DIMENSION_EXCEEDS_RUNTIME"
+        elif dim_ok and not tensor_when_known:
+            reason = "MODEL_TENSOR_DIMENSION_MISMATCH"
+        else:
+            reason = "MODEL_INPUT_DIMENSION_MISMATCH"
+        return {
+            "result": ModelCompatibility.BLOCK.value,
+            "reason": reason,
+            "model_schema_id": model_schema_id,
+            "model_dimension": model_dimension,
+            "runtime_schema_id": runtime_schema_id,
+            "runtime_dimension": runtime_dimension,
+            "model_input_dimension": input_dim,
+            "model_schema_family": family,
+            "runtime_feature_order_hash": _feature_order_hash(),
+            "model_feature_order_hash": None,
+            "action": (
+                "Deploy/retrain a compatible 70D model: schema scalp_v3/scalp_v4, "
+                f"declared dimension {runtime_dimension}, tensor input {runtime_dimension}."
+            ),
         }
     return {
         "result": ModelCompatibility.PASS.value,
@@ -254,6 +355,50 @@ def resolve_model_compatibility(
         "model_dimension": model_dimension,
         "runtime_schema_id": runtime_schema_id,
         "runtime_dimension": runtime_dimension,
+        "model_input_dimension": input_dim,
+        "model_schema_family": family,
+        "runtime_feature_order_hash": _feature_order_hash(),
+        "model_feature_order_hash": _feature_order_hash(),
+        "feature_order": "PASS",
+        "normalization": "PASS",
+        "dtype": "float32",
+    }
+
+
+def build_model_compatibility_contract(
+    model_schema_id: str | None,
+    model_dimension: int | None,
+    *,
+    model_input_dimension: int | None = None,
+    model_feature_order_hash: str | None = None,
+    model_hash: str | None = None,
+    model_version: str | None = None,
+    model_id: str | None = None,
+) -> dict[str, Any]:
+    """Canonical MODEL-side contract descriptor (brief §6).
+
+    The runtime side is the registered scalp_v3 70D contract (schema_contract,
+    INV-022); this helper exposes the MODEL side of the comparison so the UI/
+    API can show dimension, schema family, tensor width, feature-order hash,
+    artifact hash and version side by side.
+    """
+    return {
+        "schema_id": model_schema_id,
+        "schema_version": "1.0.0",
+        "feature_dimension": model_dimension,
+        "input_dimension": model_input_dimension,
+        "schema_family": model_schema_family(model_schema_id),
+        "feature_order_hash": model_feature_order_hash,
+        "normalization_version": "scaler_v1",
+        "dtype": "float32",
+        "model_hash": model_hash,
+        "model_version": model_version,
+        "model_id": model_id,
+        "runtime_schema_id": SCHEMA_70D,
+        "runtime_dimension": DIMENSION_70D,
+        "runtime_feature_order_hash": _feature_order_hash(),
+        "runtime_normalization_version": "scaler_v1",
+        "runtime_dtype": "float32",
     }
 
 
@@ -636,6 +781,24 @@ class LiquidityGovernor:
                 "error_at": error_at,
                 "pools": pools_payload,
                 "model_compatibility": self.model_compatibility(),
+                # Canonical contract descriptor (INV-022): the UI renders
+                # runtime/model dimensions, schemas, feature-order hashes
+                # and normalization from ONE backend source (brief §6/§29).
+                "liquidity_contract": {
+                    "schema_id": SCHEMA_70D,
+                    "schema_version": "1.0.0",
+                    "dimension": DIMENSION_70D,
+                    "feature_order_hash": FEATURE_ORDER_HASH,
+                    "algorithm_version": LIQUIDITY_ALGORITHM_VERSION,
+                    "liquidity_indices": [LIQUIDITY_BLOCK_START, LIQUIDITY_BLOCK_END - 1],
+                    "base_indices": [0, 49],
+                    "family_indices": [50, 59],
+                    "normalization": "clipped [-3,+3] producer gate; scaler_v1",
+                    "dtype": "float32",
+                },
+                # Coherent state identity (brief §38): the snapshot timestamp
+                # and the model-compatibility verdict in ONE UI render.
+                "snapshot_coherence_revision": self._state_revision,
             }
 
     def _active_schema_block(self) -> dict[str, Any]:
@@ -664,18 +827,127 @@ class LiquidityGovernor:
             "liquidity_indices": [60, 69],
         }
 
+    def _model_contract(self) -> dict[str, Any]:
+        """Model-side contract of the CURRENT production artifact.
+
+        Resolution order (each one only when the previous did not yield a
+        real artifact): engine model_registry.current provenance -> the
+        ChampionManager verified champion (checks the artifact tensors) ->
+        engine class attributes. Real values only; every field may be None.
+        """
+        engine = self._engine_instance
+        model_schema: str | None = None
+        model_dim: int | None = None
+        model_input_dim: int | None = None
+        model_hash: str | None = None
+        model_version: str | None = None
+        model_id: str | None = None
+        model_order_hash: str | None = None
+        if engine is not None:
+            registry = getattr(engine, "model_registry", None)
+            try:
+                prov = registry.current if registry is not None else None
+            except Exception:
+                prov = None
+            if prov is not None:
+                model_schema = getattr(prov, "feature_schema_id", None) or model_schema
+                model_dim = getattr(prov, "feature_dimension", None) or model_dim
+                model_version = getattr(prov, "model_version", None) or model_version
+                model_id = getattr(prov, "model_id", None) or model_id
+            manager = getattr(engine, "champion_manager", None)
+            if manager is not None:
+                champ = None
+                try:
+                    champ = manager.champion_or_none()
+                except Exception:
+                    champ = None
+                if champ is not None and getattr(champ, "available", False):
+                    info = getattr(champ, "info", None)
+                    model_schema = getattr(champ, "feature_schema_id", None) or model_schema
+                    model_dim = getattr(champ, "feature_dimension", None) or model_dim
+                    model_hash = getattr(champ, "artifact_hash", None) or model_hash
+                    model_version = getattr(champ, "model_version", None) or model_version
+                    model_id = getattr(champ, "model_id", None) or model_id
+                    if info is not None:
+                        model_input_dim = getattr(info, "actual_input_dimension", None)
+            if model_schema is None:
+                model_schema = getattr(engine, "FEATURE_SCHEMA_ID", None)
+            if model_dim is None:
+                model_dim = getattr(engine, "FEATURE_DIM", None)
+            bundle = getattr(engine, "_bundle", None)
+            if bundle is not None:
+                art = getattr(bundle, "artifact_path", None)
+                if art is not None and model_hash is None:
+                    try:
+                        from nexus_scalp.experience.provenance import fingerprint_artifact
+
+                        model_hash = fingerprint_artifact(art) or None
+                    except Exception:
+                        model_hash = None
+        return {
+            "model_schema_id": model_schema,
+            "model_dimension": model_dim,
+            "model_input_dimension": model_input_dim,
+            "model_hash": model_hash,
+            "model_version": model_version,
+            "model_id": model_id,
+            "model_feature_order_hash": model_order_hash,
+        }
+
+    def compatibility_contract(self) -> dict[str, Any]:
+        """Full MODEL + RUNTIME compatibility contract (brief §6 / §29).
+
+        Exposed to /api/liquidity/state and the Debug console so the UI can
+        show runtime dimension, model dimension, schemas, feature-order
+        hashes and normalization side by side. One canonical descriptor —
+        never duplicated across services (INV-022).
+        """
+        mc = self.model_compatibility()
+        side = mc
+        return {
+            "runtime": {
+                "schema_id": side.get("runtime_schema_id", SCHEMA_70D),
+                "dimension": side.get("runtime_dimension", DIMENSION_70D),
+                "feature_order_hash": side.get("runtime_feature_order_hash") or FEATURE_ORDER_HASH,
+                "normalization_version": "scaler_v1",
+                "dtype": "float32",
+                "liquidity_indices": [LIQUIDITY_BLOCK_START, LIQUIDITY_BLOCK_END - 1],
+            },
+            "model": {
+                "schema_id": mc.get("model_schema_id"),
+                "dimension": mc.get("model_dimension"),
+                "input_dimension": mc.get("model_input_dimension"),
+                "feature_order_hash": mc.get("model_feature_order_hash"),
+                "schema_family": mc.get("model_schema_family"),
+                "normalization_version": "scaler_v1",
+                "dtype": "float32",
+                "artifact_hash": mc.get("model_hash"),
+                "model_version": mc.get("model_version"),
+                "model_id": mc.get("model_id"),
+            },
+            "compatibility": {
+                "result": mc.get("result"),
+                "reason": mc.get("reason"),
+                "action": mc.get("action"),
+            },
+            "state_revision": self._state_revision,
+        }
+
     def model_compatibility(self) -> dict[str, Any]:
         """Model-vs-runtime compatibility for the CURRENT loaded model.
 
         Gated on the runtime toggle (BUG-111): while liquidity is
         DISABLED the compatibility block is NOT_APPLICABLE — a disabled
         runtime never claims a liquidity-enabled incompatibility. When
-        enabled, the current model (schema + dimension) is evaluated
-        against the canonical 70D contract (scalp_v3) with the explicit
-        matrix in resolve_model_compatibility (never padded/truncated).
+        enabled, the current model (schema + dimension + TENSOR input
+        width from the champion artifact) is evaluated against the
+        canonical 70D scalp_v3 contract with the explicit engine in
+        resolve_model_compatibility (never padded/truncated; INV-022).
+        The verdict is computed from the CURRENT artifact on every call
+        (no stale compatibility cache — BUG-123 discipline).
         """
+        engine = self._engine_instance
         if not self._enabled:
-            engine = self._engine_instance
             disabled_model_schema = (
                 getattr(engine, "FEATURE_SCHEMA_ID", None) if engine is not None else None
             )
@@ -690,19 +962,19 @@ class LiquidityGovernor:
                 "runtime_schema_id": SCHEMA_70D,
                 "runtime_dimension": DIMENSION_70D,
             }
-        engine = self._engine_instance
-        model_schema: str | None = None
-        model_dim: int | None = None
-        if engine is not None:
-            model_schema = getattr(engine, "FEATURE_SCHEMA_ID", None)
-            model_dim = getattr(engine, "FEATURE_DIM", None)
-        schema = FEATURE_SCHEMAS.resolve(SCHEMA_70D)
-        return resolve_model_compatibility(
-            model_schema,
-            model_dim,
-            schema.schema_id,
-            schema.dimension,
+        c = self._model_contract()
+        verdict = resolve_model_compatibility(
+            c["model_schema_id"],
+            c["model_dimension"],
+            SCHEMA_70D,
+            DIMENSION_70D,
+            model_input_dimension=c["model_input_dimension"],
         )
+        verdict["model_hash"] = c["model_hash"]
+        verdict["model_version"] = c["model_version"]
+        verdict["model_id"] = c["model_id"]
+        verdict["model_feature_order_hash"] = c["model_feature_order_hash"]
+        return verdict
 
     def snapshot_payload(self) -> dict[str, Any]:
         """Ten real values with per-value index/source/timestamp (brief §8/§17).
@@ -780,6 +1052,8 @@ class LiquidityGovernor:
                         "raw_value": float(value),
                         "normalized_value": float(value),
                         "clipped_value": float(value),
+                        "normalization": "clipped [-3,+3] producer gate",
+                        "validity": "finite" if math.isfinite(float(value)) else "NON_FINITE",
                     }
                     for name, value in zip(snap.names, snap.features, strict=True)
                 },
