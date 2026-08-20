@@ -240,3 +240,48 @@ class TestLegacyMigration:
         assert result["migrated"] is False
         assert svc.db.get_meta(MIGRATION_FLAG_KEY) != "1"  # not marked migrated
         svc.close()
+
+
+class TestSettingsServiceDatabasePortability:
+    """DB-portability settings methods regression guards (DBP-01..05).
+
+    These methods back the `nexus db postgres set` / `nexus db switch` CLI
+    commands and the /api/db/manage/config + /provider web endpoints. They
+    were MISSING at first (AttributeError on every call). The canonical
+    implementation persists per-key settings (database.postgres.*) and
+    routes the PG password ONLY to the OS secret store.
+    """
+
+    def test_set_database_provider_persists(self, db_path: Path, secret_root: Path) -> None:
+        svc = _svc(db_path, secret_root)
+        svc.set_database_provider("postgresql")
+        row = svc.db.get("database.provider")
+        assert row is not None and row.value == "postgresql"
+        svc.close()
+
+    def test_set_postgres_config_never_stores_password(self, db_path: Path, secret_root: Path) -> None:
+        svc = _svc(db_path, secret_root)
+        svc.set_postgres_config(
+            {"host": "db.local", "port": 5432, "database": "nse_audit", "username": "nse_user", "password": "S3cret!"}
+        )
+        for key, expected in (("database.postgres.host", "db.local"), ("database.postgres.port", 5432)):
+            row = svc.db.get(key)
+            assert row is not None and row.value == expected, key
+        assert svc.postgres_password_set() is True
+        assert svc.secrets.get_secret("database.postgres.password") == "S3cret!"
+        svc.close()
+
+    def test_postgres_password_set_false_when_absent(self, db_path: Path, secret_root: Path) -> None:
+        svc = _svc(db_path, secret_root)
+        assert svc.postgres_password_set() is False
+        svc.close()
+
+    def test_config_roundtrip_reload(self, db_path: Path, secret_root: Path) -> None:
+        svc = _svc(db_path, secret_root)
+        svc.set_postgres_config({"host": "h", "port": 5433, "database": "d", "username": "u"})
+        svc.close()
+        svc2 = _svc(db_path, secret_root)
+        row = svc2.db.get("database.postgres.host")
+        assert row is not None and row.value == "h"
+        assert svc2.postgres_password_set() is False  # no password was ever given
+        svc2.close()

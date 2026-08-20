@@ -208,3 +208,54 @@ def test_purge_removes_old_keeps_fresh_and_never_touches_ledger(
     assert n_lev_old == 0
     assert n_lev_fresh == 1
     assert n_ledger == 1  # accounting truth untouched
+
+
+def test_log_order_accepts_execution_id(repo: AuditRepository) -> None:
+    """Regression guard: OrderManager dispatch passes execution_id=... to
+    log_order(); the audit_orders row must persist it (was a TypeError:
+    unexpected keyword argument - dark-mode live break)."""
+    repo.log_order(
+        ticket=123456,
+        order_id="req-exec-1",
+        symbol="XAUUSD",
+        action="Executed order",
+        price=4413.2,
+        stop_loss=4374.58,
+        take_profit=4455.68,
+        volume=0.1,
+        reason="dispatch_order BUY",
+        latency=0.012,
+        execution_mode="STANDARD",
+        execution_id="exec-abc-123",
+    )
+    _flush(repo)
+    with _conn(repo) as c:
+        row = c.execute(
+            "SELECT execution_id, execution_mode FROM audit_orders WHERE order_id='req-exec-1'"
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "exec-abc-123"
+    assert row[1] == "STANDARD"
+
+
+def test_log_order_without_execution_id_still_works(repo: AuditRepository) -> None:
+    """Backward compat: callers that never pass execution_id keep working."""
+    repo.log_order(
+        ticket=123457,
+        order_id="req-exec-2",
+        symbol="XAUUSD",
+        action="Executed order",
+        price=4413.2,
+        stop_loss=4374.58,
+        take_profit=4455.68,
+        volume=0.1,
+        reason="dispatch_order SELL",
+        latency=0.012,
+    )
+    _flush(repo)
+    with _conn(repo) as c:
+        row = c.execute(
+            "SELECT execution_id FROM audit_orders WHERE order_id='req-exec-2'"
+        ).fetchone()
+    assert row is not None
+    assert row[0] is None
