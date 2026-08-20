@@ -325,9 +325,9 @@ class StrategyFactory:
         else:
             base = self._evolved_population(generation_id, population, memory)
 
-        population = self._dedupe_population(base)
+        deduped = self._dedupe_population(base)
         self._record_provider_usage()
-        return population
+        return deduped
 
     def _record_provider_usage(self) -> None:
         """Persists the provider usage/cost ledger after a generation run."""
@@ -370,6 +370,16 @@ class StrategyFactory:
         if self.provider is not None and self.provider.available():
             llm = self._llm_candidates(generation_id, population)
             candidates = self._merge_llm_slice(candidates, llm, population)
+        else:
+            # Provider unconfigured/unavailable: the DSL generator already
+            # reserved LLM slots as placeholders (source=LLM) - re-tag them
+            # as TEMPLATE so the population NEVER contains fake LLM rows.
+            candidates = [
+                c.model_copy(update={"source": CandidateSource.TEMPLATE})
+                if c.source == CandidateSource.LLM
+                else c
+                for c in candidates
+            ]
         # Family diversity injection: ensure all families present in G0.
         candidates = _ensure_family_coverage(candidates, generation_id)
         return candidates
