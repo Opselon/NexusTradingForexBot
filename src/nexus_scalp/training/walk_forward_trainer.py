@@ -901,7 +901,7 @@ class WalkForwardTrainer:
                 if idx in (1, 2):
                     cb_weights[idx] *= self.active_class_boost
             mean_w = cb_weights[:num_classes].mean() if num_classes > 0 else 0.0
-            weights = cb_weights / mean_w if mean_w > 0 else cb_weights
+            weights = (cb_weights / mean_w if mean_w > 0 else cb_weights).astype(np.float32)
         # Runtime assertion: weight tensor dimension must equal the model's class count.
         # (Spec mandates a hard check so a dimension regression fails fast instead of
         # corrupting training.)

@@ -36,12 +36,26 @@ class DATA_BLOB(ctypes.Structure):  # noqa: N801
     _fields_ = [("cbData", ctypes.c_uint32), ("pbData", ctypes.c_void_p)]
 
 
+def _last_error() -> int:
+    """ctypes last-error code, portable (0 on non-Windows)."""
+    if sys.platform != "win32":
+        return 0
+    fn = getattr(ctypes, "get_last_error", None)
+    return int(fn()) if fn is not None else 0
+
+
 def _local_free(ptr: Any) -> None:
     """Free a DPAPI output buffer (LocalFree with explicit argtypes)."""
+    if sys.platform != "win32":
+        return
     try:
-        ctypes.windll.kernel32.LocalFree.argtypes = [ctypes.c_void_p]
-        ctypes.windll.kernel32.LocalFree.restype = ctypes.c_void_p
-        ctypes.windll.kernel32.LocalFree(ctypes.c_void_p(ptr))
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            return
+        local_free = windll.kernel32.LocalFree  # type: ignore[attr-defined]
+        local_free.argtypes = [ctypes.c_void_p]
+        local_free.restype = ctypes.c_void_p
+        local_free(ctypes.c_void_p(ptr))
     except Exception:
         pass
 
@@ -53,11 +67,16 @@ class _Dpapi:
 
     @classmethod
     def _ensure(cls) -> None:
+        if sys.platform != "win32":
+            raise SecretStoreError("DPAPI is only available on Windows")
         if cls._crypt32 is None:
-            cls._crypt32 = ctypes.windll.crypt32  # type: ignore[attr-defined]
+            windll = getattr(ctypes, "windll", None)
+            if windll is None:
+                raise SecretStoreError("ctypes.windll unavailable (non-Windows)")
+            cls._crypt32 = windll.crypt32  # type: ignore[attr-defined]
             cls._crypt32.CryptProtectData.restype = ctypes.c_int
             cls._crypt32.CryptUnprotectData.restype = ctypes.c_int
-            local_free = ctypes.windll.kernel32.LocalFree
+            local_free = windll.kernel32.LocalFree  # type: ignore[attr-defined]
             local_free.argtypes = [ctypes.c_void_p]
             local_free.restype = ctypes.c_void_p
 
@@ -82,7 +101,7 @@ class _Dpapi:
         )
         if not ok:
             raise SecretStoreError(
-                f"DPAPI protect failed (CryptProtectData error {ctypes.get_last_error()})"
+                f"DPAPI protect failed (CryptProtectData error {_last_error()})"
             )
         try:
             raw = ctypes.string_at(out.pbData, out.cbData)
@@ -106,7 +125,7 @@ class _Dpapi:
         )
         if not ok:
             raise SecretStoreError(
-                f"DPAPI unprotect failed (CryptUnprotectData error {ctypes.get_last_error()})"
+                f"DPAPI unprotect failed (CryptUnprotectData error {_last_error()})"
             )
         try:
             raw = ctypes.string_at(out.pbData, out.cbData)
