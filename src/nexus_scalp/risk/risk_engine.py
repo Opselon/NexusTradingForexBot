@@ -41,12 +41,12 @@ class RiskEngine:
         self,
         config: RiskConfig,
         max_margin_usage_pct: float = 10.0,
-        max_allowed_lots: float = 50.0,
+        max_allowed_lots: float = 10.0,  # HARD_MAX_LOTS parity (order_manager)
         eta_coefficient: float = 200.0,  # HFT Calibrated Almgren-Chriss coefficient for Gold micro-lots
         max_impact_reward_ratio: float = 0.45,  # Allow up to 45% slippage/reward ratio on tight M1 targets
         min_risk_reward_ratio: float = 1.8,
         min_rr_high_confidence: float = 1.2,
-        high_confidence_threshold: float = 0.70,
+        high_confidence_threshold: float = 0.95,  # = config default (AlgoConfig)
     ) -> None:
         self.config = config
         self.max_margin_usage_pct = max_margin_usage_pct

@@ -653,11 +653,13 @@ $$ \text{Raw Volume (Lots)} = \frac{\text{Raw Risk Amount}}{\text{Stop Loss Dist
              Floor to Broker volume_step (e.g. 0.01)
                           │
                           ▼
-             Clamped by Account Tier Ceiling:
+             Clamped by Account Tier Ceiling (code truth,
+             risk_engine.py calculate_dynamic_volume Step 6):
              - Equity < $100:     Max 0.02 Lots
-             - Equity < $1,000:   Max 0.50 Lots
-             - Equity < $10,000:  Max 2.00 Lots
-             - Equity >= $10,000: Max 10.0 Lots (HARD_MAX_LOTS)
+             - Equity < $1,000:   Max 0.10 Lots
+             - Equity < $10,000:  Max 1.00 Lots
+             - Equity >= $10,000: Max 10.0 Lots (HARD_MAX_LOTS / tier cap
+                                   min(10.0, symbol volume_max))
                           │
                           ▼
              Clamped by Free Margin Limit:

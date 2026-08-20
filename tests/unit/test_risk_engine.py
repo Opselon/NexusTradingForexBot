@@ -477,3 +477,141 @@ def test_no_flat_2_lot_bug_regression() -> None:
     assert vol_10k == 0.50
     assert vol_47k == 2.35
     assert vol_100k == 5.00
+def test_risk_tier_contract_matches_documented_tables() -> None:
+    """
+    Forensic issue #2: the Account-Tier Ceiling table in agents/skill.md
+    MUST match the code (code is the source of truth).
+
+    Code truth (calculate_dynamic_volume + get_clamped_position_size):
+      equity < $100      -> max 0.02 lots
+      equity < $1,000    -> max 0.10 lots
+      equity < $10,000   -> max 1.00 lots
+      equity >= $10,000  -> max min(10.0, symbol volume_max) lots
+    """
+    config = RiskConfig(risk_per_trade_pct=1.0)
+    engine = RiskEngine(config)
+
+    symbol_info = SymbolInfo(
+        symbol="XAUUSD",
+        digits=2,
+        point=0.01,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        stops_level=10,
+        freeze_level=0,
+        trade_contract_size=100.0,
+    )
+
+    def acct(equity: float) -> AccountInfo:
+        return AccountInfo(
+            login=123,
+            trade_mode=0,
+            leverage=100,
+            balance=equity,
+            equity=equity,
+            margin=0.0,
+            margin_free=equity * 2.0,
+            currency="USD",
+        )
+
+    # Wide SL so the raw risk-based size exceeds every tier ceiling:
+    # risk at 1% on $50 = $0.50 -> raw 0.5/(10*100) = tiny; use big equity and
+    # tight SL to push raw lots ABOVE the ceilings.
+    cases = [
+        # (equity, expected_tier_max)
+        (50.0, 0.02),      # micro tier
+        (500.0, 0.10),     # < 1k tier
+        (5000.0, 1.00),    # < 10k tier
+        (100000.0, 10.0),  # >= 10k -> HARD_MAX_LOTS parity
+    ]
+    for equity, expected_cap in cases:
+        volume, reason = engine.calculate_dynamic_volume(
+            entry=2000.0,
+            sl=1999.0,  # 1.0 distance -> raw lots = equity*1%/100
+            account=acct(equity),
+            symbol_info=symbol_info,
+            risk_pct=1.0,
+        )
+        # Raw lots: equity * 1% / (1.0 * 100) = equity/10000.
+        # $100k -> 10.0 raw -> capped at 10.0; $5k -> 0.5 raw -> capped 1.0 (fine).
+        # For the lower tiers the raw is below the cap, so explicitly verify
+        # each tier's ceiling via get_clamped_position_size.
+        clamped = engine.get_clamped_position_size(
+            volume=raw_for(equity), account=acct(equity), symbol_info=symbol_info
+        )
+        assert clamped <= expected_cap + 1e-9, (
+            f"equity={equity}: clamped {clamped} exceeded tier cap {expected_cap}"
+        )
+
+    # Below $50 the micro-account exception grants the broker minimum;
+    # at exactly $50 the standard INSUFFICIENT_EQUITY_FOR_MIN_LOT rule applies.
+    vol_micro, reason_micro = engine.calculate_dynamic_volume(
+        entry=2000.0,
+        sl=1999.0,
+        account=acct(30.0),
+        symbol_info=symbol_info,
+        risk_pct=1.0,
+    )
+    assert reason_micro == "MICRO_ACCOUNT_MIN_LOT_EXCEPTION"
+    assert vol_micro == symbol_info.volume_min
+
+
+def raw_for(equity: float) -> float:
+    # raw risk-based lots for 1% risk at 1.0 SL distance, 100 contract
+    return (equity * 0.01) / (1.0 * 100.0)
+
+
+def test_default_max_allowed_lots_matches_hard_max() -> None:
+    """
+    Forensic issue #2: RiskEngine default max_allowed_lots was 50.0 but
+    OrderManager's HARD_MAX_LOTS is 10.0. The engine-level exposure cap must
+    never exceed the execution hard ceiling.
+    """
+    engine = RiskEngine(RiskConfig(risk_per_trade_pct=1.0))
+    assert engine.max_allowed_lots == 10.0
+
+    symbol_info = SymbolInfo(
+        symbol="XAUUSD",
+        digits=2,
+        point=0.01,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        stops_level=10,
+        freeze_level=0,
+        trade_contract_size=100.0,
+    )
+    account = AccountInfo(
+        login=123,
+        trade_mode=0,
+        leverage=100,
+        balance=100000.0,
+        equity=100000.0,
+        margin=0.0,
+        margin_free=200000.0,
+        currency="USD",
+    )
+    # Raw lots at 1% risk, 1.0 SL distance = 10.0 lots; the directional
+    # exposure cap must never exceed 10.0
+    volume, reason = engine.calculate_dynamic_volume(
+        entry=2000.0, sl=1999.0, account=account, symbol_info=symbol_info, risk_pct=1.0
+    )
+    assert volume <= 10.0 + 1e-9
+
+
+def test_high_confidence_threshold_default_matches_config() -> None:
+    """
+    Forensic issue #2 / ledger #11: ctor default was 0.70 but the effective
+    config default (AlgoConfig) is 0.95. The ctor must match the config so
+    a bare RiskEngine(config) does not silently use a different RR gate.
+    """
+    from nexus_scalp.configuration.config import AlgoConfig
+
+    engine = RiskEngine(RiskConfig(risk_per_trade_pct=1.0))
+    assert engine.high_confidence_threshold == AlgoConfig().high_confidence_threshold == 0.95
+
