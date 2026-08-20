@@ -91,8 +91,12 @@ def _match_sql(cols: str, identities: dict[str, list[str]]) -> tuple[str, list[A
     args: list[Any] = []
     for vals in identities.values():
         for v in vals:
-            clauses.append(f"? IN ({cols})")
-            args.append(v)
+            # CAST(? AS TEXT) so INTEGER-typed key columns (ticket INTEGER,
+            # trade_id INTEGER) match TEXT identity values from incidents.
+            # One OR per column (an IN over multiple columns is invalid SQL).
+            per_col = " OR ".join(f"CAST(? AS TEXT) = CAST({c.strip()} AS TEXT)" for c in cols.split(","))
+            clauses.append(f"({per_col})")
+            args.extend([v] * len(cols.split(",")))
     if not clauses:
         return "1=0", []
     return "(" + " OR ".join(clauses) + ")", args
