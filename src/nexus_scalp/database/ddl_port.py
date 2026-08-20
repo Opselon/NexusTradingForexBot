@@ -69,6 +69,42 @@ def port_create_table(ddl: str) -> str | None:
     body = ddl[start + 1 : end]
     tail = ddl[end + 1 :]
 
+    # SQLite permits double-quoted STRING literals ("HOLD"), PostgreSQL treats
+    # "HOLD" as a column identifier -> rewrite double-quoted literals that are
+    # NOT identifiers (identifiers appear as `"."name` or adjacent to a type)
+    # to single-quoted strings.
+    def _normalize_literals(block: str) -> str:
+        out: list[str] = []
+        i = 0
+        n = len(block)
+        while i < n:
+            ch = block[i]
+            if ch == '"':
+                # find closing quote
+                j = block.find('"', i + 1)
+                if j == -1:
+                    out.append(ch)
+                    i += 1
+                    continue
+                inner = block[i + 1 : j]
+                # quoted identifier if it is an exact column name token
+                # followed by nothing or a constraint keyword; heuristic:
+                # identifiers are lowercase/keywords, string literals are
+                # '  mixed case, spaces, or clearly data-like.
+                # a bare identifier column definition "col" TYPE ... is an
+                # identifier; a DEFAULT "X" is a string literal
+                before = block[max(0, i - 8) : i]
+                looks_like_default = "DEFAULT" in before.upper() or "=" in before
+                if looks_like_default:
+                    out.append("'" + inner.replace("'", "''") + "'")
+                else:
+                    out.append('"' + inner + '"')
+                i = j + 1
+            else:
+                out.append(ch)
+                i += 1
+        return "".join(out)
+
     def _split_columns(body: str) -> list[str]:
         chunks: list[str] = []
         cur: list[str] = []
@@ -88,7 +124,8 @@ def port_create_table(ddl: str) -> str | None:
         return chunks
 
     out_lines: list[str] = []
-    for ln in _split_columns(body):
+    for _raw in _split_columns(body):
+        ln = _normalize_literals(_raw)
         stripped = ln.rstrip(",").strip()
         if not stripped:
             continue
