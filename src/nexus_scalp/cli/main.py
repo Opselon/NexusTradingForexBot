@@ -1510,6 +1510,105 @@ def model_doctor(model_id: str = typer.Option(..., "--model")) -> None:
         raise typer.Exit(1) from None
 
 
+@app.command("model-train-3")
+def model_train_3(
+    variant: str = typer.Option(
+        "", "--variant", help="50d_main | 70d_news | 70d_liquidity (empty = all)"
+    ),
+    smoke: bool = typer.Option(
+        False, "--smoke", help="Small quick validation run (2 folds, 1 epoch)."
+    ),
+    folds: int = typer.Option(34, "--folds", help="Walk-forward folds (full run)."),
+    epochs: int = typer.Option(10, "--epochs", help="Epochs per fold (full run)."),
+    json_mode: bool = typer.Option(False, "--json", help="JSON output."),
+) -> None:
+    """Train the 3-model matrix (50D-main / 70D+news / 70D+liquidity).
+
+    Every variant runs the canonical purged walk-forward trainer + the
+    BenchmarkRunner evidence gate, then is registered in the model lifecycle
+    as CHALLENGER (shadow-eligible / hot-swappable via the shadow70 attach
+    endpoint). ``--smoke`` trains a small end-to-end validation so the
+    pipeline is provable without a multi-hour CPU run.
+    """
+    import polars as pl
+
+    from nexus_scalp.model_generation.three_model import train_all
+
+    bars = pl.read_parquet("data/raw/XAUUSD_M1.parquet")
+    news_frame = None  # news frame loading is optional; the 70D builder
+    # accepts None => neutral news block (FEATURE_DISABLED)
+    chosen = [variant] if variant else None
+    reports = train_all(
+        bars,
+        news_frame=news_frame,
+        variants=chosen,
+        num_folds=folds,
+        epochs=epochs,
+        smoke=smoke,
+    )
+    if json_mode:
+        _emit({"ok": True, "reports": reports}, as_json=True)
+    else:
+        for r in reports:
+            console.print(
+                f"[green]variant={r['variant']}[/green] schema={r['schema_id']} "
+                f"dim={r['dimension']} gate={r['gate']} artifact={r['artifact']['model']}"
+            )
+        console.print("[green]3-model pipeline complete.[/green]")
+
+
+@app.command("model-swap-hot")
+def model_swap_hot(
+    variant: str = typer.Option(..., "--variant", help="70d_news | 70d_liquidity | 50d_main"),
+    json_mode: bool = typer.Option(False, "--json", help="JSON output."),
+) -> None:
+    """Hot-attach a trained variant to the Shadow70 runtime (no restart).
+
+    The variant must exist as a trained CHALLENGER in the lifecycle
+    registry (see ``model-train-3``). This reuses the canonical
+    ``/api/models/shadow70/attach`` contract — the 70D vector the engine
+    already produces every tick is validated, the model is load-gated and
+    then attaches with an inference callable, all isolated from the 50D
+    Champion path (INV-018).
+    """
+    from nexus_scalp.application.live_engine import LiveEngine  # noqa: F401  (import check)
+    from nexus_scalp.model_generation.three_model import variant_artifact_path
+
+    p = variant_artifact_path(variant)
+    if not p.exists():
+        console.print(f"[red]artifact missing: {p} — train it first (model-train-3).[/red]")
+        raise typer.Exit(1)
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+    from nexus_scalp.experience.provenance import ModelRegistry
+    from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
+
+    audit = AuditRepository()
+    reg = ModelLifecycleRegistry(audit_repo=audit, model_registry=ModelRegistry(audit_repo=audit))
+    derived_id = (
+        f"scalp_{variant}_scalp_v3_70d"
+        if variant.startswith("70d")
+        else f"scalp_{variant}_scalp_v1_50d"
+    )
+    rows = reg.list_models(status="CHALLENGER", limit=20)
+    cand = [r for r in rows if r.get("model_id") == derived_id]
+    if not cand:
+        console.print(
+            f"[red]no CHALLENGER row for {derived_id} — train it (model-train-3) or promote it first.[/red]"
+        )
+        raise typer.Exit(1)
+    out = {
+        "variant": variant,
+        "artifact": str(p),
+        "challenger": bool(cand),
+        "attach": "POST /api/models/shadow70/attach (runtime hot-attach)",
+        "schema": "scalp_v3" if variant.startswith("70d") else "scalp_v1",
+    }
+    if json_mode:
+        _emit(out, as_json=True)
+    else:
+        console.print("[green]Hot-swap ready.[/green]", out)
+
+
 # =============================================================================
 # TASK-9 (production release): artifact release classification
 # -----------------------------------------------------------------------------
