@@ -564,13 +564,14 @@ class LiquidityGovernor:
                 self._last_error = None
                 self._last_error_at = None
                 self._last_error_wall_at = None
-                if self._source != source:
+                src_kind = SourceKind(source) if isinstance(source, str) else source
+                if self._source != src_kind:
                     self._source_changed_wall_at = now_wall
-                self._source = source
+                self._source = src_kind
                 self._state_revision += 1
             logger.info(
                 "[LIQUIDITY] event=FEATURE_CALCULATION_OK source=%s latency_ms=%.2f bars=%d",
-                source.value,
+                src_kind.value,
                 latency_ms,
                 len(bars),
             )
