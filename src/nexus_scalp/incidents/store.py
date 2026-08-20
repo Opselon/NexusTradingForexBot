@@ -588,7 +588,7 @@ class IncidentStore:
                         counts[sev.lower()] = int(r["n"])
                 counts["open"] = int(
                     conn.execute(
-                        "SELECT COUNT(*) FROM incidents WHERE status IN ('OPEN','INVESTIGATING','ROOT_CAUSE_IDENTIFIED','CONTAINED','RECOVERY_READY')"
+                        "SELECT COUNT(*) FROM incidents WHERE status IN ('OPEN','INVESTIGATING','ROOT_CAUSE_IDENTIFIED','CONTAINED','RECOVERY_READY','RECOVERED')"
                     ).fetchone()[0]
                 )
             finally:
@@ -705,8 +705,125 @@ class IncidentStore:
         return out
 
 
+class IncidentLifecycle:
+    """Evidence-based incident resolution (spec 30/31/64).
+
+    Transitions:
+        OPEN -> INVESTIGATING -> ROOT_CAUSE_IDENTIFIED -> CONTAINED
+             -> RECOVERY_READY -> RECOVERED -> FIXED -> VERIFIED -> CLOSED
+        OPEN -> FALSE_POSITIVE (with reason + evidence; record kept)
+
+    VERIFIED requires: fix_commit + regression_test are set AND the caller
+    recorded the passing forensic check as evidence. An incident is never
+    marked VERIFIED without evidence.
+    """
+
+    #: Statuses that still count as "open" for the dashboard.
+    OPEN_STATUSES = frozenset(
+        {
+            "OPEN",
+            "INVESTIGATING",
+            "ROOT_CAUSE_IDENTIFIED",
+            "CONTAINED",
+            "RECOVERY_READY",
+            "RECOVERED",
+        }
+    )
+
+    @staticmethod
+    def transition(incident: Incident, new_status: str, *, actor: str = "operator") -> bool:
+        """Moves the incident to a lifecycle status (timeline recorded)."""
+        status = str(new_status).upper()
+        if status not in IncidentStatus._value2member_map_:
+            return False
+        if status == "VERIFIED":
+            if not incident.fix_commit or not incident.regression_test:
+                incident.add_timeline_event(
+                    TimelineEvent(
+                        timestamp=datetime.now(UTC),
+                        event_type="VERIFY_REFUSED",
+                        source=EventSource.MANUAL,
+                        payload={
+                            "reason": "VERIFIED requires fix_commit + regression_test + passing check",
+                            "actor": actor,
+                        },
+                    )
+                )
+                return False
+        incident.status = IncidentStatus(status)
+        incident.add_timeline_event(
+            TimelineEvent(
+                timestamp=datetime.now(UTC),
+                event_type=f"STATUS_{status}",
+                source=EventSource.MANUAL,
+                payload={"actor": actor},
+            )
+        )
+        return True
+
+    @staticmethod
+    def mark_false_positive(
+        incident: Incident,
+        *,
+        reason: str,
+        evidence: str = "",
+        detector_defect: str = "",
+        corrected_rule: str = "",
+        actor: str = "operator",
+    ) -> bool:
+        """Marks an incident FALSE_POSITIVE (record kept, spec 64)."""
+        incident.status = IncidentStatus.FALSE_POSITIVE
+        incident.notes.append(f"FALSE_POSITIVE: {reason}")
+        incident.add_timeline_event(
+            TimelineEvent(
+                timestamp=datetime.now(UTC),
+                event_type="MARKED_FALSE_POSITIVE",
+                source=EventSource.MANUAL,
+                payload={
+                    "reason": reason,
+                    "evidence": evidence,
+                    "detector_defect": detector_defect,
+                    "corrected_rule": corrected_rule,
+                    "actor": actor,
+                },
+            )
+        )
+        return True
+
+
+def classify_root_cause(
+    *,
+    category: str,
+    statement: str,
+    confidence: str = "UNKNOWN",
+    evidence_count: int = 0,
+    reproduction_status: str = "NOT_REPRODUCED",
+) -> dict[str, Any]:
+    """Evidence-backed root-cause record (spec 27/28).
+
+    Confidence semantics (spec 27):
+        UNKNOWN         - insufficient evidence
+        SUSPECTED       - some evidence, competing explanations possible
+        HIGH_CONFIDENCE - multiple corroborating signals, no credible alternative
+        PROVEN          - direct deterministic evidence / invariant violation
+                          with reproducible reproduction
+    """
+    conf = str(confidence).upper()
+    if conf not in ("UNKNOWN", "SUSPECTED", "HIGH_CONFIDENCE", "PROVEN"):
+        conf = "UNKNOWN"
+    return {
+        "root_cause_category": str(category),
+        "root_cause_statement": str(statement),
+        "root_cause_confidence": conf,
+        "evidence_count": int(evidence_count),
+        "reproduction_status": str(reproduction_status),
+    }
+
+
 __all__ = [
     "INCIDENT_DDL",
     "IncidentStore",
     "row_to_incident",
+    "IncidentLifecycle",
+    "classify_root_cause",
 ]

@@ -57,7 +57,14 @@ class IncidentSeverity(StrEnum):
 
 
 class IncidentStatus(StrEnum):
-    """Canonical lifecycle (spec 2)."""
+    """Canonical lifecycle (spec 2).
+
+    Evidence-based resolution (spec 30/31): an incident reaches VERIFIED
+    only after its underlying defect is fixed AND the corresponding
+    regression test / forensic check passes; FIXED marks the fix landed;
+    CLOSED is the terminal evidence-backed state. FALSE_POSITIVE keeps
+    the record (never deleted) with reason + evidence (spec 64).
+    """
 
     OPEN = "OPEN"
     INVESTIGATING = "INVESTIGATING"
@@ -65,6 +72,8 @@ class IncidentStatus(StrEnum):
     CONTAINED = "CONTAINED"
     RECOVERY_READY = "RECOVERY_READY"
     RECOVERED = "RECOVERED"
+    FIXED = "FIXED"
+    VERIFIED = "VERIFIED"
     CLOSED = "CLOSED"
     FALSE_POSITIVE = "FALSE_POSITIVE"
 
