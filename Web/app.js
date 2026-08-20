@@ -11441,6 +11441,27 @@ async function runForensicProbe(kind) {
     }
 }
 
+async function runIncidentAudit() {
+    const resEl = document.getElementById('forensic-probe-results');
+    if (!resEl) return;
+    resEl.innerHTML = '<p class="text-xs text-textMuted">Running full forensic audit...</p>';
+    try {
+        const resp = await fetch('/api/diagnostics/incidents/reconcile', {method: 'POST'});
+        const d = await resp.json();
+        if (!d.available) { resEl.innerHTML = '<p class="text-xs text-rose-400">Audit failed: ' + esc(d.error || '') + '</p>'; return; }
+        const f = d.findings || {};
+        let html = '<div class="border border-emerald-500/30 rounded p-2 bg-darkBg/50 text-[11px]">';
+        html += '<b class="text-emerald-400">AUDIT</b> started ' + esc(String(d.audit_started||'').slice(0,19).replace('T',' ')) + ' · scope: ' + esc((d.audit_scope||[]).join(', ')) + '</div>';
+        html += '<div class="text-[11px] mt-1">accounting divergences: ' + ((f.accounting||{}).divergence_count ?? 'n/a') + ' · timebase: ' + esc((f.timebase||{}).divergence || 'n/a') + ' · suspect outcomes: ' + ((f.outcome||{}).zero_realized_outcomes ?? 'n/a') + ' · split families: ' + ((f.split_fill||{}).split_fill_families ?? 'n/a') + '</div>';
+        html += '<div class="text-[11px] mt-1">incidents discovered: ' + (d.incidents_discovered ?? 0) + ' · reconciled: ' + (d.incidents_reconciled ?? 0) + '</div>';
+        html += '</div>';
+        resEl.innerHTML = html;
+        loadIncidents();
+    } catch (e) {
+        resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(String(e)) + '</p>';
+    }
+}
+
 async function exportIncident(kind) {
     // Export uses the current detail incident id if visible, else the first open incident.
     let id = '';
@@ -11506,3 +11527,184 @@ async function loadHealthPanel() {
         if (errEl) errEl.textContent = 'DB health load failed: ' + esc(String(e));
     }
 }
+// ===========================================================================
+// STRATEGY FACTORY (2026-08-20) — autonomous strategy evolution control room
+// ===========================================================================
+
+async function loadFactoryStatus() {
+    try {
+        const res = await NX.api.get('/api/factory/status', { component: 'StrategyFactory', action: 'STATUS' });
+        const data = res.data ?? res;
+        if (!data.available) {
+            document.getElementById('factory-loop-state').textContent = 'UNAVAILABLE';
+            return;
+        }
+        const loop = data.loop ?? {};
+        document.getElementById('factory-loop-state').textContent = loop.state ?? 'STOPPED';
+        document.getElementById('factory-current-generation').textContent =
+            loop.current_generation || (data.generations && data.generations.length ? data.generations[0].generation_id : '--');
+
+        const usage = data.provider_usage ?? {};
+        document.getElementById('factory-llm-cost').textContent = '$' + (usage.estimated_cost_usd ?? 0).toFixed(4);
+        document.getElementById('factory-llm-requests').textContent = usage.requests ?? 0;
+
+        // operator stats
+        const ops = loop.operator_stats ?? {};
+        const opsBox = document.getElementById('factory-operator-stats');
+        const opKeys = Object.keys(ops);
+        if (opKeys.length) {
+            opsBox.innerHTML = opKeys.map(op => {
+                const s = ops[op] ?? {};
+                return `<div><span class="text-accentCyan">${op}</span> gen=${s.generated ?? 0} surv=${s.survived ?? 0} elite=${s.elite ?? 0}</div>`;
+            }).join('');
+        } else {
+            opsBox.innerHTML = '<div class="text-textMuted italic">No operators yet.</div>';
+        }
+
+        // generations list
+        const gens = data.generations ?? [];
+        const genBox = document.getElementById('factory-generations');
+        if (gens.length) {
+            genBox.innerHTML = gens.map(g => {
+                const cfg = typeof g.config === 'string' ? safeParse(g.config) : (g.config ?? {});
+                const summary = cfg.summary;
+                const counts = summary
+                    ? `v=${summary.validated ?? 0} r=${summary.rejected ?? 0} best=${(summary.best_score ?? 0).toFixed(2)}`
+                    : `pop=${g.population_target ?? 0}`;
+                return `<div class="flex justify-between"><span class="text-accentCyan">${g.generation_id}</span><span>${g.status} ${counts}</span></div>`;
+            }).join('');
+        } else {
+            genBox.innerHTML = '<div class="text-textMuted italic">No generations yet.</div>';
+        }
+
+        await Promise.all([loadFactoryEvents(), loadFactoryFailures(), loadFactoryRanking()]);
+    } catch (err) {
+        console.warn('factory status failed', err);
+        document.getElementById('factory-loop-state').textContent = 'ERROR';
+    }
+}
+
+function safeParse(text) {
+    try { return JSON.parse(text); } catch (e) { return {}; }
+}
+
+async function loadFactoryEvents() {
+    try {
+        const res = await NX.api.get('/api/factory/events?limit=50', { component: 'StrategyFactory', action: 'EVENTS' });
+        const data = res.data ?? res;
+        const events = data.events ?? [];
+        const box = document.getElementById('factory-events');
+        if (!events.length) {
+            box.innerHTML = '<div class="text-textMuted italic">No events yet.</div>';
+            return;
+        }
+        box.innerHTML = events.slice(0, 50).map(ev => {
+            const ts = (ev.created_at ?? '').replace('T', ' ').slice(5, 19);
+            return `<div class="flex justify-between gap-2"><span class="text-textMuted">${ts}</span><span class="text-accentCyan">${ev.event_type}</span><span class="flex-1 truncate">${ev.message ?? ''}</span></div>`;
+        }).join('');
+    } catch (err) {
+        console.warn('factory events failed', err);
+    }
+}
+
+async function loadFactoryFailures() {
+    try {
+        const res = await NX.api.get('/api/factory/failures?limit=50', { component: 'StrategyFactory', action: 'FAILURES' });
+        const data = res.data ?? res;
+        const failures = data.failures ?? [];
+        const box = document.getElementById('factory-failures');
+        if (!failures.length) {
+            box.innerHTML = '<div class="text-textMuted italic">No failures recorded.</div>';
+            return;
+        }
+        box.innerHTML = failures.slice(0, 50).map(f => {
+            const ts = (f.created_at ?? '').replace('T', ' ').slice(5, 19);
+            return `<div class="flex justify-between gap-2"><span class="text-textMuted">${ts}</span><span class="text-accentRed">${f.reason}</span><span class="text-xs">${f.candidate_id}</span></div>`;
+        }).join('');
+    } catch (err) {
+        console.warn('factory failures failed', err);
+    }
+}
+
+async function loadFactoryRanking() {
+    try {
+        const res = await NX.api.get('/api/factory/ranking?dimension=OVERALL&limit=20', { component: 'StrategyFactory', action: 'RANKING' });
+        const data = res.data ?? res;
+        const ranked = data.ranked ?? [];
+        const box = document.getElementById('factory-ranking');
+        if (!ranked.length) {
+            box.innerHTML = '<div class="text-textMuted italic">No ranked strategies yet.</div>';
+            return;
+        }
+        box.innerHTML = ranked.map((r, i) => {
+            const score = r.score && typeof r.score === 'string' ? safeParse(r.score) : (r.score ?? {});
+            const total = r._dimension_score ?? (score.final_score ?? 0);
+            return `<div class="flex justify-between gap-2"><span class="text-accentCyan">#${i + 1}</span><span class="font-mono">${r.strategy_id}</span><span class="text-accentGreen">${typeof total === 'number' ? total.toFixed(3) : total}</span></div>`;
+        }).join('');
+    } catch (err) {
+        console.warn('factory ranking failed', err);
+    }
+}
+
+async function factoryGenerate() {
+    const size = parseInt(document.getElementById('factory-generation-size').value || '400', 10);
+    const mode = document.getElementById('factory-mode').value || 'MANUAL';
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    try {
+        const res = await NX.api.post('/api/factory/generate', { size, mode }, { component: 'StrategyFactory', action: 'GENERATE' });
+        const data = res.data ?? res;
+        if (data.available) {
+            alert(`Generation ${data.generation?.generation_id} created:\nPopulation: ${data.population}\nStructurally valid: ${data.passed}\nRejected: ${data.failed}`);
+            await loadFactoryStatus();
+        } else {
+            alert('Generation failed: ' + (data.reason ?? 'UNKNOWN'));
+        }
+    } catch (err) {
+        console.warn('factory generate failed', err);
+        alert('Generation error — see console');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+    }
+}
+
+async function factoryLoopStart() {
+    try {
+        const res = await NX.api.post('/api/factory/loop/start', {}, { component: 'StrategyFactory', action: 'LOOP_START' });
+        const data = res.data ?? res;
+        if (data.available) document.getElementById('factory-loop-state').textContent = 'RUNNING';
+        await loadFactoryStatus();
+    } catch (err) { console.warn('loop start failed', err); }
+}
+
+async function factoryLoopPause() {
+    try {
+        await NX.api.post('/api/factory/loop/pause', {}, { component: 'StrategyFactory', action: 'LOOP_PAUSE' });
+        await loadFactoryStatus();
+    } catch (err) { console.warn('loop pause failed', err); }
+}
+
+async function factoryLoopResume() {
+    try {
+        await NX.api.post('/api/factory/loop/resume', {}, { component: 'StrategyFactory', action: 'LOOP_RESUME' });
+        await loadFactoryStatus();
+    } catch (err) { console.warn('loop resume failed', err); }
+}
+
+async function factoryLoopStop() {
+    try {
+        await NX.api.post('/api/factory/loop/stop', {}, { component: 'StrategyFactory', action: 'LOOP_STOP' });
+        document.getElementById('factory-loop-state').textContent = 'STOPPED';
+        await loadFactoryStatus();
+    } catch (err) { console.warn('loop stop failed', err); }
+}
+
+// startup: load factory status along with the other panels
+setInterval(() => {
+    const tab = document.querySelector('#tab-factory');
+    if (tab && !tab.classList.contains('hidden')) {
+        loadFactoryStatus();
+    }
+}, 10000);
