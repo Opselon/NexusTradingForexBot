@@ -495,11 +495,19 @@ class SettingsService:
             "model": str(model.value) if model else "",
             "temperature": float(temp.value) if temp and temp.value is not None else 0.7,
             "request_timeout_sec": float(
-                (self.db.get(FACTORY_LLM_REQUEST_TIMEOUT).value if self.db.get(FACTORY_LLM_REQUEST_TIMEOUT) else None)
+                (
+                    self.db.get(FACTORY_LLM_REQUEST_TIMEOUT).value
+                    if self.db.get(FACTORY_LLM_REQUEST_TIMEOUT)
+                    else None
+                )
                 or 300.0
             ),
             "max_requests_per_generation": int(
-                (self.db.get(FACTORY_LLM_MAX_REQUESTS).value if self.db.get(FACTORY_LLM_MAX_REQUESTS) else None)
+                (
+                    self.db.get(FACTORY_LLM_MAX_REQUESTS).value
+                    if self.db.get(FACTORY_LLM_MAX_REQUESTS)
+                    else None
+                )
                 or 60
             ),
             "source": "SECURE_SECRET_STORE" if key else "NOT_CONFIGURED",
