@@ -325,12 +325,12 @@ class WalkForwardTrainer:
                 test_rows=len(X_test),
                 batch_size=dyn_batch,
             )
-        # Task 1 Diagnostics
-        logger.info("=== TASK 1 MODEL DIAGNOSTICS ===")
-        logger.info("class_id mapping:")
-        logger.info("0 = BUY")
-        logger.info("1 = SELL")
-        logger.info("2 = NO_TRADE")
+        # Model diagnostics (label mapping derived from self.label_map -
+        # never hardcode class names here; keep in sync with the actual
+        # ActionType mapping at __init__).
+        logger.info("=== MODEL DIAGNOSTICS ===")
+        logger.info("class_id mapping (self.label_map):")
+        logger.info(str(self.label_map))
         logger.info("Inference class mapping (self.inverse_label_map):")
         logger.info(str(self.inverse_label_map))
         logger.info(
