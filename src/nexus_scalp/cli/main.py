@@ -59,6 +59,15 @@ from nexus_scalp.cli.db_commands import db_app
 # so the spec surface is `nexus db hygiene status|plan|run|pause|resume|history`.
 app.add_typer(db_app, name="db", help="Database schema migration & management (TASK-10).")
 
+# DATABASE PORTABILITY (`nexus db-portability ...`) — SQLite <-> PostgreSQL workflow.
+from nexus_scalp.cli.db_commands import make_portability_app
+
+app.add_typer(
+    make_portability_app(),
+    name="db-portability",
+    help="DATABASE PORTABILITY: provider status, config, SQLite->PostgreSQL migration.",
+)
+
 # TASK-12 incident response & forensic diagnostics (`nexus incidents ...`).
 from nexus_scalp.cli.incident_commands import incidents_app
 
