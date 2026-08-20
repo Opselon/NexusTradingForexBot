@@ -306,6 +306,9 @@ jobs:
           print(" | ".join(f"{k}={v}" for k, v in statuses.items()))
           if failed:
               print(f"FAILING CHECKS: {', '.join(failed)}")
+              # Emit a workflow command so the failure lands in the check-run
+              # annotations (visible on the commit/PR page without log access).
+              print(f"::error::CI gate failed on: {', '.join(failed)} | " + " | ".join(f"{k}={v}" for k, v in statuses.items()))
               raise SystemExit(1)
           print("ALL CHECKS PASSED")
           PY
