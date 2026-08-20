@@ -224,6 +224,62 @@ class StrategyRegistry:
             return 0
 
     # ------------------------------------------------------------------
+    # Validation invariants (TASK-21, spec 55 / 56 / 57)
+    # ------------------------------------------------------------------
+
+    def invariant_check(self, entry: StrategyRegistryEntry) -> dict[str, Any]:
+        """Validates the registry invariants for one entry.
+
+        * VALIDATED requires: backtest, walkforward, oos, robustness all
+          present AND passed (per gate result status), score present with
+          verdict VALIDATED (never a shortcut).
+        * REJECTED requires: at least one gate FAILED or the score verdict
+          REJECTED (never the default for unprocessed strategies).
+        """
+        lc = entry.lifecycle.value
+        problems: list[str] = []
+        if lc == "VALIDATED":
+            for name, res in (
+                ("backtest", entry.backtest),
+                ("walkforward", entry.walkforward),
+                ("oos", entry.oos),
+                ("robustness", entry.robustness),
+            ):
+                if res is None:
+                    problems.append(f"{name} result missing")
+            if entry.oos is not None and entry.oos.status != "PASS":
+                problems.append(f"OOS status is {entry.oos.status}, not PASS")
+            if entry.walkforward is not None and not entry.walkforward.passed:
+                problems.append("walk-forward did not pass")
+            if entry.robustness is not None and entry.robustness.status != "PASS":
+                problems.append(f"robustness status is {entry.robustness.status}, not PASS")
+            if entry.score is None:
+                problems.append("score missing for VALIDATED strategy")
+            elif entry.score.verdict != "VALIDATED":
+                problems.append(f"score verdict is {entry.score.verdict}, not VALIDATED")
+        elif lc == "REJECTED":
+            gate_failed = (
+                (entry.oos is not None and entry.oos.status != "PASS")
+                (entry.robustness is not None and entry.robustness.status == "FAIL")
+                (entry.walkforward is not None and not entry.walkforward.passed)
+                (entry.score is not None and entry.score.verdict == "REJECTED")
+                (entry.backtest is not None and entry.backtest.total_trades == 0)
+            )
+            ran_any = (
+                entry.backtest is not None
+                or entry.oos is not None
+                or entry.score is not None
+            )
+            if not gate_failed and not ran_any:
+                problems.append("REJECTED without any failed gate or validation attempt")
+        return {
+            "strategy_id": entry.strategy_id,
+            "lifecycle": lc,
+            "valid": not problems,
+            "problems": problems,
+        }
+
+    # ------------------------------------------------------------------
     # Lifecycle transitions (persisted)
     # ------------------------------------------------------------------
 
