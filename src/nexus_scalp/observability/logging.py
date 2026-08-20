@@ -51,7 +51,6 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import math
-import os
 import re
 import sys
 import threading
@@ -214,9 +213,27 @@ _current_retention_days: dict[str, int] = dict(DEFAULT_RETENTION_DAYS)
 _last_prune_ts: float = 0.0
 _PRUNE_INTERVAL_SEC = 3600.0
 
+
+def _set_state(base: Path, retention: dict[str, int] | None) -> None:
+    """Update module state without global statements (PLW0603-safe)."""
+    global _current_base, _current_retention_days  # noqa: PLW0603
+    _current_base = base
+    if retention:
+        merged = dict(DEFAULT_RETENTION_DAYS)
+        merged.update(retention)
+        _current_retention_days = merged
+
+
+def _set_prune_ts(ts: float) -> None:
+    """Record the last prune timestamp (no global statement in caller)."""
+    global _last_prune_ts  # noqa: PLW0603
+    _last_prune_ts = ts
+
+
 # ---------------------------------------------------------------------------
 # Redaction (centralized; key-based + high-entropy catch-all)
 # ---------------------------------------------------------------------------
+
 
 def _shannon_entropy(value: str) -> float:
     """Empirical Shannon entropy in bits/char (0.0 for empty strings)."""
@@ -237,7 +254,10 @@ def _redact_value(value: Any) -> Any:
     def _scrub(match: re.Match[str]) -> str:
         token = match.group(0)
         alnum_ratio = sum(1 for ch in token if ch.isalnum()) / len(token)
-        if alnum_ratio >= _ENTROPY_ALNUM_THRESHOLD and _shannon_entropy(token) >= _ENTROPY_BITS_THRESHOLD:
+        if (
+            alnum_ratio >= _ENTROPY_ALNUM_THRESHOLD
+            and _shannon_entropy(token) >= _ENTROPY_BITS_THRESHOLD
+        ):
             return "[REDACTED_SECRET]"
         return token
 
@@ -266,6 +286,7 @@ def _redact_sensitive_fields(
 # Timestamp
 # ---------------------------------------------------------------------------
 
+
 def timestamp_now() -> str:
     """ISO-8601 timestamp string with explicit project timezone (+03:30).
 
@@ -290,9 +311,11 @@ def _add_timestamp(
     event_dict["timestamp"] = f"{now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]}{TIMESTAMP_TZ}"
     return event_dict
 
+
 # ---------------------------------------------------------------------------
 # Rotation: severity-dated file handler (daily + size split)
 # ---------------------------------------------------------------------------
+
 
 def _today_stamp() -> str:
     return time.strftime("%Y-%m-%d")
@@ -380,7 +403,7 @@ class DatedRotatingFileHandler(logging.Handler):
             self._stream = None
 
     @property
-    def baseFilename(self) -> str:  # noqa: N802 (logging.Handler compat)
+    def baseFilename(self) -> str:
         path = self._target_path()
         return str(path)
 
@@ -420,9 +443,11 @@ class DatedRotatingFileHandler(logging.Handler):
             self._close_stream()
             super().close()
 
+
 # ---------------------------------------------------------------------------
 # Retention pruning
 # ---------------------------------------------------------------------------
+
 
 def _prune_old_logs(base: Path | None = None, retention_days: dict[str, int] | None = None) -> None:
     """Delete severity files older than their retention window.
@@ -430,11 +455,10 @@ def _prune_old_logs(base: Path | None = None, retention_days: dict[str, int] | N
     Runs at configure time, then at most once per hour. Unknown buckets
     (e.g. ``logs/archive``) are never auto-deleted.
     """
-    global _last_prune_ts
     now = time.time()
     if _last_prune_ts > 0 and now - _last_prune_ts < _PRUNE_INTERVAL_SEC:
         return
-    _last_prune_ts = now
+    _set_prune_ts(now)
 
     root = Path(base or _current_base)
     retention = retention_days or _current_retention_days
@@ -458,6 +482,7 @@ def _prune_old_logs(base: Path | None = None, retention_days: dict[str, int] | N
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
 
 def _console_stream() -> TextIO:
     stream: Any = sys.stdout
@@ -496,15 +521,9 @@ def configure_logging(
             EXE passes ``%LOCALAPPDATA%/NexusScalpEngine/logs``.
         retention_days: Per-severity retention overrides (defaults above).
     """
-    global _current_base, _current_retention_days
-
     numeric_level = getattr(logging, str(log_level).upper(), logging.INFO)
     base_dir = Path(log_file_path) if log_file_path else LOG_DIR
-    _current_base = base_dir
-    if retention_days:
-        merged = dict(DEFAULT_RETENTION_DAYS)
-        merged.update(retention_days)
-        _current_retention_days = merged
+    _set_state(base_dir, retention_days)
 
     _configure_stdout()
 
@@ -618,15 +637,15 @@ def bind_correlation_id(
 
 
 __all__ = [
+    "DEFAULT_RETENTION_DAYS",
+    "ERROR_CODES",
+    "EVENT_CATEGORIES",
     "LOG_DIR",
     "MAX_BYTES_PER_FILE",
-    "DEFAULT_RETENTION_DAYS",
-    "EVENT_CATEGORIES",
-    "ERROR_CODES",
     "DatedRotatingFileHandler",
-    "timestamp_now",
+    "bind_correlation_id",
     "configure_logging",
     "get_logger",
     "log_event",
-    "bind_correlation_id",
+    "timestamp_now",
 ]

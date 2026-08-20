@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 from nexus_scalp.observability.logging import (
-    DEFAULT_RETENTION_DAYS,
     _ANSI_RE,
+    DEFAULT_RETENTION_DAYS,
     _LevelMatchFilter,
     _redact_sensitive_fields,
     configure_logging,
@@ -33,8 +33,12 @@ def log_root(tmp_path: Path):
     logger = get_logger("test_logging")
     yield tmp_path, logger
     root = logging.getLogger()
-    with threading.RLock():
+    lock = threading.RLock()
+    lock.acquire()
+    try:
         root.handlers.clear()
+    finally:
+        lock.release()
     root.setLevel(logging.WARNING)
 
 
