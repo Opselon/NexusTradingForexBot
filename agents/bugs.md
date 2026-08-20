@@ -5583,3 +5583,57 @@ uncommitted overnight.
 Never split a def line into the middle of an init chain; after ANY live_engine.py structural edit run
 `python tests/integration/test_engine_runtime_launch.py` FIRST (it catches exactly this class via the engine log).
 Registry JSON columns are TEXT — decode before `.get()`.
+## BUG-131 — Telegram "Send Test Message" fails: DNS-poison blackhole + UI checkbox saves enabled=false (2026-08-20 Hermes-TelegramDNS)
+
+### Symptoms
+- UI Telemetry & Notifications: Send Test Message -> "send failed" (no category).
+- /api/telegram/test returned NOTIFIER_DISABLED immediately; after enabling,
+  TELEGRAM_TIMEOUT ("_ssl.c:999: The handshake operation timed out").
+- /api/settings/telegram/status: enabled=false worker=STOPPED; token_present=true
+  source=SECURE_SECRET_STORE (credentials were FINE — token/chat never the problem).
+
+### Root causes (two independent layers)
+1. DNS POISONING of api.telegram.org: resolver returned 198.18.141.205
+   (RFC 2544 benchmark/blackhole block) -> every HTTPS call hung -> blind
+   TELEGRAM_TIMEOUT. Token verified valid via getMe over the real IP
+   (149.154.167.220) with curl --resolve. Google/GitHub HTTPS worked fine,
+   proving a targeted block (ISP/local MITM), not general connectivity.
+2. UI save-path bug (reproduced via the API): testTelegram() POSTs /api/config
+   first with telegram.enabled taken from the checkbox; an unchecked box
+   persists enabled=false into the settings DB (WEB_CONFIG source), then
+   /api/telegram/test immediately returns NOTIFIER_DISABLED. TelegramNotifier
+   computes enabled = enabled AND bool(token) AND bool(admin) at construction,
+   and LiveEngine boots from DB telegram.enabled — so the state "stuck"
+   disabled across restarts. (settings_audit showed PERSISTED token_present=False
+   admin_id_present=False + 13 WEB_CONFIG enabled→False 0-row pairs at
+   22:59:40-22:59:54 in one UI session: the UI submitted with BOTH fields empty
+   when the operator only typed credentials once.)
+
+### Fixes
+- Hosts-file workaround on this host (admin): api.telegram.org ->
+  149.154.167.220, t.me -> 91.108.56.130 (out-of-repo systemic fix).
+- Code (commit 9172967): DNS-poison detection + SNI-preserved direct-IP
+  fallback in TelegramNotifier:
+  * _DNS_POISON_BLACKHOLE_RANGES (RFC 2544/6890 blocks incl. 198.18.0.0/15),
+    _TELEGRAM_FALLBACK_IPS (known-good Telegram DC IPs)
+  * _should_bypass_dns() + _last_dns_poisoned flag
+  * _direct_https_open(): connect-to-IP with SNI+Host preserved
+  * _urlopen_with_dns_fallback() used by _send_msg_sync + get_me
+  * _classify_exception(): poisoned timeout -> TELEGRAM_DNS_BLOCKED (no blind retry)
+  * health_state() exposes dns_poisoned
+- UI defect NOT changed (Web/app.js untouched — parallel agent WIP); DB
+  telegram.enabled restored to True via /api/settings/telegram.
+
+### Verification
+- 7 new unit tests in tests/unit/test_telegram_notifier.py (17 total pass),
+  ruff/mypy/py_compile clean, beforePush-critical-suite unaffected files.
+- LIVE delivery verified: scratch/probe_telegram_delivery_verify.py sent a real
+  message — worker sent_count=1, failed=0, last_success=2026-08-20 23:41:03.
+- Deterministic repro archived in scratch/probe_telegram_dns_fallback.py.
+
+### Lessons for swarm
+- getMe 200 ok:true == token valid; the failure is ALWAYS routing/network/DNS.
+- When a status shows enabled=false after UI saves, check settings_audit for
+  WEB_CONFIG rows (UI checkbox state) — not the notifier.
+- api.telegram.org resolving into 198.18/15 or 192.0.0/24 == DNS poisoning;
+  verify with `curl --resolve api.telegram.org:443:149.154.167.220 getMe`.
