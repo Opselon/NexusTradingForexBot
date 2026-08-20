@@ -9,6 +9,7 @@ and risk engines.
 import asyncio
 import json
 import math
+import os
 import sqlite3
 import threading
 import time
@@ -2714,6 +2715,70 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except Exception as e:
             log_web_error(logger, "/api/db/manage/migrate", None, e)
             return _err("DB_MIGRATION_START_FAILED")
+
+    @app.get("/api/db/manage/progress")
+    def db_manage_progress() -> dict[str, Any]:
+        """Live migration progress (polled by the panel UI)."""
+        try:
+            from nexus_scalp.database.migrate_engine import MigrationState
+
+            state = getattr(app.state, "db_migration_state", None)
+            if state is None:
+                return {"success": True, "done": False, "progress": 0, "report": None}
+            return {
+                "success": True,
+                "done": bool(state.get("done")),
+                "progress": float(state.get("progress") or 0.0),
+                "current_table": state.get("current_table") or "",
+                "rows_copied": int(state.get("rows_copied") or 0),
+                "total_rows": int(state.get("total_rows") or 0),
+                "report": state.get("report"),
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/progress", None, e)
+            return _err("DB_MIGRATION_PROGRESS_FAILED")
+
+    @app.get("/api/db/manage/report")
+    def db_manage_report() -> dict[str, Any]:
+        """The last migration report (result + validation)."""
+        try:
+            state = getattr(app.state, "db_migration_state", None)
+            if state is None:
+                return {"success": True, "report": None}
+            return {"success": True, "report": state.get("report")}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/report", None, e)
+            return _err("DB_MIGRATION_REPORT_FAILED")
+
+    @app.post("/api/db/manage/backup")
+    def db_manage_backup() -> dict[str, Any]:
+        """WAL-consistent SQLite backup (streaming sqlite backup API)."""
+        try:
+            import shutil
+            import time
+
+            from nexus_scalp.database.config import DatabaseConfig
+            from nexus_scalp.database.drivers import get_driver
+
+            src = DatabaseConfig.for_sqlite("audit")
+            driver = get_driver(src)
+            ts = time.strftime("%Y%m%d-%H%M%S")
+            backup_path = f"artifacts/backups/audit_backup_{ts}.db"
+            os.makedirs("artifacts/backups", exist_ok=True)
+
+            conn = driver.connect(timeout=30.0)
+            try:
+                dest = __import__("sqlite3").connect(backup_path)
+                try:
+                    conn.backup(dest)
+                finally:
+                    dest.close()
+            finally:
+                conn.close()
+            return {"success": True, "backup_path": backup_path}
+        except Exception as e:
+            log_web_error(logger, "/api/db/manage/backup", None, e)
+            return _err("DB_MIGRATION_BACKUP_FAILED")
 
     @app.get("/api/db/manage/validate")
     def db_manage_validate() -> dict[str, Any]:
