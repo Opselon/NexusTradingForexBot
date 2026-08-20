@@ -226,13 +226,16 @@ def test_bug106_13_schema_hash_stable() -> None:
     not __import__("pathlib").Path(DATA_PATH).exists(), reason="real data file absent"
 )
 def test_bug106_15_20k_benchmark_completes() -> None:
-    """TEST-BUG106-15: 20K-row build completes via the incremental builder
-    (the canonical quadratic path would take hours)."""
+    """TEST-BUG106-15: bounded 4K-row build completes via the incremental
+    builder (the canonical quadratic path takes ~10+ min at this size;
+    the incremental path is O(n*window) and beat canonical 12x at 2.5K).
+    The 20K-row original benchmark took ~2-3 min in CI; 4K rows keeps the
+    quadratic-vs-incremental proof without dominating the fast gate."""
     import time
 
-    df = pl.read_parquet(DATA_PATH).head(20000)
+    df = pl.read_parquet(DATA_PATH).head(4000)
     t0 = time.perf_counter()
     fast = compute_70d_frame_fast(df, news_frame=None)
     dt = time.perf_counter() - t0
-    assert fast.height >= 19000
-    assert dt < 600, f"20K build took {dt:.1f}s (>10 min)"
+    assert fast.height >= 3800
+    assert dt < 240, f"4K build took {dt:.1f}s (>4 min)"
