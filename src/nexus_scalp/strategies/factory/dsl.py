@@ -439,7 +439,6 @@ def generate_generation_zero(
     """Generation 0 mixture (spec 6): 30% templates, 20% diversity, 10%
     regime, 10% random, 30% LLM (when the provider is configured; the caller
     replaces a slack slice with LLM candidates, else templates fill it)."""
-    import math
 
     n_tpl = max(1, int(population * 0.30))
     n_div = max(1, int(population * 0.20))
@@ -491,15 +490,15 @@ def generate_generation_zero(
 
 
 __all__ = [
+    "DEFAULT_SYMBOLS",
     "DSL_SCHEMA_VERSION",
     "GENERATOR_VERSION",
     "SUPPORTED_TIMEFRAMES",
-    "DEFAULT_SYMBOLS",
     "StrategyFamily",
     "build_feature_catalog",
+    "candidate_id_from_hash",
     "canonical_json",
     "canonicalize_dsl",
-    "candidate_id_from_hash",
     "dsl_hash",
     "feature_catalog_index",
     "feature_ids",

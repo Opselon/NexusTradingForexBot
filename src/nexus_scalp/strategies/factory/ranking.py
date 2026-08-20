@@ -86,7 +86,6 @@ def score_components(
         except Exception:
             return {}
 
-    w = weights or WEIGHTS
     score = _decoded(entry.get("score"))
     bt = _decoded(entry.get("backtest"))
     wf = _decoded(entry.get("walkforward"))
@@ -191,8 +190,8 @@ def explain_rank(entry: dict[str, Any], position: int) -> dict[str, Any]:
 def dimension_score(entry: dict[str, Any], dimension: RankDimension) -> float:
     comps = score_components(entry)
     bt = entry.get("backtest") or {}
-    oos = entry.get("oos") or {}
-    score = entry.get("score") or {}
+    entry.get("oos") or {}
+    entry.get("score") or {}
     if dimension == RankDimension.OVERALL:
         return comps["total"] if "total" in comps else selection_score(entry)["total"]
     if dimension == RankDimension.OOS:
@@ -240,7 +239,7 @@ def rank_strategies(
         scored.append((d, ann))
     scored.sort(key=lambda t: t[0], reverse=True)
     out: list[dict[str, Any]] = []
-    for i, (d, ann) in enumerate(scored[:limit], start=1):
+    for i, (_d, ann) in enumerate(scored[:limit], start=1):
         ann["_rank"] = i
         out.append(ann)
     return out
@@ -315,8 +314,8 @@ def population_diversity(entries: list[dict[str, Any]]) -> float:
 
 
 __all__ = [
-    "RankDimension",
     "WEIGHTS",
+    "RankDimension",
     "dimension_score",
     "explain_rank",
     "family_diversity",

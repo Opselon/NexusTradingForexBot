@@ -41,7 +41,6 @@ from nexus_scalp.strategies.factory.models import (
     StrategyFamily,
 )
 from nexus_scalp.strategies.factory.validators import (
-    validate_candidate,
     validate_complexity,
     validate_features,
     validate_schema,

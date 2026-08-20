@@ -332,7 +332,7 @@ class TestEvidenceVault:
         assert EvidenceKind.SCORE_RESULT.value in kinds
 
     def test_evidence_immutable_hash(self, temp_audit_repo):
-        obs = ResearchObservabilityStore(temp_audit_repo)
+        ResearchObservabilityStore(temp_audit_repo)
         art = EvidenceArtifact.create(
             "S", "RUN-H", EvidenceKind.BACKTEST_RESULT, {"trades": 10}
         )
@@ -386,7 +386,7 @@ class TestReproducibilitySnapshot:
         assert snap["research_hash"]
 
     def test_snapshot_deterministic(self, temp_audit_repo):
-        obs = ResearchObservabilityStore(temp_audit_repo)
+        ResearchObservabilityStore(temp_audit_repo)
         s1 = build_run_snapshot(
             "S1", "v1", {"ctx": {"a": 1}}, None, random_seed=42
         )
@@ -503,7 +503,7 @@ class TestQueueObservability:
     def test_queue_snapshot(self, temp_audit_repo):
         obs = ResearchObservabilityStore(temp_audit_repo)
         g1 = obs.create_gate("S-Q", "RUN-Q", GateType.BACKTEST, status=GateStatus.RUNNING)
-        g2 = obs.create_gate("S-Q", "RUN-Q", GateType.OOS, status=GateStatus.QUEUED)
+        obs.create_gate("S-Q", "RUN-Q", GateType.OOS, status=GateStatus.QUEUED)
         flush(temp_audit_repo)
         q = obs.queue_snapshot()
         assert q["available"]
@@ -517,7 +517,7 @@ class TestEndToEnd:
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         c = cands[0]
         assert c.lifecycle.value == "DISCOVERED"
-        res = pipe.validate_candidate(c, ds, run_id="RUN-E2E-V")
+        pipe.validate_candidate(c, ds, run_id="RUN-E2E-V")
         flush(temp_audit_repo)
         entry = reg.get(c.strategy_id)
         assert entry.lifecycle.value in ("VALIDATED", "DISCOVERED")

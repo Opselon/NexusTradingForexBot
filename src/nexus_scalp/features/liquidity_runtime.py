@@ -58,8 +58,12 @@ from nexus_scalp.features.liquidity_engine import (
 )
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.features.schema_contract import (
-    SCHEMA_ID as CANONICAL_70D_SCHEMA_ID,
     DIMENSION as CANONICAL_70D_DIMENSION,
+)
+from nexus_scalp.features.schema_contract import (
+    SCHEMA_ID as CANONICAL_70D_SCHEMA_ID,
+)
+from nexus_scalp.features.schema_contract import (
     feature_schema_hash,
 )
 from nexus_scalp.observability.logging import get_logger

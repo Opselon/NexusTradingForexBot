@@ -188,8 +188,7 @@ def _trace_model(conn: sqlite3.Connection, table_names: set[str], model_id: str)
     if strategy_ids and "research_runs" in table_names:
         node["research_runs"] = _rows(
             conn,
-            "SELECT * FROM research_runs WHERE strategy_id IN (%s) ORDER BY executed_at DESC LIMIT 10"
-            % ",".join("?" * len(strategy_ids)),
+            "SELECT * FROM research_runs WHERE strategy_id IN ({}) ORDER BY executed_at DESC LIMIT 10".format(",".join("?" * len(strategy_ids))),
             tuple(strategy_ids),
         )
     if not node["model_registry"] and not node["experiences"]:
@@ -254,8 +253,8 @@ def trace_lineage(db_path: str, query: str, store: IncidentStore | None = None) 
 
 
 __all__ = [
-    "trace_lineage",
     "_trace_model",
     "_trace_research_run",
     "_trace_ticket_or_execution",
+    "trace_lineage",
 ]

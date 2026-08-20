@@ -28,16 +28,13 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.evidence import (
     EvidenceArtifact,
-    EvidenceKind,
     FailureClass,
     GateStatus,
     GateType,
     ResearchEvent,
     ResearchGate,
     ResearchRunSnapshot,
-    RunStatus,
     WorkerHealth,
-    stable_digest,
 )
 
 logger = get_logger("nexus_scalp.research.observability")
@@ -854,7 +851,7 @@ class ResearchObservabilityStore:
                         bucket["scores"].append(float(fs))
             finally:
                 conn.close()
-            for fam, bucket in out["families"].items():
+            for _fam, bucket in out["families"].items():
                 scores = bucket["scores"]
                 bucket["avg_score"] = round(sum(scores) / len(scores), 3) if scores else None
                 bucket["best_score"] = round(max(scores), 3) if scores else None
@@ -1081,7 +1078,7 @@ def _registry_blocked_reason(
                         "current_gate": gt,
                         "status": st,
                         "reason": str(row["failure_reason"] or ""),
-                        "required": str((_read_json(row["result"]).get("required") or "")),
+                        "required": str(_read_json(row["result"]).get("required") or ""),
                     }
                 )
                 return blocker

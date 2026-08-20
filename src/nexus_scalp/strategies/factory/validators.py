@@ -26,13 +26,12 @@ from typing import Any
 from nexus_scalp.strategies.factory.dsl import (
     DEFAULT_SYMBOLS,
     SUPPORTED_TIMEFRAMES,
-    dsl_hash,
     feature_catalog_index,
 )
 from nexus_scalp.strategies.factory.models import (
     FactoryCandidate,
-    FailureReason,
     FactoryStage,
+    FailureReason,
     StrategyDsl,
     ValidationVerdict,
 )

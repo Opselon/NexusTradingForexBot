@@ -197,7 +197,7 @@ class ResearchPipeline:
                 sid,
                 run_id,
                 "RESEARCH_RUN_STARTED",
-                "validation run started for %s@%s" % (sid, version),
+                f"validation run started for {sid}@{version}",
                 payload={"dataset_id": family_ds.dataset_id, "samples": len(family_ds.samples)},
             )
         else:
@@ -254,7 +254,6 @@ class ResearchPipeline:
             )
         else:
             gate = None
-        last_gate = gate
 # ------------------------------------------------------------------
         # 2. BACKTEST
         # ------------------------------------------------------------------
@@ -277,7 +276,7 @@ class ResearchPipeline:
         if bt.total_trades == 0:
             logger.warning("[STRATEGY_VALIDATION] event=ABORTED empty dataset", strategy_id=sid)
             if obs is not None:
-                done = obs.finish_gate(
+                obs.finish_gate(
                     gate.gate_id, status=GateStatus.FAILED,
                     failure_reason="no trades in candidate family (dataset empty)",
                     failure_class=FailureClass.DATA,
@@ -327,7 +326,6 @@ class ResearchPipeline:
                 payload={"gate": "BACKTEST", "trades": bt.total_trades},
                 gate_id=gate.gate_id,
             )
-        last_gate = gate
 
         # ------------------------------------------------------------------
         # 3. WALK-FORWARD
@@ -358,7 +356,7 @@ class ResearchPipeline:
             wf_status = GateStatus.PASSED if wf.passed else GateStatus.FAILED
             wf_reason = ""
             if not wf.passed:
-                wf_reason = "walk-forward did not pass (degradation %.3f)" % wf.degradation
+                wf_reason = f"walk-forward did not pass (degradation {wf.degradation:.3f})"
             gate = obs.finish_gate(
                 gate.gate_id, status=wf_status,
                 failure_reason=wf_reason,
@@ -378,7 +376,6 @@ class ResearchPipeline:
                 payload={"gate": "WALK_FORWARD", "degradation": round(wf.degradation, 4)},
                 gate_id=gate.gate_id,
             )
-        last_gate = gate
 # ------------------------------------------------------------------
         # 4. OOS (hard gate, contamination-protected)
         # ------------------------------------------------------------------
@@ -417,11 +414,10 @@ class ResearchPipeline:
             obs.record_event(
                 sid, run_id,
                 "GATE_PASSED" if oos_status == GateStatus.PASSED else "GATE_FAILED",
-                "OOS %s" % oos.status,
+                f"OOS {oos.status}",
                 payload={"gate": "OOS", "oos_expectancy_r": oos.oos_expectancy_r},
                 gate_id=gate.gate_id,
             )
-        last_gate = gate
 
         # ------------------------------------------------------------------
         # 5. ROBUSTNESS
@@ -459,11 +455,10 @@ class ResearchPipeline:
             obs.record_event(
                 sid, run_id,
                 "GATE_PASSED" if rob_status == GateStatus.PASSED else "GATE_FAILED",
-                "robustness %s" % rob.status,
+                f"robustness {rob.status}",
                 payload={"gate": "ROBUSTNESS"},
                 gate_id=gate.gate_id,
             )
-        last_gate = gate
 
         # ------------------------------------------------------------------
         # 6. SCORE + VERDICT
@@ -497,7 +492,7 @@ class ResearchPipeline:
             )
             obs.record_event(
                 sid, run_id, "GATE_PASSED",
-                "scoring complete (final %.3f)" % score.final_score,
+                f"scoring complete (final {score.final_score:.3f})",
                 payload={"gate": "SCORING", "final_score": score.final_score,
                          "verdict": score.verdict},
                 gate_id=gate.gate_id,
@@ -506,11 +501,10 @@ class ResearchPipeline:
                 sid, run_id,
                 "STRATEGY_PROMOTED" if final_lifecycle == CandidateLifecycle.VALIDATED
                 else "STRATEGY_REJECTED",
-                "candidate %s" % final_lifecycle.value,
+                f"candidate {final_lifecycle.value}",
                 payload={"lifecycle": final_lifecycle.value, "score": score.final_score},
                 gate_id=gate.gate_id,
             )
-        last_gate = gate
 
         result = self._register(
             candidate,
@@ -568,7 +562,7 @@ class ResearchPipeline:
         if obs is not None:
             obs.record_event(
                 sid, run_id, "RESEARCH_RUN_COMPLETED",
-                "run %s -> %s" % (run_id, final_lifecycle.value),
+                f"run {run_id} -> {final_lifecycle.value}",
                 payload={"lifecycle": final_lifecycle.value, "score": score.final_score},
             )
         logger.info(

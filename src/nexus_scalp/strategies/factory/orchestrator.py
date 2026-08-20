@@ -37,10 +37,8 @@ from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.strategies.factory.dsl import (
     GENERATOR_VERSION,
     RANDOM_SEED,
-    build_feature_catalog,
     candidate_id_from_hash,
     dsl_hash,
-    feature_ids,
 )
 from nexus_scalp.strategies.factory.evolution import (
     adapt_probabilities,
@@ -53,17 +51,15 @@ from nexus_scalp.strategies.factory.models import (
     EvolutionConfig,
     EvolutionOperator,
     FactoryCandidate,
-    FailureReason,
     FactoryStage,
+    FailureReason,
     GenerationMode,
     LoopState,
     StrategyFamily,
 )
 from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
 from nexus_scalp.strategies.factory.ranking import (
-    population_diversity,
     rank_strategies,
-    selection_score,
 )
 from nexus_scalp.strategies.factory.store import (
     emit_event,
@@ -71,8 +67,6 @@ from nexus_scalp.strategies.factory.store import (
     list_candidates,
     list_generations,
     record_failure,
-    record_provider_usage,
-    record_run,
     set_loop_state,
     upsert_candidate,
     upsert_generation,
@@ -311,9 +305,9 @@ class StrategyFactory:
         from nexus_scalp.strategies.factory.dsl import generate_generation_zero
 
         candidates = generate_generation_zero(population, seed=RANDOM_SEED)
-        for c in candidates:
-            c = c.model_copy(update={"generation_id": generation_id})
-        # Family diversity injection: ensure all families present in G0.
+        # (The generation_id stamping loop was dead code: it discarded its
+        #  result; _ensure_family_coverage below re-stamps nothing. Generation
+        #  ids are assigned at registration. Removed for PLW2901.)
         candidates = _ensure_family_coverage(candidates, generation_id)
         return candidates
 
@@ -439,8 +433,9 @@ class StrategyFactory:
             return None
 
     def _fresh_template(self) -> Any:
-        from nexus_scalp.strategies.factory.dsl import _template_dsl
         import random as _r
+
+        from nexus_scalp.strategies.factory.dsl import _template_dsl
 
         return _template_dsl(
             _r.choice(
@@ -614,7 +609,7 @@ class StrategyFactory:
             score = result.get("score") or {}
             oos = result.get("oos") or {}
             rob = result.get("robustness") or {}
-            wf = result.get("walkforward") or {}
+            result.get("walkforward") or {}
 
             failed_reasons = self._derived_failure_reasons(result, candidate)
             self._persist_candidate(
@@ -839,7 +834,6 @@ class StrategyFactory:
         self, candidates: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         """Registry rows for the strategies evaluated in this generation."""
-        import json as _json
 
         from nexus_scalp.research.store import get_registry_entry
 

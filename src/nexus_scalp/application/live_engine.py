@@ -798,9 +798,7 @@ class LiveEngine:
                 model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
                 feature_schema_id=self.FEATURE_SCHEMA_ID,
                 feature_dimension=self.FEATURE_DIM,
-                config_version=str(
-                    getattr(self.runtime_config, "get_version", lambda: 0)()
-                ),
+                config_version=str(getattr(self.runtime_config, "get_version", lambda: 0)()),
                 replaced=replaced,
             )
             self.experience_engine.set_provenance(provenance)
@@ -1128,9 +1126,7 @@ class LiveEngine:
                 model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
                 feature_schema_id=self.FEATURE_SCHEMA_ID,
                 feature_dimension=self.FEATURE_DIM,
-                config_version=str(
-                    getattr(self.runtime_config, "get_version", lambda: 0)()
-                ),
+                config_version=str(getattr(self.runtime_config, "get_version", lambda: 0)()),
                 replaced=False,
             )
             iid = f"{self.model_registry.current.model_role.lower()}_{self.FEATURE_SCHEMA_ID}_{self.FEATURE_DIM}d"
@@ -1398,14 +1394,18 @@ class LiveEngine:
 
                         hyg_cfg = getattr(self.config, "database_hygiene", None) or {}
                         hygs = RuntimeHygieneSettings.from_mapping(
-                            hyg_cfg.model_dump() if hasattr(hyg_cfg, "model_dump") else dict(hyg_cfg)
+                            hyg_cfg.model_dump()
+                            if hasattr(hyg_cfg, "model_dump")
+                            else dict(hyg_cfg)
                         )
                         base_dir = getattr(self.config, "base_dir", None) or Path.cwd()
                         self._hygiene_scheduler = RuntimeCleanupScheduler(
                             repo_root=base_dir,
                             settings=hygs,
                             execution_mode=self._runtime_mode
-                            or str(getattr(self.config, "execution_mode", "PAPER") or "PAPER").upper(),
+                            or str(
+                                getattr(self.config, "execution_mode", "PAPER") or "PAPER"
+                            ).upper(),
                         )
                     except Exception as hyg_init_err:
                         logger.warning(
@@ -1423,9 +1423,7 @@ class LiveEngine:
                         deep = self._hygiene_scheduler.is_deep_due(now_t)
                         # Run the scheduler cycle on a thread; it owns the
                         # worker + quarantine + consistency + reports.
-                        cyc = await asyncio.to_thread(
-                            self._hygiene_scheduler.run_cycle, deep=deep
-                        )
+                        cyc = await asyncio.to_thread(self._hygiene_scheduler.run_cycle, deep=deep)
                         # Bounded Telegram REPORT (cooldown-gated, never spam).
                         if self._hygiene_scheduler.settings.telegram_report and (
                             self.notifier is not None and self.notifier.enabled
@@ -2734,7 +2732,6 @@ class LiveEngine:
                     )
 
             self.audit.log_signal(proposal)
-
 
             # Update synchronization properties for the Web backend
             self._last_tick = tick
