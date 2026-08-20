@@ -1886,6 +1886,75 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             _log_err(exc, "incident search failed", endpoint="/api/diagnostics/search")
             return _err("INTERNAL_ERROR")
 
+    @app.post("/api/diagnostics/incidents/reconcile")
+    def post_diagnostics_reconcile() -> dict[str, Any]:
+        """Genuine incident audit (spec 43): re-runs every forensic
+        probe against the CURRENT database, reports findings, and
+        reconciles incident records (impact + evidence + lifecycle
+        semantics) WITHOUT creating duplicates.
+        """
+        from datetime import UTC, datetime
+
+        from nexus_scalp.incidents.impact import ImpactAnalyzer
+        from nexus_scalp.incidents.trace import (
+            broker_ledger_divergence,
+            clock_skew,
+            learning_pipeline_rates,
+            outcome_forensics,
+            split_fill_groups,
+        )
+
+        db = db_path_for_audit()
+        started = datetime.now(UTC).isoformat()
+        findings: dict[str, Any] = {}
+        try:
+            findings["accounting"] = broker_ledger_divergence(db)
+        except Exception as exc:
+            findings["accounting"] = {"error": str(exc)[:200]}
+        try:
+            findings["timebase"] = clock_skew(db)
+        except Exception as exc:
+            findings["timebase"] = {"error": str(exc)[:200]}
+        try:
+            findings["outcome"] = outcome_forensics(db, 500)
+        except Exception as exc:
+            findings["outcome"] = {"error": str(exc)[:200]}
+        try:
+            findings["learning"] = learning_pipeline_rates(db)
+        except Exception as exc:
+            findings["learning"] = {"error": str(exc)[:200]}
+        try:
+            findings["split_fill"] = split_fill_groups(db)
+        except Exception as exc:
+            findings["split_fill"] = {"error": str(exc)[:200]}
+
+        # Reconcile stored incidents (impact + evidence) in place — never
+        # create new incidents here (idempotent by incident_id).
+        store = _incident_store()
+        analyzer = ImpactAnalyzer(db_path=db)
+        reconciled = 0
+        for inc in store.list_incidents(limit=200):
+            inc.impact = analyzer.analyze(inc)
+            store.save(inc)
+            reconciled += 1
+        return serialize_enums(
+            {
+                "available": True,
+                "audit_started": started,
+                "audit_scope": [
+                    "accounting",
+                    "timebase",
+                    "outcome",
+                    "learning",
+                    "split_fill",
+                ],
+                "findings": findings,
+                "incidents_discovered": store.count()["total"],
+                "incidents_reconciled": reconciled,
+                "note": "read-only forensic audit; incident records updated with current impact/evidence",
+            }
+        )
+
     @app.get("/api/diagnostics/trace")
     def get_diagnostics_trace(query: str = "") -> dict[str, Any]:
         """One-Click Trace (spec 24/25/26): resolve incident_id / ticket /

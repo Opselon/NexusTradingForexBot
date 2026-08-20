@@ -1625,6 +1625,18 @@ function switchTab(tabId, element) {
 
         loadResearchSummary();
 
+        loadResearchHealth();
+
+        loadResearchWorker();
+
+        loadResearchDiag();
+
+    }
+
+    if (tabId === 'tab-factory') {
+
+        loadFactoryStatus();
+
     }
 
     if (tabId === 'tab-news') {
@@ -9216,6 +9228,441 @@ async function validateResearchCandidate() {
 }
 
 
+
+// =============================================================================
+// TASK-21: RESEARCH OBSERVABILITY (health / worker / diagnostics / detail)
+// =============================================================================
+
+async function loadResearchHealth() {
+
+    try {
+
+        const res = await fetch('/api/research/summary');
+
+        if (!res.ok) return;
+
+        const body = await res.json();
+
+        if (!body.available || !body.summary) return;
+
+        const s = body.summary;
+
+        const by = s.by_lifecycle || {};
+
+        const grid = document.getElementById('research-health-grid');
+
+        if (!grid) return;
+
+        const discovered = by.DISCOVERED ?? 0;
+
+        const running = (by.BACKTESTING ?? 0) + (by.VALIDATING ?? 0) + (by.OOS_TESTING ?? 0) + (by.ROBUSTNESS_TESTING ?? 0);
+
+        const validated = by.VALIDATED ?? 0;
+
+        const rejected = by.REJECTED ?? 0;
+
+        const blocked = by.BLOCKED ?? 0;
+
+        const failed = by.FAILED ?? 0;
+
+        grid.innerHTML =
+
+            '<div class="text-textMuted">Total</div><div class="text-accentCyan font-bold">' + (s.total ?? '--') + '</div>' +
+
+            '<div class="text-textMuted">Discovered</div><div class="text-white">' + discovered + '</div>' +
+
+            '<div class="text-textMuted">Queued</div><div class="text-white">0</div>' +
+
+            '<div class="text-textMuted">Running</div><div class="text-accentYellow font-bold">' + running + '</div>' +
+
+            '<div class="text-textMuted">Validated</div><div class="text-accentGreen font-bold">' + validated + '</div>' +
+
+            '<div class="text-textMuted">Rejected</div><div class="text-accentRed font-bold">' + rejected + '</div>' +
+
+            '<div class="text-textMuted">Blocked</div><div class="text-accentRed">' + blocked + '</div>' +
+
+            '<div class="text-textMuted">Failed</div><div class="text-accentRed">' + failed + '</div>';
+
+    } catch (e) {
+
+        console.warn('research health failed', e);
+
+    }
+
+}
+
+
+
+async function loadResearchWorker() {
+
+    try {
+
+        const res = await fetch('/api/research/worker');
+
+        if (!res.ok) return;
+
+        const body = await res.json();
+
+        if (!body.available) return;
+
+        const w = body.worker || {};
+
+        const panel = document.getElementById('research-worker-panel');
+
+        if (!panel) return;
+
+        const hb = w.heartbeat || {};
+
+        const healthCls = w.health === 'HEALTHY' ? 'text-accentGreen' : (w.health === 'STUCK' || w.health === 'FAILED' ? 'text-accentRed' : 'text-accentYellow');
+
+        const rt = w.runtime || {};
+
+        panel.innerHTML =
+
+            '<div class="flex justify-between"><span class="text-textMuted">health</span><b class="' + healthCls + '">' + esc(w.health || '--') + '</b></div>' +
+
+            '<div class="flex justify-between"><span class="text-textMuted">state</span><span class="text-white">' + esc(hb.status || rt.status || '--') + '</span></div>' +
+
+            '<div class="flex justify-between"><span class="text-textMuted">cycles</span><span class="text-white">' + (hb.cycle_count ?? rt.cycle_count ?? 0) + '</span></div>' +
+
+            '<div class="flex justify-between"><span class="text-textMuted">last action</span><span class="text-gray-300">' + esc(hb.last_action || '--') + '</span></div>' +
+
+            '<div class="flex justify-between"><span class="text-textMuted">current strategy</span><span class="text-gray-300">' + esc(hb.current_strategy || '--') + '</span></div>' +
+
+            '<div class="flex justify-between"><span class="text-textMuted">current gate</span><span class="text-gray-300">' + esc(hb.current_gate || '--') + '</span></div>' +
+
+            '<div class="flex justify-between"><span class="text-textMuted">queued</span><span class="text-white">' + (hb.queued_jobs ?? 0) + '</span></div>' +
+
+            '<div class="flex justify-between"><span class="text-textMuted">failed</span><span class="text-accentRed">' + (hb.failed_jobs ?? 0) + '</span></div>' +
+
+            '<div class="mt-1 text-textMuted">last error: <span class="text-accentRed">' + esc(hb.last_error || rt.last_error || 'none') + '</span></div>';
+
+    } catch (e) {
+
+        console.warn('research worker failed', e);
+
+    }
+
+}
+
+
+
+async function loadResearchDiag() {
+
+    try {
+
+        const res = await fetch('/api/research/diagnostics');
+
+        if (!res.ok) return;
+
+        const body = await res.json();
+
+        if (!body.available) return;
+
+        const d = body;
+
+        const panel = document.getElementById('research-diag-panel');
+
+        if (!panel) return;
+
+        const q = d.queue || {};
+
+        let queueHtml = '';
+
+        const qb = q.queued || {};
+
+        const gateKeys = Object.keys(qb);
+
+        if (gateKeys.length) {
+
+            gateKeys.forEach(function (gk) {
+
+                const st = qb[gk] || {};
+
+                queueHtml += '<div class="flex justify-between"><span class="text-textMuted">' + esc(gk) + '</span><span>' +
+
+                    Object.entries(st).map(function (e) { return esc(e[0]) + ':' + e[1]; }).join(' ') + '</span></div>';
+
+            });
+
+        } else {
+
+            queueHtml = '<div class="text-textMuted">queue empty</div>';
+
+        }
+
+        const hm = d.heatmap || {};
+
+        const bg = hm.by_gate || {};
+
+        let heatHtml = '';
+
+        const hk = Object.keys(bg).slice(0, 5);
+
+        if (hk.length) {
+
+            hk.forEach(function (g) { heatHtml += '<span class="text-accentRed">' + esc(g) + ' ' + bg[g] + '</span>&nbsp; '; });
+
+        } else {
+
+            heatHtml = '<span class="text-textMuted">no gate failures</span>';
+
+        }
+
+        const blocked = d.blocked_gates || [];
+
+        let blockedHtml = blocked.length
+
+            ? blocked.slice(0, 5).map(function (b) { return '<div class="text-accentRed">' + esc(b.gate_type) + ' ' + esc(b.status) + ' — ' + esc(b.failure_reason || '') + '</div>'; }).join('')
+
+            : '<div class="text-textMuted">no blocked/failed gates</div>';
+
+        panel.innerHTML =
+
+            '<div class="mb-1"><span class="text-textMuted">queue</span></div>' + queueHtml +
+
+            '<div class="mt-2 mb-1"><span class="text-textMuted">failures</span></div>' + heatHtml +
+
+            '<div class="mt-2 mb-1"><span class="text-textMuted">blocked gates</span></div>' + blockedHtml;
+
+    } catch (e) {
+
+        console.warn('research diag failed', e);
+
+    }
+
+}
+
+
+
+async function loadResearchDetail() {
+
+    const sid = (document.getElementById('research-detail-id').value || '').trim();
+
+    const box = document.getElementById('research-detail-result');
+
+    if (!sid) { box.innerHTML = '<div class="text-accentRed italic">Enter a strategy_id first.</div>'; return; }
+
+    box.innerHTML = '<div class="text-textMuted italic">Tracing strategy lifecycle…</div>';
+
+    try {
+
+        const res = await fetch('/api/research/detail/' + encodeURIComponent(sid));
+
+        if (!res.ok) { box.innerHTML = '<div class="text-accentRed italic">Detail unavailable.</div>'; return; }
+
+        const body = await res.json();
+
+        if (!body.available) { box.innerHTML = '<div class="text-accentRed italic">' + esc(body.reason || 'NOT_IN_REGISTRY') + '</div>'; return; }
+
+        const t = body.detail || {};
+
+        const entry = t.registry || {};
+
+        let html = '<div class="text-accentCyan font-bold mb-1">STRATEGY ' + esc(entry.strategy_id || sid) + '</div>';
+
+        html += '<div class="grid grid-cols-2 gap-x-4 gap-y-0.5 mb-2">' +
+
+            '<div class="text-textMuted">version</div><div class="text-white">' + esc(entry.strategy_version || '--') + '</div>' +
+
+            '<div class="text-textMuted">lifecycle</div><div class="' + (entry.lifecycle === 'VALIDATED' ? 'text-accentGreen' : (entry.lifecycle === 'REJECTED' ? 'text-accentRed' : 'text-accentYellow')) + '">' + esc(entry.lifecycle || '--') + '</div>' +
+
+            '<div class="text-textMuted">discovery</div><div class="text-gray-300">' + esc(entry.discovery_source || '--') + '</div>' +
+
+            '<div class="text-textMuted">window</div><div class="text-gray-300">' + esc(entry.discovery_window || '--') + '</div>' +
+
+            '</div>';
+
+        const br = t.blocked_reason || {};
+
+        if (br.blocked || br.status) {
+
+            html += '<div class="mb-2 p-2 rounded border border-accentRed/30 bg-accentRed/5">' +
+
+                '<div class="text-accentRed font-bold">WHY WAITING: ' + esc(br.current_gate || '--') + ' · ' + esc(br.status || '--') + '</div>' +
+
+                '<div class="text-gray-300">' + esc(br.reason || '') + '</div>' +
+
+                (br.required ? '<div class="text-textMuted">required: ' + esc(br.required) + '</div>' : '') +
+
+                '</div>';
+
+        }
+
+        const gates = t.gates || [];
+
+        if (gates.length) {
+
+            html += '<div class="mb-1 text-textMuted uppercase tracking-widest">Gates</div>';
+
+            gates.forEach(function (g) {
+
+                const st = g.status;
+
+                const cls = st === 'PASSED' ? 'text-accentGreen' : (st === 'FAILED' || st === 'ERROR' || st === 'BLOCKED' ? 'text-accentRed' : (st === 'RUNNING' ? 'text-accentYellow' : 'text-gray-300'));
+
+                html += '<div class="flex justify-between"><span class="text-gray-300">' + esc(g.gate_type) + '</span><span class="' + cls + '">' + esc(st) + '</span>' +
+
+                    (g.duration_ms ? '<span class="text-textMuted">' + Math.round(g.duration_ms) + 'ms</span>' : '') + '</div>';
+
+                if (g.failure_reason) html += '<div class="text-accentRed pl-3">' + esc(g.failure_reason) + '</div>';
+
+                if (g.evidence_id) html += '<div class="text-textMuted pl-3">evidence: ' + esc(g.evidence_id) + '</div>';
+
+            });
+
+        }
+
+        const events = t.events || [];
+
+        if (events.length) {
+
+            html += '<div class="mt-2 mb-1 text-textMuted uppercase tracking-widest">Timeline (' + events.length + ' events)</div>';
+
+            html += '<div class="max-h-40 overflow-y-auto">';
+
+            events.slice(0, 40).forEach(function (e) {
+
+                const when = (e.occurred_at || '').slice(11, 19);
+
+                html += '<div class="text-gray-300"><span class="text-textMuted">' + esc(when) + '</span> <span class="text-accentCyan">' + esc(e.event_type) + '</span> ' + esc(e.message || '') + '</div>';
+
+            });
+
+            html += '</div>';
+
+        }
+
+        const runs = t.runs || [];
+
+        if (runs.length) {
+
+            html += '<div class="mt-2 mb-1 text-textMuted uppercase tracking-widest">Runs</div>';
+
+            runs.slice(0, 5).forEach(function (r) {
+
+                html += '<div class="text-gray-300">' + esc(r.run_id) + ' · ' + esc(r.status || '--') + ' · ' + esc(r.run_outcome || '--') + '</div>';
+
+            });
+
+        }
+
+        const snapshots = t.snapshots || [];
+
+        if (snapshots.length) {
+
+            html += '<div class="mt-2 mb-1 text-textMuted uppercase tracking-widest">Reproducibility Snapshot</div>';
+
+            const sn = snapshots[0];
+
+            html += '<div class="grid grid-cols-2 gap-x-4 gap-y-0.5">' +
+
+                '<div class="text-textMuted">dataset</div><div class="text-gray-300">' + esc(sn.dataset_version || '--') + '</div>' +
+
+                '<div class="text-textMuted">schema</div><div class="text-gray-300">' + esc(sn.feature_schema_version || '--') + '</div>' +
+
+                '<div class="text-textMuted">engine</div><div class="text-gray-300">' + esc(sn.engine_version || '--') + '</div>' +
+
+                '<div class="text-textMuted">research hash</div><div class="text-gray-300">' + esc((sn.research_hash || '--').slice(0, 16)) + '</div>' +
+
+                '</div>';
+
+        }
+
+        const inv = t.invariant || {};
+
+        if (inv.valid !== undefined) {
+
+            html += '<div class="mt-2">invariant: <b class="' + (inv.valid ? 'text-accentGreen' : 'text-accentRed') + '">' + (inv.valid ? 'VALID' : 'BROKEN') + '</b>' +
+
+                (inv.problems && inv.problems.length ? ' <span class="text-accentRed">' + esc(inv.problems.join('; ')) + '</span>' : '') + '</div>';
+
+        }
+
+        box.innerHTML = html;
+
+    } catch (e) {
+
+        console.warn('research detail failed', e);
+
+        box.innerHTML = '<div class="text-accentRed italic">detail failed</div>';
+
+    }
+
+}
+
+
+
+async function runResearchPreflight() {
+
+    const sid = (document.getElementById('research-detail-id').value || '').trim();
+
+    const box = document.getElementById('research-detail-result');
+
+    if (!sid) { box.innerHTML = '<div class="text-accentRed italic">Enter a strategy_id first.</div>'; return; }
+
+    box.innerHTML = '<div class="text-textMuted italic">Running validation pre-flight…</div>';
+
+    try {
+
+        const res = await fetch('/api/research/preflight?strategy_id=' + encodeURIComponent(sid));
+
+        if (!res.ok) { box.innerHTML = '<div class="text-accentRed italic">Preflight unavailable.</div>'; return; }
+
+        const body = await res.json();
+
+        if (!body.available) { box.innerHTML = '<div class="text-accentRed italic">Preflight unavailable.</div>'; return; }
+
+        const p = body.preflight || {};
+
+        const cls = p.status === 'PREFLIGHT PASS' ? 'text-accentGreen' : 'text-accentRed';
+
+        let html = '<div class="' + cls + ' font-bold mb-1">' + esc(p.status) + '</div>';
+
+        const c = p.checks || {};
+
+        html += '<div class="grid grid-cols-2 gap-x-4 gap-y-0.5">';
+
+        Object.entries(c).forEach(function (kv) {
+
+            html += '<div class="text-textMuted">' + esc(kv[0]) + '</div><div class="text-gray-300">' + esc(String(kv[1])) + '</div>';
+
+        });
+
+        html += '</div>';
+
+        if (p.blockers && p.blockers.length) {
+
+            html += '<div class="mt-1 text-accentRed">blockers: ' + p.blockers.map(esc).join(', ') + '</div>';
+
+        }
+
+        box.innerHTML = html;
+
+    } catch (e) {
+
+        console.warn('research preflight failed', e);
+
+        box.innerHTML = '<div class="text-accentRed italic">preflight failed</div>';
+
+    }
+
+}
+
+
+
+// TASK-21: also load health/worker/diag with the summary refresh.
+async function loadResearchSummaryWithObs() {
+
+    await loadResearchSummary();
+
+    await loadResearchHealth();
+
+    await loadResearchWorker();
+
+    await loadResearchDiag();
+
+}
 
 // PHASE 09: TRADE INTELLIGENCE BRAIN (lifecycle / autopsy / behavior / evolution)
 

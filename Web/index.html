@@ -89,6 +89,11 @@
                             <i class="fa-solid fa-flask-vial text-lg w-5 text-accentCyan"></i>
                             <span>Strategy Research</span>
                         </button>
+                        <button onclick="switchTab('tab-factory', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                            <i class="fa-solid fa-industry text-lg w-5 text-accentCyan"></i>
+                            <span>Strategy Factory</span>
+                            <span id="factory-nav-state" class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">--</span>
+                        </button>
                         <button onclick="switchTab('tab-news', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
                             <i class="fa-solid fa-newspaper text-lg w-5 text-accentCyan"></i>
                             <span>News Intelligence</span>
@@ -1277,6 +1282,52 @@
                         </div>
             </div>
 
+<!-- TASK-21: RESEARCH OBSERVABILITY (quick health + diagnostics + detail) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Quick Health Summary (spec 69) -->
+                <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
+                    <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-2">Research Health</div>
+                    <div id="research-health-grid" class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono text-gray-300">
+                        <div class="text-textMuted">Loading…</div>
+                    </div>
+                </div>
+                <!-- Worker + Queue (spec 29/30/31) -->
+                <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
+                    <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-2">Worker &amp; Queue</div>
+                    <div id="research-worker-panel" class="text-[11px] font-mono text-gray-300">
+                        <div class="text-textMuted italic">Loading worker state…</div>
+                    </div>
+                </div>
+                <!-- Diagnostics (spec 70) -->
+                <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
+                    <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-2">Research Diagnostics</div>
+                    <div id="research-diag-panel" class="text-[11px] font-mono text-gray-300">
+                        <div class="text-textMuted italic">Loading diagnostics…</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TASK-21: Strategy Research Detail (spec 10/11/12) -->
+            <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-4">
+                    <div>
+                        <h3 class="text-md font-bold text-white flex items-center">
+                        <i class="fa-solid fa-magnifying-glass-chart mr-2 text-accentCyan"></i>
+                        Strategy Research Detail
+                        </h3>
+                        <p class="text-xs text-textMuted mt-1">One-click trace: strategy → runs → gates → events → evidence → snapshot. Shows exactly why a strategy is waiting.</p>
+                    </div>
+                <button onclick="loadResearchDetail()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Trace</button>
+                </div>
+                <div class="flex items-center gap-2 mb-3">
+                    <input id="research-detail-id" type="text" placeholder="strategy_id e.g. STRAT-XXXX" class="flex-1 bg-darkBg/60 border border-borderClr rounded px-3 py-2 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50"/>
+                    <button onclick="runResearchPreflight()" class="bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded px-3 py-1.5 text-xs font-bold hover:bg-amber-500/20 transition">Preflight</button>
+                </div>
+                <div id="research-detail-result" class="mt-2 p-3 rounded-lg border border-borderClr bg-darkBg/40 text-xs text-gray-300 font-mono max-h-[480px] overflow-y-auto">
+                    <div class="text-textMuted italic">Enter a strategy_id and click Trace to see its full lifecycle, gates, timeline and evidence.</div>
+                </div>
+            </div>
+
             <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
                 <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
                     <div>
@@ -1295,6 +1346,139 @@
                 <div class="text-textMuted italic">Enter a discovered candidate id and run validation.</div>
             </div>
             </div>
+            </section>
+
+<!-- TAB: STRATEGY FACTORY (2026-08-20) -->
+            <section id="tab-factory" class="tab-content hidden space-y-6">
+                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                    <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-6">
+                        <div>
+                            <h3 class="text-md font-bold text-white flex items-center">
+                            <i class="fa-solid fa-industry mr-2 text-accentCyan"></i>
+                            Strategy Factory — Autonomous Strategy Evolution
+                            </h3>
+                            <p class="text-xs text-textMuted mt-1">
+                            GENERATE → VALIDATE → BACKTEST → WALK-FORWARD → OOS → ROBUSTNESS → SCORE → RANK → ELITE → EVOLVE. Candidates NEVER go live automatically.
+                            </p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span id="factory-loop-state" class="text-[10px] font-black px-2 py-1 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">STOPPED</span>
+                            <button onclick="loadFactoryStatus()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-3 py-1.5 rounded text-xs font-bold transition flex items-center space-x-1">
+                                <i class="fa-solid fa-arrows-rotate"></i> <span>Refresh</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Generation controls -->
+                    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-1">Generation Size</div>
+                            <select id="factory-generation-size" class="w-full bg-darkBg/60 border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50">
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                                <option value="300">300</option>
+                                <option value="400" selected>400</option>
+                            </select>
+                        </div>
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-1">Mode</div>
+                            <select id="factory-mode" class="w-full bg-darkBg/60 border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 outline-none focus:border-accentCyan/50">
+                                <option value="MANUAL" selected>Manual</option>
+                                <option value="AUTONOMOUS">Autonomous</option>
+                            </select>
+                        </div>
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-1">Actions</div>
+                            <div class="flex flex-wrap gap-2">
+                                <button onclick="factoryGenerate()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Generate</button>
+                                <button onclick="factoryLoopStart()" class="bg-accentGreen/10 text-accentGreen border border-accentGreen/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentGreen/20 transition">Start Loop</button>
+                            </div>
+                        </div>
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-1">Loop Control</div>
+                            <div class="flex flex-wrap gap-2">
+                                <button onclick="factoryLoopPause()" class="bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded px-3 py-1 text-xs font-bold hover:bg-amber-500/20 transition">Pause</button>
+                                <button onclick="factoryLoopResume()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Resume</button>
+                                <button onclick="factoryLoopStop()" class="bg-accentRed/10 text-accentRed border border-accentRed/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentRed/20 transition">Stop</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live progress -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans">Current Generation</div>
+                            <div id="factory-current-generation" class="text-2xl font-black font-mono text-accentCyan mt-1">--</div>
+                            <div id="factory-generation-progress" class="text-xs text-textMuted mt-1">No generation running</div>
+                            <div class="grid grid-cols-2 gap-3 mt-3">
+                                <div><div class="text-xs text-textMuted">Generated</div><div id="factory-generated-count" class="text-lg font-black font-mono text-accentCyan">--</div></div>
+                                <div><div class="text-xs text-textMuted">Valid</div><div id="factory-validated-count" class="text-lg font-black font-mono text-accentGreen">--</div></div>
+                                <div><div class="text-xs text-textMuted">Rejected</div><div id="factory-rejected-count" class="text-lg font-black font-mono text-accentRed">--</div></div>
+                                <div><div class="text-xs text-textMuted">Elite</div><div id="factory-elite-count" class="text-lg font-black font-mono text-accentGreen">--</div></div>
+                            </div>
+                            <div class="mt-3 text-[10px] text-textMuted">LLM cost: <span id="factory-llm-cost" class="font-mono text-accentCyan">$0.00</span> · <span id="factory-llm-requests">0</span> req</div>
+                        </div>
+
+                        <!-- Operator stats -->
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-2">Evolution Operator Stats</div>
+                            <div id="factory-operator-stats" class="text-xs font-mono text-gray-300 space-y-1">
+                                <div class="text-textMuted italic">No operators yet.</div>
+                            </div>
+                        </div>
+
+                        <!-- Generations list -->
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-4">
+                            <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans mb-2">Generations</div>
+                            <div id="factory-generations" class="max-h-48 overflow-y-auto space-y-1 text-[11px] font-mono text-gray-300">
+                                <div class="text-textMuted italic">No generations yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Event stream -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                    <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-4">
+                        <div>
+                            <h3 class="text-md font-bold text-white flex items-center">
+                            <i class="fa-solid fa-radio mr-2 text-accentCyan"></i>
+                            Factory Event Stream
+                            </h3>
+                            <p class="text-xs text-textMuted mt-1">Structured lifecycle events (persisted, immutable).</p>
+                        </div>
+                    </div>
+                    <div id="factory-events" class="max-h-64 overflow-y-auto space-y-1 text-[11px] font-mono text-gray-300">
+                        <div class="text-textMuted italic">No events yet.</div>
+                    </div>
+                </div>
+
+                <!-- Failure analysis + candidate browsing -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                        <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-4">
+                            <h3 class="text-md font-bold text-white flex items-center">
+                            <i class="fa-solid fa-bug mr-2 text-accentRed"></i>
+                            Failure Analysis
+                            </h3>
+                        </div>
+                        <div id="factory-failures" class="max-h-72 overflow-y-auto space-y-1 text-[11px] font-mono text-gray-300">
+                            <div class="text-textMuted italic">No failures recorded.</div>
+                        </div>
+                    </div>
+                    <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                        <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-4">
+                            <h3 class="text-md font-bold text-white flex items-center">
+                            <i class="fa-solid fa-ranking-star mr-2 text-accentCyan"></i>
+                            Rankings (overall)
+                            </h3>
+                        </div>
+                        <div id="factory-ranking" class="max-h-72 overflow-y-auto space-y-1 text-[11px] font-mono text-gray-300">
+                            <div class="text-textMuted italic">No ranked strategies yet.</div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- TAB 5: NEWS INTELLIGENCE PANEL (PHASE 12) -->
