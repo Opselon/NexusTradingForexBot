@@ -196,7 +196,14 @@ class LiveEngine:
     ) -> None:
         self.config = config
         self.adapter = adapter
-        self.audit = audit_repo or AuditRepository()
+        if audit_repo is not None:
+            self.audit = audit_repo
+        else:
+            # DATABASE PORTABILITY: resolve the authoritative provider from the
+            # settings database + environment; SQLite remains the default.
+            from nexus_scalp.database.config import load_database_config
+
+            self.audit = AuditRepository(config=load_database_config("audit"))
         self.force_fresh_model = bool(force_fresh_model)
 
         # =====================================================================

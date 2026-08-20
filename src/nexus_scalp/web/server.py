@@ -378,6 +378,13 @@ def _ui_forensic_once() -> None:
     )
 
 
+def _default_audit_config() -> Any:
+    """Resolve the authoritative audit DatabaseConfig (DATABASE PORTABILITY)."""
+    from nexus_scalp.database.config import load_database_config
+
+    return load_database_config("audit")
+
+
 def db_path_for_audit() -> str:
     """Resolves the canonical audit.db path (used by incident diagnostics)."""
     from pathlib import Path as _Path
@@ -1987,7 +1994,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         else:
             from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
-            repo = AuditRepository()
+            repo = AuditRepository(config=_default_audit_config())
             return repo.get_trading_rules()
 
     @app.post("/api/rules/toggle")
@@ -2005,7 +2012,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         else:
             from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
-            repo = AuditRepository()
+            repo = AuditRepository(config=_default_audit_config())
             success = repo.toggle_trading_rule(
                 rule_name=req.rule_name, is_enabled=req.is_enabled, parameters_json=params_json
             )
@@ -4264,7 +4271,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             else:
                 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
-                repo = AuditRepository()
+                repo = AuditRepository(config=_default_audit_config())
 
             metrics_db = repo.get_account_performance_metrics()
             queue_size = 0
@@ -4331,7 +4338,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             else:
                 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
-                repo = AuditRepository()
+                repo = AuditRepository(config=_default_audit_config())
             events = repo.get_recent_order_events(limit=max(1, min(limit, 500)))
         except Exception as e:
             log_web_error(
