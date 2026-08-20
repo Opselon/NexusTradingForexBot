@@ -669,9 +669,7 @@ class LiquidityGovernor:
             status = self.status()
             causal = self.causal_state()
             source = (
-                self._source.value
-                if self._source is not None
-                else SourceKind.UNAVAILABLE.value
+                self._source.value if self._source is not None else SourceKind.UNAVAILABLE.value
             )
             # Explicit separation of the two orthogonal dimensions (BUG-110
             # contract): calculation_status = whether the last compute attempt
@@ -1038,9 +1036,7 @@ class LiquidityGovernor:
             liq_start = int(act.get("liquidity_indices", [60, 69])[0])
             indices = {n: liq_start + i for i, n in enumerate(LIQUIDITY_FEATURE_NAMES)}
             source = (
-                self._source.value
-                if self._source is not None
-                else SourceKind.UNAVAILABLE.value
+                self._source.value if self._source is not None else SourceKind.UNAVAILABLE.value
             )
             snap_ts = snap.decision_at.isoformat() if snap.decision_at else None
             return {
