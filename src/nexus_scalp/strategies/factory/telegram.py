@@ -151,9 +151,11 @@ def send_factory_event(
         text = "⏸️ <b>Autonomous loop paused</b>" if event_type == "LOOP_PAUSED" else "▶️ <b>Autonomous loop resumed</b>"
     else:
         # DEPLOYMENT_GATE and others: generic structured line.
-        text = f"⚠️ <b>{_esc(event_type)}</b>\n" + "\n".join(
-            f"{k}: {_esc(v)}" for k, v in payload.items() if isinstance(v, (str, int, float))
-        )
+        lines = [f"⚠️ <b>{_esc(event_type)}</b>"]
+        for k, v in payload.items():
+            if isinstance(v, (str, int, float)):
+                lines.append(f"{k}: {_esc(str(v))}")
+        text = chr(10).join(lines)
     try:
         notifier.send(text, severity=severity, event_type="STRATEGY_FACTORY")
         return True
