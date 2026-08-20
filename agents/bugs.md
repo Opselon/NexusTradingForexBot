@@ -5446,3 +5446,34 @@ were silently decorative.
 
 **Verification:** 16 newly-added tests pass; ruff clean on changed files; commits
   7e68f43, eeb8add, 62cddf8, eb31ed7, 32547e9, b26e399, 1bca29f, 19a95c8, ff00c38.
+## BUG-127 — Swarm Committed an Incomplete Driver Refactor Into audit_repository (Binding Count + Undefined _driver, 2026-08-20 Hermes-Forensic-01)
+
+**Impact:** The TASK-21 lint/format commit c617c0f formalized an incomplete refactor that
+broke the ENTIRE order-audit write path and several reader paths:
+- log_order / log_execution kept DATETIME('now') in SQL while a datetime.now(UTC) ISO arg
+  was added -> binding-count mismatch (12 cols vs 11 args; 8 cols vs 7 args) -> the
+  background worker logged "Incorrect number of bindings supplied" and DROPPED every
+  audit_orders / audit_executions row (verified in test stderr).
+- 6 reader/writer sites referenced self._driver which is NEVER defined in __init__ ->
+  AttributeError on get_open_order / get_open_position_count / get_deals_by_position /
+  get_open_position / get_account_performance_metrics.
+- log_account_snapshot lost its ISO timestamp (DATETIME('now') restored) - benign but
+  inconsistent with the fix lineage.
+- git blame shows all damage introduced by c617c0f at 05:22; root: the stash merge
+  aa55115 (05:20) half-applied a driver refactor that 4c9b148 had completed for OTHER
+  files; c617c0f then "formatted" the broken split-state.
+
+**Fix (9bf7df5 Hermes-Forensic-01):** restored the pre-swarm (aa55115) behavior:
+- per-method sqlite3.connect(self._db_path, timeout=5.0) with row_factory (no _driver).
+- log_order / log_execution: ISO timestamp arg now matches the ? placeholders.
+- log_account_snapshot: datetime.now(UTC).isoformat() + 5 placeholders.
+- get_account_performance_metrics: with-block, row_factory, drawdown from snapshots,
+  return AFTER computation.
+
+**Regression guards:** tests/unit/test_accounting_core.py::TestTradeForensics (asserts
+  order_events >= 1 -> fails if audit_orders writes are dropped), tests/unit/
+  test_accounting_hedging.py::test_audit_ledger_recording_and_metrics (asserts exact
+  win_rate/profit_factor/drawdown -> fails on reader-path break).
+**Verification:** both suites pass after fix; py_compile clean. TRAP for swarm: a
+"lint/format" commit must never silently merge conflicting refactor states - diff the
+file against its last good state before committing.
