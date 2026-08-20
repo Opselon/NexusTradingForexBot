@@ -8655,6 +8655,20 @@ async function loadAccountPeriod(kind, btn) {
         document.getElementById('acct-cost-drag').textContent = (p.cost_drag_pct != null ? acctFmtNum(p.cost_drag_pct, 2) + '%' : '--');
 
         renderAccountPeriodExtras(p);
+        // BUG-134: broker-day + market-state label (UI '1 Day' truth).
+        const titleEl = document.getElementById('acct-period-title');
+        if (titleEl) {
+            const m = data.market || {};
+            const serverDay = m.server_day || (p && p.key) || '--';
+            titleEl.textContent = (kind === 'DAY' ? 'broker day ' : kind.toLowerCase() + ' ') + serverDay;
+        }
+        const msEl = document.getElementById('acct-market-state');
+        if (msEl && data.market) {
+            const m = data.market;
+            const st = m.state || 'UNKNOWN';
+            msEl.textContent = 'market ' + st + (m.next_open_iso ? ' | opens ' + new Date(m.next_open_iso).toLocaleString() : '');
+            msEl.classList.toggle('hidden', st === 'OPEN');
+        }
 
         const wrDeno = p.win_rate_denominator || 'NONE';
 
