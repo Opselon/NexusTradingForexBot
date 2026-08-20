@@ -62,6 +62,8 @@ def probe_server_time(adapter: Any) -> float | None:
     except Exception as exc:  # failure-isolated
         logger.warning("[MARKET_CAL] probe_server_time failed: %s", exc)
         return None
+    # No matching capability on the adapter -> None (caller treats as unknown).
+    return None
 
 
 def _weekday_utc(moment: datetime) -> int:
