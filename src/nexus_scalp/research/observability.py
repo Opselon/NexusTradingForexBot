@@ -254,6 +254,15 @@ class ResearchObservabilityStore:
             ),
         )
         self._gates[gate_id] = updated
+        self._queue(
+            _UPDATE_GATE_RESULT_SQL,
+            (
+                _json(updated.result),
+                updated.duration_ms,
+                int(updated.retryable),
+                gate_id,
+            ),
+        )
         return updated
 
     def skip_gate(self, gate_id: str, reason: str = "") -> ResearchGate | None:
@@ -430,7 +439,7 @@ class ResearchObservabilityStore:
             args.append(research_run_id)
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY occurred_at ASC, event_id ASC LIMIT ?;"
+        sql += " ORDER BY occurred_at ASC, id ASC LIMIT ?;"
         args.append(bounded)
         out: list[dict[str, Any]] = []
         try:

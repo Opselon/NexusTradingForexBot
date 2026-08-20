@@ -260,10 +260,10 @@ class StrategyRegistry:
         elif lc == "REJECTED":
             gate_failed = (
                 (entry.oos is not None and entry.oos.status != "PASS")
-                (entry.robustness is not None and entry.robustness.status == "FAIL")
-                (entry.walkforward is not None and not entry.walkforward.passed)
-                (entry.score is not None and entry.score.verdict == "REJECTED")
-                (entry.backtest is not None and entry.backtest.total_trades == 0)
+                or (entry.robustness is not None and entry.robustness.status == "FAIL")
+                or (entry.walkforward is not None and not entry.walkforward.passed)
+                or (entry.score is not None and entry.score.verdict == "REJECTED")
+                or (entry.backtest is not None and entry.backtest.total_trades == 0)
             )
             ran_any = (
                 entry.backtest is not None

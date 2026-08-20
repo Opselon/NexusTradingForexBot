@@ -485,6 +485,8 @@ class ResearchPipeline:
                 dataset_version=family_ds.dataset_id,
             )
             obs.record_event(sid, run_id, "GATE_QUEUED", "scoring queued", gate_id=gate.gate_id)
+            gate = obs.start_gate(gate.gate_id)
+            obs.record_event(sid, run_id, "GATE_STARTED", "scoring started", gate_id=gate.gate_id)
             gate = obs.finish_gate(
                 gate.gate_id, status=GateStatus.PASSED,
                 result=score_data, retryable=False,
