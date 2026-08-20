@@ -492,6 +492,7 @@ class LiveEngine:
             research_pipeline=self.research_pipeline,
             config=EvolutionConfig(),
             symbols=[str(self.config.execution.symbol or "XAUUSD")],
+            notifier=getattr(self, "notifier", None),
         )
         self.strategy_factory_worker = AutonomousLoopWorker(
             factory=self.strategy_factory,
@@ -762,6 +763,87 @@ class LiveEngine:
         except Exception as e:
             # Provenance is observability, never a live-path dependency.
             logger.error("[MODEL] provenance registration failed (isolated)", error=str(e))
+
+    def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
+        """Atomically swap the serving model artifact (safe hot swap).
+
+        Loads + validates + warms the NEW bundle FIRST; only on success the
+        current bundle is released and the new one becomes authoritative.
+        In-flight inference completes against the old bundle under the
+        bundle lock. Never replaces a healthy model with an invalid artifact.
+        """
+        import hashlib
+
+        new_path = Path(new_artifact_path)
+        old_path = Path(self.config.model.model_artifact_path)
+        if not new_path.exists():
+            logger.error(
+                "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_FAILED reason=ARTIFACT_MISSING path=%s",
+                new_artifact_path,
+            )
+            return {
+                "success": False,
+                "reason": "ARTIFACT_MISSING",
+                "runtime_applied": False,
+            }
+        try:
+            # Load + validate the NEW bundle in isolation (never touching
+            # the serving bundle). _load_or_create_bundle raises on dimension
+            # mismatch and quarantines corrupt checkpoints.
+            new_bundle = self._load_or_create_bundle(model_path=new_path, force_fresh=False)
+            # Warm-up: one forward pass validates the artifact end-to-end.
+            import numpy as np
+            import torch
+
+            warm = np.zeros((1, self.FEATURE_DIM), dtype=np.float32)
+            warm = new_bundle.scaler.transform_50d(warm)
+            with torch.inference_mode():
+                new_bundle.model(torch.tensor(warm, dtype=torch.float32))
+
+            # Compute artifact hash for traceability (model version/hash)
+            h = hashlib.sha256()
+            with open(new_path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            artifact_hash = h.hexdigest()[:16]
+
+            # ATOMIC SWAP under the bundle lock: new bundle replaces old.
+            with self._bundle_lock:
+                self._bundle = new_bundle
+            self.config.model.model_artifact_path = new_artifact_path
+            self._register_active_model(model_path=new_path, replaced=True)
+            # Surface model version/hash on the runtime snapshot
+            self.runtime_config.apply(
+                {"model.model_artifact_path": new_artifact_path},
+                source=f"MODEL_HOT_SWAP::{source}",
+            )
+            logger.info(
+                "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_COMPLETED source=%s "
+                "artifact_hash=%s old=%s new=%s",
+                source,
+                artifact_hash,
+                old_path.name,
+                new_path.name,
+            )
+            return {
+                "success": True,
+                "runtime_applied": True,
+                "artifact_hash": artifact_hash,
+                "artifact_path": new_artifact_path,
+                "configuration_version": self.runtime_config.get_version(),
+            }
+        except Exception as exc:
+            logger.error(
+                "[MODEL_HOT_SWAP] event=MODEL_HOT_SWAP_FAILED source=%s error=%s",
+                source,
+                exc,
+            )
+            return {
+                "success": False,
+                "reason": str(exc),
+                "runtime_applied": False,
+                "current_model_unchanged": True,
+            }
 
     def rebuild_experience_intelligence(self) -> int:
         """

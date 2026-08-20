@@ -2692,6 +2692,23 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         out["runtime_version"] = engine.runtime_config.get_version()
         return out
 
+    @app.post("/api/runtime-config/model-swap")
+    def model_hot_swap(payload: dict[str, Any]) -> dict[str, Any]:
+        """Model artifact hot swap: load-validate-warm-atomic-swap.
+
+        Payload: {"model_artifact_path": "..."}
+        Never replaces the healthy serving model before the new artifact
+        has loaded successfully and warmed up.
+        """
+        engine = app.state.engine
+        if engine is None or not hasattr(engine, "hot_swap_model"):
+            raise HTTPException(status_code=400, detail="Trading Engine offline.")
+        artifact = str(payload.get("model_artifact_path") or "").strip()
+        if not artifact:
+            raise HTTPException(status_code=422, detail="model_artifact_path required")
+        result = engine.hot_swap_model(artifact, source="WEB_UI")
+        return result
+
     # ------------------------------------------------------------------
     # BUG-072: /api/settings — isolated user settings + secure secrets.
     # Never returns plaintext secrets; masked token only.
@@ -4838,8 +4855,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 from nexus_scalp.research.observability import _registry_blocked_reason
 
                 trace["blocked_reason"] = _registry_blocked_reason(engine.audit, entry)
-                from nexus_scalp.research.registry import StrategyRegistry
                 from nexus_scalp.research.models import StrategyRegistryEntry
+                from nexus_scalp.research.registry import StrategyRegistry
 
                 reg = StrategyRegistry(engine.audit)
                 parsed = StrategyRegistryEntry(
