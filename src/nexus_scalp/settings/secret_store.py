@@ -73,9 +73,10 @@ class _Dpapi:
             windll = getattr(ctypes, "windll", None)
             if windll is None:
                 raise SecretStoreError("ctypes.windll unavailable (non-Windows)")
-            cls._crypt32 = windll.crypt32  # type: ignore[attr-defined]
-            cls._crypt32.CryptProtectData.restype = ctypes.c_int
-            cls._crypt32.CryptUnprotectData.restype = ctypes.c_int
+            crypt32 = windll.crypt32  # type: ignore[attr-defined]
+            crypt32.CryptProtectData.restype = ctypes.c_int  # type: ignore[attr-defined]
+            crypt32.CryptUnprotectData.restype = ctypes.c_int  # type: ignore[attr-defined]
+            cls._crypt32 = crypt32  # type: ignore[assignment]
             local_free = windll.kernel32.LocalFree  # type: ignore[attr-defined]
             local_free.argtypes = [ctypes.c_void_p]
             local_free.restype = ctypes.c_void_p
@@ -100,9 +101,7 @@ class _Dpapi:
             ctypes.byref(out),
         )
         if not ok:
-            raise SecretStoreError(
-                f"DPAPI protect failed (CryptProtectData error {_last_error()})"
-            )
+            raise SecretStoreError(f"DPAPI protect failed (CryptProtectData error {_last_error()})")
         try:
             raw = ctypes.string_at(out.pbData, out.cbData)
             return bytes(raw)
