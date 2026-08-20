@@ -796,7 +796,7 @@ def test_up45_ambiguous_checksum_failsafe(monkeypatch) -> None:
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     digest, decisions = upd.DigestResolver.resolve_from_release(rel, {"name": "payload-a.zip"})
     assert digest is None  # conflicting digests for one payload -> fail safe (spec 11)
-    assert any("conflicting" in d for d in decisions)
+    assert any("conflicting" in d.lower() for d in decisions)
 
 
 def test_up46_retry_on_transient_github(monkeypatch) -> None:
