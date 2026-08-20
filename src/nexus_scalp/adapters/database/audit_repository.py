@@ -1501,10 +1501,8 @@ class AuditRepository:
         query = """
             INSERT INTO audit_orders
             (ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATETIME('now'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        from datetime import UTC, datetime
-
         args = (
             ticket,
             order_id,
@@ -1517,7 +1515,6 @@ class AuditRepository:
             reason,
             latency,
             execution_mode,
-            datetime.now(UTC).isoformat(),
         )
 
         try:
@@ -1533,10 +1530,8 @@ class AuditRepository:
         query = """
             INSERT INTO audit_executions
             (order_id, symbol, order_type, volume, price, status, executed_at, payload)
-            VALUES (?, ?, ?, ?, ?, ?, DATETIME('now'), ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
-        from datetime import UTC, datetime
-
         args = (
             order.order_id,
             order.symbol,
@@ -1544,7 +1539,6 @@ class AuditRepository:
             order.volume,
             order.price,
             status,
-            datetime.now(UTC).isoformat(),
             order.model_dump_json(),
         )
 
@@ -1577,9 +1571,17 @@ class AuditRepository:
         query = """
             INSERT INTO audit_account_snapshots
             (timestamp, balance, equity, margin_free, peak_equity)
-            VALUES (DATETIME('now'), ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
         """
-        args = (account.balance, account.equity, account.margin_free, peak_equity)
+        from datetime import UTC, datetime
+
+        args = (
+            datetime.now(UTC).isoformat(),
+            account.balance,
+            account.equity,
+            account.margin_free,
+            peak_equity,
+        )
 
         try:
             self._queue.put_nowait((query, args))
@@ -1646,11 +1648,12 @@ class AuditRepository:
         if not self._is_sqlite:
             return False
         try:
-            row = self._driver.query_one(
-                "SELECT 1 FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
-                (int(ticket),),
-            )
-            return row is not None
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                row = conn.execute(
+                    "SELECT 1 FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
+                    (int(ticket),),
+                ).fetchone()
+                return row is not None
         except Exception:
             return False
 
@@ -1666,11 +1669,12 @@ class AuditRepository:
         if not self._is_sqlite:
             return -1
         try:
-            val = self._driver.scalar(
-                "SELECT COUNT(*) FROM audit_ledger WHERE status = 'OPENED' "
-                "AND COALESCE(exit_price, 0) = 0;"
-            )
-            return int(val) if val is not None else 0
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM audit_ledger WHERE status = 'OPENED' "
+                    "AND COALESCE(exit_price, 0) = 0;"
+                ).fetchone()
+                return int(row[0]) if row else 0
         except Exception:
             return -1
 
@@ -1687,14 +1691,16 @@ class AuditRepository:
         if not self._is_sqlite:
             return []
         try:
-            rows = self._driver.query(
-                'SELECT ticket, "order", position_id, symbol, type, entry, '
-                "magic, time, reason, volume, price, profit, fee, swap, "
-                "commission, net_result, comment, external_id "
-                "FROM audit_broker_deals WHERE position_id = ? "
-                "ORDER BY time ASC;",
-                (int(position_id),),
-            )
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    'SELECT ticket, "order", position_id, symbol, type, entry, '
+                    "magic, time, reason, volume, price, profit, fee, swap, "
+                    "commission, net_result, comment, external_id "
+                    "FROM audit_broker_deals WHERE position_id = ? "
+                    "ORDER BY time ASC;",
+                    (int(position_id),),
+                ).fetchall()
         except Exception:
             return []
         out: list[dict[str, Any]] = []
@@ -1725,10 +1731,13 @@ class AuditRepository:
         if not self._is_sqlite:
             return None
         try:
-            return self._driver.query_one(
-                "SELECT * FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
-                (int(ticket),),
-            )
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT * FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
+                    (int(ticket),),
+                ).fetchone()
+                return dict(row) if row is not None else None
         except Exception:
             return None
 
@@ -1928,77 +1937,75 @@ class AuditRepository:
             }
 
         try:
-            conn = self._driver.connect(timeout=5.0)
+            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+                conn.row_factory = sqlite3.Row
 
-            # Fetch all closed trades from ledger
-            cursor = conn.execute(
-                "SELECT pnl, commission, swap, duration_sec FROM audit_ledger WHERE status != 'OPENED'"
-            )
-            rows = cursor.fetchall()
-            _names = [d[0] for d in cursor.description] if cursor.description else []
-            if _names and rows and not isinstance(rows[0], dict):
-                rows = [dict(zip(_names, r)) for r in rows]
+                # Fetch all closed trades from ledger
+                cursor = conn.execute(
+                    "SELECT pnl, commission, swap, duration_sec FROM audit_ledger WHERE status != 'OPENED'"
+                )
+                rows = cursor.fetchall()
 
-            total_trades = len(rows)
-            if total_trades == 0:
+                total_trades = len(rows)
+                if total_trades == 0:
+                    return {
+                        "total_trades": 0,
+                        "win_rate": 0.0,
+                        "profit_factor": 0.0,
+                        "max_drawdown": 0.0,
+                        "avg_duration": 0.0,
+                    }
+
+                wins = 0
+                gross_profit = 0.0
+                gross_loss = 0.0
+                total_duration = 0.0
+
+                for r in rows:
+                    # IMPORTANT: commission and swap are COSTS and must be
+                    # SUBTRACTED (net = pnl - commission - swap), exactly as
+                    # `log_ledger_closed` persists `net_pnl_usd`. The previous
+                    # implementation used `pnl + commission + swap`, which
+                    # inflated profits and disagreed with the canonical
+                    # AccountingCore (agents/bugs.md BUG-019).
+                    net_pnl = float(r["pnl"]) - abs(float(r["commission"])) - float(r["swap"])
+                    if net_pnl > 0:
+                        wins += 1
+                        gross_profit += net_pnl
+                    else:
+                        gross_loss += abs(net_pnl)
+                    total_duration += float(r["duration_sec"])
+
+                win_rate = (wins / total_trades) * 100.0
+                profit_factor = (
+                    gross_profit / gross_loss
+                    if gross_loss > 0
+                    else (gross_profit if gross_profit > 0 else 1.0)
+                )
+                avg_duration = total_duration / total_trades
+
+                # Drawdown calculation from snapshots
+                cursor_snap = conn.execute(
+                    "SELECT balance, equity FROM audit_account_snapshots ORDER BY id ASC"
+                )
+                snap_rows = cursor_snap.fetchall()
+
+                max_drawdown = 0.0
+                peak = 0.0
+                for r_snap in snap_rows:
+                    eq = float(r_snap["equity"])
+                    peak = max(peak, eq)
+                    if peak > 0:
+                        dd = ((peak - eq) / peak) * 100.0
+                        max_drawdown = max(max_drawdown, dd)
+
                 return {
-                    "total_trades": 0,
-                    "win_rate": 0.0,
-                    "profit_factor": 0.0,
-                    "max_drawdown": 0.0,
-                    "avg_duration": 0.0,
+                    "total_trades": total_trades,
+                    "win_rate": round(win_rate, 2),
+                    "profit_factor": round(profit_factor, 2),
+                    "max_drawdown": round(max_drawdown, 2),
+                    "avg_duration": round(avg_duration, 2),
                 }
-
-            wins = 0
-            gross_profit = 0.0
-            gross_loss = 0.0
-            total_duration = 0.0
-
-            for r in rows:
-                # IMPORTANT: commission and swap are COSTS and must be
-                # SUBTRACTED (net = pnl - commission - swap), exactly as
-                # `log_ledger_closed` persists `net_pnl_usd`. The previous
-                # implementation used `pnl + commission + swap`, which
-                # inflated profits and disagreed with the canonical
-                # AccountingCore (agents/bugs.md BUG-019).
-                net_pnl = float(r["pnl"]) - abs(float(r["commission"])) - float(r["swap"])
-                if net_pnl > 0:
-                    wins += 1
-                    gross_profit += net_pnl
-                else:
-                    gross_loss += abs(net_pnl)
-                total_duration += float(r["duration_sec"])
-
-            win_rate = (wins / total_trades) * 100.0
-            profit_factor = (
-                gross_profit / gross_loss
-                if gross_loss > 0
-                else (gross_profit if gross_profit > 0 else 1.0)
-            )
-            avg_duration = total_duration / total_trades
-
-            # Drawdown calculation from snapshots
-            cursor_snap = conn.execute(
-                "SELECT balance, equity FROM audit_account_snapshots ORDER BY id ASC"
-            )
-            snap_rows = cursor_snap.fetchall()
-
-            max_drawdown = 0.0
-            peak = 0.0
-            for r_snap in snap_rows:
-                eq = float(r_snap["equity"])
-                peak = max(peak, eq)
-                if peak > 0:
-                    dd = ((peak - eq) / peak) * 100.0
-                    max_drawdown = max(max_drawdown, dd)
-
-            return {
-                "total_trades": total_trades,
-                "win_rate": round(win_rate, 2),
-                "profit_factor": round(profit_factor, 2),
-                "max_drawdown": round(max_drawdown, 2),
-                "avg_duration": round(avg_duration, 2),
-            }
         except Exception as e:
             logger.error("Failed to calculate account performance metrics", error=str(e))
             return {
@@ -2008,11 +2015,6 @@ class AuditRepository:
                 "max_drawdown": 0.0,
                 "avg_duration": 0.0,
             }
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
 
     def get_recent_predictions(self, limit: int = 50) -> list[dict[str, Any]]:
         """

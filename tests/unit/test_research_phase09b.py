@@ -219,8 +219,12 @@ def build_candidate(strategy_id: str = "STRAT-TEST-1234") -> StrategyCandidate:
     c = StrategyCandidate(
         strategy_id=strategy_id,
         strategy_version="",
-        context_definition={"fingerprint": "XAUUSD|M1|ALL|TRENDING|HIGH|BULLISH"},
+        context_definition={
+            "fingerprint": "XAUUSD|M1|ALL|TRENDING|HIGH|BULLISH",
+            "symbol": "XAUUSD",
+        },
         entry_logic={"direction": "directional", "context": "XAUUSD|M1|ALL|TRENDING|HIGH|BULLISH"},
+        exit_logic={"direction": "neutral", "context": "XAUUSD|M1|ALL|TRENDING|HIGH|BULLISH"},
     )
     return c.model_copy(update={"strategy_version": c.canonical_version()})
 
