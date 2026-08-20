@@ -394,7 +394,10 @@ res = CandidateTrainer().train_candidate(exp, df, epochs=2)
 assert res["status"] == "COMPLETED", res
 print(float(res["val_accuracy"]))
 """
-    py = REPO_ROOT / ".venv/Scripts/python.exe"
+    # Active interpreter (CI runs on Linux where .venv/Scripts is
+    # Windows-only); on Windows this is exactly the running venv python.
+    from pathlib import Path
+    py = Path(sys.executable)
     env = dict(__import__("os").environ)
     env["PYTHONHASHSEED"] = "0"
     a = subprocess.run([str(py), "-c", script], capture_output=True, text=True, env=env, check=True)
