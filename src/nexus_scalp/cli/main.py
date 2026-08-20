@@ -586,10 +586,19 @@ def _update_exit_code(report: dict[str, Any]) -> int:
         return xc.EXIT_UPDATE
     if status in ("UPDATE_VERIFICATION_FAILED",):
         return xc.EXIT_UPDATE
-    if status in ("RELEASE_NOT_FOUND", "NETWORK_UNAVAILABLE", "NETWORK_ERROR",
-                  "GITHUB_UNAVAILABLE", "INCOMPATIBLE", "SECURITY_BLOCKED",
-                  "UPDATE_REJECTED", "FAILED", "UPDATE_IN_PROGRESS",
-                  "UPDATE_BLOCKED_WHILE_LIVE", "UPDATE_AVAILABLE"):
+    if status in (
+        "RELEASE_NOT_FOUND",
+        "NETWORK_UNAVAILABLE",
+        "NETWORK_ERROR",
+        "GITHUB_UNAVAILABLE",
+        "INCOMPATIBLE",
+        "SECURITY_BLOCKED",
+        "UPDATE_REJECTED",
+        "FAILED",
+        "UPDATE_IN_PROGRESS",
+        "UPDATE_BLOCKED_WHILE_LIVE",
+        "UPDATE_AVAILABLE",
+    ):
         return xc.EXIT_UPDATE
     return xc.EXIT_UPDATE
 
@@ -647,13 +656,19 @@ def update_cmd(
     ),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
     include_prerelease: bool = typer.Option(
-        False, "--include-prerelease", help="Allow pre-releases on the stable channel (explicit opt-in)."
+        False,
+        "--include-prerelease",
+        help="Allow pre-releases on the stable channel (explicit opt-in).",
     ),
     allow_downgrade: bool = typer.Option(
-        False, "--allow-downgrade", help="Permit an explicitly-requested downgrade (compatibility still verified)."
+        False,
+        "--allow-downgrade",
+        help="Permit an explicitly-requested downgrade (compatibility still verified).",
     ),
     force_refresh: bool = typer.Option(
-        False, "--force-refresh", help="Bypass cached release metadata; query GitHub fresh (spec 18/40)."
+        False,
+        "--force-refresh",
+        help="Bypass cached release metadata; query GitHub fresh (spec 18/40).",
     ),
     fresh: bool = typer.Option(
         False, "--force-refresh", help="Bypass cached release metadata; query GitHub fresh."
@@ -678,10 +693,12 @@ def update_cmd(
         info = get_version_info()
         available = rupdate.load_available_releases(manifest)
         if isinstance(available, dict):
-            available = {"assets": available.get("assets") or [],
-                         "tag_name": available.get("tag_name") or f"v{info['version']}",
-                         "prerelease": bool(available.get("prerelease")),
-                         "body": str(available.get("body") or ""),}
+            available = {
+                "assets": available.get("assets") or [],
+                "tag_name": available.get("tag_name") or f"v{info['version']}",
+                "prerelease": bool(available.get("prerelease")),
+                "body": str(available.get("body") or ""),
+            }
         plan = rupdater.UpdatePlanBuilder(
             installed_version=info["version"],
             channel=channel,
@@ -725,7 +742,7 @@ def update_cmd(
                 print(f"  Current version : {report.get('current_version')}")
                 print(f"  Target version  : {report.get('target_version')}")
                 print(f"  Asset           : {report.get('artifact_name')}")
-                print(f"  SHA256          : PASS")
+                print("  SHA256          : PASS")
                 print(f"  Staged at       : {report.get('artifact_path')}")
                 print("  Update          : STAGED_READY")
             else:
@@ -833,9 +850,20 @@ def update_cmd(
         )
 
     def _human_event(state: str, detail: str) -> None:
-        if state in ("DOWNLOADING", "VERIFYING", "BACKING_UP", "MIGRATING",
-                     "INSTALLING", "VERIFYING_INSTALL", "HEALTH_CHECK", "COMPLETED",
-                     "QUIESCING", "REDIRECTING", "ROLLED_BACK", "ROLLING_BACK"):
+        if state in (
+            "DOWNLOADING",
+            "VERIFYING",
+            "BACKING_UP",
+            "MIGRATING",
+            "INSTALLING",
+            "VERIFYING_INSTALL",
+            "HEALTH_CHECK",
+            "COMPLETED",
+            "QUIESCING",
+            "REDIRECTING",
+            "ROLLED_BACK",
+            "ROLLING_BACK",
+        ):
             print(f"  {state.replace('_', ' ').title()}... {detail}")
 
     report = orch.run(yes=yes, force=force, on_event=_human_event)

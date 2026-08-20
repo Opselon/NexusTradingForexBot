@@ -627,6 +627,7 @@ def test_no_automatic_model_promotion_app_update(app_root: Path, user_root: Path
     # The plan must state model policy explicitly: app update never promotes models.
     assert "model" in json.dumps(plan).lower()
 
+
 # ---------------------------------------------------------------------------
 # TASK-UPDATER-02 (CHG-0027) — TEST-UP-36..50: release identity, draft/revoked,
 # include-prerelease, allow-downgrade, checksum-asset digest resolution,
@@ -750,7 +751,7 @@ def test_up44_checksum_asset_digest_resolution(monkeypatch) -> None:
         def read(self) -> bytes:
             return self._t.encode()
 
-        def __enter__(self) -> "_FakeResp":
+        def __enter__(self) -> _FakeResp:
             return self
 
         def __exit__(self, *a: object) -> bool:
@@ -784,14 +785,14 @@ def test_up45_ambiguous_checksum_failsafe(monkeypatch) -> None:
         def read(self) -> bytes:
             return self._t.encode()
 
-        def __enter__(self) -> "_FakeResp":
+        def __enter__(self) -> _FakeResp:
             return self
 
         def __exit__(self, *a: object) -> bool:
             return False
 
     def fake_urlopen(req: Any, timeout: int | None = None) -> _FakeResp:  # type: ignore[no-untyped-def]
-        return _FakeResp(f"{'ab'*32}  payload-a.zip\n{'cd'*32}  payload-a.zip\n")
+        return _FakeResp(f"{'ab' * 32}  payload-a.zip\n{'cd' * 32}  payload-a.zip\n")
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     digest, decisions = upd.DigestResolver.resolve_from_release(rel, {"name": "payload-a.zip"})
@@ -810,7 +811,7 @@ def test_up46_retry_on_transient_github(monkeypatch) -> None:
 
             return _j.dumps([_release_dict(tag="v9.1.0", digest=None)]).encode()
 
-        def __enter__(self) -> "_FakeResp":
+        def __enter__(self) -> _FakeResp:
             return self
 
         def __exit__(self, *a: object) -> bool:
@@ -829,7 +830,6 @@ def test_up46_retry_on_transient_github(monkeypatch) -> None:
 
 
 def test_up47_retry_after_honored(monkeypatch) -> None:
-    import time
 
     import urllib.error as urlerr
 
@@ -842,7 +842,7 @@ def test_up47_retry_after_honored(monkeypatch) -> None:
 
             return _j.dumps([]).encode()
 
-        def __enter__(self) -> "_FakeResp":
+        def __enter__(self) -> _FakeResp:
             return self
 
         def __exit__(self, *a: object) -> bool:
@@ -859,8 +859,8 @@ def test_up47_retry_after_honored(monkeypatch) -> None:
         return _FakeResp()
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
-    out = upd.UpdateDiscovery.fetch_releases(max_retries=2)
+    monkeypatch.setattr(time, "sleep", slept.append)
+    upd.UpdateDiscovery.fetch_releases(max_retries=2)
     assert calls["n"] == 2
     assert slept and slept[0] == 1  # Retry-After used verbatim
 
@@ -874,7 +874,6 @@ def test_up48_digest_missing_blocks_plan() -> None:
 
 def test_up49_resume_hash_full_partial(tmp_path: Path) -> None:
     import hashlib
-
     import urllib.request
 
     payload = b"RESUME-ME-" * 100
@@ -892,7 +891,7 @@ def test_up49_resume_hash_full_partial(tmp_path: Path) -> None:
             chunk, self._data = self._data[:n], self._data[n:]
             return chunk
 
-        def __enter__(self) -> "_FakeResp":
+        def __enter__(self) -> _FakeResp:
             return self
 
         def __exit__(self, *a: object) -> bool:
@@ -930,7 +929,6 @@ def test_up50_model_matrix_fields_in_plan() -> None:
     assert plan["schema_version"] == "scalp_v3"
     assert plan["feature_dimension"] == 70
     assert plan["minimum_model_version"] == "3.0.0"
-
 
 
 # ---------------------------------------------------------------------------
@@ -1039,7 +1037,6 @@ def test_up54_release_info_command_shape(tmp_path: Path) -> None:
     assert info["record_file"].endswith("installed-release.json")
 
 
-
 # ---------------------------------------------------------------------------
 # TEST-UP-55..60: E2E against a CONTROLLED fake release server (spec 61/62).
 # The actual update service (UpdateDiscovery -> UpdatePlanBuilder ->
@@ -1063,7 +1060,7 @@ class _FakeReleaseServer:
         self.port = 0
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self) -> None:  # noqa: N802
+            def do_GET(self) -> None:
                 st = self.server.server_state  # type: ignore[attr-defined]
                 if self.path.startswith("/releases"):
                     body = st._releases_json().encode()
@@ -1152,7 +1149,6 @@ class _FakeReleaseServer:
         if self._httpd is not None:
             self._httpd.shutdown()
             self._httpd.server_close()
-
 
 
 def test_up55_e2e_check_download_verify_install(tmp_path: Path) -> None:

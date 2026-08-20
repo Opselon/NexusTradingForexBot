@@ -212,7 +212,7 @@ class UpdateDiscovery:
                     str(e.code), e.reason or str(e), retry_after=retry_after
                 )
                 if str(e.code) in cls._RETRYABLE_CODES and attempt < max_retries:
-                    delay = retry_after if retry_after is not None else min(2 ** attempt * 2, 30)
+                    delay = retry_after if retry_after is not None else min(2**attempt * 2, 30)
                     time.sleep(delay)
                     attempt += 1
                     continue
@@ -220,14 +220,14 @@ class UpdateDiscovery:
             except urllib.error.URLError as e:
                 last_err = GitHubDiscoveryError("", str(e.reason or e))
                 if attempt < max_retries:
-                    time.sleep(min(2 ** attempt * 2, 30))
+                    time.sleep(min(2**attempt * 2, 30))
                     attempt += 1
                     continue
                 raise last_err from last_err
             except TimeoutError:
                 last_err = GitHubDiscoveryError("", "timeout contacting GitHub")
                 if attempt < max_retries:
-                    time.sleep(min(2 ** attempt * 2, 30))
+                    time.sleep(min(2**attempt * 2, 30))
                     attempt += 1
                     continue
                 raise last_err from last_err
@@ -287,12 +287,8 @@ class UpdateDiscovery:
             "release_id": release.get("id"),
             "tag": str(release.get("tag_name", "")),
             "version": str(release.get("tag_name", "")).lstrip("v"),
-            "commit_sha": str(
-                release.get("target_commitish") or release.get("commit") or ""
-            ),
-            "published_at": str(
-                release.get("published_at") or release.get("created_at") or ""
-            ),
+            "commit_sha": str(release.get("target_commitish") or release.get("commit") or ""),
+            "published_at": str(release.get("published_at") or release.get("created_at") or ""),
             "draft": bool(release.get("draft")),
             "prerelease": bool(release.get("prerelease")),
             "revoked": cls._is_revoked(release),
@@ -890,7 +886,7 @@ class SafeDownloader:
                 if attempt >= max_retries:
                     raise
                 attempt += 1
-                time.sleep(min(2 ** attempt * 2, 30))
+                time.sleep(min(2**attempt * 2, 30))
                 existing = part.stat().st_size if part.exists() else 0
                 headers = {"User-Agent": UpdateDiscovery.USER_AGENT}
                 if existing > 0:
@@ -2069,7 +2065,9 @@ class UpdateOrchestrator:
 
         _add("version", bool(version) and version != "0.0.0", f"running {version}")
         rec_match = bool(rec) and str(rec.get("version") or "") == version
-        _add("installed_release", rec_match, "record present" if rec else "no installed-release.json")
+        _add(
+            "installed_release", rec_match, "record present" if rec else "no installed-release.json"
+        )
         if rec_match and rec.get("asset_sha256"):
             artifact = self.cache_dir / str(rec.get("asset_name") or "")
             if artifact.exists():
@@ -2319,8 +2317,7 @@ class UpdateOrchestrator:
             report["health"] = health
             if health.get("overall") in (None, "FAIL") and health.get("error"):
                 raise UpdateBlockedError(
-                    f"post-update health failed: {health.get('error', '')} "
-                    "(STAGE=Startup)"
+                    f"post-update health failed: {health.get('error', '')} (STAGE=Startup)"
                 )
 
             # 10. running-version verification == target (spec 21).
@@ -2329,9 +2326,9 @@ class UpdateOrchestrator:
                 running = get_version_info().get("version") or ""
             except Exception:
                 running = ""
-            verified = bool(running) and running.lstrip("v") == str(
-                plan["target_version"]
-            ).lstrip("v")
+            verified = bool(running) and running.lstrip("v") == str(plan["target_version"]).lstrip(
+                "v"
+            )
             report["running_version"] = running
             report["post_update_verified"] = verified
             if not verified and str(plan.get("target_version", "")).lstrip("v") != "":
@@ -2371,16 +2368,16 @@ class UpdateOrchestrator:
                     to_version=plan["target_version"],
                     channel=self.channel,
                     result="UPDATE_VERIFICATION_FAILED",
-                    rollback="restored-previous" if report.get("rollback_completed") else "unavailable",
+                    rollback="restored-previous"
+                    if report.get("rollback_completed")
+                    else "unavailable",
                     correlation_id=self._correlation_id,
                 )
                 return report
 
             # 11. record what is actually installed (spec 33).
             ReleaseLocalState(self.update_home).write(plan, install)
-            report["installed_release_record"] = str(
-                self.update_home / ReleaseLocalState.FILE_NAME
-            )
+            report["installed_release_record"] = str(self.update_home / ReleaseLocalState.FILE_NAME)
 
             _emit(STATE_HEALTH_CHECK, f"health overall={health.get('overall')}")
             _emit(STATE_COMPLETED)

@@ -165,7 +165,9 @@ nexus setup     /  install                First-run wizard (compat, install, DB,
 nexus logs      [--tail N] [--errors]     Tail / filter / export engine logs
 nexus config    [--validate path]         Inspect / validate configuration (--show/--json)
 nexus test      --mode quick|unit|integration   Run test suites (never live-broker tests)
-nexus update    [check|status|history|rollback|doctor]   Update / rollback the installation
+nexus update    [check|latest|download|install|verify|status|history|rollback|doctor]
+                                                       Update / rollback the installation
+nexus release   [info]                                 Installed release metadata
 nexus repair                              Repair non-destructive derived state (never deletes data)
 nexus export-diagnostics                  Sanitized diagnostics ZIP (never contains secrets)
 nexus db        hygiene status|plan|run   Database schema + retention hygiene (audit-only by default)

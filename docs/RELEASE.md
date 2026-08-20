@@ -148,16 +148,24 @@ credentials/database contents).
 `nexus update` is the FULL installed-user update system:
 
 ```
-nexus update check      # discovery only (never fabricates latest)
-nexus update            # check -> download -> verify -> backup -> migrate
-                        #   -> install -> health -> COMPLETED
-nexus update --dry-run  # full plan, zero mutation
+nexus update check            # discovery only (never fabricates latest)
+nexus update latest           # authoritative fresh latest (bypasses cache)
+nexus update download         # check + download + verify to staging (not installed)
+nexus update install          # install the staged/latest package
+nexus update verify           # verify the INSTALLED client (no download)
+nexus update                  # check -> download -> verify -> backup -> migrate
+                              #   -> install -> running-version verify -> COMPLETED
+nexus update --dry-run        # full plan, zero mutation
 nexus update --channel beta|nightly
-nexus update status     # observable state machine + crash recovery
-nexus update history    # persisted update log (jsonl, never credentials)
-nexus update rollback   # restore prior application (user data intact)
-nexus update doctor     # github/disk/mode/db/config/process/lock checks
-nexus update --yes      # skip prompts (never bypasses security checks)
+nexus update --include-prerelease   # stable channel accepts pre-releases (explicit)
+nexus update --allow-downgrade      # permit an explicit downgrade
+nexus update --force-refresh        # bypass cached release metadata
+nexus update status           # observable state machine + crash recovery
+nexus update history          # persisted update log (jsonl, never credentials)
+nexus update rollback         # restore prior application (user data intact)
+nexus update doctor           # github/disk/mode/db/config/process/lock checks
+nexus update --yes            # skip prompts (never bypasses security checks)
+nexus release info            # installed release record (installed-release.json)
 ```
 
 * Update source = GitHub Releases API (never main.zip / source archives).
