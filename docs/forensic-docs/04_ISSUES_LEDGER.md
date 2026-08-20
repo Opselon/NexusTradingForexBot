@@ -8,10 +8,15 @@
    cut the single most expensive line in the feature module (P3).
 2. **Risk tier table in code vs skill doc** (risk_engine.py 191-199):
    equity<1k → 0.10 lots and <10k → 1.00 lots; the skill's older table
-   (0.50/2.00) never matched. Code is truth; docs should be corrected.
+   (0.50/2.00) never matched. Code is truth; docs should be corrected. ✅ FIXED 2026-08-20 (Hermes-Forensic-01 cc6104c): skill.md §7 table
+   corrected; RiskEngine ctor defaults aligned (max_allowed_lots 50→10
+   HARD_MAX_LOTS parity, high_confidence_threshold 0.70→0.95 config parity);
+   tier-contract tests added.
 3. **Dead expression at scalp_features.py:879** — the 50% impulse-equilibrium
    expression is computed and discarded (no assignment). Harmless, but it
-   looks like the used path; remove or bind it.
+   looks like the used path; remove or bind it. ✅ FIXED 2026-08-20 (Hermes-Forensic-01 cdd7a45): removed with explanatory
+   comment; no behavior change (equilibrium ratio already captured by
+   ob_equilibrium_ratio).
 4. **Hard-coded ATR fallback 1.50** (scalp_features.py cold start +
    validate_and_fallback) — a magic constant; if the symbol's volatility
    regime changes materially, warm-up normalization biases. Worth an
@@ -31,7 +36,8 @@
 9. **walk_forward_trainer stale TASK-1 diagnostic log** (~329-340) — the
    log block says "0=BUY, 1=SELL, 2=NO_TRADE"; the real label_map is
    0=NO_TRADE, 1=BUY, 2=SELL. Diagnostic-only, but misleading on a live
-   training run.
+   training run. ✅ FIXED 2026-08-20 (Hermes-Forensic-01 76d3b50): log derives from
+   self.label_map / self.inverse_label_map; stale header removed.
 10. **SignalPolicy UNSAFE_REGIMES set is string-coupled** (policy.py 131)
     — values must match RegimeType enum values; a renamed regime silently
     stops being blocked. Consider deriving from the enum.
@@ -95,3 +101,19 @@
   (BUG-068/BUG-120 class) — a strict div/section balance check + tab-
   nesting test is the only guard; consider a formatter pass as a separate,
   carefully-tested change.
+
+
+## Forensic fix pass postscript (2026-08-20, Hermes-Forensic-01)
+
+During the fix pass a NEW issue was discovered and repaired:
+
+- **BUG-127 — swarm-committed incomplete driver refactor in
+  audit_repository.py** (introduced by c617c0f TASK-21 lint/format, rooted
+  in stash-merge aa55115 half-applying 4c9b148's driver refactor):
+  `self._driver` referenced at 6 sites but never defined (AttributeError on
+  live order/execution/snapshot writes and reader paths); log_order /
+  log_execution binding-count mismatch (12 cols vs 11 args) made the worker
+  silently DROP every audit_orders / audit_executions row; log_account_snapshot
+  lost its ISO timestamp. Repaired in 9bf7df5 (restored pre-swarm behavior),
+  ledger entry BUG-127 (af28d3f), regression test c4b82b3.
+
