@@ -5541,3 +5541,45 @@ Commit absorption is aggressive: uncommitted fixes in shared files
 twice during this task. Verify with `git show <sha>:<file>` after every
 commit; re-apply + commit promptly, and never leave shared-file fixes
 uncommitted overnight.
+
+## BUG-130 — Split `__init__` Corruption + MT5 Connect Fatal + Boot Rehydrate Rejection + Factory Score-String Crash (2026-08-20 Hermes-ErrorFix)
+
+### Symptom (errors log 2026-08-20)
+- `[EXECUTION_RECONCILIATION] event=STARTUP_FAILED error='LiveEngine' object has no attribute 'order_manager'`
+- `Failed to initialize connection to MT5 terminal process. Retcode: (-10005, 'IPC timeout')` — engine killed at startup
+- Warnings: `[RUNTIME_CONFIG] rehydrate rejected (keeping bootstrap): unknown configuration key: 'factory.llm_base_url'...`
+- `WEB_ERROR endpoint=/api/factory/generate AttributeError: 'str' object has no attribute 'get'` at orchestrator._load_elite
+
+### Root causes
+1. **Split-init corruption (head-of-repo bug, committed by Hermes-MSLIE 79d1957)**: the constructor body after the
+   StrategyFactory block got absorbed into `_rebuild_factory_llm_provider`; `order_manager`/`trainer`/
+   `_rolling_feature_records`/`champion_manager` were assigned in a method NEVER called at construction. AST-verified
+   (`__init__` ended at line ~556, swallowed body at 588-881). Engine constructed fine syntactically but lacked every
+   post-factory attribute → run_loop crash at EXECUTION_RECONCILIATION.
+2. **MT5 connect() single-shot**: transient Win32 IPC timeouts killed the engine at startup; no retry at adapter or
+   engine level.
+3. **PersistentConfigStore.get_all()** replayed settings-service-owned keys (`factory.llm_*`, `database.*`) into the
+   runtime snapshot builder → whole persisted batch rejected at every boot.
+4. **strategy_registry.score is JSON TEXT** (row-safe normalization) but orchestrator called `(e.get('score') or {}).get(...)`.
+
+### Fixes (commits 463f30d, 86be5c8, 57b1603, 02ff127, 424e642)
+- Construct: `__init__` body restored (factory helpers moved to sibling methods after the constructor); pre-declared
+  `self.order_manager: OrderLifecycleManager | None = None` + reconciliation guard.
+- MT5: adapter `connect()` bounded retries (config.mt5.retries, 250ms*attempt backoff, structured [MT5_CONNECT] logs);
+  LiveEngine.run_loop 3 outer attempts with asyncio.sleep; web gradient connecting pill + MT5 status pill.
+- Rehydrate: `get_all()` excludes non-runtime keys via `_is_known_flat_key`.
+- Factory: module-level `_score_dict()` helper (dict/JSON-string/None-safe) at all 3 elite/verdict call sites.
+- Also committed: BUG-129 telegram BLOCKED_NOT_CONFIGURED throttle (1/60s) + POSITION_EXIT_EVAL 3s rate-limit.
+
+### Verification
+- `python tests/integration/test_engine_runtime_launch.py` → PASS (no ERROR/WARNING in engine log).
+- CONSTRUCTION_SMOKE probe (scratch/smoke_liveengine_init_fix.py) → PASS: order_manager/trainer/records assigned.
+- Runtime: `MT5 initialize()` live probe 8ms OK (account 10011755849 MetaQuotes-Demo).
+- Regressions: test_liveengine_init_order_bug130.py (3), test_factory_score_parse_bug130.py (5),
+-  test_runtime_config_hot_reload.py (10), test_frontend_assets_phase14.py (41).
+- beforePush.ps1 full gate re-run after ledger append.
+
+### TRAP for swarm
+Never split a def line into the middle of an init chain; after ANY live_engine.py structural edit run
+`python tests/integration/test_engine_runtime_launch.py` FIRST (it catches exactly this class via the engine log).
+Registry JSON columns are TEXT — decode before `.get()`.
