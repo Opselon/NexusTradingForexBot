@@ -477,6 +477,8 @@ def test_no_flat_2_lot_bug_regression() -> None:
     assert vol_10k == 0.50
     assert vol_47k == 2.35
     assert vol_100k == 5.00
+
+
 def test_risk_tier_contract_matches_documented_tables() -> None:
     """
     Forensic issue #2: the Account-Tier Ceiling table in agents/skill.md
@@ -522,9 +524,9 @@ def test_risk_tier_contract_matches_documented_tables() -> None:
     # tight SL to push raw lots ABOVE the ceilings.
     cases = [
         # (equity, expected_tier_max)
-        (50.0, 0.02),      # micro tier
-        (500.0, 0.10),     # < 1k tier
-        (5000.0, 1.00),    # < 10k tier
+        (50.0, 0.02),  # micro tier
+        (500.0, 0.10),  # < 1k tier
+        (5000.0, 1.00),  # < 10k tier
         (100000.0, 10.0),  # >= 10k -> HARD_MAX_LOTS parity
     ]
     for equity, expected_cap in cases:
@@ -614,4 +616,3 @@ def test_high_confidence_threshold_default_matches_config() -> None:
 
     engine = RiskEngine(RiskConfig(risk_per_trade_pct=1.0))
     assert engine.high_confidence_threshold == AlgoConfig().high_confidence_threshold == 0.95
-

@@ -406,6 +406,8 @@ def test_intelligent_hedging_trigger_and_policy() -> None:
         gc.collect()
         time.sleep(0.1)
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def test_audit_writer_paths_bug127_regression() -> None:
     """
     BUG-127 regression: the swarm's incomplete driver refactor (c617c0f)
@@ -486,9 +488,11 @@ def test_audit_writer_paths_bug127_regression() -> None:
         assert "T" in ts, f"order timestamp not ISO: {ts!r}"
 
         # execution row: executed_at ISO
-        ex_rows = audit_reader.get_recent_executions(limit=10) if hasattr(
-            audit_reader, "get_recent_executions"
-        ) else []
+        ex_rows = (
+            audit_reader.get_recent_executions(limit=10)
+            if hasattr(audit_reader, "get_recent_executions")
+            else []
+        )
         if not ex_rows:
             ex_rows = audit_reader.get_recent_order_events(limit=50)
         ex = [r for r in ex_rows if r.get("order_id") == "ord_bug127"]
@@ -517,4 +521,3 @@ def test_audit_writer_paths_bug127_regression() -> None:
         gc.collect()
         time.sleep(0.1)
         shutil.rmtree(temp_dir, ignore_errors=True)
-
