@@ -111,6 +111,16 @@ class TradeProposal(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     request_id: str = Field(..., description="Unique UUID tracing signal lifecycle")
+    execution_id: str | None = Field(
+        default=None,
+        description=(
+            "EXEC trace id (EXEC-YYYYMMDD-HHMMSS-xxxxxx) stamped once per "
+            "evaluation in SignalPolicy.evaluate_probabilities and carried "
+            "through filters, experience gate, risk and dispatch so a single "
+            "audit id follows the whole lifecycle. Observability only (INV-018); "
+            "never used for execution decisions."
+        ),
+    )
     symbol: str = Field(..., description="Target instrument")
     generated_at: datetime = Field(..., description="UTC timestamp of signal output")
     action: ActionType = Field(..., description="Proposed trading action")

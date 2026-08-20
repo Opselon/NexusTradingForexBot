@@ -435,3 +435,73 @@ def test_candidate_confidence_is_raw_probability_not_floor():
         assert proposal.confidence <= 0.45, (
             f"confidence {proposal.confidence} must reflect raw prob, not the 0.55+ floor"
         )
+
+
+def test_execution_id_stamped_on_no_trade_confidence_block():
+    """PHASE 13 forensic audit (2026-08-20): every evaluation must carry a
+    unique EXEC-... id even when the signal is rejected at the confidence
+    gate — the id is the single join key across radar logs, audit_signals,
+    audit_orders and the broker ticket."""
+    import copy
+
+    policy = SignalPolicy()
+    fv = copy.deepcopy(_make_feature_vector())
+    tick = _make_tick()
+
+    probs = torch.tensor([[0.05, 0.20, 0.75, 0.0]])
+    proposal = policy.evaluate_probabilities(
+        probabilities=probs,
+        current_tick=tick,
+        feature_vector=fv,
+    )
+    assert proposal.action == ActionType.NO_TRADE
+    assert proposal.execution_id is not None
+    assert proposal.execution_id.startswith("EXEC-"), proposal.execution_id
+    assert len(proposal.execution_id) >= 20, proposal.execution_id
+
+
+def test_execution_id_unique_across_evaluations():
+    """PHASE 13: consecutive evaluations must NOT reuse the same EXEC id
+    (two ticks one second apart -> two distinct trace ids)."""
+    import copy
+
+    from datetime import timedelta
+
+    policy = SignalPolicy()
+    fv = copy.deepcopy(_make_feature_vector())
+    t1 = _make_tick()
+    t2 = _make_tick()
+    t2 = t2.model_copy(update={"timestamp": t1.timestamp + timedelta(seconds=1)})
+
+    p1 = policy.evaluate_probabilities(
+        probabilities=torch.tensor([[0.05, 0.20, 0.75, 0.0]]),
+        current_tick=t1,
+        feature_vector=fv,
+    )
+    p2 = policy.evaluate_probabilities(
+        probabilities=torch.tensor([[0.05, 0.20, 0.75, 0.0]]),
+        current_tick=t2,
+        feature_vector=fv,
+    )
+    assert p1.execution_id != p2.execution_id
+
+
+def test_execution_id_stamped_on_actionable_proposal():
+    """PHASE 13: an actionable proposal (high confidence directional prob)
+    also carries the EXEC id so dispatch is joinable."""
+    import copy
+
+    policy = SignalPolicy()
+    fv = copy.deepcopy(_make_feature_vector())
+    tick = _make_tick()
+
+    probs = torch.tensor([[0.05, 0.95, 0.00, 0.0]])
+    proposal = policy.evaluate_probabilities(
+        probabilities=probs,
+        current_tick=tick,
+        feature_vector=fv,
+    )
+    # A 0.95 directional probability must survive the confidence gate; the
+    # proposal (whatever its final action) must carry the trace id.
+    assert proposal.execution_id is not None
+    assert proposal.execution_id.startswith("EXEC-")

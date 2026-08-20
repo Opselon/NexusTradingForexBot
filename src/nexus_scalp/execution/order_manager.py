@@ -893,6 +893,7 @@ class OrderLifecycleManager:
             action=action,
             symbol=symbol,
             volume=volume,
+            execution_id=getattr(decision, "execution_id", None),
         )
 
         if action in (
@@ -924,7 +925,7 @@ class OrderLifecycleManager:
                     stop_loss=sl,
                     take_profit=tp,
                     volume=volume,
-                    reason=f"dispatch_order {action.value}",
+                    reason=f"dispatch_order {action.value} | exec={getattr(decision, 'execution_id', '') or ''}",
                     latency=0.012,
                     execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
                 )
@@ -966,7 +967,7 @@ class OrderLifecycleManager:
                     stop_loss=sl,
                     take_profit=tp,
                     volume=volume,
-                    reason=f"dispatch_order pending {action.value}",
+                    reason=f"dispatch_order pending {action.value} | exec={getattr(decision, 'execution_id', '') or ''}",
                     latency=0.011,
                     execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
                 )

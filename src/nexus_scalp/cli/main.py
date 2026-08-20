@@ -1169,14 +1169,27 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
 
     from nexus_scalp.web.server import create_app
 
+    # DOCKER-REPAIR: NSE_LOG_LEVEL (DEBUG|INFO|WARNING|ERROR) drives the
+    # structlog config used by `nexus start` (default INFO when unset).
+    nse_log_level = os.getenv("NSE_LOG_LEVEL", "INFO").strip().upper()
+    from nexus_scalp.observability.logging import configure_logging
+
+    configure_logging(
+        log_level=nse_log_level,
+        json_format=False,
+        log_to_file=True,
+    )
     console.print(
         f"[bold cyan]Starting {cfg.execution.mode.value} mode — {cfg.execution.symbol}[/bold cyan]"
     )
     engine._preflight_or_raise()
     app_obj = create_app(engine_ref=engine)
     engine.server_state = app_obj.state.server_state
+    # DOCKER-REPAIR (2026-08-20): container bind is driven by env
+    # (NSE_WEB_HOST / NSE_WEB_PORT); bare `run` keeps localhost-only.
+    bind_host = os.getenv("NSE_WEB_HOST", "127.0.0.1")
     uvicorn_config = uvicorn.Config(
-        app=app_obj, host="127.0.0.1", port=port, log_level="warning", ws_max_size=16 * 1024 * 1024
+        app=app_obj, host=bind_host, port=port, log_level="warning", ws_max_size=16 * 1024 * 1024
     )
     server = uvicorn.Server(uvicorn_config)
 

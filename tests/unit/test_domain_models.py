@@ -57,3 +57,31 @@ def test_trade_proposal_buy_invariants() -> None:
             take_profit=1.09000,
             risk_reward_ratio=2.0,
         )
+
+
+def test_trade_proposal_execution_id_default_none():
+    """PHASE 13 forensic contract: execution_id is optional (default None) so
+    legacy construction sites and tests keep working; it only carries a value
+    once the policy stamps it."""
+    from datetime import UTC, datetime
+
+    from nexus_scalp.domain.enums import ActionType
+    from nexus_scalp.domain.models import TradeProposal
+
+    p = TradeProposal(
+        request_id="req-1",
+        symbol="XAUUSD",
+        generated_at=datetime.now(UTC),
+        action=ActionType.BUY,
+        confidence=0.5,
+        proposed_entry=100.0,
+        stop_loss=99.0,
+        take_profit=101.0,
+        risk_reward_ratio=2.0,
+    )
+    assert p.execution_id is None
+
+    p2 = p.model_copy(update={"execution_id": "EXEC-20260820-010203-abc123"})
+    assert p2.execution_id == "EXEC-20260820-010203-abc123"
+    # frozen model: original untouched
+    assert p.execution_id is None

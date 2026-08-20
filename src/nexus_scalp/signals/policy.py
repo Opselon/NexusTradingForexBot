@@ -111,6 +111,16 @@ class SignalPolicy:
         """
         Evaluates conditions at maximum live speed (50ms hot path) and outputs a sized TradeProposal.
         """
+        # Forensic execution trace id (PHASE 13 audit, 2026-08-20): ONE id per
+        # evaluation, stamped BEFORE any gate, carried into every proposal the
+        # policy emits (NO_TRADE included) so logs + audit rows + dispatch are
+        # joinable by a single EXEC-... key. Observability only (INV-018) —
+        # never influences a decision.
+        now_exec = current_tick.timestamp
+        execution_id = (
+            f"EXEC-{now_exec:%Y%m%d}-{now_exec:%H%M%S}-"
+            f"{uuid.uuid4().hex[:6]}"
+        )
         # Authoritative Regime Guardian Gate early in evaluation pipeline
         is_guardian_active = False
         if regime_state is not None:
@@ -134,6 +144,7 @@ class SignalPolicy:
             # Return detailed NO_TRADE proposal containing 'BLOCKED_BY_GUARDIAN'
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
+                execution_id=execution_id,
                 symbol=current_tick.symbol,
                 generated_at=current_tick.timestamp,
                 action=ActionType.NO_TRADE,
@@ -189,6 +200,7 @@ class SignalPolicy:
             _pnt = probs[0] if len(probs) > 0 else 0.0
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
+                execution_id=execution_id,
                 symbol=current_tick.symbol,
                 generated_at=current_tick.timestamp,
                 action=ActionType.NO_TRADE,
@@ -861,6 +873,7 @@ class SignalPolicy:
 
                 tick_sweep_proposal = TradeProposal(
                     request_id=str(uuid.uuid4()),
+                    execution_id=execution_id,
                     symbol=current_tick.symbol,
                     generated_at=now,
                     action=proposed_action,
@@ -963,6 +976,7 @@ class SignalPolicy:
             self._last_signal_time = now
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
+                execution_id=execution_id,
                 symbol=current_tick.symbol,
                 generated_at=now,
                 action=proposed_action,
@@ -1006,6 +1020,7 @@ class SignalPolicy:
             }
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
+                execution_id=execution_id,
                 symbol=current_tick.symbol,
                 generated_at=current_tick.timestamp,
                 action=ActionType.NO_TRADE,
@@ -1403,6 +1418,7 @@ class SignalPolicy:
 
                 final_proposal = TradeProposal(
                     request_id=str(uuid.uuid4()),
+                    execution_id=execution_id,
                     symbol=current_tick.symbol,
                     generated_at=now,
                     action=proposed_action,
@@ -1432,6 +1448,33 @@ class SignalPolicy:
                     confidence_before_filters=float(confidence_before_filters),
                     confidence_after_filters=float(confidence),
                 )
+
+        # PHASE 13 forensic trace: one log line per evaluation carrying the
+        # EXEC id + full decision chain (action, stage, blocked_by, confidences,
+        # regime) so a single id explains WHY this evaluation did/didn't trade.
+        # Guarded by the same throttle as radar telemetry (never a hot-path
+        # flood). Observability only.
+        if execution_id and final_proposal is not None:
+            logger.info(
+                "[EXEC_TRACE]",
+                execution_id=execution_id,
+                request_id=final_proposal.request_id,
+                action=(
+                    final_proposal.action.value
+                    if hasattr(final_proposal.action, "value")
+                    else str(final_proposal.action)
+                ),
+                stage=final_proposal.decision_stage,
+                blocked_by=final_proposal.blocked_by,
+                reason=final_proposal.reason_code,
+                conf_before=float(
+                    final_proposal.confidence_before_filters or 0.0
+                ),
+                conf_after=float(
+                    final_proposal.confidence_after_filters or 0.0
+                ),
+                regime=str(final_proposal.regime or ""),
+            )
 
         # Throttled Console Telemetry logging actual finalized decision action
         should_log = False

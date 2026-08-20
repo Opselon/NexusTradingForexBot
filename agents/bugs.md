@@ -5311,3 +5311,63 @@ The 2026-08-19 UI state was NOT a false positive: the production champion serves
 - Never evaluate model compatibility from stale engine class attributes alone — read the actual loaded model contract (champion artifact + tensor width).
 - The compatibility gate must be recomputed from the current model contract on every report (no stale cache); caching may key on artifact fingerprint (BUG-118).
 - scalp_v3 and scalp_v4 are the SAME 70D geometry family; exact-id-only checks create false BLOCKs.
+
+## BUG-124 — Bot Opened No Positions: honest stacked-gate deadlock + engine exit at 03:00 (execution forensic audit, 2026-08-20 Hermes-Forensic-ExecAudit)
+
+### Symptom
+Bot running LIVE (XAUUSD, MT5 connected) but no positions opened. Audit window
+22:11 IST → 02:59 IST: 1,297 signals, 1,191 NO_TRADE (92%); only ONE dispatch
+ever reached the broker (SELL_LIMIT 0.17 @ 4520.84 → ticket 152508395848 →
+filled → closed -$5.44 at 02:22:07). Since the close: 0 orders.
+
+### Root cause
+NOT one bug — a stacked, honest filter deadlock in
+`SignalPolicy.evaluate_probabilities` (+ experience gate):
+1. Model probabilities cluster 0.22–0.33 (below 0.35 effective threshold =
+   0.25 base + 0.10 RANGING penalty) → INSUFFICIENT_CONFIDENCE.
+2. RANGING_MEAN_REVERSION regime filter → NO_TRADE.
+3. Remaining directional candidates (PREDICTIVE_OB_*_LIMIT_EQUILIBRIUM)
+   killed by EXPERIENCE_INTELLIGENCE_GATE: ALL strategy families DEGRADED
+   (win_rate 0.24–0.31, expectancy_r −0.17..−0.26, replay_validated=False)
+   or RETIRED → conf × 0.70 < 0.40 floor → NO_TRADE.
+4. Zones: ai_zone_confidence_threshold 0.60; R:R min 1.8 — strict.
+
+Also: engine process EXITED ~03:00 IST (log last line 02:59:56, PID 13380
+gone, port 8080 closed, audit_signals last 23:29:00Z). No crash marker in log.
+
+Classification: E) STRATEGY FILTER + D) CONFIDENCE BLOCK (+ process-down).
+
+### Fix (smallest correct — observability only, NO gate weakening)
+- `TradeProposal.execution_id` (optional, default None).
+- `evaluate_probabilities` stamps ONE `EXEC-YYYYMMDD-HHMMSS-xxxxxx` per
+  evaluation before any gate; carried into every proposal incl. NO_TRADE.
+- `[EXEC_TRACE]` structlog line at every finalized decision (execution_id,
+  action, stage, blocked_by, reason, conf_before/after, regime).
+- `dispatch_order` embeds `| exec=<id>` into audit_orders.reason (market +
+  pending) so signals ↔ orders ↔ broker ticket are joinable.
+- `GET /api/debug/trace/{execution_id}` read-only endpoint (audit_signals +
+  audit_orders join, never mutates).
+
+### Evidence
+- 24h gate census: REGIME_RANGING_MEAN_REVERSION 188, ASYMMETRIC_RR 84,
+  INSUFFICIENT_CONFIDENCE (0.24..0.34 < 0.35) 62+58+52+..., PREDICTIVE_OB 52,
+  EXPERIENCE gate rows with DEGRADED_CONFIDENCE_BELOW_THRESHOLD (0.18..0.22)
+  e.g. `02:54:00 [PRE_TRADE] REJECT reason=DEGRADED_CONFIDENCE_BELOW_THRESHOLD (0.22) samples=21 strategy_id=strat_68a1d48c8a3f`.
+- Broker: `02:20:50 Fast-Act Pending Order Placed Successfully on attempt 1! Ticket: 152508395848`;
+  `02:22:07 Successfully closed live position ticket #152508395848 at price 4521.2`;
+  audit_ledger row ticket 152508395848 CLOSED −5.44 HOLD_SCORE_DECAY PURE_AI.
+- Live probe: `[EXEC_TRACE] execution_id=EXEC-20260820-002033-d783c9 action=NO_TRADE blocked_by=ASYMMETRIC_RR_LIMIT stage=STANDARD_EVAL`.
+- Tests: 12 policy/domain + 38 debug-snapshot PASS.
+
+### Regression guards
+- test_execution_id_stamped_on_no_trade_confidence_block
+- test_execution_id_unique_across_evaluations
+- test_execution_id_stamped_on_actionable_proposal
+- test_trade_proposal_execution_id_default_none
+
+### Next agent
+- Restart engine (`python -m nexus_scalp.cli.main run --mode LIVE` from repo
+  root) — the process is DOWN; nothing trades while down.
+- Investigate the ~03:00 IST exit (daily maintenance/scheduler/watchdog).
+- Do NOT lower confidence gates to force trades (2026-08-18 $-4.7k regime).
+- Full report: agents/forensic_reports/2026-08-20_execution_forensic_no_positions.md

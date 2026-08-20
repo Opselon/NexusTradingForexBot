@@ -821,3 +821,12 @@ Dependencies: TASK-11 hygiene worker, TASK-10 migrations, TASK-12 telegram
 Required tests: TEST-HYG-37..48 (scheduler, first-run audit, quarantine,
        consistency, index health, dry-run, protected data, telemetry, budget)
 Status: VERIFIED (49 tests in file PASS; ruff+format+mypy clean)
+
+## CHG-0028 — EXEC trace-id observability: single execution_id across signal→dispatch→broker (BUG-124, 2026-08-20 Hermes-Forensic-ExecAudit)
+
+Change: Add `TradeProposal.execution_id` (EXEC-YYYYMMDD-HHMMSS-xxxxxx) stamped once per evaluation in SignalPolicy.evaluate_probabilities and carried into every proposal; `[EXEC_TRACE]` structlog line per finalized decision; dispatch_order embeds `| exec=<id>` in audit_orders.reason; new read-only endpoint GET /api/debug/trace/{execution_id}.
+Scope: src/nexus_scalp/domain/models.py, src/nexus_scalp/signals/policy.py, src/nexus_scalp/execution/order_manager.py, src/nexus_scalp/web/server.py, tests/unit/test_policy.py, tests/unit/test_domain_models.py
+Why: Forensic audit found NO positions opened (stacked filter deadlock). The trace id is the observability prerequisite to attribute every future rejection to its exact gate — without weakening any safety gate.
+Migration: none (additive optional field; DB schema unchanged; reason-string embeds the id).
+Verification: VERIFIED — 12 policy/domain tests + 38 debug-snapshot tests PASS; live probe `[EXEC_TRACE] execution_id=EXEC-20260820-002033-d783c9 action=NO_TRADE blocked_by=ASYMMETRIC_RR_LIMIT stage=STANDARD_EVAL`.
+Risk: minimal — observability only; no decision/behavior change.
