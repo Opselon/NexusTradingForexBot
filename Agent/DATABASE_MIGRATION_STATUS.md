@@ -5,7 +5,7 @@
 > Coordination contract: `agents/multi-agent-git-contract.md`, `agents/locks.yaml`.
 
 ```text
-STATUS: DATABASE PORTABILITY / SQLITE <-> POSTGRESQL PREPARATION IN PROGRESS
+STATUS: DATABASE PORTABILITY / SQLITE <-> POSTGRESQL PREPARATION COMPLETE
 
 OWNER:
 Hermes-DBPortability (DATABASE-PORTABILITY mission)
@@ -23,17 +23,17 @@ repository persistence contracts, migration tooling, or database UI without
 coordinating with this workstream.
 
 Current phase:
-Implementation complete -> verification + final report
+COMPLETE - verified 2026-08-20
 
 Current branch:
-main (commits as <AGENT>: <task> per repo contract)
+main
 
-Files already modified/created (committed):
+Files created/modified (all committed):
 - src/nexus_scalp/database/provider.py        (NEW - DatabaseProvider registry/selector)
-- src/nexus_scalp/database/config.py          (NEW - DatabaseConfig model + loader)
+- src/nexus_scalp/database/config.py          (NEW - DatabaseConfig model + loader + secrets)
 - src/nexus_scalp/database/drivers/          (NEW - base/sqlite/postgres/proxy drivers)
 - src/nexus_scalp/database/health.py          (NEW - DatabaseHealthService)
-- src/nexus_scalp/database/ddl_port.py        (NEW - SQLite DDL to PostgreSQL DDL porter)
+- src/nexus_scalp/database/ddl_port.py        (NEW - SQLite DDL -> PostgreSQL DDL porter)
 - src/nexus_scalp/database/migrate_copier.py  (NEW - streamed batch copier + checkpoints)
 - src/nexus_scalp/database/migrate_engine.py  (NEW - migration orchestrator + validation)
 - src/nexus_scalp/adapters/database/audit_repository.py (provider-aware, portable SQL)
@@ -56,23 +56,25 @@ Completed:
   - SQLite + PostgreSQL drivers (real psycopg3), portable proxy, DDL porter
   - Migration engine (preview/run/validate/resume/backup) verified against
     a REAL PostgreSQL 16 container
-  - DATABASE MANAGEMENT UI tab + API + CLI
-  - Docker compose PG profile + CI database-provider arm
+  - DATABASE MANAGEMENT UI tab + API (status/config/test-connection/provider/
+    preview/migrate/progress/report/validate/backup) + CLI db-portability
+  - Docker compose PG profile + CI database-provider arm (real PG service)
   - docs/DATABASE.md
-  - Provider matrix test suite (34 tests, includes real PG integration)
+  - Provider matrix test suite (34 tests, includes real PG integration):
+    ruff PASS, mypy PASS, unit suite PASS, PG integration PASS (34/34)
 
 In progress:
-  - Full beforePush gate verification
-  - Final report
+  - none
 
 Remaining:
-  - Telegram final report to operator
+  - none
 
 Known risks:
-  - Parallel swarm agents keep committing around this work; re-verify HEAD
-    before staging (contract). My commits are incremental and isolated.
+  - Parallel swarm agents commit around this work; the migrate route's
+    app.state wiring was reverted twice mid-task and re-applied. Verify
+    `app.state.db_migration_state` before future work in that route.
   - psycopg is an optional extra; SQLite remains fully functional without it.
-  - The PG integration tests require NSE_PG_TEST_URL - CI provides it.
+  - PG integration tests require NSE_PG_TEST_URL - CI provides it.
 
 Do not modify:
   - src/nexus_scalp/database/ (provider registry, config, drivers, migrator,
@@ -91,14 +93,13 @@ TRUE
 ## Coordination
 
 ```text
-DATABASE PORTABILITY WORKSTREAM: ACTIVE
+DATABASE PORTABILITY WORKSTREAM: COMPLETE
 
 Owner:            Hermes-DBPortability
 Started:          2026-08-20
+Completed:        2026-08-20
 Branch:           main
-Completed:        architecture, providers, migration, UI, Docker, CI, tests
-In progress:      final verification + report
-Remaining:        none (barring gate findings)
+Verified:         ruff PASS / mypy PASS / unit PASS / PG integration 34/34 PASS
 ```
 
 ## Log
@@ -106,4 +107,6 @@ Remaining:        none (barring gate findings)
 - 2026-08-20: workstream registered; audit completed.
 - 2026-08-20: core layer, providers, migration engine, UI, CLI, Docker, CI,
   tests all implemented and committed. PG integration verified against a real
-  PostgreSQL 16 container.
+  PostgreSQL 16 container (34/34 tests).
+- 2026-08-20: full web API E2E verified (preview -> migrate -> progress ->
+  report COMPLETE/PASSED -> provider switch ready). Gate clean. COMPLETE.
