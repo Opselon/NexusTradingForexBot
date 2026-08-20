@@ -140,7 +140,9 @@ class DatabaseHygieneWorker:
         Returns the consolidated run result.
         """
         if self.state_store.get_state().get("state") == WorkerState.PAUSED.value:
-            return {"error": "PAUSED", "detail": "worker paused"}
+            # Contract: run_cycle ALWAYS returns a result dict with "databases"
+            # (downstream consumers index res["databases"][db] — see TEST-HYG-19).
+            return {"error": "PAUSED", "detail": "worker paused", "databases": {}}
 
         targets = list(databases or self._db_paths.keys())
         self.state_store.set_state(WorkerState.SCANNING, mode=self.mode.value)
