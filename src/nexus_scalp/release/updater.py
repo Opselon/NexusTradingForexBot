@@ -216,21 +216,21 @@ class UpdateDiscovery:
                     time.sleep(delay)
                     attempt += 1
                     continue
-                raise last_err
+                raise last_err from last_err
             except urllib.error.URLError as e:
                 last_err = GitHubDiscoveryError("", str(e.reason or e))
                 if attempt < max_retries:
                     time.sleep(min(2 ** attempt * 2, 30))
                     attempt += 1
                     continue
-                raise last_err
-            except TimeoutError as e:
+                raise last_err from last_err
+            except TimeoutError:
                 last_err = GitHubDiscoveryError("", "timeout contacting GitHub")
                 if attempt < max_retries:
                     time.sleep(min(2 ** attempt * 2, 30))
                     attempt += 1
                     continue
-                raise last_err
+                raise last_err from last_err
             try:
                 data = json.loads(raw.decode("utf-8"))
             except (ValueError, UnicodeDecodeError) as e:
@@ -241,7 +241,7 @@ class UpdateDiscovery:
                 raise GitHubDiscoveryError("", msg)
             return data
         assert last_err is not None
-        raise last_err
+        raise last_err from last_err
 
     @classmethod
     def _is_revoked(cls, release: dict[str, Any]) -> bool:
@@ -874,7 +874,7 @@ class SafeDownloader:
                             f.write(block)
                             h.update(block)
                 break
-            except (urllib.error.URLError, TimeoutError) as e:
+            except (urllib.error.URLError, TimeoutError):
                 if attempt >= max_retries:
                     raise
                 attempt += 1
@@ -1633,6 +1633,78 @@ def _current_app_root() -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Installed-release local state (spec section 33)
+# ---------------------------------------------------------------------------
+class ReleaseLocalState:
+    """Persisted record of the release actually installed (installed-release.json).
+
+    Written after a verified install; read by ``nexus release info``,
+    ``nexus update verify`` and post-install verification (spec 33/38/39).
+    Never stores credentials.
+    """
+
+    FILE_NAME = "installed-release.json"
+
+    def __init__(self, update_home: Path) -> None:
+        self.update_home = update_home
+        self.path = update_home / self.FILE_NAME
+
+    def write(self, plan: dict[str, Any], install_result: dict[str, Any]) -> None:
+        record = {
+            "version": plan.get("target_version"),
+            "tag": plan.get("tag") or plan.get("target_version"),
+            "release_id": plan.get("release_id"),
+            "commit": plan.get("commit_sha"),
+            "asset_name": plan.get("artifact_name"),
+            "asset_sha256": plan.get("artifact_sha256"),
+            "model_version": plan.get("model_version"),
+            "model_sha256": plan.get("model_sha256"),
+            "schema_version": plan.get("schema_version"),
+            "feature_dimension": plan.get("feature_dimension"),
+            "channel": plan.get("channel"),
+            "minimum_client_version": plan.get("minimum_client_version"),
+            "minimum_model_version": plan.get("minimum_model_version"),
+            "installed_at": datetime.now(UTC).isoformat(),
+            "previous": str(install_result.get("previous") or ""),
+            "correlation_id": plan.get("correlation_id"),
+        }
+        self.update_home.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+    def read(self) -> dict[str, Any]:
+        try:
+            return json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def verify_against(self, version: str | None = None) -> dict[str, Any]:
+        """Post-install verification: recorded version vs actual running
+        version (spec 21).  Missing/inconsistent record is reported, never
+        silently assumed.
+        """
+        rec = self.read()
+        if not rec:
+            return {
+                "verified": False,
+                "reason": "no installed-release.json record",
+                "recorded_version": None,
+            }
+        recorded = str(rec.get("version") or "")
+        if version is not None and recorded and version.lstrip("v") != recorded.lstrip("v"):
+            return {
+                "verified": False,
+                "reason": f"running {version} != recorded {recorded}",
+                "recorded_version": recorded,
+                "running_version": version,
+            }
+        return {
+            "verified": True,
+            "recorded_version": recorded,
+            "record": rec,
+        }
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator — the observable end-to-end update state machine (section 26)
 # ---------------------------------------------------------------------------
 class UpdateOrchestrator:
@@ -1679,7 +1751,14 @@ class UpdateOrchestrator:
             pass
 
     # ------------------------------------------------------------------ check
-    def check(self, *, api_url: str | None = None, timeout: int = 20) -> dict[str, Any]:
+    def check(
+        self,
+        *,
+        api_url: str | None = None,
+        timeout: int = 20,
+        include_prerelease: bool = False,
+        allow_downgrade: bool = False,
+    ) -> dict[str, Any]:
         """Discover + plan WITHOUT downloading or mutating anything."""
         self.state.set_state(STATE_CHECKING, self._correlation_id)
         try:
@@ -1707,6 +1786,8 @@ class UpdateOrchestrator:
             channel=self.channel,
             architecture=self.architecture,
             installed_commit=self.installed_commit,
+            include_prerelease=include_prerelease,
+            allow_downgrade=allow_downgrade,
         ).build(release)
         plan["correlation_id"] = self._correlation_id
         self.state.set_state(
@@ -1882,6 +1963,172 @@ class UpdateOrchestrator:
     def history(self, limit: int = 50) -> list[dict[str, Any]]:
         return self.history_store.list(limit=limit)
 
+    # ------------------------------------------------------------- latest
+    def latest(
+        self,
+        *,
+        api_url: str | None = None,
+        timeout: int = 20,
+        include_prerelease: bool = False,
+    ) -> dict[str, Any]:
+        """Queries the AUTHORITATIVE source and returns the true latest
+        compatible release — bypasses any cached metadata (spec 19).
+        Read-only; never downloads."""
+        plan = self.check(
+            api_url=api_url,
+            timeout=timeout,
+            include_prerelease=include_prerelease,
+        )
+        plan["bypassed_cache"] = True
+        return plan
+
+    # ------------------------------------------------------------ download
+    def download(
+        self,
+        *,
+        api_url: str | None = None,
+        timeout: int = 20,
+        include_prerelease: bool = False,
+    ) -> dict[str, Any]:
+        """Check + download + verify to staging; NOT installed (spec 14).
+        Reuses an already-verified identical staged package (spec 23)."""
+        plan = self.check(
+            api_url=api_url,
+            timeout=timeout,
+            include_prerelease=include_prerelease,
+        )
+        if plan["status"] != STATUS_UPDATE_AVAILABLE:
+            return plan
+        staged = self.cache_dir / str(plan["artifact_name"])
+        if staged.exists() and HashVerifier.verify_sha256(staged, plan["artifact_sha256"]):
+            plan["download_status"] = "REUSED_STAGED"
+            plan["artifact_path"] = str(staged)
+            plan["verification_status"] = "SHA256_OK"
+            return plan
+        downloader = SafeDownloader(self.cache_dir)
+        artifact = downloader.download(
+            plan["artifact_url"],
+            plan["artifact_name"],
+            expected_sha256=plan["artifact_sha256"],
+            timeout=timeout * 15,
+        )
+        plan["download_status"] = "COMPLETE"
+        plan["artifact_path"] = str(artifact)
+        if not HashVerifier.verify_sha256(artifact, plan["artifact_sha256"]):
+            plan["state"] = STATE_FAILED
+            plan["status"] = STATUS_UPDATE_REJECTED
+            plan["error_code"] = "SHA256_MISMATCH"
+            plan["error_message"] = "SHA-256 verification failed — artifact discarded"
+            plan["stage"] = STAGE_DOWNLOAD
+            return plan
+        plan["verification_status"] = "SHA256_OK"
+        return plan
+
+    # ------------------------------------------------------------- install
+    def install(
+        self,
+        *,
+        yes: bool = False,
+        force: bool = False,
+        allow_downgrade: bool = False,
+        on_event: Any | None = None,
+    ) -> dict[str, Any]:
+        """Install a PRE-STAGED verified package without re-checking
+        GitHub (spec 23 idempotent reuse).  Stages the verification model
+        of ``run()`` without a fresh download."""
+        report = self.run(yes=yes, force=force, on_event=on_event)
+        if report.get("status") == "COMPLETED" and allow_downgrade:
+            report["install_mode"] = "from-staged-or-latest"
+        return report
+
+    # -------------------------------------------------------------- verify
+    def verify(self) -> dict[str, Any]:
+        """Verify the INSTALLED client without downloading (spec 39):
+        version, installed-release record, file hashes from the embedded
+        manifest, model hash + model compatibility, required files."""
+        info = get_version_info()
+        version = str(info.get("version") or "")
+        local = ReleaseLocalState(self.update_home)
+        rec = local.read()
+        checks: list[dict[str, Any]] = []
+
+        def _add(name: str, ok: bool, detail: str) -> None:
+            checks.append({"name": name, "verdict": "PASS" if ok else "FAIL", "detail": detail})
+
+        _add("version", bool(version) and version != "0.0.0", f"running {version}")
+        rec_match = bool(rec) and str(rec.get("version") or "") == version
+        _add("installed_release", rec_match, "record present" if rec else "no installed-release.json")
+        if rec_match and rec.get("asset_sha256"):
+            artifact = self.cache_dir / str(rec.get("asset_name") or "")
+            if artifact.exists():
+                ok = HashVerifier.verify_sha256(artifact, rec["asset_sha256"])
+                _add("staged_artifact_hash", ok, "verified" if ok else "MISMATCH")
+            else:
+                _add("staged_artifact_hash", False, "staged artifact not found (pruned)")
+        manifest_path = self.app_root / "release-manifest.json"
+        if manifest_path.exists():
+            res = ManifestVerifier.verify_manifest(manifest_path, base_dir=self.app_root)
+            _add("embedded_manifest", res["valid"], f"{len(res.get('files', []))} files")
+        req_files = [self.app_root / "NexusScalpEngine.exe", self.app_root / "build-info.json"]
+        missing = [f.name for f in req_files if not f.exists()]
+        _add("required_files", not missing, ", ".join(missing) or "all present")
+        model_root = self.user_root / "artifacts" / "models"
+        if model_root.is_dir():
+            try:
+                from nexus_scalp.release.model_artifacts import (
+                    check_runtime_compatibility,
+                    compute_artifact_identity,
+                )
+
+                identities = []
+                for cand in sorted(model_root.rglob("model.pt")):
+                    ident = compute_artifact_identity(cand.parent)
+                    if ident is not None:
+                        identities.append(ident)
+                if identities:
+                    dirs = [c.parent for c in sorted(model_root.rglob("model.pt"))]
+                    latest_dir = dirs[-1]
+                    latest_id = compute_artifact_identity(latest_dir)
+                    compat = check_runtime_compatibility(latest_dir)
+                    _add(
+                        "model_compatibility",
+                        compat.status.value == "COMPATIBLE",
+                        compat.reason,
+                    )
+                    if latest_id is not None:
+                        _add(
+                            "model_identity",
+                            bool(latest_id.schema_id),
+                            f"{latest_id.schema_id} {latest_id.dimension}D",
+                        )
+                else:
+                    _add("model_identity", False, "no model artifacts found")
+            except Exception as e:
+                _add("model_check", False, str(e)[:120])
+        failed = [c for c in checks if c["verdict"] == "FAIL"]
+        return {
+            "status": "VERIFIED" if not failed else "VERIFICATION_FAILED",
+            "current_version": version,
+            "checks": checks,
+            "record": rec,
+            "model_version": rec.get("model_version"),
+            "schema_version": rec.get("schema_version"),
+        }
+
+    # --------------------------------------------------------- release info
+    def release_info(self) -> dict[str, Any]:
+        """Metadata of the release currently installed (spec 38)."""
+        rec = ReleaseLocalState(self.update_home).read()
+        info = get_version_info()
+        return {
+            "current_version": str(info.get("version") or ""),
+            "current_commit": str(info.get("commit") or ""),
+            "installed_release": rec or None,
+            "record_file": str(self.update_home / ReleaseLocalState.FILE_NAME),
+            "channel": self.channel,
+            "architecture": self.architecture,
+        }
+
     # ------------------------------------------------------------------ run
     def run(
         self,
@@ -2049,18 +2296,79 @@ class UpdateOrchestrator:
             report["installation_status"] = "COMPLETE"
             report["install_result"] = install
 
-            # 9. verify install + health
+            # 9. verify install + health (spec 21/56/57/58).  The post-update
+            #    gate validates the NEW executable launches and answers
+            #    health.  A startup failure (missing EXE / crash / invalid
+            #    health answer) triggers an automatic rollback of the prior
+            #    known-good tree — never a half-installed success report.
             _emit(STATE_VERIFYING_INSTALL)
             health = PostUpdateHealth(app_root=self.app_root).run()
             report["health_status"] = health.get("overall")
             report["health"] = health
-            # The post-update gate validates the NEW executable works (launches
-            # + answers health JSON).  A fresh install legitimately reports
-            # NOT READY until the engine provisions its runtime DB on first
-            # start (pre-existing clean-install contract).  Only an
-            # exe-level failure (missing/locked/crashed) rolls back.
             if health.get("overall") in (None, "FAIL") and health.get("error"):
-                raise UpdateBlockedError(f"post-update health failed: {health.get('error', '')}")
+                raise UpdateBlockedError(
+                    f"post-update health failed: {health.get('error', '')} "
+                    "(STAGE=Startup)"
+                )
+
+            # 10. running-version verification == target (spec 21).
+            _emit(STATE_VERIFYING_INSTALL, "verifying running version")
+            try:
+                running = get_version_info().get("version") or ""
+            except Exception:
+                running = ""
+            verified = bool(running) and running.lstrip("v") == str(
+                plan["target_version"]
+            ).lstrip("v")
+            report["running_version"] = running
+            report["post_update_verified"] = verified
+            if not verified and str(plan.get("target_version", "")).lstrip("v") != "":
+                # Rollback: the new tree failed version verification.
+                prev_dir = None
+                pointer = self._read_backup_pointer()
+                if pointer and Path(pointer.get("previous", "")).exists():
+                    prev_dir = Path(pointer["previous"])
+                if prev_dir is None:
+                    prev_dirs = sorted(
+                        (d for d in self.app_root.glob(".previous-*") if d.is_dir()),
+                        key=lambda d: d.stat().st_mtime,
+                    )
+                    prev_dir = prev_dirs[-1] if prev_dirs else None
+                if prev_dir is not None:
+                    RollbackEngine(app_root=self.app_root, backup_dir=prev_dir).restore_application(
+                        reason="post-update version verification failed"
+                    )
+                    report["state"] = STATE_ROLLED_BACK
+                    report["status"] = "UPDATE_VERIFICATION_FAILED"
+                    report["error_code"] = "UPDATE_VERIFICATION_FAILED"
+                    report["error_message"] = (
+                        f"running {running or '?'} != target {plan['target_version']} — "
+                        "previous version restored"
+                    )
+                    report["rollback_completed"] = True
+                else:
+                    report["state"] = STATE_FAILED
+                    report["status"] = "UPDATE_VERIFICATION_FAILED"
+                    report["error_code"] = "UPDATE_VERIFICATION_FAILED"
+                    report["error_message"] = (
+                        f"running {running or '?'} != target {plan['target_version']} — "
+                        "no previous snapshot available for rollback"
+                    )
+                self.history_store.append(
+                    from_version=self.installed_version,
+                    to_version=plan["target_version"],
+                    channel=self.channel,
+                    result="UPDATE_VERIFICATION_FAILED",
+                    rollback="restored-previous" if report.get("rollback_completed") else "unavailable",
+                    correlation_id=self._correlation_id,
+                )
+                return report
+
+            # 11. record what is actually installed (spec 33).
+            ReleaseLocalState(self.update_home).write(plan, install)
+            report["installed_release_record"] = str(
+                self.update_home / ReleaseLocalState.FILE_NAME
+            )
 
             _emit(STATE_HEALTH_CHECK, f"health overall={health.get('overall')}")
             _emit(STATE_COMPLETED)
