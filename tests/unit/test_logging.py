@@ -7,6 +7,7 @@ stack traces, secret redaction, retention pruning and correlation IDs.
 """
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -17,11 +18,14 @@ import pytest
 from nexus_scalp.observability.logging import (
     _ANSI_RE,
     DEFAULT_RETENTION_DAYS,
+    DatedRotatingFileHandler,
     _LevelMatchFilter,
+    _prune_old_logs,
     _redact_sensitive_fields,
     configure_logging,
     get_logger,
     log_event,
+    reset_prune_throttle,
     timestamp_now,
 )
 
@@ -197,3 +201,43 @@ def test_dated_path_convention(tmp_path: Path) -> None:
     year, month = today[:4], today[5:7]
     target = tmp_path / "info" / year / month / f"{today}.log"
     assert target.exists(), f"expected {target}"
+
+
+def test_size_rotation_preserves_all_lines(tmp_path: Path) -> None:
+    """Files over max_bytes split into .part-NNN.log without losing records."""
+    handler = DatedRotatingFileHandler(tmp_path, logging.INFO, max_bytes=10 * 1024)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    total = 500
+    for i in range(total):
+        rec = logging.LogRecord(
+            "rot", logging.INFO, __file__, 1, f"EVENT i={i} pad=" + "x" * 180, None, None
+        )
+        handler.emit(rec)
+    handler.close()
+
+    info_dir = tmp_path / "info" / "2026" / "08"
+    files = sorted(info_dir.glob("2026-08-20*.log"))
+    assert any("part-" in f.name for f in files), "expected part files"
+    written = sum(len(f.read_text(encoding="utf-8").splitlines()) for f in files)
+    assert written == total, f"zero-loss violated: {written} != {total}"
+
+
+def test_retention_prunes_old_but_keeps_archive(tmp_path: Path) -> None:
+    """Retention deletes old severity files; archive/ is never auto-deleted."""
+    old_dir = tmp_path / "info" / "2026" / "01"
+    old_dir.mkdir(parents=True, exist_ok=True)
+    old_file = old_dir / "2026-01-15.log"
+    old_file.write_text("old\n", encoding="utf-8")
+    old_ts = time.time() - 30 * 86400
+    os.utime(old_file, (old_ts, old_ts))
+
+    archive_dir = tmp_path / "archive" / "2026" / "01"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    keep = archive_dir / "2026-01-15.log"
+    keep.write_text("keep\n", encoding="utf-8")
+    os.utime(keep, (old_ts, old_ts))
+
+    reset_prune_throttle()  # bypass the hourly throttle for the test
+    _prune_old_logs(tmp_path, {"info": 5, "warning": 5, "error": 5, "critical": 5})
+    assert not old_file.exists(), "old info file should be pruned"
+    assert keep.exists(), "archive must never be auto-deleted"

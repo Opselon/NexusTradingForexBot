@@ -224,6 +224,11 @@ def _set_state(base: Path, retention: dict[str, int] | None) -> None:
         _current_retention_days = merged
 
 
+def reset_prune_throttle() -> None:
+    """Reset the hourly retention-prune throttle (test/ops seam)."""
+    _set_prune_ts(0.0)
+
+
 def _set_prune_ts(ts: float) -> None:
     """Record the last prune timestamp (no global statement in caller)."""
     global _last_prune_ts  # noqa: PLW0603
