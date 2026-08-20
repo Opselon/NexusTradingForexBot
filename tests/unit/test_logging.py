@@ -39,12 +39,16 @@ def log_root(tmp_path: Path):
 
 
 def _read_events(dir_path: Path, severity: str) -> list[str]:
-    """Event names found in logs/<severity>/YYYY/MM/YYYY-MM-DD.log files."""
+    """Event names found in logs/<severity>/YYYY/MM/YYYY-MM-DD.log files.
+
+    Rendered line: ``2026-08-20T03:41:05.210+03:30 [info     ] EVENT [logger] k=v``
+    """
     events: list[str] = []
     for f in sorted((dir_path / severity).rglob("*.log")):
         for line in f.read_text(encoding="utf-8").splitlines():
             if line.startswith("20") and "] " in line:
-                events.append(line.split("]")[-1].strip().split()[0])
+                head = line.split("]")[1].strip()
+                events.append(head.split()[0])
     return events
 
 
