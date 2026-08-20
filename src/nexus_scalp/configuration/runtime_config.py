@@ -41,12 +41,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
-import time
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from nexus_scalp.configuration.config import (
     AlgoConfig,
@@ -354,9 +354,11 @@ class RuntimeConfiguration:
 
     def to_app_config(self) -> AppConfig:
         """Project the snapshot back to the bootstrap AppConfig schema."""
+        from nexus_scalp.domain.enums import ExecutionMode
+
         execution = ExecutionConfig(
             symbol=self.execution.symbol,
-            mode=self.execution.mode,
+            mode=ExecutionMode(self.execution.mode),
             timeframe=self.execution.timeframe,
             magic_number=self.execution.magic_number,
             max_slippage_points=self.execution.max_slippage_points,
@@ -522,14 +524,24 @@ class PersistentConfigStore:
 
 # Validation bounds mirroring the bootstrap schema Field() constraints.
 _VALIDATORS: dict[str, Callable[[Any], bool]] = {
-    "algo.atr_sl_buffer_multiplier": lambda v: isinstance(v, (int, float)) and 0.5 <= float(v) <= 4.0,
+    "algo.atr_sl_buffer_multiplier": lambda v: (
+        isinstance(v, (int, float)) and 0.5 <= float(v) <= 4.0
+    ),
     "algo.min_risk_reward_ratio": lambda v: isinstance(v, (int, float)) and 1.0 <= float(v) <= 5.0,
     "algo.min_rr_high_confidence": lambda v: isinstance(v, (int, float)) and 0.5 <= float(v) <= 5.0,
-    "algo.high_confidence_threshold": lambda v: isinstance(v, (int, float)) and 0.5 <= float(v) <= 1.0,
-    "algo.ai_zone_confidence_threshold": lambda v: isinstance(v, (int, float)) and 0.50 <= float(v) <= 0.99,
-    "algo.fvg_mitigation_sensitivity": lambda v: isinstance(v, (int, float)) and 0.1 <= float(v) <= 1.0,
+    "algo.high_confidence_threshold": lambda v: (
+        isinstance(v, (int, float)) and 0.5 <= float(v) <= 1.0
+    ),
+    "algo.ai_zone_confidence_threshold": lambda v: (
+        isinstance(v, (int, float)) and 0.50 <= float(v) <= 0.99
+    ),
+    "algo.fvg_mitigation_sensitivity": lambda v: (
+        isinstance(v, (int, float)) and 0.1 <= float(v) <= 1.0
+    ),
     "algo.order_block_lookback_bars": lambda v: isinstance(v, int) and 10 <= int(v) <= 100,
-    "risk.max_account_drawdown_pct": lambda v: isinstance(v, (int, float)) and 0.0 < float(v) <= 100.0,
+    "risk.max_account_drawdown_pct": lambda v: (
+        isinstance(v, (int, float)) and 0.0 < float(v) <= 100.0
+    ),
     "risk.risk_per_trade_pct": lambda v: isinstance(v, (int, float)) and 0.0 < float(v) <= 100.0,
     "risk.max_concurrent_positions": lambda v: isinstance(v, int) and int(v) >= 1,
     "risk.max_spread_points": lambda v: isinstance(v, int) and int(v) >= 0,
@@ -559,11 +571,23 @@ def validate_field(key: str, value: Any) -> tuple[bool, str]:
 def _coerce(key: str, value: Any) -> Any:
     if value is None:
         return value
-    if key.endswith("_bars") or key in ("risk.max_concurrent_positions", "risk.max_spread_points", "execution.magic_number", "execution.max_slippage_points"):
+    if key.endswith("_bars") or key in (
+        "risk.max_concurrent_positions",
+        "risk.max_spread_points",
+        "execution.magic_number",
+        "execution.max_slippage_points",
+    ):
         return int(value)
-    if key == "risk.enforce_stop_loss" or key == "model.liquidity_features_enabled" or key == "telegram.enabled":
+    if key in ("risk.enforce_stop_loss", "model.liquidity_features_enabled", "telegram.enabled"):
         return bool(value)
-    if key.endswith("_pct") or key.endswith("_multiplier") or key.endswith("_ratio") or key.endswith("_sensitivity") or key.endswith("_threshold") or key.endswith("_delta"):
+    if (
+        key.endswith("_pct")
+        or key.endswith("_multiplier")
+        or key.endswith("_ratio")
+        or key.endswith("_sensitivity")
+        or key.endswith("_threshold")
+        or key.endswith("_delta")
+    ):
         return float(value)
     return value
 
@@ -772,7 +796,7 @@ def _cross_field_validate(cur: dict[str, Any]) -> list[str]:
 
 
 def _utcnow() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def new_corr_id(prefix: str = "cfg") -> str:
@@ -845,7 +869,9 @@ class RuntimeConfigStore:
             "runtime_version": snap.version,
             "runtime_updated_at": snap.updated_at,
             "runtime_source": snap.source,
-            "persistent_version": self._persistent.get_config_version() if self._persistent else None,
+            "persistent_version": self._persistent.get_config_version()
+            if self._persistent
+            else None,
             "last_apply_status": self._last_apply_status,
             "last_apply_error": self._last_apply_error,
             "last_event": self._last_event.to_dict() if self._last_event else None,
