@@ -1503,6 +1503,8 @@ class AuditRepository:
             (ticket, order_id, symbol, action, price, stop_loss, take_profit, volume, reason, latency, execution_mode, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
+        from datetime import UTC, datetime
+
         args = (
             ticket,
             order_id,
@@ -1515,6 +1517,7 @@ class AuditRepository:
             reason,
             latency,
             execution_mode,
+            datetime.now(UTC).isoformat(),
         )
 
         try:
@@ -1532,6 +1535,8 @@ class AuditRepository:
             (order_id, symbol, order_type, volume, price, status, executed_at, payload)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
+        from datetime import UTC, datetime
+
         args = (
             order.order_id,
             order.symbol,
@@ -1539,6 +1544,7 @@ class AuditRepository:
             order.volume,
             order.price,
             status,
+            datetime.now(UTC).isoformat(),
             order.model_dump_json(),
         )
 
