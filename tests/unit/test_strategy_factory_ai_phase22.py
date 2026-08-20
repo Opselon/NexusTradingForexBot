@@ -360,7 +360,9 @@ def test_provider_prompt_version_recorded():
 
 def test_provider_parses_fenced_json():
     provider = LLMGenerationProvider(api_base_url="http://x/v1", model="m", api_key="k")
-    content = '```json\n{"strategies": [{"schema_version": "1.0", "family": "TREND_FOLLOWING"}]}\n```'
+    content = (
+        '```json\n{"strategies": [{"schema_version": "1.0", "family": "TREND_FOLLOWING"}]}\n```'
+    )
     out = provider._extract_dsl_list(content)
     assert len(out) == 1
     assert out[0]["family"] == "TREND_FOLLOWING"

@@ -354,4 +354,6 @@ class LLMGenerationProvider:
             "Diversify across families and mechanisms. Output ONLY the JSON object."
         )
         return system, user
+
+
 __all__ = ["LLM_API_KEY_SECRET", "LLMGenerationProvider", "ProviderUsage"]

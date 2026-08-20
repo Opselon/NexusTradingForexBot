@@ -88,6 +88,30 @@ def _event_id() -> str:
     return f"evt_{uuid.uuid4().hex[:16]}"
 
 
+def _score_dict(entry: dict[str, Any]) -> dict[str, Any]:
+    """Parse the registry row's ``score`` column defensively.
+
+    ``list_registry`` returns score as a JSON TEXT string (registry row safe
+    normalization keeps it text); registry row dicts may arrive pre-parsed.
+    Either shape must decode without crashing (BUG-130: AttributeError
+    'str' object has no attribute 'get').
+    """
+    score = entry.get("score")
+    if isinstance(score, dict):
+        return score
+    if score is None:
+        return {}
+    if isinstance(score, str):
+        try:
+            import json as _json
+
+            parsed = _json.loads(score) if score.strip() else {}
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 class StrategyFactory:
     """The strategy generation + evolution orchestrator.
 
@@ -582,11 +606,11 @@ class StrategyFactory:
         elites = [
             e
             for e in entries
-            if (e.get("score") or {}).get("verdict") == "VALIDATED"
-            and float((e.get("score") or {}).get("final_score", 0.0) or 0.0) >= 0.6
+            if _score_dict(e).get("verdict") == "VALIDATED"
+            and float(_score_dict(e).get("final_score", 0.0) or 0.0) >= 0.6
         ]
         elites.sort(
-            key=lambda e: float((e.get("score") or {}).get("final_score", 0.0) or 0.0),
+            key=lambda e: float(_score_dict(e).get("final_score", 0.0) or 0.0),
             reverse=True,
         )
         return elites[: self.config.elite_size]
@@ -988,7 +1012,7 @@ class StrategyFactory:
             runtime_ms=0.0,
         )
         ranked = rank_strategies(registry_entries, limit=100)
-        elite = [e for e in ranked if (e.get("score") or {}).get("verdict") == "VALIDATED"][
+        elite = [e for e in ranked if _score_dict(e).get("verdict") == "VALIDATED"][
             : self.config.elite_size
         ]
 
@@ -1050,7 +1074,7 @@ class StrategyFactory:
         from nexus_scalp.research.store import list_registry
 
         entries = list_registry(self.audit_repo, limit=200)
-        elite = [e for e in entries if (e.get("score") or {}).get("verdict") == "VALIDATED"]
+        elite = [e for e in entries if _score_dict(e).get("verdict") == "VALIDATED"]
         return memory_summary(summaries, elite, entries)
 
     # ------------------------------------------------------------------

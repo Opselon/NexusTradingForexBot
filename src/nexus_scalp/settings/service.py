@@ -495,14 +495,24 @@ class SettingsService:
         build the in-process provider; never serialized to the web)."""
         return {
             "api_base_url": str(
-                (self.db.get(FACTORY_LLM_BASE_URL).value if self.db.get(FACTORY_LLM_BASE_URL) else "") or ""
+                (
+                    self.db.get(FACTORY_LLM_BASE_URL).value
+                    if self.db.get(FACTORY_LLM_BASE_URL)
+                    else ""
+                )
+                or ""
             ),
             "model": str(
-                (self.db.get(FACTORY_LLM_MODEL).value if self.db.get(FACTORY_LLM_MODEL) else "") or ""
+                (self.db.get(FACTORY_LLM_MODEL).value if self.db.get(FACTORY_LLM_MODEL) else "")
+                or ""
             ),
             "api_key": self.secrets.get_secret(FACTORY_LLM_API_KEY) or "",
             "temperature": float(
-                (self.db.get(FACTORY_LLM_TEMPERATURE).value if self.db.get(FACTORY_LLM_TEMPERATURE) else None)
+                (
+                    self.db.get(FACTORY_LLM_TEMPERATURE).value
+                    if self.db.get(FACTORY_LLM_TEMPERATURE)
+                    else None
+                )
                 or 0.7
             ),
         }

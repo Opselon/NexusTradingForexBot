@@ -1285,7 +1285,8 @@ class LiveEngine:
             if attempt < 3:
                 wait_s = 1.5 * attempt
                 logger.warning(
-                    "[MT5_CONNECT] event=RETRY_ENGINE attempt=%s/3 msg=terminal_unavailable "                     "wait_s=%s — retrying...",
+                    "[MT5_CONNECT] event=RETRY_ENGINE attempt=%s/3 msg=terminal_unavailable "
+                    "wait_s=%s — retrying...",
                     attempt,
                     wait_s,
                 )

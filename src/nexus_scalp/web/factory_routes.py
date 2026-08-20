@@ -277,7 +277,9 @@ def factory_llm_config_status(request: Request) -> dict[str, Any]:
 
 
 @router.post("/llm-config")
-def factory_llm_config_save(request: Request, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def factory_llm_config_save(
+    request: Request, payload: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Persist the LLM provider config (encrypted key) + hot-rebuild the
     in-process factory provider. Never returns the API key."""
     payload = payload or {}
