@@ -1109,6 +1109,12 @@ class AuditRepository:
             pass
 
         # Restart-safe research worker bookkeeping.
+        # TASK-21-RESEARCH-OBSERVABILITY: first-class gate / event / evidence
+        # / snapshot / heartbeat / queue observability. All tables are
+        # idempotent (CREATE IF NOT EXISTS + ADD COLUMN guards) so existing
+        # user databases upgrade in place.
+        self._create_research_observability_tables(conn)
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS research_worker_state (
@@ -1120,6 +1126,147 @@ class AuditRepository:
             );
             """
         )
+
+    def _create_research_observability_tables(self, conn: sqlite3.Connection) -> None:
+        """TASK-21 tables: research_gates / research_events / research_evidence /
+        research_run_snapshots / research_worker_heartbeat.
+        Idempotent; upgrades existing user databases in place via ADD COLUMN guards.
+        """
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_gates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                gate_id TEXT NOT NULL,
+                strategy_id TEXT NOT NULL,
+                research_run_id TEXT NOT NULL,
+                gate_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                started_at TEXT DEFAULT '',
+                completed_at TEXT DEFAULT '',
+                duration_ms REAL DEFAULT 0.0,
+                configuration_version TEXT DEFAULT '',
+                dataset_version TEXT DEFAULT '',
+                engine_version TEXT DEFAULT '',
+                result TEXT DEFAULT '{}',
+                failure_reason TEXT DEFAULT '',
+                failure_class TEXT DEFAULT 'UNKNOWN',
+                evidence_id TEXT DEFAULT '',
+                retryable INTEGER DEFAULT 0,
+                order_index INTEGER DEFAULT 0,
+                UNIQUE (gate_id)
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL,
+                strategy_id TEXT NOT NULL,
+                research_run_id TEXT NOT NULL,
+                gate_id TEXT DEFAULT '',
+                event_type TEXT NOT NULL,
+                message TEXT DEFAULT '',
+                payload TEXT DEFAULT '{}',
+                occurred_at TEXT NOT NULL,
+                UNIQUE (event_id)
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_evidence (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                evidence_id TEXT NOT NULL,
+                strategy_id TEXT NOT NULL,
+                research_run_id TEXT NOT NULL,
+                gate_id TEXT DEFAULT '',
+                kind TEXT NOT NULL,
+                content TEXT DEFAULT '{}',
+                content_hash TEXT NOT NULL DEFAULT '',
+                dataset_version TEXT DEFAULT '',
+                engine_version TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                UNIQUE (evidence_id)
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_run_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                research_run_id TEXT NOT NULL,
+                strategy_id TEXT NOT NULL,
+                strategy_version TEXT NOT NULL,
+                strategy_definition_hash TEXT DEFAULT '',
+                strategy_configuration TEXT DEFAULT '{}',
+                dataset_version TEXT DEFAULT '',
+                dataset_hash TEXT DEFAULT '',
+                feature_schema_version TEXT DEFAULT '',
+                model_version TEXT DEFAULT '',
+                model_hash TEXT DEFAULT '',
+                rule_matrix_version TEXT DEFAULT '',
+                runtime_configuration_version TEXT DEFAULT '',
+                backtest_engine_version TEXT DEFAULT '',
+                validation_engine_version TEXT DEFAULT '',
+                random_seed TEXT DEFAULT '',
+                research_prompt_version TEXT DEFAULT '',
+                engine_version TEXT DEFAULT '',
+                configuration_hash TEXT DEFAULT '',
+                research_hash TEXT DEFAULT '',
+                captured_at TEXT NOT NULL,
+                UNIQUE (research_run_id)
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_worker_heartbeat (
+                scope TEXT PRIMARY KEY,
+                last_beat_at TEXT DEFAULT '',
+                cycle_count INTEGER DEFAULT 0,
+                last_cycle_start TEXT DEFAULT '',
+                last_cycle_completion TEXT DEFAULT '',
+                last_cycle_duration_ms REAL DEFAULT 0.0,
+                last_action TEXT DEFAULT '',
+                current_job TEXT DEFAULT '',
+                current_strategy TEXT DEFAULT '',
+                current_gate TEXT DEFAULT '',
+                queued_jobs INTEGER DEFAULT 0,
+                failed_jobs INTEGER DEFAULT 0,
+                last_error TEXT DEFAULT '',
+                status TEXT DEFAULT 'RUNNING'
+            );
+            """
+        )
+        for col_def in [
+            ("status", "TEXT"),
+            ("run_outcome", "TEXT"),
+            ("snapshot_id", "TEXT"),
+            ("gates", "TEXT"),
+            ("completed_at", "TEXT"),
+        ]:
+            try:
+                conn.execute(
+                    f"ALTER TABLE research_runs ADD COLUMN {col_def[0]} {col_def[1]};"
+                )
+            except Exception:
+                pass
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_gates_strategy ON research_gates(strategy_id, order_index);"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_gates_run ON research_gates(research_run_id);"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_strategy ON research_events(strategy_id, occurred_at);"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_evidence_strategy ON research_evidence(strategy_id, created_at);"
+            )
+        except Exception:
+            pass
 
     def _start_background_worker(self) -> None:
         """Starts the dedicated background thread for zero-latency database inserts."""
