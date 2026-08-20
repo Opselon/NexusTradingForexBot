@@ -34,11 +34,11 @@ import pytest
 import torch
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.configuration.config import RiskConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import AccountInfo, SymbolInfo, TickData, TradeOrder, TradeProposal
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.risk.risk_engine import RiskEngine
-from nexus_scalp.configuration.config import RiskConfig
 from nexus_scalp.signals.policy import SignalPolicy
 
 XAU_TICK = dict(
@@ -141,7 +141,9 @@ def test_critical_whole_cycle_heartbeat(tmp_path) -> None:
     model = ScalpNet(num_features=50, num_classes=4)
     model.eval()
     with torch.no_grad():
-        probs = torch.softmax(model(torch.tensor([fv.to_tensor_input()], dtype=torch.float32)), dim=1)
+        probs = torch.softmax(
+            model(torch.tensor([fv.to_tensor_input()], dtype=torch.float32)), dim=1
+        )
     assert probs.shape == (1, 4)
     assert float(probs.sum()) == pytest.approx(1.0, abs=1e-4)
 
@@ -174,8 +176,13 @@ def test_critical_whole_cycle_heartbeat(tmp_path) -> None:
         trade_contract_size=100.0,
     )
     account = AccountInfo(
-        login=1, trade_mode=0, leverage=100,
-        balance=10000.0, equity=10000.0, margin=0.0, margin_free=10000.0,
+        login=1,
+        trade_mode=0,
+        leverage=100,
+        balance=10000.0,
+        equity=10000.0,
+        margin=0.0,
+        margin_free=10000.0,
     )
     verdict = risk.evaluate_proposal(
         proposal=proposal,
@@ -203,7 +210,6 @@ def test_critical_whole_cycle_heartbeat(tmp_path) -> None:
 
     # 6. Accounting: ledger records the trade lifecycle (OPENED then CLOSED
     # with PnL) and an account snapshot - the financial chain is observable.
-    closed_at = now + timedelta(hours=2)
     audit_repo.log_ledger_opened(
         ticket=9991001,
         symbol=order.symbol,
@@ -237,7 +243,9 @@ def test_critical_whole_cycle_heartbeat(tmp_path) -> None:
         conn.close()
     audit_repo.close()
     # 7. Result: the full chain is observable end-to-end.
-    print("CRITICAL APPLICATION PATH PASSED (data->features->model->signal->risk->order->accounting)")
+    print(
+        "CRITICAL APPLICATION PATH PASSED (data->features->model->signal->risk->order->accounting)"
+    )
 
 
 def test_critical_risk_1pct_not_10pct() -> None:
@@ -259,18 +267,39 @@ def test_critical_risk_1pct_not_10pct() -> None:
         risk_reward_ratio=3.0,
     )
     symbol_info = SymbolInfo(
-        symbol="XAUUSD", digits=2, point=0.01, tick_size=0.01, tick_value=1.0,
-        volume_min=0.01, volume_max=100.0, volume_step=0.01,
-        stops_level=10, freeze_level=0, trade_contract_size=100.0,
+        symbol="XAUUSD",
+        digits=2,
+        point=0.01,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        stops_level=10,
+        freeze_level=0,
+        trade_contract_size=100.0,
     )
     account = AccountInfo(
-        login=1, trade_mode=0, leverage=100,
-        balance=10000.0, equity=10000.0, margin=0.0, margin_free=10000.0,
+        login=1,
+        trade_mode=0,
+        leverage=100,
+        balance=10000.0,
+        equity=10000.0,
+        margin=0.0,
+        margin_free=10000.0,
     )
-    verdict = risk.evaluate_proposal(proposal=proposal, account=account, symbol_info=symbol_info, active_positions=[], current_tick=TickData(timestamp=now, **XAU_TICK))
+    verdict = risk.evaluate_proposal(
+        proposal=proposal,
+        account=account,
+        symbol_info=symbol_info,
+        active_positions=[],
+        current_tick=TickData(timestamp=now, **XAU_TICK),
+    )
     assert verdict is not None
     # 1% of 10,000 = $100 risk / ($2 SL distance * 100 contract size) = 0.50 lots
-    assert 0.45 <= verdict.volume <= 0.60, "1% risk must size ~0.50 lots at $100/SL-unit (got %s)" % verdict.volume
+    assert 0.45 <= verdict.volume <= 0.60, (
+        f"1% risk must size ~0.50 lots at $100/SL-unit (got {verdict.volume})"
+    )
     assert verdict.volume < 1.0, "10% risk would size 5.0 lots — regression"
 
 
@@ -279,9 +308,17 @@ def test_critical_risk_fixed_lot_never_sneaks_in() -> None:
     risk = RiskEngine(RiskConfig(risk_per_trade_pct=1.0))
     now = datetime.now(UTC)
     symbol_info = SymbolInfo(
-        symbol="XAUUSD", digits=2, point=0.01, tick_size=0.01, tick_value=1.0,
-        volume_min=0.01, volume_max=100.0, volume_step=0.01,
-        stops_level=10, freeze_level=0, trade_contract_size=100.0,
+        symbol="XAUUSD",
+        digits=2,
+        point=0.01,
+        tick_size=0.01,
+        tick_value=1.0,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        stops_level=10,
+        freeze_level=0,
+        trade_contract_size=100.0,
     )
     volumes = []
     for equity in (1000.0, 10000.0, 100000.0):
@@ -297,10 +334,21 @@ def test_critical_risk_fixed_lot_never_sneaks_in() -> None:
             risk_reward_ratio=3.0,
         )
         account = AccountInfo(
-            login=1, trade_mode=0, leverage=100,
-            balance=equity, equity=equity, margin=0.0, margin_free=equity,
+            login=1,
+            trade_mode=0,
+            leverage=100,
+            balance=equity,
+            equity=equity,
+            margin=0.0,
+            margin_free=equity,
         )
-        verdict = risk.evaluate_proposal(proposal=proposal, account=account, symbol_info=symbol_info, active_positions=[], current_tick=TickData(timestamp=now, **XAU_TICK))
+        verdict = risk.evaluate_proposal(
+            proposal=proposal,
+            account=account,
+            symbol_info=symbol_info,
+            active_positions=[],
+            current_tick=TickData(timestamp=now, **XAU_TICK),
+        )
         assert verdict is not None
         volumes.append(verdict.volume)
     assert volumes[0] < volumes[1] < volumes[2], "position size must scale with equity"
