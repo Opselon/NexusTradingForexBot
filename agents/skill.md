@@ -3205,3 +3205,105 @@ The following backlog details prioritized architectural and operational recommen
   structure needs reversals to form pivots).
 - The feature vector is observation-first: wiring it into a live model requires a schema
   decision (new feature block would be `mslie_v1` at indices 70..N under INV-009 discipline).
+
+## 15o. Strategy Factory — Autonomous Strategy Creator with Generation API + Strategy-Aware Benchmarks (2026-08-21 Fix & Full Upgrade)
+
+> **The strategy creator with API** (`src/nexus_scalp/strategies/factory/` + `src/nexus_scalp/web/factory_routes.py`).
+> Autonomous generation loop: GENERATE (template/diversity/regime/random + optional LLM slice, 70D-confined, causal)
+> → VALIDATE (4 structural gates: schema/feature/causality/complexity + dedup) → BACKTEST/WALK-FORWARD/OOS/ROBUSTNESS
+> via the authoritative Phase 09B `ResearchPipeline` → SCORE/RANK → ELITE → EVOLUTION. The API surfaces every
+> generation/candidate/failure/event/ranking/memory/benchmark for the control room and for AI decisioning.
+
+### Why the 07:15 systemic collapse happened (forensic 2026-08-21)
+
+Every `SF-*` candidate backtested the **same 90-sample full-dataset slice** (ledger mean −0.079 R, drawdown 7.49 R,
+OOS −0.14 R) regardless of its DSL hypothesis. Root cause: `StrategyFactory._to_strategy_candidate()` never populated
+`discovery_evidence.sample_ids`, so `research/pipeline.py::_select_family()` hit its empty-list fallback and returned
+the **whole** `ResearchDataset`. Outcome: all 200+ candidates produced the **identical** `BacktestResult`
+(`expectancy_r −0.060669`, `score 0.3516`, `verdict REJECTED`) with two failures each (`WALK_FORWARD_FAILURE` +
+`OOS_FAILURE`) at 07:15:30 — the 40-line user dump is not bad strategy DNA, it is a **data-selection bug**.
+Evidence: `artifacts/audit.db` `audit_experiences` (334 rows), `artifacts/strategies.db` `factory_candidates` 2701 /
+`factory_failures` 866, `strategy_registry` rows show identical `bt`/`oos`/`score` hashes; generations G1..G14 left
+`RUNNING` with no `summary`.
+
+### Fix (2026-08-21) — strategy-aware dataset selection
+
+| File | Change |
+| :--- | :--- |
+| `strategies/factory/benchmark.py` *(new)* | `dsl_matches_snapshot(dsl, values)` — evaluates a DSL's `filters` (gt/lt/between on canonical 70D `feature_id` → ledger 50D `feature_snapshot.values`) over **real** historical `feature_snapshot` vectors (the same vectors the live `ScalpFeatureEngine` produced). `benchmark_subset_for_candidate` + `candidate_coverage_stats` + `build_benchmark_artifact` (deterministic benchmark with coverage, per-gate explainability, `decision` label). Pure, no DB/MT5, no pipeline mutation. |
+| `strategies/factory/orchestrator.py` | `StrategyFactory._ledger_snapshot_for_filter()` (bounded 5000-row ledger snapshot) + patched `_to_strategy_candidate` to populate `discovery_evidence.sample_ids` + `sample_coverage` via `benchmark.py`. `evaluate_candidate` now stamps `build_benchmark_artifact` into `factory_runs` + the `CANDIDATE_EVALUATED` event. |
+| `strategies/factory/__init__.py` | Re-exports `benchmark_subset_for_candidate`, `build_benchmark_artifact`, `candidate_coverage_stats`. |
+| `strategies/factory/store.py` | `record_run` merges `benchmark` into `result_summary` for persistence. |
+| `strategies/factory/ranking.py` / `summarizer.py` | Consume registry `score` faithfully — no pipeline change; divergence now comes from per-candidate datasets. |
+
+Verified live: `SF-889A5B96D0` (MOMENTUM) 48.5 % coverage (162/334), `SF-C529A6C996` (MEAN_REVERSION) 30.5 % (102/334),
+`SF-F03D462743` (TREND_FOLLOWING) 56.3 % (188/334) and `_select_family` returns exactly those counts — scores now
+diverge and are strategy-aware.
+
+### Benchmarks that help AI decide (what the upgrade adds)
+
+Each candidate now carries a **benchmark artifact** (`factory_runs.result_summary.benchmark`) and the event payload:
+
+```json
+{
+  "benchmark_id": "bm_<12hex>",
+  "candidate_id": "SF-…", "family": "MOMENTUM", "decision": "REJECTED | CANDIDATE_ELITE | INCONCLUSIVE_NEEDS_MORE_DATA",
+  "eligible_for_next_gen": false,
+  "coverage": { "total_ledger_samples": 334, "matched": 162, "coverage_pct": 48.5, "unmatched": 172 },
+  "backtest": { "total_trades": 162, "expectancy_r": -0.06, "profit_factor": 0.68, "max_drawdown_r": 7.49 },
+  "walk_forward": { "folds": 3, "passes": 1, "pass_rate": 0.33, "degradation": 0.42, "passed": false },
+  "oos": { "status": "FAIL", "oos_expectancy_r": -0.14, "reason": "OOS expectancy -0.14R below minimum …", "degradation": 1.3 },
+  "robustness": { "status": "PASS", "max_degradation": 0.02 },
+  "score": { "final_score": 0.3516, "verdict": "REJECTED", "reasons": […], "dimensions": { "performance_score": 0, "oos_score": 0, … } },
+  "primary_failure": "OOS"
+}
+```
+
+AI consumers use `decision` + `walk_forward.pass_rate` + `oos.degradation` + `coverage.verdict_hint`
+(`NO_DATA <8` → skip, `LOW_EVIDENCE 8..19` → caution, `EVALUABLE ≥20`) to rank, promote, or suppress strategies.
+The 07:15 identical-score pathology is eliminated — legacy generations before the fix surface via on-demand coverage
+computation in the API fallback.
+
+### Generation API & Strategy-Aware benchmark API
+
+`src/nexus_scalp/web/factory_routes.py` (`/api/factory/*`):
+
+| Route | Method | Purpose |
+| :--- | :---: | :--- |
+| `/status` | GET | Loop + worker + generations + `provider_usage` + config + provider (`available`/`model`/`prompt_version`/`usage`). |
+| `/generations` | GET | Bounded generation list. |
+| `/generations/{id}` | GET | One generation + candidates + failures. |
+| `/candidates` | GET | Candidate rows (filter `generation_id`/`lifecycle`). |
+| `/benchmarks` | GET | **NEW (2026-08-21):** strategy-aware benchmarks per generation (the AI surface). Query `generation_id`. Returns `{benchmarks: [benchmarkArtifact,…]}`; for legacy generations without `factory_runs` computes coverage on-the-fly. |
+| `/events` | GET | Event stream. |
+| `/failures` | GET | Structured failure reasons (`WALK_FORWARD_FAILURE`/`OOS_FAILURE`/… + `detail`). |
+| `/ranking` | GET | Ranked registry survivors by dimension. |
+| `/memory` | GET | Evolution memory (next-gen research summary). |
+| `/llm-config` | GET/POST | LLM provider config (encrypted key, hot-rebuild, never returns raw key). |
+| `/generate` | POST | Create+generate+validate a generation (and, since BUG-135, auto-evaluate + complete in background). |
+| `/evaluate/{id}` | POST | Evaluate one persisted candidate. |
+| `/complete/{id}` | POST | Finalize a generation (ranking→elite→summary). |
+| `/loop/{start,pause,resume,stop}` | POST | Autonomous loop control (kill switch). |
+
+All routes are wrapped (never raise), use `serialize_enums`, and mirror the research-API conventions.
+
+### Full upgrade cycle (what changes for the AI)
+
+1. **Dataset is strategy-aware** — every backtest grades the candidate's *own* filtered ledger slice (real 50D vectors),
+   not the ledger average. Expectations, drawdowns, win rates and OOS results now vary meaningfully.
+2. **Walk-forward is walk-forward** — `_select_family` returns exactly `len(sample_ids)` rows; fold pass/fail reflects
+   *that* strategy's temporal stability, not a shared losing book.
+3. **Benchmark payload is prescriptive** — `GET /api/factory/benchmarks?generation_id=G17` returns strategy-aware
+   backtests + walk-forward repr + OOS explain + robustness explain + decision label, so the AI can pick a top-K
+   without re-running the pipeline. The control-room UI should render coverage %, `primary_failure` and the `decision`
+   badge.
+4. **Stuck generations are stitched** — the `factory_routes /generate` route now runs the full cycle (generate →
+   validate → evaluate → complete) in a background thread; future generations land `COMPLETED` with a `summary`
+   (G15/G17 already do: `avg_score 0.3516` is the last pre-fix cohort's losing baseline — next cohorts will diverge).
+
+### Tests
+
+- Existing `tests/unit/test_mslie_*` suites remain green (unrelated subsystem).
+- New unit behaviour is covered by the live probe in this audit (162/102/188 divergence + `_select_family` exactness);
+  an explicit `tests/unit/test_factory_benchmark_phase23.py` should be added to lock `dsl_matches_snapshot` (PASS/FAIL),
+  `benchmark_subset_for_candidate` coverage math, and determinism.

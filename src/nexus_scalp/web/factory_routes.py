@@ -179,6 +179,72 @@ def factory_candidates(
         return _err("INTERNAL_ERROR")
 
 
+@router.get("/benchmarks")
+def factory_benchmarks(
+    request: Request,
+    generation_id: str | None = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Strategy-aware benchmarks (per-candidate backtests) for AI decisions.
+
+    Returns the factory_runs rows that carry the `benchmark` artifact
+    (coverage + walk-forward/OOS/robustness explainability + decision label)
+    produced by the 2026-08-21 fix. Each benchmark is strategy-specific
+    (filtered dataset), not the shared ledger-average that caused the
+    07:15 systemic 40-failure collapse.
+    """
+    factory = _factory(request)
+    if factory is None:
+        return _err("FACTORY_UNAVAILABLE")
+    try:
+        from nexus_scalp.strategies.factory.store import list_runs
+        from nexus_scalp.web.server import serialize_enums
+
+        rows = list_runs(factory._research_backend, limit=limit)
+        if generation_id:
+            rows = [r for r in rows if r.get("generation_id") == generation_id]
+        # Decode benchmark payloads for the response (stored as JSON text in result_summary)
+        import json as _json
+
+        benchmarks: list[dict[str, Any]] = []
+        for r in rows:
+            raw = r.get("result_summary")
+            bm: Any = None
+            if isinstance(raw, str):
+                try:
+                    parsed = _json.loads(raw)
+                    bm = parsed.get("benchmark") if isinstance(parsed, dict) else None
+                    if bm is None and isinstance(parsed, dict):
+                        bm = parsed
+                except Exception:
+                    bm = None
+            elif isinstance(raw, dict):
+                bm = raw.get("benchmark") or raw
+            if bm and isinstance(bm, dict) and bm.get("candidate_id"):
+                benchmarks.append(bm)
+        # Also surface candidates that lacked a factory_runs row (legacy generations)
+        # via on-demand coverage computation — kept bounded.
+        if not benchmarks and generation_id:
+            from nexus_scalp.strategies.factory.store import list_candidates
+
+            cands = list_candidates(factory._research_backend, generation_id=generation_id, limit=limit)
+            for c in cands[:20]:
+                try:
+                    row = factory._candidate_from_row(c)  # type: ignore[attr-defined]
+                    if row is None:
+                        continue
+                    from nexus_scalp.strategies.factory.benchmark import candidate_coverage_stats
+
+                    cov = candidate_coverage_stats(row, factory._ledger_snapshot_for_filter())
+                    benchmarks.append(cov)
+                except Exception:
+                    continue
+        return serialize_enums(_ok({"benchmarks": benchmarks[:limit]}))
+    except Exception as e:
+        log_factory_error("/api/factory/benchmarks", e)
+        return _err("INTERNAL_ERROR")
+
+
 @router.get("/events")
 def factory_events(
     request: Request, generation_id: str | None = None, limit: int = 200
@@ -376,6 +442,25 @@ def factory_generate(request: Request, payload: dict[str, Any] | None = None) ->
             source,
             request.headers.get("x-request-id", "-"),
         )
+        # BUG-135: a MANUAL generate must ALSO EVALUATE + COMPLETE the generation.
+        # Previously the route stopped after structural validation, stranding every
+        # generation RUNNING with 0 evaluated (13 in a row). Full cycle is expensive
+        # -> background thread; results stream into the factory store/events.
+        import threading as _threading
+
+        def _run_full_cycle() -> None:
+            try:
+                factory.run_generation_cycle(size=int(size) if size else None)
+            except Exception as _cyc_err:  # failure-isolated
+                logger.error(
+                    "[STRATEGY_FACTORY] event=GENERATE_CYCLE_FAILED generation_id=%s error=%s",
+                    gen["generation_id"],
+                    _cyc_err,
+                )
+
+        _threading.Thread(
+            target=_run_full_cycle, name=f"factory-cycle-{gen['generation_id']}", daemon=True
+        ).start()
         from nexus_scalp.web.server import serialize_enums
 
         return serialize_enums(

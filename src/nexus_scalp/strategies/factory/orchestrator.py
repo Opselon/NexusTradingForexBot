@@ -57,6 +57,11 @@ from nexus_scalp.strategies.factory.models import (
     LoopState,
     StrategyFamily,
 )
+from nexus_scalp.strategies.factory.benchmark import (
+    benchmark_subset_for_candidate,
+    build_benchmark_artifact,
+    candidate_coverage_stats,
+)
 from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
 from nexus_scalp.strategies.factory.ranking import (
     rank_strategies,
@@ -806,6 +811,11 @@ class StrategyFactory:
         The pipeline runs backtest -> walk-forward -> OOS -> robustness ->
         score and persists the strategy_registry row. The factory records the
         outcome and the structured failure reasons (spec 14 / 23 / 59).
+
+        BENCHMARK (2026-08-21): stamps a strategy-aware benchmark artifact
+        (coverage + per-gate explainability) onto factory_runs and emits it
+        in the candidate event so the API/AI can rank without re-running the
+        pipeline.
         """
         started = time.perf_counter()
         try:
@@ -823,6 +833,33 @@ class StrategyFactory:
             rob = result.get("robustness") or {}
 
             failed_reasons = self._derived_failure_reasons(result, candidate)
+            # BENCHMARK ARTIFACT (pure, never mutates the pipeline result)
+            try:
+                snapshot = self._ledger_snapshot_for_filter()
+                coverage = candidate_coverage_stats(candidate, snapshot)
+                benchmark = build_benchmark_artifact(candidate, result, coverage)
+            except Exception:
+                benchmark = {}
+                coverage = {}
+            # Persist benchmark into factory_runs (reproducibility, AI surface)
+            try:
+                from nexus_scalp.strategies.factory.store import record_run as _record_run
+
+                _record_run(
+                    self._research_backend,
+                    {
+                        "run_id": (run_id or result.get("run_id") or f"run_{uuid.uuid4().hex[:12]}"),
+                        "generation_id": candidate.generation_id,
+                        "candidate_id": candidate.candidate_id,
+                        "strategy_id": candidate.candidate_id,
+                        "lifecycle": lifecycle,
+                        "score": score,
+                        "benchmark": benchmark,
+                        "created_at": _now().isoformat(),
+                    },
+                )
+            except Exception:
+                pass
             self._persist_candidate(
                 candidate,
                 lifecycle=lifecycle,
@@ -863,10 +900,12 @@ class StrategyFactory:
                         "lifecycle": lifecycle,
                         "score": float(score.get("final_score", 0.0) or 0.0),
                         "duration_ms": round(duration_ms, 1),
+                        "benchmark": benchmark,
+                        "coverage": coverage.get("coverage", {}) if isinstance(coverage, dict) else {},
                     },
                 },
             )
-            return result
+            return {**result, "benchmark": benchmark}
         except Exception as e:
             logger.error(
                 "[STRATEGY_FACTORY] candidate evaluation failed",
@@ -890,12 +929,55 @@ class StrategyFactory:
             )
             return None
 
+    def _ledger_snapshot_for_filter(self) -> list[dict[str, Any]]:
+        """Pure snapshot of the ledger needed for DSL-aware filtering.
+
+        Returns a list of dicts: {idempotency_key, feature_values}.
+        Sourced from the audit DB's audit_experiences.feature_snapshot.
+        Bounded (5000 rows) to keep per-candidate filtering cheap.
+        """
+        rows: list[dict[str, Any]] = []
+        try:
+            import json as _json
+            import sqlite3 as _sq
+
+            repo = self.audit_repo
+            db_path = getattr(repo, "_db_path", None)
+            if not db_path:
+                return rows
+            conn = _sq.connect(str(db_path), timeout=3.0)
+            conn.row_factory = _sq.Row
+            try:
+                for r in conn.execute(
+                    "SELECT idempotency_key, payload FROM audit_experiences "
+                    "ORDER BY decision_timestamp DESC LIMIT 5000"
+                ):
+                    try:
+                        payload = _json.loads(r["payload"] or "{}")
+                        vals = (payload.get("feature_snapshot") or {}).get("values") or []
+                        if isinstance(vals, list) and vals:
+                            rows.append(
+                                {"idempotency_key": str(r["idempotency_key"]), "feature_values": vals}
+                            )
+                    except Exception:
+                        continue
+            finally:
+                conn.close()
+        except Exception:
+            pass
+        return rows
+
     def _to_strategy_candidate(self, candidate: FactoryCandidate) -> Any:
         """Builds the research StrategyCandidate from a factory candidate.
 
-        The research candidate is the interface to the deterministic engine;
-        its context_definition carries the full DSL so the pipeline's
-        family-select validation has the information it needs.
+        FIX 2026-08-21 (BENCHMARK): populates discovery_evidence.sample_ids
+        via DSL-aware replay over the ledger's real 50D snapshots. Without
+        this the research pipeline's _select_family falls back to the full
+        dataset, so every SF-* grades the SAME 90-sample losing book
+        (expectancy -0.06R, OOS -0.14R, score 0.3516). With sample_ids the
+        pipeline restricts backtest / walk-forward / OOS / robustness to the
+        candidate's OWN filtered slice — scores DIVERGE and benchmarks become
+        strategy-aware (the "help AI decides" surface).
         """
         from nexus_scalp.research.candidates import StrategyCandidate
         from nexus_scalp.research.models import CandidateLifecycle
@@ -903,10 +985,12 @@ class StrategyFactory:
         dsl = candidate.dsl.model_dump()
         strategy_id = candidate.candidate_id
         symbols = dsl.get("market", {}).get("symbols") or self.symbols
+        snapshot = self._ledger_snapshot_for_filter()
+        sample_ids = benchmark_subset_for_candidate(candidate, snapshot)
         return StrategyCandidate(
             strategy_id=strategy_id,
             strategy_version="",
-            feature_schema_id="scalp_v3",  # canonical 70D (schema_contract)
+            feature_schema_id="scalp_v3",
             feature_dimension=70,
             context_definition={
                 "dsl": dsl,
@@ -926,6 +1010,8 @@ class StrategyFactory:
                 "generation_id": candidate.generation_id,
                 "operator": candidate.operator.value,
                 "dsl": dsl,
+                "sample_ids": sample_ids,
+                "sample_coverage": candidate_coverage_stats(candidate, snapshot)["coverage"],
             },
         )
 

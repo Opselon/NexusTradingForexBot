@@ -244,11 +244,25 @@ def emit_event(repo: Any, event: dict[str, Any]) -> bool:
 
 
 def record_run(repo: Any, run: dict[str, Any]) -> bool:
-    """Record a research run — audit queue (legacy) or isolated store."""
+    """Record a research run — audit queue (legacy) or isolated store.
+
+    BENCHMARK (2026-08-21): when `benchmark` is present in `run`, it is
+    stashed in the result_summary under the `benchmark` key so the API can
+    surface strategy-aware backtests (per-candidate filtered dataset, OOS /
+    walk-forward explainability) without re-running the pipeline.
+    """
     if _is_store_backend(repo):
         return repo.record_run(run)
     if not repo._is_sqlite:
         return False
+    # Merge benchmark into result_summary (AI-facing backtest payload)
+    result_summary: Any = run.get("result_summary")
+    benchmark = run.get("benchmark")
+    if benchmark and isinstance(result_summary, dict):
+        result_summary = {**result_summary, "benchmark": benchmark}
+    elif benchmark and isinstance(run.get("score"), dict):
+        # Also attach benchmark when result_summary is a score/lifecycle dict
+        result_summary = {"benchmark": benchmark, "score": run.get("score"), "lifecycle": run.get("lifecycle")}
     sql = """
         INSERT INTO factory_runs (
             run_id, generation_id, strategy_id, experiment_kind,
@@ -267,7 +281,7 @@ def record_run(repo: Any, run: dict[str, Any]) -> bool:
                     run.get("experiment_kind", "GENERATE"),
                     run.get("executed_at", _now()),
                     _json(run.get("config")),
-                    _json(run.get("result_summary")),
+                    _json(result_summary),
                 ),
             )
         )
