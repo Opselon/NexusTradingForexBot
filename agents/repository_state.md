@@ -318,3 +318,19 @@ training_dataset_id.
   (2f80285, e813340, eea33a7, + 6ab3c9b, b29280d); stash salvages archived to
   archive/stash-salvage-20260820/ (git-ignored); DB-portability settings chain now
   canonical (service -> PG_CONFIG_SETTING_KEY -> config.py); 0 stashes remain.
+
+## Snapshot 2026-08-22 (Hermes Kanban Swarm adoption — Lead Architect init)
+- Hermes Kanban Swarm adopted as an orchestration pattern (integration contract:
+  `agents/hermes-kanban-swarm.md`). The swarm is an orchestration layer only; the
+  repository's existing multi-agent Git/forensic/runtime/ownership contracts remain
+  authoritative over task state, ownership, Git history, runtime safety, forensic
+  integrity, and verification.
+- Decision record: `agents/decisions/DEC-0003-hermes-kanban-swarm-integration.md`
+  (renumbered from the upstream `DEC-0002` to avoid collision with
+  `DEC-0002-nodejs-runtime-role.md` already on main).
+- Lead Architect role established for swarm coordination: owns architecture/contracts/
+  ownership mapping and verification-before-merge gates; does NOT directly modify
+  critical shared files (live_engine.py, order_manager.py, risk, MT5 adapters, feature
+  schema, model governance, migrations, secrets) without explicit ownership.
+- Swarm work maps to existing TASK-ID / BUG-NNN / CHANGE-ID registries; no second
+  independent coordination state is introduced.

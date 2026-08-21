@@ -14,7 +14,8 @@
 > This compliance gate is part of the MASTER MULTI-AGENT CONTRACT (v2).
 > Full contract: `agents/multi-agent-git-contract.md`. Registries: `agents/contracts.md`,
 > `agents/runtime_invariants.md`, `agents/change_control.md`, `agents/taskboard.md`,
-> `agents/repository_state.md`, `agents/locks.yaml`, `agents/decisions/`.
+> `agents/repository_state.md`, `agents/locks.yaml`, `agents/decisions/`,
+> `agents/hermes-kanban-swarm.md` (Hermes Kanban Swarm orchestration integration contract).
 
 ### Before coding
 
