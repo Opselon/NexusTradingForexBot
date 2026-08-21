@@ -157,11 +157,24 @@ class ScalerBundle:
     def is_ready(self) -> bool:
         return self.mean is not None and self.std is not None
 
-    def transform_50d(self, x_1x50: np.ndarray) -> np.ndarray:
+    def dimension(self) -> int | None:
+        """Declared scaler width (mean/std length) or None when not ready."""
+        if self.mean is None or self.std is None:
+            return None
+        try:
+            return int(self.mean.shape[0])
+        except Exception:
+            return None
+
+    def transform(self, x: np.ndarray) -> np.ndarray:
+        """Dimension-agnostic scaler (70D/50D/60D) - clips tails to [-5,+5]."""
         if not self.is_ready():
-            return x_1x50
-        # clip to avoid tail explosion
-        return np.clip((x_1x50 - self.mean) / self.std, -5.0, 5.0)
+            return x
+        return np.clip((x - self.mean) / self.std, -5.0, 5.0)
+
+    def transform_50d(self, x_1x50: np.ndarray) -> np.ndarray:
+        """Backward-compat alias: delegates to the dimension-agnostic transform."""
+        return self.transform(x_1x50)
 
 
 @dataclass(frozen=True)
@@ -186,6 +199,64 @@ class LiveEngine:
     FEATURE_DIM: int = active_dimension()
     FEATURE_COLS: tuple[str, ...] = active_columns()
     FEATURE_SCHEMA_ID: str = active_schema().schema_id
+
+    # ------------------------------------------------------------------
+    # BUG-125: EFFECTIVE MODEL CONTRACT - artifact-driven, not class-frozen.
+    #
+    # The class constants above are the BOOTSTRAP default (scalp_v1/50D).
+    # The authoritative live contract is derived from the LOADED BUNDLE:
+    # a validated 70D artifact (scaler width 70 + tensor width 70) drives
+    # effective_feature_dim=70 / effective_feature_schema_id=scalp_v3, so
+    # the canonical 70D tensor (Base 0..49 | News 50..59 | Liquidity
+    # 60..69) is assembled for inference. With the 50D Champion loaded the
+    # effective contract stays scalp_v1/50D and behavior is byte-identical
+    # to the pre-BUG-125 hot path. One source of truth: the bundle itself.
+    # ------------------------------------------------------------------
+
+    @property
+    def effective_feature_dim(self) -> int:
+        """Authoritative feature width of the LOADED model bundle.
+
+        Resolution order: scaler width (mean/std length) > model tensor
+        width (num_features) > class bootstrap default. Never raises -- a
+        probe failure falls back to the class default (50D-safe).
+        """
+        try:
+            with self._bundle_lock:
+                b = self._bundle
+            if b is not None:
+                d = b.scaler.dimension() if hasattr(b.scaler, "dimension") else None
+                if isinstance(d, int) and d > 0:
+                    return d
+                nf = int(getattr(b.model, "num_features", 0) or 0)
+                if nf > 0:
+                    return nf
+        except Exception:
+            pass
+        return int(self.__class__.FEATURE_DIM)
+
+    @property
+    def effective_feature_schema_id(self) -> str:
+        """Schema id bound to the LOADED model's dimension.
+
+        70D bundles bind to the canonical scalp_v3 contract
+        (features/schema_contract.py); everything else keeps the ACTIVE
+        schema id (scalp_v1). This is the single authoritative mapping --
+        no duplicated hardcoded dimensions anywhere in the engine.
+        """
+        try:
+            if self.effective_feature_dim == 70:
+                from nexus_scalp.features.schema_contract import SCHEMA_ID as _SCHEMA_70D
+
+                return _SCHEMA_70D
+        except Exception:
+            pass
+        return str(self.__class__.FEATURE_SCHEMA_ID)
+
+    @property
+    def effective_feature_cols(self) -> tuple[str, ...]:
+        """Ordered feat_* columns for the effective contract."""
+        return tuple(f"feat_{i}" for i in range(self.effective_feature_dim))
 
     def __init__(
         self,
@@ -897,21 +968,22 @@ class LiveEngine:
         """
         Stamps the active model identity onto future experiences.
 
-        Called at startup and after every hot-swap. Historical experiences keep
-        the provenance of the model that produced them and are never rewritten.
+        BUG-125: the advertised schema/dimension are taken from the
+        authoritative bundle when present, not from the class default.
         """
         try:
+            eff_id = str(self.effective_feature_schema_id)
+            eff_dim = int(self.effective_feature_dim)
             provenance = self.model_registry.register_model(
                 artifact_path=model_path,
                 model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
-                feature_schema_id=self.FEATURE_SCHEMA_ID,
-                feature_dimension=self.FEATURE_DIM,
+                feature_schema_id=eff_id,
+                feature_dimension=eff_dim,
                 config_version=str(getattr(self.runtime_config, "get_version", lambda: 0)()),
                 replaced=replaced,
             )
             self.experience_engine.set_provenance(provenance)
         except Exception as e:
-            # Provenance is observability, never a live-path dependency.
             logger.error("[MODEL] provenance registration failed (isolated)", error=str(e))
 
     def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
@@ -945,8 +1017,8 @@ class LiveEngine:
             import numpy as np
             import torch
 
-            warm = np.zeros((1, self.FEATURE_DIM), dtype=np.float32)
-            warm = new_bundle.scaler.transform_50d(warm)
+            warm = np.zeros((1, int(new_bundle.model.num_features)), dtype=np.float32)
+            warm = new_bundle.scaler.transform(warm)
             with torch.inference_mode():
                 new_bundle.model(torch.tensor(warm, dtype=torch.float32))
 
@@ -1887,11 +1959,35 @@ class LiveEngine:
         scaler = self._load_scaler_artifacts(model_path=model_path)
         return ModelBundle(model=model, scaler=scaler, artifact_path=model_path)
 
+    def _expected_num_features_for_artifact(self, model_path: Path) -> int:
+        """Infer expected input width from the on-disk artifact, falling back to class default.
+
+        When the checkpoint exists, its ``input_projection.weight.shape[1]`` is
+        the source of truth (covers 50D + 70D). On cold-start (no file) the
+        class ``FEATURE_DIM`` is kept so first-time users still bootstrap 50D.
+        """
+        try:
+            if model_path.exists():
+                probe = torch.load(model_path, map_location="cpu")
+                w = probe.get("input_projection.weight") if isinstance(probe, dict) else None
+                if w is not None and hasattr(w, "shape") and len(w.shape) == 2:
+                    return int(w.shape[1])
+        except Exception:
+            pass
+        return int(self.__class__.FEATURE_DIM)
+
     def _load_or_initialize_model_weights(self, model_path: Path, force_fresh: bool) -> ScalpNet:
+        """Loads model.pt if present, validating against the artifact's own declared width.
+
+        BUG-125: the width gate now validates against the checkpoint's own
+        declared tensor width (artifact-driven contract selection) instead of
+        the process-wide 50D default.
         """
-        Loads model.pt if present, validates 50D contract, otherwise creates and saves.
-        """
-        model = ScalpNet(num_features=self.FEATURE_DIM, num_classes=4)
+        if force_fresh:
+            expected_dim = int(self.__class__.FEATURE_DIM)
+        else:
+            expected_dim = self._expected_num_features_for_artifact(model_path)
+        model = ScalpNet(num_features=expected_dim, num_classes=4)
         model.eval()
 
         if model_path.exists() and not force_fresh:
@@ -1916,10 +2012,12 @@ class LiveEngine:
                 )
 
             model.load_state_dict(state_dict)
-            logger.info("Loaded model weights", path=str(model_path))
+            logger.info("Loaded model weights", path=str(model_path), expected_dim=expected_dim)
             return model
 
-        logger.info("Initializing fresh model weights", path=str(model_path))
+        logger.info(
+            "Initializing fresh model weights", path=str(model_path), expected_dim=expected_dim
+        )
         self._save_model_weights_atomic(model, model_path)
         return model
 
@@ -1934,9 +2032,12 @@ class LiveEngine:
             mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
             std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
 
-            if mean.shape[0] != self.FEATURE_DIM or std.shape[0] != self.FEATURE_DIM:
+            # BUG-125: scaler width must match the MODEL's declared width
+            expected_dim = self._expected_num_features_for_artifact(model_path)
+            if mean.shape[0] != expected_dim or std.shape[0] != expected_dim:
                 raise RuntimeError(
-                    f"Scaler dim invalid: mean{mean.shape} std{std.shape} expected ({self.FEATURE_DIM},)"
+                    f"Scaler dim invalid: mean{mean.shape} std{std.shape} "
+                    f"expected ({expected_dim},) for artifact {model_path.name}"
                 )
 
             logger.info(
@@ -2237,7 +2338,10 @@ class LiveEngine:
         # Start the worker if the engine is already running.
         if getattr(self, "_running", False):
             self._start_news_worker()
-        logger.info("[NEWS] event=HOT_RELOAD_CONSTRUCTED status=ENABLED runtime_version=%d", getattr(snap, "version", 0))
+        logger.info(
+            "[NEWS] event=HOT_RELOAD_CONSTRUCTED status=ENABLED runtime_version=%d",
+            getattr(snap, "version", 0),
+        )
 
     def _stop_news_engine_hot(self) -> None:
         """Hot-reload helper: tear down the news worker + engine + gate.
@@ -2695,13 +2799,17 @@ class LiveEngine:
                 if desired_news:
                     try:
                         self._start_news_engine_from_snapshot(snap)
-                        logger.info("[NEWS] event=HOT_RELOAD_ENABLED runtime_version=%d", snap.version)
+                        logger.info(
+                            "[NEWS] event=HOT_RELOAD_ENABLED runtime_version=%d", snap.version
+                        )
                     except Exception as ne:
                         logger.error("[NEWS] event=HOT_RELOAD_ENABLE_FAILED error=%s", ne)
                 else:
                     try:
                         self._stop_news_engine_hot()
-                        logger.info("[NEWS] event=HOT_RELOAD_DISABLED runtime_version=%d", snap.version)
+                        logger.info(
+                            "[NEWS] event=HOT_RELOAD_DISABLED runtime_version=%d", snap.version
+                        )
                     except Exception as ne:
                         logger.error("[NEWS] event=HOT_RELOAD_DISABLE_FAILED error=%s", ne)
             # Rule matrix cache TTL (live-tunable; the engine uses
@@ -3627,6 +3735,114 @@ class LiveEngine:
             except RuntimeError:
                 pass
 
+    def _validate_feature_vector(self, features: Sequence[float], context: str) -> list[float]:
+        """Schema-gated validation dispatching to 50D or 70D gate."""
+        eff = int(self.effective_feature_dim)
+        if eff == 70 and len(features) == 70:
+            from nexus_scalp.features.schema_contract import (
+                feature_schema_hash,
+                validate_70d_vector,
+            )
+
+            return validate_70d_vector(
+                list(features), schema_hash=feature_schema_hash(), context=context
+            )
+        return self.__class__._validate_50d_tensor(features, context=context)
+
+    def _build_live_feature_vector(self, fv) -> tuple[list[float], dict[str, float]]:
+        """Assembles the canonical live tensor (50D or 70D) for this tick.
+
+        50D CHAMPION (scalp_v1/50D): returns the 50D vector; liquidity is
+        never injected. 70D CHAMPION (validated 70D model): assembles
+        0..49 Base + 50..59 News + 60..69 Liquidity (causal, VALID only).
+        STALE/INVALID liquidity raises so the caller can degrade safely.
+        """
+        import time as _time
+
+        _t0 = _time.perf_counter()
+        base50 = fv.to_tensor_input()
+        base50 = self._validate_50d_tensor(base50, context="live_base50")
+        _t_base = _time.perf_counter()
+
+        eff_dim = int(self.effective_feature_dim)
+        if eff_dim != 70:
+            return base50, {
+                "feature_ms": round((_t_base - _t0) * 1e3, 3),
+                "liquidity_ms": 0.0,
+                "news_ms": 0.0,
+                "assembly_ms": 0.0,
+            }
+
+        # News 10D (indices 50..59): same canonical projection as training.
+        news10: list[float]
+        try:
+            from nexus_scalp.features.features70 import news_10d_from_context
+
+            news_ctx = None
+            if (
+                getattr(self, "_news_enabled", False)
+                and getattr(self, "news_engine", None) is not None
+            ):
+                try:
+                    news_ctx = self.news_engine.current_context()
+                    if hasattr(news_ctx, "model_dump"):
+                        news_ctx = news_ctx.model_dump()
+                except Exception:
+                    news_ctx = None
+            if news_ctx is None:
+                news10 = [0.0] * 10
+            else:
+                if not isinstance(news_ctx, dict):
+                    news_ctx = dict(news_ctx) if hasattr(news_ctx, "__dict__") else {}
+                news10 = news_10d_from_context(news_ctx)
+        except Exception:
+            news10 = [0.0] * 10
+        _t_news = _time.perf_counter()
+
+        # Liquidity 10D (indices 60..69): real, causal, causality-checked.
+        liq10: list[float] | None = None
+        gov = getattr(self, "liquidity_governor", None)
+        if gov is not None:
+            snap = getattr(gov, "last_snapshot", None)
+            causal = getattr(gov, "causal_state", lambda: "INVALID")()
+            if snap is not None and causal == "VALID":
+                try:
+                    vec = list(snap.features)
+                    if len(vec) == 10 and all(-3.0 <= float(v) <= 3.0 for v in vec):
+                        liq10 = [float(v) for v in vec]
+                except Exception:
+                    liq10 = None
+        _t_liq = _time.perf_counter()
+
+        if liq10 is None:
+            raise RuntimeError(
+                "70D inference requested but liquidity snapshot is not VALID "
+                "(stale/missing) - refusing to feed fabricated values into the 70D model"
+            )
+
+        try:
+            from nexus_scalp.features.liquidity_runtime import build_70d_vector
+
+            vec70 = build_70d_vector(base50, family_10=news10, liquidity_10=liq10)
+        except Exception as e:
+            raise RuntimeError(f"70D assembly failed: {e}") from e
+        _t_asm = _time.perf_counter()
+        try:
+            from nexus_scalp.features.schema_contract import (
+                feature_schema_hash,
+                validate_70d_vector,
+            )
+
+            validate_70d_vector(vec70, schema_hash=feature_schema_hash(), context="live_70d")
+        except Exception as e:
+            raise RuntimeError(f"70D contract validation failed: {e}") from e
+        return vec70, {
+            "feature_ms": round((_t_base - _t0) * 1e3, 3),
+            "news_ms": round((_t_news - _t_base) * 1e3, 3),
+            "liquidity_ms": round((_t_liq - _t_news) * 1e3, 3),
+            "assembly_ms": round((_t_asm - _t_liq) * 1e3, 3),
+        }
+
     def _infer_probabilities(self, fv) -> torch.Tensor:
         import time as _time
 
@@ -3637,16 +3853,43 @@ class LiveEngine:
         _trace.mark(LatencyStage.T0_MARKET_EVENT)
         _trace.mark(LatencyStage.T1_FEATURE_START)
 
-        x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="live_inference")
+        # BUG-125: Canonical live tensor: 50D for the production Champion,
+        # 70D when a validated 70D model is hot-swapped. Assembly does
+        # per-family telemetry bookkeeping and validates the liquidity snapshot.
+        try:
+            x_vec, asm_timings = self._build_live_feature_vector(fv)
+            self._last_live_tensor_dim = len(x_vec)
+            self._last_live_tensor_schema = self.effective_feature_schema_id
+            self._last_70d_assembly_timings = asm_timings
+        except RuntimeError as asm_err:
+            if int(self.effective_feature_dim) == 70:
+                logger.warning(
+                    "[INFERENCE] 70D assembly failed - inference blocked for this tick",
+                    error=str(asm_err),
+                )
+                self._last_70d_assembly_timings = {}
+                self._last_live_tensor_dim = 70
+                self._last_live_tensor_schema = self.effective_feature_schema_id
+                raise
+            # Non-70D defensive fallback
+            logger.warning(
+                "[INFERENCE] feature assembly failed - falling back to 50D", error=str(asm_err)
+            )
+            x_vec = self._validate_50d_tensor(
+                fv.to_tensor_input(), context="live_inference_fallback_50d"
+            )
+            self._last_70d_assembly_timings = {}
+            self._last_live_tensor_dim = len(x_vec)
+            self._last_live_tensor_schema = "scalp_v1"
         _trace.mark(LatencyStage.T2_FEATURE_DONE)
-        x_np = np.array(x50, dtype=np.float32).reshape(1, -1)
+        x_np = np.array(x_vec, dtype=np.float32).reshape(1, -1)
 
         with self._bundle_lock:
             bundle = self._bundle
         if bundle is None:
             raise RuntimeError("Model bundle not initialized")
 
-        x_np = bundle.scaler.transform_50d(x_np)
+        x_np = bundle.scaler.transform(x_np)
         _trace.mark(LatencyStage.T3_SCALER_DONE)
         x = torch.tensor(x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
@@ -4026,7 +4269,7 @@ class LiveEngine:
         sample_x_np = (
             df_labeled.select(feature_cols).tail(20).to_numpy().astype(np.float32, copy=False)
         )
-        sample_x_np = bundle.scaler.transform_50d(sample_x_np)
+        sample_x_np = bundle.scaler.transform(sample_x_np)
         x = torch.tensor(sample_x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -4037,7 +4280,7 @@ class LiveEngine:
         # Test 2/3: calibrated class distribution
         test_df = df_labeled.tail(100)
         test_x_np = test_df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
-        test_x_np = bundle.scaler.transform_50d(test_x_np)
+        test_x_np = bundle.scaler.transform(test_x_np)
         tx = torch.tensor(test_x_np, dtype=torch.float32)
         tx = torch.nan_to_num(tx, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -4095,7 +4338,7 @@ class LiveEngine:
         try:
             test_df = df_labeled.tail(100)
             test_x_np = test_df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
-            test_x_np = bundle.scaler.transform_50d(test_x_np)
+            test_x_np = bundle.scaler.transform(test_x_np)
             tx = torch.tensor(test_x_np, dtype=torch.float32)
             tx = torch.nan_to_num(tx, nan=0.0, posinf=1.0, neginf=-1.0)
             with torch.inference_mode():
