@@ -1935,13 +1935,19 @@ class LiveEngine:
 
     def _init_regime_classifier(self, symbol: str) -> MarketRegimeClassifier:
         """
-        Initializes the MarketRegimeClassifier matching its active constructor signature.
+        Initializes the MarketRegimeClassifier with XAUUSD-evidenced calibration.
+
+        Thresholds were recalibrated from 100k real XAUUSD M1 bars (2026-05..08)
+        in BUG-132. The classifier defaults already encode those values, so we
+        only override the two that differ from the constructor defaults
+        (spread hysteresis band + hold/markup margins) to keep a single source of
+        truth in the classifier module.
         """
         try:
             return MarketRegimeClassifier(
                 symbol=symbol,
-                spread_chop_enter_usd=0.50,
-                spread_chop_exit_usd=0.40,
+                spread_chop_enter_usd=0.25,
+                spread_chop_exit_usd=0.18,
                 min_regime_hold_sec=4.0,
                 switch_prob_margin=0.10,
             )

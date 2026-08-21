@@ -911,6 +911,16 @@ def _policy_section(engine: Any) -> dict[str, Any]:
     )
     out["request_id"] = getattr(proposal, "request_id", None) if proposal else None
     out["regime"] = regime_name
+    # Regime decision diagnostics (BUG-132): expose measured inputs + which
+    # decision conditions are firing so the UI shows WHY a regime was chosen,
+    # not just the final label.
+    if regime is not None and hasattr(regime, "decision_diagnostics"):
+        try:
+            out["regime_diagnostics"] = regime.decision_diagnostics()
+        except Exception:
+            out["regime_diagnostics"] = None
+    else:
+        out["regime_diagnostics"] = None
     out["proposal_generated_at"] = (
         getattr(proposal, "generated_at", None).isoformat()
         if proposal and getattr(proposal, "generated_at", None)

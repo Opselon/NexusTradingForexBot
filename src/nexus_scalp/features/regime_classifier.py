@@ -35,6 +35,7 @@ import math
 from collections import deque
 from datetime import UTC
 from enum import StrEnum
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -108,14 +109,19 @@ class MarketRegimeState(BaseModel):
 
 
 class MarketRegimeClassifier:
-    """
-    Strict-O(1) microstructure regime classifier with hysteresis.
+    """..."""
 
-    Notes:
-    - We intentionally separate:
-        * "candidate regime" computed from metrics
-        * "stable regime" released via hysteresis gate
-    """
+    # Activity/market-stress ordinal used by the hysteresis gate to decide
+    # whether a candidate switch is an ESCALATION (into a more active/special
+    # regime) or a de-escalation (back toward neutral). Higher = more active /
+    # more intervention. RANGING_MEAN_REVERSION is the neutral baseline (0).
+    _REGIME_ACTIVITY: ClassVar[dict[RegimeType, int]] = {
+        RegimeType.RANGING_MEAN_REVERSION: 0,
+        RegimeType.TRENDING_MOMENTUM: 1,
+        RegimeType.VOLATILITY_EXPANSION: 2,
+        RegimeType.HIGH_SPREAD_CHOP: 3,
+        RegimeType.MACRO_NEWS_FREEZE: 3,
+    }
 
     def __init__(
         self,
@@ -123,22 +129,36 @@ class MarketRegimeClassifier:
         # Rolling window
         rolling_seconds: int = 300,
         max_ticks_buffer: int = 6000,
-        # Spread schmitt-trigger thresholds (hysteresis band)
-        # Example: enter chop if spread >= 0.35, exit chop only if spread <= 0.30
-        # Spread schmitt-trigger thresholds (hysteresis band)
-        # Calibrated for Gold: Enter chop if spread >= $0.50, exit chop when spread <= $0.40
-        spread_chop_enter_usd: float = 0.50,
-        spread_chop_exit_usd: float = 0.40,
-        # Volatility thresholds
-        rv_expand_enter: float = 0.0015,
-        rv_expand_exit: float = 0.0011,
-        # Tick density thresholds
-        tick_vel_expand_enter: float = 15.0,
-        tick_vel_expand_exit: float = 11.0,
-        # Trend threshold
+        # Spread Schmitt-trigger thresholds (hysteresis band).
+        # Calibrated for XAUUSD from 100k real M1 bars (2026-05-01..2026-08-17):
+        #   spread_usd p50=$0.04, p90=$0.20, p95=$0.24, p99=$0.34, max=$6.22.
+        # Enter chop (FREEZE_ALL guard) when spread >= $0.25 (≈p97 of normal Gold),
+        # exit only when spread <= $0.18 (hysteresis band of $0.07). This makes
+        # HIGH_SPREAD_CHOP reachable during genuine spread widening without firing
+        # on routine $0.04-0.24 quiet-session spreads. See BUG-132.
+        spread_chop_enter_usd: float = 0.25,
+        spread_chop_exit_usd: float = 0.18,
+        # Volatility thresholds (PRICE-based only — tick_velocity removed as a
+        # volatility proxy, see BUG-132 / VOLATILITY_EXPANSION below).
+        # Calibrated from real XAUUSD 5-min realized vol (sqrt sum sq log-ret):
+        #   rv_5m p50=0.00062, p75=0.00091, p90=0.00128, p95=0.00160, p99=0.00250.
+        # Enter VOLATILITY_EXPANSION at p~P90 (0.0013), exit at p~P75 (0.0010).
+        rv_expand_enter: float = 0.0013,
+        rv_expand_exit: float = 0.0010,
+        # Tick-VELOCITY is feed-activity, NOT volatility (see cal. evidence).
+        # Retained as a *context* field + a secondary, high-bar VOLATILITY trigger
+        # for the rare case of a price-driven burst the rv_5m ring missed. It is
+        # intentionally set far above any observed XAUUSD feed rate (p99=13.9/s,
+        # max=32/s) so it does NOT drive classification on normal data.
+        tick_vel_expand_enter: float = 20.0,
+        tick_vel_expand_exit: float = 15.0,
+        # Trend thresholds. Calibrated from real XAUUSD 5-min aggregate:
+        #   |cumulative 5-min return| p50=0.00044, p75=0.00081, p90=0.00131,
+        #   p95=0.00171, p99=0.00292. Require genuine directional displacement
+        #   >= p~P85 (0.0010) AND a realized-vol floor >= p~P55 (0.0004).
         ofi_trend_threshold: float = 0.40,
-        price_trend_threshold: float = 0.0005,  # ~0.05% 5m cumulative price displacement
-        rv_trend_floor: float = 0.0015 * 0.35,
+        price_trend_threshold: float = 0.0010,  # ~0.10% 5m cumulative price displacement
+        rv_trend_floor: float = 0.0004,
         # Hysteresis timing and confidence margin
         min_regime_hold_sec: float = 4.0,  # Fast 4s hold window
         switch_prob_margin: float = 0.10,  # require new_prob >= old_prob + margin
@@ -194,6 +214,12 @@ class MarketRegimeClassifier:
         self._stable_prob: float = 0.0
         self._stable_since_sec: float = 0.0
         self._last_logged_regime: RegimeType | None = None
+
+        # Last computed metrics (cached each classify_tick) for observability.
+        self._last_spread: float = 0.0
+        self._last_rv_5m: float = 0.0
+        self._last_tick_vel: float = 0.0
+        self._last_ofi: float = 0.0
 
     # -------------------------
     # Public API
@@ -290,6 +316,12 @@ class MarketRegimeClassifier:
                 reason=stable_reason.value,
             )
             self._last_logged_regime = stable_regime
+
+        # Cache last computed metrics for decision_diagnostics() observability.
+        self._last_spread = float(spread_usd)
+        self._last_rv_5m = float(rv_5m)
+        self._last_tick_vel = float(tick_velocity)
+        self._last_ofi = float(norm_ofi)
 
         return self._state(
             now_utc=now_utc,
@@ -428,6 +460,61 @@ class MarketRegimeClassifier:
             RegimeReason.DEFAULT_RANGE,
         )
 
+    def decision_diagnostics(self) -> dict[str, object]:
+        """Auditable snapshot of the live classifier inputs and which decision
+        conditions are currently firing. Used by the debug/telemetry UI so an
+        operator can see WHY a regime was selected (not just the final label).
+
+        All thresholds are the active (possibly recalibrated) instance values,
+        so this reflects the exact logic that produced the last stable regime.
+        """
+        cum_ret_abs = abs(self._sum_ret)
+        in_chop = self._stable_regime == RegimeType.HIGH_SPREAD_CHOP
+        in_expand = self._stable_regime == RegimeType.VOLATILITY_EXPANSION
+        return {
+            "thresholds": {
+                "spread_chop_enter_usd": self.spread_chop_enter,
+                "spread_chop_exit_usd": self.spread_chop_exit,
+                "rv_expand_enter": self.rv_expand_enter,
+                "rv_expand_exit": self.rv_expand_exit,
+                "tick_vel_expand_enter": self.tick_vel_expand_enter,
+                "tick_vel_expand_exit": self.tick_vel_expand_exit,
+                "price_trend_threshold": self.price_trend_threshold,
+                "ofi_trend_threshold": self.ofi_trend_threshold,
+                "rv_trend_floor": self.rv_trend_floor,
+            },
+            "state": {
+                "stable_regime": self._stable_regime.value if self._stable_regime else None,
+                "in_chop": in_chop,
+                "in_expand": in_expand,
+                "sum_ret_abs": round(cum_ret_abs, 6),
+            },
+            "conditions": {
+                # Each key is True when that branch would (or did) fire given the
+                # current rolling metrics + stable-regime Schmitt state.
+                "macro_news_freeze": False,  # only set by caller; not derivable here
+                "high_spread_chop": (
+                    (not in_chop and self._last_spread >= self.spread_chop_enter)
+                    or (in_chop and self._last_spread >= self.spread_chop_exit)
+                ),
+                "volatility_expansion_rv": (
+                    (self._last_rv_5m >= self.rv_expand_enter)
+                    if not in_expand
+                    else (self._last_rv_5m >= self.rv_expand_exit)
+                ),
+                "volatility_expansion_tickvel": (
+                    (self._last_tick_vel >= self.tick_vel_expand_enter)
+                    if not in_expand
+                    else (self._last_tick_vel >= self.tick_vel_expand_exit)
+                ),
+                "trending_price": cum_ret_abs >= self.price_trend_threshold
+                and self._last_rv_5m >= self.rv_trend_floor,
+                "trending_ofi": abs(self._last_ofi) >= self.ofi_trend_threshold
+                and self._last_rv_5m >= self.rv_trend_floor,
+                "ranging_default": True,  # the fallback branch
+            },
+        }
+
     # -------------------------
     # Hysteresis gate
     # -------------------------
@@ -465,19 +552,37 @@ class MarketRegimeClassifier:
                 RegimeReason.HYSTERESIS_HOLD,
             )
 
-        # Require confidence margin to switch
-        # If current regime is UNSAFE (CHOP/NEWS), bypass probability margin once conditions normalize
+        # Require confidence margin to switch.
+        # We only demand the margin when ESCALATING into a MORE ACTIVE / special
+        # regime than the current one (e.g. RANGING -> TRENDING/VOLATILITY, or
+        # TRENDING -> VOLATILITY). This prevents a single noisy tick from flipping
+        # the regime into a high-intervention state. De-escalation back toward the
+        # neutral RANGING regime is gated instead by the Schmitt exit bands inside
+        # the candidate logic plus min_regime_hold_sec, NOT by a probability margin
+        # that RANGING (ranged ~0.60-0.90) could never satisfy.
+        # The old code required the margin for ALL switches out of a safe regime,
+        # which made TRENDING_MEAN_REVERSION absorbing: once entered it could never
+        # leave because the candidate RANGING prob was never >= stable_prob+margin.
+        # See BUG-132.
+        # UNSAFE regimes (CHOP/NEWS) are intentionally NOT covered by the margin:
+        # when the market normalizes we must ALWAYS be able to relax the FREEZE_ALL
+        # guard immediately (safety-critical — never get stuck frozen). The
+        # `not is_current_unsafe` guard below handles that.
         is_current_unsafe = self._stable_regime in (
             RegimeType.HIGH_SPREAD_CHOP,
             RegimeType.MACRO_NEWS_FREEZE,
         )
-        if not is_current_unsafe and candidate_prob < (self._stable_prob + self.switch_prob_margin):
-            return (
-                self._stable_regime,
-                self._stable_prob,
-                self._exec_for(self._stable_regime),
-                RegimeReason.HYSTERESIS_MARGIN,
+        if not is_current_unsafe:
+            escalating = (
+                self._REGIME_ACTIVITY[candidate_regime] > self._REGIME_ACTIVITY[self._stable_regime]
             )
+            if escalating and candidate_prob < (self._stable_prob + self.switch_prob_margin):
+                return (
+                    self._stable_regime,
+                    self._stable_prob,
+                    self._exec_for(self._stable_regime),
+                    RegimeReason.HYSTERESIS_MARGIN,
+                )
 
         # Switch accepted
         self._stable_regime = candidate_regime

@@ -5803,3 +5803,93 @@ REVERSAL DSL in 24.8s (2301 tokens, 0 failures). Commits 1fa2fd2 + 6f20a52.
   Fri 22:00 UTC - Sun 21:00 UTC weekend rule + tick freshness is the
   pragmatic approximation (documented in the module).
 - Period CONTENT stays UTC-canonical; only the LABEL/context is UI-localized.
+### BUG-132 (Hermes-RegimeCal, 2026-08-21) — XAUUSD regime classifier mis-calibrated + hysteresis absorbing-state + tick_velocity-as-volatility
+
+#### Symptoms
+- UI showed `RANGING_MEAN_REVERSION` almost constantly for XAUUSD even when the
+  market was clearly trending or volatile. The other four regimes (TRENDING,
+  VOLATILITY_EXPANSION, HIGH_SPREAD_CHOP, MACRO_NEWS_FREEZE) were rarely or never
+  reachable on real data.
+- A high tick feed rate with a flat price falsely classified VOLATILITY_EXPANSION.
+- Once TRENDING (or CHOP) was entered it stuck — the regime never relaxed back to
+  RANGING when conditions normalized.
+
+#### Root causes (3 distinct)
+1. **Calibration**: thresholds were tuned for a wide-spread, high-tick-rate,
+   more volatile instrument, not XAUUSD. Measured on 100k real XAUUSD M1 bars
+   (data/raw/XAUUSD_M1.parquet, 2026-05-01..08-17):
+   - spread_usd p50=$0.04, p90=$0.20, p95=$0.24, p99=$0.34, max=$6.22. Old CHOP
+     enter was $0.50 -> fired on <0.5% of bars.
+   - 5-min realized vol (rv_5m) p50=0.00062, p90=0.00128, p95=0.00160, p99=0.00250.
+     Old VOL enter was rv>=0.0015 OR tick_vel>=15/s -> fired on <1% of bars
+     (real tick_vel p99=13.9/s, max=32/s, so 15/s was almost never crossed).
+   - 5-min |cumulative return| p50=0.00044, p90=0.00131. Old price_trend 0.0005
+     + rv_trend_floor 0.000525 were reachable but the absorbing hysteresis below
+     suppressed the TRENDING signal in steady state.
+2. **Hysteresis absorbing-state bug**: `_apply_hysteresis` required a confidence
+   margin (`candidate_prob >= stable_prob + switch_prob_margin`) for EVERY switch
+   out of a safe regime. RANGING always reports prob ~0.60-0.90, so once a
+   TRENDING/CHOP state reached prob ~0.8 it could NEVER be left (RANGING candidate
+   prob could never exceed it). TRENDING_MEAN_REVERSION became a sticky trap.
+3. **tick_velocity semantics**: `tick_velocity` (feed update rate) was an OR-gate
+   for VOLATILITY_EXPANSION. High feed + flat price -> false VOLATILITY_EXPANSION;
+   low feed + big move -> missed. It measures feed activity, not volatility.
+
+#### Fix (commit <SHA>)
+- Recalibrated all thresholds from the real XAUUSD distributions (values + rationale
+  inline in `MarketRegimeClassifier.__init__`):
+  - spread_chop_enter=0.25 / exit=0.18 (was 0.50/0.40)
+  - rv_expand_enter=0.0013 / exit=0.0010 (was 0.0015/0.0011)
+  - tick_vel_expand_enter=20.0 / exit=15.0 (was 15/11) — retained ONLY as a very
+    high-bar secondary trigger, far above any observed XAUUSD feed rate, so it no
+    longer drives classification on normal data.
+  - price_trend_threshold=0.0010 (was 0.0005); rv_trend_floor=0.0004 (was 0.000525).
+  - live_engine._init_regime_classifier updated to the new spread band.
+- Fixed the hysteresis gate: the confidence margin is now required ONLY when
+  ESCALATING into a more-active regime (RANGING->TRENDING/VOL, TRENDING->VOL);
+  de-escalation back to RANGING is gated by the Schmitt exit bands + min-hold,
+  not by an unreachable probability margin. UNSAFE regimes (CHOP/NEWS) always
+  bypass the margin so the FREEZE_ALL guard can never get stuck (safety-critical).
+  Added `_REGIME_ACTIVITY` ordinal to classify escalations.
+- `tick_velocity_per_sec` retained as a context field; it is no longer a standalone
+  volatility signal. Downstream `policy.py`/`rule_matrix.py` momentum uses are
+  unaffected (they read the field as feed/momentum context, which is still valid).
+- Added `decision_diagnostics()` to the classifier (thresholds + live measured
+  metrics + which conditions are firing) and surfaced it as `regime_diagnostics`
+  in the debug snapshot so operators can see WHY a regime was selected.
+
+#### Evidence / calibration
+- Probe: scratch/calibrate_regime_realdata.py reconstructs deterministic tick
+  streams from the canonical XAUUSD_M1.parquet (Brownian-bridge per-bar, density-
+  faithful feed rate) and runs the REAL classifier. Calibration JSONs in
+  scratch/calibration/.
+- Before (old thresholds, fixed hysteresis) vs After (new evidenced thresholds),
+  identical 20k-bar replay:
+  - RANGING 75.4% -> 82.2%; TRENDING 23.9% -> 16.3%; VOLATILITY 0.38% -> 1.16%;
+    CHOP 0.26% -> 0.35%; transitions 2426 -> 2391.
+  - Candidate (pre-hysteresis) VOLATILITY 3.6% -> 6.3%; TRENDING 34.6% -> 13.9%.
+  - Key result: with the hysteresis fix, BOTH old and new thresholds give sane,
+    non-pathological distributions; the old thresholds were *mostly* defensible on
+    real data — the absorbing-state bug was the dominant cause of the constant
+    RANGING and the false VOLATILITY-on-flat-price reports.
+
+#### Verification
+- 19 deterministic regression tests: tests/unit/test_regime_calibration_bug132.py
+  (calm/trend-up/trend-down/volatility/chop/news, high-feed-flat NOT vol,
+  low-feed-real-vol detected, boundary conditions, hysteresis enter/exit,
+  non-absorbing de-escalation for all three special regimes, all-five-reachable,
+  tick_velocity retained as context, recalibrated defaults asserted).
+- ruff + ruff format + mypy src clean; debug-snapshot integration import-checked.
+
+#### Remaining risk / assumptions
+- Thresholds assume the live feed exposes spread in USD and tick_velocity
+  approximates real feed rate (validated against XAUUSD_M1 parquet). Other
+  symbols would need their own calibration pass (thresholds are constructor args).
+- The trend gate still requires BOTH cumulative displacement AND a realized-vol
+  floor; a perfectly smooth, zero-noise trend would not trigger TRENDING. This is
+  intentional (a smooth climb with no volatility is not a "momentum" regime), but
+  means very slow grind trends may read as RANGING — acceptable per the task
+  ("a regime may legitimately be rare").
+- synthetic probe reconstruction is an APPROXIMATION of intrabar noise; the
+  distributional conclusions are validated against the 5-min aggregate of the
+  real bars, not only the reconstructed ticks.

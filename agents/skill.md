@@ -356,6 +356,8 @@ NexusTradingForexBot/
 * **Neural Architecture:** `ScalpNet` (`src/nexus_scalp/models/scalp_net.py`) 🟢 VERIFIED
 * **Feature Pipeline:** `ScalpFeatureEngine` (`src/nexus_scalp/features/scalp_features.py`) 🟢 VERIFIED
 * **Regime Classifier:** `MarketRegimeClassifier` (`src/nexus_scalp/features/regime_classifier.py`) 🟢 VERIFIED
+* **Regime Classifier calibration (BUG-132, 2026-08-21):** thresholds are XAUUSD-evidenced from 100k real M1 bars (data/raw/XAUUSD_M1.parquet); see agents/bugs.md BUG-132. Five regimes (RANGING_MEAN_REVERSION, TRENDING_MOMENTUM, VOLATILITY_EXPANSION, HIGH_SPREAD_CHOP, MACRO_NEWS_FREEZE) — NOT 10. `tick_velocity` is a feed-activity CONTEXT field, NOT a volatility proxy; VOLATILITY_EXPANSION is price-based (rv_5m). The hysteresis gate requires the confidence margin only when ESCALATING into a more-active regime, so special regimes are reachable and non-absorbing. Recalibration probe: scratch/calibrate_regime_realdata.py. Tests: tests/unit/test_regime_calibration_bug132.py.
+
 * **Labeling Engine:** `TripleBarrierLabeler` (`src/nexus_scalp/labeling/triple_barrier.py`) 🟢 VERIFIED
 * **Training Orchestrator:** `WalkForwardTrainer` (`src/nexus_scalp/training/walk_forward_trainer.py`) 🟢 VERIFIED
 * **Inference Pipeline:** `LiveEngine._infer_probabilities()` (`src/nexus_scalp/application/live_engine.py`) 🟢 VERIFIED
