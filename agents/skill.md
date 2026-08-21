@@ -3321,3 +3321,27 @@ All routes are wrapped (never raise), use `serialize_enums`, and mirror the rese
 | Cycle integrity | Tick path: `feature_engine→regime→manage_active_positions(probs)→observe_positions→infer(warmup-gated)→signal_policy→experience→intelligence→news→shadow(50D+70D, observational)→liquidity(901 bars)→hedge→dispatch`. Hedging + shadow + liquidity are failure-isolated. | 🟢 No LIVE impact. |
 | Prompt | `factory-dsl-v3.1` now carries benchmark surface (OWN slice, coverage_pct, walk_forward/OOS explain). | 🟢 |
 | Skill mandate | `ABSOLUTE DIRECTIVE: Every update must write a SHORT skill entry` enforced. | 🟢 |
+## Node.js Runtime Role (AUDIT 2026-08-22 — DECISION: BUILD/DEV/TEST-ONLY, NOT RUNTIME)
+
+- **Fact:** there is NO `package.json`, NO bundler (webpack/vite/esbuild/parcel), and NO Node
+  child-process spawned anywhere in the engine (`grep` for node/npm/npx in `src/` = 0 hits).
+- **Web UI** (`Web/`): a *buildless* vanilla-JS SPA (`index.html` + `app.js` + `*.js` includes).
+  It is served entirely by the Python FastAPI process: `GET /` -> `index.html`, plus `/app.js`,
+  `/styles.css`, `/api_client.js`, `/tailwind.css` (route in `src/nexus_scalp/web/server.py`).
+  No Node HTTP server, no Node WebSocket gateway, no Node API proxy exists.
+- **Why it opens without Node:** the UI is static + browser JS + the committed pre-compiled
+  `Web/tailwind.css`; the runtime serves it via FastAPI (port 8080 local, 9090 docker) using only
+  Python (uvicorn/FastAPI). Node is not on the runtime path at all.
+- **Where Node is actually used (build/dev/test only):**
+  1. Tailwind compile: `scripts/build/build_tailwind.py` (pins `tailwindcss@3`, `npx` ephemeral —
+     no committed `node_modules`). Committed `Web/tailwind.css` is the artifact; rebuild only on theme change.
+  2. JS syntax gate + unit tests: `node --check Web/*.js` and `tests/js/*.test.js` via
+     `.github/workflows/js-tests.yml`. Pure node, no browser, no bundler.
+  3. E2E: Playwright (habitat in `node_modules/`, `.gitignore`d, CI-only) — never the runtime.
+- **Decision (Outcome B):** Node is isolated as a build/dev/test dependency. The official launcher
+  (`python NexusTradingForexBot.py` / `nexus start`) does NOT require Node and must NOT spawn Node.
+  Do not reintroduce a Node server, gateway, or `npm run` into the runtime launch path.
+- **Regression guards:** `tests/unit/test_node_runtime_role.py` (12 tests) — asserts buildless assets,
+  no CDN/bundler refs in browser JS, FastAPI-served UI without Node, no `package.json` at root,
+  no Node subprocess in engine, build script present + `js-tests.yml` declares `buildless`.
+- **See:** `agents/decisions/DEC-0002-nodejs-runtime-role.md`.

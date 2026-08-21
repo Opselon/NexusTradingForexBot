@@ -20,9 +20,10 @@ htmlcov
 .venv
 venv
 
-# Node / frontend build
-node_modules
-Web/node_modules
+# Node / frontend build (dev/test only — see agents/decisions/DEC-0002)
+# The Web UI is a buildless SPA served by FastAPI; no runtime node_modules exists.
+node_modules/playwright*
+node_modules/.bin/playwright*
 
 # Local secrets — never ship
 .env

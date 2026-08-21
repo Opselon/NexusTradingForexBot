@@ -2118,6 +2118,56 @@ Added `@app.get("/api_client.js")` → `FileResponse(WEB_DIR / "api_client.js")`
 
 ---
 
+## BUG-135 — Stale Node.js Assumptions (phantom `node_modules`, no build recipe)
+
+- **Status**: FIXED (2026-08-22, Node Runtime Role Audit)
+- **Severity**: LOW (hygiene / architectural clarity; no runtime impact)
+- **Confidence**: HIGH
+- **Verified**: `tests/unit/test_node_runtime_role.py` (12 tests pass)
+
+### Symptom
+Repository carried Node.js-shaped artifacts that implied a Node runtime dependency
+the app does not have:
+  * `.dockerignore` / `.gitignore` referenced `node_modules` / `Web/node_modules` that
+    do not exist (no `package.json`, no bundler).
+  * The Tailwind build recipe lived only in a commit message + prose docs (BUG-047),
+    making it non-reproducible and drift-prone.
+  * A user could open the project locally with no Node installed and everything still
+    worked -- but no single doc stated WHY, leaving Node's purpose ambiguous.
+
+### Root Cause
+Node.js is used ONLY at build/dev/test time (Tailwind compile via `npx`, plus the
+`node --check` + `tests/js/*.test.js` gate in `.github/workflows/js-tests.yml`). The
+engine and Web UI runtime require NO Node: the UI is a buildless vanilla-JS SPA served
+entirely by FastAPI (routes in `src/nexus_scalp/web/server.py`). Stale ignore rules and
+an undocumented build recipe made this non-obvious.
+
+### Fix
+- `scripts/build/build_tailwind.py` (NEW): canonical, reproducible Tailwind build.
+  Pins `tailwindcss@3`, uses ephemeral `npx` (no committed `node_modules`), version-gates
+  Node >= 18, and rebuilds the exact `Web/tailwind.css` the runtime serves.
+- `.dockerignore` / `.gitignore` `node_modules` lines re-pointed to the real Playwright
+  dev test habitat (`node_modules/playwright*`) so they are truthful.
+- `README.md` `## How to Run` + `## Technology Stack` + `## Repository Structure` updated
+  with a `### Node.js & the Web UI (build/dev/test-only)` subsection.
+- `agents/skill.md` + `agents/decisions/DEC-0002-nodejs-runtime-role.md`: documented
+  decision (Outcome B -- Node is build/dev/test-only, NOT runtime).
+
+### Regression Guards
+- `tests/unit/test_node_runtime_role.py::test_buildless_assets_present`
+- `tests/unit/test_node_runtime_role.py::test_browser_js_has_no_bundler_or_cdn_refs`
+- `tests/unit/test_node_runtime_role.py::test_web_ui_served_without_node`
+- `tests/unit/test_node_runtime_role.py::test_no_package_json_runtime_marker`
+- `tests/unit/test_node_runtime_role.py::test_node_not_referenced_by_engine_runtime`
+- `tests/unit/test_node_runtime_role.py::test_build_tailwind_script_locatable`
+- `tests/unit/test_node_runtime_role.py::test_js_tests_workflow_declares_buildless`
+
+### Verification
+`python scripts/build/build_tailwind.py` -> OK (rebuilt Web/tailwind.css, pinned v3).
+`pytest tests/unit/test_node_runtime_role.py` -> 12 passed.
+
+---
+
 ## BUG-047 — Tailwind Play CDN Runtime Dependency (`cdn.tailwindcss.com`)
 
 - **Status**: FIXED (2026-08-17, Phase 14 completion)
