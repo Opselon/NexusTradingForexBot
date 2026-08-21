@@ -36,3 +36,7 @@ tests/integration/test_accounting_api.py
 tests/integration/test_mt5_accounting_api_contract.py
 tests/unit/test_strategy_factory_phase22.py
 tests/unit/test_runtime_config_hot_reload.py
+tests/unit/test_regime_calibration_bug132.py
+tests/unit/test_accounting_deduplication.py
+tests/unit/test_accounting_pnl_regression.py
+tests/unit/test_accounting_timezone.py
