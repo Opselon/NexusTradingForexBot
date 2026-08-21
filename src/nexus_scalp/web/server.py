@@ -1026,10 +1026,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             model_meta["artifact_path"] = str(bundle.artifact_path)
                             model_meta["architecture"] = "ScalpNet"
                             model_meta["feature_schema_id"] = getattr(
-                                engine, "FEATURE_SCHEMA_ID", "scalp_v1"
+                                engine, "effective_feature_schema_id",
+                                getattr(engine, "FEATURE_SCHEMA_ID", "scalp_v1"),
                             )
                             model_meta["feature_dimension"] = getattr(
-                                engine, "FEATURE_DIM", len(FEATURE_NAMES)
+                                engine, "effective_feature_dim",
+                                getattr(engine, "FEATURE_DIM", len(FEATURE_NAMES)),
                             )
                             model_meta["scaler_ready"] = bool(
                                 getattr(bundle.scaler, "is_ready", lambda: False)()
@@ -1079,10 +1081,19 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     context={"msg": "Failed to fetch engine sync predictions/features"},
                 )
 
-        # Create structured features objects (50-dim schema-driven; missing
-        # values are reported as explicit null, never as fake zeros).
+        # BUG-125: Build feature payload using the effective contract names
+        # (50D scalp_v1 or 70D scalp_v3 — determined by the loaded bundle).
+        try:
+            eff_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
+            if eff_dim == 70:
+                from nexus_scalp.features.schema_contract import canonical_feature_names
+                feature_names_for_payload = list(canonical_feature_names())
+            else:
+                feature_names_for_payload = list(FEATURE_NAMES)
+        except Exception:
+            feature_names_for_payload = list(FEATURE_NAMES)
         features_payload = []
-        for i, name in enumerate(FEATURE_NAMES):
+        for i, name in enumerate(feature_names_for_payload):
             if i < len(features_values):
                 val = features_values[i]
                 status = "VALID" if _classify_feature(val)[1] == "VALID" else "NAN"
@@ -3915,7 +3926,18 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         nan_count = 0
         inf_count = 0
 
-        for idx, name in enumerate(FEATURE_NAMES):
+        # BUG-125: use effective contract names for the debug features endpoint
+        try:
+            eff_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
+            if eff_dim == 70:
+                from nexus_scalp.features.schema_contract import canonical_feature_names
+                _debug_feature_names = list(canonical_feature_names())
+            else:
+                _debug_feature_names = list(FEATURE_NAMES)
+        except Exception:
+            _debug_feature_names = list(FEATURE_NAMES)
+
+        for idx, name in enumerate(_debug_feature_names):
             raw = raw_values[idx] if idx < len(raw_values) else 0.0
             value, status = _classify_feature(raw)
             if status == "NAN":
@@ -3961,7 +3983,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         waiting for a live signal.
         """
         engine = app.state.engine
-        expected_dim = len(FEATURE_NAMES)
+        expected_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES)) if engine else len(FEATURE_NAMES)
 
         features = req.features
         source = "REQUEST"
@@ -4138,13 +4160,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 else:
                     values = list(fv.to_tensor_input())
                     bad = sum(1 for v in values if _classify_feature(v)[1] != "VALID")
-                    dim_ok = len(values) == len(FEATURE_NAMES)
+                    eff_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
+                    dim_ok = len(values) == eff_dim
                     if not dim_ok:
                         add(
                             "Feature Engine",
                             "UNHEALTHY",
-                            f"Dimensionality contract violated: {len(values)} != {len(FEATURE_NAMES)}.",
-                            {"dimensions": len(values), "expected": len(FEATURE_NAMES)},
+                            f"Dimensionality contract violated: {len(values)} != {eff_dim}.",
+                            {"dimensions": len(values), "expected": eff_dim},
                         )
                     elif bad:
                         add(
