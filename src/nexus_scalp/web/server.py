@@ -1459,6 +1459,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "bid": bid,
             "ask": ask,
             "spread": spread,
+            "price_digits": getattr(getattr(engine, "_symbol_info", None), "digits", None) if engine else None,
             "atr": atr,
             "regime": regime,
             "account": account_data,

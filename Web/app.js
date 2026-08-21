@@ -3720,9 +3720,8 @@ function handleIncomingLiveTick(payload, opts) {
     if (payload.symbol != null) setTxt('quick-symbol', payload.symbol);
 
     if (payload.bid != null && payload.ask != null) {
-
-        setTxt('quick-bid-ask', `${payload.bid.toFixed(2)} / ${payload.ask.toFixed(2)}`);
-
+        const __d = (payload.price_digits != null) ? payload.price_digits : (String(payload.symbol||"").startsWith("XAU")||String(payload.symbol||"").startsWith("GOLD") ? 2 : 5);
+        setTxt('quick-bid-ask', `${payload.bid.toFixed(__d)} / ${payload.ask.toFixed(__d)}`);
     }
 
     if (payload.regime != null) setTxt('quick-regime', payload.regime);
@@ -3856,9 +3855,7 @@ function handleIncomingLiveTick(payload, opts) {
 
     // Monitoring Panel
 
-    if (payload.bid != null) setTxt('monitor-bid', payload.bid.toFixed(2));
-
-    if (payload.ask != null) setTxt('monitor-ask', payload.ask.toFixed(2));
+    { const __d=(payload.price_digits!=null)?payload.price_digits:(String(payload.symbol||"").startsWith("XAU")||String(payload.symbol||"").startsWith("GOLD")?2:5); if (payload.bid != null) setTxt('monitor-bid', payload.bid.toFixed(__d)); if (payload.ask != null) setTxt('monitor-ask', payload.ask.toFixed(__d)); }
 
     if (payload.spread != null) setTxt('monitor-spread', `${payload.spread} pts`);
 
