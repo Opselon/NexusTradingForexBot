@@ -3071,10 +3071,16 @@ If you are an AI coding agent making changes to this repository in the future, *
 
 ### ⚙️ CI/CD Workflows (`.github/workflows/`)
 
-* `ci.yml`: Runs Python 3.11 environment, Ruff linter/formatter check, Mypy type validation, and Pytest with code coverage reports. 🟢 VERIFIED
-* `docker.yml`: Builds multi-stage Docker container and publishes to GitHub Container Registry (GHCR). 🟢 VERIFIED
-* `security.yml`: Executes GitHub CodeQL SAST and Trivy container vulnerability scanning. 🟢 VERIFIED
-* `release.yml`: Automates releases on GitHub tag creation (`v*`). 🟢 VERIFIED
+* `ci.yml`: Runs Python 3.11 quality gate (Ruff lint/format, Mypy, Pytest **critical suite** + coverage) on every push/PR. The **first job `ci-integrity`** statically analyzes every workflow via `scripts/ci/check_workflows.py` (fails CI on undefined job outputs, local actions without checkout, matrix artifact collisions, empty/always-false `if:`, YAML parse errors) and exercises the canonical change classifier `scripts/ci/classify_changes.py`. Emits `review-status.json`. Weekly cron re-runs the integrity scan (drift detection). 🟢 VERIFIED
+* `js-tests.yml`: Vanilla-JS syntax gate (`node --check` on `Web/*.js`) + node unit tests (`tests/js/*.test.js`). 🟢 VERIFIED
+* `tests-os.yml`: Critical suite on `windows-latest` + `macos-latest` (cross-OS parity; Ubuntu covered by `ci.yml`). 🟢 VERIFIED
+* `docker.yml`: Builds multi-stage Docker container and publishes to GitHub Container Registry (GHCR) on the `docker` branch only. 🟢 VERIFIED
+* `security.yml`: GitHub CodeQL (python) + Trivy fs scan; actions pinned to commit SHAs. 🟢 VERIFIED
+* `osv-scanner.yml`: Python dependency CVE scan (advisory SARIF). 🟢 VERIFIED
+* `lockfile-diff.yml`: PR dependency-manifest diff report (advisory). 🟢 VERIFIED
+* `release.yml`: Validates tag/version, quality gates, Windows PyInstaller build + Inno Setup installer + EXE smoke tests, publishes GitHub release. 🟢 VERIFIED
+
+> **CI self-defending contract (2026-08-22):** change classification is CENTRALIZED in `scripts/ci/classify_changes.py` (single lane formula; lanes: python/web/js/docker/ci/deps/scripts/release/docs). Workflows must branch on that classifier, not re-derive globs. CI infrastructure has its own deterministic regression tests in `tests/ci/` (`test_classify_changes.py`, `test_check_workflows.py`). There is NO C#/.NET or native C++ source in this repo — do not add `.NET`/`native` CI lanes (see docs/CI_ARCHITECTURE.md). 🟢 VERIFIED
 
 ---
 
