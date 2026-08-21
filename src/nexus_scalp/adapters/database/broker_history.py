@@ -246,14 +246,14 @@ def reconstruct_trades(
         trade = LogicalTrade(
             trade_id=str(position_id),
             position_id=position_id,
-            symbol=_s(deal_rows[0].get("symbol")) or (symbol or ""),
+            symbol=_s(deal_rows[0].get("symbol")),
         )
         open_deal: dict[str, Any] | None = None
         for d in deal_rows:
             trade.gross_pnl += _f(d.get("profit"))
             trade.commission += abs(_f(d.get("commission")))
-            trade.swap += _f(d.get("swap"))
-            trade.fee += _f(d.get("fee"))
+            trade.swap += abs(_f(d.get("swap")))
+            trade.fee += abs(_f(d.get("fee")))
             trade.volume += _f(d.get("volume"))
             trade.magic = _i(d.get("magic")) or trade.magic
             deal_ticket = _i(d.get("ticket"))

@@ -11811,7 +11811,7 @@ async function loadFactoryStatus() {
             genBox.innerHTML = '<div class="text-textMuted italic">No generations yet.</div>';
         }
 
-        await Promise.all([loadFactoryEvents(), loadFactoryFailures(), loadFactoryRanking(), loadFactoryLlmConfig()]);
+        await Promise.all([loadFactoryEvents(), loadFactoryFailures(), loadFactoryRanking(), loadFactoryLlmConfig(), loadFactoryBenchmarks()]);
     } catch (err) {
         factoryLog('error', 'loadFactoryStatus: ' + String(err && err.message || err));
         document.getElementById('factory-loop-state').textContent = 'ERROR';
@@ -12049,6 +12049,86 @@ setInterval(() => {
         loadFactoryStatus();
     }
 }, 10000);
+
+async function loadFactoryBenchmarks(generationId) {
+    try {
+        const sel = document.getElementById('factory-benchmark-generation');
+        const gid = (generationId !== undefined && generationId !== null) ? generationId : (sel ? sel.value : '');
+        const qs = gid ? ('?generation_id=' + encodeURIComponent(gid) + '&limit=50') : '?limit=50';
+        const res = await NX.api.get('/api/factory/benchmarks' + qs, { component: 'StrategyFactory', action: 'BENCHMARKS' });
+        const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
+        if (!data.available) {
+            const box = document.getElementById('factory-benchmarks');
+            if (box) box.innerHTML = '<div class="text-amber-300 italic">Benchmarks unavailable: ' + escHtml(data.reason || 'UNKNOWN') + '</div>';
+            return;
+        }
+        const bms = data.benchmarks ?? [];
+        if (sel && sel.options.length <= 1) {
+            try {
+                const st = await NX.api.get('/api/factory/generations?limit=20', { component: 'StrategyFactory', action: 'GENS_FOR_BM' });
+                const sd = factoryRes(st, { available: false });
+                if (sd.available && sd.generations) {
+                    sd.generations.forEach(function(g) {
+                        if (!Array.from(sel.options).some(function(o){ return o.value === g.generation_id; })) {
+                            var o = document.createElement('option'); o.value = g.generation_id; o.textContent = g.generation_id + ' (' + (g.status || '') + ')'; sel.appendChild(o);
+                        }
+                    });
+                }
+            } catch(e) {}
+        }
+        const elite = bms.filter(function(b){ return b.decision === 'CANDIDATE_ELITE' || b.lifecycle === 'VALIDATED'; }).length;
+        const incon = bms.filter(function(b){ return b.decision === 'INCONCLUSIVE_NEEDS_MORE_DATA'; }).length;
+        const rej = bms.length - elite - incon;
+        var avgCov = 0; if (bms.length) { var s=0,c=0; bms.forEach(function(b){ var pct=(b.coverage && b.coverage.coverage_pct)!=null? b.coverage.coverage_pct : null; if(pct!=null){ s+=Number(pct); c++; }}); if(c) avgCov=s/c; }
+        var setBm = function(id, v){ var el=document.getElementById(id); if(el) el.textContent=v; };
+        setBm('factory-bm-count', String(bms.length));
+        setBm('factory-bm-elite', String(elite));
+        setBm('factory-bm-inconclusive', String(incon));
+        setBm('factory-bm-rejected', String(rej < 0 ? 0 : rej));
+        setBm('factory-bm-coverage', bms.length ? avgCov.toFixed(1) + '%' : '--');
+        const box = document.getElementById('factory-benchmarks');
+        if (!box) return;
+        if (!bms.length) {
+            box.innerHTML = '<div class="text-textMuted italic">No benchmarks yet for this generation.</div>';
+            return;
+        }
+        box.innerHTML = bms.slice(0,50).map(function(b){
+            var decision = b.decision || b.lifecycle || '--';
+            var decCls = decision === 'CANDIDATE_ELITE' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : decision === 'INCONCLUSIVE_NEEDS_MORE_DATA' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-rose-500/10 text-rose-300 border-rose-500/30';
+            var cov = b.coverage || {};
+            var covTxt = cov.coverage_pct != null ? cov.coverage_pct + '%' : (cov.matched != null ? cov.matched + '/' + (cov.total_ledger_samples ?? '?') : '--');
+            var bt = b.backtest || {}; var wf = b.walk_forward || {}; var oos = b.oos || {};
+            var score = b.score || {};
+            var fs = score.final_score != null ? Number(score.final_score).toFixed(3) : '--';
+            var verdict = score.verdict || b.lifecycle || '--';
+            var pf = b.primary_failure || (oos.status !== 'PASS' ? 'OOS' : (!wf.passed ? 'WALK_FORWARD' : '--'));
+            var expR = bt.expectancy_r != null ? Number(bt.expectancy_r).toFixed(4) : '--';
+            var oosE = oos.oos_expectancy_r != null ? Number(oos.oos_expectancy_r).toFixed(4) : '--';
+            var flist = Array.isArray(b.dsl_filters) ? b.dsl_filters.slice(0,3).map(function(f){ return escHtml((f.feature||'') + ' ' + (f.op||'') + ' ' + String(f.value ?? '')); }).join(', ') : '';
+            return '<div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3 hover:border-violet-400/30 transition">'
+                + '<div class="flex flex-wrap justify-between gap-2 items-center">'
+                + '<span class="font-black text-violet-300">' + escHtml(b.candidate_id || b.benchmark_id || '--') + '</span>'
+                + '<span class="text-[10px] font-black px-2 py-0.5 rounded border ' + decCls + '">' + escHtml(decision) + '</span>'
+                + '<span class="text-textMuted">family <span class="text-gray-200">' + escHtml(b.family || '--') + '</span></span>'
+                + '<span class="text-textMuted">coverage <span class="text-accentCyan">' + escHtml(String(covTxt)) + '</span></span>'
+                + '<span class="text-textMuted">score <span class="text-emerald-300">' + escHtml(fs) + '</span> ' + escHtml(verdict) + '</span>'
+                + '</div>'
+                + '<div class="mt-1.5 grid grid-cols-2 lg:grid-cols-4 gap-2 text-[10px] leading-tight">'
+                + '<div><span class="text-textMuted">backtest</span> expR ' + escHtml(expR) + ' pf ' + escHtml(bt.profit_factor != null ? String(bt.profit_factor) : '--') + ' trades ' + escHtml(bt.total_trades != null ? String(bt.total_trades) : '--') + '</div>'
+                + '<div><span class="text-textMuted">walk-fwd</span> ' + (wf.passed ? '<span class="text-emerald-400">PASS</span>' : '<span class="text-rose-400">FAIL</span>') + ' ' + escHtml(wf.passes != null ? (wf.passes + '/' + (wf.folds ?? '?')) : '--') + ' rate ' + escHtml(wf.pass_rate != null ? String(wf.pass_rate) : '--') + '</div>'
+                + '<div><span class="text-textMuted">OOS</span> ' + escHtml(oos.status || '--') + ' expR ' + escHtml(oosE) + '</div>'
+                + '<div><span class="text-textMuted">primary failure</span> <span class="text-rose-300">' + escHtml(pf) + '</span></div>'
+                + '</div>'
+                + (flist ? '<div class="mt-1 text-[10px] text-textMuted truncate">filters: <span class="text-gray-300">' + flist + '</span></div>' : '')
+                + '</div>';
+        }).join('');
+        if (bms.length) factoryLog('info', 'Benchmarks loaded: ' + bms.length + ' (elite ' + elite + ', inconclusive ' + incon + ')');
+    } catch (err) {
+        console.warn('factory benchmarks failed', err);
+        factoryLog('warn', 'Benchmarks load failed: ' + String(err && err.message || err));
+    }
+}
+
 
 // ===========================================================================
 // DATABASE MANAGEMENT PANEL (DATABASE PORTABILITY, 2026-08-20)

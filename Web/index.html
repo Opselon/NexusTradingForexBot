@@ -1598,6 +1598,41 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Strategy-aware Benchmarks (2026-08-21) — per-candidate filtered backtest -->
+                <div class="bg-panelBg border border-borderClr rounded-xl p-6 shadow-xl">
+                    <div class="flex justify-between items-center border-b border-borderClr pb-4 mb-4">
+                        <div>
+                            <h3 class="text-md font-bold text-white flex items-center">
+                                <i class="fa-solid fa-flask-vial mr-2 text-violet-400"></i>
+                                Strategy Benchmarks — per-candidate filtered backtest
+                            </h3>
+                            <p class="text-xs text-textMuted mt-1">Each candidate is graded on its OWN filtered ledger slice (DSL-aware replay). Not the ledger average — scores diverge so the AI can rank. Walk-forward / OOS / robustness run on the filtered subset.</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <select id="factory-benchmark-generation" onchange="loadFactoryBenchmarks(this.value)" class="bg-darkBg/60 border border-borderClr rounded px-2 py-1.5 text-xs font-mono text-gray-200 outline-none focus:border-violet-400/50">
+                                <option value="">latest generation</option>
+                            </select>
+                            <button onclick="loadFactoryBenchmarks(document.getElementById('factory-benchmark-generation').value || null)" class="bg-darkBg hover:bg-borderClr border border-borderClr text-violet-300 px-3 py-1.5 rounded text-xs font-bold transition flex items-center space-x-1">
+                                <i class="fa-solid fa-arrows-rotate"></i> <span>Refresh</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="factory-benchmark-summary" class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3"><div class="text-[10px] uppercase tracking-widest text-textMuted">Benchmarks</div><div id="factory-bm-count" class="text-lg font-black font-mono text-violet-300">--</div></div>
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3"><div class="text-[10px] uppercase tracking-widest text-textMuted">Elite</div><div id="factory-bm-elite" class="text-lg font-black font-mono text-emerald-400">--</div></div>
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3"><div class="text-[10px] uppercase tracking-widest text-textMuted">Inconclusive</div><div id="factory-bm-inconclusive" class="text-lg font-black font-mono text-amber-400">--</div></div>
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3"><div class="text-[10px] uppercase tracking-widest text-textMuted">Rejected</div><div id="factory-bm-rejected" class="text-lg font-black font-mono text-rose-400">--</div></div>
+                        <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3"><div class="text-[10px] uppercase tracking-widest text-textMuted">Avg coverage</div><div id="factory-bm-coverage" class="text-lg font-black font-mono text-accentCyan">--</div></div>
+                    </div>
+                    <div id="factory-benchmarks" class="space-y-2 max-h-[520px] overflow-y-auto text-[11px] font-mono">
+                        <div class="text-textMuted italic">No benchmarks yet — generate a population to see per-candidate filtered backtests.</div>
+                    </div>
+                    <div class="mt-3 flex items-center justify-between text-[10px] font-mono text-textMuted">
+                        <span>Endpoint: <span class="text-violet-300">GET /api/factory/benchmarks</span> · filtered slice · WALK_FORWARD + OOS + ROBUSTNESS per candidate</span>
+                        <span id="factory-benchmark-hint" class="hidden"></span>
+                    </div>
+                </div>
             </section>
 
             <!-- TAB 5: NEWS INTELLIGENCE PANEL (PHASE 12) -->
