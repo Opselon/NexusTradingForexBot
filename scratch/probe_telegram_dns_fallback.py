@@ -10,6 +10,7 @@ Safe: never touches the engine or the settings DB.
 """
 import io
 import json
+import os
 import socket
 import ssl
 import sys
@@ -83,18 +84,22 @@ assert "dns_poisoned" in h
 print("6) health_state.dns_poisoned OK")
 
 # --- 7) REAL end-to-end send via the notifier (live network, normal DNS) ---
-TOKEN = "7233738325:AAGuH2WLVRy8KW7M6tuusZMB2XtniyYELnM"
-ADMIN = "5094837833"
-live = tn.TelegramNotifier(bot_token=TOKEN, admin_id=ADMIN, enabled=True, timeout_seconds=12.0)
-res = live.get_me()
-print("7) get_me live:", res)
-assert res.get("ok") is True, res
+# Token loaded from environment — never hardcode secrets in tracked files.
+TOKEN = os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")
+ADMIN = os.getenv("NEXUS_TELEGRAM_ADMIN_ID", "5094837833")
 
-# 7b) informational: forced direct-IP path (bypass works even when resolver lies)
-res2 = live.get_me.__self__.__class__.__mro__  # noqa
-live._last_dns_poisoned = False
-with mock.patch("socket.getaddrinfo", side_effect=fake_getaddrinfo):
-    res2 = live.get_me()
-print("7b) get_me forced-direct-path result:", res2)
-live.shutdown(timeout=1.0)
+if TOKEN:
+    live = tn.TelegramNotifier(bot_token=TOKEN, admin_id=ADMIN, enabled=True, timeout_seconds=12.0)
+    res = live.get_me()
+    print("7) get_me live:", res)
+    assert res.get("ok") is True, res
+
+    # 7b) informational: forced direct-IP path (bypass works even when resolver lies)
+    live._last_dns_poisoned = False
+    with mock.patch("socket.getaddrinfo", side_effect=fake_getaddrinfo):
+        res2 = live.get_me()
+    print("7b) get_me forced-direct-path result:", res2)
+    live.shutdown(timeout=1.0)
+else:
+    print("7) Skipping live end-to-end probe (NEXUS_TELEGRAM_BOT_TOKEN environment variable not set)")
 print("ALL PROBES PASSED")
