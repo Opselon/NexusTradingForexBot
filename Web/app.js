@@ -11775,7 +11775,7 @@ async function loadFactoryStatus() {
             acc.rej += s.rejected || 0;
             return acc;
         }, { generated: 0, valid: 0, rej: 0 });
-        setText('factory-metric-generations', String(gens.length));
+        setText('factory-metric-generations', String(genList.length));
         setText('factory-metric-generated', String(genTotals.generated));
         setText('factory-metric-validated', String(genTotals.valid));
         setText('factory-metric-rejected', String(genTotals.rej));

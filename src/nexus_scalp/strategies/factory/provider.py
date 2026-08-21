@@ -44,7 +44,7 @@ LLM_TEMPERATURE_KEY: str = "factory.llm_temperature"
 
 #: Prompt template version — every candidate records which prompt version
 #: produced it (spec 86). Bump when the DSL grammar/prompt changes.
-PROMPT_VERSION: str = "factory-dsl-v3"
+PROMPT_VERSION: str = "factory-dsl-v3.1"
 
 #: Default openai-compatible endpoint suffix.
 _CHAT_COMPLETIONS_PATH = "/chat/completions"
@@ -298,13 +298,20 @@ class LLMGenerationProvider:
     # ------------------------------------------------------------------
 
     def _build_messages(self, context: dict[str, Any], n: int) -> tuple[str, str]:
-        """Builds the LONG structured generation prompt (prompt v3).
+        """Builds the LONG structured generation prompt (prompt v3.1, 2026-08-21).
 
         The prompt teaches the model the EXACT post-generation pipeline the
         engine runs on every candidate: GENERATE -> VALIDATE -> BACKTEST ->
         WALK-FORWARD -> OOS -> ROBUSTNESS -> SCORE -> RANK -> ELITE -> EVOLVE.
         The model proposes HYPOTHESES only; the engine measures everything
         (spec 34/35/69/70/83/86).
+
+        v3.1 upgrade (2026-08-21): the prompt now includes the BENCHMARK
+        surface (strategy-aware backtests via DSL filter coverage, walk-forward
+        repr, OOS explainability) so the model understands HOW its hypotheses
+        will be graded and what the API returns for AI ranking — and it is
+        told to diversify thresholds not just families (the pre-fix failure
+        was threshold-homogeneity leading to 40 identical scores).
         """
         feature_list = ", ".join(context.get("feature_ids") or [])
         timeframes = ", ".join(context.get("timeframes") or [])
@@ -312,6 +319,17 @@ class LLMGenerationProvider:
         max_cond = context.get("max_conditions", 9)
         max_feat = context.get("max_features", 6)
         max_tf = context.get("max_timeframes", 1)
+        benchmark_note = (
+            "BENCHMARK (how each hypothesis is graded, 2026-08-21): every candidate is backtested "
+            "against ITS OWN ledger slice — the DSL filters are evaluated over real historical 50D "
+            "feature_snapshot vectors (same vectors the live ScalpFeatureEngine produced) to select only "
+            "the samples the strategy would have entered; walk-forward and OOS each re-run on that slice. "
+            "The API GET /api/factory/benchmarks?generation_id=Gx returns {coverage_pct, backtest {expectancy_r, "
+            "profit_factor}, walk_forward {pass_rate, degradation}, oos {status, reason}, score {final_score, verdict}, "
+            "primary_failure, decision} per candidate. Threshold choices MATTER — a filter `dist_to_ema > 0.7` "
+            "vs `> 0.0` yields a different slice and a different score; diversify thresholds. "
+        )
+        # PROMPT_VERSION is declared at module top; bump doc comment only here.
         schema_fields = """{
   "schema_version": "1.0",
   "hypothesis": {
@@ -354,6 +372,8 @@ class LLMGenerationProvider:
             " 10. EVOLVE - the next generation preserves elites and mutates/crosses/"
             "explores around them.\n"
             "\n"
+            + benchmark_note
+            + "\n"
             "HARD RULES:\n"
             "1. Use ONLY features from the approved catalog below. NEVER invent indicators.\n"
             "2. Every strategy MUST declare no_future_data: true - signals are computed on "

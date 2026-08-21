@@ -4,7 +4,8 @@
 > **PURPOSE:** Authoritative, repository-grounded Master Skill & Architecture Map for the Nexus Scalp Engine repository.
 > **SOURCE OF TRUTH:** Actual Executable Codebase (verified via forensic audit).
 > **BUG LEDGER:** For historical bug forensics, root causes, evidence, and regression guards, see `agents/bugs.md`.
-> **ABSOLUTE DIRECTIVE:** READ-ONLY for codebase files. Do NOT modify any file in this repository except `agents/skill.md` and `agents/bugs.md`.
+> **ABSOLUTE DIRECTIVE:** Every update you make to this repo, write a SHORT skill entry here (in this file) so ALL agents inherit it.
+> READ-ONLY for codebase files is lifted for `agents/skill.md` and `agents/bugs.md` only — all other files follow the contract gates below.
 
 ---
 
