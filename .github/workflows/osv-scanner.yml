@@ -1,0 +1,45 @@
+name: OSV Dependency Scan
+
+# Language-aware dependency CVE scan. security.yml already runs Trivy (fs) and
+# CodeQL (code), but neither is a Python-package vulnerability scanner. OSV
+# reads pyproject.toml / uv.lock and flags known CVEs in the resolved tree.
+# ADVISORY: results upload to code scanning but the job is continue-on-error so
+# a disclosed CVE never blocks a merge (reviewers act on the alert). Maps to the
+# supply-chain-audit / osv-scanner need.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "27 4 * * 1"   # Every Monday at 04:27 UTC
+  workflow_dispatch:
+
+# SARIF upload requires security-events write; contents read is enough to scan.
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  osv:
+    name: OSV Scanner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run OSV Scanner
+        uses: osv-scanner/osv-scanner-action@v2
+        continue-on-error: true
+        with:
+          results-format: sarif
+          output: osv-scan.sarif
+
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: osv-scan.sarif
