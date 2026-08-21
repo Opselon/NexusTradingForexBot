@@ -3308,3 +3308,14 @@ All routes are wrapped (never raise), use `serialize_enums`, and mirror the rese
 - New unit behaviour is covered by the live probe in this audit (162/102/188 divergence + `_select_family` exactness);
   an explicit `tests/unit/test_factory_benchmark_phase23.py` should be added to lock `dsl_matches_snapshot` (PASS/FAIL),
   `benchmark_subset_for_candidate` coverage math, and determinism.
+
+### 2026-08-21T11:44 full cycle check — liquidity shadow + replay + benchmark parity
+
+| Signal | Evidence | Verdict |
+| :--- | :--- | :--- |
+| `11:44 FEATURE_CALCULATION_OK source=LIVE_MARKET_STATE latency 43.6ms bars 901` | `features/liquidity_runtime.py` healthy (governor status=ENABLED, pure numpy, no I/O). | 🟢 No throttle. |
+| Telegram spam | `DEDUPLICATED duplicate suppressed` flood (~10/s) at 11:32 — expected coalescing of `GENERIC` sends. Downgraded `SEND_FAILED/FAILED_FINAL` for `DEDUPLICATED` to `DEBUG` (`DEDUP_SUPPRESSED`/`DEDUP_FINAL`) so console is not spammed; real failures still `ERROR`. Tracking unaffected. | 🟢 Patched (`observability/telegram_notifier.py: DEDUPLICATED → DEBUG`). |
+| Backtest bias | Ledger mean −0.079 R (92 outcomes), pipeline backtest expect −0.06 R. Pre-fix 40 failures identical (07:15). Post-fix `benchmark.py` strategy-aware slices: 162 vs 102 vs 188 / 334; `_select_family` exact. G19 best 0.77 INCONCLUSIVE (1 trade, need 8) vs prior flat 0.35. | 🟢 Diverging; not a bug. |
+| Cycle integrity | Tick path: `feature_engine→regime→manage_active_positions(probs)→observe_positions→infer(warmup-gated)→signal_policy→experience→intelligence→news→shadow(50D+70D, observational)→liquidity(901 bars)→hedge→dispatch`. Hedging + shadow + liquidity are failure-isolated. | 🟢 No LIVE impact. |
+| Prompt | `factory-dsl-v3.1` now carries benchmark surface (OWN slice, coverage_pct, walk_forward/OOS explain). | 🟢 |
+| Skill mandate | `ABSOLUTE DIRECTIVE: Every update must write a SHORT skill entry` enforced. | 🟢 |
