@@ -1650,6 +1650,12 @@
                                     </div>
                                     <div class="flex items-center space-x-2">
                                         <span id="news-state-badge" class="text-[10px] font-black px-2 py-1 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">--</span>
+                                        <!-- Pro Hot Reload: ENABLE/DISABLE the News engine live (no restart) -->
+                                        <label class="flex items-center gap-1.5 bg-darkBg border border-borderClr rounded px-2 py-1 cursor-pointer select-none" title="Pro Hot Reload — toggle the News Intelligence engine live (no restart). News can never force a trade.">
+                                            <span id="news-toggle-label" class="text-[10px] font-black text-textMuted">NEWS</span>
+                                            <input id="news-toggle" type="checkbox" class="w-3.5 h-3.5 accent-accentCyan cursor-pointer" onchange="toggleNewsEngine(this.checked)">
+                                        </label>
+                                        <span id="news-toggle-state" class="text-[9px] font-mono text-textMuted">—</span>
                                         <button onclick="loadNewsState()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-3 py-1.5 rounded text-xs font-bold transition">Refresh</button>
                                         <button onclick="triggerNewsRefresh()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Fetch News</button>
                                     </div>

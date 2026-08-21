@@ -147,7 +147,7 @@ class TelemetrySnapshot:
 
 @dataclass(frozen=True)
 class NewsSnapshot:
-    enabled: bool = False
+    enabled: bool = True
     worker_interval_sec: int = 60
     poll_fast_interval_sec: int = 300
     poll_medium_interval_sec: int = 900
@@ -569,6 +569,12 @@ _VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "model.model_artifact_path": lambda v: isinstance(v, str) and bool(v.strip()),
     "model.liquidity_features_enabled": lambda v: isinstance(v, bool),
     "telegram.enabled": lambda v: isinstance(v, bool),
+    "news.enabled": lambda v: isinstance(v, bool),
+    "news.worker_interval_sec": lambda v: isinstance(v, int) and 10 <= int(v) <= 3600,
+    "news.poll_fast_interval_sec": lambda v: isinstance(v, int) and 60 <= int(v) <= 3600,
+    "news.poll_medium_interval_sec": lambda v: isinstance(v, int) and 120 <= int(v) <= 7200,
+    "news.poll_slow_interval_sec": lambda v: isinstance(v, int) and 300 <= int(v) <= 86400,
+    "news.max_queue_size": lambda v: isinstance(v, int) and 10 <= int(v) <= 10000,
 }
 
 
@@ -589,9 +595,14 @@ def _coerce(key: str, value: Any) -> Any:
         "risk.max_spread_points",
         "execution.magic_number",
         "execution.max_slippage_points",
+        "news.worker_interval_sec",
+        "news.poll_fast_interval_sec",
+        "news.poll_medium_interval_sec",
+        "news.poll_slow_interval_sec",
+        "news.max_queue_size",
     ):
         return int(value)
-    if key in ("risk.enforce_stop_loss", "model.liquidity_features_enabled", "telegram.enabled"):
+    if key in ("risk.enforce_stop_loss", "model.liquidity_features_enabled", "telegram.enabled", "news.enabled"):
         return bool(value)
     if (
         key.endswith("_pct")
@@ -715,7 +726,14 @@ def build_runtime_configuration(
         telegram=TelemetrySnapshot(
             enabled=bool(cur["telegram.enabled"]),
         ),
-        news=NewsSnapshot(),
+        news=NewsSnapshot(
+            enabled=bool(cur["news.enabled"]),
+            worker_interval_sec=int(cur["news.worker_interval_sec"]),
+            poll_fast_interval_sec=int(cur["news.poll_fast_interval_sec"]),
+            poll_medium_interval_sec=int(cur["news.poll_medium_interval_sec"]),
+            poll_slow_interval_sec=int(cur["news.poll_slow_interval_sec"]),
+            max_queue_size=int(cur["news.max_queue_size"]),
+        ),
         rule_matrix=RuleMatrixSnapshot(),
     )
     return SnapshotBuildResult(snapshot, [], changed, sections)
@@ -749,6 +767,12 @@ def _empty_values() -> dict[str, Any]:
         "model.model_artifact_path": "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt",
         "model.liquidity_features_enabled": False,
         "telegram.enabled": True,
+        "news.enabled": True,
+        "news.worker_interval_sec": 60,
+        "news.poll_fast_interval_sec": 300,
+        "news.poll_medium_interval_sec": 900,
+        "news.poll_slow_interval_sec": 3600,
+        "news.max_queue_size": 1000,
     }
 
 
@@ -789,6 +813,14 @@ def _apply_bootstrap(cur: dict[str, Any], bootstrap: AppConfig) -> dict[str, Any
     out["model.liquidity_features_enabled"] = md.liquidity_features_enabled
     tg = bootstrap.telegram
     out["telegram.enabled"] = bool(tg.enabled)
+    nw = getattr(bootstrap, "news", None)
+    if nw is not None:
+        out["news.enabled"] = bool(nw.enabled)
+        out["news.worker_interval_sec"] = int(nw.worker_interval_sec)
+        out["news.poll_fast_interval_sec"] = int(nw.polling.fast_interval_sec)
+        out["news.poll_medium_interval_sec"] = int(nw.polling.medium_interval_sec)
+        out["news.poll_slow_interval_sec"] = int(nw.polling.slow_interval_sec)
+        out["news.max_queue_size"] = int(nw.max_queue_size)
     return out
 
 

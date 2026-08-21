@@ -10283,7 +10283,54 @@ document.addEventListener('DOMContentLoaded', () => {
 // PHASE 12: NEWS INTELLIGENCE (live feed / state / fetch / analyze)
 
 // =============================================================================
+// PRO HOT RELOAD: News engine ENABLE / DISABLE (no restart)
+// -----------------------------------------------------------------------------
+// Toggle is the AUTHORITATIVE UI for the real backend flag (news.enabled).
+// Enabled -> engine constructs worker+gate, badge shows state (NORMAL/STALE/...);
+// Disabled -> worker stopped, /api/news/* return available=false, badge OFF.
+// Persists via runtime_config (validated, restart-persistent). News can never
+// force a trade (bounded gate invariant) even when ON.
+// =============================================================================
+function syncNewsToggleUI(enabled) {
+    const cb = document.getElementById('news-toggle');
+    const lbl = document.getElementById('news-toggle-label');
+    const st = document.getElementById('news-toggle-state');
+    if (cb) cb.checked = !!enabled;
+    if (lbl) { lbl.textContent = enabled ? 'NEWS ON' : 'NEWS OFF'; lbl.className = 'text-[10px] font-black ' + (enabled ? 'text-emerald-400' : 'text-slate-400'); }
+    if (st) st.textContent = enabled ? 'ENABLED' : 'DISABLED';
+}
 
+async function refreshNewsToggleState() {
+    try {
+        const res = await fetch('/api/news/toggle-state');
+        if (!res.ok) return;
+        const body = await res.json();
+        if (body && typeof body.enabled === 'boolean') syncNewsToggleUI(body.enabled);
+    } catch (_e) { /* silent — badge will reflect actual state on next loadNewsState */ }
+}
+
+async function toggleNewsEngine(enabled) {
+    const cb = document.getElementById('news-toggle');
+    if (cb) cb.disabled = true;
+    setNewsStatus((enabled ? 'enabling' : 'disabling') + ' news engine...', false);
+    try {
+        const res = await fetch('/api/news/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !!enabled }) });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body.success) {
+            const msg = (body && (body.error || body.reason)) || ('HTTP ' + res.status);
+            throw new Error(msg);
+        }
+        syncNewsToggleUI(!!body.enabled);
+        setNewsStatus('news engine ' + (body.enabled ? 'ENABLED' : 'DISABLED') + ' (v' + (body.runtime_version ?? '?') + ')', false);
+        await loadNewsState();
+    } catch (e) {
+        console.error('[UI_ERROR] component=News endpoint=/api/news/toggle action=TOGGLE message=' + (e && e.message));
+        setNewsStatus('news toggle failed: ' + (e && e.message), true);
+        await refreshNewsToggleState();
+    } finally {
+        if (cb) cb.disabled = false;
+    }
+}
 
 
 function setNewsStatus(msg, isError) {
@@ -10305,9 +10352,8 @@ function setNewsStatus(msg, isError) {
 
 
 async function loadNewsState() {
-
     try {
-
+        refreshNewsToggleState().catch(() => {});
         const res = await fetch('/api/news/state');
 
         if (!res.ok) {
@@ -10321,16 +10367,12 @@ async function loadNewsState() {
         const body = await res.json();
 
         if (!body.available) {
-
             document.getElementById('news-state-value').textContent = 'OFF';
-
             document.getElementById('news-state-badge').textContent = 'OFF';
-
             setNewsStatus('news engine unavailable (available=false)', true);
-
             return;
-
         }
+        syncNewsToggleUI(true);
 
         const state = body.state || 'NORMAL';
 

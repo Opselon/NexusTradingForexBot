@@ -7430,6 +7430,58 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
             return {"success": False, "error": "LIQUIDITY_TOGGLE_FAILED"}
 
+    @app.get("/api/news/toggle-state")
+    def get_news_toggle_state() -> dict[str, Any]:
+        """Current news toggle state (Pro Hot Reload — read side).
+
+        Returns {enabled, runtime_version, source}. Enabled is authoritative:
+        engine._news_enabled + snapshot truth (never UI-only).
+        """
+        engine = app.state.engine
+        try:
+            enabled = bool(getattr(engine, "_news_enabled", False)) if engine else False
+            snap = None
+            runtime_version = None
+            if engine is not None and hasattr(engine, "runtime_config"):
+                snap = engine.runtime_config.get_snapshot()
+                runtime_version = snap.version
+                # snapshot enabled is the validated persisted value
+                enabled = bool(snap.news.enabled)
+            return {"success": True, "enabled": enabled, "runtime_version": runtime_version, "source": getattr(snap, "source", "") if snap else ""}
+        except Exception as e:
+            log_web_error(logger, "/api/news/toggle-state", None, e)
+            return {"success": False, "enabled": False, "error": "NEWS_TOGGLE_STATE_FAILED"}
+
+    @app.post("/api/news/toggle")
+    def set_news_toggle(payload: dict[str, Any]) -> dict[str, Any]:
+        """Pro Hot Reload: enable/disable the News Intelligence engine live.
+
+        Flow: UI toggle -> POST {enabled} -> runtime_config.apply(news.enabled)
+        -> atomic snapshot swap -> _sync_runtime_config -> engine hot-swap
+        (construct / tear down worker+gate) -> new toggle state returned.
+        Never restarts the engine; never touches orders/risk/execution.
+        News can still never force a trade (bounded gate invariant).
+        """
+        engine = app.state.engine
+        if engine is None or not hasattr(engine, "runtime_config"):
+            raise HTTPException(status_code=400, detail="Trading Engine offline.")
+        raw = payload.get("enabled")
+        if raw is None:
+            raise HTTPException(status_code=422, detail="enabled (bool) required")
+        desired = bool(raw)
+        try:
+            report = engine.apply_runtime_update({"news.enabled": desired}, source="WEB_NEWS_TOGGLE", actor="web")
+            if not report.success:
+                return {"success": False, "enabled": bool(getattr(engine, "_news_enabled", False)), "error": report.reason or "NEWS_TOGGLE_REJECTED", "runtime_version": engine.runtime_config.get_version()}
+            snap = engine.runtime_config.get_snapshot()
+            # /api/news/health-style payload for the UI badge
+            return {"success": True, "enabled": bool(snap.news.enabled), "runtime_version": snap.version, "source": snap.source, "worker_interval_sec": snap.news.worker_interval_sec}
+        except HTTPException:
+            raise
+        except Exception as e:
+            log_web_error(logger, "/api/news/toggle", None, e)
+            return {"success": False, "enabled": bool(getattr(engine, "_news_enabled", False)), "error": "NEWS_TOGGLE_FAILED"}
+
     @app.get("/api/news/state")
     def get_news_state() -> dict[str, Any]:
         """Current news state (NORMAL/ELEVATED/HIGH_IMPACT/CONFLICTED/

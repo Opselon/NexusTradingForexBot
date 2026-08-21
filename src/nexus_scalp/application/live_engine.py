@@ -723,6 +723,16 @@ class LiveEngine:
             self.mslie_engine = None
         self._last_mslie_vector: Any | None = None
         self._last_news_gate: Any | None = None
+        # News enabled is AUTHORITATIVE from the runtime snapshot (persisted
+        # toggle), not from the bootstrap yaml alone — so a restart respects
+        # the operator's UI choice. LiveEngine bootstraps from config then
+        # rehydrates; override with the snapshot truth if present.
+        self._news_enabled = bool(getattr(config, "news", None) and config.news.enabled)
+        try:
+            _news_snap = self.runtime_config.get_snapshot().news
+            self._news_enabled = bool(_news_snap.enabled)
+        except Exception:
+            pass
         if self._news_enabled:
             try:
                 from nexus_scalp.news import NewsEngine, NewsGate, NewsWorker
@@ -2195,6 +2205,60 @@ class LiveEngine:
             self._news_worker_started = False
             logger.error("[NEWS_WORKER] event=START status=FAILED", error=str(err))
 
+    def _start_news_engine_from_snapshot(self, snap: Any) -> None:
+        """Hot-reload helper: (re)construct the news engine + worker + gate.
+
+        Used by _sync_runtime_config when the operator enables news from the
+        UI without restarting. Fully isolated like the bootstrap constructor:
+        a failure leaves the subsystem disabled and trading unaffected.
+        """
+        from nexus_scalp.news import NewsEngine, NewsGate, NewsWorker
+        from nexus_scalp.news.config import NewsConfig, NewsPollingConfig
+
+        cfg = NewsConfig(
+            enabled=True,
+            worker_interval_sec=int(snap.news.worker_interval_sec),
+            max_queue_size=int(snap.news.max_queue_size),
+            polling=NewsPollingConfig(
+                fast_interval_sec=int(snap.news.poll_fast_interval_sec),
+                medium_interval_sec=int(snap.news.poll_medium_interval_sec),
+                slow_interval_sec=int(snap.news.poll_slow_interval_sec),
+            ),
+        )
+        self.news_engine = NewsEngine(config=cfg)
+        self.news_worker = NewsWorker(
+            engine=self.news_engine,
+            interval_sec=float(snap.news.worker_interval_sec),
+            max_queue=int(snap.news.max_queue_size),
+        )
+        self.news_gate = NewsGate(config=cfg)
+        self._news_enabled = True
+        self._news_worker_started = False
+        # Start the worker if the engine is already running.
+        if getattr(self, "_running", False):
+            self._start_news_worker()
+        logger.info("[NEWS] event=HOT_RELOAD_CONSTRUCTED status=ENABLED runtime_version=%d", getattr(snap, "version", 0))
+
+    def _stop_news_engine_hot(self) -> None:
+        """Hot-reload helper: tear down the news worker + engine + gate.
+
+        Called when the operator disables news from the UI. Stops the worker
+        (even if _news_enabled is still True — the guard in _stop_news_worker
+        would otherwise early-return).
+        """
+        try:
+            if self.news_worker is not None and self._news_worker_started:
+                self._news_worker_started = False
+                try:
+                    self.news_worker.stop()
+                except Exception:
+                    pass
+        finally:
+            self._news_enabled = False
+            self.news_engine = None
+            self.news_worker = None
+            self.news_gate = None
+
     async def _stop_news_worker(self) -> None:
         """Stops the news worker (idempotent, never raises)."""
         if not self._news_enabled or not self._news_worker_started:
@@ -2624,6 +2688,22 @@ class LiveEngine:
             nw = getattr(self, "news_worker", None)
             if nw is not None and snap.news.worker_interval_sec > 0:
                 nw.interval_sec = float(snap.news.worker_interval_sec)
+            # News enabled toggle (Pro Hot Reload): hot-swap the worker/gate
+            # next time _sync_runtime_config runs (either via apply or tick).
+            desired_news = bool(snap.news.enabled)
+            if desired_news != self._news_enabled:
+                if desired_news:
+                    try:
+                        self._start_news_engine_from_snapshot(snap)
+                        logger.info("[NEWS] event=HOT_RELOAD_ENABLED runtime_version=%d", snap.version)
+                    except Exception as ne:
+                        logger.error("[NEWS] event=HOT_RELOAD_ENABLE_FAILED error=%s", ne)
+                else:
+                    try:
+                        self._stop_news_engine_hot()
+                        logger.info("[NEWS] event=HOT_RELOAD_DISABLED runtime_version=%d", snap.version)
+                    except Exception as ne:
+                        logger.error("[NEWS] event=HOT_RELOAD_DISABLE_FAILED error=%s", ne)
             # Rule matrix cache TTL (live-tunable; the engine uses
             # refresh_cache(force) with the TTL as a default — the attr
             # is set when the engine reads it each refresh)
