@@ -104,8 +104,7 @@ jobs:
         run: |
           python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-q', '--tb=short']).returncode)"
       - name: Integration tests (no MT5, no browser)
-        run: pytest tests/integration/ -q --tb=short \
-             --ignore=tests/integration/test_playwright_e2e.py
+        run: pytest tests/integration/ -q --tb=short --ignore=tests/integration/test_playwright_e2e.py
 
       - name: Telegram - release gates complete
         continue-on-error: true
