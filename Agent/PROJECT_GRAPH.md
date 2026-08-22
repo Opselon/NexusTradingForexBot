@@ -309,15 +309,28 @@ confirmation (SWING_CONFIRM_BARS); pool lifecycle CANDIDATE→CONFIRMED→
 
 ### 1.9 Telemetry
 - `web/server.py` — FastAPI: REST (>/api/status, /api/account/*, /api/models/*,
-  /api/research/*, /api/news/*, /api/liquidity/*, /api/debug/*, /api/settings/*,
-  /api/db/*, /api/forensics/*, /api/intelligence/* …), SSE `/api/ticks/stream`,
-  WebSocket `/web` + `/ws`. All Enum payloads pass `serialize_enums()`.
+  /api/research/*, /api/news/* (+ `/api/news/ai-status`, `/api/news/analyze/*`,
+  `/api/news/auto-prune`, `/api/news/{id}/restore`), /api/liquidity/*,
+  /api/debug/*, /api/settings/*, /api/db/*, /api/forensics/*, /api/intelligence/*
+  …), SSE `/api/ticks/stream`, WebSocket `/web` + `/ws`. All Enum payloads pass
+  `serialize_enums()`. `GET /api/news?status=ACTIVE|ALL|IRRELEVANT` filters by
+  `article_status`; response includes `status_counts` + per-article `ai_analysis`.
 - Web UI (`Web/` at repo root; index.html LF / app.js CRLF): Account,
-  News, Liquidity, Rules, Config, Debug, Incident Center tabs. The Debug tab is
+  News + News Intelligence 0100 (AI status, per-article AI analysis, batch
+  analysis, auto-prune Pro Mode, Active/All/Irrelevant filters, restore),
+  Liquidity, Rules, Config, Debug, Incident Center tabs. The Debug tab is
   a PURE renderer of the canonical `GET /api/debug/state` (18 sections) — never
   computes trading intelligence in JS. UI is the source of control for
   execution mode (BUG-119); settings persist via SettingsService
   (`db.set('execution.mode', …)`, HOT_RESTRICTED) — never live.yaml (INV-010).
+- `Web/forensic_console.js` + `Web/news_intelligence.js` — buildless vanilla-JS
+  companion modules (no bundler): forensic shared infra (toast, error
+  normalization, single-source incident model `deriveKpis`, severity/status
+  normalization, Agent Mode state machine, task provider surface, modal/focus
+  trap, button-lock) + News Intelligence (AI status banner, analyze/re-analyze,
+  bounded batch, auto-prune with confirm, filters, restore, `articleExtrasHTML`
+  card enrichment). All HTTP via `window.NX.api` — never raw `fetch()` in
+  feature modules; never `TypeError: Failed to fetch` in DOM.
 - Observability: structlog JSON logs; `TelegramNotifier` (queue+worker,
   full lifecycle, HTML, redacted secrets, health_state READY/DEGRADED/STOPPED);
   `observability/telegram_html.py` + `telegram_transport.py` +
@@ -351,10 +364,21 @@ confirmation (SWING_CONFIRM_BARS); pool lifecycle CANDIDATE→CONFIRMED→
 - `governance/` (TASK-6/8) — 10/14-gate load gate, alignment, engine,
   evidence, shadow runtime, promotion transaction + rollback, audit tables.
   Observability-only: imports NO order manager / risk engine / adapter.
-- `news/` (Phase 12) — ingest/dedupe/analyze/consensus/decay/gate; 11
-  sources, 189 keywords; news is CONTEXTUAL ONLY (bounded confidence
-  adjustment ≤+0.05 / ≤−0.10, action never changed); dedicated
-  `artifacts/news.db`.
+- `news/` (Phase 12 + Intelligence 0100) — ingest/dedupe/analyze/consensus/
+  decay/gate; 11 sources, 189 keywords; news is CONTEXTUAL ONLY (bounded
+  confidence adjustment ≤+0.05 / ≤−0.10, action never changed); dedicated
+  `artifacts/news.db`. Intelligence 0100 adds: `news/ai_service.py`
+  (NewsAIStatus, `analyze_article_with_ai`, `auto_prune_irrelevant`,
+  `restore_article`, provider reuse via `strategies/factory/provider.py::
+  complete_json`, grounded delimited prompts, injection-defended system prompt,
+  schema-validated responses, separate `news_ai_analysis` table — deterministic
+  truth never overwritten), `news/database.py` additions (`news_ai_analysis`,
+  `news_prune_audit`, `article_status` ACTIVE/IRRELEVANT with recoverable
+  transitions + audit rows, status-filtered `list_articles`,
+  `count_articles_by_status`), `configuration/runtime_config.py`
+  `news.auto_analysis_enabled` (bool, OFF by default, deterministic local-only
+  path when enabled), `web/news_intelligence_routes.py` (5 endpoints:
+  ai-status, analyze/{id}, analyze/batch, auto-prune, {id}/restore).
 - `hygiene/` (TASK-11) — non-destructive DB hygiene
   (OBSERVE→CLASSIFY→PLAN→VALIDATE→CLEAN→VERIFY; AUDIT_ONLY default).
 - `incidents/` (TASK-12/13) — diagnostic-only incident detection/correlation/
@@ -443,11 +467,16 @@ execution, features, models]  →  ports  →  adapters  →  domain
   UI/Telegram settings changes route via SettingsService, never live.yaml
   (INV-010, BUG-080).
 
-### 2.8 UI — `Web/`, `web/server.py`, `web/debug_snapshot.py`
+### 2.8 UI — `Web/`, `web/server.py`, `web/debug_snapshot.py`, `Web/forensic_console.js`, `Web/news_intelligence.js`
 - **Responsibility:** REST/SSE/WS serving, canonical debug snapshot, static
-  bundle. UI renders backend truth; frontend never recomputes trading
-  intelligence; enum serialization mandatory; sanitized error envelopes
-  (`web/errors.py`) — never `str(e)` to clients (BUG-040).
+  bundle + buildless forensic/news companion modules. UI renders backend truth;
+  frontend never recomputes trading intelligence; enum serialization mandatory;
+  sanitized error envelopes (`web/errors.py`) — never `str(e)` to clients
+  (BUG-040). All fetch paths via `window.NX.api` (safe envelope
+  `{ok, error:{code,message,request_id}}`); no raw `fetch()` in feature
+  modules; user errors via `NX.Forensic.normalizeError` + `NX.Forensic.toast`
+  (never `String(e)` in DOM). Incident KPIs derived from ONE authoritative
+  array via `NX.Forensic.model.deriveKpis` (never separate count vs list).
 
 ### 2.9 External integrations — MT5 (primary), Telegram (alerting),
 GitHub (release updates), news sources (RSS/official), Docker.
@@ -637,6 +666,36 @@ READY_FOR_REVIEW → APPROVED → CHAMPION with operator token.
 today); same live vector; simulated observations; disagreement analysis
 (8 categories); feature health + drift; zero Champion/broker impact;
 queued persistence.
+
+### 3.5b News Intelligence & Forensic UI Algorithms (0100 — NEW)
+
+**A20b. News AI Analysis Service** (`news/ai_service.py` + `strategies/factory/provider.py::complete_json`)
+- Purpose: AI interpretation layer for news (separate from deterministic engine).
+- Provider: reuses Strategy Factory `LLMGenerationProvider.complete_json` (single LLM source, single secret store; hot-reload aware via `resolve_factory_provider`); never a second config.
+- Prompt: injection-defended — article text wrapped in `<<<ARTICLE_START>>>` DATA delimiters; system prompt explicitly labels article as UNTRUSTED EXTERNAL DATA; deterministic context (importance_score, xauusd_relevance, direction, entities/topics) passed as trusted CONTEXT.
+- Input caps: `NEWS_AI_MAX_BODY_CHARS=4000`, `temperature=0.2`, `max_tokens=1200`, `response_format={type:"json_object"}`.
+- Validation: `_validate_response` normalizes sentiment to BULLISH/BEARISH/NEUTRAL/MIXED, caps key_facts/uncertainties at 20, enforces non-empty content or `insufficient_evidence=true`; malformed → `analysis_status='failed'` (never masquerades as success).
+- Persistence: separate `news_ai_analysis` table (never overwrites deterministic `news_analysis`); dedup via prior completed analysis unless `force=true`; structured `NewsAIAnalysisResult` (completed/failed/skipped).
+- Batch: `POST /api/news/analyze/batch` — bounded concurrency `NEWS_AI_BATCH_CONCURRENCY=3` via ThreadPoolExecutor, cap 200 ids, per-item isolation.
+
+**A20c. Recoverable Auto-Prune (Pro Mode)** (`news/ai_service.py::auto_prune_irrelevant` + `news/database.py::set_article_status`)
+- Purpose: mark low-signal, non-XAUUSD articles IRRELEVANT without deleting truth.
+- Rule (§29): `importance_score < 0.30 AND xauusd_relevance < 0.25` → IRRELEVANT; else ACTIVE. XAUUSD relevance resolved from persisted `news_analysis.relevance_to_xauusd` or recomputed via `LocalNewsAnalyzer` (never invented). Explainable reason via `_prune_reason` (LOW_IMPORTANCE_AND_LOW_XAUUSD_RELEVANCE / LOW_XAUUSD_RELEVANCE / LOW_IMPORTANCE).
+- Recoverability: `article_status` migration-safe (`ALTER TABLE ADD COLUMN ... DEFAULT 'ACTIVE'` before indexes); `set_article_status` is idempotent + records `news_prune_audit` row (`pau_*`, previous/new state, rule_version `news-prune-v1`, actor, reason); `restore_article` flips IRRELEVANT→ACTIVE with RESTORE audit; original rows never deleted.
+- Counters: `count_articles_by_status` surfaces ACTIVE/IRRELEVANT for the API `status_counts`.
+
+**A20d. News Intelligence API Surface** (`web/news_intelligence_routes.py` + `web/server.py`)
+- Endpoints: `GET /api/news/ai-status` (secret-free readiness: NOT_CONFIGURED/AVAILABLE/UNAVAILABLE/MISCONFIGURED), `POST /api/news/analyze/{id}`, `POST /api/news/analyze/batch`, `POST /api/news/auto-prune`, `POST /api/news/{id}/restore`; plus `GET /api/news?status=...` filter.
+- Guarantees: reuses Factory provider, never exposes API keys, never raises, consistent error envelope (`NEWS_UNAVAILABLE`, `ARTICLE_NOT_FOUND`, `AI_NOT_CONFIGURED`, `AI_ANALYSIS_FAILED`, `INVALID_REQUEST`).
+- Frontend companion: `Web/news_intelligence.js` (`window.NewsIntel` — AI banner, per-article state machine + dedup, batch progress, Pro auto-prune confirm, filter tabs, status_counts, `articleExtrasHTML`).
+
+**A20e. Forensic Incident Center Overhaul** (`Web/forensic_console.js` + `Web/app.js` + `Web/index.html`)
+- Purpose: production-grade operational console (Task-12 rework): single authoritative incident array → KPIs derived via `NX.Forensic.model.deriveKpis` (fixes OPEN=2/CRITICAL=1/HIGH=1/MEDIUM=3 impossible state); loading/empty/error/loaded are distinct states; no raw `TypeError: Failed to fetch` in DOM (all via `NX.api` + `normalizeError`).
+- Model: `normSeverity`/`normStatus` single normalization boundary; `isOpen`/`isResolved` vocabulary; `deriveKpis` computes all header numbers from the list actually rendered.
+- Agent Mode: state machine OFF/IDLE/TRACING/ANALYZING/GENERATING_TASK/RESOLVING/ERROR; auto-trace eligible open incidents via the real `/api/diagnostics/trace` endpoint (deduped by `INC_STATE.agentProcessed`), never fabricated.
+- Task Generation: drawer (review-before-submit) populated from REAL incident evidence (ids/timestamps/symptoms/impact, never invented); provider surface truthful (`configured:false` until backend wired); duplicate-submit guard via `withButtonLock`.
+- Safety: Stop Bot modal requires typing `STOP` (case-sensitive); `confirmStopBot` only fires after confirmation; halt is `engine._running=False` (does NOT cancel broker pending orders — docs truthfully state this).
+- UX: toast region (ARIA live), modal focus trap/Escape/backdrop, skeleton loaders, filter tabs (Open/Resolved/Resolved by Agent), concurrency guard `requestSeq`, Worker health hierarchy (Status/Cycles/Last OK).
 
 ### 3.6 Execution Algorithms
 
@@ -1285,6 +1344,9 @@ This file must stay:
 
 ## 12. Credits & Maintenance
 
+- **Canonical architecture maps:** `agents/skill.md` (forensic badges, §1-§20) + `Agent/skill.md` (concise alias + upgrade notes).
+- **News Intelligence:** `Agent/PROJECT_GRAPH.md §1.9/§1.10/§2.8/§3.5b` + `src/nexus_scalp/news/ai_service.py` + `src/nexus_scalp/web/news_intelligence_routes.py`.
+- **Forensic Incident Center:** `Web/forensic_console.js` + `Agent/PROJECT_GRAPH.md §3.5b`.
 - **Canonical architecture map:** `agents/skill.md` (forensic badges, §1-§20).
 - **Bug forensics:** `agents/bugs.md` — append (never rewrite) after real bugs.
 - **Invariants:** `agents/runtime_invariants.md` — INV-001..021.
