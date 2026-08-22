@@ -1014,6 +1014,22 @@ def _write_effective_config(path: Path, cfg: AppConfig) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
+def _get_network_endpoints(port: int = 8080) -> list[str]:
+    import socket
+
+    endpoints = [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip and ip != "127.0.0.1":
+            endpoints.append(f"http://{ip}:{port}")
+    except Exception:
+        pass
+    return endpoints
+
+
 @app.command("install")
 @app.command("setup")
 def setup_cmd(
@@ -1027,15 +1043,22 @@ def setup_cmd(
     Web dashboard at http://localhost:8080. No browser? Use CLI: `nexus start --mode paper`.
     """
     outcome = _wizard_flow(json_mode)
+    endpoints = _get_network_endpoints(port=8080)
+    endpoints_str = chr(10).join(f"  • [cyan]{ep}[/cyan]" for ep in endpoints)
+    outcome["web_endpoints"] = endpoints
+    outcome["port"] = 8080
     if json_mode:
         _emit(outcome, True)
         return
+    nl = chr(10)
     console.print(
         Panel(
-            f"Setup complete — [bold]{outcome['overall']}[/bold]. "
+            f"Setup complete — [bold]{outcome['overall']}[/bold].{nl}{nl}"
+            f"[bold]Web Dashboard Endpoints (Port 8080):[/bold]{nl}{endpoints_str}{nl}{nl}"
             f"Start with [bold]nexus start --mode {outcome['mode'].lower()}[/bold] "
             f"or [bold]nexus start[/bold].",
             border_style="green",
+            title="NEXUS SETUP COMPLETE",
         )
     )
 
