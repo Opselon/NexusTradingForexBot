@@ -1019,7 +1019,13 @@ def _write_effective_config(path: Path, cfg: AppConfig) -> None:
 def setup_cmd(
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """First-run setup wizard (compat, install, DB, model, mode, health)."""
+    """First-run setup wizard (compat, install, DB, model, mode, health).
+
+    PAPER=simulation (no real orders, safe default), SHADOW=mirror live
+    without orders, LIVE=real execution (requires confirmation). Default
+    symbol is XAUUSD (Gold). After setup, start with `nexus start` or the
+    Web dashboard at http://localhost:8080. No browser? Use CLI: `nexus start --mode paper`.
+    """
     outcome = _wizard_flow(json_mode)
     if json_mode:
         _emit(outcome, True)
@@ -1080,7 +1086,13 @@ def start_cmd(
     daemon: bool = typer.Option(False, "--daemon", help="Run as background process."),
     port: int = typer.Option(8080, "--port", help="Web dashboard port."),
 ) -> None:
-    """Start the engine. LIVE requires explicit confirmation."""
+    """Start the engine (default: paper/XAUUSD, safe).
+
+    Modes: paper (simulation, default) | shadow (mirror live) | live
+    (real orders -- shows red warning + requires confirmation). Web dashboard
+    at http://localhost:8080 when running. Symbol comes from config (setup
+    default XAUUSD).
+    """
     mode_key = mode.strip().lower()
     if mode_key not in MODE_ALIASES:
         raise typer.BadParameter(f"mode must be paper|shadow|live (got '{mode}')")
@@ -1197,7 +1209,7 @@ def _run_engine(cfg: AppConfig, *, gateway: bool, port: int) -> None:
             timeout=cfg.mt5.timeout_ms,
             retries=cfg.mt5.retries,
         )
-    cfg.execution.mode = cfg.execution.mode
+    cfg.execution.mode = chosen
     engine = LiveEngine(config=cfg, adapter=adapter)
     _start_web_and_engine(engine, cfg, port)
 
