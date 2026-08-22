@@ -1144,6 +1144,7 @@ def start_cmd(
         _spawn_daemon(cmd)
         return
 
+    cfg.execution.mode = chosen
     _run_engine(cfg, gateway=gateway, port=port)
 
 
@@ -1209,7 +1210,6 @@ def _run_engine(cfg: AppConfig, *, gateway: bool, port: int) -> None:
             timeout=cfg.mt5.timeout_ms,
             retries=cfg.mt5.retries,
         )
-    cfg.execution.mode = chosen
     engine = LiveEngine(config=cfg, adapter=adapter)
     _start_web_and_engine(engine, cfg, port)
 
