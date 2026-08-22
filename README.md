@@ -46,9 +46,9 @@ Two ways:
    Python, pip or PyTorch. First run opens the **setup wizard** (`nexus setup`):
    compatibility report → mode (**default: PAPER**, never silently LIVE) →
    symbol → health check.
-   > ⚠️ *No release has been published yet* — the release pipeline is fully built
-   > and CI-ready (`.github/workflows/release.yml`, tag `vX.Y.Z` = publish), but
-   > GitHub currently has **zero releases** until the first version tag is pushed.
+   > 🚀 **v9.0.0 Production Release Ready:** The release pipeline (`.github/workflows/release.yml`) builds
+   > packaged Windows x64 binaries (`NexusScalpEngine-<version>-win-x64-setup.exe` and portable `.zip`) with
+   > automated SHA-256 digests and release manifests.
 
 2. **Developers — run from source (see below).**
 
@@ -105,12 +105,17 @@ pytest tests/unit -q
 
 ### Start the application
 
+#### 🖱️ Portable EXE (Direct Launch)
+Simply **double-click** `NexusScalpEngine.exe` (or run it bare from the command line). It launches immediately in **PAPER** simulation mode (XAUUSD Gold), runs startup health & migration pre-flights, and spins up the Web UI Dashboard without closing.
+
+#### ⌨️ CLI Launch Commands
 ```text
-nexus start                      # PAPER mode (default, safe)
-nexus start --mode shadow        # live market data, zero orders
-nexus start --mode live          # REAL execution — explicit confirmation required
-nexus start --config configs/live.yaml --port 8080
-nexus start --daemon             # background process
+NexusScalpEngine.exe             # Bare launch -> Starts directly in PAPER mode (Safe)
+nexus start                      # Starts engine in PAPER mode (default, safe)
+nexus start --mode shadow        # Live market data feed, zero orders (mirroring)
+nexus start --mode live          # REAL execution — explicit interactive confirmation required
+nexus start --port 8080          # Custom Web Dashboard port (default: 8080)
+nexus start --daemon             # Run as detached background daemon
 ```
 
 From source (same commands via the installed console script, or):
