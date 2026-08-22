@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run OSV Scanner
-        uses: osv-scanner/osv-scanner-action@v2
+        uses: google/osv-scanner-action@v2
         continue-on-error: true
         with:
           results-format: sarif
