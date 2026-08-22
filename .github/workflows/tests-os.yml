@@ -53,6 +53,7 @@ jobs:
           pip install pytest-cov
 
       - name: Run Critical Suite
+        shell: bash
         run: |
           set +e
           readarray -t CRIT_FILES < tests/critical_suite.txt
