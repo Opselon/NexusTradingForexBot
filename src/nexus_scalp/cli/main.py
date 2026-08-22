@@ -962,7 +962,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
 
     # Mode selection — never silently LIVE.
     mode = typer.prompt("Execution mode (PAPER / SHADOW / LIVE)", default="PAPER").strip().upper()
-    if mode not in MODE_ALIASES:
+    if mode.lower() not in MODE_ALIASES:
         mode = "PAPER"
     if mode == "LIVE":
         confirm = typer.confirm(
@@ -973,7 +973,9 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
             console.print("[yellow]Setup aborted — LIVE not confirmed.[/yellow]")
             raise typer.Exit(1)
 
-    symbol = typer.prompt("Trading symbol", default="XAUUSD").strip().upper()
+    symbol = typer.prompt("Trading symbol (XAUUSD=Gold, EURUSD, GBPUSD, ...)", default="XAUUSD").strip().upper()
+    if not symbol:
+        symbol = "XAUUSD"
     config_path = rpaths.get_user_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
     template = rrepair.RepairEngine().template_config
@@ -983,7 +985,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
         cfg = AppConfig.load_from_yaml(config_path) if config_path.exists() else AppConfig()
     except Exception:
         cfg = AppConfig()
-    cfg.execution.mode = MODE_ALIASES[mode]
+    cfg.execution.mode = MODE_ALIASES[mode.lower()]
     cfg.execution.symbol = symbol
     # Persist effective mode/symbol into the yaml (idempotent write of the
     # whole validated config is safer than regex surgery).
@@ -1227,7 +1229,7 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     # (NSE_WEB_HOST / NSE_WEB_PORT); bare `run` keeps localhost-only.
     bind_host = os.getenv("NSE_WEB_HOST", "127.0.0.1")
     uvicorn_config = uvicorn.Config(
-        app=app_obj, host=bind_host, port=port, log_level="warning", ws_max_size=16 * 1024 * 1024
+        app=app_obj, host=bind_host, port=port, log_level="warning", ws_max_size=16 * 1024 * 1024, ws="none"
     )
     server = uvicorn.Server(uvicorn_config)
 

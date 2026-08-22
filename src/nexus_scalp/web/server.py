@@ -162,13 +162,34 @@ def _resolve_web_root() -> Path:
     operators can see which bundle is served.
     """
     import os
+    import sys
 
     override = os.environ.get("NEXUS_WEB_DIR")
     if override:
         return Path(override)
+    # Frozen (PyInstaller) — _MEIPASS is the _internal dir next to the exe
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        cand = Path(meipass) / "Web"
+        if cand.is_dir():
+            return cand
     packaged = Path(__file__).resolve().parent.parent.parent.parent / "_internal" / "Web"
     if packaged.is_dir():
         return packaged
+    # Portable layout: exe next to _internal/Web (onedir)
+    try:
+        exe_dir = Path(sys.executable).resolve().parent
+        alt = exe_dir / "_internal" / "Web"
+        if alt.is_dir():
+            return alt
+        alt2 = exe_dir / "Web"
+        if alt2.is_dir() and (alt2 / "index.html").exists():
+            return alt2
+    except Exception:
+        pass
+    repo_web = Path(__file__).resolve().parent.parent.parent.parent / "Web"
+    if repo_web.is_dir():
+        return repo_web
     return Path("Web") if Path("Web").is_dir() else packaged
 
 

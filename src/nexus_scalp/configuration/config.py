@@ -34,7 +34,7 @@ from nexus_scalp.news.config import NewsConfig
 
 class ExecutionConfig(BaseModel):
     symbol: str = "XAUUSD"
-    mode: ExecutionMode = ExecutionMode.LIVE
+    mode: ExecutionMode = ExecutionMode.PAPER
     timeframe: str = "M1"
     magic_number: int = 888101
     max_slippage_points: int = 30

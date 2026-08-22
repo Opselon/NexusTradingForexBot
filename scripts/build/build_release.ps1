@@ -225,6 +225,13 @@ Copy-Item (Join-Path $Root "docs\*") (Join-Path $Stage "docs") -Recurse -Force
 # Stage the canonical build identity at the portable root (next to the EXE)
 # so verify-release can cross-check it against the manifest.
 Copy-Item (Join-Path $Root "build-info.json") (Join-Path $Stage "build-info.json") -Force
+# Portable Web must mirror _internal/Web for the web server fallback (empty portable/Web broke production panel)
+$portableWeb = Join-Path $Stage "Web"
+$internalWeb = Join-Path $Stage "_internal" "Web"
+if (Test-Path $internalWeb) {
+    if (Test-Path $portableWeb) { Remove-Item $portableWeb -Recurse -Force -ErrorAction SilentlyContinue }
+    Copy-Item $internalWeb $portableWeb -Recurse -Force
+}
 
 # licenses/
 New-Item -ItemType Directory -Force -Path (Join-Path $Stage "licenses") | Out-Null
