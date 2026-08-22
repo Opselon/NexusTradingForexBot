@@ -1145,6 +1145,15 @@ def start_cmd(
         return
 
     cfg.execution.mode = chosen
+    # Persist the explicit --mode so LiveEngine's SettingsService override (app_settings.db) does not flip it back.
+    # The packaged bare launch (start --mode paper) must remain PAPER even when DB has LIVE.
+    try:
+        from nexus_scalp.settings.service import SettingsService
+
+        svc = SettingsService()
+        svc.set("execution.mode", chosen.value, actor="cli:start")
+    except Exception:
+        pass
     _run_engine(cfg, gateway=gateway, port=port)
 
 
