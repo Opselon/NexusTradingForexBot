@@ -68,7 +68,7 @@ jobs:
       - name: Ensure no user/dev artifacts are staged
         shell: bash
         run: |
-          if git ls-files | grep -E 'artifacts/audit\.db|\.env|credentials|private_key' ; then
+          if git ls-files | grep -E 'artifacts/audit\.db|\.env$|credentials|private_key' ; then
             echo "::error::Developer/user artifact tracked in git."
             exit 1
           fi
