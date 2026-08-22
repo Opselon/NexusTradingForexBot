@@ -262,7 +262,7 @@ def test_factory_llm_config_default_unconfigured(settings_env):
 def test_factory_llm_config_save_roundtrip(settings_env):
     svc = settings_env
     result = svc.set_factory_llm_config(
-        api_key="sk-test-1234567890",
+        api_key="test_dummy_key_7890",
         base_url="http://178.105.20.69:20128/v1",
         model="claude-opus-5",
         temperature=0.7,
@@ -272,7 +272,7 @@ def test_factory_llm_config_save_roundtrip(settings_env):
     status = svc.factory_llm_config_status()
     assert status["configured"] is True
     assert status["api_key_present"] is True
-    assert "sk-test-1234567890" not in str(status)  # masked, never plaintext
+    assert "test_dummy_key_7890" not in str(status)  # masked, never plaintext
     assert status["masked_api_key"].endswith("7890")
     assert status["base_url"] == "http://178.105.20.69:20128/v1"
     assert status["model"] == "claude-opus-5"
@@ -280,10 +280,10 @@ def test_factory_llm_config_save_roundtrip(settings_env):
 
 
 def test_factory_llm_key_encrypted_at_rest(settings_env, tmp_path):
-    settings_env.set_factory_llm_config(api_key="sk-super-secret-key", actor="test")
+    settings_env.set_factory_llm_config(api_key="test_super_secret_key", actor="test")
     secrets_file = tmp_path / "secrets" / "secrets.enc"
     raw = secrets_file.read_bytes()
-    assert b"sk-super-secret-key" not in raw  # encrypted at rest (DPAPI/ACL)
+    assert b"test_super_secret_key" not in raw  # encrypted at rest (DPAPI/ACL)
 
 
 def test_factory_llm_config_rebuild_reads_persisted(settings_env):

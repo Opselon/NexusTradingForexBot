@@ -61,17 +61,16 @@ jobs:
         run: |
           python scripts/ci/telegram_notify.py release-started --tag "${{ github.ref_name }}" || true
 
-      - name: Scan for secrets in the tree
+      - name: Scan for secrets in source
         shell: bash
         run: |
           set -e
-          echo "Scanning for secret-shaped strings (best effort)..."
-          if grep -RIlE "(api[_-]?key\s*[=:]\s*['\"]?[A-Za-z0-9_\-]{12,}|bot[_-]?token\s*[=:]\s*['\"]?\d{6,}:[A-Za-z0-9_\-]{25,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)" \
-              --exclude-dir=.git --exclude-dir=.venv --exclude-dir=release --exclude-dir=artifacts . ; then
-            echo "::error::Secret-shaped strings found in tree."
+          echo "Scanning for secret-shaped strings in source and configs..."
+          if grep -RIlE "(api[_-]?key\s*[=:]\s*['"]?[A-Za-z0-9_\-]{12,}|bot[_-]?token\s*[=:]\s*['"]?\d{6,}:[A-Za-z0-9_\-]{25,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)"               --exclude-dir=.git --exclude-dir=.venv --exclude-dir=release --exclude-dir=artifacts --exclude-dir=tests src configs docs ; then
+            echo "::error::Secret-shaped strings found in source/config tree."
             exit 1
           fi
-          echo "Tree scan clean."
+          echo "Source scan clean."
       - name: Ensure no user/dev artifacts are staged
         shell: bash
         run: |
