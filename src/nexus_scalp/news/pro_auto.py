@@ -82,7 +82,7 @@ def _now_iso() -> str:
 
 
 def _console_push(entry: dict[str, Any]) -> None:
-    global _CONSOLE_SEQ
+    global _CONSOLE_SEQ  # noqa: PLW0603
     _CONSOLE_SEQ += 1
     entry.setdefault("seq", _CONSOLE_SEQ)
     entry.setdefault("ts", _now_iso())
@@ -340,6 +340,14 @@ def run_pro_auto_analysis_for_article(
         _console_push({"kind": "error", "article_id": article_id, "msg": "ARTICLE_NOT_FOUND", "via": "pro_auto"})
         return {"ok": False, "error": "ARTICLE_NOT_FOUND", "via": "error"}
 
+    # Idempotent: tombstoned hash never re-analyzed unless force=True
+    try:
+        ah0 = str(row.get("article_hash") or "")
+        if not force and ah0 and db.is_analyzed_hash(ah0):
+            _console_push({"kind": "skip", "article_id": article_id, "msg": "already analyzed (tombstone)", "via": "cached"})
+            return {"ok": True, "via": "cached", "article_id": article_id, "status": "skipped"}
+    except Exception:
+        pass
     # Dedup: reuse valid prior AI analysis unless forced
     if not force:
         prior = db.get_ai_analysis(article_id)
@@ -354,7 +362,7 @@ def run_pro_auto_analysis_for_article(
 
     # Resolve Factory LLM provider (API key from secret store, never exposed)
     svc2 = _resolve_settings_service(engine, settings_service)
-    provider = resolve_factory_provider(engine if hasattr(engine, "settings_service") else engine, svc2)
+    provider = resolve_factory_provider(engine if hasattr(engine, "settings_service") else engine, svc2)  # noqa: RUF034
     llm_json: dict[str, Any] | None = None
     via = "local"
 
@@ -370,29 +378,19 @@ def run_pro_auto_analysis_for_article(
             if isinstance(raw, dict) and raw:
                 llm_json = raw
                 via = "llm"
-            else:
-                # Soft retry: one immediate retry with a stricter max_tokens=1500
-                # (fixes rare truncation on tool-verbose hosts); if it still
-                # returns empty, fall back to local so the pipeline never stalls.
-                if raw is None or (isinstance(raw, dict) and not raw):
-                    try:
-                        raw = provider.complete_json(system_prompt=PRO_SYSTEM_PROMPT, user_prompt=user_prompt, temperature=0.2, max_tokens=1500)
-                        if isinstance(raw, dict) and raw:
-                            llm_json = raw
-                            via = "llm"
-                            _console_push({"kind": "ai_retry_ok", "article_id": article_id, "via": "llm", "msg": "soft retry recovered LLM JSON"})
-                        else:
-                            raise RuntimeError("retry empty")
-                    except Exception:
-                        _err = getattr(provider, 'usage', None)
-                        _detail = getattr(_err, 'last_error', '') if _err else ''
-                        _req = getattr(_err, 'requests', 0) if _err else 0
-                        _fail = getattr(_err, 'failures', 0) if _err else 0
-                        _raw_type = type(raw).__name__ if raw is not None else 'None'
-                        _raw_len = len(str(raw)) if raw is not None else 0
-                        _console_push({"kind": "fallback", "article_id": article_id, "msg": f"LLM returned empty ({_raw_type} len={_raw_len}) last_error={_detail} req={_req} fail={_fail}, using local", "via": "local"})
-                        logger.warning("[PRO_AUTO] LLM empty", article_id=article_id, raw_type=_raw_type, raw_len=_raw_len, last_error=_detail, requests=_req, failures=_fail)
-                else:
+            # Soft retry: one immediate retry with a stricter max_tokens=1500
+            # (fixes rare truncation on tool-verbose hosts); if it still
+            # returns empty, fall back to local so the pipeline never stalls.
+            elif raw is None or (isinstance(raw, dict) and not raw):
+                try:
+                    raw = provider.complete_json(system_prompt=PRO_SYSTEM_PROMPT, user_prompt=user_prompt, temperature=0.2, max_tokens=1500)
+                    if isinstance(raw, dict) and raw:
+                        llm_json = raw
+                        via = "llm"
+                        _console_push({"kind": "ai_retry_ok", "article_id": article_id, "via": "llm", "msg": "soft retry recovered LLM JSON"})
+                    else:
+                        raise RuntimeError("retry empty")
+                except Exception:
                     _err = getattr(provider, 'usage', None)
                     _detail = getattr(_err, 'last_error', '') if _err else ''
                     _req = getattr(_err, 'requests', 0) if _err else 0
@@ -401,15 +399,23 @@ def run_pro_auto_analysis_for_article(
                     _raw_len = len(str(raw)) if raw is not None else 0
                     _console_push({"kind": "fallback", "article_id": article_id, "msg": f"LLM returned empty ({_raw_type} len={_raw_len}) last_error={_detail} req={_req} fail={_fail}, using local", "via": "local"})
                     logger.warning("[PRO_AUTO] LLM empty", article_id=article_id, raw_type=_raw_type, raw_len=_raw_len, last_error=_detail, requests=_req, failures=_fail)
+            else:
+                _err = getattr(provider, 'usage', None)
+                _detail = getattr(_err, 'last_error', '') if _err else ''
+                _req = getattr(_err, 'requests', 0) if _err else 0
+                _fail = getattr(_err, 'failures', 0) if _err else 0
+                _raw_type = type(raw).__name__ if raw is not None else 'None'
+                _raw_len = len(str(raw)) if raw is not None else 0
+                _console_push({"kind": "fallback", "article_id": article_id, "msg": f"LLM returned empty ({_raw_type} len={_raw_len}) last_error={_detail} req={_req} fail={_fail}, using local", "via": "local"})
+                logger.warning("[PRO_AUTO] LLM empty", article_id=article_id, raw_type=_raw_type, raw_len=_raw_len, last_error=_detail, requests=_req, failures=_fail)
         except Exception as e:
             _console_push({"kind": "fallback", "article_id": article_id, "msg": f"LLM error {type(e).__name__}, using local", "via": "local"})
             llm_json = None
 
     # Deterministic path ALWAYS runs so variables are accurate
     # Use engine pipeline when available for full persistence; otherwise insert directly
-    mapped_llm = None
     if llm_json is not None:
-        mapped_llm = _map_llm_into_deterministic(db, article, local, llm_json)
+        _map_llm_into_deterministic(db, article, local, llm_json)
         # Validate LLM JSON schema before persisting AI layer
         validated = _validate_response(llm_json, article_id)
         validated.provider = getattr(provider, "provider_name", "openai-compatible") if provider else "openai-compatible"
@@ -534,8 +540,23 @@ def run_pro_cycle(
     # naturally drains last (then auto-prunes to IRRELEVANT).
     raw_pending: list[dict[str, Any]] = []
     for art in articles:
+        try:
+            ah_chk = str(art.get("article_hash") or "")
+            if ah_chk and db.is_analyzed_hash(ah_chk):
+                continue
+        except Exception:
+            pass
         if db.get_analysis(art["article_id"]) is None:
             raw_pending.append(art)
+        else:
+            # Backfill tombstone so re-ingest stays suppressed even after retention
+            try:
+                ah_b = str(art.get("article_hash") or "")
+                if ah_b:
+                    ex0 = db.get_analysis(art["article_id"]) or {}
+                    db.remember_analyzed_hash(ah_b, title=str(art.get("title","")), analysis_id=str(ex0.get("analysis_id","")))
+            except Exception:
+                pass
     pending = _ranked_pending(db, analyzer, raw_pending, limit)
     # Keep true total for the status card (ranked slice is bounded by limit)
     total_pending = len(raw_pending)

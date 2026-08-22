@@ -91,7 +91,7 @@ class NewsContextCache:
         """
         now = datetime.now(UTC)
         try:
-            analyses = self.db.list_analysis(limit=100)
+            analyses = self.db.list_analysis(limit=300)
             if not analyses:
                 logger.info("[NEWS] context build: no analyses in DB (available=False)")
                 return CurrentNewsContext(available=False, timestamp=now)
@@ -117,10 +117,45 @@ class NewsContextCache:
         any_breaking = False
         any_conflict = False
 
+        # Deduplicate to the latest analysis per article so a re-analyzed
+        # old article does not double-count and new analysis is authoritative.
+        seen: set[str] = set()
+        deduped: list[dict] = []
+        for _r in analyses:
+            _aid = str(_r.get("article_id") or "")
+            if not _aid or _aid in seen:
+                continue
+            seen.add(_aid)
+            deduped.append(_r)
+        analyses = deduped
+
+        # Build a one-shot map of article_id -> published_at so freshness
+        # decays from the real event time (publication), not analysis time.
+        # A late-analyzed 4h-old article must sit at 4h-ago on any timeline
+        # and must decay as a 4h-old event; newer analysis is still more valid
+        # because its w = freshness * confidence recency is encoded below and
+        # the article list itself is ordered by published recency where relevant.
+        published_by_id: dict[str, object] = {}
+        try:
+            ids = [r.get("article_id") for r in analyses if r.get("article_id")]
+            if ids:
+                ph = ",".join("?" for _ in ids)
+                with self.db._connect() as _c:
+                    _rows = _c.execute(
+                        f"SELECT article_id, published_at FROM news_articles WHERE article_id IN ({ph});",
+                        ids,
+                    ).fetchall()
+                    for _r in _rows:
+                        published_by_id[str(_r["article_id"])] = _r["published_at"]
+        except Exception:
+            published_by_id = {}
+
         for row in analyses:
             try:
                 article_id = row["article_id"]
-                published_at = _parse_dt(row.get("analyzed_at") or "")
+                # Prefer real publication time; fall back to analysis time only if unknown
+                raw_pub = published_by_id.get(article_id) or row.get("published_at") or ""
+                published_at = _parse_dt(raw_pub) or _parse_dt(row.get("analyzed_at") or "")
                 if not published_at:
                     continue
                 importance = float(row.get("importance_score", 0.0) or 0.0)
@@ -135,11 +170,20 @@ class NewsContextCache:
                     continue  # fully decayed events drop out
                 confidence = float(row.get("confidence", 0.0) or 0.0)
                 relevance = float(row.get("relevance_to_xauusd", 0.0) or 0.0)
+                # Junk-NEUTRAL guard: ultra-low-signal NEUTRAL (e.g. Venmo tuition) was
+                # flooding the last-100 window and diluting bull/bear to 0%. It still
+                # counts for freshness/xauusd_rel but not for the directional denominator.
+                is_junk_neutral = (direction == NewsDirection.NEUTRAL and relevance < 0.35 and importance < 0.4)
                 usd_r = float(row.get("relevance_to_usd", 0.0) or 0.0)
                 w = freshness * confidence * (0.5 + relevance * 0.5)
 
                 xauusd_rel = max(xauusd_rel, relevance)
                 usd_rel = max(usd_rel, usd_r)
+                # Junk NEUTRAL does not dilute the bull/bear denominator
+                if is_junk_neutral:
+                    fresh_sum += freshness
+                    count += 1
+                    continue
                 if direction == NewsDirection.BULLISH:
                     bull += w * relevance
                 elif direction == NewsDirection.BEARISH:
@@ -164,6 +208,17 @@ class NewsContextCache:
                 continue
 
         if weights <= 0.0:
+            # Junk-only or zero-weight window: still report freshness (true publication recency)
+            # so a fresh window isn't reported as stale/empty. New analysis remains authoritative
+            # because a re-analysis keeps the same published_at recency but refreshes confidence.
+            if count > 0:
+                return CurrentNewsContext(
+                    available=True,
+                    timestamp=now,
+                    state=NewsState.NORMAL,
+                    active_event_count=0,
+                    freshness=round(min(1.0, fresh_sum / max(count, 1)), 4),
+                )
             return CurrentNewsContext(available=True, timestamp=now, active_event_count=0)
 
         state = NewsState.NORMAL
@@ -176,13 +231,12 @@ class NewsContextCache:
         elif max_importance >= 0.5:
             state = NewsState.ELEVATED
 
-        # staleness check against the newest event
+        # staleness check against the newest *published* event (true event time)
+        def _newest_pub(a: dict) -> object:
+            v = published_by_id.get(str(a.get("article_id") or "")) or a.get("published_at") or a.get("analyzed_at") or ""
+            return _parse_dt(v) if v else None
         newest = max(
-            (
-                _parse_dt(a.get("analyzed_at") or "")
-                for a in analyses
-                if _parse_dt(a.get("analyzed_at") or "")
-            ),
+            (_newest_pub(a) for a in analyses if _newest_pub(a) is not None),
             default=None,
         )
         stale = False
@@ -199,6 +253,8 @@ class NewsContextCache:
             active_events=len(active_high),
             analyses=len(analyses),
             count=count,
+            bullish=round(min(1.0, bull / max(1, weights)), 4),
+            bearish=round(min(1.0, bear / max(1, weights)), 4),
             freshness=round(min(1.0, fresh_sum / max(count, 1)), 4),
         )
         return CurrentNewsContext(

@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -256,6 +256,14 @@ _SCHEMA_SQL.extend([
     );
     """,
     """
+    CREATE TABLE IF NOT EXISTS news_analyzed_hashes (
+        article_hash TEXT PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT '',
+        analysis_id TEXT NOT NULL DEFAULT '',
+        analyzed_at TEXT NOT NULL
+    );
+    """,
+    """
     CREATE TABLE IF NOT EXISTS news_prune_audit (
         audit_id TEXT PRIMARY KEY,
         article_id TEXT NOT NULL,
@@ -284,6 +292,7 @@ _INDEX_SQL: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_news_articles_status ON news_articles(article_status);",
     "CREATE INDEX IF NOT EXISTS idx_news_ai_analysis_article ON news_ai_analysis(article_id, analyzed_at DESC);",
     "CREATE INDEX IF NOT EXISTS idx_news_junk_hashes_hash ON news_junk_hashes(article_hash);",
+    "CREATE INDEX IF NOT EXISTS idx_news_analyzed_hashes_hash ON news_analyzed_hashes(article_hash);",
     "CREATE INDEX IF NOT EXISTS idx_news_prune_audit_article ON news_prune_audit(article_id, created_at DESC);",
 ]
 
@@ -392,6 +401,25 @@ class NewsDatabase:
     def count_junk_hashes(self) -> int:
         with self._connect() as conn:
             row = conn.execute("SELECT COUNT(*) AS c FROM news_junk_hashes;").fetchone()
+            return int(row["c"]) if row else 0
+
+    def is_analyzed_hash(self, article_hash: str) -> bool:
+        """True if this article_hash was already analyzed (idempotent guard)."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT 1 FROM news_analyzed_hashes WHERE article_hash = ?;", (article_hash,)).fetchone()
+            return row is not None
+
+    def remember_analyzed_hash(self, article_hash: str, title: str = "", analysis_id: str = "") -> None:
+        """Remember that article_hash has been analyzed — suppresses re-ingest + re-analysis."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO news_analyzed_hashes (article_hash, title, analysis_id, analyzed_at) VALUES (?, ?, ?, ?);",
+                (article_hash, title, analysis_id, self._now()),
+            )
+
+    def count_analyzed_hashes(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS c FROM news_analyzed_hashes;").fetchone()
             return int(row["c"]) if row else 0
 
     def close(self) -> None:
@@ -707,7 +735,14 @@ class NewsDatabase:
     # Analysis / impacts / consensus / runs
     # ------------------------------------------------------------------
 
-    def insert_analysis(self, row: dict[str, Any]) -> None:
+    def insert_analysis(self, row: dict[str, Any], *, allow_overwrite: bool = False) -> None:
+        """Idempotent: by default refuses to re-analyze an already-analyzed article (confusion guard).
+        Pass allow_overwrite=True only for explicit user re-analysis (API force flag)."""
+        if not allow_overwrite:
+            with self._connect() as conn:
+                exists = conn.execute("SELECT 1 FROM news_analysis WHERE article_id = ? LIMIT 1;", (row.get("article_id", ""),)).fetchone()
+                if exists is not None:
+                    return
         with self._connect() as conn:
             conn.execute(
                 """
@@ -749,6 +784,18 @@ class NewsDatabase:
                     row.get("analyzed_at", self._now()),
                 ),
             )
+        # Tombstone this hash so future re-ingest of same story (even if DB row deleted) stays suppressed
+        try:
+            ah = None
+            with self._connect() as _c2:
+                r = _c2.execute("SELECT article_hash, title FROM news_articles WHERE article_id = ?;", (row.get("article_id",""),)).fetchone()
+                if r:
+                    ah = str(r["article_hash"] or "")
+                    ttl = str(r["title"] or "")
+                    if ah:
+                        _c2.execute("INSERT OR IGNORE INTO news_analyzed_hashes (article_hash, title, analysis_id, analyzed_at) VALUES (?, ?, ?, ?);", (ah, ttl, row.get("analysis_id",""), self._now()))
+        except Exception:
+            pass
 
     def get_analysis(self, article_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -889,10 +936,16 @@ class NewsDatabase:
         neutral (unsigned sum), article_count, top_title (highest-relevance
         article title in the bucket).
         """
+        # Keep historical rows anchored to true publication time (one-shot, idempotent)
+        try:
+            self._backfill_impact_anchors()
+        except Exception:
+            pass
         bucket_sec = max(60, min(int(bucket_sec), 86400))
         hours_back = max(1, min(int(hours_back), 24 * 7))
+        cutoff = datetime.now(UTC) - timedelta(hours=hours_back)
         with self._connect() as conn:
-            rows = conn.execute(
+            rows_all = conn.execute(
                 """
                 SELECT COALESCE(a.published_at, i.evaluated_at) AS anchor_ts,
                        i.direction, i.strength, i.relevance, a.title
@@ -901,11 +954,25 @@ class NewsDatabase:
                 WHERE i.asset = ?
                   AND COALESCE(a.published_at, i.evaluated_at) IS NOT NULL
                   AND COALESCE(a.published_at, i.evaluated_at) != ''
-                  AND COALESCE(a.published_at, i.evaluated_at) >= datetime('now', ?)
                 ORDER BY anchor_ts ASC;
                 """,
-                (asset, f"-{hours_back} hours"),
+                (asset,),
             ).fetchall()
+        # Exact time-window filtering in Python (SQLite datetime('now') string
+        # format does not match ISO 'T' timestamps, so lexicographic compare
+        # would misplace hourly buckets — e.g. 4h-old would appear as now)
+        rows: list = []
+        for r in rows_all:
+            try:
+                ts = datetime.fromisoformat(str(r[0]).replace("Z", "+00:00"))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
+                else:
+                    ts = ts.astimezone(UTC)
+                if ts >= cutoff:
+                    rows.append(r)
+            except Exception:
+                continue
 
         buckets: dict[int, dict[str, Any]] = {}
         for anchor_ts, direction, strength, relevance, title in rows:
@@ -1053,7 +1120,16 @@ class NewsDatabase:
     # AI analysis (separate from deterministic news_analysis — AI interpretation layer)
     # ------------------------------------------------------------------
 
-    def insert_ai_analysis(self, row: dict[str, Any]) -> None:
+    def insert_ai_analysis(self, row: dict[str, Any], *, allow_overwrite: bool = False) -> None:
+        """Idempotent: skips if article already has a completed AI analysis (prevents duplicate AI noise)."""
+        if not allow_overwrite:
+            with self._connect() as conn:
+                exists = conn.execute(
+                    "SELECT 1 FROM news_ai_analysis WHERE article_id = ? AND analysis_status IN ('completed','completed_insufficient') LIMIT 1;",
+                    (row.get("article_id", ""),)
+                ).fetchone()
+                if exists is not None:
+                    return
         with self._connect() as conn:
             conn.execute(
                 """
