@@ -1,15 +1,12 @@
 import json
 import os
 import sqlite3
-import uuid
 from datetime import UTC, datetime
 
-import pytest
 import torch
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.domain.enums import ActionType
-from nexus_scalp.domain.models import TickData, TradeProposal
+from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.signals.policy import SignalPolicy
 

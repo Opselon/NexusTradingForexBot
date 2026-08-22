@@ -61,7 +61,9 @@ _OPS = {
     "lte": lambda a, b: a <= b,
     "eq": lambda a, b: abs(a - b) < 1e-9,
     "neq": lambda a, b: abs(a - b) >= 1e-9,
-    "between": lambda a, b: (b[0] <= a <= b[1]) if isinstance(b, (list, tuple)) and len(b) == 2 else False,
+    "between": lambda a, b: (
+        (b[0] <= a <= b[1]) if isinstance(b, (list, tuple)) and len(b) == 2 else False
+    ),
 }
 
 
@@ -109,6 +111,7 @@ def dsl_matches_snapshot(dsl: StrategyDsl, values: list[float]) -> bool:
 # ---------------------------------------------------------------------------
 # Dataset subset selection (pure helper for the ledger audit layer)
 # ---------------------------------------------------------------------------
+
 
 def benchmark_subset_for_candidate(
     candidate: FactoryCandidate,
@@ -170,6 +173,7 @@ def candidate_coverage_stats(
 # Post-evaluation benchmark artifact (what the API/AI consumes)
 # ---------------------------------------------------------------------------
 
+
 def build_benchmark_artifact(
     candidate: FactoryCandidate,
     pipeline_result: dict[str, Any],
@@ -186,7 +190,9 @@ def build_benchmark_artifact(
     oos = pipeline_result.get("oos") or {}
     rob = pipeline_result.get("robustness") or {}
     score = pipeline_result.get("score") or {}
-    digest = hashlib.sha256(json.dumps(pipeline_result, sort_keys=True, default=str).encode()).hexdigest()[:12]
+    digest = hashlib.sha256(
+        json.dumps(pipeline_result, sort_keys=True, default=str).encode()
+    ).hexdigest()[:12]
 
     wf_folds = wf.get("folds") or []
     wf_summary = None
@@ -297,7 +303,9 @@ def build_benchmark_artifact(
         or candidate.model_dump().get("failure_reasons")
         or [],
         "primary_failure": (
-            "OOS" if oos.get("status") != "PASS" else ("WALK_FORWARD" if not wf.get("passed") else None)
+            "OOS"
+            if oos.get("status") != "PASS"
+            else ("WALK_FORWARD" if not wf.get("passed") else None)
         ),
     }
 

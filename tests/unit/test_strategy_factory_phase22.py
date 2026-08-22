@@ -62,7 +62,6 @@ from nexus_scalp.strategies.factory.models import (
     CandidateSource,
     EvolutionConfig,
     FactoryCandidate,
-    FactoryStage,
     FailureReason,
     LoopState,
     StrategyDsl,
@@ -74,10 +73,6 @@ from nexus_scalp.strategies.factory.store import (
     get_loop_state,
     list_candidates,
     list_events,
-    list_failures,
-    list_generations,
-    set_loop_state,
-    upsert_candidate,
 )
 from nexus_scalp.strategies.factory.worker import AutonomousLoopWorker
 
@@ -356,7 +351,7 @@ def test_generation_persisted(audit_repo):
 
 def test_mutation_preserves_validity(audit_repo):
     """Spec 7: mutation never produces an invalid strategy."""
-    from nexus_scalp.strategies.factory.dsl import dsl_hash, generate_template_candidates
+    from nexus_scalp.strategies.factory.dsl import generate_template_candidates
     from nexus_scalp.strategies.factory.evolution import mutate
 
     dsl = generate_template_candidates(1)[0]

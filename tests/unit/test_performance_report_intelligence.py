@@ -26,7 +26,6 @@ from __future__ import annotations
 import gc
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import pytest
 
@@ -36,12 +35,9 @@ from nexus_scalp.experience import ExperienceLedger
 from nexus_scalp.reporting import (
     PerformanceReportEngine,
     classify_trend,
-    compute_anomalies,
-    compute_health_score,
     evidence_level,
     format_deep_report,
     format_telegram_daily,
-    generate_insights,
     make_report_id,
     make_snapshot_id,
 )

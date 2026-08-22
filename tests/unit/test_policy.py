@@ -1,11 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
-import pytest
 import torch
 
-from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType
-from nexus_scalp.domain.models import TickData, TradeProposal
+from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.signals.policy import SignalPolicy
 
@@ -379,7 +377,6 @@ def test_tick_sweep_requires_model_confidence():
     fire with zero model confidence. Previously the path returned before the
     confidence gate, entering trades at conf=0.00 that lost -$189/-$190
     (1.5-ATR SL, no probability support)."""
-    import copy
 
     policy = SignalPolicy()
     fv = _make_feature_vector()

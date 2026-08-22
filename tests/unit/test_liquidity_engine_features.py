@@ -7,14 +7,12 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
-import polars as pl
 import pytest
 
 from nexus_scalp.features.liquidity_engine import (
     DEFAULT_CONFLUENCE,
     compute_liquidity_features,
     htf_liquidity_score,
-    internal_external_distances,
     liquidity_confluence,
 )
 from nexus_scalp.market_data.bar_aggregator import BarData
@@ -83,11 +81,9 @@ def test_liq14_15_two_pools_in_and_out() -> None:
 
 def test_liq16_confluence_rewards_zones() -> None:
     from nexus_scalp.features.liquidity_engine import (
-        LiquidityFeatures,
         LiquidityPool,
         PoolSide,
         PoolSource,
-        PoolState,
     )
 
     t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
@@ -288,7 +284,6 @@ def test_liq40_legacy_50d_model_remains_loadable(tmp_path) -> None:
 # config switch
 # ---------------------------------------------------------------------------
 def test_config_liquidity_switch_parses_from_yaml(tmp_path) -> None:
-    from pathlib import Path
 
     from nexus_scalp.configuration.config import AppConfig
 

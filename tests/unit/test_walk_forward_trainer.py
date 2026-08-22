@@ -1,10 +1,8 @@
-import os
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import polars as pl
-import pytest
 import torch
 
 from nexus_scalp.features.scalp_features import FEATURE_NAMES

@@ -13,7 +13,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import polars as pl
-import pytest
 
 from nexus_scalp.model_generation.models import default_news_context_schema
 from nexus_scalp.model_generation.news_bridge import (

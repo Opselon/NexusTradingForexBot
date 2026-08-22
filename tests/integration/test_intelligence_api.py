@@ -25,7 +25,6 @@ Also verifies:
 
 from __future__ import annotations
 
-import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -34,15 +33,11 @@ from fastapi.testclient import TestClient
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import (
-    ExecutionContext,
-    ExperienceOutcome,
     ExperienceRecord,
     FeatureSnapshot,
     StrategyContext,
 )
-from nexus_scalp.experience.quality import compute_behavior_metrics
 from nexus_scalp.web.server import create_app
 
 
@@ -117,7 +112,7 @@ def seed_lifecycle(repo, tracker):
 
 class TestIntelligenceAPI:
     def test_engine_exposes_intelligence_subsystem(self, wired_engine):
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         for attr in (
             "intelligence_lifecycle",
             "intelligence_autopsy",
@@ -194,7 +189,7 @@ class TestIntelligenceAPI:
         assert resp2.json()["available"] is True
 
     def test_summary_and_worker_status(self, wired_engine):
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         app = create_app(engine)
         client = TestClient(app)
         resp = client.get("/api/intelligence/summary")
@@ -205,7 +200,7 @@ class TestIntelligenceAPI:
         assert "lifecycle_events" in body
 
     def test_worker_is_restart_safe_and_isolated(self, wired_engine):
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         worker = engine.intelligence_worker
         worker.start()
         assert worker.running is True
@@ -249,7 +244,7 @@ class TestIntelligenceAPI:
 
     def test_gate_rejects_degraded_before_any_dispatch(self, wired_engine):
         """The pre-trade gate converts a degraded-proposal to NO_TRADE."""
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         from nexus_scalp.domain.enums import ActionType
         from nexus_scalp.domain.models import TradeProposal
 
@@ -266,16 +261,14 @@ class TestIntelligenceAPI:
             reason_code="SMC_GOD_MODE",
         )
         # With no experience, the gate must pass the proposal through unchanged.
-        from nexus_scalp.experience.intelligence import ExperienceAction
 
-        out, _, verdict = engine.intelligence_gate.evaluate(proposal, None, None)
+        out, _, _verdict = engine.intelligence_gate.evaluate(proposal, None, None)
         # No evidence -> passes through (must not fabricate a rejection).
         assert out.action in (ActionType.BUY_MARKET, ActionType.NO_TRADE)
 
     def test_no_mt5_required(self, wired_engine):
         """The whole Phase 09 brain uses only the paper adapter - no MT5."""
-        repo, engine = wired_engine
-        from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
+        _repo, engine = wired_engine
 
         # The intelligence subsystem construction never touches a real terminal.
         assert engine.adapter.__class__.__name__ == "PaperMT5Adapter"

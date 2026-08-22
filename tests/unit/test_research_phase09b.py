@@ -81,15 +81,12 @@ from nexus_scalp.research import (
     can_transition,
     compute_strategy_score,
     discover_candidates,
-    transition,
 )
 from nexus_scalp.research.models import (
-    BacktestResult,
     CandidateLifecycle,
     ExecutionAssumptions,
     ResearchDataset,
     ResearchSample,
-    StrategyRegistryEntry,
 )
 from nexus_scalp.research.splitting import split_temporal, walk_forward_folds
 

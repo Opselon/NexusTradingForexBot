@@ -47,8 +47,6 @@ from nexus_scalp.experience.models import (
     StrategyContext,
     StrategyLifecycle,
 )
-from nexus_scalp.experience.provenance import ModelRegistry
-from nexus_scalp.experience.quality import OutcomeAnalyzer, compute_behavior_metrics
 from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.features.scalp_features import BarData, ScalpFeatureEngine
 from nexus_scalp.intelligence import (
@@ -594,7 +592,7 @@ class TestStrategyLifecycle:
 
 class TestGate:
     def test_retired_strategy_blocks_before_dispatch(self, base_components, sample_feature_vector):
-        repo, ledger, evaluator, _, exp, _, _, _, _, gate = base_components
+        repo, ledger, evaluator, _, _exp, _, _, _, _, gate = base_components
         seed_outcomes(ledger, repo, 16, "strat_rej", "rej", realized_r=-0.8)
         exps = ledger.get_experiences_for_strategy("strat_rej", limit=50)
         score = evaluator.evaluate_strategy("strat_rej", exps)
@@ -764,7 +762,6 @@ class TestWorkerIsolation:
 class TestSafetyContract:
     def test_intelligence_holds_no_execution_capability(self):
         """None of the intelligence engines expose an adapter/order-manager."""
-        import inspect
 
         intel_mod = __import__("nexus_scalp.intelligence", fromlist=["*"])
         for name in (
@@ -785,7 +782,7 @@ class TestSafetyContract:
             assert not attrs
 
     def test_gate_rejection_before_order_dispatch(self, base_components, sample_feature_vector):
-        repo, ledger, evaluator, _, exp, _, _, _, _, gate = base_components
+        repo, ledger, evaluator, _, _exp, _, _, _, _, gate = base_components
         seed_outcomes(ledger, repo, 16, "strat_safe", "safe", realized_r=-0.8)
         score = evaluator.evaluate_strategy(
             "strat_safe",

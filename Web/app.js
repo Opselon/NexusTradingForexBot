@@ -627,7 +627,7 @@ function renderLiquidityPanel(state) {
 
         mcReason.textContent = reasonTxt || '--';
 
-        mcReason.className = 'text-[10px] font-mono mt-1 ' + (res === 'BLOCK' ? 'text-rose-400' : (res === 'PASS' ? 'text-emerald-400' : 'text-gray-300'));
+        mcReason.className = 'text-[10px] font-mono mt-1 ' + ((mc.result || 'UNKNOWN') === 'BLOCK' ? 'text-rose-400' : ((mc.result || 'UNKNOWN') === 'PASS' ? 'text-emerald-400' : 'text-gray-300'));
 
     }
 
@@ -998,6 +998,12 @@ function initApp() {
     // Hook up some simulation button controls
 
     document.getElementById('btn-toggle-engine').addEventListener('click', toggleEngineRunning);
+
+    // Forensic Incident Center: Stop Bot type-to-confirm + task drawer close.
+    var stopInput = document.getElementById('stop-bot-confirm-input');
+    if (stopInput) stopInput.addEventListener('input', onStopBotInput);
+    var taskBackdrop = document.getElementById('task-drawer-backdrop');
+    if (taskBackdrop) taskBackdrop.addEventListener('click', closeTaskDrawer);
 
 
 
@@ -1640,9 +1646,10 @@ function switchTab(tabId, element) {
     }
 
     if (tabId === 'tab-news') {
-
         loadNewsState();
-
+        if (window.NewsIntel && NewsIntel.startProConsole) { try { NewsIntel.startProConsole(); } catch(_){} }
+        // Timeline needs a visible canvas — defer one frame so the tab is laid out
+        setTimeout(()=>{ try{ setNewsTimeframe(__newsTfSec); }catch(_){ try{ loadNewsTimeline(); }catch(__){} } }, 80);
     }
 
     if (tabId === 'tab-liquidity') {
@@ -3721,7 +3728,8 @@ function handleIncomingLiveTick(payload, opts) {
 
     if (payload.bid != null && payload.ask != null) {
         const __d = (payload.price_digits != null) ? payload.price_digits : (String(payload.symbol||"").startsWith("XAU")||String(payload.symbol||"").startsWith("GOLD") ? 2 : 5);
-        setTxt('quick-bid-ask', `${payload.bid.toFixed(__d)} / ${payload.ask.toFixed(__d)}`);
+        setTxt('quick-bid', payload.bid != null ? payload.bid.toFixed(__d) : '—');
+        setTxt('quick-ask', payload.ask != null ? payload.ask.toFixed(__d) : '—');
     }
 
     if (payload.regime != null) setTxt('quick-regime', payload.regime);
@@ -10314,6 +10322,47 @@ async function refreshNewsToggleState() {
     } catch (_e) { /* silent — badge will reflect actual state on next loadNewsState */ }
 }
 
+// News Auto Analysis — local deterministic toggle (NO API key / NO endpoint).
+// ON: worker auto-analyzes each cycle for more accuracy. OFF: worker still
+// ingests, skips auto-analysis. Persists via runtime_config (hot-reload).
+function syncNewsAutoUI(enabled) {
+    const cb = document.getElementById("news-auto-toggle");
+    const lbl = document.getElementById("news-auto-label");
+    const st = document.getElementById("news-auto-state");
+    if (cb) cb.checked = !!enabled;
+    if (lbl) { lbl.textContent = enabled ? "AUTO ON" : "AUTO OFF"; lbl.className = "text-[10px] font-black " + (enabled ? "text-emerald-400" : "text-slate-400"); }
+    if (st) st.textContent = enabled ? "AUTO ON" : "AUTO OFF";
+}
+async function refreshNewsAutoState() {
+    try {
+        const res = await fetch("/api/news/auto-analysis");
+        if (!res.ok) return;
+        const body = await res.json();
+        if (body && typeof body.enabled === "boolean") syncNewsAutoUI(body.enabled);
+    } catch (_e) { /* silent — next loadNewsState refreshes */ }
+}
+async function toggleNewsAutoAnalysis(enabled) {
+    const cb = document.getElementById("news-auto-toggle");
+    if (cb) cb.disabled = true;
+    setNewsStatus((enabled ? "enabling" : "disabling") + " news auto analysis...", false);
+    try {
+        const res = await fetch("/api/news/auto-analysis", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !!enabled }) });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body.success) {
+            const msg = (body && (body.error || body.reason)) || ("HTTP " + res.status);
+            throw new Error(msg);
+        }
+        syncNewsAutoUI(!!body.enabled);
+        setNewsStatus("news auto analysis " + (body.enabled ? "ENABLED" : "DISABLED") + " (v" + (body.runtime_version ?? "?") + ")", false);
+    } catch (e) {
+        console.error("[UI_ERROR] component=News endpoint=/api/news/auto-analysis action=TOGGLE message=" + (e && e.message));
+        setNewsStatus("news auto toggle failed: " + (e && e.message), true);
+        await refreshNewsAutoState();
+    } finally {
+        if (cb) cb.disabled = false;
+    }
+}
+
 async function toggleNewsEngine(enabled) {
     const cb = document.getElementById('news-toggle');
     if (cb) cb.disabled = true;
@@ -10359,6 +10408,7 @@ function setNewsStatus(msg, isError) {
 async function loadNewsState() {
     try {
         refreshNewsToggleState().catch(() => {});
+        refreshNewsAutoState().catch(() => {});
         const res = await fetch('/api/news/state');
 
         if (!res.ok) {
@@ -10396,6 +10446,13 @@ async function loadNewsState() {
         document.getElementById('news-bear').textContent = (body.bearish_score * 100).toFixed(0) + '%';
 
         document.getElementById('news-events').textContent = body.active_event_count ?? 0;
+        // Truth hint: when last 100 are all NEUTRAL junk, user sees 0% with no context — surface it
+        try {
+            const bh = document.getElementById('news-bb-hint');
+            if (bh) bh.textContent = (body.bullish_score===0 && body.bearish_score===0 && (body.xauusd_relevance||0)>0.3) ? 'junk NEUTRAL filtered' : '';
+            const ah = document.getElementById('news-active-hint');
+            if (ah) ah.textContent = (body.active_event_count===0 && (body.xauusd_relevance||0)>0.3) ? 'no high-impact' : '';
+        } catch(_){}
 
         setNewsStatus('state=' + state + ' events=' + (body.active_event_count ?? 0));
 
@@ -10499,9 +10556,9 @@ function setNewsTimeframe(bucketSec) {
 
         b.className = active
 
-            ? 'px-2 py-0.5 rounded bg-accentCyan/20 border border-accentCyan/60 text-accentCyan transition'
+            ? 'px-2.5 py-1 rounded-md bg-white text-slate-900 shadow-sm transition'
 
-            : 'px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition';
+            : 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition';
 
     });
 
@@ -10512,7 +10569,15 @@ function setNewsTimeframe(bucketSec) {
 
 
 async function loadNewsTimeline() {
-
+    // If News tab is hidden, defer until visible (canvas has zero size while hidden)
+    try {
+        const tab = document.getElementById('tab-news');
+        if (tab && tab.classList.contains('hidden')) {
+            // will be retried on tab switch
+            setTimeout(loadNewsTimeline, 800);
+            return;
+        }
+    } catch(_) {}
     try {
 
         const res = await fetch('/api/news/timeline?bucket_sec=' + __newsTfSec + '&hours_back=' + __newsTfHours);
@@ -10538,42 +10603,53 @@ async function loadNewsTimeline() {
 function drawNewsImpactChart(buckets) {
 
     const canvas = document.getElementById('newsImpactChart');
-
+    const wrap = canvas ? canvas.parentElement : null;
+    const emptyEl = document.getElementById('news-timeline-empty');
+    const countEl = document.getElementById('news-timeline-count');
+    const bucketsEl = document.getElementById('news-timeline-buckets');
+    const windowEl = document.getElementById('news-timeline-window');
+    const topEl = document.getElementById('news-timeline-top');
+    const dotEl = document.getElementById('news-timeline-dot');
+    const tipEl = document.getElementById('news-timeline-tip');
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
-
     const dpr = window.devicePixelRatio || 1;
-
-    const rect = canvas.getBoundingClientRect();
-
-    canvas.width = rect.width * dpr;
-
-    canvas.height = rect.height * dpr;
-
+    let rect = canvas.getBoundingClientRect();
+    if ((rect.width|0) < 10 || (rect.height|0) < 10) {
+        if (wrap) rect = wrap.getBoundingClientRect();
+        if ((rect.width|0) < 10) return;
+        if ((rect.height|0) < 10) rect = { width: rect.width, height: 220, left: rect.left||0, top: rect.top||0, right:(rect.left||0)+rect.width, bottom:(rect.top||0)+220, x:rect.left||0, y:rect.top||0 };
+    }
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
     const w = rect.width, h = rect.height;
-
-    ctx.fillStyle = '#090d16';
-
+    const g = ctx.createLinearGradient(0,0,0,h);
+    g.addColorStop(0, '#0b1320'); g.addColorStop(1, '#060a12');
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
 
 
 
+    const annotate = (text) => {
+        if (countEl) countEl.textContent = (buckets && buckets.length) ? buckets.length + ' buckets' : 'no data';
+        if (bucketsEl) bucketsEl.textContent = (buckets && buckets.length) ? String(buckets.length) : '--';
+        if (windowEl) windowEl.textContent = __newsTfSec >= 86400 ? (__newsTfHours + 'h window') : (__newsTfHours + 'h window / ' + (__newsTfSec/60) + 'm buckets');
+        if (dotEl) { dotEl.className = 'w-2 h-2 rounded-full ' + ((buckets && buckets.length) ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-slate-500/40'); }
+    };
     if (!buckets || buckets.length < 1) {
-
-        ctx.fillStyle = '#64748b';
-
-        ctx.font = '11px sans-serif';
-
-        ctx.textAlign = 'center';
-
-        ctx.fillText('No news impact data in this window', w / 2, h / 2);
-
+        annotate('');
+        if (emptyEl) { emptyEl.classList.remove('hidden'); emptyEl.classList.add('flex'); }
+        if (topEl) topEl.textContent = '';
+        // keep grid so empty state doesn't look broken
+        ctx.strokeStyle = 'rgba(148,163,184,0.12)';
+        ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(34, h/2); ctx.lineTo(w-8, h/2); ctx.stroke();
+        ctx.setLineDash([]);
         return;
-
     }
+    if (emptyEl) { emptyEl.classList.add('hidden'); emptyEl.classList.remove('flex'); }
+    annotate(buckets.length + ' buckets');
 
 
 
@@ -10745,41 +10821,58 @@ function drawNewsImpactChart(buckets) {
 
 
 
-    // top headline annotation of the max-impact bucket
-
+    // footer annotation + tooltip hit areas
     let top = buckets.reduce((a, b) => (Math.abs(b.bullish) + Math.abs(b.bearish) > Math.abs(a.bullish) + Math.abs(a.bearish) ? b : a), buckets[0]);
-
-    if (top && (top.top_title || top.article_count)) {
-
-        ctx.fillStyle = '#94a3b8';
-
-        ctx.font = '10px monospace';
-
-        ctx.textAlign = 'left';
-
-        ctx.fillText((top.top_title || ('N events')).slice(0, 62), padL + 2, padT + 10);
-
+    if (topEl) {
+        const tt = top.top_title ? ('Top: ' + top.top_title.slice(0, 88)) : (top.article_count + ' events');
+        const mag = (Math.abs(top.bullish)+Math.abs(top.bearish)+Math.abs(top.neutral||0)).toFixed(3);
+        topEl.textContent = tt + ' · impact ' + mag;
+        topEl.title = top.top_title || '';
     }
-
+    // hover tooltip
+    if (wrap && tipEl) {
+        let raf=0;
+        const showTip = (b, x, y) => {
+            const dt = new Date(b.bucket_start);
+            const when = __newsTfSec >= 86400 ? dt.toLocaleDateString() : dt.toLocaleString();
+            tipEl.innerHTML = '<div class="font-bold text-white">'+when+'</div><div><span class="text-emerald-300">▲ '+Number(b.bullish||0).toFixed(3)+'</span> &middot; <span class="text-red-300">▼ '+Number(b.bearish||0).toFixed(3)+'</span> &middot; <span class="text-slate-300">● '+Number(b.neutral||0).toFixed(3)+'</span></div><div class="text-slate-400">'+Number(b.article_count||0)+' articles</div>' + (b.top_title?'<div class="text-slate-200 mt-1 line-clamp-2">'+ (b.top_title||'').replace(/</g,'&lt;') +'</div>':'');
+            tipEl.style.left = Math.min(w-270, Math.max(8, x+10)) + 'px';
+            tipEl.style.top = Math.max(8, y-10) + 'px';
+            tipEl.classList.remove('hidden');
+        };
+        const hideTip = () => tipEl.classList.add('hidden');
+        const hit = (evt) => {
+            const r = canvas.getBoundingClientRect();
+            const mx = evt.clientX - r.left, my = evt.clientY - r.top;
+            let best=null, bestDx=1e9;
+            buckets.forEach((b,i)=>{
+                const x = 34 + i * ( (w-34-8) / Math.max(buckets.length-1,1) );
+                const dx = Math.abs(mx - x);
+                if (dx < bestDx && dx < 22) { bestDx=dx; best=b; }
+            });
+            if (!best) return hideTip();
+            showTip(best, mx, my);
+        };
+        canvas.onmousemove = (e)=>{ cancelAnimationFrame(raf); raf=requestAnimationFrame(()=>hit(e)); };
+        canvas.onmouseleave = hideTip;
+    }
 }
-
 
 
 async function loadNewsFeed() {
 
     try {
 
-        const res = await fetch('/api/news?limit=20');
+        const filter = (window.NewsIntel && window.NewsIntel.state) ? window.NewsIntel.state.filter : 'ACTIVE';
+        const res = await NX.api.get('/api/news?limit=50&status=' + encodeURIComponent(filter), { component: 'News', action: 'FEED' });
 
         if (!res.ok) {
-
-            console.error('[UI_ERROR] component=News endpoint=/api/news status=' + res.status);
-
-            throw new Error('HTTP ' + res.status);
-
+            let _nmsg='news feed failed'; try{ if(window.NX&&NX.Forensic&&NX.Forensic.normalizeError){ const _nn=NX.Forensic.normalizeError(res,{component:'News',action:'FEED',endpoint:'/api/news'}); _nmsg='news feed failed: '+_nn.message; } else _nmsg='news feed failed: HTTP '+res.status; }catch(_x){ _nmsg='news feed failed: HTTP '+res.status; }
+            setNewsStatus(_nmsg, true);
+            return;
         }
 
-        const body = await res.json();
+        const body = res.body;
 
         const feed = document.getElementById('news-feed');
 
@@ -10787,6 +10880,7 @@ async function loadNewsFeed() {
 
             feed.innerHTML = '<div class="text-textMuted italic">No news events yet. Click "Fetch News" or wait for the worker.</div>';
 
+            if (window.NewsIntel && NewsIntel.renderStatusCounts) NewsIntel.renderStatusCounts(body.status_counts);
             return;
 
         }
@@ -10807,7 +10901,9 @@ async function loadNewsFeed() {
 
             const impColor = imp == null ? 'bg-slate-600/20 text-slate-400' : imp >= 70 ? 'bg-rose-500/20 text-rose-300' : imp >= 50 ? 'bg-orange-500/20 text-orange-300' : imp >= 30 ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-500/20 text-slate-400';
 
-            return '<div class="bg-darkBg/40 border border-borderClr/40 rounded p-2.5">' +
+            const extras = (window.NewsIntel && NewsIntel.articleExtrasHTML) ? NewsIntel.articleExtrasHTML(a) : '';
+
+            return '<div class="bg-darkBg/40 border border-borderClr/40 rounded p-2.5" data-article-id="' + esc(a.article_id) + '">' +
 
                 '<div class="flex justify-between items-center gap-2">' +
 
@@ -10827,13 +10923,13 @@ async function loadNewsFeed() {
 
                 (mech ? '<div class="text-[9px] text-slate-500 mt-0.5 truncate">' + esc(mech) + '</div>' : '') +
 
-                '<div class="flex gap-2 mt-1">' +
+                '<div class="flex flex-wrap items-center gap-2 mt-1.5">' + extras + '</div>' +
 
-                '<button onclick="analyzeNewsWithAI(\'' + a.article_id + '\')" class="text-[9px] bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-2 py-0.5 hover:bg-accentCyan/20">Analyze with AI</button>' +
-
-                '</div></div>';
+                '</div>';
 
         }).join('');
+
+        if (window.NewsIntel && NewsIntel.renderStatusCounts) NewsIntel.renderStatusCounts(body.status_counts);
 
         setNewsStatus('feed: ' + body.articles.length + ' articles');
 
@@ -10841,9 +10937,8 @@ async function loadNewsFeed() {
 
     } catch (e) {
 
-        console.error('[UI_ERROR] component=News endpoint=/api/news action=LOAD message=' + (e && e.message));
-
-        setNewsStatus('news feed failed: ' + (e && e.message), true);
+        let _nf2='news feed failed'; try{ if(window.NX&&NX.Forensic&&NX.Forensic.normalizeError){ const _nn=NX.Forensic.normalizeError(e,{component:'News',action:'FEED',endpoint:'/api/news'}); _nf2='news feed failed: '+_nn.message; } else if(e&&e.message) _nf2='news feed failed: '+e.message; }catch(_x){ if(e&&e.message) _nf2='news feed failed: '+e.message; }
+        setNewsStatus(_nf2, true);
 
     }
 
@@ -10996,23 +11091,13 @@ function kwRow(k) {
 
 
 async function analyzeNewsWithAI(articleId) {
-
-    try {
-
-        const res = await NX.api.post('/api/news/analyze/' + articleId, {}, { component: 'News', action: 'ANALYZE' });
-
-        const body = res.ok ? res.body : { available: false, error: res.error };
-
-        alert(body && body.ok ? 'Analysis queued (status: ' + (body.status || 'QUEUED') + ')' : 'Analysis request failed');
-
-        setTimeout(loadNewsFeed, 1500);
-
-    } catch (e) {
-
-        console.warn('news analyze failed', e);
-
+    // Delegated to the News Intelligence module (state machine + safe error
+    // handling + toast). Kept as a thin wrapper for backward compatibility.
+    if (window.NewsIntel && NewsIntel.analyzeArticle) {
+        NewsIntel.analyzeArticle(articleId);
+    } else {
+        console.warn('news analyze unavailable');
     }
-
 }
 
 
@@ -11077,6 +11162,8 @@ function startNewsAutoRefresh() {
 
             loadNewsState();
 
+            if (window.NewsIntel && NewsIntel.loadAIStatus) NewsIntel.loadAIStatus();
+
         }
 
     }, 60000);
@@ -11094,6 +11181,12 @@ const __newsTabObserver = new MutationObserver(() => {
         bindNewsKeywordSearch();
 
         loadNewsState();
+
+        // News Intelligence (0100): initialize AI status + filter + pro controls.
+        if (window.NewsIntel) {
+            if (NewsIntel.setNewsFilter) NewsIntel.setNewsFilter('ACTIVE');
+            if (NewsIntel.loadAIStatus) NewsIntel.loadAIStatus();
+        }
 
         startNewsAutoRefresh();
 
@@ -11323,384 +11416,724 @@ function renderShadow70(summary, health, disagreements) {
 
 // =====================================================================
 
-// FORENSIC INCIDENT CENTER (TASK-12)
-
+// =====================================================================
+// FORENSIC INCIDENT CENTER (TASK-12 / FORENSIC INCIDENT CENTER overhaul)
+// ---------------------------------------------------------------------
+// Production-grade operational console:
+//  - SINGLE authoritative incident array (no duplicated counters)
+//  - KPIs DERIVED from that array (fixes OPEN/CRITICAL/HIGH/MEDIUM
+//    impossible state)
+//  - NX.api everywhere => no raw "TypeError: Failed to fetch" in DOM
+//  - Loading / Empty / Error / Loaded states are DISTINCT
+//  - Agent Mode: real state machine, automatic eligible trace, dedup
+//  - Generate Task drawer with review-before-submit
+//  - Stop Bot confirmation (type STOP), truthful semantics
+// All HTTP goes through NX.api (safe envelope). See forensic_console.js.
 // =====================================================================
 
-async function loadIncidents() {
+// Single source of truth for the Forensic Incident Center.
+var INC_STATE = {
+  incidents: [],     // authoritative full list (data.incidents)
+  filter: 'open',    // open | resolved | agent
+  loading: false,
+  loaded: false,
+  error: null,
+  requestSeq: 0,     // concurrency guard: latest response wins
+  agentMode: false,
+  agentProcessed: {}, // incident_id -> agent state (dedup map)
+};
 
-    const listEl = document.getElementById('incident-list');
+var INC_AGENT_OPEN = ['OPEN', 'INVESTIGATING', 'ROOT_CAUSE_IDENTIFIED', 'CONTAINED', 'RECOVERY_READY'];
 
-    if (!listEl) return;
-
-    listEl.innerHTML = '<p class="text-xs text-textMuted">Loading incidents...</p>';
-
-    try {
-
-        const resp = await fetch('/api/diagnostics/health');
-
-        const data = await resp.json();
-
-        if (!data.available) { listEl.innerHTML = '<p class="text-xs text-rose-400">Incident API unavailable</p>'; return; }
-
-        const c = data.counts || {};
-
-        document.getElementById('inc-summary-open').textContent = c.open ?? '--';
-
-        document.getElementById('inc-summary-critical').textContent = c.critical ?? '--';
-
-        document.getElementById('inc-summary-high').textContent = c.high ?? '--';
-
-        document.getElementById('inc-summary-medium').textContent = c.medium ?? '--';
-
-        const badge = document.getElementById('incident-nav-badge');
-
-        if (badge) badge.textContent = (c.open ?? 0) + ' open';
-
-        // TASK-13: worker health display (spec 39)
-        const w = data.worker || {};
-        const wState = w.display_state || 'DISABLED';
-        const wEl = document.getElementById('inc-worker-state');
-        if (wEl) {
-            const wColor = {RUNNING: 'text-emerald-400', DEGRADED: 'text-amber-400', FAILED: 'text-rose-400', DISABLED: 'text-gray-400'}[wState] || 'text-gray-300';
-            wEl.className = 'text-xs font-bold ' + wColor;
-            wEl.textContent = wState + (w.cycle_count ? ' · cycles:' + w.cycle_count : '');
-        }
-        const wDetail = document.getElementById('inc-worker-detail');
-        if (wDetail) {
-            wDetail.textContent = (w.last_success ? 'last ok: ' + String(w.last_success).slice(5,19).replace('T',' ') : 'no success yet')
-                + (w.last_failure ? ' · last fail: ' + String(w.last_failure).slice(5,19).replace('T',' ') : '')
-                + (w.queue_size ? ' · queue: ' + w.queue_size : '')
-                + (w.incidents_created ? ' · created: ' + w.incidents_created : '')
-                + (w.incidents_deduplicated ? ' · dedup: ' + w.incidents_deduplicated : '');
-        }
-
-        const resp2 = await fetch('/api/diagnostics/incidents?limit=50');
-
-        const data2 = await resp2.json();
-
-        const incidents = (data2.incidents || []).filter(i =>
-
-            ['CRITICAL','HIGH','MEDIUM'].includes(i.severity) &&
-
-            ['OPEN','INVESTIGATING','ROOT_CAUSE_IDENTIFIED','CONTAINED','RECOVERY_READY'].includes(i.status));
-
-        if (!incidents.length) {
-
-            listEl.innerHTML = '<p class="text-xs text-textMuted">No open CRITICAL/HIGH/MEDIUM incidents.</p>';
-
-            return;
-
-        }
-
-        listEl.innerHTML = '';
-
-        incidents.forEach(inc => {
-
-            const card = document.createElement('div');
-
-            const sevColor = {CRITICAL: 'text-rose-400 border-rose-500/40', HIGH: 'text-orange-400 border-orange-500/40', MEDIUM: 'text-yellow-400 border-yellow-500/40'}[inc.severity] || 'text-gray-300 border-borderClr';
-
-            card.className = 'border rounded-lg p-3 bg-darkBg/50 cursor-pointer ' + sevColor;
-
-            card.onclick = () => showIncidentDetail(inc.incident_id);
-
-            card.innerHTML = '<div class="flex justify-between items-center"><div class="flex items-center gap-2">' +
-
-                '<span class="font-mono text-xs font-bold">' + esc(inc.incident_id) + '</span>' +
-
-                '<span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/30">' + inc.severity + '</span>' +
-
-                '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 border border-slate-500/30">' + inc.category + '</span>' +
-
-                '</div><span class="text-[10px] text-textMuted">' + (inc.detected_at||'').slice(0,19).replace('T',' ') + '</span></div>' +
-
-                '<p class="text-xs text-gray-300 mt-2"><b>' + esc(inc.operation||'') + '</b> @ <code class="text-accentCyan">' + esc(inc.component||'') + '</code></p>' +
-
-                '<p class="text-[11px] text-textMuted mt-1">root cause: <b>' + inc.root_cause_status + '</b> | impact: ' +
-
-                (inc.impact ? inc.impact.affected_trades + ' trades / ' + inc.impact.affected_records + ' records' : 'n/a') +
-
-                (inc.repeated_count > 1 ? ' | repeats: ' + inc.repeated_count : '') + '</p>';
-
-            listEl.appendChild(card);
-
-        });
-
-    } catch (e) {
-
-        listEl.innerHTML = '<p class="text-xs text-rose-400">Failed to load incidents: ' + esc(String(e)) + '</p>';
-
-    }
-
+// Severity -> display class (reuse existing palette).
+function incSevClass(sev) {
+  switch (NX.Forensic.model.normSeverity(sev)) {
+    case 'CRITICAL': return 'text-rose-400 border-rose-500/40 bg-rose-500/10';
+    case 'HIGH': return 'text-orange-400 border-orange-500/40 bg-orange-500/10';
+    case 'MEDIUM': return 'text-yellow-400 border-yellow-500/40 bg-yellow-500/10';
+    case 'LOW': return 'text-sky-400 border-sky-500/40 bg-sky-500/10';
+    case 'INFO': return 'text-slate-300 border-slate-500/40 bg-slate-500/10';
+    default: return 'text-gray-300 border-borderClr bg-slate-500/10';
+  }
 }
 
+// Render the derived KPI summary (single source of truth).
+function renderIncidentKpis() {
+  var k = NX.Forensic.model.deriveKpis(INC_STATE.incidents);
+  var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = (v == null ? '--' : v); };
+  set('inc-summary-open', k.open);
+  set('inc-summary-critical', k.critical);
+  set('inc-summary-high', k.high);
+  set('inc-summary-medium', k.medium);
+  // Nav badge reflects the OPEN count only.
+  var badge = document.getElementById('incident-nav-badge');
+  if (badge) {
+    badge.textContent = k.open + ' open';
+    badge.classList.remove('hidden');
+  }
+}
 
+// Worker health hierarchy (spec 33): separate Status / Cycles / Last OK.
+function renderWorkerHealth(w) {
+  w = w || {};
+  var state = w.display_state || (w.state ? (w.state === 'RUNNING' || w.state === 'STARTING' ? 'RUNNING'
+    : w.state === 'DEGRADED' ? 'DEGRADED' : w.state === 'FAILED' ? 'FAILED' : 'DISABLED') : 'DISABLED');
+  var stateEl = document.getElementById('inc-worker-state');
+  if (stateEl) {
+    var cls = { RUNNING: 'status-success', DEGRADED: 'status-degraded', FAILED: 'status-error', DISABLED: 'status-inactive' }[state] || 'status-inactive';
+    stateEl.className = 'nx-status-pill ' + cls;
+    stateEl.innerHTML = '<span class="nx-status-dot"></span>' + esc(state);
+  }
+  var detail = document.getElementById('inc-worker-detail');
+  if (detail) {
+    var parts = [];
+    if (w.cycle_count != null) parts.push('Cycles: ' + w.cycle_count);
+    if (w.last_success) parts.push('Last OK: ' + String(w.last_success).slice(5, 19).replace('T', ' '));
+    else parts.push('No success yet');
+    if (w.last_failure) parts.push('Last fail: ' + String(w.last_failure).slice(5, 19).replace('T', ' '));
+    if (w.queue_size) parts.push('Queue: ' + w.queue_size);
+    if (w.incidents_created) parts.push('Created: ' + w.incidents_created);
+    if (w.incidents_deduplicated) parts.push('Dedup: ' + w.incidents_deduplicated);
+    detail.textContent = parts.length ? parts.join('  ·  ') : 'no worker attached';
+  }
+}
+// Load + render incidents. Single authoritative array; KPIs derived.
+// Uses NX.api so errors never leak raw stack text into the DOM.
+async function loadIncidents() {
+  var listEl = document.getElementById('incident-list');
+  if (!listEl) return;
+
+  // Concurrency guard: only the latest response wins.
+  var seq = ++INC_STATE.requestSeq;
+  INC_STATE.loading = true;
+  if (!INC_STATE.loaded) {
+    renderIncidentLoading(listEl);
+  }
+
+  // Skeleton while we wait (no layout jump).
+  renderIncidentLoading(listEl);
+
+  try {
+    // Health gives counts + worker state (used for worker health + nav badge).
+    var hres = await NX.api.get('/api/diagnostics/health', { component: 'Incidents', action: 'HEALTH' });
+    if (seq !== INC_STATE.requestSeq) return; // superseded
+    if (!hres || !hres.ok) {
+      var hn = NX.Forensic.normalizeError(hres, { component: 'Incidents', action: 'HEALTH', endpoint: '/api/diagnostics/health' });
+      NX.Forensic.toast.error(hn.message, { detail: hn.detail });
+      renderIncidentError(listEl); INC_STATE.loading = false; return;
+    }
+    var hdata = hres.body || {};
+    renderWorkerHealth(hdata.worker || {});
+
+    // AUTHORITATIVE list: all incidents (not pre-filtered).
+    var ires = await NX.api.get('/api/diagnostics/incidents?limit=200', { component: 'Incidents', action: 'LIST' });
+    if (seq !== INC_STATE.requestSeq) return;
+    if (!ires || !ires.ok) {
+      var inerr = NX.Forensic.normalizeError(ires, { component: 'Incidents', action: 'LIST', endpoint: '/api/diagnostics/incidents' });
+      NX.Forensic.toast.error(inerr.message, { detail: inerr.detail });
+      renderIncidentError(listEl); INC_STATE.loading = false; return;
+    }
+    var body = ires.body || {};
+    if (body.available === false) {
+      NX.Forensic.toast.error('Incident service is unavailable.');
+      renderIncidentError(listEl, 'The incident service could not be reached.'); INC_STATE.loading = false; return;
+    }
+    var incidents = Array.isArray(body.incidents) ? body.incidents : [];
+    // Normalize + attach any agent state we already track.
+    incidents.forEach(function (inc) {
+      if (INC_STATE.agentProcessed[inc.incident_id]) {
+        inc._agentState = INC_STATE.agentProcessed[inc.incident_id];
+      }
+    });
+    INC_STATE.incidents = incidents;
+    INC_STATE.loaded = true;
+    INC_STATE.error = null;
+    INC_STATE.loading = false;
+    renderIncidentKpis();
+    renderIncidentList(listEl);
+
+    // Agent Mode: trigger automatic trace for eligible incidents (deduped).
+    if (INC_STATE.agentMode) maybeAutoTraceEligible();
+  } catch (e) {
+    var n = NX.Forensic.normalizeError(e, { component: 'Incidents', action: 'LOAD', endpoint: '/api/diagnostics/incidents' });
+    NX.Forensic.toast.error(n.message, { detail: n.detail });
+    renderIncidentError(listEl);
+    INC_STATE.loading = false;
+  }
+}
+
+function renderIncidentLoading(listEl) {
+  if (!listEl) return;
+  var html = '';
+  for (var i = 0; i < 3; i++) html += '<div class="nx-skeleton"></div>';
+  listEl.innerHTML = html;
+}
+
+function renderIncidentError(listEl, msg) {
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4 text-rose-200">' +
+    '<p class="text-sm font-semibold">Unable to load incidents.</p>' +
+    '<p class="text-[11px] text-rose-300/80 mt-1">' + esc(msg || 'The incident service could not be reached.') + '</p>' +
+    '<button onclick="loadIncidents()" class="mt-3 nx-btn-ghost px-3 py-1.5 rounded text-[11px]"><i class="fa-solid fa-rotate mr-1"></i>Retry</button>' +
+    '</div>';
+}
+
+// Filtered view of the authoritative array (single dataset, no copies).
+function getFilteredIncidents() {
+  var arr = INC_STATE.incidents;
+  if (INC_STATE.filter === 'open') return arr.filter(NX.Forensic.model.isOpen);
+  if (INC_STATE.filter === 'resolved') return arr.filter(NX.Forensic.model.isResolved);
+  if (INC_STATE.filter === 'agent') return arr.filter(function (i) {
+    return NX.Forensic.model.isResolved(i) && (i.resolved_by === 'AGENT' || NX.Forensic.model.normStatus(i.status) === 'RESOLVED_BY_AGENT');
+  });
+  return arr;
+}
+
+function setIncidentFilter(filter, btn) {
+  INC_STATE.filter = filter;
+  document.querySelectorAll('#incident-filter-tabs .nx-filter-tab').forEach(function (b) {
+    var on = b.getAttribute('data-filter') === filter;
+    b.classList.toggle('nx-filter-tab-active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  var listEl = document.getElementById('incident-list');
+  if (listEl) renderIncidentList(listEl);
+}
+
+// Render the list for the current filter (distinct empty/loaded states).
+function renderIncidentList(listEl) {
+  if (!listEl) return;
+  if (!INC_STATE.loaded) return; // loading/error handled elsewhere
+  var items = getFilteredIncidents();
+  if (!items.length) {
+    var label = INC_STATE.filter === 'open' ? 'open' : (INC_STATE.filter === 'agent' ? 'resolved by Agent' : 'resolved');
+    listEl.innerHTML = '<div class="rounded-lg border border-borderClr bg-darkBg/40 p-6 text-center">' +
+      '<i class="fa-solid fa-circle-check text-emerald-400 text-xl mb-2"></i>' +
+      '<p class="text-sm text-white font-semibold">No ' + label + ' incidents</p>' +
+      '<p class="text-[11px] text-textMuted mt-1">The forensic worker has not reported any ' + label + ' incidents.</p>' +
+      '</div>';
+    return;
+  }
+  listEl.innerHTML = '';
+  items.forEach(function (inc) { listEl.appendChild(buildIncidentCard(inc)); });
+}
+
+// Compact, hierarchy-clear incident card with row-level actions.
+function buildIncidentCard(inc) {
+  var card = document.createElement('div');
+  var sev = NX.Forensic.model.normSeverity(inc.severity);
+  var sevCls = incSevClass(sev);
+  card.className = 'border rounded-lg p-3 bg-darkBg/50 hover:border-accentCyan/40 transition';
+  card.style.borderColor = 'rgba(148,163,184,.18)';
+
+  var agentState = inc._agentState || (inc.resolved_by === 'AGENT' ? 'RESOLVED' : null);
+  var agentPill = agentState ? agentBadgeHtml(agentState) : '';
+
+  var head = document.createElement('div');
+  head.className = 'flex items-center justify-between gap-2';
+  head.innerHTML =
+    '<div class="flex items-center gap-2 min-w-0">' +
+      '<span class="font-mono text-xs font-bold text-white truncate">' + esc(inc.incident_id) + '</span>' +
+      '<span class="text-[10px] px-1.5 py-0.5 rounded border ' + sevCls + '">' + esc(sev) + '</span>' +
+      '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 border border-slate-500/30 text-slate-300">' + esc(inc.category || '—') + '</span>' +
+      agentPill +
+    '</div>' +
+    '<span class="text-[10px] text-textMuted whitespace-nowrap">' + esc((inc.detected_at || inc.first_seen_at || '').toString().slice(0, 19).replace('T', ' ')) + '</span>';
+
+  var body = document.createElement('p');
+  body.className = 'text-xs text-gray-300 mt-2';
+  body.innerHTML = '<b>' + esc(inc.operation || '') + '</b> @ <code class="text-accentCyan">' + esc(inc.component || '') + '</code>';
+
+  var meta = document.createElement('p');
+  meta.className = 'text-[11px] text-textMuted mt-1';
+  var impact = inc.impact ? (inc.impact.affected_trades + ' trades / ' + inc.impact.affected_records + ' records') : 'n/a';
+  meta.innerHTML = 'root cause: <b>' + esc(inc.root_cause_status || 'UNKNOWN') + '</b> · impact: ' + esc(impact) +
+    (inc.repeated_count > 1 ? ' · repeats: ' + inc.repeated_count : '');
+
+  var actions = document.createElement('div');
+  actions.className = 'flex items-center gap-2 mt-3 pt-2 border-t border-borderClr/40';
+  var traceBtn = document.createElement('button');
+  traceBtn.className = 'nx-btn-ghost px-2.5 py-1 rounded text-[11px]';
+  traceBtn.innerHTML = '<i class="fa-solid fa-route mr-1"></i>Trace';
+  traceBtn.onclick = function (e) { e.stopPropagation(); var inp = document.getElementById('incident-search-input'); if (inp) inp.value = inc.incident_id; searchIncidents(); };
+
+  var taskBtn = document.createElement('button');
+  taskBtn.className = 'nx-btn-ghost px-2.5 py-1 rounded text-[11px] text-accentCyan';
+  taskBtn.innerHTML = '<i class="fa-solid fa-clipboard-list mr-1"></i>Generate Task';
+  taskBtn.title = 'Generate a reviewable task from this incident';
+  taskBtn.onclick = function (e) { e.stopPropagation(); openTaskDrawer(inc); };
+
+  var detailBtn = document.createElement('button');
+  detailBtn.className = 'nx-btn-ghost px-2.5 py-1 rounded text-[11px] ml-auto';
+  detailBtn.innerHTML = 'Details';
+  detailBtn.onclick = function (e) { e.stopPropagation(); showIncidentDetail(inc.incident_id); };
+
+  actions.appendChild(traceBtn);
+  actions.appendChild(taskBtn);
+  actions.appendChild(detailBtn);
+
+  card.appendChild(head);
+  card.appendChild(body);
+  card.appendChild(meta);
+  card.appendChild(actions);
+  card.onclick = function () { showIncidentDetail(inc.incident_id); };
+  return card;
+}
+
+function agentBadgeHtml(state) {
+  var b = NX.Forensic.agent.badge(state);
+  var cls = 'nx-agent-pill';
+  if (b.color === 'success') cls += ' is-success';
+  else if (b.color === 'error') cls += ' is-error';
+  else if (NX.Forensic.agent.isActive(state)) cls += ' is-processing';
+  return '<span class="' + cls + '"><i class="fa-solid fa-robot"></i>' + esc(b.label) + '</span>';
+}
+// =====================================================================
+// AGENT MODE (spec 15-22)
+// Real state machine; never fakes backend behavior. Auto-trace only
+// fires for ELIGIBLE incidents and is deduplicated by incident_id.
+// =====================================================================
+
+function isEligibleForAgent(inc) {
+  if (!inc) return false;
+  if (!NX.Forensic.model.isOpen(inc)) return false; // only open incidents
+  var sev = NX.Forensic.model.normSeverity(inc.severity);
+  // Respect severity: CRITICAL/HIGH/MEDIUM eligible; LOW/INFO are queued lightly.
+  if (['CRITICAL', 'HIGH', 'MEDIUM'].indexOf(sev) === -1) return false;
+  // Respect existing trace state + dedup.
+  if (INC_STATE.agentProcessed[inc.incident_id]) return false;
+  if (inc._agentState) return false;
+  return true;
+}
+
+// Auto-trace eligible incidents when Agent Mode is ON. Deduplicated by id.
+function maybeAutoTraceEligible() {
+  var eligible = INC_STATE.incidents.filter(isEligibleForAgent);
+  if (!eligible.length) return;
+  // Respect a simple workload cap to avoid a storm on reconnect/refresh.
+  var active = Object.keys(INC_STATE.agentProcessed).length;
+  var budget = 5;
+  eligible.slice(0, Math.max(0, budget - active)).forEach(function (inc) {
+    agentTraceIncident(inc.incident_id);
+  });
+}
+
+async function agentTraceIncident(incidentId) {
+  if (INC_STATE.agentProcessed[incidentId]) return; // dedup guard
+  INC_STATE.agentProcessed[incidentId] = 'TRACING';
+  await refreshAgentPillFor(incidentId);
+  try {
+    // Use the SAME real trace endpoint the manual Trace uses.
+    var res = await NX.api.get('/api/diagnostics/trace?query=' + encodeURIComponent(incidentId), { component: 'Agent', action: 'TRACE' });
+    if (!res || !res.ok) {
+      INC_STATE.agentProcessed[incidentId] = 'FAILED';
+    } else {
+      var trace = (res.body && res.body.trace) || {};
+      if (trace.missing_link) {
+        INC_STATE.agentProcessed[incidentId] = 'ANALYZING'; // partial lineage; keep investigating
+      } else {
+        // Lineage resolved => generate a proposal (stays as ANALYZING -> TASK_READY).
+        INC_STATE.agentProcessed[incidentId] = 'TASK_READY';
+      }
+    }
+  } catch (e) {
+    INC_STATE.agentProcessed[incidentId] = 'FAILED';
+  }
+  await refreshAgentPillFor(incidentId);
+}
+
+// Re-render the card (and its pill) for a single incident without a full reload.
+async function refreshAgentPillFor(incidentId) {
+  var inc = INC_STATE.incidents.find(function (i) { return i.incident_id === incidentId; });
+  if (!inc) return;
+  inc._agentState = INC_STATE.agentProcessed[incidentId];
+  var listEl = document.getElementById('incident-list');
+  if (listEl) renderIncidentList(listEl);
+}
+
+function toggleAgentMode() {
+  INC_STATE.agentMode = !INC_STATE.agentMode;
+  var btn = document.getElementById('agent-mode-toggle');
+  if (btn) {
+    btn.setAttribute('aria-checked', INC_STATE.agentMode ? 'true' : 'false');
+    btn.title = INC_STATE.agentMode ? 'Agent Mode: ON — automatic trace/anomaly investigation' : 'Agent Mode: OFF';
+  }
+  if (INC_STATE.agentMode) {
+    NX.Forensic.toast.info('Agent Mode enabled. Eligible open incidents will be traced automatically.');
+    if (INC_STATE.loaded) maybeAutoTraceEligible();
+  } else {
+    NX.Forensic.toast.info('Agent Mode disabled.');
+  }
+}
+
+// =====================================================================
+// TASK GENERATION (spec 23-31) — review-before-submit drawer
+// No external provider is wired on the backend yet => truthful
+// "pending / not configured" state. Never fabricates success.
+// =====================================================================
+
+var TASK_DRAWER_CTX = null;
+
+function openTaskDrawer(inc) {
+  TASK_DRAWER_CTX = inc || null;
+  var drawer = document.getElementById('task-drawer');
+  var backdrop = document.getElementById('task-drawer-backdrop');
+  if (!drawer) return;
+
+  // Reset states.
+  showOnly('task-loading');
+  var note = document.getElementById('task-submit-note');
+  if (note) note.classList.add('hidden');
+  setTaskSubmitEnabled(false);
+
+  drawer.classList.remove('hidden');
+  drawer.classList.add('nx-modal-open');
+  if (backdrop) backdrop.classList.remove('hidden');
+  drawer._lastFocused = document.activeElement;
+
+  // Simulate analysis then populate from REAL incident evidence (no AI here).
+  NX.Forensic.withButtonLock(null, null, function () {});
+  setTimeout(function () { populateTaskFromIncident(inc); }, 450);
+}
+
+function closeTaskDrawer() {
+  var drawer = document.getElementById('task-drawer');
+  var backdrop = document.getElementById('task-drawer-backdrop');
+  if (drawer) { drawer.classList.add('hidden'); drawer.classList.remove('nx-modal-open'); }
+  if (backdrop) backdrop.classList.add('hidden');
+  if (drawer && drawer._lastFocused && drawer._lastFocused.focus) {
+    try { drawer._lastFocused.focus(); } catch (e) {}
+  }
+  drawer._lastFocused = null;
+}
+
+function showOnly(which) {
+  ['task-loading', 'task-form', 'task-error'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) {
+      if (id === which) { el.classList.remove('hidden'); if (id === 'task-loading') el.classList.add('flex'); }
+      else { el.classList.add('hidden'); el.classList.remove('flex'); }
+    }
+  });
+}
+
+function setTaskSubmitEnabled(on) {
+  var b = document.getElementById('task-submit-btn');
+  if (!b) return;
+  b.disabled = !on;
+  b.classList.toggle('opacity-50', !on);
+  b.classList.toggle('cursor-not-allowed', !on);
+}
+
+// Build the task proposal from the REAL incident record. No fabricated
+// timestamps/root causes/confidence. Preserves forensic context.
+function populateTaskFromIncident(inc) {
+  if (!inc) { showOnly('task-error'); var em = document.getElementById('task-error-msg'); if (em) em.textContent = 'No incident selected.'; return; }
+  var sev = NX.Forensic.model.normSeverity(inc.severity);
+  var comp = inc.component || 'unknown component';
+  var title = 'Investigate ' + (inc.category || 'INCIDENT').toUpperCase() + ' in ' + comp;
+
+  var desc = [];
+  desc.push('Incident: ' + inc.incident_id);
+  desc.push('Severity: ' + sev + '   Status: ' + (inc.status || 'UNKNOWN'));
+  if (inc.first_seen_at) desc.push('First observed: ' + String(inc.first_seen_at).replace('T', ' '));
+  if (inc.last_seen_at) desc.push('Last observed: ' + String(inc.last_seen_at).replace('T', ' '));
+  if (inc.component) desc.push('Affected component: ' + inc.component);
+  if (inc.correlation_id) desc.push('Correlation ID: ' + inc.correlation_id);
+  if (inc.operation) desc.push('Operation: ' + inc.operation);
+  if (inc.root_cause) desc.push('Root cause: ' + inc.root_cause);
+  else if (inc.root_cause_status) desc.push('Root cause status: ' + inc.root_cause_status);
+  if (inc.ticket) desc.push('Ticket: ' + inc.ticket);
+  if (inc.execution_id) desc.push('Execution ID: ' + inc.execution_id);
+  if (inc.request_id) desc.push('Request ID: ' + inc.request_id);
+  if (inc.model_id) desc.push('Model ID: ' + inc.model_id);
+  var impact = inc.impact ? (inc.impact.affected_trades + ' trades / ' + inc.impact.affected_records + ' records') : null;
+  if (impact) desc.push('Observed impact: ' + impact);
+  if (inc.symptom) desc.push('Symptom: ' + inc.symptom);
+  if (inc.suspected_root_cause) desc.push('Suspected root cause: ' + inc.suspected_root_cause);
+  desc.push('Recommended action: investigate the ' + comp + ' subsystem lineage and confirm resolution before closing.');
+
+  setValue('task-title', title);
+  setValue('task-severity', sev);
+  setValue('task-description', desc.join('\n'));
+  setValue('task-tags', [inc.category, sev, 'forensic'].filter(Boolean).join(','));
+
+  showOnly('task-form');
+  setTaskSubmitEnabled(true);
+}
+
+function setValue(id, v) { var el = document.getElementById(id); if (el) el.value = v == null ? '' : v; }
+
+async function submitGeneratedTask(btn) {
+  // Duplicate-submit guard.
+  if (btn && btn._busy) return;
+  var incident = TASK_DRAWER_CTX;
+  var provider = (document.getElementById('task-provider') || {}).value || 'jira';
+  var title = (document.getElementById('task-title') || {}).value || '';
+  var description = (document.getElementById('task-description') || {}).value || '';
+  var severity = (document.getElementById('task-severity') || {}).value || 'MEDIUM';
+  var tags = (document.getElementById('task-tags') || {}).value || '';
+
+  if (!title.trim() || !description.trim()) {
+    NX.Forensic.toast.warning('Task title and description are required.');
+    return;
+  }
+
+  var prevHtml = btn ? btn.innerHTML : '';
+  NX.Forensic.withButtonLock(btn, 'Creating…', async function () {
+    // No backend provider endpoint exists. Truthful handling per spec 48:
+    // we do NOT fabricate a successful external ticket.
+    var surface = NX.Forensic.taskProvider.surface();
+    if (!surface.configured || !surface.submitEndpoint) {
+      // Keep the operator's edits; report honest pending state.
+      var note = document.getElementById('task-submit-note');
+      if (note) note.classList.remove('hidden');
+      NX.Forensic.toast.warning('No external task provider is configured. Submission is pending backend wiring (reviewed, not sent).');
+      if (btn) btn.innerHTML = prevHtml;
+      if (btn) { btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed'); }
+      return;
+    }
+    // (Reserved) real submission path would POST to surface.submitEndpoint here.
+  });
+}
+// =====================================================================
+// STOP BOT — production safety (spec 7)
+// Modal requires typing STOP (case-sensitive). Destructive call only
+// fires after confirmation. Truthful: toggling OFF halts the engine
+// loop; it does NOT cancel broker-placed pending orders (verify: the
+// backend sets engine._running=False only). Modal never claims success
+// until the backend confirms.
+// =====================================================================
+
+function openStopBotModal() {
+  var modal = document.getElementById('stop-bot-modal');
+  if (!modal) return;
+  var input = document.getElementById('stop-bot-confirm-input');
+  var confirmBtn = document.getElementById('stop-bot-confirm-btn');
+  if (input) { input.value = ''; input.classList.remove('border-rose-500'); }
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
+  NX.Forensic.modal.open(modal);
+  if (input) setTimeout(function () { try { input.focus(); } catch (e) {} }, 20);
+}
+
+function onStopBotInput(e) {
+  var input = e && e.target ? e.target : document.getElementById('stop-bot-confirm-input');
+  var confirmBtn = document.getElementById('stop-bot-confirm-btn');
+  if (!input || !confirmBtn) return;
+  var ok = input.value === 'STOP'; // exact, case-sensitive
+  confirmBtn.disabled = !ok;
+  confirmBtn.classList.toggle('opacity-50', !ok);
+  confirmBtn.classList.toggle('cursor-not-allowed', !ok);
+}
+
+function closeStopBotModal() {
+  var modal = document.getElementById('stop-bot-modal');
+  if (modal) NX.Forensic.modal.close(modal);
+}
+
+async function confirmStopBot(btn) {
+  var input = document.getElementById('stop-bot-confirm-input');
+  if (!input || input.value !== 'STOP') {
+    NX.Forensic.toast.warning('Type STOP exactly to confirm.');
+    return;
+  }
+  if (btn && btn._busy) return; // duplicate guard
+  NX.Forensic.withButtonLock(btn, 'Stopping…', async function () {
+    var result = await NX.api.post('/api/engine/toggle', { active: false }, { component: 'Engine', action: 'STOP' });
+    if (!result || !result.ok) {
+      var n = NX.Forensic.normalizeError(result, { component: 'Engine', action: 'STOP', endpoint: '/api/engine/toggle' });
+      NX.Forensic.toast.error('Stop Bot failed: ' + n.message, { detail: n.detail });
+      return; // modal stays open; truthful failure
+    }
+    var body = result.body || {};
+    if (body.success) {
+      NX.Forensic.toast.success('Bot stopped. The engine loop is halted; open positions are untouched.');
+      closeStopBotModal();
+    } else {
+      NX.Forensic.toast.error('Stop Bot was not confirmed by the server.');
+      // modal stays open — no fake success
+    }
+  });
+}
+
+// Replace the old direct toggle with a confirmation-gated flow.
+async function toggleEngineRunning() {
+  // When currently running (label says "Stop Bot"), require confirmation.
+  var btn = document.getElementById('btn-toggle-engine');
+  var isStopping = btn && btn.textContent && btn.textContent.indexOf('Stop') !== -1;
+  if (isStopping) {
+    openStopBotModal();
+    return;
+  }
+  // Starting the bot: direct (non-destructive) action.
+  try {
+    var result = await NX.api.post('/api/engine/toggle', { active: true }, { component: 'Engine', action: 'START' });
+    if (result && result.ok && result.body && result.body.success) {
+      NX.Forensic.toast.success('Bot started.');
+    } else {
+      var n = NX.Forensic.normalizeError(result, { component: 'Engine', action: 'START', endpoint: '/api/engine/toggle' });
+      NX.Forensic.toast.error('Start failed: ' + n.message, { detail: n.detail });
+    }
+  } catch (e) {
+    var ne = NX.Forensic.normalizeError(e, { component: 'Engine', action: 'START' });
+    NX.Forensic.toast.error(ne.message, { detail: ne.detail });
+  }
+}
+
+// =====================================================================
+// INCIDENT DETAIL / SEARCH / PROBES — route through NX.api + toasts.
+// No raw stack traces rendered.
+// =====================================================================
 
 async function showIncidentDetail(id) {
-
-    const el = document.getElementById('incident-detail');
-
-    if (!el) return;
-
-    el.classList.remove('hidden');
-
-    el.innerHTML = '<p class="text-xs text-textMuted">Loading...</p>';
-
-    try {
-
-        const resp = await fetch('/api/diagnostics/incidents/' + encodeURIComponent(id));
-
-        const data = await resp.json();
-
-        if (!data.available || !data.incident) { el.innerHTML = '<p class="text-xs text-rose-400">Not found</p>'; return; }
-
-        const inc = data.incident;
-
-        let html = '<h3 class="text-sm font-bold text-white">Incident <code>' + esc(inc.incident_id) + '</code>' +
-
-            ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/30">' + inc.severity + '</span>' +
-
-            ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 border border-slate-500/30">' + inc.status + '</span></h3>';
-
-        html += '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">' +
-
-            '<div><span class="text-textMuted">Category:</span> ' + esc(inc.category) + '</div>' +
-
-            '<div><span class="text-textMuted">Component:</span> <code>' + esc(inc.component) + '</code></div>' +
-
-            '<div><span class="text-textMuted">Root cause:</span> ' + inc.root_cause_status + '</div>' +
-
-            '<div><span class="text-textMuted">Correlation:</span> <code>' + esc(inc.correlation_id || '—') + '</code></div>' +
-
-            '<div><span class="text-textMuted">First seen:</span> ' + esc((inc.first_seen_at||'').slice(0,19).replace('T',' ')) + '</div>' +
-
-            '<div><span class="text-textMuted">Last seen:</span> ' + esc((inc.last_seen_at||'').slice(0,19).replace('T',' ')) + '</div>' +
-
-            '<div><span class="text-textMuted">Repeats:</span> ' + (inc.repeated_count||1) + '</div>' +
-
-            (inc.related_bug_id ? '<div><span class="text-textMuted">BUG:</span> ' + esc(inc.related_bug_id) + '</div>' : '') +
-
-            '</div>';
-
-        if (inc.root_cause) html += '<p class="text-xs text-gray-300 mt-2">' + esc(inc.root_cause) + '</p>';
-
-        const plan = inc.recovery_plan || {};
-
-        if (plan.options && plan.options.length) {
-
-            html += '<h4 class="text-xs font-bold text-accentCyan mt-3">Recovery plan (' + esc(plan.status||'RECOMMENDED') + ')</h4><ul class="text-[11px] space-y-1 mt-1">';
-
-            plan.options.forEach(o => { html += '<li>[' + esc(o.status) + '] ' + esc(o.action) + '</li>'; });
-
-            html += '</ul>';
-
-        }
-
-        if (inc.timeline && inc.timeline.length) {
-
-            html += '<h4 class="text-xs font-bold text-accentCyan mt-3">Timeline</h4><ul class="text-[11px] space-y-1 mt-1 max-h-48 overflow-y-auto">';
-
-            inc.timeline.forEach(t => { html += '<li><code>' + esc((t.timestamp||'').slice(11,19)) + '</code> [' + esc(t.source) + '] ' + esc(t.event_type) + '</li>'; });
-
-            html += '</ul>';
-
-        }
-
-        if (inc.quarantine_entries && inc.quarantine_entries.length) {
-
-            html += '<h4 class="text-xs font-bold text-amber-400 mt-3">Quarantine</h4><ul class="text-[11px] space-y-1 mt-1">';
-
-            inc.quarantine_entries.forEach(q => { html += '<li><code>' + esc(q.target_table) + '</code> ' + esc(q.record_key) + ' -> ' + esc(q.status) + ' (' + esc(q.reason) + ')</li>'; });
-
-            html += '</ul>';
-
-        }
-
-        el.innerHTML = html;
-
-    } catch (e) {
-
-        el.innerHTML = '<p class="text-xs text-rose-400">' + esc(String(e)) + '</p>';
-
+  var el = document.getElementById('incident-detail');
+  if (!el) return;
+  el.classList.remove('hidden');
+  el.innerHTML = '<p class="text-xs text-textMuted">Loading…</p>';
+  try {
+    var res = await NX.api.get('/api/diagnostics/incidents/' + encodeURIComponent(id), { component: 'Incidents', action: 'DETAIL' });
+    if (!res || !res.ok) { var n = NX.Forensic.normalizeError(res, { component: 'Incidents', action: 'DETAIL' }); el.innerHTML = '<p class="text-xs text-rose-400">' + esc(n.message) + '</p>'; return; }
+    var data = res.body || {};
+    if (data.available === false || !data.incident) { el.innerHTML = '<p class="text-xs text-rose-400">Incident not found.</p>'; return; }
+    var inc = data.incident;
+    var html = '<h3 class="text-sm font-bold text-white">Incident <code>' + esc(inc.incident_id) + '</code>' +
+      ' <span class="text-[10px] px-1.5 py-0.5 rounded border ' + incSevClass(inc.severity) + '">' + esc(inc.severity) + '</span>' +
+      ' <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 border border-slate-500/30">' + esc(inc.status || '') + '</span></h3>';
+    html += '<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">' +
+      '<div><span class="text-textMuted">Category:</span> ' + esc(inc.category) + '</div>' +
+      '<div><span class="text-textMuted">Component:</span> <code>' + esc(inc.component) + '</code></div>' +
+      '<div><span class="text-textMuted">Root cause:</span> ' + esc(inc.root_cause_status || 'UNKNOWN') + '</div>' +
+      '<div><span class="text-textMuted">Correlation:</span> <code>' + esc(inc.correlation_id || '—') + '</code></div>' +
+      '<div><span class="text-textMuted">First seen:</span> ' + esc((inc.first_seen_at || '').toString().slice(0, 19).replace('T', ' ')) + '</div>' +
+      '<div><span class="text-textMuted">Last seen:</span> ' + esc((inc.last_seen_at || '').toString().slice(0, 19).replace('T', ' ')) + '</div>' +
+      '<div><span class="text-textMuted">Repeats:</span> ' + (inc.repeated_count || 1) + '</div>' +
+      (inc.related_bug_id ? '<div><span class="text-textMuted">BUG:</span> ' + esc(inc.related_bug_id) + '</div>' : '') +
+      '</div>';
+    if (inc.root_cause) html += '<p class="text-xs text-gray-300 mt-2">' + esc(inc.root_cause) + '</p>';
+    var plan = inc.recovery_plan || {};
+    if (plan.options && plan.options.length) {
+      html += '<h4 class="text-xs font-bold text-accentCyan mt-3">Recovery plan (' + esc(plan.status || 'RECOMMENDED') + ')</h4><ul class="text-[11px] space-y-1 mt-1">';
+      plan.options.forEach(function (o) { html += '<li>[' + esc(o.status) + '] ' + esc(o.action) + '</li>'; });
+      html += '</ul>';
     }
-
+    if (inc.timeline && inc.timeline.length) {
+      html += '<h4 class="text-xs font-bold text-accentCyan mt-3">Timeline</h4><ul class="text-[11px] space-y-1 mt-1 max-h-48 overflow-y-auto">';
+      inc.timeline.forEach(function (t) { html += '<li><code>' + esc((t.timestamp || '').slice(11, 19)) + '</code> [' + esc(t.source) + '] ' + esc(t.event_type) + '</li>'; });
+      html += '</ul>';
+    }
+    if (inc.quarantine_entries && inc.quarantine_entries.length) {
+      html += '<h4 class="text-xs font-bold text-amber-400 mt-3">Quarantine</h4><ul class="text-[11px] space-y-1 mt-1">';
+      inc.quarantine_entries.forEach(function (q) { html += '<li><code>' + esc(q.target_table) + '</code> ' + esc(q.record_key) + ' -> ' + esc(q.status) + ' (' + esc(q.reason) + ')</li>'; });
+      html += '</ul>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    var ne = NX.Forensic.normalizeError(e, { component: 'Incidents', action: 'DETAIL' });
+    el.innerHTML = '<p class="text-xs text-rose-400">' + esc(ne.message) + '</p>';
+  }
 }
-
-
 
 async function searchIncidents() {
-
-    const input = document.getElementById('incident-search-input');
-
-    const resEl = document.getElementById('incident-search-results');
-
-    if (!input || !resEl) return;
-
-    const q = input.value.trim();
-
-    resEl.innerHTML = '';
-
-    if (!q) return;
-
-    resEl.innerHTML = '<p class="text-xs text-textMuted">Tracing...</p>';
-
-    try {
-
-        const resp = await fetch('/api/diagnostics/trace?query=' + encodeURIComponent(q));
-
-        const data = await resp.json();
-
-        const tr = (data.trace || {});
-
-        if (tr.missing_link) {
-
-            resEl.innerHTML = '<div class="border border-amber-500/30 rounded p-2 bg-darkBg/50 text-[11px]">' +
-
-                '<b class="text-amber-400">TRACE</b> missing link: <code>' + esc(tr.missing_link) + '</code>' +
-
-                ' — ' + esc(tr.reason || '') +
-
-                (tr.last_known_node ? ' (last known: ' + esc(String(tr.last_known_node)) + ')' : '') +
-
-                '</div>';
-
-        } else if (tr.kind === 'incident') {
-
-            const rc = tr.root_cause || {};
-
-            resEl.innerHTML = '<div class="border border-borderClr rounded p-2 bg-darkBg/50 text-[11px] space-y-1">' +
-
-                '<div><b class="text-accentCyan">INCIDENT ' + esc(tr.query) + '</b> — ' + esc((tr.incident||{}).severity || '') + '/' + esc((tr.incident||{}).status || '') + '</div>' +
-
-                '<div>root cause: <b>' + esc(rc.status || 'UNKNOWN') + '</b> — ' + esc(rc.statement || '') + ' (evidence: ' + (rc.evidence_count || 0) + ')</div>' +
-
-                '<div>affected records: ' + (tr.affected_entities && tr.affected_entities.affected_records ? tr.affected_entities.affected_records.length : 0) + '</div>' +
-
-                '<div>lineage downstream: ' + ((tr.lineage && tr.lineage.downstream) ? tr.lineage.downstream.length : 0) + ' nodes</div>' +
-
-                '</div>';
-
-        } else {
-
-            let html = '<div class="border border-borderClr rounded p-2 bg-darkBg/50 text-[11px] space-y-1">';
-
-            html += '<div><b class="text-accentCyan">TRACE ' + esc(q) + '</b> (' + esc(tr.kind || 'object') + ')</div>';
-
-            html += '<div>ledger: ' + (tr.ledger ? 'found' : '—') + ' · broker position: ' + (tr.broker_position ? 'found' : '—') + '</div>';
-
-            html += '<div>outcome: ' + (tr.outcome ? 'found' : '—') + ' · experience: ' + (tr.experience ? 'found' : '—') + '</div>';
-
-            html += (tr.model_id ? '<div>model: <code>' + esc(tr.model_id) + '</code></div>' : '');
-
-            html += (tr.research_runs && tr.research_runs.length ? '<div>research runs: ' + tr.research_runs.length + '</div>' : '');
-
-            html += '</div>';
-
-            resEl.innerHTML = html;
-
-        }
-
-    } catch (e) {
-
-        resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(String(e)) + '</p>';
-
+  var input = document.getElementById('incident-search-input');
+  var resEl = document.getElementById('incident-search-results');
+  if (!input || !resEl) return;
+  var q = input.value.trim();
+  resEl.innerHTML = '';
+  if (!q) { resEl.innerHTML = '<p class="text-xs text-textMuted">Enter an identifier to trace.</p>'; return; }
+  resEl.innerHTML = '<p class="text-xs text-textMuted">Tracing…</p>';
+  try {
+    var res = await NX.api.get('/api/diagnostics/trace?query=' + encodeURIComponent(q), { component: 'Incidents', action: 'TRACE' });
+    if (!res || !res.ok) { var n = NX.Forensic.normalizeError(res, { component: 'Incidents', action: 'TRACE' }); resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(n.message) + '</p>'; return; }
+    var data = res.body || {};
+    var tr = data.trace || {};
+    if (tr.missing_link) {
+      resEl.innerHTML = '<div class="border border-amber-500/30 rounded p-2 bg-darkBg/50 text-[11px]"><b class="text-amber-400">TRACE</b> missing link: <code>' + esc(tr.missing_link) + '</code> — ' + esc(tr.reason || '') + (tr.last_known_node ? ' (last known: ' + esc(String(tr.last_known_node)) + ')' : '') + '</div>';
+    } else if (tr.kind === 'incident') {
+      var rc = tr.root_cause || {};
+      resEl.innerHTML = '<div class="border border-borderClr rounded p-2 bg-darkBg/50 text-[11px] space-y-1">' +
+        '<div><b class="text-accentCyan">INCIDENT ' + esc(tr.query) + '</b> — ' + esc((tr.incident || {}).severity || '') + '/' + esc((tr.incident || {}).status || '') + '</div>' +
+        '<div>root cause: <b>' + esc(rc.status || 'UNKNOWN') + '</b> — ' + esc(rc.statement || '') + ' (evidence: ' + (rc.evidence_count || 0) + ')</div>' +
+        '<div>affected records: ' + ((tr.affected_entities && tr.affected_entities.affected_records) ? tr.affected_entities.affected_records.length : 0) + '</div>' +
+        '<div>lineage downstream: ' + ((tr.lineage && tr.lineage.downstream) ? tr.lineage.downstream.length : 0) + ' nodes</div></div>';
+    } else {
+      var h = '<div class="border border-borderClr rounded p-2 bg-darkBg/50 text-[11px] space-y-1">';
+      h += '<div><b class="text-accentCyan">TRACE ' + esc(q) + '</b> (' + esc(tr.kind || 'object') + ')</div>';
+      h += '<div>ledger: ' + (tr.ledger ? 'found' : '—') + ' · broker position: ' + (tr.broker_position ? 'found' : '—') + '</div>';
+      h += '<div>outcome: ' + (tr.outcome ? 'found' : '—') + ' · experience: ' + (tr.experience ? 'found' : '—') + '</div>';
+      h += (tr.model_id ? '<div>model: <code>' + esc(tr.model_id) + '</code></div>' : '');
+      h += (tr.research_runs && tr.research_runs.length ? '<div>research runs: ' + tr.research_runs.length + '</div>' : '');
+      h += '</div>';
+      resEl.innerHTML = h;
     }
-
+  } catch (e) {
+    var ne = NX.Forensic.normalizeError(e, { component: 'Incidents', action: 'TRACE' });
+    resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(ne.message) + '</p>';
+  }
 }
 
 // =====================================================================
-// TASK-13: forensic probes + export (STEP-04/06/09)
+// FORENSIC PROBES / AUDIT — truthful toasts, no raw leak (spec 9/11).
 // =====================================================================
+
 async function runForensicProbe(kind) {
-    const resEl = document.getElementById('forensic-probe-results');
-    if (!resEl) return;
-    resEl.innerHTML = '<p class="text-xs text-textMuted">Running ' + kind + ' probe...</p>';
-    try {
-        const ticketParam = '';
-        try { const ti = document.getElementById('incident-search-input'); if (ti && ti.value.trim() && !String(ti.value.trim()).toUpperCase().startsWith('INC-')) { ticketParam = '&ticket=' + encodeURIComponent(ti.value.trim()); } } catch (e) {}
-        const resp = await fetch('/api/diagnostics/forensics?kind=' + encodeURIComponent(kind) + ticketParam);
-        const d = await resp.json();
-        if (!d.available) { resEl.innerHTML = '<p class="text-xs text-rose-400">Probe failed: ' + esc(d.error || '') + '</p>'; return; }
-        if (kind === 'timebase') {
-            const o = d.measured_offsets_seconds || {};
-            let html = '<div class="border border-sky-500/30 rounded p-2 bg-darkBg/50 text-[11px]">' +
-                '<b class="text-sky-400">TIMEBASE</b> ' + esc(d.classification || '') +
-                ' · sync lag: <code>' + (d.sync_lag_seconds ?? 'n/a') + 's</code>' +
-                ' · data age: <code>' + (d.observed_data_age_seconds ?? 'n/a') + 's</code>' +
-                ' · host→db: <code>' + (o.host_to_db ?? 'n/a') + 's</code>' +
-                ' · affected: ' + esc((d.affected_subsystems || []).join(', ')) +
-                '</div>';
-            const ec = d.event_chain || {};
-            if (ec.source_time) {
-                html += '<div class="border border-sky-500/30 rounded p-2 bg-darkBg/50 text-[11px] mt-1 space-y-1">' +
-                    '<div><b class="text-sky-400">EVENT CHAIN</b> ' + esc(ec.source_component || '') + ' vs ' + esc(ec.comparison_component || '') + '</div>' +
-                    '<div>source: <code>' + esc(ec.source_time || '') + '</code> (' + esc(ec.source_timezone || '') + ')</div>' +
-                    '<div>normalized UTC: <code>' + esc(ec.normalized_utc || '') + '</code> · expected: <code>' + esc(ec.expected_time || '') + '</code></div>' +
-                    '<div>difference: <code>' + (ec.difference_ms ?? 'n/a') + ' ms</code> · rule: ' + esc(ec.normalization_rule || '') + '</div>' +
-                    (ec.normalization_note ? '<div class="text-amber-400">' + esc(ec.normalization_note) + '</div>' : '') +
-                    '</div>';
-            }
-            resEl.innerHTML = html;
-        } else {
-            const cls = d.classification_counts || {};
-            const zcls = d.zero_outcome_classification_counts || {};
-            resEl.innerHTML = '<div class="border border-amber-500/30 rounded p-2 bg-darkBg/50 text-[11px]">' +
-                '<b class="text-amber-400">ACCOUNTING AUDIT</b> checked=' + (d.checked_records ?? 0) +
-                ' · classification: ' + esc(JSON.stringify(cls)) +
-                ' · zero-outcomes: ' + esc(JSON.stringify(zcls)) +
-                ' · recovery candidates: ' + (d.recovery_candidate_count ?? 0) +
-                '</div>';
-        }
-    } catch (e) {
-        resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(String(e)) + '</p>';
-    }
+  var resEl = document.getElementById('forensic-probe-results');
+  if (!resEl) return;
+  var ticketParam = '';
+  try { var ti = document.getElementById('incident-search-input'); if (ti && ti.value.trim() && !String(ti.value.trim()).toUpperCase().startsWith('INC-')) { ticketParam = '&ticket=' + encodeURIComponent(ti.value.trim()); } } catch (e) {}
+  resEl.innerHTML = 'Running ' + kind + ' probe…';
+  var res = await NX.api.get('/api/diagnostics/forensics?kind=' + encodeURIComponent(kind) + ticketParam, { component: 'Forensics', action: 'PROBE_' + kind.toUpperCase() });
+  if (!res || !res.ok) { var n = NX.Forensic.normalizeError(res, { component: 'Forensics', action: 'PROBE' }); NX.Forensic.toast.error(n.message, { detail: n.detail }); resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(n.message) + '</p>'; return; }
+  var d = res.body || {};
+  if (d.available === false) { NX.Forensic.toast.warning('Probe unavailable: ' + (d.error || '')); resEl.innerHTML = '<p class="text-xs text-rose-400">Probe failed: ' + esc(d.error || '') + '</p>'; return; }
+  NX.Forensic.toast.success((kind === 'timebase' ? 'Timebase' : 'Accounting') + ' probe completed.' + (d.recovery_candidate_count ? ' ' + d.recovery_candidate_count + ' recovery candidate(s).' : ''));
+  if (kind === 'timebase') {
+    var o = d.measured_offsets_seconds || {};
+    var html = '<div class="border border-sky-500/30 rounded p-2 bg-darkBg/50 text-[11px]"><b class="text-sky-400">TIMEBASE</b> ' + esc(d.classification || '') +
+      ' · sync lag: <code>' + (d.sync_lag_seconds ?? 'n/a') + 's</code> · data age: <code>' + (d.observed_data_age_seconds ?? 'n/a') + 's</code>' +
+      ' · host→db: <code>' + (o.host_to_db ?? 'n/a') + 's</code> · affected: ' + esc((d.affected_subsystems || []).join(', ')) + '</div>';
+    var ec = d.event_chain || {};
+    if (ec.source_time) { html += '<div class="border border-sky-500/30 rounded p-2 bg-darkBg/50 text-[11px] mt-1 space-y-1"><div><b class="text-sky-400">EVENT CHAIN</b> ' + esc(ec.source_component || '') + ' vs ' + esc(ec.comparison_component || '') + '</div><div>source: <code>' + esc(ec.source_time || '') + '</code> (' + esc(ec.source_timezone || '') + ')</div><div>normalized UTC: <code>' + esc(ec.normalized_utc || '') + '</code> · expected: <code>' + esc(ec.expected_time || '') + '</code></div><div>difference: <code>' + (ec.difference_ms ?? 'n/a') + ' ms</code> · rule: ' + esc(ec.normalization_rule || '') + '</div>' + (ec.normalization_note ? '<div class="text-amber-400">' + esc(ec.normalization_note) + '</div>' : '') + '</div>'; }
+    resEl.innerHTML = html;
+  } else {
+    var cls = d.classification_counts || {}, zcls = d.zero_outcome_classification_counts || {};
+    resEl.innerHTML = '<div class="border border-amber-500/30 rounded p-2 bg-darkBg/50 text-[11px]"><b class="text-amber-400">ACCOUNTING AUDIT</b> checked=' + (d.checked_records ?? 0) + ' · classification: ' + esc(JSON.stringify(cls)) + ' · zero-outcomes: ' + esc(JSON.stringify(zcls)) + ' · recovery candidates: ' + (d.recovery_candidate_count ?? 0) + '</div>';
+  }
 }
 
 async function runIncidentAudit() {
-    const resEl = document.getElementById('forensic-probe-results');
-    if (!resEl) return;
-    resEl.innerHTML = '<p class="text-xs text-textMuted">Running full forensic audit...</p>';
-    try {
-        const resp = await fetch('/api/diagnostics/incidents/reconcile', {method: 'POST'});
-        const d = await resp.json();
-        if (!d.available) { resEl.innerHTML = '<p class="text-xs text-rose-400">Audit failed: ' + esc(d.error || '') + '</p>'; return; }
-        const f = d.findings || {};
-        let html = '<div class="border border-emerald-500/30 rounded p-2 bg-darkBg/50 text-[11px]">';
-        html += '<b class="text-emerald-400">AUDIT</b> started ' + esc(String(d.audit_started||'').slice(0,19).replace('T',' ')) + ' · scope: ' + esc((d.audit_scope||[]).join(', ')) + '</div>';
-        html += '<div class="text-[11px] mt-1">accounting divergences: ' + ((f.accounting||{}).divergence_count ?? 'n/a') + ' · timebase: ' + esc((f.timebase||{}).divergence || 'n/a') + ' · suspect outcomes: ' + ((f.outcome||{}).zero_realized_outcomes ?? 'n/a') + ' · split families: ' + ((f.split_fill||{}).split_fill_families ?? 'n/a') + '</div>';
-        html += '<div class="text-[11px] mt-1">incidents discovered: ' + (d.incidents_discovered ?? 0) + ' · reconciled: ' + (d.incidents_reconciled ?? 0) + '</div>';
-        html += '</div>';
-        resEl.innerHTML = html;
-        loadIncidents();
-    } catch (e) {
-        resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(String(e)) + '</p>';
-    }
+  var resEl = document.getElementById('forensic-probe-results');
+  if (!resEl) return;
+  resEl.innerHTML = 'Running full forensic audit…';
+  var res = await NX.api.post('/api/diagnostics/incidents/reconcile', {}, { component: 'Forensics', action: 'AUDIT' });
+  if (!res || !res.ok) { var n = NX.Forensic.normalizeError(res, { component: 'Forensics', action: 'AUDIT' }); NX.Forensic.toast.error(n.message, { detail: n.detail }); resEl.innerHTML = '<p class="text-xs text-rose-400">' + esc(n.message) + '</p>'; return; }
+  var d = res.body || {};
+  if (d.available === false) { NX.Forensic.toast.warning('Audit unavailable: ' + (d.error || '')); resEl.innerHTML = '<p class="text-xs text-rose-400">Audit failed: ' + esc(d.error || '') + '</p>'; return; }
+  NX.Forensic.toast.success('Forensic audit complete: ' + (d.incidents_reconciled ?? 0) + ' incident(s) reconciled.');
+  var f = d.findings || {};
+  var html = '<div class="border border-emerald-500/30 rounded p-2 bg-darkBg/50 text-[11px]">';
+  html += '<b class="text-emerald-400">AUDIT</b> started ' + esc(String(d.audit_started || '').slice(0, 19).replace('T', ' ')) + ' · scope: ' + esc((d.audit_scope || []).join(', ')) + '</div>';
+  html += '<div class="text-[11px] mt-1">accounting divergences: ' + ((f.accounting || {}).divergence_count ?? 'n/a') + ' · timebase: ' + esc((f.timebase || {}).divergence || 'n/a') + ' · suspect outcomes: ' + ((f.outcome || {}).zero_realized_outcomes ?? 'n/a') + ' · split families: ' + ((f.split_fill || {}).split_fill_families ?? 'n/a') + '</div>';
+  html += '<div class="text-[11px] mt-1">incidents discovered: ' + (d.incidents_discovered ?? 0) + ' · reconciled: ' + (d.incidents_reconciled ?? 0) + '</div>';
+  html += '</div>';
+  resEl.innerHTML = html;
+  loadIncidents();
 }
 
 async function exportIncident(kind) {
-    // Export uses the current detail incident id if visible, else the first open incident.
-    let id = '';
-    const detailEl = document.getElementById('incident-detail');
-    if (detailEl && !detailEl.classList.contains('hidden')) {
-        const m = detailEl.innerHTML.match(/Incident <code>([^<]+)<\/code>/);
-        if (m) id = m[1];
-    }
-    if (!id) {
-        try {
-            const resp = await fetch('/api/diagnostics/incidents?limit=1');
-            const d = await resp.json();
-            if (d.incidents && d.incidents.length) id = d.incidents[0].incident_id;
-        } catch (e) { /* fallthrough */ }
-    }
-    if (!id) { alert('No incident to export'); return; }
-    if (kind === 'report') {
-        const url = '/api/diagnostics/incidents/' + encodeURIComponent(id) + '/report';
-        window.open(url, '_blank');
-    } else {
-        const url = '/api/diagnostics/incidents/' + encodeURIComponent(id) + '/zip';
-        window.open(url, '_blank');
-    }
+  var id = '';
+  var detailEl = document.getElementById('incident-detail');
+  if (detailEl && !detailEl.classList.contains('hidden')) {
+    var m = detailEl.innerHTML.match(/Incident <code>([^<]+)<\/code>/);
+    if (m) id = m[1];
+  }
+  if (!id) {
+    var res = await NX.api.get('/api/diagnostics/incidents?limit=1', { component: 'Forensics', action: 'EXPORT_LOOKUP' });
+    if (res && res.ok && res.body && res.body.incidents && res.body.incidents.length) id = res.body.incidents[0].incident_id;
+  }
+  if (!id) { NX.Forensic.toast.warning('No incident to export.'); return; }
+  var url = '/api/diagnostics/incidents/' + encodeURIComponent(id) + (kind === 'report' ? '/report' : '/zip');
+  NX.Forensic.toast.info('Exporting ' + (kind === 'report' ? 'report' : 'evidence ZIP') + ' for ' + id + '…');
+  window.open(url, '_blank');
 }
 
 // TASK-22: Database Health Panel (spec 17) — real backend data only.
@@ -12587,3 +13020,5 @@ async function dbApiKeyDelete() {
 
 // load explorer + api keys on startup
 document.addEventListener('DOMContentLoaded', () => { setTimeout(dbConsoleLoad, 800); });
+// News Auto Analysis — prime toggle state on load (no API key needed)
+document.addEventListener('DOMContentLoaded', () => { setTimeout(() => { try { refreshNewsAutoState(); refreshNewsToggleState(); } catch(_e){} }, 900); });

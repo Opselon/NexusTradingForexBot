@@ -16,14 +16,12 @@ import pytest
 
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.features.schema_contract import (
-    DIMENSION,
     FAMILY_BASE,
     FAMILY_LIQUIDITY,
     FAMILY_NEWS,
     NEWS_10D_NAMES,
     SCHEMA_ID,
     SchemaContractError,
-    base_50d_names,
     canonical_feature_names,
     canonical_registry_json,
     family_of,

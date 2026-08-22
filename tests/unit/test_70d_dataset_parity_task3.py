@@ -26,18 +26,14 @@ from nexus_scalp.features.features70 import (
     news_10d_from_context,
 )
 from nexus_scalp.features.schema_contract import (
-    DIMENSION,
-    canonical_feature_names,
     feature_schema_hash,
     validate_70d_vector,
 )
-from nexus_scalp.market_data.bar_aggregator import BarData
 from nexus_scalp.model_generation.schema_v2 import (
-    SEVENTY_D_SCHEMA_ID,
     compute_70d_frame,
     verify_70d_artifact,
 )
-from tests.helpers.liquidity_fixtures import bars_to_frame, steady_bars
+from tests.helpers.liquidity_fixtures import steady_bars
 
 
 def _frame(n: int = 200, price: float = 3300.0, step: float = 0.0) -> pl.DataFrame:
@@ -225,7 +221,7 @@ def test_verify_70d_artifact_rejects_epoch_zero_timestamps() -> None:
     misread as microseconds) MUST fail verification — the previous gate let
     the broken ds_d3f35b12d63148da pass."""
     import tempfile
-    from datetime import UTC, datetime
+    from datetime import datetime
 
     from nexus_scalp.model_generation.artifact_store import ArtifactStore
 

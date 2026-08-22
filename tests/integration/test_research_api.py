@@ -122,7 +122,7 @@ def seed_strategy_experiences(ledger: ExperienceLedger, repo, count: int = 40) -
 
 class TestResearchAPI:
     def test_engine_exposes_research_subsystem(self, wired_engine):
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         for attr in (
             "strategy_registry",
             "research_dataset_builder",
@@ -132,7 +132,7 @@ class TestResearchAPI:
             assert hasattr(engine, attr), f"LiveEngine missing {attr}"
 
     def test_research_summary_endpoint(self, wired_engine):
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         engine._start_research_worker()
         app = create_app(engine)
         client = TestClient(app)
@@ -176,7 +176,7 @@ class TestResearchAPI:
         assert resp.json()["available"] is True
 
     def test_worker_restart_safe(self, wired_engine):
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         engine._start_research_worker()
         assert engine._research_worker_started is True
         engine.research_worker.tick()
@@ -199,7 +199,7 @@ class TestResearchAPI:
 
     def test_research_health_endpoint(self, wired_engine):
         """TASK-4: /api/research/health explains WHY the registry is empty."""
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         app = create_app(engine)
         client = TestClient(app)
         resp = client.get("/api/research/health")
@@ -231,7 +231,7 @@ class TestResearchAPI:
             raise RuntimeError("SECRET_INTERNAL_RESEARCH_PATH")
 
         monkeypatch.setattr(research_store, "research_health_summary", _boom)
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         app = create_app(engine)
         client = TestClient(app)
         resp = client.get("/api/research/health")
@@ -242,7 +242,7 @@ class TestResearchAPI:
         assert "Traceback" not in body_text
 
     def test_self_heal_endpoint(self, wired_engine):
-        repo, engine = wired_engine
+        _repo, engine = wired_engine
         app = create_app(engine)
         client = TestClient(app)
         resp = client.post("/api/research/self-heal")

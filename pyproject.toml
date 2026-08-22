@@ -93,6 +93,7 @@ ignore = [
 "NexusTradingForexBot.py" = ["E402"]
 "main.py" = ["E402"]
 "src/nexus_scalp/web/server.py" = ["RUF006", "E402"]
+"tests/unit/test_accounting_pnl_regression.py" = ["N801"]
 "tests/*" = [
     "PLR2004",
     "PLC0415",

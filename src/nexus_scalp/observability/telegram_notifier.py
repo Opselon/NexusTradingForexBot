@@ -616,8 +616,7 @@ class TelegramNotifier:
         # The previous spam was ~10 FAILED_FINAL/1s at the same timestamp.
         if record.category == "DEDUPLICATED":
             logger.debug(
-                "[TELEGRAM] event=DEDUP_FINAL notification_id=%s correlation_id=%s "
-                "safe_reason=%s",
+                "[TELEGRAM] event=DEDUP_FINAL notification_id=%s correlation_id=%s safe_reason=%s",
                 record.notification_id,
                 record.correlation_id,
                 record.description[:160],

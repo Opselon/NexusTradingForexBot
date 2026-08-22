@@ -228,7 +228,6 @@ class TestRestartPersistence:
         """BUG-130: settings-owned keys (factory.llm_*, database.*) must not
         reject the whole rehydrate batch at boot — the boot warning
         'rehydrate rejected: unknown configuration key' must never appear."""
-        import logging
 
         from nexus_scalp.settings import SettingsDatabase, SettingsService
 

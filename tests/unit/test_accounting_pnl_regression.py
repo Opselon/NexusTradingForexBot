@@ -17,8 +17,9 @@ period/midnight isolation, empty period, negative-only accounting).
 
 from __future__ import annotations
 
+import gc
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -28,13 +29,17 @@ from nexus_scalp.accounting.periods import ensure_utc, period_bounds
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.adapters.database.broker_history import normalize_deal_row, reconstruct_trades
 
-import gc
-
 # ---------------------------------------------------------------------------
 # Fixture helpers
 # ---------------------------------------------------------------------------
 
-_FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "mt5" / "accounting" / "2026-08-21_closed_deals.json"
+_FIXTURE = (
+    Path(__file__).resolve().parent.parent
+    / "fixtures"
+    / "mt5"
+    / "accounting"
+    / "2026-08-21_closed_deals.json"
+)
 _CANONICAL_TICKETS = [152515953349, 152515934081, 152515910523, 152515857705, 152515766338]
 _EXPECTED_NET = -497.81
 _EXPECTED_COUNT = 5
@@ -43,10 +48,14 @@ _EXPECTED_COUNT = 5
 def _fixture_objects() -> list[dict]:
     """Returns cleaned deal dicts (value-only) like tests/helpers/mt5_fixtures.py."""
     payload = json.loads(_FIXTURE.read_text(encoding="utf-8"))
-    skip = frozenset({"count", "index", "n_fields", "n_sequence_fields", "n_unnamed_fields", "_none"})
+    skip = frozenset(
+        {"count", "index", "n_fields", "n_sequence_fields", "n_unnamed_fields", "_none"}
+    )
     out: list[dict] = []
     for obj in payload.get("objects", []):
-        cleaned = {k: (v["value"] if isinstance(v, dict) else v) for k, v in obj.items() if k not in skip}
+        cleaned = {
+            k: (v["value"] if isinstance(v, dict) else v) for k, v in obj.items() if k not in skip
+        }
         out.append(cleaned)
     return out
 
@@ -64,7 +73,9 @@ def core(audit) -> AccountingCore:
     return AccountingCore(audit_repo=audit, adapter=None)
 
 
-def _seed_broker(audit: AuditRepository, deals: list[dict] | None = None, *, orders: list[dict] | None = None):
+def _seed_broker(
+    audit: AuditRepository, deals: list[dict] | None = None, *, orders: list[dict] | None = None
+):
     """Seeds the normalized broker copy from deal dicts (optionally with orders)."""
     d = deals if deals is not None else _fixture_objects()
     synthetic_entries: list[dict] = []
@@ -113,6 +124,7 @@ def _seed_broker(audit: AuditRepository, deals: list[dict] | None = None, *, ord
 # A. Canonical regression — DAY 2026-08-21
 # ===========================================================================
 
+
 class TestA_CanonicalRegression:
     """
     Incident regression. 5 closed deals on 2026-08-21 must aggregate to
@@ -148,6 +160,7 @@ class TestA_CanonicalRegression:
 # B. Individual ticket coverage
 # ===========================================================================
 
+
 class TestB_TicketSurvival:
     def test_all_five_tickets_present_in_trades(self, audit, core):
         _seed_broker(audit)
@@ -166,7 +179,12 @@ class TestB_TicketSurvival:
         for deal in _fixture_objects():
             row = normalize_deal_row(deal)
             # canonical formula matches DealSnapshot.net_result / _net_from_deal
-            expected_net = float(deal["profit"]) + float(deal["commission"]) + float(deal["swap"]) + float(deal["fee"])
+            expected_net = (
+                float(deal["profit"])
+                + float(deal["commission"])
+                + float(deal["swap"])
+                + float(deal["fee"])
+            )
             # commission/swap/fee are already negative for real MT5 records
             assert row["net_result"] == pytest.approx(expected_net)
 
@@ -175,42 +193,53 @@ class TestB_TicketSurvival:
 # C. No missing trades (input == normalized == period)
 # ===========================================================================
 
+
 class TestC_NoMissingTrades:
     def test_pipeline_preserves_all_deals(self, audit, core):
         deals = _fixture_objects()
         _seed_broker(audit, deals=deals)
-        reconstructed = reconstruct_trades(orders=[], deals=deals + [
-            # re-add synthetic entries used by _seed_broker so reconstruct count matches
-            {
-                "ticket": int(d["ticket"]) - 70000000,
-                "order": 0,
-                "position_id": int(d["position_id"]),
-                "symbol": "XAUUSD",
-                "type": int(d["type"]) ^ 1,
-                "entry": 0,
-                "magic": 888101,
-                "time": int(d["time"]) - 900,
-                "volume": float(d["volume"]),
-                "price": float(d["price"]) + 5.0,
-                "profit": 0.0,
-                "fee": 0.0,
-                "swap": 0.0,
-                "commission": 0.0,
-                "reason": 0,
-                "comment": "ENTRY",
-                "external_id": "",
-            }
-            for d in deals
-        ])
+        reconstructed = reconstruct_trades(
+            orders=[],
+            deals=deals
+            + [
+                # re-add synthetic entries used by _seed_broker so reconstruct count matches
+                {
+                    "ticket": int(d["ticket"]) - 70000000,
+                    "order": 0,
+                    "position_id": int(d["position_id"]),
+                    "symbol": "XAUUSD",
+                    "type": int(d["type"]) ^ 1,
+                    "entry": 0,
+                    "magic": 888101,
+                    "time": int(d["time"]) - 900,
+                    "volume": float(d["volume"]),
+                    "price": float(d["price"]) + 5.0,
+                    "profit": 0.0,
+                    "fee": 0.0,
+                    "swap": 0.0,
+                    "commission": 0.0,
+                    "reason": 0,
+                    "comment": "ENTRY",
+                    "external_id": "",
+                }
+                for d in deals
+            ],
+        )
         # Every position yields one logical trade -> 5
         assert len(reconstructed) == 5
         assert len(core.load_trades()) == 5
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)).total_trades == 5
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 5
+        )
 
 
 # ===========================================================================
 # D. PnL component calculation (net = profit + commission + swap + fee)
 # ===========================================================================
+
 
 class TestD_PnlFormula:
     @pytest.mark.parametrize(
@@ -223,12 +252,71 @@ class TestD_PnlFormula:
         ],
     )
     def test_net_formula_sign(self, profit, commission, swap, fee, expected_row):
-        row = normalize_deal_row({"ticket": 1, "profit": profit, "commission": commission, "swap": swap, "fee": fee, "volume": 0.1, "price": 3350.0, "type": 0, "entry": 1, "position_id": 1, "symbol": "XAUUSD", "magic": 0, "time": 0, "reason": 0, "order": 0, "comment": "", "external_id": ""})
+        row = normalize_deal_row(
+            {
+                "ticket": 1,
+                "profit": profit,
+                "commission": commission,
+                "swap": swap,
+                "fee": fee,
+                "volume": 0.1,
+                "price": 3350.0,
+                "type": 0,
+                "entry": 1,
+                "position_id": 1,
+                "symbol": "XAUUSD",
+                "magic": 0,
+                "time": 0,
+                "reason": 0,
+                "order": 0,
+                "comment": "",
+                "external_id": "",
+            }
+        )
         assert row["net_result"] == pytest.approx(expected_row)
-        trades = reconstruct_trades(orders=[], deals=[
-            {"ticket": 9001, "position_id": 9001, "symbol": "XAUUSD", "type": 0, "entry": 0, "volume": 0.1, "price": 3350.0, "profit": 0.0, "commission": 0.0, "swap": 0.0, "fee": 0.0, "magic": 0, "time": 1000, "order": 1, "reason": 0, "comment": "", "external_id": ""},
-            {"ticket": 9002, "position_id": 9001, "symbol": "XAUUSD", "type": 0, "entry": 1, "volume": 0.1, "price": 3352.0, "profit": profit, "commission": commission, "swap": swap, "fee": fee, "magic": 0, "time": 1100, "order": 2, "reason": 0, "comment": "", "external_id": ""},
-        ])
+        trades = reconstruct_trades(
+            orders=[],
+            deals=[
+                {
+                    "ticket": 9001,
+                    "position_id": 9001,
+                    "symbol": "XAUUSD",
+                    "type": 0,
+                    "entry": 0,
+                    "volume": 0.1,
+                    "price": 3350.0,
+                    "profit": 0.0,
+                    "commission": 0.0,
+                    "swap": 0.0,
+                    "fee": 0.0,
+                    "magic": 0,
+                    "time": 1000,
+                    "order": 1,
+                    "reason": 0,
+                    "comment": "",
+                    "external_id": "",
+                },
+                {
+                    "ticket": 9002,
+                    "position_id": 9001,
+                    "symbol": "XAUUSD",
+                    "type": 0,
+                    "entry": 1,
+                    "volume": 0.1,
+                    "price": 3352.0,
+                    "profit": profit,
+                    "commission": commission,
+                    "swap": swap,
+                    "fee": fee,
+                    "magic": 0,
+                    "time": 1100,
+                    "order": 2,
+                    "reason": 0,
+                    "comment": "",
+                    "external_id": "",
+                },
+            ],
+        )
         assert len(trades) == 1
         assert trades[0].net_pnl == pytest.approx(expected_row)
 
@@ -278,7 +366,7 @@ class TestD_PnlFormula:
             "comment": "Deposit ENTRY",
             "external_id": "",
         }
-        _seed_broker(audit, deals=deals + [balance_deal, entry])
+        _seed_broker(audit, deals=[*deals, balance_deal, entry])
         trades = core.load_trades()
         trading = [t for t in trades if t.symbol]
         assert len(trading) == 5
@@ -288,6 +376,7 @@ class TestD_PnlFormula:
 # ===========================================================================
 # E. Duplicate ingestion — same deal twice
 # ===========================================================================
+
 
 class TestE_DuplicateIngestion:
     def test_duplicate_sync_does_not_double_count(self, audit, core):
@@ -311,12 +400,67 @@ class TestE_DuplicateIngestion:
 # F. Partial close handling
 # ===========================================================================
 
+
 class TestF_PartialClose:
     def test_partial_close_aggregates_into_one_logical_trade(self):
         deals = [
-            {"ticket": 8001, "order": 801, "position_id": 777700001, "symbol": "XAUUSD", "type": 0, "entry": 0, "magic": 0, "time": 1000, "volume": 0.30, "price": 3350.0, "profit": 0.0, "fee": 0.0, "swap": 0.0, "commission": 0.0, "reason": 0, "comment": "", "external_id": ""},
-            {"ticket": 8002, "order": 802, "position_id": 777700001, "symbol": "XAUUSD", "type": 1, "entry": 1, "magic": 0, "time": 1100, "volume": 0.10, "price": 3355.0, "profit": -20.0, "fee": 0.0, "swap": -1.0, "commission": -2.0, "reason": 0, "comment": "", "external_id": ""},
-            {"ticket": 8003, "order": 803, "position_id": 777700001, "symbol": "XAUUSD", "type": 1, "entry": 1, "magic": 0, "time": 1200, "volume": 0.20, "price": 3352.0, "profit": -80.0, "fee": -1.0, "swap": -0.5, "commission": -3.0, "reason": 0, "comment": "", "external_id": ""},
+            {
+                "ticket": 8001,
+                "order": 801,
+                "position_id": 777700001,
+                "symbol": "XAUUSD",
+                "type": 0,
+                "entry": 0,
+                "magic": 0,
+                "time": 1000,
+                "volume": 0.30,
+                "price": 3350.0,
+                "profit": 0.0,
+                "fee": 0.0,
+                "swap": 0.0,
+                "commission": 0.0,
+                "reason": 0,
+                "comment": "",
+                "external_id": "",
+            },
+            {
+                "ticket": 8002,
+                "order": 802,
+                "position_id": 777700001,
+                "symbol": "XAUUSD",
+                "type": 1,
+                "entry": 1,
+                "magic": 0,
+                "time": 1100,
+                "volume": 0.10,
+                "price": 3355.0,
+                "profit": -20.0,
+                "fee": 0.0,
+                "swap": -1.0,
+                "commission": -2.0,
+                "reason": 0,
+                "comment": "",
+                "external_id": "",
+            },
+            {
+                "ticket": 8003,
+                "order": 803,
+                "position_id": 777700001,
+                "symbol": "XAUUSD",
+                "type": 1,
+                "entry": 1,
+                "magic": 0,
+                "time": 1200,
+                "volume": 0.20,
+                "price": 3352.0,
+                "profit": -80.0,
+                "fee": -1.0,
+                "swap": -0.5,
+                "commission": -3.0,
+                "reason": 0,
+                "comment": "",
+                "external_id": "",
+            },
         ]
         trades = reconstruct_trades(orders=[], deals=deals)
         assert len(trades) == 1
@@ -338,6 +482,7 @@ class TestF_PartialClose:
 # G. Period / midnight isolation & empty period & buy/sell inclusion
 # ===========================================================================
 
+
 class TestG_PeriodIsolation:
     def test_buy_and_sell_both_included(self, audit, core):
         # Fixture mixes BUY (1) and SELL (0) closes — both must count
@@ -345,14 +490,30 @@ class TestG_PeriodIsolation:
         types = {int(d["type"]) for d in deals}
         assert 0 in types and 1 in types, "fixture must contain both directions"
         _seed_broker(audit)
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)).total_trades == 5
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 5
+        )
 
     def test_trade_outside_period_excluded(self, audit, core):
         _seed_broker(audit)
-        outside = audit  # reuse same repo, but query a different day
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 20, 12, 0, tzinfo=UTC)).total_trades == 0
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 20, 12, 0, tzinfo=UTC)).net_pnl == pytest.approx(0.0)
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 23, 12, 0, tzinfo=UTC)).total_trades == 0
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 0
+        )
+        assert core.period_report(
+            PeriodKind.DAY, at=datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
+        ).net_pnl == pytest.approx(0.0)
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 0
+        )
 
     def test_adjacent_midnight_belongs_to_new_day(self, audit, core):
         """
@@ -381,7 +542,7 @@ class TestG_PeriodIsolation:
             "comment": "",
             "external_id": "",
         }
-        deals = _fixture_objects() + [extra]
+        deals = [*_fixture_objects(), extra]
         # Need an entry leg for the extra position
         entry = {
             "ticket": 152500000000,
@@ -403,7 +564,9 @@ class TestG_PeriodIsolation:
             "comment": "ENTRY",
             "external_id": "",
         }
-        _seed_broker(audit, deals=deals + [entry])  # _seed_broker will also synthesize entries, but idempotent
+        _seed_broker(
+            audit, deals=[*deals, entry]
+        )  # _seed_broker will also synthesize entries, but idempotent
         # Re-seed via raw sync to avoid duplicating synthetic entries for the extra
         # (simpler: assert using period_bounds.contains on the resulting trades)
         trades = core.load_trades()

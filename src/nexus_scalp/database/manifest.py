@@ -202,6 +202,10 @@ NEWS_TABLES: tuple[SchemaTable, ...] = (
         name="news_health",
         indexes=("idx_news_health_source",),
     ),
+    SchemaTable(name="news_analyzed_hashes"),
+    SchemaTable(name="news_junk_hashes"),
+    SchemaTable(name="news_prune_audit"),
+    SchemaTable(name="news_ai_analysis"),
     SchemaTable(name="schema_migrations"),
     SchemaTable(name="schema_meta"),
 )

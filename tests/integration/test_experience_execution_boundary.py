@@ -160,7 +160,7 @@ def test_harmful_strategy_is_rejected_before_any_order_is_attempted(wired, featu
     A statistically harmful strategy family must be rejected by the gate, and the
     dispatch path must never be entered for that proposal.
     """
-    repo, ledger, _, _, engine, adapter, risk, om = wired
+    repo, ledger, _, _, engine, adapter, _risk, om = wired
     ctx = engine.build_proposal_context(_proposal("req_ctx"), feature_vector)
     _seed_losing_history(repo, ledger, ctx, count=20)
     engine.invalidate_score_cache()

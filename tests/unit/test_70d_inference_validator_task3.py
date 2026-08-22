@@ -16,8 +16,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from nexus_scalp.features.inference_validator import (
     FAMILY_AVAILABLE,
     FAMILY_INVALID,

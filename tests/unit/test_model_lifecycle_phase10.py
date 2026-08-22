@@ -65,7 +65,6 @@ from nexus_scalp.experience.models import (
 )
 from nexus_scalp.experience.provenance import ModelRegistry, fingerprint_artifact
 from nexus_scalp.model_lifecycle import (
-    GateResult,
     ModelStatus,
     TrainingDataset,
     TrainingDatasetRow,
@@ -73,18 +72,13 @@ from nexus_scalp.model_lifecycle import (
     TrainingRunStatus,
 )
 from nexus_scalp.model_lifecycle.champion import ChampionManager
-from nexus_scalp.model_lifecycle.comparison import ChampionChallengerComparator
 from nexus_scalp.model_lifecycle.dataset import TrainingDatasetBuilder, validate_no_future_leakage
 from nexus_scalp.model_lifecycle.gates import (
     check_model_collapse,
-    gate_artifact_integrity,
     gate_dataset_integrity,
-    gate_label_integrity,
     gate_oos,
     gate_risk_drawdown,
     gate_robustness,
-    gate_schema_compatibility,
-    gate_training_stability,
     gate_validation_performance,
 )
 from nexus_scalp.model_lifecycle.integrity import (
@@ -96,8 +90,7 @@ from nexus_scalp.model_lifecycle.integrity import (
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
 from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
 from nexus_scalp.model_lifecycle.store import TrainingRunStore
-from nexus_scalp.model_lifecycle.trainer import ChallengerTrainer, summarize_run
-from nexus_scalp.model_lifecycle.worker import TrainingWorker, format_training_worker_status
+from nexus_scalp.model_lifecycle.worker import TrainingWorker
 
 # =============================================================================
 # FIXTURES & HELPERS
@@ -245,8 +238,6 @@ def seed_experiences(
 
 def torch_available() -> bool:
     try:
-        import torch
-
         return True
     except Exception:
         return False
@@ -617,7 +608,6 @@ class TestCompatibility:
 
     def test_bug118_champion_verified_logs_once_per_fingerprint(self, tmp_path):
         """Repeated champion_or_none() polls must NOT spam the log."""
-        import logging
 
         mgr = self._make_bug118_champion(tmp_path)
         capture, root, original_level, original_handlers = self._capture_champion_logs()
@@ -638,7 +628,6 @@ class TestCompatibility:
     def test_bug118_artifact_rewrite_reverifies_once(self, tmp_path):
         """A content rewrite (retrain/promotion) invalidates the cache and
         re-verifies, logging CHAMPION VERIFIED once for the new hash."""
-        import logging
         import os
         import time
 
@@ -677,7 +666,6 @@ class TestCompatibility:
 
     def test_bug118_cold_start_none_memoized(self, tmp_path):
         """Missing artifact returns None once; repeated polls stay silent."""
-        import logging
 
         mgr = ChampionManager(artifact_path=str(tmp_path / "missing.pt"))
         capture, root, original_level, original_handlers = self._capture_champion_logs()

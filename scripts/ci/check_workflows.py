@@ -31,6 +31,7 @@ Usage:
   check_workflows.py [--workflows-dir PATH] [--format text|json] [--strict]
   Exit 0 if no ERROR findings (or if --strict, no WARNING either).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,9 +56,7 @@ _NEEDS_OUTPUT_RE = re.compile(
 _EXPR_RE = re.compile(r"\$\{\{\s*(.+?)\s*\}\}")
 # Reference to the canonical classifier lane output, e.g.
 #   needs.classify.outputs.python == 'true'
-_LANE_REF_RE = re.compile(
-    r"needs\.(?P<job>[A-Za-z0-9_\-]+)\.outputs\.(?P<lane>[A-Za-z0-9_\-]+)"
-)
+_LANE_REF_RE = re.compile(r"needs\.(?P<job>[A-Za-z0-9_\-]+)\.outputs\.(?P<lane>[A-Za-z0-9_\-]+)")
 
 
 @dataclass
@@ -392,10 +391,8 @@ def main(argv: list[str] | None = None) -> int:
     default_wd = str(Path(__file__).resolve().parents[2] / ".github" / "workflows")
     parser.add_argument("--workflows-dir", default=default_wd)
     parser.add_argument("--format", choices=["text", "json"], default="text")
-    parser.add_argument("--strict", action="store_true",
-                        help="treat WARNING as failure too")
-    parser.add_argument("--quiet", action="store_true",
-                        help="only print ERROR-level findings")
+    parser.add_argument("--strict", action="store_true", help="treat WARNING as failure too")
+    parser.add_argument("--quiet", action="store_true", help="only print ERROR-level findings")
     args = parser.parse_args(argv)
 
     wd = Path(args.workflows_dir)

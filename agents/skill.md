@@ -14,7 +14,8 @@
 > This compliance gate is part of the MASTER MULTI-AGENT CONTRACT (v2).
 > Full contract: `agents/multi-agent-git-contract.md`. Registries: `agents/contracts.md`,
 > `agents/runtime_invariants.md`, `agents/change_control.md`, `agents/taskboard.md`,
-> `agents/repository_state.md`, `agents/locks.yaml`, `agents/decisions/`.
+> `agents/repository_state.md`, `agents/locks.yaml`, `agents/decisions/`,
+> `agents/hermes-kanban-swarm.md` (Hermes Kanban Swarm orchestration integration contract).
 
 ### Before coding
 
@@ -3351,3 +3352,22 @@ All routes are wrapped (never raise), use `serialize_enums`, and mirror the rese
   no CDN/bundler refs in browser JS, FastAPI-served UI without Node, no `package.json` at root,
   no Node subprocess in engine, build script present + `js-tests.yml` declares `buildless`.
 - **See:** `agents/decisions/DEC-0002-nodejs-runtime-role.md`.
+
+## Git Release Guardian Agent (REGISTERED 2026-08-22 — swarm gate role)
+
+- **Agent identity:** `Hermes-GitReleaseGuardian`.
+- **Role:** repository hygiene, commit governance, and safe push management. A
+  **non-implementing** gate: it owns Git history / release mechanics, never feature code.
+- **Core principle:** batch accumulated swarm changes, validate ownership, run
+  `beforePush`, then create ONE atomic ID-referenced commit and push only verified states.
+  Never per-change commit+push. See CORE PRINCIPLE in the charter.
+- **Allowed:** git status/diff/log/branch/fetch, commit messages, release notes,
+  changelog/release metadata, repository-state metadata, running `beforePush`.
+- **Forbidden (return to owning agent):** `src/` feature code, execution engine,
+  trading/ML/accounting logic, UI feature code, config secrets, any exclusively-locked path.
+- **Every commit references** a `TASK-`/`BUG-`/`CHANGE-`/`DEC-` ID; push requires a
+  passing `beforePush.ps1`/`beforePush.sh` gate (capture exit code, failed stage, logs).
+- **On gate failure:** BLOCKED — write `.git/reports/prepush-failure-{date}.md`,
+  never bypass/force-push/mark-green. Priority order: integrity > CI stability >
+  traceability > clean history > speed.
+- **Charter (authoritative):** `agents/git-release-guardian.md`.

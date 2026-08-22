@@ -47,7 +47,6 @@ import pytest
 
 from nexus_scalp.features.liquidity_engine import (
     BASE_50D,
-    LIQUIDITY_DIM,
     LIQUIDITY_FEATURE_NAMES,
     compute_liquidity_features,
 )
@@ -59,7 +58,6 @@ from nexus_scalp.features.liquidity_runtime import (
     LiquiditySnapshot,
     ModelCompatibility,
     build_70d_vector,
-    build_model_compatibility_contract,
     model_schema_family,
     resolve_model_compatibility,
 )

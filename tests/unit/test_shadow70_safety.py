@@ -13,7 +13,6 @@ Extends the TEST-SHADOW matrix with hard safety proofs:
 from __future__ import annotations
 
 import os
-import queue as _queue
 import shutil
 import sqlite3
 import tempfile
@@ -24,10 +23,9 @@ from datetime import UTC, datetime
 import pytest
 
 from nexus_scalp.shadow.shadow70.models import (
-    SHADOW70_DIMENSION,
     Shadow70CandidateContract,
 )
-from nexus_scalp.shadow.shadow70.runtime import Shadow70Runtime, sha256_file
+from nexus_scalp.shadow.shadow70.runtime import Shadow70Runtime
 from nexus_scalp.shadow.shadow70.store import Shadow70Store
 from nexus_scalp.shadow.shadow70.worker import Shadow70Worker
 from tests.helpers.shadow70_fixtures import make_contract, vector70

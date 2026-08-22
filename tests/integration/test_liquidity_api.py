@@ -208,7 +208,7 @@ def test_70d_10_toggle_persists_and_returns_new_state(api_env) -> None:
 
 
 def test_70d_11_toggle_off_keeps_engine_untouched(api_env) -> None:
-    _, client, gov = api_env
+    _, client, _gov = api_env
     resp = client.post("/api/liquidity/toggle", json={"enabled": False})
     assert resp.status_code == 200
     body = resp.json()
@@ -259,7 +259,7 @@ def test_70d_17_reconnect_snapshot_restores_liquidity(api_env) -> None:
 
 
 def test_70d_12_model_compatibility_reported(api_env) -> None:
-    _, client, gov = api_env
+    _, client, _gov = api_env
     # fake engine declares scalp_v4/70D -> PASS
     resp = client.get("/api/liquidity/state")
     body = resp.json()

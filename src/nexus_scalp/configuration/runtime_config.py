@@ -153,6 +153,11 @@ class NewsSnapshot:
     poll_medium_interval_sec: int = 900
     poll_slow_interval_sec: int = 3600
     max_queue_size: int = 1000
+    # News Auto Analysis — deterministic local analysis only (NO API key,
+    # NO external LLM). OFF by default; enabling it just lets the worker's
+    # analysis cycle run each tick so news articles get rule-based scoring
+    # тики for more accuracy downstream. Worker still ingests even when OFF.
+    auto_analysis_enabled: bool = False
     effective_scope: str = NEXT_SESSION
 
 
@@ -319,6 +324,7 @@ class RuntimeConfiguration:
                 "poll_medium_interval_sec": self.news.poll_medium_interval_sec,
                 "poll_slow_interval_sec": self.news.poll_slow_interval_sec,
                 "max_queue_size": self.news.max_queue_size,
+                "auto_analysis_enabled": self.news.auto_analysis_enabled,
                 "effective_scope": self.news.effective_scope,
             },
             "rule_matrix": {
@@ -575,6 +581,7 @@ _VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "news.poll_medium_interval_sec": lambda v: isinstance(v, int) and 120 <= int(v) <= 7200,
     "news.poll_slow_interval_sec": lambda v: isinstance(v, int) and 300 <= int(v) <= 86400,
     "news.max_queue_size": lambda v: isinstance(v, int) and 10 <= int(v) <= 10000,
+    "news.auto_analysis_enabled": lambda v: isinstance(v, bool),
 }
 
 
@@ -602,7 +609,13 @@ def _coerce(key: str, value: Any) -> Any:
         "news.max_queue_size",
     ):
         return int(value)
-    if key in ("risk.enforce_stop_loss", "model.liquidity_features_enabled", "telegram.enabled", "news.enabled"):
+    if key in (
+        "risk.enforce_stop_loss",
+        "model.liquidity_features_enabled",
+        "telegram.enabled",
+        "news.enabled",
+        "news.auto_analysis_enabled",
+    ):
         return bool(value)
     if (
         key.endswith("_pct")
@@ -728,6 +741,7 @@ def build_runtime_configuration(
         ),
         news=NewsSnapshot(
             enabled=bool(cur["news.enabled"]),
+            auto_analysis_enabled=bool(cur.get("news.auto_analysis_enabled", False)),
             worker_interval_sec=int(cur["news.worker_interval_sec"]),
             poll_fast_interval_sec=int(cur["news.poll_fast_interval_sec"]),
             poll_medium_interval_sec=int(cur["news.poll_medium_interval_sec"]),
@@ -773,6 +787,7 @@ def _empty_values() -> dict[str, Any]:
         "news.poll_medium_interval_sec": 900,
         "news.poll_slow_interval_sec": 3600,
         "news.max_queue_size": 1000,
+        "news.auto_analysis_enabled": False,
     }
 
 
@@ -816,6 +831,7 @@ def _apply_bootstrap(cur: dict[str, Any], bootstrap: AppConfig) -> dict[str, Any
     nw = getattr(bootstrap, "news", None)
     if nw is not None:
         out["news.enabled"] = bool(nw.enabled)
+        out["news.auto_analysis_enabled"] = bool(getattr(nw, "auto_analysis_enabled", False))
         out["news.worker_interval_sec"] = int(nw.worker_interval_sec)
         out["news.poll_fast_interval_sec"] = int(nw.polling.fast_interval_sec)
         out["news.poll_medium_interval_sec"] = int(nw.polling.medium_interval_sec)

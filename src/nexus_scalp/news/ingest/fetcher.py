@@ -210,6 +210,17 @@ class NewsIngestor:
                 continue
 
             article_hash = canonical["article_hash"]
+            # Tombstone: previously pruned junk OR already-analyzed stories never re-enter
+            # (re-analysis would confuse the AI decision layer — analyze once, never again).
+            try:
+                if self.db.is_analyzed_hash(article_hash):
+                    stats["duplicate"] += 1
+                    continue
+                if self.db.is_junk_hash(article_hash):
+                    stats["duplicate"] += 1
+                    continue
+            except Exception:
+                pass
             existing = self.db.get_article_by_hash(article_hash)
             if existing:
                 # Exact duplicate: strengthen evidence, no new impact.

@@ -21,8 +21,7 @@ Covers the concrete defects found in live forensics (artifacts/audit.db):
            rule-driven MODIFY_SL and NORMAL_TRAIL dispatch paths).
 """
 
-import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AlgoConfig
@@ -30,9 +29,7 @@ from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData
 from nexus_scalp.execution.order_manager import (
     BREAKEVEN_ATTEMPT_COOLDOWN_SEC,
-    ExitMechanism,
     OrderLifecycleManager,
-    PositionState,
 )
 
 

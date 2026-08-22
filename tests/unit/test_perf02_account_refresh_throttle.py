@@ -10,8 +10,6 @@ every tick. Behavior preserved:
 
 from __future__ import annotations
 
-import time
-
 
 class _CountingAdapter:
     """Adapter double counting get_account_info calls."""

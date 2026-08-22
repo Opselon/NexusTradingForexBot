@@ -1,19 +1,15 @@
-import math
-import uuid
 from datetime import UTC, datetime
 
-import pytest
 import torch
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.configuration.config import AlgoConfig, RiskConfig
+from nexus_scalp.configuration.config import RiskConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
     Position,
     SymbolInfo,
     TickData,
-    TradeOrder,
     TradeProposal,
 )
 from nexus_scalp.execution.order_manager import OrderLifecycleManager

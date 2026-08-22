@@ -26,8 +26,8 @@
 | **Risk** (`risk/`) | Capital allocation; dynamic lot sizing; margin/tier clamps | Be bypassed for ANY order; return negative/NaN volume |
 | **Execution** (`execution/`) | Order dispatch; position state machine; exits; protection; reconciliation | Skip risk validation; exceed `HARD_MAX_LOTS=10.0`; exceed `MAX_TOTAL_EXPOSURE=1`; trust unverified cancellation |
 | **Application** (`application/`) | Async orchestration; tick loop; workers; model bundle lifecycle | Block the event loop; do sync DB I/O on the hot path (INV-001); `import time` inside hot functions (BUG-074) |
-| **Learning layers** (`experience/`, `intelligence/`, `research/`, `shadow/`, `governance/`, `incidents/`, `forensics/`, `hygiene/`, `news/` analysis) | Analyze, score, recommend, reject, observe, alert, quarantine (advisory), clean (operator-gated), report | Place/modify/close orders; hold an adapter/order-manager/risk-engine (INV-002); mutate raw financial truth (INV-007); run on the tick path |
-| **Web/API** (`web/`, `Web/`) | Serve canonical state; serialize enums; stream SSE/WS; sanitize errors | Recompute trading intelligence in JS; leak exception text (`str(e)`) to clients (BUG-040); fabricate data (never synthetic candles/SMC boxes); expose secrets (mask tokens) |
+| **Learning layers** (`experience/`, `intelligence/`, `research/`, `shadow/`, `governance/`, `incidents/`, `forensics/`, `hygiene/`, `news/` analysis, `news/ai_service.py` Intelligence 0100) | Analyze, score, recommend, reject, observe, alert, quarantine (advisory), clean (operator-gated), report; News AI: reuse Factory provider, grounded delimited prompts, schema-validated `news_ai_analysis` (separate table, never overwrites deterministic truth), recoverable `article_status` ACTIVE↔IRRELEVANT with `news_prune_audit` | Place/modify/close orders; hold an adapter/order-manager/risk-engine (INV-002); mutate raw financial truth (INV-007); run on the tick path; duplicate LLM config/secret store; expose secrets; fabricate analysis without evidence |
+| **Web/API** (`web/`, `Web/`, `Web/forensic_console.js`, `Web/news_intelligence.js`) | Serve canonical state; serialize enums; stream SSE/WS; sanitize errors; all feature HTTP via `window.NX.api` (safe envelope), user errors via `NX.Forensic.normalizeError`+toast; incident KPIs derived from ONE array via `NX.Forensic.model.deriveKpis`; News Intelligence: AI banner, per-article state machine, batch (bounded), auto-prune (confirm+recoverable), filters, restore | Recompute trading intelligence in JS; leak exception text (`str(e)`) or raw `TypeError: Failed to fetch` to DOM; separate KPI counters vs list (forbidden); raw `fetch()` in feature modules; fabricate data (never synthetic candles/SMC boxes); expose secrets (mask tokens); bypass `NX.api` safe envelope |
 | **Persistence** (`adapters/database/`, `database/`, `settings/`) | WAL-ledger writes via background queue; versioned migrations; settings via SettingsService | Accept DDL outside migrations (INV-013); let UI/Telegram write live.yaml (INV-010/BUG-080); delete broker truth without archive + operator gate |
 
 **Dependency direction:** Domain ← Ports ← Adapters ← Features ← Models ←
@@ -184,11 +184,68 @@ adapters (tested).
 7. **UI/Telegram never mutate canonical state** (INV-010): settings changes
    route via SettingsService (HOT_SAFE / HOT_RESTRICTED / RESTART_REQUIRED…),
    secrets via DPAPI SecureSecretStore — never live.yaml.
+8. **News Intelligence persistence honesty (0100):** deterministic news truth
+   (`news_analysis`) is NEVER overwritten by AI output; AI interpretations live
+   ONLY in `news_ai_analysis` (separate table, `news-ai-v1` versioned); low-signal
+   classification is recoverable (`article_status` ACTIVE/IRRELEVANT) with an
+   immutable `news_prune_audit` row per transition (previous/new state,
+   `news-prune-v1`, actor, reason); original rows are never deleted. Status
+   filtering is `GET /api/news?status=ACTIVE|ALL|IRRELEVANT` + `status_counts`.
+   Secret handling: the Factory LLM API key stays server-side (secret store),
+   never returned to the frontend, never logged; `GET /api/news/ai-status`
+   is secret-free (NOT_CONFIGURED/AVAILABLE/UNAVAILABLE/MISCONFIGURED).
 8. **Failure is never silent:** every MT5 call reports `[MT5_CALL]`
    operation/status/duration_ms/error; snapshots carry error_state; HTTP
    errors return the sanitized envelope + X-Request-ID (BUG-040).
 
 ---
+
+## 5b. News Intelligence & Forensic UI Contracts (0100)
+
+1. **Single LLM source (Factory reuse):** `news/ai_service.py` reuses
+   `strategies/factory/provider.py::LLMGenerationProvider.complete_json` — the
+   ONLY LLM source. No second secret store, no second LLM config, no second
+   key path. `resolve_factory_provider` prefers the live engine's
+   `strategy_factory.provider` (hot-reload aware) and falls back to
+   `SettingsService.get_factory_llm_config()`. The provider is never
+   constructed with an exposed key on the wire.
+2. **Grounded, injection-defended prompts:** article body is UNTRUSTED DATA,
+   wrapped in `<<<ARTICLE_START>>>` delimiters; the system prompt explicitly
+   instructs the model to treat article content as data (never instructions,
+   never tools/secrets/config). Deterministic signals (importance_score,
+   xauusd_relevance, direction, entities/topics) are passed as trusted CONTEXT
+   distinct from the untrusted body. Body cap `NEWS_AI_MAX_BODY_CHARS=4000`.
+3. **Response validation before persistence:** `_validate_response` enforces
+   sentiment ∈ {BULLISH,BEARISH,NEUTRAL,MIXED}, caps key_facts/uncertainties at
+   20, requires non-empty content or `insufficient_evidence=true`; malformed
+   → `analysis_status='failed'` (never a fake 'completed'). Isolation:
+   batch/provider/validation failures return structured errors, never raw
+   exceptions or fabricated success.
+4. **Recoverable classification (never destructive):** `article_status`
+   migration is idempotent (`ALTER TABLE ... DEFAULT 'ACTIVE'` before indexes;
+   existing rows stay ACTIVE). `set_article_status` is idempotent + audited
+   (`pau_*` in `news_prune_audit`); `auto_prune_irrelevant` rule is
+   `importance < 0.30 AND xauusd_relevance < 0.25` (explainable via
+   `_prune_reason`, not "not-XAUUSD ⇒ irrelevant"); macro gold-movers above
+   either threshold are preserved. Restore is `IRRELEVANT→ACTIVE` with a
+   RESTORE audit row — no duplicate records, no silent reclassification.
+5. **Forensic UI truthfulness:** KPIs via `NX.Forensic.model.deriveKpis` from
+   the ONE authoritative `incidents` array (header never diverges from list);
+   `normSeverity`/`normStatus` single normalization boundary;
+   loading/empty/error/loaded are distinct states (skeleton vs error vs list).
+   All HTTP via `window.NX.api`; no `TypeError: Failed to fetch` in DOM (via
+   `NX.Forensic.normalizeError`). To inhibit duplicate work: `requestSeq`
+   concurrency guard, `analyzing[articleId]` in-flight dedup, `withButtonLock`
+   on submit, bounded batch concurrency `NEWS_AI_BATCH_CONCURRENCY=3` (cap 200).
+6. **Agent Mode & Task Generation honesty (forensic_console.js contract):**
+   state machine OFF/IDLE/TRACING/ANALYZING/GENERATING_TASK/RESOLVING/ERROR;
+   auto-trace via the real `/api/diagnostics/trace` endpoint, deduped by
+   `INC_STATE.agentProcessed`; task drawer is review-before-submit from REAL
+   incident evidence (ids/timestamps/symptoms/impact, never invented);
+   provider surface truthful (`configured:false` until backend wired;
+   never fabricates external ticket success). Stop Bot requires typing `STOP`
+   (case-sensitive); halt is `engine._running=False` only — docs truthfully
+   state it does NOT cancel broker pending orders.
 
 ## 6. Change Management Rules
 

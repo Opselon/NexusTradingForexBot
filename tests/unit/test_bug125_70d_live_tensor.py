@@ -26,11 +26,10 @@ TEST MAP:
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -57,7 +56,9 @@ def _mock_bundle(dim: int) -> Any:
     model.eval()
     return ModelBundle(
         model=model,
-        scaler=ScalerBundle(mean=np.zeros(dim, dtype=np.float32), std=np.ones(dim, dtype=np.float32)),
+        scaler=ScalerBundle(
+            mean=np.zeros(dim, dtype=np.float32), std=np.ones(dim, dtype=np.float32)
+        ),
         artifact_path=ARTIFACTS / f"{'50d_main' if dim == 50 else '70d_liquidity'}" / "model.pt",
     )
 
@@ -83,7 +84,9 @@ def _mock_engine(bundle_dim: int = 50) -> Any:
     # so we use an identity that just returns the input list.
     eng._validate_50d_tensor = lambda features, context: list(features)
     eng._build_live_feature_vector = lambda fv: LiveEngine._build_live_feature_vector(eng, fv)
-    eng._register_active_model = lambda path, replaced: LiveEngine._register_active_model(eng, path, replaced)
+    eng._register_active_model = lambda path, replaced: LiveEngine._register_active_model(
+        eng, path, replaced
+    )
     eng._news_enabled = False
     eng.news_engine = None
     eng.liquidity_governor = None
@@ -201,7 +204,7 @@ class TestBuildLiveFeatureVector:
         fv = MagicMock()
         base50 = [float(i % 7 - 3) for i in range(50)]
         fv.to_tensor_input.return_value = base50
-        vec, timings = eng._build_live_feature_vector(fv)
+        vec, _timings = eng._build_live_feature_vector(fv)
         assert len(vec) == 70
         # Liquidity values at 60..69
         assert vec[60:70] == fake_features
@@ -218,7 +221,6 @@ class TestHotSwap:
     def test_125_13_hot_swap_warmup_uses_bundle_dim(self) -> None:
         """The hot_swap warm-up must create a zero vector matching the NEW
         bundle's model width, not the class-level FEATURE_DIM."""
-        from nexus_scalp.application.live_engine import LiveEngine
 
         eng = _mock_engine(50)
         # Simulate loading a 70D bundle

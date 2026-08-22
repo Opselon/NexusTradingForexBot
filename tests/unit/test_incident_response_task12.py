@@ -29,7 +29,6 @@ from nexus_scalp.incidents.impact import ImpactAnalyzer, QuarantineManager, Reco
 from nexus_scalp.incidents.lineage import LineageEngine
 from nexus_scalp.incidents.models import (
     BlastRadius,
-    EvidenceItem,
     Incident,
     IncidentCategory,
     IncidentSeverity,
@@ -41,7 +40,6 @@ from nexus_scalp.incidents.models import (
 from nexus_scalp.incidents.reports import (
     export_zip_bundle,
     incident_json,
-    incident_markdown,
     mask_secrets,
     write_incident_reports,
 )
@@ -575,7 +573,7 @@ class TestTimelineReconstruction:
                 ),
             ]
         )
-        pattern, chain = corr.classify_chain(result.incidents[0])
+        _pattern, chain = corr.classify_chain(result.incidents[0])
         assert len(chain) >= 3
 
 
@@ -858,7 +856,6 @@ class TestGovernanceInconsistency:
     def test_invariant_inspection(self) -> None:
         # The incident layer must reference the governance invariants for
         # blocking unsafe inference (spec 27/34).
-        import ast
         from pathlib import Path
 
         impact_src = Path("src/nexus_scalp/incidents/impact.py").read_text(encoding="utf-8")
@@ -1343,7 +1340,6 @@ class TestNoTradingMutation:
 class TestNoAutomaticCodeMutation:
     def test_no_self_modification_code(self) -> None:
         """The incident layer must not contain code-rewriting primitives."""
-        import ast
         from pathlib import Path
 
         for f in Path("src/nexus_scalp/incidents").glob("*.py"):

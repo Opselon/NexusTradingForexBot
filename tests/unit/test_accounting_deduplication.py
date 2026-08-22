@@ -10,22 +10,33 @@ from __future__ import annotations
 
 import gc
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from nexus_scalp.accounting import AccountingCore, PeriodKind
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.adapters.database.broker_history import deal_identity, reconstruct_trades
+from nexus_scalp.adapters.database.broker_history import deal_identity
 
-_FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "mt5" / "accounting" / "2026-08-21_closed_deals.json"
+_FIXTURE = (
+    Path(__file__).resolve().parent.parent
+    / "fixtures"
+    / "mt5"
+    / "accounting"
+    / "2026-08-21_closed_deals.json"
+)
 
 
 def _fixture_objects() -> list[dict]:
     payload = json.loads(_FIXTURE.read_text(encoding="utf-8"))
-    skip = frozenset({"count", "index", "n_fields", "n_sequence_fields", "n_unnamed_fields", "_none"})
-    return [{k: (v["value"] if isinstance(v, dict) else v) for k, v in obj.items() if k not in skip} for obj in payload.get("objects", [])]
+    skip = frozenset(
+        {"count", "index", "n_fields", "n_sequence_fields", "n_unnamed_fields", "_none"}
+    )
+    return [
+        {k: (v["value"] if isinstance(v, dict) else v) for k, v in obj.items() if k not in skip}
+        for obj in payload.get("objects", [])
+    ]
 
 
 @pytest.fixture()

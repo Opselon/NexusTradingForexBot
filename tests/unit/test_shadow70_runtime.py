@@ -21,16 +21,11 @@ Covers the required test-first matrix from the TASK-5/10 brief:
 from __future__ import annotations
 
 import os
-import shutil
 import tempfile
-import threading
 import time
-from datetime import UTC, datetime, timedelta
-
-import pytest
+from datetime import UTC, datetime
 
 from nexus_scalp.shadow.shadow70.health import (
-    DRIFT_SEVERITY_NORMAL,
     DRIFT_SEVERITY_WARNING,
     DRIFT_SEVERITY_WATCH,
     Shadow70DriftMonitor,
@@ -41,12 +36,10 @@ from nexus_scalp.shadow.shadow70.models import (
     SHADOW70_SCHEMA_ID,
     DisagreementClass,
     Shadow70CandidateContract,
-    Shadow70Observation,
     classify_disagreement,
 )
 from nexus_scalp.shadow.shadow70.runtime import (
     MAX_INMEMORY_OBSERVATIONS,
-    Shadow70LoadValidator,
     Shadow70Runtime,
     sha256_file,
 )

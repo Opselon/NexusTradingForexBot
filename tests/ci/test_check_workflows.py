@@ -8,6 +8,7 @@ Each test builds a tiny synthetic workflow YAML in a temp dir and asserts the
 scanner's verdict, so the analyzer's invariants are locked down independently
 of the live .github/workflows tree.
 """
+
 from __future__ import annotations
 
 import sys
@@ -16,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "ci"))
 
-import check_workflows as c  # noqa: E402
+import check_workflows as c
 
 
 def _write(dir_: Path, name: str, body: str) -> Path:
@@ -28,7 +29,10 @@ def _write(dir_: Path, name: str, body: str) -> Path:
 def test_clean_workflow_passes():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "good.yml", """
+        _write(
+            d,
+            "good.yml",
+            """
 name: good
 on: [push]
 jobs:
@@ -46,7 +50,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: echo ${{ needs.build.outputs.x }}
-""")
+""",
+        )
         models, ec = c.run(d)
         assert ec == 0, f"expected clean, got {ec}"
         assert not any(f.severity == "ERROR" for m in models for f in m.findings)
@@ -55,7 +60,10 @@ jobs:
 def test_undefined_job_output_reference_fails():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "bad.yml", """
+        _write(
+            d,
+            "bad.yml",
+            """
 name: bad
 on: [push]
 jobs:
@@ -70,12 +78,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: echo ${{ needs.detect.outputs.lane }}
-""")
+""",
+        )
         models, ec = c.run(d)
         assert ec == 1, f"expected ERROR exit, got {ec}"
         found = any(
             f.severity == "ERROR" and f.check == "undefined-output"
-            for m in models for f in m.findings
+            for m in models
+            for f in m.findings
         )
         assert found, "undefined-output check did not fire"
 
@@ -83,7 +93,10 @@ jobs:
 def test_undefined_job_reference_fails():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "bad2.yml", """
+        _write(
+            d,
+            "bad2.yml",
+            """
 name: bad2
 on: [push]
 jobs:
@@ -93,19 +106,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: echo ${{ needs.ghost.outputs.x }}
-""")
+""",
+        )
         models, ec = c.run(d)
         assert ec == 1
         assert any(
             f.severity == "ERROR" and "does not exist" in f.message
-            for m in models for f in m.findings
+            for m in models
+            for f in m.findings
         )
 
 
 def test_local_action_without_checkout_fails():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "local.yml", """
+        _write(
+            d,
+            "local.yml",
+            """
 name: local
 on: [push]
 jobs:
@@ -113,19 +131,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: ./.github/actions/my-action
-""")
+""",
+        )
         models, ec = c.run(d)
         assert ec == 1
         assert any(
             f.severity == "ERROR" and f.check == "local-action-no-checkout"
-            for m in models for f in m.findings
+            for m in models
+            for f in m.findings
         )
 
 
 def test_local_action_with_checkout_passes():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "localok.yml", """
+        _write(
+            d,
+            "localok.yml",
+            """
 name: localok
 on: [push]
 jobs:
@@ -134,15 +157,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/my-action
-""")
-        models, ec = c.run(d)
+""",
+        )
+        _models, ec = c.run(d)
         assert ec == 0
 
 
 def test_matrix_artifact_without_dim_warns():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "matrix.yml", """
+        _write(
+            d,
+            "matrix.yml",
+            """
 name: matrix
 on: [push]
 jobs:
@@ -157,7 +184,8 @@ jobs:
         with:
           name: results        # no matrix dim -> collision
           path: out
-""")
+""",
+        )
         models, ec = c.run(d)
         # Warning only -> exit 0 unless strict
         assert ec == 0
@@ -169,7 +197,10 @@ jobs:
 def test_matrix_artifact_with_dim_passes():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "matrixok.yml", """
+        _write(
+            d,
+            "matrixok.yml",
+            """
 name: matrixok
 on: [push]
 jobs:
@@ -184,7 +215,8 @@ jobs:
         with:
           name: results-${{ matrix.os }}
           path: out
-""")
+""",
+        )
         models, ec = c.run(d)
         assert ec == 0
         assert not any(f.check == "matrix-artifact-collision" for m in models for f in m.findings)
@@ -193,7 +225,10 @@ jobs:
 def test_empty_if_fails():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "emptyif.yml", """
+        _write(
+            d,
+            "emptyif.yml",
+            """
 name: emptyif
 on: [push]
 jobs:
@@ -203,7 +238,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: echo x
-""")
+""",
+        )
         models, ec = c.run(d)
         assert ec == 1
         assert any(f.check == "empty-if" for m in models for f in m.findings)
@@ -212,7 +248,10 @@ jobs:
 def test_always_false_if_fails():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "falseif.yml", """
+        _write(
+            d,
+            "falseif.yml",
+            """
 name: falseif
 on: [push]
 jobs:
@@ -222,7 +261,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: echo x
-""")
+""",
+        )
         models, ec = c.run(d)
         assert ec == 1
         assert any(f.check == "always-false-if" for m in models for f in m.findings)
@@ -234,13 +274,20 @@ def test_yaml_syntax_error_fails():
         _write(d, "broken.yml", "name: broken\non: [push\njobs: : :\n")
         models, ec = c.run(d)
         assert ec == 1
-        assert any(f.severity == "ERROR" and "parse" in f.message.lower() for m in models for f in m.findings)
+        assert any(
+            f.severity == "ERROR" and "parse" in f.message.lower()
+            for m in models
+            for f in m.findings
+        )
 
 
 def test_lane_if_undeclared_warns():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "lane.yml", """
+        _write(
+            d,
+            "lane.yml",
+            """
 name: lane
 on: [push]
 jobs:
@@ -255,8 +302,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         # classify declares no outputs.python
-""")
-        models, ec = c.run(d)
+""",
+        )
+        models, _ec = c.run(d)
         # warning only
         assert any(f.check == "lane-if-undeclared" for m in models for f in m.findings)
 
@@ -264,7 +312,10 @@ jobs:
 def test_self_watch_poller_detected():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "poller.yml", """
+        _write(
+            d,
+            "poller.yml",
+            """
 name: poller
 on: [pull_request]
 jobs:
@@ -276,7 +327,8 @@ jobs:
         env:
           GITHUB_RUN_ID: ${{ github.run_id }}
         # uses GITHUB_RUN_ID inside a polling command -> INFO
-""")
+""",
+        )
         models, _ = c.run(d)
         assert any(f.check == "self-watch" for m in models for f in m.findings)
 
@@ -284,7 +336,10 @@ jobs:
 def test_self_watch_metadata_not_flagged():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        _write(d, "meta.yml", """
+        _write(
+            d,
+            "meta.yml",
+            """
 name: meta
 on: [pull_request]
 jobs:
@@ -296,6 +351,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: echo "run is $RUN_ID"
         # run id only in metadata/env, no polling command -> no self-watch
-""")
+""",
+        )
         models, _ = c.run(d)
         assert not any(f.check == "self-watch" for m in models for f in m.findings)

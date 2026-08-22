@@ -15,7 +15,6 @@ from __future__ import annotations
 import math
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -507,7 +506,6 @@ def test_task02_13_14_dataset_replay_runtime_parity(tmp_path) -> None:
     for k in range(60):
         assert rec["feature_vector"][k] == float(sample_row.get(f"feat_{k}", 0.0))
     # the liquidity block reproduces the canonical producer order by name:
-    from nexus_scalp.features.liquidity_engine import LIQUIDITY_FEATURE_NAMES
 
     # the liquidity feature NAMES contract is asserted by TEST-TASK02-10
 

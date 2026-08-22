@@ -20,8 +20,6 @@ execution.mode, leaking into tests/unit/test_mt5_status_endpoint.py).
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
 
 import pytest
 
@@ -35,11 +33,6 @@ logging.raiseExceptions = False
 # loaded (the 'Module already imported so cannot be rewritten' warning appears
 # when the order is reversed).
 pytest.register_assert_rewrite("tests.helpers.shadow70_fixtures")
-
-from tests.helpers.shadow70_fixtures import (  # noqa: E402 (register-before-import)
-    contract,
-    tmp_artifacts,
-)
 
 
 @pytest.fixture(autouse=True)

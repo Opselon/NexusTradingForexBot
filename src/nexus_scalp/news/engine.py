@@ -199,12 +199,44 @@ class NewsEngine:
     # Manual analysis (AI Analyze button / API)
     # ------------------------------------------------------------------
 
-    def analyze_article_id(self, article_id: str) -> dict[str, Any]:
-        """Analyzes (or re-analyzes) one article by id. Returns a summary
-        dict with the job status - never blocks waiting on external AI."""
+    def analyze_article_id(self, article_id: str, *, force: bool = False) -> dict[str, Any]:
+        """Idempotent: if already analyzed this hash, returns cached SKIPPED unless force=True.
+
+        Prevents re-analysis confusion when same story re-enters the DB via filters.
+        Returns a summary dict with the job status - never blocks waiting on external AI.
+        """
         art = self.db.get_article(article_id)
         if not art:
             return {"ok": False, "error": "ARTICLE_NOT_FOUND"}
+        # Idempotent guard: already analyzed this story (hash tombstone OR existing row)
+        try:
+            ah = str(art.get("article_hash") or "")
+            if not force and ah and self.db.is_analyzed_hash(ah):
+                return {
+                    "ok": True,
+                    "status": "SKIPPED_ALREADY_ANALYZED",
+                    "article_id": article_id,
+                    "reason": "hash already analyzed",
+                }
+            if not force and self.db.get_analysis(article_id) is not None:
+                if ah:
+                    try:
+                        ex = self.db.get_analysis(article_id) or {}
+                        self.db.remember_analyzed_hash(
+                            ah,
+                            title=str(art.get("title", "")),
+                            analysis_id=str(ex.get("analysis_id", "")),
+                        )
+                    except Exception:
+                        pass
+                return {
+                    "ok": True,
+                    "status": "SKIPPED_ALREADY_ANALYZED",
+                    "article_id": article_id,
+                    "reason": "article already analyzed",
+                }
+        except Exception:
+            pass
         try:
             article = NewsArticle(
                 article_id=art["article_id"],
@@ -219,7 +251,7 @@ class NewsEngine:
                 raw_categories=[],
                 novelty=NewsNovelty.NEW,
             )
-            result = self.pipeline.analyze_article(article)
+            result = self.pipeline.analyze_article(article, force=force)
             return {"ok": True, "analysis_id": result.analysis_id, "status": result.status.value}
         except Exception as e:
             logger.error("[NEWS_ANALYSIS] event=FAILED article_id=%s", article_id, error=str(e))

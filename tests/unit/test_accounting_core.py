@@ -23,9 +23,6 @@ derived from rows this test itself wrote.
 from __future__ import annotations
 
 import gc
-import os
-import shutil
-import tempfile
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -38,7 +35,7 @@ from nexus_scalp.accounting import (
     PeriodKind,
     TradeOutcome,
 )
-from nexus_scalp.accounting.aggregation import aggregate_period, compute_drawdown
+from nexus_scalp.accounting.aggregation import compute_drawdown
 from nexus_scalp.accounting.models import AccountSnapshot, TradeRecord
 from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, normalize_trade_row
 from nexus_scalp.accounting.periods import (
@@ -49,7 +46,6 @@ from nexus_scalp.accounting.periods import (
 )
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.models import AccountInfo
-from nexus_scalp.experience.intelligence import ExperienceIntelligenceEngine
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import (
     ExperienceOutcome,

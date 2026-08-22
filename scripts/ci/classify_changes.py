@@ -31,6 +31,7 @@ Usage:
 
 Exit code 0 always (classification is advisory; the caller decides what to run).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -97,8 +98,14 @@ def classify_file(path: str) -> set[str]:
         lanes.add("docker")
 
     # ---- Dependency manifests ------------------------------------------
-    if p in ("pyproject.toml", "requirements.txt", "uv.lock", "package.json",
-             "package-lock.json", "Directory.Packages.props"):
+    if p in (
+        "pyproject.toml",
+        "requirements.txt",
+        "uv.lock",
+        "package.json",
+        "package-lock.json",
+        "Directory.Packages.props",
+    ):
         lanes.add("deps")
         # uv.lock / pyproject changes also affect Python resolution.
         lanes.add("python")
@@ -133,26 +140,23 @@ def classify_file(path: str) -> set[str]:
 
     # ---- Python package / tests / training / config ---------------------
     if (
-        (
-            p.startswith("src/")
-            or (p.startswith("tests/") and not p.startswith("tests/js/"))
-            or p.startswith("configs/")
-            or p in ("pyproject.toml", "requirements.txt")
-            or p.startswith("data/")
-            or p == "main.py"
-        )
-        or (
-            p.endswith(".py")
-            and not p.startswith("scripts/ci/")
-            and not p.startswith("scripts/build/")
-        )
+        p.startswith("src/")
+        or (p.startswith("tests/") and not p.startswith("tests/js/"))
+        or p.startswith("configs/")
+        or p in ("pyproject.toml", "requirements.txt")
+        or p.startswith("data/")
+        or p == "main.py"
+    ) or (
+        p.endswith(".py") and not p.startswith("scripts/ci/") and not p.startswith("scripts/build/")
     ):
         lanes.add("python")
 
     # ---- Documentation-only ---------------------------------------------
-    if (p.startswith("docs/") and p.endswith(_DOC_SUFFIXES)) or (
-        p in _DOC_NAMES
-    ) or (p.startswith("agents/") and p.endswith(_DOC_SUFFIXES)):
+    if (
+        (p.startswith("docs/") and p.endswith(_DOC_SUFFIXES))
+        or (p in _DOC_NAMES)
+        or (p.startswith("agents/") and p.endswith(_DOC_SUFFIXES))
+    ):
         lanes.add("docs")
 
     return lanes
@@ -172,9 +176,7 @@ def classify_files(paths: list[str]) -> dict[str, bool]:
         fl = classify_file(path)
         lanes |= fl
         # A path contributes to "docs-only" only if it is pure docs.
-        pure_doc = fl == {"docs"} or (
-            fl.issubset({"docs", "ci"}) and "docs" in fl
-        )
+        pure_doc = fl == {"docs"} or (fl.issubset({"docs", "ci"}) and "docs" in fl)
         if pure_doc:
             any_doc = True
         else:
@@ -230,21 +232,18 @@ def _git_changed_since_ref(ref: str, root: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Classify repository changes into NSE CI lanes"
-    )
+    parser = argparse.ArgumentParser(description="Classify repository changes into NSE CI lanes")
     parser.add_argument("--base", default="", help="base SHA for git diff")
     parser.add_argument("--head", default="HEAD", help="head SHA for git diff")
-    parser.add_argument("--changed-since-ref", default="",
-                        help="diff HEAD against this ref")
-    parser.add_argument("--files", default="",
-                        help="space-separated explicit file list")
-    parser.add_argument("--format", choices=["json", "lines", "gha"],
-                        default="json",
-                        help="json (default), lines (space-joined lanes), "
-                             "gha (set $GITHUB_OUTPUT 'lanes=...')")
-    parser.add_argument("--root", default=str(REPO_ROOT),
-                        help="repo root (for tests)")
+    parser.add_argument("--changed-since-ref", default="", help="diff HEAD against this ref")
+    parser.add_argument("--files", default="", help="space-separated explicit file list")
+    parser.add_argument(
+        "--format",
+        choices=["json", "lines", "gha"],
+        default="json",
+        help="json (default), lines (space-joined lanes), gha (set $GITHUB_OUTPUT 'lanes=...')",
+    )
+    parser.add_argument("--root", default=str(REPO_ROOT), help="repo root (for tests)")
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
 
