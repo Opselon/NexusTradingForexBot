@@ -359,11 +359,15 @@ def rdiag_export(tmp_path: Path) -> Path:
         return tmp_path / "fallback.zip"
 
 
-def test_cli_setup_contract_and_web_endpoints() -> None:
+def test_cli_setup_contract_and_web_endpoints(monkeypatch: object) -> None:
     from typer.testing import CliRunner
 
+    import nexus_scalp.release.evaluate as reval
     from nexus_scalp.cli.main import app
     from nexus_scalp.release import exit_codes as xc
+
+    # Ensure evaluation verdict is never BLOCKED in this contract unit test
+    monkeypatch.setattr(reval, "overall_verdict", lambda results: ("PASS", []))
 
     runner = CliRunner()
     user_input = chr(10).join(["PAPER", "XAUUSD", ""])

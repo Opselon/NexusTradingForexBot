@@ -1170,6 +1170,7 @@ def test_up55_e2e_check_download_verify_install(tmp_path: Path) -> None:
             update_home=home,
             installed_version="9.0.0",
             channel="stable",
+            architecture="x64",
         )
         api = f"http://127.0.0.1:{server.port}/releases"
 

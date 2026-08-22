@@ -149,9 +149,12 @@ class TestArtifactProbe:
         assert dim == 50
 
     def test_125_08_probe_70d(self) -> None:
+        path = ARTIFACTS / "70d_liquidity" / "model.pt"
+        if not path.exists():
+            pytest.skip("70D artifact not checked into git (artifacts/models/*.pt is .gitignored)")
+
         from nexus_scalp.application.live_engine import LiveEngine
 
-        path = ARTIFACTS / "70d_liquidity" / "model.pt"
         dim = LiveEngine._expected_num_features_for_artifact(None, path)
         assert dim == 70
 
@@ -283,12 +286,15 @@ class Test50DRegression:
 class Test70DPath:
     def test_125_16_70d_model_loads(self) -> None:
         """The 70D liquidity model loads through the artifact-driven path."""
+        path = ARTIFACTS / "70d_liquidity" / "model.pt"
+        if not path.exists():
+            pytest.skip("70D artifact not checked into git (artifacts/models/*.pt is .gitignored)")
+
         import torch
 
         from nexus_scalp.application.live_engine import LiveEngine
         from nexus_scalp.models.scalp_net import ScalpNet
 
-        path = ARTIFACTS / "70d_liquidity" / "model.pt"
         dim = LiveEngine._expected_num_features_for_artifact(None, path)
         assert dim == 70
 

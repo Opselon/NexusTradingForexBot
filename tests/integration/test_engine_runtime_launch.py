@@ -196,5 +196,11 @@ if __name__ == "__main__":
 
 # ---- pytest entry (same checks) --------------------------------------------
 def test_engine_runtime_log_is_clean() -> None:
+    from pathlib import Path as _Path
+
+    import pytest as _pytest
+
+    if not _Path("artifacts/runtime_test/engine.log").exists():
+        _pytest.skip("engine log absent — run engine once first (CI has no live engine log)")
     rc = scan_and_report()
     assert rc == 0, "engine log contains errors/warnings — see artifacts/runtime_test/FIX_PROMPT.md"

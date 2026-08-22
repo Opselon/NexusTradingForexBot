@@ -555,6 +555,12 @@ class TestDbConsoleDatabases:
         assert r.json()["resynced"] is True
 
     def test_rows_endpoint_paginated_and_capped(self):
+        from nexus_scalp.database.config import load_database_config
+
+        cfg = load_database_config("audit")
+        if cfg.is_postgresql:
+            pytest.skip("audit is on PostgreSQL; db_console rows test requires SQLite audit_ledger")
+
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
@@ -579,6 +585,12 @@ class TestDbConsoleDatabases:
         assert len(r2.json()["rows"]) <= MAX_ROWS
 
     def test_columns_endpoint(self):
+        from nexus_scalp.database.config import load_database_config
+
+        cfg = load_database_config("audit")
+        if cfg.is_postgresql:
+            pytest.skip("audit is on PostgreSQL; columns test requires SQLite audit_ledger")
+
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
@@ -596,6 +608,12 @@ class TestDbConsoleDatabases:
 
 class TestDbConsoleQueryGuard:
     def test_select_allowed(self):
+        from nexus_scalp.database.config import load_database_config
+
+        cfg = load_database_config("audit")
+        if cfg.is_postgresql:
+            pytest.skip("audit is on PostgreSQL; query test requires SQLite audit_ledger")
+
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
@@ -648,6 +666,12 @@ class TestDbConsoleQueryGuard:
         assert r.json()["success"] is False
 
     def test_quick_sql_top100(self):
+        from nexus_scalp.database.config import load_database_config
+
+        cfg = load_database_config("audit")
+        if cfg.is_postgresql:
+            pytest.skip("audit is on PostgreSQL; quick-sql test requires SQLite audit_ledger")
+
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 

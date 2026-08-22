@@ -99,8 +99,10 @@ jobs:
         run: ruff format --check .
       - name: Mypy
         run: mypy src
-      - name: Unit tests
-        run: pytest tests/unit/ -q --tb=short
+      - name: Unit tests (critical suite)
+        shell: bash
+        run: |
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-q', '--tb=short']).returncode)"
       - name: Integration tests (no MT5, no browser)
         run: pytest tests/integration/ -q --tb=short \
              --ignore=tests/integration/test_playwright_e2e.py

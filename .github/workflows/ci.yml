@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, develop, ci-tests]
+    tags-ignore: ["v*"]
   pull_request:
     branches: [main, develop]
   schedule:
@@ -170,7 +171,8 @@ jobs:
           # The huge historical suite was aggressively reduced (2335 -> ~1400
           # tests) and is no longer the default CI gate (see heavy-ci for the
           # surviving extended suites on ci-tests / manual dispatch).
-          readarray -t CRIT_FILES < tests/critical_suite.txt
+          CRIT_FILES=()
+          while IFS= read -r line || [[ -n "$line" ]]; do line="${line%%#*}"; line="$(echo "$line" | xargs)"; [[ -n "$line" ]] && CRIT_FILES+=("$line"); done < tests/critical_suite.txt
                     # Parallelized with pytest-xdist: serial gate measured about 15
                     # minutes locally (torch import plus heavy model suites) and sat
                     # close to the 20 minute job timeout.  The -n auto flag cut the
