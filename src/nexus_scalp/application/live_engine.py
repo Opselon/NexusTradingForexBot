@@ -1993,6 +1993,10 @@ class LiveEngine:
                     return int(w.shape[1])
         except Exception:
             pass
+        # BUG-125 regression: tests call via LiveEngine._expected_num_features_for_artifact(None, path)
+        # (unbound with self=None on macOS). Handle None gracefully.
+        if self is None:
+            return int(LiveEngine.FEATURE_DIM)
         return int(self.__class__.FEATURE_DIM)
 
     def _load_or_initialize_model_weights(self, model_path: Path, force_fresh: bool) -> ScalpNet:

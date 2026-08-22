@@ -28,6 +28,7 @@ dependencies = [
     "httpx>=0.26.0,<1.0.0",
     "MetaTrader5>=5.0.45; platform_system == 'Windows'",
     "feedparser>=6.0.0,<7.0.0; python_version >= '3.11'",
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

@@ -2869,6 +2869,7 @@
                             <i class="fa-solid fa-list mr-2 text-accentCyan"></i>
                             Incidents
                         </h3>
+                        <button id="agent-mode-toggle" role="switch" aria-checked="false" onclick="toggleAgentMode()" class="px-2 py-1 rounded bg-darkBg border border-borderClr text-[11px] text-textMuted hover:text-white transition" title="Agent Mode: OFF">Agent Mode</button>
                         <div class="flex items-center gap-1 text-[11px]" role="tablist" id="incident-filter-tabs">
                             <button class="nx-filter-tab nx-filter-tab-active" data-filter="open" role="tab" aria-selected="true" onclick="setIncidentFilter('open', this)">Open</button>
                             <button class="nx-filter-tab" data-filter="resolved" role="tab" aria-selected="false" onclick="setIncidentFilter('resolved', this)">Resolved</button>

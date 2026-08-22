@@ -66,8 +66,8 @@ PRO_SYSTEM_PROMPT = (
     + "  the deterministic variables (importance, xauusd relevance, direction,\n"
     + "  confidence). Accuracy of those mappings depends on your JSON being\n"
     + "  schema-correct and grounded.\n"
-    + '- You MUST include \\"is_junk\\" (boolean): true when the article has no plausible XAUUSD/gold/FX/rates/macro linkage and is lifestyle/consumer/celebrity/sports noise (e.g. Venmo tuition, Costco retail, Tesla robotaxi without macro). False when ANY plausible driver exists (FOMC, CPI, BoE/ECB, rates, yields, gold, USD, geopolitics, energy, safe-haven). When uncertain, set false — deterministic guard still prunes only if local signals also low.\n'
-    + '- When is_junk=true include \\"junk_reason\\" (string <=200 chars) like \\"NO_GOLD_DRIVER_LIFESTYLE\\"; else \\"\\".\n'
+    + '- You MUST include \\"is_junk\\" (boolean). true ONLY for lifestyle/retail/celebrity/sports/human-interest/no-market noise with NO plausible USD/rates/FX/commodity/gold/XAUUSD/macro linkage (examples: tuition, warehouse-club retail, inheritance anecdote, sports). For ANY Treasury/Fed/ECB/BOE/CPI/PPI/yields/USD/gold/safe-haven/geopolitics on policy, set false even if thin — deterministic guard still prunes only if local signals also low.\n'
+    + '- When is_junk=true include \\"junk_reason\\" (one of NO_GOLD_DRIVER_LIFESTYLE|CELEBRITY_NOISE|SPORTS_NOISE|LOW_SIGNAL_RETAIL|ANECDOTAL_OPINION, <=60 chars); else \\"\\".\n'
 )
 
 # Bounded in-process console ring — the News tab streams this via REST.
@@ -261,38 +261,21 @@ def _ranked_pending(db, analyzer, pending_rows, limit):
     Falls back to published_at order if scoring fails.
     """
     try:
-        scored = []
+        scored: list[tuple[float, str, dict]] = []
         for row in pending_rows:
             try:
                 art = _parse_article_row(row)
                 loc = _local_signals(art, analyzer)
                 prio = _gold_priority(art, loc)
-                scored.append((prio, row.get("published_at", ""), row))
+                scored.append((prio, str(row.get("published_at") or ""), row))
             except Exception:
-                scored.append((0.0, row.get("published_at", ""), row))
-        # Higher prio first, then newer published_at, stable
-        scored.sort(key=lambda x: (-x[0], str(x[1]) < "", str(x[1])), reverse=False)
-        # Python sort stability: negate prio, then reverse pub date string
-        # Simpler: sort by (-prio, pub string desc)
-        scored.sort(key=lambda x: (-x[0], "" if not x[1] else str(x[1])), reverse=False)
-        # Actually enforce correctly: gold first, then newest within tier
-        scored.sort(key=lambda kv: (-kv[0], str(kv[1] or "")), reverse=False)
-        # Fix: published_at desc within same prio — do a second stable pass
-        # Bucket by prio 0.05 so near-ties still prefer newer
-        # Final order: higher prio bucket first, then newer published_at
-        scored.sort(key=lambda kv: (-round(kv[0] * 20) / 20, str(kv[1] or "")), reverse=False)
-        # Reverse pub desc within bucket requires explicit key
-        out = []
-        # Stable regroup: bucket by 0.05
-        buckets: dict[float, list] = {}
-        for prio, pub, row in scored:
-            b = round(prio * 20) / 20
-            buckets.setdefault(b, []).append((pub, row))
-        for b in sorted(buckets.keys(), reverse=True):
-            # newest first within bucket
-            buckets[b].sort(key=lambda x: str(x[0] or ""), reverse=True)
-            out.extend(r for _, r in buckets[b])
-        return out[: int(limit)]
+                scored.append((0.0, str(row.get("published_at") or ""), row))
+        # Single deterministic key: gold priority first (higher wins), then newer article first within tier.
+        # Bucket priority to 0.05 so near-ties still prefer recency rather than noise.
+        # Real order: bucket desc, then published_at desc — stable two-pass:
+        scored.sort(key=lambda kv: kv[1], reverse=True)
+        scored.sort(key=lambda kv: -round(kv[0] * 20) / 20)
+        return [r for _, _, r in scored[: int(limit)]]
     except Exception:
         return pending_rows[: int(limit)]
 
@@ -426,16 +409,16 @@ def run_pro_auto_analysis_for_article(
             if isinstance(raw, dict) and raw:
                 llm_json = raw
                 via = "llm"
-            # Soft retry: one immediate retry with a stricter max_tokens=1500
-            # (fixes rare truncation on tool-verbose hosts); if it still
-            # returns empty, fall back to local so the pipeline never stalls.
+            # Soft retry: retry with a slightly smaller budget (2200) for hosts that
+            # truncate the first pass; if it still returns empty or insufficient, fall
+            # back to local so the pipeline never stalls. Rare path — logged as retry.
             elif raw is None or (isinstance(raw, dict) and not raw):
                 try:
                     raw = provider.complete_json(
                         system_prompt=PRO_SYSTEM_PROMPT,
                         user_prompt=user_prompt,
                         temperature=0.2,
-                        max_tokens=1500,
+                        max_tokens=2200,
                     )
                     if isinstance(raw, dict) and raw:
                         llm_json = raw
@@ -450,7 +433,7 @@ def run_pro_auto_analysis_for_article(
                         )
                     else:
                         raise RuntimeError("retry empty")
-                except Exception:
+                except Exception as _retry_e:
                     _err = getattr(provider, "usage", None)
                     _detail = getattr(_err, "last_error", "") if _err else ""
                     _req = getattr(_err, "requests", 0) if _err else 0

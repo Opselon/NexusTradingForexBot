@@ -33,6 +33,7 @@ logging.raiseExceptions = False
 # loaded (the 'Module already imported so cannot be rewritten' warning appears
 # when the order is reversed).
 pytest.register_assert_rewrite("tests.helpers.shadow70_fixtures")
+pytest_plugins = ["tests.helpers.shadow70_fixtures"]
 
 
 @pytest.fixture(autouse=True)
