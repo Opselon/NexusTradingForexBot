@@ -361,12 +361,13 @@ def rdiag_export(tmp_path: Path) -> Path:
 
 def test_cli_setup_contract_and_web_endpoints() -> None:
     from typer.testing import CliRunner
+
     from nexus_scalp.cli.main import app
     from nexus_scalp.release import exit_codes as xc
 
     runner = CliRunner()
-    user_input = chr(10).join(['PAPER', 'XAUUSD', ''])
-    res = runner.invoke(app, ['setup', '--json'], input=user_input)
+    user_input = chr(10).join(["PAPER", "XAUUSD", ""])
+    res = runner.invoke(app, ["setup", "--json"], input=user_input)
     assert res.exit_code == xc.EXIT_OK
 
     raw_lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
@@ -378,14 +379,14 @@ def test_cli_setup_contract_and_web_endpoints() -> None:
         except Exception:
             continue
     assert data is not None
-    assert data['mode'] == 'PAPER'
-    assert data['symbol'] == 'XAUUSD'
-    assert data['port'] == 8080
-    assert 'web_endpoints' in data
-    assert any('8080' in ep for ep in data['web_endpoints'])
-    assert any('localhost' in ep or '127.0.0.1' in ep for ep in data['web_endpoints'])
+    assert data["mode"] == "PAPER"
+    assert data["symbol"] == "XAUUSD"
+    assert data["port"] == 8080
+    assert "web_endpoints" in data
+    assert any("8080" in ep for ep in data["web_endpoints"])
+    assert any("localhost" in ep or "127.0.0.1" in ep for ep in data["web_endpoints"])
 
-    res_human = runner.invoke(app, ['setup'], input=user_input)
+    res_human = runner.invoke(app, ["setup"], input=user_input)
     assert res_human.exit_code == xc.EXIT_OK
-    assert 'Web Dashboard Endpoints (Port 8080):' in res_human.stdout
-    assert 'http://' in res_human.stdout
+    assert "Web Dashboard Endpoints (Port 8080):" in res_human.stdout
+    assert "http://" in res_human.stdout

@@ -973,7 +973,11 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
             console.print("[yellow]Setup aborted — LIVE not confirmed.[/yellow]")
             raise typer.Exit(1)
 
-    symbol = typer.prompt("Trading symbol (XAUUSD=Gold, EURUSD, GBPUSD, ...)", default="XAUUSD").strip().upper()
+    symbol = (
+        typer.prompt("Trading symbol (XAUUSD=Gold, EURUSD, GBPUSD, ...)", default="XAUUSD")
+        .strip()
+        .upper()
+    )
     if not symbol:
         symbol = "XAUUSD"
     config_path = rpaths.get_user_config_path()
@@ -1172,12 +1176,12 @@ def start_cmd(
         from nexus_scalp.settings.service import SettingsService
 
         svc = SettingsService()
-        svc.set("execution.mode", chosen.value, actor="cli:start")
+        svc.set("execution.mode", chosen.value, actor="cli:start")  # type: ignore[attr-defined]
     except Exception:
         pass
 
     endpoints = _get_network_endpoints(port=port)
-    endpoints_str = chr(10).join(f'  • [cyan]{ep}[/cyan]' for ep in endpoints)
+    endpoints_str = chr(10).join(f"  • [cyan]{ep}[/cyan]" for ep in endpoints)
     nl = chr(10)
     welcome_panel = Panel(
         f"[bold cyan]NEXUS SCALP ENGINE[/bold cyan] (v9.0.0 Pro Client){nl}{nl}"
@@ -1185,8 +1189,8 @@ def start_cmd(
         f"[green]✔ Active Instrument   :[/green] [bold]{cfg.execution.symbol}[/bold]{nl}"
         f"[green]✔ Risk Drawdown Guard :[/green] {cfg.risk.max_account_drawdown_pct}% max account drawdown{nl}{nl}"
         f"[bold]Web Control Center and UI Dashboard:[/bold]{nl}{endpoints_str}{nl}{nl}"
-        f"[dim]ℹ Tip: You can seamlessly monitor, inspect charts, and toggle LIVE/SHADOW mode directly inside the Web UI at any time.[/dim]{nl}"
-        f"[dim]ℹ Press Ctrl+C to safely stop the engine.[/dim]",
+        f"[dim]Tip: You can seamlessly monitor, inspect charts, and toggle LIVE/SHADOW mode directly inside the Web UI at any time.[/dim]{nl}"
+        f"[dim]Press Ctrl+C to safely stop the engine.[/dim]",
         title="🚀 NEXUS TRADING FOREX BOT",
         border_style="cyan",
     )
@@ -1287,7 +1291,12 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     # (NSE_WEB_HOST / NSE_WEB_PORT); bare `run` keeps localhost-only.
     bind_host = os.getenv("NSE_WEB_HOST", "127.0.0.1")
     uvicorn_config = uvicorn.Config(
-        app=app_obj, host=bind_host, port=port, log_level="warning", ws_max_size=16 * 1024 * 1024, ws="none"
+        app=app_obj,
+        host=bind_host,
+        port=port,
+        log_level="warning",
+        ws_max_size=16 * 1024 * 1024,
+        ws="none",
     )
     server = uvicorn.Server(uvicorn_config)
 

@@ -351,12 +351,28 @@ class CandleIntelStore:
         # Self-heal corrupted DB (candle_intel.db with bare candles(id) table) — see commit fde756b fix
         try:
             import sqlite3 as _sqlite3  # noqa: F401
-            probe_cur = self._conn.cursor() if hasattr(self, "_conn") and self._conn is not None else None
+
+            probe_cur = (
+                self._conn.cursor() if hasattr(self, "_conn") and self._conn is not None else None
+            )
             if probe_cur is not None:
                 try:
                     probe_cur.execute("SELECT bar_ts FROM candles LIMIT 0")
                 except Exception:
-                    for _tbl in ("candles", "candle_closures", "candle_patterns", "market_regimes", "feature_vectors", "trade_proposals", "trade_decisions", "open_positions", "exit_signals", "risk_evaluations", "rule_vetoes", "audit_log"):
+                    for _tbl in (
+                        "candles",
+                        "candle_closures",
+                        "candle_patterns",
+                        "market_regimes",
+                        "feature_vectors",
+                        "trade_proposals",
+                        "trade_decisions",
+                        "open_positions",
+                        "exit_signals",
+                        "risk_evaluations",
+                        "rule_vetoes",
+                        "audit_log",
+                    ):
                         try:
                             probe_cur.execute(f"DROP TABLE IF EXISTS {_tbl}")
                         except Exception:

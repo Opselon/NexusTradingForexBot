@@ -120,7 +120,8 @@ def test_error_routes_to_error_file_with_stack(log_root) -> None:
     time.sleep(0.2)
     assert _read_events(root, "error") == ["BACKTEST_FAILED"]
     assert _read_events(root, "info") == []
-    today = datetime.now().strftime("%Y-%m-%d"); content = (root / "error" / today[:4] / today[5:7] / f"{today}.log").read_text(encoding="utf-8")
+    today = datetime.now().strftime("%Y-%m-%d")
+    content = (root / "error" / today[:4] / today[5:7] / f"{today}.log").read_text(encoding="utf-8")
     assert "ValueError: boom" in content
     assert "Traceback (most recent call last)" in content
     assert _ANSI_RE.search(content) is None  # plain-text file output
@@ -147,7 +148,8 @@ def test_structured_fields_present(log_root) -> None:
         correlation_id="RUN-20260820-0001",
     )
     time.sleep(0.1)
-    today = datetime.now().strftime("%Y-%m-%d"); content = (root / "info" / today[:4] / today[5:7] / f"{today}.log").read_text(encoding="utf-8")
+    today = datetime.now().strftime("%Y-%m-%d")
+    content = (root / "info" / today[:4] / today[5:7] / f"{today}.log").read_text(encoding="utf-8")
     assert "GENERATION_STARTED" in content
     assert "component=StrategyFactory" in content
     assert "generation_id=14" in content
@@ -165,7 +167,8 @@ def test_secrets_redacted_on_disk(log_root) -> None:
         correlation_id="RUN-T",
     )
     time.sleep(0.1)
-    today = datetime.now().strftime("%Y-%m-%d"); content = (root / "info" / today[:4] / today[5:7] / f"{today}.log").read_text(encoding="utf-8")
+    today = datetime.now().strftime("%Y-%m-%d")
+    content = (root / "info" / today[:4] / today[5:7] / f"{today}.log").read_text(encoding="utf-8")
     assert "sk-12345" not in content
     assert "hunter2" not in content
     assert "[REDACTED_SECRET]" in content
