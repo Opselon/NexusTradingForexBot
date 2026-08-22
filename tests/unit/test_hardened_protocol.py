@@ -1,8 +1,6 @@
 import math
-import os
 from datetime import UTC, datetime
 
-import numpy as np
 import polars as pl
 import pytest
 import torch
@@ -10,11 +8,9 @@ import torch
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
-    Position,
     SymbolInfo,
     TickData,
     TradeOrder,
-    TradeProposal,
 )
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
 from nexus_scalp.features.regime_classifier import (
@@ -24,7 +20,6 @@ from nexus_scalp.features.regime_classifier import (
     RegimeType,
 )
 from nexus_scalp.features.scalp_features import (
-    BarData,
     FeaturePipelineFrozenError,
     FeatureVector,
     ScalpFeatureEngine,
@@ -32,7 +27,7 @@ from nexus_scalp.features.scalp_features import (
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.signals.policy import SignalPolicy
-from nexus_scalp.training.walk_forward_trainer import ScalpDataset, WalkForwardTrainer
+from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
 # =============================================================================
 # 1. MODEL ROLLBACK & STABILIZATION TESTS

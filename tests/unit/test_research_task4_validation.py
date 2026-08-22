@@ -30,7 +30,6 @@ from nexus_scalp.research.pipeline import ResearchPipeline, _select_family
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.robustness import RobustnessEngine
 from nexus_scalp.research.scoring import compute_strategy_score
-from nexus_scalp.research.walkforward import WalkForwardEngine
 from nexus_scalp.research.worker import ResearchWorker
 
 try:

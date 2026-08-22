@@ -1,4 +1,4 @@
-﻿"""Dedicated News database (PHASE 12).
+"""Dedicated News database (PHASE 12).
 
 A SEPARATE SQLite database (``artifacts/news.db``) so news rows, article
 bodies, analysis payloads and AI traces NEVER mix with the core trading
@@ -221,8 +221,9 @@ _SCHEMA_SQL: list[str] = [
     """,
 ]
 
-_SCHEMA_SQL.extend([
-    """
+_SCHEMA_SQL.extend(
+    [
+        """
     CREATE TABLE IF NOT EXISTS news_ai_analysis (
         ai_analysis_id TEXT PRIMARY KEY,
         article_id TEXT NOT NULL,
@@ -246,7 +247,7 @@ _SCHEMA_SQL.extend([
         analyzed_at TEXT NOT NULL
     );
     """,
-    """
+        """
     CREATE TABLE IF NOT EXISTS news_junk_hashes (
         article_hash TEXT PRIMARY KEY,
         title TEXT NOT NULL DEFAULT '',
@@ -255,7 +256,7 @@ _SCHEMA_SQL.extend([
         analysis_id TEXT DEFAULT ''
     );
     """,
-    """
+        """
     CREATE TABLE IF NOT EXISTS news_analyzed_hashes (
         article_hash TEXT PRIMARY KEY,
         title TEXT NOT NULL DEFAULT '',
@@ -263,7 +264,7 @@ _SCHEMA_SQL.extend([
         analyzed_at TEXT NOT NULL
     );
     """,
-    """
+        """
     CREATE TABLE IF NOT EXISTS news_prune_audit (
         audit_id TEXT PRIMARY KEY,
         article_id TEXT NOT NULL,
@@ -276,9 +277,8 @@ _SCHEMA_SQL.extend([
         created_at TEXT NOT NULL
     );
     """,
-])
-
-_INDEX_SQL: list[str] = []
+    ]
+)
 
 _INDEX_SQL: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_news_articles_published ON news_articles(published_at DESC);",
@@ -372,10 +372,14 @@ class NewsDatabase:
     def is_junk_hash(self, article_hash: str) -> bool:
         """True if this article_hash was tombstoned as junk (never re-ingest)."""
         with self._connect() as conn:
-            row = conn.execute("SELECT 1 FROM news_junk_hashes WHERE article_hash = ?;", (article_hash,)).fetchone()
+            row = conn.execute(
+                "SELECT 1 FROM news_junk_hashes WHERE article_hash = ?;", (article_hash,)
+            ).fetchone()
             return row is not None
 
-    def remember_junk_hash(self, article_hash: str, title: str = "", reason: str = "junk", analysis_id: str = "") -> None:
+    def remember_junk_hash(
+        self, article_hash: str, title: str = "", reason: str = "junk", analysis_id: str = ""
+    ) -> None:
         with self._connect() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO news_junk_hashes (article_hash, title, reason, pruned_at, analysis_id) VALUES (?, ?, ?, ?, ?);",
@@ -391,7 +395,13 @@ class NewsDatabase:
                 try:
                     conn.execute(
                         "INSERT OR IGNORE INTO news_junk_hashes (article_hash, title, reason, pruned_at, analysis_id) VALUES (?, ?, ?, ?, ?);",
-                        (h.get("article_hash",""), h.get("title",""), h.get("reason","junk"), self._now(), h.get("analysis_id","")),
+                        (
+                            h.get("article_hash", ""),
+                            h.get("title", ""),
+                            h.get("reason", "junk"),
+                            self._now(),
+                            h.get("analysis_id", ""),
+                        ),
                     )
                     n += 1
                 except Exception:
@@ -406,10 +416,14 @@ class NewsDatabase:
     def is_analyzed_hash(self, article_hash: str) -> bool:
         """True if this article_hash was already analyzed (idempotent guard)."""
         with self._connect() as conn:
-            row = conn.execute("SELECT 1 FROM news_analyzed_hashes WHERE article_hash = ?;", (article_hash,)).fetchone()
+            row = conn.execute(
+                "SELECT 1 FROM news_analyzed_hashes WHERE article_hash = ?;", (article_hash,)
+            ).fetchone()
             return row is not None
 
-    def remember_analyzed_hash(self, article_hash: str, title: str = "", analysis_id: str = "") -> None:
+    def remember_analyzed_hash(
+        self, article_hash: str, title: str = "", analysis_id: str = ""
+    ) -> None:
         """Remember that article_hash has been analyzed — suppresses re-ingest + re-analysis."""
         with self._connect() as conn:
             conn.execute(
@@ -586,7 +600,10 @@ class NewsDatabase:
                 )
 
     def list_articles(
-        self, limit: int = 50, include_duplicates: bool = False, asset_filter: str | None = None,
+        self,
+        limit: int = 50,
+        include_duplicates: bool = False,
+        asset_filter: str | None = None,
         status_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         bounded = max(1, min(int(limit), 500))
@@ -740,7 +757,10 @@ class NewsDatabase:
         Pass allow_overwrite=True only for explicit user re-analysis (API force flag)."""
         if not allow_overwrite:
             with self._connect() as conn:
-                exists = conn.execute("SELECT 1 FROM news_analysis WHERE article_id = ? LIMIT 1;", (row.get("article_id", ""),)).fetchone()
+                exists = conn.execute(
+                    "SELECT 1 FROM news_analysis WHERE article_id = ? LIMIT 1;",
+                    (row.get("article_id", ""),),
+                ).fetchone()
                 if exists is not None:
                     return
         with self._connect() as conn:
@@ -788,12 +808,18 @@ class NewsDatabase:
         try:
             ah = None
             with self._connect() as _c2:
-                r = _c2.execute("SELECT article_hash, title FROM news_articles WHERE article_id = ?;", (row.get("article_id",""),)).fetchone()
+                r = _c2.execute(
+                    "SELECT article_hash, title FROM news_articles WHERE article_id = ?;",
+                    (row.get("article_id", ""),),
+                ).fetchone()
                 if r:
                     ah = str(r["article_hash"] or "")
                     ttl = str(r["title"] or "")
                     if ah:
-                        _c2.execute("INSERT OR IGNORE INTO news_analyzed_hashes (article_hash, title, analysis_id, analyzed_at) VALUES (?, ?, ?, ?);", (ah, ttl, row.get("analysis_id",""), self._now()))
+                        _c2.execute(
+                            "INSERT OR IGNORE INTO news_analyzed_hashes (article_hash, title, analysis_id, analyzed_at) VALUES (?, ?, ?, ?);",
+                            (ah, ttl, row.get("analysis_id", ""), self._now()),
+                        )
         except Exception:
             pass
 
@@ -977,10 +1003,10 @@ class NewsDatabase:
         buckets: dict[int, dict[str, Any]] = {}
         for anchor_ts, direction, strength, relevance, title in rows:
             try:
-                ts = datetime.fromisoformat(str(anchor_ts).replace("Z", "+00:00")).timestamp()
+                _ts_f = datetime.fromisoformat(str(anchor_ts).replace("Z", "+00:00")).timestamp()
             except Exception:
                 continue
-            bucket = int(ts // bucket_sec) * bucket_sec
+            bucket = int(_ts_f // bucket_sec) * bucket_sec
             b = buckets.setdefault(
                 bucket,
                 {
@@ -1126,7 +1152,7 @@ class NewsDatabase:
             with self._connect() as conn:
                 exists = conn.execute(
                     "SELECT 1 FROM news_ai_analysis WHERE article_id = ? AND analysis_status IN ('completed','completed_insufficient') LIMIT 1;",
-                    (row.get("article_id", ""),)
+                    (row.get("article_id", ""),),
                 ).fetchone()
                 if exists is not None:
                     return

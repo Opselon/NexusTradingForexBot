@@ -52,18 +52,15 @@ from nexus_scalp.experience.models import (
     CANONICAL_FEATURE_SCHEMA_ID,
 )
 from nexus_scalp.shadow import (
-    PromotionEvaluation,
-    ShadowComparison,
     ShadowDecisionRecord,
     ShadowEvidenceStatus,
     ShadowModelRef,
-    ShadowRun,
     SharedInputRef,
 )
 from nexus_scalp.shadow.comparison import ShadowComparer
 from nexus_scalp.shadow.engine import ShadowEngine
 from nexus_scalp.shadow.store import ShadowStore
-from nexus_scalp.shadow.worker import ShadowWorker, format_shadow_worker_status
+from nexus_scalp.shadow.worker import ShadowWorker
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-﻿"""News PRO Auto-Analysis (FULL — LLM + local fallback, junk purge, full drain, console).
+"""News PRO Auto-Analysis (FULL — LLM + local fallback, junk purge, full drain, console).
 
 When the PRO toggle is ON (news.auto_analysis_enabled == True):
 
@@ -66,8 +66,8 @@ PRO_SYSTEM_PROMPT = (
     + "  the deterministic variables (importance, xauusd relevance, direction,\n"
     + "  confidence). Accuracy of those mappings depends on your JSON being\n"
     + "  schema-correct and grounded.\n"
-    + "- You MUST include \\\"is_junk\\\" (boolean): true when the article has no plausible XAUUSD/gold/FX/rates/macro linkage and is lifestyle/consumer/celebrity/sports noise (e.g. Venmo tuition, Costco retail, Tesla robotaxi without macro). False when ANY plausible driver exists (FOMC, CPI, BoE/ECB, rates, yields, gold, USD, geopolitics, energy, safe-haven). When uncertain, set false — deterministic guard still prunes only if local signals also low.\n"
-    + "- When is_junk=true include \\\"junk_reason\\\" (string <=200 chars) like \\\"NO_GOLD_DRIVER_LIFESTYLE\\\"; else \\\"\\\".\n"
+    + '- You MUST include \\"is_junk\\" (boolean): true when the article has no plausible XAUUSD/gold/FX/rates/macro linkage and is lifestyle/consumer/celebrity/sports noise (e.g. Venmo tuition, Costco retail, Tesla robotaxi without macro). False when ANY plausible driver exists (FOMC, CPI, BoE/ECB, rates, yields, gold, USD, geopolitics, energy, safe-haven). When uncertain, set false — deterministic guard still prunes only if local signals also low.\n'
+    + '- When is_junk=true include \\"junk_reason\\" (string <=200 chars) like \\"NO_GOLD_DRIVER_LIFESTYLE\\"; else \\"\\".\n'
 )
 
 # Bounded in-process console ring — the News tab streams this via REST.
@@ -207,7 +207,19 @@ def _gold_priority(article: NewsArticle, local: dict[str, Any]) -> float:
         # from the local classifier — still credit them as drivers.
         title_blob = ((article.title or "") + " " + (article.summary or "")).upper()
         keyword_drivers = set()
-        if any(k in title_blob for k in ("FOMC", "FEDERAL RESERVE", "ECB", "BOE", "BANK RATE", "MONETARY POLICY", "MINUTES", "STATEMENT")):
+        if any(
+            k in title_blob
+            for k in (
+                "FOMC",
+                "FEDERAL RESERVE",
+                "ECB",
+                "BOE",
+                "BANK RATE",
+                "MONETARY POLICY",
+                "MINUTES",
+                "STATEMENT",
+            )
+        ):
             keyword_drivers.update(["CENTRAL_BANK", "MONETARY_POLICY"])
         if any(k in title_blob for k in ("CPI", "INFLATION")):
             keyword_drivers.add("INFLATION")
@@ -216,9 +228,17 @@ def _gold_priority(article: NewsArticle, local: dict[str, Any]) -> float:
         if any(k in title_blob for k in ("YIELD", "TREASURY", "BOND")):
             keyword_drivers.add("BOND_YIELDS")
         driver_bonus = 0.0
-        for key, w in (("INTEREST_RATES", 0.10), ("CENTRAL_BANK", 0.10), ("BOND_YIELDS", 0.10),
-                       ("INFLATION", 0.12), ("SAFE_HAVEN", 0.08), ("GEOPOLITICS", 0.08),
-                       ("MONETARY_POLICY", 0.08), ("USD", 0.06), ("COMMODITIES", 0.06)):
+        for key, w in (
+            ("INTEREST_RATES", 0.10),
+            ("CENTRAL_BANK", 0.10),
+            ("BOND_YIELDS", 0.10),
+            ("INFLATION", 0.12),
+            ("SAFE_HAVEN", 0.08),
+            ("GEOPOLITICS", 0.08),
+            ("MONETARY_POLICY", 0.08),
+            ("USD", 0.06),
+            ("COMMODITIES", 0.06),
+        ):
             if key in topics or key in keyword_drivers:
                 driver_bonus += w
         driver_bonus = min(0.30, driver_bonus)
@@ -295,7 +315,11 @@ def _map_llm_into_deterministic(
     sentiment = str(llm_json.get("sentiment", local["direction"] or "NEUTRAL")).upper()
     # Map sentiment -> NewsDirection
     try:
-        direction = NewsDirection(sentiment) if sentiment in ("BULLISH", "BEARISH", "NEUTRAL") else local["_direction"]
+        direction = (
+            NewsDirection(sentiment)
+            if sentiment in ("BULLISH", "BEARISH", "NEUTRAL")
+            else local["_direction"]
+        )
     except Exception:
         direction = local["_direction"]
 
@@ -305,7 +329,9 @@ def _map_llm_into_deterministic(
     confidence = round(base_conf if insufficient else min(1.0, base_conf + 0.15), 4)
 
     # Impact strength: derived from importance + sentiment clarity
-    impact_strength = float(local["importance_score"]) * (0.9 if sentiment in ("BULLISH", "BEARISH") else 0.6)
+    impact_strength = float(local["importance_score"]) * (
+        0.9 if sentiment in ("BULLISH", "BEARISH") else 0.6
+    )
     impact_strength = max(0.0, min(1.0, round(impact_strength, 4)))
 
     summary = str(llm_json.get("summary", article.summary or article.title or "") or "")[:4000]
@@ -337,14 +363,28 @@ def run_pro_auto_analysis_for_article(
     analyzer = analyzer or LocalNewsAnalyzer()
     row = db.get_article(article_id)
     if not row:
-        _console_push({"kind": "error", "article_id": article_id, "msg": "ARTICLE_NOT_FOUND", "via": "pro_auto"})
+        _console_push(
+            {
+                "kind": "error",
+                "article_id": article_id,
+                "msg": "ARTICLE_NOT_FOUND",
+                "via": "pro_auto",
+            }
+        )
         return {"ok": False, "error": "ARTICLE_NOT_FOUND", "via": "error"}
 
     # Idempotent: tombstoned hash never re-analyzed unless force=True
     try:
         ah0 = str(row.get("article_hash") or "")
         if not force and ah0 and db.is_analyzed_hash(ah0):
-            _console_push({"kind": "skip", "article_id": article_id, "msg": "already analyzed (tombstone)", "via": "cached"})
+            _console_push(
+                {
+                    "kind": "skip",
+                    "article_id": article_id,
+                    "msg": "already analyzed (tombstone)",
+                    "via": "cached",
+                }
+            )
             return {"ok": True, "via": "cached", "article_id": article_id, "status": "skipped"}
     except Exception:
         pass
@@ -354,7 +394,14 @@ def run_pro_auto_analysis_for_article(
         if prior and prior.get("analysis_status") in ("completed", "completed_insufficient"):
             # Still ensure deterministic layer exists
             if db.get_analysis(article_id):
-                _console_push({"kind": "skip", "article_id": article_id, "msg": "already analyzed", "via": "cached"})
+                _console_push(
+                    {
+                        "kind": "skip",
+                        "article_id": article_id,
+                        "msg": "already analyzed",
+                        "via": "cached",
+                    }
+                )
                 return {"ok": True, "via": "cached", "article_id": article_id, "status": "skipped"}
 
     article = _parse_article_row(row)
@@ -362,7 +409,8 @@ def run_pro_auto_analysis_for_article(
 
     # Resolve Factory LLM provider (API key from secret store, never exposed)
     svc2 = _resolve_settings_service(engine, settings_service)
-    provider = resolve_factory_provider(engine if hasattr(engine, "settings_service") else engine, svc2)  # noqa: RUF034
+    _eng_for_provider = engine  # _resolve_settings_service already chases engine.settings_service
+    provider = resolve_factory_provider(_eng_for_provider, svc2)
     llm_json: dict[str, Any] | None = None
     via = "local"
 
@@ -383,33 +431,82 @@ def run_pro_auto_analysis_for_article(
             # returns empty, fall back to local so the pipeline never stalls.
             elif raw is None or (isinstance(raw, dict) and not raw):
                 try:
-                    raw = provider.complete_json(system_prompt=PRO_SYSTEM_PROMPT, user_prompt=user_prompt, temperature=0.2, max_tokens=1500)
+                    raw = provider.complete_json(
+                        system_prompt=PRO_SYSTEM_PROMPT,
+                        user_prompt=user_prompt,
+                        temperature=0.2,
+                        max_tokens=1500,
+                    )
                     if isinstance(raw, dict) and raw:
                         llm_json = raw
                         via = "llm"
-                        _console_push({"kind": "ai_retry_ok", "article_id": article_id, "via": "llm", "msg": "soft retry recovered LLM JSON"})
+                        _console_push(
+                            {
+                                "kind": "ai_retry_ok",
+                                "article_id": article_id,
+                                "via": "llm",
+                                "msg": "soft retry recovered LLM JSON",
+                            }
+                        )
                     else:
                         raise RuntimeError("retry empty")
                 except Exception:
-                    _err = getattr(provider, 'usage', None)
-                    _detail = getattr(_err, 'last_error', '') if _err else ''
-                    _req = getattr(_err, 'requests', 0) if _err else 0
-                    _fail = getattr(_err, 'failures', 0) if _err else 0
-                    _raw_type = type(raw).__name__ if raw is not None else 'None'
+                    _err = getattr(provider, "usage", None)
+                    _detail = getattr(_err, "last_error", "") if _err else ""
+                    _req = getattr(_err, "requests", 0) if _err else 0
+                    _fail = getattr(_err, "failures", 0) if _err else 0
+                    _raw_type = type(raw).__name__ if raw is not None else "None"
                     _raw_len = len(str(raw)) if raw is not None else 0
-                    _console_push({"kind": "fallback", "article_id": article_id, "msg": f"LLM returned empty ({_raw_type} len={_raw_len}) last_error={_detail} req={_req} fail={_fail}, using local", "via": "local"})
-                    logger.warning("[PRO_AUTO] LLM empty", article_id=article_id, raw_type=_raw_type, raw_len=_raw_len, last_error=_detail, requests=_req, failures=_fail)
+                    _console_push(
+                        {
+                            "kind": "fallback",
+                            "article_id": article_id,
+                            "msg": f"LLM returned empty ({_raw_type} len={_raw_len}) last_error={_detail} req={_req} fail={_fail}, using local",
+                            "via": "local",
+                        }
+                    )
+                    logger.warning(
+                        "[PRO_AUTO] LLM empty",
+                        article_id=article_id,
+                        raw_type=_raw_type,
+                        raw_len=_raw_len,
+                        last_error=_detail,
+                        requests=_req,
+                        failures=_fail,
+                    )
             else:
-                _err = getattr(provider, 'usage', None)
-                _detail = getattr(_err, 'last_error', '') if _err else ''
-                _req = getattr(_err, 'requests', 0) if _err else 0
-                _fail = getattr(_err, 'failures', 0) if _err else 0
-                _raw_type = type(raw).__name__ if raw is not None else 'None'
+                _err = getattr(provider, "usage", None)
+                _detail = getattr(_err, "last_error", "") if _err else ""
+                _req = getattr(_err, "requests", 0) if _err else 0
+                _fail = getattr(_err, "failures", 0) if _err else 0
+                _raw_type = type(raw).__name__ if raw is not None else "None"
                 _raw_len = len(str(raw)) if raw is not None else 0
-                _console_push({"kind": "fallback", "article_id": article_id, "msg": f"LLM returned empty ({_raw_type} len={_raw_len}) last_error={_detail} req={_req} fail={_fail}, using local", "via": "local"})
-                logger.warning("[PRO_AUTO] LLM empty", article_id=article_id, raw_type=_raw_type, raw_len=_raw_len, last_error=_detail, requests=_req, failures=_fail)
+                _console_push(
+                    {
+                        "kind": "fallback",
+                        "article_id": article_id,
+                        "msg": f"LLM returned empty ({_raw_type} len={_raw_len}) last_error={_detail} req={_req} fail={_fail}, using local",
+                        "via": "local",
+                    }
+                )
+                logger.warning(
+                    "[PRO_AUTO] LLM empty",
+                    article_id=article_id,
+                    raw_type=_raw_type,
+                    raw_len=_raw_len,
+                    last_error=_detail,
+                    requests=_req,
+                    failures=_fail,
+                )
         except Exception as e:
-            _console_push({"kind": "fallback", "article_id": article_id, "msg": f"LLM error {type(e).__name__}, using local", "via": "local"})
+            _console_push(
+                {
+                    "kind": "fallback",
+                    "article_id": article_id,
+                    "msg": f"LLM error {type(e).__name__}, using local",
+                    "via": "local",
+                }
+            )
             llm_json = None
 
     # Deterministic path ALWAYS runs so variables are accurate
@@ -418,7 +515,11 @@ def run_pro_auto_analysis_for_article(
         _map_llm_into_deterministic(db, article, local, llm_json)
         # Validate LLM JSON schema before persisting AI layer
         validated = _validate_response(llm_json, article_id)
-        validated.provider = getattr(provider, "provider_name", "openai-compatible") if provider else "openai-compatible"
+        validated.provider = (
+            getattr(provider, "provider_name", "openai-compatible")
+            if provider
+            else "openai-compatible"
+        )
         validated.model = getattr(provider, "model", "") if provider else ""
         validated.analysis_version = NEWS_AI_ANALYSIS_VERSION
         # Persist AI layer
@@ -439,13 +540,36 @@ def run_pro_auto_analysis_for_article(
                         "model": validated.model,
                         "sentiment": validated.sentiment,
                         "summary": (validated.summary or "")[:220],
-                        "answer": {k: llm_json.get(k) for k in ("summary", "sentiment", "market_relevance", "xauusd_relevance", "potential_market_impact")},
+                        "answer": {
+                            k: llm_json.get(k)
+                            for k in (
+                                "summary",
+                                "sentiment",
+                                "market_relevance",
+                                "xauusd_relevance",
+                                "potential_market_impact",
+                            )
+                        },
                     }
                 )
             else:
-                _console_push({"kind": "ai_failed", "article_id": article_id, "via": "llm", "msg": validated.error_detail})
+                _console_push(
+                    {
+                        "kind": "ai_failed",
+                        "article_id": article_id,
+                        "via": "llm",
+                        "msg": validated.error_detail,
+                    }
+                )
         except Exception as e:
-            _console_push({"kind": "ai_persist_failed", "article_id": article_id, "via": "llm", "msg": type(e).__name__})
+            _console_push(
+                {
+                    "kind": "ai_persist_failed",
+                    "article_id": article_id,
+                    "via": "llm",
+                    "msg": type(e).__name__,
+                }
+            )
     # LLM-driven inline purge: when the model itself says is_junk=true AND the
     # deterministic local signals are also low (conservative double-gate), remove
     # the article immediately so the DB never accumulates Venmo/Costco noise.
@@ -458,38 +582,97 @@ def run_pro_auto_analysis_for_article(
             _imp = float(local.get("importance_score", 0) or 0)
             _xau = float(local.get("xauusd_relevance", 0) or 0)
             # Use the same thresholds as auto_prune (0.30 / 0.25) — LLM+local AND
-            _det_also_junk = (_imp < 0.30 and _xau < 0.25)
+            _det_also_junk = _imp < 0.30 and _xau < 0.25
             if _det_also_junk:
                 # Purge now: delete article + analysis + ai + derived, tombstone hash
                 try:
                     _ah = str(row.get("article_hash") or "")
                     _title = str(row.get("title") or "")
                     with db._connect() as _conn:
-                        _conn.execute("DELETE FROM news_articles WHERE article_id = ?;", (article_id,))
-                        _conn.execute("DELETE FROM news_analysis WHERE article_id = ?;", (article_id,))
-                        _conn.execute("DELETE FROM news_ai_analysis WHERE article_id = ?;", (article_id,))
-                        _conn.execute("DELETE FROM news_entities WHERE article_id = ?;", (article_id,))
-                        _conn.execute("DELETE FROM news_topics WHERE article_id = ?;", (article_id,))
-                        _conn.execute("DELETE FROM news_impacts WHERE article_id = ?;", (article_id,))
-                        _conn.execute("DELETE FROM news_consensus WHERE article_id = ?;", (article_id,))
+                        _conn.execute(
+                            "DELETE FROM news_articles WHERE article_id = ?;", (article_id,)
+                        )
+                        _conn.execute(
+                            "DELETE FROM news_analysis WHERE article_id = ?;", (article_id,)
+                        )
+                        _conn.execute(
+                            "DELETE FROM news_ai_analysis WHERE article_id = ?;", (article_id,)
+                        )
+                        _conn.execute(
+                            "DELETE FROM news_entities WHERE article_id = ?;", (article_id,)
+                        )
+                        _conn.execute(
+                            "DELETE FROM news_topics WHERE article_id = ?;", (article_id,)
+                        )
+                        _conn.execute(
+                            "DELETE FROM news_impacts WHERE article_id = ?;", (article_id,)
+                        )
+                        _conn.execute(
+                            "DELETE FROM news_consensus WHERE article_id = ?;", (article_id,)
+                        )
                         if _ah:
                             _conn.execute(
                                 "INSERT OR IGNORE INTO news_junk_hashes (article_hash, title, reason, pruned_at) VALUES (?, ?, ?, ?);",
-                                (_ah, _title, f"llm_junk:{_junk_reason}", __import__('datetime').datetime.now(__import__('datetime').UTC).isoformat()),
+                                (
+                                    _ah,
+                                    _title,
+                                    f"llm_junk:{_junk_reason}",
+                                    __import__("datetime")
+                                    .datetime.now(__import__("datetime").UTC)
+                                    .isoformat(),
+                                ),
                             )
                         _conn.commit()
-                    _console_push({"kind": "llm_purge", "article_id": article_id, "via": "llm", "msg": f"LLM junk purged: {_junk_reason} (imp={_imp:.2f} xau={_xau:.2f})", "junk_reason": _junk_reason})
-                    return {"ok": True, "via": "purged_llm", "article_id": article_id, "junk_reason": _junk_reason, "local": local, "llm_json": llm_json}
+                    _console_push(
+                        {
+                            "kind": "llm_purge",
+                            "article_id": article_id,
+                            "via": "llm",
+                            "msg": f"LLM junk purged: {_junk_reason} (imp={_imp:.2f} xau={_xau:.2f})",
+                            "junk_reason": _junk_reason,
+                        }
+                    )
+                    return {
+                        "ok": True,
+                        "via": "purged_llm",
+                        "article_id": article_id,
+                        "junk_reason": _junk_reason,
+                        "local": local,
+                        "llm_json": llm_json,
+                    }
                 except Exception as _pe:
-                    _console_push({"kind": "llm_purge_failed", "article_id": article_id, "via": "llm", "msg": type(_pe).__name__})
+                    _console_push(
+                        {
+                            "kind": "llm_purge_failed",
+                            "article_id": article_id,
+                            "via": "llm",
+                            "msg": type(_pe).__name__,
+                        }
+                    )
             else:
                 # LLM says junk but deterministic disagrees — mark IRRELEVANT instead of deleting (recoverable)
                 try:
-                    db.set_article_status(article_id, "IRRELEVANT", reason=f"LLM_JUNK_SOFT:{_junk_reason}", actor="llm_purge")
+                    db.set_article_status(
+                        article_id,
+                        "IRRELEVANT",
+                        reason=f"LLM_JUNK_SOFT:{_junk_reason}",
+                        actor="llm_purge",
+                    )
                     ah2 = str(row.get("article_hash") or "")
                     if ah2:
-                        db.remember_junk_hash(ah2, title=str(row.get("title","")), reason=f"LLM_JUNK_SOFT:{_junk_reason}")
-                    _console_push({"kind": "llm_mark_irrelevant", "article_id": article_id, "via": "llm", "msg": f"LLM junk soft-marked IRRELEVANT: {_junk_reason}"})
+                        db.remember_junk_hash(
+                            ah2,
+                            title=str(row.get("title", "")),
+                            reason=f"LLM_JUNK_SOFT:{_junk_reason}",
+                        )
+                    _console_push(
+                        {
+                            "kind": "llm_mark_irrelevant",
+                            "article_id": article_id,
+                            "via": "llm",
+                            "msg": f"LLM junk soft-marked IRRELEVANT: {_junk_reason}",
+                        }
+                    )
                 except Exception:
                     pass
         except Exception:
@@ -505,12 +688,36 @@ def run_pro_auto_analysis_for_article(
         else:
             from nexus_scalp.news.analysis.pipeline import NewsAnalysisPipeline
 
-            pipe = NewsAnalysisPipeline(db, getattr(engine, "config", None) if engine else None, local=analyzer)
+            pipe = NewsAnalysisPipeline(
+                db, getattr(engine, "config", None) if engine else None, local=analyzer
+            )
             pipe.analyze_article(article)
-        _console_push({"kind": "analysis_ok", "article_id": article_id, "via": via, "direction": local["direction"], "xauusd": local["xauusd_relevance"], "importance": local["importance_score"]})
-        return {"ok": True, "via": via, "article_id": article_id, "local": local, "llm_json": llm_json}
+        _console_push(
+            {
+                "kind": "analysis_ok",
+                "article_id": article_id,
+                "via": via,
+                "direction": local["direction"],
+                "xauusd": local["xauusd_relevance"],
+                "importance": local["importance_score"],
+            }
+        )
+        return {
+            "ok": True,
+            "via": via,
+            "article_id": article_id,
+            "local": local,
+            "llm_json": llm_json,
+        }
     except Exception as e:
-        _console_push({"kind": "analysis_failed", "article_id": article_id, "via": via, "msg": type(e).__name__})
+        _console_push(
+            {
+                "kind": "analysis_failed",
+                "article_id": article_id,
+                "via": via,
+                "msg": type(e).__name__,
+            }
+        )
         return {"ok": False, "via": via, "error": type(e).__name__, "article_id": article_id}
 
 
@@ -554,7 +761,11 @@ def run_pro_cycle(
                 ah_b = str(art.get("article_hash") or "")
                 if ah_b:
                     ex0 = db.get_analysis(art["article_id"]) or {}
-                    db.remember_analyzed_hash(ah_b, title=str(art.get("title","")), analysis_id=str(ex0.get("analysis_id","")))
+                    db.remember_analyzed_hash(
+                        ah_b,
+                        title=str(art.get("title", "")),
+                        analysis_id=str(ex0.get("analysis_id", "")),
+                    )
             except Exception:
                 pass
     pending = _ranked_pending(db, analyzer, raw_pending, limit)
@@ -568,14 +779,34 @@ def run_pro_cycle(
 
     # Count gold vs junk in this ranked slice for the console header
     try:
-        _gold_in_slice = sum(1 for _r in pending if _gold_priority(_parse_article_row(_r), _local_signals(_parse_article_row(_r), analyzer)) >= 0.20)
+        _gold_in_slice = sum(
+            1
+            for _r in pending
+            if _gold_priority(
+                _parse_article_row(_r), _local_signals(_parse_article_row(_r), analyzer)
+            )
+            >= 0.20
+        )
     except Exception:
         _gold_in_slice = 0
-    _console_push({"kind": "cycle_start", "pending": total_pending, "limit": limit, "gold_next": _gold_in_slice, "junk_next": len(pending) - _gold_in_slice, "msg": f"PRO cycle: {total_pending} pending — gold { _gold_in_slice} first, junk {len(pending)-_gold_in_slice} last"})
+    _console_push(
+        {
+            "kind": "cycle_start",
+            "pending": total_pending,
+            "limit": limit,
+            "gold_next": _gold_in_slice,
+            "junk_next": len(pending) - _gold_in_slice,
+            "msg": f"PRO cycle: {total_pending} pending — gold {_gold_in_slice} first, junk {len(pending) - _gold_in_slice} last",
+        }
+    )
 
     for art in pending:
         res = run_pro_auto_analysis_for_article(
-            db, art["article_id"], engine=engine, settings_service=settings_service, analyzer=analyzer
+            db,
+            art["article_id"],
+            engine=engine,
+            settings_service=settings_service,
+            analyzer=analyzer,
         )
         if res.get("ok"):
             if res.get("via") == "cached":
@@ -594,8 +825,18 @@ def run_pro_cycle(
     if prune_junk:
         try:
             pr = auto_prune_irrelevant(db, actor="pro_auto", analyzer=analyzer, limit=2000)
-            junk = {"marked_irrelevant": pr.marked_irrelevant, "preserved": pr.preserved, "already_irrelevant": pr.already_irrelevant}
-            _console_push({"kind": "junk_prune", "msg": f"junk marked IRRELEVANT: {pr.marked_irrelevant}, preserved {pr.preserved}", **junk})
+            junk = {
+                "marked_irrelevant": pr.marked_irrelevant,
+                "preserved": pr.preserved,
+                "already_irrelevant": pr.already_irrelevant,
+            }
+            _console_push(
+                {
+                    "kind": "junk_prune",
+                    "msg": f"junk marked IRRELEVANT: {pr.marked_irrelevant}, preserved {pr.preserved}",
+                    **junk,
+                }
+            )
         except Exception as e:
             _console_push({"kind": "junk_failed", "msg": type(e).__name__})
 
@@ -645,27 +886,42 @@ def purge_irrelevant(
             ids: list[str] = []
             for r in rows:
                 try:
-                    ts = datetime.fromisoformat(str(r["published_at"]).replace("Z", "+00:00")).timestamp()
+                    ts = datetime.fromisoformat(
+                        str(r["published_at"]).replace("Z", "+00:00")
+                    ).timestamp()
                 except Exception:
                     ts = 0
                 if ts <= cutoff or ts == 0:
                     ids.append(str(r["article_id"]))
         else:
-            rows = conn.execute("SELECT article_id FROM news_articles WHERE article_status = 'IRRELEVANT' LIMIT ?;", (bounded,)).fetchall()
+            rows = conn.execute(
+                "SELECT article_id FROM news_articles WHERE article_status = 'IRRELEVANT' LIMIT ?;",
+                (bounded,),
+            ).fetchall()
             ids = [str(r["article_id"]) for r in rows]
 
-        total_irrelevant = conn.execute("SELECT COUNT(*) AS c FROM news_articles WHERE article_status = 'IRRELEVANT';").fetchone()["c"]
+        total_irrelevant = conn.execute(
+            "SELECT COUNT(*) AS c FROM news_articles WHERE article_status = 'IRRELEVANT';"
+        ).fetchone()["c"]
         count = len(ids)
 
         if not hard_delete:
-            return {"candidates": count, "total_irrelevant": int(total_irrelevant), "deleted": 0, "hard_delete": False}
+            return {
+                "candidates": count,
+                "total_irrelevant": int(total_irrelevant),
+                "deleted": 0,
+                "hard_delete": False,
+            }
 
         # Capture hashes before delete so they can be tombstoned (purge is durable)
         hashes: list[tuple[str, str]] = []
         if ids:
             for aid in ids:
                 try:
-                    row = conn.execute("SELECT article_hash, title FROM news_articles WHERE article_id = ?;", (aid,)).fetchone()
+                    row = conn.execute(
+                        "SELECT article_hash, title FROM news_articles WHERE article_id = ?;",
+                        (aid,),
+                    ).fetchone()
                     if row:
                         hashes.append((str(row["article_hash"]), str(row["title"] or "")))
                 except Exception:
@@ -685,14 +941,32 @@ def purge_irrelevant(
             try:
                 conn.execute(
                     "INSERT OR IGNORE INTO news_junk_hashes (article_hash, title, reason, pruned_at) VALUES (?, ?, ?, ?);",
-                    (ah, title, "purge_irrelevant", __import__('datetime').datetime.now(__import__('datetime').UTC).isoformat()),
+                    (
+                        ah,
+                        title,
+                        "purge_irrelevant",
+                        __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat(),
+                    ),
                 )
             except Exception:
                 pass
         conn.commit()
 
-    _console_push({"kind": "purge", "msg": f"purged {deleted}/{count} IRRELEVANT (hard_delete={hard_delete})", "deleted": deleted, "candidates": count, "total_irrelevant": int(total_irrelevant)})
-    return {"candidates": count, "total_irrelevant": int(total_irrelevant), "deleted": deleted, "hard_delete": bool(hard_delete)}
+    _console_push(
+        {
+            "kind": "purge",
+            "msg": f"purged {deleted}/{count} IRRELEVANT (hard_delete={hard_delete})",
+            "deleted": deleted,
+            "candidates": count,
+            "total_irrelevant": int(total_irrelevant),
+        }
+    )
+    return {
+        "candidates": count,
+        "total_irrelevant": int(total_irrelevant),
+        "deleted": deleted,
+        "hard_delete": bool(hard_delete),
+    }
 
 
 def provider_status_for_console(

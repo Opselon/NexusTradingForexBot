@@ -173,7 +173,9 @@ class NewsContextCache:
                 # Junk-NEUTRAL guard: ultra-low-signal NEUTRAL (e.g. Venmo tuition) was
                 # flooding the last-100 window and diluting bull/bear to 0%. It still
                 # counts for freshness/xauusd_rel but not for the directional denominator.
-                is_junk_neutral = (direction == NewsDirection.NEUTRAL and relevance < 0.35 and importance < 0.4)
+                is_junk_neutral = (
+                    direction == NewsDirection.NEUTRAL and relevance < 0.35 and importance < 0.4
+                )
                 usd_r = float(row.get("relevance_to_usd", 0.0) or 0.0)
                 w = freshness * confidence * (0.5 + relevance * 0.5)
 
@@ -232,13 +234,17 @@ class NewsContextCache:
             state = NewsState.ELEVATED
 
         # staleness check against the newest *published* event (true event time)
-        def _newest_pub(a: dict) -> object:
-            v = published_by_id.get(str(a.get("article_id") or "")) or a.get("published_at") or a.get("analyzed_at") or ""
+        def _newest_pub(a: dict) -> datetime | None:
+            v = (
+                published_by_id.get(str(a.get("article_id") or ""))
+                or a.get("published_at")
+                or a.get("analyzed_at")
+                or ""
+            )
             return _parse_dt(v) if v else None
-        newest = max(
-            (_newest_pub(a) for a in analyses if _newest_pub(a) is not None),
-            default=None,
-        )
+
+        _newests: list[datetime] = [d for d in (_newest_pub(a) for a in analyses) if d is not None]
+        newest: datetime | None = max(_newests, default=None)
         stale = False
         if newest is not None:
             stale = (now - newest).total_seconds() > self.decay.config.stale_after_sec
@@ -282,8 +288,8 @@ class NewsContextCache:
         )
 
 
-def _parse_dt(value: str) -> datetime | None:
-    if not value:
+def _parse_dt(value: object) -> datetime | None:
+    if not value or not isinstance(value, str):
         return None
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))

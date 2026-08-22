@@ -20,7 +20,6 @@ from nexus_scalp.features.liquidity_engine import (
 from tests.helpers.liquidity_fixtures import (
     bar,
     ramp_bars,
-    steady_bars,
     sweep_pool_bars,
     swing_high_bars,
 )

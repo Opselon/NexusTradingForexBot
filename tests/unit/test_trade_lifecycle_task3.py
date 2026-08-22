@@ -29,13 +29,11 @@ import json
 import os
 import sqlite3
 import tempfile
-from datetime import UTC, datetime, timedelta
-
-import pytest
+from datetime import UTC, datetime
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.domain.enums import ActionType, OrderType
-from nexus_scalp.domain.models import Position, SymbolInfo, TickData
+from nexus_scalp.domain.enums import OrderType
+from nexus_scalp.domain.models import Position, TickData
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
 from nexus_scalp.experience.models import ExitReason
 from nexus_scalp.experience.outcome_recovery import (
@@ -46,9 +44,7 @@ from nexus_scalp.experience.outcome_recovery import (
 from nexus_scalp.intelligence.lifecycle import PositionLifecycleTracker
 from nexus_scalp.intelligence.models import (
     DecisionContext,
-    MarketContext,
     PositionEventType,
-    PositionPerformance,
     PositionSnapshot,
 )
 
@@ -126,7 +122,7 @@ def _pos(ticket: int, volume: float = 0.1, price_open: float = 2000.0) -> Positi
 
 def test_tl01_one_decision_one_canonical_trade():
     """One decision id -> one registry family; siblings share the parent id."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, mock, _ = _make_om()
     try:
         rid = "req_tl01"
         om.register_entry_context(
@@ -151,7 +147,7 @@ def test_tl01_one_decision_one_canonical_trade():
 
 def test_tl02_one_parent_order_n_fills_one_economic_trade():
     """Six broker tickets of one fill family all carry the SAME parent order."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, mock, _ = _make_om()
     try:
         rid = "req_tl02"
         om.register_entry_context(
@@ -169,7 +165,7 @@ def test_tl02_one_parent_order_n_fills_one_economic_trade():
 
 def test_tl03_split_siblings_inherit_full_context():
     """Every sibling inherits strategy/order/confidence/regime/setup/version."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, mock, _ = _make_om()
     try:
         rid = "req_tl03"
         om.register_entry_context(
@@ -194,7 +190,7 @@ def test_tl03_split_siblings_inherit_full_context():
 
 def test_tl04_strategy_context_survives_close():
     """Closed ledger rows keep strategy/order/confidence/regime context."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, mock, _ = _make_om()
     try:
         rid = "req_tl04"
         om.register_entry_context(
@@ -285,7 +281,7 @@ def test_tl05_model_metadata_survives_close():
 
 def test_tl07_initial_risk_immutable():
     """R recomputes from INITIAL SL distance, never the final trailing SL."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, _mock, _ = _make_om()
     try:
         # entry 2000, initial SL 1995 -> risk distance 5.0
         om._entry_prices[1] = 2000.0
@@ -303,7 +299,7 @@ def test_tl07_initial_risk_immutable():
 
 def test_tl08_r_uses_initial_risk():
     """R = net_pnl / initial_risk — verified through the experience recorder."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, _mock, _ = _make_om()
     try:
 
         class RecordingEngine:
@@ -446,7 +442,7 @@ def test_tl12_unknown_exit_stays_unknown():
 
 def test_tl13_duplicate_close_event_is_idempotent():
     """Two close callbacks for one decision produce ONE outcome row."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, _mock, _ = _make_om()
     try:
 
         class RecordingEngine:
@@ -501,7 +497,7 @@ def test_tl13_duplicate_close_event_is_idempotent():
 
 def test_tl14_broker_history_reconciliation_recovers_missing_deal():
     """reconcile_missed_closes recovers a closed ticket with broker evidence."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, mock, _ = _make_om()
     try:
         # Ledger OPENED row exists for ticket 6001, but internal trackers are empty.
         audit.log_ledger_opened(
@@ -552,7 +548,7 @@ def test_tl14_broker_history_reconciliation_recovers_missing_deal():
 
 def test_tl15_reconciliation_is_idempotent_across_passes():
     """Two reconciliation passes record the closed row exactly once."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, mock, _ = _make_om()
     try:
         audit.log_ledger_opened(
             ticket=6002,
@@ -615,7 +611,7 @@ def _probs(buy: float, sell: float, no_trade: float = 0.0):
 
 def test_tl16_model_reversal_is_captured():
     """A directional flip while open records a MODEL_REVERSAL event."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, _mock, _ = _make_om()
     try:
         om._entry_prices[10] = 2000.0
         om._entry_sls[10] = 1995.0
@@ -639,7 +635,7 @@ def test_tl16_model_reversal_is_captured():
 
 def test_tl17_regime_reversal_is_captured():
     """A regime change while open records a REGIME_REVERSAL event."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, _mock, _ = _make_om()
     try:
         om._entry_prices[11] = 2000.0
         om._entry_sls[11] = 1995.0
@@ -667,7 +663,7 @@ def test_tl17_regime_reversal_is_captured():
 
 def test_tl19_timeline_event_ordering_is_deterministic():
     """Events persist with a monotonic per-ticket sequence and dedup key."""
-    om, audit, db_path, mock, tracker = _make_om(with_tracker=True)
+    _om, audit, db_path, _mock, tracker = _make_om(with_tracker=True)
     try:
         snap1 = PositionSnapshot(entry_price=2000.0, current_price=2000.0, volume=0.1)
         snap2 = PositionSnapshot(entry_price=2000.0, current_price=2000.5, volume=0.1)
@@ -734,7 +730,7 @@ def test_tl21_canonical_trade_pnl_equals_accounting_pnl():
 
 def test_tl22_canonical_outcome_equals_experience_outcome():
     """Experience outcome records the same realized PnL / R as the ledger."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, _mock, _ = _make_om()
     try:
         calls: list[dict] = []
 
@@ -788,10 +784,9 @@ def test_tl22_canonical_outcome_equals_experience_outcome():
 def test_tl23_research_dataset_sees_one_canonical_trade():
     """Dataset builder filters to is_executed AND is_closed — one row per trade."""
     from nexus_scalp.experience.ledger import ExperienceLedger
-    from nexus_scalp.experience.models import ExperienceOutcome
 
     # Direct ledger semantics: UNIQUE(idempotency_key) prevents duplicates.
-    om, audit, db_path, mock, _ = _make_om()
+    _om, audit, _db_path, _mock, _ = _make_om()
     try:
         ledger = ExperienceLedger(audit)
         assert hasattr(ledger, "record_outcome")
@@ -806,7 +801,7 @@ def test_tl23_research_dataset_sees_one_canonical_trade():
 
 def test_tl24_telegram_receives_canonical_values():
     """notify_canonical_close receives the canonical exit reason + R."""
-    om, audit, db_path, mock, _ = _make_om()
+    om, audit, _db_path, _mock, _ = _make_om()
     try:
         received: dict = {}
 
@@ -854,7 +849,7 @@ def test_tl24_telegram_receives_canonical_values():
 
 def test_bug083_sl_reason_never_tp():
     """MT5 DEAL_REASON_SL=4 must never classify as TAKE_PROFIT_HIT."""
-    result, source, detail, conf = classify_exit_with_evidence(
+    result, source, _detail, conf = classify_exit_with_evidence(
         deal_reason_code=4,
         comment="[sl 4388.30]",
         profit_usd=-196.88,
@@ -873,7 +868,7 @@ def test_bug083_sl_reason_never_tp():
 
 def test_bug083_tp_reason_five():
     """MT5 DEAL_REASON_TP=5 classifies TAKE_PROFIT_HIT."""
-    result, source, _d, conf = classify_exit_with_evidence(
+    result, _source, _d, conf = classify_exit_with_evidence(
         deal_reason_code=5,
         comment="[tp 4080.66]",
         profit_usd=10.0,

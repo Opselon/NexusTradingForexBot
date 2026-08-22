@@ -223,7 +223,9 @@ class NewsEngine:
                     try:
                         ex = self.db.get_analysis(article_id) or {}
                         self.db.remember_analyzed_hash(
-                            ah, title=str(art.get("title", "")), analysis_id=str(ex.get("analysis_id", ""))
+                            ah,
+                            title=str(art.get("title", "")),
+                            analysis_id=str(ex.get("analysis_id", "")),
                         )
                     except Exception:
                         pass

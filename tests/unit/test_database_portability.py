@@ -18,12 +18,10 @@ PostgreSQL integration tests run only when NSE_PG_TEST_URL is set
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -32,7 +30,6 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from nexus_scalp.database.config import (  # noqa: E402
     DatabaseConfig,
-    build_postgres_url,
     load_database_config,
     mask_url_password,
 )
@@ -465,9 +462,7 @@ class TestPostgresCrud:
 
     def test_pg_health_service(self):
         self._ensure_pw()
-        from nexus_scalp.database.config import DatabaseConfig
         from nexus_scalp.database.drivers import get_driver
-        from nexus_scalp.database.health import DatabaseHealthService
 
         # DBHealth for a PG-configured domain resolves via settings; probe the
         # driver health directly here

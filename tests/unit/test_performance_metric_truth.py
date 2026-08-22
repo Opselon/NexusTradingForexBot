@@ -36,7 +36,6 @@ suite runs WITHOUT a database and pins the metric definitions.
 from __future__ import annotations
 
 import datetime as dt
-import math
 
 import pytest
 
@@ -48,9 +47,7 @@ from nexus_scalp.accounting.aggregation import (
 )
 from nexus_scalp.accounting.models import (
     AccountSnapshot,
-    DrawdownReport,
     ExitClassification,
-    PeriodReport,
     TradeOutcome,
     TradeRecord,
 )
@@ -61,7 +58,6 @@ from nexus_scalp.accounting.normalize import (
     reconstruct_risk,
 )
 from nexus_scalp.accounting.periods import PeriodBounds, PeriodKind, period_bounds
-from nexus_scalp.reporting.engine import PerformanceReportEngine
 
 # ---------------------------------------------------------------------------
 # Fixtures

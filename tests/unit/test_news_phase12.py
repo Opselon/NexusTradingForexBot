@@ -54,7 +54,6 @@ from nexus_scalp.news.ingest import (
     NewsDeduplicator,
     NewsScheduler,
     canonicalize_item,
-    compute_article_hash,
     normalize_title,
 )
 from nexus_scalp.news.models import (
@@ -1108,7 +1107,6 @@ class TestLiveIntegration:
         """impact_timeline groups impacts into time buckets with direction sums."""
         from nexus_scalp.news.analysis.pipeline import NewsAnalysisPipeline
         from nexus_scalp.news.ingest import NewsIngestor
-        from nexus_scalp.news.models import NewsDirection
         from nexus_scalp.news.sources import SourceFetchResult
 
         now = datetime.now(UTC)

@@ -19,8 +19,6 @@ Regression tests for the runtime telemetry fixes driven by the log autopsy:
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData
@@ -154,7 +152,7 @@ class TestHoldScoreDegradation:
         om._entry_prices[2] = 2000.0
         om._entry_sls[2] = 1990.0
         om._time_in_drawdown_sec[2] = 0.0
-        score, reasons = om._calculate_hold_value_score(
+        _score, reasons = om._calculate_hold_value_score(
             pos=pos,
             price_current=1996.0,
             features=FakeFV(),

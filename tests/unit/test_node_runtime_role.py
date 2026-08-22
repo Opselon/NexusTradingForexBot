@@ -12,9 +12,9 @@ These tests assert *structural* facts about the repository so the "Node is not a
 runtime dependency" contract cannot silently regress (e.g. a future asset ref to a
 CDN or a committed node_modules, or a route that assumes a Node server).
 """
+
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -73,8 +73,8 @@ def test_browser_js_has_no_bundler_or_cdn_refs() -> None:
         for pattern in FORBIDDEN_JS_PATTERNS:
             if pattern in text:
                 offenders.append(f"{js.name}: contains {pattern!r}")
-    assert not offenders, "Browser JS must be buildless (no bundler/CDN/node_modules):\n" + "\n".join(
-        offenders
+    assert not offenders, (
+        "Browser JS must be buildless (no bundler/CDN/node_modules):\n" + "\n".join(offenders)
     )
 
 
@@ -111,7 +111,6 @@ def test_build_tailwind_script_locatable() -> None:
 
 def test_node_not_referenced_by_engine_runtime() -> None:
     """No Python source may spawn node/npm/npx/vite as a runtime subprocess."""
-    import subprocess as _sp
 
     hits: list[str] = []
     for py in (REPO_ROOT / "src").rglob("*.py"):
@@ -120,7 +119,13 @@ def test_node_not_referenced_by_engine_runtime() -> None:
         for token in ("node.exe", "npx ", "npm run", "vite", "webpack", "esbuild"):
             if token in low:
                 # ignore incidental words (e.g. 'nodes' contains 'node' -> skip)
-                if token == "node.exe" or token in ("npx ", "npm run", "vite", "webpack", "esbuild"):
+                if token == "node.exe" or token in (
+                    "npx ",
+                    "npm run",
+                    "vite",
+                    "webpack",
+                    "esbuild",
+                ):
                     hits.append(f"{py.name}: {token}")
     assert not hits, "engine runtime must not depend on Node tooling:\n" + "\n".join(hits)
 

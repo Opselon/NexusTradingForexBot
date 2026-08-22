@@ -22,8 +22,8 @@
         if the self-test does not pass.
 
     Gates (identical flags to ci.yml):
-      ruff lint    -> ruff check .          (JSON + text, like CI)
-      ruff format  -> ruff format --check . (validates; -Fix to auto-fix)
+      ruff lint    -> ruff check --config pyproject.toml .          (JSON + text, like CI)
+      ruff format  -> ruff format --config pyproject.toml --check . (validates; -Fix to auto-fix)
       mypy         -> mypy src --junit-xml
       pytest       -> critical suite, -n <ram-aware> --dist loadgroup
                     --cov=src + junit.xml + coverage.xml + htmlcov
@@ -395,11 +395,11 @@ Write-Cmd "$VenvPy scripts/ci/make_ci_results.py init $CiRoot"
 if ($Fix) {
     Write-Warn "-Fix set: auto-fixing lint + format BEFORE validation (files rewritten)."
     $RuffFixLog = Join-Path $RunDir "ruff-fix.log"
-    Write-Cmd "$VenvPy -m ruff check . --fix --unsafe-fixes"
-    & $VenvPy -m ruff check . --fix --unsafe-fixes *> $RuffFixLog
+    Write-Cmd "$VenvPy -m ruff check --config pyproject.toml . --fix --unsafe-fixes"
+    & $VenvPy -m ruff check --config pyproject.toml . --fix --unsafe-fixes *> $RuffFixLog
     if ($LASTEXITCODE -ne 0) { Show-Tail $RuffFixLog "ruff --fix"; Write-Fail "ruff-fix" "Ruff --fix left unfixable violations." $LASTEXITCODE }
-    Write-Cmd "$VenvPy -m ruff format ."
-    & $VenvPy -m ruff format . *>> $RuffFixLog
+    Write-Cmd "$VenvPy -m ruff format --config pyproject.toml ."
+    & $VenvPy -m ruff format --config pyproject.toml . *>> $RuffFixLog
     if ($LASTEXITCODE -ne 0) { Show-Tail $RuffFixLog "ruff format"; Write-Fail "ruff-format" "Ruff format failed." $LASTEXITCODE }
     Write-Success "Auto-fix pass complete."
 }
@@ -428,7 +428,7 @@ $lintJob = Start-Job -ScriptBlock {
     param($log, $json, $txt, $venvPy, $runRoot)
     Set-Location -Path $runRoot
     try {
-        & $venvPy -m ruff check . --output-format json *> $json
+        & $venvPy -m ruff check --config pyproject.toml . --output-format json *> $json
         $code = $LASTEXITCODE
         # derive human text from the SAME json (no second full-tree scan)
         try {
@@ -450,7 +450,7 @@ $fmtJob = Start-Job -ScriptBlock {
     param($log, $fmtTxt, $venvPy, $runRoot)
     Set-Location -Path $runRoot
     try {
-        & $venvPy -m ruff format --check . *> $fmtTxt
+        & $venvPy -m ruff format --config pyproject.toml --check . *> $fmtTxt
         $code = $LASTEXITCODE
     } catch {
         $code = 900
@@ -506,8 +506,8 @@ $pytestJob = Start-Job -ScriptBlock {
 } -ArgumentList $PyTestLog, $VenvPy, $RunRoot, $pytestArgs
 
 Write-Step 3 7 "Ruff lint + format + mypy + pytest - all four checks $(if ($Serial) { 'SEQUENTIAL' } else { 'ASYNC (concurrent jobs)' })"
-Write-Cmd "$VenvPy -m ruff check . --output-format json"
-Write-Cmd "$VenvPy -m ruff format --check ."
+Write-Cmd "$VenvPy -m ruff check --config pyproject.toml . --output-format json"
+Write-Cmd "$VenvPy -m ruff format --config pyproject.toml --check ."
 Write-Cmd "$VenvPy -m mypy src --junit-xml ci-results/mypy/mypy-junit.xml"
 Write-Cmd "$VenvPy -m pytest $($PytestTarget -join ' ') -n $Cores --dist loadgroup --cov=src --junitxml ci-results/pytest/junit.xml -q --tb=short"
 
@@ -566,7 +566,7 @@ if ($ruffLintStatus -ne "PASSED") {
 }
 if ($ruffFmtStatus -ne "PASSED") {
     Show-Tail $FormatTxt "ruff format" 30
-    Write-Fail "ruff_format" "Ruff format $ruffFmtStatus (rc=$ruffFmtRc) - run .\beforePush.ps1 -Fix or '$VenvPy -m ruff format .'." $ruffFmtRc
+    Write-Fail "ruff_format" "Ruff format $ruffFmtStatus (rc=$ruffFmtRc) - run .\beforePush.ps1 -Fix or '$VenvPy -m ruff format --config pyproject.toml .'." $ruffFmtRc
 }
 if ($mypyStatus -ne "PASSED") {
     Show-Tail (Join-Path $CiRoot "mypy\mypy.txt") "mypy" 30

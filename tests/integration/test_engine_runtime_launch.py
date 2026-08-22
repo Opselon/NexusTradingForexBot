@@ -147,8 +147,6 @@ def scan_and_report() -> int:
     engine_frame = "no frame captured"
     try:
         sys.path.insert(0, str(REPO_ROOT / "src"))
-        from nexus_scalp.application.live_engine import LiveEngine
-        from nexus_scalp.configuration import AppConfig
 
         # Check the class can be COMPILED + the reseed symbol exists in source.
         src = (REPO_ROOT / "src" / "nexus_scalp" / "application" / "live_engine.py").read_text(

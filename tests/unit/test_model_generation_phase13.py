@@ -34,11 +34,8 @@ import pytest
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.features.schema_augment import (
     FEATURE_NAMES_60D_EXTRA,
-    NUM_EXTRA_60D,
-    augment_50d_to_60d,
     compute_60d_extras,
     feature_quality_report,
-    session_phase_encoding,
     validate_60d_vector,
 )
 from nexus_scalp.model_generation import (
@@ -57,7 +54,6 @@ from nexus_scalp.model_generation import (
     detect_feature_drift,
 )
 from nexus_scalp.model_generation.models import (
-    LABEL_SCHEMA_3CLASS_V1,
     ModelArchitecture,
     ModelManifest,
     NeuralLabel,
@@ -71,7 +67,6 @@ from nexus_scalp.model_generation.schema_v2 import (
 )
 from nexus_scalp.model_generation.validation import (
     ECE_FLOOR,
-    MIN_EVIDENCE_SAMPLES,
     _balanced_accuracy,
 )
 from nexus_scalp.models.scalp_net import ScalpNet
@@ -1010,7 +1005,6 @@ class TestTask5Dataset60D:
         assert d1["dataset_id"] == d2["dataset_id"]
 
     def test_mg13b_candidate_identity_deterministic(self, store: ArtifactStore):
-        from nexus_scalp.model_generation.models import ExperimentConfig
         from nexus_scalp.model_generation.training import deterministic_candidate_id
 
         bars = make_60d_bars(n=220)
@@ -1187,7 +1181,6 @@ class TestTask5RuntimeParity:
     def test_mg21_db_unavailable_during_prediction(self, store: ArtifactStore):
         # LocalModelRuntime has no DB import/dependency: predict works with the
         # module's sqlite3 monkey-patched to raise
-        import sqlite3 as _sqlite3
 
         bars = make_60d_bars(n=220)
         feat = compute_60d_frame(bars, min_bars=55)
@@ -1256,7 +1249,6 @@ class TestTask5DriftAndWorker:
 
     def test_mg25_worker_disabled_state_explicit(self):
         from nexus_scalp.model_lifecycle.worker import (
-            TrainingWorker,
             format_training_worker_status,
         )
 

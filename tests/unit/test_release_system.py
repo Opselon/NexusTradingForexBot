@@ -12,13 +12,10 @@ import re
 import zipfile
 from pathlib import Path
 
-import pytest
-
 from nexus_scalp.release import environment as renv
 from nexus_scalp.release import evaluate as reval
 from nexus_scalp.release import health as rhealth
 from nexus_scalp.release import packaging as rpkg
-from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release import repair as rrepair
 from nexus_scalp.release import update as rupdate
 from nexus_scalp.release import verify as rverify

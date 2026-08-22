@@ -262,7 +262,11 @@ def record_run(repo: Any, run: dict[str, Any]) -> bool:
         result_summary = {**result_summary, "benchmark": benchmark}
     elif benchmark and isinstance(run.get("score"), dict):
         # Also attach benchmark when result_summary is a score/lifecycle dict
-        result_summary = {"benchmark": benchmark, "score": run.get("score"), "lifecycle": run.get("lifecycle")}
+        result_summary = {
+            "benchmark": benchmark,
+            "score": run.get("score"),
+            "lifecycle": run.get("lifecycle"),
+        }
     sql = """
         INSERT INTO factory_runs (
             run_id, generation_id, strategy_id, experiment_kind,

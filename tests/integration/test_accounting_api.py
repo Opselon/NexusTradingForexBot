@@ -25,19 +25,16 @@ Also verifies:
 from __future__ import annotations
 
 import gc
-import os
 import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from nexus_scalp.accounting import PeriodKind
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.models import AccountInfo
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import (
     ExperienceOutcome,

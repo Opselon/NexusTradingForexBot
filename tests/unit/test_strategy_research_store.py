@@ -19,7 +19,6 @@ docker-compose PG is reachable) — skipped otherwise, mirroring
 from __future__ import annotations
 
 import os
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -369,7 +368,6 @@ class TestDdlPorting:
 @needs_pg
 class TestPostgresIntegration:
     def _pg_store(self) -> StrategyResearchStore:
-        from nexus_scalp.database.config import build_postgres_url
 
         # NSE_PG_TEST_URL like postgresql://nse_user:***@localhost:5432/nse_audit
         cfg = DatabaseConfig.for_postgres(

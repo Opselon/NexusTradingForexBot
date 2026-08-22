@@ -11,13 +11,11 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-
-import pytest
+from datetime import UTC, datetime
 
 from nexus_scalp.features.features70 import FeatureSourceState
 from nexus_scalp.features.inference_validator import RejectionCode
-from nexus_scalp.features.runtime70 import Runtime70Config, Runtime70Hook
+from nexus_scalp.features.runtime70 import Runtime70Hook
 from tests.helpers.liquidity_fixtures import steady_bars
 
 

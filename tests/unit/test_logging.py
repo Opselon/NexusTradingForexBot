@@ -17,7 +17,6 @@ import pytest
 from nexus_scalp.observability.logging import (
     _ANSI_RE,
     DEFAULT_RETENTION_DAYS,
-    DatedRotatingFileHandler,
     _LevelMatchFilter,
     _redact_sensitive_fields,
     configure_logging,

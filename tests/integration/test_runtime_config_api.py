@@ -14,7 +14,6 @@ from __future__ import annotations
 import os
 import tempfile
 from datetime import UTC
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -70,7 +69,7 @@ def client_with_engine():
             )
 
         def get_last_tick(self, symbol: str):
-            from datetime import datetime, timezone
+            from datetime import datetime
 
             from nexus_scalp.domain.models import TickData
 
@@ -230,7 +229,7 @@ class TestConfigApiHotReload:
         assert engine.risk_engine.config.risk_per_trade_pct == 0.75
 
     def test_effective_config_endpoint_reports_mismatch(self, client_with_engine) -> None:
-        client, engine, _ = client_with_engine
+        client, _engine, _ = client_with_engine
         client.put(
             "/api/algo/config",
             json={

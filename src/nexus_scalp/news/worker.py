@@ -1,4 +1,4 @@
-﻿"""News Intelligence Worker (PHASE 12).
+"""News Intelligence Worker (PHASE 12).
 
 Isolated, restart-safe, cancellable background worker for the News Engine.
 Follows the repository's worker contract (see research/worker.py):
@@ -187,7 +187,9 @@ class NewsWorker:
                 try:
                     from nexus_scalp.news.pro_auto import run_pro_cycle as _run_pro_cycle
 
-                    _svc = getattr(getattr(self.engine, "live_engine", None), "settings_service", None)
+                    _svc = getattr(
+                        getattr(self.engine, "live_engine", None), "settings_service", None
+                    )
                     _pro_summary = _run_pro_cycle(
                         self.engine.db,
                         engine=self.engine,
@@ -207,7 +209,8 @@ class NewsWorker:
                         if retries >= 3:
                             self._retries.pop(article_id, None)
                             logger.error(
-                                "[NEWS_WORKER] event=FAILED article_id=%s retries_exhausted", article_id
+                                "[NEWS_WORKER] event=FAILED article_id=%s retries_exhausted",
+                                article_id,
                             )
                             continue
                         result = self.engine.analyze_article_id(article_id)
@@ -268,7 +271,11 @@ class NewsWorker:
                     try:
                         if ah:
                             ex = self.engine.db.get_analysis(art["article_id"]) or {}
-                            self.engine.db.remember_analyzed_hash(ah, title=str(art.get("title","")), analysis_id=str(ex.get("analysis_id","")))
+                            self.engine.db.remember_analyzed_hash(
+                                ah,
+                                title=str(art.get("title", "")),
+                                analysis_id=str(ex.get("analysis_id", "")),
+                            )
                     except Exception:
                         pass
                     continue
@@ -293,9 +300,21 @@ class NewsWorker:
             art = self.engine.db.get_article(article_id)
             ah = str((art or {}).get("article_hash") or "")
             if art and ah and self.engine.db.is_analyzed_hash(ah):
-                return {"ok": True, "article_id": article_id, "status": "SKIPPED_ALREADY_ANALYZED", "worker_running": self.running, "reason": "hash already analyzed"}
+                return {
+                    "ok": True,
+                    "article_id": article_id,
+                    "status": "SKIPPED_ALREADY_ANALYZED",
+                    "worker_running": self.running,
+                    "reason": "hash already analyzed",
+                }
             if self.engine.db.get_analysis(article_id) is not None:
-                return {"ok": True, "article_id": article_id, "status": "SKIPPED_ALREADY_ANALYZED", "worker_running": self.running, "reason": "article already analyzed"}
+                return {
+                    "ok": True,
+                    "article_id": article_id,
+                    "status": "SKIPPED_ALREADY_ANALYZED",
+                    "worker_running": self.running,
+                    "reason": "article already analyzed",
+                }
         except Exception:
             pass
         added = self._enqueue(article_id, priority=priority)

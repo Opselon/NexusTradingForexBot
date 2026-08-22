@@ -22,6 +22,8 @@ from typing import Any
 import yaml
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
+
 from nexus_scalp.accounting import PeriodKind
 from nexus_scalp.accounting.aggregation import compute_advanced_metrics
 from nexus_scalp.accounting.market_calendar import (
@@ -40,7 +42,6 @@ from nexus_scalp.web.errors import (
     new_request_id,
     safe_error_payload,
 )
-from pydantic import BaseModel
 
 
 def serialize_enums(obj: Any) -> Any:
@@ -1025,11 +1026,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             model_meta["artifact_path"] = str(bundle.artifact_path)
                             model_meta["architecture"] = "ScalpNet"
                             model_meta["feature_schema_id"] = getattr(
-                                engine, "effective_feature_schema_id",
+                                engine,
+                                "effective_feature_schema_id",
                                 getattr(engine, "FEATURE_SCHEMA_ID", "scalp_v1"),
                             )
                             model_meta["feature_dimension"] = getattr(
-                                engine, "effective_feature_dim",
+                                engine,
+                                "effective_feature_dim",
                                 getattr(engine, "FEATURE_DIM", len(FEATURE_NAMES)),
                             )
                             model_meta["scaler_ready"] = bool(
@@ -1086,6 +1089,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             eff_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
             if eff_dim == 70:
                 from nexus_scalp.features.schema_contract import canonical_feature_names
+
                 feature_names_for_payload = list(canonical_feature_names())
             else:
                 feature_names_for_payload = list(FEATURE_NAMES)
@@ -1469,7 +1473,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "bid": bid,
             "ask": ask,
             "spread": spread,
-            "price_digits": getattr(getattr(engine, "_symbol_info", None), "digits", None) if engine else None,
+            "price_digits": getattr(getattr(engine, "_symbol_info", None), "digits", None)
+            if engine
+            else None,
             "atr": atr,
             "regime": regime,
             "account": account_data,
@@ -3938,6 +3944,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             eff_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
             if eff_dim == 70:
                 from nexus_scalp.features.schema_contract import canonical_feature_names
+
                 _debug_feature_names = list(canonical_feature_names())
             else:
                 _debug_feature_names = list(FEATURE_NAMES)
@@ -3990,7 +3997,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         waiting for a live signal.
         """
         engine = app.state.engine
-        expected_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES)) if engine else len(FEATURE_NAMES)
+        expected_dim = (
+            getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
+            if engine
+            else len(FEATURE_NAMES)
+        )
 
         features = req.features
         source = "REQUEST"
@@ -6337,6 +6348,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 def _infer(vector70: list[float]) -> list[float]:
                     import numpy as np
                     import torch
+
                     from nexus_scalp.models.scalp_net import ScalpNet
 
                     state = torch.load(path, map_location="cpu", weights_only=False)
@@ -7214,7 +7226,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         return engine.news_engine
 
     @app.get("/api/news")
-    def get_news(limit: int = 50, include_duplicates: bool = False, status: str | None = None) -> dict[str, Any]:
+    def get_news(
+        limit: int = 50, include_duplicates: bool = False, status: str | None = None
+    ) -> dict[str, Any]:
         """Live news feed (canonical articles).
 
         `status` filters by article_status (ACTIVE / IRRELEVANT). When omitted,
@@ -7489,7 +7503,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 runtime_version = snap.version
                 # snapshot enabled is the validated persisted value
                 enabled = bool(snap.news.enabled)
-            return {"success": True, "enabled": enabled, "runtime_version": runtime_version, "source": getattr(snap, "source", "") if snap else ""}
+            return {
+                "success": True,
+                "enabled": enabled,
+                "runtime_version": runtime_version,
+                "source": getattr(snap, "source", "") if snap else "",
+            }
         except Exception as e:
             log_web_error(logger, "/api/news/toggle-state", None, e)
             return {"success": False, "enabled": False, "error": "NEWS_TOGGLE_STATE_FAILED"}
@@ -7512,17 +7531,34 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             raise HTTPException(status_code=422, detail="enabled (bool) required")
         desired = bool(raw)
         try:
-            report = engine.apply_runtime_update({"news.enabled": desired}, source="WEB_NEWS_TOGGLE", actor="web")
+            report = engine.apply_runtime_update(
+                {"news.enabled": desired}, source="WEB_NEWS_TOGGLE", actor="web"
+            )
             if not report.success:
-                return {"success": False, "enabled": bool(getattr(engine, "_news_enabled", False)), "error": report.reason or "NEWS_TOGGLE_REJECTED", "runtime_version": engine.runtime_config.get_version()}
+                return {
+                    "success": False,
+                    "enabled": bool(getattr(engine, "_news_enabled", False)),
+                    "error": report.reason or "NEWS_TOGGLE_REJECTED",
+                    "runtime_version": engine.runtime_config.get_version(),
+                }
             snap = engine.runtime_config.get_snapshot()
             # /api/news/health-style payload for the UI badge
-            return {"success": True, "enabled": bool(snap.news.enabled), "runtime_version": snap.version, "source": snap.source, "worker_interval_sec": snap.news.worker_interval_sec}
+            return {
+                "success": True,
+                "enabled": bool(snap.news.enabled),
+                "runtime_version": snap.version,
+                "source": snap.source,
+                "worker_interval_sec": snap.news.worker_interval_sec,
+            }
         except HTTPException:
             raise
         except Exception as e:
             log_web_error(logger, "/api/news/toggle", None, e)
-            return {"success": False, "enabled": bool(getattr(engine, "_news_enabled", False)), "error": "NEWS_TOGGLE_FAILED"}
+            return {
+                "success": False,
+                "enabled": bool(getattr(engine, "_news_enabled", False)),
+                "error": "NEWS_TOGGLE_FAILED",
+            }
 
     # ------------------------------------------------------------------
     # News Auto Analysis (local deterministic, NO API key / NO endpoint).
@@ -7545,12 +7581,20 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 runtime_version = snap.version
                 enabled = bool(getattr(snap.news, "auto_analysis_enabled", False))
             else:
-                enabled = bool(getattr(engine, "_news_auto_analysis_enabled", False)) if engine else False
+                enabled = (
+                    bool(getattr(engine, "_news_auto_analysis_enabled", False)) if engine else False
+                )
             # also surface worker gate truth when available
             worker_gate = None
             if engine is not None and getattr(engine, "news_worker", None) is not None:
                 worker_gate = bool(getattr(engine.news_worker, "auto_analysis_enabled", enabled))
-            return {"success": True, "enabled": enabled, "worker_enabled": worker_gate, "runtime_version": runtime_version, "source": getattr(snap, "source", "") if snap else ""}
+            return {
+                "success": True,
+                "enabled": enabled,
+                "worker_enabled": worker_gate,
+                "runtime_version": runtime_version,
+                "source": getattr(snap, "source", "") if snap else "",
+            }
         except Exception as e:
             log_web_error(logger, "/api/news/auto-analysis", None, e)
             return {"success": False, "enabled": False, "error": "NEWS_AUTO_ANALYSIS_STATE_FAILED"}
@@ -7566,21 +7610,40 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             raise HTTPException(status_code=422, detail="enabled (bool) required")
         desired = bool(raw)
         try:
-            report = engine.apply_runtime_update({"news.auto_analysis_enabled": desired}, source="WEB_NEWS_AUTO_ANALYSIS", actor="web")
+            report = engine.apply_runtime_update(
+                {"news.auto_analysis_enabled": desired},
+                source="WEB_NEWS_AUTO_ANALYSIS",
+                actor="web",
+            )
             if not report.success:
                 cur = bool(getattr(engine, "_news_auto_analysis_enabled", False))
-                return {"success": False, "enabled": cur, "error": report.reason or "NEWS_AUTO_ANALYSIS_REJECTED", "runtime_version": engine.runtime_config.get_version()}
+                return {
+                    "success": False,
+                    "enabled": cur,
+                    "error": report.reason or "NEWS_AUTO_ANALYSIS_REJECTED",
+                    "runtime_version": engine.runtime_config.get_version(),
+                }
             snap = engine.runtime_config.get_snapshot()
             # _sync already propagated to worker; re-read worker truth
             worker_gate = None
             if getattr(engine, "news_worker", None) is not None:
                 worker_gate = bool(getattr(engine.news_worker, "auto_analysis_enabled", desired))
-            return {"success": True, "enabled": bool(snap.news.auto_analysis_enabled), "worker_enabled": worker_gate, "runtime_version": snap.version, "source": snap.source}
+            return {
+                "success": True,
+                "enabled": bool(snap.news.auto_analysis_enabled),
+                "worker_enabled": worker_gate,
+                "runtime_version": snap.version,
+                "source": snap.source,
+            }
         except HTTPException:
             raise
         except Exception as e:
             log_web_error(logger, "/api/news/auto-analysis", None, e)
-            return {"success": False, "enabled": bool(getattr(engine, "_news_auto_analysis_enabled", False)), "error": "NEWS_AUTO_ANALYSIS_FAILED"}
+            return {
+                "success": False,
+                "enabled": bool(getattr(engine, "_news_auto_analysis_enabled", False)),
+                "error": "NEWS_AUTO_ANALYSIS_FAILED",
+            }
 
     @app.get("/api/news/state")
     def get_news_state() -> dict[str, Any]:
@@ -7692,9 +7755,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 art = news.db.get_article(article_id)
                 ah = str((art or {}).get("article_hash") or "")
                 if art and ah and news.db.is_analyzed_hash(ah):
-                    return {"available": True, "ok": True, "status": "SKIPPED_ALREADY_ANALYZED", "article_id": article_id, "reason": "hash already analyzed"}
+                    return {
+                        "available": True,
+                        "ok": True,
+                        "status": "SKIPPED_ALREADY_ANALYZED",
+                        "article_id": article_id,
+                        "reason": "hash already analyzed",
+                    }
                 if news.db.get_analysis(article_id) is not None:
-                    return {"available": True, "ok": True, "status": "SKIPPED_ALREADY_ANALYZED", "article_id": article_id, "reason": "article already analyzed"}
+                    return {
+                        "available": True,
+                        "ok": True,
+                        "status": "SKIPPED_ALREADY_ANALYZED",
+                        "article_id": article_id,
+                        "reason": "article already analyzed",
+                    }
         except Exception:
             pass
         engine = app.state.engine
@@ -7781,7 +7856,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     from nexus_scalp.web.db_console import router as db_console_router
 
     app.include_router(db_console_router)
-
 
     @app.get("/api/news/keywords")
     def get_news_keywords(top_n: int = 25, category: str = "", q: str = "") -> dict[str, Any]:

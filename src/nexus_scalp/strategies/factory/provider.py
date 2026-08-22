@@ -461,9 +461,7 @@ class LLMGenerationProvider:
             "elite pool (bounded by elite_size).\n"
             " 10. EVOLVE - the next generation preserves elites and mutates/crosses/"
             "explores around them.\n"
-            "\n"
-            + benchmark_note
-            + "\n"
+            "\n" + benchmark_note + "\n"
             "HARD RULES:\n"
             "1. Use ONLY features from the approved catalog below. NEVER invent indicators.\n"
             "2. Every strategy MUST declare no_future_data: true - signals are computed on "

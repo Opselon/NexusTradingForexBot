@@ -18,8 +18,11 @@ import pytest
 from nexus_scalp.accounting import AccountingCore, PeriodKind
 from nexus_scalp.accounting.periods import ensure_utc, period_bounds
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.adapters.database.broker_history import normalize_deal_row, reconstruct_trades
-from nexus_scalp.adapters.mt5.providers import BROKER_SERVER_UTC_OFFSET_MINUTES, broker_epoch_to_utc, normalize_utc
+from nexus_scalp.adapters.mt5.providers import (
+    BROKER_SERVER_UTC_OFFSET_MINUTES,
+    broker_epoch_to_utc,
+    normalize_utc,
+)
 
 
 @pytest.fixture()
@@ -131,20 +134,50 @@ class TestUtcNormalization:
 class TestMidnightBoundaries:
     def test_deal_at_start_of_day_belongs_to_that_day(self, audit, core):
         _seed_one_closed(audit, datetime(2026, 8, 21, 0, 0, 0, tzinfo=UTC))
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)).total_trades == 1
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 20, 12, 0, tzinfo=UTC)).total_trades == 0
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 1
+        )
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 0
+        )
 
     def test_deal_one_ms_before_midnight_belongs_to_previous_day(self, audit, core):
         # Close at 2026-08-21 23:59:59.999 UTC — still inside 08-21
         _seed_one_closed(audit, datetime(2026, 8, 21, 23, 59, 59, 999000, tzinfo=UTC))
         # The broker epoch resolution is seconds, so this is 23:59:59 — inside 08-21
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)).total_trades == 1
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 22, 12, 0, tzinfo=UTC)).total_trades == 0
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 1
+        )
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 22, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 0
+        )
 
     def test_deal_at_next_midnight_belongs_to_next_day(self, audit, core):
         _seed_one_closed(audit, datetime(2026, 8, 22, 0, 0, 0, tzinfo=UTC))
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)).total_trades == 0
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 22, 12, 0, tzinfo=UTC)).total_trades == 1
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 0
+        )
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 22, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 1
+        )
 
     def test_half_open_interval_contains(self):
         bounds = period_bounds(PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC))
@@ -154,10 +187,21 @@ class TestMidnightBoundaries:
         assert bounds.contains(datetime(2026, 8, 20, 23, 59, 59, tzinfo=UTC)) is False
 
     def test_period_bounds_keys_are_stable(self):
-        assert period_bounds(PeriodKind.DAY, at=datetime(2026, 8, 21, 15, 0, tzinfo=UTC)).key == "2026-08-21"
-        assert period_bounds(PeriodKind.WEEK, at=datetime(2026, 8, 21, 15, 0, tzinfo=UTC)).key.startswith("2026-W")
-        assert period_bounds(PeriodKind.MONTH, at=datetime(2026, 8, 21, 15, 0, tzinfo=UTC)).key == "2026-08"
-        assert period_bounds(PeriodKind.YEAR, at=datetime(2026, 8, 21, 15, 0, tzinfo=UTC)).key == "2026"
+        assert (
+            period_bounds(PeriodKind.DAY, at=datetime(2026, 8, 21, 15, 0, tzinfo=UTC)).key
+            == "2026-08-21"
+        )
+        assert period_bounds(
+            PeriodKind.WEEK, at=datetime(2026, 8, 21, 15, 0, tzinfo=UTC)
+        ).key.startswith("2026-W")
+        assert (
+            period_bounds(PeriodKind.MONTH, at=datetime(2026, 8, 21, 15, 0, tzinfo=UTC)).key
+            == "2026-08"
+        )
+        assert (
+            period_bounds(PeriodKind.YEAR, at=datetime(2026, 8, 21, 15, 0, tzinfo=UTC)).key
+            == "2026"
+        )
 
 
 class TestBrokerUtcAlignment:
@@ -170,5 +214,15 @@ class TestBrokerUtcAlignment:
         """
         utc_2100 = datetime(2026, 8, 21, 21, 0, tzinfo=UTC)
         _seed_one_closed(audit, utc_2100)
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)).total_trades == 1
-        assert core.period_report(PeriodKind.DAY, at=datetime(2026, 8, 22, 12, 0, tzinfo=UTC)).total_trades == 0
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 1
+        )
+        assert (
+            core.period_report(
+                PeriodKind.DAY, at=datetime(2026, 8, 22, 12, 0, tzinfo=UTC)
+            ).total_trades
+            == 0
+        )

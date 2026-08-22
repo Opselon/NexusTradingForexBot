@@ -1,4 +1,4 @@
-﻿"""News Intelligence — AI Analysis Service (PRODUCTION).
+"""News Intelligence — AI Analysis Service (PRODUCTION).
 
 This service is the AI interpretation layer for the News subsystem
 (PHASE 12 + News Intelligence 0100 spec). It deliberately does NOT replace
@@ -397,9 +397,7 @@ def _local_signals(article: NewsArticle, analyzer: LocalNewsAnalyzer) -> dict[st
     direction, _ = analyzer.directional_hypothesis(article, entities, topics)
     xauusd = analyzer.xauusd_relevance(article, entities, topics)
     usd = analyzer.usd_relevance(article, entities, topics)
-    importance_score, _ = analyzer.importance_score(
-        article, topics, 0.5
-    )
+    importance_score, _ = analyzer.importance_score(article, topics, 0.5)
     return {
         "entities": [e.name for e in entities],
         "topics": [t.value for t in topics],
@@ -450,7 +448,14 @@ def _validate_response(data: Any | None, article_id: str) -> NewsAIAnalysisResul
 
         # Schema validation: a 'completed' analysis must carry real content.
         has_content = any(
-            [summary, market_relevance, xauusd_relevance, importance_assessment, potential_market_impact, key_facts]
+            [
+                summary,
+                market_relevance,
+                xauusd_relevance,
+                importance_assessment,
+                potential_market_impact,
+                key_facts,
+            ]
         )
         if not has_content and not insufficient:
             return NewsAIAnalysisResult(
@@ -645,7 +650,10 @@ class PruneResult:
 
 def _prune_reason(importance_score: float, xauusd_rel: float, local_dir: str) -> str:
     """Explainable prune reason (§64) — corresponds to actual rules."""
-    if importance_score < NEWS_IRRELEVANCE_IMPORTANCE_THRESHOLD and xauusd_rel < NEWS_XAUUSD_RELEVANCE_THRESHOLD:
+    if (
+        importance_score < NEWS_IRRELEVANCE_IMPORTANCE_THRESHOLD
+        and xauusd_rel < NEWS_XAUUSD_RELEVANCE_THRESHOLD
+    ):
         return "LOW_IMPORTANCE_AND_LOW_XAUUSD_RELEVANCE"
     if xauusd_rel < NEWS_XAUUSD_RELEVANCE_THRESHOLD:
         return "LOW_XAUUSD_RELEVANCE"
@@ -705,7 +713,9 @@ def auto_prune_irrelevant(
                     try:
                         ah = str(art.get("article_hash") or "")
                         if ah:
-                            db.remember_junk_hash(ah, title=str(art.get("title","")), reason=reason)
+                            db.remember_junk_hash(
+                                ah, title=str(art.get("title", "")), reason=reason
+                            )
                     except Exception:
                         pass
                 else:
@@ -766,7 +776,13 @@ def restore_article(
         return {"ok": False, "error": "ARTICLE_NOT_FOUND"}
     current = db.get_article_status(article_id)
     if current == "ACTIVE":
-        return {"ok": True, "changed": False, "article_id": article_id, "status": "ACTIVE", "reason": "already active"}
+        return {
+            "ok": True,
+            "changed": False,
+            "article_id": article_id,
+            "status": "ACTIVE",
+            "reason": "already active",
+        }
     changed = db.set_article_status(
         article_id,
         "ACTIVE",

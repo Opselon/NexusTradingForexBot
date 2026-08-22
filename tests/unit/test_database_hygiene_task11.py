@@ -19,25 +19,16 @@ Proves the non-destructive safety contract of the hygiene worker:
 
 from __future__ import annotations
 
-import json
-import os
 import sqlite3
-import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from nexus_scalp.hygiene import Confidence, WorkerMode, WorkerState
+from nexus_scalp.hygiene import Confidence, WorkerMode
 from nexus_scalp.hygiene.archive import ArchiveManager
 from nexus_scalp.hygiene.detectors import DuplicateDetector, OrphanDetector
-from nexus_scalp.hygiene.retention import RetentionEngine
-from nexus_scalp.hygiene.state import HygieneStateStore
 from nexus_scalp.hygiene.worker import (
-    SAFE_CLEAN_CLASSES,
-    CleanupExecutor,
-    HygienePlanner,
-    HygieneScanner,
     financial_aggregates,
 )
 from nexus_scalp.hygiene.worker_runner import (
@@ -265,7 +256,7 @@ def env(tmp_path: Path):
 
 
 def test_hyg01_dry_run_makes_zero_mutation(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, audit_path, _news_path, _candle_path = env
     digest_before = db_integrity_digest(str(audit_path))
     worker = DatabaseHygieneWorker(repo_root=repo, mode=WorkerMode.DRY_RUN, apply_deletes=False)
     res = worker.run_cycle(["audit"])
@@ -277,7 +268,7 @@ def test_hyg01_dry_run_makes_zero_mutation(env):
 
 
 def test_hyg02_exact_duplicate_detection(env):
-    repo, audit_path, news_path, candle_path = env
+    _repo, _audit_path, news_path, _candle_path = env
     conn = sqlite3.connect(str(news_path))
     det = DuplicateDetector()
     dups = det.scan_news(conn)
@@ -292,7 +283,7 @@ def test_hyg02_exact_duplicate_detection(env):
 
 
 def test_hyg03_split_fill_is_not_duplicate(env):
-    repo, audit_path, news_path, candle_path = env
+    _repo, audit_path, _news_path, _candle_path = env
     conn = sqlite3.connect(str(audit_path))
     det = DuplicateDetector()
     finds = det.scan_audit(conn)
@@ -306,7 +297,7 @@ def test_hyg03_split_fill_is_not_duplicate(env):
 
 
 def test_hyg04_financial_row_never_deleted_automatically(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, audit_path, _news_path, _candle_path = env
     worker = DatabaseHygieneWorker(repo_root=repo, mode=WorkerMode.SAFE_CLEAN, apply_deletes=True)
     res = worker.run_cycle(["audit"])
     db = res["databases"]["audit"]
@@ -323,7 +314,7 @@ def test_hyg04_financial_row_never_deleted_automatically(env):
 
 
 def test_hyg05_migration_history_never_deleted(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, audit_path, _news_path, _candle_path = env
     # TASK-10 schema_meta table (migration history) — simulated; must be KEEP.
     conn = sqlite3.connect(str(audit_path))
     conn.execute("CREATE TABLE schema_meta (migration_id TEXT PRIMARY KEY, applied_at TEXT)")
@@ -363,7 +354,7 @@ def test_hyg05_migration_history_never_deleted(env):
 
 
 def test_hyg06_research_evidence_preserved(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, audit_path, _news_path, _candle_path = env
     worker = DatabaseHygieneWorker(
         repo_root=repo, mode=WorkerMode.AGGRESSIVE_CLEAN, apply_deletes=True
     )
@@ -377,7 +368,7 @@ def test_hyg06_research_evidence_preserved(env):
 
 
 def test_hyg07_model_provenance_preserved(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, audit_path, _news_path, _candle_path = env
     conn = sqlite3.connect(str(audit_path))
     conn.execute(
         "CREATE TABLE experience_model_registry (model_id TEXT PRIMARY KEY, model_version TEXT)"
@@ -417,7 +408,7 @@ def test_hyg07_model_provenance_preserved(env):
 
 
 def test_hyg08_expired_cache_cleanup(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, _audit_path, _news_path, _candle_path = env
     worker = DatabaseHygieneWorker(repo_root=repo, mode=WorkerMode.SAFE_CLEAN, apply_deletes=True)
     res = worker.run_cycle(["audit", "news", "candle_intel"])
     # news_health old rows deleted (retention 90d, 2 rows @200d).
@@ -436,7 +427,7 @@ def test_hyg08_expired_cache_cleanup(env):
 
 
 def test_hyg10_orphan_detection(env):
-    repo, audit_path, news_path, candle_path = env
+    _repo, audit_path, _news_path, _candle_path = env
     conn = sqlite3.connect(str(audit_path))
     det = OrphanDetector()
     orphs = det.scan_audit(conn)
@@ -450,7 +441,7 @@ def test_hyg10_orphan_detection(env):
 
 
 def test_hyg12_archive_before_delete(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, _audit_path, news_path, _candle_path = env
     worker = DatabaseHygieneWorker(repo_root=repo, mode=WorkerMode.SAFE_CLEAN, apply_deletes=True)
     res = worker.run_cycle(["news"])
     db = res["databases"]["news"]
@@ -469,7 +460,7 @@ def test_hyg12_archive_before_delete(env):
 
 
 def test_hyg13_archive_checksum_verified(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, _audit_path, _news_path, _candle_path = env
     am = ArchiveManager(repo)
     man = am.archive_rows(
         "test",
@@ -491,7 +482,7 @@ def test_hyg13_archive_checksum_verified(env):
 
 
 def test_hyg15_financial_aggregate_unchanged(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, audit_path, _news_path, _candle_path = env
     conn = sqlite3.connect(str(audit_path))
     before = financial_aggregates(conn)
     conn.close()
@@ -507,7 +498,7 @@ def test_hyg15_financial_aggregate_unchanged(env):
 
 
 def test_hyg16_research_lineage_unchanged(env):
-    repo, audit_path, news_path, candle_path = env
+    repo, audit_path, _news_path, _candle_path = env
     worker = DatabaseHygieneWorker(
         repo_root=repo, mode=WorkerMode.AGGRESSIVE_CLEAN, apply_deletes=True
     )

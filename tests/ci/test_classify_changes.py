@@ -5,6 +5,7 @@ gates run. A wrong mapping means a required gate is silently skipped (or an
 unrelated gate needlessly runs). If you change a mapping, you MUST update the
 expectation here — drift between the code and these tests is a bug.
 """
+
 from __future__ import annotations
 
 import sys
@@ -12,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "ci"))
 
-from classify_changes import classify_file, classify_files, KNOWN_LANES  # noqa: E402
+from classify_changes import KNOWN_LANES, classify_file, classify_files
 
 
 def test_python_source_changes():
@@ -78,9 +79,7 @@ def test_docs_only_aggregation():
 
 
 def test_multiple_changed_areas():
-    res = classify_files(
-        ["src/x.py", "Web/app.js", "Dockerfile", ".github/workflows/ci.yml"]
-    )
+    res = classify_files(["src/x.py", "Web/app.js", "Dockerfile", ".github/workflows/ci.yml"])
     assert res["python"] and res["web"] and res["docker"] and res["ci"]
 
 
@@ -98,4 +97,4 @@ def test_all_known_lanes_present_in_output():
 def test_no_lane_outside_known_set():
     res = classify_files(["src/x.py", "Web/a.js", "docs/b.md"])
     for k in res:
-        assert k in (KNOWN_LANES + ("docs_only",)), f"unexpected lane {k}"
+        assert k in ((*KNOWN_LANES, "docs_only")), f"unexpected lane {k}"

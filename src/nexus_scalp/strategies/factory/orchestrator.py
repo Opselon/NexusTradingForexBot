@@ -34,6 +34,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.strategies.factory.benchmark import (
+    benchmark_subset_for_candidate,
+    build_benchmark_artifact,
+    candidate_coverage_stats,
+)
 from nexus_scalp.strategies.factory.dsl import (
     GENERATOR_VERSION,
     RANDOM_SEED,
@@ -56,11 +61,6 @@ from nexus_scalp.strategies.factory.models import (
     GenerationMode,
     LoopState,
     StrategyFamily,
-)
-from nexus_scalp.strategies.factory.benchmark import (
-    benchmark_subset_for_candidate,
-    build_benchmark_artifact,
-    candidate_coverage_stats,
 )
 from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
 from nexus_scalp.strategies.factory.ranking import (
@@ -848,7 +848,9 @@ class StrategyFactory:
                 _record_run(
                     self._research_backend,
                     {
-                        "run_id": (run_id or result.get("run_id") or f"run_{uuid.uuid4().hex[:12]}"),
+                        "run_id": (
+                            run_id or result.get("run_id") or f"run_{uuid.uuid4().hex[:12]}"
+                        ),
                         "generation_id": candidate.generation_id,
                         "candidate_id": candidate.candidate_id,
                         "strategy_id": candidate.candidate_id,
@@ -901,7 +903,9 @@ class StrategyFactory:
                         "score": float(score.get("final_score", 0.0) or 0.0),
                         "duration_ms": round(duration_ms, 1),
                         "benchmark": benchmark,
-                        "coverage": coverage.get("coverage", {}) if isinstance(coverage, dict) else {},
+                        "coverage": coverage.get("coverage", {})
+                        if isinstance(coverage, dict)
+                        else {},
                     },
                 },
             )
@@ -957,7 +961,10 @@ class StrategyFactory:
                         vals = (payload.get("feature_snapshot") or {}).get("values") or []
                         if isinstance(vals, list) and vals:
                             rows.append(
-                                {"idempotency_key": str(r["idempotency_key"]), "feature_values": vals}
+                                {
+                                    "idempotency_key": str(r["idempotency_key"]),
+                                    "feature_values": vals,
+                                }
                             )
                     except Exception:
                         continue

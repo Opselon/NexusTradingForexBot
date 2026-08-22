@@ -202,10 +202,18 @@ class NewsAnalysisPipeline:
         # Idempotent guard before allocating a new run_id/analysis_id
         if not force:
             try:
-                ah = str(getattr(article, "article_hash", "") or getattr(article, "articleHash", "") or "")
+                ah = str(
+                    getattr(article, "article_hash", "")
+                    or getattr(article, "articleHash", "")
+                    or ""
+                )
                 aid = str(getattr(article, "article_id", "") or "")
                 if ah and self.db.is_analyzed_hash(ah):
-                    logger.info("[NEWS_ANALYSIS] event=SKIP_ALREADY_ANALYZED article_id=%s hash=%s", aid, ah[:12])
+                    logger.info(
+                        "[NEWS_ANALYSIS] event=SKIP_ALREADY_ANALYZED article_id=%s hash=%s",
+                        aid,
+                        ah[:12],
+                    )
                     # Return a synthetic SKIPPED result that won't overwrite the real one
                     existing = self.db.get_analysis(aid) if aid else None
                     if existing:
@@ -259,7 +267,11 @@ class NewsAnalysisPipeline:
                     existing2 = self.db.get_analysis(aid) or {}
                     if ah:
                         try:
-                            self.db.remember_analyzed_hash(ah, title=str(getattr(article, "title", "")), analysis_id=str(existing2.get("analysis_id", "")))
+                            self.db.remember_analyzed_hash(
+                                ah,
+                                title=str(getattr(article, "title", "")),
+                                analysis_id=str(existing2.get("analysis_id", "")),
+                            )
                         except Exception:
                             pass
                     logger.info("[NEWS_ANALYSIS] event=SKIP_ALREADY_ANALYZED article_id=%s", aid)
@@ -489,7 +501,9 @@ class NewsAnalysisPipeline:
                 try:
                     if ah_tmp:
                         self.db.remember_analyzed_hash(
-                            ah_tmp, title=str(art.get("title", "")), analysis_id=str(existing.get("analysis_id", ""))
+                            ah_tmp,
+                            title=str(art.get("title", "")),
+                            analysis_id=str(existing.get("analysis_id", "")),
                         )
                 except Exception:
                     pass

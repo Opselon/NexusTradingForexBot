@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.domain.models import AccountInfo
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -192,7 +192,7 @@ class TestSaveConfigTelegramPersistence:
     def test_config_save_rebuilds_notifier(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        client, svc = self._client(tmp_path, monkeypatch)
+        client, _svc = self._client(tmp_path, monkeypatch)
         engine = client.app.state.engine
         # Initially unconfigured -> notifier disabled.
         assert engine.notifier.enabled is False

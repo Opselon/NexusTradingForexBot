@@ -42,7 +42,6 @@ Spec reference: TASK-9 sections 3-56.  TEST-UP-01..35 acceptance mapping:
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import threading
 import time
@@ -53,7 +52,7 @@ from typing import Any
 import pytest
 
 from nexus_scalp.release import updater as upd
-from nexus_scalp.release.metadata import get_version_info, parse_version
+from nexus_scalp.release.metadata import parse_version
 
 
 # ---------------------------------------------------------------------------

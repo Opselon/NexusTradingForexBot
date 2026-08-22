@@ -75,3 +75,186 @@ pre, code, .font-mono {
 .glow-border:hover::after {
     opacity: 0.3;
 }
+
+/* =========================================================================
+ * Forensic Incident Center — additions (2026-08-22)
+ * Keep existing visual language; add hierarchy, spacing, status pills,
+ * toast system, modal/drawer, agent toggle, dropdowns.
+ * ========================================================================= */
+
+/* --- Header market data hierarchy (LABEL / PRIMARY VALUE) --- */
+.nx-mkt { gap: 2px; min-width: 0; }
+.nx-mkt-label {
+    font-size: 9px; line-height: 1; font-weight: 600; letter-spacing: .05em;
+    color: #64748b; text-transform: uppercase; white-space: nowrap;
+}
+.nx-mkt-value {
+    font-family: 'JetBrains Mono', monospace; font-size: 15px; line-height: 1.1;
+    font-weight: 700; color: #e2e8f0; white-space: nowrap;
+    font-variant-numeric: tabular-nums; /* prevent layout shift on value change */
+}
+
+/* --- STALE warning badge (spec 3.1) --- */
+.nx-badge-stale {
+    display: inline-block; padding: 2px 8px; border-radius: 6px;
+    background: rgba(245, 158, 11, 0.20);
+    color: #F59E0B;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    font-weight: 700; font-size: 10px;
+}
+
+/* --- Ghost action button (high-frequency / neutral controls) --- */
+.nx-btn-ghost {
+    background: rgba(6, 182, 212, 0.10);
+    color: #06b6d4;
+    border: 1px solid rgba(6, 182, 212, 0.30);
+    font-weight: 600;
+    transition: background-color .15s ease, border-color .15s ease;
+}
+.nx-btn-ghost:hover { background: rgba(6, 182, 212, 0.20); }
+
+/* --- Dropdown (Tools / Export) --- */
+.nx-dropdown { position: relative; display: inline-block; }
+.nx-dropdown-menu {
+    position: absolute; right: 0; top: calc(100% + 4px); z-index: 45;
+    min-width: 190px; padding: 4px;
+    background: #0f1623; border: 1px solid #1e293b; border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+}
+.nx-dropdown-item {
+    display: flex; align-items: center; width: 100%; text-align: left;
+    padding: 8px 10px; border-radius: 7px; color: #cbd5e1; font-size: 12px;
+    background: transparent;
+}
+.nx-dropdown-item:hover { background: rgba(6,182,212,.12); color: #fff; }
+
+/* --- Incident filter tabs --- */
+.nx-filter-tab {
+    padding: 4px 10px; border-radius: 7px; color: #94a3b8; font-weight: 600;
+    border: 1px solid transparent; background: transparent;
+}
+.nx-filter-tab:hover { color: #06b6d4; }
+.nx-filter-tab-active {
+    color: #fff; background: rgba(6,182,212,.12); border-color: rgba(6,182,212,.30);
+}
+
+/* --- Agent Mode toggle (spec 15-16) --- */
+.nx-agent-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 8px;
+    background: rgba(148,163,184,.08); color: #94a3b8;
+    border: 1px solid rgba(148,163,184,.25); font-weight: 700; font-size: 12px;
+    transition: all .18s ease;
+}
+.nx-agent-toggle .nx-agent-dot {
+    width: 8px; height: 8px; border-radius: 9999px; background: #475569;
+    transition: all .18s ease;
+}
+.nx-agent-toggle[aria-checked="true"] {
+    border: 1px solid #06b6d4;
+    box-shadow: 0 0 10px rgba(6,182,212,.5), inset 0 0 10px rgba(6,182,212,.2);
+    color: #cffafe;
+}
+.nx-agent-toggle[aria-checked="true"] .nx-agent-dot {
+    background: #06b6d4; box-shadow: 0 0 8px rgba(6,182,212,.8);
+}
+.nx-agent-toggle[aria-checked="true"] .fa-robot { color: #06b6d4; }
+
+/* Compact incident Agent status pill */
+.nx-agent-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 9999px;
+    border: 1px solid rgba(168,85,247,.35); background: rgba(168,85,247,.12);
+    color: #d8b4fe;
+}
+.nx-agent-pill.is-success { border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.12); color: #86efac; }
+.nx-agent-pill.is-error { border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.12); color: #fca5a5; }
+.nx-agent-pill.is-processing { animation: nx-pulse 1.6s ease-in-out infinite; }
+@keyframes nx-pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+
+/* --- Status pills (spec 6) --- */
+.nx-status-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 9999px;
+}
+.nx-status-pill .nx-status-dot { width: 6px; height: 6px; border-radius: 9999px; background: currentColor; }
+.status-error { color: #f87171; background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.35); }
+.status-degraded { color: #fbbf24; background: rgba(245,158,11,.15); border: 1px solid rgba(245,158,11,.35); }
+.status-inactive { color: #94a3b8; background: rgba(148,163,184,.10); border: 1px solid rgba(148,163,184,.25); }
+
+/* --- Toast notifications (spec 10) --- */
+.nx-toast-region {
+    position: fixed; right: 16px; bottom: 16px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 10px; max-width: 360px;
+    pointer-events: none;
+}
+.nx-toast {
+    pointer-events: auto;
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; border-radius: 10px;
+    background: #0f1623; border: 1px solid #1e293b;
+    color: #e2e8f0; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    animation: nx-toast-in .18s ease-out;
+}
+.nx-toast-leaving { animation: nx-toast-out .2s ease-in forwards; }
+@keyframes nx-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes nx-toast-out { to { opacity: 0; transform: translateX(12px); } }
+.nx-toast-icon {
+    flex: 0 0 20px; height: 20px; width: 20px; border-radius: 9999px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 12px; color: #0b0f17;
+}
+.nx-toast-body { flex: 1 1 auto; min-width: 0; }
+.nx-toast-msg { font-size: 12.5px; font-weight: 600; line-height: 1.3; }
+.nx-toast-detail { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.nx-toast-close {
+    flex: 0 0 auto; background: transparent; border: none; color: #64748b;
+    font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px;
+}
+.nx-toast-close:hover { color: #e2e8f0; }
+.nx-toast-success .nx-toast-icon { background: #22C55E; }
+.nx-toast-success { border-color: rgba(34,197,94,.4); }
+.nx-toast-error .nx-toast-icon { background: #EF4444; }
+.nx-toast-error { border-color: rgba(239,68,68,.4); }
+.nx-toast-warning .nx-toast-icon { background: #F59E0B; }
+.nx-toast-warning { border-color: rgba(245,158,11,.4); }
+.nx-toast-info .nx-toast-icon { background: #06B6D4; }
+.nx-toast-info { border-color: rgba(6,182,212,.4); }
+
+/* --- Modal / drawer backdrop --- */
+.nx-modal-backdrop { background: rgba(2,6,12,.72); backdrop-filter: blur(2px); }
+@media (prefers-reduced-motion: reduce) {
+    .nx-toast, .nx-toast-leaving, .nx-agent-pill.is-processing { animation: none !important; }
+    .nx-agent-toggle[aria-checked="true"] { box-shadow: none; }
+}
+
+/* Skeleton loading (spec 35) */
+.nx-skeleton {
+    height: 64px; border-radius: 10px;
+    background: linear-gradient(90deg, rgba(30,41,59,.4) 25%, rgba(51,65,85,.6) 37%, rgba(30,41,59,.4) 63%);
+    background-size: 400% 100%; animation: nx-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes nx-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+/* --- News Intelligence (0100) --- */
+.news-filter-btn { color: #94a3b8; border-color: rgba(71,85,105,.4); background: rgba(15,23,42,.4); }
+.news-filter-btn:hover { border-color: rgba(34,211,238,.5); color: #e2e8f0; }
+.news-filter-btn.is-active { background: rgba(34,211,238,.15); border-color: rgba(34,211,238,.6); color: #67e8f9; }
+
+.ni-chip { display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:6px; font-weight:700; letter-spacing:.04em; }
+.ni-chip-ready { background:rgba(16,185,129,.15); color:#6ee7b7; border:1px solid rgba(16,185,129,.4); }
+.ni-chip-notcfg { background:rgba(148,163,184,.15); color:#cbd5e1; border:1px solid rgba(148,163,184,.4); }
+.ni-chip-unavail { background:rgba(245,158,11,.15); color:#fcd34d; border:1px solid rgba(245,158,11,.4); }
+.ni-chip-misconfig { background:rgba(239,68,68,.15); color:#fca5a5; border:1px solid rgba(239,68,68,.4); }
+.ni-chip-unknown { background:rgba(100,116,139,.15); color:#cbd5e1; border:1px solid rgba(100,116,139,.4); }
+
+.ni-status-irrelevant { background:rgba(100,116,139,.18); color:#cbd5e1; border:1px solid rgba(100,116,139,.45); }
+.ni-status-active { background:rgba(34,211,238,.12); color:#67e8f9; border:1px solid rgba(34,211,238,.35); }
+
+.ni-ai-card { border-left:2px solid rgba(34,211,238,.5); background:rgba(15,23,42,.55); }
+.ni-fact { color:#e2e8f0; }
+.ni-muted { color:#94a3b8; }
+
+.ni-analyze-btn[disabled] { opacity:.5; cursor:not-allowed; }
+.ni-spinner { display:inline-block; width:9px; height:9px; border:2px solid rgba(34,211,238,.35); border-top-color:#67e8f9; border-radius:50%; animation:ni-spin .7s linear infinite; vertical-align:middle; }
+@keyframes ni-spin { to { transform:rotate(360deg); } }

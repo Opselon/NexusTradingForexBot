@@ -20,7 +20,6 @@ from pathlib import Path
 import pytest
 
 from nexus_scalp.settings import SettingsDatabase, SettingsService
-from nexus_scalp.settings.secret_store import SecureSecretStore
 
 
 @pytest.fixture()

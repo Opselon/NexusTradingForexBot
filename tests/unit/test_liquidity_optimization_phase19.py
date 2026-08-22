@@ -17,16 +17,9 @@ Naming: TEST-LIQ-OPT-01 .. TEST-LIQ-OPT-28 per the TASK-6 brief.
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import numpy as np
-import pytest
-
-from nexus_scalp.features.liquidity_engine import (
-    LiquidityPool,
-    PoolSide,
-    PoolSource,
-)
 
 # ---------------------------------------------------------------------------
 # TEST-LIQ-OPT-01 — implementation files exist
@@ -102,7 +95,7 @@ def test_liq_opt_04_v11_causality_inherited() -> None:
         LiquidityParams,
         compute_liquidity_features_v1_1,
     )
-    from tests.helpers.liquidity_fixtures import bar, swing_high_bars
+    from tests.helpers.liquidity_fixtures import swing_high_bars
 
     t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
     bars = swing_high_bars(60, 3310.0, 3300.0, t0=t0)

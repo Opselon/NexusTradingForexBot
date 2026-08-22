@@ -18,21 +18,17 @@ Covers the requirements of §38/§39 test matrices:
 from __future__ import annotations
 
 import sqlite3
-import threading
 from pathlib import Path
 
 import pytest
 
 from nexus_scalp.settings import (
     MIGRATION_FLAG_KEY,
-    TELEGRAM_ADMIN_KEY,
-    TELEGRAM_ENABLED_KEY,
     TELEGRAM_TOKEN_KEY,
     SecureSecretStore,
     SettingsDatabase,
     SettingsService,
 )
-from nexus_scalp.settings.secret_store import SecretStoreError
 
 
 @pytest.fixture

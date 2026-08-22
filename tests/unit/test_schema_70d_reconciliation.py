@@ -323,7 +323,6 @@ def test_current_70d_12_skip_not_pass():
 def test_current_70d_13_ui_backend_state_parity():
     """TEST-CURRENT-70D-13 — the UI governance panel consumes the canonical
     status endpoint (backend truth, not hardcoded states)."""
-    import re
 
     js = (REPO_ROOT / "Web" / "app.js").read_text(encoding="utf-8")
     assert "api/models/governance/status" in js
@@ -370,7 +369,6 @@ def test_current_70d_16_champion_write_protection():
 def test_current_70d_17_head3_weight_integrity_detection():
     """TEST-CURRENT-70D-17 — head.3.weight (TCNAttentionV1 class head) is
     detected as the class-count source before weaker assumptions."""
-    import torch
 
     from nexus_scalp.model_lifecycle.integrity import inspect_artifact
 

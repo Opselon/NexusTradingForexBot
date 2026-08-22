@@ -32,7 +32,6 @@ from nexus_scalp.incidents.models import (
     Incident,
     IncidentCategory,
     IncidentSeverity,
-    IncidentStatus,
     RootCauseConfidence,
 )
 from nexus_scalp.incidents.store import IncidentStore
@@ -395,7 +394,7 @@ class TestCausalChain:
             ),
         ]
         result = corr.correlate(tele)
-        pattern, chain = corr.classify_chain(result.incidents[0])
+        _pattern, chain = corr.classify_chain(result.incidents[0])
         assert len(chain) >= 3
         positions = [c["position"] for c in chain]
         assert positions[0] == "ROOT_EVENT"
@@ -465,7 +464,6 @@ class TestSplitFillAccounting:
     def test_one_economic_execution_one_outcome(self) -> None:
         """Split fills must group under one master order — the accounting
         engine treats them as ONE economic outcome (protected family)."""
-        from nexus_scalp.incidents.trace import split_fill_groups
 
         # covered by the split-fill family tests; here we verify the engine's
         # recovery candidate maps one ticket (never merges/de-dupes siblings).

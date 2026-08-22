@@ -35,7 +35,6 @@ import torch
 
 from nexus_scalp.model_generation import (
     ArtifactStore,
-    CandidateTrainer,
     DatasetFactory,
     ExperimentFactory,
     LocalModelRuntime,

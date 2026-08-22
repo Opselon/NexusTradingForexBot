@@ -799,9 +799,15 @@ class LiveEngine:
         # the operator's UI choice. LiveEngine bootstraps from config then
         # rehydrates; override with the snapshot truth if present.
         self._news_enabled = bool(getattr(config, "news", None) and config.news.enabled)
+        self._news_auto_analysis_enabled = bool(
+            getattr(getattr(config, "news", None), "auto_analysis_enabled", False)
+        )
         try:
             _news_snap = self.runtime_config.get_snapshot().news
             self._news_enabled = bool(_news_snap.enabled)
+            self._news_auto_analysis_enabled = bool(
+                getattr(_news_snap, "auto_analysis_enabled", False)
+            )
         except Exception:
             pass
         if self._news_enabled:
@@ -815,6 +821,13 @@ class LiveEngine:
                     interval_sec=float(getattr(news_config, "worker_interval_sec", 60)),
                     max_queue=int(getattr(news_config, "max_queue_size", 1000)),
                 )
+                # News Auto Analysis — seed worker gate from snapshot/bootstrap (no API key needed)
+                try:
+                    self.news_worker.auto_analysis_enabled = bool(
+                        getattr(self, "_news_auto_analysis_enabled", False)
+                    )
+                except Exception:
+                    pass
                 self.news_gate = NewsGate(config=news_config)
                 logger.info("[NEWS] event=CONSTRUCTED status=ENABLED")
             except Exception as news_err:
@@ -2338,6 +2351,14 @@ class LiveEngine:
             interval_sec=float(snap.news.worker_interval_sec),
             max_queue=int(snap.news.max_queue_size),
         )
+        # seed auto-analysis gate from snapshot
+        try:
+            self.news_worker.auto_analysis_enabled = bool(
+                getattr(snap.news, "auto_analysis_enabled", False)
+            )
+            self._news_auto_analysis_enabled = bool(self.news_worker.auto_analysis_enabled)
+        except Exception:
+            pass
         self.news_gate = NewsGate(config=cfg)
         self._news_enabled = True
         self._news_worker_started = False
@@ -2818,6 +2839,24 @@ class LiveEngine:
                         )
                     except Exception as ne:
                         logger.error("[NEWS] event=HOT_RELOAD_DISABLE_FAILED error=%s", ne)
+            # News Auto Analysis (local deterministic, no API key) — live-tunable
+            desired_auto = bool(getattr(snap.news, "auto_analysis_enabled", False))
+            if desired_auto != getattr(self, "_news_auto_analysis_enabled", False):
+                self._news_auto_analysis_enabled = desired_auto
+                # propagate to worker gate (cheap, no restart)
+                nw2 = getattr(self, "news_worker", None)
+                if nw2 is not None and hasattr(nw2, "auto_analysis_enabled"):
+                    nw2.auto_analysis_enabled = desired_auto
+                logger.info(
+                    "[NEWS_AUTO] event=HOT_RELOAD_TOGGLE enabled=%s runtime_version=%d",
+                    desired_auto,
+                    snap.version,
+                )
+            else:
+                # keep worker in sync every tick (handles worker reconstructed)
+                nw2 = getattr(self, "news_worker", None)
+                if nw2 is not None and hasattr(nw2, "auto_analysis_enabled"):
+                    nw2.auto_analysis_enabled = desired_auto
             # Rule matrix cache TTL (live-tunable; the engine uses
             # refresh_cache(force) with the TTL as a default — the attr
             # is set when the engine reads it each refresh)

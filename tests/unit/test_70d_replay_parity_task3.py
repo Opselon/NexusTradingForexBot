@@ -13,7 +13,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import polars as pl
-import pytest
 
 from nexus_scalp.features.schema_contract import validate_70d_vector
 from nexus_scalp.model_generation.replay import replay_70d_vector

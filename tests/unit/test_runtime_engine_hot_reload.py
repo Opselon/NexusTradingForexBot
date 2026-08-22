@@ -12,12 +12,9 @@ Proves the actual runtime consumers read the new configuration:
 from __future__ import annotations
 
 import os
-import tempfile
-from datetime import UTC, datetime, timedelta, timezone
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 
 import pytest
-import torch
 
 from nexus_scalp.configuration import RuntimeConfigStore
 from nexus_scalp.configuration.config import AlgoConfig, AppConfig, ModelConfig
@@ -246,8 +243,6 @@ class TestPolicyHotReload:
         return round(100.0 - 1.0 * algo.atr_sl_buffer_multiplier, 2)
 
     def test_atr_sl_buffer_deterministic_method_changes(self) -> None:
-        from nexus_scalp.features.scalp_features import ScalpFeatureEngine
-        from nexus_scalp.market_data.bar_aggregator import BarData
 
         svc = _MiniServices(_base_config())
         pid = os.getpid()

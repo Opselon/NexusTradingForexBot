@@ -80,7 +80,7 @@ def _ok(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _err(code: str, **kw: Any) -> dict[str, Any]:
-    from nexus_scalp.web.server import safe_error_payload, new_request_id
+    from nexus_scalp.web.server import new_request_id, safe_error_payload
 
     return safe_error_payload(code=code, request_id=new_request_id(), **kw)
 
@@ -273,11 +273,13 @@ def news_pro_status(request: Request) -> dict[str, Any]:
     svc = _resolve_settings_svc(engine) if engine else _settings(request)
     try:
         from nexus_scalp.news.pro_auto import console_status, provider_status_for_console
+
         if engine is not None:
             db = engine.news_engine.db
         else:
             from nexus_scalp.news.config import NewsConfig
             from nexus_scalp.news.database import NewsDatabase
+
             db = NewsDatabase(NewsConfig().db_path)
             db.initialize_schema()
         total = db.count_articles()
@@ -286,7 +288,11 @@ def news_pro_status(request: Request) -> dict[str, Any]:
         try:
             pending = int(db.count_pending_analysis())
         except Exception:
-            pending = sum(1 for r in db.list_articles(limit=500, include_duplicates=False) if db.get_analysis(r["article_id"]) is None)
+            pending = sum(
+                1
+                for r in db.list_articles(limit=500, include_duplicates=False)
+                if db.get_analysis(r["article_id"]) is None
+            )
         status_counts = db.count_articles_by_status()
         last = db.list_ai_analysis(limit=1)
         latest_ai = dict(last[0]) if last else None
@@ -295,7 +301,11 @@ def news_pro_status(request: Request) -> dict[str, Any]:
             _ok(
                 {
                     "console": console_status(),
-                    "counts": {"total": int(total), "pending": int(pending), "status_counts": status_counts},
+                    "counts": {
+                        "total": int(total),
+                        "pending": int(pending),
+                        "status_counts": status_counts,
+                    },
                     "latest_ai": latest_ai,
                     "provider": prov,
                 }
@@ -311,8 +321,8 @@ def news_pro_console(request: Request, limit: int = 200, since_seq: int = 0) -> 
     """Live console feed: every pass/answer/error, ordered by seq.
     Always available (in-memory ring survives even when the news subsystem
     is idle) so the News tab never shows an empty console due to NEWS_UNAVAILABLE.
-    Query params: limit (1..500), since_seq (poll from last seen seq — 0 for all).
-    Frontend polls this every 1–2s when the News tab is active.
+    Query params: limit (1..500), since_seq (poll from last seen seq - 0 for all).
+    Frontend polls this every 1-2s when the News tab is active.
     """
     try:
         from nexus_scalp.news.pro_auto import get_console_history
@@ -339,7 +349,10 @@ def news_pro_analyze_all(request: Request, payload: dict[str, Any] | None = None
 
     last = float(getattr(request.app.state, "_news_pro_last_trigger", 0.0) or 0.0)
     if _time.time() - last < 15.0 and not bool((payload or {}).get("force")):
-        return _err("COOLDOWN", message=f"Analyze ALL cooldown — retry in {int(15 - (_time.time() - last))}s")
+        return _err(
+            "COOLDOWN",
+            message=f"Analyze ALL cooldown — retry in {int(15 - (_time.time() - last))}s",
+        )
     request.app.state._news_pro_last_trigger = _time.time()
     payload = payload or {}
     limit = max(10, min(int(payload.get("limit", 200) or 200), 2000))
@@ -348,7 +361,9 @@ def news_pro_analyze_all(request: Request, payload: dict[str, Any] | None = None
         from nexus_scalp.news.pro_auto import run_pro_cycle
 
         db = engine.news_engine.db
-        summary = run_pro_cycle(db, engine=engine, settings_service=svc, limit=limit, prune_junk=True)
+        summary = run_pro_cycle(
+            db, engine=engine, settings_service=svc, limit=limit, prune_junk=True
+        )
         return serialize_enums(_ok({"summary": summary}))
     except Exception as e:  # pragma: no cover
         logger.warning("[NEWS_PRO_ANALYZE_ALL] failed", error=str(e))
@@ -395,6 +410,7 @@ def news_pro_latest_answers(request: Request, limit: int = 20) -> dict[str, Any]
         else:
             from nexus_scalp.news.config import NewsConfig
             from nexus_scalp.news.database import NewsDatabase
+
             db = NewsDatabase(NewsConfig().db_path)
             db.initialize_schema()
             rows = db.list_ai_analysis(limit=max(1, min(int(limit), 100)))

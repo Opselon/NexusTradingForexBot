@@ -32,6 +32,7 @@ Exit codes mirror the engine convention:
   3  environment error (Node.js not available)
   1  build/compile failure
 """
+
 from __future__ import annotations
 
 import argparse
@@ -152,9 +153,7 @@ def build(minify: bool = True) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build Web/tailwind.css")
-    parser.add_argument(
-        "--no-minify", action="store_true", help="emit an unminified stylesheet"
-    )
+    parser.add_argument("--no-minify", action="store_true", help="emit an unminified stylesheet")
     args = parser.parse_args()
     return build(minify=not args.no_minify)
 

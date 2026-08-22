@@ -11,7 +11,6 @@ adapter to simulate MT5 outage.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient

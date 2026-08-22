@@ -1,4 +1,4 @@
-﻿"""News ingestion: fetcher + scheduler + normalizer (PHASE 12).
+"""News ingestion: fetcher + scheduler + normalizer (PHASE 12).
 
 The fetcher drives per-source polling with rate-limit / backoff / jitter;
 the scheduler decides which sources are due; the normalizer is the

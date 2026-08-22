@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.configuration.config import AlgoConfig, AppConfig, RiskConfig
+from nexus_scalp.configuration.config import AlgoConfig, RiskConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import (
     AccountInfo,
@@ -16,7 +16,6 @@ from nexus_scalp.domain.models import (
     SymbolInfo,
     TickData,
     TradeOrder,
-    TradeProposal,
 )
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
 from nexus_scalp.features.scalp_features import FeatureVector

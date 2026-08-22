@@ -26,7 +26,7 @@ computes performance; generated strategies never go live.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -52,14 +52,11 @@ from nexus_scalp.settings.service import SettingsDatabase, SettingsService
 from nexus_scalp.strategies.factory.dsl import canonicalize_dsl
 from nexus_scalp.strategies.factory.models import (
     EvolutionConfig,
-    FactoryCandidate,
-    StrategyFamily,
 )
 from nexus_scalp.strategies.factory.orchestrator import StrategyFactory
 from nexus_scalp.strategies.factory.provider import (
     PROMPT_VERSION,
     LLMGenerationProvider,
-    ProviderUsage,
 )
 from nexus_scalp.strategies.factory.store import provider_usage_total, record_provider_usage
 from nexus_scalp.strategies.factory.validators import validate_candidate

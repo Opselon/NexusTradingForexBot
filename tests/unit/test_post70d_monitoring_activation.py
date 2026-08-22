@@ -25,7 +25,6 @@ from nexus_scalp.forensics import (
     EXIT_ENGINE_UNAVAILABLE,
     EXIT_REVIEW,
     CheckResult,
-    FeatureReferenceRegistry,
     FeatureReferenceStats,
     ForensicHealthEngine,
     HealthStatus,

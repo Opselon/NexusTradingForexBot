@@ -29,7 +29,6 @@ threshold, actual/expected values and an explanation.
 
 from __future__ import annotations
 
-import json
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any

@@ -227,7 +227,9 @@ def factory_benchmarks(
         if not benchmarks and generation_id:
             from nexus_scalp.strategies.factory.store import list_candidates
 
-            cands = list_candidates(factory._research_backend, generation_id=generation_id, limit=limit)
+            cands = list_candidates(
+                factory._research_backend, generation_id=generation_id, limit=limit
+            )
             for c in cands[:20]:
                 try:
                     row = factory._candidate_from_row(c)  # type: ignore[attr-defined]

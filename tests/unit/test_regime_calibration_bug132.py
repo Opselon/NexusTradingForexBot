@@ -26,13 +26,10 @@ import random
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.features.regime_classifier import (
     MarketRegimeClassifier,
     RecommendedExecutionType,
-    RegimeReason,
     RegimeType,
 )
 
