@@ -203,7 +203,29 @@ jobs:
         run: |
           $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
           winget install --id JRSoftware.InnoSetup -e --accept-package-agreements --accept-source-agreements --disable-interactivity
-          $Iscc = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          # Resolve ISCC robustly: winget package installs to Program Files (x86) on windows-latest,
+          # not LOCALAPPDATA; probe all known locations plus PATH / WinGet packages.
+          $candidates = @(
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          )
+          $Iscc = $null
+          foreach ($cand in $candidates) { if (Test-Path $cand) { $Iscc = $cand; break } }
+          if (-not $Iscc) {
+            $cmd = Get-Command ISCC -ErrorAction SilentlyContinue
+            if ($cmd) { $Iscc = $cmd.Source }
+          }
+          if (-not $Iscc) {
+            $hit = (where.exe ISCC 2>$null | Select-Object -First 1)
+            if ($hit -and (Test-Path $hit.Trim())) { $Iscc = $hit.Trim() }
+          }
+          if (-not $Iscc) {
+            $hit = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+            if ($hit) { $Iscc = $hit }
+          }
+          if (-not $Iscc -or -not (Test-Path $Iscc)) { throw "ISCC not found after winget install; searched: $($candidates -join ', '), PATH, WinGet Packages" }
+          Write-Host "ISCC resolved: $Iscc"
           $Out = "release\v$V\windows\x64"
           & $Iscc "installer\NexusScalpEngine.iss" `
             "/DNSE_VERSION=$V" "/DNSE_CHANNEL=stable" `
