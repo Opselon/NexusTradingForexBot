@@ -1168,8 +1168,6 @@ def start_cmd(
         return
 
     cfg.execution.mode = chosen
-    # Persist the explicit --mode so LiveEngine's SettingsService override (app_settings.db) does not flip it back.
-    # The packaged bare launch (start --mode paper) must remain PAPER even when DB has LIVE.
     try:
         from nexus_scalp.settings.service import SettingsService
 
@@ -1177,6 +1175,22 @@ def start_cmd(
         svc.set("execution.mode", chosen.value, actor="cli:start")
     except Exception:
         pass
+
+    endpoints = _get_network_endpoints(port=port)
+    endpoints_str = chr(10).join(f'  • [cyan]{ep}[/cyan]' for ep in endpoints)
+    nl = chr(10)
+    welcome_panel = Panel(
+        f"[bold cyan]NEXUS SCALP ENGINE[/bold cyan] (v9.0.0 Pro Client){nl}{nl}"
+        f"[green]✔ Engine Running Mode :[/green] [bold yellow]{chosen.value}[/bold yellow] (Safe Simulation){nl}"
+        f"[green]✔ Active Instrument   :[/green] [bold]{cfg.execution.symbol}[/bold]{nl}"
+        f"[green]✔ Risk Drawdown Guard :[/green] {cfg.risk.max_account_drawdown_pct}% max account drawdown{nl}{nl}"
+        f"[bold]Web Control Center and UI Dashboard:[/bold]{nl}{endpoints_str}{nl}{nl}"
+        f"[dim]ℹ Tip: You can seamlessly monitor, inspect charts, and toggle LIVE/SHADOW mode directly inside the Web UI at any time.[/dim]{nl}"
+        f"[dim]ℹ Press Ctrl+C to safely stop the engine.[/dim]",
+        title="🚀 NEXUS TRADING FOREX BOT",
+        border_style="cyan",
+    )
+    console.print(welcome_panel)
     _run_engine(cfg, gateway=gateway, port=port)
 
 
