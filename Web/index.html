@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -37,21 +37,25 @@
 
                         <!-- Quick System Stats -->
                         <div class="flex items-center space-x-6 text-sm">
-                            <div class="hidden sm:block">
-                                <span class="text-xs text-textMuted block">SYMBOL</span>
-                                <span id="quick-symbol" class="font-mono font-bold text-accentCyan">—</span>
+                            <div class="hidden sm:flex flex-col items-start md:gap-0.5 nx-mkt">
+                                <span class="nx-mkt-label">SYMBOL</span>
+                                <span id="quick-symbol" class="nx-mkt-value text-accentCyan">—</span>
                             </div>
-                            <div class="hidden sm:block">
-                                <span class="text-xs text-textMuted block">BID / ASK</span>
-                                <span id="quick-bid-ask" class="font-mono font-bold text-gray-300">WAITING FOR LIVE STATE</span>
+                            <div class="hidden sm:flex flex-col items-start md:gap-0.5 nx-mkt">
+                                <span class="nx-mkt-label">BID</span>
+                                <span id="quick-bid" class="nx-mkt-value text-emerald-400">—</span>
                             </div>
-                            <div class="hidden sm:block">
-                                <span class="text-xs text-textMuted block">REGIME</span>
-                                <span id="quick-regime" class="font-mono font-bold text-accentGold">—</span>
+                            <div class="hidden sm:flex flex-col items-start md:gap-0.5 nx-mkt">
+                                <span class="nx-mkt-label">ASK</span>
+                                <span id="quick-ask" class="nx-mkt-value text-rose-400">—</span>
                             </div>
-                            <div class="hidden sm:block">
-                                <span class="text-xs text-textMuted block">LAST UPDATE</span>
-                                <span id="header-last-update" class="font-mono font-bold text-gray-300">—</span>
+                            <div class="hidden sm:flex flex-col items-start md:gap-0.5 nx-mkt">
+                                <span class="nx-mkt-label">REGIME</span>
+                                <span id="quick-regime" class="nx-mkt-value text-accentGold">—</span>
+                            </div>
+                            <div class="hidden sm:flex flex-col items-start md:gap-0.5 nx-mkt">
+                                <span class="nx-mkt-label">LAST UPDATE</span>
+                                <span id="header-last-update" class="nx-mkt-value text-gray-300">—</span>
                             </div>
                             <div>
                                 <span class="text-xs text-textMuted block">MODE</span>
@@ -1656,6 +1660,12 @@
                                             <input id="news-toggle" type="checkbox" class="w-3.5 h-3.5 accent-accentCyan cursor-pointer" onchange="toggleNewsEngine(this.checked)">
                                         </label>
                                         <span id="news-toggle-state" class="text-[9px] font-mono text-textMuted">—</span>
+                                        <!-- News Auto Analysis: local deterministic (NO API key / NO endpoint). ON enhances accuracy; OFF saves work. Persists via runtime_config. -->
+                                        <label class="flex items-center gap-1.5 bg-darkBg border border-borderClr rounded px-2 py-1 cursor-pointer select-none" title="News Auto Analysis — local deterministic analysis (no API key). ON: worker auto-analyzes new articles each cycle for more accuracy. OFF: worker still ingests, skips auto-analysis. Manual Analyze buttons always work.">
+                                            <span id="news-auto-label" class="text-[10px] font-black text-textMuted">AUTO</span>
+                                            <input id="news-auto-toggle" type="checkbox" class="w-3.5 h-3.5 accent-emerald-500 cursor-pointer" onchange="toggleNewsAutoAnalysis(this.checked)">
+                                        </label>
+                                        <span id="news-auto-state" class="text-[9px] font-mono text-textMuted">—</span>
                                         <button onclick="loadNewsState()" class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-3 py-1.5 rounded text-xs font-bold transition">Refresh</button>
                                         <button onclick="triggerNewsRefresh()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/30 rounded px-3 py-1 text-xs font-bold hover:bg-accentCyan/20 transition">Fetch News</button>
                                     </div>
@@ -1671,7 +1681,7 @@
                                         <div id="news-xauusd-rel" class="text-lg font-black font-mono text-amber-400 mt-1">--</div>
                                     </div>
                                     <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
-                                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Bullish / Bearish</div>
+                                        <div class="flex items-center justify-between"><span class="text-[10px] uppercase tracking-widest text-textMuted">Bullish / Bearish</span><span id="news-bb-hint" class="text-[9px] font-mono text-slate-500"></span></div>
                                         <div class="flex items-center space-x-3 mt-1">
                                             <span id="news-bull" class="text-lg font-black font-mono text-accentGreen">--</span>
                                             <span class="text-textMuted text-xs">/</span>
@@ -1679,31 +1689,94 @@
                                         </div>
                                     </div>
                                     <div class="bg-darkBg/40 border border-borderClr/40 rounded-lg p-3">
-                                        <div class="text-[10px] uppercase tracking-widest text-textMuted">Active Events</div>
+                                        <div class="flex items-center justify-between"><span class="text-[10px] uppercase tracking-widest text-textMuted">Active Events</span><span id="news-active-hint" class="text-[9px] font-mono text-slate-500"></span></div>
                                         <div id="news-events" class="text-lg font-black font-mono text-accentCyan mt-1">--</div>
                                     </div>
                                 </div>
 
-                                <!-- NEWS IMPACT TIMELINE CHART -->
-                                <div class="mb-4">
-                                    <div class="flex justify-between items-center mb-2">
-                                        <div class="text-[10px] uppercase tracking-widest text-textMuted">XAUUSD News Impact Timeline</div>
-                                        <div class="flex items-center space-x-1 text-[10px] font-mono">
-                                            <span class="px-2 py-0.5 rounded bg-accentGreen/10 text-accentGreen border border-accentGreen/30">▲ bullish</span>
-                                            <span class="px-2 py-0.5 rounded bg-accentRed/10 text-accentRed border border-accentRed/30">▼ bearish</span>
-                                            <span class="px-2 py-0.5 rounded bg-slate-500/10 text-slate-400 border border-slate-500/30">● neutral</span>
-                                            <span class="ml-2 text-textMuted">timeframe</span>
-                                            <button id="news-tf-15m" onclick="setNewsTimeframe(900)" class="px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition">15m</button>
-                                            <button id="news-tf-1h" onclick="setNewsTimeframe(3600)" class="px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition">1h</button>
-                                            <button id="news-tf-4h" onclick="setNewsTimeframe(14400)" class="px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition">4h</button>
-                                            <button id="news-tf-1d" onclick="setNewsTimeframe(86400)" class="px-2 py-0.5 rounded bg-darkBg border border-borderClr text-gray-300 hover:border-accentCyan/50 transition">1d</button>
+                                <!-- NEWS IMPACT TIMELINE — PRO CARD (fix: canvas now fills, no more invisible chart) -->
+                                <div class="rounded-xl border border-borderClr/60 bg-[#0b1220]/60 overflow-hidden">
+                                    <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-borderClr/50 bg-[#0d1726]/80">
+                                        <div class="flex items-center gap-2.5">
+                                            <span class="w-7 h-7 rounded-lg bg-accentCyan/15 border border-accentCyan/30 flex items-center justify-center text-accentCyan"><i class="fa-solid fa-chart-line text-[11px]"></i></span>
+                                            <div>
+                                                <div class="text-[11px] font-black tracking-widest text-white">XAUUSD NEWS IMPACT TIMELINE</div>
+                                                <div class="text-[10px] text-slate-400 font-mono">Signed impact buckets — bullish above zero, bearish below · <span id="news-timeline-count" class="text-slate-300">--</span></div>
+                                            </div>
+                                            <span id="news-timeline-dot" class="w-2 h-2 rounded-full bg-slate-500/40 ml-1"></span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5">
+                                            <span class="hidden sm:inline-flex items-center gap-1 text-[10px] font-mono text-slate-400"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>bullish <span class="w-2 h-2 rounded-full bg-red-500 ml-1"></span>bearish <span class="w-2 h-2 rounded-full bg-slate-400 ml-1"></span>neutral</span>
+                                            <span class="text-[10px] font-bold text-slate-500 ml-2 hidden sm:inline">Timeframe</span>
+                                            <div class="flex rounded-lg overflow-hidden border border-borderClr bg-darkBg/60 p-0.5">
+                                                <button id="news-tf-15m" onclick="setNewsTimeframe(900)" class="px-2.5 py-1 rounded-md text-[10px] font-black transition">15m</button>
+                                                <button id="news-tf-1h" onclick="setNewsTimeframe(3600)" class="px-2.5 py-1 rounded-md text-[10px] font-black transition">1h</button>
+                                                <button id="news-tf-4h" onclick="setNewsTimeframe(14400)" class="px-2.5 py-1 rounded-md text-[10px] font-black transition">4h</button>
+                                                <button id="news-tf-1d" onclick="setNewsTimeframe(86400)" class="px-2.5 py-1 rounded-md text-[10px] font-black transition">1d</button>
+                                            </div>
+                                            <button onclick="loadNewsTimeline()" class="w-7 h-7 rounded-lg bg-darkBg border border-borderClr text-slate-400 hover:text-white hover:border-slate-500 transition flex items-center justify-center" title="Reload timeline"><i class="fa-solid fa-rotate text-[10px]"></i></button>
                                         </div>
                                     </div>
-                                    <canvas id="newsImpactChart" class="w-full rounded-lg border border-borderClr/40" style="height:180px; background:#090d16;"></canvas>
+                                    <div class="relative bg-[#060a12]" style="height:220px;">
+                                        <canvas id="newsImpactChart" class="absolute inset-0 w-full h-full block"></canvas>
+                                        <div id="news-timeline-empty" class="absolute inset-0 hidden items-center justify-center text-[11px] font-mono text-slate-500 bg-[#060a12]/80 backdrop-blur-[1px]">No news impact data in this window — try a wider timeframe.</div>
+                                        <div id="news-timeline-tip" class="hidden absolute z-10 pointer-events-none rounded-lg border border-slate-600 bg-slate-900/95 text-white text-[10px] font-mono px-2.5 py-2 shadow-xl max-w-[260px] leading-4"></div>
+                                    </div>
+                                    <div class="flex items-center justify-between px-3 py-1.5 border-t border-borderClr/30 bg-darkBg/20 text-[10px] font-mono text-slate-500">
+                                        <span><span class="text-slate-400">Buckets</span> <b id="news-timeline-buckets" class="text-slate-200">--</b> · <span id="news-timeline-window" class="text-slate-400">--</span></span>
+                                        <span id="news-timeline-top" class="truncate max-w-[52%] text-slate-300 hidden sm:inline"></span>
+                                    </div>
                                 </div>
 
                                 <div class="text-[10px] uppercase tracking-widest text-textMuted mb-2">Live News</div>
-                                                                <div id="news-status-line" class="text-[9px] font-mono text-slate-500 mb-1 hidden"></div>
+
+                                <!-- NEWS AI STATUS (0100): visible but not dominant -->
+                                <div id="news-ai-status" class="flex flex-wrap items-center gap-2 mb-3 text-[10px] font-mono"></div>
+
+                                <!-- NEWS FILTERS (0100): Active / All / Irrelevant -->
+                                <div id="news-filter-bar" class="flex flex-wrap items-center gap-1.5 mb-3">
+                                    <span class="text-[9px] uppercase tracking-widest text-textMuted mr-1">View</span>
+                                    <button data-news-filter="ACTIVE" onclick="setNewsFilter('ACTIVE')" class="news-filter-btn px-2 py-0.5 rounded border text-[10px] font-bold transition">Active</button>
+                                    <button data-news-filter="ALL" onclick="setNewsFilter('ALL')" class="news-filter-btn px-2 py-0.5 rounded border text-[10px] font-bold transition">All</button>
+                                    <button data-news-filter="IRRELEVANT" onclick="setNewsFilter('IRRELEVANT')" class="news-filter-btn px-2 py-0.5 rounded border text-[10px] font-bold transition">Irrelevant</button>
+                                    <span id="news-status-counts" class="text-[9px] text-slate-500 ml-2"></span>
+                                </div>
+
+                                <!-- PRO MODE: Auto-prune (0100) -->
+                                <div id="news-pro-controls" class="mb-3 flex flex-wrap items-center gap-2"></div>
+                                <!-- PRO AUTO CONSOLE — live pass/answer/error trace (News Tab only) -->
+                                <div id="news-pro-console" class="mb-4 rounded-xl border border-borderClr/60 bg-[#071018]/60 overflow-hidden">
+                                    <div class="flex items-center justify-between px-3 py-2 border-b border-borderClr/60 bg-[#0b1620]/80">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
+                                            <span class="text-[10px] font-black tracking-widest text-emerald-300">PRO AUTO CONSOLE</span>
+                                            <span id="news-pro-console-badge" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">idle</span>
+                                            <span id="news-pro-console-pending" class="text-[9px] font-mono text-slate-400"></span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5">
+                                            <span id="news-pro-console-provider" class="text-[9px] font-mono text-slate-500"></span>
+                                            <button onclick="NewsIntel.refreshProStatus()" class="text-[9px] font-bold px-2 py-1 rounded bg-darkBg border border-borderClr text-slate-300 hover:text-white transition">Refresh</button>
+                                            <button id="news-pro-analyze-all" onclick="NewsIntel.proAnalyzeAll()" class="text-[9px] font-black px-2.5 py-1 rounded bg-emerald-500 text-black hover:bg-emerald-400 transition">Analyze ALL</button>
+                                            <button onclick="NewsIntel.clearProConsole()" class="text-[9px] font-bold px-2 py-1 rounded bg-darkBg border border-borderClr text-slate-400 hover:text-white transition">Clear</button>
+                                            <button id="news-pro-purge-soft" onclick="NewsIntel.proPurge(false)" class="text-[9px] font-bold px-2 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/20 transition">Purge junk (count)</button>
+                                            <button id="news-pro-purge-hard" onclick="if(confirm('Hard DELETE IRRELEVANT articles from DB? This cannot be undone.')) NewsIntel.proPurge(true)" class="text-[9px] font-bold px-2 py-1 rounded bg-red-500/10 text-red-300 border border-red-500/30 hover:bg-red-500/20 transition">Hard purge</button>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-[1fr_1fr_minmax(0,1.5fr)] gap-2 px-3 py-2 text-[10px] font-mono border-b border-borderClr/30 bg-darkBg/20">
+                                                        <div class="min-w-0">Pending: <span id="news-pro-pending" class="text-amber-300 font-black">--</span> <span class="text-slate-500">Total</span> <span id="news-pro-total" class="text-slate-300">--</span></div>
+                                                        <div class="min-w-0 truncate">Status: <span id="news-pro-status-counts" class="text-slate-300">--</span></div>
+                                                        <div id="news-pro-last-answer" class="text-slate-400 text-right min-w-0 break-words whitespace-normal line-clamp-2" title=""></div>
+                                    </div>
+                                    <div id="news-pro-console-log" class="max-h-64 overflow-y-auto px-3 py-2 space-y-1 font-mono text-[10px] leading-4 bg-black/20">
+                                        <div class="text-slate-500 italic">Console idle — toggle AUTO on or click Analyze ALL. Every pass and LLM answer will appear here.</div>
+                                    </div>
+                                    <div id="news-pro-latest-answers" class="border-t border-borderClr/30 px-3 py-2 max-h-40 overflow-y-auto space-y-1 font-mono text-[10px] bg-[#0a1220]/40">
+                                        <div class="text-[9px] uppercase tracking-widest text-slate-500 mb-1">Latest PRO answers (route: /api/news/pro/latest-answers)</div>
+                                        <div id="news-pro-answers-list" class="space-y-1 text-slate-300"><span class="text-slate-500 italic">No answers yet.</span></div>
+                                    </div>
+                                </div>
+
+                                <div id="news-status-line" class="text-[9px] font-mono text-slate-500 mb-1 hidden"></div>
                                                                 <div id="news-feed" class="max-h-96 overflow-y-auto space-y-2 text-[11px] font-mono text-gray-300">
                                                                     <div class="text-textMuted italic">News engine idle. Click "Fetch News" or wait for the worker cycle.</div>
                                                                 </div>
@@ -2120,7 +2193,7 @@
                 <span id="debug-feature-anomaly-count" class="px-2 py-1 rounded bg-slate-500/10 text-slate-400 border border-slate-500/30 font-mono">ANOMALY --</span>
                 <span class="px-2 py-1 rounded bg-amber-500/10 text-accentGold border border-amber-500/30 font-mono">FALLBACK --</span>
                 <span class="px-2 py-1 rounded bg-slate-500/10 text-slate-400 border border-slate-500/30 font-mono">UNAVAIL --</span>
-                <span class="px-2 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-mono">STALE --</span>
+                <span class="nx-badge-stale font-mono">STALE --</span>
             </div>
             <div class="flex items-center gap-2 text-[10px] font-bold">
                 <span id="debug-feature-stale" class="px-2 py-1 rounded bg-slate-500/15 text-slate-300 border border-slate-500/30 font-mono">AGE --</span>
@@ -2791,10 +2864,17 @@
 
                 <!-- Incident list -->
                 <div class="bg-panelBg border border-borderClr rounded-xl p-4">
-                    <h3 class="text-sm font-bold text-white mb-3 flex items-center">
-                        <i class="fa-solid fa-list mr-2 text-accentCyan"></i>
-                        Open Incidents (CRITICAL / HIGH / MEDIUM)
-                    </h3>
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-bold text-white flex items-center">
+                            <i class="fa-solid fa-list mr-2 text-accentCyan"></i>
+                            Incidents
+                        </h3>
+                        <div class="flex items-center gap-1 text-[11px]" role="tablist" id="incident-filter-tabs">
+                            <button class="nx-filter-tab nx-filter-tab-active" data-filter="open" role="tab" aria-selected="true" onclick="setIncidentFilter('open', this)">Open</button>
+                            <button class="nx-filter-tab" data-filter="resolved" role="tab" aria-selected="false" onclick="setIncidentFilter('resolved', this)">Resolved</button>
+                            <button class="nx-filter-tab" data-filter="agent" role="tab" aria-selected="false" onclick="setIncidentFilter('agent', this)">Resolved by Agent</button>
+                        </div>
+                    </div>
                     <div id="incident-list" class="space-y-2"></div>
                 </div>
 
@@ -3087,8 +3167,145 @@
         &copy; 2026 Nexus Quantitative Engineering. Proprietary Trading System Core. All Rights Reserved.
     </footer>
 
-    <!-- App Logic -->
-    <script src="api_client.js?v=20260820"></script>
-    <script src="app.js?v=20260820b"></script>
+    <!-- =====================================================================
+         STOP BOT CONFIRMATION MODAL (production safety, spec 7)
+         Destructive action: requires typing STOP; modal never claims
+         success until the backend confirms. Escape / backdrop close supported.
+         ===================================================================== -->
+    <div id="stop-bot-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center nx-modal-backdrop" data-esc-close="true" role="dialog" aria-modal="true" aria-labelledby="stop-bot-title">
+        <div class="bg-panelBg border border-rose-500/40 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+            <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-full bg-rose-500/15 flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation text-rose-400"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 id="stop-bot-title" class="text-base font-bold text-white">Stop the bot?</h3>
+                    <p class="text-xs text-textMuted mt-1 leading-relaxed">
+                        This will stop active bot execution. The live engine loop is halted
+                        and no new signals will be dispatched. Pending orders already placed
+                        with the broker are <b>not</b> automatically cancelled &mdash; manage
+                        open positions separately.
+                    </p>
+                </div>
+            </div>
+            <div class="mt-4">
+                <label for="stop-bot-confirm-input" class="block text-[11px] font-semibold text-textMuted mb-1">
+                    Type <span class="font-mono text-rose-400 font-bold">STOP</span> to confirm:
+                </label>
+                <input id="stop-bot-confirm-input" type="text" autocomplete="off" spellcheck="false"
+                       class="w-full bg-darkBg border border-borderClr text-white rounded px-3 py-2 font-mono focus:outline-none focus:border-rose-500"
+                       placeholder="STOP" />
+            </div>
+            <div class="flex space-x-3 pt-4">
+                <button data-modal-close onclick="closeStopBotModal()" class="flex-1 bg-darkBg hover:bg-borderClr text-gray-300 font-bold py-2 rounded transition text-xs">Cancel</button>
+                <button id="stop-bot-confirm-btn" disabled
+                        class="flex-1 bg-rose-600 text-white font-extrabold py-2 rounded transition text-xs opacity-50 cursor-not-allowed"
+                        onclick="confirmStopBot(this)">Stop Bot</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         TASK GENERATION DRAWER (spec 23-31)
+         Right-side drawer; AI analyzes incident evidence; operator reviews
+         and explicitly submits to the configured provider. Review-before-
+         submit: nothing is pushed externally until the operator confirms.
+         ===================================================================== -->
+    <div id="task-drawer-backdrop" class="hidden fixed inset-0 z-40 bg-black/60 nx-modal-backdrop" data-esc-close="true"></div>
+    <aside id="task-drawer" class="hidden fixed top-0 right-0 z-50 h-full w-full max-w-md bg-panelBg border-l border-borderClr shadow-2xl flex flex-col" role="dialog" aria-modal="true" aria-labelledby="task-drawer-title">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-borderClr">
+            <h3 id="task-drawer-title" class="text-sm font-bold text-white flex items-center">
+                <i class="fa-solid fa-clipboard-list mr-2 text-accentCyan"></i>Generate Task
+            </h3>
+            <button class="nx-btn-ghost rounded p-2" aria-label="Close task drawer" onclick="closeTaskDrawer()">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div id="task-drawer-body" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-xs">
+            <!-- Loading state -->
+            <div id="task-loading" class="hidden flex-col items-center justify-center py-10 text-center">
+                <i class="fa-solid fa-spinner fa-spin text-accentCyan text-2xl mb-3"></i>
+                <p class="text-textMuted">Analyzing incident evidence</p>
+            </div>
+
+            <!-- Form (review-before-submit) -->
+            <div id="task-form" class="hidden space-y-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-textMuted mb-1">Title</label>
+                    <input id="task-title" class="w-full bg-darkBg border border-borderClr text-white rounded px-3 py-2 focus:outline-none focus:border-accentCyan" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-textMuted mb-1">Severity</label>
+                        <select id="task-severity" class="w-full bg-darkBg border border-borderClr text-white rounded px-2 py-2 focus:outline-none focus:border-accentCyan">
+                            <option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option><option>INFO</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-textMuted mb-1">Provider</label>
+                        <select id="task-provider" class="w-full bg-darkBg border border-borderClr text-white rounded px-2 py-2 focus:outline-none focus:border-accentCyan">
+                            <option value="jira">Jira</option>
+                            <option value="clickup">ClickUp</option>
+                            <option value="github">GitHub Issues</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-textMuted mb-1">Description</label>
+                    <textarea id="task-description" rows="9" class="w-full bg-darkBg border border-borderClr text-gray-200 rounded px-3 py-2 font-mono text-[11px] leading-relaxed focus:outline-none focus:border-accentCyan"></textarea>
+                    <p class="text-[10px] text-textMuted mt-1">Forensic context is preserved (IDs, timestamps, symptoms). All content is editable before submission.</p>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-textMuted mb-1">Labels / Tags</label>
+                    <input id="task-tags" class="w-full bg-darkBg border border-borderClr text-white rounded px-3 py-2 focus:outline-none focus:border-accentCyan" placeholder="comma,separated" />
+                </div>
+                <div id="task-submit-note" class="hidden rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 px-3 py-2 text-[11px]">
+                    <i class="fa-solid fa-circle-info mr-1"></i> No external task provider is configured on the backend yet. This submission will be validated and reported as pending &mdash; it will NOT fabricate success.
+                </div>
+            </div>
+
+            <!-- Error state -->
+            <div id="task-error" class="hidden rounded border border-rose-500/30 bg-rose-500/10 text-rose-300 px-3 py-3">
+                <p id="task-error-msg" class="font-semibold"></p>
+                <p class="text-[11px] text-textMuted mt-1">Your draft is preserved below so you can retry.</p>
+            </div>
+        </div>
+
+        <div class="px-4 py-3 border-t border-borderClr flex space-x-3">
+            <button id="task-cancel-btn" class="flex-1 bg-darkBg hover:bg-borderClr text-gray-300 font-bold py-2 rounded transition text-xs" onclick="closeTaskDrawer()">Close</button>
+            <button id="task-submit-btn" disabled class="flex-1 bg-accentCyan hover:bg-cyan-500 text-black font-extrabold py-2 rounded transition text-xs opacity-50 cursor-not-allowed" onclick="submitGeneratedTask(this)">Create Task</button>
+        </div>
+    </aside>
+
+    <!-- Dropdown helper (Tools / Export menus) -->
+    <script>
+        window.NXDropdown = {
+            toggle: function (name, btn) {
+                var wrap = document.querySelector('[data-dropdown="' + name + '"]');
+                if (!wrap) return;
+                var menu = wrap.querySelector('.nx-dropdown-menu');
+                var willOpen = menu.classList.contains('hidden');
+                this.closeAll();
+                if (willOpen) {
+                    menu.classList.remove('hidden');
+                    if (btn) btn.setAttribute('aria-expanded', 'true');
+                }
+            },
+            closeAll: function () {
+                document.querySelectorAll('.nx-dropdown-menu').forEach(function (m) { m.classList.add('hidden'); });
+                document.querySelectorAll('[data-dropdown] > button').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+            }
+        };
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest || !e.target.closest('.nx-dropdown')) window.NXDropdown.closeAll();
+        });
+    </script>
+
+    <!-- App infra: api_client (defines NX) -> forensic_console (extends NX) -> news -> app -->
+    <script src="api_client.js?v=20260822f"></script>
+    <script src="forensic_console.js?v=20260822g"></script>
+    <script src="news_intelligence.js?v=20260822g"></script>
+    <script src="app.js?v=20260822i"></script>
 </body>
 </html>

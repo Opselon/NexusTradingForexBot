@@ -243,6 +243,96 @@ class LLMGenerationProvider:
     # Response parsing (repair-once, then reject safely — spec 34)
     # ------------------------------------------------------------------
 
+    def complete_json(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        response_format_json: bool = True,
+    ) -> dict[str, Any] | None:
+        """Generic single JSON-object completion (reused by News Intelligence AI
+        analysis and any other JSON-producing task).
+
+        Returns a parsed dict, or None on ANY failure (unconfigured / network /
+        HTTP / malformed JSON). Never raises. The API key stays server-side in
+        the secret store and is never logged.
+        """
+        if not self.available():
+            return None
+        if self._budget_exhausted():
+            self.usage.last_error = "request budget exhausted"
+            return None
+        try:
+            import httpx
+        except ImportError:  # pragma: no cover
+            logger.warning("[STRATEGY_FACTORY] httpx unavailable")
+            return None
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "temperature": self.temperature if temperature is None else float(temperature),
+            "max_tokens": self.max_tokens if max_tokens is None else int(max_tokens),
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        if response_format_json:
+            payload["response_format"] = {"type": "json_object"}
+        url = f"{self.api_base_url}{_CHAT_COMPLETIONS_PATH}"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        started = time.perf_counter()
+        self.usage.requests += 1
+        self._window_requests += 1
+        try:
+            resp = httpx.post(url, json=payload, headers=headers, timeout=self.request_timeout_sec)
+        except Exception as e:
+            self.usage.failures += 1
+            self.usage.last_error = f"NETWORK:{type(e).__name__}"
+            logger.warning("[STRATEGY_FACTORY] provider network failure", error=type(e).__name__)
+            return None
+        latency_ms = (time.perf_counter() - started) * 1000.0
+        self.usage.last_latency_ms = latency_ms
+        self.usage.total_latency_ms += latency_ms
+        if resp.status_code != 200:
+            self.usage.failures += 1
+            self.usage.last_error = f"HTTP:{resp.status_code}"
+            logger.warning("[STRATEGY_FACTORY] provider HTTP failure", status=resp.status_code)
+            return None
+        body = resp.text
+        marker = body.rfind("data: [DONE]")
+        if marker > 0:
+            body = body[:marker].rstrip()
+        try:
+            data = json.loads(body)
+        except Exception:
+            self.usage.failures += 1
+            self.usage.last_error = "BAD_JSON_RESPONSE"
+            return None
+        usage = data.get("usage") or {}
+        self.usage.prompt_tokens += int(usage.get("prompt_tokens", 0) or 0)
+        self.usage.completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+        self.usage.total_tokens += int(usage.get("total_tokens", 0) or 0)
+        content = ""
+        try:
+            content = (data["choices"][0]["message"]["content"] or "").strip()
+        except (KeyError, IndexError, TypeError):
+            return None
+        parsed = self._try_parse(content)
+        if isinstance(parsed, dict):
+            return parsed
+        repaired = self._repair(content)
+        parsed = self._try_parse(repaired)
+        if isinstance(parsed, dict):
+            return parsed
+        self.usage.last_error = "NO_VALID_JSON_IN_RESPONSE"
+        return None
+
     def _extract_dsl_list(self, content: str) -> list[dict[str, Any]]:
         if not content:
             return []
