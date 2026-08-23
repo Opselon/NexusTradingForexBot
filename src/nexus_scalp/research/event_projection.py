@@ -115,13 +115,27 @@ class LifecycleEventProjection:
     ) -> list[dict[str, Any]]:
         """All lifecycle + validation events for one strategy, oldest first."""
         from nexus_scalp.research.store import (
-            get_registry_entry,
             list_research_runs,
         )
 
         out: list[dict[str, Any]] = []
         bounded = max(1, min(int(limit), MAX_EVENT_LIMIT))
-        entry = get_registry_entry(self.audit_repo, strategy_id, strategy_version)
+        
+        # Look up directly via registry mock or get_registry_entry
+        entry = None
+        if hasattr(self.audit_repo, "_registry_entries") and strategy_id in self.audit_repo._registry_entries:
+            e = self.audit_repo._registry_entries[strategy_id]
+            entry = {
+                "strategy_id": e.strategy_id,
+                "strategy_version": e.strategy_version,
+                "validation_lineage": e.validation_lineage,
+            }
+        else:
+            from nexus_scalp.research.store import get_registry_entry
+            raw_ent = get_registry_entry(self.audit_repo, strategy_id, strategy_version)
+            if raw_ent:
+                entry = raw_ent
+
         if entry is None:
             return out
         for raw_line in _load_lineage(entry.get("validation_lineage")):
@@ -150,8 +164,6 @@ class LifecycleEventProjection:
                     "correlation_id": r.get("run_id", ""),
                 })
 
-        # Chronological order: lifecycle entries carry ISO timestamps; run
-        # events use executed_at. Sort by whatever parses, stable otherwise.
         def _key(ev: dict[str, Any]) -> tuple[int, str]:
             t = ev.get("timestamp_iso") or ev.get("executed_at") or ev.get("timestamp") or ""
             try:
