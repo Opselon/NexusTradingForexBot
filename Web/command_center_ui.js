@@ -16,15 +16,21 @@
   let selectedStrategyId = null;
   let fleetRows = [];
   let overviewData = null;
+  let reloadToken = 0; // guards against stale async responses after refresh/filter change
 
   async function loadCommandCenter() {
     if (!window.NX || !window.NX.api) return;
+    const myToken = ++reloadToken;
     try {
       const [ovRes, fleetRes, spatialRes] = await Promise.all([
         window.NX.api.get('/api/command-center/overview', { component: 'scc', action: 'overview' }),
         window.NX.api.get('/api/command-center/fleet', { component: 'scc', action: 'fleet' }),
         window.NX.api.get('/api/command-center/spatial', { component: 'scc', action: 'spatial' }),
       ]);
+
+      // Stale-response guard: a newer load() superseded this one. (Granted by
+      // backend being authoritative — never apply a superseded snapshot.)
+      if (myToken !== reloadToken) return;
 
       if (ovRes.ok) {
         overviewData = ovRes.body;
@@ -36,7 +42,10 @@
       }
       if (spatialRes.ok) {
         currentSpatialData = spatialRes.body;
-        renderSpatialCanvas(currentSpatialData);
+        // Push the authoritative payload straight to the renderer. The renderer
+        // is the single source of truth for drawing; the old canvas stub here is
+        // removed to avoid double-draw conflict.
+        if (window.NX.spatial) window.NX.spatial.update(currentSpatialData);
         window.__lastSpatialPayload = currentSpatialData;
       }
     } catch (err) {
@@ -80,59 +89,97 @@
     `).join('');
   }
 
-  function renderSpatialCanvas(spatial) {
-    const canvas = document.getElementById('scc-spatial-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  // Wire camera + filter controls once the DOM is live (called from onShow).
+  function wireSpatialControls() {
+    if (window.__sccControlsWired) return;
+    window.__sccControlsWired = true;
 
-    // Resize canvas to parent
-    const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = rect.width || 800;
-    canvas.height = 500;
+    const SP = () => window.NX.spatial;
+    const bind = (id, fn) => {
+      const el = document.getElementById(id);
+      if (el) el.onclick = fn;
+    };
+    bind('scc-fit-all', () => SP() && SP().fitAll());
+    bind('scc-reset-cam', () => SP() && SP().resetCamera());
+    bind('scc-focus-selected', () => SP() && SP().focusSelected());
+    bind('scc-focus-stage', () => SP() && SP().focusStage());
+    bind('scc-focus-blocked', () => SP() && SP().focusBlocked());
+    bind('scc-focus-active', () => SP() && SP().focusActive());
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const filter = document.getElementById('scc-lifecycle-filter');
+    if (filter) {
+      filter.onchange = () => applyLifecycleFilter(filter.value);
+    }
+  }
 
-    // Draw background grid & zones
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Honest empty-state overlay for the spatial canvas (no fabricated counts).
+  function showSpatialEmptyState(backendTotal, filterLabel, matching) {
+    const el = document.getElementById('scc-spatial-empty');
+    if (!el) return;
+    el.classList.remove('hidden');
+    el.innerHTML =
+      '<div class="text-center px-6">' +
+        '<p class="text-lg font-black text-rose-400 tracking-wide">NO VISIBLE STRATEGIES</p>' +
+        '<p class="text-xs text-textMuted mt-2 font-mono">Backend strategies: ' + backendTotal + '</p>' +
+        '<p class="text-xs text-textMuted font-mono">Current filter: ' + (filterLabel || 'ALL') + '</p>' +
+        '<p class="text-xs text-textMuted font-mono">Matching: ' + matching + '</p>' +
+      '</div>';
+  }
 
-    const zones = spatial.zones || [];
-    const zoneHeight = canvas.height / Math.max(1, zones.length);
+  function hideSpatialEmptyState() {
+    const el = document.getElementById('scc-spatial-empty');
+    if (el) el.classList.add('hidden');
+  }
 
-    zones.forEach((z, idx) => {
-      const y = idx * zoneHeight;
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(20, y + 10, canvas.width - 40, zoneHeight - 20);
+  // Re-derive the visible node set from the last authoritative payload applying
+  // the selected lifecycle filter, then feed the renderer and show empty state
+  // if nothing matches.
+  function applyLifecycleFilter(filterValue) {
+    if (!currentSpatialData) return;
+    if (filterValue && filterValue !== 'ALL') {
+      const filtered = {
+        ...currentSpatialData,
+        nodes: (currentSpatialData.nodes || []).filter(n => n.zone === filterValue),
+        zones: (currentSpatialData.zones || []).map(z =>
+          z.zone === filterValue ? z : { ...z, count: 0 }),
+      };
+      if (window.NX.spatial) window.NX.spatial.update(filtered);
+      const matching = (filtered.nodes || []).length;
+      const backendTotal = (currentSpatialData.meta && currentSpatialData.meta.total_nodes)
+        || (currentSpatialData.nodes || []).length;
+      if (!matching) showSpatialEmptyState(backendTotal, filterValue, 0);
+      else hideSpatialEmptyState();
+      // After a filter the visible extent changed → fit-all to the subset.
+      if (window.NX.spatial) setTimeout(() => window.NX.spatial.fitAll(), 30);
+    } else {
+      if (window.NX.spatial) window.NX.spatial.update(currentSpatialData);
+      hideSpatialEmptyState();
+      if (window.NX.spatial) setTimeout(() => window.NX.spatial.fitAll(), 30);
+    }
+  }
 
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.fillText(`${z.zone} (${z.count})`, 30, y + 30);
-    });
-
-    // Draw nodes
-    const nodes = spatial.nodes || [];
-    nodes.forEach(n => {
-      const zoneIdx = zones.findIndex(z => z.zone === n.zone);
-      const yBase = zoneIdx >= 0 ? zoneIdx * zoneHeight + zoneHeight / 2 : 100;
-      const cx = canvas.width / 2 + (n.x || 0);
-      const cy = yBase + ((n.y || 0) * 0.2);
-
-      const isSelected = n.strategy_id === selectedStrategyId;
-
-      ctx.beginPath();
-      ctx.arc(cx, cy, isSelected ? 10 : 6, 0, Math.PI * 2);
-      ctx.fillStyle = isSelected ? '#38bdf8' : (n.zone === 'ACTIVE' ? '#10b981' : (n.zone === 'REJECTED' ? '#f43f5e' : '#64748b'));
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = isSelected ? '#ffffff' : '#1e293b';
-      ctx.stroke();
-
-      ctx.fillStyle = '#cbd5e1';
-      ctx.font = '10px monospace';
-      ctx.fillText(n.strategy_id.substring(0, 10), cx + 10, cy + 4);
-    });
+  // Called by the dashboard tab switch when CC becomes visible.
+  async function onShowCommandCenter() {
+    wireSpatialControls();
+    if (window.NX && window.NX.spatial) {
+      // Canvas becomes sized only once it is in the visible layout tree.
+      window.NX.spatial.init('scc-spatial-canvas');
+    }
+    await loadCommandCenter();
+    // INITIAL VIEW: fetch real fleet, AUTO FIT ALL so nodes are never off-viewport.
+    // Backend may return up to its current cap (500 now, 1165 later) — never
+    // hardcode the count.
+    if (window.NX.spatial) {
+      const fitted = window.NX.spatial.fitAll();
+      const backendTotal = currentSpatialData && currentSpatialData.nodes
+        ? currentSpatialData.nodes.length : 0;
+      if (!fitted) {
+        // No visible nodes at all → explicit empty state.
+        showSpatialEmptyState(backendTotal || '—', 'ALL', 0);
+      } else {
+        hideSpatialEmptyState();
+      }
+    }
   }
 
   async function inspectStrategy(strategyId) {
@@ -217,16 +264,57 @@
     load: loadCommandCenter,
     inspect: inspectStrategy,
     closeInspector: closeInspector,
+    onShow: onShowCommandCenter,
+    applyLifecycleFilter: applyLifecycleFilter,
   };
 
   // Test hooks (exposed in same closure scope; harmless in production).
   window.NX.scc._test_renderFleet = renderFleetTable;
   window.NX.scc._test_renderOverview = renderOverview;
   window.NX.scc._test_renderInspector = renderInspector;
-  window.NX.scc._test_renderSpatial = renderSpatialCanvas;
+  window.NX.scc._test_applyLifecycleFilter = applyLifecycleFilter;
+  window.NX.scc._test_showEmpty = showSpatialEmptyState;
+  window.NX.scc._test_hideEmpty = hideSpatialEmptyState;
+  window.NX.scc._test_setSpatialData = (data) => { currentSpatialData = data; };
+  window.NX.scc._test_getSpatialData = () => currentSpatialData;
 
-  // Auto-load on init when tab selected
-  document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(loadCommandCenter, 1500);
-  });
+  // When loaded standalone (command_center.html), boot immediately.
+  // When embedded in the dashboard (index.html), the tab switch calls onShow().
+  if (document.getElementById('scc-spatial-canvas') &&
+      !window.__NX_DASHBOARD_EMBEDDED) {
+    document.addEventListener('DOMContentLoaded', () => {
+      wireSpatialControls();
+      window.NX.spatial.init('scc-spatial-canvas');
+      window.NX.tm.init();
+      loadCommandCenter().then(() => {
+        if (window.NX.spatial) {
+          const fitted = window.NX.spatial.fitAll();
+          const backendTotal = currentSpatialData && currentSpatialData.nodes
+            ? currentSpatialData.nodes.length : 0;
+          if (!fitted) showSpatialEmptyState(backendTotal || '—', 'ALL', 0);
+          else hideSpatialEmptyState();
+        }
+      });
+    });
+
+    // Re-init + auto-fit when the parent dashboard makes this iframe visible.
+    // The canvas is sized 0 while hidden; once shown we must recompute layout.
+    window.addEventListener('message', (ev) => {
+      if (ev && ev.data && ev.data.type === 'NX_SCC_SHOW') {
+        if (window.NX.spatial) {
+          window.NX.spatial.init('scc-spatial-canvas');
+          // Re-fetch to get fresh authoritative snapshot, then fit.
+          loadCommandCenter().then(() => {
+            if (window.NX.spatial) {
+              const fitted = window.NX.spatial.fitAll();
+              const backendTotal = currentSpatialData && currentSpatialData.nodes
+                ? currentSpatialData.nodes.length : 0;
+              if (!fitted) showSpatialEmptyState(backendTotal || '—', 'ALL', 0);
+              else hideSpatialEmptyState();
+            }
+          });
+        }
+      }
+    });
+  }
 })();
