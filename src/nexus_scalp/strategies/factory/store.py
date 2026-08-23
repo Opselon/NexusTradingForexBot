@@ -414,6 +414,89 @@ def list_generations(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
         conn.close()
 
 
+# ------------------------------------------------------------------
+# Stale-generation sweeper (P1 hardening, 2026-08-23)
+# ------------------------------------------------------------------
+
+def sweep_stale_generations(
+    repo: Any,
+    max_age_minutes: int = 30,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Mark orphaned RUNNING generations as FAILED (P1 lifecycle hardening).
+
+    A generation is STALE when its status is RUNNING and its created_at
+    timestamp is older than ``max_age_minutes``. Genuinely active runs
+    update their loop-state checkpoint frequently; a RUNNING row older
+    than the threshold cannot be alive (the factory writes progress
+    events on every candidate evaluation).
+
+    Semantics:
+    * NEVER touches COMPLETED/FAILED/CANCELLED rows — only RUNNING.
+    * Idempotent: already-swept (FAILED) rows are never touched twice.
+    * Bounded: inspects at most ``limit`` most-recent generations.
+    * Auditable: logs event=GENERATION_SWEPT with swept ids.
+    * Does NOT fabricate completion: stale means FAILED (crash); the
+      operator can still resume via recover()/resume_generation().
+
+    Returns {"swept": [generation_id...], "inspected": n}.
+    """
+    import datetime as _dt
+
+    if _is_store_backend(repo):
+        gens = repo.list_generations(limit=limit)
+    else:
+        gens = list_generations(repo, limit=limit)
+    now = _dt.datetime.now(_dt.UTC)
+    swept: list[str] = []
+    inspected = 0
+    for g in gens:
+        inspected += 1
+        status = str(g.get("status", "") or "").upper()
+        if status != "RUNNING":
+            continue
+        created = g.get("created_at") or ""
+        try:
+            if isinstance(created, str):
+                text = str(created).strip().replace("Z", "+00:00")
+                created_ts = _dt.datetime.fromisoformat(text)
+                if created_ts.tzinfo is None:
+                    created_ts = created_ts.replace(tzinfo=_dt.UTC)
+            else:
+                created_ts = created
+            age_min = (now - created_ts).total_seconds() / 60.0
+        except Exception:
+            continue
+        if age_min < float(max_age_minutes):
+            continue
+        gid = str(g.get("generation_id", "") or "")
+        if not gid:
+            continue
+        updated = upsert_generation(
+            repo,
+            {
+                "generation_id": gid,
+                "number": int(g.get("number", 0) or 0),
+                "mode": str(g.get("mode", "MANUAL")),
+                "parent_generation": str(g.get("parent_generation", "") or ""),
+                "population_target": int(g.get("population_target", 0) or 0),
+                "created_at": created,
+                "completed_at": now.isoformat(),
+                "status": "FAILED",
+                "config": g.get("config") or {},
+            },
+        )
+        if updated:
+            swept.append(gid)
+    if swept:
+        logger.error(
+            "[STRATEGY_FACTORY] event=GENERATION_SWEPT swept=%d ids=%s",
+            len(swept),
+            ",".join(swept[:10]),
+        )
+    return {"swept": swept, "inspected": inspected}
+
+
 def list_candidates(
     repo: Any,
     generation_id: str | None = None,

@@ -33,7 +33,9 @@ from nexus_scalp.strategies.factory.store import (
     emit_event,
     get_loop_state,
     set_loop_state,
+    sweep_stale_generations,
 )
+
 
 logger = get_logger("nexus_scalp.strategies.factory.worker")
 
@@ -233,11 +235,15 @@ class AutonomousLoopWorker:
         Returns the resume result; idempotent (no duplicated experiments —
         already-evaluated candidates are skipped).
         """
+        # P1 hardening: sweep orphaned RUNNING generations before resuming the
+        # current one, so a stale (previously-crashed) run cannot be mistaken
+        # for an active generation. Idempotent and bounded.
+        sweep = sweep_stale_generations(self.factory.audit_repo, max_age_minutes=30)
         persisted = get_loop_state(self.factory.audit_repo)
         generation_id = str(persisted.get("generation_id", "") or "")
         if not generation_id:
             # No active generation: nothing to resume.
-            return {"status": "NOTHING_TO_RESUME"}
+            return {"status": "NOTHING_TO_RESUME", "swept": sweep.get("swept", [])}
         result = self.factory.resume_generation(generation_id)
         result["resumed_state"] = persisted.get("state")
         return result

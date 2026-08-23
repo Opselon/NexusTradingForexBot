@@ -78,7 +78,7 @@ class StrategyRegistry:
     # ------------------------------------------------------------------
 
     def upsert(
-        self, entry: StrategyRegistryEntry, forbid_lifecycle_regression: bool = False
+        self, entry: StrategyRegistryEntry, forbid_lifecycle_regression: bool = True
     ) -> bool:
         """
         Persists a registry entry.
@@ -89,10 +89,13 @@ class StrategyRegistry:
           row carries a context_definition that differs from the new entry's,
           the upsert is REFUSED (returns False) instead of silently replacing
           the definition under the same version.
-        * `forbid_lifecycle_regression=True` additionally refuses replacing a
-          terminal/advanced lifecycle (VALIDATED / SHADOW / ACTIVE / REJECTED /
-          DEGRADED / RETIRED) with a weaker one (DISCOVERED etc.) — seeding and
-          re-validation must never downgrade established validation truth.
+        * Lifecycle regression protection is ON by default (P2 hardening,
+          2026-08-23): refuses replacing a terminal/advanced lifecycle
+          (VALIDATED / SHADOW / ACTIVE / REJECTED / DEGRADED / RETIRED) with a
+          weaker one (DISCOVERED etc.) — seeding and re-validation must never
+          downgrade established validation truth. Callers that legitimately
+          need an administrative downgrade must pass
+          `forbid_lifecycle_regression=False` explicitly (audited exception).
         """
         if not self.audit_repo._is_sqlite:
             return False
