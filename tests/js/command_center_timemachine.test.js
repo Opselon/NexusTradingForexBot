@@ -69,12 +69,17 @@ test('debug console classifies and stores events without DOM crash', () => {
   assert.doesNotThrow(() => nx.console.add(ev));
   assert.ok(Array.isArray(nx.console.getEvents()));
   assert.ok(nx.console.getEvents().length >= 1);
-  // Classification must distinguish validation failure from stale recovery
+  // Spec requirement: WALK_FORWARD_FAILURE must be its OWN distinct class and
+  // NOT be collapsed into VALIDATION_FAILURE (so it never looks like a generic
+  // validation failure).
   const stored = nx.console.getEvents()[nx.console.getEvents().length - 1];
-  assert.strictEqual(stored._class, 'VALIDATION_FAILURE');
+  assert.strictEqual(stored._class, 'WALK_FORWARD_FAILURE');
+  // A GENERATION_SWEPT event must NOT look like a WALK_FORWARD_FAILURE.
   nx.console.add({ event_type: 'GENERATION_SWEPT', severity: 'INFO' });
   const swept = nx.console.getEvents()[nx.console.getEvents().length - 1];
   assert.strictEqual(swept._class, 'STALE_RUN_RECOVERY');
+  // Distinct classes confirmed.
+  assert.notStrictEqual(stored._class, swept._class);
 });
 
 test('debug console bounded retention (no unbounded memory growth)', () => {

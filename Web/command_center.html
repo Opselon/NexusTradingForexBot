@@ -104,17 +104,45 @@
                     <button onclick="window.NX.console.clear()" class="px-2 py-0.5 rounded bg-panelBg text-gray-300 border border-borderClr text-[9px] font-bold hover:border-rose-500/40">CLEAR</button>
                 </div>
             </div>
-            <div class="px-2 py-1.5 flex gap-1 border-b border-borderClr">
+
+            <!-- Bottleneck visualization (real /fleet evidence) -->
+            <div id="scc-bottleneck" class="bg-panelBg text-[10px]"></div>
+
+            <!-- Filters: search + severity + event type + strategy + generation + time range -->
+            <div class="px-2 py-1.5 flex flex-wrap gap-1 border-b border-borderClr">
                 <input id="scc-console-search" placeholder="search events..." oninput="window.NX.console.applyFilters()"
-                       class="flex-1 bg-darkBg border border-borderClr rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-accentCyan">
+                       class="flex-1 min-w-[120px] bg-darkBg border border-borderClr rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-accentCyan">
                 <select id="scc-console-sev" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
-                    <option value="ALL">ALL</option>
+                    <option value="ALL">SEV:ALL</option>
+                    <option value="ERROR">ERROR</option>
+                    <option value="WARN">WARN</option>
+                    <option value="INFO">INFO</option>
+                </select>
+                <select id="scc-console-type" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
+                    <option value="ALL">TYPE:ALL</option>
+                    <option value="RESEARCH_FAILURE">RESEARCH_FAILURE</option>
                     <option value="VALIDATION_FAILURE">VALIDATION_FAILURE</option>
+                    <option value="WALK_FORWARD_FAILURE">WALK_FORWARD_FAILURE</option>
+                    <option value="OOS_FAILURE">OOS_FAILURE</option>
+                    <option value="DATA_FAILURE">DATA_FAILURE</option>
+                    <option value="SYSTEM_ERROR">SYSTEM_ERROR</option>
                     <option value="STALE_RUN_RECOVERY">STALE_RUN_RECOVERY</option>
+                    <option value="GENERATION_COMPLETED">GENERATION_COMPLETED</option>
+                    <option value="LIFECYCLE_TRANSITION">LIFECYCLE_TRANSITION</option>
                     <option value="EXPECTED_REJECTION">EXPECTED_REJECTION</option>
                 </select>
             </div>
-            <div id="scc-console-body" class="overflow-y-auto" style="max-height: 220px;"></div>
+            <div class="px-2 py-1.5 flex flex-wrap gap-1 border-b border-borderClr">
+                <select id="scc-console-strategy" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]"><option value="">ALL STRATEGIES</option></select>
+                <select id="scc-console-gen" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]"><option value="ALL">ALL GENERATIONS</option></select>
+                <input id="scc-console-from" type="datetime-local" onchange="window.NX.console.applyFilters()" title="time from" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
+                <input id="scc-console-to" type="datetime-local" onchange="window.NX.console.applyFilters()" title="time to" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
+            </div>
+            <div class="px-2 py-1 flex gap-1 border-b border-borderClr">
+                <button id="scc-console-autoscroll" onclick="window.NX.console.setAutoScroll(document.getElementById('scc-console-autoscroll').textContent.indexOf('ON')<0)" class="px-2 py-0.5 rounded bg-panelBg text-gray-300 border border-borderClr text-[9px] font-bold">AUTO-SCROLL: ON</button>
+                <button id="scc-console-live" onclick="window.NX.console.jumpToLive()" class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold">JUMP TO LIVE</button>
+            </div>
+            <div id="scc-console-body" class="overflow-y-auto" style="max-height: 220px;" onscroll="window.NX.console.detectTailScroll()"></div>
         </div>
     </div>
 </div>

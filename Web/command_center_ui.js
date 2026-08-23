@@ -39,6 +39,11 @@
       if (fleetRes.ok) {
         fleetRows = fleetRes.body.rows || [];
         renderFleetTable(fleetRows);
+        // Share the authoritative fleet payload with the debug console so its
+        // bottleneck visualization and filters use REAL data (no fabrication).
+        if (window.NX && window.NX.console && window.NX.console.setFleetContext) {
+          window.NX.console.setFleetContext(fleetRows);
+        }
       }
       if (spatialRes.ok) {
         currentSpatialData = spatialRes.body;
@@ -208,48 +213,138 @@
     const ev = data.evidence_summary || {};
     const attr = data.ai_attribution || {};
     const dbg = data.debug_intelligence || {};
+    const comp = data.evidence_completeness || {};
+    const dna = data.lineage_dna || {};
+    const events = data.events || [];
+
+    // --- CAN THIS STRATEGY TRADE? verdict banner (NEVER faked) ---
+    // Source of truth is the REAL backend execution-eligibility response. If the
+    // backend returned no eligibility, we honestly show UNKNOWN.
+    const VERDICT = ee.eligibility_state || 'UNKNOWN';
+    const VERDICT_STYLE = {
+      YES: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40',
+      SHADOW_ONLY: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/40',
+      NO: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
+      BLOCKED: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
+      UNKNOWN: 'bg-slate-700/40 text-slate-300 border-slate-500/40',
+    }[VERDICT] || 'bg-slate-700/40 text-slate-300 border-slate-500/40';
+
+    const canTradeHtml = `
+      <div class="rounded-lg border ${VERDICT_STYLE} px-3 py-2 mb-3">
+        <div class="flex items-center justify-between">
+          <span class="text-[9px] font-black tracking-widest text-textMuted">CAN THIS STRATEGY TRADE</span>
+          <span class="text-sm font-black">${VERDICT}</span>
+        </div>
+        <p class="text-[11px] mt-1">${ee.reason || 'No eligibility verdict returned by backend.'}</p>
+        ${ee.required_gate ? `<p class="text-[10px] text-textMuted mt-0.5">required gate: ${ee.required_gate}</p>` : ''}
+        ${Array.isArray(ee.blockers) && ee.blockers.length ? `<p class="text-[10px] text-rose-300/80 mt-0.5">blockers: ${ee.blockers.join(', ')}</p>` : ''}
+      </div>`;
+
+    // --- Evidence completeness (honest) ---
+    const evidenceVerdict = comp.verdict || (ev.backtest_status || 'MISSING');
+    const evCompleteHtml = `
+      <div class="bg-darkBg p-3 rounded border border-borderClr">
+        <p class="font-bold text-accentCyan mb-1">Evidence & Gates <span class="text-[10px] font-normal text-textMuted">(${evidenceVerdict})</span></p>
+        <div class="grid grid-cols-2 gap-1 text-gray-300">
+          <div>Backtest: <span class="font-mono text-white">${ev.backtest_status || 'MISSING'}</span></div>
+          <div>Walk-Forward: <span class="font-mono text-white">${ev.walkforward_status || 'MISSING'}</span></div>
+          <div>OOS: <span class="font-mono text-white">${ev.oos_status || 'MISSING'}</span></div>
+          <div>Robustness: <span class="font-mono text-white">${ev.robustness_status || 'MISSING'}</span></div>
+          <div>Score Verdict: <span class="font-mono text-white">${ev.score_verdict || 'MISSING'}</span></div>
+          ${comp.missing ? `<div class="col-span-2 text-[10px] text-rose-300/80">missing: ${comp.missing.join(', ')}</div>` : ''}
+        </div>
+      </div>`;
+
+    // --- AI Explainability (honest attribution only) ---
+    const ATTR_STATUS = attr.status || 'UNAVAILABLE';
+    const attrStatusLabel = {
+      MEASURED: 'MEASURED',
+      PARTIALLY_MEASURABLE: 'PARTIALLY MEASURED',
+      NOT_AVAILABLE: 'UNAVAILABLE',
+      UNAVAILABLE: 'UNAVAILABLE',
+    }[ATTR_STATUS] || 'UNAVAILABLE';
+    const measuredCount = (attr.measured && attr.measured.weights) || 0;
+    const attrHtml = `
+      <div class="bg-darkBg p-3 rounded border border-borderClr">
+        <p class="font-bold text-accentCyan mb-1">AI Explainability (${attrStatusLabel})</p>
+        ${measuredCount === 0 ? `<p class="text-[11px] text-amber-300/90 mb-2">NOT MEASURED — no numeric influence weights recorded for this decision.</p>`
+          : `<p class="text-[11px] text-textMuted mb-2">${attr.measured && attr.measured.note ? attr.measured.note : ''}</p>`}
+        <div class="space-y-1">
+          ${(attr.contributions && attr.contributions.length)
+            ? attr.contributions.map(c => `<div class="bg-panelBg p-1.5 rounded font-mono text-[10px] text-gray-300"><b>${c.source_type}</b>: ${c.kind}${c.weight_measured ? ` (w=${c.weight})` : ' (weight NOT measured)'}</div>`).join('')
+            : '<div class="text-[10px] text-textMuted">No attribution records.</div>'}
+        </div>
+        ${(attr.timeline && attr.timeline.length)
+          ? `<p class="text-[10px] text-textMuted mt-2">Timeline entries: ${attr.timeline.length}</p>` : ''}
+      </div>`;
+
+    // --- Debug Intelligence: strictly FACT / INFERENCE / HYPOTHESIS / RECOMMENDATION ---
+    const CATEGORY_STYLE = {
+      FACT: 'text-sky-300 border-sky-500/40',
+      INFERENCE: 'text-violet-300 border-violet-500/40',
+      HYPOTHESIS: 'text-amber-300 border-amber-500/40',
+      RECOMMENDATION: 'text-emerald-300 border-emerald-500/40',
+    };
+    const hintsHtml = `
+      <div class="bg-darkBg p-3 rounded border border-borderClr">
+        <p class="font-bold text-accentCyan mb-1">Debug Intelligence</p>
+        <div class="space-y-2">
+          <div>Anomaly Score: <span class="font-mono text-white">${dbg.anomaly_score ? dbg.anomaly_score.anomaly_score : 0}</span></div>
+          <div class="space-y-1 mt-1">
+            ${(dbg.hints && dbg.hints.length)
+              ? dbg.hints.map(h => {
+                  const st = CATEGORY_STYLE[h.category] || 'text-gray-300 border-borderClr';
+                  return `<div class="p-1.5 rounded bg-slate-800/80 border ${st} text-[10px]"><span class="font-black">${h.category}</span>: ${h.message}</div>`;
+                }).join('')
+              : '<div class="text-[10px] text-textMuted">No debug hints.</div>'}
+          </div>
+        </div>
+      </div>`;
+
+    // --- Strategy DNA / Lineage (honest; no invented descendants) ---
+    const parents = (dna.parent_strategy_ids && dna.parent_strategy_ids.length)
+      ? dna.parent_strategy_ids.join(', ') : '— (genesis / no recorded parent)';
+    const dnaHtml = `
+      <div class="bg-darkBg p-3 rounded border border-borderClr">
+        <p class="font-bold text-accentCyan mb-1">Strategy DNA <span class="text-[10px] font-normal text-textMuted">(${dna.descendants_recorded ? 'LINEAGE RECORDED' : 'LINEAGE PARTIALLY RECORDED'})</span></p>
+        <div class="grid grid-cols-2 gap-1 text-gray-300 text-[11px]">
+          <div>Generation: <span class="font-mono text-white">${dna.generation || '—'}</span></div>
+          <div>Parents: <span class="font-mono text-white">${parents}</span></div>
+          <div class="col-span-2 text-[10px] text-amber-300/80">Descendants: not enumerated (registry-wide scan out of inspector scope)</div>
+        </div>
+      </div>`;
+
+    // --- Identity & State ---
+    const identityHtml = `
+      <div class="bg-darkBg p-3 rounded border border-borderClr">
+        <p class="font-bold text-accentCyan mb-1">Identity & State</p>
+        <div class="grid grid-cols-2 gap-2 text-gray-300 font-mono text-[11px]">
+          <div>State: <span class="text-white">${data.current_state}</span></div>
+          <div>Version: <span class="text-white">${data.strategy_version}</span></div>
+          <div>Eligibility: <span class="${ee.can_trade ? 'text-emerald-400' : 'text-rose-400'}">${ee.eligibility_state || 'UNKNOWN'}</span></div>
+          <div>Confidence: <span class="text-white">${Math.round((data.confidence_score || 0) * 100)}%</span></div>
+        </div>
+        <p class="mt-2 text-[11px] text-textMuted">${ee.reason || ''}</p>
+      </div>`;
+
+    // --- Recent events (honest, derived from backend projection) ---
+    const eventsHtml = `
+      <div class="bg-darkBg p-3 rounded border border-borderClr">
+        <p class="font-bold text-accentCyan mb-1">Recent Events (${events.length})</p>
+        <div class="space-y-1">
+          ${events.length ? events.slice(-20).reverse().map(e => `<div class="text-[10px] font-mono text-gray-400">${e.timestamp || e.executed_at || ''} · ${(e.event_type || e.decision || 'EVENT')}</div>`).join('') : '<div class="text-[10px] text-textMuted">No recorded events.</div>'}
+        </div>
+      </div>`;
 
     content.innerHTML = `
-      <div class="space-y-4 text-xs">
-        <div class="bg-darkBg p-3 rounded border border-borderClr">
-          <p class="font-bold text-accentCyan mb-1">Identity & State</p>
-          <div class="grid grid-cols-2 gap-2 text-gray-300 font-mono">
-            <div>State: <span class="text-white">${data.current_state}</span></div>
-            <div>Version: <span class="text-white">${data.strategy_version}</span></div>
-            <div>Eligibility: <span class="${ee.can_trade ? 'text-emerald-400' : 'text-rose-400'}">${ee.eligibility_state}</span></div>
-            <div>Confidence: <span class="text-white">${Math.round((data.confidence_score || 0) * 100)}%</span></div>
-          </div>
-          <p class="mt-2 text-[11px] text-textMuted">${ee.reason || ''}</p>
-        </div>
-
-        <div class="bg-darkBg p-3 rounded border border-borderClr">
-          <p class="font-bold text-accentCyan mb-1">Evidence & Gates</p>
-          <div class="grid grid-cols-2 gap-1 text-gray-300">
-            <div>Backtest: <span class="font-mono text-white">${ev.backtest_status}</span></div>
-            <div>Walk-Forward: <span class="font-mono text-white">${ev.walkforward_status}</span></div>
-            <div>OOS: <span class="font-mono text-white">${ev.oos_status}</span></div>
-            <div>Robustness: <span class="font-mono text-white">${ev.robustness_status}</span></div>
-            <div>Score Verdict: <span class="font-mono text-white">${ev.score_verdict}</span></div>
-          </div>
-        </div>
-
-        <div class="bg-darkBg p-3 rounded border border-borderClr">
-          <p class="font-bold text-accentCyan mb-1">AI Explainability (${attr.status || 'NOT_AVAILABLE'})</p>
-          <p class="text-[11px] text-textMuted mb-2">${attr.measured && attr.measured.note ? attr.measured.note : 'Honest attribution provenance.'}</p>
-          <div class="space-y-1">
-            ${(attr.contributions || []).map(c => `<div class="bg-panelBg p-1.5 rounded font-mono text-[10px] text-gray-300"><b>${c.source_type}</b>: ${c.kind}</div>`).join('')}
-          </div>
-        </div>
-
-        <div class="bg-darkBg p-3 rounded border border-borderClr">
-          <p class="font-bold text-accentCyan mb-1">Debug Intelligence</p>
-          <div class="space-y-2">
-            <div>Anomaly Score: <span class="font-mono text-white">${dbg.anomaly_score ? dbg.anomaly_score.anomaly_score : 0}</span></div>
-            <div class="space-y-1 mt-1">
-              ${(dbg.hints || []).map(h => `<div class="p-1.5 rounded bg-slate-800/80 border border-borderClr text-[10px]"><span class="font-bold text-accentGold">${h.category}</span>: ${h.message}</div>`).join('')}
-            </div>
-          </div>
-        </div>
+      <div class="space-y-3 text-xs">
+        ${canTradeHtml}
+        ${identityHtml}
+        ${evCompleteHtml}
+        ${attrHtml}
+        ${hintsHtml}
+        ${dnaHtml}
+        ${eventsHtml}
       </div>
     `;
   }
@@ -277,6 +372,7 @@
   window.NX.scc._test_hideEmpty = hideSpatialEmptyState;
   window.NX.scc._test_setSpatialData = (data) => { currentSpatialData = data; };
   window.NX.scc._test_getSpatialData = () => currentSpatialData;
+  window.NX.scc._test_getLastFleet = () => fleetRows;
 
   // When loaded standalone (command_center.html), boot immediately.
   // When embedded in the dashboard (index.html), the tab switch calls onShow().

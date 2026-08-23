@@ -69,6 +69,21 @@ class StrategyLifecycleSnapshot(BaseModel):
     recent_events: list[dict[str, Any]] = Field(default_factory=list)
     transition_history: list[dict[str, Any]] = Field(default_factory=list)
 
+    #: Honest Strategy-DNA lineage. Only fields that exist in the authoritative
+    #: registry entry are populated. Descendants require a cross-entry registry
+    #: scan that is NOT in scope of the per-strategy inspector read path, so the
+    #: flag `descendants_recorded` stays False and the UI shows
+    #: "LINEAGE PARTIALLY RECORDED" rather than inventing children.
+    lineage_dna: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "parent_strategy_ids": [],
+            "generation": None,
+            "mutation_note": "",
+            "descendants": [],
+            "descendants_recorded": False,
+        }
+    )
+
 
 def build_snapshot(entry: StrategyRegistryEntry) -> StrategyLifecycleSnapshot:
     """
@@ -201,4 +216,11 @@ def build_snapshot(entry: StrategyRegistryEntry) -> StrategyLifecycleSnapshot:
         data_quality_score=score.sample_confidence if score else 0.0,
         stability_score=score.stability_score if score else 0.0,
         transition_history=transitions,
+        lineage_dna={
+            "parent_strategy_ids": list(entry.parent_strategy_ids or []),
+            "generation": entry.strategy_version,
+            "mutation_note": "",
+            "descendants": [],
+            "descendants_recorded": False,
+        },
     )
