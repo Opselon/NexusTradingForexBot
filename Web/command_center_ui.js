@@ -453,6 +453,34 @@
     if (drawer) drawer.classList.add('translate-x-full');
   }
 
+  function setHistorical(selectedNode, ms) {
+    const title = document.getElementById('scc-insp-title');
+    const content = document.getElementById('scc-insp-content');
+    if (title) title.textContent = `Time Machine Inspector [${new Date(Number(ms)).toUTCString()}]`;
+    if (!content) return;
+    if (!selectedNode) {
+      content.innerHTML = `<div class="p-4 text-center text-textMuted text-xs">No strategy selected at timestamp ${new Date(Number(ms)).toUTCString()}.</div>`;
+      return;
+    }
+    content.innerHTML = `
+      <div class="space-y-3 text-xs p-2">
+        <div class="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3">
+          <p class="font-bold text-amber-300">HISTORICAL REPLAY STATE</p>
+          <p class="text-[11px] text-gray-300 mt-1">Viewing strategy state at historical timestamp: <b>${new Date(Number(ms)).toUTCString()}</b></p>
+        </div>
+        <div class="bg-darkBg p-3 rounded border border-borderClr space-y-1 font-mono text-[11px]">
+          <div>Strategy ID: <span class="text-white font-bold">${selectedNode.strategy_id}</span></div>
+          <div>Zone / Lifecycle: <span class="text-accentCyan font-bold">${selectedNode.zone}</span></div>
+        </div>
+      </div>
+    `;
+  }
+
+  window.NX = window.NX || {};
+  window.NX.inspector = {
+    setHistorical,
+  };
+
   window.NX.scc = {
     load: loadCommandCenter,
     inspect: inspectStrategy,

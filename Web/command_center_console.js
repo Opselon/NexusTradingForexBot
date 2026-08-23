@@ -400,9 +400,17 @@
     }
   }
 
+  function pushFrame(frameConsoleEvents) {
+    clear();
+    for (const ev of (frameConsoleEvents || [])) {
+      addEvent(ev);
+    }
+  }
+
   window.NX = window.NX || {};
   window.NX.console = {
     add: addEvent,
+    pushFrame,
     clear,
     togglePause,
     setAutoScroll,

@@ -43,7 +43,7 @@ def register_command_center_routes(app: Any, get_research_engine: Any, serialize
             return _err("INTERNAL_ERROR", extra={"error": str(e)})
 
     @app.get("/api/command-center/fleet")
-    def cc_fleet(lifecycle: str | None = None, execution_filter: str | None = None, limit: int = 200) -> dict[str, Any]:
+    def cc_fleet(lifecycle: str | None = None, execution_filter: str | None = None, limit: int = 2000) -> dict[str, Any]:
         api = _get_api()
         if api is None:
             return {"available": False, "reason": "RESEARCH_ENGINE_UNAVAILABLE"}
@@ -88,12 +88,12 @@ def register_command_center_routes(app: Any, get_research_engine: Any, serialize
             return _err("INTERNAL_ERROR", extra={"error": str(e)})
 
     @app.get("/api/command-center/spatial")
-    def cc_spatial(max_columns: int = 6) -> dict[str, Any]:
+    def cc_spatial(max_columns: int = 6, limit: int = 2000) -> dict[str, Any]:
         api = _get_api()
         if api is None:
             return {"available": False, "reason": "RESEARCH_ENGINE_UNAVAILABLE"}
         try:
-            entries = api.registry.list(limit=500)
+            entries = api.registry.list(limit=limit)
             snapshots = {e.strategy_id: api.inspector(e.strategy_id) for e in entries}
             layout = SpatialLayout(max_columns=max_columns)
             return serialize_enums(layout.compute(entries, snapshots=snapshots))
@@ -111,25 +111,25 @@ def register_command_center_routes(app: Any, get_research_engine: Any, serialize
             return _err("INTERNAL_ERROR", extra={"error": str(e)})
 
     @app.get("/api/command-center/timemachine/frame")
-    def cc_timemachine_frame(at: str) -> dict[str, Any]:
+    def cc_timemachine_frame(at: str, limit: int = 2000) -> dict[str, Any]:
         api = _get_api()
         if api is None:
             return {"available": False, "reason": "RESEARCH_ENGINE_UNAVAILABLE"}
         try:
             dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
-            entries = api.registry.list(limit=500)
+            entries = api.registry.list(limit=limit)
             tm = TimeMachine(api.audit_repo)
             return serialize_enums(tm.frame_at(entries, dt))
         except Exception as e:
             return _err("INTERNAL_ERROR", extra={"error": str(e)})
 
     @app.get("/api/command-center/timemachine/bounds")
-    def cc_timemachine_bounds() -> dict[str, Any]:
+    def cc_timemachine_bounds(limit: int = 2000) -> dict[str, Any]:
         api = _get_api()
         if api is None:
             return {"available": False, "reason": "RESEARCH_ENGINE_UNAVAILABLE"}
         try:
-            entries = api.registry.list(limit=500)
+            entries = api.registry.list(limit=limit)
             tm = TimeMachine(api.audit_repo)
             return serialize_enums(tm.bounds(entries))
         except Exception as e:

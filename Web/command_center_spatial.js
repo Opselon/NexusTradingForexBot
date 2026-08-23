@@ -46,6 +46,7 @@
   let dpr = 1;
   let lastPayload = null;
   let onSelectionCb = null;
+  let isHistoricalMode = false;
 
   function worldToScreen(wx, wy) {
     return [
@@ -129,6 +130,7 @@
   function updateFromPayload(payload) {
     if (!payload || !payload.nodes) return;
     lastPayload = payload;
+    const historical = !!payload.historical;
     zoneOrder = (payload.zones || []).map(z => z.zone).filter(Boolean);
     if (!zoneOrder.length) zoneOrder = ALL_ZONES;
     const incoming = payload.nodes;
@@ -512,6 +514,8 @@
   window.NX.spatial = {
     init: initSpatialCanvas,
     update: updateFromPayload,
+    setHistorical(v) { isHistoricalMode = !!v; },
+    isHistorical() { return isHistoricalMode; },
     fitAll() {
       const b = visibleBounds(false);
       if (!b) return false;

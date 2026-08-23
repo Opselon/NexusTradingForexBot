@@ -13,7 +13,14 @@
   let minMs = 0;
   let maxMs = Date.now();
   let stepMs = 3600000; // 1 hour steps by default
+  let speedMultiplier = 1.0;
   let timer = null;
+
+  function setSpeed(mult) {
+    speedMultiplier = Number(mult);
+    const sel = document.getElementById('scc-tm-speed');
+    if (sel) sel.value = mult;
+  }
 
   async function initTimeMachine() {
     if (!window.NX || !window.NX.api) return;
@@ -41,7 +48,9 @@
     try {
       const res = await window.NX.api.get(`/api/command-center/timemachine/frame?at=${encodeURIComponent(iso)}`, { component: 'tm', action: 'frame' });
       if (res.ok && res.body.available && window.NX.spatial) {
-        // Map replay frame nodes into the spatial engine format
+        // Strict separation: feed LIVE vs HISTORICAL.
+        // During replay, mark the spatial engine so it stops consuming live data.
+        window.NX.spatial.setHistorical(true);
         const frameNodes = (res.body.nodes || []).map(n => ({
           strategy_id: n.strategy_id,
           zone: n.zone,
@@ -50,7 +59,13 @@
           ring_count: 2,
           elevation: 0.5,
         }));
-        window.NX.spatial.update({ zones: [], nodes: frameNodes });
+        window.NX.spatial.update({ zones: [], nodes: frameNodes, historical: true });
+        if (window.NX.console && window.NX.console.pushFrame) {
+          window.NX.console.pushFrame(res.body.console || []);
+        }
+        if (window.NX.inspector && window.NX.inspector.setHistorical) {
+          window.NX.inspector.setHistorical(res.body.selected || null, ms);
+        }
       }
     } catch (err) {
       console.warn('[TM] frame fetch failed', err);
@@ -73,8 +88,9 @@
     const btn = document.getElementById('scc-tm-play');
     if (btn) btn.textContent = playing ? 'PAUSE' : 'PLAY';
     if (playing) {
+      const intervalMs = Math.max(50, 400 / speedMultiplier);
       timer = setInterval(() => {
-        currentMs += stepMs;
+        currentMs += stepMs * speedMultiplier;
         if (currentMs > maxMs) {
           currentMs = minMs;
           togglePlay();
@@ -84,9 +100,12 @@
         if (slider) slider.value = currentMs;
         updateTimeLabel();
         fetchFrame(currentMs);
-      }, 400);
+      }, intervalMs);
     } else {
       if (timer) clearInterval(timer);
+      if (window.NX.spatial && window.NX.spatial.setHistorical) {
+        window.NX.spatial.setHistorical(false);
+      }
     }
   }
 
@@ -95,5 +114,6 @@
     init: initTimeMachine,
     scrub,
     togglePlay,
+    setSpeed,
   };
 })();

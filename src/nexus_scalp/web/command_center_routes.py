@@ -68,7 +68,7 @@ class CommandCenterAPI:
 
     def overview(self) -> dict[str, Any]:
         """Global strategy counts by lifecycle + anomaly/stuck summaries."""
-        entries = self.registry.list(limit=500)
+        entries = self.registry.list(limit=2000)
         by_state: dict[str, int] = {s: 0 for s in PIPELINE_ORDER}
         terminal: dict[str, int] = {"REJECTED": 0, "DEGRADED": 0, "RETIRED": 0}
         blocked = 0
@@ -118,10 +118,10 @@ class CommandCenterAPI:
         self,
         lifecycle: str | None = None,
         execution_filter: str | None = None,
-        limit: int = 200,
+        limit: int = 2000,
     ) -> dict[str, Any]:
         """Fleet table rows with health/eligibility/evidence columns."""
-        entries = self.registry.list(lifecycle=lifecycle, limit=min(limit, 500))
+        entries = self.registry.list(lifecycle=lifecycle, limit=min(limit, 2000))
         rows: list[dict[str, Any]] = []
         for e in entries:
             snap = build_snapshot(e)

@@ -123,12 +123,37 @@ class TimeMachine:
                 })
             nodes.append(node)
 
+        # Build console events and selected state info for the frame
+        console_events = []
+        selected_node = None
+        for t in transitioning:
+            console_events.append({
+                "timestamp": at.isoformat(),
+                "event_type": "LIFECYCLE_TRANSITION",
+                "strategy_id": t["strategy_id"],
+                "lifecycle": t["to_state"],
+                "reason": t["reason"],
+                "actor": t["actor"],
+            })
+        if nodes:
+            # Pick first transitioning or first node as the selected historical item
+            chosen = transitioning[0]["strategy_id"] if transitioning else nodes[0]["strategy_id"]
+            for entry in entries:
+                if entry.strategy_id == chosen:
+                    selected_node = {
+                        "strategy_id": entry.strategy_id,
+                        "zone": next((n["zone"] for n in nodes if n["strategy_id"] == chosen), entry.lifecycle.value),
+                    }
+                    break
+
         return {
             "available": True,
             "frame_time": at.isoformat(),
             "node_count": len(nodes),
             "nodes": nodes,
             "transitions_in_frame": transitioning,
+            "console": console_events,
+            "selected": selected_node,
         }
 
     def journey(self, entry: StrategyRegistryEntry) -> dict[str, Any]:

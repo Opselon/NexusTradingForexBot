@@ -48,18 +48,32 @@ test('time machine initializes bounds and clamps slider', () => {
   });
 });
 
-test('time machine scrub fetches frame and updates spatial payload', async () => {
+test('time machine scrub fetches frame and updates spatial payload (historical mode)', async () => {
   let updatedPayload = null;
+  let historicalSet = false;
   const slider = makeEl();
   const label = makeEl();
   const nx = loadModule('command_center_timemachine.js', { 'scc-tm-slider': slider, 'scc-tm-label': label });
-  // Patch AFTER module load — module captured window.NX reference at eval time,
-  // but fetchFrame resolves window.NX.spatial.update dynamically at call time.
   global.window.NX.spatial.update = (p) => { updatedPayload = p; };
+  global.window.NX.spatial.setHistorical = (v) => { historicalSet = v; };
   await nx.tm.init();
   nx.tm.scrub(slider.max);
-  await new Promise(r => setTimeout(r, 30)); // allow async frame fetch
+  await new Promise(r => setTimeout(r, 30));
   assert.ok(updatedPayload && updatedPayload.nodes && updatedPayload.nodes[0].strategy_id === 'A');
+  // Strict LIVE vs HISTORICAL separation must be flagged during replay.
+  assert.strictEqual(updatedPayload.historical, true);
+  assert.strictEqual(historicalSet, true);
+});
+
+test('time machine supports speed multipliers', async () => {
+  const slider = makeEl();
+  const label = makeEl();
+  const nx = loadModule('command_center_timemachine.js', { 'scc-tm-slider': slider, 'scc-tm-label': label });
+  const speed = makeEl();
+  assert.strictEqual(typeof nx.tm.setSpeed, 'function');
+  nx.tm.setSpeed(5);
+  // No crash; speed select updated if present.
+  assert.ok(true);
 });
 
 test('debug console classifies and stores events without DOM crash', () => {

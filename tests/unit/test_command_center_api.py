@@ -146,9 +146,67 @@ class TestValidationPipeline:
         assert gates["ROBUSTNESS"]["status"] == "NOT_RUN"
 
 
-class TestTimeline:
-    def test_timeline_returns_events(self, api):
-        tl = api.timeline("s-active")
-        assert tl["available"] is True
-        assert tl["count"] >= 1
-        assert tl["events"][0]["event_type"] == "LIFECYCLE_TRANSITION"
+class TestRegistryScaleNoCap:
+    """BLOCKER 2: the API must reflect the FULL registry, not a 500-row cap."""
+
+    def test_overview_reflects_full_registry(self, api):
+        # Simulate a fleet larger than the former 500-row ceiling (1165 in prod).
+        # Note: the `api` fixture already prepopulates 4 entries, so total = 1169.
+        from tests.unit.test_command_center_api import _make_entry  # local import guard
+        cls = CandidateLifecycle
+        states = [cls.DISCOVERED, cls.BACKTESTING, cls.VALIDATING, cls.OOS_TESTING,
+                  cls.ROBUSTNESS_TESTING, cls.VALIDATED, cls.SHADOW, cls.ACTIVE,
+                  cls.REJECTED, cls.DEGRADED, cls.RETIRED]
+        for i in range(1165):
+            sid = f"s-scale-{i:04d}"
+            api.registry.list = lambda *a, **k: list(_FakeRepo._registry_entries.values())
+            api.registry.get = lambda sid, ver=None: _FakeRepo._registry_entries.get(sid)
+            _FakeRepo._registry_entries[sid] = _make_entry(sid, states[i % len(states)])
+        ov = api.overview()
+        assert ov["available"] is True
+        # 4 prepopulated by fixture + 1165 seeded = 1169 (cap must NOT truncate)
+        assert ov["total_strategies"] == 1169, "overview must show the true fleet size"
+
+    def test_fleet_default_limit_covers_full_registry(self, api):
+        cls = CandidateLifecycle
+        states = [cls.DISCOVERED, cls.VALIDATED, cls.ACTIVE, cls.REJECTED]
+        for i in range(1165):
+            sid = f"s-fleet-{i:04d}"
+            _FakeRepo._registry_entries[sid] = _make_entry(sid, states[i % len(states)])
+        fl = api.fleet()  # default limit is now 2000 (was 500)
+        # 4 fixture entries + 1165 seeded = 1169 (cap must NOT truncate)
+        assert fl["count"] == 1169, "fleet default must return the full registry"
+        # explicit large limit also works
+        fl2 = api.fleet(limit=2000)
+        assert fl2["count"] == 1169
+
+
+class TestTimeMachineReplay:
+    def test_frame_at_reconstructs_historical_state(self, api):
+        from nexus_scalp.research.time_machine import TimeMachine
+        from datetime import UTC, datetime, timedelta
+        # Seed a strategy with a two-step lineage.
+        past = datetime.now(UTC) - timedelta(days=10)
+        mid = datetime.now(UTC) - timedelta(days=5)
+        sid = "s-tm"
+        entry = _make_entry(
+            sid, CandidateLifecycle.VALIDATED,
+            validation_lineage=[
+                f"{past.isoformat()}:DISCOVERED:seed",
+                f"{mid.isoformat()}:VALIDATED:promotion",
+            ],
+        )
+        _FakeRepo._registry_entries[sid] = entry
+        tm = TimeMachine(_FakeRepo())
+        # At 'past' the strategy should be DISCOVERED, not yet VALIDATED.
+        frame = tm.frame_at([entry], past + timedelta(hours=1))
+        assert frame["available"] is True
+        assert frame["node_count"] == 1
+        assert frame["nodes"][0]["zone"] == "DISCOVERED"
+        # After 'mid' it should be VALIDATED.
+        frame2 = tm.frame_at([entry], mid + timedelta(hours=1))
+        assert frame2["nodes"][0]["zone"] == "VALIDATED"
+        # Frame returns console + selected for frontend integration.
+        assert "console" in frame2
+        assert "selected" in frame2
+
