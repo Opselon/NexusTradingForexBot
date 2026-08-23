@@ -861,6 +861,87 @@ class TestWorker:
         worker.stop()
         assert elapsed < 5.0, "research cycle must be bounded/non-blocking"
 
+    def test_discovered_candidates_re_enqueued_after_restart(self, temp_audit_repo):
+        # RC1 regression: after a worker restart with an UNCHANGED dataset,
+        # discovery/validation must still run so DISCOVERED candidates are
+        # re-enqueued for processing instead of remaining stuck.
+        #
+        # Mechanics: on the first post-restart cycle _refresh_dataset() syncs
+        # _last_dataset_id, so the legacy `if self._dataset_changed:` guard
+        # skipped discovery+validation entirely -> DISCOVERED candidates from
+        # the pre-restart process were stranded forever.
+        from nexus_scalp.research.worker import ResearchWorker
+
+        ledger = ExperienceLedger(audit_repo=temp_audit_repo)
+        # Enough positive experiences to produce a discovered family.
+        seed_experiences(ledger, temp_audit_repo, 60, r_values=[0.5] * 60)
+        real_pipeline = ResearchPipeline(
+            dataset_builder=ResearchDatasetBuilder(ledger),
+            registry=StrategyRegistry(audit_repo=temp_audit_repo),
+        )
+
+        class CountingPipeline:
+            """Delegating spy: counts discover/validate invocations."""
+
+            def __init__(self, inner: Any) -> None:
+                self._inner = inner
+                self.discover_calls = 0
+                self.validate_calls = 0
+
+            @property
+            def dataset_builder(self) -> Any:
+                return self._inner.dataset_builder
+
+            def discover(self, dataset: Any) -> list[Any]:
+                self.discover_calls += 1
+                return self._inner.discover(dataset)
+
+            def validate_candidate(self, candidate: Any, dataset: Any, **kw: Any) -> dict[str, Any]:
+                self.validate_calls += 1
+                return self._inner.validate_candidate(candidate, dataset, **kw)
+
+        # --- Pre-restart worker: discovers + validates normally. ---
+        pipe1 = CountingPipeline(real_pipeline)
+        worker1 = ResearchWorker(
+            audit_repo=temp_audit_repo,
+            ledger=ledger,
+            pipeline=pipe1,
+            interval_sec=0.0,
+        )
+        worker1.start()
+        worker1.tick()
+        worker1.stop()
+        assert pipe1.discover_calls >= 1, "first cycle must run discovery"
+        assert pipe1.validate_calls >= 1, "first cycle must validate discoveries"
+
+        # --- Post-restart worker: SAME db, SAME (unchanged) dataset. ---
+        pipe2 = CountingPipeline(real_pipeline)
+        worker2 = ResearchWorker(
+            audit_repo=temp_audit_repo,
+            ledger=ledger,
+            pipeline=pipe2,
+            interval_sec=0.0,
+        )
+        worker2.start()
+        worker2.tick()
+        worker2.stop()
+
+        # Dataset identity must be unchanged (same content-addressed id).
+        assert worker2._dataset is not None
+        assert (
+            getattr(worker2._dataset, "dataset_id", "") == worker2._last_dataset_id
+        ), "restart must observe the SAME dataset (RC1 precondition)"
+        # THE FIX: despite DATASET_UNCHANGED, discovery + validation ran again,
+        # re-enqueuing DISCOVERED candidates for processing.
+        assert pipe2.discover_calls >= 1, (
+            "post-restart cycle must re-run discovery (re-enqueue) even when "
+            "the dataset is unchanged"
+        )
+        assert pipe2.validate_calls >= 1, (
+            "post-restart cycle must re-validate DISCOVERED candidates even "
+            "when the dataset is unchanged"
+        )
+
 
 # =============================================================================
 # FULL PIPELINE END-TO-END

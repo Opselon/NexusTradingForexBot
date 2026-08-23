@@ -215,14 +215,22 @@ class ResearchWorker:
         work = False
         work |= self._run("seed", self._refresh_seed)
         work |= self._run("dataset", self._refresh_dataset)
-        if self._dataset_changed:
+        # RC1 FIX (2026-08-23): discovery + validation must run whenever a
+        # dataset exists — NOT gated on _dataset_changed. On the first cycle
+        # after a restart _refresh_dataset() syncs _last_dataset_id, so the
+        # legacy guard skipped both steps and DISCOVERED candidates from the
+        # pre-restart process stayed stranded forever (never validated).
+        # pipeline.discover/validate_candidate are idempotent on unchanged
+        # data, so an unchanged dataset makes this a cheap no-op pass.
+        if self._dataset is not None:
             work |= self._run("discovery", self._refresh_discovery)
             work |= self._run("validation", self._refresh_validation)
         else:
+            # If dataset is None, it means we are in the very first cycle or failed to load.
+            # The _refresh_dataset call should handle this, but as a fallback, log.
             logger.info(
-                "[STRATEGY_RESEARCH] event=DATASET_UNCHANGED",
+                "[STRATEGY_RESEARCH] event=DATASET_UNAVAILABLE",
                 cycle=self.cycle_count,
-                dataset_id=self._last_dataset_id,
             )
         logger.debug("[RESEARCH_WORKER] event=UPDATE", cycle=self.cycle_count, work_done=work)
         return bool(work)
