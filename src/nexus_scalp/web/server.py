@@ -1564,6 +1564,24 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_command_center_js() -> FileResponse:
         return FileResponse(WEB_DIR / "command_center_ui.js")
 
+    # FORENSIC FIX (Nexus-Forensic-01): command_center.html loads
+    # command_center_spatial.js / command_center_console.js /
+    # command_center_timemachine.js but server.py previously had NO routes
+    # for them -> GET 404 -> window.NX.spatial/tm/console undefined ->
+    # DOMContentLoaded handler throws and the entire CC renders blank.
+    # These three routes restore asset resolution (verified 404 -> 200).
+    @app.get("/command_center_spatial.js")
+    def serve_command_center_spatial_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center_spatial.js")
+
+    @app.get("/command_center_console.js")
+    def serve_command_center_console_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center_console.js")
+
+    @app.get("/command_center_timemachine.js")
+    def serve_command_center_timemachine_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center_timemachine.js")
+
     @app.get("/styles.css")
     def serve_styles() -> FileResponse:
         return FileResponse(WEB_DIR / "styles.css")
