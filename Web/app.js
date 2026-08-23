@@ -9429,27 +9429,35 @@ async function loadResearchHealth() {
 
         const rejected = by.REJECTED ?? 0;
 
-        const blocked = by.BLOCKED ?? 0;
+        const shadow = by.SHADOW ?? 0;
 
-        const failed = by.FAILED ?? 0;
+        const active = by.ACTIVE ?? 0;
 
+        const degraded = by.DEGRADED ?? 0;
+
+        const retired = by.RETIRED ?? 0;
+
+        // RC3 state contract: every bucket MUST exist in CandidateLifecycle
+        // (src/nexus_scalp/research/models.py). No QUEUED/BLOCKED/FAILED rows.
         grid.innerHTML =
 
             '<div class="text-textMuted">Total</div><div class="text-accentCyan font-bold">' + (s.total ?? '--') + '</div>' +
 
             '<div class="text-textMuted">Discovered</div><div class="text-white">' + discovered + '</div>' +
 
-            '<div class="text-textMuted">Queued</div><div class="text-white">0</div>' +
-
             '<div class="text-textMuted">Running</div><div class="text-accentYellow font-bold">' + running + '</div>' +
 
             '<div class="text-textMuted">Validated</div><div class="text-accentGreen font-bold">' + validated + '</div>' +
 
+            '<div class="text-textMuted">Shadow</div><div class="text-white">' + shadow + '</div>' +
+
+            '<div class="text-textMuted">Active</div><div class="text-accentGreen">' + active + '</div>' +
+
             '<div class="text-textMuted">Rejected</div><div class="text-accentRed font-bold">' + rejected + '</div>' +
 
-            '<div class="text-textMuted">Blocked</div><div class="text-accentRed">' + blocked + '</div>' +
+            '<div class="text-textMuted">Degraded</div><div class="text-accentRed">' + degraded + '</div>' +
 
-            '<div class="text-textMuted">Failed</div><div class="text-accentRed">' + failed + '</div>';
+            '<div class="text-textMuted">Retired</div><div class="text-gray-400">' + retired + '</div>';
 
     } catch (e) {
 
