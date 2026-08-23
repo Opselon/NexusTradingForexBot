@@ -3692,36 +3692,27 @@ function handleIncomingLiveTick(payload, opts) {
 
 
 
-    // Update Connection State badge
-
+    // Update Connection State badge & engine toggle button (Reconciled single truth)
     const badge = document.getElementById('system-status-badge');
-
+    const engineBtn = document.getElementById('btn-toggle-engine');
     if (payload.engine_running) {
-
-        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span> ACTIVE`;
-
-        badge.className = "ml-3 text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center";
-
-        document.getElementById('btn-toggle-engine').innerHTML = `<i class="fa-solid fa-circle-stop"></i> <span>Stop Bot</span>`;
-
-        document.getElementById('btn-toggle-engine').className = "flex-1 bg-rose-500 hover:bg-rose-600 text-white font-bold py-1.5 px-3 rounded text-xs transition shadow-md shadow-rose-500/10 flex items-center justify-center space-x-1";
-
-    } else {
-
-        badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span> PAUSED`;
-
-        badge.className = "ml-3 text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center";
-
-        const btn = document.getElementById('btn-toggle-engine');
-
-        if (btn) {
-
-            btn.innerHTML = `<i class="fa-solid fa-circle-play"></i> <span>Start Bot</span>`;
-
-            btn.className = "flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-1.5 px-3 rounded text-xs transition shadow-md shadow-emerald-500/10 flex items-center justify-center space-x-1";
-
+        if (badge) {
+            badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span> RUNNING`;
+            badge.className = "ml-3 text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center font-bold";
         }
-
+        if (engineBtn) {
+            engineBtn.innerHTML = `<i class="fa-solid fa-circle-stop"></i> <span>Stop Bot</span>`;
+            engineBtn.className = "flex-1 bg-rose-500 hover:bg-rose-600 text-white font-bold py-1.5 px-3 rounded text-xs transition shadow-md shadow-rose-500/10 flex items-center justify-center space-x-1";
+        }
+    } else {
+        if (badge) {
+            badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span> PAUSED`;
+            badge.className = "ml-3 text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center font-bold";
+        }
+        if (engineBtn) {
+            engineBtn.innerHTML = `<i class="fa-solid fa-circle-play"></i> <span>Start Bot</span>`;
+            engineBtn.className = "flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-1.5 px-3 rounded text-xs transition shadow-md shadow-emerald-500/10 flex items-center justify-center space-x-1";
+        }
     }
 
 

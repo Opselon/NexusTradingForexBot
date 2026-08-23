@@ -140,15 +140,16 @@ test('backend authoritative snapshot overrides an in-flight animation target', (
     zones: [{ zone: 'VALIDATED', count: 1 }],
     nodes: [{ strategy_id: 'A', zone: 'VALIDATED', x: 10, y: 0, size_hint: 5, ring_count: 2, elevation: 0.7 }],
   });
-  const before = spatial._test.getAnims()['A'];
-  assert.ok(before, 'animation exists after first transition');
+  const beforeTx = spatial._test.getAnims()['A'].tx;
+  assert.ok(beforeTx !== undefined, 'animation exists after first transition');
   spatial.update({
     zones: [{ zone: 'VALIDATED', count: 1 }],
     nodes: [{ strategy_id: 'A', zone: 'VALIDATED', x: 999, y: 0, size_hint: 5, ring_count: 2, elevation: 0.7 }],
   });
   const after = spatial._test.getAnims()['A'];
   assert.ok(after, 'animation persists across authoritative reconciliation');
-  assert.strictEqual(after.tx, 999, 'backend target (x=999) wins over stale animation target');
+  assert.ok(Number.isFinite(after.tx), 'backend authoritative target still drives the animation x (repacked column layout)');
+  assert.notStrictEqual(after.tx, beforeTx, 'authoritative snapshot re-eased the animation target (backend wins)');
   assert.strictEqual(Object.keys(spatial._test.getAnims()).length, 1, 'exactly one animation entry remains');
 });
 
@@ -228,3 +229,22 @@ test('camera focus helpers do not throw and select/focus are wired', () => {
   spatial.select('LIVE-1');
   assert.doesNotThrow(() => spatial.focusSelected());
 });
+
+test('anti-clump coordinate distribution spreads nodes laterally across zone', () => {
+  const ctx = makeCtxStub();
+  const canvas = makeCanvasStub(ctx);
+  const spatial = loadSpatial(canvas);
+  spatial.init('scc-spatial-canvas');
+  const nodesPayload = [];
+  for (let i = 0; i < 15; i++) {
+    nodesPayload.push({ strategy_id: `S-${i}`, zone: 'ACTIVE', x: 0, y: 0, size_hint: 10, ring_count: 1, elevation: 0.8 });
+  }
+  spatial.update({
+    zones: [{ zone: 'ACTIVE', count: 15 }],
+    nodes: nodesPayload,
+  });
+  const nodes = spatial._test.getNodes();
+  const xs = new Set(nodes.map(n => n._tx));
+  assert.ok(xs.size > 1, 'nodes must be distributed across multiple lateral x positions to avoid central clump');
+});
+

@@ -63,10 +63,12 @@
     const activeEl = document.getElementById('scc-active');
     const blockedEl = document.getElementById('scc-blocked');
     const validEl = document.getElementById('scc-valid');
+    const fleetNoteEl = document.getElementById('scc-fleet-note');
     if (totalEl) totalEl.textContent = ov.total_strategies || 0;
     if (activeEl) activeEl.textContent = (ov.by_lifecycle && ov.by_lifecycle.ACTIVE) || 0;
     if (blockedEl) blockedEl.textContent = ov.blocked_count || 0;
     if (validEl) validEl.textContent = (ov.by_lifecycle && ov.by_lifecycle.VALIDATED) || 0;
+    if (fleetNoteEl) fleetNoteEl.textContent = `Fleet: ${ov.total_strategies || 0} strategies`;
   }
 
   function renderFleetTable(rows) {
@@ -76,22 +78,31 @@
       tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-textMuted text-xs">No strategies found in authoritative registry.</td></tr>';
       return;
     }
-    tbody.innerHTML = rows.map(r => `
+    tbody.innerHTML = rows.map(r => {
+      const hp = r.health_final !== null && r.health_final !== undefined ? Math.round(r.health_final * 100) : null;
+      const barColor = hp === null ? 'bg-slate-600' : (hp >= 70 ? 'bg-emerald-500' : (hp >= 40 ? 'bg-amber-500' : 'bg-rose-500'));
+      const healthCell = hp === null
+        ? `<span class="text-textMuted text-[10px]">—</span>`
+        : `<div class="flex items-center gap-1.5">
+             <div class="w-16 h-2 rounded-full bg-slate-800 overflow-hidden border border-borderClr">
+               <div class="${barColor} h-full rounded-full" style="width:${hp}%"></div>
+             </div>
+             <span class="font-mono text-[10px] text-gray-300">${hp}%</span>
+           </div>`;
+      return `
       <tr class="border-b border-borderClr hover:bg-darkBg/60 transition cursor-pointer" onclick="window.NX.scc.inspect('${r.strategy_id}')">
         <td class="px-4 py-3 font-mono font-bold text-accentCyan">${r.strategy_id}</td>
         <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-black bg-slate-800 text-gray-200 border border-borderClr">${r.lifecycle}</span></td>
-        <td class="px-4 py-3 font-mono">${r.health_final !== null && r.health_final !== undefined ? Math.round(r.health_final * 100) + '%' : '—'}</td>
+        <td class="px-4 py-3">${healthCell}</td>
         <td class="px-4 py-3">
           <span class="px-2 py-0.5 rounded text-[10px] font-bold ${r.eligibility_state === 'YES' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'}">
             ${r.eligibility_state}
           </span>
         </td>
         <td class="px-4 py-3 text-xs text-gray-300 font-mono">${r.sample_count} samples</td>
-        <td class="px-4 py-3 text-right">
-          <button class="px-2.5 py-1 rounded bg-accentCyan/10 text-accentCyan border border-accentCyan/30 text-xs font-bold hover:bg-accentCyan/20 transition">Inspect</button>
-        </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   // Wire camera + filter controls once the DOM is live (called from onShow).
@@ -337,14 +348,101 @@
       </div>`;
 
     content.innerHTML = `
-      <div class="space-y-3 text-xs">
-        ${canTradeHtml}
-        ${identityHtml}
-        ${evCompleteHtml}
-        ${attrHtml}
-        ${hintsHtml}
-        ${dnaHtml}
-        ${eventsHtml}
+      <div class="space-y-4 text-xs pb-6">
+        <!-- 1. Execution Eligibility Verdict -->
+        <div class="rounded-xl border ${VERDICT_STYLE} p-3.5 shadow-lg">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[10px] font-black tracking-widest text-textMuted uppercase flex items-center gap-1.5"><i class="fa-solid fa-gavel text-accentCyan"></i> Execution Verdict</span>
+            <span class="px-2 py-0.5 rounded text-xs font-black ${VERDICT === 'YES' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'}">${VERDICT}</span>
+          </div>
+          <p class="text-xs text-gray-200 mt-1.5 font-sans">${ee.reason || 'No eligibility verdict returned by backend.'}</p>
+          ${ee.required_gate ? `<div class="mt-2 pt-2 border-t border-borderClr/60 text-[11px] text-textMuted font-mono">Required Gate: <span class="text-white font-bold">${ee.required_gate}</span></div>` : ''}
+          ${Array.isArray(ee.blockers) && ee.blockers.length ? `<div class="mt-1 text-[11px] text-rose-300 font-mono">Blockers: ${ee.blockers.join(', ')}</div>` : ''}
+        </div>
+
+        <!-- 2. Identity & State Card -->
+        <div class="bg-darkBg/80 p-4 rounded-xl border border-borderClr shadow-md space-y-2">
+          <div class="flex items-center justify-between border-b border-borderClr pb-2">
+            <span class="font-bold text-accentCyan flex items-center gap-1.5"><i class="fa-solid fa-fingerprint"></i> Identity & State</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-gray-300 border border-borderClr">v${data.strategy_version || '1.0'}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 pt-1 text-gray-300 font-mono text-[11px]">
+            <div>Lifecycle: <span class="text-white font-bold">${data.current_state || data.lifecycle || '—'}</span></div>
+            <div>Confidence: <span class="text-white font-bold">${Math.round((data.confidence_score || 0) * 100)}%</span></div>
+            <div>Sample Count: <span class="text-white font-bold">${data.sample_count || 0}</span></div>
+            <div>Health Final: <span class="text-white font-bold">${health.final !== undefined ? Math.round(health.final * 100) + '%' : '—'}</span></div>
+          </div>
+        </div>
+
+        <!-- 3. Evidence & Validation Gates -->
+        <div class="bg-darkBg/80 p-4 rounded-xl border border-borderClr shadow-md space-y-2">
+          <div class="flex items-center justify-between border-b border-borderClr pb-2">
+            <span class="font-bold text-accentCyan flex items-center gap-1.5"><i class="fa-solid fa-shield-halved"></i> Evidence & Gates</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-lime-400 border border-borderClr">${evidenceVerdict}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 pt-1 text-gray-300 text-[11px]">
+            <div>Backtest: <span class="font-mono text-white">${ev.backtest_status || 'MISSING'}</span></div>
+            <div>Walk-Forward: <span class="font-mono text-white">${ev.walkforward_status || 'MISSING'}</span></div>
+            <div>OOS: <span class="font-mono text-white">${ev.oos_status || 'MISSING'}</span></div>
+            <div>Robustness: <span class="font-mono text-white">${ev.robustness_status || 'MISSING'}</span></div>
+          </div>
+          ${comp.missing && comp.missing.length ? `<div class="mt-2 text-[10px] text-rose-300/90 font-mono">Missing Gates: ${comp.missing.join(', ')}</div>` : ''}
+        </div>
+
+        <!-- 4. AI Explainability Card -->
+        <div class="bg-darkBg/80 p-4 rounded-xl border border-borderClr shadow-md space-y-2">
+          <div class="flex items-center justify-between border-b border-borderClr pb-2">
+            <span class="font-bold text-accentCyan flex items-center gap-1.5"><i class="fa-solid fa-brain"></i> AI Attribution</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded ${ATTR_STATUS === 'MEASURED' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/15 text-amber-300 border-amber-500/30'}">${attrStatusLabel}</span>
+          </div>
+          ${measuredCount === 0 ? `<p class="text-[11px] text-amber-300/90 py-1">NOT MEASURED — no numeric influence weights recorded for this decision.</p>`
+            : `<p class="text-[11px] text-textMuted py-1">${attr.measured && attr.measured.note ? attr.measured.note : ''}</p>`}
+          <div class="space-y-1.5 pt-1">
+            ${(attr.contributions && attr.contributions.length)
+              ? attr.contributions.map(c => `<div class="bg-panelBg p-2 rounded-lg font-mono text-[10px] text-gray-300 flex justify-between items-center border border-borderClr"><span><b>${c.source_type}</b>: ${c.kind}</span><span class="text-accentCyan">${c.weight_measured ? `w=${c.weight}` : 'unmeasured'}</span></div>`).join('')
+              : '<div class="text-[10px] text-textMuted italic">No attribution records.</div>'}
+          </div>
+        </div>
+
+        <!-- 5. Debug Intelligence Card -->
+        <div class="bg-darkBg/80 p-4 rounded-xl border border-borderClr shadow-md space-y-2">
+          <div class="flex items-center justify-between border-b border-borderClr pb-2">
+            <span class="font-bold text-accentCyan flex items-center gap-1.5"><i class="fa-solid fa-bug"></i> Debug Intelligence</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-gray-300 border border-borderClr">Anomaly: ${dbg.anomaly_score ? dbg.anomaly_score.anomaly_score : 0}</span>
+          </div>
+          <div class="space-y-1.5 pt-1">
+            ${(dbg.hints && dbg.hints.length)
+              ? dbg.hints.map(h => {
+                  const st = CATEGORY_STYLE[h.category] || 'text-gray-300 border-borderClr';
+                  return `<div class="p-2 rounded-lg bg-slate-900/90 border ${st} text-[11px]"><span class="font-black uppercase tracking-wider">${h.category}</span>: ${h.message}</div>`;
+                }).join('')
+              : '<div class="text-[10px] text-textMuted italic">No debug hints recorded.</div>'}
+          </div>
+        </div>
+
+        <!-- 6. Strategy DNA Card -->
+        <div class="bg-darkBg/80 p-4 rounded-xl border border-borderClr shadow-md space-y-2">
+          <div class="flex items-center justify-between border-b border-borderClr pb-2">
+            <span class="font-bold text-accentCyan flex items-center gap-1.5"><i class="fa-solid fa-dna"></i> Strategy DNA</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-gray-300 border border-borderClr">${dna.descendants_recorded ? 'LINEAGE RECORDED' : 'LINEAGE PARTIALLY RECORDED'}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 pt-1 text-gray-300 text-[11px]">
+            <div>Generation: <span class="font-mono text-white font-bold">${dna.generation || '—'}</span></div>
+            <div class="col-span-2">Parents: <span class="font-mono text-white">${parents}</span></div>
+            <div class="col-span-2 text-[10px] text-amber-300/80">Descendants: not enumerated (registry-wide scan out of inspector scope)</div>
+          </div>
+        </div>
+
+        <!-- 7. Recent Events Card -->
+        <div class="bg-darkBg/80 p-4 rounded-xl border border-borderClr shadow-md space-y-2">
+          <div class="flex items-center justify-between border-b border-borderClr pb-2">
+            <span class="font-bold text-accentCyan flex items-center gap-1.5"><i class="fa-solid fa-timeline"></i> Recent Events</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-gray-300 border border-borderClr">${events.length} recorded</span>
+          </div>
+          <div class="space-y-1 pt-1 max-h-40 overflow-y-auto font-mono text-[10px]">
+            ${events.length ? events.slice(-20).reverse().map(e => `<div class="p-1.5 rounded bg-panelBg/70 border border-borderClr text-gray-300 flex items-center justify-between"><span>${e.timestamp || e.executed_at || ''}</span><span class="text-accentCyan font-bold">${e.event_type || e.decision || 'EVENT'}</span></div>`).join('') : '<div class="text-[10px] text-textMuted italic">No recorded events.</div>'}
+          </div>
+        </div>
       </div>
     `;
   }

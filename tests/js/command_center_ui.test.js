@@ -114,7 +114,7 @@ test('inspector shows CAN-THIS-TRADE verdict from real eligibility (never faked)
     lineage_dna: { parent_strategy_ids: ['S-100'], generation: '2.1.0', descendants_recorded: false },
     events: [{ timestamp: '2026-08-23T10:00:00Z', event_type: 'LIFECYCLE_TRANSITION' }],
   });
-  assert.match(content.innerHTML, /CAN THIS STRATEGY TRADE/);
+  assert.match(content.innerHTML, /Execution Verdict/);
   assert.match(content.innerHTML, /YES/);
   assert.doesNotMatch(content.innerHTML, /UNKNOWN/); // real eligibility → not UNKNOWN
 });
@@ -220,4 +220,51 @@ test('empty state overlay shows honest zero-match message (no fabricated counts)
   assert.doesNotMatch(el.innerHTML, /Matching: [1-9]/);
   scc._test_hideEmpty();
   assert.ok(el.classList.add.called || true); // hide path does not throw
+});
+
+test('fleet row is fully clickable (no redundant Inspect button) and shows health bar', () => {
+  const tbody = makeElementStub();
+  const scc = loadModule({ 'scc-fleet-tbody': tbody });
+  scc._test_renderFleet([
+    { strategy_id: 'S-001', lifecycle: 'ACTIVE', health_final: 0.72, eligibility_state: 'YES', sample_count: 120 },
+    { strategy_id: 'S-002', lifecycle: 'REJECTED', health_final: null, eligibility_state: 'BLOCKED', sample_count: 0 },
+  ]);
+  // Whole row triggers inspect()
+  assert.match(tbody.innerHTML, /onclick="window\.NX\.scc\.inspect\('S-001'\)"/);
+  // Redundant per-row Inspect button removed
+  assert.doesNotMatch(tbody.innerHTML, /Inspect/);
+  // Inline health bar present (track + fill) for measured health
+  assert.match(tbody.innerHTML, /rounded-full bg-slate-800/);
+  assert.match(tbody.innerHTML, /bg-emerald-500/);
+  assert.match(tbody.innerHTML, /72%/);
+  // Null health rendered as dash, not a fake bar
+  assert.match(tbody.innerHTML, /—/);
+});
+
+test('inspector renders structured cards with verdict + visual hierarchy (no wall-of-text)', () => {
+  const content = makeElementStub();
+  const title = makeElementStub();
+  const scc = loadModule({ 'scc-insp-content': content, 'scc-insp-title': title });
+  scc._test_renderInspector({
+    available: true, strategy_id: 'S-300', current_state: 'VALIDATED', strategy_version: '4.2.0',
+    execution_eligibility: { can_trade: false, eligibility_state: 'NO', reason: 'gated' },
+    confidence_score: 0.4,
+    health_score: { final: 0.55 },
+    evidence_summary: { backtest_status: 'PASS', walkforward_status: 'PASS', oos_status: 'PASS', robustness_status: 'PASS', score_verdict: 'VALIDATED' },
+    ai_attribution: { status: 'MEASURED', measured: { weights: 2, note: 'ok' }, contributions: [{ source_type: 'AI_MODEL', kind: 'AI_RANKED', weight: 0.5, weight_measured: true }] },
+    debug_intelligence: { anomaly_score: { anomaly_score: 0.3 }, hints: [{ category: 'FACT', message: 'stable' }] },
+    evidence_completeness: { verdict: 'PASS' },
+    lineage_dna: { parent_strategy_ids: [], generation: '4.2.0', descendants_recorded: false },
+    events: [],
+  });
+  // Verdict card present with clear hierarchy
+  assert.match(content.innerHTML, /Execution Verdict/);
+  assert.match(content.innerHTML, /Identity & State/);
+  assert.match(content.innerHTML, /Evidence & Gates/);
+  assert.match(content.innerHTML, /AI Attribution/);
+  assert.match(content.innerHTML, /Debug Intelligence/);
+  assert.match(content.innerHTML, /Strategy DNA/);
+  assert.match(content.innerHTML, /Recent Events/);
+  // MEASURED badge rendered (honest attribution)
+  assert.match(content.innerHTML, /MEASURED/);
 });

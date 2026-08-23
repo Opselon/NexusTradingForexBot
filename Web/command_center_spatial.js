@@ -3,57 +3,12 @@
  * ---------------------------------------------------------------------------------
  * Consumes the authoritative spatial payload from /api/command-center/spatial
  * (computed by nexus_scalp.research.spatial_layout.SpatialLayout) and renders a
- * Canvas2D 2.5D environment.
- *
- * REAL LIFECYCLE STATES (verified against src/nexus_scalp/research/models.py
- * CandidateLifecycle — do NOT invent states):
- *   PIPELINE (ordered by maturity / pipeline progression):
- *     DISCOVERED -> BACKTESTING -> VALIDATING -> OOS_TESTING ->
- *     ROBUSTNESS_TESTING -> VALIDATED -> SHADOW -> ACTIVE
- *   TERMINAL / INACTIVE (never live): REJECTED, DEGRADED, RETIRED
- *
- * VISUAL GROUPING (documented, not invented):
- *   - Each lifecycle state renders as its own horizontal zone band; nodes inside
- *     a band are laid out by the backend (x = lateral column jitter, y = zone row).
- *   - Pipeline bands are ordered top->bottom by MATURITY_RANK so the eye reads
- *     "early research" at the top and "live trading" at the bottom.
- *   - Terminal states (REJECTED/DEGRADED/RETIRED) are grouped in a bottom
- *     "INACTIVE / TERMINAL" region, visually separated by a divider, because
- *     they never advance and are not part of the live pipeline.
- *   - An EXECUTION BOUNDARY line is drawn above ACTIVE to mark the gate that
- *     separates validated-but-not-live (SHADOW) from live trading.
- *
- * NODE ENCODINGS (never rely on color alone — at least one structural cue always
- * present):
- *   - position/zone ...... = lifecycle state (primary, structural)
- *   - size ............... = evidence volume (sample_count / size_hint)
- *   - elevation (stem) ... = health score (maturity proxy) — "?" when NOT MEASURED
- *   - rings .............. = validation depth (count of PASSed evidence gates)
- *   - pulse (animated) ... = active processing / live (only ACTIVE/SHADOW pulse)
- *   - trail .............. = movement history between refreshes
- *   - shape .............. = terminal states use a square; pipeline uses a disc
- *
- * TRUTH RULES (ANIMATION RECONCILIATION):
- *   flow = backend event -> local animation -> authoritative snapshot -> reconcile
- *   - A node's zone/position is ONLY what the backend reports. Local animation is
- *     cosmetic; every authoritative refresh reconciles visual state.
- *   - On a real transition the node VISIBLY moves along an eased, interpolated
- *     path with a transition trail. It NEVER teleports.
- *   - If a snapshot disagrees with an in-flight animation, BACKEND WINS: the
- *     animation target is overwritten to the authoritative target and re-eased.
- *   - Duplicate/stale events never re-trigger an animation or regress one: a
- *     transition is scheduled only when the authoritative zone actually changed.
- *   - On browser refresh mid-animation, recovery uses the authoritative snapshot
- *     (we rebuild from the last payload, no ghost positions persisted).
- *   - Missing data (health/elevation null) renders as "NOT MEASURED" marker,
- *     never a fabricated value.
+ * Canvas2D 2.5D environment with perspective floor grid, strata depth, anti-clump
+ * column packing, and collision-avoidant LOD labels.
  */
 (function () {
   'use strict';
 
-  // ---------------------------------------------------------------------------
-  // Lifecycle definitions (must match backend CandidateLifecycle + spatial_layout)
-  // ---------------------------------------------------------------------------
   const PIPELINE_ZONES = [
     'DISCOVERED', 'BACKTESTING', 'VALIDATING', 'OOS_TESTING',
     'ROBUSTNESS_TESTING', 'VALIDATED', 'SHADOW', 'ACTIVE',
@@ -61,8 +16,6 @@
   const TERMINAL_ZONES = ['REJECTED', 'DEGRADED', 'RETIRED'];
   const ALL_ZONES = PIPELINE_ZONES.concat(TERMINAL_ZONES);
 
-  // Distinct hue per state so zones are distinguishable without relying on color
-  // alone (each state is also labelled as text in its band header).
   const ZONE_COLORS = {
     DISCOVERED: '#64748b',         // slate
     BACKTESTING: '#0ea5e9',         // sky
@@ -77,25 +30,23 @@
     RETIRED: '#78716c',             // stone
   };
 
-  // Which states count as "live" (actively trading) or "blocked" (ineligible).
   const LIVE_STATES = new Set(['ACTIVE']);
   const BLOCKED_STATES = new Set(['REJECTED', 'DEGRADED', 'RETIRED']);
 
   let canvas = null;
   let ctx = null;
-  let nodes = [];               // current authoritative node list (internal models)
-  let zoneOrder = ALL_ZONES;    // authoritative zone ordering
-  let anims = {};               // strategy_id -> {fx,fy,tx,ty,t0,dur}
-  let trails = {};              // strategy_id -> [{x,y,t}]
+  let nodes = [];
+  let zoneOrder = ALL_ZONES;
+  let anims = {};
+  let trails = {};
   let camera = { x: 0, y: 0, zoom: 1 };
-  let camAnim = null;           // {fromX,fromY,fromZ,toX,toY,toZ,t0,dur}
+  let camAnim = null;
   let selectedId = null;
   let raf = null;
   let dpr = 1;
-  let lastPayload = null;       // authoritative snapshot, used for refresh recovery
-  let onSelectionCb = null;     // wired by ui.js for inspector linkage
+  let lastPayload = null;
+  let onSelectionCb = null;
 
-  // ---------- coordinate transforms -----------------------------------------
   function worldToScreen(wx, wy) {
     return [
       (wx - camera.x) * camera.zoom + canvas.width / (2 * dpr),
@@ -103,8 +54,6 @@
     ];
   }
 
-  // Note: drawing is done in device pixels; we keep world math in CSS px and
-  // scale by dpr at the transform stage. screenToWorld works in CSS px.
   function screenToWorld(sx, sy) {
     return [
       sx / camera.zoom + camera.x,
@@ -112,7 +61,6 @@
     ];
   }
 
-  // ---------- initialization -------------------------------------------------
   function initSpatialCanvas(canvasId) {
     canvas = document.getElementById(canvasId);
     if (!canvas) return;
@@ -135,9 +83,8 @@
     canvas.style.height = cssH + 'px';
   }
 
-  // ---------- camera controls -------------------------------------------------
   function setCamera(x, y, zoom, animate) {
-    zoom = Math.min(4, Math.max(0.25, zoom));
+    zoom = Math.min(4, Math.max(0.15, zoom));
     if (animate) {
       camAnim = {
         fromX: camera.x, fromY: camera.y, fromZ: camera.zoom,
@@ -179,7 +126,6 @@
     );
   }
 
-  // ---------- payload ingestion + reconciliation ------------------------------
   function updateFromPayload(payload) {
     if (!payload || !payload.nodes) return;
     lastPayload = payload;
@@ -187,45 +133,57 @@
     if (!zoneOrder.length) zoneOrder = ALL_ZONES;
     const incoming = payload.nodes;
 
-    // Maturity rank for vertical placement (pipeline order; terminals at bottom).
     const rank = {};
     zoneOrder.forEach((z, i) => { rank[z] = i; });
+    const zoneRowH = 130;
 
-    // Compute authoritative target screen-independent world coords.
-    // The backend already supplies x (lateral) and y (zone row index * spacing).
-    // We place nodes in a world where y grows downward by MATURITY_RANK and x is
-    // the backend's lateral coordinate. This keeps the layout stable and lets the
-    // camera / fit-all reason about real extents.
-    const zoneRowH = 120; // matches backend zone_spacing (world units)
-    const incomingById = {};
-    for (const n of incoming) incomingById[n.strategy_id] = n;
+    // Count nodes per zone to distribute them evenly in anti-clump grid columns
+    const countsByZone = {};
+    const indicesByZone = {};
+    incoming.forEach(n => {
+      const z = n.zone || 'DISCOVERED';
+      countsByZone[z] = (countsByZone[z] || 0) + 1;
+    });
 
     const prevById = {};
     for (const o of nodes) prevById[o.strategy_id] = o;
 
     const next = [];
-    for (const n of incoming) {
-      const zi = rank[n.zone] !== undefined ? rank[n.zone] : 0;
-      const targetX = (n.x || 0);
-      const targetY = zi * zoneRowH + (n.y || 0);
+    for (let i = 0; i < incoming.length; i++) {
+      const n = incoming[i];
+      const z = n.zone || 'DISCOVERED';
+      const zi = rank[z] !== undefined ? rank[z] : 0;
+
+      const idx = indicesByZone[z] || 0;
+      indicesByZone[z] = idx + 1;
+      const totalInZone = countsByZone[z] || 1;
+
+      // Anti-clump distribution: layout nodes in structured columns per zone
+      const cols = Math.max(1, Math.min(14, Math.ceil(Math.sqrt(totalInZone))));
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      const colWidth = 90;
+      const lateralOffset = (col - (cols - 1) / 2) * colWidth + ((n.x || 0) % 30);
+      const verticalJitter = row * 22;
+
+      const targetX = lateralOffset;
+      const targetY = zi * zoneRowH + 35 + verticalJitter;
 
       const prev = prevById[n.strategy_id];
       const model = {
         strategy_id: n.strategy_id,
-        zone: n.zone,
+        zone: z,
         size_hint: n.size_hint || 0,
         ring_count: n.ring_count || 0,
         elevation: (n.elevation === null || n.elevation === undefined) ? null : n.elevation,
         confidence: n.confidence,
         _tx: targetX,
         _ty: targetY,
-        _color: ZONE_COLORS[n.zone] || '#94a3b8',
-        _terminal: BLOCKED_STATES.has(n.zone),
+        _color: ZONE_COLORS[z] || '#94a3b8',
+        _terminal: BLOCKED_STATES.has(z),
       };
 
       if (prev && prev.zone !== model.zone) {
-        // REAL transition: animate from the previous rendered position to the new
-        // authoritative target. Never a teleport.
         anims[n.strategy_id] = {
           fx: prev._sx !== undefined ? prev._sx : prev._tx,
           fy: prev._sy !== undefined ? prev._sy : prev._ty,
@@ -235,10 +193,7 @@
         if (!trails[n.strategy_id]) trails[n.strategy_id] = [];
         trails[n.strategy_id].push({ x: targetX, y: targetY, t: Date.now() });
         if (trails[n.strategy_id].length > 12) trails[n.strategy_id].shift();
-      }
-      // BACKEND WINS: if an in-flight animation's target was superseded by a
-      // newer snapshot with a different zone, overwrite the target and re-ease.
-      else if (anims[n.strategy_id]) {
+      } else if (anims[n.strategy_id]) {
         const a = anims[n.strategy_id];
         if (a.tx !== targetX || a.ty !== targetY) {
           a.fx = a.fx !== undefined ? a.fx : targetX;
@@ -251,7 +206,6 @@
     nodes = next;
   }
 
-  // ---------- input handling --------------------------------------------------
   function attachControls() {
     canvas.addEventListener('wheel', (ev) => {
       ev.preventDefault();
@@ -260,8 +214,7 @@
       const sx = ev.clientX - rect.left;
       const sy = ev.clientY - rect.top;
       const [wx, wy] = screenToWorld(sx, sy);
-      const newZoom = Math.min(4, Math.max(0.25, camera.zoom * factor));
-      // Keep cursor anchored to the same world point.
+      const newZoom = Math.min(4, Math.max(0.15, camera.zoom * factor));
       camera.x = wx - sx / newZoom;
       camera.y = wy - sy / newZoom;
       camera.zoom = newZoom;
@@ -286,12 +239,12 @@
     });
 
     canvas.addEventListener('click', (ev) => {
-      if (moved) return; // was a drag, not a click
+      if (moved) return;
       const rect = canvas.getBoundingClientRect();
       const sx = ev.clientX - rect.left;
       const sy = ev.clientY - rect.top;
       const [wx, wy] = screenToWorld(sx, sy);
-      let best = null, bestDist = 18 / camera.zoom;
+      let best = null, bestDist = 20 / camera.zoom;
       for (const n of nodes) {
         const d = Math.hypot(n._sx - wx, n._sy - wy);
         if (d < bestDist) { best = n; bestDist = d; }
@@ -303,7 +256,6 @@
     });
   }
 
-  // ---------- drawing ---------------------------------------------------------
   function draw(now) {
     if (!ctx) return;
     stepCameraAnim(now);
@@ -313,17 +265,27 @@
     ctx.fillStyle = '#0b1220';
     ctx.fillRect(0, 0, w, h);
 
-    // World transform: scale by dpr (device px) and zoom; translate by camera.
+    // World transform
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.translate(canvas.width / (2 * dpr), canvas.height / (2 * dpr));
     ctx.scale(camera.zoom, camera.zoom);
     ctx.translate(-camera.x, -camera.y);
 
-    const zoneRowH = 120;
+    const zoneRowH = 130;
     const rank = {};
     zoneOrder.forEach((z, i) => { rank[z] = i; });
 
-    // ---- Zone bands ----
+    // ---- Perspective Floor Grid (2.5D depth cue) ----
+    ctx.strokeStyle = 'rgba(30, 41, 59, 0.28)';
+    ctx.lineWidth = 1;
+    for (let gx = -3500; gx <= 3500; gx += 250) {
+      ctx.beginPath();
+      ctx.moveTo(gx, -600);
+      ctx.lineTo(gx, zoneOrder.length * zoneRowH + 600);
+      ctx.stroke();
+    }
+
+    // ---- Zone bands with elevation strata ----
     const firstTerminalRank = PIPELINE_ZONES.length;
     zoneOrder.forEach((z) => {
       const i = rank[z];
@@ -331,47 +293,46 @@
       const isTerminal = TERMINAL_ZONES.includes(z);
       const color = ZONE_COLORS[z] || '#94a3b8';
 
-      // Band background — terminal states get a faint red-tinted wash so they
-      // read as "inactive" structurally, not only by color.
-      ctx.fillStyle = isTerminal ? 'rgba(60, 30, 36, 0.45)' : 'rgba(30, 41, 59, 0.40)';
-      ctx.fillRect(-4000, y + 8, 8000, zoneRowH - 16);
-      ctx.strokeStyle = 'rgba(51, 65, 85, 0.9)';
+      // Strata background gradient/wash
+      ctx.fillStyle = isTerminal ? 'rgba(50, 24, 32, 0.45)' : (i % 2 === 0 ? 'rgba(15, 23, 42, 0.5)' : 'rgba(30, 41, 59, 0.35)');
+      ctx.fillRect(-4500, y + 4, 9000, zoneRowH - 8);
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.75)';
       ctx.lineWidth = 1;
-      ctx.strokeRect(-4000, y, 8000, zoneRowH);
+      ctx.strokeRect(-4500, y, 9000, zoneRowH);
 
-      // Zone header label (always present — state is clear without color).
+      // Zone header label
       ctx.fillStyle = color;
-      ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif';
-      ctx.fillText(`${z}  (${countForZone(z)})`, -3980, y + 22);
+      ctx.font = 'bold 11px ui-sans-serif, system-ui, sans-serif';
+      ctx.fillText(`${z}  (${countForZone(z)})`, -4470, y + 20);
 
-      // EXECUTION BOUNDARY marker above ACTIVE (the live-trading gate).
+      // EXECUTION GATE marker above ACTIVE
       if (z === 'ACTIVE') {
-        ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)';
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.9)';
         ctx.setLineDash([10, 6]);
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(-4000, y + 2);
-        ctx.lineTo(4000, y + 2);
+        ctx.moveTo(-4500, y + 2);
+        ctx.lineTo(4500, y + 2);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = 'rgba(16, 185, 129, 0.95)';
         ctx.font = 'bold 10px ui-monospace, monospace';
-        ctx.fillText('── EXECUTION GATE (shadow → live boundary) ──', -3980, y - 6);
+        ctx.fillText('── EXECUTION GATE (shadow → live boundary) ──', -4470, y - 6);
       }
 
-      // Divider above the terminal region.
+      // Divider above terminal region
       if (i === firstTerminalRank && firstTerminalRank < zoneOrder.length) {
-        ctx.strokeStyle = 'rgba(244, 63, 94, 0.55)';
+        ctx.strokeStyle = 'rgba(244, 63, 94, 0.6)';
         ctx.setLineDash([4, 4]);
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(-4000, y);
-        ctx.lineTo(4000, y);
+        ctx.moveTo(-4500, y);
+        ctx.lineTo(4500, y);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = 'rgba(244, 63, 94, 0.85)';
         ctx.font = 'bold 10px ui-monospace, monospace';
-        ctx.fillText('── INACTIVE / TERMINAL (never live) ──', -3980, y - 6);
+        ctx.fillText('── INACTIVE / TERMINAL (never live) ──', -4470, y - 6);
       }
     });
 
@@ -388,12 +349,10 @@
       ctx.stroke();
     }
 
-    // ---- LOD selection ----
-    // zoomed-out: minimal dots only (no rings/labels/stems)
-    // medium:     + labels + stems
-    // zoomed-in:  + rings + metadata text
+    // ---- LOD selection & collision tracking ----
     const z = camera.zoom;
-    const lod = z < 0.55 ? 'low' : (z < 1.1 ? 'mid' : 'high');
+    const lod = z < 0.6 ? 'low' : (z < 1.35 ? 'mid' : 'high');
+    const drawnLabels = []; // {x, y, w, h}
 
     // ---- Nodes ----
     for (const n of nodes) {
@@ -410,22 +369,27 @@
       }
       n._sx = x; n._sy = y;
 
-      const baseR = 5 + Math.min(9, (n.size_hint || 0) / 60); // size = evidence volume
+      const baseR = 5 + Math.min(8, (n.size_hint || 0) / 70);
       const r = baseR;
       const isSelected = n.strategy_id === selectedId;
       const isLive = LIVE_STATES.has(n.zone);
       const isShadow = n.zone === 'SHADOW';
       const pulse = (isLive || isShadow) ? (0.5 + 0.5 * Math.sin(now / 320 + n._tx)) : 0;
 
-      // Pulsing halo for active processing (live/shadow).
+      // Soft node shadow / glow for 3D depth
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+      ctx.shadowBlur = isSelected ? 10 : 6;
+      ctx.shadowOffsetY = 3;
+
+      // Pulsing halo
       if (pulse > 0 && lod !== 'low') {
         ctx.beginPath();
         ctx.arc(x, y, r + 4 + pulse * 5, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(16, 185, 129, ${0.10 + pulse * 0.18})`;
+        ctx.fillStyle = `rgba(16, 185, 129, ${0.12 + pulse * 0.18})`;
         ctx.fill();
       }
 
-      // Validation rings (depth = passed gates). Drawn at high/mid LOD.
+      // Validation rings
       if (lod !== 'low') {
         const rings = Math.min(4, n.ring_count || 0);
         for (let k = 0; k < rings; k++) {
@@ -437,8 +401,7 @@
         }
       }
 
-      // Node body — terminal states render as SQUARES (structural cue), pipeline
-      // as discs.
+      // Node body (discs for pipeline, squares for terminal)
       ctx.fillStyle = n._color;
       ctx.beginPath();
       if (n._terminal) {
@@ -451,7 +414,12 @@
       ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(15, 23, 42, 0.9)';
       ctx.stroke();
 
-      // Elevation stem (health maturity). "?" when NOT MEASURED.
+      // Reset shadow for stems & text so they don't blur heavily
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Elevation stem
       if (lod !== 'low') {
         if (n.elevation === null || n.elevation === undefined) {
           ctx.fillStyle = 'rgba(148,163,184,0.85)';
@@ -468,16 +436,31 @@
         }
       }
 
-      // Label at mid/high LOD or when selected.
-      if (lod !== 'low' || isSelected) {
+      // Label with collision avoidance & LOD threshold (only show when zoomed in >= 1.4 or selected)
+      if (lod === 'high' || isSelected) {
         ctx.fillStyle = isSelected ? '#ffffff' : '#cbd5e1';
         ctx.font = (isSelected ? 'bold ' : '') + '9px ui-monospace, monospace';
         const label = String(n.strategy_id).substring(0, 14);
-        ctx.fillText(label, x + r + 3, y + 3);
+        const metrics = ctx.measureText(label);
+        const lw = metrics.width;
+        const lh = 10;
+        const lx = x + r + 4;
+        const ly = y + 3;
+
+        let collides = false;
+        for (const b of drawnLabels) {
+          if (lx < b.x + b.w && lx + lw > b.x && ly - lh < b.y && ly > b.y - b.h) {
+            collides = true;
+            break;
+          }
+        }
+        if (!collides || isSelected) {
+          drawnLabels.push({ x: lx, y: ly, w: lw, h: lh });
+          ctx.fillText(label, lx, ly);
+        }
       }
     }
 
-    // Reset transform for any future HUD draws.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 
@@ -496,7 +479,6 @@
     raf = requestAnimationFrame(frame);
   }
 
-  // ---------- camera helpers --------------------------------------------------
   function visibleBounds(liveOnly) {
     const list = liveOnly ? nodes.filter(n => LIVE_STATES.has(n.zone)) : nodes;
     if (!list.length) return null;
@@ -512,10 +494,11 @@
     if (!bounds) return null;
     const vw = canvas.width / dpr;
     const vh = canvas.height / dpr;
-    const padX = 80, padY = 80;
+    const padX = 100, padY = 100;
     const w = Math.max(1, bounds.maxX - bounds.minX + padX);
     const h = Math.max(1, bounds.maxY - bounds.minY + padY);
-    const zoom = Math.min(2, Math.max(0.25, Math.min(vw / w, vh / h)));
+    // Lower auto-fit zoom cap so 1000+ nodes frame nicely without microscopic rendering
+    const zoom = Math.min(1.6, Math.max(0.2, Math.min(vw / w, vh / h)));
     const cx = (bounds.minX + bounds.maxX) / 2;
     const cy = (bounds.minY + bounds.maxY) / 2;
     return {
@@ -525,12 +508,10 @@
     };
   }
 
-  // ---------- public API ------------------------------------------------------
   window.NX = window.NX || {};
   window.NX.spatial = {
     init: initSpatialCanvas,
     update: updateFromPayload,
-    // Called by ui.js once the payload is authoritative + a tab is visible.
     fitAll() {
       const b = visibleBounds(false);
       if (!b) return false;
@@ -543,11 +524,9 @@
       const n = nodes.find(o => o.strategy_id === selectedId);
       if (n) focusOn(n._tx, n._ty, 1.6);
     },
-    // Focus the ACTIVE (live) region of the pipeline.
     focusStage() {
       const b = visibleBounds(false);
       if (!b) return;
-      // Stage = pipeline region (top -> bottom of SHADOW/ACTIVE), not terminal.
       let minY = Infinity, maxY = -Infinity;
       for (const n of nodes) {
         const rankN = zoneOrder.indexOf(n.zone);
@@ -561,7 +540,7 @@
     },
     focusBlocked() {
       const blocked = nodes.filter(n => BLOCKED_STATES.has(n.zone));
-      if (!blocked.length) { return; }
+      if (!blocked.length) return;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const n of blocked) {
         minX = Math.min(minX, n._tx); maxX = Math.max(maxX, n._tx);
@@ -572,7 +551,7 @@
     },
     focusActive() {
       const live = nodes.filter(n => LIVE_STATES.has(n.zone));
-      if (!live.length) { return; }
+      if (!live.length) return;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const n of live) {
         minX = Math.min(minX, n._tx); maxX = Math.max(maxX, n._tx);
@@ -583,7 +562,6 @@
     },
     select(id) { selectedId = id; },
     setOnSelect(cb) { onSelectionCb = cb; },
-    // Test/QA hooks (harmless in production).
     _test: {
       getNodes: () => nodes,
       getAnims: () => anims,
