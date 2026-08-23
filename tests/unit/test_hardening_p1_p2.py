@@ -409,16 +409,19 @@ def test_scenario_6_no_duplicated_generation_execution(tmp_path):
     expected_resumed = len(passed) - 1
     assert expected_resumed >= 1
 
-    # Simulate the crash: age the generation past the 30-minute threshold AND
-    # set it RUNNING (the factory leaves freshly-created generations in PENDING;
-    # the sweeper only reclaims RUNNING rows). upsert_generation's ON CONFLICT
-    # never touches created_at/status together, so we use a direct UPDATE on the
-    # same audit write queue, then let the real sweeper mark it FAILED.
+    # Simulate the crash: age the generation AND its loop-state heartbeat
+    # past the 30-minute threshold AND set it RUNNING.
     old_time = (datetime.now(UTC) - timedelta(minutes=60)).isoformat()
     audit._queue.put_nowait((
         "UPDATE factory_generations SET created_at=?, status='RUNNING' WHERE generation_id=?;",
         (old_time, gen["generation_id"]),
     ))
+    set_loop_state(audit, {
+        "state": "RUNNING",
+        "generation_id": gen["generation_id"],
+        "cycle_count": 2,
+        "updated_at": old_time,  # stale heartbeat so sweeper reclaims it
+    })
     audit._queue.join()
     swept = sweep_stale_generations(audit, max_age_minutes=30)
     audit._queue.join()
