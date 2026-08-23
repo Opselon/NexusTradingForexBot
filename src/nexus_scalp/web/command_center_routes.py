@@ -67,20 +67,49 @@ class CommandCenterAPI:
     # ------------------------------------------------------------------
 
     def overview(self) -> dict[str, Any]:
-        """Global strategy counts by lifecycle + anomaly/stuck summaries."""
+        """Global strategy counts by lifecycle + transient evaluation pipeline + anomaly/stuck summaries."""
         entries = self.registry.list(limit=2000)
         by_state: dict[str, int] = {s: 0 for s in PIPELINE_ORDER}
         terminal: dict[str, int] = {"REJECTED": 0, "DEGRADED": 0, "RETIRED": 0}
         blocked = 0
         eligible = 0
         stuck: list[dict[str, Any]] = []
-        now_ok = True
+
+        eval_pipeline_counts = {
+            "BACKTEST_RUN": 0,
+            "WALK_FORWARD_TESTED": 0,
+            "WALK_FORWARD_PASSED": 0,
+            "OOS_TESTED": 0,
+            "OOS_PASSED": 0,
+            "ROBUSTNESS_TESTED": 0,
+            "ROBUSTNESS_PASSED": 0,
+            "SCORING_COMPLETED": 0,
+        }
+
         for e in entries:
             state = e.lifecycle.value
             if state in by_state:
                 by_state[state] += 1
             elif state in terminal:
                 terminal[state] += 1
+
+            if e.backtest is not None:
+                eval_pipeline_counts["BACKTEST_RUN"] += 1
+            if e.walkforward is not None:
+                eval_pipeline_counts["WALK_FORWARD_TESTED"] += 1
+                if e.walkforward.passed:
+                    eval_pipeline_counts["WALK_FORWARD_PASSED"] += 1
+            if e.oos is not None:
+                eval_pipeline_counts["OOS_TESTED"] += 1
+                if e.oos.status == "PASS":
+                    eval_pipeline_counts["OOS_PASSED"] += 1
+            if e.robustness is not None:
+                eval_pipeline_counts["ROBUSTNESS_TESTED"] += 1
+                if e.robustness.status == "PASS":
+                    eval_pipeline_counts["ROBUSTNESS_PASSED"] += 1
+            if e.score is not None:
+                eval_pipeline_counts["SCORING_COMPLETED"] += 1
+
             snap = build_snapshot(e)
             ee = snap.execution_eligibility
             if ee.eligibility_state == "BLOCKED":
@@ -105,6 +134,7 @@ class CommandCenterAPI:
             "total_strategies": len(entries),
             "by_lifecycle": by_state,
             "terminal": terminal,
+            "evaluation_pipeline": eval_pipeline_counts,
             "execution_eligible_count": eligible,
             "blocked_count": blocked,
             "stuck_strategies": stuck[:10],

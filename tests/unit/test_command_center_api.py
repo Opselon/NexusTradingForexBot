@@ -89,6 +89,8 @@ class TestCommandCenterOverview:
         assert ov["by_lifecycle"]["VALIDATED"] == 1
         assert ov["execution_eligible_count"] == 1  # only ACTIVE
         assert ov["blocked_count"] == 3
+        assert "evaluation_pipeline" in ov
+        assert ov["evaluation_pipeline"]["BACKTEST_RUN"] == 1
 
 
 class TestCommandCenterFleet:
