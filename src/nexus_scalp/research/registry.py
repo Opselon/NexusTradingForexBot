@@ -416,7 +416,14 @@ def _is_stronger(current: CandidateLifecycle, proposed: CandidateLifecycle) -> b
     # path with fresh evidence, or the explicit administrative
     # transition_lifecycle() path.
     _peer_truth = {CandidateLifecycle.VALIDATED, CandidateLifecycle.REJECTED}
-    return current in _peer_truth and proposed in _peer_truth
+    # Same-state writes are evidence REFRESHES (new backtest/OOS payloads on
+    # an unchanged lifecycle) and must pass; only cross-peer truth rewrites
+    # are refused.
+    return (
+        current in _peer_truth
+        and proposed in _peer_truth
+        and current is not proposed
+    )
 
 
 def _json(value: Any) -> str:
