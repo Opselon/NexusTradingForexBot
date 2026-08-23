@@ -15,10 +15,34 @@
     <div><span class="text-[9px] text-textMuted">ACTIVE</span> <b id="scc-active" class="text-emerald-400 text-sm font-mono">—</b></div>
     <div><span class="text-[9px] text-textMuted">VALIDATED</span> <b id="scc-valid" class="text-lime-400 text-sm font-mono">—</b></div>
     <div><span class="text-[9px] text-textMuted">BLOCKED</span> <b id="scc-blocked" class="text-rose-400 text-sm font-mono">—</b></div>
-    <div class="ml-auto flex items-center gap-2">
+
+    <!-- Lifecycle filter (honest subset of real backend states) -->
+    <div class="flex items-center gap-1 ml-2">
+        <span class="text-[9px] text-textMuted">FILTER</span>
+        <select id="scc-lifecycle-filter" class="bg-darkBg border border-borderClr rounded px-1.5 py-1 text-[10px] font-mono focus:outline-none focus:border-accentCyan">
+            <option value="ALL">ALL LIFECYCLES</option>
+            <option value="DISCOVERED">DISCOVERED</option>
+            <option value="BACKTESTING">BACKTESTING</option>
+            <option value="VALIDATING">VALIDATING</option>
+            <option value="OOS_TESTING">OOS_TESTING</option>
+            <option value="ROBUSTNESS_TESTING">ROBUSTNESS_TESTING</option>
+            <option value="VALIDATED">VALIDATED</option>
+            <option value="SHADOW">SHADOW</option>
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="REJECTED">REJECTED</option>
+            <option value="DEGRADED">DEGRADED</option>
+            <option value="RETIRED">RETIRED</option>
+        </select>
+    </div>
+
+    <div class="ml-auto flex items-center gap-2 flex-wrap">
+        <button id="scc-fit-all" class="px-3 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">FIT ALL</button>
+        <button id="scc-reset-cam" class="px-3 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">RESET CAM</button>
+        <button id="scc-focus-selected" class="px-3 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">FOCUS SEL</button>
+        <button id="scc-focus-stage" class="px-3 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">STAGE</button>
+        <button id="scc-focus-active" class="px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-bold hover:bg-emerald-500/20 transition">LIVE</button>
+        <button id="scc-focus-blocked" class="px-3 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 text-xs font-bold hover:bg-rose-500/20 transition">BLOCKED</button>
         <button onclick="window.NX.scc.load()" class="px-3 py-1 rounded bg-accentCyan/10 text-accentCyan border border-accentCyan/30 text-xs font-bold hover:bg-accentCyan/20 transition">REFRESH</button>
-        <button onclick="window.NX.spatial.fitAll()" class="px-3 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">FIT ALL</button>
-        <button onclick="window.NX.spatial.resetCamera()" class="px-3 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">RESET CAM</button>
     </div>
 </div>
 
@@ -28,6 +52,9 @@
     <div class="flex-1 relative bg-[#0b1220] overflow-hidden">
         <canvas id="scc-spatial-canvas" class="w-full h-full block"></canvas>
 
+        <!-- Explicit empty-state overlay (shown only when zero nodes match) -->
+        <div id="scc-spatial-empty" class="hidden absolute inset-0 flex items-center justify-center bg-[#0b1220]/80 z-20"></div>
+
         <!-- TIME MACHINE OVERLAY -->
         <div id="scc-tm-bar" class="absolute bottom-2 left-2 right-2 bg-panelBg/95 backdrop-blur border border-borderClr rounded-lg px-4 py-2 flex items-center gap-3 z-10">
             <button id="scc-tm-play" onclick="window.NX.tm.togglePlay()" class="px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-black hover:bg-emerald-500/20 transition">PLAY</button>
@@ -35,16 +62,21 @@
             <span id="scc-tm-label" class="text-[10px] font-mono text-textMuted whitespace-nowrap">—</span>
         </div>
 
-        <!-- LEGEND -->
+        <!-- LEGEND (real lifecycle zones; structural cues, not color-only) -->
         <div class="absolute top-2 right-2 bg-panelBg/95 backdrop-blur border border-borderClr rounded-lg p-3 z-10 space-y-1">
             <p class="text-[9px] font-bold text-textMuted tracking-wider mb-2">LEGEND</p>
-            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-slate-500 inline-block"></span> DISCOVERED</div>
-            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span> BACKTESTING / VALIDATING</div>
-            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-lime-500 inline-block"></span> VALIDATED</div>
-            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-yellow-500 inline-block"></span> SHADOW</div>
-            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> ACTIVE (LIVE)</div>
-            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> REJECTED</div>
-            <p class="text-[8px] text-textMuted mt-1 pt-1 border-t border-borderClr">Rings = passed gates · Stem = health<br>? = NOT MEASURED</p>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-slate-500 inline-block"></span> DISCOVERED</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block"></span> BACKTESTING</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-cyan-500 inline-block"></span> VALIDATING</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-teal-500 inline-block"></span> OOS_TESTING</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> ROBUSTNESS_TESTING</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-lime-500 inline-block"></span> VALIDATED</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-yellow-500 inline-block"></span> SHADOW</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> ACTIVE (LIVE)</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block"></span> REJECTED (square)</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-orange-500 inline-block"></span> DEGRADED (square)</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-sm bg-stone-500 inline-block"></span> RETIRED (square)</div>
+            <p class="text-[8px] text-textMuted mt-1 pt-1 border-t border-borderClr">Size=evidence vol · Elevation stem=health · Rings=passed gates · ?=NOT MEASURED · Pulse=live processing</p>
         </div>
     </div>
 
@@ -102,15 +134,15 @@
 <script src="command_center_timemachine.js"></script>
 <script src="command_center_ui.js"></script>
 <script>
+  // Bootstrap: this page is a STANDALONE CC surface. command_center_ui.js already
+  // auto-boots when it finds #scc-spatial-canvas and is NOT embedded in the
+  // dashboard. Wire inspector selection from the spatial renderer.
   window.addEventListener('DOMContentLoaded', () => {
-    window.NX.spatial.init('scc-spatial-canvas');
-    window.NX.tm.init();
-    // Hook spatial payload into renderer after each load
-    const origLoad = window.NX.scc.load;
-    window.NX.scc.load = async function () {
-      await origLoad();
-      if (window.__lastSpatialPayload) window.NX.spatial.update(window.__lastSpatialPayload);
-    };
+    if (window.NX && window.NX.spatial) {
+      window.NX.spatial.setOnSelect((id) => {
+        if (window.NX && window.NX.scc) window.NX.scc.inspect(id);
+      });
+    }
   });
 </script>
 </body>
