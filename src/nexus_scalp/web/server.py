@@ -1556,6 +1556,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_index() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html")
 
+    @app.get("/command_center.html")
+    def serve_command_center_html() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center.html")
+
+    @app.get("/command_center_ui.js")
+    def serve_command_center_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center_ui.js")
+
     @app.get("/styles.css")
     def serve_styles() -> FileResponse:
         return FileResponse(WEB_DIR / "styles.css")

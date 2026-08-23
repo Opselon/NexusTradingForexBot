@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NEXUS — Command Center (Standalone)</title>
+</head>
+<body class="bg-darkBg text-gray-100">
+<div id="scc-root">
+    <!-- ============ GLOBAL OVERVIEW STRIP ============ -->
+    <div class="scc-overview-strip" style="display:flex;gap:16px;padding:12px;border-bottom:1px solid #334155;background:#1e293b;">
+        <div><span style="color:#94a3b8;font-size:10px;">TOTAL</span> <b id="scc-total">—</b></div>
+        <div><span style="color:#94a3b8;font-size:10px;">ACTIVE</span> <b id="scc-active">—</b></div>
+        <div><span style="color:#94a3b8;font-size:10px;">VALIDATED</span> <b id="scc-valid">—</b></div>
+        <div><span style="color:#94a3b8;font-size:10px;">BLOCKED</span> <b id="scc-blocked">—</b></div>
+        <button id="scc-refresh-btn" onclick="window.NX.scc.load()" style="margin-left:auto;background:#0ea5e9;color:white;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">REFRESH</button>
+        <label style="font-size:10px;display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="scc-timemachine-toggle"> TIME MACHINE
+        </label>
+    </div>
+
+    <div style="display:flex;height:calc(100vh - 60px);">
+        <!-- ============ SPATIAL 2.5D CANVAS ============ -->
+        <div id="scc-spatial-wrap" style="flex:1;position:relative;background:#0f172a;">
+            <canvas id="scc-spatial-canvas" style="width:100%;height:500px;display:block;"></canvas>
+        </div>
+
+        <!-- ============ FLEET TABLE ============ -->
+        <div id="scc-fleet-panel" style="width:420px;border-left:1px solid #334155;background:#1e293b;overflow-y:auto;">
+            <p style="padding:8px 12px;font-size:11px;font-weight:bold;color:#94a3b8;border-bottom:1px solid #334155;">STRATEGY FLEET</p>
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#0f172a;">
+                        <th style="text-align:left;padding:6px 12px;font-size:9px;color:#94a3b8;">STRATEGY</th>
+                        <th style="text-align:left;padding:6px 12px;font-size:9px;color:#94a3b8;">STATE</th>
+                        <th style="text-align:left;padding:6px 12px;font-size:9px;color:#94a3b8;">HEALTH</th>
+                        <th style="text-align:left;padding:6px 12px;font-size:9px;color:#94a3b8;">EXECUTION</th>
+                    </tr>
+                </thead>
+                <tbody id="scc-fleet-tbody"></tbody>
+            </tr>
+        </div>
+
+        <!-- ============ INSPECTOR DRAWER ============ -->
+        <div id="scc-inspector-drawer" style="position:fixed;top:0;right:0;width:480px;height:100vh;background:#1e293b;border-left:2px solid #334155;z-index:999;transform:translateX(100%);transition:transform .25s ease-out;box-shadow:-8px 0 24px rgba(0,0,0,.5);display:flex;flex-direction:column;">
+            <div style="padding:12px;border-bottom:1px solid #334155;display:flex;justify-content:space-between;align-items:center;">
+                <h3 id="scc-insp-title" style="font-size:13px;font-weight:bold;color:#38bdf8;margin:0;">Strategy Inspector</h3>
+                <button onclick="window.NX.scc.closeInspector()" style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;">×</button>
+            </div>
+            <div id="scc-insp-content" style="flex:1;overflow-y:auto;padding:12px;"></div>
+        </div>
+    </div>
+</div>
+
+<script src="api_client.js"></script>
+<script src="command_center_ui.js"></script>
+</body>
+</html>
