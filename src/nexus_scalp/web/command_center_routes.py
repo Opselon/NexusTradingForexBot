@@ -12,11 +12,11 @@ from __future__ import annotations
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.research.snapshot import build_snapshot
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.event_projection import LifecycleEventProjection
 from nexus_scalp.research.models import CandidateLifecycle
 from nexus_scalp.research.registry import StrategyRegistry
-from nexus_scalp.research.snapshot import build_snapshot
 
 logger = get_logger("nexus_scalp.web.command_center_routes")
 
@@ -42,6 +42,172 @@ def _serialize_enums(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_serialize_enums(x) for x in obj]
     return obj
+
+
+#: The five transient evaluation gates, in pipeline order.
+EVAL_GATES: tuple[str, ...] = ("BACKTEST", "WALK_FORWARD", "OOS", "ROBUSTNESS", "SCORE")
+
+#: Canonical result tokens for an evaluation gate.
+EVAL_RESULT_RANK = {"RUNNING": 3, "PASS": 2, "FAIL": 1, "NOT_RUN": 0, "MISSING": -1}
+
+
+def _eval_gate_status(entry: Any, gate: str) -> str:
+    """Real per-gate evaluation status for one registry entry (no fabrication)."""
+    if gate == "BACKTEST":
+        bt = entry.backtest
+        if bt is None:
+            return "NOT_RUN"
+        return "PASS" if bt.total_trades > 0 else "FAIL"
+    if gate == "WALK_FORWARD":
+        wf = entry.walkforward
+        if wf is None:
+            return "NOT_RUN"
+        return "PASS" if wf.passed else "FAIL"
+    if gate == "OOS":
+        oos = entry.oos
+        if oos is None:
+            return "NOT_RUN"
+        return oos.status  # 'PASS' | 'FAIL'
+    if gate == "ROBUSTNESS":
+        rob = entry.robustness
+        if rob is None:
+            return "NOT_RUN"
+        return rob.status  # 'PASS' | 'FAIL'
+    if gate == "SCORE":
+        sc = entry.score
+        if sc is None:
+            return "NOT_RUN"
+        return "PASS" if sc.verdict == "VALIDATED" else ("FAIL" if sc.verdict == "REJECTED" else "INCONCLUSIVE")
+    return "NOT_RUN"
+
+
+def evaluation_detail(entry: Any, running_runs: dict[str, str] | None = None) -> dict[str, Any]:
+    """Builds the transient EVALUATION PIPELINE projection for one strategy.
+
+    This is TELEMETRY, not a persistent lifecycle. The UI renders it as an
+    internal node indicator; it never moves the node between lifecycle zones.
+    Honest: a gate is RUNNING only when a real research_runs row reports it.
+    """
+    gates: dict[str, str] = {}
+    for g in EVAL_GATES:
+        gates[g] = _eval_gate_status(entry, g)
+
+    running_runs = running_runs or {}
+    running_stage = running_runs.get(entry.strategy_id)
+    if running_stage and gates.get(running_stage) in ("NOT_RUN", "FAIL", "MISSING"):
+        # A real in-flight run overrides the persisted artifact view for this
+        # stage only when no passing/failing artifact has been recorded yet.
+        gates[running_stage] = "RUNNING"
+
+    # Current evaluation stage = furthest gate not yet PASSED (RUNNING if active).
+    current_stage = None
+    for g in EVAL_GATES:
+        if gates[g] == "RUNNING":
+            current_stage = g
+            break
+        if gates[g] in ("NOT_RUN", "MISSING"):
+            current_stage = g
+            break
+        if gates[g] == "FAIL":
+            current_stage = g
+            break
+    if current_stage is None:
+        current_stage = "DONE"  # all gates resolved
+
+    passed = sum(1 for g in EVAL_GATES if gates[g] == "PASS")
+    total = sum(1 for g in EVAL_GATES if gates[g] != "NOT_RUN")
+    progress = round(passed / len(EVAL_GATES), 3)
+
+    return {
+        "gates": gates,             # {BACKTEST: 'PASS', ...}
+        "current_stage": current_stage,
+        "passed_gates": passed,
+        "resolved_gates": total,
+        "progress": progress,       # 0..1 of gates positively resolved
+        "is_running": bool(running_stage),
+        "running_stage": running_stage,
+    }
+
+
+def evaluation_metrics(eval_details: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate pass/fail rates by gate from REAL per-strategy evaluation.
+
+    Scope is always 'current_evaluation' — these are transient runs, NOT the
+    persistent lifecycle counts. Never mix the two.
+    """
+    agg: dict[str, dict[str, int]] = {
+        g: {"PASS": 0, "FAIL": 0, "RUNNING": 0, "INCONCLUSIVE": 0, "OTHER": 0, "total": 0}
+        for g in EVAL_GATES
+    }
+    for d in eval_details:
+        for g, st in d.get("gates", {}).items():
+            if g not in agg:
+                continue
+            a = agg[g]
+            a["total"] += 1
+            if st == "PASS":
+                a["PASS"] += 1
+            elif st == "FAIL":
+                a["FAIL"] += 1
+            elif st == "RUNNING":
+                a["RUNNING"] += 1
+            elif st in ("INCONCLUSIVE",):
+                a["INCONCLUSIVE"] += 1
+            else:
+                a["OTHER"] += 1
+    out = {}
+    for g, a in agg.items():
+        t = a["total"]
+        out[g] = {
+            "pass": a["PASS"],
+            "fail": a["FAIL"],
+            "running": a["RUNNING"],
+            "inconclusive": a["INCONCLUSIVE"],
+            "total": t,
+            "pass_rate": round(a["PASS"] / t, 4) if t else 0.0,
+            "fail_rate": round(a["FAIL"] / t, 4) if t else 0.0,
+        }
+    return out
+
+
+def _running_runs_by_strategy(audit_repo: Any) -> dict[str, str]:
+    """Maps strategy_id -> currently-running evaluation stage (real only).
+
+    Reads the authoritative research_runs table. A row with status=RUNNING
+    carries its gate in `gates` (JSON list). No RUNNING → never invent one.
+    """
+    out: dict[str, str] = {}
+    try:
+        from nexus_scalp.research.store import list_research_runs
+
+        for r in list_research_runs(audit_repo, limit=2000):
+            if r.get("status") != "RUNNING":
+                continue
+            sid = r.get("strategy_id")
+            gates_raw = r.get("gates")
+            gatestr = gates_raw if isinstance(gates_raw, str) else ""
+            import json as _json
+
+            try:
+                gs = _json.loads(gatestr) if gatestr else []
+            except Exception:
+                gs = []
+            # Map a known gate token to the EVAL_GATES vocabulary.
+            stage = None
+            for tok in gs:
+                toku = str(tok).upper()
+                for g in EVAL_GATES:
+                    if g in toku or toku in g:
+                        stage = g
+                        break
+                if stage:
+                    break
+            if sid and stage:
+                out[sid] = stage
+    except Exception:
+        # Non-fatal: if the runs table is unavailable we simply report no RUNNING.
+        pass
+    return out
 
 
 class CommandCenterAPI:
@@ -74,6 +240,9 @@ class CommandCenterAPI:
         blocked = 0
         eligible = 0
         stuck: list[dict[str, Any]] = []
+
+        running_runs = _running_runs_by_strategy(self.audit_repo)
+        eval_details: list[dict[str, Any]] = []
 
         eval_pipeline_counts = {
             "BACKTEST_RUN": 0,
@@ -110,6 +279,9 @@ class CommandCenterAPI:
             if e.score is not None:
                 eval_pipeline_counts["SCORING_COMPLETED"] += 1
 
+            # Transient evaluation-pipeline projection (telemetry, not lifecycle).
+            eval_details.append(evaluation_detail(e, running_runs))
+
             snap = build_snapshot(e)
             ee = snap.execution_eligibility
             if ee.eligibility_state == "BLOCKED":
@@ -135,6 +307,8 @@ class CommandCenterAPI:
             "by_lifecycle": by_state,
             "terminal": terminal,
             "evaluation_pipeline": eval_pipeline_counts,
+            "evaluation_metrics": evaluation_metrics(eval_details),
+            "running_evaluations": len([d for d in eval_details if d["is_running"]]),
             "execution_eligible_count": eligible,
             "blocked_count": blocked,
             "stuck_strategies": stuck[:10],
@@ -185,10 +359,12 @@ class CommandCenterAPI:
         events = self.projection.events_for_strategy(strategy_id)
         completeness = self.projection.evidence_completeness(strategy_id)
         invariant = self.registry.invariant_check(entry)
+        running_runs = _running_runs_by_strategy(self.audit_repo)
         out = snap.model_dump()
         out["events"] = events[-100:]
         out["evidence_completeness"] = completeness
         out["invariant_check"] = invariant
+        out["evaluation"] = evaluation_detail(entry, running_runs)
         return _serialize_enums({"available": True, **out})
 
     # ------------------------------------------------------------------

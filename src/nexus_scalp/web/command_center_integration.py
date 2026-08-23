@@ -11,6 +11,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.web.command_center_routes import CommandCenterAPI
+from nexus_scalp.web.command_center_routes import (
+    _running_runs_by_strategy,
+    evaluation_detail,
+)
 from nexus_scalp.research.spatial_layout import SpatialLayout
 from nexus_scalp.research.attribution import AIAttributionEngine
 from nexus_scalp.research.debug_intelligence import (
@@ -96,7 +100,21 @@ def register_command_center_routes(app: Any, get_research_engine: Any, serialize
             entries = api.registry.list(limit=limit)
             snapshots = {e.strategy_id: api.inspector(e.strategy_id) for e in entries}
             layout = SpatialLayout(max_columns=max_columns)
-            return serialize_enums(layout.compute(entries, snapshots=snapshots))
+            result = layout.compute(entries, snapshots=snapshots)
+            # Enrich each spatial node with the transient evaluation pipeline
+            # projection + execution eligibility so the renderer can show an
+            # INTERNAL indicator (not a fake lifecycle-zone move).
+            running_runs = _running_runs_by_strategy(api.audit_repo)
+            for n in result.get("nodes", []):
+                entry = api.registry.get(n["strategy_id"])
+                if entry is None:
+                    continue
+                n["evaluation"] = evaluation_detail(entry, running_runs)
+                snap = api.inspector(n["strategy_id"])
+                n["eligibility_state"] = (snap.get("execution_eligibility") or {}).get(
+                    "eligibility_state", "UNKNOWN"
+                )
+            return serialize_enums(result)
         except Exception as e:
             return _err("INTERNAL_ERROR", extra={"error": str(e)})
 
