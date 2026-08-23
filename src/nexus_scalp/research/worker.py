@@ -89,6 +89,7 @@ class ResearchWorker:
         self._seeded_once: bool = False
         self._candidates: list[Any] = []
         self._last_dataset_id: str = ""
+        self._seen_candidate_ids: set[str] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -297,17 +298,33 @@ class ResearchWorker:
         return changed
 
     def _refresh_discovery(self) -> bool:
-        """Runs bounded discovery; candidates never touch live trading."""
+        """Runs bounded discovery; candidates never touch live trading.
+
+        Candidates that were already discovered this worker session (and thus
+        either validated or queued for validation) are NOT re-discovered, so a
+        cycle over an unchanged dataset is a genuine no-op rather than a
+        re-execution of the full gate chain every tick. This preserves the RC1
+        drain-on-restart contract: a DISCOVERED candidate stranded by a prior
+        process is still picked up on the first tick of this process (it is not
+        in ``_seen_candidate_ids`` yet), evaluated once, and then never
+        re-queued.
+        """
         dataset = getattr(self, "_dataset", None)
         if dataset is None:
             dataset = self.pipeline.dataset_builder.build()
             self._dataset = dataset
         candidates = self.pipeline.discover(dataset)
-        self._candidates = candidates
-        if candidates:
+        pending = [
+            c for c in candidates if c.strategy_id not in self._seen_candidate_ids
+        ]
+        # Record everything discovered this cycle so subsequent ticks skip it.
+        for c in candidates:
+            self._seen_candidate_ids.add(c.strategy_id)
+        self._candidates = pending
+        if pending:
             logger.info(
                 "[STRATEGY_RESEARCH] event=CANDIDATE_DISCOVERED",
-                count=len(candidates),
+                count=len(pending),
             )
             return True
         return False
