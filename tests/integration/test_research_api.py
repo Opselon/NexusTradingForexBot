@@ -14,6 +14,7 @@ Endpoints covered:
     POST /api/research/discover
     POST /api/research/validate
     POST /api/research/self-heal
+    POST /api/research/promote   (RC4 repair: explicit operator lifecycle promotion)
 
 Also verifies:
     * LiveEngine constructs the full research subsystem
@@ -40,6 +41,8 @@ from nexus_scalp.experience.models import (
     FeatureSnapshot,
     StrategyContext,
 )
+from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry
+from nexus_scalp.research.models import StrategyScore
 from nexus_scalp.web.server import create_app
 
 
@@ -248,3 +251,275 @@ class TestResearchAPI:
         resp = client.post("/api/research/self-heal")
         assert resp.status_code == 200
         assert resp.json()["available"] is True
+
+
+# =============================================================================
+# RC4 REPAIR: explicit operator-driven promotion lifecycle (VALIDATED ->
+# SHADOW -> ACTIVE). The state machine + registry always existed but had NO
+# production caller; POST /api/research/promote is the operator workflow.
+# =============================================================================
+
+
+def _validated_entry(strategy_id: str = "strat_promo"):
+    """A registry entry carrying COMPLETE validation truth (passes
+    StrategyRegistry.invariant_check for VALIDATED)."""
+    from nexus_scalp.research.models import (
+        BacktestResult,
+        OOSResult,
+        RobustnessResult,
+        StrategyRegistryEntry,
+        StrategyScore,
+        WalkForwardResult,
+    )
+
+    return StrategyRegistryEntry(
+        strategy_id=strategy_id,
+        strategy_version="1.0.0",
+        lifecycle=CandidateLifecycle.VALIDATED,
+        backtest=BacktestResult(
+            strategy_id=strategy_id,
+            strategy_version="1.0.0",
+            dataset_id="ds_test",
+            total_trades=40,
+            wins=24,
+            losses=16,
+            expectancy_r=0.3,
+        ),
+        walkforward=WalkForwardResult(
+            strategy_id=strategy_id,
+            strategy_version="1.0.0",
+            dataset_id="ds_test",
+            passed=True,
+        ),
+        oos=OOSResult(
+            strategy_id=strategy_id,
+            strategy_version="1.0.0",
+            dataset_id="ds_test",
+            status="PASS",
+            oos_expectancy_r=0.2,
+            oos_samples=12,
+        ),
+        robustness=RobustnessResult(
+            strategy_id=strategy_id,
+            strategy_version="1.0.0",
+            status="PASS",
+        ),
+        score=StrategyScore(verdict="VALIDATED", final_score=0.7),
+        sample_count=40,
+    )
+
+
+class TestStrategyPromotionAPI:
+    """POST /api/research/promote — operator-gated lifecycle advancement."""
+
+    def _client(self, engine):
+        app = create_app(engine)
+        return TestClient(app)
+
+    def _seed_validated(self, repo, engine, strategy_id="strat_promo"):
+        from nexus_scalp.research.models import CandidateLifecycle as CL
+
+        entry = _validated_entry(strategy_id).model_copy(
+            update={"lifecycle": CL.VALIDATED}
+        )
+        assert engine.strategy_registry.upsert(entry) is True
+        _flush(repo)
+
+    def test_validated_to_shadow_then_active(self, wired_engine):
+        repo, engine = wired_engine
+        self._seed_validated(repo, engine)
+        client = self._client(engine)
+
+        # Step 1: VALIDATED -> SHADOW (explicit operator call).
+        r1 = client.post(
+            "/api/research/promote",
+            json={
+                "strategy_id": "strat_promo",
+                "target_lifecycle": "SHADOW",
+                "actor": "ops_tester",
+                "reason": "shadow evaluation start",
+            },
+        )
+        assert r1.status_code == 200
+        b1 = r1.json()
+        assert b1["available"] is True and b1["promoted"] is True
+        assert b1["lifecycle"] == "SHADOW"
+
+        # Persisted? (registry writes are queued on the audit worker — flush)
+        _flush(repo)
+        persisted = engine.strategy_registry.get("strat_promo")
+        assert persisted is not None and persisted.lifecycle.value == "SHADOW"
+        # Audit trail: lineage records the operator actor.
+        lineage = persisted.validation_lineage[-1]
+        assert "operator_promotion:actor=ops_tester" in lineage
+
+        # Step 2: SHADOW -> ACTIVE (second explicit operator call).
+        r2 = client.post(
+            "/api/research/promote",
+            json={
+                "strategy_id": "strat_promo",
+                "target_lifecycle": "ACTIVE",
+                "actor": "ops_tester",
+                "reason": "shadow metrics accepted",
+            },
+        )
+        assert r2.status_code == 200
+        b2 = r2.json()
+        assert b2["available"] is True and b2["promoted"] is True
+        assert b2["lifecycle"] == "ACTIVE"
+        _flush(repo)
+        persisted = engine.strategy_registry.get("strat_promo")
+        assert persisted.lifecycle.value == "ACTIVE"
+
+    def test_skip_shadow_blocked(self, wired_engine):
+        """VALIDATED -> ACTIVE directly is ILLEGAL — must pass through SHADOW."""
+        repo, engine = wired_engine
+        self._seed_validated(repo, engine)
+        client = self._client(engine)
+
+        resp = client.post(
+            "/api/research/promote",
+            json={
+                "strategy_id": "strat_promo",
+                "target_lifecycle": "ACTIVE",
+                "actor": "ops_tester",
+            },
+        )
+        body = resp.json()
+        assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
+        # Nothing mutated.
+        persisted = engine.strategy_registry.get("strat_promo")
+        assert persisted.lifecycle.value == "VALIDATED"
+
+    def test_unknown_strategy_blocked(self, wired_engine):
+        _repo, engine = wired_engine
+        client = self._client(engine)
+        resp = client.post(
+            "/api/research/promote",
+            json={
+                "strategy_id": "does_not_exist",
+                "target_lifecycle": "SHADOW",
+                "actor": "ops_tester",
+            },
+        )
+        body = resp.json()
+        assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
+        assert "not found" in str(body)
+
+    def test_missing_actor_blocked_no_implicit_promotion(self, wired_engine):
+        """No actor => no promotion. Auto/system promotion must be impossible."""
+        repo, engine = wired_engine
+        self._seed_validated(repo, engine)
+        client = self._client(engine)
+
+        resp = client.post(
+            "/api/research/promote",
+            json={
+                "strategy_id": "strat_promo",
+                "target_lifecycle": "SHADOW",
+            },
+        )
+        body = resp.json()
+        assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
+        persisted = engine.strategy_registry.get("strat_promo")
+        assert persisted.lifecycle.value == "VALIDATED"
+
+    def test_invalid_target_blocked(self, wired_engine):
+        repo, engine = wired_engine
+        self._seed_validated(repo, engine)
+        client = self._client(engine)
+
+        # Only SHADOW / ACTIVE are operator targets.
+        for bad in ("VALIDATED", "RETIRED", "BOGUS_STATE"):
+            resp = client.post(
+                "/api/research/promote",
+                json={
+                    "strategy_id": "strat_promo",
+                    "target_lifecycle": bad,
+                    "actor": "ops_tester",
+                },
+            )
+            assert resp.json().get("error", {}).get("code") == "PROMOTION_BLOCKED"
+
+    def test_unvalidated_strategy_cannot_be_activated(self, wired_engine):
+        """A DISCOVERED row (no gate evidence) can never advance."""
+        from nexus_scalp.research.models import CandidateLifecycle as CL
+
+        repo, engine = wired_engine
+        bare = StrategyRegistryEntry(
+            strategy_id="strat_bare",
+            strategy_version="1.0.0",
+            lifecycle=CL.DISCOVERED,
+        )
+        assert engine.strategy_registry.upsert(bare) is True
+        _flush(repo)
+        client = self._client(engine)
+        resp = client.post(
+            "/api/research/promote",
+            json={
+                "strategy_id": "strat_bare",
+                "target_lifecycle": "SHADOW",
+                "actor": "ops_tester",
+            },
+        )
+        body = resp.json()
+        code = body.get("error", {}).get("code")
+        assert code == "PROMOTION_BLOCKED"
+        # Either the invariant or the state machine refused it.
+        persisted = engine.strategy_registry.get("strat_bare")
+        assert persisted.lifecycle.value == "DISCOVERED"
+
+    def test_rejected_strategy_never_reaches_shadow_or_active(self, wired_engine):
+        from nexus_scalp.research.models import CandidateLifecycle as CL
+
+        repo, engine = wired_engine
+        rejected = StrategyRegistryEntry(
+            strategy_id="strat_rejected",
+            strategy_version="1.0.0",
+            lifecycle=CL.REJECTED,
+            score=StrategyScore(verdict="REJECTED"),
+        )
+        assert engine.strategy_registry.upsert(rejected) is True
+        _flush(repo)
+        client = self._client(engine)
+        for target in ("SHADOW", "ACTIVE"):
+            resp = client.post(
+                "/api/research/promote",
+                json={
+                    "strategy_id": "strat_rejected",
+                    "target_lifecycle": target,
+                    "actor": "ops_tester",
+                },
+            )
+            assert resp.json().get("error", {}).get("code") == "PROMOTION_BLOCKED"
+        persisted = engine.strategy_registry.get("strat_rejected")
+        assert persisted.lifecycle.value == "REJECTED"
+
+    def test_activation_with_broken_validation_truth_blocked(self, wired_engine):
+        """A SHADOW row whose underlying gate truth is missing/broken can
+        never reach ACTIVE (activation re-proves VALIDATED-truth)."""
+        from nexus_scalp.research.models import CandidateLifecycle as CL
+
+        repo, engine = wired_engine
+        hollow_shadow = StrategyRegistryEntry(
+            strategy_id="strat_hollow",
+            strategy_version="1.0.0",
+            lifecycle=CL.SHADOW,
+            score=StrategyScore(verdict="REJECTED"),
+        )
+        assert engine.strategy_registry.upsert(hollow_shadow) is True
+        _flush(repo)
+        client = self._client(engine)
+        resp = client.post(
+            "/api/research/promote",
+            json={
+                "strategy_id": "strat_hollow",
+                "target_lifecycle": "ACTIVE",
+                "actor": "ops_tester",
+            },
+        )
+        body = resp.json()
+        assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
+        assert "problems" in str(body)
+        persisted = engine.strategy_registry.get("strat_hollow")
+        assert persisted.lifecycle.value == "SHADOW"

@@ -5860,6 +5860,169 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             log_web_error(logger, "/api", None, e, context={"msg": "Research validate failed"})
             return _err("INTERNAL_ERROR")
 
+    @app.post("/api/research/promote")
+    def promote_strategy_lifecycle(payload: dict[str, Any]) -> dict[str, Any]:
+        """Operator-triggered lifecycle promotion for a VALIDATED strategy.
+
+        RC4 repair: the explicit VALIDATED -> SHADOW -> ACTIVE promotion path
+        had NO production caller. This endpoint is the ONLY operator-driven
+        entry point for advancing a strategy's persisted lifecycle state.
+
+        SAFETY (do NOT weaken):
+          * Never auto-promotes. Every call requires an explicit `actor`.
+          * `target_lifecycle` must be SHADOW or ACTIVE; the registry's state
+            machine rejects illegal jumps (e.g. VALIDATED -> ACTIVE, or
+            promoting a REJECTED/DEGRADED strategy) so an unvalidated or
+            rejected strategy can never reach ACTIVE here.
+          * `actor` is recorded in the validation lineage for auditability.
+
+        Payload:
+            strategy_id     : str  (required)
+            target_lifecycle: "SHADOW" | "ACTIVE"  (required)
+            actor           : str  (required; explicit operator identity)
+            reason          : str  (optional; recorded in lineage)
+        """
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.lifecycle import LifecycleError
+            from nexus_scalp.research.models import CandidateLifecycle
+            from nexus_scalp.research.registry import StrategyRegistry
+
+            strategy_id = str(payload.get("strategy_id", "") or "").strip()
+            target_str = str(payload.get("target_lifecycle", "") or "").strip().upper()
+            actor = str(payload.get("actor", "") or "").strip()
+            reason = str(payload.get("reason", "") or "").strip()
+
+            if not strategy_id or not target_str:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={"reason": "strategy_id and target_lifecycle are required"},
+                )
+            # Explicit operator identity is mandatory — no implicit/system promotion.
+            if not actor:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={"reason": "actor is required for explicit operator promotion"},
+                )
+            try:
+                target_lifecycle = CandidateLifecycle(target_str)
+            except ValueError:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={
+                        "reason": (
+                            f"target_lifecycle must be SHADOW or ACTIVE (got {target_str!r})"
+                        )
+                    },
+                )
+            if target_lifecycle not in (
+                CandidateLifecycle.SHADOW,
+                CandidateLifecycle.ACTIVE,
+            ):
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={
+                        "reason": (
+                            "operator promotion target must be SHADOW or ACTIVE; "
+                            "VALIDATED is reached only by the validation pipeline"
+                        )
+                    },
+                )
+
+            registry = getattr(engine, "strategy_registry", None) or StrategyRegistry(
+                engine.audit
+            )
+            existing = registry.get(strategy_id)
+            if existing is None:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={"reason": "strategy not found in registry", "strategy_id": strategy_id},
+                )
+            # Confirmation gate: the persisted validation truth must be intact
+            # before ANY operator promotion. A VALIDATED row with missing /
+            # failed gates (or a REJECTED verdict score) can NEVER advance —
+            # this makes activating an unvalidated or rejected strategy
+            # structurally impossible through this endpoint.
+            invariant = registry.invariant_check(existing)
+            if not invariant.get("valid", False):
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={
+                        "reason": "validation-truth invariant check failed",
+                        "strategy_id": strategy_id,
+                        "problems": invariant.get("problems", []),
+                    },
+                )
+            # Activation re-proves the FULL validation truth: a SHADOW row is
+            # probed as VALIDATED so missing/failed OOS / walk-forward /
+            # robustness / score evidence blocks ACTIVATION itself, not just
+            # entry into shadow.
+            if target_lifecycle == CandidateLifecycle.ACTIVE:
+                truth_probe = existing.model_copy(
+                    update={"lifecycle": CandidateLifecycle.VALIDATED}
+                )
+                activation_invariant = registry.invariant_check(truth_probe)
+                if not activation_invariant.get("valid", False):
+                    return _err(
+                        "PROMOTION_BLOCKED",
+                        extra={
+                            "reason": "ACTIVATION requires intact validation truth",
+                            "strategy_id": strategy_id,
+                            "problems": activation_invariant.get("problems", []),
+                        },
+                    )
+            # The registry state machine enforces: VALIDATED->SHADOW and
+            # SHADOW->ACTIVE only; any other source or target is refused.
+            updated = registry.transition_lifecycle(
+                strategy_id=strategy_id,
+                target=target_lifecycle,
+                reason=f"operator_promotion:actor={actor}"
+                + (f":{reason}" if reason else ""),
+            )
+            if updated is None:
+                # Either the strategy is unknown, or the transition was illegal
+                # (e.g. skipping SHADOW, or promoting REJECTED/DEGRADED). The
+                # caller must first reach VALIDATED via /api/research/validate
+                # and SHADOW via a prior explicit call.
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={
+                        "reason": (
+                            "strategy not found or illegal transition (must reach "
+                            "VALIDATED via validation, then SHADOW, then ACTIVE)"
+                        ),
+                        "strategy_id": strategy_id,
+                        "target_lifecycle": target_str,
+                    },
+                )
+            return serialize_enums(
+                {
+                    "available": True,
+                    "promoted": True,
+                    "strategy_id": updated.strategy_id,
+                    "lifecycle": updated.lifecycle,
+                    "actor": actor,
+                    "entry": updated.model_dump(mode="json"),
+                }
+            )
+        except LifecycleError as e:
+            log_web_error(
+                logger,
+                "/api/research/promote",
+                None,
+                e,
+                context={"msg": "Strategy lifecycle promotion blocked by state machine"},
+            )
+            return _err(
+                "PROMOTION_BLOCKED",
+                extra={"reason": "illegal lifecycle transition", "detail": str(e)},
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research promote failed"})
+            return _err("INTERNAL_ERROR")
+
     @app.post("/api/research/self-heal")
     def trigger_research_self_heal() -> dict[str, Any]:
         """Rebuilds derived research state from the immutable ledger."""
