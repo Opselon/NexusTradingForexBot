@@ -1652,6 +1652,22 @@ function switchTab(tabId, element) {
         setTimeout(()=>{ try{ setNewsTimeframe(__newsTfSec); }catch(_){ try{ loadNewsTimeline(); }catch(__){} } }, 80);
     }
 
+    if (tabId === 'tab-command-center') {
+        // The Command Center lives in an isolated iframe (clean namespace,
+        // avoids double-loading the CC scripts into the dashboard bundle).
+        // It boots on its own DOMContentLoaded, but its canvas is sized 0 while
+        // the tab is hidden, so once the tab is visible we post a message telling
+        // the CC to re-init at the correct size and AUTO FIT ALL.
+        const frame = document.getElementById('scc-iframe');
+        if (frame && frame.contentWindow) {
+            setTimeout(() => {
+                try {
+                    frame.contentWindow.postMessage({ type: 'NX_SCC_SHOW' }, '*');
+                } catch (_) { /* cross-origin guard — same origin here */ }
+            }, 60);
+        }
+    }
+
     if (tabId === 'tab-liquidity') {
 
         loadLiquidityState();
