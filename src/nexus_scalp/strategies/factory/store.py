@@ -532,6 +532,22 @@ def sweep_stale_generations(
         )
         if updated:
             swept.append(gid)
+            try:
+                import uuid as _uuid
+                emit_event(
+                    repo,
+                    {
+                        "event_id": str(_uuid.uuid4()),
+                        "generation_id": gid,
+                        "candidate_id": "",
+                        "event_type": "GENERATION_SWEPT",
+                        "message": f"Stale RUNNING generation {gid} marked FAILED by startup sweeper",
+                        "payload": {"generation_id": gid, "status": "FAILED"},
+                        "created_at": now.isoformat(),
+                    },
+                )
+            except Exception:
+                pass
     if swept:
         logger.info(
             "[STRATEGY_FACTORY] event=GENERATION_SWEPT swept=%d ids=%s",

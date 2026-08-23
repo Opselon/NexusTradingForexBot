@@ -237,15 +237,26 @@ class AutonomousLoopWorker:
         """
         # P1 hardening: sweep orphaned RUNNING generations before resuming the
         # current one, so a stale (previously-crashed) run cannot be mistaken
-        # for an active generation. Idempotent and bounded.
-        sweep = sweep_stale_generations(self.factory.audit_repo, max_age_minutes=30)
+        # for an active generation. Idempotent and bounded. Wrapped in try/except
+        # so storage/DB transient issues do not abort worker startup (A5).
+        swept_ids: list[str] = []
+        try:
+            # Route the sweeper through the SAME backend the orchestrator
+            # reads/writes (isolated StrategyResearchStore when injected,
+            # else the legacy audit-repo queue) so generations are swept in
+            # the database that actually owns them.
+            sweep = sweep_stale_generations(self.factory._research_backend, max_age_minutes=30)
+            swept_ids = sweep.get("swept", [])
+        except Exception as err:
+            logger.warning("[STRATEGY_FACTORY] recovery sweeper failed non-fatally", error=str(err))
         persisted = get_loop_state(self.factory.audit_repo)
         generation_id = str(persisted.get("generation_id", "") or "")
         if not generation_id:
             # No active generation: nothing to resume.
-            return {"status": "NOTHING_TO_RESUME", "swept": sweep.get("swept", [])}
+            return {"status": "NOTHING_TO_RESUME", "swept": swept_ids}
         result = self.factory.resume_generation(generation_id)
         result["resumed_state"] = persisted.get("state")
+        result["swept"] = swept_ids
         return result
 
     # ------------------------------------------------------------------
