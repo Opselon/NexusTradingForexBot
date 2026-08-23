@@ -487,8 +487,9 @@ jobs:
                     tests/unit/test_research_registry_null_score_bug075.py \
                     tests/unit/test_research_task4_dataset.py \
                     tests/unit/test_research_task4_validation.py \
-                    tests/unit/test_lifecycle_verdict_mapping.py \
                     tests/unit/test_nse_lifecycle_regression_matrix.py \
+                    tests/unit/test_lifecycle_verdict_mapping.py \
+                    tests/unit/test_lifecycle_e2e_v3.py \
                     tests/unit/test_model_benchmark_phase13b.py \
                     tests/unit/test_model_generation_phase13.py \
                     tests/integration/test_research_api.py \
