@@ -225,7 +225,7 @@ def print_startup_banner(port: int, mode: str, symbol: str) -> None:
         f"[{'bold red' if live else 'bold green'}]● {mode_u}[/{'bold red' if live else 'bold green'}]"
         f"  [dim]·[/dim]  [bold]{symbol}[/bold]  [dim]·[/dim]  [dim]port {port}[/dim]\n\n"
         f"[bold]Web Control Center[/bold]\n{ep_str}\n\n"
-        f"[dim italic]{tip}[/dim]\n"
+        f"[dim italic]{tip}[/dim italic]\n"
         f"[dim]Press Ctrl+C to stop safely  ·  nexus doctor --fix for health[/dim]"
     )
     panel = Panel(

@@ -272,7 +272,7 @@ def _welcome_panel(
         f"[bold]Instrument:[/bold] [bold cyan]{symbol}[/bold cyan]  "
         f"[dim]·[/dim]  Risk guard [bold]{risk_drawdown}%[/bold] max drawdown{nl}{nl}"
         f"[bold]Web Control Center[/bold]{nl}{endpoints_str}{nl}{nl}"
-        f"[dim italic]{tip}[/dim]{nl}"
+        f"[dim italic]{tip}[/dim italic]{nl}"
         f"[dim]Press Ctrl+C to stop safely  ·  [cyan]nexus doctor[/cyan] for health  ·  [cyan]nexus update[/cyan] for updates[/dim]"
     )
     title = Text("NEXUS TRADING FOREX BOT", style="bold white")
