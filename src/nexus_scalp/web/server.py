@@ -8041,6 +8041,19 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     app.include_router(db_console_router)
 
+    # =========================================================================
+    # STRATEGY COMMAND CENTER (2026-08-23): spatial 2.5D lifecycle observability.
+    # Read-only projections over the authoritative registry; never mutates
+    # domain state and never fabricates eligibility or attribution.
+    # =========================================================================
+    from nexus_scalp.web.command_center_integration import (
+        register_command_center_routes,
+    )
+
+    register_command_center_routes(
+        app, _research, serialize_enums, _err,
+    )
+
     @app.get("/api/news/keywords")
     def get_news_keywords(top_n: int = 25, category: str = "", q: str = "") -> dict[str, Any]:
         """Keyword analysis dataset: full library + live corpus coverage.
