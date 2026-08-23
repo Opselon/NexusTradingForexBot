@@ -541,12 +541,31 @@ class ResearchPipeline:
             family_ds, backtest=bt, walkforward=wf, oos=oos, robustness=rob
         )
         score_data = score.model_dump(mode="json")
+
+        # Lifecycle verdict mapping (lifecycle-repair 2026-08-23): the previous
+        # else-branch collapsed any non-terminal verdict back to DISCOVERED,
+        # which re-queued the candidate for validation every cycle and left
+        # Validated=0 forever. Every non-passing verdict is now an explicit
+        # REJECTED with a recorded reason — DISCOVERED is never re-entered
+        # after gates have run, and no threshold is weakened.
         if score.verdict == "VALIDATED":
             final_lifecycle = CandidateLifecycle.VALIDATED
         elif score.verdict == "REJECTED":
             final_lifecycle = CandidateLifecycle.REJECTED
+        elif score.verdict == "INCONCLUSIVE":
+            final_lifecycle = CandidateLifecycle.REJECTED
+            logger.warning(
+                "[STRATEGY_VALIDATION] event=VERDICT_INCONCLUSIVE_REJECTED",
+                strategy_id=sid,
+                score=score.final_score,
+            )
         else:
-            final_lifecycle = CandidateLifecycle.DISCOVERED
+            final_lifecycle = CandidateLifecycle.REJECTED
+            logger.warning(
+                "[STRATEGY_VALIDATION] event=UNKNOWN_VERDICT_REJECTED",
+                strategy_id=sid,
+                verdict=score.verdict,
+            )
         if obs is not None:
             gate = obs.create_gate(
                 sid,
