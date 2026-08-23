@@ -1248,7 +1248,7 @@ class StrategyFactory:
         candidates = list_candidates(
             self._research_backend, generation_id=generation_id, limit=2000
         )
-        pending = [c for c in candidates if c.get("lifecycle") in ("GENERATED", None, "")]
+        pending = [c for c in candidates if c.get("lifecycle") in ("GENERATED", None, "", "DISCOVERED", "RUNNING")]
         dataset = self._build_dataset()
         resumed = 0
         for c in pending:

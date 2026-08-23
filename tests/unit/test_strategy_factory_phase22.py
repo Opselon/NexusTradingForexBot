@@ -532,14 +532,14 @@ def test_resume_generation_skips_evaluated(audit_repo):
     assert result["status"] == "RESUMED"
     # the first was evaluated (lifecycle != GENERATED); pending = the rest
     cands = list_candidates(audit_repo, generation_id=gen["generation_id"])
-    pending = [c for c in cands if c.get("lifecycle") in ("GENERATED", None, "")]
+    pending = [c for c in cands if c.get("lifecycle") in ("GENERATED", None, "", "DISCOVERED", "RUNNING")]
     eval_n = [c for c in cands if c.get("lifecycle") not in ("GENERATED", None, "")]
     assert pending or eval_n
     # every candidate row has a non-GENERATED lifecycle after resume completes
     # (resumed ones got evaluated in this call)
     flush(audit_repo)
     cands2 = list_candidates(audit_repo, generation_id=gen["generation_id"])
-    non_generated = [c for c in cands2 if c.get("lifecycle") not in ("GENERATED", None, "")]
+    non_generated = [c for c in cands2 if c.get("lifecycle") not in ("GENERATED", None, "", "DISCOVERED", "RUNNING")]
     assert len(non_generated) >= 2  # the original + at least one resumed
 
 
