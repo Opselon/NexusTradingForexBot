@@ -418,6 +418,25 @@ def list_generations(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
 # Stale-generation sweeper (P1 hardening, 2026-08-23)
 # ------------------------------------------------------------------
 
+def get_loop_states(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
+    """List loop control states — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.get_loop_states(limit=limit) if hasattr(repo, "get_loop_states") else []
+    conn = _conn(repo)
+    if conn is None:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT * FROM factory_loop_state ORDER BY updated_at DESC LIMIT ?;", (limit,)
+        ).fetchall()
+        return [_row_safe(dict(r)) for r in rows]
+    except Exception as e:
+        logger.error("[STRATEGY_FACTORY] get_loop_states failed", error=str(e))
+        return []
+    finally:
+        conn.close()
+
+
 def sweep_stale_generations(
     repo: Any,
     max_age_minutes: int = 30,
@@ -425,19 +444,25 @@ def sweep_stale_generations(
 ) -> dict[str, Any]:
     """Mark orphaned RUNNING generations as FAILED (P1 lifecycle hardening).
 
-    A generation is STALE when its status is RUNNING and its created_at
-    timestamp is older than ``max_age_minutes``. Genuinely active runs
-    update their loop-state checkpoint frequently; a RUNNING row older
-    than the threshold cannot be alive (the factory writes progress
-    events on every candidate evaluation).
+    Freshness is keyed off the **loop-state heartbeat**
+    (``factory_loop_state.updated_at`` / ``checkpoint``), NOT
+    ``factory_generations.created_at``: the generation row itself is never
+    refreshed mid-run (ON CONFLICT updates only status/completed_at/config),
+    so a legitimate 45-minute LLM generation is indistinguishable from an
+    orphan by creation time alone. The autonomous loop writes its loop-state
+    checkpoint on every cycle, so an alive run always has a recent heartbeat.
+    When no heartbeat exists for a generation, created_at is used as fallback.
 
     Semantics:
     * NEVER touches COMPLETED/FAILED/CANCELLED rows — only RUNNING.
     * Idempotent: already-swept (FAILED) rows are never touched twice.
     * Bounded: inspects at most ``limit`` most-recent generations.
-    * Auditable: logs event=GENERATION_SWEPT with swept ids.
-    * Does NOT fabricate completion: stale means FAILED (crash); the
-      operator can still resume via recover()/resume_generation().
+    * Auditable: logs event=GENERATION_SWEPT with swept ids (info level).
+    * Does NOT fabricate completion: stale means FAILED (crash) and
+      ``completed_at`` is deliberately left NULL — resume_generation()
+      ignores header status and only re-evaluates unevaluated candidates,
+      so a crashed-but-finished generation can still be reconciled to
+      COMPLETED by complete_generation().
 
     Returns {"swept": [generation_id...], "inspected": n}.
     """
@@ -445,8 +470,18 @@ def sweep_stale_generations(
 
     if _is_store_backend(repo):
         gens = repo.list_generations(limit=limit)
+        try:
+            loop_states = {
+                ls.get("generation_id"): ls for ls in (repo.get_loop_states() or [])
+            } if hasattr(repo, "get_loop_states") else {}
+        except Exception:
+            loop_states = {}
     else:
         gens = list_generations(repo, limit=limit)
+        try:
+            loop_states = {ls.get("generation_id"): ls for ls in (get_loop_states(repo) or [])}
+        except Exception:
+            loop_states = {}
     now = _dt.datetime.now(_dt.UTC)
     swept: list[str] = []
     inspected = 0
@@ -455,23 +490,32 @@ def sweep_stale_generations(
         status = str(g.get("status", "") or "").upper()
         if status != "RUNNING":
             continue
-        created = g.get("created_at") or ""
-        try:
-            if isinstance(created, str):
-                text = str(created).strip().replace("Z", "+00:00")
-                created_ts = _dt.datetime.fromisoformat(text)
-                if created_ts.tzinfo is None:
-                    created_ts = created_ts.replace(tzinfo=_dt.UTC)
-            else:
-                created_ts = created
-            age_min = (now - created_ts).total_seconds() / 60.0
-        except Exception:
-            continue
-        if age_min < float(max_age_minutes):
-            continue
         gid = str(g.get("generation_id", "") or "")
         if not gid:
             continue
+        # Freshness = loop-state heartbeat; fall back to created_at.
+        ls = loop_states.get(gid) or {}
+        heartbeat_raw = ls.get("updated_at") or g.get("created_at")
+        age_min: float | None = None
+        try:
+            if isinstance(heartbeat_raw, str):
+                text = str(heartbeat_raw).strip().replace("Z", "+00:00")
+                hb_ts = _dt.datetime.fromisoformat(text)
+                if hb_ts.tzinfo is None:
+                    hb_ts = hb_ts.replace(tzinfo=_dt.UTC)
+            elif isinstance(heartbeat_raw, _dt.datetime):
+                hb_ts = heartbeat_raw
+            else:
+                hb_ts = None
+            if hb_ts is not None:
+                age_min = (now - hb_ts).total_seconds() / 60.0
+        except Exception:
+            age_min = None
+        if age_min is None:
+            # Unparseable heartbeat: conservative skip (never sweep unknown).
+            continue
+        if age_min < float(max_age_minutes):
+            continue  # alive (recent heartbeat) — never swept
         updated = upsert_generation(
             repo,
             {
@@ -480,8 +524,8 @@ def sweep_stale_generations(
                 "mode": str(g.get("mode", "MANUAL")),
                 "parent_generation": str(g.get("parent_generation", "") or ""),
                 "population_target": int(g.get("population_target", 0) or 0),
-                "created_at": created,
-                "completed_at": now.isoformat(),
+                "created_at": g.get("created_at") or now.isoformat(),
+                # Do NOT set completed_at: a crash is FAILED, not completed.
                 "status": "FAILED",
                 "config": g.get("config") or {},
             },
@@ -489,7 +533,7 @@ def sweep_stale_generations(
         if updated:
             swept.append(gid)
     if swept:
-        logger.error(
+        logger.info(
             "[STRATEGY_FACTORY] event=GENERATION_SWEPT swept=%d ids=%s",
             len(swept),
             ",".join(swept[:10]),

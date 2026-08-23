@@ -403,8 +403,17 @@ def self_heal_research(repo: AuditRepository, registry) -> int:
                 from nexus_scalp.research.models import CandidateLifecycle
 
                 repair = entry.model_copy(update={"lifecycle": CandidateLifecycle.REJECTED})
-                registry.upsert(repair)
-                repaired += 1
+                # Respect the upsert result: only count REAL repairs (the
+                # regression guard can refuse SHADOW/ACTIVE→REJECTED; those
+                # rows need the administrative transition_lifecycle path).
+                if registry.upsert(repair):
+                    repaired += 1
+                else:
+                    logger.warning(
+                        "[STRATEGY_RESEARCH] self-heal refused by regression guard",
+                        strategy_id=entry.strategy_id,
+                        lifecycle=entry.lifecycle.value,
+                    )
     except Exception as e:
         logger.error("[STRATEGY_RESEARCH] self-heal failed", error=str(e))
     return repaired

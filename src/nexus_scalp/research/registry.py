@@ -307,7 +307,14 @@ class StrategyRegistry:
                 ],
             }
         )
-        self.upsert(updated)
+        # P2 hardening note: transition_lifecycle is the EXPLICIT administrative
+        # recovery/operations path — legality is already enforced by the state
+        # machine above (transition()). The regression guard must not silently
+        # block legal operational descents (ACTIVE→DEGRADED/RETIRED,
+        # SHADOW→DEGRADED/REJECTED), so persistence bypasses the default
+        # forbid_lifecycle_regression=True here. Plain upsert() callers keep
+        # full protection.
+        self.upsert(updated, forbid_lifecycle_regression=False)
         return updated
 
     # ------------------------------------------------------------------
@@ -400,7 +407,16 @@ def _is_stronger(current: CandidateLifecycle, proposed: CandidateLifecycle) -> b
         CandidateLifecycle.REJECTED: 2,
         CandidateLifecycle.RETIRED: 2,
     }
-    return _strength.get(current, 0) > _strength.get(proposed, 0)
+    if _strength.get(current, 0) > _strength.get(proposed, 0):
+        return True
+    # Peer-tier truth-rewrite hole (P2 hardening review A4): VALIDATED and
+    # REJECTED share strength rank 2; a plain upsert must not silently flip
+    # established validation truth between them (REJECTED->VALIDATED or
+    # VALIDATED->REJECTED). Real changes go through the pipeline register
+    # path with fresh evidence, or the explicit administrative
+    # transition_lifecycle() path.
+    _peer_truth = {CandidateLifecycle.VALIDATED, CandidateLifecycle.REJECTED}
+    return current in _peer_truth and proposed in _peer_truth
 
 
 def _json(value: Any) -> str:
