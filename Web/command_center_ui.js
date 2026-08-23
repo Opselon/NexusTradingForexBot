@@ -37,6 +37,7 @@
       if (spatialRes.ok) {
         currentSpatialData = spatialRes.body;
         renderSpatialCanvas(currentSpatialData);
+        window.__lastSpatialPayload = currentSpatialData;
       }
     } catch (err) {
       console.warn('[SCC] load failed', err);
@@ -217,6 +218,12 @@
     inspect: inspectStrategy,
     closeInspector: closeInspector,
   };
+
+  // Test hooks (exposed in same closure scope; harmless in production).
+  window.NX.scc._test_renderFleet = renderFleetTable;
+  window.NX.scc._test_renderOverview = renderOverview;
+  window.NX.scc._test_renderInspector = renderInspector;
+  window.NX.scc._test_renderSpatial = renderSpatialCanvas;
 
   // Auto-load on init when tab selected
   document.addEventListener('DOMContentLoaded', () => {

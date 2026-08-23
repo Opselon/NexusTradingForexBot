@@ -2,56 +2,116 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>NEXUS — Command Center (Standalone)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS — Strategy Command Center (Visual)</title>
+    <link rel="stylesheet" href="tailwind.css">
 </head>
-<body class="bg-darkBg text-gray-100">
-<div id="scc-root">
-    <!-- ============ GLOBAL OVERVIEW STRIP ============ -->
-    <div class="scc-overview-strip" style="display:flex;gap:16px;padding:12px;border-bottom:1px solid #334155;background:#1e293b;">
-        <div><span style="color:#94a3b8;font-size:10px;">TOTAL</span> <b id="scc-total">—</b></div>
-        <div><span style="color:#94a3b8;font-size:10px;">ACTIVE</span> <b id="scc-active">—</b></div>
-        <div><span style="color:#94a3b8;font-size:10px;">VALIDATED</span> <b id="scc-valid">—</b></div>
-        <div><span style="color:#94a3b8;font-size:10px;">BLOCKED</span> <b id="scc-blocked">—</b></div>
-        <button id="scc-refresh-btn" onclick="window.NX.scc.load()" style="margin-left:auto;background:#0ea5e9;color:white;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">REFRESH</button>
-        <label style="font-size:10px;display:flex;align-items:center;gap:4px;">
-            <input type="checkbox" id="scc-timemachine-toggle"> TIME MACHINE
-        </label>
+<body class="bg-darkBg text-gray-100 font-sans min-h-screen">
+
+<!-- ============ GLOBAL OVERVIEW STRIP ============ -->
+<div class="flex flex-wrap gap-4 items-center px-4 py-3 border-b border-borderClr bg-panelBg">
+    <h1 class="text-sm font-bold text-white tracking-wide">🛰 STRATEGY COMMAND CENTER</h1>
+    <div><span class="text-[9px] text-textMuted">TOTAL</span> <b id="scc-total" class="text-accentCyan text-sm font-mono">—</b></div>
+    <div><span class="text-[9px] text-textMuted">ACTIVE</span> <b id="scc-active" class="text-emerald-400 text-sm font-mono">—</b></div>
+    <div><span class="text-[9px] text-textMuted">VALIDATED</span> <b id="scc-valid" class="text-lime-400 text-sm font-mono">—</b></div>
+    <div><span class="text-[9px] text-textMuted">BLOCKED</span> <b id="scc-blocked" class="text-rose-400 text-sm font-mono">—</b></div>
+    <div class="ml-auto flex items-center gap-2">
+        <button onclick="window.NX.scc.load()" class="px-3 py-1 rounded bg-accentCyan/10 text-accentCyan border border-accentCyan/30 text-xs font-bold hover:bg-accentCyan/20 transition">REFRESH</button>
+        <button onclick="window.NX.spatial.fitAll()" class="px-3 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">FIT ALL</button>
+        <button onclick="window.NX.spatial.resetCamera()" class="px-3 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">RESET CAM</button>
+    </div>
+</div>
+
+<div class="flex" style="height: calc(100vh - 56px);">
+
+    <!-- ============ SPATIAL 2.5D CANVAS ============ -->
+    <div class="flex-1 relative bg-[#0b1220] overflow-hidden">
+        <canvas id="scc-spatial-canvas" class="w-full h-full block"></canvas>
+
+        <!-- TIME MACHINE OVERLAY -->
+        <div id="scc-tm-bar" class="absolute bottom-2 left-2 right-2 bg-panelBg/95 backdrop-blur border border-borderClr rounded-lg px-4 py-2 flex items-center gap-3 z-10">
+            <button id="scc-tm-play" onclick="window.NX.tm.togglePlay()" class="px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-black hover:bg-emerald-500/20 transition">PLAY</button>
+            <input type="range" id="scc-tm-slider" min="0" max="100" value="0" oninput="window.NX.tm.scrub(this.value)" class="flex-1 accent-cyan-400 cursor-pointer">
+            <span id="scc-tm-label" class="text-[10px] font-mono text-textMuted whitespace-nowrap">—</span>
+        </div>
+
+        <!-- LEGEND -->
+        <div class="absolute top-2 right-2 bg-panelBg/95 backdrop-blur border border-borderClr rounded-lg p-3 z-10 space-y-1">
+            <p class="text-[9px] font-bold text-textMuted tracking-wider mb-2">LEGEND</p>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-slate-500 inline-block"></span> DISCOVERED</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span> BACKTESTING / VALIDATING</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-lime-500 inline-block"></span> VALIDATED</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-yellow-500 inline-block"></span> SHADOW</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> ACTIVE (LIVE)</div>
+            <div class="text-[10px] flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> REJECTED</div>
+            <p class="text-[8px] text-textMuted mt-1 pt-1 border-t border-borderClr">Rings = passed gates · Stem = health<br>? = NOT MEASURED</p>
+        </div>
     </div>
 
-    <div style="display:flex;height:calc(100vh - 60px);">
-        <!-- ============ SPATIAL 2.5D CANVAS ============ -->
-        <div id="scc-spatial-wrap" style="flex:1;position:relative;background:#0f172a;">
-            <canvas id="scc-spatial-canvas" style="width:100%;height:500px;display:block;"></canvas>
-        </div>
+    <!-- ============ FLEET TABLE PANEL ============ -->
+    <div class="w-[420px] shrink-0 border-l border-borderClr bg-panelBg overflow-y-auto flex flex-col">
+        <p class="px-3 py-2 text-[10px] font-bold text-textMuted border-b border-borderClr tracking-wider">STRATEGY FLEET (AUTHORITATIVE)</p>
+        <table class="w-full text-xs">
+            <thead class="bg-darkBg sticky top-0 z-10">
+                <tr class="text-left text-textMuted">
+                    <th class="px-3 py-2 text-[9px] font-black">STRATEGY</th>
+                    <th class="px-3 py-2 text-[9px] font-black">STATE</th>
+                    <th class="px-3 py-2 text-[9px] font-black">HEALTH</th>
+                    <th class="px-3 py-2 text-[9px] font-black">EXECUTION</th>
+                </tr>
+            </thead>
+            <tbody id="scc-fleet-tbody"></tbody>
+        </table>
 
-        <!-- ============ FLEET TABLE ============ -->
-        <div id="scc-fleet-panel" style="width:420px;border-left:1px solid #334155;background:#1e293b;overflow-y:auto;">
-            <p style="padding:8px 12px;font-size:11px;font-weight:bold;color:#94a3b8;border-bottom:1px solid #334155;">STRATEGY FLEET</p>
-            <table style="width:100%;border-collapse:collapse;">
-                <thead>
-                    <tr style="background:#0f172a;">
-                        <th style="text-align:left;padding:6px 12px;font-size:9px;color:#94a3b8;">STRATEGY</th>
-                        <th style="text-align:left;padding:6px 12px;font-size:9px;color:#94a3b8;">STATE</th>
-                        <th style="text-align:left;padding:6px 12px;font-size:9px;color:#94a3b8;">HEALTH</th>
-                        <th style="text-align:left;padding:6px 12px;font-size:9px;color:#94a3b8;">EXECUTION</th>
-                    </tr>
-                </thead>
-                <tbody id="scc-fleet-tbody"></tbody>
-            </tr>
-        </div>
-
-        <!-- ============ INSPECTOR DRAWER ============ -->
-        <div id="scc-inspector-drawer" style="position:fixed;top:0;right:0;width:480px;height:100vh;background:#1e293b;border-left:2px solid #334155;z-index:999;transform:translateX(100%);transition:transform .25s ease-out;box-shadow:-8px 0 24px rgba(0,0,0,.5);display:flex;flex-direction:column;">
-            <div style="padding:12px;border-bottom:1px solid #334155;display:flex;justify-content:space-between;align-items:center;">
-                <h3 id="scc-insp-title" style="font-size:13px;font-weight:bold;color:#38bdf8;margin:0;">Strategy Inspector</h3>
-                <button onclick="window.NX.scc.closeInspector()" style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;">×</button>
+        <!-- DEBUG CONSOLE -->
+        <div class="border-t border-borderClr mt-auto">
+            <div class="px-3 py-2 flex items-center justify-between border-b border-borderClr">
+                <p class="text-[10px] font-bold text-textMuted tracking-wider">DEBUG CONSOLE</p>
+                <div class="flex gap-1">
+                    <button id="scc-console-pause" onclick="window.NX.console.togglePause()" class="px-2 py-0.5 rounded bg-panelBg text-gray-300 border border-borderClr text-[9px] font-bold hover:border-accentCyan/40">PAUSE</button>
+                    <button onclick="window.NX.console.clear()" class="px-2 py-0.5 rounded bg-panelBg text-gray-300 border border-borderClr text-[9px] font-bold hover:border-rose-500/40">CLEAR</button>
+                </div>
             </div>
-            <div id="scc-insp-content" style="flex:1;overflow-y:auto;padding:12px;"></div>
+            <div class="px-2 py-1.5 flex gap-1 border-b border-borderClr">
+                <input id="scc-console-search" placeholder="search events..." oninput="window.NX.console.applyFilters()"
+                       class="flex-1 bg-darkBg border border-borderClr rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-accentCyan">
+                <select id="scc-console-sev" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
+                    <option value="ALL">ALL</option>
+                    <option value="VALIDATION_FAILURE">VALIDATION_FAILURE</option>
+                    <option value="STALE_RUN_RECOVERY">STALE_RUN_RECOVERY</option>
+                    <option value="EXPECTED_REJECTION">EXPECTED_REJECTION</option>
+                </select>
+            </div>
+            <div id="scc-console-body" class="overflow-y-auto" style="max-height: 220px;"></div>
         </div>
     </div>
 </div>
 
+<!-- ============ INSPECTOR DRAWER ============ -->
+<div id="scc-inspector-drawer" class="fixed top-0 right-0 w-[480px] max-w-full h-full bg-panelBg border-l-2 border-borderClr shadow-2xl z-[999] translate-x-full transition-transform duration-200 flex flex-col">
+    <div class="px-4 py-3 border-b border-borderClr flex items-center justify-between">
+        <h3 id="scc-insp-title" class="text-sm font-bold text-accentCyan m-0">Strategy Inspector</h3>
+        <button onclick="window.NX.scc.closeInspector()" class="text-textMuted hover:text-white text-lg leading-none">×</button>
+    </div>
+    <div id="scc-insp-content" class="flex-1 overflow-y-auto p-4"></div>
+</div>
+
 <script src="api_client.js"></script>
+<script src="command_center_spatial.js"></script>
+<script src="command_center_console.js"></script>
+<script src="command_center_timemachine.js"></script>
 <script src="command_center_ui.js"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    window.NX.spatial.init('scc-spatial-canvas');
+    window.NX.tm.init();
+    // Hook spatial payload into renderer after each load
+    const origLoad = window.NX.scc.load;
+    window.NX.scc.load = async function () {
+      await origLoad();
+      if (window.__lastSpatialPayload) window.NX.spatial.update(window.__lastSpatialPayload);
+    };
+  });
+</script>
 </body>
 </html>
