@@ -69,6 +69,49 @@
     if (blockedEl) blockedEl.textContent = ov.blocked_count || 0;
     if (validEl) validEl.textContent = (ov.by_lifecycle && ov.by_lifecycle.VALIDATED) || 0;
     if (fleetNoteEl) fleetNoteEl.textContent = `Fleet: ${ov.total_strategies || 0} strategies`;
+
+    // --- EVALUATION-PROGRESS METRICS (transient, scope always shown) ---
+    // Distinct from the persistent lifecycle counts above. Shows pass/fail rate
+    // per gate so the operator sees WHERE the research bottleneck is without
+    // conflating it with the domain lifecycle.
+    const metrEl = document.getElementById('scc-eval-metrics');
+    if (metrEl) {
+      const metrics = ov.evaluation_metrics || {};
+      const gates = ['BACKTEST', 'WALK_FORWARD', 'OOS', 'ROBUSTNESS', 'SCORE'];
+      const rows = gates.map(g => {
+        const m = metrics[g] || { pass: 0, fail: 0, running: 0, total: 0, pass_rate: 0, fail_rate: 0 };
+        const pr = Math.round((m.pass_rate || 0) * 100);
+        const fr = Math.round((m.fail_rate || 0) * 100);
+        return `<div class="px-2 py-1"><div class="flex justify-between text-[10px]"><span class="text-gray-300">${g}</span><span class="font-mono text-gray-400">${pr}% pass · ${fr}% fail · n=${m.total}</span></div><div class="h-1 bg-darkBg rounded mt-0.5 overflow-hidden"><div style="width:${pr}%;background:${fr > 50 ? '#ef4444' : pr > 0 ? '#22c55e' : '#475569'};height:100%"></div></div></div>`;
+      }).join('');
+      const runCount = ov.running_evaluations || 0;
+      metrEl.innerHTML = `<div class="px-3 py-2"><div class="flex items-center justify-between"><p class="text-[9px] font-bold text-textMuted tracking-wider">EVALUATION PIPELINE (SCOPE: TRANSIENT RUNS)</p><span class="text-[9px] text-amber-300">${runCount} running</span></div>${rows}</div>`;
+    }
+
+    // --- RESEARCH-BOTTLENECK EXPLANATION (honest, when upper layers empty) ---
+    const bnEl = document.getElementById('scc-research-bottleneck');
+    if (bnEl) {
+      const validated = (ov.by_lifecycle && ov.by_lifecycle.VALIDATED) || 0;
+      const shadow = (ov.by_lifecycle && ov.by_lifecycle.SHADOW) || 0;
+      const active = (ov.by_lifecycle && ov.by_lifecycle.ACTIVE) || 0;
+      const wf = (ov.evaluation_metrics && ov.evaluation_metrics.WALK_FORWARD) || { fail: 0, total: 0, fail_rate: 0 };
+      if (validated === 0 && shadow === 0 && active === 0) {
+        const wfFail = wf.fail || 0;
+        const wfTotal = wf.total || 0;
+        bnEl.classList.remove('hidden');
+        bnEl.innerHTML =
+          '<div class="px-3 py-2 border-t border-rose-500/40 bg-rose-500/5">' +
+          '<p class="text-[11px] font-black text-rose-300 tracking-wide">RESEARCH BOTTLENECK</p>' +
+          '<p class="text-[10px] text-gray-300 font-mono mt-1">Upper layers (VALIDATED/SHADOW/ACTIVE) are empty — this is a <b>legitimate</b> rejection, not a UI bug.</p>' +
+          `<p class="text-[10px] text-gray-300 font-mono mt-1">FACT: ${wfFail} of ${wfTotal} walk-forward runs failed (${(Math.round((wf.fail_rate||0)*100))}%).</p>` +
+          '<p class="text-[10px] text-violet-300 font-mono mt-1">INFERENCE: walk-forward is the dominant gate failing candidates.</p>' +
+          '<p class="text-[10px] text-amber-300 font-mono mt-1">HYPOTHESIS: candidate generalization under regime shift is weak.</p>' +
+          '<p class="text-[10px] text-emerald-300 font-mono mt-1">RECOMMENDATION: inspect parameter sensitivity + regime distribution before loosening gates.</p>' +
+          '</div>';
+      } else {
+        bnEl.classList.add('hidden');
+      }
+    }
   }
 
   function renderFleetTable(rows) {
@@ -222,6 +265,7 @@
     const ee = data.execution_eligibility || {};
     const health = data.health_score || {};
     const ev = data.evidence_summary || {};
+    const ev2 = data.evaluation || null;   // transient pipeline (telemetry)
     const attr = data.ai_attribution || {};
     const dbg = data.debug_intelligence || {};
     const comp = data.evidence_completeness || {};
@@ -387,6 +431,40 @@
             <div>Robustness: <span class="font-mono text-white">${ev.robustness_status || 'MISSING'}</span></div>
           </div>
           ${comp.missing && comp.missing.length ? `<div class="mt-2 text-[10px] text-rose-300/90 font-mono">Missing Gates: ${comp.missing.join(', ')}</div>` : ''}
+        </div>
+
+        <!-- 3.5 EVALUATION PIPELINE (transient telemetry — NOT a lifecycle move) -->
+        <div class="bg-darkBg/80 p-4 rounded-xl border border-borderClr shadow-md space-y-2">
+          <div class="flex items-center justify-between border-b border-borderClr pb-2">
+            <span class="font-bold text-accentCyan flex items-center gap-1.5"><i class="fa-solid fa-arrows-rotate"></i> Evaluation Pipeline</span>
+            <span class="text-[9px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-borderClr">TRANSIENT</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 pt-1 text-gray-300 font-mono text-[11px]">
+            <div>LIFECYCLE: <span class="text-white font-bold">${data.current_state || data.lifecycle || '—'}</span></div>
+            <div>EVAL STAGE: <span class="text-white font-bold">${ev2 ? (ev2.current_stage || '—') : '—'}</span></div>
+          </div>
+          ${ev2 && ev2.is_running ? `<div class="text-[10px] text-amber-300 font-mono">Running: ${ev2.running_stage || ''} (real backend flag)</div>` : ''}
+          ${ev2 ? `
+          <div class="grid grid-cols-5 gap-1 pt-1 text-center">
+            ${['BACKTEST','WALK_FORWARD','OOS','ROBUSTNESS','SCORE'].map(g => {
+              const st = ev2.gates && ev2.gates[g] ? ev2.gates[g] : 'NOT_RUN';
+              const cls = st === 'PASS' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                : st === 'FAIL' ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
+                : st === 'RUNNING' ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                : st === 'INCONCLUSIVE' ? 'bg-violet-500/15 text-violet-300 border-violet-500/40'
+                : 'bg-slate-700/40 text-slate-400 border-slate-600/40';
+              const short = { BACKTEST:'BT', WALK_FORWARD:'WF', OOS:'OOS', ROBUSTNESS:'ROB', SCORE:'SCR' }[g];
+              return `<div class="rounded border ${cls} px-1 py-1"><div class="text-[8px] opacity-70">${short}</div><div class="text-[9px] font-bold">${st}</div></div>`;
+            }).join('')}
+          </div>
+          <div class="mt-1">
+            <div class="flex justify-between text-[9px] text-gray-400 font-mono"><span>EVAL PROGRESS</span><span>${Math.round((ev2.progress||0)*100)}%</span></div>
+            <div class="h-1.5 bg-darkBg rounded mt-0.5 overflow-hidden"><div style="width:${(ev2.progress||0)*100}%;background:#38bdf8;height:100%"></div></div>
+          </div>
+          ` : `<div class="text-[10px] text-textMuted italic">No evaluation telemetry for this strategy.</div>`}
+          <div class="mt-1 pt-1 border-t border-borderClr/60 text-[11px] font-mono text-gray-300">
+            EXECUTION ELIGIBILITY: <span class="text-white font-bold">${ee.eligibility_state || 'UNKNOWN'}</span>
+          </div>
         </div>
 
         <!-- 4. AI Explainability Card -->

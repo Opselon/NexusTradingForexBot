@@ -33,12 +33,26 @@
   const LIVE_STATES = new Set(['ACTIVE']);
   const BLOCKED_STATES = new Set(['REJECTED', 'DEGRADED', 'RETIRED']);
 
+  // The five transient evaluation gates, in pipeline order (telemetry, NOT lifecycle).
+  const EVAL_GATES = ['BACKTEST', 'WALK_FORWARD', 'OOS', 'ROBUSTNESS', 'SCORE'];
+  const EVAL_GATE_SHORT = { BACKTEST: 'BT', WALK_FORWARD: 'WF', OOS: 'OOS', ROBUSTNESS: 'ROB', SCORE: 'SCR' };
+  const EVAL_RESULT_COLOR = {
+    PASS: '#22c55e',
+    FAIL: '#f43f5e',
+    RUNNING: '#eab308',
+    INCONCLUSIVE: '#a855f7',
+    NOT_RUN: '#475569',
+    MISSING: '#475569',
+  };
+  function evalResultColor(st) { return EVAL_RESULT_COLOR[st] || '#64748b'; }
+
   let canvas = null;
   let ctx = null;
   let nodes = [];
   let zoneOrder = ALL_ZONES;
   let anims = {};
   let trails = {};
+  let flashes = {};       // evaluation-pipeline change flashes (do NOT move the node)
   let camera = { x: 0, y: 0, zoom: 1 };
   let camAnim = null;
   let selectedId = null;
@@ -179,6 +193,10 @@
         ring_count: n.ring_count || 0,
         elevation: (n.elevation === null || n.elevation === undefined) ? null : n.elevation,
         confidence: n.confidence,
+        // --- TRANSIENT EVALUATION PIPELINE (telemetry, NOT lifecycle) ---
+        // Rendered as an internal node indicator; never relocates the node.
+        evaluation: n.evaluation || null,
+        eligibility_state: n.eligibility_state || 'UNKNOWN',
         _tx: targetX,
         _ty: targetY,
         _color: ZONE_COLORS[z] || '#94a3b8',
@@ -203,7 +221,21 @@
           a.tx = targetX; a.ty = targetY; a.t0 = performance.now();
         }
       }
-      next.push(model);
+
+        // EVALUATION-PROGRESS FLASH (internal, NON-MOVING): when the transient
+        // evaluation pipeline advances (e.g. BACKTEST->WF->OOS) but the persistent
+        // lifecycle ZONE is unchanged, we flash the node's internal indicator to
+        // show progress WITHOUT relocating it between zones. This is the core fix:
+        // evaluation progress is telemetry, not a lifecycle-zone move.
+        const evNow = n.evaluation || null;
+        const prevEv = prev ? prev.evaluation : null;
+        const sigNow = evNow ? JSON.stringify([evNow.current_stage, evNow.gates, evNow.progress]) : null;
+        const sigPrev = prevEv ? JSON.stringify([prevEv.current_stage, prevEv.gates, prevEv.progress]) : null;
+        if (prev && sigPrev !== sigNow && evNow) {
+          flashes[n.strategy_id] = { t0: performance.now(), dur: 1100, bump: evNow.progress || 0 };
+        }
+
+        next.push(model);
     }
     nodes = next;
   }
@@ -415,6 +447,72 @@
       ctx.lineWidth = isSelected ? 2.5 : 1;
       ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(15, 23, 42, 0.9)';
       ctx.stroke();
+
+      // ---- INTERNAL EVALUATION-PROGRESS INDICATOR (transient telemetry) ----
+      // This does NOT move the node between lifecycle zones. It draws an
+      // arc of per-gate result dots + a progress ring around the node body, so
+      // the operator sees BACKTEST->WF->OOS progress while the strategy stays
+      // in its true persistent lifecycle zone (e.g. DISCOVERED).
+      const ev = n.evaluation;
+      const flash = flashes[n.strategy_id];
+      if (ev && ev.gates && lod !== 'low') {
+        // Progress ring (0..1) — strength of gates resolved, not lifecycle rank.
+        const prog = Number(ev.progress) || 0;
+        if (prog > 0) {
+          ctx.beginPath();
+          ctx.arc(x, y, r + 1.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * prog);
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        // Per-gate result dots arranged in a tight arc beneath/beside the node.
+        const gates = ev.gates;
+        const dotN = EVAL_GATES.length;
+        const dotR = 2.1;
+        const arcR = r + 7;
+        for (let k = 0; k < dotN; k++) {
+          const gk = EVAL_GATES[k];
+          const st = gates[gk] || 'NOT_RUN';
+          const ang = Math.PI * 0.5 + (k / (dotN - 1)) * Math.PI; // bottom semicircle
+          const dx = x + Math.cos(ang) * arcR;
+          const dy = y + Math.sin(ang) * arcR;
+          ctx.beginPath();
+          ctx.arc(dx, dy, dotR, 0, Math.PI * 2);
+          ctx.fillStyle = evalResultColor(st);
+          ctx.fill();
+          // Highlight the gate currently in flight.
+          if (st === 'RUNNING') {
+            const rp = 0.5 + 0.5 * Math.sin(now / 160);
+            ctx.beginPath();
+            ctx.arc(dx, dy, dotR + 2 + rp * 2, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(234, 179, 8, ${0.4 + rp * 0.4})`;
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+          }
+        }
+        // RUNNING badge for in-flight evaluation (honest, real backend flag).
+        if (ev.is_running && ev.running_stage) {
+          const bx = x - r - 6, by = y - r - 6;
+          ctx.beginPath();
+          ctx.arc(bx, by, 3, 0, Math.PI * 2);
+          const rp = 0.5 + 0.5 * Math.sin(now / 160);
+          ctx.fillStyle = `rgba(234, 179, 8, ${0.5 + rp * 0.5})`;
+          ctx.fill();
+        }
+        // Flash pulse when evaluation advances (non-moving: brightens ring only).
+        if (flash) {
+          const rawT = (now - flash.t0) / flash.dur;
+          if (rawT >= 1) delete flashes[n.strategy_id];
+          else {
+            const fa = (1 - rawT) * 0.6;
+            ctx.beginPath();
+            ctx.arc(x, y, r + 5 + rawT * 6, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(56, 189, 248, ${fa})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+        }
+      }
 
       // Reset shadow for stems & text so they don't blur heavily
       ctx.shadowColor = 'transparent';

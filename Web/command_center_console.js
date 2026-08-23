@@ -29,6 +29,7 @@
   // Filter state (UI-driven).
   const filters = {
     severity: 'ALL',
+    family: 'ALL',
     strategy: '',
     eventType: 'ALL',
     generation: 'ALL',
@@ -68,6 +69,30 @@
     LIFECYCLE_TRANSITION:  ['#94a3b8', '⇄', 'LIFECYCLE'],
     EXPECTED_REJECTION:    ['#eab308', '⊘', 'EXPECTED REJECT'],
   };
+
+  // Event FAMILY classification (5 mutually-exclusive families). The console
+  // distinguishes: CANDIDATE_LIFECYCLE, EVALUATION_PROGRESS, VALIDATION_RESULT,
+  // GENERATION_EVENT, SYSTEM_RECOVERY. Family is a coarser, always-present
+  // bucket that is independent of the fine-grained class; it never fabricates.
+  const CLASS_FAMILY = {
+    RESEARCH_FAILURE:      'EVALUATION_PROGRESS',
+    VALIDATION_FAILURE:    'EVALUATION_PROGRESS',
+    WALK_FORWARD_FAILURE:  'EVALUATION_PROGRESS',
+    OOS_FAILURE:           'EVALUATION_PROGRESS',
+    DATA_FAILURE:          'EVALUATION_PROGRESS',
+    SYSTEM_ERROR:          'SYSTEM_RECOVERY',
+    STALE_RUN_RECOVERY:    'SYSTEM_RECOVERY',
+    GENERATION_COMPLETED:  'GENERATION_EVENT',
+    LIFECYCLE_TRANSITION:  'CANDIDATE_LIFECYCLE',
+    EXPECTED_REJECTION:    'VALIDATION_RESULT',
+  };
+  const FAMILY_ORDER = [
+    'CANDIDATE_LIFECYCLE', 'EVALUATION_PROGRESS', 'VALIDATION_RESULT',
+    'GENERATION_EVENT', 'SYSTEM_RECOVERY',
+  ];
+  function familyOf(cls) {
+    return CLASS_FAMILY[cls] || 'SYSTEM_RECOVERY';
+  }
 
   function classifyEvent(payload) {
     if (!payload) return 'SYSTEM_ERROR';
@@ -146,6 +171,7 @@
   function syncFiltersFromDOM() {
     const get = (id) => { const el = document.getElementById(id); return el ? el.value : null; };
     const sev = get('scc-console-sev'); filters.severity = (sev && sev.trim()) ? sev : 'ALL';
+    const fam = get('scc-console-family'); filters.family = (fam && fam.trim()) ? fam : 'ALL';
     const type = get('scc-console-type'); filters.eventType = (type && type.trim()) ? type : 'ALL';
     const strat = get('scc-console-strategy'); filters.strategy = (strat && strat.trim()) ? strat : '';
     const gen = get('scc-console-gen'); filters.generation = (gen && gen.trim()) ? gen : 'ALL';
@@ -158,6 +184,7 @@
       const sev = effectiveSeverity(ev);
       if (sev !== filters.severity.toUpperCase() && ev._class !== filters.severity) return false;
     }
+    if (filters.family !== 'ALL' && (ev._family || familyOf(ev._class)) !== filters.family) return false;
     if (filters.eventType !== 'ALL' && ev._class !== filters.eventType) return false;
     if (filters.strategy && (ev.strategy_id || '').toUpperCase() !== filters.strategy.toUpperCase()) return false;
     if (filters.generation !== 'ALL' && String(ev.generation || '?') !== filters.generation) return false;
@@ -179,11 +206,13 @@
     const src = ev.source || ev.actor || ev.event_type || '';
     const corr = ev.correlation_id || '';
     const msg = ev.message || ev.reason || ev.run_outcome || ev.detail || '';
+    const family = ev._family || familyOf(ev._class);
 
     const row = document.createElement('div');
     row.className = 'scc-event-row border-b border-borderClr py-1 px-2 font-mono text-[10px] flex gap-2 items-start';
     if (row.dataset) {
       row.dataset._class = ev._class;
+      row.dataset.family = family;
       row.dataset.strategy = sid;
       row.dataset.generation = ev.generation != null ? String(ev.generation) : '';
       row.dataset.severity = ev.severity || ev._class;
@@ -192,6 +221,7 @@
     row.innerHTML =
       `<span class="opacity-50 whitespace-nowrap">${ts}</span>` +
       `<span class="font-bold whitespace-nowrap" title="${ev._class}">${glyph} ${label}</span>` +
+      `<span class="px-1 rounded bg-slate-800/80 text-slate-400 whitespace-nowrap" title="event family">${family}</span>` +
       (sid ? `<span class="text-accentCyan cursor-pointer underline decoration-dotted" onclick="window.NX.console.action('inspect','${sid}','${corr}')">${sid}</span>` : '') +
       `<span class="text-gray-400 flex-1 truncate" title="${msg}">${msg}</span>` +
       (gen !== '—' ? `<span class="opacity-70 whitespace-nowrap">${gen}</span>` : '') +
@@ -206,6 +236,7 @@
   function addEvent(ev) {
     if (paused) return;
     const enriched = Object.assign({}, ev, { _class: classifyEvent(ev) });
+    enriched._family = familyOf(enriched._class);
     events.push(enriched);
     if (events.length > MAX_EVENTS) events.shift();
     if (matchesFilters(enriched)) {
@@ -423,6 +454,8 @@
     getEvents: () => events,
     classifyEvent,           // exposed for tests
     computeBottleneck,       // exposed for tests
+    familyOf,                // exposed for tests
+    FAMILY_ORDER,            // exposed for tests
     SEVERITY_OF,             // exposed for tests
     CLASS_SIG,               // exposed for tests
   };
