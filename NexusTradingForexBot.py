@@ -8,6 +8,9 @@ This module serves as the main executable script for launching the real-time
 trading engine from Visual Studio, Windows PowerShell, or production deployment tasks via:
     `python NexusTradingForexBot.py`
 
+PAPER + XAUUSD by default. Animated, gradient-rich CLI that matches the
+packaged EXE experience (src/nexus_scalp/cli/main.py + packaged_main.py).
+
 Key Architectural Responsibilities:
     1. Sys.Path Bootstrapping: Automatically registers the local `src` folder into Python's
        module lookup paths before importing internal sub-systems.
@@ -26,6 +29,7 @@ import asyncio
 import shutil
 import socket
 import sys
+import time
 from pathlib import Path
 
 # ==============================================================================
@@ -37,9 +41,14 @@ if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import uvicorn
+from rich import box
+from rich.align import Align
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
+from rich.text import Text
 
 from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter
 from nexus_scalp.application.live_engine import LiveEngine
@@ -52,17 +61,55 @@ from nexus_scalp.web.server import create_app
 console = Console()
 logger = get_logger("nexus_scalp.launcher")
 
+GRADIENT_TITLE = "bold cyan"
+MODE_TIPS = {
+    "PAPER": "Safe simulation — no broker orders. Perfect for first run.",
+    "SHADOW": "Shadow paper — mirrors live decisions without execution.",
+    "LIVE": "Real capital at risk — dashboard kill-switch available.",
+}
+
+
+def _version_tag() -> str:
+    try:
+        from nexus_scalp.release.metadata import get_version_info
+
+        info = get_version_info()
+        return f"v{info.get('version', '?')} · {info.get('channel', 'stable')}"
+    except Exception:
+        return "v9"
+
 
 def display_startup_banner() -> None:
-    """
-    Renders high-visibility startup banner with engine branding and mode warnings.
-    """
-    banner_content = (
-        "[bold cyan]NEXUS SCALP ENGINE (NSE)[/bold cyan]\n"
-        "[dim]Production-Grade High-Performance Quantitative Scalping System[/dim]\n"
-        "[bold red]EXECUTION TARGET: LIVE METATRADER 5 TERMINAL EXECUTION[/bold red]"
-    )
-    console.print(Panel(banner_content, title="System Initialization", border_style="cyan"))
+    """First visible frame — gradient hero (no animation deps)."""
+    tag = _version_tag()
+    title = Text("NEXUS SCALP ENGINE", style="bold cyan")
+    title.append(f"  {tag}", style="dim cyan")
+    is_tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
+    # Two-frame shimmer on TTY, single frame otherwise
+    frames: list[Panel] = []
+    for step in (0, 1):
+        body = Text()
+        body.append("Production-Grade High-Performance Quantitative Scalping\n", style="bold white")
+        body.append(
+            "PAPER  ·  XAUUSD  ·  Secure by default", style="dim cyan" if step == 0 else "dim white"
+        )
+        frames.append(
+            Panel(
+                Align.center(body),
+                title=str(title),
+                subtitle="[dim]Secure runtime · gradient boot[/dim]",
+                border_style="bright_cyan" if step else "cyan",
+                box=box.ROUNDED,
+                padding=(1, 2),
+            )
+        )
+    if not is_tty:
+        console.print(frames[-1])
+        return
+    with Live(frames[0], console=console, refresh_per_second=12, transient=False) as live:
+        time.sleep(0.26)
+        live.update(frames[1])
+        time.sleep(0.22)
 
 
 def find_available_port(start_port: int = 8080) -> int:
@@ -93,12 +140,20 @@ def ensure_config_files() -> Path:
         if example_config.exists():
             shutil.copy(example_config, live_config)
             console.print(
-                "[yellow]configs/live.yaml not found. Copied template from configs/live.yaml.example[/yellow]"
+                Panel(
+                    f"[yellow]Created {live_config}[/yellow] from template [dim]{example_config}[/dim]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
             )
         elif base_config.exists():
             shutil.copy(base_config, live_config)
             console.print(
-                "[yellow]configs/live.yaml not found. Copied template from configs/base.yaml[/yellow]"
+                Panel(
+                    f"[yellow]Created {live_config}[/yellow] from base [dim]{base_config}[/dim]\n[dim]Mode PAPER · Symbol XAUUSD — safe default[/dim]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
             )
         else:
             default_content = """execution:
@@ -122,6 +177,7 @@ telegram:
 mt5:
   timeout_ms: 5000
   retries: 3
+  portable_mode: false
 model:
   confidence_threshold: 0.35
   feature_schema_version: "v1.0"
@@ -130,35 +186,64 @@ model:
             with open(live_config, "w", encoding="utf-8") as f:
                 f.write(default_content)
             console.print(
-                "[yellow]configs/live.yaml not found. Generated a default live configuration.[/yellow]"
+                Panel(
+                    f"[yellow]Generated {live_config}[/yellow] with safe defaults\n[dim]PAPER · XAUUSD · never LIVE by default[/dim]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
             )
 
     return live_config
 
 
 def print_startup_banner(port: int, mode: str, symbol: str) -> None:
-    """Prints a beautiful Bloomberg/Terminal styled system status overview."""
+    """Bloomberg/Terminal welcome — mode-aware, endpoint-rich."""
+    tag = _version_tag()
+    mode_u = mode.upper()
+    live = mode_u == "LIVE"
+    title = Text("NEXUS TRADING FOREX BOT", style="bold white")
+    title.append(f"  —  {mode_u} · {symbol}", style="bold red" if live else "dim cyan")
+    # Animated two-step: first PAPER/XAUUSD safety, then full dashboard
+    is_tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
+    endpoints = [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
+    # Also advertise LAN ip when discoverable
+    try:
+        hostname = socket.gethostname()
+        lan = socket.gethostbyname(hostname)
+        if lan and not lan.startswith("127.") and f"http://{lan}:{port}" not in endpoints:
+            endpoints.append(f"http://{lan}:{port}")
+    except Exception:
+        pass
+    ep_str = "\n".join(f"  [cyan]> {ep}[/cyan]" for ep in endpoints)
+    tip = (
+        "Kill-switch on dashboard — real orders are live."
+        if live
+        else "Tip: monitor, chart, and toggle LIVE/SHADOW in the Web UI at any time."
+    )
     banner_text = (
-        f"[bold cyan]=================================[/bold cyan]\n"
-        f"[bold white]AI Trading System Started[/bold white]\n\n"
-        f"[bold white]Web Dashboard:[/bold white]\n"
-        f"[bold green]http://localhost:{port}[/bold green]\n\n"
-        f"[bold white]Status:[/bold white]\n"
-        f"[bold green]Running[/bold green]\n\n"
-        f"[bold white]AI Engine:[/bold white]\n"
-        f"[bold cyan]Active[/bold cyan]\n\n"
-        f"[bold white]Bot Mode / Symbol:[/bold white]\n"
-        f"[{'red animate-pulse' if mode == 'LIVE' else 'yellow'}]{mode}[/{'red animate-pulse' if mode == 'LIVE' else 'yellow'}] / [bold white]{symbol}[/bold white]\n"
-        f"[bold cyan]=================================[/bold cyan]"
+        f"[bold cyan]NEXUS SCALP ENGINE[/bold cyan]  [dim]{tag}[/dim]\n"
+        f"[{'bold red' if live else 'bold green'}]● {mode_u}[/{'bold red' if live else 'bold green'}]"
+        f"  [dim]·[/dim]  [bold]{symbol}[/bold]  [dim]·[/dim]  [dim]port {port}[/dim]\n\n"
+        f"[bold]Web Control Center[/bold]\n{ep_str}\n\n"
+        f"[dim italic]{tip}[/dim]\n"
+        f"[dim]Press Ctrl+C to stop safely  ·  nexus doctor --fix for health[/dim]"
     )
-    console.print(
-        Panel(
-            banner_text,
-            border_style="cyan",
-            title="Nexus Control panel",
-            subtitle="System Initialized",
-        )
+    panel = Panel(
+        banner_text,
+        title=str(title),
+        subtitle="[dim]System initialized — secure by default[/dim]",
+        border_style="bright_cyan" if not live else "red",
+        box=box.ROUNDED,
+        padding=(1, 2),
     )
+    if is_tty:
+        with Live(panel, console=console, refresh_per_second=8, transient=False) as live_obj:
+            time.sleep(0.18)
+            # nudge border shimmer
+            live_obj.update(panel)
+            time.sleep(0.12)
+    else:
+        console.print(panel)
 
 
 def run_infrastructure_doctor(config_path: Path) -> bool:
@@ -172,55 +257,118 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
         bool: True if all critical diagnostic checks pass.
     """
     console.print(
-        "\n[bold yellow]Executing Infrastructure Pre-Flight Diagnostics Check...[/bold yellow]\n"
+        Panel(
+            "[bold cyan]Pre-flight diagnostics[/bold cyan]  [dim]19 checks · never silent on failure[/dim]",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
     )
 
-    table = Table(title="System Runtime Diagnostic Summary")
-    table.add_column("Subsystem", style="bold white")
-    table.add_column("Status", style="bold")
-    table.add_column("Operational Details", style="dim")
+    # Spinner for the heavy-ish checks
+    with Progress(
+        SpinnerColumn(style="cyan"),
+        TextColumn("[cyan]Checking system…[/cyan]"),
+        transient=True,
+        console=console,
+    ) as progress:
+        task = progress.add_task("doctor", total=None)
+        # Do the work inside the spinner context so it feels alive
+        py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        mt5_ok = HAS_NATIVE_MT5
+        mt5_detail = (
+            "Direct Win32 IPC — local MT5 terminal"
+            if HAS_NATIVE_MT5
+            else "Remote Gateway required (non-Windows or MetaTrader5 missing)"
+        )
+        cfg_ok = True
+        cfg_detail = ""
+        if config_path.exists():
+            try:
+                cfg = AppConfig.load_from_yaml(config_path)
+                cfg_detail = f"{config_path} · Symbol {cfg.execution.symbol} · Mode {cfg.execution.mode.value}"
+            except Exception as err:
+                cfg_ok = False
+                cfg_detail = f"Parse error: {err}"
+        else:
+            cfg_ok = False
+            cfg_detail = f"File not found: {config_path} — run nexus repair --recreate-config"
+        time.sleep(0.18)
+        progress.update(task, completed=1)
 
-    # 1. Check Python Version Invariant
-    py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    table = Table(title="System Runtime Diagnostic Summary", box=box.SIMPLE_HEAD, show_lines=False)
+    table.add_column("Subsystem", style="bold white", no_wrap=True)
+    table.add_column("Status", style="bold", no_wrap=True)
+    table.add_column("Operational Details", style="dim", overflow="fold")
+
     table.add_row("Python Runtime", "[green]PASS[/green]", f"Python {py_ver}")
-
-    # 2. Check Host Operating System & IPC Driver
     table.add_row("Host Platform", "OK", sys.platform)
-
-    if HAS_NATIVE_MT5:
-        table.add_row(
-            "Native MT5 IPC Driver",
-            "[green]AVAILABLE[/green]",
-            "Direct Win32 IPC Available for Local Terminal Process",
-        )
+    table.add_row(
+        "Native MT5 IPC Driver",
+        "[green]AVAILABLE[/green]" if mt5_ok else "[yellow]UNAVAILABLE[/yellow]",
+        mt5_detail,
+    )
+    if not config_path.exists():
+        table.add_row("Configuration File", "[red]MISSING[/red]", cfg_detail)
+    elif not cfg_ok:
+        table.add_row("Configuration File", "[red]INVALID[/red]", cfg_detail)
     else:
-        table.add_row(
-            "Native MT5 IPC Driver",
-            "[yellow]UNAVAILABLE[/yellow]",
-            "Platform non-Windows or 'MetaTrader5' module missing (Requires Remote Gateway)",
-        )
-
-    # 3. Check Configuration File Validity
-    if config_path.exists():
+        table.add_row("Configuration File", "[green]VALID[/green]", cfg_detail)
+        # PAPER + XAUUSD safety hint
         try:
-            cfg = AppConfig.load_from_yaml(config_path)
-            table.add_row(
-                "Configuration File",
-                "[green]VALID[/green]",
-                f"{config_path} (Symbol: {cfg.execution.symbol})",
-            )
-        except Exception as err:
-            table.add_row("Configuration File", "[red]INVALID[/red]", f"Parse Error: {err}")
-            console.print(table)
-            return False
-    else:
-        table.add_row("Configuration File", "[red]MISSING[/red]", f"File not found: {config_path}")
-        console.print(table)
-        return False
+            c = AppConfig.load_from_yaml(config_path)
+            if str(c.execution.mode.value).upper() == "LIVE":
+                table.add_row(
+                    "Execution safety",
+                    "[red]LIVE[/red]",
+                    "PAPER is the safe default — confirm LIVE carefully",
+                )
+            else:
+                table.add_row(
+                    "Paper guard", "[green]PAPER[/green]", f"Default safe · {c.execution.symbol}"
+                )
+        except Exception:
+            pass
 
     console.print(table)
+    if cfg_ok and cfg_detail:
+        try:
+            # Rich full HealthEngine grade when available
+            from nexus_scalp.release.health import HealthEngine
+
+            engine = HealthEngine(config_path=config_path)
+            verdict, entries = engine.overall()
+            bad = [e for e in entries if e.verdict == "FAIL"]
+            if bad:
+                console.print(
+                    Panel(
+                        f"[bold]{verdict}[/bold] — {len(bad)} check(s) failing\n"
+                        + "\n".join(f"[red]• {e.category}:[/red] {e.reason}" for e in bad[:6])
+                        + (
+                            "\n[dim]Run nexus doctor --fix to repair fixable issues[/dim]"
+                            if bad
+                            else ""
+                        ),
+                        border_style="red" if verdict in ("NOT READY", "FAIL") else "yellow",
+                        title="Doctor summary",
+                    )
+                )
+                return verdict in ("READY", "PASS", "DEGRADED")
+        except Exception:
+            pass
+    if not cfg_ok:
+        console.print(
+            Panel(
+                "[red]Pre-flight check: config issue detected[/red]\n[dim]Try: nexus repair --recreate-config  ·  then nexus doctor[/dim]",
+                border_style="red",
+            )
+        )
+        return False
     console.print(
-        "[bold green]All Infrastructure Pre-Flight Checks Passed Successfully![/bold green]\n"
+        Panel(
+            "[bold green]All pre-flight checks passed[/bold green]  [dim]·  PAPER · XAUUSD ready[/dim]",
+            border_style="green",
+            box=box.ROUNDED,
+        )
     )
     return True
 
@@ -233,7 +381,8 @@ def main() -> None:
 
     # 1. Parse Command Line Arguments
     parser = argparse.ArgumentParser(
-        description="Nexus Trading Forex Bot — Production Scalping Launcher"
+        description="Nexus Trading Forex Bot — Production Scalping Launcher (PAPER/XAUUSD safe by default)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--config",
@@ -249,6 +398,11 @@ def main() -> None:
         help="Run comprehensive infrastructure health diagnostics check and exit.",
     )
     parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="With --doctor, auto-repair fixable issues (dirs/config/DB) then re-verify.",
+    )
+    parser.add_argument(
         "--gateway",
         "-g",
         action="store_true",
@@ -261,6 +415,19 @@ def main() -> None:
         default=None,
         help="Override target instrument symbol (e.g. '--symbol EURUSD').",
     )
+    parser.add_argument(
+        "--mode",
+        "-m",
+        type=str,
+        default=None,
+        choices=["paper", "shadow", "live"],
+        help="Override execution mode (default: from config, PAPER safe).",
+    )
+    parser.add_argument(
+        "--no-animate",
+        action="store_true",
+        help="Disable animated startup banners (CI / plain terminals).",
+    )
 
     args = parser.parse_args()
 
@@ -269,27 +436,108 @@ def main() -> None:
     # 2. Execute Doctor Diagnostic Check if explicitly requested
     if args.doctor:
         success = run_infrastructure_doctor(config_path)
+        # --fix loop: repair fixable and re-verify
+        if args.fix and not success:
+            console.print(Panel("[cyan]Auto-repairing fixable issues…[/cyan]", border_style="cyan"))
+            try:
+                from nexus_scalp.release.repair import RepairEngine
+
+                eng = RepairEngine()
+                results = eng.run(recreate_dirs=True, with_news=False)
+                for r in results:
+                    style = (
+                        "green"
+                        if r.status == "OK"
+                        else ("yellow" if r.status == "SKIPPED" else "red")
+                    )
+                    console.print(f"[{style}]{r.status:8}[/{style}] {r.action:12} {r.detail}")
+                success = run_infrastructure_doctor(config_path)
+                if success:
+                    console.print(
+                        Panel(
+                            "[bold green]Repaired — system is ready.[/bold green]",
+                            border_style="green",
+                        )
+                    )
+                else:
+                    console.print(
+                        Panel(
+                            "[yellow]Some checks still failing — see above[/yellow]",
+                            border_style="yellow",
+                        )
+                    )
+            except Exception as e:
+                console.print(Panel(f"[red]Repair failed:[/red] {e}", border_style="red"))
+                success = False
         sys.exit(0 if success else 1)
 
     # Always execute mandatory pre-flight health checks
     if not run_infrastructure_doctor(config_path):
         console.print(
-            "[bold red]Pre-flight infrastructure diagnostics failed! Halting launch.[/bold red]"
+            Panel(
+                "[bold red]Pre-flight diagnostics failed![/bold red]\n[dim]Halting launch — fix with nexus doctor --fix or nexus repair[/dim]",
+                border_style="red",
+            )
         )
         sys.exit(1)
 
     # 3. Load & Validate System Configuration
     console.print(
-        f"[bold green]Loading Configuration File:[/bold green] [yellow]{config_path}[/yellow]"
+        Panel(
+            f"[bold green]Loading config[/bold green]  [dim]{config_path}[/dim]",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
     )
+    ensure_config_files()
     config = AppConfig.load_from_yaml(config_path)
 
-    # Allow CLI symbol override
+    # CLI overrides — mode + symbol, both persist for the session banner
     if args.symbol:
         config.execution.symbol = args.symbol.upper()
         console.print(
-            f"[bold yellow]Symbol override applied from CLI:[/bold yellow] [bold white]{config.execution.symbol}[/bold white]"
+            Panel(
+                f"[yellow]Symbol override → [bold]{config.execution.symbol}[/bold][/yellow]",
+                border_style="yellow",
+            )
         )
+    if args.mode:
+        from nexus_scalp.domain.enums import ExecutionMode
+
+        chosen = {
+            "paper": ExecutionMode.PAPER,
+            "shadow": ExecutionMode.SHADOW,
+            "live": ExecutionMode.LIVE,
+        }[args.mode]
+        config.execution.mode = chosen
+        console.print(
+            Panel(
+                f"[bold]Mode override → [cyan]{chosen.value}[/cyan][/bold]  [dim](use nexus setup to persist)[/dim]",
+                border_style="cyan",
+            )
+        )
+        if chosen == ExecutionMode.LIVE:
+            console.print(
+                Panel(
+                    "[bold red]LIVE trading requested via launcher[/bold red]\n[dim]You will see a confirmation before real orders.[/dim]",
+                    border_style="red",
+                )
+            )
+            # Require explicit yes on TTY
+            if sys.stdin.isatty():
+                try:
+                    ans = input("Confirm LIVE trading? Type YES to continue: ").strip()
+                    if ans != "YES":
+                        console.print(
+                            Panel(
+                                "[yellow]LIVE not confirmed — aborting.[/yellow]",
+                                border_style="yellow",
+                            )
+                        )
+                        sys.exit(1)
+                except (EOFError, KeyboardInterrupt):
+                    console.print(Panel("[yellow]Aborted.[/yellow]", border_style="yellow"))
+                    sys.exit(1)
 
     # 4. Configure System Observability Logging Engine
     configure_logging(
@@ -312,14 +560,20 @@ def main() -> None:
     adapter: IMT5Port
     if args.gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
         console.print(
-            "[bold yellow]Binding Execution Adapter: Remote MT5 Gateway Client[/bold yellow]"
+            Panel(
+                "[yellow]Execution Adapter → Remote MT5 Gateway Client[/yellow]",
+                border_style="yellow",
+            )
         )
         from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
 
         adapter = RemoteMT5GatewayAdapter()
     else:
         console.print(
-            "[bold green]Binding Execution Adapter: Direct Native MetaTrader 5 (Win32 IPC)[/bold green]"
+            Panel(
+                "[green]Execution Adapter → Direct Native MetaTrader 5 (Win32 IPC)[/green]",
+                border_style="green",
+            )
         )
         adapter = DirectMT5Adapter(
             account=config.mt5.account,
@@ -333,7 +587,16 @@ def main() -> None:
     web_port = find_available_port(start_port=8080)
     try:
         engine = LiveEngine(config=config, adapter=adapter)
-        engine._preflight_or_raise()
+        try:
+            engine._preflight_or_raise()
+        except Exception as e:
+            console.print(
+                Panel(
+                    f"[bold red]Pre-flight failed:[/bold red] {e}\n[dim]Try nexus doctor --fix or nexus repair[/dim]",
+                    border_style="red",
+                )
+            )
+            sys.exit(1)
 
         app = create_app(engine_ref=engine)
         engine.server_state = app.state.server_state
@@ -356,16 +619,30 @@ def main() -> None:
         asyncio.run(run_concurrently())
     except KeyboardInterrupt:
         console.print(
-            "\n[bold yellow]Keyboard interrupt received (Ctrl+C). Initiating clean shutdown...[/bold yellow]"
+            Panel(
+                "[yellow]Shutdown requested (Ctrl+C) — stopping cleanly…[/yellow]",
+                border_style="yellow",
+            )
         )
+    except SystemExit:
+        raise
     except Exception as e:
         logger.critical(
             "Fatal unhandled execution error in launcher thread", error=str(e), exc_info=True
         )
-        console.print(f"\n[bold red]FATAL ENGINE EXECUTION ERROR:[/bold red] {e}")
+        console.print(
+            Panel(
+                f"[bold red]FATAL ENGINE ERROR:[/bold red] {e}\n[dim]Run nexus logs --errors and nexus doctor[/dim]",
+                border_style="red",
+            )
+        )
         sys.exit(1)
     finally:
-        console.print("[bold cyan]Nexus Scalp Engine lifecycle terminated cleanly.[/bold cyan]")
+        console.print(
+            Panel(
+                "[bold cyan]Nexus Scalp Engine terminated cleanly.[/bold cyan]", border_style="cyan"
+            )
+        )
 
 
 if __name__ == "__main__":

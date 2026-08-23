@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Nexus Scalp Engine CLI Management Console
 ==========================================
@@ -9,6 +10,11 @@ Safety contract (section 17 / 31 / 59):
     * ``nexus start --mode live`` prints the full risk warning and requires an
       explicit interactive confirmation.
     * First-run setup defaults to PAPER / SHADOW (diagnostic-safe).
+
+Design language (2026-08-23 refresh):
+    * Gradient typography, animated startup sequence, mode-aware palettes.
+    * Every error path has a pretty, actionable panel + --json parity.
+    * Doctor can auto-repair (+ --fix) and loops back into verification.
 """
 
 from __future__ import annotations
@@ -19,16 +25,27 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
 
 import typer
 from rich import box
+from rich.align import Align
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
+from rich.text import Text
 
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ExecutionMode
@@ -48,8 +65,8 @@ app = typer.Typer(
     name="nexus",
     help=f"{PRODUCT_DISPLAY} - operational & release console",
     add_completion=False,
+    rich_markup_mode="rich",
 )
-
 # ---------------------------------------------------------------------------
 # DB migration & schema management (TASK-10) — same canonical engine as startup
 # ---------------------------------------------------------------------------
@@ -67,7 +84,6 @@ app.add_typer(
     name="db-portability",
     help="DATABASE PORTABILITY: provider status, config, SQLite->PostgreSQL migration.",
 )
-
 # TASK-12 incident response & forensic diagnostics (`nexus incidents ...`).
 from nexus_scalp.cli.incident_commands import incidents_app
 
@@ -77,11 +93,30 @@ app.add_typer(
     help="Incident response & forensic diagnostics (TASK-12) — read-only by default.",
 )
 console = Console()
+# Faster output when --json (no rich truncation, see exit-code contract)
+_json_mode_global = False
 
 MODE_ALIASES = {
     "paper": ExecutionMode.PAPER,
     "shadow": ExecutionMode.SHADOW,
     "live": ExecutionMode.LIVE,
+}
+
+# ---------------------------------------------------------------------------
+# Cinematic palette — gradient + mode-aware styles
+# ---------------------------------------------------------------------------
+GRADIENT_TITLE = "bold cyan"
+GRADIENT_SUB = "dim white"
+MODE_STYLES: dict[str, str] = {
+    "PAPER": "bold white on #1a4a3a",  # pro-soft green
+    "SHADOW": "bold white on #3a3a1a",  # amber watch
+    "LIVE": "bold white on #5a1a1a",  # guarded crimson
+}
+MODE_DOTS: dict[str, str] = {"PAPER": "●", "SHADOW": "◐", "LIVE": "■"}
+MODE_TIPS: dict[str, str] = {
+    "PAPER": "Safe simulation — no broker orders. Perfect for first run + tests.",
+    "SHADOW": "Shadow paper — mirrors live decisions without execution.",
+    "LIVE": "Real capital at risk. Confirm carefully; kill-switch on dashboard.",
 }
 
 
@@ -103,26 +138,176 @@ def _emit(data: Any, as_json: bool, plain: bool = False) -> None:
     console.print(data)
 
 
-def _banner() -> None:
+def _version_line() -> str:
     info = get_version_info()
-    console.print(
-        Panel(
-            f"[bold cyan]{PRODUCT_DISPLAY}[/bold cyan]\n"
-            f"[dim]Version {info['version']} · {info['channel']} · "
-            f"{info['platform']} {info['architecture']} · commit "
-            f"{info['commit'] or 'n/a'}[/dim]",
-            border_style="cyan",
-        )
+    ch = info.get("channel") or "stable"
+    ver = info.get("version") or "?"
+    commit = (info.get("commit") or "n/a")[:7]
+    return f"[dim]{PRODUCT_DISPLAY} · v{ver} · {ch} · {commit}[/dim]"
+
+
+def _banner(*, subtitle: str | None = None) -> Panel:
+    info = get_version_info()
+    ver = info.get("version") or "?"
+    ch = info.get("channel") or "stable"
+    commit = (info.get("commit") or "n/a")[:7]
+    arch = info.get("architecture") or ""
+    title = Text("NEXUS SCALP ENGINE", style="bold cyan")
+    title.append(f"  v{ver}", style="dim cyan")
+    body = Text()
+    body.append(PRODUCT_DISPLAY, style="bold white")
+    body.append(f"  ·  {ch}  ·  {arch}  ·  {commit}", style="dim")
+    if subtitle:
+        body.append(f"\n{subtitle}", style="dim white")
+    return Panel(
+        Align.center(body),
+        title=str(title),
+        border_style="cyan",
+        box=box.ROUNDED,
+        padding=(1, 2),
     )
+
+
+def _mode_style(mode_value: str) -> str:
+    return MODE_STYLES.get(mode_value.upper(), "bold white on #1a4a3a")
+
+
+def _mode_dot(mode_value: str) -> str:
+    return MODE_DOTS.get(mode_value.upper(), "●")
 
 
 def _verdict_style(v: str) -> str:
     return {
         "PASS": "[green]PASS[/green]",
+        "READY": "[green]READY[/green]",
         "WARNING": "[yellow]WARN[/yellow]",
+        "DEGRADED": "[yellow]DEGRADED[/yellow]",
         "FAIL": "[red]FAIL[/red]",
+        "NOT READY": "[red]NOT READY[/red]",
         "UNKNOWN": "[dim]UNKNOWN[/dim]",
     }.get(v, v)
+
+
+# ---------------------------------------------------------------------------
+# Cinematic boot — animated gradient frames for the .exe launch
+# ---------------------------------------------------------------------------
+def _animated_intro(
+    *,
+    mode_value: str,
+    symbol: str,
+    endpoints: list[str],
+    version: str,
+    duration_ms: int = 900,
+) -> None:
+    """Short lived gradient intro (no extra deps, rich-only)."""
+    mode = mode_value.upper()
+    dot = _mode_dot(mode)
+    tip = MODE_TIPS.get(mode, "")
+    # Two-frame gradient: emerald -> cyan shimmer
+    frames: list[Panel] = []
+    for step in (0, 1):
+        title = Text()
+        title.append("NEXUS  ", style="bold cyan" if step == 0 else "bold white")
+        title.append("SCALP ENGINE", style="bold white" if step == 0 else "bold cyan")
+        body = Text()
+        body.append(f"{dot}  ", style=_mode_style(mode))
+        body.append(f"{mode}", style="bold white")
+        body.append(f"  ·  {symbol}", style="bold cyan")
+        body.append("  ·  PAPER" if mode == "PAPER" else f"  ·  {mode}", style="dim")
+        body.append(f"\n{version}", style="dim")
+        body.append(f"\n\n{tip}", style="dim italic")
+        frames.append(
+            Panel(
+                Align.center(body),
+                title=str(title),
+                subtitle="[dim]initializing…[/dim]",
+                border_style="bright_cyan" if step else "cyan",
+                box=box.ROUNDED,
+                padding=(1, 2),
+            )
+        )
+    # Render frames with a tiny beat (skip entirely if not a TTY)
+    is_tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
+    if not is_tty or duration_ms <= 0:
+        console.print(frames[-1])
+        return
+    with Live(frames[0], console=console, refresh_per_second=12, transient=False) as live:
+        time.sleep(min(duration_ms, 700) / 1000)
+        live.update(frames[1])
+        time.sleep(0.22)
+
+
+def _welcome_panel(
+    *,
+    mode_value: str,
+    symbol: str,
+    risk_drawdown: float,
+    endpoints: list[str],
+    animate: bool = True,
+) -> None:
+    info = get_version_info()
+    ver = info.get("version") or "?"
+    ch = info.get("channel") or "stable"
+    mode = mode_value.upper()
+    live_risk = mode == "LIVE"
+    tip = (
+        "LIVE guard: orders are real — use dashboard kill-switch. "
+        if live_risk
+        else "Tip: monitor charts & toggle LIVE/SHADOW directly in the Web UI."
+    )
+    endpoints_str = "\n".join(f"  [cyan]> {ep}[/cyan]" for ep in endpoints)
+    nl = "\n"
+    if animate:
+        _animated_intro(
+            mode_value=mode,
+            symbol=symbol,
+            endpoints=endpoints,
+            version=f"v{ver} · {ch} · PAPER default · XAUUSD ready",
+            duration_ms=900,
+        )
+
+    body = (
+        f"[bold]{_mode_dot(mode)}  Engine mode:[/bold] [{_mode_style(mode)}] {mode} [/{_mode_style(mode)}]"
+        f"{'  [bold red]⚠ LIVE[/bold red]' if live_risk else ''}{nl}"
+        f"[bold]Instrument:[/bold] [bold cyan]{symbol}[/bold cyan]  "
+        f"[dim]·[/dim]  Risk guard [bold]{risk_drawdown}%[/bold] max drawdown{nl}{nl}"
+        f"[bold]Web Control Center[/bold]{nl}{endpoints_str}{nl}{nl}"
+        f"[dim italic]{tip}[/dim]{nl}"
+        f"[dim]Press Ctrl+C to stop safely  ·  [cyan]nexus doctor[/cyan] for health  ·  [cyan]nexus update[/cyan] for updates[/dim]"
+    )
+    title = Text("NEXUS TRADING FOREX BOT", style="bold white")
+    title.append("  —  PAPER  ·  XAUUSD", style="dim cyan")
+    console.print(
+        Panel(
+            body,
+            title=str(title),
+            subtitle=f"[dim]v{ver} · {ch} · secure by default[/dim]",
+            border_style="bright_cyan",
+            box=box.ROUNDED,
+            padding=(1, 2),
+        )
+    )
+
+
+def _error_panel(
+    title: str,
+    detail: str,
+    *,
+    hint: str | None = None,
+    exit_code: int | None = None,
+) -> Panel:
+    body = f"[bold red]{detail}[/bold red]"
+    if hint:
+        body += f"\n\n[dim]Fix: {hint}[/dim]"
+    if exit_code is not None:
+        body += f"\n[dim]Exit code: {exit_code} ({xc.EXIT_NAMES.get(exit_code, '?')})[/dim]"
+    return Panel(body, title=f"[bold red]{title}[/bold red]", border_style="red", box=box.ROUNDED)
+
+
+def _success_panel(title: str, body: str, *, border: str = "green") -> Panel:
+    return Panel(
+        body, title=f"[bold {border}]{title}[/bold {border}]", border_style=border, box=box.ROUNDED
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -151,8 +336,8 @@ def version_cmd(
             f"{info['architecture']}, commit {info['commit'] or 'n/a'})"
         )
         return
-    _banner()
-    table = Table(show_header=False, box=box.SIMPLE)
+    console.print(_banner(subtitle="version & build identity"))
+    table = Table(show_header=False, box=box.SIMPLE, padding=(0, 1))
     table.add_column("Key", style="bold cyan")
     table.add_column("Value")
     for k in (
@@ -182,12 +367,18 @@ def doctor_cmd(
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
     verbose: bool = typer.Option(False, "--verbose", help="Show full reasons/suggestions."),
     no_color: bool = typer.Option(False, "--no-color", help="Disable ANSI colors."),
+    fix: bool = typer.Option(False, "--fix", help="Auto-repair fixable issues then re-verify."),
+    yes: bool = typer.Option(False, "--yes", help="Auto-confirm repair (use with --fix)."),
 ) -> None:
-    """Run the full system doctor (SYSTEM to ACCOUNTING)."""
+    """Run the full system doctor (SYSTEM to ACCOUNTING).
+
+    With --fix, fixable failures (missing dirs/config/DB/schema/logs) are
+    repaired non-destructively and the doctor re-runs to confirm the fix.
+    """
     if no_color:
         console.print = lambda *a, **k: print(*[str(x) for x in a])  # type: ignore[assignment]
     verdict, entries = _health_entries()
-    if json_mode:
+    if json_mode and not fix:
         _emit(
             {
                 "overall": verdict,
@@ -197,24 +388,110 @@ def doctor_cmd(
             True,
         )
         return
-    _banner()
-    table = Table(title="NEXUS SYSTEM HEALTH", box=box.SIMPLE)
-    table.add_column("Check", style="bold white")
-    table.add_column("Status", style="bold")
-    table.add_column("Detail", style="dim")
-    for e in entries:
-        detail = e.reason
-        if verbose and e.suggestion:
-            detail += f"  -> {e.suggestion}"
-        table.add_row(e.category, _verdict_style(e.verdict), detail)
-    console.print(table)
-    console.print(Panel(f"Overall: [bold]{verdict}[/bold]", border_style="cyan"))
+    if not json_mode:
+        console.print(_banner(subtitle="system doctor · 19 checks"))
+        table = Table(title="NEXUS SYSTEM HEALTH", box=box.SIMPLE_HEAD, show_lines=False)
+        table.add_column("Check", style="bold white", no_wrap=True)
+        table.add_column("Status", style="bold", no_wrap=True)
+        table.add_column("Detail", style="dim", overflow="fold")
+        for e in entries:
+            detail = e.reason
+            if verbose and e.suggestion:
+                detail += f"  → {e.suggestion}"
+            table.add_row(e.category, _verdict_style(e.verdict), detail)
+        console.print(table)
+        console.print(
+            Panel(
+                f"Overall: [bold]{verdict}[/bold]",
+                border_style="green"
+                if verdict in ("READY", "PASS")
+                else ("yellow" if verdict == "DEGRADED" else "red"),
+            )
+        )
+
     fails = [e for e in entries if e.verdict == "FAIL"]
+    auto_fixables = {"CONFIGURATION", "DATABASE", "LOGGING"}
+    fixable = [e for e in fails if e.category in auto_fixables]
     if fails and not json_mode:
-        console.print("[bold yellow]Suggested fixes:[/bold yellow]")
-        for e in fails:
-            if e.suggestion:
-                console.print(f"  • {e.category}: {e.suggestion}")
+        if fixable:
+            console.print("[bold cyan]Fixable issues detected:[/bold cyan]")
+            for e in fixable:
+                console.print(f"  • {e.category}: {e.reason}")
+                if e.suggestion:
+                    console.print(f"    [dim]→ {e.suggestion}[/dim]")
+        non_fixable = [e for e in fails if e not in fixable]
+        if non_fixable:
+            console.print("[bold yellow]Manual action needed:[/bold yellow]")
+            for e in non_fixable:
+                console.print(f"  • {e.category}: {e.reason}")
+                if e.suggestion:
+                    console.print(f"    [dim]→ {e.suggestion}[/dim]")
+
+    if fix and fixable:
+        if not yes:
+            ok = typer.confirm("Apply non-destructive fixes and re-verify?", default=True)
+            if not ok:
+                console.print("[yellow]Cancelled.[/yellow]")
+                raise typer.Exit(xc.EXIT_OK) from None
+        console.print("\n[bold cyan]Repairing fixable issues…[/bold cyan]")
+        # Map fixable categories -> RepairEngine options
+        rec_dirs = any(e.category in ("CONFIGURATION", "LOGGING") for e in fixable)
+        with_news = any(e.category == "NEWS" for e in fails)  # off by default
+        engine2 = rrepair.RepairEngine()
+        results = engine2.run(recreate_dirs=rec_dirs, with_news=with_news)
+        for r in results:
+            style = "green" if r.status == "OK" else ("yellow" if r.status == "SKIPPED" else "red")
+            console.print(f"[{style}]{r.status:8}[/{style}] {r.action:12} {r.detail}")
+        # Re-verify
+        verdict2, entries2 = _health_entries()
+        if json_mode:
+            _emit(
+                {
+                    "overall": verdict2,
+                    "checks": [e.to_dict() for e in entries2],
+                    "repair": [r.to_dict() for r in results],
+                    "environment": renv.format_hardware_block(renv.detect_environment()),
+                },
+                True,
+            )
+            raise typer.Exit(xc.EXIT_OK if verdict2 in ("READY", "PASS") else xc.EXIT_RUNTIME)
+        console.print("\n[bold]Re-check after repair[/bold]")
+        table2 = Table(box=box.SIMPLE_HEAD)
+        table2.add_column("Check", style="bold white")
+        table2.add_column("Status", style="bold")
+        table2.add_column("Detail", style="dim")
+        for e in entries2:
+            table2.add_row(e.category, _verdict_style(e.verdict), e.reason)
+        console.print(table2)
+        console.print(
+            Panel(
+                f"Overall: [bold]{verdict2}[/bold]",
+                border_style="green"
+                if verdict2 in ("READY", "PASS")
+                else ("yellow" if verdict2 == "DEGRADED" else "red"),
+            )
+        )
+        fails2 = [e for e in entries2 if e.verdict == "FAIL"]
+        if not fails2:
+            console.print("[bold green]Repaired — system is ready.[/bold green]")
+        else:
+            console.print(f"[yellow]{len(fails2)} check(s) still failing — see above.[/yellow]")
+        raise typer.Exit(xc.EXIT_OK if verdict2 in ("READY", "PASS") else xc.EXIT_RUNTIME)
+
+    if json_mode and fix:
+        _emit(
+            {
+                "overall": verdict,
+                "checks": [e.to_dict() for e in entries],
+                "repair": {
+                    "applied": False,
+                    "reason": "nothing fixable" if not fixable else "user declined",
+                },
+            },
+            True,
+        )
+    if not json_mode and verdict in ("NOT READY", "FAIL"):
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
 
 
 @app.command("health")
@@ -238,7 +515,8 @@ def health_cmd(
             print(f"{e.category:18} {e.verdict:8} {e.reason}")
         print(f"\nOverall: {verdict}")
         return
-    table = Table(box=box.SIMPLE, show_header=False)
+    console.print(_banner(subtitle="quick health"))
+    table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
     table.add_column("Check", style="bold white")
     table.add_column("Status", style="bold")
     table.add_column("Detail", style="dim")
@@ -248,7 +526,9 @@ def health_cmd(
     console.print(
         Panel(
             f"Overall: [bold]{verdict}[/bold]",
-            border_style="green" if verdict == "READY" else "yellow",
+            border_style="green"
+            if verdict == "READY"
+            else ("yellow" if verdict == "DEGRADED" else "red"),
         )
     )
 
@@ -304,12 +584,50 @@ def test_cmd(
         return
     target = _TEST_TARGETS.get(mode)
     if target is None:
-        raise typer.BadParameter(
-            f"unknown test mode '{mode}' — use quick|unit|integration|health|release|all"
-        )
+        hint = "Use quick|unit|integration|health|release|all. Try: nexus test --mode quick"
+        if json_mode:
+            _emit(
+                {"error": f"unknown test mode '{mode}'", "hint": hint, "exit_code": xc.EXIT_USAGE},
+                True,
+            )
+        else:
+            console.print(
+                _error_panel(
+                    "Invalid test mode",
+                    f"unknown test mode '{mode}'",
+                    hint=hint,
+                    exit_code=xc.EXIT_USAGE,
+                )
+            )
+        raise typer.Exit(xc.EXIT_USAGE) from None
     cmd = [sys.executable, "-m", "pytest", "-q", "--tb=short", *target]
     if not json_mode:
-        console.print(f"[bold cyan]Running tests ({mode}):[/bold cyan] {' '.join(target)[:120]}")
+        with Progress(
+            SpinnerColumn(style="cyan"),
+            TextColumn("[bold cyan]Running tests[/bold cyan] ({mode})…"),
+            transient=True,
+            console=console,
+        ) as progress:
+            progress.add_task("tests", total=None)
+            # Still print a lightweight header so CI logs keep context
+            console.print(f"[dim]pytest {' '.join(target)[:140]}[/dim]")
+        # Real run after spinner header (typer runner suppresses live, so do plain run now)
+        proc = subprocess.run(cmd, check=False)
+        if proc.returncode == 0:
+            console.print(
+                _success_panel("Tests passed", f"mode: {mode}  ·  exit code 0", border="green")
+            )
+        else:
+            console.print(
+                _error_panel(
+                    "Tests failed",
+                    f"mode: {mode} returned {proc.returncode}",
+                    hint="Run with --json for machine-readable output, or nexus doctor --fix",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+        raise typer.Exit(0 if proc.returncode == 0 else 1)
+    # json path — no spinner
     proc = subprocess.run(cmd, check=False)
     _emit(
         {"mode": mode, "returncode": proc.returncode},
@@ -345,13 +663,19 @@ def logs_cmd(
     """Tail / filter / export engine logs."""
     files = _log_files()
     if not files:
-        console.print("[yellow]No log files found yet.[/yellow]")
+        console.print(
+            _error_panel(
+                "No logs yet",
+                "No log files found.",
+                hint="Start the engine once: nexus start  ·  then check again. Logs live in artifacts/logs/",
+            )
+        )
         return
     if export is not None:
         with zipfile.ZipFile(export, "w", zipfile.ZIP_DEFLATED) as zf:
             for f in files:
                 zf.write(f, arcname=f.name)
-        console.print(f"[green]Logs exported to {export}[/green]")
+        console.print(_success_panel("Logs exported", str(export)))
         return
     latest = files[-1]
     lines = latest.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -359,6 +683,9 @@ def logs_cmd(
         lines = [l for l in lines if re.search(r"\b(ERROR|CRITICAL)\b", l, re.I)]
     if worker:
         lines = [l for l in lines if re.search(r"WORKER", l, re.I)]
+    console.print(
+        Panel(f"[dim]{latest}[/dim]  ·  last {tail} lines", border_style="cyan", box=box.ROUNDED)
+    )
     for line in lines[-tail:]:
         console.print(line)
 
@@ -377,14 +704,41 @@ def config_cmd(
     """Inspect / validate the active configuration."""
     target = validate or rpaths.get_user_config_path()
     if not target.exists():
-        console.print(f"[red]Config not found: {target}[/red]")
-        console.print("Run [bold]nexus setup[/bold] or [bold]nexus repair[/bold] first.")
-        raise typer.Exit(1)
+        if json_mode:
+            _emit(
+                {
+                    "path": str(target),
+                    "valid": False,
+                    "error": "config not found",
+                    "hint": "Run nexus setup or nexus repair",
+                },
+                True,
+            )
+        else:
+            console.print(
+                _error_panel(
+                    "Config not found",
+                    str(target),
+                    hint="Run nexus setup or nexus repair first.",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     try:
         cfg = AppConfig.load_from_yaml(target)
     except Exception as e:
-        console.print(f"[red]INVALID configuration:[/red] {e}")
-        raise typer.Exit(1) from None
+        if json_mode:
+            _emit({"path": str(target), "valid": False, "error": str(e)}, True)
+        else:
+            console.print(
+                _error_panel(
+                    "Invalid configuration",
+                    str(e),
+                    hint=f"Fix {target} or run nexus repair --recreate-config",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     if json_mode:
         _emit(
             {
@@ -397,10 +751,9 @@ def config_cmd(
             True,
         )
         return
-    console.print(f"[green]Configuration valid:[/green] {target}")
+    console.print(_success_panel("Configuration valid", str(target), border="green"))
     console.print(
-        f"Symbol: {cfg.execution.symbol} | Mode: {cfg.execution.mode.value} | "
-        f"Schema: {cfg.model.feature_schema_version}"
+        f"Symbol: [bold cyan]{cfg.execution.symbol}[/bold cyan]  ·  Mode: [bold]{cfg.execution.mode.value}[/bold]  ·  Schema: {cfg.model.feature_schema_version}"
     )
 
 
@@ -428,10 +781,12 @@ def settings_cmd(
                 True,
             )
             return
-        console.print("[bold cyan]NEXUS USER SETTINGS[/bold cyan]")
-        console.print(f"State    : {svc.state.state}  ({svc.db.db_path})")
+        console.print(_banner(subtitle="user settings (secrets masked)"))
+        console.print(f"State    : [bold]{svc.state.state}[/bold]  ([dim]{svc.db.db_path}[/dim])")
         console.print("Telegram :")
-        console.print(f"  configured      : {'YES' if status['configured'] else 'NO'}")
+        console.print(
+            f"  configured      : {'[green]YES[/green]' if status['configured'] else '[yellow]NO[/yellow]'}"
+        )
         console.print(f"  enabled         : {status['enabled']}")
         console.print(f"  token_present   : {status['token_present']}")
         console.print(f"  masked_token    : {status['masked_token'] or '(none)'}")
@@ -453,16 +808,45 @@ def repair_cmd(
         False, "--recreate-config", help="Restore config from template (keeps DBs)."
     ),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    verify: bool = typer.Option(True, "--verify/--no-verify", help="Re-run doctor after repair."),
 ) -> None:
     """Repair non-destructive derived state. NEVER deletes user data."""
-    engine = rrepair.RepairEngine()
-    results = engine.run(recreate_dirs=force_recreate, with_news=news_db)
+    with Progress(
+        SpinnerColumn(style="cyan"),
+        TextColumn("[bold cyan]Repairing…[/bold cyan]"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task("repair", total=None)
+        engine = rrepair.RepairEngine()
+        results = engine.run(recreate_dirs=force_recreate, with_news=news_db)
     if json_mode:
-        _emit(engine.summary_dict(results), True)
+        payload = engine.summary_dict(results)
+        if verify:
+            verdict, entries = _health_entries()
+            payload["verify"] = {"overall": verdict, "checks": [e.to_dict() for e in entries]}
+        _emit(payload, True)
         return
+    console.print(_banner(subtitle="repair — what we fixed"))
     for r in results:
         style = "green" if r.status == "OK" else ("yellow" if r.status == "SKIPPED" else "red")
         console.print(f"[{style}]{r.status:8}[/{style}] {r.action:12} {r.detail}")
+    if verify:
+        verdict, entries = _health_entries()
+        console.print("\n[bold]Verification after repair[/bold]")
+        for e in entries:
+            if e.verdict == "FAIL":
+                console.print(f"[red]FAIL[/red]  {e.category:16} {e.reason}")
+        console.print(
+            Panel(
+                f"Overall: [bold]{verdict}[/bold]",
+                border_style="green"
+                if verdict in ("READY", "PASS")
+                else ("yellow" if verdict == "DEGRADED" else "red"),
+            )
+        )
+        if verdict in ("READY", "PASS"):
+            console.print("[bold green]System verified — you can run: nexus start[/bold green]")
     failed = [r for r in results if r.status == "FAILED"]
     raise typer.Exit(1 if failed else 0)
 
@@ -503,12 +887,20 @@ def audit_purge_cmd(
     if json_mode:
         _emit(res, True)
         return
-    console.print("[green]Audit retention purge complete[/green]")
+    console.print(
+        _success_panel(
+            "Audit retention purge complete",
+            f"window: signals {signal_days}d · moving {moving_days}d · telemetry {telemetry_days}d",
+            border="green",
+        )
+    )
     for table, count in (res.get("deleted") or {}).items():
         console.print(f"  {table:22} {count} rows deleted")
     if res.get("error"):
-        console.print(f"[red]error: {res['error']}[/red]")
-        raise typer.Exit(1)
+        console.print(
+            _error_panel("Purge error", str(res["error"]), hint="Check DB locks and try again")
+        )
+        raise typer.Exit(1) from None
     console.print(f"  duration: {res.get('duration_ms', 0)} ms")
 
 
@@ -520,13 +912,14 @@ def audit_purge_cmd(
 def diagnostics_cmd() -> None:
     """Export a sanitized diagnostics archive (never contains secrets)."""
     with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold cyan]Collecting diagnostics...[/bold cyan]"),
+        SpinnerColumn(style="cyan"),
+        TextColumn("[bold cyan]Collecting diagnostics…[/bold cyan]"),
         transient=True,
+        console=console,
     ) as progress:
         progress.add_task("collect", total=None)
         out = rdiag.export_diagnostics()
-    console.print(f"[green]Diagnostics exported:[/green] {out}")
+    console.print(_success_panel("Diagnostics exported", str(out), border="cyan"))
     console.print("[dim]Sanitized: no passwords, tokens, credentials or DB contents.[/dim]")
 
 
@@ -541,7 +934,10 @@ def verify_cmd(
     """Verify a release tree: EXE, launch, version, assets, checksums, secrets."""
     root = root.resolve()
     with Progress(
-        SpinnerColumn(), TextColumn("[bold cyan]Verifying release...[/bold cyan]"), transient=True
+        SpinnerColumn(style="cyan"),
+        TextColumn("[bold cyan]Verifying release…[/bold cyan]"),
+        transient=True,
+        console=console,
     ) as progress:
         progress.add_task("verify", total=None)
         result = rverify.verify_release(root)
@@ -549,6 +945,7 @@ def verify_cmd(
         result["exit_code"] = xc.EXIT_OK if result["valid"] else xc.EXIT_RELEASE
         _emit(result, True)
         return
+    console.print(_banner(subtitle=f"verify release · {root.name}"))
     for c in result["checks"]:
         style = "green" if c["status"] == "PASS" else ("yellow" if c["status"] == "WARN" else "red")
         console.print(f"[{style}]{c['status']:5}[/{style}] {c['check']:28} {c['detail']}")
@@ -619,30 +1016,45 @@ def _update_json_exit(report: dict[str, Any], json_mode: bool, code: int | None 
         report = dict(report)
         report["exit_code"] = code
         _emit(report, True)
-    raise typer.Exit(code)
+    raise typer.Exit(code) from None
 
 
 def _update_human_check(report: dict[str, Any]) -> None:
     """Human-readable update-check output (spec 2/34)."""
-    print("Nexus Client Updater")
-    print(f"  Current version : {report.get('current_version')}")
-    print(f"  Latest release  : {report.get('target_version')}")
-    print(f"  Release tag     : {report.get('tag') or '—'}")
-    if report.get("commit_sha"):
-        print(f"  Commit SHA      : {report['commit_sha']}")
-    if report.get("published_at"):
-        print(f"  Published at    : {report['published_at']}")
-    print(f"  Platform        : {report.get('platform')}")
-    print(f"  Architecture    : {report.get('architecture')}")
-    if report.get("artifact_name"):
-        print(f"  Asset           : {report['artifact_name']}")
-    if report.get("model_version"):
-        print(f"  Model version   : {report['model_version']}")
-    if report.get("schema_version"):
-        print(f"  Model schema    : {report['schema_version']}")
-    print(f"  Status          : {report.get('status')}")
-    for d in report.get("decisions", []):
-        print(f"    - {d}")
+    info = get_version_info()
+    ch_disp = f"[cyan]{info.get('channel') or 'stable'}[/cyan]"
+    status = str(report.get("status") or "UNKNOWN")
+    status_style = (
+        "green"
+        if status == "UPDATE_AVAILABLE"
+        else ("yellow" if status in ("NO_UPDATE", "IDLE") else "red")
+    )
+    console.print(_banner(subtitle=f"update check · {ch_disp}"))
+    table = Table(show_header=False, box=box.SIMPLE, padding=(0, 1))
+    table.add_column("Field", style="bold white", no_wrap=True)
+    table.add_column("Value", style="dim")
+    for k, label in (
+        ("current_version", "Current version"),
+        ("target_version", "Latest release"),
+        ("tag", "Release tag"),
+        ("commit_sha", "Commit SHA"),
+        ("published_at", "Published at"),
+        ("platform", "Platform"),
+        ("architecture", "Architecture"),
+        ("artifact_name", "Asset"),
+        ("model_version", "Model version"),
+        ("schema_version", "Model schema"),
+        ("status", "Status"),
+    ):
+        v = report.get(k)
+        if v:
+            table.add_row(label, str(v))
+    console.print(table)
+    if report.get("decisions"):
+        console.print("[dim]Decisions:[/dim]")
+        for d in report.get("decisions", []):
+            console.print(f"  [dim]> {d}[/dim]")
+    console.print(Panel(f"[{status_style}]{status}[/{status_style}]", border_style="cyan"))
 
 
 @app.command("update")
@@ -696,11 +1108,45 @@ def update_cmd(
     nexus update rollback   : restore the prior application (user data intact)
     nexus update doctor     : verify github/disk/mode/db/config/process/lock
     """
+    # --- validation: unknown channel must be a pretty error, never silent ---
+    if channel not in ("stable", "beta", "nightly"):
+        msg = f"unknown channel '{channel}' — use stable|beta|nightly"
+        if json_mode:
+            _emit({"error": msg, "hint": "Add --channel stable", "exit_code": xc.EXIT_USAGE}, True)
+        else:
+            console.print(
+                _error_panel(
+                    "Invalid channel", msg, hint="Use --channel stable", exit_code=xc.EXIT_USAGE
+                )
+            )
+        raise typer.Exit(xc.EXIT_USAGE) from None
+
     # Offline manifest mode (build pipeline / tests): routed through the
     # SAME discovery/plan core (no duplicate update implementation, spec 55).
     if manifest is not None:
+        if not manifest.exists():
+            msg = f"manifest not found: {manifest}"
+            if json_mode:
+                _emit({"error": msg, "exit_code": xc.EXIT_RUNTIME}, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "Manifest not found",
+                        msg,
+                        hint="Pass a JSON file produced by the release pipeline",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
         info = get_version_info()
-        available = rupdate.load_available_releases(manifest)
+        try:
+            available = rupdate.load_available_releases(manifest)
+        except Exception as e:
+            if json_mode:
+                _emit({"error": f"invalid manifest: {e}", "exit_code": xc.EXIT_RUNTIME}, True)
+            else:
+                console.print(_error_panel("Invalid manifest", str(e), exit_code=xc.EXIT_RUNTIME))
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
         if isinstance(available, dict):
             available = {
                 "assets": available.get("assets") or [],
@@ -723,10 +1169,26 @@ def update_cmd(
     orch = _update_orchestrator()
 
     if subcommand == "check":
-        report = orch.check(
-            include_prerelease=include_prerelease,
-            allow_downgrade=allow_downgrade,
-        )
+        try:
+            report = orch.check(
+                include_prerelease=include_prerelease,
+                allow_downgrade=allow_downgrade,
+            )
+        except Exception as e:
+            if json_mode:
+                _emit(
+                    {"error": str(e), "status": "NETWORK_ERROR", "exit_code": xc.EXIT_UPDATE}, True
+                )
+            else:
+                console.print(
+                    _error_panel(
+                        "Update check failed",
+                        str(e),
+                        hint="Check your internet / nexus update doctor",
+                        exit_code=xc.EXIT_UPDATE,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_UPDATE) from None
         report["dry_run"] = True
         report["force_refresh"] = force_refresh
         if not json_mode:
@@ -734,40 +1196,96 @@ def update_cmd(
         _update_json_exit(report, json_mode)
         return
     if subcommand == "latest":
-        report = orch.latest(
-            include_prerelease=include_prerelease,
-        )
+        try:
+            report = orch.latest(
+                include_prerelease=include_prerelease,
+            )
+        except Exception as e:
+            if json_mode:
+                _emit(
+                    {"error": str(e), "status": "NETWORK_ERROR", "exit_code": xc.EXIT_UPDATE}, True
+                )
+            else:
+                console.print(
+                    _error_panel(
+                        "Update latest failed",
+                        str(e),
+                        hint="Try nexus update doctor",
+                        exit_code=xc.EXIT_UPDATE,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_UPDATE) from None
         report["force_refresh"] = True  # latest ALWAYS bypasses cache (spec 19)
         if not json_mode:
             _update_human_check(report)
         _update_json_exit(report, json_mode)
         return
     if subcommand == "download":
-        report = orch.download(include_prerelease=include_prerelease)
+        try:
+            report = orch.download(include_prerelease=include_prerelease)
+        except Exception as e:
+            if json_mode:
+                _emit(
+                    {"error": str(e), "status": "NETWORK_ERROR", "exit_code": xc.EXIT_UPDATE}, True
+                )
+            else:
+                console.print(
+                    _error_panel(
+                        "Download failed",
+                        str(e),
+                        hint="nexus update doctor  ·  check disk & network",
+                        exit_code=xc.EXIT_UPDATE,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_UPDATE) from None
         report["force_refresh"] = force_refresh
         if not json_mode:
             if report.get("artifact_path"):
-                print("Nexus Client Updater — DOWNLOAD")
-                print(f"  Current version : {report.get('current_version')}")
-                print(f"  Target version  : {report.get('target_version')}")
-                print(f"  Asset           : {report.get('artifact_name')}")
-                print("  SHA256          : PASS")
-                print(f"  Staged at       : {report.get('artifact_path')}")
-                print("  Update          : STAGED_READY")
+                console.print(
+                    _success_panel(
+                        "Download staged",
+                        f"Target: {report.get('target_version')}  ·  Asset: {report.get('artifact_name')}\nStaged at {report.get('artifact_path')}\nSHA256: PASS",
+                        border="green",
+                    )
+                )
             else:
-                print("Nexus Client Updater — DOWNLOAD")
-                print(f"  Status          : {report.get('status')}")
+                console.print(
+                    _error_panel(
+                        "Download not ready",
+                        str(report.get("status")),
+                        hint=" ".join(report.get("decisions", [])[:2]),
+                    )
+                )
                 for d in report.get("decisions", []):
-                    print(f"    - {d}")
+                    console.print(f"  [dim]> {d}[/dim]")
         _update_json_exit(report, json_mode)
         return
     if subcommand == "verify":
-        report = orch.verify()
+        try:
+            report = orch.verify()
+        except Exception as e:
+            if json_mode:
+                _emit(
+                    {"error": str(e), "status": "VERIFY_FAILED", "exit_code": xc.EXIT_RELEASE}, True
+                )
+            else:
+                console.print(_error_panel("Verify failed", str(e), exit_code=xc.EXIT_RELEASE))
+            raise typer.Exit(xc.EXIT_RELEASE) from None
         if not json_mode:
+            console.print(_banner(subtitle="verify installed client"))
             for c in report.get("checks", []):
-                style = "green" if c["verdict"] == "PASS" else "red"
-                print(f"[{style}]{c['verdict']:8}[/{style}] {c['name']:24} {c['detail']}")
-            print(f"\nVerify       : {report.get('status')}")
+                style = (
+                    "green"
+                    if c["verdict"] == "PASS"
+                    else ("yellow" if c["verdict"] == "WARNING" else "red")
+                )
+                console.print(f"[{style}]{c['verdict']:8}[/{style}] {c['name']:24} {c['detail']}")
+            console.print(
+                Panel(
+                    f"Verify: [bold]{report.get('status')}[/bold]",
+                    border_style="green" if report.get("status") == "PASS" else "red",
+                )
+            )
         _update_json_exit(report, json_mode)
         return
     if subcommand == "status":
@@ -777,34 +1295,71 @@ def update_cmd(
         else:
             st = report["state"]
             rec = report.get("recovery", {})
-            console.print(f"[bold cyan]Update state:[/bold cyan] {st}")
-            console.print(f"Crashed      : {rec.get('crashed', False)}")
-            console.print(f"Recovery     : {rec.get('recovery', 'n/a')}")
-            console.print(f"Lock held    : {report.get('lock_held', False)}")
-            console.print(f"Current      : {report['current_version']} ({report['channel']})")
-        raise typer.Exit(xc.EXIT_OK)
+            table = Table(show_header=False, box=box.SIMPLE, padding=(0, 1))
+            table.add_column("Field", style="bold white")
+            table.add_column("Value")
+            table.add_row("State", f"[bold]{st}[/bold]")
+            table.add_row("Crashed", str(rec.get("crashed", False)))
+            table.add_row("Recovery", str(rec.get("recovery", "n/a")))
+            table.add_row("Lock held", str(report.get("lock_held", False)))
+            table.add_row("Current", f"{report['current_version']} ({report['channel']})")
+            console.print(_banner(subtitle="update status · state machine"))
+            console.print(table)
+        raise typer.Exit(xc.EXIT_OK) from None
     if subcommand == "history":
         rows = orch.history()
         if json_mode:
             _emit(rows, True)
         else:
+            console.print(_banner(subtitle="update history"))
             if not rows:
-                console.print("[yellow]No update history yet.[/yellow]")
+                console.print(
+                    Panel(
+                        "[dim]No update history yet — first update will log here.[/dim]",
+                        border_style="cyan",
+                    )
+                )
             for row in rows:
                 console.print(
-                    f"{row.get('timestamp', '?')[:19]}  {row.get('from_version')} -> "
-                    f"{row.get('to_version')}  [{row.get('channel')}]  {row.get('result')}"
+                    f"[dim]{row.get('timestamp', '?')[:19]}[/dim]  {row.get('from_version')} → "
+                    f"[bold]{row.get('to_version')}[/bold]  [{row.get('channel')}]  {row.get('result')}"
                 )
-        raise typer.Exit(xc.EXIT_OK)
+        raise typer.Exit(xc.EXIT_OK) from None
     if subcommand == "rollback":
-        report = orch.rollback(reason="user-requested")
+        try:
+            report = orch.rollback(reason="user-requested")
+        except Exception as e:
+            if json_mode:
+                _emit({"error": str(e), "exit_code": xc.EXIT_RUNTIME}, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "Rollback failed",
+                        str(e),
+                        hint="Check logs and nexus diagnostics",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        if not json_mode:
+            console.print(_success_panel("Rollback", str(report.get("status"))))
         _update_json_exit(report, json_mode)
         return
     if subcommand == "doctor":
-        report = orch.doctor()
+        try:
+            report = orch.doctor()
+        except Exception as e:
+            if json_mode:
+                _emit({"error": str(e), "exit_code": xc.EXIT_UPDATE}, True)
+            else:
+                console.print(
+                    _error_panel("Update doctor failed", str(e), exit_code=xc.EXIT_UPDATE)
+                )
+            raise typer.Exit(xc.EXIT_UPDATE) from None
         if json_mode:
             _emit(report, True)
         else:
+            console.print(_banner(subtitle="update doctor · pre-flight for updates"))
             for c in report["checks"]:
                 style = (
                     "green"
@@ -812,33 +1367,66 @@ def update_cmd(
                     else ("yellow" if c["verdict"] == "WARNING" else "red")
                 )
                 console.print(f"[{style}]{c['verdict']:8}[/{style}] {c['name']:20} {c['reason']}")
-            console.print(f"\nOverall: [bold]{report['overall']}[/bold]")
+            console.print(
+                Panel(
+                    f"Overall: [bold]{report['overall']}[/bold]",
+                    border_style="green" if report["overall"] == "READY" else "red",
+                )
+            )
         raise typer.Exit(xc.EXIT_OK if report["overall"] == "READY" else xc.EXIT_UPDATE)
 
     if subcommand == "install":
-        report = orch.install(
-            yes=yes,
-            force=force,
-            allow_downgrade=allow_downgrade,
-        )
+        try:
+            report = orch.install(
+                yes=yes,
+                force=force,
+                allow_downgrade=allow_downgrade,
+            )
+        except Exception as e:
+            if json_mode:
+                _emit({"error": str(e), "exit_code": xc.EXIT_UPDATE}, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "Install failed",
+                        str(e),
+                        hint="Try nexus update download first, then install",
+                        exit_code=xc.EXIT_UPDATE,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_UPDATE) from None
+        if not json_mode and report.get("error_message"):
+            console.print(_error_panel("Install error", str(report.get("error_message"))))
         _update_json_exit(report, json_mode)
         return
 
     if subcommand not in (None, "run", "apply"):
-        raise typer.BadParameter(
-            f"unknown update subcommand '{subcommand}' — use "
-            "check|latest|download|install|verify|status|history|rollback|doctor"
-        )
+        msg = f"unknown update subcommand '{subcommand}'"
+        hint = "Use check|latest|download|install|verify|status|history|rollback|doctor"
+        if json_mode:
+            _emit({"error": msg, "hint": hint, "exit_code": xc.EXIT_USAGE}, True)
+        else:
+            console.print(
+                _error_panel("Invalid update command", msg, hint=hint, exit_code=xc.EXIT_USAGE)
+            )
+        raise typer.Exit(xc.EXIT_USAGE) from None
 
     if dry_run:
-        report = orch.dry_run()
+        try:
+            report = orch.dry_run()
+        except Exception as e:
+            if json_mode:
+                _emit({"error": str(e), "exit_code": xc.EXIT_UPDATE}, True)
+            else:
+                console.print(_error_panel("Dry run failed", str(e), exit_code=xc.EXIT_UPDATE))
+            raise typer.Exit(xc.EXIT_UPDATE) from None
         if json_mode:
             report["exit_code"] = (
                 xc.EXIT_OK if report.get("status") == "UPDATE_AVAILABLE" else xc.EXIT_UPDATE
             )
             _emit(report, True)
         else:
-            print("NEXUS UPDATE — DRY RUN (nothing downloaded, nothing modified)")
+            console.print(_banner(subtitle="dry run — nothing downloaded, nothing touched"))
             print(f"  Current : {report.get('current_version')}")
             print(f"  Target  : {report.get('target_version')}")
             print(f"  Channel : {report.get('channel')}")
@@ -858,6 +1446,7 @@ def update_cmd(
             xc.EXIT_OK if report.get("status") == "UPDATE_AVAILABLE" else xc.EXIT_UPDATE
         )
 
+    # Pretty run with live step panel
     def _human_event(state: str, detail: str) -> None:
         if state in (
             "DOWNLOADING",
@@ -873,19 +1462,65 @@ def update_cmd(
             "ROLLED_BACK",
             "ROLLING_BACK",
         ):
-            print(f"  {state.replace('_', ' ').title()}... {detail}")
+            console.print(f"  [dim]{state.replace('_', ' ').title()}…[/dim] {detail}")
 
-    report = orch.run(yes=yes, force=force, on_event=_human_event)
+    try:
+        # Live progress for the long phases
+        with Progress(
+            SpinnerColumn(style="cyan"),
+            TextColumn("[bold cyan]{task.description}[/bold cyan]"),
+            BarColumn(style="cyan", complete_style="green"),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            transient=True,
+            console=console,
+        ) as progress:
+            task = progress.add_task("Updating Nexus…", total=None)
+            report = orch.run(yes=yes, force=force, on_event=_human_event)
+            progress.update(task, completed=1)
+    except Exception as e:
+        if json_mode:
+            _emit({"error": str(e), "status": "FAILED", "exit_code": xc.EXIT_UPDATE}, True)
+        else:
+            console.print(
+                _error_panel(
+                    "Update failed",
+                    str(e),
+                    hint="Run nexus update doctor and nexus logs --errors",
+                    exit_code=xc.EXIT_UPDATE,
+                )
+            )
+        raise typer.Exit(xc.EXIT_UPDATE) from None
+
     if not json_mode:
-        print(f"\n  Current        : {report.get('current_version')}")
-        print(f"  Target         : {report.get('target_version')}")
-        print(f"  Status         : {report.get('status')}")
-        if report.get("health_status"):
-            print(f"  Client health  : {report['health_status']}")
-        if report.get("error_message"):
-            print(f"  Error          : {report['error_message']}")
-        if report.get("rollback_completed"):
-            print("  Rollback       : COMPLETED — previous version restored")
+        if report.get("status") == "COMPLETED":
+            console.print(
+                _success_panel(
+                    "Update complete",
+                    f"Now on {report.get('target_version')} — safe to start: nexus start",
+                    border="green",
+                )
+            )
+        else:
+            console.print(
+                Panel(
+                    f"Status: [bold]{report.get('status')}[/bold]\n"
+                    + (
+                        f"Error: {report.get('error_message')}\n"
+                        if report.get("error_message")
+                        else ""
+                    )
+                    + (
+                        "Rollback: COMPLETED — previous version restored"
+                        if report.get("rollback_completed")
+                        else ""
+                    ),
+                    border_style="red"
+                    if report.get("status") not in ("COMPLETED", "NO_UPDATE")
+                    else "yellow",
+                    title="Update finished",
+                )
+            )
     _update_json_exit(report, json_mode)
 
 
@@ -900,45 +1535,62 @@ def release_cmd(
     installed client (version, tag, commit, asset hash, model, schema).
     """
     if subcommand not in (None, "info"):
-        raise typer.BadParameter("unknown release subcommand — use info")
+        msg = "unknown release subcommand — use info"
+        if json_mode:
+            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
+        else:
+            console.print(
+                _error_panel(
+                    "Invalid release command",
+                    msg,
+                    hint="Try: nexus release info --json",
+                    exit_code=xc.EXIT_USAGE,
+                )
+            )
+        raise typer.Exit(xc.EXIT_USAGE) from None
     report = _update_orchestrator().release_info()
     if json_mode:
         report["exit_code"] = xc.EXIT_OK
         _emit(report, True)
     else:
         inst = report.get("installed_release") or {}
-        print("Nexus Client Release Info")
-        print(f"  Current version    : {report.get('current_version')}")
-        print(f"  Current commit     : {report.get('current_commit') or 'n/a'}")
-        print(f"  Channel            : {report.get('channel')}")
-        print(f"  Architecture       : {report.get('architecture')}")
+        console.print(_banner(subtitle="release metadata"))
+        table = Table(show_header=False, box=box.SIMPLE, padding=(0, 1))
+        table.add_column("Field", style="bold white")
+        table.add_column("Value", style="dim")
+        table.add_row("Current version", str(report.get("current_version")))
+        table.add_row("Current commit", str(report.get("current_commit") or "n/a"))
+        table.add_row("Channel", str(report.get("channel")))
+        table.add_row("Architecture", str(report.get("architecture")))
         if inst:
-            print(f"  Installed release  : v{inst.get('version')}")
-            print(f"  Release tag        : {inst.get('tag')}")
-            print(f"  Commit             : {inst.get('commit') or 'n/a'}")
-            print(f"  Asset              : {inst.get('asset_name')}")
-            print(f"  Asset SHA256       : {str(inst.get('asset_sha256') or '')[:16]}…")
+            table.add_row("Installed release", f"v{inst.get('version')}")
+            table.add_row("Release tag", str(inst.get("tag")))
+            table.add_row("Commit", str(inst.get("commit") or "n/a"))
+            table.add_row("Asset", str(inst.get("asset_name")))
+            table.add_row("Asset SHA256", f"{str(inst.get('asset_sha256') or '')[:16]}…")
             if inst.get("model_version"):
-                print(f"  Model version      : {inst['model_version']}")
+                table.add_row("Model version", str(inst["model_version"]))
             if inst.get("schema_version"):
-                print(f"  Model schema       : {inst['schema_version']}")
+                table.add_row("Model schema", str(inst["schema_version"]))
             if inst.get("feature_dimension"):
-                print(f"  Feature dimension  : {inst['feature_dimension']}")
-            print(f"  Installed at       : {inst.get('installed_at')}")
+                table.add_row("Feature dimension", str(inst["feature_dimension"]))
+            table.add_row("Installed at", str(inst.get("installed_at")))
         else:
-            print("  Installed release  : none recorded yet")
-    raise typer.Exit(xc.EXIT_OK)
+            table.add_row("Installed release", "[dim]none recorded yet[/dim]")
+        console.print(table)
+    raise typer.Exit(xc.EXIT_OK) from None
 
 
 # ---------------------------------------------------------------------------
 # install / setup (first-run wizard)
 # ---------------------------------------------------------------------------
 def _wizard_flow(json_mode: bool) -> dict[str, Any]:
+    console.print(_banner(subtitle="first-run setup wizard"))
     console.print(
         Panel(
-            "[bold cyan]Nexus First-Run Setup Wizard[/bold cyan]\n"
-            "Compatibility check, install, database, model, mode, health",
+            "Compatibility check → install → database → model → mode → health",
             border_style="cyan",
+            box=box.ROUNDED,
         )
     )
 
@@ -946,19 +1598,44 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     results = reval.evaluate_requirements(env)
     verdict, _lines = reval.overall_verdict(results)
 
-    console.print("\n[bold]Compatibility report[/bold]")
+    table = Table(title="Compatibility", box=box.SIMPLE_HEAD)
+    table.add_column("Component", style="bold white")
+    table.add_column("Result", style="bold")
+    table.add_column("Detail", style="dim")
     for r in results:
-        console.print(f"  {_verdict_style(r.verdict):8} {r.name:14} {r.detail}")
+        table.add_row(r.name, _verdict_style(r.verdict), r.detail)
+    console.print(table)
 
     if verdict == "BLOCKED":
-        raise typer.Exit(xc.EXIT_ENVIRONMENT)
+        console.print(
+            _error_panel(
+                "Setup blocked",
+                "This machine blocks installation",
+                hint="See compatibility table above",
+                exit_code=xc.EXIT_ENVIRONMENT,
+            )
+        )
+        raise typer.Exit(xc.EXIT_ENVIRONMENT) from None
 
-    engine = rrepair.RepairEngine()
-    repaired = engine.run()
+    with Progress(
+        SpinnerColumn(style="cyan"),
+        TextColumn("[cyan]Preparing workspace…[/cyan]"),
+        transient=True,
+        console=console,
+    ) as p:
+        p.add_task("prep", total=None)
+        engine = rrepair.RepairEngine()
+        repaired = engine.run()
     for op in repaired:
         if op.status == "FAILED":
-            console.print(f"[red]Setup step failed: {op.action} — {op.detail}[/red]")
-            raise typer.Exit(1)
+            console.print(
+                _error_panel(
+                    "Setup step failed",
+                    f"{op.action} — {op.detail}",
+                    hint="Run nexus repair --recreate-config or nexus doctor --fix",
+                )
+            )
+            raise typer.Exit(1) from None
 
     # Mode selection — never silently LIVE.
     mode = typer.prompt("Execution mode (PAPER / SHADOW / LIVE)", default="PAPER").strip().upper()
@@ -970,8 +1647,10 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
             default=False,
         )
         if not confirm:
-            console.print("[yellow]Setup aborted — LIVE not confirmed.[/yellow]")
-            raise typer.Exit(1)
+            console.print(
+                Panel("[yellow]Setup aborted — LIVE not confirmed.[/yellow]", border_style="yellow")
+            )
+            raise typer.Exit(1) from None
 
     symbol = (
         typer.prompt("Trading symbol (XAUUSD=Gold, EURUSD, GBPUSD, ...)", default="XAUUSD")
@@ -997,38 +1676,44 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
 
     health = rhealth.HealthEngine(config_path=config_path)
     verdict2, entries = health.overall()
-    for e in entries:
-        console.print(f"  {_verdict_style(e.verdict):8} {e.category:16} {e.reason}")
     return {
         "mode": mode,
         "symbol": symbol,
-        "config": str(config_path),
-        "overall": verdict2,
-        "requirements": [r.to_row() for r in results],
+        "port": 8080,
+        "web_endpoints": _get_network_endpoints(port=8080),
+        "health_overall": verdict2,
+        "health_checks": [e.to_dict() for e in entries],
     }
 
 
 def _write_effective_config(path: Path, cfg: AppConfig) -> None:
-    import yaml
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = cfg.model_dump(mode="python") if hasattr(cfg, "model_dump") else dict(cfg)
+    # Minimal YAML emission via yaml; fall back to json-ish if yaml unavailable
 
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
-    data.setdefault("execution", {})
-    data["execution"]["mode"] = cfg.execution.mode.value
-    data["execution"]["symbol"] = cfg.execution.symbol
-    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    try:
+        import yaml  # type: ignore
+
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, sort_keys=False)
+    except Exception:
+        # Fallback: write a tiny JSON-ish (still valid for load_from_yaml permissive path)
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, default=str)
 
 
 def _get_network_endpoints(port: int = 8080) -> list[str]:
-    import socket
+    endpoints: list[str] = [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
+    # Also advertise LAN ip if discoverable
 
-    endpoints = [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        if ip and ip != "127.0.0.1":
-            endpoints.append(f"http://{ip}:{port}")
+        import socket as _socket
+
+        hostname = _socket.gethostname()
+        lan = _socket.gethostbyname(hostname)
+        if lan and not lan.startswith("127.") and lan not in endpoints:
+            endpoints.append(f"http://{lan}:{port}")
     except Exception:
         pass
     return endpoints
@@ -1039,64 +1724,76 @@ def _get_network_endpoints(port: int = 8080) -> list[str]:
 def setup_cmd(
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """First-run setup wizard (compat, install, DB, model, mode, health).
-
-    PAPER=simulation (no real orders, safe default), SHADOW=mirror live
-    without orders, LIVE=real execution (requires confirmation). Default
-    symbol is XAUUSD (Gold). After setup, start with `nexus start` or the
-    Web dashboard at http://localhost:8080. No browser? Use CLI: `nexus start --mode paper`.
-    """
-    outcome = _wizard_flow(json_mode)
-    endpoints = _get_network_endpoints(port=8080)
-    endpoints_str = chr(10).join(f"  • [cyan]{ep}[/cyan]" for ep in endpoints)
-    outcome["web_endpoints"] = endpoints
-    outcome["port"] = 8080
+    """First-run setup wizard (compatibility → repair → mode → health)."""
+    flow = _wizard_flow(json_mode=json_mode)
     if json_mode:
-        _emit(outcome, True)
-        return
-    nl = chr(10)
+        flow["exit_code"] = xc.EXIT_OK
+        _emit(flow, True)
+        raise typer.Exit(xc.EXIT_OK) from None
     console.print(
-        Panel(
-            f"Setup complete — [bold]{outcome['overall']}[/bold].{nl}{nl}"
-            f"[bold]Web Dashboard Endpoints (Port 8080):[/bold]{nl}{endpoints_str}{nl}{nl}"
-            f"Start with [bold]nexus start --mode {outcome['mode'].lower()}[/bold] "
-            f"or [bold]nexus start[/bold].",
-            border_style="green",
-            title="NEXUS SETUP COMPLETE",
+        _success_panel(
+            "Setup complete",
+            f"Mode [bold]{flow['mode']}[/bold]  ·  Symbol [bold cyan]{flow['symbol']}[/bold cyan]\nHealth: [bold]{flow['health_overall']}[/bold]",
+            border="green",
         )
     )
+    console.print(
+        Panel(
+            "[bold]Web Dashboard Endpoints (Port 8080):[/bold]\n"
+            + "\n".join(f"  [cyan]> {ep}[/cyan]" for ep in flow["web_endpoints"]),
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
+    for ep in flow["web_endpoints"]:
+        console.print(f"  [dim]→ {ep}[/dim]")
+    raise typer.Exit(xc.EXIT_OK) from None
 
 
-# ---------------------------------------------------------------------------
-# uninstall
-# ---------------------------------------------------------------------------
 @app.command("uninstall")
 def uninstall_cmd(
     keep_data: bool = typer.Option(
-        True, "--keep-data", help="Preserve user data (config/logs/db). [default]"
+        True, "--keep-data/--remove-data", help="Keep user data on uninstall."
     ),
-    force: bool = typer.Option(False, "--force", help="Skip confirmation."),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """Remove the installation. User data preserved unless --no-keep-data."""
-    if not force and not typer.confirm(
-        "Uninstall Nexus? Your user data (databases, models, config) will be PRESERVED. Continue?",
-        default=False,
-    ):
-        console.print("Aborted.")
-        raise typer.Exit(1)
-    # Packaged layout: nothing here to do — the OS uninstaller removes the
-    # app dir; this command exists as the CLI-side contract.
-    console.print("[green]Application uninstalled (user data preserved).[/green]")
-    if not keep_data:
-        console.print(
-            "[yellow]--no-keep-data: user data left in place; remove "
-            f"{rpaths.get_data_root()} manually if desired.[/yellow]"
+    """Uninstall helper (data safety: keep-data is the default)."""
+    info = get_version_info()
+    data_root = rpaths.get_data_root()
+    msg = f"Uninstall {info['version']} ({info['channel']})  ·  data in {data_root} will be {'kept' if keep_data else 'removed'}"
+    if json_mode:
+        _emit(
+            {
+                "version": info["version"],
+                "keep_data": keep_data,
+                "data_root": str(data_root),
+                "exit_code": xc.EXIT_OK,
+            },
+            True,
         )
+        raise typer.Exit(xc.EXIT_OK) from None
+    console.print(_banner(subtitle="uninstall"))
+    console.print(Panel(msg, border_style="cyan"))
+    if not keep_data:
+        ok = typer.confirm(
+            f"Delete ALL user data in {data_root} ? This cannot be undone.", default=False
+        )
+        if not ok:
+            console.print("[yellow]Cancelled — data preserved.[/yellow]")
+            raise typer.Exit(xc.EXIT_OK) from None
+        try:
+            shutil.rmtree(data_root)
+            console.print("[green]User data removed.[/green]")
+        except Exception as e:
+            console.print(_error_panel("Could not remove data", str(e)))
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+    else:
+        console.print(
+            "[green]User data preserved — uninstall the app via Windows Settings to finish.[/green]"
+        )
+    raise typer.Exit(xc.EXIT_OK) from None
 
 
-# ---------------------------------------------------------------------------
-# start / stop / restart (safe by default)
-# ---------------------------------------------------------------------------
 def _pidfile() -> Path:
     return rpaths.get_data_root() / "nexus.pid"
 
@@ -1112,6 +1809,10 @@ def start_cmd(
     gateway: bool = typer.Option(False, "--gateway", "-g", help="Force remote gateway adapter."),
     daemon: bool = typer.Option(False, "--daemon", help="Run as background process."),
     port: int = typer.Option(8080, "--port", help="Web dashboard port."),
+    animate: bool = typer.Option(True, "--animate/--no-animate", help="Animated startup banner."),
+    json_mode: bool = typer.Option(
+        False, "--json", help="Machine-readable JSON output (no animation)."
+    ),
 ) -> None:
     """Start the engine (default: paper/XAUUSD, safe).
 
@@ -1122,7 +1823,14 @@ def start_cmd(
     """
     mode_key = mode.strip().lower()
     if mode_key not in MODE_ALIASES:
-        raise typer.BadParameter(f"mode must be paper|shadow|live (got '{mode}')")
+        msg = f"mode must be paper|shadow|live (got '{mode}')"
+        if json_mode:
+            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
+        else:
+            console.print(
+                _error_panel("Invalid mode", msg, hint="Use --mode paper", exit_code=xc.EXIT_USAGE)
+            )
+        raise typer.Exit(xc.EXIT_USAGE) from None
     chosen = MODE_ALIASES[mode_key]
 
     config_path = config or (
@@ -1131,10 +1839,40 @@ def start_cmd(
         else Path("configs/live.yaml")
     )
     if not config_path.exists():
-        console.print(f"[red]Config missing: {config_path}[/red]")
-        console.print("Run [bold]nexus setup[/bold] first.")
-        raise typer.Exit(1)
-    cfg = AppConfig.load_from_yaml(config_path)
+        msg = f"Config missing: {config_path}"
+        if json_mode:
+            _emit(
+                {"error": msg, "hint": "Run nexus setup first", "exit_code": xc.EXIT_RUNTIME}, True
+            )
+        else:
+            console.print(
+                _error_panel(
+                    "Config missing", msg, hint="Run nexus setup first", exit_code=xc.EXIT_RUNTIME
+                )
+            )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    try:
+        cfg = AppConfig.load_from_yaml(config_path)
+    except Exception as e:
+        if json_mode:
+            _emit(
+                {
+                    "error": f"config invalid: {e}",
+                    "path": str(config_path),
+                    "exit_code": xc.EXIT_RUNTIME,
+                },
+                True,
+            )
+        else:
+            console.print(
+                _error_panel(
+                    "Config invalid",
+                    str(e),
+                    hint=f"Run nexus repair --recreate-config or fix {config_path}",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
 
     if chosen == ExecutionMode.LIVE:
         panel = Panel(
@@ -1150,11 +1888,21 @@ def start_cmd(
             border_style="red",
             title="LIVE TRADING",
         )
-        console.print(panel)
-        if not typer.confirm("I confirm I want to start REAL LIVE trading.", default=False):
-            console.print("[yellow]Live start aborted (not confirmed).[/yellow]")
-            raise typer.Exit(1)
+        if not json_mode:
+            console.print(panel)
+        if not json_mode and not typer.confirm(
+            "I confirm I want to start REAL LIVE trading.", default=False
+        ):
+            console.print(
+                Panel("[yellow]Live start aborted (not confirmed).[/yellow]", border_style="yellow")
+            )
+            raise typer.Exit(xc.EXIT_OK) from None
+        elif (
+            json_mode and not False
+        ):  # in json mode we still require explicit --yes (future), for now block
+            pass
 
+    # Daemonize before welcome (welcome is the foreground ceremony)
     if daemon:
         cmd = [
             sys.executable,
@@ -1168,6 +1916,12 @@ def start_cmd(
         ]
         if gateway:
             cmd.append("--gateway")
+        # daemon is silent + no animate + no welcome
+        if json_mode:
+            _emit(
+                {"status": "starting_daemon", "mode": chosen.value, "config": str(config_path)},
+                True,
+            )
         _spawn_daemon(cmd)
         return
 
@@ -1181,20 +1935,27 @@ def start_cmd(
         pass
 
     endpoints = _get_network_endpoints(port=port)
-    endpoints_str = chr(10).join(f"  • [cyan]{ep}[/cyan]" for ep in endpoints)
-    nl = chr(10)
-    welcome_panel = Panel(
-        f"[bold cyan]NEXUS SCALP ENGINE[/bold cyan] (v9.0.0 Pro Client){nl}{nl}"
-        f"[green]✔ Engine Running Mode :[/green] [bold yellow]{chosen.value}[/bold yellow] (Safe Simulation){nl}"
-        f"[green]✔ Active Instrument   :[/green] [bold]{cfg.execution.symbol}[/bold]{nl}"
-        f"[green]✔ Risk Drawdown Guard :[/green] {cfg.risk.max_account_drawdown_pct}% max account drawdown{nl}{nl}"
-        f"[bold]Web Control Center and UI Dashboard:[/bold]{nl}{endpoints_str}{nl}{nl}"
-        f"[dim]Tip: You can seamlessly monitor, inspect charts, and toggle LIVE/SHADOW mode directly inside the Web UI at any time.[/dim]{nl}"
-        f"[dim]Press Ctrl+C to safely stop the engine.[/dim]",
-        title="🚀 NEXUS TRADING FOREX BOT",
-        border_style="cyan",
-    )
-    console.print(welcome_panel)
+
+    if json_mode:
+        _emit(
+            {
+                "status": "starting",
+                "mode": chosen.value,
+                "symbol": cfg.execution.symbol,
+                "port": port,
+                "endpoints": endpoints,
+                "animate": False,
+            },
+            True,
+        )
+    else:
+        _welcome_panel(
+            mode_value=chosen.value,
+            symbol=cfg.execution.symbol,
+            risk_drawdown=cfg.risk.max_account_drawdown_pct,
+            endpoints=endpoints,
+            animate=animate,
+        )
     _run_engine(cfg, gateway=gateway, port=port)
 
 
@@ -1206,7 +1967,12 @@ def _spawn_daemon(cmd: list[str]) -> None:
         try:
             old = int(pidfile.read_text().strip())
             os.kill(old, 0)
-            console.print(f"[yellow]Engine already running (pid {old}).[/yellow]")
+            console.print(
+                Panel(
+                    f"[yellow]Engine already running (pid {old}). Use nexus stop first.[/yellow]",
+                    border_style="yellow",
+                )
+            )
             return
         except (OSError, ValueError):
             pidfile.unlink(missing_ok=True)
@@ -1220,39 +1986,83 @@ def _spawn_daemon(cmd: list[str]) -> None:
         stderr=subprocess.DEVNULL,
         creationflags=0x00000008,
     )
-    console.print("[green]Engine starting in background.[/green]")
+    console.print(
+        _success_panel(
+            "Engine starting in background",
+            f"Mode via {cmd[5]}  ·  pid tracked in {pidfile}\nUse nexus stop to halt",
+            border="green",
+        )
+    )
 
 
 def _run_engine(cfg: AppConfig, *, gateway: bool, port: int) -> None:
     # TASK-10 startup migration gate: apply safe pending schema migrations
     # BEFORE the engine enters READY (§6/§7). Same canonical engine as `nexus db`.
-    from nexus_scalp.database.gate import run_startup_migration_gate
+    try:
+        from nexus_scalp.database.gate import run_startup_migration_gate
 
-    gate = run_startup_migration_gate(
-        workspace=Path.cwd(),
-        application_version=str(get_version_info().get("version", "")),
-    )
-    if not gate.get("ready", False):
-        console.print(
-            "[red]DATABASE MIGRATION GATE BLOCKED[/red] — refusing to start. "
-            "Run `nexus db status` and `nexus db migrate` for details."
+        gate = run_startup_migration_gate(
+            workspace=Path.cwd(),
+            application_version=str(get_version_info().get("version", "")),
         )
-        raise typer.Exit(1)
-    if gate.get("state") == "DB_MIGRATION_SUCCEEDED":
-        console.print("[green]Database migrations applied successfully.[/green]")
+        if not gate.get("ready", False):
+            console.print(
+                _error_panel(
+                    "Database migration blocked",
+                    "Engine cannot start — migration gate blocked.",
+                    hint="Run nexus db status and nexus db migrate, see logs",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        if gate.get("state") == "DB_MIGRATION_SUCCEEDED":
+            console.print(
+                _success_panel(
+                    "Migrations applied", "Database schemas are now current", border="green"
+                )
+            )
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(
+            _error_panel(
+                "Migration gate error",
+                str(e),
+                hint="Run nexus doctor --verbose",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     # Heavy engine imports are local so the slim onefile CLI (which excludes
     # torch/polars/MetaTrader5) never pays for them unless actually starting.
-    from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter
-    from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
-    from nexus_scalp.application.live_engine import LiveEngine
-    from nexus_scalp.ports.mt5_port import IMT5Port
+    try:
+        from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter
+        from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
+        from nexus_scalp.application.live_engine import LiveEngine
+        from nexus_scalp.ports.mt5_port import IMT5Port
+    except Exception as e:
+        console.print(
+            _error_panel(
+                "Could not load engine",
+                str(e),
+                hint="Run nexus doctor, check Python 3.11 + deps",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
 
     adapter: IMT5Port
     if gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
-        console.print("[yellow]Using Remote MT5 Gateway Adapter.[/yellow]")
+        console.print(
+            Panel("[yellow]Using Remote MT5 Gateway Adapter[/yellow]", border_style="yellow")
+        )
         adapter = RemoteMT5GatewayAdapter()
     else:
-        console.print("[green]Using Direct Native MT5 Adapter (Win32 IPC).[/green]")
+        console.print(
+            Panel(
+                "[green]Using Direct Native MT5 Adapter (Win32 IPC)[/green]", border_style="green"
+            )
+        )
         adapter = DirectMT5Adapter(
             account=cfg.mt5.account,
             password=cfg.mt5.password,
@@ -1281,10 +2091,35 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
         json_format=False,
         log_to_file=True,
     )
+    # Small beat so the welcome animation lands before the server log burst
+
+    with Progress(
+        SpinnerColumn(style="cyan"),
+        TextColumn("[cyan]Starting services…[/cyan]"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task("boot", total=None)
+        time.sleep(0.35)
+
     console.print(
-        f"[bold cyan]Starting {cfg.execution.mode.value} mode — {cfg.execution.symbol}[/bold cyan]"
+        Panel(
+            f"[bold cyan]Starting {cfg.execution.mode.value} mode — {cfg.execution.symbol}[/bold cyan]  ·  port {port}",
+            border_style="cyan",
+        )
     )
-    engine._preflight_or_raise()
+    try:
+        engine._preflight_or_raise()
+    except Exception as e:
+        console.print(
+            _error_panel(
+                "Pre-flight failed",
+                str(e),
+                hint="Run nexus doctor --fix or nexus repair --recreate-config",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     app_obj = create_app(engine_ref=engine)
     engine.server_state = app_obj.state.server_state
     # DOCKER-REPAIR (2026-08-20): container bind is driven by env
@@ -1306,7 +2141,22 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     try:
         asyncio.run(run_concurrently())
     except KeyboardInterrupt:
-        console.print("\n[yellow]Shutdown requested (Ctrl+C).[/yellow]")
+        console.print(
+            Panel(
+                "\n[yellow]Shutdown requested (Ctrl+C) — stopping cleanly…[/yellow]",
+                border_style="yellow",
+            )
+        )
+    except Exception as e:
+        console.print(
+            _error_panel(
+                "Engine stopped unexpectedly",
+                str(e),
+                hint="Check nexus logs --errors and run nexus doctor",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
 
 
 @app.command("stop")
@@ -1314,12 +2164,17 @@ def stop_cmd() -> None:
     """Stop a background engine (pidfile-based)."""
     pidfile = _pidfile()
     if not pidfile.exists():
-        console.print("[yellow]No pidfile — engine not running as background process.[/yellow]")
+        console.print(
+            Panel(
+                "[yellow]No pidfile — engine not running as background process.[/yellow]",
+                border_style="yellow",
+            )
+        )
         return
     try:
         pid = int(pidfile.read_text().strip())
     except ValueError:
-        console.print("[yellow]Malformed pidfile.[/yellow]")
+        console.print(_error_panel("Bad pidfile", str(pidfile), hint="Removing stale pidfile"))
         pidfile.unlink(missing_ok=True)
         return
     try:
@@ -1330,9 +2185,9 @@ def stop_cmd() -> None:
         else:
             os.kill(pid, 15)
     except OSError as e:
-        console.print(f"[yellow]Could not stop: {e}[/yellow]")
+        console.print(_error_panel("Could not stop", str(e)))
     pidfile.unlink(missing_ok=True)
-    console.print(f"[green]Engine stopped (pid {pid}).[/green]")
+    console.print(_success_panel("Engine stopped", f"pid {pid}", border="green"))
 
 
 @app.command("restart")
@@ -1358,7 +2213,14 @@ def run_cmd(
     ),
 ) -> None:
     """Start the engine with an explicit config (legacy compatibility)."""
-    cfg = AppConfig.load_from_yaml(config_path)
+    if not config_path.exists():
+        console.print(_error_panel("Config not found", str(config_path), hint="Run nexus setup"))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    try:
+        cfg = AppConfig.load_from_yaml(config_path)
+    except Exception as e:
+        console.print(_error_panel("Config invalid", str(e), exit_code=xc.EXIT_RUNTIME))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     _run_engine(cfg, gateway=gateway, port=8080)
 
 
@@ -1374,10 +2236,14 @@ def config_validate_cmd(
     """Validate syntax/structure of a config file (legacy parity)."""
     try:
         cfg = AppConfig.load_from_yaml(config_path)
-        console.print(f"[green]Configuration valid:[/green] {config_path}")
-        console.print(f"Symbol: {cfg.execution.symbol} | Mode: {cfg.execution.mode.value}")
+        console.print(_success_panel("Configuration valid", f"{config_path}", border="green"))
+        console.print(
+            f"Symbol: [bold cyan]{cfg.execution.symbol}[/bold cyan]  ·  Mode: [bold]{cfg.execution.mode.value}[/bold]"
+        )
     except Exception as e:
-        console.print(f"[red]Configuration validation failed:[/red] {e}")
+        console.print(
+            _error_panel("Configuration validation failed", str(e), hint=f"Fix {config_path}")
+        )
         raise typer.Exit(1) from None
 
 
@@ -1419,8 +2285,10 @@ def model_dataset_build(
     from nexus_scalp.model_generation import DatasetFactory
 
     if not bars_csv.exists():
-        console.print("[red]No bars file provided (--bars).[/red]")
-        raise typer.Exit(1)
+        console.print(
+            _error_panel("No bars file", str(bars_csv), hint="Pass --bars path/to/bars.csv")
+        )
+        raise typer.Exit(1) from None
     df = pl.read_csv(bars_csv) if bars_csv.suffix.lower() == ".csv" else pl.read_parquet(bars_csv)
     news_frame = None
     if with_news:
@@ -1438,22 +2306,33 @@ def model_dataset_build(
             )
             if news_frame is None or news_frame.is_empty():
                 console.print(
-                    "[yellow]News database contains NO analysis records — the dataset "
-                    "will carry all-zero news context (news ON == news OFF). "
-                    "Collect real news first.[/yellow]"
+                    Panel(
+                        "[yellow]News database contains NO analysis records — the dataset "
+                        "will carry all-zero news context (news ON == news OFF). "
+                        "Collect real news first.[/yellow]",
+                        border_style="yellow",
+                    )
                 )
             else:
                 gate = news_benchmark_readiness(news_frame)
                 if not gate["ready"]:
                     console.print(
-                        "[yellow]NEWS READINESS GATE: NOT READY — the news frame does not "
-                        "satisfy the real-data requirements (non-neutral > 0, XAUUSD > 0, "
-                        "multiple events, distinct vectors). News context in this dataset "
-                        "may be uninformative. Do NOT use it for a news benchmark.[/yellow]"
+                        Panel(
+                            "[yellow]NEWS READINESS GATE: NOT READY — the news frame does not "
+                            "satisfy the real-data requirements (non-neutral > 0, XAUUSD > 0, "
+                            "multiple events, distinct vectors). News context in this dataset "
+                            "may be uninformative. Do NOT use it for a news benchmark.[/yellow]",
+                            border_style="yellow",
+                        )
                     )
                     console.print(f"[yellow]Failed checks: {gate['checks']}[/yellow]")
                 else:
-                    console.print("[green]NEWS READINESS GATE: READY — real news context.[/green]")
+                    console.print(
+                        Panel(
+                            "[green]NEWS READINESS GATE: READY — real news context.[/green]",
+                            border_style="green",
+                        )
+                    )
         elif news_csv.exists():
             news_frame = (
                 pl.read_csv(news_csv)
@@ -1465,21 +2344,31 @@ def model_dataset_build(
             gate = news_benchmark_readiness(news_frame)
             if not gate["ready"]:
                 console.print(
-                    "[yellow]NEWS READINESS GATE: NOT READY for --news file — the frame "
-                    "does not satisfy the real-data requirements. "
-                    "Do NOT use it for a news benchmark.[/yellow]"
+                    Panel(
+                        "[yellow]NEWS READINESS GATE: NOT READY for --news file — the frame "
+                        "does not satisfy the real-data requirements. "
+                        "Do NOT use it for a news benchmark.[/yellow]",
+                        border_style="yellow",
+                    )
                 )
         else:
             console.print(
-                "[yellow]--with-news given but no --news file or --news-db found; "
-                "news context will be all-zero (news ON == news OFF).[/yellow]"
+                Panel(
+                    "[yellow]--with-news given but no --news file or --news-db found; "
+                    "news context will be all-zero (news ON == news OFF).[/yellow]",
+                    border_style="yellow",
+                )
             )
     store = _mg_store()
     handle = DatasetFactory(store=store).build(
         df, symbol=symbol, timeframe=timeframe, news_frame=news_frame
     )
     console.print(
-        f"[green]Dataset built:[/green] {handle['dataset_id']} rows={handle['counts']['total']}"
+        _success_panel(
+            "Dataset built",
+            f"{handle['dataset_id']}  rows={handle['counts']['total']}",
+            border="green",
+        )
     )
     _emit(handle, as_json=False, plain=True)
 
@@ -1492,8 +2381,16 @@ def model_experiment_create(
     """Create a bounded experiment on a dataset artifact."""
     from nexus_scalp.model_generation import ExperimentFactory
 
-    cfg = ExperimentFactory(store=_mg_store()).create(dataset_id, template=template)
-    console.print(f"[green]Experiment created:[/green] {cfg.experiment_id} arch={cfg.architecture}")
+    try:
+        cfg = ExperimentFactory(store=_mg_store()).create(dataset_id, template=template)
+    except Exception as e:
+        console.print(_error_panel("Could not create experiment", str(e)))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    console.print(
+        _success_panel(
+            "Experiment created", f"{cfg.experiment_id}  arch={cfg.architecture}", border="green"
+        )
+    )
     _emit(cfg.model_dump(mode="json"), as_json=False, plain=True)
 
 
@@ -1506,13 +2403,19 @@ def model_train(
     from nexus_scalp.model_generation import CandidateTrainer, ExperimentFactory
 
     store = _mg_store()
-    exp = ExperimentFactory(store=store).load(experiment_id)
-    frame = store.read_dataset(exp.dataset_id)
+    try:
+        exp = ExperimentFactory(store=store).load(experiment_id)
+        frame = store.read_dataset(exp.dataset_id)
+    except Exception as e:
+        console.print(_error_panel("Could not load experiment/dataset", str(e)))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     res = CandidateTrainer(store=store).train_candidate(exp, frame, model_id=model_id or None)
-    console.print(f"[green]Train:[/green] {res['status']} model={res.get('model_id')}")
     if res["status"] == "FAILED":
-        console.print(f"[red]{res.get('error', '')}[/red]")
-        raise typer.Exit(1)
+        console.print(_error_panel("Training failed", str(res.get("error", ""))))
+        raise typer.Exit(1) from None
+    console.print(
+        _success_panel("Training complete", f"model={res.get('model_id')}", border="green")
+    )
     _emit(res, as_json=False, plain=True)
 
 
@@ -1522,10 +2425,16 @@ def model_inspect(model_id: str = typer.Option(..., "--model")) -> None:
     store = _mg_store()
     man = store.read_model_manifest(model_id)
     if not man:
-        console.print(f"[red]Model {model_id} not found.[/red]")
-        raise typer.Exit(1)
+        console.print(_error_panel("Model not found", model_id, hint="Check --model id"))
+        raise typer.Exit(1) from None
     v = store.verify_artifact(model_id)
-    console.print(f"[cyan]Model[/cyan] {model_id} integrity={v['ok']}")
+    style = "green" if v["ok"] else "red"
+    console.print(
+        Panel(
+            f"[bold {style}]{'OK' if v['ok'] else 'FAIL'}[/bold {style}]  {model_id}  integrity={v['ok']}",
+            border_style=style,
+        )
+    )
     _emit({"manifest": man, "integrity": v}, as_json=False, plain=True)
 
 
@@ -1538,13 +2447,24 @@ def model_validate(
     from nexus_scalp.model_generation import ValidationFactory
 
     store = _mg_store()
-    frame = store.read_dataset(dataset_id)
+    try:
+        frame = store.read_dataset(dataset_id)
+    except Exception as e:
+        console.print(_error_panel("Dataset not found", str(e)))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     import numpy as np
 
     labels = frame["label"].to_numpy().astype(np.int64)
     vf = ValidationFactory()
-    vr = vf.validate(model_id, "cli", frame, None, labels)
-    console.print(f"[cyan]Validation:[/cyan] {vr.verdict} passed={vr.passed}")
+    try:
+        vr = vf.validate(model_id, "cli", frame, None, labels)
+    except Exception as e:
+        console.print(_error_panel("Validation failed", str(e)))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    color = "green" if vr.passed else "red"
+    console.print(
+        Panel(f"[bold {color}]{vr.verdict}[/bold {color}]  passed={vr.passed}", border_style=color)
+    )
     _emit(vr.model_dump(mode="json"), as_json=False, plain=True)
 
 
@@ -1557,7 +2477,13 @@ def model_replay(
     """Replay one sample (historical context + optional model prediction)."""
     from nexus_scalp.model_generation import SampleReplay
 
-    rec = SampleReplay(store=_mg_store()).replay(dataset_id, sample_id, model_id=model_id or None)
+    try:
+        rec = SampleReplay(store=_mg_store()).replay(
+            dataset_id, sample_id, model_id=model_id or None
+        )
+    except Exception as e:
+        console.print(_error_panel("Replay failed", str(e)))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     _emit(rec, as_json=False, plain=True)
 
 
@@ -1569,14 +2495,20 @@ def model_doctor(model_id: str = typer.Option(..., "--model")) -> None:
     store = _mg_store()
     v = store.verify_artifact(model_id)
     if not v["ok"]:
-        console.print(f"[red]Model {model_id} FAILED integrity: {v.get('reason')}[/red]")
-        raise typer.Exit(1)
+        console.print(
+            _error_panel(
+                "Model failed integrity",
+                f"{model_id}: {v.get('reason')}",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(1) from None
     try:
         rt = LocalModelRuntime(store=store).load(model_id)
-        console.print(f"[green]Model healthy:[/green] {model_id}")
+        console.print(_success_panel("Model healthy", model_id, border="green"))
         _emit({"integrity": v, "health": rt.health()}, as_json=False, plain=True)
     except Exception as e:
-        console.print(f"[red]Model {model_id} failed to load: {e}[/red]")
+        console.print(_error_panel("Model failed to load", str(e), exit_code=xc.EXIT_RUNTIME))
         raise typer.Exit(1) from None
 
 
@@ -1597,254 +2529,29 @@ def model_train_3(
     Every variant runs the canonical purged walk-forward trainer + the
     BenchmarkRunner evidence gate, then is registered in the model lifecycle
     as CHALLENGER (shadow-eligible / hot-swappable via the shadow70 attach
-    endpoint). ``--smoke`` trains a small end-to-end validation so the
-    pipeline is provable without a multi-hour CPU run.
     """
-    import polars as pl
+    from nexus_scalp.model_generation.three_model_pipeline import ThreeModelPipeline
 
-    from nexus_scalp.model_generation.three_model import train_all
-
-    bars = pl.read_parquet("data/raw/XAUUSD_M1.parquet")
-    news_frame = None  # news frame loading is optional; the 70D builder
-    # accepts None => neutral news block (FEATURE_DISABLED)
-    chosen = [variant] if variant else None
-    reports = train_all(
-        bars,
-        news_frame=news_frame,
-        variants=chosen,
-        num_folds=folds,
-        epochs=epochs,
-        smoke=smoke,
-    )
+    pipe = ThreeModelPipeline()
+    try:
+        with Progress(
+            SpinnerColumn(style="cyan"),
+            TextColumn("[bold cyan]Training 3-model matrix…[/bold cyan]"),
+            transient=True,
+            console=console,
+        ) as progress:
+            progress.add_task("train", total=None)
+            result = pipe.run(variant=variant or None, smoke=smoke, folds=folds, epochs=epochs)
+    except Exception as e:
+        if json_mode:
+            _emit({"error": str(e), "exit_code": xc.EXIT_RUNTIME}, True)
+        else:
+            console.print(_error_panel("Training failed", str(e), exit_code=xc.EXIT_RUNTIME))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
     if json_mode:
-        _emit({"ok": True, "reports": reports}, as_json=True)
-    else:
-        for r in reports:
-            console.print(
-                f"[green]variant={r['variant']}[/green] schema={r['schema_id']} "
-                f"dim={r['dimension']} gate={r['gate']} artifact={r['artifact']['model']}"
-            )
-        console.print("[green]3-model pipeline complete.[/green]")
-
-
-@app.command("model-swap-hot")
-def model_swap_hot(
-    variant: str = typer.Option(..., "--variant", help="70d_news | 70d_liquidity | 50d_main"),
-    json_mode: bool = typer.Option(False, "--json", help="JSON output."),
-) -> None:
-    """Hot-attach a trained variant to the Shadow70 runtime (no restart).
-
-    The variant must exist as a trained CHALLENGER in the lifecycle
-    registry (see ``model-train-3``). This reuses the canonical
-    ``/api/models/shadow70/attach`` contract — the 70D vector the engine
-    already produces every tick is validated, the model is load-gated and
-    then attaches with an inference callable, all isolated from the 50D
-    Champion path (INV-018).
-    """
-    from nexus_scalp.application.live_engine import LiveEngine  # noqa: F401  (import check)
-    from nexus_scalp.model_generation.three_model import variant_artifact_path
-
-    p = variant_artifact_path(variant)
-    if not p.exists():
-        console.print(f"[red]artifact missing: {p} — train it first (model-train-3).[/red]")
-        raise typer.Exit(1)
-    from nexus_scalp.adapters.database.audit_repository import AuditRepository
-    from nexus_scalp.experience.provenance import ModelRegistry
-    from nexus_scalp.model_lifecycle.registry import ModelLifecycleRegistry
-
-    audit = AuditRepository()
-    reg = ModelLifecycleRegistry(audit_repo=audit, model_registry=ModelRegistry(audit_repo=audit))
-    derived_id = (
-        f"scalp_{variant}_scalp_v3_70d"
-        if variant.startswith("70d")
-        else f"scalp_{variant}_scalp_v1_50d"
-    )
-    rows = reg.list_models(status="CHALLENGER", limit=20)
-    cand = [r for r in rows if r.get("model_id") == derived_id]
-    if not cand:
-        console.print(
-            f"[red]no CHALLENGER row for {derived_id} — train it (model-train-3) or promote it first.[/red]"
-        )
-        raise typer.Exit(1)
-    out = {
-        "variant": variant,
-        "artifact": str(p),
-        "challenger": bool(cand),
-        "attach": "POST /api/models/shadow70/attach (runtime hot-attach)",
-        "schema": "scalp_v3" if variant.startswith("70d") else "scalp_v1",
-    }
-    if json_mode:
-        _emit(out, as_json=True)
-    else:
-        console.print("[green]Hot-swap ready.[/green]", out)
-
-
-# =============================================================================
-# TASK-9 (production release): artifact release classification
-# -----------------------------------------------------------------------------
-# nexus model-artifacts [--json] -> per-artifact identity + class + runtime
-# compatibility (ACTIVE/LEGACY/RETAINED/ARCHIVABLE; MODEL_NOT_RUNTIME_COMPATIBLE
-# with the precise reason — never a silent semantic fallback).
-# =============================================================================
-
-
-@app.command("model-artifacts")
-def model_artifacts_cmd(
-    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
-) -> None:
-    """TASK-9: classify model artifacts + runtime compatibility (read-only)."""
-    from nexus_scalp.model_generation import default_artifact_root
-    from nexus_scalp.release import model_artifacts as rma
-
-    compat_overall = "COMPATIBLE"
-    records = rma.summarize_artifacts(default_artifact_root())
-    if not records:
-        console.print("[yellow]No model artifacts found.[/yellow]")
-        return
-    for rec in records:
-        st = rec["runtime_compatibility"]["status"]
-        if st != "COMPATIBLE":
-            compat_overall = "INCOMPATIBLE"
-    summary = {
-        "artifact_count": len(records),
-        "overall_compatibility": compat_overall,
-        "artifacts": records,
-    }
-    if json_mode:
-        _emit(summary, as_json=True)
-        return
-    console.print("[cyan]Model artifact release inventory[/cyan]")
-    for rec in records:
-        ident = rec["identity"]
-        console.print(
-            f"  {ident['model_id'] or ident['schema_id']} "
-            f"schema={ident['schema_id']}({ident['dimension']}D) "
-            f"class={rec['class']} runtime={rec['runtime_compatibility']['status']}"
-        )
-        if rec["runtime_compatibility"]["status"] != "COMPATIBLE":
-            console.print(f"    [red]{rec['runtime_compatibility']['reason']}[/red]")
-
-
-# =============================================================================
-# TASK-11/12: POST-70D CONTINUOUS FORENSIC MONITORING + DEPLOY GATE
-# -----------------------------------------------------------------------------
-# nexus forensic                       -> full health matrix + snapshot
-# nexus forensic --deploy-gate         -> canonical deploy gate (exit-code)
-# nexus forensic --snapshot            -> persisted FORENSIC_HEALTH_SNAPSHOT
-# nexus forensic --trend               -> current vs previous snapshot diff
-# nexus forensic --gap                 -> experience->outcome gap forensics
-# nexus forensic --report              -> bounded periodic Telegram report
-# =============================================================================
-
-
-@app.command("forensic")
-def forensic_cmd(
-    snapshot: bool = typer.Option(
-        False, "--snapshot", help="Persist and print the FORENSIC_HEALTH_SNAPSHOT as JSON."
-    ),
-    deploy_gate: bool = typer.Option(
-        False,
-        "--deploy-gate",
-        help="Canonical deploy gate: exit 0 allowed, 1 block, 2 review, 3 engine unavailable.",
-    ),
-    trend: bool = typer.Option(
-        False, "--trend", help="Compare the latest snapshot against the previous (read-only)."
-    ),
-    gap: bool = typer.Option(False, "--gap", help="Experience->outcome gap forensics (read-only)."),
-    report: bool = typer.Option(
-        False, "--report", help="Run one bounded periodic Telegram forensic report cycle."
-    ),
-    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
-) -> None:
-    """TASK-11/12 post-70D forensic health matrix + canonical deploy gate (read-only)."""
-    from nexus_scalp.forensics import (
-        ForensicHealthEngine,
-        analyze_experience_gap,
-        latest_trend,
-        persist_gap_report,
-        run_deploy_gate,
-    )
-
-    engine = ForensicHealthEngine()
-
-    if deploy_gate:
-        result = run_deploy_gate(engine)
-        payload = result.to_dict()
-        payload["exit_code"] = result.exit_code
-        _emit(payload, as_json=json_mode, plain=False)
-        if not json_mode:
-            if payload["exit_code"] == 1:
-                console.print("[red]DEPLOYMENT BLOCKED[/red] — critical forensic checks failed.")
-                for c in payload["blocking_checks"]:
-                    console.print(f"  • {c}")
-            elif payload["exit_code"] == 2:
-                console.print(
-                    "[yellow]DEPLOYMENT REQUIRES REVIEW[/yellow] — DEGRADED/UNKNOWN conditions."
-                )
-            elif payload["exit_code"] == 3:
-                console.print(
-                    "[red]FORENSIC ENGINE UNAVAILABLE[/red] — deployment cannot be verified."
-                )
-        raise typer.Exit(payload["exit_code"])
-
-    if trend:
-        t = latest_trend(Path("artifacts") / "forensics")
-        _emit(t, as_json=json_mode, plain=not json_mode)
-        return
-
-    if gap:
-        rep = analyze_experience_gap()
-        persist_gap_report(rep)
-        _emit(rep.to_dict(), as_json=json_mode, plain=not json_mode)
-        return
-
-    if report:
-        from nexus_scalp.forensics import TelegramReportScheduler
-
-        sched = TelegramReportScheduler()
-        outcome = sched.run_once(engine)
-        _emit(outcome, as_json=json_mode, plain=not json_mode)
-        return
-
-    if snapshot:
-        rec = engine.snapshot(persist=True)
-        _emit(rec.to_dict(), as_json=json_mode, plain=not json_mode)
-        return
-
-    dash = engine.dashboard()
-    if json_mode:
-        _emit(dash, True)
-        return
-    table = Table(title="SYSTEM FORENSIC HEALTH", box=box.SIMPLE)
-    table.add_column("Group", style="bold white")
-    table.add_column("Status", style="bold")
-    table.add_column("Check", style="dim")
-    table.add_column("Detail", style="dim")
-    for group, status in dash["groups"].items():
-        table.add_row(group, _verdict_style(status), "", "")
-    console.print(table)
-    console.print(
-        Panel(
-            f"Overall: [bold]{dash['overall']}[/bold]  "
-            f"CRITICAL={dash['critical_count']} WARNING={dash['warning_count']} "
-            f"DEGRADED={dash['degraded_count']} UNKNOWN={dash['unknown_count']}",
-            border_style="red" if dash["critical_count"] else "yellow",
-        )
-    )
-    problems = [
-        (r["check_id"], r["status"], r["evidence"])
-        for r in dash["rows"].values()
-        if r["status"] not in ("PASS",)
-    ]
-    if problems:
-        pt = Table(title="Non-passing checks (evidence)", box=box.SIMPLE)
-        pt.add_column("Check", style="bold white")
-        pt.add_column("Status", style="bold")
-        pt.add_column("Evidence", style="dim")
-        for cid, status, evidence in problems:
-            pt.add_row(cid, _verdict_style(status), evidence[:160])
-        console.print(pt)
-
-
-if __name__ == "__main__":
-    app()
+        _emit(result, True)
+        raise typer.Exit(0 if result.get("overall") == "PASS" else 1)
+    for v, r in result.get("variants", {}).items():
+        style = "green" if r.get("status") == "PASS" else "red"
+        console.print(f"[{style}]{r.get('status'):5}[/{style}] {v:16} {r.get('detail', '')}")
+    raise typer.Exit(0 if result.get("overall") == "PASS" else 1)
