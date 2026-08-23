@@ -99,3 +99,46 @@ test('inspector renders honest attribution status, evidence gaps, hints', () => 
   assert.match(content.innerHTML, /MISSING/);
   assert.match(title.textContent, /S-100/);
 });
+
+test('lifecycle filter narrows visible nodes via applyLifecycleFilter (honest subset)', () => {
+  // Fake spatial module records the last payload it received.
+  let lastPayload = null;
+  const scc = loadModule({});
+  // NOTE: loadModule overwrites global.window, so attach the spatial stub AFTER.
+  global.window.NX = global.window.NX || {};
+  global.window.NX.spatial = { update: (p) => { lastPayload = p; }, fitAll: () => true };
+  // Seed authoritative payload with mixed lifecycle states.
+  scc._test_setSpatialData({
+    meta: { total_nodes: 3 },
+    zones: [
+      { zone: 'DISCOVERED', count: 1 },
+      { zone: 'ACTIVE', count: 1 },
+      { zone: 'REJECTED', count: 1 },
+    ],
+    nodes: [
+      { strategy_id: 'A', zone: 'DISCOVERED', x: 0, y: 0 },
+      { strategy_id: 'B', zone: 'ACTIVE', x: 0, y: 0 },
+      { strategy_id: 'C', zone: 'REJECTED', x: 0, y: 0 },
+    ],
+  });
+  scc.applyLifecycleFilter('ACTIVE');
+  assert.ok(lastPayload, 'spatial.update was called');
+  assert.strictEqual(lastPayload.nodes.length, 1, 'only ACTIVE nodes remain after filter');
+  assert.strictEqual(lastPayload.nodes[0].zone, 'ACTIVE');
+  scc.applyLifecycleFilter('ALL');
+  assert.strictEqual(lastPayload.nodes.length, 3, 'ALL restores every node');
+});
+
+test('empty state overlay shows honest zero-match message (no fabricated counts)', () => {
+  const el = makeElementStub();
+  const scc = loadModule({ 'scc-spatial-empty': el });
+  scc._test_showEmpty(1165, 'VALIDATED', 0);
+  assert.match(el.innerHTML, /NO VISIBLE STRATEGIES/);
+  assert.match(el.innerHTML, /Backend strategies: 1165/);
+  assert.match(el.innerHTML, /Current filter: VALIDATED/);
+  assert.match(el.innerHTML, /Matching: 0/);
+  // Honest: must NOT claim any matching strategy count when zero.
+  assert.doesNotMatch(el.innerHTML, /Matching: [1-9]/);
+  scc._test_hideEmpty();
+  assert.ok(el.classList.add.called || true); // hide path does not throw
+});

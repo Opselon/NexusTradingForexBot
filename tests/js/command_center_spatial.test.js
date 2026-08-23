@@ -87,9 +87,9 @@ test('nodes receive world coordinates from payload', () => {
 });
 
 test('zone change between updates schedules an animation, not a teleport', () => {
-  // This test verifies the anims map gets populated by checking that the
-  // module does not crash and re-render is safe; full visual verification
-  // is done in manual QA (canvas pixel checks are out of scope for unit).
+  // A real transition (DISCOVERED -> VALIDATED) must schedule an interpolation
+  // animation in the `anims` map; the node must NOT instantly snap to the new
+  // zone. We assert the anim map is populated for that strategy id.
   const ctx = makeCtxStub();
   const canvas = makeCanvasStub(ctx);
   const spatial = loadSpatial(canvas);
@@ -102,13 +102,129 @@ test('zone change between updates schedules an animation, not a teleport', () =>
     zones: [{ zone: 'DISCOVERED', count: 0 }, { zone: 'VALIDATED', count: 1 }],
     nodes: [{ strategy_id: 'A', zone: 'VALIDATED', x: 0, y: 0, size_hint: 5, ring_count: 2, elevation: 0.7 }],
   });
-  assert.ok(true); // reached without exception — animation scheduling path exercised
+  const anims = spatial._test.getAnims();
+  assert.ok(anims['A'], 'expected an interpolation animation to be scheduled for node A');
 });
 
-test('fitAll with no nodes is safe', () => {
+test('duplicate/stale zone event does NOT reschedule an animation (no regression)', () => {
   const ctx = makeCtxStub();
   const canvas = makeCanvasStub(ctx);
   const spatial = loadSpatial(canvas);
   spatial.init('scc-spatial-canvas');
-  assert.doesNotThrow(() => spatial.fitAll());
+  spatial.update({
+    zones: [{ zone: 'DISCOVERED', count: 1 }],
+    nodes: [{ strategy_id: 'A', zone: 'DISCOVERED', x: 0, y: 0, size_hint: 5, ring_count: 0, elevation: null }],
+  });
+  // Same zone again — must NOT create an animation.
+  spatial.update({
+    zones: [{ zone: 'DISCOVERED', count: 1 }],
+    nodes: [{ strategy_id: 'A', zone: 'DISCOVERED', x: 0, y: 0, size_hint: 5, ring_count: 0, elevation: null }],
+  });
+  const anims = spatial._test.getAnims();
+  assert.ok(!anims['A'], 'duplicate same-zone update must not schedule an animation');
+});
+
+test('backend authoritative snapshot overrides an in-flight animation target', () => {
+  // If a newer authoritative payload moves the target while an animation is
+  // still running, BACKEND WINS: the animation target is overwritten to the new
+  // authoritative coords and re-eased (not a second duplicate animation).
+  const ctx = makeCtxStub();
+  const canvas = makeCanvasStub(ctx);
+  const spatial = loadSpatial(canvas);
+  spatial.init('scc-spatial-canvas');
+  spatial.update({
+    zones: [{ zone: 'DISCOVERED', count: 1 }],
+    nodes: [{ strategy_id: 'A', zone: 'DISCOVERED', x: 0, y: 0, size_hint: 5, ring_count: 0, elevation: null }],
+  });
+  spatial.update({
+    zones: [{ zone: 'VALIDATED', count: 1 }],
+    nodes: [{ strategy_id: 'A', zone: 'VALIDATED', x: 10, y: 0, size_hint: 5, ring_count: 2, elevation: 0.7 }],
+  });
+  const before = spatial._test.getAnims()['A'];
+  assert.ok(before, 'animation exists after first transition');
+  spatial.update({
+    zones: [{ zone: 'VALIDATED', count: 1 }],
+    nodes: [{ strategy_id: 'A', zone: 'VALIDATED', x: 999, y: 0, size_hint: 5, ring_count: 2, elevation: 0.7 }],
+  });
+  const after = spatial._test.getAnims()['A'];
+  assert.ok(after, 'animation persists across authoritative reconciliation');
+  assert.strictEqual(after.tx, 999, 'backend target (x=999) wins over stale animation target');
+  assert.strictEqual(Object.keys(spatial._test.getAnims()).length, 1, 'exactly one animation entry remains');
+});
+
+test('real lifecycle zones are preserved from payload (no invented states)', () => {
+  const ctx = makeCtxStub();
+  const canvas = makeCanvasStub(ctx);
+  const spatial = loadSpatial(canvas);
+  spatial.init('scc-spatial-canvas');
+  const payload = {
+    zones: [
+      { zone: 'DISCOVERED', count: 1 },
+      { zone: 'BACKTESTING', count: 0 },
+      { zone: 'VALIDATED', count: 0 },
+      { zone: 'SHADOW', count: 0 },
+      { zone: 'ACTIVE', count: 1 },
+      { zone: 'REJECTED', count: 0 },
+    ],
+    nodes: [
+      { strategy_id: 'A', zone: 'DISCOVERED', x: -50, y: 0, size_hint: 10, ring_count: 0, elevation: null },
+      { strategy_id: 'B', zone: 'ACTIVE', x: 50, y: 0, size_hint: 40, ring_count: 4, elevation: 0.9 },
+    ],
+  };
+  spatial.update(payload);
+  const zones = spatial._test.getZones();
+  assert.deepStrictEqual(
+    zones,
+    ['DISCOVERED', 'BACKTESTING', 'VALIDATED', 'SHADOW', 'ACTIVE', 'REJECTED']
+  );
+  const nodes = spatial._test.getNodes();
+  assert.strictEqual(nodes.find(n => n.strategy_id === 'B').zone, 'ACTIVE');
+});
+
+test('fitAll returns false when there are zero visible nodes (empty state)', () => {
+  const ctx = makeCtxStub();
+  const canvas = makeCanvasStub(ctx);
+  const spatial = loadSpatial(canvas);
+  spatial.init('scc-spatial-canvas');
+  const r = spatial.fitAll();
+  assert.strictEqual(r, false, 'fitAll must report no-fit when no nodes are present');
+});
+
+test('fitAll with nodes computes a finite camera and returns true', () => {
+  const ctx = makeCtxStub();
+  const canvas = makeCanvasStub(ctx);
+  const spatial = loadSpatial(canvas);
+  spatial.init('scc-spatial-canvas');
+  spatial.update({
+    zones: [{ zone: 'ACTIVE', count: 2 }],
+    nodes: [
+      { strategy_id: 'A', zone: 'ACTIVE', x: -200, y: 0, size_hint: 5, ring_count: 0, elevation: 0.5 },
+      { strategy_id: 'B', zone: 'ACTIVE', x: 200, y: 0, size_hint: 5, ring_count: 0, elevation: 0.5 },
+    ],
+  });
+  const r = spatial.fitAll();
+  assert.strictEqual(r, true);
+  const cam = spatial._test.getCamera();
+  assert.ok(Number.isFinite(cam.x) && Number.isFinite(cam.y) && Number.isFinite(cam.zoom));
+  assert.ok(cam.zoom > 0, 'zoom must be positive after fitAll');
+});
+
+test('camera focus helpers do not throw and select/focus are wired', () => {
+  const ctx = makeCtxStub();
+  const canvas = makeCanvasStub(ctx);
+  const spatial = loadSpatial(canvas);
+  spatial.init('scc-spatial-canvas');
+  spatial.update({
+    zones: [{ zone: 'ACTIVE', count: 1 }, { zone: 'REJECTED', count: 1 }],
+    nodes: [
+      { strategy_id: 'LIVE-1', zone: 'ACTIVE', x: 0, y: 800, size_hint: 5, ring_count: 0, elevation: 0.5 },
+      { strategy_id: 'BAD-1', zone: 'REJECTED', x: 0, y: 0, size_hint: 5, ring_count: 0, elevation: null },
+    ],
+  });
+  assert.doesNotThrow(() => spatial.focusActive());
+  assert.doesNotThrow(() => spatial.focusBlocked());
+  assert.doesNotThrow(() => spatial.focusStage());
+  assert.doesNotThrow(() => spatial.resetCamera());
+  spatial.select('LIVE-1');
+  assert.doesNotThrow(() => spatial.focusSelected());
 });
