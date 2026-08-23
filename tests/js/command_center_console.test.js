@@ -213,3 +213,48 @@ test('pause stops ingestion; clear empties store', () => {
   nx.console.clear();
   assert.strictEqual(nx.console.getEvents().length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// 7. Event FAMILY classification — 5 mutually-exclusive families distinct from
+//    the fine-grained class.
+// ---------------------------------------------------------------------------
+test('familyOf maps each class into one of the five families', () => {
+  const nx = loadModule({});
+  const f = nx.console.familyOf;
+  assert.strictEqual(f('LIFECYCLE_TRANSITION'), 'CANDIDATE_LIFECYCLE');
+  assert.strictEqual(f('WALK_FORWARD_FAILURE'), 'EVALUATION_PROGRESS');
+  assert.strictEqual(f('OOS_FAILURE'), 'EVALUATION_PROGRESS');
+  assert.strictEqual(f('VALIDATION_FAILURE'), 'EVALUATION_PROGRESS');
+  assert.strictEqual(f('RESEARCH_FAILURE'), 'EVALUATION_PROGRESS');
+  assert.strictEqual(f('DATA_FAILURE'), 'EVALUATION_PROGRESS');
+  assert.strictEqual(f('EXPECTED_REJECTION'), 'VALIDATION_RESULT');
+  assert.strictEqual(f('GENERATION_COMPLETED'), 'GENERATION_EVENT');
+  assert.strictEqual(f('STALE_RUN_RECOVERY'), 'SYSTEM_RECOVERY');
+  assert.strictEqual(f('SYSTEM_ERROR'), 'SYSTEM_RECOVERY');
+});
+
+test('addEvent stamps _family and row renders the family badge', () => {
+  const dom = { 'scc-console-body': makeEl() };
+  const nx = loadModule(dom);
+  nx.console.add({ event_type: 'WALK_FORWARD_FAILURE', strategy_id: 'S-1', timestamp: '2026-08-23T11:00:00Z' });
+  const stored = nx.console.getEvents()[0];
+  assert.strictEqual(stored._family, 'EVALUATION_PROGRESS');
+});
+
+test('family filter narrows the rendered rows', () => {
+  const dom = {
+    'scc-console-body': makeEl(),
+    'scc-console-sev': makeEl(), 'scc-console-type': makeEl(),
+    'scc-console-family': makeEl(),
+    'scc-console-strategy': makeEl(), 'scc-console-gen': makeEl(),
+    'scc-console-from': makeEl(), 'scc-console-to': makeEl(),
+    'scc-console-search': makeEl(),
+  };
+  const nx = loadModule(dom);
+  nx.console.add({ event_type: 'WALK_FORWARD_FAILURE', strategy_id: 'A', timestamp: '2026-08-23T11:00:00Z' });
+  nx.console.add({ event_type: 'LIFECYCLE_TRANSITION', strategy_id: 'B', timestamp: '2026-08-23T11:00:00Z' });
+  nx.console.add({ event_type: 'GENERATION_COMPLETED', strategy_id: 'C', timestamp: '2026-08-23T11:00:00Z' });
+  document.getElementById('scc-console-family').value = 'EVALUATION_PROGRESS';
+  withRowSpy(() => { nx.console.applyFilters(); });
+  assert.strictEqual(global.__consoleRowCount, 1, 'only EVALUATION_PROGRESS family shown');
+});

@@ -268,3 +268,107 @@ test('inspector renders structured cards with verdict + visual hierarchy (no wal
   // MEASURED badge rendered (honest attribution)
   assert.match(content.innerHTML, /MEASURED/);
 });
+
+test('inspector renders evaluation pipeline breakdown (lifecycle vs transient stages)', () => {
+  const content = makeElementStub();
+  const title = makeElementStub();
+  const els = { 'scc-insp-content': content, 'scc-insp-title': title };
+  const scc = loadModule(els);
+  scc._test_renderInspector({
+    available: true, strategy_id: 'S-EVAL', current_state: 'DISCOVERED', strategy_version: '1.0.0',
+    execution_eligibility: { can_trade: false, eligibility_state: 'BLOCKED', reason: 'not validated' },
+    confidence_score: 0.4,
+    evaluation: {
+      gates: { BACKTEST: 'PASS', WALK_FORWARD: 'FAIL', OOS: 'NOT_RUN', ROBUSTNESS: 'NOT_RUN', SCORE: 'NOT_RUN' },
+      current_stage: 'WALK_FORWARD', passed_gates: 1, resolved_gates: 2, progress: 0.2,
+      is_running: false, running_stage: null,
+    },
+    evidence_summary: { backtest_status: 'PASS', walkforward_status: 'FAIL', oos_status: 'MISSING', robustness_status: 'MISSING', score_verdict: 'MISSING' },
+    ai_attribution: { status: 'PARTIALLY_MEASURABLE', measured: { weights: 0, note: '' }, contributions: [] },
+    debug_intelligence: { anomaly_score: { anomaly_score: 0.2 }, hints: [] },
+    lineage_dna: { parent_strategy_ids: [], generation: '1.0.0', descendants_recorded: false },
+    events: [],
+  });
+  // Distinguishes persistent lifecycle from transient evaluation stage.
+  assert.match(content.innerHTML, /Evaluation Pipeline/);
+  assert.match(content.innerHTML, /LIFECYCLE:/);
+  assert.match(content.innerHTML, /EVAL STAGE:/);
+  assert.match(content.innerHTML, /DISCOVERED/);
+  assert.match(content.innerHTML, /WALK_FORWARD/);
+  // Per-gate breakdown shown (short codes BT/WF/OOS/ROB/SCR + Evidence labels).
+  assert.match(content.innerHTML, /Backtest:/);
+  assert.match(content.innerHTML, /OOS/);
+  assert.match(content.innerHTML, /SCR/);
+  assert.match(content.innerHTML, /EVAL PROGRESS/);
+  // Execution eligibility verdict surfaced.
+  assert.match(content.innerHTML, /EXECUTION ELIGIBILITY/);
+  assert.match(content.innerHTML, /BLOCKED/);
+});
+
+test('overview metrics panel renders pass/fail per gate (scope: transient runs)', () => {
+  const content = makeElementStub();
+  const els = {
+    'scc-total': makeElementStub(), 'scc-active': makeElementStub(),
+    'scc-blocked': makeElementStub(), 'scc-valid': makeElementStub(),
+    'scc-eval-metrics': content, 'scc-research-bottleneck': makeElementStub(),
+  };
+  const scc = loadModule(els);
+  scc._test_renderOverview({
+    total_strategies: 50, by_lifecycle: { ACTIVE: 1, VALIDATED: 1, REJECTED: 48 },
+    blocked_count: 48,
+    evaluation_metrics: {
+      BACKTEST: { pass: 50, fail: 5, running: 0, total: 55, pass_rate: 0.9, fail_rate: 0.09 },
+      WALK_FORWARD: { pass: 5, fail: 45, running: 0, total: 50, pass_rate: 0.1, fail_rate: 0.9 },
+      OOS: { pass: 0, fail: 5, running: 0, total: 5, pass_rate: 0.0, fail_rate: 1.0 },
+      ROBUSTNESS: { pass: 0, fail: 0, running: 0, total: 0, pass_rate: 0.0, fail_rate: 0.0 },
+      SCORE: { pass: 0, fail: 0, running: 0, total: 0, pass_rate: 0.0, fail_rate: 0.0 },
+    },
+  });
+  assert.match(content.innerHTML, /EVALUATION PIPELINE/);
+  assert.match(content.innerHTML, /SCOPE: TRANSIENT RUNS/);
+  assert.match(content.innerHTML, /WALK_FORWARD/);
+  assert.match(content.innerHTML, /BACKTEST/);
+});
+
+test('overview shows RESEARCH BOTTLENECK when upper layers empty (honest)', () => {
+  const bn = makeElementStub();
+  const els = {
+    'scc-total': makeElementStub(), 'scc-active': makeElementStub(),
+    'scc-blocked': makeElementStub(), 'scc-valid': makeElementStub(),
+    'scc-eval-metrics': makeElementStub(), 'scc-research-bottleneck': bn,
+  };
+  const scc = loadModule(els);
+  scc._test_renderOverview({
+    total_strategies: 1093, by_lifecycle: { DISCOVERED: 1093, VALIDATED: 0, SHADOW: 0, ACTIVE: 0, REJECTED: 0 },
+    blocked_count: 0,
+    evaluation_metrics: {
+      BACKTEST: { pass: 1093, fail: 0, total: 1093, pass_rate: 1.0, fail_rate: 0.0 },
+      WALK_FORWARD: { pass: 0, fail: 1361, total: 1361, pass_rate: 0.0, fail_rate: 1.0 },
+      OOS: { pass: 0, fail: 0, total: 0, pass_rate: 0.0, fail_rate: 0.0 },
+      ROBUSTNESS: { pass: 0, fail: 0, total: 0, pass_rate: 0.0, fail_rate: 0.0 },
+      SCORE: { pass: 0, fail: 0, total: 0, pass_rate: 0.0, fail_rate: 0.0 },
+    },
+  });
+  assert.match(bn.innerHTML, /RESEARCH BOTTLENECK/);
+  assert.match(bn.innerHTML, /FACT/);
+  assert.match(bn.innerHTML, /INFERENCE/);
+  assert.match(bn.innerHTML, /HYPOTHESIS/);
+  assert.match(bn.innerHTML, /RECOMMENDATION/);
+  assert.match(bn.innerHTML, /1361/);
+});
+
+test('overview hides RESEARCH BOTTLENECK when a strategy is validated', () => {
+  const bn = makeElementStub();
+  const els = {
+    'scc-total': makeElementStub(), 'scc-active': makeElementStub(),
+    'scc-blocked': makeElementStub(), 'scc-valid': makeElementStub(),
+    'scc-eval-metrics': makeElementStub(), 'scc-research-bottleneck': bn,
+  };
+  const scc = loadModule(els);
+  scc._test_renderOverview({
+    total_strategies: 10, by_lifecycle: { VALIDATED: 1, DISCOVERED: 9 },
+    blocked_count: 0,
+    evaluation_metrics: {},
+  });
+  assert.doesNotMatch(bn.innerHTML, /RESEARCH BOTTLENECK/);
+});

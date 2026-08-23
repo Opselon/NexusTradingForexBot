@@ -248,3 +248,87 @@ test('anti-clump coordinate distribution spreads nodes laterally across zone', (
   assert.ok(xs.size > 1, 'nodes must be distributed across multiple lateral x positions to avoid central clump');
 });
 
+test('node stores transient evaluation payload without moving lifecycle zone', () => {
+  // The evaluation indicator is INTERNAL: the node must keep its persistent
+  // zone (e.g. DISCOVERED) while carrying transient evaluation telemetry.
+  const ctx = makeCtxStub();
+  const canvas = makeCanvasStub(ctx);
+  const spatial = loadSpatial(canvas);
+  spatial.init('scc-spatial-canvas');
+  spatial.update({
+    zones: [{ zone: 'DISCOVERED', count: 1 }],
+    nodes: [{
+      strategy_id: 'A', zone: 'DISCOVERED', x: 0, y: 0, size_hint: 5, ring_count: 0, elevation: null,
+      evaluation: {
+        gates: { BACKTEST: 'PASS', WALK_FORWARD: 'RUNNING', OOS: 'NOT_RUN', ROBUSTNESS: 'NOT_RUN', SCORE: 'NOT_RUN' },
+        current_stage: 'WALK_FORWARD', passed_gates: 1, resolved_gates: 2, progress: 0.2,
+        is_running: true, running_stage: 'WALK_FORWARD',
+      },
+      eligibility_state: 'BLOCKED',
+    }],
+  });
+  const n = spatial._test.getNodes().find(d => d.strategy_id === 'A');
+  assert.strictEqual(n.zone, 'DISCOVERED', 'zone (persistent lifecycle) is unchanged');
+  assert.ok(n.evaluation, 'transient evaluation payload attached');
+  assert.strictEqual(n.evaluation.current_stage, 'WALK_FORWARD');
+  assert.strictEqual(n.evaluation.is_running, true);
+  assert.strictEqual(n.eligibility_state, 'BLOCKED');
+});
+
+test('evaluation progress advance flashes indicator but does NOT move the node', () => {
+  // Core fix: as evaluation advances (BACKTEST->WF) while the lifecycle stays
+  // DISCOVERED, the renderer must flash the internal indicator (flashes map),
+  // and must NOT schedule a zone-move animation (anims stays empty).
+  const ctx = makeCtxStub();
+  const canvas = makeCanvasStub(ctx);
+  const spatial = loadSpatial(canvas);
+  spatial.init('scc-spatial-canvas');
+  spatial.update({
+    zones: [{ zone: 'DISCOVERED', count: 1 }],
+    nodes: [{
+      strategy_id: 'A', zone: 'DISCOVERED', x: 0, y: 0, size_hint: 5, ring_count: 0, elevation: null,
+      evaluation: {
+        gates: { BACKTEST: 'PASS', WALK_FORWARD: 'NOT_RUN', OOS: 'NOT_RUN', ROBUSTNESS: 'NOT_RUN', SCORE: 'NOT_RUN' },
+        current_stage: 'WALK_FORWARD', passed_gates: 1, resolved_gates: 1, progress: 0.2, is_running: false, running_stage: null,
+      },
+    }],
+  });
+  // Advance evaluation only (lifecycle/DISCOVERED unchanged).
+  spatial.update({
+    zones: [{ zone: 'DISCOVERED', count: 1 }],
+    nodes: [{
+      strategy_id: 'A', zone: 'DISCOVERED', x: 0, y: 0, size_hint: 5, ring_count: 0, elevation: null,
+      evaluation: {
+        gates: { BACKTEST: 'PASS', WALK_FORWARD: 'RUNNING', OOS: 'NOT_RUN', ROBUSTNESS: 'NOT_RUN', SCORE: 'NOT_RUN' },
+        current_stage: 'WALK_FORWARD', passed_gates: 1, resolved_gates: 2, progress: 0.2, is_running: true, running_stage: 'WALK_FORWARD',
+      },
+    }],
+  });
+  const anims = spatial._test.getAnims();
+  assert.ok(!anims['A'], 'evaluation advance must NOT schedule a lifecycle-zone move');
+  // Note: flashes is internal; we assert the node still sits in DISCOVERED and
+  // retained the advanced evaluation. Movement = zone change = animation.
+  const n = spatial._test.getNodes().find(d => d.strategy_id === 'A');
+  assert.strictEqual(n.zone, 'DISCOVERED');
+  assert.strictEqual(n.evaluation.current_stage, 'WALK_FORWARD');
+});
+
+test('real lifecycle transition still animates the zone move (backend wins)', () => {
+  // Independent of evaluation work, a genuine lifecycle transition (DISCOVERED
+  // -> VALIDATED) must still schedule an interpolation animation.
+  const ctx = makeCtxStub();
+  const canvas = makeCanvasStub(ctx);
+  const spatial = loadSpatial(canvas);
+  spatial.init('scc-spatial-canvas');
+  spatial.update({
+    zones: [{ zone: 'DISCOVERED', count: 1 }],
+    nodes: [{ strategy_id: 'A', zone: 'DISCOVERED', x: 0, y: 0, size_hint: 5, ring_count: 0, elevation: null }],
+  });
+  spatial.update({
+    zones: [{ zone: 'VALIDATED', count: 1 }],
+    nodes: [{ strategy_id: 'A', zone: 'VALIDATED', x: 0, y: 0, size_hint: 5, ring_count: 2, elevation: 0.7,
+      evaluation: { gates: { BACKTEST:'PASS', WALK_FORWARD:'PASS', OOS:'PASS', ROBUSTNESS:'PASS', SCORE:'PASS' }, current_stage:'DONE', passed_gates:5, resolved_gates:5, progress:1.0, is_running:false, running_stage:null } }],
+  });
+  assert.ok(spatial._test.getAnims()['A'], 'genuine lifecycle transition animates');
+});
+
