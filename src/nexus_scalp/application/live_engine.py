@@ -916,8 +916,20 @@ class LiveEngine:
         self._last_chart_snapshot_overlays: dict[str, Any] | None = None
         self._last_chart_snapshot_time: float = 0.0
 
-        # Preload model/scaler bundle (pre-flight)
-        model_path = Path(self.config.model.model_artifact_path)
+        # Preload model/scaler bundle (pre-flight).
+        # BUG-136: honor the REHYDRATED runtime snapshot model_artifact_path
+        # (persisted via hot-swap / runtime-config apply) at boot; fall back
+        # to the bootstrap default only when no persisted value exists.
+        # Without this, a restart reverts to the 50D default bundle while the
+        # persistent store expects 70D -> false MODEL_INPUT_DIMENSION_MISMATCH.
+        model_path_str = self.config.model.model_artifact_path
+        try:
+            _md_snap = self.runtime_config.get_snapshot().model.model_artifact_path
+            if _md_snap:
+                model_path_str = str(_md_snap)
+        except Exception:
+            pass
+        model_path = Path(model_path_str)
         self._bundle = self._load_or_create_bundle(
             model_path=model_path, force_fresh=self.force_fresh_model
         )
