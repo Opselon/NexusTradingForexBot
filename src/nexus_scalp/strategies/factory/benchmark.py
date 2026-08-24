@@ -310,7 +310,41 @@ def build_benchmark_artifact(
     }
 
 
+def behavioral_preview_signature(
+    candidate: FactoryCandidate,
+    ledger_samples: list[dict[str, Any]],
+) -> str:
+    """Semantic (behavioral) fingerprint of a candidate, computable BEFORE the
+    expensive research pipeline runs.
+
+    Two candidates that trade the SAME experience subset under the SAME
+    structural contract are behavioral clones: the deterministic backtest is a
+    pure function of the sample partition (ids/versions are labels only), so
+    identical ``(family, timeframes, sorted-sample-subset-hash)`` => identical
+    backtest/WF/OOS/robustness. This is exactly the equivalence the DSL-level
+    ``dsl_hash`` dedup CANNOT see (different filters can select the same
+    samples — the 345-cluster pathology).
+
+    The signature is content-addressed and deterministic, so a known
+    pathological cluster (e.g. the 345-clone cluster) maps to ONE stable key
+    that is then comparable against persisted cluster evidence (member count +
+    OOS-pass count) built from `strategy_registry`.
+
+    Determinism note: folds/versions are NOT included, by design — a clone must
+    match regardless of the generation it was produced in. The sample subset is
+    hashed via its SORTED idempotency_keys, so order-independent.
+    """
+    dsl = candidate.dsl
+    family = candidate.family.value
+    timeframes = ",".join(sorted(str(t) for t in (dsl.market or {}).get("timeframes") or []))
+    sample_ids = benchmark_subset_for_candidate(candidate, ledger_samples)
+    subset_hash = hashlib.sha256(("|".join(sample_ids)).encode("utf-8")).hexdigest()[:24]
+    raw = f"{family}|{timeframes}|{subset_hash}|{len(sample_ids)}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+
 __all__ = [
+    "behavioral_preview_signature",
     "benchmark_subset_for_candidate",
     "build_benchmark_artifact",
     "candidate_coverage_stats",

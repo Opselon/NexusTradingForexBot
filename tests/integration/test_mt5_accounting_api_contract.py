@@ -87,10 +87,10 @@ class TestAccountPerformanceEndpoint:
             assert p["net_pnl"] is not None
 
     def test_period_series_has_points(self, client) -> None:
-        res = client.get("/api/account/performance/DAY/series?count=7")
+        res = client.get("/api/account/performance/DAY/series?count=14")
         assert res.status_code == 200
         periods = res.json()["periods"]
-        assert len(periods) == 7
+        assert len(periods) == 14
         assert sum(1 for p in periods if p["has_data"]) >= 1
 
     def test_full_period_report_no_zero_defaults_for_history(self, client) -> None:

@@ -49,7 +49,7 @@ from nexus_scalp.strategies.factory.evolution import (
     adapt_probabilities,
     crossover,
     explore,
-    mutate,
+    mutate_with_action,
 )
 from nexus_scalp.strategies.factory.models import (
     CandidateSource,
@@ -149,7 +149,19 @@ class StrategyFactory:
         self.notifier = notifier
         self.loop_state: str = LoopState.STOPPED.value
         self.current_generation_id: str = ""
+        # Operator accounting (G28 TARGET 2): cumulative across restarts.
+        # Structure:
+        #   "operators":  {op: {generated, valid, survived, elite, wf_pass,
+        #                       oos_pass, improved, improvement_delta}}
+        #   "actions":    {action: {same shape}} for the 8 mutation/crossover
+        #                 actions the handoff requires per-action attribution of
+        #   "clone_clusters": {behavioral_signature: {"members", "oos_passes"}}
+        # Loaded from factory_loop_state at construction, saved on every tally.
         self._operator_stats: dict[str, dict[str, int]] = {}
+        self._operator_actions: dict[str, dict[str, float]] = {}
+        self._clone_clusters: dict[str, dict[str, int]] = {}
+        self._candidate_action: dict[str, dict[str, str]] = {}
+        self._load_operator_accounting()
         self._last_run_summary: dict[str, Any] = {}
         self._kill_requested = False
 
@@ -243,10 +255,18 @@ class StrategyFactory:
         return True
 
     def loop_status(self) -> dict[str, Any]:
+        # G28: operator evidence is cumulative (persisted to factory_loop_state
+        # and reloaded at construction) — restart no longer resets accounting.
+        pathological = sum(
+            1 for c in self._clone_clusters.values() if self._is_pathological_clone(c)
+        )
         return {
             "state": self.loop_state,
             "current_generation": self.current_generation_id,
             "operator_stats": self._operator_stats,
+            "action_stats": self._operator_actions,
+            "clone_clusters_tracked": len(self._clone_clusters),
+            "clone_clusters_pathological": pathological,
             "kill_requested": self._kill_requested,
         }
 
@@ -561,14 +581,17 @@ class StrategyFactory:
             roll = rng.random()
             child: FactoryCandidate | None = None
             op = "EXPLORATION"
+            action: str | None = None
             if roll < probs["mutation_rate"] and elite_pool:
                 base = rng.choice(elite_pool)
-                child = mutate(base, rng=rng, budgets=self._budgets())
+                # G28 TARGET 2: per-action attribution (which mutation fired).
+                child, action = mutate_with_action(base, rng=rng, budgets=self._budgets())
                 op = "MUTATION"
             elif roll < probs["mutation_rate"] + probs["crossover_rate"] and len(elite_pool) >= 2:
                 a, b = rng.sample(elite_pool, 2)
                 child = crossover(a, b, rng=rng, budgets=self._budgets())
                 op = "CROSSOVER"
+                action = "crossover"
             else:
                 base = rng.choice(elite_pool) if elite_pool else None
                 if base is not None:
@@ -579,7 +602,16 @@ class StrategyFactory:
                 # template (bounded exploration, never an invalid strategy).
                 child = self._fresh_candidate(generation_id, len(out))
                 op = "TEMPLATE"
+                action = None
             self._tally_operator(op, len(out))
+            if action is not None:
+                # Per-action accounting: generated (+ parent linkage for later
+                # valid / wf_pass / oos_pass / improved attribution).
+                self._tally_action(action, "generated")
+                self._candidate_action[child.candidate_id] = {
+                    "action": action,
+                    "parent_id": (child.parent_ids or [""])[0],
+                }
             out.append(
                 child.model_copy(
                     update={
@@ -698,6 +730,164 @@ class StrategyFactory:
     def _tally_operator(self, op: str, index: int) -> None:
         stats = self._operator_stats.setdefault(op, {"generated": 0, "survived": 0, "elite": 0})
         stats["generated"] = stats.get("generated", 0) + 1
+        self._persist_operator_accounting()
+
+    # ------------------------------------------------------------------
+    # Operator accounting persistence + semantic clone pre-screen
+    # (G28 TARGET 1 / TARGET 2, forensic 2026-08-24)
+    # ------------------------------------------------------------------
+
+    #: Bounded cluster registry: at most this many signatures are tracked.
+    MAX_CLONE_CLUSTERS = 512
+
+    def _load_operator_accounting(self) -> None:
+        """Restores cumulative operator evidence from factory_loop_state.
+
+        Never raises: a missing/corrupt row degrades to a fresh in-memory
+        registry (the legacy behavior) — restart must not brick the factory.
+        """
+        try:
+            from nexus_scalp.strategies.factory.store import get_operator_stats
+
+            persisted = get_operator_stats(self._research_backend) or {}
+        except Exception as e:
+            logger.warning(
+                "[STRATEGY_FACTORY] operator accounting load failed (fresh start)",
+                error=str(e),
+            )
+            return
+        operators = persisted.get("operators")
+        if isinstance(operators, dict):
+            for op, stats in operators.items():
+                if isinstance(stats, dict):
+                    self._operator_stats[str(op)] = {
+                        str(k): int(v) for k, v in stats.items() if isinstance(v, (int, float))
+                    }
+        actions = persisted.get("actions")
+        if isinstance(actions, dict):
+            for action, stats in actions.items():
+                if isinstance(stats, dict):
+                    self._operator_actions[str(action)] = {
+                        str(k): int(v) for k, v in stats.items() if isinstance(v, (int, float))
+                    }
+        clusters = persisted.get("clone_clusters")
+        if isinstance(clusters, dict):
+            for sig, info in clusters.items():
+                if isinstance(info, dict):
+                    self._clone_clusters[str(sig)] = {
+                        "members": max(0, int(info.get("members", 0) or 0)),
+                        "oos_passes": max(0, int(info.get("oos_passes", 0) or 0)),
+                    }
+
+    def _persist_operator_accounting(self) -> None:
+        """Writes cumulative operator evidence to factory_loop_state."""
+        try:
+            from nexus_scalp.strategies.factory.store import set_operator_stats
+
+            set_operator_stats(
+                self._research_backend,
+                {
+                    "operators": self._operator_stats,
+                    "actions": self._operator_actions,
+                    "clone_clusters": self._clone_clusters,
+                    "updated_at": _now().isoformat(),
+                },
+            )
+        except Exception as e:
+            logger.warning(
+                "[STRATEGY_FACTORY] operator accounting persist failed (isolated)",
+                error=str(e),
+            )
+
+    def _behavior_cluster(self, signature: str) -> dict[str, int]:
+        """Returns (creating if needed) the cluster record for one signature."""
+        cluster = self._clone_clusters.setdefault(signature, {"members": 0, "oos_passes": 0})
+        # Bound the registry: drop the OLDEST-inserted signatures first.
+        while len(self._clone_clusters) > self.MAX_CLONE_CLUSTERS:
+            oldest = next(iter(self._clone_clusters))
+            self._clone_clusters.pop(oldest, None)
+        return cluster
+
+    def _is_pathological_clone(self, cluster: dict[str, int]) -> bool:
+        """A known cluster is pathological when it has >= min members and has
+        NEVER produced an OOS pass (the exact shape of the 345-clone cluster)."""
+        return (
+            int(cluster.get("members", 0)) >= self.config.clone_cluster_min_members
+            and int(cluster.get("oos_passes", 0)) <= 0
+        )
+
+    def _record_behavior_outcome(self, signature: str, oos_pass: bool) -> None:
+        """Records one REAL pipeline outcome against its behavioral cluster."""
+        cluster = self._behavior_cluster(signature)
+        cluster["members"] = int(cluster.get("members", 0)) + 1
+        if oos_pass:
+            cluster["oos_passes"] = int(cluster.get("oos_passes", 0)) + 1
+        self._persist_operator_accounting()
+
+    #: Per-action counter keys (G28 TARGET 2 handoff contract).
+    ACTION_COUNTER_KEYS = (
+        "generated",
+        "valid",
+        "wf_pass",
+        "oos_pass",
+        "improved",
+        "improvement_delta",
+    )
+
+    def _tally_action(self, action: str, key: str, amount: float = 1.0) -> None:
+        """Bumps one per-action counter and persists the accounting state."""
+        stats = self._operator_actions.setdefault(
+            action, dict.fromkeys(self.ACTION_COUNTER_KEYS, 0)
+        )
+        stats[key] = float(stats.get(key, 0) or 0) + float(amount)
+        self._persist_operator_accounting()
+
+    def _attribute_action_outcome(
+        self,
+        candidate: FactoryCandidate,
+        result: dict[str, Any],
+    ) -> None:
+        """Attributes wf_pass / oos_pass / improved to the producing action.
+
+        Uses ONLY validation-tier outcomes (WF pass flag, OOS pass FLAG — not
+        scores) plus the parent-vs-child in-sample expectancy delta for
+        `improvement_delta`. No OOS score ever feeds probabilities (leakage
+        boundary, SEARCH_LEARNING_BOUNDARIES.md).
+        """
+        linkage = self._candidate_action.pop(candidate.candidate_id, None)
+        if not linkage:
+            return
+        action = str(linkage.get("action", ""))
+        if not action:
+            return
+        wf = result.get("walkforward") or {}
+        oos = result.get("oos") or {}
+        if bool(wf.get("passed")):
+            self._tally_action(action, "wf_pass")
+        if oos.get("status") == "PASS":
+            self._tally_action(action, "oos_pass")
+            child_exp = float((result.get("backtest") or {}).get("expectancy_r", 0.0) or 0.0)
+            parent_exp = self._parent_expectancy(str(linkage.get("parent_id", "")))
+            if parent_exp is not None:
+                delta = child_exp - parent_exp
+                self._tally_action(action, "improvement_delta", delta)
+                if delta > 0:
+                    self._tally_action(action, "improved")
+
+    def _parent_expectancy(self, strategy_id: str) -> float | None:
+        """Parent's recorded IN-SAMPLE backtest expectancy (baseline for
+        improvement deltas). None when the parent has no registry row."""
+        if not strategy_id:
+            return None
+        try:
+            from nexus_scalp.research.store import get_registry_entry
+
+            entry = get_registry_entry(self.audit_repo, strategy_id)
+            bt = _decode_registry_row(entry or {}).get("backtest") or {}
+            raw = bt.get("expectancy_r")
+            return float(raw) if raw is not None else None
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Structural validation + evaluation
@@ -749,6 +939,7 @@ class StrategyFactory:
         verdict: Any = None,
         lifecycle: str = "GENERATED",
         preserve_structural: bool = False,
+        failure_reasons: list[str] | None = None,
     ) -> None:
         if preserve_structural:
             # Keep the existing structural verdict from the first upsert
@@ -761,6 +952,10 @@ class StrategyFactory:
             )
         else:
             structural = verdict.model_dump() if verdict else None
+        if failure_reasons is None:
+            failure_reasons = (
+                [verdict.failure_reason.value] if verdict and verdict.failure_reason else []
+            )
         upsert_candidate(
             self._research_backend,
             {
@@ -775,9 +970,7 @@ class StrategyFactory:
                 "dsl": candidate.dsl.model_dump(),
                 "structural": structural,
                 "lifecycle": lifecycle,
-                "failure_reasons": [verdict.failure_reason.value]
-                if verdict and verdict.failure_reason
-                else [],
+                "failure_reasons": failure_reasons,
                 "llm_response_id": candidate.llm_response_id,
                 "created_at": candidate.created_at.isoformat(),
             },
@@ -812,6 +1005,14 @@ class StrategyFactory:
         score and persists the strategy_registry row. The factory records the
         outcome and the structured failure reasons (spec 14 / 23 / 59).
 
+        SEMANTIC CLONE PRE-SCREEN (G28 TARGET 1):
+        Before running the expensive research pipeline, computes the
+        behavioral-preview signature from the candidate's DSL + projected sample
+        subset. If it matches a known cluster with >= clone_cluster_min_members
+        members and 0 OOS passes, skips evaluation and records CLONE_SKIPPED.
+        Pure budget rescue (~30% budget saved); does NOT alter structural dedup
+        hashes and never weakens validation gates.
+
         BENCHMARK (2026-08-21): stamps a strategy-aware benchmark artifact
         (coverage + per-gate explainability) onto factory_runs and emits it
         in the candidate event so the API/AI can rank without re-running the
@@ -819,6 +1020,64 @@ class StrategyFactory:
         """
         started = time.perf_counter()
         try:
+            from nexus_scalp.strategies.factory.benchmark import behavioral_preview_signature
+
+            snapshot = self._ledger_snapshot_for_filter()
+            sig = behavioral_preview_signature(candidate, snapshot)
+            cluster = self._behavior_cluster(sig)
+
+            if self.config.clone_prescreen_enabled and self._is_pathological_clone(cluster):
+                # CLONE PRE-SCREEN TRIGGERED: known behavioral clone with high
+                # volume and 0 historical OOS passes. Skip evaluation.
+                duration_ms = (time.perf_counter() - started) * 1000.0
+                self._persist_candidate(
+                    candidate,
+                    lifecycle="REJECTED",
+                    verdict=None,
+                    preserve_structural=True,
+                    failure_reasons=[FailureReason.CLONE_SKIPPED.value],
+                )
+                record_failure(
+                    self._research_backend,
+                    {
+                        "failure_id": f"fail_{uuid.uuid4().hex[:16]}",
+                        "candidate_id": candidate.candidate_id,
+                        "strategy_id": candidate.candidate_id,
+                        "generation_id": candidate.generation_id,
+                        "stage": FactoryStage.OOS.value,
+                        "reason": FailureReason.CLONE_SKIPPED.value,
+                        "detail": {
+                            "behavioral_signature": sig,
+                            "cluster_members": cluster.get("members", 0),
+                            "cluster_oos_passes": cluster.get("oos_passes", 0),
+                            "message": "Semantic clone pre-screen skipped evaluation (known zero-edge behavior cluster)",
+                        },
+                        "created_at": _now().isoformat(),
+                    },
+                )
+                emit_event(
+                    self._research_backend,
+                    {
+                        "event_id": _event_id(),
+                        "generation_id": candidate.generation_id,
+                        "candidate_id": candidate.candidate_id,
+                        "event_type": "CLONE_SKIPPED",
+                        "message": f"{candidate.candidate_id} -> CLONE_SKIPPED (sig {sig[:12]}..., members={cluster.get('members', 0)})",
+                        "payload": {
+                            "behavioral_signature": sig,
+                            "cluster_members": cluster.get("members", 0),
+                            "duration_ms": round(duration_ms, 1),
+                        },
+                    },
+                )
+                return {
+                    "lifecycle": "REJECTED",
+                    "failure_reasons": [FailureReason.CLONE_SKIPPED.value],
+                    "score": {"verdict": "REJECTED", "final_score": 0.0},
+                    "oos": {"status": "SKIPPED_CLONE"},
+                    "backtest": {},
+                }
+
             registry_candidate = self._to_strategy_candidate(candidate)
             result = self.research_pipeline.validate_candidate(
                 registry_candidate,
@@ -832,10 +1091,22 @@ class StrategyFactory:
             oos = result.get("oos") or {}
             rob = result.get("robustness") or {}
 
+            # Record outcome against the behavioral clone cluster
+            oos_passed = oos.get("status") == "PASS"
+            self._record_behavior_outcome(sig, oos_passed)
+            # Per-action attribution (G28 TARGET 2) — no-op for non-evolved
+            # candidates (no linkage recorded at generation time).
+            self._attribute_action_outcome(candidate, result)
+            if candidate.candidate_id in self._candidate_action:
+                linkage = self._candidate_action[candidate.candidate_id]
+                action = str(linkage.get("action", ""))
+                if lifecycle not in ("GENERATED", "", "DISCOVERED"):
+                    self._tally_action(action, "valid")
+
             failed_reasons = self._derived_failure_reasons(result, candidate)
-            # BENCHMARK ARTIFACT (pure, never mutates the pipeline result)
+            # BENCHMARK ARTIFACT (pure, never mutates the pipeline result);
+            # reuses the ledger snapshot already taken by the clone pre-screen.
             try:
-                snapshot = self._ledger_snapshot_for_filter()
                 coverage = candidate_coverage_stats(candidate, snapshot)
                 benchmark = build_benchmark_artifact(candidate, result, coverage)
             except Exception:
@@ -1248,7 +1519,11 @@ class StrategyFactory:
         candidates = list_candidates(
             self._research_backend, generation_id=generation_id, limit=2000
         )
-        pending = [c for c in candidates if c.get("lifecycle") in ("GENERATED", None, "", "DISCOVERED", "RUNNING")]
+        pending = [
+            c
+            for c in candidates
+            if c.get("lifecycle") in ("GENERATED", None, "", "DISCOVERED", "RUNNING")
+        ]
         dataset = self._build_dataset()
         resumed = 0
         for c in pending:

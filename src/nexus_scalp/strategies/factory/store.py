@@ -418,6 +418,7 @@ def list_generations(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
 # Stale-generation sweeper (P1 hardening, 2026-08-23)
 # ------------------------------------------------------------------
 
+
 def get_loop_states(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
     """List loop control states — audit DB (legacy) or isolated store."""
     if _is_store_backend(repo):
@@ -471,9 +472,11 @@ def sweep_stale_generations(
     if _is_store_backend(repo):
         gens = repo.list_generations(limit=limit)
         try:
-            loop_states = {
-                ls.get("generation_id"): ls for ls in (repo.get_loop_states() or [])
-            } if hasattr(repo, "get_loop_states") else {}
+            loop_states = (
+                {ls.get("generation_id"): ls for ls in (repo.get_loop_states() or [])}
+                if hasattr(repo, "get_loop_states")
+                else {}
+            )
         except Exception:
             loop_states = {}
     else:
@@ -534,6 +537,7 @@ def sweep_stale_generations(
             swept.append(gid)
             try:
                 import uuid as _uuid
+
                 emit_event(
                     repo,
                     {
@@ -727,6 +731,77 @@ def get_loop_state(repo: Any) -> dict[str, Any]:
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Operator accounting persistence (G28 TARGET 2)
+#
+# ``factory_loop_state`` doubles as the crash-safe home for cumulative
+# operator evidence: a DEDICATED scope row (``operator_stats``) stores the
+# merged operator/action counters + behavioral clone-cluster registry as JSON
+# in its ``checkpoint`` column. The autonomous control row (scope
+# 'autonomous') is intentionally left alone — its checkpoint is rewritten by
+# every start/pause/stop transition and must stay loop-control-only.
+# ---------------------------------------------------------------------------
+
+OPERATOR_STATS_SCOPE = "operator_stats"
+
+
+def set_operator_stats(repo: Any, payload: dict[str, Any]) -> bool:
+    """Persist cumulative operator/accounting state — either backend."""
+    if _is_store_backend(repo):
+        setter = getattr(repo, "set_operator_stats", None)
+        if setter is not None:
+            return setter(payload)
+    if not repo._is_sqlite:
+        return False
+    sql = """
+        INSERT INTO factory_loop_state (
+            scope, state, generation_id, checkpoint, updated_at, last_error
+        ) VALUES (?, 'ACTIVE', '', ?, ?, '')
+        ON CONFLICT(scope) DO UPDATE SET
+            checkpoint=excluded.checkpoint,
+            updated_at=excluded.updated_at;
+    """
+    try:
+        repo._queue.put_nowait((sql, (OPERATOR_STATS_SCOPE, _json(payload), _now())))
+        return True
+    except Exception as e:
+        logger.error("[STRATEGY_FACTORY] set_operator_stats failed", error=str(e))
+        return False
+
+
+def get_operator_stats(repo: Any) -> dict[str, Any]:
+    """Read cumulative operator/accounting state ({} when absent)."""
+    if _is_store_backend(repo):
+        getter = getattr(repo, "get_operator_stats", None)
+        if getter is not None:
+            try:
+                return getter() or {}
+            except Exception as e:
+                logger.error("[STRATEGY_FACTORY] get_operator_stats failed", error=str(e))
+                return {}
+    conn = _conn(repo)
+    if conn is None:
+        return {}
+    try:
+        row = conn.execute(
+            "SELECT checkpoint FROM factory_loop_state WHERE scope=? LIMIT 1;",
+            (OPERATOR_STATS_SCOPE,),
+        ).fetchone()
+        if row is None:
+            return {}
+        raw = row["checkpoint"]
+        text = str(raw or "").strip()
+        if not text or text.lower() in ("null", "{}"):
+            return {}
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception as e:
+        logger.error("[STRATEGY_FACTORY] get_operator_stats failed", error=str(e))
+        return {}
+    finally:
+        conn.close()
+
+
 def provider_usage_total(repo: Any) -> dict[str, Any]:
     """Aggregate LLM provider usage — audit DB (legacy) or isolated store."""
     if _is_store_backend(repo):
@@ -783,6 +858,7 @@ __all__ = [
     "get_candidate_structural",
     "get_generation",
     "get_loop_state",
+    "get_operator_stats",
     "list_candidates",
     "list_events",
     "list_failures",
@@ -793,6 +869,7 @@ __all__ = [
     "record_provider_usage",
     "record_run",
     "set_loop_state",
+    "set_operator_stats",
     "upsert_candidate",
     "upsert_generation",
 ]

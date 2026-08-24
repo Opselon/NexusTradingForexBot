@@ -419,6 +419,30 @@ def explore(
     )
 
 
+def mutate_with_action(
+    candidate: FactoryCandidate,
+    rng: random.Random | None = None,
+    feature_pool: list[str] | None = None,
+    budgets: dict[str, int] | None = None,
+) -> tuple[FactoryCandidate | None, str]:
+    """Per-action-attribution wrapper around mutate() (G28 TARGET 2).
+
+    Returns ``(child_or_None, action)`` where action is one of the 7 mutation
+    actions, so the orchestrator can attribute outcomes per action without
+    changing the DSL representation or the structural gates.
+    """
+    rng = rng or random.Random(RANDOM_SEED)
+    action = rng.choice(_MUTATION_ACTIONS)
+    child = mutate(
+        candidate,
+        rng=rng,
+        feature_pool=feature_pool,
+        action=action,
+        budgets=budgets,
+    )
+    return child, action
+
+
 def adapt_probabilities(
     base: dict[str, float],
     operator_success: dict[str, float],
