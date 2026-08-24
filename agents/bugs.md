@@ -5969,3 +5969,29 @@ provenance are fallbacks only. Real 50D bundles still BLOCK correctly.
 test_liq_false_block_02_real_50d_bundle_still_blocked (negative control).
 Reviewer: PASS (nexus-reviewer). Note: running server must restart to load
 the fixed module; hot-swap path itself unchanged.
+
+
+## BUG-136 — 70D model hot-swap lost after engine restart (boot ignored rehydrated runtime model_artifact_path) (2026-08-25 Nexus-Main)
+
+**Symptom:** After BUG-135, the UI STILL showed BLOCK
+(MODEL_INPUT_DIMENSION_MISMATCH). Investigation proved the running engine was
+serving artifacts/models/scalp/XAUUSD/v1.0.0/model.pt (50D scalp_v1) even
+though RuntimeConfig's persistent store held model.model_artifact_path =
+70d_liquidity/model.pt from the earlier hot-swap.
+
+**Root cause:** Split-brain persistence. hot_swap_model() correctly persisted
+the new path via runtime_config.apply -> PersistentConfigStore, but
+LiveEngine.__init__ loaded the initial bundle from the bootstrap
+AppConfig.model_artifact_path default and never consulted the rehydrated
+snapshot at boot. Every restart reverted the serving bundle to the 50D default.
+BUG-135's bundle-first governor then truthfully reported the mismatch.
+
+**Fix (aa56671):** LiveEngine boot resolves model_path from
+runtime_config.get_snapshot().model.model_artifact_path first; falls back to
+config.model.model_artifact_path when absent (mirrors the _news_enabled boot
+pattern). Regression tests added for both resolution branches.
+
+**Tests:** test_runtime_config_hot_reload.py TestBug136BootModelPathRehydration
+(+2). LIVE restart proof: /api/live/state artifact=70d_liquidity/model.pt,
+scalp_v3/dim=70, liquidity compatibility PASS / SCHEMA_DIMENSION_MATCH.
+Reviewer: PASS (nexus-reviewer, false-block fix chain).
