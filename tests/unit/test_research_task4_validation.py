@@ -315,12 +315,21 @@ def test_rs27_small_sample_never_validated(repo):
     bt = BacktestEngine().run(ds, "s1", "v1", use_split=True)
     # Simulate a passing OOS + robustness; only the sample floor should bite.
     oos_pass = type(
-        "O", (), {"status": "PASS", "reason": "", "oos_expectancy_r": 0.3,
-                  "in_sample_expectancy_r": 0.3, "oos_samples": 12}
+        "O",
+        (),
+        {
+            "status": "PASS",
+            "reason": "",
+            "oos_expectancy_r": 0.3,
+            "in_sample_expectancy_r": 0.3,
+            "oos_samples": 12,
+        },
     )()
     rob_pass = type("R", (), {"status": "PASS", "reason": "", "max_degradation": 0.0})()
     wf = type("W", (), {"passed": True, "degradation": 0.0})()
-    score = compute_strategy_score(ds, backtest=bt, walkforward=wf, oos=oos_pass, robustness=rob_pass)
+    score = compute_strategy_score(
+        ds, backtest=bt, walkforward=wf, oos=oos_pass, robustness=rob_pass
+    )
     # 15 trades < MIN_EVIDENCE_SAMPLES (100) -> must NOT be VALIDATED.
     assert score.verdict != "VALIDATED"
     assert score.verdict in ("INCONCLUSIVE", "REJECTED")

@@ -314,9 +314,7 @@ class ResearchWorker:
             dataset = self.pipeline.dataset_builder.build()
             self._dataset = dataset
         candidates = self.pipeline.discover(dataset)
-        pending = [
-            c for c in candidates if c.strategy_id not in self._seen_candidate_ids
-        ]
+        pending = [c for c in candidates if c.strategy_id not in self._seen_candidate_ids]
         # Record everything discovered this cycle so subsequent ticks skip it.
         for c in candidates:
             self._seen_candidate_ids.add(c.strategy_id)

@@ -64,7 +64,7 @@ class TestTimeMachine:
         # at Aug 22 15:00, fast is SHADOW (since Aug 22 11:00), slow not yet born.
         frame = self.tm.frame_at(ENTRIES, datetime(2026, 8, 22, 15, 0, tzinfo=UTC))
         by_id = {n["strategy_id"]: n for n in frame["nodes"]}
-        assert "slow" not in by_id          # not yet discovered
+        assert "slow" not in by_id  # not yet discovered
         assert by_id["fast"]["zone"] == "SHADOW"
 
     def test_frame_excludes_future_strategy(self):
@@ -96,7 +96,6 @@ class TestTimeMachine:
 
     def test_scrub_step_semantics(self):
         # Step through fast's journey one event at a time and check the zone.
-        j = self.tm.journey(ENTRIES[0])
         checkpoints = [
             ("2026-08-21T09:30:00+00:00", "DISCOVERED"),
             ("2026-08-21T10:30:00+00:00", "VALIDATED"),

@@ -12,11 +12,10 @@ from __future__ import annotations
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.research.snapshot import build_snapshot
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.event_projection import LifecycleEventProjection
-from nexus_scalp.research.models import CandidateLifecycle
 from nexus_scalp.research.registry import StrategyRegistry
+from nexus_scalp.research.snapshot import build_snapshot
 
 logger = get_logger("nexus_scalp.web.command_center_routes")
 
@@ -77,7 +76,11 @@ def _eval_gate_status(entry: Any, gate: str) -> str:
         sc = entry.score
         if sc is None:
             return "NOT_RUN"
-        return "PASS" if sc.verdict == "VALIDATED" else ("FAIL" if sc.verdict == "REJECTED" else "INCONCLUSIVE")
+        return (
+            "PASS"
+            if sc.verdict == "VALIDATED"
+            else ("FAIL" if sc.verdict == "REJECTED" else "INCONCLUSIVE")
+        )
     return "NOT_RUN"
 
 
@@ -119,11 +122,11 @@ def evaluation_detail(entry: Any, running_runs: dict[str, str] | None = None) ->
     progress = round(passed / len(EVAL_GATES), 3)
 
     return {
-        "gates": gates,             # {BACKTEST: 'PASS', ...}
+        "gates": gates,  # {BACKTEST: 'PASS', ...}
         "current_stage": current_stage,
         "passed_gates": passed,
         "resolved_gates": total,
-        "progress": progress,       # 0..1 of gates positively resolved
+        "progress": progress,  # 0..1 of gates positively resolved
         "is_running": bool(running_stage),
         "running_stage": running_stage,
     }
@@ -291,28 +294,37 @@ class CommandCenterAPI:
             if e.updated_at is not None:
                 from datetime import UTC, datetime
 
-                age_h = (
-                    datetime.now(UTC) - e.updated_at.astimezone(UTC)
-                ).total_seconds() / 3600.0
-                if state not in ("ACTIVE", "SHADOW", "VALIDATED", "REJECTED", "RETIRED", "DEGRADED"):
-                    stuck.append({
-                        "strategy_id": e.strategy_id,
-                        "state": state,
-                        "hours_in_state": round(age_h, 1),
-                    })
+                age_h = (datetime.now(UTC) - e.updated_at.astimezone(UTC)).total_seconds() / 3600.0
+                if state not in (
+                    "ACTIVE",
+                    "SHADOW",
+                    "VALIDATED",
+                    "REJECTED",
+                    "RETIRED",
+                    "DEGRADED",
+                ):
+                    stuck.append(
+                        {
+                            "strategy_id": e.strategy_id,
+                            "state": state,
+                            "hours_in_state": round(age_h, 1),
+                        }
+                    )
         stuck.sort(key=lambda s: -s["hours_in_state"])
-        return _serialize_enums({
-            "available": True,
-            "total_strategies": len(entries),
-            "by_lifecycle": by_state,
-            "terminal": terminal,
-            "evaluation_pipeline": eval_pipeline_counts,
-            "evaluation_metrics": evaluation_metrics(eval_details),
-            "running_evaluations": len([d for d in eval_details if d["is_running"]]),
-            "execution_eligible_count": eligible,
-            "blocked_count": blocked,
-            "stuck_strategies": stuck[:10],
-        })
+        return _serialize_enums(
+            {
+                "available": True,
+                "total_strategies": len(entries),
+                "by_lifecycle": by_state,
+                "terminal": terminal,
+                "evaluation_pipeline": eval_pipeline_counts,
+                "evaluation_metrics": evaluation_metrics(eval_details),
+                "running_evaluations": len([d for d in eval_details if d["is_running"]]),
+                "execution_eligible_count": eligible,
+                "blocked_count": blocked,
+                "stuck_strategies": stuck[:10],
+            }
+        )
 
     # ------------------------------------------------------------------
     # Fleet view
@@ -332,18 +344,22 @@ class CommandCenterAPI:
             ee = snap.execution_eligibility
             if execution_filter and ee.eligibility_state != execution_filter:
                 continue
-            rows.append(_serialize_enums({
-                "strategy_id": e.strategy_id,
-                "strategy_version": e.strategy_version,
-                "lifecycle": e.lifecycle.value,
-                "confidence": round(e.confidence, 3),
-                "sample_count": e.sample_count,
-                "health_final": snap.health_score.get("final"),
-                "eligibility_state": ee.eligibility_state,
-                "eligibility_reason": ee.reason,
-                "evidence": snap.evidence_summary,
-                "updated_at": e.updated_at.isoformat(),
-            }))
+            rows.append(
+                _serialize_enums(
+                    {
+                        "strategy_id": e.strategy_id,
+                        "strategy_version": e.strategy_version,
+                        "lifecycle": e.lifecycle.value,
+                        "confidence": round(e.confidence, 3),
+                        "sample_count": e.sample_count,
+                        "health_final": snap.health_score.get("final"),
+                        "eligibility_state": ee.eligibility_state,
+                        "eligibility_reason": ee.reason,
+                        "evidence": snap.evidence_summary,
+                        "updated_at": e.updated_at.isoformat(),
+                    }
+                )
+            )
         return {"available": True, "count": len(rows), "rows": rows}
 
     # ------------------------------------------------------------------
@@ -382,17 +398,19 @@ class CommandCenterAPI:
             }
         snap = build_snapshot(entry)
         ee = snap.execution_eligibility
-        return _serialize_enums({
-            "available": True,
-            "strategy_id": strategy_id,
-            "lifecycle": entry.lifecycle.value,
-            "eligibility_state": ee.eligibility_state,
-            "can_trade": ee.can_trade,
-            "reason": ee.reason,
-            "required_gate": ee.required_gate,
-            "blockers": ee.blockers,
-            "invariant_check": self.registry.invariant_check(entry),
-        })
+        return _serialize_enums(
+            {
+                "available": True,
+                "strategy_id": strategy_id,
+                "lifecycle": entry.lifecycle.value,
+                "eligibility_state": ee.eligibility_state,
+                "can_trade": ee.can_trade,
+                "reason": ee.reason,
+                "required_gate": ee.required_gate,
+                "blockers": ee.blockers,
+                "invariant_check": self.registry.invariant_check(entry),
+            }
+        )
 
     # ------------------------------------------------------------------
     # Validation panel
@@ -405,49 +423,61 @@ class CommandCenterAPI:
             return {"available": False, "error": "STRATEGY_NOT_FOUND"}
         gates: list[dict[str, Any]] = []
         bt = entry.backtest
-        gates.append({
-            "gate": "BACKTEST",
-            "status": ("PASS" if bt and bt.total_trades > 0 else "FAIL" if bt else "NOT_RUN"),
-            "expectancy_r": bt.expectancy_r if bt else None,
-            "total_trades": bt.total_trades if bt else None,
-            "profit_factor": bt.profit_factor if bt else None,
-        })
+        gates.append(
+            {
+                "gate": "BACKTEST",
+                "status": ("PASS" if bt and bt.total_trades > 0 else "FAIL" if bt else "NOT_RUN"),
+                "expectancy_r": bt.expectancy_r if bt else None,
+                "total_trades": bt.total_trades if bt else None,
+                "profit_factor": bt.profit_factor if bt else None,
+            }
+        )
         wf = entry.walkforward
-        gates.append({
-            "gate": "WALK_FORWARD",
-            "status": ("PASS" if wf and wf.passed else "FAIL" if wf else "NOT_RUN"),
-            "fold_count": wf.fold_count if wf else None,
-            "degradation": wf.degradation if wf else None,
-            "avg_oos_expectancy_r": wf.avg_oos_expectancy_r if wf else None,
-        })
+        gates.append(
+            {
+                "gate": "WALK_FORWARD",
+                "status": ("PASS" if wf and wf.passed else "FAIL" if wf else "NOT_RUN"),
+                "fold_count": wf.fold_count if wf else None,
+                "degradation": wf.degradation if wf else None,
+                "avg_oos_expectancy_r": wf.avg_oos_expectancy_r if wf else None,
+            }
+        )
         oos = entry.oos
-        gates.append({
-            "gate": "OOS",
-            "status": (oos.status if oos else "NOT_RUN"),
-            "oos_expectancy_r": oos.oos_expectancy_r if oos else None,
-            "oos_samples": oos.oos_samples if oos else None,
-            "reason": oos.reason if oos else "",
-        })
+        gates.append(
+            {
+                "gate": "OOS",
+                "status": (oos.status if oos else "NOT_RUN"),
+                "oos_expectancy_r": oos.oos_expectancy_r if oos else None,
+                "oos_samples": oos.oos_samples if oos else None,
+                "reason": oos.reason if oos else "",
+            }
+        )
         rob = entry.robustness
-        gates.append({
-            "gate": "ROBUSTNESS",
-            "status": (rob.status if rob else "NOT_RUN"),
-            "max_degradation": rob.max_degradation if rob else None,
-            "reason": rob.reason if rob else "",
-        })
+        gates.append(
+            {
+                "gate": "ROBUSTNESS",
+                "status": (rob.status if rob else "NOT_RUN"),
+                "max_degradation": rob.max_degradation if rob else None,
+                "reason": rob.reason if rob else "",
+            }
+        )
         score = entry.score
-        gates.append({
-            "gate": "SCORE_VERDICT",
-            "status": (score.verdict if score else "NOT_RUN"),
-            "final_score": score.final_score if score else None,
-            "reasons": score.reasons if score else [],
-        })
-        return _serialize_enums({
-            "available": True,
-            "strategy_id": strategy_id,
-            "lifecycle": entry.lifecycle.value,
-            "gates": gates,
-        })
+        gates.append(
+            {
+                "gate": "SCORE_VERDICT",
+                "status": (score.verdict if score else "NOT_RUN"),
+                "final_score": score.final_score if score else None,
+                "reasons": score.reasons if score else [],
+            }
+        )
+        return _serialize_enums(
+            {
+                "available": True,
+                "strategy_id": strategy_id,
+                "lifecycle": entry.lifecycle.value,
+                "gates": gates,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Decision timeline
@@ -455,9 +485,7 @@ class CommandCenterAPI:
 
     def timeline(self, strategy_id: str, limit: int = 200) -> dict[str, Any]:
         """Chronological decision timeline (lifecycle + validation runs)."""
-        events = self.projection.events_for_strategy(
-            strategy_id, include_runs=True, limit=limit
-        )
+        events = self.projection.events_for_strategy(strategy_id, include_runs=True, limit=limit)
         return {
             "available": True,
             "strategy_id": strategy_id,

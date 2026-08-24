@@ -54,14 +54,20 @@ class TimeMachine:
             dt = self._parse_ts(parsed.get("timestamp", ""))
             if dt is None and entry.created_at is not None:
                 # Lineage without parseable timestamp: fall back to created_at
-                dt = entry.created_at.astimezone(UTC) if entry.created_at.tzinfo else entry.created_at.replace(tzinfo=UTC)
-            events.append({
-                "timestamp": parsed.get("timestamp", ""),
-                "dt": dt,
-                "to_state": parsed.get("to_state", ""),
-                "reason": parsed.get("reason", ""),
-                "actor": parsed.get("actor", ""),
-            })
+                dt = (
+                    entry.created_at.astimezone(UTC)
+                    if entry.created_at.tzinfo
+                    else entry.created_at.replace(tzinfo=UTC)
+                )
+            events.append(
+                {
+                    "timestamp": parsed.get("timestamp", ""),
+                    "dt": dt,
+                    "to_state": parsed.get("to_state", ""),
+                    "reason": parsed.get("reason", ""),
+                    "actor": parsed.get("actor", ""),
+                }
+            )
         events.sort(key=lambda e: e["dt"] or datetime.max.replace(tzinfo=UTC))
         return events
 
@@ -85,7 +91,6 @@ class TimeMachine:
 
         nodes: list[dict[str, Any]] = []
         transitioning: list[dict[str, Any]] = []
-        window_start = at
 
         for entry in entries:
             events = self._strategy_events(entry)
@@ -115,26 +120,30 @@ class TimeMachine:
             # Transition occurring within this frame (same timestamp bucket).
             if last_event["dt"] is not None and abs((at - last_event["dt"]).total_seconds()) < 60:
                 node["transitioning"] = True
-                transitioning.append({
-                    "strategy_id": entry.strategy_id,
-                    "to_state": current_state,
-                    "reason": last_event["reason"],
-                    "actor": last_event["actor"],
-                })
+                transitioning.append(
+                    {
+                        "strategy_id": entry.strategy_id,
+                        "to_state": current_state,
+                        "reason": last_event["reason"],
+                        "actor": last_event["actor"],
+                    }
+                )
             nodes.append(node)
 
         # Build console events and selected state info for the frame
         console_events = []
         selected_node = None
         for t in transitioning:
-            console_events.append({
-                "timestamp": at.isoformat(),
-                "event_type": "LIFECYCLE_TRANSITION",
-                "strategy_id": t["strategy_id"],
-                "lifecycle": t["to_state"],
-                "reason": t["reason"],
-                "actor": t["actor"],
-            })
+            console_events.append(
+                {
+                    "timestamp": at.isoformat(),
+                    "event_type": "LIFECYCLE_TRANSITION",
+                    "strategy_id": t["strategy_id"],
+                    "lifecycle": t["to_state"],
+                    "reason": t["reason"],
+                    "actor": t["actor"],
+                }
+            )
         if nodes:
             # Pick first transitioning or first node as the selected historical item
             chosen = transitioning[0]["strategy_id"] if transitioning else nodes[0]["strategy_id"]
@@ -142,7 +151,10 @@ class TimeMachine:
                 if entry.strategy_id == chosen:
                     selected_node = {
                         "strategy_id": entry.strategy_id,
-                        "zone": next((n["zone"] for n in nodes if n["strategy_id"] == chosen), entry.lifecycle.value),
+                        "zone": next(
+                            (n["zone"] for n in nodes if n["strategy_id"] == chosen),
+                            entry.lifecycle.value,
+                        ),
                     }
                     break
 
@@ -163,14 +175,16 @@ class TimeMachine:
         cumulative_states: list[str] = []
         for i, ev in enumerate(events):
             cumulative_states.append(ev["to_state"])
-            out_events.append({
-                "index": i,
-                "timestamp": ev["timestamp"],
-                "to_state": ev["to_state"],
-                "actor": ev["actor"],
-                "reason": ev["reason"],
-                "states_so_far": list(cumulative_states),
-            })
+            out_events.append(
+                {
+                    "index": i,
+                    "timestamp": ev["timestamp"],
+                    "to_state": ev["to_state"],
+                    "actor": ev["actor"],
+                    "reason": ev["reason"],
+                    "states_so_far": list(cumulative_states),
+                }
+            )
         return {
             "available": True,
             "strategy_id": entry.strategy_id,

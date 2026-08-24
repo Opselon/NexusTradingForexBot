@@ -34,32 +34,43 @@ def _entry(lc: CandidateLifecycle) -> StrategyRegistryEntry:
 
 
 class TestIllegalAdministrativeDescents:
-    @pytest.mark.parametrize("frm,to", [
-        (CandidateLifecycle.VALIDATED, CandidateLifecycle.DISCOVERED),
-        (CandidateLifecycle.SHADOW, CandidateLifecycle.DISCOVERED),
-        (CandidateLifecycle.ACTIVE, CandidateLifecycle.VALIDATED),
-        (CandidateLifecycle.ACTIVE, CandidateLifecycle.SHADOW),
-        (CandidateLifecycle.SHADOW, CandidateLifecycle.BACKTESTING),
-        (CandidateLifecycle.ACTIVE, CandidateLifecycle.BACKTESTING),
-    ])
+    @pytest.mark.parametrize(
+        "frm,to",
+        [
+            (CandidateLifecycle.VALIDATED, CandidateLifecycle.DISCOVERED),
+            (CandidateLifecycle.SHADOW, CandidateLifecycle.DISCOVERED),
+            (CandidateLifecycle.ACTIVE, CandidateLifecycle.VALIDATED),
+            (CandidateLifecycle.ACTIVE, CandidateLifecycle.SHADOW),
+            (CandidateLifecycle.SHADOW, CandidateLifecycle.BACKTESTING),
+            (CandidateLifecycle.ACTIVE, CandidateLifecycle.BACKTESTING),
+        ],
+    )
     def test_state_machine_refuses(self, frm, to):
         assert can_transition(frm, to) is False
         with pytest.raises(LifecycleError):
             from nexus_scalp.research.lifecycle import transition
+
             transition(frm, to)
 
-    @pytest.mark.parametrize("frm,to", [
-        (CandidateLifecycle.VALIDATED, CandidateLifecycle.SHADOW),
-        (CandidateLifecycle.SHADOW, CandidateLifecycle.ACTIVE),
-        (CandidateLifecycle.DISCOVERED, CandidateLifecycle.BACKTESTING),
-        (CandidateLifecycle.REJECTED, CandidateLifecycle.DISCOVERED),  # REJECTED terminal → not allowed
-    ])
+    @pytest.mark.parametrize(
+        "frm,to",
+        [
+            (CandidateLifecycle.VALIDATED, CandidateLifecycle.SHADOW),
+            (CandidateLifecycle.SHADOW, CandidateLifecycle.ACTIVE),
+            (CandidateLifecycle.DISCOVERED, CandidateLifecycle.BACKTESTING),
+            (
+                CandidateLifecycle.REJECTED,
+                CandidateLifecycle.DISCOVERED,
+            ),  # REJECTED terminal → not allowed
+        ],
+    )
     def test_state_machine_legal_or_terminal(self, frm, to):
         # Either legal or properly refused — never silently allowed.
         ok = can_transition(frm, to)
         if not ok:
             with pytest.raises(LifecycleError):
                 from nexus_scalp.research.lifecycle import transition
+
                 transition(frm, to)
 
 
@@ -78,7 +89,11 @@ class TestExecutionInvariantUnderAdversary:
         assert snap.execution_eligibility.eligibility_state != "YES"
 
     def test_rejected_never_trades(self):
-        for lc in (CandidateLifecycle.REJECTED, CandidateLifecycle.DEGRADED, CandidateLifecycle.RETIRED):
+        for lc in (
+            CandidateLifecycle.REJECTED,
+            CandidateLifecycle.DEGRADED,
+            CandidateLifecycle.RETIRED,
+        ):
             snap = build_snapshot(_entry(lc))
             assert snap.execution_eligibility.eligibility_state == "BLOCKED"
             assert snap.execution_eligibility.can_trade is False

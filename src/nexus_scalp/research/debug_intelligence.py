@@ -15,6 +15,7 @@ Provides explainable diagnostic algorithms over authoritative registry data:
 from __future__ import annotations
 
 from typing import Any
+
 from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry
 
 
@@ -30,7 +31,11 @@ def compute_anomaly_score(entry: StrategyRegistryEntry) -> dict[str, Any]:
     for l in lineage:
         for st in CandidateLifecycle:
             if f":{st.value}" in l:
-                if prev_state and prev_state != st.value and st.value in ("DISCOVERED", "BACKTESTING"):
+                if (
+                    prev_state
+                    and prev_state != st.value
+                    and st.value in ("DISCOVERED", "BACKTESTING")
+                ):
                     oscillations += 1
                 prev_state = st.value
 
@@ -97,10 +102,23 @@ def decompose_strategy_health(entry: StrategyRegistryEntry) -> dict[str, float]:
 
     # Data quality proxy from sample count (MIN_EVIDENCE_SAMPLES = 20)
     data_quality = min(1.0, sample_count / 50.0) if sample_count > 0 else 0.0
-    validation_score = score.oos_score if score else (1.0 if entry.lifecycle in (CandidateLifecycle.VALIDATED, CandidateLifecycle.SHADOW, CandidateLifecycle.ACTIVE) else 0.2)
+    validation_score = (
+        score.oos_score
+        if score
+        else (
+            1.0
+            if entry.lifecycle
+            in (CandidateLifecycle.VALIDATED, CandidateLifecycle.SHADOW, CandidateLifecycle.ACTIVE)
+            else 0.2
+        )
+    )
     robustness_score = score.robustness_score if score else 0.0
     exec_safety = 1.0 if entry.is_eligible_for_new_trades else 0.5
-    lifecycle_stability = 0.9 if entry.lifecycle not in (CandidateLifecycle.DEGRADED, CandidateLifecycle.REJECTED) else 0.1
+    lifecycle_stability = (
+        0.9
+        if entry.lifecycle not in (CandidateLifecycle.DEGRADED, CandidateLifecycle.REJECTED)
+        else 0.1
+    )
     evidence_complete = 1.0 if (entry.backtest and entry.oos and entry.robustness) else 0.5
 
     return {
@@ -120,7 +138,9 @@ def compute_debug_priority(entry: StrategyRegistryEntry) -> dict[str, Any]:
     lineage = entry.validation_lineage or []
     failures = sum(1 for l in lineage if "REJECTED" in l or "FAIL" in l)
     is_live_risk = entry.lifecycle in (CandidateLifecycle.ACTIVE, CandidateLifecycle.SHADOW)
-    exec_proximity = 2.0 if is_live_risk else (1.5 if entry.lifecycle == CandidateLifecycle.VALIDATED else 1.0)
+    exec_proximity = (
+        2.0 if is_live_risk else (1.5 if entry.lifecycle == CandidateLifecycle.VALIDATED else 1.0)
+    )
 
     severity = 1.0 if entry.lifecycle == CandidateLifecycle.REJECTED or failures > 0 else 0.2
     priority_score = severity * (1.0 + failures) * exec_proximity
@@ -143,30 +163,42 @@ def generate_debug_hints(entry: StrategyRegistryEntry) -> list[dict[str, str]]:
     failures = [l for l in lineage if "REJECTED" in l or "FAIL" in l]
 
     if failures:
-        hints.append({
-            "category": "FACT",
-            "message": f"Strategy {entry.strategy_id} has {len(failures)} recorded validation failure(s) or rejection event(s).",
-        })
-        hints.append({
-            "category": "INFERENCE",
-            "message": "Failures concentrated in validation/OOS gates suggest generalization degradation.",
-        })
-        hints.append({
-            "category": "HYPOTHESIS",
-            "message": "Search space or feature dimensionality may be encouraging overfitting on training windows.",
-        })
-        hints.append({
-            "category": "RECOMMENDATION",
-            "message": "Inspect parameter sensitivity across walk-forward folds and verify feature schema stability.",
-        })
+        hints.append(
+            {
+                "category": "FACT",
+                "message": f"Strategy {entry.strategy_id} has {len(failures)} recorded validation failure(s) or rejection event(s).",
+            }
+        )
+        hints.append(
+            {
+                "category": "INFERENCE",
+                "message": "Failures concentrated in validation/OOS gates suggest generalization degradation.",
+            }
+        )
+        hints.append(
+            {
+                "category": "HYPOTHESIS",
+                "message": "Search space or feature dimensionality may be encouraging overfitting on training windows.",
+            }
+        )
+        hints.append(
+            {
+                "category": "RECOMMENDATION",
+                "message": "Inspect parameter sensitivity across walk-forward folds and verify feature schema stability.",
+            }
+        )
     else:
-        hints.append({
-            "category": "FACT",
-            "message": f"Strategy {entry.strategy_id} is at lifecycle state {entry.lifecycle.value} with no recorded gate failures.",
-        })
-        hints.append({
-            "category": "RECOMMENDATION",
-            "message": "No immediate debugging required; follow standard pipeline progression.",
-        })
+        hints.append(
+            {
+                "category": "FACT",
+                "message": f"Strategy {entry.strategy_id} is at lifecycle state {entry.lifecycle.value} with no recorded gate failures.",
+            }
+        )
+        hints.append(
+            {
+                "category": "RECOMMENDATION",
+                "message": "No immediate debugging required; follow standard pipeline progression.",
+            }
+        )
 
     return hints

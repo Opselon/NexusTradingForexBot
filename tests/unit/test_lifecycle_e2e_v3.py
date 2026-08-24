@@ -26,6 +26,7 @@ from nexus_scalp.experience.models import (
     FeatureSnapshot,
     StrategyContext,
 )
+from nexus_scalp.model_lifecycle.champion import ChampionManager
 from nexus_scalp.research.candidates import StrategyCandidate
 from nexus_scalp.research.dataset import ResearchDatasetBuilder
 from nexus_scalp.research.lifecycle import (
@@ -46,7 +47,6 @@ from nexus_scalp.research.models import (
 )
 from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
-from nexus_scalp.model_lifecycle.champion import ChampionManager
 
 
 def _flush(repo) -> None:
@@ -222,6 +222,7 @@ def test_positive_full_lifecycle_and_runtime_boundary(tmp_path):
             model={"model_artifact_path": str(tmp_path / "model.pt")},
         )
         from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
         engine = LiveEngine(
             config=cfg,
             adapter=PaperMT5Adapter(initial_balance=10000.0, symbol="XAUUSD"),
@@ -233,6 +234,7 @@ def test_positive_full_lifecycle_and_runtime_boundary(tmp_path):
         assert hasattr(engine, "_bundle")
         assert engine.strategy_registry is not None
         import inspect
+
         sig = inspect.signature(engine._infer_probabilities)
         assert "strategy_registry" not in sig.parameters
 
@@ -315,6 +317,7 @@ def test_neg_02_walkforward_failure_rejected(tmp_path):
         },
     )()
     import nexus_scalp.research.pipeline as pipeline_mod
+
     mp = pytest.MonkeyPatch()
     mp.setattr(
         pipeline_mod,
@@ -333,7 +336,9 @@ def test_neg_02_walkforward_failure_rejected(tmp_path):
         feature_dimension=4,
     )
     try:
-        res = pipeline.validate_candidate(candidate=candidate, dataset=ResearchDataset(dataset_id="ds"))
+        res = pipeline.validate_candidate(
+            candidate=candidate, dataset=ResearchDataset(dataset_id="ds")
+        )
         assert res["lifecycle"] == "REJECTED"
     finally:
         mp.undo()
@@ -389,6 +394,7 @@ def test_neg_03_oos_failure_rejected(tmp_path):
         },
     )()
     import nexus_scalp.research.pipeline as pipeline_mod
+
     mp = pytest.MonkeyPatch()
     mp.setattr(
         pipeline_mod,
@@ -407,7 +413,9 @@ def test_neg_03_oos_failure_rejected(tmp_path):
         feature_dimension=4,
     )
     try:
-        res = pipeline.validate_candidate(candidate=candidate, dataset=ResearchDataset(dataset_id="ds"))
+        res = pipeline.validate_candidate(
+            candidate=candidate, dataset=ResearchDataset(dataset_id="ds")
+        )
         assert res["lifecycle"] == "REJECTED"
     finally:
         mp.undo()
@@ -464,12 +472,16 @@ def test_neg_04_robustness_failure_rejected(tmp_path):
         {
             "evaluate": staticmethod(
                 lambda *a, **k: RobustnessResult(
-                    strategy_id="strat_n4", strategy_version="1.0.0", status="FAIL", reason="spread fail"
+                    strategy_id="strat_n4",
+                    strategy_version="1.0.0",
+                    status="FAIL",
+                    reason="spread fail",
                 )
             )
         },
     )()
     import nexus_scalp.research.pipeline as pipeline_mod
+
     mp = pytest.MonkeyPatch()
     mp.setattr(
         pipeline_mod,
@@ -488,7 +500,9 @@ def test_neg_04_robustness_failure_rejected(tmp_path):
         feature_dimension=4,
     )
     try:
-        res = pipeline.validate_candidate(candidate=candidate, dataset=ResearchDataset(dataset_id="ds"))
+        res = pipeline.validate_candidate(
+            candidate=candidate, dataset=ResearchDataset(dataset_id="ds")
+        )
         assert res["lifecycle"] == "REJECTED"
     finally:
         mp.undo()
@@ -551,6 +565,7 @@ def test_neg_05_inconclusive_verdict_rejected(tmp_path):
         },
     )()
     import nexus_scalp.research.pipeline as pipeline_mod
+
     mp = pytest.MonkeyPatch()
     mp.setattr(
         pipeline_mod,
@@ -569,7 +584,9 @@ def test_neg_05_inconclusive_verdict_rejected(tmp_path):
         feature_dimension=4,
     )
     try:
-        res = pipeline.validate_candidate(candidate=candidate, dataset=ResearchDataset(dataset_id="ds"))
+        res = pipeline.validate_candidate(
+            candidate=candidate, dataset=ResearchDataset(dataset_id="ds")
+        )
         assert res["lifecycle"] == "REJECTED"
         assert res["lifecycle"] != "DISCOVERED"
     finally:
@@ -583,7 +600,11 @@ def test_neg_06_rejected_never_active(tmp_path):
 
 
 def test_neg_07_unvalidated_never_active(tmp_path):
-    for st in (CandidateLifecycle.DISCOVERED, CandidateLifecycle.BACKTESTING, CandidateLifecycle.VALIDATING):
+    for st in (
+        CandidateLifecycle.DISCOVERED,
+        CandidateLifecycle.BACKTESTING,
+        CandidateLifecycle.VALIDATING,
+    ):
         with pytest.raises(LifecycleError):
             approve_for_live(st)
         with pytest.raises(LifecycleError):
@@ -781,9 +802,7 @@ def test_neg_19_runtime_ignores_validated_unpromoted(tmp_path):
     _flush(repo)
 
     # Direct jump VALIDATED -> ACTIVE via the persisted state machine is refused
-    jumped = registry.transition_lifecycle(
-        "strat_val_unpromoted", CandidateLifecycle.ACTIVE
-    )
+    jumped = registry.transition_lifecycle("strat_val_unpromoted", CandidateLifecycle.ACTIVE)
     assert jumped is None, "VALIDATED -> ACTIVE direct jump must be refused"
     _flush(repo)
     assert registry.get("strat_val_unpromoted").lifecycle == CandidateLifecycle.VALIDATED

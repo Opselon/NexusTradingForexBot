@@ -16,7 +16,6 @@ state.
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
@@ -53,13 +52,13 @@ def parse_lineage_entry(line: str) -> dict[str, Any] | None:
         return None
     idx = line.find(f":{matched_state}")
     ts = line[:idx]
-    rem = line[idx + len(matched_state) + 1:]
+    rem = line[idx + len(matched_state) + 1 :]
     detail = rem[1:] if rem.startswith(":") else rem
     actor = ""
     reason = detail
     if detail.startswith("operator_promotion:"):
         actor = "operator"
-        reason = detail[len("operator_promotion:"):]
+        reason = detail[len("operator_promotion:") :]
     elif "self_heal" in detail:
         actor = "system_selfheal"
     elif not detail:
@@ -83,7 +82,7 @@ def parse_lineage_entry(line: str) -> dict[str, Any] | None:
         "reason": reason,
         "timestamp": ts,
         "timestamp_iso": ts_iso,
-        "correlation_id": "",   # populated by caller when available
+        "correlation_id": "",  # populated by caller when available
         "evidence_ref": "",
     }
 
@@ -120,10 +119,13 @@ class LifecycleEventProjection:
 
         out: list[dict[str, Any]] = []
         bounded = max(1, min(int(limit), MAX_EVENT_LIMIT))
-        
+
         # Look up directly via registry mock or get_registry_entry
         entry = None
-        if hasattr(self.audit_repo, "_registry_entries") and strategy_id in self.audit_repo._registry_entries:
+        if (
+            hasattr(self.audit_repo, "_registry_entries")
+            and strategy_id in self.audit_repo._registry_entries
+        ):
             e = self.audit_repo._registry_entries[strategy_id]
             entry = {
                 "strategy_id": e.strategy_id,
@@ -132,6 +134,7 @@ class LifecycleEventProjection:
             }
         else:
             from nexus_scalp.research.store import get_registry_entry
+
             raw_ent = get_registry_entry(self.audit_repo, strategy_id, strategy_version)
             if raw_ent:
                 entry = raw_ent
@@ -147,22 +150,26 @@ class LifecycleEventProjection:
             out.append(parsed)
 
         if include_runs:
-            runs = list_research_runs(
-                self.audit_repo, strategy_id=strategy_id, limit=bounded
-            )
+            runs = list_research_runs(self.audit_repo, strategy_id=strategy_id, limit=bounded)
             for r in runs:
-                out.append({
-                    "event_type": "VALIDATION_RUN",
-                    "run_id": r.get("run_id", ""),
-                    "strategy_id": strategy_id,
-                    "status": r.get("status", ""),
-                    "run_outcome": r.get("run_outcome", ""),
-                    "snapshot_id": r.get("snapshot_id", ""),
-                    "gates": _safe_loads(r.get("gates")) if isinstance(r.get("gates"), str) else r.get("gates") or [],
-                    "executed_at": r.get("executed_at", ""),
-                    "result_summary": _safe_loads(r.get("result_summary")) if isinstance(r.get("result_summary"), str) else {},
-                    "correlation_id": r.get("run_id", ""),
-                })
+                out.append(
+                    {
+                        "event_type": "VALIDATION_RUN",
+                        "run_id": r.get("run_id", ""),
+                        "strategy_id": strategy_id,
+                        "status": r.get("status", ""),
+                        "run_outcome": r.get("run_outcome", ""),
+                        "snapshot_id": r.get("snapshot_id", ""),
+                        "gates": _safe_loads(r.get("gates"))
+                        if isinstance(r.get("gates"), str)
+                        else r.get("gates") or [],
+                        "executed_at": r.get("executed_at", ""),
+                        "result_summary": _safe_loads(r.get("result_summary"))
+                        if isinstance(r.get("result_summary"), str)
+                        else {},
+                        "correlation_id": r.get("run_id", ""),
+                    }
+                )
 
         def _key(ev: dict[str, Any]) -> tuple[int, str]:
             t = ev.get("timestamp_iso") or ev.get("executed_at") or ev.get("timestamp") or ""
@@ -205,7 +212,8 @@ class LifecycleEventProjection:
             try:
                 cut = datetime.fromisoformat(since_iso.replace("Z", "+00:00"))
                 events = [
-                    e for e in events
+                    e
+                    for e in events
                     if _parse_or_none(e.get("timestamp")) is None
                     or (_parse_or_none(e.get("timestamp")) >= cut)
                 ]

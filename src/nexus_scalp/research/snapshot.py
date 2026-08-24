@@ -11,6 +11,7 @@ source-of-truth tables.
 from __future__ import annotations
 
 from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry
@@ -90,7 +91,7 @@ def build_snapshot(entry: StrategyRegistryEntry) -> StrategyLifecycleSnapshot:
     Constructs a canonical StrategyLifecycleSnapshot from a authoritative StrategyRegistryEntry.
     """
     lc = entry.lifecycle
-    
+
     # Determine eligibility
     eligible_for_trades = entry.is_eligible_for_new_trades
     elig_state = "BLOCKED"
@@ -170,13 +171,15 @@ def build_snapshot(entry: StrategyRegistryEntry) -> StrategyLifecycleSnapshot:
         if matched_state:
             idx = line.find(f":{matched_state}")
             ts = line[:idx]
-            rem = line[idx + len(matched_state) + 1:]
+            rem = line[idx + len(matched_state) + 1 :]
             detail = rem[1:] if rem.startswith(":") else rem
-            transitions.append({
-                "timestamp": ts,
-                "state": matched_state,
-                "detail": detail,
-            })
+            transitions.append(
+                {
+                    "timestamp": ts,
+                    "state": matched_state,
+                    "detail": detail,
+                }
+            )
         else:
             transitions.append({"timestamp": "", "state": line, "detail": ""})
 
@@ -189,7 +192,9 @@ def build_snapshot(entry: StrategyRegistryEntry) -> StrategyLifecycleSnapshot:
         previous_state=prev_state,
         lifecycle_history=[t["state"] for t in transitions],
         current_gate=lc.value,
-        next_gate="SHADOW" if lc == CandidateLifecycle.VALIDATED else ("ACTIVE" if lc == CandidateLifecycle.SHADOW else "NONE"),
+        next_gate="SHADOW"
+        if lc == CandidateLifecycle.VALIDATED
+        else ("ACTIVE" if lc == CandidateLifecycle.SHADOW else "NONE"),
         execution_eligibility=ExecutionEligibility(
             can_trade=(elig_state in ("YES", "SHADOW_ONLY")),
             eligibility_state=elig_state,

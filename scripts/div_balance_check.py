@@ -22,6 +22,7 @@ Usage:
     python scripts/div_balance_check.py Web/index.html [more files...]
     python scripts/div_balance_check.py   # checks Web/index.html by default
 """
+
 from __future__ import annotations
 
 import re
@@ -34,9 +35,29 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # balance, but we also validate that other common block elements are not left
 # unbalanced in a way that would indicate a structural edit error.
 PAIRED_TAGS = {
-    "div", "section", "article", "header", "footer", "main", "aside",
-    "nav", "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th",
-    "form", "button", "select", "script", "style", "template",
+    "div",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "main",
+    "aside",
+    "nav",
+    "ul",
+    "ol",
+    "li",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "td",
+    "th",
+    "form",
+    "button",
+    "select",
+    "script",
+    "style",
+    "template",
 }
 
 TAG_RE = re.compile(r"<\s*(/?)\s*([a-zA-Z0-9]+)([^>]*?)(/?)>", re.DOTALL)
@@ -48,9 +69,15 @@ def _strip_ignored(text: str) -> str:
     # Remove HTML comments.
     text = COMMENT_RE.sub(" ", text)
     # Remove raw-text containers that legitimately contain '<' that is not markup.
-    text = re.sub(r"<\s*script\b[^>]*>.*?<\s*/\s*script\s*>", " ", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<\s*style\b[^>]*>.*?<\s*/\s*style\s*>", " ", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<\s*template\b[^>]*>.*?<\s*/\s*template\s*>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(
+        r"<\s*script\b[^>]*>.*?<\s*/\s*script\s*>", " ", text, flags=re.DOTALL | re.IGNORECASE
+    )
+    text = re.sub(
+        r"<\s*style\b[^>]*>.*?<\s*/\s*style\s*>", " ", text, flags=re.DOTALL | re.IGNORECASE
+    )
+    text = re.sub(
+        r"<\s*template\b[^>]*>.*?<\s*/\s*template\s*>", " ", text, flags=re.DOTALL | re.IGNORECASE
+    )
     return text
 
 

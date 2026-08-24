@@ -41,8 +41,7 @@ from nexus_scalp.experience.models import (
     FeatureSnapshot,
     StrategyContext,
 )
-from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry
-from nexus_scalp.research.models import StrategyScore
+from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry, StrategyScore
 from nexus_scalp.web.server import create_app
 
 
@@ -317,10 +316,10 @@ class TestStrategyPromotionAPI:
         return TestClient(app)
 
     def _seed_validated(self, repo, engine, strategy_id="strat_promo"):
-        from nexus_scalp.research.models import CandidateLifecycle as CL
+        from nexus_scalp.research.models import CandidateLifecycle
 
         entry = _validated_entry(strategy_id).model_copy(
-            update={"lifecycle": CL.VALIDATED}
+            update={"lifecycle": CandidateLifecycle.VALIDATED}
         )
         assert engine.strategy_registry.upsert(entry) is True
         _flush(repo)
@@ -443,13 +442,13 @@ class TestStrategyPromotionAPI:
 
     def test_unvalidated_strategy_cannot_be_activated(self, wired_engine):
         """A DISCOVERED row (no gate evidence) can never advance."""
-        from nexus_scalp.research.models import CandidateLifecycle as CL
+        from nexus_scalp.research.models import CandidateLifecycle
 
         repo, engine = wired_engine
         bare = StrategyRegistryEntry(
             strategy_id="strat_bare",
             strategy_version="1.0.0",
-            lifecycle=CL.DISCOVERED,
+            lifecycle=CandidateLifecycle.DISCOVERED,
         )
         assert engine.strategy_registry.upsert(bare) is True
         _flush(repo)
@@ -470,13 +469,13 @@ class TestStrategyPromotionAPI:
         assert persisted.lifecycle.value == "DISCOVERED"
 
     def test_rejected_strategy_never_reaches_shadow_or_active(self, wired_engine):
-        from nexus_scalp.research.models import CandidateLifecycle as CL
+        from nexus_scalp.research.models import CandidateLifecycle
 
         repo, engine = wired_engine
         rejected = StrategyRegistryEntry(
             strategy_id="strat_rejected",
             strategy_version="1.0.0",
-            lifecycle=CL.REJECTED,
+            lifecycle=CandidateLifecycle.REJECTED,
             score=StrategyScore(verdict="REJECTED"),
         )
         assert engine.strategy_registry.upsert(rejected) is True
@@ -498,13 +497,13 @@ class TestStrategyPromotionAPI:
     def test_activation_with_broken_validation_truth_blocked(self, wired_engine):
         """A SHADOW row whose underlying gate truth is missing/broken can
         never reach ACTIVE (activation re-proves VALIDATED-truth)."""
-        from nexus_scalp.research.models import CandidateLifecycle as CL
+        from nexus_scalp.research.models import CandidateLifecycle
 
         repo, engine = wired_engine
         hollow_shadow = StrategyRegistryEntry(
             strategy_id="strat_hollow",
             strategy_version="1.0.0",
-            lifecycle=CL.SHADOW,
+            lifecycle=CandidateLifecycle.SHADOW,
             score=StrategyScore(verdict="REJECTED"),
         )
         assert engine.strategy_registry.upsert(hollow_shadow) is True

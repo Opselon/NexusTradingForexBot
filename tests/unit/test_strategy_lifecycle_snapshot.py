@@ -52,7 +52,11 @@ class TestExecutionEligibility:
         assert "awaiting_shadow_or_promotion" in snap.execution_eligibility.blockers
 
     def test_rejected_never_trades(self):
-        for lc in (CandidateLifecycle.REJECTED, CandidateLifecycle.RETIRED, CandidateLifecycle.DEGRADED):
+        for lc in (
+            CandidateLifecycle.REJECTED,
+            CandidateLifecycle.RETIRED,
+            CandidateLifecycle.DEGRADED,
+        ):
             snap = build_snapshot(_entry(lc))
             assert snap.execution_eligibility.eligibility_state == "BLOCKED"
             assert snap.execution_eligibility.can_trade is False
@@ -73,12 +77,18 @@ class TestEvidenceSummary:
     def test_present_gates_reported(self):
         bt = BacktestResult(strategy_id="s", strategy_version="1", dataset_id="d1", total_trades=42)
         oos = OOSResult(strategy_id="s", strategy_version="1", dataset_id="d1", status="PASS")
-        rob = RobustnessResult(strategy_id="s", strategy_version="1", dataset_id="d1", status="PASS")
+        rob = RobustnessResult(
+            strategy_id="s", strategy_version="1", dataset_id="d1", status="PASS"
+        )
         wf = WalkForwardResult(strategy_id="s", strategy_version="1", dataset_id="d1", passed=True)
         score = StrategyScore(final_score=0.8, verdict="VALIDATED")
         entry = _entry(
             CandidateLifecycle.VALIDATED,
-            backtest=bt, walkforward=wf, oos=oos, robustness=rob, score=score,
+            backtest=bt,
+            walkforward=wf,
+            oos=oos,
+            robustness=rob,
+            score=score,
         )
         snap = build_snapshot(entry)
         ev = snap.evidence_summary
@@ -89,7 +99,9 @@ class TestEvidenceSummary:
         assert ev["score_verdict"] == "VALIDATED"
 
     def test_health_decomposition_from_score(self):
-        score = StrategyScore(performance_score=0.9, risk_score=0.7, stability_score=0.85, final_score=0.82)
+        score = StrategyScore(
+            performance_score=0.9, risk_score=0.7, stability_score=0.85, final_score=0.82
+        )
         entry = _entry(CandidateLifecycle.VALIDATED, score=score)
         snap = build_snapshot(entry)
         h = snap.health_score

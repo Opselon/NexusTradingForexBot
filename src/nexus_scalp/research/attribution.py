@@ -20,13 +20,12 @@ to accept DecisionContribution records when instrumentation lands.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.observability.logging import get_logger
-from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry
+from nexus_scalp.research.models import StrategyRegistryEntry
 
 logger = get_logger("nexus_scalp.research.attribution")
 
@@ -65,15 +64,15 @@ class DecisionContribution:
     """
 
     __slots__ = (
-        "source_type",
-        "kind",
-        "decision_id",
-        "strategy_id",
-        "evidence_reference",
-        "weight",
         "confidence",
-        "timestamp",
+        "decision_id",
+        "evidence_reference",
+        "kind",
         "reproducibility_key",
+        "source_type",
+        "strategy_id",
+        "timestamp",
+        "weight",
     )
 
     def __init__(
@@ -120,7 +119,7 @@ def _actor_to_contribution(
 ) -> DecisionContribution:
     """Maps an event-projection actor tag onto an honest contribution."""
     if actor == "operator":
-        kind = ContributionKind.HUMAN_APPROVED if state in ("ACTIVE", "SHADOW") else ContributionKind.HUMAN_APPROVED
+        kind = ContributionKind.HUMAN_APPROVED
         return DecisionContribution(
             source_type=SourceType.HUMAN,
             kind=kind,
@@ -132,7 +131,11 @@ def _actor_to_contribution(
     if state in ("VALIDATED", "REJECTED"):
         return DecisionContribution(
             source_type=SourceType.STATISTICAL_TEST,
-            kind=(ContributionKind.SYSTEM_VALIDATED if state == "VALIDATED" else ContributionKind.SYSTEM_REJECTED),
+            kind=(
+                ContributionKind.SYSTEM_VALIDATED
+                if state == "VALIDATED"
+                else ContributionKind.SYSTEM_REJECTED
+            ),
             strategy_id=strategy_id,
             decision_id=f"gate:{state}",
             evidence_reference=reason or "validation_lineage",

@@ -36,7 +36,6 @@ from nexus_scalp.strategies.factory.store import (
     sweep_stale_generations,
 )
 
-
 logger = get_logger("nexus_scalp.strategies.factory.worker")
 
 

@@ -7,15 +7,9 @@ debug intelligence, and historical time machine into the FastAPI web server.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
-from nexus_scalp.web.command_center_routes import CommandCenterAPI
-from nexus_scalp.web.command_center_routes import (
-    _running_runs_by_strategy,
-    evaluation_detail,
-)
-from nexus_scalp.research.spatial_layout import SpatialLayout
 from nexus_scalp.research.attribution import AIAttributionEngine
 from nexus_scalp.research.debug_intelligence import (
     compute_anomaly_score,
@@ -24,10 +18,18 @@ from nexus_scalp.research.debug_intelligence import (
     decompose_strategy_health,
     generate_debug_hints,
 )
+from nexus_scalp.research.spatial_layout import SpatialLayout
 from nexus_scalp.research.time_machine import TimeMachine
+from nexus_scalp.web.command_center_routes import (
+    CommandCenterAPI,
+    _running_runs_by_strategy,
+    evaluation_detail,
+)
 
 
-def register_command_center_routes(app: Any, get_research_engine: Any, serialize_enums: Any, _err: Any) -> None:
+def register_command_center_routes(
+    app: Any, get_research_engine: Any, serialize_enums: Any, _err: Any
+) -> None:
     """Registers /api/command-center/* endpoints on the FastAPI app."""
 
     def _get_api() -> CommandCenterAPI | None:
@@ -47,12 +49,16 @@ def register_command_center_routes(app: Any, get_research_engine: Any, serialize
             return _err("INTERNAL_ERROR", extra={"error": str(e)})
 
     @app.get("/api/command-center/fleet")
-    def cc_fleet(lifecycle: str | None = None, execution_filter: str | None = None, limit: int = 2000) -> dict[str, Any]:
+    def cc_fleet(
+        lifecycle: str | None = None, execution_filter: str | None = None, limit: int = 2000
+    ) -> dict[str, Any]:
         api = _get_api()
         if api is None:
             return {"available": False, "reason": "RESEARCH_ENGINE_UNAVAILABLE"}
         try:
-            return serialize_enums(api.fleet(lifecycle=lifecycle, execution_filter=execution_filter, limit=limit))
+            return serialize_enums(
+                api.fleet(lifecycle=lifecycle, execution_filter=execution_filter, limit=limit)
+            )
         except Exception as e:
             return _err("INTERNAL_ERROR", extra={"error": str(e)})
 

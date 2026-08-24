@@ -28,7 +28,6 @@ from nexus_scalp.research.candidates import StrategyCandidate
 from nexus_scalp.research.models import CandidateLifecycle, ResearchDataset
 from nexus_scalp.research.pipeline import ResearchPipeline
 
-
 # ---------------------------------------------------------------------------
 # Stub gate/score result objects (duck-typed to what validate_candidate reads)
 # ---------------------------------------------------------------------------
@@ -107,14 +106,14 @@ class _CapturingRegistry:
 # ---------------------------------------------------------------------------
 
 
-def _make_pipeline_with_verdict(
-    monkeypatch: pytest.MonkeyPatch, verdict: str | None
-):
+def _make_pipeline_with_verdict(monkeypatch: pytest.MonkeyPatch, verdict: str | None):
     pipeline = ResearchPipeline.__new__(ResearchPipeline)
     pipeline.observability = None  # obs=None skips gate/event recording blocks
 
     # Real subsystem attributes with stubbed results — all gates PASS.
-    pipeline.backtest = type("BTGate", (), {"run": staticmethod(lambda *a, **k: _backtest_result())})()
+    pipeline.backtest = type(
+        "BTGate", (), {"run": staticmethod(lambda *a, **k: _backtest_result())}
+    )()
     pipeline.walkforward = type(
         "WFGate", (), {"validate": staticmethod(lambda *a, **k: _walkforward_result())}
     )()
@@ -158,9 +157,7 @@ def _make_pipeline_with_verdict(
 
     # Family selection reads dataset.samples; empty dataset is fine because all
     # downstream stages are stubbed.
-    monkeypatch.setattr(
-        pipeline_module, "_select_family", lambda ds, cand: ds, raising=False
-    )
+    monkeypatch.setattr(pipeline_module, "_select_family", lambda ds, cand: ds, raising=False)
 
     return pipeline, candidate, dataset, captured_registry
 
@@ -192,9 +189,7 @@ def test_every_verdict_maps_to_terminal_lifecycle(monkeypatch, verdict, expected
     Old code: else -> final_lifecycle = DISCOVERED (infinite re-validation loop).
     New code: INCONCLUSIVE/unknown -> REJECTED (terminal + observable).
     """
-    pipeline, candidate, dataset, registry = _make_pipeline_with_verdict(
-        monkeypatch, verdict
-    )
+    pipeline, candidate, dataset, registry = _make_pipeline_with_verdict(monkeypatch, verdict)
     final = _run_and_capture(pipeline, candidate, dataset, registry)
 
     assert final == expected

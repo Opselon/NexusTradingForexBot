@@ -4,30 +4,34 @@ Hardening Regression Tests (P1 & P2)
 P1: Stale RUNNING generation sweeper (AutonomousLoopWorker.recover / sweep_stale_generations).
 P2: StrategyRegistry.upsert lifecycle regression protection default (forbid_lifecycle_regression=True).
 """
+
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from datetime import datetime, UTC, timedelta
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.experience.ledger import ExperienceLedger
+from nexus_scalp.research.dataset import ResearchDatasetBuilder
+from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry
+from nexus_scalp.research.pipeline import ResearchPipeline
 from nexus_scalp.research.registry import StrategyRegistry
-from nexus_scalp.research.models import StrategyRegistryEntry, CandidateLifecycle
+from nexus_scalp.strategies.factory.models import EvolutionConfig
+from nexus_scalp.strategies.factory.orchestrator import StrategyFactory
 from nexus_scalp.strategies.factory.store import (
-    upsert_generation,
     get_generation,
-    sweep_stale_generations,
-    set_loop_state,
     list_candidates,
+    set_loop_state,
+    sweep_stale_generations,
+    upsert_generation,
 )
 from nexus_scalp.strategies.factory.worker import AutonomousLoopWorker
-from nexus_scalp.strategies.factory.orchestrator import StrategyFactory
-from nexus_scalp.strategies.factory.models import EvolutionConfig
-from nexus_scalp.research.pipeline import ResearchPipeline
-from nexus_scalp.research.dataset import ResearchDatasetBuilder
-from nexus_scalp.experience.ledger import ExperienceLedger
 
 
-def _make_factory(audit: AuditRepository, size: int = 4) -> tuple[StrategyFactory, ResearchPipeline]:
+def _make_factory(
+    audit: AuditRepository, size: int = 4
+) -> tuple[StrategyFactory, ResearchPipeline]:
     """Builds a real StrategyFactory over the shared audit DB (LLM boundary unused here)."""
     ledger = ExperienceLedger(audit_repo=audit)
     registry = StrategyRegistry(audit_repo=audit)
@@ -49,32 +53,41 @@ def test_p1_stale_generation_sweeper(tmp_path):
 
     # Create an old RUNNING generation (40 minutes old)
     old_time = (datetime.now(UTC) - timedelta(minutes=40)).isoformat()
-    upsert_generation(audit, {
-        "generation_id": "gen_old_running",
-        "number": 1,
-        "mode": "MANUAL",
-        "status": "RUNNING",
-        "created_at": old_time,
-    })
+    upsert_generation(
+        audit,
+        {
+            "generation_id": "gen_old_running",
+            "number": 1,
+            "mode": "MANUAL",
+            "status": "RUNNING",
+            "created_at": old_time,
+        },
+    )
 
     # Create a fresh RUNNING generation (5 minutes old)
     fresh_time = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
-    upsert_generation(audit, {
-        "generation_id": "gen_fresh_running",
-        "number": 2,
-        "mode": "MANUAL",
-        "status": "RUNNING",
-        "created_at": fresh_time,
-    })
+    upsert_generation(
+        audit,
+        {
+            "generation_id": "gen_fresh_running",
+            "number": 2,
+            "mode": "MANUAL",
+            "status": "RUNNING",
+            "created_at": fresh_time,
+        },
+    )
 
     # Create a completed generation (old)
-    upsert_generation(audit, {
-        "generation_id": "gen_old_completed",
-        "number": 3,
-        "mode": "MANUAL",
-        "status": "COMPLETED",
-        "created_at": old_time,
-    })
+    upsert_generation(
+        audit,
+        {
+            "generation_id": "gen_old_completed",
+            "number": 3,
+            "mode": "MANUAL",
+            "status": "COMPLETED",
+            "created_at": old_time,
+        },
+    )
     audit._queue.join()
 
     # Run sweeper (max_age_minutes=30)
@@ -138,6 +151,7 @@ def test_p2_upsert_lifecycle_regression_protection_default(tmp_path):
 # Additional QA Matrix Scenarios (1-7)
 # =========================================================================
 
+
 def test_scenario_1_crash_restart_recovery(tmp_path):
     """1. CRASH-RESTART-RECOVERY: stale RUNNING generation is swept to FAILED by
     AutonomousLoopWorker.recover() and resume_generation on it does NOT re-execute;
@@ -153,29 +167,38 @@ def test_scenario_1_crash_restart_recovery(tmp_path):
     # still points at it with a STALE heartbeat (process died 45 min ago) —
     # then a restart triggers recover() which must sweep it to FAILED.
     old_time = (datetime.now(UTC) - timedelta(minutes=45)).isoformat()
-    upsert_generation(audit, {
-        "generation_id": "gen_crashed_stale",
-        "number": 1,
-        "mode": "AUTONOMOUS",
-        "status": "RUNNING",
-        "created_at": old_time,
-    })
-    set_loop_state(audit, {
-        "state": "RUNNING",
-        "generation_id": "gen_crashed_stale",
-        "cycle_count": 5,
-        "updated_at": old_time,  # stale heartbeat => genuinely crashed
-    })
+    upsert_generation(
+        audit,
+        {
+            "generation_id": "gen_crashed_stale",
+            "number": 1,
+            "mode": "AUTONOMOUS",
+            "status": "RUNNING",
+            "created_at": old_time,
+        },
+    )
+    set_loop_state(
+        audit,
+        {
+            "state": "RUNNING",
+            "generation_id": "gen_crashed_stale",
+            "cycle_count": 5,
+            "updated_at": old_time,  # stale heartbeat => genuinely crashed
+        },
+    )
 
     # A second, genuinely-alive generation started 1 minute ago.
     fresh_time = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
-    upsert_generation(audit, {
-        "generation_id": "gen_fresh_active",
-        "number": 2,
-        "mode": "AUTONOMOUS",
-        "status": "RUNNING",
-        "created_at": fresh_time,
-    })
+    upsert_generation(
+        audit,
+        {
+            "generation_id": "gen_fresh_active",
+            "number": 2,
+            "mode": "AUTONOMOUS",
+            "status": "RUNNING",
+            "created_at": fresh_time,
+        },
+    )
     audit._queue.join()
 
     # AutonomousLoopWorker-style recovery (sweep -> reload checkpoint -> resume).
@@ -217,13 +240,16 @@ def test_scenario_7_fresh_generation_not_swept(tmp_path):
 
     # Loop state points at a brand-new RUNNING generation.
     now_time = datetime.now(UTC).isoformat()
-    upsert_generation(audit, {
-        "generation_id": "gen_live_now",
-        "number": 1,
-        "mode": "AUTONOMOUS",
-        "status": "RUNNING",
-        "created_at": now_time,
-    })
+    upsert_generation(
+        audit,
+        {
+            "generation_id": "gen_live_now",
+            "number": 1,
+            "mode": "AUTONOMOUS",
+            "status": "RUNNING",
+            "created_at": now_time,
+        },
+    )
     set_loop_state(audit, {"state": "RUNNING", "generation_id": "gen_live_now", "cycle_count": 0})
     audit._queue.join()
 
@@ -252,13 +278,16 @@ def test_scenario_2_idempotent_sweep(tmp_path):
     audit._queue.join()
 
     old_time = (datetime.now(UTC) - timedelta(minutes=60)).isoformat()
-    upsert_generation(audit, {
-        "generation_id": "gen_stale_1",
-        "number": 1,
-        "mode": "MANUAL",
-        "status": "RUNNING",
-        "created_at": old_time,
-    })
+    upsert_generation(
+        audit,
+        {
+            "generation_id": "gen_stale_1",
+            "number": 1,
+            "mode": "MANUAL",
+            "status": "RUNNING",
+            "created_at": old_time,
+        },
+    )
     audit._queue.join()
 
     r1 = sweep_stale_generations(audit, max_age_minutes=30)
@@ -295,7 +324,9 @@ def test_scenario_3_concurrent_write_regression_p2(tmp_path):
     assert reg_a.upsert(entry) is True
     audit_a._queue.join()
 
-    downgrade_entry = entry.model_copy(update={"lifecycle": CandidateLifecycle.DISCOVERED, "updated_at": datetime.now(UTC)})
+    downgrade_entry = entry.model_copy(
+        update={"lifecycle": CandidateLifecycle.DISCOVERED, "updated_at": datetime.now(UTC)}
+    )
     assert reg_b.upsert(downgrade_entry) is False
     audit_b._queue.join()
 
@@ -321,12 +352,16 @@ def test_scenario_4_forward_transition_still_works(tmp_path):
     registry.upsert(entry)
     audit._queue.join()
 
-    res1 = registry.transition_lifecycle("strat_fwd", CandidateLifecycle.SHADOW, reason="testing shadow")
+    res1 = registry.transition_lifecycle(
+        "strat_fwd", CandidateLifecycle.SHADOW, reason="testing shadow"
+    )
     audit._queue.join()
     assert res1 is not None
     assert res1.lifecycle == CandidateLifecycle.SHADOW
 
-    res2 = registry.transition_lifecycle("strat_fwd", CandidateLifecycle.ACTIVE, reason="testing active")
+    res2 = registry.transition_lifecycle(
+        "strat_fwd", CandidateLifecycle.ACTIVE, reason="testing active"
+    )
     audit._queue.join()
     assert res2 is not None
     assert res2.lifecycle == CandidateLifecycle.ACTIVE
@@ -412,16 +447,21 @@ def test_scenario_6_no_duplicated_generation_execution(tmp_path):
     # Simulate the crash: age the generation AND its loop-state heartbeat
     # past the 30-minute threshold AND set it RUNNING.
     old_time = (datetime.now(UTC) - timedelta(minutes=60)).isoformat()
-    audit._queue.put_nowait((
-        "UPDATE factory_generations SET created_at=?, status='RUNNING' WHERE generation_id=?;",
-        (old_time, gen["generation_id"]),
-    ))
-    set_loop_state(audit, {
-        "state": "RUNNING",
-        "generation_id": gen["generation_id"],
-        "cycle_count": 2,
-        "updated_at": old_time,  # stale heartbeat so sweeper reclaims it
-    })
+    audit._queue.put_nowait(
+        (
+            "UPDATE factory_generations SET created_at=?, status='RUNNING' WHERE generation_id=?;",
+            (old_time, gen["generation_id"]),
+        )
+    )
+    set_loop_state(
+        audit,
+        {
+            "state": "RUNNING",
+            "generation_id": gen["generation_id"],
+            "cycle_count": 2,
+            "updated_at": old_time,  # stale heartbeat so sweeper reclaims it
+        },
+    )
     audit._queue.join()
     swept = sweep_stale_generations(audit, max_age_minutes=30)
     audit._queue.join()
@@ -472,7 +512,9 @@ def test_b1_operational_descent_via_transition_lifecycle(tmp_path):
     assert registry.upsert(weaker) is False
 
     # But the administrative transition path MUST persist the descent.
-    out = registry.transition_lifecycle("strat_active", CandidateLifecycle.RETIRED, reason="operator retire")
+    out = registry.transition_lifecycle(
+        "strat_active", CandidateLifecycle.RETIRED, reason="operator retire"
+    )
     audit._queue.join()
     assert out is not None
     row = registry.get("strat_active", "1.0.0")
@@ -498,7 +540,9 @@ def test_b1_shadow_to_degraded_persists(tmp_path):
     assert registry.upsert(entry) is True
     audit._queue.join()
 
-    out = registry.transition_lifecycle("strat_shadow", CandidateLifecycle.DEGRADED, reason="shadow degrade")
+    out = registry.transition_lifecycle(
+        "strat_shadow", CandidateLifecycle.DEGRADED, reason="shadow degrade"
+    )
     audit._queue.join()
     assert out is not None
     assert registry.get("strat_shadow", "1.0.0").lifecycle == CandidateLifecycle.DEGRADED
@@ -537,7 +581,14 @@ def test_a4_peer_tier_rejected_cannot_fabricate_validated(tmp_path):
     assert registry.get("strat_peer", "1.0.0").lifecycle == CandidateLifecycle.REJECTED
 
     # And VALIDATED->REJECTED plain upsert is also refused (no silent downgrade).
-    val = base.model_copy(update={"lifecycle": CandidateLifecycle.VALIDATED, "oos": OOSResult(status="PASS", strategy_id="strat_peer", strategy_version="1.0.0", dataset_id="d")})
+    val = base.model_copy(
+        update={
+            "lifecycle": CandidateLifecycle.VALIDATED,
+            "oos": OOSResult(
+                status="PASS", strategy_id="strat_peer", strategy_version="1.0.0", dataset_id="d"
+            ),
+        }
+    )
     assert registry.upsert(val, forbid_lifecycle_regression=False) is True  # admin seed
     audit._queue.join()
     downgrade = val.model_copy(update={"lifecycle": CandidateLifecycle.REJECTED})
@@ -550,8 +601,8 @@ def test_selfheal_respects_upsert_result(tmp_path):
     """Reviewer HIGH_RISK 2: self-heal must count only REAL repairs. On a
     SHADOW row with failing OOS, the regression guard refuses SHADOW→REJECTED,
     so repaired count must stay 0 (previously fake-incremented)."""
-    from nexus_scalp.research.store import self_heal_research
     from nexus_scalp.research.models import OOSResult
+    from nexus_scalp.research.store import self_heal_research
 
     db_path = tmp_path / "selfheal.db"
     audit = AuditRepository(db_url=f"sqlite:///{db_path}")
@@ -564,7 +615,9 @@ def test_selfheal_respects_upsert_result(tmp_path):
         discovery_source="test",
         discovery_window="w1",
         lifecycle=CandidateLifecycle.SHADOW,
-        oos=OOSResult(status="FAIL", strategy_id="strat_heal", strategy_version="1.0.0", dataset_id="d"),
+        oos=OOSResult(
+            status="FAIL", strategy_id="strat_heal", strategy_version="1.0.0", dataset_id="d"
+        ),
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )

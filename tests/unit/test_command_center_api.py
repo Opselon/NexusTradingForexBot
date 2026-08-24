@@ -9,7 +9,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from nexus_scalp.web.command_center_routes import CommandCenterAPI
 from nexus_scalp.research.event_projection import LifecycleEventProjection
 from nexus_scalp.research.models import (
     BacktestResult,
@@ -20,6 +19,7 @@ from nexus_scalp.research.models import (
     StrategyScore,
 )
 from nexus_scalp.research.registry import StrategyRegistry
+from nexus_scalp.web.command_center_routes import CommandCenterAPI
 
 
 class _FakeRepo:
@@ -67,13 +67,17 @@ def api(monkeypatch):
 
     # Prepopulate a few entries.
     entries["s-active"] = _make_entry(
-        "s-active", CandidateLifecycle.ACTIVE,
+        "s-active",
+        CandidateLifecycle.ACTIVE,
         score=StrategyScore(final_score=0.9, verdict="VALIDATED"),
     )
     entries["s-validated"] = _make_entry(
-        "s-validated", CandidateLifecycle.VALIDATED,
+        "s-validated",
+        CandidateLifecycle.VALIDATED,
         score=StrategyScore(final_score=0.8, verdict="VALIDATED"),
-        backtest=BacktestResult(strategy_id="s-validated", strategy_version="1", dataset_id="d", total_trades=30),
+        backtest=BacktestResult(
+            strategy_id="s-validated", strategy_version="1", dataset_id="d", total_trades=30
+        ),
     )
     entries["s-rejected"] = _make_entry("s-rejected", CandidateLifecycle.REJECTED)
     entries["s-discovered"] = _make_entry("s-discovered", CandidateLifecycle.DISCOVERED)
@@ -155,10 +159,21 @@ class TestRegistryScaleNoCap:
         # Simulate a fleet larger than the former 500-row ceiling (1165 in prod).
         # Note: the `api` fixture already prepopulates 4 entries, so total = 1169.
         from tests.unit.test_command_center_api import _make_entry  # local import guard
+
         cls = CandidateLifecycle
-        states = [cls.DISCOVERED, cls.BACKTESTING, cls.VALIDATING, cls.OOS_TESTING,
-                  cls.ROBUSTNESS_TESTING, cls.VALIDATED, cls.SHADOW, cls.ACTIVE,
-                  cls.REJECTED, cls.DEGRADED, cls.RETIRED]
+        states = [
+            cls.DISCOVERED,
+            cls.BACKTESTING,
+            cls.VALIDATING,
+            cls.OOS_TESTING,
+            cls.ROBUSTNESS_TESTING,
+            cls.VALIDATED,
+            cls.SHADOW,
+            cls.ACTIVE,
+            cls.REJECTED,
+            cls.DEGRADED,
+            cls.RETIRED,
+        ]
         for i in range(1165):
             sid = f"s-scale-{i:04d}"
             api.registry.list = lambda *a, **k: list(_FakeRepo._registry_entries.values())
@@ -185,14 +200,17 @@ class TestRegistryScaleNoCap:
 
 class TestTimeMachineReplay:
     def test_frame_at_reconstructs_historical_state(self, api):
-        from nexus_scalp.research.time_machine import TimeMachine
         from datetime import UTC, datetime, timedelta
+
+        from nexus_scalp.research.time_machine import TimeMachine
+
         # Seed a strategy with a two-step lineage.
         past = datetime.now(UTC) - timedelta(days=10)
         mid = datetime.now(UTC) - timedelta(days=5)
         sid = "s-tm"
         entry = _make_entry(
-            sid, CandidateLifecycle.VALIDATED,
+            sid,
+            CandidateLifecycle.VALIDATED,
             validation_lineage=[
                 f"{past.isoformat()}:DISCOVERED:seed",
                 f"{mid.isoformat()}:VALIDATED:promotion",
@@ -211,4 +229,3 @@ class TestTimeMachineReplay:
         # Frame returns console + selected for frontend integration.
         assert "console" in frame2
         assert "selected" in frame2
-

@@ -1,0 +1,32 @@
+{
+  "steps": {
+    "pageTitle": "NEXUS — Strategy Command Center (Visual)",
+    "canvasPresent": true,
+    "spatial": {
+      "ok": true,
+      "nodes": 500,
+      "zones": 11
+    },
+    "overviewTotal": 500,
+    "buttonCount": 13,
+    "canvasInfo": {
+      "canvas": true,
+      "w": 896,
+      "h": 844,
+      "cw": 896,
+      "ch": 844
+    },
+    "execSafetyNonActive": {
+      "noRows": true
+    },
+    "timeMachine": {
+      "ok": true,
+      "bounds": null
+    }
+  },
+  "errors": {
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedRequests": []
+  }
+}

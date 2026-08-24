@@ -419,11 +419,7 @@ def _is_stronger(current: CandidateLifecycle, proposed: CandidateLifecycle) -> b
     # Same-state writes are evidence REFRESHES (new backtest/OOS payloads on
     # an unchanged lifecycle) and must pass; only cross-peer truth rewrites
     # are refused.
-    return (
-        current in _peer_truth
-        and proposed in _peer_truth
-        and current is not proposed
-    )
+    return current in _peer_truth and proposed in _peer_truth and current is not proposed
 
 
 def _json(value: Any) -> str:

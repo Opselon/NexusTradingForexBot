@@ -5957,9 +5957,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     },
                 )
 
-            registry = getattr(engine, "strategy_registry", None) or StrategyRegistry(
-                engine.audit
-            )
+            registry = getattr(engine, "strategy_registry", None) or StrategyRegistry(engine.audit)
             existing = registry.get(strategy_id)
             if existing is None:
                 return _err(
@@ -6004,8 +6002,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             updated = registry.transition_lifecycle(
                 strategy_id=strategy_id,
                 target=target_lifecycle,
-                reason=f"operator_promotion:actor={actor}"
-                + (f":{reason}" if reason else ""),
+                reason=f"operator_promotion:actor={actor}" + (f":{reason}" if reason else ""),
             )
             if updated is None:
                 # Either the strategy is unknown, or the transition was illegal
@@ -8077,7 +8074,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     )
 
     register_command_center_routes(
-        app, _research, serialize_enums, _err,
+        app,
+        _research,
+        serialize_enums,
+        _err,
     )
 
     @app.get("/api/news/keywords")

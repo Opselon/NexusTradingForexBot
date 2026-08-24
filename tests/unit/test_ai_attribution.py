@@ -80,7 +80,9 @@ class TestAttributionEngine:
     def test_gate_verdict_is_statistical_test(self):
         eng = AIAttributionEngine(None)
         rep = eng.attribution(_entry())
-        stats = [c for c in rep["contributions"] if c["source_type"] == SourceType.STATISTICAL_TEST.value]
+        stats = [
+            c for c in rep["contributions"] if c["source_type"] == SourceType.STATISTICAL_TEST.value
+        ]
         assert any(c["kind"] == ContributionKind.SYSTEM_VALIDATED.value for c in stats)
 
     def test_status_honest_when_no_weights(self):

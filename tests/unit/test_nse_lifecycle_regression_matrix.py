@@ -72,20 +72,63 @@ def test_matrix_1_full_gate_pass_path(tmp_path):
         registry=registry,
     )
 
-    pipeline.backtest = type("BT", (), {"run": staticmethod(lambda *a, **k: BacktestResult(
-        strategy_id="STRAT-PASS", strategy_version="1.0.0", dataset_id="ds", total_trades=50, wins=30, losses=20, expectancy_r=0.4
-    ))})()
-    pipeline.walkforward = type("WF", (), {"validate": staticmethod(lambda *a, **k: WalkForwardResult(
-        strategy_id="STRAT-PASS", strategy_version="1.0.0", dataset_id="ds", passed=True
-    ))})()
-    pipeline.oos_gate = type("OOS", (), {"evaluate": staticmethod(lambda *a, **k: OOSResult(
-        strategy_id="STRAT-PASS", strategy_version="1.0.0", dataset_id="ds", status="PASS", oos_expectancy_r=0.25
-    ))})()
-    pipeline.robustness = type("ROB", (), {"evaluate": staticmethod(lambda *a, **k: RobustnessResult(
-        strategy_id="STRAT-PASS", strategy_version="1.0.0", status="PASS"
-    ))})()
+    pipeline.backtest = type(
+        "BT",
+        (),
+        {
+            "run": staticmethod(
+                lambda *a, **k: BacktestResult(
+                    strategy_id="STRAT-PASS",
+                    strategy_version="1.0.0",
+                    dataset_id="ds",
+                    total_trades=50,
+                    wins=30,
+                    losses=20,
+                    expectancy_r=0.4,
+                )
+            )
+        },
+    )()
+    pipeline.walkforward = type(
+        "WF",
+        (),
+        {
+            "validate": staticmethod(
+                lambda *a, **k: WalkForwardResult(
+                    strategy_id="STRAT-PASS", strategy_version="1.0.0", dataset_id="ds", passed=True
+                )
+            )
+        },
+    )()
+    pipeline.oos_gate = type(
+        "OOS",
+        (),
+        {
+            "evaluate": staticmethod(
+                lambda *a, **k: OOSResult(
+                    strategy_id="STRAT-PASS",
+                    strategy_version="1.0.0",
+                    dataset_id="ds",
+                    status="PASS",
+                    oos_expectancy_r=0.25,
+                )
+            )
+        },
+    )()
+    pipeline.robustness = type(
+        "ROB",
+        (),
+        {
+            "evaluate": staticmethod(
+                lambda *a, **k: RobustnessResult(
+                    strategy_id="STRAT-PASS", strategy_version="1.0.0", status="PASS"
+                )
+            )
+        },
+    )()
 
     import nexus_scalp.research.pipeline as pipeline_mod
+
     monkeypatch_obj = pytest.MonkeyPatch()
     monkeypatch_obj.setattr(
         pipeline_mod,
@@ -131,7 +174,14 @@ def test_matrix_1_full_gate_pass_path(tmp_path):
     ],
 )
 def test_matrix_2_rejection_gates(
-    tmp_path, gate_name, bt_trades, wf_passed, oos_status, rob_status, score_verdict, expected_outcome
+    tmp_path,
+    gate_name,
+    bt_trades,
+    wf_passed,
+    oos_status,
+    rob_status,
+    score_verdict,
+    expected_outcome,
 ):
     """Every failing gate or non-passing verdict results in REJECTED lifecycle and run_outcome."""
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / f'mat2_{gate_name}.db'}")
@@ -141,20 +191,63 @@ def test_matrix_2_rejection_gates(
         registry=registry,
     )
 
-    pipeline.backtest = type("BT", (), {"run": staticmethod(lambda *a, **k: BacktestResult(
-        strategy_id="STRAT-REJ", strategy_version="1.0.0", dataset_id="ds", total_trades=bt_trades, expectancy_r=0.2
-    ))})()
-    pipeline.walkforward = type("WF", (), {"validate": staticmethod(lambda *a, **k: WalkForwardResult(
-        strategy_id="STRAT-REJ", strategy_version="1.0.0", dataset_id="ds", passed=wf_passed
-    ))})()
-    pipeline.oos_gate = type("OOS", (), {"evaluate": staticmethod(lambda *a, **k: OOSResult(
-        strategy_id="STRAT-REJ", strategy_version="1.0.0", dataset_id="ds", status=oos_status
-    ))})()
-    pipeline.robustness = type("ROB", (), {"evaluate": staticmethod(lambda *a, **k: RobustnessResult(
-        strategy_id="STRAT-REJ", strategy_version="1.0.0", status=rob_status
-    ))})()
+    pipeline.backtest = type(
+        "BT",
+        (),
+        {
+            "run": staticmethod(
+                lambda *a, **k: BacktestResult(
+                    strategy_id="STRAT-REJ",
+                    strategy_version="1.0.0",
+                    dataset_id="ds",
+                    total_trades=bt_trades,
+                    expectancy_r=0.2,
+                )
+            )
+        },
+    )()
+    pipeline.walkforward = type(
+        "WF",
+        (),
+        {
+            "validate": staticmethod(
+                lambda *a, **k: WalkForwardResult(
+                    strategy_id="STRAT-REJ",
+                    strategy_version="1.0.0",
+                    dataset_id="ds",
+                    passed=wf_passed,
+                )
+            )
+        },
+    )()
+    pipeline.oos_gate = type(
+        "OOS",
+        (),
+        {
+            "evaluate": staticmethod(
+                lambda *a, **k: OOSResult(
+                    strategy_id="STRAT-REJ",
+                    strategy_version="1.0.0",
+                    dataset_id="ds",
+                    status=oos_status,
+                )
+            )
+        },
+    )()
+    pipeline.robustness = type(
+        "ROB",
+        (),
+        {
+            "evaluate": staticmethod(
+                lambda *a, **k: RobustnessResult(
+                    strategy_id="STRAT-REJ", strategy_version="1.0.0", status=rob_status
+                )
+            )
+        },
+    )()
 
     import nexus_scalp.research.pipeline as pipeline_mod
+
     monkeypatch_obj = pytest.MonkeyPatch()
 
     # Realistic scorer: verdict derived from gate results (score is the
@@ -209,14 +302,41 @@ def test_matrix_3_restart_and_recovery(tmp_path):
 
     base = datetime(2024, 1, 1, tzinfo=UTC)
     for i in range(50):
-        ledger.record_experience(ExperienceRecord(
-            experience_id=f"exp3_{i}", request_id=f"req3_{i}", idempotency_key=f"id3_{i}", symbol="XAUUSD", timeframe="M1",
-            decision_timestamp=base + timedelta(minutes=i), strategy_id="strat_m3", strategy_version="1.0.0",
-            context=StrategyContext(strategy_id="strat_m3", symbol="XAUUSD", session="LONDON", regime="TRENDING", volatility_regime="HIGH", trend_state="BULLISH"),
-            feature_snapshot=FeatureSnapshot(values=[0.1] * 50), action="BUY_MARKET", entry_reason="SMC",
-            model_probability=0.8, signal_confidence=0.8, proposed_entry=2000.0, stop_loss=1990.0, take_profit=2020.0, risk_reward_ratio=2.0, approved_volume=0.1,
-            is_executed=True, is_closed=True, exit_reason="TP", realized_pnl_usd=10.0, realized_r_multiple=0.3
-        ))
+        ledger.record_experience(
+            ExperienceRecord(
+                experience_id=f"exp3_{i}",
+                request_id=f"req3_{i}",
+                idempotency_key=f"id3_{i}",
+                symbol="XAUUSD",
+                timeframe="M1",
+                decision_timestamp=base + timedelta(minutes=i),
+                strategy_id="strat_m3",
+                strategy_version="1.0.0",
+                context=StrategyContext(
+                    strategy_id="strat_m3",
+                    symbol="XAUUSD",
+                    session="LONDON",
+                    regime="TRENDING",
+                    volatility_regime="HIGH",
+                    trend_state="BULLISH",
+                ),
+                feature_snapshot=FeatureSnapshot(values=[0.1] * 50),
+                action="BUY_MARKET",
+                entry_reason="SMC",
+                model_probability=0.8,
+                signal_confidence=0.8,
+                proposed_entry=2000.0,
+                stop_loss=1990.0,
+                take_profit=2020.0,
+                risk_reward_ratio=2.0,
+                approved_volume=0.1,
+                is_executed=True,
+                is_closed=True,
+                exit_reason="TP",
+                realized_pnl_usd=10.0,
+                realized_r_multiple=0.3,
+            )
+        )
     _flush(repo)
 
     registry = StrategyRegistry(audit_repo=repo)
@@ -263,18 +383,47 @@ def test_matrix_5_promotion_restart_persistence(tmp_path):
     """Promote VALIDATED->SHADOW->ACTIVE via API client, restart registry, verify persistence."""
     db_path = tmp_path / "mat5.db"
     repo = AuditRepository(db_url=f"sqlite:///{db_path}")
-    cfg = AppConfig(execution={"symbol": "XAUUSD", "mode": "PAPER"}, model={"model_artifact_path": str(tmp_path / "model.pt")})
+    cfg = AppConfig(
+        execution={"symbol": "XAUUSD", "mode": "PAPER"},
+        model={"model_artifact_path": str(tmp_path / "model.pt")},
+    )
     from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
-    engine = LiveEngine(config=cfg, adapter=PaperMT5Adapter(initial_balance=10000.0, symbol="XAUUSD"), audit_repo=repo)
+
+    engine = LiveEngine(
+        config=cfg,
+        adapter=PaperMT5Adapter(initial_balance=10000.0, symbol="XAUUSD"),
+        audit_repo=repo,
+    )
 
     validated_entry = StrategyRegistryEntry(
         strategy_id="strat_promo_restart",
         strategy_version="1.0.0",
         lifecycle=CandidateLifecycle.VALIDATED,
-        backtest=BacktestResult(strategy_id="strat_promo_restart", strategy_version="1.0.0", dataset_id="ds", total_trades=40, wins=25, losses=15, expectancy_r=0.3),
-        walkforward=WalkForwardResult(strategy_id="strat_promo_restart", strategy_version="1.0.0", dataset_id="ds", passed=True),
-        oos=OOSResult(strategy_id="strat_promo_restart", strategy_version="1.0.0", dataset_id="ds", status="PASS", oos_expectancy_r=0.2),
-        robustness=RobustnessResult(strategy_id="strat_promo_restart", strategy_version="1.0.0", status="PASS"),
+        backtest=BacktestResult(
+            strategy_id="strat_promo_restart",
+            strategy_version="1.0.0",
+            dataset_id="ds",
+            total_trades=40,
+            wins=25,
+            losses=15,
+            expectancy_r=0.3,
+        ),
+        walkforward=WalkForwardResult(
+            strategy_id="strat_promo_restart",
+            strategy_version="1.0.0",
+            dataset_id="ds",
+            passed=True,
+        ),
+        oos=OOSResult(
+            strategy_id="strat_promo_restart",
+            strategy_version="1.0.0",
+            dataset_id="ds",
+            status="PASS",
+            oos_expectancy_r=0.2,
+        ),
+        robustness=RobustnessResult(
+            strategy_id="strat_promo_restart", strategy_version="1.0.0", status="PASS"
+        ),
         score=StrategyScore(verdict="VALIDATED", final_score=0.75),
         sample_count=40,
     )
@@ -283,11 +432,14 @@ def test_matrix_5_promotion_restart_persistence(tmp_path):
 
     client = TestClient(create_app(engine))
 
-    r1 = client.post("/api/research/promote", json={
-        "strategy_id": "strat_promo_restart",
-        "target_lifecycle": "SHADOW",
-        "actor": "ops_matrix",
-    })
+    r1 = client.post(
+        "/api/research/promote",
+        json={
+            "strategy_id": "strat_promo_restart",
+            "target_lifecycle": "SHADOW",
+            "actor": "ops_matrix",
+        },
+    )
     assert r1.status_code == 200
     assert r1.json()["lifecycle"] == "SHADOW"
     _flush(repo)
@@ -299,13 +451,20 @@ def test_matrix_5_promotion_restart_persistence(tmp_path):
     assert reloaded_shadow is not None
     assert reloaded_shadow.lifecycle == CandidateLifecycle.SHADOW
 
-    engine2 = LiveEngine(config=cfg, adapter=PaperMT5Adapter(initial_balance=10000.0, symbol="XAUUSD"), audit_repo=repo2)
+    engine2 = LiveEngine(
+        config=cfg,
+        adapter=PaperMT5Adapter(initial_balance=10000.0, symbol="XAUUSD"),
+        audit_repo=repo2,
+    )
     client2 = TestClient(create_app(engine2))
-    r2 = client2.post("/api/research/promote", json={
-        "strategy_id": "strat_promo_restart",
-        "target_lifecycle": "ACTIVE",
-        "actor": "ops_matrix",
-    })
+    r2 = client2.post(
+        "/api/research/promote",
+        json={
+            "strategy_id": "strat_promo_restart",
+            "target_lifecycle": "ACTIVE",
+            "actor": "ops_matrix",
+        },
+    )
     assert r2.status_code == 200
     assert r2.json()["lifecycle"] == "ACTIVE"
     _flush(repo2)
@@ -322,16 +481,27 @@ def test_matrix_5_promotion_restart_persistence(tmp_path):
 def test_matrix_6_runtime_selection_boundary():
     """Research package exposes no RiskEngine/OrderManager/MT5; unvalidated states cannot be approved for live."""
     import nexus_scalp.research
+
     assert not hasattr(nexus_scalp.research, "RiskEngine")
     assert not hasattr(nexus_scalp.research, "OrderManager")
     assert not hasattr(nexus_scalp.research, "mt5")
     assert not hasattr(nexus_scalp.research, "MetaTrader5")
 
-    for bad_state in (CandidateLifecycle.DISCOVERED, CandidateLifecycle.BACKTESTING, CandidateLifecycle.REJECTED, CandidateLifecycle.DEGRADED, CandidateLifecycle.RETIRED):
+    for bad_state in (
+        CandidateLifecycle.DISCOVERED,
+        CandidateLifecycle.BACKTESTING,
+        CandidateLifecycle.REJECTED,
+        CandidateLifecycle.DEGRADED,
+        CandidateLifecycle.RETIRED,
+    ):
         with pytest.raises(LifecycleError):
             approve_for_live(bad_state)
 
-    for bad_state in (CandidateLifecycle.DISCOVERED, CandidateLifecycle.BACKTESTING, CandidateLifecycle.REJECTED):
+    for bad_state in (
+        CandidateLifecycle.DISCOVERED,
+        CandidateLifecycle.BACKTESTING,
+        CandidateLifecycle.REJECTED,
+    ):
         with pytest.raises(LifecycleError):
             require_validation_gate(bad_state)
 
@@ -342,14 +512,18 @@ def test_matrix_6_runtime_selection_boundary():
 def test_matrix_7_stale_running_generation_recovery(tmp_path):
     """Simulate crash mid-generation (RUNNING status), run factory resume/recovery, ensure resilience."""
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'mat7.db'}")
-    pipeline = ResearchPipeline(dataset_builder=ResearchDatasetBuilder(ExperienceLedger(audit_repo=repo)), registry=StrategyRegistry(audit_repo=repo))
+    pipeline = ResearchPipeline(
+        dataset_builder=ResearchDatasetBuilder(ExperienceLedger(audit_repo=repo)),
+        registry=StrategyRegistry(audit_repo=repo),
+    )
     factory = StrategyFactory(audit_repo=repo, research_pipeline=pipeline)
-    
+
     gen = factory.create_generation(size=4)
     gid = gen["generation_id"]
     _flush(repo)
 
     from nexus_scalp.strategies.factory.store import upsert_generation
+
     upsert_generation(factory._research_backend, {**gen, "status": "RUNNING"})
     _flush(repo)
 

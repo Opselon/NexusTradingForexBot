@@ -51,6 +51,7 @@ Coverage map (spec 38):
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -928,9 +929,9 @@ class TestWorker:
 
         # Dataset identity must be unchanged (same content-addressed id).
         assert worker2._dataset is not None
-        assert (
-            getattr(worker2._dataset, "dataset_id", "") == worker2._last_dataset_id
-        ), "restart must observe the SAME dataset (RC1 precondition)"
+        assert getattr(worker2._dataset, "dataset_id", "") == worker2._last_dataset_id, (
+            "restart must observe the SAME dataset (RC1 precondition)"
+        )
         # THE FIX: despite DATASET_UNCHANGED, discovery + validation ran again,
         # re-enqueuing DISCOVERED candidates for processing.
         assert pipe2.discover_calls >= 1, (

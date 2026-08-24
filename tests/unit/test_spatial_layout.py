@@ -17,7 +17,9 @@ from nexus_scalp.research.snapshot import build_snapshot
 from nexus_scalp.research.spatial_layout import ALL_ZONES, SpatialLayout
 
 
-def _entry(sid: str, lc: CandidateLifecycle, score: StrategyScore | None = None, sample_count: int = 10):
+def _entry(
+    sid: str, lc: CandidateLifecycle, score: StrategyScore | None = None, sample_count: int = 10
+):
     return StrategyRegistryEntry(
         strategy_id=sid,
         strategy_version="1.0.0",
@@ -83,12 +85,22 @@ class TestSpatialLayout:
         )
 
         entry = _entry("gated", CandidateLifecycle.VALIDATED)
-        entry = entry.model_copy(update={
-            "backtest": BacktestResult(strategy_id="g", strategy_version="1", dataset_id="d", total_trades=5),
-            "walkforward": WalkForwardResult(strategy_id="g", strategy_version="1", dataset_id="d", passed=True),
-            "oos": OOSResult(strategy_id="g", strategy_version="1", dataset_id="d", status="PASS"),
-            "robustness": RobustnessResult(strategy_id="g", strategy_version="1", dataset_id="d", status="PASS"),
-        })
+        entry = entry.model_copy(
+            update={
+                "backtest": BacktestResult(
+                    strategy_id="g", strategy_version="1", dataset_id="d", total_trades=5
+                ),
+                "walkforward": WalkForwardResult(
+                    strategy_id="g", strategy_version="1", dataset_id="d", passed=True
+                ),
+                "oos": OOSResult(
+                    strategy_id="g", strategy_version="1", dataset_id="d", status="PASS"
+                ),
+                "robustness": RobustnessResult(
+                    strategy_id="g", strategy_version="1", dataset_id="d", status="PASS"
+                ),
+            }
+        )
         snapshots = {"gated": build_snapshot(entry)}
         layout = SpatialLayout().compute([entry], snapshots=snapshots)
         node = layout["nodes"][0]

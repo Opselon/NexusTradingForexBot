@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry
+from nexus_scalp.research.models import StrategyRegistryEntry
 
 #: Spatial zones in pipeline order (elevation increases with maturity).
 PIPELINE_ZONES: list[str] = [
@@ -95,9 +95,8 @@ class SpatialLayout:
             col = idx_in_zone % self.max_columns
             row = idx_in_zone // self.max_columns
             y_idx = MATURITY_RANK.get(zone, 0)
-            x = (
-                (col - (self.max_columns - 1) / 2.0) * self.node_spacing
-                + _stable_jitter(f"{entry.strategy_id}:x", spread=8)
+            x = (col - (self.max_columns - 1) / 2.0) * self.node_spacing + _stable_jitter(
+                f"{entry.strategy_id}:x", spread=8
             )
             # Rows stack downward within a zone; extra rows push slightly back.
             y = (
@@ -119,31 +118,40 @@ class SpatialLayout:
             elevation = float(final) if isinstance(final, (int, float)) else None
             ring_count = sum(
                 1
-                for key in ("backtest_status", "walkforward_status", "oos_status", "robustness_status")
+                for key in (
+                    "backtest_status",
+                    "walkforward_status",
+                    "oos_status",
+                    "robustness_status",
+                )
                 if snap.get("evidence_summary", {}).get(key) == "PASS"
             )
 
-            nodes.append({
-                "strategy_id": entry.strategy_id,
-                "strategy_version": entry.strategy_version,
-                "zone": zone,
-                "x": round(x, 2),
-                "y": round(y, 2),
-                "z": z,
-                "elevation": elevation,           # None → NOT_MEASURED in UI
-                "size_hint": entry.sample_count,
-                "ring_count": ring_count,
-                "confidence": entry.confidence,
-            })
+            nodes.append(
+                {
+                    "strategy_id": entry.strategy_id,
+                    "strategy_version": entry.strategy_version,
+                    "zone": zone,
+                    "x": round(x, 2),
+                    "y": round(y, 2),
+                    "z": z,
+                    "elevation": elevation,  # None → NOT_MEASURED in UI
+                    "size_hint": entry.sample_count,
+                    "ring_count": ring_count,
+                    "confidence": entry.confidence,
+                }
+            )
 
         zones_out = []
         for zone in ALL_ZONES:
-            zones_out.append({
-                "zone": zone,
-                "y_index": MATURITY_RANK[zone],
-                "count": zone_counts[zone],
-                "terminal": zone in TERMINAL_ZONES,
-            })
+            zones_out.append(
+                {
+                    "zone": zone,
+                    "y_index": MATURITY_RANK[zone],
+                    "count": zone_counts[zone],
+                    "terminal": zone in TERMINAL_ZONES,
+                }
+            )
 
         return {
             "available": True,

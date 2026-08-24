@@ -25,14 +25,18 @@ class TestParseLineageEntry:
 
     def test_iso_colons_not_fragmented(self):
         # The ISO timestamp contains colons; parsing must not break it.
-        ev = parse_lineage_entry("2026-08-23T10:30:45.123456+00:00:SHADOW:operator_promotion:actor=alice")
+        ev = parse_lineage_entry(
+            "2026-08-23T10:30:45.123456+00:00:SHADOW:operator_promotion:actor=alice"
+        )
         assert ev is not None
         assert ev["to_state"] == "SHADOW"
         assert "2026-08-23T10:30:45" in ev["timestamp"]
         assert "operator" in ev["actor"]
 
     def test_operator_actor_detected(self):
-        ev = parse_lineage_entry("2026-08-23T10:00:00+00:00:ACTIVE:operator_promotion:actor=bob:manual_review")
+        ev = parse_lineage_entry(
+            "2026-08-23T10:00:00+00:00:ACTIVE:operator_promotion:actor=bob:manual_review"
+        )
         assert ev["actor"] == "operator"
         assert "bob" in ev["reason"]
 
@@ -84,11 +88,13 @@ class TestEventProjection:
             )
             """,
             (
-                json.dumps([
-                    "2026-08-20T09:00:00+00:00:DISCOVERED",
-                    "2026-08-21T09:41:00+00:00:VALIDATED",
-                    "2026-08-23T11:03:00+00:00:SHADOW",
-                ]),
+                json.dumps(
+                    [
+                        "2026-08-20T09:00:00+00:00:DISCOVERED",
+                        "2026-08-21T09:41:00+00:00:VALIDATED",
+                        "2026-08-23T11:03:00+00:00:SHADOW",
+                    ]
+                ),
             ),
         )
         conn.execute(

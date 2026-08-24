@@ -56,7 +56,9 @@ def test_evaluation_detail_all_not_run_for_fresh_candidate():
 
 def test_evaluation_detail_backtest_pass_then_walkforward_running():
     e = _entry(
-        backtest=BacktestResult(strategy_id="E1", strategy_version="1", dataset_id="d", total_trades=50),
+        backtest=BacktestResult(
+            strategy_id="E1", strategy_version="1", dataset_id="d", total_trades=50
+        ),
     )
     # Real RUNNING only when a research_runs row reports it; here none → not running.
     d = evaluation_detail(e)
@@ -74,7 +76,9 @@ def test_evaluation_detail_backtest_pass_then_walkforward_running():
 
 def test_evaluation_detail_does_not_invent_running_without_real_row():
     e = _entry(
-        backtest=BacktestResult(strategy_id="E1", strategy_version="1", dataset_id="d", total_trades=50),
+        backtest=BacktestResult(
+            strategy_id="E1", strategy_version="1", dataset_id="d", total_trades=50
+        ),
         walkforward=None,  # no artifact
     )
     # No running_runs supplied → must NOT claim RUNNING.
@@ -85,10 +89,30 @@ def test_evaluation_detail_does_not_invent_running_without_real_row():
 
 def test_evaluation_detail_full_pass_is_done():
     e = _entry(
-        backtest=BacktestResult(strategy_id="E1", strategy_version="1", dataset_id="d", total_trades=50),
-        walkforward=WalkForwardResult(strategy_id="E1", strategy_version="1", dataset_id="d", folds=[], passed=True, avg_oos_expectancy_r=0.5),
-        oos=OOSResult(strategy_id="E1", strategy_version="1", dataset_id="d", status="PASS", oos_expectancy_r=0.5, oos_samples=10, oos_win_rate=0.5, in_sample_expectancy_r=0.6),
-        robustness=RobustnessResult(strategy_id="E1", strategy_version="1", status="PASS", max_degradation=0.1, reason="ok"),
+        backtest=BacktestResult(
+            strategy_id="E1", strategy_version="1", dataset_id="d", total_trades=50
+        ),
+        walkforward=WalkForwardResult(
+            strategy_id="E1",
+            strategy_version="1",
+            dataset_id="d",
+            folds=[],
+            passed=True,
+            avg_oos_expectancy_r=0.5,
+        ),
+        oos=OOSResult(
+            strategy_id="E1",
+            strategy_version="1",
+            dataset_id="d",
+            status="PASS",
+            oos_expectancy_r=0.5,
+            oos_samples=10,
+            oos_win_rate=0.5,
+            in_sample_expectancy_r=0.6,
+        ),
+        robustness=RobustnessResult(
+            strategy_id="E1", strategy_version="1", status="PASS", max_degradation=0.1, reason="ok"
+        ),
         score=StrategyScore(final_score=0.8, verdict="VALIDATED", reasons=[]),
     )
     d = evaluation_detail(e)
@@ -99,7 +123,12 @@ def test_evaluation_detail_full_pass_is_done():
 
 def test_evaluation_metrics_aggregates_with_scope_preserved():
     entries = [
-        _entry(strategy_id=f"s{i}", backtest=BacktestResult(strategy_id=f"s{i}", strategy_version="1", dataset_id="d", total_trades=10))
+        _entry(
+            strategy_id=f"s{i}",
+            backtest=BacktestResult(
+                strategy_id=f"s{i}", strategy_version="1", dataset_id="d", total_trades=10
+            ),
+        )
         for i in range(3)
     ]
     details = [evaluation_detail(e, {"s0": "WALK_FORWARD"}) for e in entries]

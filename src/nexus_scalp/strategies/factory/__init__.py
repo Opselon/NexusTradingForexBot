@@ -35,6 +35,7 @@ from nexus_scalp.strategies.factory.evolution import (
     crossover,
     explore,
     mutate,
+    mutate_with_action,
 )
 from nexus_scalp.strategies.factory.models import (
     CandidateResult,
@@ -156,6 +157,7 @@ __all__ = [
     "list_runs",
     "memory_summary",
     "mutate",
+    "mutate_with_action",
     "population_diversity",
     "provider_usage_total",
     "rank_strategies",

@@ -634,6 +634,47 @@ class StrategyResearchStore:
             return {"scope": scope, "state": "STOPPED"}
         return _row_safe(dict(row))
 
+    def set_operator_stats(self, payload: dict[str, Any]) -> bool:
+        """Persist cumulative operator/accounting state (G28 TARGET 2).
+
+        Stored in a dedicated ``operator_stats`` scope row's ``checkpoint``
+        JSON column so the autonomous control row (scope 'autonomous') is
+        never disturbed.
+        """
+        return self._write(
+            lambda conn: self.driver.upsert(
+                "factory_loop_state",
+                {
+                    "scope": "operator_stats",
+                    "state": "ACTIVE",
+                    "generation_id": "",
+                    "last_cycle_at": "",
+                    "cycle_count": 0,
+                    "checkpoint": _json(payload),
+                    "updated_at": str(_now()),
+                },
+                conn=conn,
+            )
+        )
+
+    def get_operator_stats(self) -> dict[str, Any]:
+        """Read cumulative operator/accounting state ({} when absent)."""
+        row = self.driver.query_one(
+            "SELECT checkpoint FROM factory_loop_state WHERE scope = ?",
+            ("operator_stats",),
+        )
+        if not row:
+            return {}
+        raw = row.get("checkpoint")
+        text = str(raw or "").strip()
+        if not text or text.lower() in ("null", "{}"):
+            return {}
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
     def provider_usage_total(self) -> dict[str, Any]:
         row = self.driver.query_one(
             "SELECT COALESCE(SUM(requests), 0) AS requests, "

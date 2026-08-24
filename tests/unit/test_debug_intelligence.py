@@ -37,7 +37,9 @@ def _entry(lc=CandidateLifecycle.DISCOVERED, **kw):
 
 class TestAnomalyScore:
     def test_clean_strategy_low_anomaly(self):
-        e = _entry(CandidateLifecycle.VALIDATED, validation_lineage=["2026-01-01T00:00:00+00:00:VALIDATED"])
+        e = _entry(
+            CandidateLifecycle.VALIDATED, validation_lineage=["2026-01-01T00:00:00+00:00:VALIDATED"]
+        )
         r = compute_anomaly_score(e)
         assert r["anomaly_score"] < 0.3
 
@@ -57,14 +59,24 @@ class TestAnomalyScore:
     def test_score_is_decomposable(self):
         e = _entry(CandidateLifecycle.REJECTED, validation_lineage=["x:REJECTED:y"])
         r = compute_anomaly_score(e)
-        assert set(r["components"].keys()) == {"transition_frequency", "failure_density", "oscillation_count"}
+        assert set(r["components"].keys()) == {
+            "transition_frequency",
+            "failure_density",
+            "oscillation_count",
+        }
 
 
 class TestValidationConsistency:
     def test_all_pass_is_consistent(self):
         e = _entry(
             CandidateLifecycle.VALIDATED,
-            backtest=BacktestResult(strategy_id="s", strategy_version="1", dataset_id="d", expectancy_r=1.5, total_trades=30),
+            backtest=BacktestResult(
+                strategy_id="s",
+                strategy_version="1",
+                dataset_id="d",
+                expectancy_r=1.5,
+                total_trades=30,
+            ),
             oos=OOSResult(strategy_id="s", strategy_version="1", dataset_id="d", status="PASS"),
         )
         r = compute_validation_consistency(e)
@@ -73,7 +85,13 @@ class TestValidationConsistency:
     def test_backtest_good_but_oos_fail_is_inconsistent(self):
         e = _entry(
             CandidateLifecycle.REJECTED,
-            backtest=BacktestResult(strategy_id="s", strategy_version="1", dataset_id="d", expectancy_r=2.0, total_trades=50),
+            backtest=BacktestResult(
+                strategy_id="s",
+                strategy_version="1",
+                dataset_id="d",
+                expectancy_r=2.0,
+                total_trades=50,
+            ),
             oos=OOSResult(strategy_id="s", strategy_version="1", dataset_id="d", status="FAIL"),
         )
         r = compute_validation_consistency(e)
@@ -89,8 +107,12 @@ class TestHealthDecomposition:
     def test_components_present(self):
         h = decompose_strategy_health(_entry(CandidateLifecycle.ACTIVE))
         assert set(h.keys()) == {
-            "data_quality", "validation", "robustness",
-            "execution_safety", "lifecycle_stability", "evidence_completeness",
+            "data_quality",
+            "validation",
+            "robustness",
+            "execution_safety",
+            "lifecycle_stability",
+            "evidence_completeness",
         }
 
     def test_rejected_low_lifecycle_stability(self):
