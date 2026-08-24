@@ -34,6 +34,11 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from nexus_scalp.features.liquidity_runtime import (
+    build_70d_vector,
+    resolve_model_compatibility,
+)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -306,3 +311,213 @@ class Test70DPath:
         with torch.inference_mode():
             out = m(x)
         assert out.shape == (1, 4)
+
+
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# CASE-A EXTENSIONS: tensor contract, schema compat, isolation, 50D regress
+# ---------------------------------------------------------------------------
+
+
+class TestCaseATensorContract:
+    def test_ca_01_70d_vector_len_70(self) -> None:
+        """Canonical 70D vector is EXACTLY 70 wide (no pad/truncate)."""
+        base50 = [float(i) for i in range(50)]
+        news10 = [0.1 * i for i in range(10)]
+        liq10 = [-0.1 * i for i in range(10)]
+        vec = build_70d_vector(base50, family_10=news10, liquidity_10=liq10)
+        assert len(vec) == 70
+        assert vec[:50] == base50
+        assert vec[50:60] == news10
+        assert vec[60:70] == liq10
+
+    def test_ca_02_70d_vector_rejects_bad_widths(self) -> None:
+        """build_70d_vector never silently pads/truncates (INV-009)."""
+        import pytest
+
+        with pytest.raises(ValueError):
+            build_70d_vector([0.0] * 49, family_10=[0.0] * 10, liquidity_10=[0.0] * 10)
+        with pytest.raises(ValueError):
+            build_70d_vector([0.0] * 50, family_10=[0.0] * 9, liquidity_10=[0.0] * 10)
+        with pytest.raises(ValueError):
+            build_70d_vector([0.0] * 50, family_10=[0.0] * 10, liquidity_10=[0.0] * 11)
+
+
+class TestCaseASchemaCompat:
+    def test_ca_03_scalp_v3_dim70_passes(self) -> None:
+        """scalp_v3 + dim 70 against the 70D runtime => PASS (SCHEMA_DIMENSION_MATCH)."""
+        from nexus_scalp.features.schema_contract import DIMENSION, SCHEMA_ID
+
+        r = resolve_model_compatibility(SCHEMA_ID, DIMENSION, SCHEMA_ID, DIMENSION)
+        assert r["result"] == "PASS"
+        assert r["reason"] == "SCHEMA_DIMENSION_MATCH"
+
+    def test_ca_04_scalp_v1_dim50_blocks_against_70d_runtime(self) -> None:
+        """Production 50D Champion MUST be BLOCK against the 70D runtime (the bug we fixed)."""
+        r = resolve_model_compatibility("scalp_v1", 50, "scalp_v3", 70)
+        assert r["result"] == "BLOCK"
+        assert r["reason"] == "MODEL_INPUT_DIMENSION_MISMATCH"
+
+
+class TestCaseA50DRegression:
+    def test_ca_05_50d_pipeline_unchanged(self) -> None:
+        """With a 50D bundle loaded, effective contract stays scalp_v1/50D
+        and _build_live_feature_vector returns a 50-wide vector (no liquidity injection)."""
+        from nexus_scalp.application.live_engine import LiveEngine
+
+        eng = _mock_engine(50)
+        assert eng.effective_feature_dim == 50
+        assert eng.effective_feature_schema_id == "scalp_v1"
+
+        class _FV:
+            def to_tensor_input(self):
+                return [float(i) for i in range(50)]
+
+        vec, _ = LiveEngine._build_live_feature_vector(eng, _FV())
+        assert len(vec) == 50
+
+    def test_ca_06_70d_assembly_blocks_when_liquidity_unavailable(self) -> None:
+        """When a 70D model is active but liquidity snapshot is missing/invalid,
+        inference for that tick is skipped with an explicit RuntimeError (no fabrication)."""
+        from nexus_scalp.application.live_engine import LiveEngine
+
+        eng = _mock_engine(70)
+        eng._news_enabled = False
+        eng.news_engine = None
+        from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+        gov = LiquidityGovernor(enabled=True)
+        eng.liquidity_governor = gov
+        assert gov.causal_state() == "INVALID"
+
+        class _FV:
+            def to_tensor_input(self):
+                return [float(i) for i in range(50)]
+
+        import pytest
+
+        with pytest.raises(RuntimeError):
+            LiveEngine._build_live_feature_vector(eng, _FV())
+
+
+class TestCaseALiquidityIsolation:
+    def test_ca_07_liquidity_features_create_no_trade_action(self) -> None:
+        """Liquidity/70D vector assembly has NO execution authority."""
+        from datetime import UTC, datetime, timedelta
+        from types import SimpleNamespace
+
+        from nexus_scalp.application.live_engine import LiveEngine
+        from nexus_scalp.features.liquidity_engine import compute_liquidity_features
+        from nexus_scalp.features.liquidity_runtime import (
+            LiquidityGovernor,
+            SourceKind,
+        )
+
+        def _bar(i):
+            t = datetime.now(UTC).replace(microsecond=0) + timedelta(minutes=i)
+            return SimpleNamespace(
+                symbol="XAUUSD",
+                timeframe="M1",
+                timestamp=t,
+                open=3300.0,
+                high=3300.5,
+                low=3299.5,
+                close=3300.0,
+                tick_volume=100,
+                is_complete=True,
+            )
+
+        bars = [_bar(i) for i in range(60)]
+        gov = LiquidityGovernor(enabled=True)
+        gov.compute_from_engine(
+            bars=bars,
+            mid_price=3300.0,
+            atr=1.5,
+            decision_at=bars[-1].timestamp,
+            source=SourceKind.LIVE_MARKET_STATE,
+        )
+        assert gov.causal_state() == "VALID"
+        eng = _mock_engine(70)
+        eng.liquidity_governor = gov
+        eng._news_enabled = False
+        eng.news_engine = None
+
+        class _FV:
+            def to_tensor_input(self):
+                # Values within [-3, +3] (the 70D contract clip range)
+                return [((i % 7) - 3.0) for i in range(50)]
+
+        import inspect
+
+        sig = inspect.signature(LiveEngine._build_live_feature_vector)
+        assert "proposal" not in sig.parameters
+        assert "order" not in sig.parameters
+        result = LiveEngine._build_live_feature_vector(eng, _FV())
+        assert isinstance(result, tuple)
+        vec, timing = result
+        assert len(vec) == 70
+        src = inspect.getsource(LiveEngine._build_live_feature_vector)
+        assert "order_manager" not in src
+        assert "ActionType.BUY" not in src
+        assert "ActionType.SELL" not in src
+
+    def test_ca_08_liquidity_governor_has_no_order_authority(self) -> None:
+        """The LiquidityGovernor code never references order/execution classes."""
+        import inspect
+
+        from nexus_scalp.features import liquidity_runtime as lr
+
+        source_code = inspect.getsource(lr)
+        for forbidden in ("order_manager", "OrderType", "place_order"):
+            assert forbidden not in source_code
+
+
+class TestCaseAGovernorLifecycle:
+    def test_ca_09_governor_warms_from_completed_bars(self) -> None:
+        from datetime import UTC, datetime, timedelta
+        from types import SimpleNamespace
+
+        from nexus_scalp.features.liquidity_runtime import LiquidityGovernor, SourceKind
+
+        def _bar(i):
+            t = datetime.now(UTC).replace(microsecond=0) + timedelta(minutes=i)
+            return SimpleNamespace(
+                symbol="XAUUSD",
+                timeframe="M1",
+                timestamp=t,
+                open=3300.0,
+                high=3300.5,
+                low=3299.5,
+                close=3300.0,
+                tick_volume=100,
+                is_complete=True,
+            )
+
+        bars = [_bar(i) for i in range(60)]
+        gov = LiquidityGovernor(enabled=True)
+        assert gov.report()["status"] == "UNAVAILABLE"
+        assert gov.report()["calculation_status"] == "NOT_RUN"
+        assert gov.causal_state() == "INVALID"
+        gov.compute_from_engine(
+            bars=bars,
+            mid_price=3300.0,
+            atr=1.5,
+            decision_at=bars[-1].timestamp,
+            source=SourceKind.LIVE_MARKET_STATE,
+        )
+        rep = gov.report()
+        assert rep["status"] == "ENABLED"
+        assert rep["calculation_status"] == "SUCCESS"
+        assert rep["feature_availability"] == "AVAILABLE"
+        assert rep["causal_state"] == "VALID"
+        assert len(rep["features"]) == 10
+
+    def test_ca_10_disabled_governor_reports_not_active(self) -> None:
+        from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+        gov = LiquidityGovernor(enabled=False)
+        rep = gov.report()
+        assert rep["status"] == "DISABLED"
+        assert rep["feature_availability"] == "NOT_ACTIVE"

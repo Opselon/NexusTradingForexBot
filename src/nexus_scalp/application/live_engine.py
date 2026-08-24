@@ -66,7 +66,7 @@ from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import PreTradeExperienceDecision
 from nexus_scalp.experience.provenance import ModelRegistry
 from nexus_scalp.experience.retriever import ExperienceRetriever
-from nexus_scalp.features.liquidity_runtime import LiquidityGovernor, SourceKind
+from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.features.schema import active_columns, active_dimension, active_schema
@@ -2566,6 +2566,9 @@ class LiveEngine:
         # live tick must CONTINUE the broker's current minute, not mint a
         # duplicate stale bar with the same timestamp.
         last_seeded = self.aggregator.reseed(hist_m1_bars)
+        completed_init = self.aggregator.get_completed_bars()
+        if completed_init:
+            self._warm_liquidity_from_bars(completed_init, atr=1.5)
 
         completed = self.aggregator.get_completed_bars()
         if len(completed) >= 55:
@@ -2646,6 +2649,9 @@ class LiveEngine:
             or []
         )
         last_seeded = self.aggregator.reseed(hist_m1)
+        completed_resync = self.aggregator.get_completed_bars()
+        if completed_resync:
+            self._warm_liquidity_from_bars(completed_resync, atr=1.5)
         if last_seeded is None:
             logger.warning("[RESYNC] SKIPPED reason=NO_BROKER_BARS")
             return
@@ -2893,6 +2899,48 @@ class LiveEngine:
     # Hot-path tick pipeline
     # -------------------------
 
+    def _warm_liquidity_from_bars(
+        self,
+        bars: list[Any],
+        *,
+        atr: float | None = None,
+        source: Any = None,
+    ) -> None:
+        """Causal-safe liquidity snapshot from COMPLETED bars.
+
+        Called on every new-bar cadence (including during warmup, so the
+        LiquidityGovernor never stays UNAVAILABLE/NOT_RUN/INVALID once
+        bars exist) and after a broker reseed / cold-start warm from the
+        seeded history. Pure numpy, no I/O, no DB, no execution authority
+        (INV-020: liquidity is information-only). A failure is isolated and
+        logged; it never disturbs trading and never fabricates a state.
+        """
+        gov = getattr(self, "liquidity_governor", None)
+        if gov is None or not getattr(gov, "enabled", False):
+            return
+        if not bars:
+            return
+        try:
+            from nexus_scalp.features.liquidity_runtime import SourceKind
+
+            last = bars[-1]
+            mid = float(getattr(last, "close", 0.0) or 0.0)
+            decision_at = getattr(last, "timestamp", None)
+            use_atr = float(atr) if (atr is not None and float(atr) > 0) else 1.5
+            src = source if source is not None else SourceKind.LIVE_MARKET_STATE
+            gov.compute_from_engine(
+                bars=bars,
+                mid_price=mid,
+                atr=use_atr,
+                decision_at=decision_at,
+                source=src,
+            )
+        except Exception as liq_exc:  # isolated; trading unaffected
+            logger.warning(
+                "[LIQUIDITY] event=WARM_COMPUTE_FAILED error=%s (isolated; trading unaffected)",
+                liq_exc,
+            )
+
     def _process_tick_pipeline(self, tick: TickData, account: AccountInfo) -> None:
         try:
             # RUNTIME CONFIGURATION: re-sync services each tick. This is
@@ -2911,6 +2959,16 @@ class LiveEngine:
             fv = self.feature_engine.compute_from_bars(
                 completed_bars=completed_bars, current_tick=tick
             )
+            # TASK-02-70D-INTEGRATION: liquidity snapshot from COMPLETED bars.
+            # Runs BEFORE the HTF warmup gate so the governor becomes
+            # AVAILABLE/VALID as soon as bars exist instead of staying
+            # UNAVAILABLE / NOT_RUN / INVALID through the whole warmup window
+            # (INV-020: information-only, pure numpy, failure-isolated).
+            if completed_bars:
+                self._warm_liquidity_from_bars(
+                    completed_bars,
+                    atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
+                )
 
             if is_new_bar and completed_bars:
                 self._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
@@ -3142,27 +3200,7 @@ class LiveEngine:
                 proposal=proposal,
             )
 
-            # TASK-02-70D-INTEGRATION: liquidity snapshot on the bar-close
-            # cadence (pure numpy; no I/O; information-only). The governor
-            # stores the REAL 10 values and derives status from timestamps.
-            if getattr(self, "liquidity_governor", None) is not None and is_new_bar:
-                try:
-                    self.liquidity_governor.compute_from_engine(
-                        bars=completed_bars,
-                        mid_price=float(tick.bid),
-                        atr=float(fv.atr_m1),
-                        decision_at=tick.timestamp,
-                        # BUG-111: the source of THIS computation is the
-                        # live market state — never the governor's stale
-                        # prior _source (which defaulted to UNAVAILABLE and
-                        # corrupted the first live snapshot's provenance).
-                        source=SourceKind.LIVE_MARKET_STATE,
-                    )
-                except Exception as liq_exc:
-                    logger.warning(
-                        "[LIQUIDITY] event=ENGINE_HOOK_FAILED error=%s (isolated; trading unaffected)",
-                        liq_exc,
-                    )
+            # (Liquidity governor is pre-warmed on every tick/new-bar above)
 
             # Extract and update real SMC overlays for the live chart canvas.
             # Recomputed ONLY when the completed-bar series changes (new bar)
