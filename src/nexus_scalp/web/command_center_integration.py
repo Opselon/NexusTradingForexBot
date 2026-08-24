@@ -110,7 +110,7 @@ def register_command_center_routes(app: Any, get_research_engine: Any, serialize
                 if entry is None:
                     continue
                 n["evaluation"] = evaluation_detail(entry, running_runs)
-                snap = api.inspector(n["strategy_id"])
+                snap = snapshots.get(n["strategy_id"]) or {}
                 n["eligibility_state"] = (snap.get("execution_eligibility") or {}).get(
                     "eligibility_state", "UNKNOWN"
                 )
