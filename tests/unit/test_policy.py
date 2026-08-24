@@ -500,3 +500,91 @@ def test_execution_id_stamped_on_actionable_proposal():
     # proposal (whatever its final action) must carry the trace id.
     assert proposal.execution_id is not None
     assert proposal.execution_id.startswith("EXEC-")
+
+
+def test_confidence_rejection_telemetry_breakdown():
+    """Verify that insufficient confidence rejections contain a fully transparent
+    breakdown (model confidence, base threshold, range penalty, survival mode adjustment,
+    effective threshold) in both reason_code/rejection_reason and risk_checks payload."""
+    policy = SignalPolicy()
+    policy.confidence_threshold = 0.40
+    policy.range_confidence_penalty = 0.15
+
+    fv = _make_feature_vector().model_copy(
+        update={
+            "is_above_kumo": True,
+            "tenkan_sen": 1999.0,
+            "kijun_sen": 1998.0,
+            "live_tick_displacement": 0.5,
+        }
+    )
+
+    tick = _make_tick()
+
+    # Case A: buy prob 0.45, threshold 0.40 + survival 0.10 = 0.50 -> CONFIDENCE_FAIL
+    probs = torch.tensor([[0.05, 0.45, 0.50, 0.0]])
+
+    proposal = policy.evaluate_probabilities(
+        probabilities=probs,
+        current_tick=tick,
+        feature_vector=fv,
+        survival_mode=True,
+    )
+
+    assert proposal.action == ActionType.NO_TRADE
+    assert proposal.blocked_by == "CONFIDENCE_FAIL"
+    assert "INSUFFICIENT_CONFIDENCE" in proposal.reason_code
+    assert "Model Confidence (0.45)" in proposal.reason_code
+    assert "Effective Threshold (0.50)" in proposal.reason_code
+    assert "Base: 0.40" in proposal.reason_code
+    assert "Range Penalty: +0.00" in proposal.reason_code
+    assert "Survival Mode: +0.10" in proposal.reason_code
+
+    rc = proposal.risk_checks
+    assert rc is not None
+    assert abs(rc["model_confidence"] - 0.45) < 1e-4
+    assert rc["base_threshold"] == 0.40
+    assert rc["range_penalty"] == 0.0
+    assert rc["survival_mode_adjustment"] == 0.10
+    assert rc["effective_threshold"] == 0.50
+
+
+def test_confidence_telemetry_payload_always_carries_breakdown():
+    """Every rejected signal must carry the complete threshold breakdown in its
+    risk_checks audit payload (base, range penalty, survival adjustment, effective)."""
+    policy = SignalPolicy()
+    policy.confidence_threshold = 0.40
+    policy.range_confidence_penalty = 0.15
+
+    fv = _make_feature_vector().model_copy(
+        update={
+            "is_above_kumo": False,
+            "is_below_kumo": False,  # inside kumo => range market => +range penalty
+            "live_tick_displacement": 0.01,
+        }
+    )
+    tick = _make_tick()
+
+    # prob_buy=0.30 -> candidate confidence 0.30, well below any combination; reaches a reject gate.
+    probs = torch.tensor([[0.05, 0.30, 0.65, 0.0]])
+
+    proposal = policy.evaluate_probabilities(
+        probabilities=probs,
+        current_tick=tick,
+        feature_vector=fv,
+        survival_mode=True,  # effective = 0.40 + 0.15 + 0.10 = 0.65
+    )
+
+    assert proposal.action == ActionType.NO_TRADE
+    rc = proposal.risk_checks
+    assert rc is not None
+    # The breakdown must always be present and reflect the configured adjustments.
+    assert rc["base_threshold"] == 0.40
+    assert rc["range_penalty"] == 0.15
+    assert rc["survival_mode_adjustment"] == 0.10
+    assert rc["effective_threshold"] == 0.65
+    # Reason code carries the human-readable breakdown when rejected at confidence gate.
+    if proposal.blocked_by == "CONFIDENCE_FAIL":
+        assert "INSUFFICIENT_CONFIDENCE" in proposal.reason_code
+        assert "Range Penalty: +0.15" in proposal.reason_code
+        assert "Survival Mode: +0.10" in proposal.reason_code
