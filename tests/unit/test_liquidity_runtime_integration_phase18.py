@@ -1138,6 +1138,7 @@ def test_liq_bug123_16_real_liquidity_values_fill_60_69() -> None:
         assert meta["validity"] == "finite"
         assert math.isfinite(meta["value"])
 
+
 def test_liq_false_block_01_bundle_70d_overrides_stale_registry() -> None:
     """REGRESSION (2026-08-24 false-BLOCK): after a 70D hot-swap, the serving
     bundle is the authoritative model contract. Even if model_registry /
@@ -1199,4 +1200,3 @@ def test_liq_false_block_02_real_50d_bundle_still_blocked() -> None:
     assert mc["result"] == ModelCompatibility.BLOCK.value, mc
     assert mc["reason"] == "MODEL_INPUT_DIMENSION_MISMATCH", mc
     assert mc["model_dimension"] == 50, mc
-

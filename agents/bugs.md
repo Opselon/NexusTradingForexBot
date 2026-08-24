@@ -5943,3 +5943,29 @@ REVERSAL DSL in 24.8s (2301 tokens, 0 failures). Commits 1fa2fd2 + 6f20a52.
 - synthetic probe reconstruction is an APPROXIMATION of intrabar noise; the
   distributional conclusions are validated against the 5-min aggregate of the
   real bars, not only the reconstructed ticks.
+
+
+## BUG-135 — LiquidityGovernor reported false MODEL_INPUT_DIMENSION_MISMATCH after a successful 70D hot-swap (2026-08-24 Nexus-Coder)
+
+**Symptom:** UI Liquidity Intelligence panel kept showing Model Compatibility
+BLOCK (MODEL_INPUT_DIMENSION_MISMATCH) with model 50D (scalp_v1) even after
+POST /api/runtime-config/model-swap successfully loaded the 70D bundle
+(artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt, scalp_v3/dim=70,
+verified serving in /api/live/state model section).
+
+**Root cause:** LiquidityGovernor._model_contract() resolved the model side of
+the compatibility verdict from engine.model_registry.current and
+champion_manager.champion_or_none() provenance FIRST. hot_swap_model() swaps
+engine._bundle + config.model.model_artifact_path + RuntimeConfig but does NOT
+re-register those provenance rows, so the verdict was computed against the
+STALE 50D champion registration while the actually-serving bundle was 70D.
+
+**Fix (88cea11):** _model_contract() now reads engine._bundle first via the
+BUG-125 artifact-driven authoritative contract properties
+(effective_feature_dim / effective_feature_schema_id); registry/champion
+provenance are fallbacks only. Real 50D bundles still BLOCK correctly.
+
+**Tests:** test_liq_false_block_01_bundle_70d_overrides_stale_registry (PASS),
+test_liq_false_block_02_real_50d_bundle_still_blocked (negative control).
+Reviewer: PASS (nexus-reviewer). Note: running server must restart to load
+the fixed module; hot-swap path itself unchanged.

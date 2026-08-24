@@ -856,15 +856,24 @@ class LiquidityGovernor:
             if bundle is not None:
                 try:
                     dim_fn = getattr(engine, "effective_feature_dim", None)
-                    model_dim = dim_fn() if callable(dim_fn) else getattr(engine, "effective_feature_dim", None)
+                    model_dim = (
+                        dim_fn()
+                        if callable(dim_fn)
+                        else getattr(engine, "effective_feature_dim", None)
+                    )
                     schema_fn = getattr(engine, "effective_feature_schema_id", None)
-                    model_schema = schema_fn() if callable(schema_fn) else getattr(engine, "effective_feature_schema_id", None)
+                    model_schema = (
+                        schema_fn()
+                        if callable(schema_fn)
+                        else getattr(engine, "effective_feature_schema_id", None)
+                    )
                 except Exception:
                     pass
                 art = getattr(bundle, "artifact_path", None)
                 if art is not None:
                     try:
                         from nexus_scalp.experience.provenance import fingerprint_artifact
+
                         model_hash = fingerprint_artifact(art) or None
                     except Exception:
                         model_hash = None
