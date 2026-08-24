@@ -117,6 +117,12 @@ class FailureReason(StrEnum):
     UNSUPPORTED_TIMEFRAME = "UNSUPPORTED_TIMEFRAME"
     LOOKAHEAD_RISK = "LOOKAHEAD_RISK"
     INSUFFICIENT_TRADES = "INSUFFICIENT_TRADES"
+    # PHASE 25 (2026-08-25): backtest failed ONLY on low trade count /
+    # small sample while expectancy stayed positive. Distinct from
+    # NEGATIVE_EXPECTANCY (a genuine edge failure): the candidate is parked
+    # in lifecycle EVIDENCE_BUILDING for re-evaluation on more data instead
+    # of being terminally REJECTED. Does NOT relax any gate threshold.
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
     NEGATIVE_EXPECTANCY = "NEGATIVE_EXPECTANCY"
     EXCESSIVE_DRAWDOWN = "EXCESSIVE_DRAWDOWN"
     LOW_PROFIT_FACTOR = "LOW_PROFIT_FACTOR"

@@ -21,6 +21,27 @@ logger = get_logger("nexus_scalp.research.store")
 
 MAX_READ_LIMIT = 2000
 
+#: PHASE 25 (2026-08-25): JSON column carrying context matrices
+#: {session_matrix, hourly_matrix, weekday_matrix, regime_matrix} on every
+#: registry entry so discovery quality can be analyzed per market condition.
+CONTEXT_MATRICES_COLUMN = "context_matrices"
+
+
+def ensure_registry_context_columns(conn: sqlite3.Connection) -> None:
+    """Idempotent ALTER TABLE adding ``context_matrices`` to strategy_registry.
+
+    Mirrors the audit_repository migration pattern: duplicate-column errors
+    are swallowed so repeated calls are no-ops; fresh databases gain the
+    column immediately after CREATE TABLE.
+    """
+    try:
+        conn.execute(
+            f"ALTER TABLE strategy_registry ADD COLUMN {CONTEXT_MATRICES_COLUMN} "
+            "TEXT DEFAULT '{}';"
+        )
+    except Exception:
+        pass  # column already exists (idempotent) or table not created yet
+
 
 def _json_text_safe(value: Any) -> str:
     """Normalizes a JSON-text column read from a registry row.

@@ -19,17 +19,52 @@ from nexus_scalp.research.models import CandidateLifecycle
 
 #: State machine adjacency.
 _TRANSITIONS: dict[CandidateLifecycle, set[CandidateLifecycle]] = {
-    CandidateLifecycle.DISCOVERED: {CandidateLifecycle.BACKTESTING, CandidateLifecycle.REJECTED},
+    # DISCOVERED fans out to the validation track OR the evidence-building
+    # track (PHASE 25). EVIDENCE_BUILDING is reserved for candidates whose
+    # backtest failed ONLY on sample size (INSUFFICIENT_TRADES) while
+    # expectancy stayed positive; they are re-tested once more data accrues.
+    CandidateLifecycle.DISCOVERED: {
+        CandidateLifecycle.INITIAL_TESTING,
+        CandidateLifecycle.EVIDENCE_BUILDING,
+        CandidateLifecycle.BACKTESTING,
+        CandidateLifecycle.REJECTED,
+    },
+    CandidateLifecycle.INITIAL_TESTING: {
+        CandidateLifecycle.BACKTESTING,
+        CandidateLifecycle.EVIDENCE_BUILDING,
+        CandidateLifecycle.REJECTED,
+    },
+    CandidateLifecycle.EVIDENCE_BUILDING: {
+        CandidateLifecycle.INITIAL_TESTING,
+        CandidateLifecycle.BACKTESTING,
+        CandidateLifecycle.REJECTED,
+    },
     CandidateLifecycle.BACKTESTING: {CandidateLifecycle.VALIDATING, CandidateLifecycle.REJECTED},
     CandidateLifecycle.VALIDATING: {CandidateLifecycle.OOS_TESTING, CandidateLifecycle.REJECTED},
     CandidateLifecycle.OOS_TESTING: {
         CandidateLifecycle.ROBUSTNESS_TESTING,
+        CandidateLifecycle.OOS_READY,
+        CandidateLifecycle.REJECTED,
+    },
+    CandidateLifecycle.OOS_READY: {
+        CandidateLifecycle.ROBUSTNESS_TESTING,
         CandidateLifecycle.REJECTED,
     },
     CandidateLifecycle.ROBUSTNESS_TESTING: {
+        CandidateLifecycle.ROBUSTNESS_READY,
         CandidateLifecycle.VALIDATED,
         CandidateLifecycle.REJECTED,
         CandidateLifecycle.DEGRADED,
+    },
+    CandidateLifecycle.ROBUSTNESS_READY: {
+        CandidateLifecycle.VALIDATED,
+        CandidateLifecycle.REJECTED,
+        CandidateLifecycle.DEGRADED,
+    },
+    CandidateLifecycle.WALK_FORWARD_READY: {
+        CandidateLifecycle.OOS_TESTING,
+        CandidateLifecycle.VALIDATED,
+        CandidateLifecycle.REJECTED,
     },
     CandidateLifecycle.VALIDATED: {
         CandidateLifecycle.SHADOW,

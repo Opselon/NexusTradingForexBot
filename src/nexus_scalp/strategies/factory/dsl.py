@@ -55,6 +55,289 @@ DEFAULT_SYMBOLS: tuple[str, ...] = ("XAUUSD",)
 RANDOM_SEED: int = 20260820
 
 #: Family -> preferred structural template (deterministic hypothesis family map).
+# ---------------------------------------------------------------------------
+# PHASE 25 hypothesis-driven discovery (2026-08-25) — Session & Family Premises
+# ---------------------------------------------------------------------------
+SESSION_REGIMES: dict[str, dict[str, Any]] = {
+    "ASIAN": {
+        "utc_hours": (0, 8),
+        "dominant_regime": "RANGING",
+        "volatility": "CONTRACTION",
+        "liquidity_behavior": "liquidity builds at Asian range extremes",
+    },
+    "LONDON": {
+        "utc_hours": (8, 13),
+        "dominant_regime": "TRENDING",
+        "volatility": "EXPANSION",
+        "liquidity_behavior": "Asian-range liquidity is swept at the open",
+    },
+    "LONDON_NY_OVERLAP": {
+        "utc_hours": (13, 17),
+        "dominant_regime": "TRENDING",
+        "volatility": "EXPANSION",
+        "liquidity_behavior": "peak two-way liquidity; breakouts extend",
+    },
+    "NY": {
+        "utc_hours": (17, 22),
+        "dominant_regime": "TRENDING",
+        "volatility": "EXPANSION",
+        "liquidity_behavior": "US flows continue or exhaust the London move",
+    },
+}
+
+_FAMILY_HYPOTHESES: dict[StrategyFamily, dict[str, Any]] = {
+    StrategyFamily.TREND_FOLLOWING: {
+        "statement": (
+            "During London session after an Asian-range liquidity sweep, with "
+            "HTF H4 trend alignment and volatility expansion, pullback-in-trend "
+            "continuation shows positive expectancy"
+        ),
+        "market_condition": "LONDON | TRENDING | VOLATILITY_EXPANSION | liquidity swept at open",
+        "entry_reason": (
+            "Price pulls back into a higher-timeframe demand zone inside an H4 "
+            "uptrend and prints a bullish CHoCH on the entry timeframe"
+        ),
+        "exit_reason": (
+            "Trail behind structure at 2x ATR; exit when the entry-timeframe "
+            "CHoCH flips against the position or HTF bias turns neutral"
+        ),
+        "expected_edge": (
+            "London continuation flow extends the established direction after "
+            "the sweep, targeting >= +0.3R average expectancy per trade"
+        ),
+        "failure_condition": (
+            "HTF trend flattens or volatility contracts into range: pullbacks "
+            "stop continuing and expectancy degrades below zero"
+        ),
+    },
+    StrategyFamily.MEAN_REVERSION: {
+        "statement": (
+            "During the Asian session inside a neutral-trend contraction range, "
+            "overshoot beyond the session extreme reverts to equilibrium "
+            "(range midline) with positive expectancy"
+        ),
+        "market_condition": "ASIAN | RANGING | VOLATILITY_CONTRACTION | balanced two-way liquidity",
+        "entry_reason": (
+            "RSI-style oscillator undershoots while price spikes beyond the "
+            "Asian range edge against a flat HTF bias"
+        ),
+        "exit_reason": (
+            "Fixed target at the range midline (2R) or exit on range-boundary "
+            "break with volume confirmation"
+        ),
+        "expected_edge": (
+            "Asian-session inventory rebalancing snaps overshoots back to "
+            "fair value, targeting >= +0.25R average expectancy"
+        ),
+        "failure_condition": (
+            "Range resolves into a directional breakout (volatility expansion): "
+            "reversion entries get run over and losses exceed the target"
+        ),
+    },
+    StrategyFamily.BREAKOUT: {
+        "statement": (
+            "During London-NY overlap with volatility expansion and HTF trend "
+            "alignment, a confirmed range break in the direction of HTF bias "
+            "shows positive expectancy as released liquidity fuels continuation"
+        ),
+        "market_condition": "LONDON_NY_OVERLAP | TRENDING | VOLATILITY_EXPANSION | peak directional liquidity",
+        "entry_reason": (
+            "Breakout signal confirms a close beyond the compression range with "
+            "above-average volume participation"
+        ),
+        "exit_reason": "Fixed 2.5R target; stop stays just inside the broken range boundary",
+        "expected_edge": (
+            "Overlap-session breakouts convert trapped-stop liquidity into "
+            "momentum continuation, targeting >= +0.3R average expectancy"
+        ),
+        "failure_condition": (
+            "False break / failure swing: price re-enters the range within a few "
+            "bars and the stop absorbs the trap (expansion without follow-through)"
+        ),
+    },
+    StrategyFamily.REVERSAL: {
+        "statement": (
+            "After a London-session liquidity sweep of the Asian range low/high "
+            "into a marked exhaustion zone, displacement-backed reversal entries "
+            "show positive expectancy"
+        ),
+        "market_condition": "LONDON | EXHAUSTION | VOLATILITY_EXPANSION | stop-hunt liquidity taken",
+        "entry_reason": (
+            "Pinbar/exhaustion candle prints at the swept extreme with "
+            "displacement confirming rejection of the level"
+        ),
+        "exit_reason": "Target at the origin of the sweep (2R); exit on renewed sweep of the same extreme",
+        "expected_edge": (
+            "Swept-stop fuel plus displacement reversal recaptures the prior "
+            "value area, targeting >= +0.3R average expectancy"
+        ),
+        "failure_condition": (
+            "Genuine trend continuation through the level: the reversal fails "
+            "and price extends past the exhaustion zone"
+        ),
+    },
+    StrategyFamily.MOMENTUM: {
+        "statement": (
+            "During New York session with consecutive momentum bars aligned to "
+            "HTF trend and volatility expansion, momentum-continuation entries "
+            "show positive expectancy"
+        ),
+        "market_condition": "NY | TRENDING | VOLATILITY_EXPANSION | sustained US-flow direction",
+        "entry_reason": (
+            "Consecutive momentum count confirms persistence and the Tenkan/"
+            "Kijun cross agrees with the HTF direction"
+        ),
+        "exit_reason": (
+            "Chandelier trail at 3x ATR rides the momentum leg; exit on "
+            "trail-out or opposing momentum burst"
+        ),
+        "expected_edge": (
+            "US-session flow persistence extends intraday trends beyond random "
+            "walk baseline, targeting >= +0.25R average expectancy"
+        ),
+        "failure_condition": (
+            "Momentum stalls into chop (trend state flips NEUTRAL): trailing "
+            "stops absorb repeated false starts"
+        ),
+    },
+    StrategyFamily.VOLATILITY_EXPANSION: {
+        "statement": (
+            "When ATR expands sharply above its baseline during the London-NY "
+            "overlap, volatility-expansion breaks in the expansion direction "
+            "show positive expectancy"
+        ),
+        "market_condition": "LONDON_NY_OVERLAP | EXPANSION | VOLATILITY_EXPANSION | liquidity release event",
+        "entry_reason": (
+            "Normalized displacement exceeds threshold while ATR ratio confirms "
+            "genuine expansion (not a single spike)"
+        ),
+        "exit_reason": "Fixed 2R target sized off the expanded ATR; stop below the expansion origin",
+        "expected_edge": (
+            "Expansion regimes persist short clusters of bars; entering on "
+            "confirmed expansion captures the fat right tail, >= +0.25R expectancy"
+        ),
+        "failure_condition": (
+            "One-bar volatility spike that immediately decays: entry buys the "
+            "top of the burst and mean-reverts against the position"
+        ),
+    },
+    StrategyFamily.VOLATILITY_CONTRACTION: {
+        "statement": (
+            "During Asian-session volatility contraction, a squeeze-break out of "
+            "the compression range in the HTF direction shows positive expectancy"
+        ),
+        "market_condition": "ASIAN | CONTRACTION | VOLATILITY_CONTRACTION | compressed liquidity pockets",
+        "entry_reason": (
+            "Price-compression flag ratio exceeds threshold and the break "
+            "confirms with a breakout signal"
+        ),
+        "exit_reason": "Target at 2R measured-move of the compressed box; stop inside the box",
+        "expected_edge": (
+            "Compression precedes expansion: energy stored in the squeeze "
+            "resolves directionally, targeting >= +0.25R expectancy"
+        ),
+        "failure_condition": (
+            "Compression deepens instead of resolving: repeated failed breaks "
+            "chip away at equity inside dead liquidity"
+        ),
+    },
+    StrategyFamily.LIQUIDITY_SWEEP: {
+        "statement": (
+            "During London session after an explicit stop-hunt sweep of resting "
+            "liquidity below/above a structural level, sweep-reversal entries "
+            "with displacement confirmation show positive expectancy"
+        ),
+        "market_condition": "LONDON | REVERSAL | VOLATILITY_EXPANSION | engineered liquidity sweep active",
+        "entry_reason": (
+            "Liquidity-sweep state flags a completed grab and stop-hunt depth "
+            "exceeds the structural threshold"
+        ),
+        "exit_reason": "Target at 2.5R back toward pre-sweep value; hard stop beyond the sweep wick",
+        "expected_edge": (
+            "Post-sweep displacement reversals monetize trapped positioning, "
+            "targeting >= +0.35R average expectancy"
+        ),
+        "failure_condition": (
+            "The sweep IS the trend: price keeps running through successive "
+            "levels and reversal stops cascade"
+        ),
+    },
+    StrategyFamily.SESSION: {
+        "statement": (
+            "During the London-NY overlap, session-boundary breakouts with HTF "
+            "regime alignment show positive expectancy as peak liquidity "
+            "resolves the preceding range"
+        ),
+        "market_condition": "LONDON_NY_OVERLAP | SESSION_BOUND | VOLATILITY_EXPANSION | maximal participation window",
+        "entry_reason": (
+            "London/NY overlap flag is active and price breaks the pre-overlap "
+            "session high/low"
+        ),
+        "exit_reason": "Fixed 2R target before session close; no overnight carry",
+        "expected_edge": (
+            "The overlap window carries the highest intraday liquidity share; "
+            "session-resolved moves complete before close, >= +0.25R expectancy"
+        ),
+        "failure_condition": (
+            "Low-participation anomaly day (holiday/thin book): the overlap "
+            "breaks nothing and chops both boundaries"
+        ),
+    },
+    StrategyFamily.MULTI_TIMEFRAME: {
+        "statement": (
+            "With H4 and H1 multi-timeframe alignment during London, HTF-aligned "
+            "pullback entries show positive expectancy because cross-timeframe "
+            "confirmation filters counter-trend noise"
+        ),
+        "market_condition": "LONDON | TRENDING | MIXED_VOLATILITY | HTF-aligned directional liquidity",
+        "entry_reason": (
+            "H4 trend state and H1 momentum agree and price retraces to value "
+            "near the EMA50 anchor"
+        ),
+        "exit_reason": "Trailing stop at 1.8x ATR below structure; exit on H1 momentum flip",
+        "expected_edge": (
+            "Multi-timeframe agreement raises per-trade information content, "
+            "targeting >= +0.3R expectancy with fewer false positives"
+        ),
+        "failure_condition": (
+            "Timeframe disagreement (H4 vs H1 conflict): entries fire into "
+            "transition zones and lose on both sides"
+        ),
+    },
+    StrategyFamily.HYBRID: {
+        "statement": (
+            "Combining HTF bias, volatility-expansion and London-NY overlap "
+            "filters, CHoCH-plus-momentum combined entries show positive "
+            "expectancy across trending and expansion regimes"
+        ),
+        "market_condition": "LONDON_NY_OVERLAP | TRENDING+EXPANSION | regime-filtered composite",
+        "entry_reason": (
+            "CHoCH confirmation and consecutive-momentum agreement fire "
+            "together only when all context filters pass"
+        ),
+        "exit_reason": "Trailing stop at 2x ATR; exit when any composite filter invalidates",
+        "expected_edge": (
+            "Condition stacking trades less but cleaner: filtered expectancy "
+            "per trade targets >= +0.3R at reduced frequency"
+        ),
+        "failure_condition": (
+            "Filter over-constraint starves the sample: too few qualifying "
+            "setups leave expectancy statistically unproven"
+        ),
+    },
+}
+
+def _family_hypothesis(family: StrategyFamily) -> dict[str, Any]:
+    base = _FAMILY_HYPOTHESES.get(family, _FAMILY_HYPOTHESES[StrategyFamily.HYBRID])
+    return {
+        "statement": str(base["statement"]),
+        "market_condition": str(base["market_condition"]),
+        "entry_reason": str(base["entry_reason"]),
+        "exit_reason": str(base["exit_reason"]),
+        "expected_edge": str(base["expected_edge"]),
+        "failure_condition": str(base["failure_condition"]),
+    }
+
 _FAMILY_TEMPLATES: dict[StrategyFamily, dict[str, Any]] = {
     StrategyFamily.TREND_FOLLOWING: {
         "context": {"htf_bias": {"use": True}, "trend_state": {"use": True}},
@@ -256,14 +539,7 @@ def _template_dsl(family: StrategyFamily, rng: random.Random) -> StrategyDsl:
     tfs = list(SUPPORTED_TIMEFRAMES[:5])  # M1..H1 for templates
     tf = rng.choice(tfs)
     market = {"symbols": list(DEFAULT_SYMBOLS), "timeframes": [tf]}
-    hypothesis = {
-        "statement": f"{family.value} hypothesis: exploit {family.value.lower().replace('_', ' ')} "
-        "dynamics in the configured market.",
-        "market_mechanism": _FAMILY_TEMPLATES[family].get("entry", {}).get("logic", "price action"),
-        "expected_regime": _expected_regime(family),
-        "invalidation": ["trend flattening", "regime mismatch"],
-        "abstain_conditions": ["high spread", "news shock"],
-    }
+    hypothesis = _family_hypothesis(family)
     return StrategyDsl(
         schema_version=DSL_SCHEMA_VERSION,
         hypothesis=hypothesis,
@@ -439,13 +715,7 @@ def generate_random_candidates(
         tf = rng.choice(SUPPORTED_TIMEFRAMES[:5])
         dsl = StrategyDsl(
             schema_version=DSL_SCHEMA_VERSION,
-            hypothesis={
-                "statement": f"Exploration hypothesis ({fam.value}): bounded feature combos",
-                "market_mechanism": "exploratory feature interaction",
-                "expected_regime": _expected_regime(fam),
-                "invalidation": ["no observable mechanism"],
-                "abstain_conditions": ["high spread", "low liquidity"],
-            },
+            hypothesis=_family_hypothesis(fam),
             family=fam,
             market={"symbols": list(DEFAULT_SYMBOLS), "timeframes": [tf]},
             context={"volatility_filter": {"use": bool(rng.randint(0, 1))}},

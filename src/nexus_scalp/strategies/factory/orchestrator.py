@@ -1104,6 +1104,19 @@ class StrategyFactory:
                     self._tally_action(action, "valid")
 
             failed_reasons = self._derived_failure_reasons(result, candidate)
+
+            # PHASE 25 (2026-08-25) EVIDENCE LIFECYCLE: a backtest that
+            # fails ONLY on low trade count / small sample while
+            # expectancy stays positive is NOT terminal. Park the
+            # candidate in EVIDENCE_BUILDING with INSUFFICIENT_EVIDENCE
+            # so it can be re-tested on more data instead of being
+            # discarded as REJECTED. No gate threshold changes.
+            if (
+                lifecycle == "REJECTED"
+                and self._is_evidence_only_failure(result, candidate)
+            ):
+                lifecycle = "EVIDENCE_BUILDING"
+                failed_reasons = [FailureReason.INSUFFICIENT_EVIDENCE.value]
             # BENCHMARK ARTIFACT (pure, never mutates the pipeline result);
             # reuses the ledger snapshot already taken by the clone pre-screen.
             try:
@@ -1334,6 +1347,37 @@ class StrategyFactory:
             reasons.append(FailureReason.INSUFFICIENT_TRADES.value)
         return reasons
 
+    def _is_evidence_only_failure(
+        self, result: dict[str, Any], candidate: FactoryCandidate
+    ) -> bool:
+        """PHASE 25 (2026-08-25): True when the evaluation failed ONLY because
+        of low trade count / small sample while expectancy stayed positive.
+
+        Such candidates are NOT terminally rejected - they are parked in
+        lifecycle EVIDENCE_BUILDING with FailureReason.INSUFFICIENT_EVIDENCE so
+        they can be re-tested once more data accrues. Gate thresholds
+        (min_trades, drawdown, profit factor, WF/OOS/robustness floors) are
+        UNCHANGED; only the disposition of a small-sample-positive-expectancy
+        outcome changes from REJECT to EVIDENCE_BUILDING.
+        """
+        reasons = self._derived_failure_reasons(result, candidate)
+        if not reasons:
+            return False
+        hard_failures = {
+            r
+            for r in reasons
+            if r
+            not in (
+                FailureReason.INSUFFICIENT_TRADES.value,
+                FailureReason.INSUFFICIENT_EVIDENCE.value,
+            )
+        }
+        if hard_failures:
+            return False
+        bt = result.get("backtest") or {}
+        exp = float(bt.get("expectancy_r", 0.0) or 0.0)
+        return exp > 0.0
+
     @staticmethod
     def _stage_for_reason(reason: str) -> str:
         stage_map = {
@@ -1345,6 +1389,8 @@ class StrategyFactory:
             FailureReason.OOS_FAILURE.value: FactoryStage.OOS.value,
             FailureReason.WALK_FORWARD_FAILURE.value: FactoryStage.WALK_FORWARD.value,
             FailureReason.ROBUSTNESS_FAILURE.value: FactoryStage.ROBUSTNESS.value,
+            FailureReason.INSUFFICIENT_TRADES.value: FactoryStage.BACKTEST.value,
+            FailureReason.INSUFFICIENT_EVIDENCE.value: FactoryStage.BACKTEST.value,
         }
         return stage_map.get(FailureReason(reason), FactoryStage.SCORING.value)
 

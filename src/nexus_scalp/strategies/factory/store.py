@@ -42,6 +42,28 @@ logger = get_logger("nexus_scalp.strategies.factory.store")
 
 MAX_READ_LIMIT = 2000
 
+#: PHASE 25 (2026-08-25): JSON column carrying the per-candidate context
+#: matrices {session_matrix, hourly_matrix, weekday_matrix, regime_matrix}.
+CONTEXT_MATRICES_COLUMN = "context_matrices"
+
+
+def ensure_factory_context_columns(conn: sqlite3.Connection) -> None:
+    """Idempotent ALTER TABLE for the context-matrices evidence columns.
+
+    SQLite has no ``ADD COLUMN IF NOT EXISTS``; the codebase-standard
+    try/except pattern (see audit_repository research_runs migration) makes
+    the operation idempotent: an existing column raises OperationalError
+    ("duplicate column name") which is swallowed, a missing column is added.
+    Safe to call on every schema check / startup.
+    """
+    try:
+        conn.execute(
+            f"ALTER TABLE factory_candidates ADD COLUMN {CONTEXT_MATRICES_COLUMN} "
+            "TEXT DEFAULT '{}';"
+        )
+    except Exception:
+        pass  # column already exists (idempotent) or table not created yet
+
 
 def _json(value: Any) -> str:
     if value is None:
@@ -139,12 +161,13 @@ def upsert_candidate(repo: Any, candidate: dict[str, Any]) -> bool:
         INSERT INTO factory_candidates (
             candidate_id, definition_hash, generation_id, source, operator,
             parent_ids, family, population_index, dsl, structural, lifecycle,
-            failure_reasons, llm_response_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            failure_reasons, llm_response_id, created_at, context_matrices
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(candidate_id) DO UPDATE SET
             structural=excluded.structural,
             lifecycle=excluded.lifecycle,
-            failure_reasons=excluded.failure_reasons;
+            failure_reasons=excluded.failure_reasons,
+            context_matrices=excluded.context_matrices;
     """
     try:
         repo._queue.put_nowait(
@@ -165,6 +188,7 @@ def upsert_candidate(repo: Any, candidate: dict[str, Any]) -> bool:
                     _json(candidate.get("failure_reasons")),
                     candidate.get("llm_response_id", ""),
                     candidate.get("created_at", _now()),
+                    _json(candidate.get("context_matrices")),
                 ),
             )
         )

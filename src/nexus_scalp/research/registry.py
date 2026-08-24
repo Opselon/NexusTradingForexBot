@@ -44,8 +44,8 @@ UPSERT_ENTRY_SQL = """
         discovery_source, discovery_window, context_definition,
         parent_strategy_ids, lifecycle, backtest, walkforward, oos, robustness,
         score, confidence, sample_count, validation_lineage, retirement_reason,
-        created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, updated_at, context_matrices
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(strategy_id, strategy_version) DO UPDATE SET
         feature_schema_id=excluded.feature_schema_id,
         feature_dimension=excluded.feature_dimension,
@@ -63,7 +63,8 @@ UPSERT_ENTRY_SQL = """
         sample_count=excluded.sample_count,
         validation_lineage=excluded.validation_lineage,
         retirement_reason=excluded.retirement_reason,
-        updated_at=excluded.updated_at;
+        updated_at=excluded.updated_at,
+        context_matrices=excluded.context_matrices;
 """
 
 
@@ -137,6 +138,7 @@ class StrategyRegistry:
             entry.sample_count,
             _json(entry.validation_lineage),
             entry.retirement_reason,
+            _json(entry.context_matrices) if getattr(entry, "context_matrices", None) is not None else "{}",
             entry.created_at.isoformat(),
             entry.updated_at.isoformat(),
         )
@@ -359,6 +361,10 @@ class StrategyRegistry:
             context = json.loads(row["context_definition"] or "{}")
             parents = json.loads(row["parent_strategy_ids"] or "[]")
             lineage = json.loads(row["validation_lineage"] or "[]")
+            try:
+                c_mat = json.loads(row["context_matrices"] or "{}")
+            except Exception:
+                c_mat = {}
 
             return StrategyRegistryEntry(
                 strategy_id=row["strategy_id"],
@@ -379,6 +385,7 @@ class StrategyRegistry:
                 sample_count=int(row["sample_count"] or 0),
                 validation_lineage=lineage if isinstance(lineage, list) else [],
                 retirement_reason=row["retirement_reason"] or "",
+                context_matrices=c_mat if isinstance(c_mat, dict) else {},
                 created_at=created,
                 updated_at=updated,
             )
