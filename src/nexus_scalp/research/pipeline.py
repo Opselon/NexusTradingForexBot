@@ -81,14 +81,27 @@ def _extract_context_contract(candidate) -> dict | None:
     so generic candidates keep the legacy global evaluation path.
     """
     try:
-        from nexus_scalp.research.context_contract import extract_context_contract, has_active_contract
+        from nexus_scalp.research.context_contract import (
+            ContextContractError,
+            extract_context_contract,
+            has_active_contract,
+        )
 
         ctx = getattr(candidate, "context_definition", None) or {}
         hyp = (ctx.get("hypothesis") if isinstance(ctx, dict) else None) or {}
-        contract = extract_context_contract(ctx, hyp)
-        return contract if has_active_contract(contract) else None
-    except Exception:
-        return None
+        contract = extract_context_contract(ctx if isinstance(ctx, dict) else {}, hyp)
+        if not has_active_contract(contract):
+            return None
+        return contract
+    except ContextContractError:
+        raise
+    except Exception as exc:
+        # PHASE 27 fail-loud: extraction errors must NEVER silently degrade a
+        # declared-context strategy to global evaluation.
+        sid = getattr(candidate, "strategy_id", "?")
+        raise ContextContractError(
+            f"CONTEXT_CONTRACT_MISMATCH: contract extraction failed for {sid}: {exc}"
+        ) from exc
 
 class ResearchPipeline:
     """
