@@ -76,11 +76,9 @@ class WalkForwardEngine:
         # maps this to EVIDENCE_BUILDING (more data needed) — never REJECTED.
         min_needed = (n_splits + 2) * 3  # mirrors splitting.walk_forward_folds guard
         if len(dataset_for_folds.samples) < min_needed:
-            max_folds = max(0, (len(dataset_for_folds.samples) // 3) - 2)
             reason = (
                 f"FAMILY_TOO_SMALL_FOR_FOLDS: {len(dataset_for_folds.samples)} samples "
                 f"< {min_needed} required for {n_splits} folds"
-                + (f" (max feasible folds={max_folds})" if max_folds else "")
             )
             logger.warning(
                 "[WALK_FORWARD] event=INSUFFICIENT_SAMPLES strategy_id=%s samples=%s needed=%s",
@@ -100,8 +98,6 @@ class WalkForwardEngine:
                 context_diagnostics=context_diag or None,
                 insufficient_reason=reason,
             )
-            if context_contract and context_diag:
-                pass
             return result
 
         folds = walk_forward_folds(

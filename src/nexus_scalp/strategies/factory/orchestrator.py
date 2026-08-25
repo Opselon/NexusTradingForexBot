@@ -76,6 +76,9 @@ from nexus_scalp.strategies.factory.store import (
     upsert_candidate,
     upsert_generation,
 )
+from nexus_scalp.strategies.factory.store import (
+    resume_generation as resume_generation_row,
+)
 from nexus_scalp.strategies.factory.summarizer import (
     build_summary,
     memory_summary,
@@ -1575,6 +1578,67 @@ class StrategyFactory:
     def _build_dataset(self) -> Any:
         """Builds the research dataset from the immutable ledger."""
         return self.research_pipeline.dataset_builder.build()
+
+    def auto_resume_failed_generations(self) -> dict[str, Any]:
+        """PHASE 29 (2026-08-25): startup recovery for sweeper-killed runs.
+
+        The stale-generation sweeper marks orphaned RUNNING generations
+        FAILED after an engine restart; until now nothing ever RESUMED them,
+        so G8-G26 stayed dead despite unevaluated candidates. When
+        ``config.auto_resume`` is true this re-arms every FAILED generation
+        whose population_target was never met via store.resume_generation()
+        (fresh RUNNING status + heartbeat + GENERATION_RESUMED event; audit
+        preserved). Default config keeps the legacy kill-only behavior.
+        Returns {"checked": n, "resumed": [gid...], "skipped": n}.
+        """
+        resumed: list[str] = []
+        skipped = 0
+        if not bool(getattr(self.config, "auto_resume", False)):
+            return {"checked": 0, "resumed": resumed, "skipped": 0}
+        try:
+            gens = list_generations(self._research_backend, limit=200)
+        except Exception as e:
+            logger.warning(
+                "[STRATEGY_FACTORY] auto_resume listing failed non-fatally",
+                error=str(e),
+            )
+            return {"checked": 0, "resumed": [], "skipped": 0}
+        for gen in gens:
+            if str(gen.get("status", "") or "").upper() != "FAILED":
+                continue
+            population_target = int(gen.get("population_target", 0) or 0)
+            try:
+                evaluated = list_candidates(
+                    self._research_backend,
+                    generation_id=str(gen.get("generation_id", "") or ""),
+                    limit=2000,
+                )
+                evaluated_count = len(
+                    [
+                        c
+                        for c in evaluated
+                        if c.get("lifecycle") not in ("GENERATED", None, "", "DISCOVERED")
+                    ]
+                )
+            except Exception:
+                evaluated_count = 0
+            if population_target > 0 and evaluated_count >= population_target:
+                skipped += 1  # population already met: nothing to resume
+                continue
+            outcome = resume_generation_row(
+                self._research_backend, str(gen.get("generation_id", "") or "")
+            )
+            if outcome.get("status") == "RESUMED":
+                resumed.append(str(gen.get("generation_id", "")))
+            else:
+                skipped += 1
+        if resumed:
+            logger.info(
+                "[STRATEGY_FACTORY] event=AUTO_RESUME_GENERATIONS resumed=%d ids=%s",
+                len(resumed),
+                ",".join(resumed[:10]),
+            )
+        return {"checked": len(gens), "resumed": resumed, "skipped": skipped}
 
     def resume_generation(self, generation_id: str) -> dict[str, Any]:
         """Crash recovery: reloads a PENDING/RUNNING generation and continues

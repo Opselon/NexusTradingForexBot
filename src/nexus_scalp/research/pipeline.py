@@ -37,6 +37,7 @@ from nexus_scalp.research.models import (
     CandidateLifecycle,
     ResearchDataset,
     ResearchRun,
+    WalkForwardResult,
 )
 from nexus_scalp.research.oos import OOSGate
 from nexus_scalp.research.registry import StrategyRegistry
@@ -464,14 +465,38 @@ class ResearchPipeline:
             )
         # PHASE 27: WF consumes the SAME canonical contract-scoped dataset as
         # the backtest gate (single extraction upstream). Thresholds unchanged.
-        wf = self.walkforward.validate(
-            _ctx_ds_for_gates if _ctx_ds_for_gates is not None else family_ds,
-            strategy_id=sid,
-            strategy_version=version,
-            n_splits=n_folds,
-            purge_seconds=purge_seconds,
-            embargo_seconds=embargo_seconds,
+        # PHASE 29 ADAPTIVE FOLDS: request only what the family population can
+        # actually support (splitting.walk_forward_folds needs n >= (splits+2)*3,
+        # so a 60-sample family supports 2 folds, not the configured 3). When even
+        # one fold is impossible we skip WF with an explicit insufficient_reason
+        # instead of passing zeros through. No gate threshold changes: this only
+        # prevents structurally-impossible fold requests.
+        _wf_ds = _ctx_ds_for_gates if _ctx_ds_for_gates is not None else family_ds
+        max_folds = min(
+            n_folds,
+            max(1, (len(_wf_ds.samples) // 15) - 2),
         )
+        if max_folds < 1:
+            wf = WalkForwardResult(
+                strategy_id=sid,
+                strategy_version=version,
+                dataset_id=family_ds.dataset_id,
+                folds=[],
+                passed=False,
+                insufficient_reason=(
+                    f"FAMILY_TOO_SMALL_FOR_FOLDS: {len(_wf_ds.samples)} samples "
+                    "cannot form any walk-forward fold"
+                ),
+            )
+        else:
+            wf = self.walkforward.validate(
+                _wf_ds,
+                strategy_id=sid,
+                strategy_version=version,
+                n_splits=max_folds,
+                purge_seconds=purge_seconds,
+                embargo_seconds=embargo_seconds,
+            )
         wf_data = wf.model_dump(mode="json")
         wf_data["context_contract_hash"] = _ctx_hash
         wf_data["contract_consistent"] = True

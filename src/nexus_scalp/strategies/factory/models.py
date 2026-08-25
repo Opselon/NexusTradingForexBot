@@ -441,3 +441,10 @@ class EvolutionConfig(BaseModel):
     # disable to restore evaluate-everything behavior (reversible).
     clone_prescreen_enabled: bool = Field(default=True)
     clone_cluster_min_members: int = Field(default=50, ge=2)
+
+    # PHASE 29 (2026-08-25): on startup the sweeper marks stale RUNNING
+    # generations FAILED; when auto_resume is true the orchestrator re-arms
+    # every FAILED generation whose population_target was never met via
+    # store.resume_generation() (fresh heartbeat + GENERATION_RESUMED event).
+    # Default false keeps the legacy kill-only behavior. Audit preserved.
+    auto_resume: bool = Field(default=False)

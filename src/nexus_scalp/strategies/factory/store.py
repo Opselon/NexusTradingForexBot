@@ -466,6 +466,7 @@ def sweep_stale_generations(
     repo: Any,
     max_age_minutes: int = 30,
     limit: int = 200,
+    resume_stale: bool | None = None,
 ) -> dict[str, Any]:
     """Mark orphaned RUNNING generations as FAILED (P1 lifecycle hardening).
 
@@ -483,6 +484,11 @@ def sweep_stale_generations(
     * Idempotent: already-swept (FAILED) rows are never touched twice.
     * Bounded: inspects at most ``limit`` most-recent generations.
     * Auditable: logs event=GENERATION_SWEPT with swept ids (info level).
+    * PHASE 29: every swept generation is emitted as RESUMABLE — its event
+      payload carries ``resumable=True`` and the return dict gains a
+      parallel ``resumable`` id list. Status stays FAILED (audit preserved);
+       actual resumption is a separate explicit step
+      (resume_generation / orchestrator auto-resume), never silent.
     * Does NOT fabricate completion: stale means FAILED (crash) and
       ``completed_at`` is deliberately left NULL — resume_generation()
       ignores header status and only re-evaluates unevaluated candidates,
@@ -492,7 +498,16 @@ def sweep_stale_generations(
     Returns {"swept": [generation_id...], "inspected": n}.
     """
     import datetime as _dt
+    import os as _os
 
+    # PHASE 29: RESUME_STALE=true (env or explicit param) marks every sweep
+    # candidate as resumable; default keeps the legacy kill-only behavior.
+    if resume_stale is None:
+        resume_stale = _os.environ.get("RESUME_STALE", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
     if _is_store_backend(repo):
         gens = repo.list_generations(limit=limit)
         try:
@@ -511,6 +526,7 @@ def sweep_stale_generations(
             loop_states = {}
     now = _dt.datetime.now(_dt.UTC)
     swept: list[str] = []
+    resumable: list[str] = []
     inspected = 0
     for g in gens:
         inspected += 1
@@ -559,6 +575,8 @@ def sweep_stale_generations(
         )
         if updated:
             swept.append(gid)
+            if resume_stale:
+                resumable.append(gid)
             try:
                 import uuid as _uuid
 
@@ -570,7 +588,11 @@ def sweep_stale_generations(
                         "candidate_id": "",
                         "event_type": "GENERATION_SWEPT",
                         "message": f"Stale RUNNING generation {gid} marked FAILED by startup sweeper",
-                        "payload": {"generation_id": gid, "status": "FAILED"},
+                        "payload": {
+                            "generation_id": gid,
+                            "status": "FAILED",
+                            "resumable": bool(resume_stale),
+                        },
                         "created_at": now.isoformat(),
                     },
                 )
@@ -582,7 +604,82 @@ def sweep_stale_generations(
             len(swept),
             ",".join(swept[:10]),
         )
-    return {"swept": swept, "inspected": inspected}
+    return {
+        "swept": swept,
+        "inspected": inspected,
+        "resumable": resumable,
+    }
+
+
+def resume_generation(repo: Any, generation_id: str) -> dict[str, Any]:
+    """PHASE 29: re-arm a FAILED generation for resumption (crash recovery).
+
+     Resets status to RUNNING with a fresh loop-state heartbeat so the
+     orchestrator's resume path can pick it up. Audit is preserved: the
+     GENERATION_SWEPT event and the FAILED interval stay in history, and the
+     reset emits its own GENERATION_RESUMED event. Callers gate on
+     population_target not yet met + config auto-resume; this function only
+     flips state. Returns {"status": "RESUMED"|"NOT_FOUND"|"NOT_FAILED",
+     "generation_id": gid}.
+    """
+    import datetime as _dt
+    import uuid as _uuid
+
+    gen = get_generation(repo, generation_id)
+    if not gen:
+        return {"status": "NOT_FOUND", "generation_id": generation_id}
+    if str(gen.get("status", "") or "").upper() != "FAILED":
+        return {"status": "NOT_FAILED", "generation_id": generation_id}
+    now = _dt.datetime.now(_dt.UTC).isoformat()
+    updated = upsert_generation(
+        repo,
+        {
+            "generation_id": generation_id,
+            "number": int(gen.get("number", 0) or 0),
+            "mode": str(gen.get("mode", "MANUAL")),
+            "parent_generation": str(gen.get("parent_generation", "") or ""),
+            "population_target": int(gen.get("population_target", 0) or 0),
+            "created_at": gen.get("created_at") or now,
+            "status": "RUNNING",
+            "config": gen.get("config") or {},
+        },
+    )
+    if not updated:
+        return {"status": "ERROR", "generation_id": generation_id}
+    # Fresh heartbeat: an immediate post-resume sweep must not re-kill it.
+    try:
+        set_loop_state(
+            repo,
+            {
+                "state": "RUNNING",
+                "generation_id": generation_id,
+                "checkpoint": {"resumed_at": now},
+                "updated_at": now,
+                "last_error": "",
+            },
+        )
+    except Exception:
+        pass
+    try:
+        emit_event(
+            repo,
+            {
+                "event_id": str(_uuid.uuid4()),
+                "generation_id": generation_id,
+                "candidate_id": "",
+                "event_type": "GENERATION_RESUMED",
+                "message": f"Generation {generation_id} re-armed RUNNING by resume_generation",
+                "payload": {"generation_id": generation_id, "status": "RUNNING"},
+                "created_at": now,
+            },
+        )
+    except Exception:
+        pass
+    logger.info(
+        "[STRATEGY_FACTORY] event=GENERATION_RESUMED generation_id=%s",
+        generation_id,
+    )
+    return {"status": "RESUMED", "generation_id": generation_id}
 
 
 def list_candidates(
