@@ -27,6 +27,11 @@ from nexus_scalp.research.models import StrategyRegistryEntry
 #: Spatial zones in pipeline order (elevation increases with maturity).
 PIPELINE_ZONES: list[str] = [
     "DISCOVERED",
+    "INITIAL_TESTING",
+    "EVIDENCE_BUILDING",
+    "WALK_FORWARD_READY",
+    "OOS_READY",
+    "ROBUSTNESS_READY",
     "BACKTESTING",
     "VALIDATING",
     "OOS_TESTING",
