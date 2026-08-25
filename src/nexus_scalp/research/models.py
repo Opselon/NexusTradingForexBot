@@ -60,7 +60,16 @@ class CandidateLifecycle(StrEnum):
 
 #: Lifecycle states that may never become live.
 _INELIGIBLE: frozenset[CandidateLifecycle] = frozenset(
-    {CandidateLifecycle.REJECTED, CandidateLifecycle.RETIRED, CandidateLifecycle.DEGRADED}
+    {
+        CandidateLifecycle.REJECTED,
+        CandidateLifecycle.RETIRED,
+        CandidateLifecycle.DEGRADED,
+        CandidateLifecycle.INITIAL_TESTING,
+        CandidateLifecycle.EVIDENCE_BUILDING,
+        CandidateLifecycle.WALK_FORWARD_READY,
+        CandidateLifecycle.OOS_READY,
+        CandidateLifecycle.ROBUSTNESS_READY,
+    }
 )
 
 
@@ -256,6 +265,9 @@ class WalkForwardResult(BaseModel):
     avg_val_expectancy_r: float = Field(default=0.0)
     avg_oos_expectancy_r: float = Field(default=0.0)
     degradation: float = Field(default=0.0)
+    #: PHASE 26 strategy-aware validation: transparency block describing the
+    #: context contract applied to the fold population (None = global eval).
+    context_diagnostics: dict[str, Any] | None = Field(default=None)
 
     @property
     def fold_count(self) -> int:
@@ -276,6 +288,8 @@ class OOSResult(BaseModel):
     oos_win_rate: float = Field(default=0.0)
     status: str = Field(...)  # PASS | FAIL
     reason: str = Field(default="")
+    #: PHASE 26 strategy-aware validation: context contract diagnostics.
+    context_diagnostics: dict[str, Any] | None = Field(default=None)
 
 
 class RobustnessResult(BaseModel):

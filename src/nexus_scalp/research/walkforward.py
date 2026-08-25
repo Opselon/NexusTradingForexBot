@@ -49,8 +49,28 @@ class WalkForwardEngine:
         val_frac: float = 0.2,
         purge_seconds: float = 0.0,
         embargo_seconds: float = 0.0,
+        context_contract: dict | None = None,
     ) -> WalkForwardResult:
+        # PHASE 26: strategy-aware sample filtering (reconstructed after
+        # accidental working-tree loss; mirrors restored oos.py contract).
+        dataset_for_folds = dataset
+        context_diag: dict = {}
+        if context_contract:
+            from nexus_scalp.research.context_contract import (
+                filter_samples_by_contract,
+                has_active_contract,
+            )
+            if has_active_contract(context_contract):
+                filtered, context_diag = filter_samples_by_contract(
+                    list(dataset.samples), context_contract
+                )
+                if filtered:
+                    dataset_for_folds = dataset.model_copy(update={'samples': filtered})
+                else:
+                    context_diag['sufficient_evidence'] = False
+
         folds = walk_forward_folds(
+            dataset_for_folds,
             dataset,
             n_splits=n_splits,
             val_frac=val_frac,
@@ -135,6 +155,7 @@ class WalkForwardEngine:
             avg_val_expectancy_r=round(avg_val, 6),
             avg_oos_expectancy_r=round(avg_oos, 6),
             degradation=round(degradation, 6),
+            context_diagnostics=(context_diag or None),
         )
 
 

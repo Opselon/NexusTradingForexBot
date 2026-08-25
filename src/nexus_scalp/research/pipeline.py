@@ -71,6 +71,25 @@ def _select_family(dataset: ResearchDataset, candidate: StrategyCandidate) -> Re
     )
 
 
+
+
+def _extract_context_contract(candidate) -> dict | None:
+    """PHASE 26: derive the evaluation context contract from a candidate DSL.
+
+    Reads candidate.context_definition (the persisted DSL context block).
+    Returns None when no explicit session/regime/volatility claim exists,
+    so generic candidates keep the legacy global evaluation path.
+    """
+    try:
+        from nexus_scalp.research.context_contract import extract_context_contract, has_active_contract
+
+        ctx = getattr(candidate, "context_definition", None) or {}
+        hyp = (ctx.get("hypothesis") if isinstance(ctx, dict) else None) or {}
+        contract = extract_context_contract(ctx, hyp)
+        return contract if has_active_contract(contract) else None
+    except Exception:
+        return None
+
 class ResearchPipeline:
     """
     Orchestrates the full evidence pipeline for strategy candidates.
@@ -392,6 +411,11 @@ class ResearchPipeline:
             obs.record_event(
                 sid, run_id, "GATE_STARTED", "walk-forward started", gate_id=gate.gate_id
             )
+        # PHASE 26: derive the strategy market-context contract from its DSL
+        # and scope the validation population to that contract (a London-only
+        # strategy is validated on London samples only -> no false degradation
+        # from sessions it never trades). Gate thresholds are unchanged.
+        _ctx_for_validation = _extract_context_contract(candidate)
         wf = self.walkforward.validate(
             family_ds,
             strategy_id=sid,
@@ -399,6 +423,7 @@ class ResearchPipeline:
             n_splits=n_folds,
             purge_seconds=purge_seconds,
             embargo_seconds=embargo_seconds,
+            context_contract=_ctx_for_validation,
         )
         wf_data = wf.model_dump(mode="json")
         if obs is not None:
@@ -451,6 +476,7 @@ class ResearchPipeline:
             strategy_version=version,
             purge_seconds=purge_seconds,
             embargo_seconds=embargo_seconds,
+            context_contract=_ctx_for_validation,
         )
         oos_data = oos.model_dump(mode="json")
         if obs is not None:
