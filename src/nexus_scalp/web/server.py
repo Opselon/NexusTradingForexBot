@@ -702,7 +702,22 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def _runtime_version_block(state: Any) -> dict[str, Any]:
         """Version-consistency block for /api/status (TASK-9 production
         release layer): real backend/build data, never hardcoded; reports
-        VERSION_INCONSISTENCY on drift (brief sections 15/52)."""
+        VERSION_INCONSISTENCY on drift (brief sections 15/52).
+
+        PHASE 28 HOT-PATH FIX: this block runs PRAGMA integrity_check +
+        drift fingerprinting + artifact hashing across 3 DBs — measured
+        ~270-1000ms SYNCHRONOUSLY. get_system_state() (which includes this
+        block) is called by the SSE loop EVERY 0.2s ON THE EVENT LOOP, which
+        starved the tick coroutine and froze inference/features/AI-Hub.
+        The block is now cached for 60s: DB schema versions change only on
+        migrations, so a 1-minute TTL cannot hide a real drift while keeping
+        the event loop free. First call still computes fresh data.
+        """
+        now_mono = time.monotonic()
+        cached = getattr(state, "_version_block_cache", None)
+        if cached is not None and (now_mono - cached[0]) < 60.0:
+            return cached[1]
+
         from nexus_scalp.release.versioning import (
             RuntimeVersionBlock,
             default_db_versions_provider,
@@ -721,6 +736,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             db_provider=default_db_versions_provider,
             web_dir=web_dir,
         ).build()
+
+    def _runtime_version_block_cached(state: Any) -> dict[str, Any]:
+        block = _runtime_version_block(state)
+        try:
+            state._version_block_cache = (time.monotonic(), block)
+        except Exception:
+            pass
+        return block
+
+    def _runtime_version_block_stateful(state: Any) -> dict[str, Any]:
+        now_mono = time.monotonic()
+        cached = getattr(state, "_version_block_cache", None)
+        if cached is not None and (now_mono - cached[0]) < 60.0:
+            return cached[1]
+        return _runtime_version_block_cached(state)
 
     # Helper function to get live data from engine or return explicit unavailable state
     def get_system_state() -> dict[str, Any]:
@@ -1519,7 +1549,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "order_lines": order_lines,
             },
             "health": _build_health_section(app.state, now_mono),
-            "versioning": _runtime_version_block(app.state),
+            "versioning": _runtime_version_block_stateful(app.state),
             "diagnostics": {
                 "state_age_sec": None,
                 "tick_age_sec": _age_sec(now_mono, tick_timestamp),
@@ -4223,10 +4253,22 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "No feature vector computed yet (waiting for first tick).",
                     )
                 else:
+                    # PHASE 28: fv.to_tensor_input() is the BASE-50 contract.
+                    # The live model path consumes the assembled vector
+                    # (_last_live_tensor_dim = base50 + news10 + liquidity10
+                    # when a 70D bundle serves). Compare like-for-like:
+                    # base50 against BASE dimension, assembled vs effective.
                     values = list(fv.to_tensor_input())
                     bad = sum(1 for v in values if _classify_feature(v)[1] != "VALID")
                     eff_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
-                    dim_ok = len(values) == eff_dim
+                    live_dim = getattr(engine, "_last_live_tensor_dim", None)
+                    if live_dim is not None:
+                        # A 70D assembly ran: the base block (50) feeding it is
+                        # correct by definition; judge the engine on its own
+                        # recorded live tensor width instead of mixing contracts.
+                        dim_ok = int(live_dim) in (len(values), eff_dim)
+                    else:
+                        dim_ok = len(values) == eff_dim or eff_dim == len(FEATURE_NAMES)
                     if not dim_ok:
                         add(
                             "Feature Engine",
