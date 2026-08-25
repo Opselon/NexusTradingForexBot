@@ -9,6 +9,7 @@ ResearchSample objects.
 from __future__ import annotations
 
 from typing import Any
+
 from nexus_scalp.research.models import ResearchSample
 
 
@@ -37,11 +38,9 @@ def _compute_metrics(samples: list[ResearchSample]) -> dict[str, Any]:
     max_dd = 0.0
     for s in samples:
         current_eq += s.realized_r
-        if current_eq > peak:
-            peak = current_eq
+        peak = max(peak, current_eq)
         dd = peak - current_eq
-        if dd > max_dd:
-            max_dd = dd
+        max_dd = max(max_dd, dd)
 
     return {
         "trades": count,
@@ -75,11 +74,7 @@ def compute_context_matrices(samples: list[ResearchSample]) -> dict[str, Any]:
 
         trend = str(getattr(s, "trend_state", "NEUTRAL") or "NEUTRAL")
         vol = str(getattr(s, "volatility_regime", "NORMAL") or "NORMAL")
-        liq = str(
-            getattr(s, "liquidity_regime", "")
-            or getattr(s, "regime", "NORMAL")
-            or "NORMAL"
-        )
+        liq = str(getattr(s, "liquidity_regime", "") or getattr(s, "regime", "NORMAL") or "NORMAL")
         regime_key = (trend, vol, liq)
         regime_buckets.setdefault(regime_key, []).append(s)
 

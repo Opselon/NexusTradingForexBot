@@ -270,8 +270,7 @@ _FAMILY_HYPOTHESES: dict[StrategyFamily, dict[str, Any]] = {
         ),
         "market_condition": "LONDON_NY_OVERLAP | SESSION_BOUND | VOLATILITY_EXPANSION | maximal participation window",
         "entry_reason": (
-            "London/NY overlap flag is active and price breaks the pre-overlap "
-            "session high/low"
+            "London/NY overlap flag is active and price breaks the pre-overlap session high/low"
         ),
         "exit_reason": "Fixed 2R target before session close; no overnight carry",
         "expected_edge": (
@@ -291,8 +290,7 @@ _FAMILY_HYPOTHESES: dict[StrategyFamily, dict[str, Any]] = {
         ),
         "market_condition": "LONDON | TRENDING | MIXED_VOLATILITY | HTF-aligned directional liquidity",
         "entry_reason": (
-            "H4 trend state and H1 momentum agree and price retraces to value "
-            "near the EMA50 anchor"
+            "H4 trend state and H1 momentum agree and price retraces to value near the EMA50 anchor"
         ),
         "exit_reason": "Trailing stop at 1.8x ATR below structure; exit on H1 momentum flip",
         "expected_edge": (
@@ -327,6 +325,7 @@ _FAMILY_HYPOTHESES: dict[StrategyFamily, dict[str, Any]] = {
     },
 }
 
+
 def _family_hypothesis(family: StrategyFamily) -> dict[str, Any]:
     base = _FAMILY_HYPOTHESES.get(family, _FAMILY_HYPOTHESES[StrategyFamily.HYBRID])
     return {
@@ -337,6 +336,7 @@ def _family_hypothesis(family: StrategyFamily) -> dict[str, Any]:
         "expected_edge": str(base["expected_edge"]),
         "failure_condition": str(base["failure_condition"]),
     }
+
 
 _FAMILY_TEMPLATES: dict[StrategyFamily, dict[str, Any]] = {
     StrategyFamily.TREND_FOLLOWING: {
