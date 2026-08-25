@@ -1108,8 +1108,21 @@ class StrategyFactory:
             # PHASE 29: WF that could not form folds (family too small for the
             # requested fold count) is an EVIDENCE gap, not a quality failure —
             # same hold semantics as the Phase 25 insufficient-evidence path.
+            # ADVERSARIAL HARDENING: the hold applies ONLY when no hard quality
+            # failure exists (negative expectancy / PF / drawdown / OOS fail).
+            # A negative-expectancy small-family candidate still REJECTS.
             wf_insufficient = bool(
                 (result.get("walkforward") or {}).get("insufficient_reason")
+            ) and not any(
+                r
+                in (
+                    FailureReason.NEGATIVE_EXPECTANCY.value,
+                    FailureReason.LOW_PROFIT_FACTOR.value,
+                    FailureReason.EXCESSIVE_DRAWDOWN.value,
+                    FailureReason.OOS_FAILURE.value,
+                    FailureReason.WALK_FORWARD_FAILURE.value,
+                )
+                for r in failed_reasons
             )
 
             # PHASE 25 (2026-08-25) EVIDENCE LIFECYCLE: a backtest that
