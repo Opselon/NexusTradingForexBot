@@ -248,6 +248,15 @@ class AutonomousLoopWorker:
             swept_ids = sweep.get("swept", [])
         except Exception as err:
             logger.warning("[STRATEGY_FACTORY] recovery sweeper failed non-fatally", error=str(err))
+        # PHASE 29: sweeper-killed generations are no longer dead ends — when
+        # config.auto_resume is true, re-arm every FAILED generation whose
+        # population_target was never met (exception-isolated like the sweep).
+        try:
+            self.factory.auto_resume_failed_generations()
+        except Exception as err:
+            logger.warning(
+                "[STRATEGY_FACTORY] auto-resume failed non-fatally", error=str(err)
+            )
         persisted = get_loop_state(self.factory.audit_repo)
         generation_id = str(persisted.get("generation_id", "") or "")
         if not generation_id:
