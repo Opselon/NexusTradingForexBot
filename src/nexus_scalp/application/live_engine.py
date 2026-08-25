@@ -1608,7 +1608,7 @@ class LiveEngine:
                 # work; it can never block the tick loop.
                 if self._accounting_worker_started:
                     try:
-                        await asyncio.to_thread(self.accounting_worker.tick)
+                        await self._kick_worker("ACCOUNTING", self.accounting_worker.tick)
                     except Exception:
                         # Worker failure is fully isolated; never disturb ticks.
                         pass
@@ -1754,7 +1754,7 @@ class LiveEngine:
                 # (watermark + overlap, idempotent). Never on the tick path.
                 if self._history_sync_started:
                     try:
-                        await asyncio.to_thread(self.history_sync_worker.tick)
+                        await self._kick_worker("HISTORY_SYNC", self.history_sync_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[HISTORY_SYNC_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
@@ -1763,7 +1763,7 @@ class LiveEngine:
                 # failure can never disturb the tick loop.
                 if self._intelligence_worker_started:
                     try:
-                        await asyncio.to_thread(self.intelligence_worker.tick)
+                        await self._kick_worker("INTELLIGENCE", self.intelligence_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[INTELLIGENCE_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
@@ -1772,7 +1772,7 @@ class LiveEngine:
                 # pipeline; a failure here can never disturb trading.
                 if self._research_worker_started:
                     try:
-                        await asyncio.to_thread(self.research_worker.tick)
+                        await self._kick_worker("RESEARCH", self.research_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[RESEARCH_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
@@ -1780,21 +1780,21 @@ class LiveEngine:
                 # bounded to worker threads; training can NEVER block ticks).
                 if self._training_worker_started:
                     try:
-                        await asyncio.to_thread(self.training_worker.tick)
+                        await self._kick_worker("TRAINING", self.training_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[TRAINING_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
                 # PHASE 11: shadow-aggregation worker kick (bounded, isolated).
                 if self._shadow_worker_started:
                     try:
-                        await asyncio.to_thread(self.shadow_worker.tick)
+                        await self._kick_worker("SHADOW", self.shadow_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[SHADOW_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
                 # PHASE 12: news intelligence worker kick (bounded, isolated).
                 if self._news_enabled and self._news_worker_started:
                     try:
-                        await asyncio.to_thread(self.news_worker.tick)
+                        await self._kick_worker("NEWS", self.news_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[NEWS_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
@@ -1815,6 +1815,26 @@ class LiveEngine:
                 await asyncio.sleep(1.0)
 
         await self._shutdown_async()
+
+    #: PHASE 28: per-call timeout for background worker kicks executed via
+    #: asyncio.to_thread inside run_loop. A hung C-extension call (MT5 IPC,
+    #: sqlite C lock) previously parked a to_thread future forever, which
+    #: froze the whole tick loop (inference/features/AI-Hub) while web stayed
+    #: responsive. With wait_for, a hung kick is abandoned (the thread may
+    #: linger but is detached from the loop) and the loop keeps ticking.
+    WORKER_KICK_TIMEOUT_SEC: float = float(__import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "45"))
+
+    async def _kick_worker(self, name: str, fn) -> None:
+        """Await fn() in a worker thread with a hard timeout (fail-loud)."""
+        try:
+            await asyncio.wait_for(asyncio.to_thread(fn), timeout=self.WORKER_KICK_TIMEOUT_SEC)
+        except asyncio.TimeoutError:
+            logger.error(
+                "[WORKER_KICK] event=TIMEOUT worker=%s timeout_sec=%s — detaching hung call",
+                name, self.WORKER_KICK_TIMEOUT_SEC,
+            )
+        except Exception as wkr_err:
+            logger.warning("[WORKER_KICK] event=FAILED worker=%s error=%s", name, wkr_err)
 
     def _start_history_sync_worker(self) -> None:
         """Starts the broker-history sync worker (idempotent, isolated)."""
