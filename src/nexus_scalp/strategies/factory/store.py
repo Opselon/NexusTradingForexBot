@@ -865,6 +865,7 @@ def _row_safe(row: dict[str, Any]) -> dict[str, Any]:
         "payload",
         "result_summary",
         "checkpoint",
+        "context_matrices",
     ):
         if col in out:
             raw = out[col]

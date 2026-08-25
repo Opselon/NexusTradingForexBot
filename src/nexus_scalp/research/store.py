@@ -78,6 +78,7 @@ def _registry_row_safe(row: dict[str, Any]) -> dict[str, Any]:
         "score",
         "validation_lineage",
         "retirement_reason",
+        "context_matrices",
     ):
         if col in out:
             out[col] = _json_text_safe(out[col])

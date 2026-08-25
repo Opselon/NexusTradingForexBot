@@ -138,9 +138,9 @@ class StrategyRegistry:
             entry.sample_count,
             _json(entry.validation_lineage),
             entry.retirement_reason,
-            _json(entry.context_matrices) if getattr(entry, "context_matrices", None) is not None else "{}",
             entry.created_at.isoformat(),
             entry.updated_at.isoformat(),
+            _json(getattr(entry, "context_matrices", None) or {}),
         )
         try:
             if hasattr(self.audit_repo, "_queue"):
@@ -403,6 +403,13 @@ def _is_stronger(current: CandidateLifecycle, proposed: CandidateLifecycle) -> b
     """
     _strength = {
         CandidateLifecycle.DISCOVERED: 1,
+        # PHASE 25 evidence-track states: pre-validation tier (never a
+        # downgrade target from VALIDATED+; never blocks regression guard).
+        CandidateLifecycle.INITIAL_TESTING: 1,
+        CandidateLifecycle.EVIDENCE_BUILDING: 1,
+        CandidateLifecycle.WALK_FORWARD_READY: 1,
+        CandidateLifecycle.OOS_READY: 1,
+        CandidateLifecycle.ROBUSTNESS_READY: 1,
         CandidateLifecycle.BACKTESTING: 1,
         CandidateLifecycle.VALIDATING: 1,
         CandidateLifecycle.OOS_TESTING: 1,

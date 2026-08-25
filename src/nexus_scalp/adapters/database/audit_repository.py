@@ -957,6 +957,14 @@ class AuditRepository:
             );
             """
         )
+        # PHASE 25 (2026-08-25): ensure context_matrices on factory_candidates
+        try:
+            from nexus_scalp.strategies.factory.store import ensure_factory_context_columns
+
+            ensure_factory_context_columns(conn)
+        except Exception:
+            pass
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS factory_failures (
@@ -1094,6 +1102,14 @@ class AuditRepository:
             );
             """
         )
+        # PHASE 25 (2026-08-25): ensure context_matrices on strategy_registry
+        try:
+            from nexus_scalp.research.store import ensure_registry_context_columns
+
+            ensure_registry_context_columns(conn)
+        except Exception:
+            pass
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS research_runs (

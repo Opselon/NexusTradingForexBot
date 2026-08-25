@@ -71,7 +71,6 @@ class WalkForwardEngine:
 
         folds = walk_forward_folds(
             dataset_for_folds,
-            dataset,
             n_splits=n_splits,
             val_frac=val_frac,
             embargo_seconds=embargo_seconds,
