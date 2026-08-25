@@ -209,6 +209,7 @@ class ResearchPipeline:
         # contract_hash is stamped into each gate result so the registry
         # evidence proves all stages consumed the identical semantic filter.
         from nexus_scalp.research.context_contract import (
+            ContextContractError,
             contract_hash as _contract_hash,
             filter_samples_by_contract,
         )
@@ -222,6 +223,14 @@ class ResearchPipeline:
             )
             if _filtered:
                 _ctx_ds_for_gates = family_ds.model_copy(update={"samples": _filtered})
+            else:
+                # PHASE 27 F1 (fail-loud): a declared-context strategy whose
+                # family contains ZERO matching samples must ABSTAIN — never
+                # silently validate on the global population.
+                raise ContextContractError(
+                    f"CONTEXT_CONTRACT_EMPTY_POPULATION: {sid} "
+                    f"hash={_ctx_hash} matched=0/{len(family_ds.samples)}"
+                )
             logger.info(
                 "[CONTEXT_CONTRACT] event=GATES_SCOPED strategy_id=%s hash=%s "
                 "population=%d/%d",
@@ -356,6 +365,8 @@ class ResearchPipeline:
             use_split=True,
         )
         bt_data = bt.model_dump(mode="json")
+        bt_data["context_contract_hash"] = _ctx_hash
+        bt_data["contract_consistent"] = True
         if bt.total_trades == 0:
             logger.warning("[STRATEGY_VALIDATION] event=ABORTED empty dataset", strategy_id=sid)
             if obs is not None:
