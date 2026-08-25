@@ -251,6 +251,43 @@ class AutonomousLoopWorker:
         persisted = get_loop_state(self.factory.audit_repo)
         generation_id = str(persisted.get("generation_id", "") or "")
         if not generation_id:
+            # PHASE 29 (crash-recovery completeness): a crash can wipe the
+            # loop-state checkpoint BEFORE the generation row is updated,
+            # leaving the newest FAILED generation with unevaluated
+            # candidates. Fall back to the newest FAILED generation that has
+            # pending (GENERATED) candidates and resume it instead of
+            # silently doing nothing. Never auto-creates generations; never
+            # promotes anything to live.
+            try:
+                from nexus_scalp.strategies.factory.store import list_generations, list_candidates
+
+                failed = [
+                    g for g in (list_generations(self.factory._research_backend) or [])
+                    if str(g.get("status", "")) == "FAILED"
+                ]
+                for g in sorted(
+                    failed, key=lambda x: int(x.get("number", 0) or 0), reverse=True
+                ):
+                    gid = str(g.get("generation_id", "") or "")
+                    cands = list_candidates(
+                        self.factory._research_backend, generation_id=gid, limit=2000
+                    ) or []
+                    pending = [
+                        c for c in cands
+                        if c.get("lifecycle") in ("GENERATED", None, "", "DISCOVERED", "RUNNING")
+                    ]
+                    if pending:
+                        generation_id = gid
+                        logger.info(
+                            "[STRATEGY_FACTORY] event=RECOVERY_FALLBACK generation=%s pending=%s",
+                            gid, len(pending),
+                        )
+                        break
+            except Exception as fb_err:
+                logger.warning(
+                    "[STRATEGY_FACTORY] recovery fallback failed non-fatally", error=str(fb_err),
+                )
+        if not generation_id:
             # No active generation: nothing to resume.
             return {"status": "NOTHING_TO_RESUME", "swept": swept_ids}
         result = self.factory.resume_generation(generation_id)

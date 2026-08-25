@@ -1105,13 +1105,23 @@ class StrategyFactory:
 
             failed_reasons = self._derived_failure_reasons(result, candidate)
 
+            # PHASE 29: WF that could not form folds (family too small for the
+            # requested fold count) is an EVIDENCE gap, not a quality failure —
+            # same hold semantics as the Phase 25 insufficient-evidence path.
+            wf_insufficient = bool(
+                (result.get("walkforward") or {}).get("insufficient_reason")
+            )
+
             # PHASE 25 (2026-08-25) EVIDENCE LIFECYCLE: a backtest that
             # fails ONLY on low trade count / small sample while
             # expectancy stays positive is NOT terminal. Park the
             # candidate in EVIDENCE_BUILDING with INSUFFICIENT_EVIDENCE
             # so it can be re-tested on more data instead of being
             # discarded as REJECTED. No gate threshold changes.
-            if lifecycle == "REJECTED" and self._is_evidence_only_failure(result, candidate):
+            if (
+                lifecycle == "REJECTED"
+                and (wf_insufficient or self._is_evidence_only_failure(result, candidate))
+            ):
                 lifecycle = "EVIDENCE_BUILDING"
                 failed_reasons = [FailureReason.INSUFFICIENT_EVIDENCE.value]
             # BENCHMARK ARTIFACT (pure, never mutates the pipeline result);

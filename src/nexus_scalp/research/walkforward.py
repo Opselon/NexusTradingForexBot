@@ -69,6 +69,41 @@ class WalkForwardEngine:
                 else:
                     context_diag['sufficient_evidence'] = False
 
+        # PHASE 29 (data-volume honesty): when the population cannot support
+        # the requested fold count, compute an ADAPTIVE fold number and, if
+        # even one fold is impossible, return an explicit insufficient_reason
+        # instead of a silent passed=False with zeroed metrics. The orchestrator
+        # maps this to EVIDENCE_BUILDING (more data needed) — never REJECTED.
+        min_needed = (n_splits + 2) * 3  # mirrors splitting.walk_forward_folds guard
+        if len(dataset_for_folds.samples) < min_needed:
+            max_folds = max(0, (len(dataset_for_folds.samples) // 3) - 2)
+            reason = (
+                f"FAMILY_TOO_SMALL_FOR_FOLDS: {len(dataset_for_folds.samples)} samples "
+                f"< {min_needed} required for {n_splits} folds"
+                + (f" (max feasible folds={max_folds})" if max_folds else "")
+            )
+            logger.warning(
+                "[WALK_FORWARD] event=INSUFFICIENT_SAMPLES strategy_id=%s samples=%s needed=%s",
+                strategy_id,
+                len(dataset_for_folds.samples),
+                min_needed,
+            )
+            result = WalkForwardResult(
+                strategy_id=strategy_id,
+                strategy_version=strategy_version,
+                dataset_id=dataset.dataset_id,
+                folds=[],
+                passed=False,
+                avg_val_expectancy_r=0.0,
+                avg_oos_expectancy_r=0.0,
+                degradation=0.0,
+                context_diagnostics=context_diag or None,
+                insufficient_reason=reason,
+            )
+            if context_contract and context_diag:
+                pass
+            return result
+
         folds = walk_forward_folds(
             dataset_for_folds,
             n_splits=n_splits,

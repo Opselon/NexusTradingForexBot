@@ -268,6 +268,9 @@ class WalkForwardResult(BaseModel):
     #: PHASE 26 strategy-aware validation: transparency block describing the
     #: context contract applied to the fold population (None = global eval).
     context_diagnostics: dict[str, Any] | None = Field(default=None)
+    #: PHASE 29: explicit reason when WF could not form folds (family too
+    #: small) instead of a silent passed=False with zeroed metrics.
+    insufficient_reason: str | None = Field(default=None)
 
     @property
     def fold_count(self) -> int:
