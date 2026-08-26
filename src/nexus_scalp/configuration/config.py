@@ -152,6 +152,20 @@ class DatabaseHygieneConfig(BaseModel):
     retention: RetentionsConfig = RetentionsConfig()
 
 
+class FreshnessConfig(BaseModel):
+    """NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: live-freshness truth model.
+
+    Drives the per-stage STALE threshold (seconds). A stage whose last
+    successful update is older than `max_age_sec` is reported STALE,
+    independent of process uptime / state_version / HTTP 200. Conservative
+    default (30s) because the live path is expected to refresh on every tick;
+    QA asserts against this value (see tests).
+    """
+
+    enabled: bool = True
+    max_age_sec: float = 30.0
+
+
 class AppConfig(BaseSettings):
     """
     Root application settings holding configuration sections.
@@ -178,6 +192,8 @@ class AppConfig(BaseSettings):
     forensic_report: ForensicReportConfig | None = None
     # TASK-22: DATABASE HYGIENE (continuous runtime cleanup; optional)
     database_hygiene: DatabaseHygieneConfig | None = None
+    # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: live-freshness truth model
+    freshness: FreshnessConfig = FreshnessConfig()
 
     @classmethod
     def load_from_yaml(cls, yaml_path: Path) -> "AppConfig":

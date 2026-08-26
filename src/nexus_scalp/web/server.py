@@ -534,8 +534,31 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             engine_status = "STOPPED"
             details["engine"] = "engine loop is not running"
         elif warmup == "READY" and inference_enabled:
-            engine_status = "READY"
-            details["engine"] = f"engine running · warmup READY · inference ENABLED ({mode})"
+            # BUGFIX-G29: process liveness (warmup READY + inference ENABLED)
+            # is NOT proof of live market data. If the engine's own freshness
+            # model reports the pipeline STALE (frozen tick feed / frozen
+            # inference) while the process stays up, surface HEALTH=STALE plus
+            # the live_freshness contract so the dashboard can never present a
+            # stale price/inference as current. This never bypasses a guard;
+            # it only downgrades the *reported* health signal.
+            _fresh = None
+            try:
+                if engine is not None and hasattr(engine, "compute_live_freshness"):
+                    _fresh = engine.compute_live_freshness()
+            except Exception:
+                _fresh = None
+            if _fresh is not None and _fresh.get("overall") == "STALE":
+                engine_status = "STALE"
+                _stages = _fresh.get("market", {})
+                details["engine"] = (
+                    f"engine running · warmup READY · inference ENABLED ({mode}) "
+                    f"· BUT live_freshness=STALE (market={_stages.get('state')}, "
+                    f"age_ms={_stages.get('age_ms')}) — process alive, intelligence NOT fresh"
+                )
+                details["live_freshness"] = _fresh
+            else:
+                engine_status = "READY"
+                details["engine"] = f"engine running · warmup READY · inference ENABLED ({mode})"
         else:
             engine_status = "WARMING_UP"
             details["engine"] = f"engine running · warmup {warmup} · inference BLOCKED ({mode})"
@@ -638,6 +661,33 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 model_detail = "model introspection failed"
         subsystems["model"] = model_status
         details["model"] = model_detail
+
+        # --- NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: LIVE INFERENCE FRESHNESS ---
+        # Process being READY + model bundle loaded is NOT proof that the
+        # feature->inference->decision chain is live. A frozen chain (ticks
+        # move but features/inference are stale) must surface as STALE here,
+        # independent of uptime / state_version / HTTP 200.
+        inference_fresh_status = "UNKNOWN"
+        inference_fresh_detail = "engine not attached"
+        if engine is not None:
+            try:
+                fresh = engine.compute_live_freshness()
+                inf = fresh.get("inference", {}).get("state")
+                dec = fresh.get("decision", {}).get("state")
+                overall_fresh = fresh.get("overall")
+                inference_fresh_status = str(overall_fresh)
+                inference_fresh_detail = (
+                    f"inference={inf} decision={dec} "
+                    f"(features_age_ms={fresh.get('features', {}).get('age_ms')}, "
+                    f"inference_age_ms={fresh.get('inference', {}).get('age_ms')})"
+                )
+            except Exception as e:
+                inference_fresh_status = "UNKNOWN"
+                inference_fresh_detail = f"freshness introspection failed: {e}"
+        # Allow STALE/UNKNOWN to win at the same rank weight as the model
+        # subsystem so a frozen chain cannot be masked by a READY bundle.
+        subsystems["inference_freshness"] = inference_fresh_status
+        details["inference_freshness"] = inference_fresh_detail
 
         # --- news ---
         if engine is None or not getattr(engine, "_news_enabled", False):
@@ -1559,6 +1609,20 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "order_lines": order_lines,
             },
             "health": _build_health_section(app.state, now_mono),
+            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: authoritative freshness of
+            # every pipeline stage (market/features/inference/decision), each
+            # FRESH|STALE|UNKNOWN independent of process uptime / state_version.
+            "live_freshness": (
+                engine.compute_live_freshness() if engine is not None else None
+            ),
+            # UI stale-state flag: lets the frontend show an explicit STALE
+            # banner instead of trusting state_version (which keeps climbing
+            # even when intelligence is frozen).
+            "is_stale": (
+                bool(engine.compute_live_freshness().get("overall") == "STALE")
+                if engine is not None
+                else False
+            ),
             "versioning": _runtime_version_block_stateful(app.state),
             "diagnostics": {
                 "state_age_sec": None,
@@ -4590,6 +4654,41 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "timestamp": datetime.now(UTC).isoformat(),
                 "available": False,
                 "reason": "DEBUG_SNAPSHOT_ERROR",
+            }
+
+    @app.get("/api/debug/freshness")
+    def get_debug_freshness() -> dict[str, Any]:
+        """NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: live-freshness + no-cache diagnostic.
+
+        Returns the authoritative per-stage freshness (market/features/
+        inference/decision) AND runs the observational no-cache
+        diagnose_freshness() that re-fetches fresh market state, rebuilds
+        features, the 70D tensor, and runs fresh inference to localize exactly
+        where the chain froze. Purely diagnostic; never touches the live order
+        path or any safety control.
+        """
+        try:
+            engine = app.state.engine
+            if engine is None:
+                return {
+                    "available": False,
+                    "reason": "ENGINE_NOT_ATTACHED",
+                    "frozen_at": "UNKNOWN",
+                }
+            fresh = engine.compute_live_freshness()
+            diagnostic = engine.diagnose_freshness()
+            return {
+                "available": True,
+                "live_freshness": fresh,
+                "diagnostic": diagnostic,
+                "checked_at": datetime.now(UTC).isoformat(),
+            }
+        except Exception as exc:
+            _log_err(exc, "Freshness diagnostic failed", endpoint="/api/debug/freshness")
+            return {
+                "available": False,
+                "reason": "FRESHNESS_DIAGNOSTIC_ERROR",
+                "frozen_at": "UNKNOWN",
             }
 
     @app.get("/api/debug/snapshots")

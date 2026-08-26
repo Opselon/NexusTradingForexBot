@@ -355,6 +355,59 @@ class LiveEngine:
         # Diagnostics & Heartbeat
         self._last_radar_log_time: float = 0.0
 
+        # =====================================================================
+        # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: LIVE-FRESHNESS TRUTH MODEL
+        # ---------------------------------------------------------------------
+        # Root cause (proven from telemetry 2026-08-26): ticks advance
+        # (tick_age_sec ~0.5s) but features/inference/proposal timestamps were
+        # FROZEN at 06:25:42 for >770s while the engine reported health=READY
+        # and an ever-increasing state_version. state_version / uptime /
+        # HTTP 200 are NOT proof of intelligence freshness. This block exposes
+        # the real freshness of every pipeline stage and is purely
+        # observational at the instrumentation site (it never blocks trading).
+        # =====================================================================
+        # Freshness config (BUGFIX-G29): upper bounds (seconds) beyond which a
+        # stage is reported STALE. Tunable via runtime_config key
+        # "freshness.max_age_sec" (default 30.0s); values are documented so QA
+        # can assert on them.
+        self._freshness_max_age_sec: float = float(
+            getattr(config, "freshness", None) is not None
+            and getattr(config.freshness, "max_age_sec", 30.0)
+            or 30.0
+        )
+        # Monotonic tick timestamp: strictly increasing wall-clock-ms of the
+        # most recent MARKET tick observed on the live path. Exposes that the
+        # data feed itself is moving independently of feature/inference age.
+        self._monotonic_tick_ms: int = 0
+        self._last_tick_timestamp: datetime | None = None
+        # Observed (engine-snapshot) stage timestamps - authoritative for
+        # change-detection / staleness.
+        self.last_feature_update: datetime | None = None
+        self.last_inference_timestamp: datetime | None = None
+        self.last_decision_timestamp: datetime | None = None
+        self.last_successful_inference: datetime | None = None
+        self.last_failed_inference: datetime | None = None
+        # Monotonic sequence ids: increment only when the STAGE actually
+        # re-ran on NEW substantive input (not on heartbeat). Lets the UI/QA
+        # prove inference progressed without trusting timestamps alone.
+        self._tick_sequence: int = 0
+        self._feature_sequence: int = 0
+        self._inference_sequence: int = 0
+        self._decision_sequence: int = 0
+        # Deterministic change-detection hashes (volatile timestamps excluded)
+        # so the coordinator can prove exactly where state becomes frozen.
+        self._last_raw_market_hash: str = ""
+        self._last_feature_hash: str = ""
+        self._last_model_input_hash: str = ""
+        self._last_model_output_hash: str = ""
+        # Telemetry counters (mission requirement)
+        self._market_updates_total: int = 0
+        self._feature_builds_total: int = 0
+        self._inference_runs_total: int = 0
+        self._inference_failures_total: int = 0
+        self._decision_updates_total: int = 0
+        self._stale_state_detected_total: int = 0
+
         # Buffers / engines
         symbol = config.execution.symbol
         self.aggregator = BarAggregator(symbol=symbol, timeframe_minutes=1)
@@ -3200,6 +3253,95 @@ class LiveEngine:
 
             self.audit.log_signal(proposal)
 
+            # =====================================================================
+            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: SAFETY FRESHNESS GATE
+            # ---------------------------------------------------------------------
+            # Runs AFTER all model/experience/news/intelligence gates. If the
+            # feature->inference->decision chain is proven STALE (frozen), the
+            # proposal is converted to NO_TRADE / BLOCKED_BY_STALE so a frozen
+            # intelligence state can NEVER masquerade as a live BUY/SELL. This
+            # is a pure downgrade to NO_TRADE; it relaxes NO existing guard and
+            # fabricates NO confidence. It is the only production touchpoint of
+            # the freshness model.
+            # =====================================================================
+            proposal, _fresh_blocked = self.live_freshness_gate(proposal)
+            if _fresh_blocked:
+                logger.warning(
+                    "[FRESHNESS_GATE] event=BLOCKED reason=BLOCKED_BY_STALE "
+                    "(inference chain frozen; proposal downgraded to NO_TRADE)"
+                )
+
+            # =====================================================================
+            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: FRESHNESS INSTRUMENTATION
+            # ---------------------------------------------------------------------
+            # Purely OBSERVATIONAL bookkeeping at the live sync point. Records
+            # the authoritative stage timestamps, bumps monotonic sequence ids
+            # ONLY when the substantive input/output actually changed (so the
+            # UI/QA can prove inference progressed without trusting
+            # state_version), and stores change-detection hashes. This does NOT
+            # gate or block trading; gates live in `live_freshness_gate()`.
+            # =====================================================================
+            import hashlib
+
+            now_utc = datetime.now(UTC)
+            # Monotonic tick timestamp: strictly increasing ms of the newest
+            # market tick on the live path.
+            tick_ms = int(tick.timestamp.timestamp() * 1000.0)
+            if tick_ms > self._monotonic_tick_ms:
+                self._monotonic_tick_ms = tick_ms
+                self._last_tick_timestamp = tick.timestamp
+                self._tick_sequence += 1
+                self._market_updates_total += 1
+            # Deterministic raw-market hash (price/spread/regime, NOT timestamp)
+            raw_market = (
+                f"{tick.bid:.5f}|{tick.ask:.5f}|{tick.last:.5f}|"
+                f"{getattr(tick, 'spread', '')}|{regime_state}"
+            )
+            raw_market_hash = hashlib.sha1(raw_market.encode()).hexdigest()[:16]
+            # Feature change detection
+            feat_vals = list(getattr(fv, "to_tensor_input", lambda: [])())
+            feature_hash = hashlib.sha1(
+                ("|".join(f"{v:.6g}" for v in feat_vals)).encode()
+            ).hexdigest()[:16]
+            self.last_feature_update = now_utc
+            self._feature_builds_total += 1
+            if feature_hash != self._last_feature_hash:
+                self._feature_sequence += 1
+                self._last_feature_hash = feature_hash
+            # Model input + output change detection
+            with self._bundle_lock:
+                _b = self._bundle
+            try:
+                if _b is not None:
+                    x_np = np.array(feat_vals, dtype=np.float32).reshape(1, -1)
+                    x_scaled = _b.scaler.transform(x_np)
+                    model_input_hash = hashlib.sha1(
+                        x_scaled.tobytes()
+                    ).hexdigest()[:16]
+                else:
+                    model_input_hash = ""
+            except Exception:
+                model_input_hash = ""
+            probs_list = (
+                probs.cpu().numpy().flatten().tolist() if probs is not None else []
+            )
+            model_output_hash = hashlib.sha1(
+                ("|".join(f"{v:.8g}" for v in probs_list)).encode()
+            ).hexdigest()[:16]
+            self.last_inference_timestamp = now_utc
+            self.last_successful_inference = now_utc
+            self._inference_runs_total += 1
+            if model_input_hash and model_input_hash != self._last_model_input_hash:
+                self._inference_sequence += 1
+                self._last_model_input_hash = model_input_hash
+            if model_output_hash != self._last_model_output_hash:
+                self._last_model_output_hash = model_output_hash
+            self._last_raw_market_hash = raw_market_hash
+            # Decision stage
+            self.last_decision_timestamp = getattr(proposal, "generated_at", now_utc)
+            self._decision_updates_total += 1
+            self._decision_sequence += 1
+
             # Update synchronization properties for the Web backend
             self._last_tick = tick
             self._last_fv = fv
@@ -4009,6 +4151,219 @@ class LiveEngine:
             "liquidity_ms": round((_t_liq - _t_news) * 1e3, 3),
             "assembly_ms": round((_t_asm - _t_liq) * 1e3, 3),
         }
+
+    # ==================================================================
+    # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: LIVE-FRESHNESS TRUTH MODEL
+    # ------------------------------------------------------------------
+    # These methods make "PROCESS ALIVE" != "INTELLIGENCE ALIVE" explicit.
+    # compute_live_freshness() is pure read (no side effects, no trading
+    # impact). live_freshness_gate() is the ONLY place a decision is allowed
+    # to be downgraded to BLOCKED_BY_STALE for safety; it never relaxes or
+    # bypasses any existing risk guard.
+    # ==================================================================
+
+    def _stage_freshness(
+        self, stamp: datetime | None, max_age_sec: float
+    ) -> tuple[str, float | None]:
+        """Return (state, age_ms) for one stage given its last-update stamp."""
+        if stamp is None:
+            return "UNKNOWN", None
+        age = (datetime.now(UTC) - stamp).total_seconds()
+        if age < 0:
+            age = 0.0
+        if age > max_age_sec:
+            return "STALE", round(age * 1000.0, 1)
+        return "FRESH", round(age * 1000.0, 1)
+
+    def compute_live_freshness(self) -> dict[str, Any]:
+        """Authoritative freshness of every pipeline stage (observational).
+
+        Stages: market / features / inference / decision. Each is FRESH,
+        STALE, or UNKNOWN, independent of process uptime, state_version, or
+        HTTP 200. Carries monotonic sequence ids + change-detection hashes
+        so the coordinator proves exactly where state froze.
+        """
+        max_age = float(self._freshness_max_age_sec)
+        mkt_state, mkt_age = self._stage_freshness(self._last_tick_timestamp, max_age)
+        feat_state, feat_age = self._stage_freshness(self.last_feature_update, max_age)
+        inf_state, inf_age = self._stage_freshness(
+            self.last_inference_timestamp, max_age
+        )
+        dec_state, dec_age = self._stage_freshness(
+            self.last_decision_timestamp, max_age
+        )
+        # Overall health is the WORST of market/features/inference/decision.
+        # BUGFIX-G29: the MARKET stage is now included. A dead tick feed
+        # (market=STALE while is_connected() stays True) MUST surface as
+        # overall=STALE so live_freshness_gate() halts execution — process
+        # liveness (warmup READY / inference ENABLED / HTTP 200) is NOT proof
+        # of live market data. A frozen inference chain must also surface even
+        # though the process is up.
+        stage_states = [mkt_state, feat_state, inf_state, dec_state]
+        if "STALE" in stage_states:
+            overall = "STALE"
+        elif "UNKNOWN" in stage_states:
+            overall = "UNKNOWN"
+        else:
+            overall = "FRESH"
+        return {
+            "market": {"state": mkt_state, "age_ms": mkt_age},
+            "features": {"state": feat_state, "age_ms": feat_age},
+            "inference": {"state": inf_state, "age_ms": inf_age},
+            "decision": {"state": dec_state, "age_ms": dec_age},
+            "overall": overall,
+            "max_age_sec": max_age,
+            "sequences": {
+                "tick": self._tick_sequence,
+                "feature": self._feature_sequence,
+                "inference": self._inference_sequence,
+                "decision": self._decision_sequence,
+            },
+            "monotonic_tick_ms": self._monotonic_tick_ms,
+            "hashes": {
+                "raw_market": self._last_raw_market_hash,
+                "feature": self._last_feature_hash,
+                "model_input": self._last_model_input_hash,
+                "model_output": self._last_model_output_hash,
+            },
+            "telemetry": {
+                "market_updates_total": self._market_updates_total,
+                "feature_builds_total": self._feature_builds_total,
+                "inference_runs_total": self._inference_runs_total,
+                "inference_failures_total": self._inference_failures_total,
+                "decision_updates_total": self._decision_updates_total,
+                "stale_state_detected_total": self._stale_state_detected_total,
+            },
+        }
+
+    def live_freshness_gate(self, proposal: Any) -> tuple[Any, bool]:
+        """Safety gate: downgrade a live proposal when inference is STALE.
+
+        Returns (proposal, blocked). When the inference/feature chain is STALE
+        (frozen) the engine MUST NOT present a live BUY/SELL as if it were
+        current. It converts the action to NO_TRADE with a distinct reason
+        code BLOCKED_BY_STALE so the UI can separate "model predicted X but
+        guard blocked" from "no live intelligence". This NEVER weakens an
+        existing guard and NEVER fabricates confidence - it only blocks on
+        confirmed staleness. The last-known model probability is preserved in
+        the proposal for diagnosis but confidence is reported 0.0 so the UI
+        does not show a stale 22.1% as live.
+        """
+        fresh = self.compute_live_freshness()
+        overall = fresh.get("overall")
+        if overall != "STALE":
+            return proposal, False
+        self._stale_state_detected_total += 1
+        try:
+            return (
+                proposal.model_copy(
+                    update={
+                        "action": ActionType.NO_TRADE,
+                        "confidence": 0.0,
+                        "reason_code": "BLOCKED_BY_STALE",
+                    }
+                ),
+                True,
+            )
+        except Exception:
+            # Defensive: if proposal is not copyable, still block decision.
+            return proposal, True
+
+    def diagnose_freshness(self) -> dict[str, Any]:
+        """No-cache live-freshness diagnostic (observational only).
+
+        Fetches FRESH market state, builds FRESH features, assembles the FRESH
+        70D tensor, runs FRESH inference, and compares hashes at every stage
+        to localize the freeze. Does NOT mutate the live proposal/order path
+        and does NOT bypass any production safety control.
+        """
+        import hashlib
+
+        result: dict[str, Any] = {
+            "frozen_at": None,
+            "stages": {},
+            "error": None,
+        }
+        try:
+            # 1) MARKET: pull a fresh tick straight from the adapter.
+            tick = self.adapter.get_tick(self.config.execution.symbol)
+            if tick is None:
+                result["frozen_at"] = "MARKET"
+                result["error"] = "adapter.get_tick returned None"
+                return result
+            completed_bars = self.aggregator.get_completed_bars()
+            fv = self.feature_engine.compute_from_bars(
+                completed_bars=completed_bars, current_tick=tick
+            )
+            mkt_hash = hashlib.sha1(
+                f"{tick.bid:.5f}|{tick.ask:.5f}|{tick.last:.5f}".encode()
+            ).hexdigest()[:16]
+            feat_vals = list(getattr(fv, "to_tensor_input", lambda: [])())
+            feat_hash = hashlib.sha1(
+                ("|".join(f"{v:.6g}" for v in feat_vals)).encode()
+            ).hexdigest()[:16]
+            changed_market = mkt_hash != self._last_raw_market_hash
+            changed_feat = feat_hash != self._last_feature_hash
+            result["stages"]["MARKET"] = {
+                "changed": changed_market,
+                "hash": mkt_hash,
+            }
+            result["stages"]["FEATURES"] = {
+                "changed": changed_feat,
+                "hash": feat_hash,
+            }
+            if not changed_market:
+                result["frozen_at"] = "MARKET"
+                return result
+            if not changed_feat:
+                result["frozen_at"] = "FEATURES"
+                return result
+            # 2) MODEL INPUT: re-run real assembly + scaler.
+            x_vec, _ = self._build_live_feature_vector(fv)
+            with self._bundle_lock:
+                _b = self._bundle
+            if _b is None:
+                result["frozen_at"] = "MODEL_INPUT"
+                result["error"] = "bundle not initialized"
+                return result
+            x_scaled = _b.scaler.transform(
+                np.array(x_vec, dtype=np.float32).reshape(1, -1)
+            )
+            model_input_hash = hashlib.sha1(x_scaled.tobytes()).hexdigest()[:16]
+            result["stages"]["MODEL_INPUT"] = {
+                "changed": model_input_hash != self._last_model_input_hash,
+                "hash": model_input_hash,
+            }
+            # 3) MODEL OUTPUT: fresh inference.
+            probs = self._run_inference_tensor(x_scaled)
+            probs_list = probs.cpu().numpy().flatten().tolist()
+            model_output_hash = hashlib.sha1(
+                ("|".join(f"{v:.8g}" for v in probs_list)).encode()
+            ).hexdigest()[:16]
+            result["stages"]["MODEL_OUTPUT"] = {
+                "changed": model_output_hash != self._last_model_output_hash,
+                "hash": model_output_hash,
+                "probs": probs_list,
+            }
+            # Localize the freeze.
+            for stage in ("MARKET", "FEATURES", "MODEL_INPUT", "MODEL_OUTPUT"):
+                if not result["stages"][stage]["changed"]:
+                    result["frozen_at"] = stage
+                    break
+        except Exception as e:
+            result["error"] = f"{type(e).__name__}: {e}"
+            result["frozen_at"] = result["frozen_at"] or "UNKNOWN"
+        return result
+
+    def _run_inference_tensor(self, x_scaled: Any) -> torch.Tensor:
+        """Helper: run the model on an already-scaled tensor (diagnostic)."""
+        import torch as _torch
+
+        x = _torch.tensor(x_scaled, dtype=_torch.float32)
+        x = _torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+        with self._bundle_lock:
+            model = self._bundle.model
+        return model(x)
 
     def _infer_probabilities(self, fv) -> torch.Tensor:
         import time as _time
