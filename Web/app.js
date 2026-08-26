@@ -928,6 +928,8 @@ async function fetchSystemSnapshot() {
         updateObsStrip();
 
         handleIncomingLiveTick(data, { isSnapshot: true });
+        renderMarketRadar(liveUiSnapshot && liveUiSnapshot.radar);
+
 
     } catch (err) {
 
@@ -1624,6 +1626,8 @@ function switchTab(tabId, element) {
     if (tabId === 'tab-ai-analysis') {
 
         loadIntelligenceSummary();
+
+        renderMarketRadar(liveUiSnapshot && liveUiSnapshot.radar);
 
     }
 
@@ -3553,6 +3557,8 @@ function startSSE() {
             // Full snapshot: replace the merged state, then render.
 
             liveUiSnapshot = data;
+            renderMarketRadar(liveUiSnapshot && liveUiSnapshot.radar);
+
 
             handleIncomingLiveTick(data, { isSnapshot: true });
 
@@ -3683,6 +3689,8 @@ function handleIncomingLiveTick(payload, opts) {
     }
 
     payload = liveUiSnapshot;
+    renderMarketRadar(liveUiSnapshot && liveUiSnapshot.radar);
+
 
 
 
@@ -9853,6 +9861,97 @@ async function loadResearchSummaryWithObs() {
 
 
 
+// =============================================================================
+// MARKET RADAR (Intel Hub) - render binding ONLY.
+// Renders the backend `radar` object attached to the canonical
+// get_system_state() snapshot. We NEVER recompute or derive any trading
+// intelligence here; every value is taken verbatim from the backend payload.
+// =============================================================================
+
+function renderMarketRadar(radar) {
+
+    const statusEl   = document.getElementById('radar-status');
+    const regimeEl   = document.getElementById('radar-regime');
+    const typeEl     = document.getElementById('radar-best-type');
+    const dirEl      = document.getElementById('radar-direction');
+    const qualEl     = document.getElementById('radar-quality');
+    const compatEl   = document.getElementById('radar-compatible');
+    const countEl    = document.getElementById('radar-count');
+    const newsEl     = document.getElementById('radar-news');
+    const decisionEl = document.getElementById('radar-decision');
+    const updatedEl  = document.getElementById('radar-updated');
+
+    // Empty / missing radar: explicit waiting state - NEVER fake numbers.
+    if (!radar || typeof radar !== 'object') {
+
+        if (statusEl)   { statusEl.textContent = 'NO RADAR DATA'; statusEl.className = 'text-[10px] font-black px-2 py-1 rounded border bg-slate-500/10 text-slate-300 border-slate-500/30'; }
+        if (regimeEl)   regimeEl.textContent = '-';
+        if (typeEl)     typeEl.textContent = '-';
+        if (dirEl)      { dirEl.textContent = '-'; dirEl.className = 'text-[10px] font-bold px-2 py-0.5 rounded border bg-slate-500/10 text-slate-300 border-slate-500/30'; }
+        if (qualEl)     qualEl.textContent = '-';
+        if (compatEl)   compatEl.textContent = '-';
+        if (countEl)    countEl.textContent = '-';
+        if (newsEl)     { newsEl.textContent = '-'; newsEl.className = 'text-[10px] font-bold px-2 py-0.5 rounded border bg-slate-500/10 text-slate-300 border-slate-500/30'; }
+        if (decisionEl) decisionEl.textContent = 'Awaiting radar snapshot...';
+        if (updatedEl)  updatedEl.textContent = '-';
+        return;
+
+    }
+
+    // Status badge - exact backend `state` value, distinct visual states, no
+    // invented terminology. A Radar candidate is NEVER shown as an approved
+    // trade (e.g. SETUP_READY + BLOCKED_BY_GUARDIAN_UNSAFE_REGIME stays
+    // visibly distinct from ENTRY_APPROVED).
+    const state = radar.state || 'NO_SETUP';
+    const STATE_STYLE = {
+        SETUP_READY: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+        WATCHING:    'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
+        NO_SETUP:    'bg-slate-500/10 text-slate-300 border-slate-500/30',
+    };
+    if (statusEl) {
+        statusEl.textContent = state;
+        statusEl.className = 'text-[10px] font-black px-2 py-1 rounded border ' + (STATE_STYLE[state] || STATE_STYLE.NO_SETUP);
+    }
+
+    if (regimeEl)   regimeEl.textContent = radar.regime != null ? String(radar.regime) : '-';
+    if (countEl)    countEl.textContent = radar.candidate_count != null ? String(radar.candidate_count) : '-';
+
+    const best = radar.best_setup && typeof radar.best_setup === 'object' ? radar.best_setup : null;
+    if (typeEl)     typeEl.textContent = best && best.setup_type ? String(best.setup_type) : '-';
+    if (qualEl)     qualEl.textContent = best && typeof best.quality === 'number' ? (best.quality * 100).toFixed(1) + '%' : '-';
+
+    // Direction from factors.direction: +1 = BUY, -1 = SELL (only if present).
+    let dirText = '-', dirCls = 'bg-slate-500/10 text-slate-300 border-slate-500/30';
+    if (best && best.factors && best.factors.direction != null) {
+        if (best.factors.direction === 1)       { dirText = 'BUY';  dirCls = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'; }
+        else if (best.factors.direction === -1) { dirText = 'SELL'; dirCls = 'bg-rose-500/10 text-rose-400 border-rose-500/30'; }
+    }
+    if (dirEl) { dirEl.textContent = dirText; dirEl.className = 'text-[10px] font-bold px-2 py-0.5 rounded border ' + dirCls; }
+
+    if (compatEl) {
+        const cs = best && Array.isArray(best.compatible_strategies) ? best.compatible_strategies : [];
+        compatEl.textContent = cs.length ? cs.join(', ') : '-';
+    }
+
+    // News state + freshness (radar.updated_at is the authoritative timestamp).
+    const news = radar.news_state;
+    let newsCls = 'bg-slate-500/10 text-slate-300 border-slate-500/30';
+    if (news === 'HIGH_IMPACT') newsCls = 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+    else if (news === 'MEDIUM_IMPACT') newsCls = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+    else if (news === 'LOW_IMPACT' || news === 'CALM') newsCls = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+    if (newsEl) {
+        newsEl.textContent = news != null ? String(news) : '-';
+        newsEl.className = 'text-[10px] font-bold px-2 py-0.5 rounded border ' + newsCls;
+    }
+
+    // Decision reason - keeps a blocked candidate visibly distinct from approval.
+    if (decisionEl) decisionEl.textContent = radar.decision_reason != null ? String(radar.decision_reason) : '-';
+
+    if (updatedEl)  updatedEl.textContent = radar.updated_at != null ? String(radar.updated_at) : '-';
+
+}
+
+
 function esc(s) {
 
     return String(s == null ? '' : s)
@@ -9906,6 +10005,8 @@ async function loadIntelligenceSummary() {
         loadIntelligenceEvolution();
 
         loadIntelligenceAutopsies();
+        renderMarketRadar(liveUiSnapshot && liveUiSnapshot.radar);
+
 
     } catch (e) {
 
