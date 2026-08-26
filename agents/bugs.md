@@ -6024,3 +6024,15 @@ test_debug_snapshot_phase20.py suite (37 tests) PASS. Smoke probe
 scratch/probe_intelligence_pipeline_smoke.py confirms /api/debug/state and
 /api/live/state both 200 with engine=None. Reviewer: N/A (1-line fix,
 covered by regression test).
+## BUG-138 — Market Radar / SetupDetector had zero live consumers (missing integration) (2026-08-26 Nexus-Main)
+
+**Symptom:** The Intel Hub UI / Web Panel had no Market Radar setup rankings or structured entry zone / invalidation data, even though the `SetupDetector` subsystem existed in `model_generation/setup_detector.py`.
+
+**Root cause:** Missing integration. `SetupDetector` was exclusively used by `sample_maker.py` for offline training data labeling. The live engine never invoked it, no API endpoint exposed its results, and the UI had no telemetry stream for it.
+
+**Fix:**
+1. Hooked `SetupDetector` into `LiveEngine._on_new_bar` so completed-bar feature records are evaluated on bar-close cadence.
+2. Stored the ranked setup list as `self._last_market_radar` on the engine (pure + causal, failure-isolated).
+3. Exposed `radar` in the canonical `/api/live/state` response graph (`server.py`) so the Web Panel / Intel Hub consumes real structured setup rankings (`best_setup`, `setups`, `candidate_count`, `state`).
+
+**Tests:** `tests/unit/test_market_radar_integration.py` (NEW, PASS). Full integration suite (48 tests) PASS. Reviewer: PASS (nexus-reviewer).

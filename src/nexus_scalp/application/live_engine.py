@@ -89,6 +89,7 @@ from nexus_scalp.intelligence import (
     StrategyEvolutionEngine,
     TradeAutopsyEngine,
 )
+from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
 from nexus_scalp.model_lifecycle.champion import ChampionManager
@@ -893,6 +894,9 @@ class LiveEngine:
         # Web / UI Synchronization states to act as single source of truth
         self._last_tick: TickData | None = None
         self._last_fv: FeatureVector | None = None
+        # Market Radar (Hunter SetupDetector) - live, bar-close cadence (BUG-138 fix).
+        self.setup_detector = SetupDetector()
+        self._last_market_radar: dict[str, Any] | None = None
         self._last_model_input_tensor: list[float] | None = None
         self._last_regime_state: MarketRegimeState | None = None
         self._last_probs: torch.Tensor | None = None
@@ -3820,6 +3824,41 @@ class LiveEngine:
                         atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
                     )
                     self._last_mslie_vector = vector
+                    # Market Radar (Hunter SetupDetector): run completed-bar feature record
+                    # through detector and store ranked setup list (BUG-138 fix).
+                    try:
+                        radar_rec = rec
+                        if not radar_rec or not radar_rec.get("feat_0"):
+                            radar_rec = self._rolling_feature_records[-1] if self._rolling_feature_records else None
+                        if radar_rec is not None:
+                            detected = self.setup_detector.detect(radar_rec, timestamp=last_bar.timestamp)
+                            ranked = sorted(detected, key=lambda s: s.quality, reverse=True)
+                            best = ranked[0] if ranked else None
+                            _regime_val = getattr(getattr(self._last_regime_state, "regime_type", None), "value", None) or "UNKNOWN"
+                            _news_state_val = None
+                            try:
+                                if getattr(self, "news_engine", None) is not None:
+                                    _nc = self.news_engine.current_context()
+                                    if _nc is not None:
+                                        _ns = getattr(_nc, "state", None)
+                                        _news_state_val = getattr(_ns, "value", None) or str(_ns)
+                            except Exception:
+                                _news_state_val = None
+                            self._last_market_radar = {
+                                "symbol": tick.symbol,
+                                "timestamp": last_bar.timestamp.isoformat(),
+                                "bar_timestamp": last_bar.timestamp.isoformat(),
+                                "regime": str(_regime_val),
+                                "candidate_count": len(ranked),
+                                "best_setup": best.to_contract() if best else None,
+                                "setups": [s.to_contract() for s in ranked[:5]],
+                                "state": ("SETUP_READY" if best and best.quality >= self.setup_detector.min_quality else ("WATCHING" if ranked else "NO_SETUP")),
+                                "news_state": _news_state_val,
+                                "decision_reason": self._last_proposal.reason_code if getattr(self, "_last_proposal", None) else None,
+                                "updated_at": datetime.now(UTC).isoformat(),
+                            }
+                    except Exception as radar_err:
+                        logger.warning("[RADAR] event=BAR_DETECT_FAILED error=%s", radar_err)
             except Exception as ms_err:
                 logger.warning(
                     "[MSLIE] event=BAR_FEED_FAILED error=%s (isolated; trading unaffected)",

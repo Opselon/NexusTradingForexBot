@@ -2249,6 +2249,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "autopsies": state.get("intel_autopsies"),
                 "worker_status": state.get("intel_worker_status"),
             },
+            # Market Radar (BUG-138): backend-authoritative ranked setup list.
+            # Pure passthrough of LiveEngine._last_market_radar - UI never computes setups.
+            "radar": (
+                getattr(engine, "_last_market_radar", None)
+                if engine is not None
+                else None
+            ),
             "predictions": state.get("predictions", []),
             "mt5": {
                 "connection": {},
