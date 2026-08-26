@@ -5995,3 +5995,32 @@ pattern). Regression tests added for both resolution branches.
 (+2). LIVE restart proof: /api/live/state artifact=70d_liquidity/model.pt,
 scalp_v3/dim=70, liquidity compatibility PASS / SCHEMA_DIMENSION_MATCH.
 Reviewer: PASS (nexus-reviewer, false-block fix chain).
+## BUG-137 — Intel Hub / Debug contract section crashed when engine offline (unbound live_tensor_schema) (2026-08-26 Nexus-Main)
+
+**Symptom:** /api/debug/state emitted a warning and the contract section
+failed to build when app.state.engine was None (pre-start / offline / no
+connected engine). The Intelligence Hub therefore had no live 70D contract
+status surface, which reads as a stale or missing contractual signal.
+
+**Root cause:** _contract_section (web/debug_snapshot.py) assigned
+live_tensor_schema inside the `if engine is not None:` branch only, but
+returned it unconditionally in the contract dict. With engine=None the
+local was never bound -> NameError -> the whole contract section raised
+and degraded to an error payload instead of explicit UNAVAILABLE markers.
+This is exactly the class of defect that makes the Intel Hub render
+stale/broken contract state: a missing binding turns the contract
+telemetry into a no-op rather than a truthful 'not running' signal.
+
+**Fix:** Initialize live_tensor_schema = None at function scope
+(debug_snapshot.py _contract_section) so every code path emits the
+contract section with explicit unavailable markers (live_tensor_schema
+= None, status = 70D CONTRACT BROKEN when dim unknown), never a crash.
+Telemetry now stays honest on every path; the real running engine path
+was already correct and is unchanged.
+
+**Tests:** tests/unit/test_debug_snapshot_phase20.py::
+test_contract_section_engine_none_no_unbound_var (NEW, PASS). Full
+test_debug_snapshot_phase20.py suite (37 tests) PASS. Smoke probe
+scratch/probe_intelligence_pipeline_smoke.py confirms /api/debug/state and
+/api/live/state both 200 with engine=None. Reviewer: N/A (1-line fix,
+covered by regression test).

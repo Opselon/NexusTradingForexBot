@@ -437,6 +437,7 @@ def _contract_section(engine: Any) -> dict[str, Any]:
     actual_classes = None
     actual_input = None
     vector_len = None
+    live_tensor_schema = None
     if engine is not None:
         # PHASE 28 (bundle-authoritative contract): "actual" = what the runtime
         # REALLY operates under — the BUG-125 effective_* contract of the

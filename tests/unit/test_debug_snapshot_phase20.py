@@ -1001,3 +1001,29 @@ class TestDebugApi:
                 assert _re.fullmatch(r"[A-Z][A-Z0-9_]*(?: [A-Z][A-Z0-9_]*)*", reason), (
                     f"reason {reason!r} in section {sec_name} looks like exception text"
                 )
+
+    def test_contract_section_engine_none_no_unbound_var(self):
+        """BUG-137 regression: _contract_section must render cleanly when
+        engine is None (offline / pre-start). It previously referenced
+        live_tensor_schema only inside the `if engine is not None` branch
+        but returned it unconditionally -> NameError -> the entire
+        /api/debug/state contract section failed to build (Intelligence
+        Hub showed no live 70D contract status). The variable is now
+        initialized at function scope so the contract section is always
+        emitted with explicit unavailable markers, never a crash."""
+        from nexus_scalp.web import debug_snapshot as ds
+        # Must not raise even with engine=None.
+        contract = ds._contract_section(None)
+        assert isinstance(contract, dict)
+        # explicit unavailable markers, not a fabricated OK state
+        assert contract.get("live_tensor_schema") is None
+        assert "status" in contract
+        assert "70D CONTRACT" in contract["status"]
+        # And the full snapshot + live state endpoints must still return 200.
+        from fastapi.testclient import TestClient
+        from nexus_scalp.web.server import create_app
+        app = create_app()
+        app.state.engine = None
+        c = TestClient(app)
+        assert c.get("/api/debug/state").status_code == 200
+        assert c.get("/api/live/state").status_code == 200
