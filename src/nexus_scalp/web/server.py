@@ -1539,6 +1539,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "ai_confidence": ai_confidence,
             "ai_reason": ai_reason,
             "predictions": predictions_payload,
+            # Market Radar (BUG-138): backend-authoritative ranked setup list.
+            # Pure passthrough of LiveEngine._last_market_radar - the UI/SSE/WS
+            # never compute setups. Included in the canonical snapshot so REST
+            # (/api/live/state), SSE (/api/ticks/stream) and WebSocket all carry
+            # the SAME authoritative radar object (single source of truth).
+            "radar": (
+                getattr(engine, "_last_market_radar", None)
+                if engine is not None
+                else None
+            ),
             "algo_config": algo_config_data,
             "liquidity": _liquidity_state_section(app.state.engine),
             "visual_overlays": {
@@ -2249,13 +2259,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "autopsies": state.get("intel_autopsies"),
                 "worker_status": state.get("intel_worker_status"),
             },
-            # Market Radar (BUG-138): backend-authoritative ranked setup list.
-            # Pure passthrough of LiveEngine._last_market_radar - UI never computes setups.
-            "radar": (
-                getattr(engine, "_last_market_radar", None)
-                if engine is not None
-                else None
-            ),
+            # Market Radar (BUG-138): sourced from the canonical get_system_state()
+            # snapshot (same backend _last_market_radar passthrough) so REST, SSE
+            # and WebSocket share one authoritative radar object.
+            "radar": state.get("radar"),
             "predictions": state.get("predictions", []),
             "mt5": {
                 "connection": {},
