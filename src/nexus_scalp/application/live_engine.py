@@ -3807,6 +3807,64 @@ class LiveEngine:
                 logger.error("[CANDLE_INTEL] bar feed failed (isolated)", error=str(ci_err))
 
         # ---------------------------------------------------------------------
+        # Build the canonical 50D feature record for THIS bar (always available,
+        # independent of MSLIE). Used by the Market Radar detector below and the
+        # rolling retrain buffer. NOTE: rec must be defined BEFORE the radar block
+        # (BUG-139: prior nesting inside the mslie_engine conditional left `rec`
+        # unbound when mslie_engine was None -> BAR_DETECT_FAILED).
+        x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
+        rec = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
+        rec.update(
+            close=last_bar.close,
+            high=last_bar.high,
+            low=last_bar.low,
+            open=last_bar.open,
+            spread=(tick.ask - tick.bid),
+            atr_m1=fv.atr_m1,
+        )
+        if self._governance_reference_vector is None:
+            self._governance_reference_vector = [float(v) for v in x50]
+
+        # ---------------------------------------------------------------------
+        # Market Radar (Hunter SetupDetector) - live, bar-close cadence (BUG-138).
+        # Runs on the SAME completed-bar feature record as the sample-maker uses,
+        # but here for the LIVE path. Pure + causal; failure-isolated. Stores the
+        # ranked setup list as _last_market_radar for the Intel Hub / Web Panel.
+        try:
+            radar_rec = rec
+            if "feat_0" not in radar_rec:
+                radar_rec = self._rolling_feature_records[-1] if self._rolling_feature_records else None
+            if radar_rec is not None:
+                detected = self.setup_detector.detect(radar_rec, timestamp=last_bar.timestamp)
+                ranked = sorted(detected, key=lambda s: s.quality, reverse=True)
+                best = ranked[0] if ranked else None
+                _regime_val = getattr(getattr(self._last_regime_state, "regime_type", None), "value", None) or "UNKNOWN"
+                _news_state_val = None
+                try:
+                    if getattr(self, "news_engine", None) is not None:
+                        _nc = self.news_engine.current_context()
+                        if _nc is not None:
+                            _ns = getattr(_nc, "state", None)
+                            _news_state_val = getattr(_ns, "value", None) or str(_ns)
+                except Exception:
+                    _news_state_val = None
+                self._last_market_radar = {
+                    "symbol": tick.symbol,
+                    "timestamp": last_bar.timestamp.isoformat(),
+                    "bar_timestamp": last_bar.timestamp.isoformat(),
+                    "regime": str(_regime_val),
+                    "candidate_count": len(ranked),
+                    "best_setup": best.to_contract() if best else None,
+                    "setups": [s.to_contract() for s in ranked[:5]],
+                    "state": ("SETUP_READY" if best and best.quality >= self.setup_detector.min_quality else ("WATCHING" if ranked else "NO_SETUP")),
+                    "news_state": _news_state_val,
+                    "decision_reason": self._last_proposal.reason_code if getattr(self, "_last_proposal", None) else None,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+        except Exception as radar_err:
+            logger.warning("[RADAR] event=BAR_DETECT_FAILED error=%s", radar_err)
+
+        # ---------------------------------------------------------------------
         # MSLIE: market perception on the bar-close cadence (pure numpy, no
         # I/O, no DB — INV-001). The engine produces the structured
         # MarketIntelligenceFeatureVectorV1 for the debug UI / AI models.
@@ -3824,61 +3882,12 @@ class LiveEngine:
                         atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
                     )
                     self._last_mslie_vector = vector
-                    # Market Radar (Hunter SetupDetector): run completed-bar feature record
-                    # through detector and store ranked setup list (BUG-138 fix).
-                    try:
-                        radar_rec = rec
-                        if not radar_rec or not radar_rec.get("feat_0"):
-                            radar_rec = self._rolling_feature_records[-1] if self._rolling_feature_records else None
-                        if radar_rec is not None:
-                            detected = self.setup_detector.detect(radar_rec, timestamp=last_bar.timestamp)
-                            ranked = sorted(detected, key=lambda s: s.quality, reverse=True)
-                            best = ranked[0] if ranked else None
-                            _regime_val = getattr(getattr(self._last_regime_state, "regime_type", None), "value", None) or "UNKNOWN"
-                            _news_state_val = None
-                            try:
-                                if getattr(self, "news_engine", None) is not None:
-                                    _nc = self.news_engine.current_context()
-                                    if _nc is not None:
-                                        _ns = getattr(_nc, "state", None)
-                                        _news_state_val = getattr(_ns, "value", None) or str(_ns)
-                            except Exception:
-                                _news_state_val = None
-                            self._last_market_radar = {
-                                "symbol": tick.symbol,
-                                "timestamp": last_bar.timestamp.isoformat(),
-                                "bar_timestamp": last_bar.timestamp.isoformat(),
-                                "regime": str(_regime_val),
-                                "candidate_count": len(ranked),
-                                "best_setup": best.to_contract() if best else None,
-                                "setups": [s.to_contract() for s in ranked[:5]],
-                                "state": ("SETUP_READY" if best and best.quality >= self.setup_detector.min_quality else ("WATCHING" if ranked else "NO_SETUP")),
-                                "news_state": _news_state_val,
-                                "decision_reason": self._last_proposal.reason_code if getattr(self, "_last_proposal", None) else None,
-                                "updated_at": datetime.now(UTC).isoformat(),
-                            }
-                    except Exception as radar_err:
-                        logger.warning("[RADAR] event=BAR_DETECT_FAILED error=%s", radar_err)
             except Exception as ms_err:
                 logger.warning(
                     "[MSLIE] event=BAR_FEED_FAILED error=%s (isolated; trading unaffected)",
                     ms_err,
                 )
 
-        x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
-        # TASK-6: capture the canonical reference vector for feature parity
-        # (live vs offline/replay baseline, spec 6).
-        if self._governance_reference_vector is None:
-            self._governance_reference_vector = [float(v) for v in x50]
-        rec = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
-        rec.update(
-            close=last_bar.close,
-            high=last_bar.high,
-            low=last_bar.low,
-            open=last_bar.open,
-            spread=(tick.ask - tick.bid),
-            atr_m1=fv.atr_m1,
-        )
         self._rolling_feature_records.append(rec)
         self._bars_since_last_retrain += 1
 

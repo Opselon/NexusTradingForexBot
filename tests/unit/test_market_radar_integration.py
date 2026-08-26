@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from nexus_scalp.web.server import create_app
 from types import SimpleNamespace
+from datetime import datetime, UTC
 
 
 def test_market_radar_live_state_integration():
@@ -74,3 +75,35 @@ def test_market_radar_live_state_integration():
     assert radar["best_setup"]["setup_type"] == "LIQUIDITY_SWEEP"
     assert radar["candidate_count"] == 1
     print("Market Radar integration test PASSED successfully.")
+
+
+def test_radar_on_new_bar_no_mslie_engine():
+    """BUG-139 regression: LiveEngine._on_new_bar must run Market Radar successfully
+    even when mslie_engine is None (without raising NameError on `rec`)."""
+    from nexus_scalp.application.live_engine import LiveEngine
+    from nexus_scalp.domain.models import TickData
+    from nexus_scalp.market_data.bar_aggregator import BarData
+    from nexus_scalp.configuration.config import AppConfig
+
+    class _MockAdapter:
+        pass
+
+    config = AppConfig()
+    engine = LiveEngine(config=config, adapter=_MockAdapter())
+    engine.mslie_engine = None  # force None to test the fallback path
+
+    tick = TickData(symbol="XAUUSD", bid=2400.0, ask=2400.5, timestamp=datetime.now(UTC))
+    bar = BarData(symbol="XAUUSD", timeframe="M1", timestamp=datetime.now(UTC), open=2399.0, high=2402.0, low=2398.0, close=2401.0, tick_volume=100, is_complete=True)
+    
+    class _MockFV:
+        atr_m1 = 1.0
+        def to_tensor_input(self):
+            return [0.0] * 50
+
+    fv = _MockFV()
+    
+    # Must run without raising NameError or UnboundLocalError
+    engine._on_new_bar(tick=tick, fv=fv, last_bar=bar)
+    assert engine._last_market_radar is not None
+    assert "candidate_count" in engine._last_market_radar
+    print("BUG-139 regression test PASSED successfully.")

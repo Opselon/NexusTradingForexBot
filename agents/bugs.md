@@ -6036,3 +6036,15 @@ covered by regression test).
 3. Exposed `radar` in the canonical `/api/live/state` response graph (`server.py`) so the Web Panel / Intel Hub consumes real structured setup rankings (`best_setup`, `setups`, `candidate_count`, `state`).
 
 **Tests:** `tests/unit/test_market_radar_integration.py` (NEW, PASS). Full integration suite (48 tests) PASS. Reviewer: PASS (nexus-reviewer).
+## BUG-139 — Market Radar bar-hook used `rec` unbound when mslie_engine was None (2026-08-26 Nexus-Main)
+
+**Symptom:** When wiring Market Radar in `LiveEngine._on_new_bar`, the radar block was nested inside `if ms is not None:` and referenced `rec` before `rec` was defined -> `NameError` / `BAR_DETECT_FAILED` warning logged, leaving `_last_market_radar` as None.
+
+**Root cause:** Scoping mismatch. `rec` was constructed later in `_on_new_bar`, while radar ran inside an optional engine block. Falsy checks on `feat_0` also dropped zero-valued feature items.
+
+**Fix:**
+1. Build `rec` and `x50` unconditionally right at the top of `_on_new_bar` (independent of MSLIE).
+2. Run Market Radar unconditionally after `rec` is ready.
+3. Corrected radar_rec missing check to `"feat_0" not in radar_rec` instead of truthiness.
+
+**Tests:** `tests/unit/test_market_radar_integration.py::test_radar_on_new_bar_no_mslie_engine` (NEW, PASS). Full integration suite PASS.
