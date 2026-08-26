@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import sqlite3
 import sys
 from collections.abc import Callable
@@ -305,6 +306,197 @@ class HealthEngine:
             f"artifact exists but could not be introspected: {candidate}",
             "Run `nexus doctor --verbose` for a full trace.",
         )
+
+    def check_model_contract(self) -> HealthEntry:
+        """MODEL_INPUT_DIMENSION_MISMATCH gate: validate serving bundle vs contract.
+
+        Loads the configured model artifact, reads its declared schema id +
+        input dimension (state_dict first-layer in_features when available), and
+        runs resolve_model_compatibility against the active runtime contract
+        (scalp_v3 70D canonical; serving scalp_v1 50D). Also dimension-checks a
+        co-located scaler artifact when present. Emits FAIL with an explicit
+        MODEL_INPUT_DIMENSION_MISMATCH / MODEL_TENSOR_DIMENSION_MISMATCH reason.
+        """
+        import torch  # type: ignore[import-not-found]
+
+        from nexus_scalp.features.liquidity_runtime import resolve_model_compatibility
+        from nexus_scalp.features.schema_contract import (
+            SCHEMA_ID as CONTRACT_ID,
+        )
+
+        runtime_id = CONTRACT_ID
+        cfg = self._load_config()
+        model_dim_from_schema = None
+        if cfg is not None and cfg is not False:
+            model_dim_from_schema = getattr(
+                getattr(cfg, "model", None), "feature_dimension", None
+            )
+        runtime_dim = getattr(cfg, "model", None)
+        if runtime_id == CONTRACT_ID:
+            from nexus_scalp.features.schema_contract import DIMENSION as CONTRACT_DIM
+
+            runtime_dim = CONTRACT_DIM
+
+        candidate = None
+        if cfg is not None and cfg is not False:
+            configured = getattr(getattr(cfg, "model", None), "model_artifact_path", None)
+            if configured:
+                p = Path(configured)
+                candidate = p if p.is_absolute() else self.workspace / p
+        if candidate is None or not candidate.exists():
+            matches = sorted(self.model_dir.rglob("model.pt")) if self.model_dir.exists() else []
+            if matches:
+                candidate = matches[0]
+        if candidate is None or not candidate.exists():
+            return HealthEntry(
+                "MODEL_CONTRACT",
+                "WARNING",
+                "no model artifact present — contract not evaluated",
+                "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            )
+        try:
+            sd = torch.load(candidate, map_location="cpu", weights_only=True)
+        except Exception as e:
+            return HealthEntry(
+                "MODEL_CONTRACT", "WARNING", f"could not load artifact: {e}", "Run `nexus model-doctor`."
+            )
+        state = sd.get("state_dict", sd) if isinstance(sd, dict) else sd
+        model_schema_id: str | None = None
+        model_dim: int | None = None
+        if isinstance(sd, dict):
+            meta = sd.get("metadata") or sd.get("model_metadata") or {}
+            model_schema_id = meta.get("schema_id") or meta.get("feature_schema_id")
+            model_dim = (
+                meta.get("dimension")
+                or meta.get("feature_dimension")
+                or model_dim_from_schema
+            )
+        if model_dim is None:
+            try:
+                first_w = next(
+                    (v for k, v in state.items() if "weight" in k and hasattr(v, "shape")), None
+                )
+                if first_w is not None and len(first_w.shape) >= 2:
+                    model_dim = int(first_w.shape[-1])
+            except Exception:
+                model_dim = None
+        compat = resolve_model_compatibility(
+            model_schema_id, model_dim, runtime_id, runtime_dim
+        )
+        result = compat.get("result")
+        reason = compat.get("reason", "unknown")
+        if result == "BLOCK":
+            return HealthEntry(
+                "MODEL_CONTRACT",
+                "FAIL",
+                f"MODEL_INPUT_DIMENSION_MISMATCH: bundle declares "
+                f"{model_schema_id or '?'}@{model_dim} vs runtime "
+                f"{runtime_id}@{runtime_dim} ({reason})",
+                "Do NOT ship this bundle — retrain/export against the active contract.",
+            )
+        if result == "UNKNOWN":
+            return HealthEntry(
+                "MODEL_CONTRACT",
+                "WARNING",
+                f"bundle metadata incomplete ({reason}) — could not confirm contract",
+                "Verify the artifact's schema_id/dimension metadata.",
+            )
+        return HealthEntry(
+            "MODEL_CONTRACT",
+            "PASS",
+            f"bundle {model_schema_id or 'unknown'}@{model_dim} matches "
+            f"{runtime_id}@{runtime_dim} ({reason})",
+        )
+
+    def check_worker_liveness(self) -> HealthEntry:
+        """Stale/duplicate worker detection from persisted checkpoints.
+
+        Flags a worker whose last checkpoint `last_cycle_at` is older than the
+        stale threshold as STALE/FAIL. Missing tables are not a defect.
+        """
+        from datetime import UTC, datetime
+
+        STALE_SECONDS = int(os.environ.get("NSE_WORKER_STALE_SECONDS", "300"))
+        if not self.db_path.exists():
+            return HealthEntry(
+                "WORKER_LIVENESS", "WARNING", "audit DB not present yet (no engine run)"
+            )
+        try:
+            con = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True, timeout=2)
+            try:
+                now = datetime.now(UTC)
+                latest: str | None = None
+                for table in ("intelligence_worker_state", "research_worker_state"):
+                    try:
+                        rows = con.execute(
+                            f"SELECT last_cycle_at FROM {table} ORDER BY rowid DESC LIMIT 1"
+                        ).fetchall()
+                    except sqlite3.Error:
+                        continue
+                    if rows and rows[0][0]:
+                        latest = max(latest or rows[0][0], rows[0][0])
+                if latest is None:
+                    return HealthEntry(
+                        "WORKER_LIVENESS",
+                        "WARNING",
+                        "worker checkpoint tables empty (no cycles recorded yet)",
+                    )
+                try:
+                    ts = datetime.fromisoformat(latest.replace("Z", "+00:00"))
+                except ValueError:
+                    return HealthEntry(
+                        "WORKER_LIVENESS", "WARNING", f"unparseable heartbeat: {latest}"
+                    )
+                age = (now - ts).total_seconds()
+                if age > STALE_SECONDS:
+                    return HealthEntry(
+                        "WORKER_LIVENESS",
+                        "FAIL",
+                        f"worker heartbeat stale: last cycle {int(age)}s ago (threshold {STALE_SECONDS}s)",
+                        "Check the engine / worker process; a worker may have crashed.",
+                    )
+                return HealthEntry(
+                    "WORKER_LIVENESS", "PASS", f"worker heartbeat fresh ({int(age)}s ago)"
+                )
+            finally:
+                con.close()
+        except sqlite3.Error as e:
+            return HealthEntry("WORKER_LIVENESS", "WARNING", f"cannot read worker state: {e}")
+
+    def check_a2a_gateway(self) -> HealthEntry:
+        """A2A gateway / web reachability probe (informational).
+
+        Attempts a short HTTP GET to the engine's health endpoint; engine-not-
+        running is WARNING (not FAIL), since the engine need not be up for
+        `doctor`. Only fails when a config explicitly requires the gateway and
+        it is unreachable.
+        """
+        import os as _os
+        import urllib.request
+
+        host = _os.getenv("NSE_WEB_HOST", "127.0.0.1")
+        port = _os.getenv("NSE_WEB_PORT", "8080")
+        # If the host is explicitly routable and no token is configured, flag exposure.
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            if not _os.getenv("A2A_BEARER_TOKEN"):
+                return HealthEntry(
+                    "A2A_GATEWAY",
+                    "WARNING",
+                    f"web/A2A bound to routable host {host} without A2A_BEARER_TOKEN",
+                    "Set A2A_BEARER_TOKEN or bind to 127.0.0.1.",
+                )
+        url = f"http://{host}:{port}/api/health"
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=3):
+                return HealthEntry("A2A_GATEWAY", "PASS", f"reachable ({url})")
+        except Exception as e:
+            return HealthEntry(
+                "A2A_GATEWAY",
+                "WARNING",
+                f"engine gateway not reachable at {url} ({type(e).__name__})",
+                "Engine not running yet, or gateway disabled.",
+            )
 
     def check_feature_schema(self) -> HealthEntry:
         try:

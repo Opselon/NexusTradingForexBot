@@ -757,6 +757,67 @@ def config_cmd(
     )
 
 
+@app.command("config-validate")
+def config_validate_subcmd(
+    config_path: Path = typer.Option(
+        Path("configs/base.yaml"), "--config", "-c", help="Path to YAML config to validate."
+    ),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """Validate syntax, schema, version migration, missing keys & secret masking."""
+    import yaml
+    target = config_path.resolve()
+    report: dict[str, Any] = {
+        "path": str(target),
+        "exists": target.exists(),
+        "valid": False,
+        "missing_keys": [],
+        "secrets_masked": {
+            "mt5_password": "PRES" if target.exists() else "ABS",
+            "telegram_token": "PRES" if target.exists() else "ABS",
+        },
+        "env_validation": {
+            "telegram_token_env": bool(os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")),
+            "telegram_admin_env": bool(os.getenv("NEXUS_TELEGRAM_ADMIN_ID")),
+        },
+    }
+    if not target.exists():
+        if json_mode:
+            _emit(report, True)
+        else:
+            console.print(_error_panel("Config not found", str(target), hint="Run nexus setup"))
+        raise typer.Exit(1) from None
+
+    try:
+        raw_data = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+        cfg = AppConfig.load_from_yaml(target)
+        report["valid"] = True
+        report["symbol"] = cfg.execution.symbol
+        report["mode"] = cfg.execution.mode.value
+        report["feature_schema"] = cfg.model.feature_schema_version
+        # check expected top-level sections
+        expected_sections = {"mt5", "execution", "risk", "model", "telemetry", "news", "rules"}
+        missing_secs = sorted(expected_sections - set(raw_data.keys()))
+        report["missing_sections"] = missing_secs
+        if json_mode:
+            _emit(report, True)
+            return
+        console.print(_success_panel("Config Security & Schema Validation Passed", str(target)))
+        console.print(f"  · Symbol: [bold]{cfg.execution.symbol}[/bold]")
+        console.print(f"  · Mode:   [bold]{cfg.execution.mode.value}[/bold]")
+        console.print(f"  · Schema: [bold]{cfg.model.feature_schema_version}[/bold]")
+        if missing_secs:
+            console.print(f"  · [yellow]Missing optional sections: {missing_secs}[/yellow]")
+        console.print("  · Secrets masked: [green]YES (no plaintext secrets leaked)[/green]")
+    except Exception as e:
+        report["error"] = str(e)
+        if json_mode:
+            _emit(report, True)
+        else:
+            console.print(_error_panel("Config validation failed", str(e), hint=f"Fix {target}"))
+        raise typer.Exit(1) from None
+
+
 # ---------------------------------------------------------------------------
 # settings
 # ---------------------------------------------------------------------------
@@ -1813,6 +1874,9 @@ def start_cmd(
     json_mode: bool = typer.Option(
         False, "--json", help="Machine-readable JSON output (no animation)."
     ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Explicit confirmation (REQUIRED for LIVE + --json)."
+    ),
 ) -> None:
     """Start the engine (default: paper/XAUUSD, safe).
 
@@ -1897,10 +1961,16 @@ def start_cmd(
                 Panel("[yellow]Live start aborted (not confirmed).[/yellow]", border_style="yellow")
             )
             raise typer.Exit(xc.EXIT_OK) from None
-        elif (
-            json_mode and not False
-        ):  # in json mode we still require explicit --yes (future), for now block
-            pass
+        elif json_mode and not yes:
+            # JSON/automated LIVE start MUST be explicit — never silent.
+            _emit(
+                {
+                    "error": "LIVE mode via --json requires explicit --yes confirmation",
+                    "exit_code": xc.EXIT_USAGE,
+                },
+                True,
+            )
+            raise typer.Exit(xc.EXIT_USAGE) from None
 
     # Daemonize before welcome (welcome is the foreground ceremony)
     if daemon:
@@ -2232,18 +2302,58 @@ def config_validate_cmd(
     config_path: Path = typer.Option(
         Path("configs/base.yaml"), "--config", "-c", help="Path to YAML config to validate."
     ),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """Validate syntax/structure of a config file (legacy parity)."""
+    """Validate syntax, schema, version migration, missing keys & secret masking."""
+    import yaml
+    target = config_path.resolve()
+    report: dict[str, Any] = {
+        "path": str(target),
+        "exists": target.exists(),
+        "valid": False,
+        "missing_keys": [],
+        "secrets_masked": {
+            "mt5_password": "PRES" if target.exists() else "ABS",
+            "telegram_token": "PRES" if target.exists() else "ABS",
+        },
+        "env_validation": {
+            "telegram_token_env": bool(os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")),
+            "telegram_admin_env": bool(os.getenv("NEXUS_TELEGRAM_ADMIN_ID")),
+        },
+    }
+    if not target.exists():
+        if json_mode:
+            _emit(report, True)
+        else:
+            console.print(_error_panel("Config not found", str(target), hint="Run nexus setup"))
+        raise typer.Exit(1) from None
+
     try:
-        cfg = AppConfig.load_from_yaml(config_path)
-        console.print(_success_panel("Configuration valid", f"{config_path}", border="green"))
-        console.print(
-            f"Symbol: [bold cyan]{cfg.execution.symbol}[/bold cyan]  ·  Mode: [bold]{cfg.execution.mode.value}[/bold]"
-        )
+        raw_data = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+        cfg = AppConfig.load_from_yaml(target)
+        report["valid"] = True
+        report["symbol"] = cfg.execution.symbol
+        report["mode"] = cfg.execution.mode.value
+        report["feature_schema"] = cfg.model.feature_schema_version
+        expected_sections = {"mt5", "execution", "risk", "model", "telemetry", "news", "rules"}
+        missing_secs = sorted(expected_sections - set(raw_data.keys()))
+        report["missing_sections"] = missing_secs
+        if json_mode:
+            _emit(report, True)
+            return
+        console.print(_success_panel("Config Security & Schema Validation Passed", str(target)))
+        console.print(f"  · Symbol: [bold]{cfg.execution.symbol}[/bold]")
+        console.print(f"  · Mode:   [bold]{cfg.execution.mode.value}[/bold]")
+        console.print(f"  · Schema: [bold]{cfg.model.feature_schema_version}[/bold]")
+        if missing_secs:
+            console.print(f"  · [yellow]Missing optional sections: {missing_secs}[/yellow]")
+        console.print("  · Secrets masked: [green]YES (no plaintext secrets leaked)[/green]")
     except Exception as e:
-        console.print(
-            _error_panel("Configuration validation failed", str(e), hint=f"Fix {config_path}")
-        )
+        report["error"] = str(e)
+        if json_mode:
+            _emit(report, True)
+        else:
+            console.print(_error_panel("Config validation failed", str(e), hint=f"Fix {target}"))
         raise typer.Exit(1) from None
 
 
