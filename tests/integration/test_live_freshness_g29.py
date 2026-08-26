@@ -331,3 +331,81 @@ def _fake_proposal(action, confidence):
         risk_reward_ratio=1.5,
         reason_code="TEST",
     )
+
+
+# ---------------------------------------------------------------------------
+# BUGFIX-G29: dead tick feed (market STALE) is an execution-halting defect
+# ---------------------------------------------------------------------------
+def test_dead_tick_feed_makes_overall_stale_and_halts(tmp_path):
+    """BUGFIX-G29 (reviewer req #2 / req #5): a process that is RUNNING with
+    warmup READY + inference ENABLED but whose MARKET stage is frozen (dead tick
+    feed, is_connected()==True) MUST be reported overall=STALE and the safety
+    gate MUST downgrade execution to NO_TRADE/BLOCKED_BY_STALE.
+
+    This pins the precise defect class found in production on 2026-08-26: the
+    market stage was previously excluded from `overall`, so a frozen feed never
+    halted trading while health=READY and state_version kept advancing.
+    """
+    from nexus_scalp.domain.models import ActionType
+
+    engine, adapter = _make_engine(tmp_path)
+    # Process is alive and "ready" but the market tick is frozen > max_age.
+    engine._running = True
+    engine.warmup_state = "READY"
+    engine._inference_enabled = True
+    engine._last_tick_timestamp = datetime.now(UTC) - timedelta(seconds=900)
+    # Features/inference/decision are FRESH so the bug is isolated to the
+    # MARKET stage being excluded from `overall`.
+    engine.last_feature_update = datetime.now(UTC)
+    engine.last_inference_timestamp = datetime.now(UTC)
+    engine.last_decision_timestamp = datetime.now(UTC)
+
+    fresh = engine.compute_live_freshness()
+    assert fresh["market"]["state"] == "STALE"
+    assert fresh["overall"] == "STALE", (
+        "dead tick feed must surface as overall STALE; excluding market from "
+        "overall is the BUGFIX-G29 defect"
+    )
+
+    # The safety gate must now halt a live BUY/SELL proposal.
+    proposal = _fake_proposal(ActionType.BUY, 0.5)
+    out, blocked = engine.live_freshness_gate(proposal)
+    assert blocked is True
+    assert out.action == ActionType.NO_TRADE
+    assert out.reason_code == "BLOCKED_BY_STALE"
+    assert out.confidence == 0.0
+
+
+def test_health_section_reports_stale_on_frozen_pipeline(tmp_path):
+    """BUGFIX-G29: the engine health status MUST surface STALE when the live
+    freshness model reports overall=STALE, even though the process is running
+    and warmup READY. health=READY MUST NOT mask a dead market feed.
+
+    Drives the real request closure (_build_health_section inside
+    get_system_state) through create_app + TestClient so the production code
+    path is exercised end-to-end, not a re-implementation.
+    """
+    from fastapi.testclient import TestClient
+
+    from nexus_scalp.web import server as web_server
+
+    engine, _ = _make_engine(tmp_path)
+    engine._running = True
+    engine.warmup_state = "READY"
+    engine._inference_enabled = True
+    # Frozen market feed (the live 2026-08-26 condition).
+    engine._last_tick_timestamp = datetime.now(UTC) - timedelta(seconds=900)
+
+    app = web_server.create_app(engine_ref=engine)
+    with TestClient(app) as client:
+        resp = client.get("/api/status")
+    assert resp.status_code == 200, resp.text
+    health = resp.json()["health"]
+    assert health["subsystems"]["engine"] == "STALE", (
+        f"expected engine_status=STALE on frozen pipeline, got "
+        f"{health['subsystems'].get('engine')!r}"
+    )
+    assert "live_freshness" in health["details"], (
+        "frozen-pipeline health must carry the live_freshness contract so the "
+        "UI can never present a stale engine as READY"
+    )
