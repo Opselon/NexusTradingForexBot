@@ -2328,6 +2328,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             # and WebSocket share one authoritative radar object.
             "radar": state.get("radar"),
             "predictions": state.get("predictions", []),
+            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: authoritative per-stage
+            # freshness + UI stale flag (mirrors get_system_state() so REST,
+            # SSE and WebSocket all carry the same truth).
+            "live_freshness": state.get("live_freshness"),
+            "is_stale": state.get("is_stale", False),
             "mt5": {
                 "connection": {},
                 "diagnostics": {},
