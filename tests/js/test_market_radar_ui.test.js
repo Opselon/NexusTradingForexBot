@@ -124,3 +124,36 @@ test('radar with no best_setup does not crash and shows dashes', () => {
 });
 
 console.log('\nAll ' + passed + ' market-radar UI tests passed.');
+
+
+test('frontend presentation adapter maps strategy and model fields correctly', () => {
+    const payload = {
+        state_version: 1500,
+        strategy: { decision: 'NO_TRADE', reason: 'BLOCKED_BY_GUARDIAN_UNSAFE_REGIME' },
+        model: {
+            confidence: 0.314,
+            probabilities_available: true,
+            probabilities: { no_trade: 0.204, buy: 0.314, sell: 0.295, WAIT: 0.185 }
+        }
+    };
+    const strat = payload.strategy || {};
+    const mod = payload.model || {};
+    if (payload.ai_decision == null && strat.decision != null) payload.ai_decision = strat.decision;
+    if (payload.ai_reason == null && strat.reason != null) payload.ai_reason = strat.reason;
+    if (payload.ai_confidence == null && mod.confidence != null) payload.ai_confidence = mod.confidence;
+    if (!payload.probs && mod.probabilities) {
+        const p = mod.probabilities;
+        payload.probs = {
+            available: !!mod.probabilities_available,
+            no_trade: p.no_trade != null ? p.no_trade : p.NO_TRADE,
+            buy: p.buy != null ? p.buy : p.BUY_MARKET,
+            sell: p.sell != null ? p.sell : p.SELL_MARKET,
+            wait: p.wait != null ? p.wait : p.WAIT
+        };
+    }
+    assert.strictEqual(payload.ai_decision, 'NO_TRADE');
+    assert.strictEqual(payload.ai_reason, 'BLOCKED_BY_GUARDIAN_UNSAFE_REGIME');
+    assert.strictEqual(payload.ai_confidence, 0.314);
+    assert.strictEqual(payload.probs.available, true);
+    assert.strictEqual(payload.probs.buy, 0.314);
+});

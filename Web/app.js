@@ -3659,6 +3659,24 @@ function startSSE() {
 // Handle Incoming Live Market Tick & State Updates
 
 function handleIncomingLiveTick(payload, opts) {
+    if (payload && typeof payload === 'object') {
+        const strat = payload.strategy || {};
+        const mod = payload.model || {};
+        if (payload.ai_decision == null && strat.decision != null) payload.ai_decision = strat.decision;
+        if (payload.ai_reason == null && strat.reason != null) payload.ai_reason = strat.reason;
+        if (payload.ai_confidence == null && mod.confidence != null) payload.ai_confidence = mod.confidence;
+        if (!payload.probs && mod.probabilities) {
+            const p = mod.probabilities;
+            payload.probs = {
+                available: !!mod.probabilities_available,
+                no_trade: p.no_trade != null ? p.no_trade : p.NO_TRADE,
+                buy: p.buy != null ? p.buy : p.BUY_MARKET,
+                sell: p.sell != null ? p.sell : p.SELL_MARKET,
+                wait: p.wait != null ? p.wait : p.WAIT
+            };
+        }
+    }
+
 
     if (uiPaused) return; // Prevent updates if user paused the visualizer
 
