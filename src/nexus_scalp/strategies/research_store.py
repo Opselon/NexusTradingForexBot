@@ -170,11 +170,13 @@ DDL_FACTORY_LOOP_STATE = """
 CREATE TABLE IF NOT EXISTS factory_loop_state (
     scope TEXT PRIMARY KEY,
     state TEXT DEFAULT 'STOPPED',
+    generation_id TEXT DEFAULT '',
     reason TEXT DEFAULT '',
     last_cycle_at TEXT DEFAULT '',
     cycle_count INTEGER DEFAULT 0,
     checkpoint TEXT DEFAULT '{}',
-    updated_at TEXT DEFAULT ''
+    updated_at TEXT DEFAULT '',
+    last_error TEXT DEFAULT ''
 );
 """
 
@@ -344,9 +346,28 @@ class StrategyResearchStore:
                     f'CREATE INDEX IF NOT EXISTS "{idx_name}" ON {table} ({cols})',
                     conn=conn,
                 )
+            # Safe forward migration for existing factory_loop_state tables
+            # that predate the generation_id / last_error columns (mission
+            # NEXUS-STRATEGY-FACTORY-PERSISTENCE-RECOVERY-G29). ALTER is a
+            # no-op if the columns already exist; we swallow the duplicate-
+            # column OperationalError so ensure_schema stays idempotent.
+            for col, col_def in (
+                ("generation_id", "TEXT DEFAULT ''"),
+                ("last_error", "TEXT DEFAULT ''"),
+            ):
+                try:
+                    self.driver.execute(
+                        f"ALTER TABLE factory_loop_state ADD COLUMN {col} {col_def};",
+                        conn=conn,
+                    )
+                except Exception:
+                    # Column already present (fresh schema) or provider does
+                    # not support ALTER — either way schema is correct.
+                    pass
             self._set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             self._set_meta(conn, "provider", self.config.provider.value)
             self.driver.commit(conn)
+            self._schema_ready = True
         finally:
             conn.close()
 
@@ -531,11 +552,13 @@ class StrategyResearchStore:
                 {
                     "scope": str(loop.get("scope", "default")),
                     "state": str(loop.get("state", "STOPPED")),
+                    "generation_id": str(loop.get("generation_id", "")),
                     "reason": str(loop.get("reason", "")),
                     "last_cycle_at": str(loop.get("last_cycle_at", "")),
                     "cycle_count": int(loop.get("cycle_count", 0)),
                     "checkpoint": _json(loop.get("checkpoint")),
                     "updated_at": str(loop.get("updated_at", _now())),
+                    "last_error": str(loop.get("last_error", "")),
                 },
                 conn=conn,
             )

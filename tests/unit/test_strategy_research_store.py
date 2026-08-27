@@ -29,6 +29,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from nexus_scalp.database.config import DatabaseConfig  # noqa: E402
 from nexus_scalp.database.ddl_port import port_create_table  # noqa: E402
+from nexus_scalp.database.drivers import get_driver  # noqa: E402
 from nexus_scalp.database.provider import DatabaseProvider  # noqa: E402
 from nexus_scalp.strategies.research_store import (  # noqa: E402
     ALL_DDL,
@@ -239,6 +240,43 @@ class TestSqliteCrud:
         # unknown scope -> STOPPED default
         other = store.get_loop_state("other")
         assert other["state"] == "STOPPED"
+
+    def test_loop_state_schema_migration(self, tmp_path):
+        """Verify that an older factory_loop_state table without generation_id is successfully migrated by ensure_schema()."""
+        cfg = default_config(str(tmp_path))
+        driver = get_driver(cfg)
+        driver.ensure_directory()
+        conn = driver.connect()
+        # Create legacy table without generation_id
+        conn.execute("""
+            CREATE TABLE factory_loop_state (
+                scope TEXT PRIMARY KEY,
+                state TEXT DEFAULT 'STOPPED',
+                reason TEXT DEFAULT '',
+                last_cycle_at TEXT DEFAULT '',
+                cycle_count INTEGER DEFAULT 0,
+                checkpoint TEXT DEFAULT '{}',
+                updated_at TEXT DEFAULT ''
+            );
+        """)
+        conn.commit()
+        conn.close()
+
+        # Now load StrategyResearchStore and ensure schema (should ALTER TABLE)
+        store = StrategyResearchStore(cfg)
+        store.ensure_schema()
+        assert store.set_loop_state(
+            {
+                "scope": "autonomous",
+                "state": "RUNNING",
+                "generation_id": "SF-TEST-12345",
+                "cycle_count": 1,
+            }
+        )
+        loop = store.get_loop_state("autonomous")
+        assert loop["state"] == "RUNNING"
+        assert loop["generation_id"] == "SF-TEST-12345"
+        store.close()
 
     def test_count_rows_and_close(self, tmp_path):
         store = _sqlite_store(tmp_path)
