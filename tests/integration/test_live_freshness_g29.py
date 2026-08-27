@@ -474,3 +474,32 @@ def test_frontend_is_stale_gates_probability_render():
     # now render it as frozen, not live — pinned via is_stale + STALE marker.
     assert "market" in fresh and fresh["market"]["state"] == "STALE"
 
+
+def test_stale_counter_increments_on_every_freshness_poll():
+    """BUGFIX-G29 (DevOps follow-up #1): the stale_state_detected_total gauge
+    must count EVERY live STALE epoch, not only when the decision gate runs.
+    compute_live_freshness() runs on every /api/status poll, so a frozen feed
+    must bump the counter there too (otherwise the telemetry gauge undercounts
+    and a silent-stall could look like zero detections).
+    """
+    import datetime as _dt
+
+    engine, _ = _make_engine(_tmp := __import__("pathlib").Path("/tmp"))
+    engine._running = True
+    engine.warmup_state = "READY"
+    engine._inference_enabled = True
+    engine._last_tick_timestamp = _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=900)
+
+    before = engine._stale_state_detected_total
+    # Each observational poll of a frozen feed must increment the gauge.
+    for _ in range(3):
+        fresh = engine.compute_live_freshness()
+        assert fresh["overall"] == "STALE"
+    assert engine._stale_state_detected_total >= before + 3, (
+        f"stale_state_detected_total must increment per STALE poll, "
+        f"got {engine._stale_state_detected_total} (before {before})"
+    )
+    # And it must be visible in the telemetry block of the freshness payload.
+    assert engine.compute_live_freshness()["telemetry"]["stale_state_detected_total"] > before
+
+

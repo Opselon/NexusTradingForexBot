@@ -4269,6 +4269,13 @@ class LiveEngine:
         stage_states = [mkt_state, feat_state, inf_state, dec_state]
         if "STALE" in stage_states:
             overall = "STALE"
+            # BUGFIX-G29 (DevOps follow-up #1): the telemetry gauge must count
+            # EVERY live STALE epoch, not only the proposal/gate path. compute_live_freshness()
+            # is the authoritative observational call that runs on every /api/status
+            # poll; incrementing here guarantees stale_state_detected_total is accurate
+            # even when the decision gate is not reached (e.g. ticks freeze before a
+            # proposal is built). The gate still independently bumps on its own STALE hit.
+            self._stale_state_detected_total += 1
         elif "UNKNOWN" in stage_states:
             overall = "UNKNOWN"
         else:
