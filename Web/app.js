@@ -290,7 +290,18 @@ function renderAiSnapshotPanel() {
 
     let probHtml = '';
 
-    if (probs.available && probs.no_trade != null) {
+    if (snap.is_stale || (snap.health && snap.health.subsystems && snap.health.subsystems.engine === 'STALE')) {
+        // BUGFIX-G29: do NOT render a live-looking probability vector when the
+        // feed is frozen. The 22.1%/32.0%/27.6% values are last-known-good and
+        // must be shown as halted, never as a live prediction.
+        probHtml = `
+            <div class="text-[10px] font-mono text-[#f59e0b]">
+                <div class="flex justify-between"><span>NO_TRADE</span><span class="font-bold">${(probs.no_trade * 100).toFixed(1)}%</span></div>
+                <div class="flex justify-between"><span>BUY</span><span class="font-bold">${(probs.buy * 100).toFixed(1)}%</span></div>
+                <div class="flex justify-between"><span>SELL</span><span class="font-bold">${(probs.sell * 100).toFixed(1)}%</span></div>
+                <div class="mt-1 text-[9px] uppercase tracking-wide">⚠ FROZEN — last known</div>
+            </div>`;
+    } else if (probs.available && probs.no_trade != null) {
 
         probHtml = `
 
@@ -4046,14 +4057,18 @@ function handleIncomingLiveTick(payload, opts) {
         setTxt('latency-e2e', e2eMs != null ? `${Number(e2eMs).toFixed(2)} ms` : '--');
         setTxt('latency-queue', lb.queue_ms != null ? `${Number(lb.queue_ms).toFixed(2)} ms` : '--');
 
-        if (payload.probs && payload.probs.available) {
-
+        if (payload.is_stale || (payload.health && payload.health.subsystems && payload.health.subsystems.engine === 'STALE')) {
+            setTxt('model-data-source', 'STALE (FROZEN FEED / HALTED)');
+            const mds = document.getElementById('model-data-source');
+            if (mds) { mds.style.color = 'var(--warning, #f59e0b)'; }
+        } else if (payload.probs && payload.probs.available) {
             setTxt('model-data-source', 'LIVE INFERENCE');
-
+            const mds = document.getElementById('model-data-source');
+            if (mds) { mds.style.color = ''; }
         } else {
-
             setTxt('model-data-source', 'AWAITING FIRST INFERENCE');
-
+            const mds = document.getElementById('model-data-source');
+            if (mds) { mds.style.color = ''; }
         }
 
     } else {
