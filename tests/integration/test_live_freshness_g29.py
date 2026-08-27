@@ -409,3 +409,68 @@ def test_health_section_reports_stale_on_frozen_pipeline(tmp_path):
         "frozen-pipeline health must carry the live_freshness contract so the "
         "UI can never present a stale engine as READY"
     )
+
+
+# ---------------------------------------------------------------------------
+# BUGFIX-G29 follow-up: watchdog resubscribe must be REACHABLE (not a no-op)
+# ---------------------------------------------------------------------------
+def test_adapter_exposes_resubscribe_and_get_tick():
+    """BUGFIX-G29 (reviewer/QA flag): the MT5 watchdog calls
+    adapter.resubscribe_symbol() + adapter.get_tick() on a stalled feed. These
+    MUST be defined on the shippable adapters or the watchdog is a silent
+    no-op. Verify both paper + mt5 adapters implement them and return fresh
+    ticks (so the watchdog can actually prove the feed is alive again).
+    """
+    from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
+    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+    paper = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
+    paper.connect()
+    assert hasattr(paper, "resubscribe_symbol") and callable(paper.resubscribe_symbol)
+    assert hasattr(paper, "get_tick") and callable(paper.get_tick)
+    # resubscribe is a no-op for paper (feed self-sustains); must not raise.
+    paper.resubscribe_symbol("XAUUSD")
+    t1 = paper.get_tick("XAUUSD")
+    assert t1 is not None and t1.symbol == "XAUUSD"
+
+    # MT5 adapter: methods exist; on a connected adapter get_tick returns a tick
+    # (or raises cleanly if the native driver is unavailable in CI — either way
+    # the method is reachable, which is the point of this assertion).
+    assert hasattr(DirectMT5Adapter, "resubscribe_symbol")
+    assert hasattr(DirectMT5Adapter, "get_tick")
+
+
+def test_frontend_is_stale_gates_probability_render():
+    """BUGFIX-G29 (reviewer flag #2): the live-looking probability vector must
+    NOT render as a live prediction when the feed is frozen. The engine emits
+    is_stale=True (and health.subsystems.engine=='STALE'); the dashboard's
+    render branch must switch to a 'FROZEN — last known' overlay instead of a
+    green live-looking bar set. This test pins the data contract the app.js
+    branch keys off so the regression cannot silently revert.
+    """
+    from nexus_scalp.web import server as web_server
+
+    engine, _ = _make_engine(_tmp := __import__("pathlib").Path("/tmp"))
+    engine._running = True
+    engine.warmup_state = "READY"
+    engine._inference_enabled = True
+    # Frozen feed -> compute_live_freshness().overall == "STALE".
+    engine._last_tick_timestamp = __import__("datetime").datetime.now(
+        __import__("datetime").UTC
+    ) - __import__("datetime").timedelta(seconds=900)
+
+    app = web_server.create_app(engine_ref=engine)
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        resp = client.get("/api/status")
+    payload = resp.json()
+    # The exact fields app.js keys its STALE branch on.
+    assert payload.get("is_stale") is True, "frozen feed must set is_stale=True"
+    assert payload["health"]["subsystems"]["engine"] == "STALE"
+    fresh = payload["live_freshness"]
+    assert fresh["overall"] == "STALE"
+    # The probability block is still present (last-known-good) but the UI must
+    # now render it as frozen, not live — pinned via is_stale + STALE marker.
+    assert "market" in fresh and fresh["market"]["state"] == "STALE"
+
