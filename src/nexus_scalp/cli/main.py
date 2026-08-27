@@ -92,6 +92,12 @@ app.add_typer(
     name="incidents",
     help="Incident response & forensic diagnostics (TASK-12) — read-only by default.",
 )
+# G29: Enterprise Code Analyzer (`nse analyze`)
+from nexus_scalp.cli.analyze_commands import register_analyze_commands
+register_analyze_commands(app)
+# Dependency Intelligence (`nse dependency`)
+from nexus_scalp.cli.dependency_commands import register_dependency_commands
+register_dependency_commands(app)
 console = Console()
 # Faster output when --json (no rich truncation, see exit-code contract)
 _json_mode_global = False
@@ -2664,4 +2670,7 @@ def model_train_3(
     for v, r in result.get("variants", {}).items():
         style = "green" if r.get("status") == "PASS" else "red"
         console.print(f"[{style}]{r.get('status'):5}[/{style}] {v:16} {r.get('detail', '')}")
-    raise typer.Exit(0 if result.get("overall") == "PASS" else 1)
+
+
+if __name__ == "__main__":
+    app()

@@ -1664,6 +1664,27 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_command_center_html() -> FileResponse:
         return FileResponse(WEB_DIR / "command_center.html")
 
+    @app.get("/dependency")
+    def serve_dependency_dashboard() -> FileResponse:
+        """Dependency Intelligence developer dashboard (NSE engineering)."""
+        return FileResponse(WEB_DIR / "dependency.html")
+
+    @app.get("/dependency.html")
+    def serve_dependency_dashboard_html() -> FileResponse:
+        return FileResponse(WEB_DIR / "dependency.html")
+
+    @app.get("/dependency_api.js")
+    def serve_dependency_api_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "dependency_api.js")
+
+    @app.get("/dependency_graph.js")
+    def serve_dependency_graph_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "dependency_graph.js")
+
+    @app.get("/dependency_ui.js")
+    def serve_dependency_ui_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "dependency_ui.js")
+
     @app.get("/command_center_ui.js")
     def serve_command_center_js() -> FileResponse:
         return FileResponse(WEB_DIR / "command_center_ui.js")
@@ -8208,7 +8229,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     app.include_router(factory_router)
 
     # =========================================================================
-    # NEWS INTELLIGENCE (0100): AI analysis + auto-prune + restore, Pro Mode.
+    # DEPENDENCY INTELLIGENCE (2026-08-27): canonical import + DI + architecture
+    # graph for NSE engineering/debugging. AST-only, never boots the engine.
+    # =========================================================================
+    from nexus_scalp.web.dependency_routes import router as dependency_router
+
+    app.include_router(dependency_router)
     # Thin handlers over the News AI service; reuses the Factory LLM provider.
     # =========================================================================
     from nexus_scalp.web.news_intelligence_routes import router as news_intel_router

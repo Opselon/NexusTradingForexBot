@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dependency Intelligence — NSE Architecture</title>
+<link rel="stylesheet" href="/tailwind.css" />
+<style>
+  html, body { background:#0b1120; color:#e2e8f0; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .nx-card { background:#111a2e; border:1px solid #1f2a44; border-radius:10px; }
+  .nx-kpi { font-size:1.6rem; font-weight:700; }
+  .nx-muted { color:#7c8aa5; }
+  #graph-svg { width:100%; height:62vh; background:#0a0f1d; border:1px solid #1f2a44; border-radius:10px; cursor:grab; }
+  #graph-svg.dragging { cursor:grabbing; }
+  .node-rect { cursor:pointer; }
+  .edge-line { stroke:#2b3a5e; stroke-width:1; }
+  .edge-line.hl { stroke:#38bdf8; stroke-width:2; }
+  .node-label { font-size:10px; fill:#9fb3d1; pointer-events:none; }
+  .nx-panel { max-height:30vh; overflow:auto; }
+  .nx-chip { display:inline-block; padding:1px 6px; border-radius:6px; font-size:11px; margin:1px; }
+  table.nx-table { width:100%; border-collapse:collapse; font-size:12px; }
+  table.nx-table td, table.nx-table th { padding:4px 6px; border-bottom:1px solid #1f2a44; text-align:left; }
+  .mono { font-family: ui-monospace, monospace; }
+  .err { color:#f87171; } .ok { color:#4ade80; } .warn { color:#fbbf24; }
+  input, select, button { background:#0a0f1d; border:1px solid #2b3a5e; color:#e2e8f0; border-radius:6px; padding:4px 8px; }
+  button.nx-btn { cursor:pointer; }
+  button.nx-btn:hover { background:#16223c; }
+</style>
+</head>
+<body class="p-4">
+  <header class="nx-card p-3 mb-3 flex items-center justify-between flex-wrap gap-2">
+    <div>
+      <div class="text-xl font-bold">Dependency Intelligence</div>
+      <div class="nx-muted text-sm">NSE Architecture &middot; <span id="gen-time">—</span> &middot; graph v<span id="graph-version">—</span></div>
+    </div>
+    <div class="nx-muted text-xs" id="repo-status">repository status: loading…</div>
+  </header>
+
+  <section class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-3" id="kpi-row"></section>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <!-- Graph -->
+    <div class="nx-card p-2 lg:col-span-2">
+      <div class="flex items-center gap-2 flex-wrap mb-2">
+        <input id="search" placeholder="Search node…" class="w-48" />
+        <button class="nx-btn" id="btn-fit">Fit</button>
+        <button class="nx-btn" id="btn-reset">Reset</button>
+        <select id="layer-filter"><option value="">All layers</option></select>
+        <select id="node-type-filter"><option value="">All node types</option></select>
+        <select id="edge-type-filter"><option value="">All edge types</option></select>
+        <label class="nx-muted text-xs"><input type="checkbox" id="f-cycle" /> Cycle only</label>
+        <label class="nx-muted text-xs"><input type="checkbox" id="f-unresolved" /> Unresolved only</label>
+        <label class="nx-muted text-xs"><input type="checkbox" id="f-critical" /> Runtime-critical only</label>
+      </div>
+      <svg id="graph-svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="nx-muted text-xs mt-1" id="graph-legend">
+        Edges: IMPORT · INJECTS · IMPLEMENTS · REGISTERS · INHERITS &nbsp;|&nbsp; click a node to inspect.
+      </div>
+    </div>
+
+    <!-- Inspector -->
+    <div class="nx-card p-3 nx-panel" id="inspector">
+      <div class="nx-muted text-sm">Select a node to inspect.</div>
+    </div>
+  </div>
+
+  <!-- Path explorer -->
+  <section class="nx-card p-3 mt-3">
+    <div class="font-bold mb-1">Dependency Path Explorer</div>
+    <div class="flex items-center gap-2 flex-wrap mb-2">
+      <input id="path-source" placeholder="source node id / qualified name" class="w-64" />
+      <span class="nx-muted">→</span>
+      <input id="path-target" placeholder="target node id / qualified name" class="w-64" />
+      <button class="nx-btn" id="btn-path">Find path</button>
+      <button class="nx-btn" id="btn-impact">Impact</button>
+    </div>
+    <div id="path-result" class="nx-muted text-sm"></div>
+  </section>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+    <div class="nx-card p-3 nx-panel">
+      <div class="font-bold mb-1">Cycles <span id="cyc-count" class="nx-muted text-xs"></span></div>
+      <div id="cycles-panel" class="nx-muted text-sm">loading…</div>
+    </div>
+    <div class="nx-card p-3 nx-panel">
+      <div class="font-bold mb-1">Architecture Violations <span id="vio-count" class="nx-muted text-xs"></span></div>
+      <div id="violations-panel" class="nx-muted text-sm">loading…</div>
+    </div>
+  </div>
+
+  <details class="nx-card p-3 mt-3 text-sm">
+    <summary class="cursor-pointer font-bold">How to read this graph</summary>
+    <ul class="list-disc pl-5 mt-2 nx-muted space-y-1">
+      <li><b>What is this?</b> A canonical dependency model built from real AST analysis of the NSE repository — imports, constructor injection, Protocol/ABC implementation, dependency registration, and architecture layers.</li>
+      <li><b>How was it generated?</b> AST parse of every <code>src/nexus_scalp/*.py</code> — no runtime boot, no engine start. Each edge carries file:line evidence and a confidence.</li>
+      <li><b>How trustworthy is an edge?</b> Confidence: 1.00 proven-by-syntax, 0.90+ strong inference, 0.70+ supported, &lt;0.40 heuristic.</li>
+      <li><b>Why does a dependency exist?</b> Click a node → inspector shows each edge with its evidence file:line.</li>
+      <li><b>What does a node affect?</b> Use Impact to see direct/transitive dependents, tests, and API/runtime impact.</li>
+      <li><b>Where is a binding registered?</b> REGISTERS edges point from the registration call site to the registered class.</li>
+      <li><b>What can break if this changes?</b> Impact panel lists inferred test/runtime breakage (inferred, not certain).</li>
+    </ul>
+  </details>
+
+  <div id="global-error" class="err text-sm mt-3" style="display:none"></div>
+
+  <script src="/dependency_api.js"></script>
+  <script src="/dependency_graph.js"></script>
+  <script src="/dependency_ui.js"></script>
+</body>
+</html>
