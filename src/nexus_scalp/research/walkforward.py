@@ -60,14 +60,15 @@ class WalkForwardEngine:
                 filter_samples_by_contract,
                 has_active_contract,
             )
+
             if has_active_contract(context_contract):
                 filtered, context_diag = filter_samples_by_contract(
                     list(dataset.samples), context_contract
                 )
                 if filtered:
-                    dataset_for_folds = dataset.model_copy(update={'samples': filtered})
+                    dataset_for_folds = dataset.model_copy(update={"samples": filtered})
                 else:
-                    context_diag['sufficient_evidence'] = False
+                    context_diag["sufficient_evidence"] = False
 
         # PHASE 29 (data-volume honesty): when the population cannot support
         # the requested fold count, compute an ADAPTIVE fold number and, if

@@ -94,9 +94,11 @@ app.add_typer(
 )
 # G29: Enterprise Code Analyzer (`nse analyze`)
 from nexus_scalp.cli.analyze_commands import register_analyze_commands
+
 register_analyze_commands(app)
 # Dependency Intelligence (`nse dependency`)
 from nexus_scalp.cli.dependency_commands import register_dependency_commands
+
 register_dependency_commands(app)
 console = Console()
 # Faster output when --json (no rich truncation, see exit-code contract)
@@ -772,6 +774,7 @@ def config_validate_subcmd(
 ) -> None:
     """Validate syntax, schema, version migration, missing keys & secret masking."""
     import yaml
+
     target = config_path.resolve()
     report: dict[str, Any] = {
         "path": str(target),
@@ -2312,6 +2315,7 @@ def config_validate_cmd(
 ) -> None:
     """Validate syntax, schema, version migration, missing keys & secret masking."""
     import yaml
+
     target = config_path.resolve()
     report: dict[str, Any] = {
         "path": str(target),

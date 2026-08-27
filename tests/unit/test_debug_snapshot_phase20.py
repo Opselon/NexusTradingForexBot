@@ -1012,6 +1012,7 @@ class TestDebugApi:
         initialized at function scope so the contract section is always
         emitted with explicit unavailable markers, never a crash."""
         from nexus_scalp.web import debug_snapshot as ds
+
         # Must not raise even with engine=None.
         contract = ds._contract_section(None)
         assert isinstance(contract, dict)
@@ -1021,7 +1022,9 @@ class TestDebugApi:
         assert "70D CONTRACT" in contract["status"]
         # And the full snapshot + live state endpoints must still return 200.
         from fastapi.testclient import TestClient
+
         from nexus_scalp.web.server import create_app
+
         app = create_app()
         app.state.engine = None
         c = TestClient(app)

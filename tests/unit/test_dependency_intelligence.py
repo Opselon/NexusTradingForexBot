@@ -48,6 +48,7 @@ def analysis(graph):
 # Scanner
 # ---------------------------------------------------------------------------
 
+
 @requires_pkg
 def test_scanner_discovers_real_modules(graph):
     assert graph.stats.files_analyzed > 100
@@ -84,6 +85,7 @@ def test_unresolved_import_recorded_not_crashing(graph):
 # ---------------------------------------------------------------------------
 # DI analyzer
 # ---------------------------------------------------------------------------
+
 
 @requires_pkg
 def test_constructor_injection_detected(graph):
@@ -124,6 +126,7 @@ def test_unresolved_di_binding_classifiable(graph):
 # ---------------------------------------------------------------------------
 # Cycle detection
 # ---------------------------------------------------------------------------
+
 
 @requires_pkg
 def test_cycle_detection_runs(analysis):
@@ -194,6 +197,7 @@ def test_three_node_cycle_detected():
 # Architecture rules
 # ---------------------------------------------------------------------------
 
+
 @requires_pkg
 def test_architecture_validation_runs(analysis):
     violations = analysis["violations"]
@@ -243,6 +247,7 @@ def test_valid_layer_dependency_ok():
 # Impact analysis
 # ---------------------------------------------------------------------------
 
+
 @requires_pkg
 def test_impact_direct_and_transitive(graph):
     from nexus_scalp.dependency_intelligence.analysis import GraphAnalyzer
@@ -262,6 +267,7 @@ def test_impact_direct_and_transitive(graph):
 # ---------------------------------------------------------------------------
 # API contract
 # ---------------------------------------------------------------------------
+
 
 @requires_pkg
 def test_api_summary_shape():
@@ -310,7 +316,10 @@ def test_api_path_lookup():
     client = TestClient(create_app(engine_ref=None))
     r = client.get(
         "/api/dependency/path",
-        params={"source": "mod:nexus_scalp.web.server", "target": "mod:nexus_scalp.observability.logging"},
+        params={
+            "source": "mod:nexus_scalp.web.server",
+            "target": "mod:nexus_scalp.observability.logging",
+        },
     )
     assert r.status_code == 200
     assert "found" in r.json()
@@ -323,7 +332,9 @@ def test_api_impact_response():
     from nexus_scalp.web.server import create_app
 
     client = TestClient(create_app(engine_ref=None))
-    r = client.get("/api/dependency/impact", params={"path": "mod:nexus_scalp.configuration.config"})
+    r = client.get(
+        "/api/dependency/impact", params={"path": "mod:nexus_scalp.configuration.config"}
+    )
     assert r.status_code == 200
     assert "impact_kind" in r.json()
 
@@ -342,6 +353,7 @@ def test_api_unknown_node_404():
 # ---------------------------------------------------------------------------
 # HTML route
 # ---------------------------------------------------------------------------
+
 
 @requires_pkg
 def test_dependency_route_exists():
@@ -371,6 +383,7 @@ def test_frontend_bootstrap_present():
 # CLI contract (lightweight — runs the registered typer app)
 # ---------------------------------------------------------------------------
 
+
 @requires_pkg
 def test_cli_dependency_scan():
     spec = importlib.util.spec_from_file_location(
@@ -389,6 +402,7 @@ def test_cli_dependency_scan():
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _m(name: str, layer=None):
     from nexus_scalp.dependency_intelligence.models import (
         DependencyNode,
@@ -400,7 +414,8 @@ def _m(name: str, layer=None):
         qualified_name=name,
         display_name=name,
         kind=NodeKind.MODULE,
-        layer=layer or __import__(
+        layer=layer
+        or __import__(
             "nexus_scalp.dependency_intelligence.models", fromlist=["Layer"]
         ).Layer.UNKNOWN,
         metadata={"rel_path": name.replace(".", "/") + ".py"},

@@ -36,9 +36,16 @@ from nexus_scalp.dependency_intelligence.models import (
 
 # Call names that denote a registration of a dependency (abstraction <- impl).
 _REGISTER_CALLS = {
-    "register", "register_strategy", "register_factory",
-    "add_singleton", "add_transient", "add_scoped", "bind", "provide",
-    "_register", "REGISTER",
+    "register",
+    "register_strategy",
+    "register_factory",
+    "add_singleton",
+    "add_transient",
+    "add_scoped",
+    "bind",
+    "provide",
+    "_register",
+    "REGISTER",
 }
 
 # Call-name prefixes that denote a factory/provider construction.
@@ -82,9 +89,14 @@ class DIAnalyzer:
         }
         # index class nodes by simple name for type resolution of call args
         name_index: dict[str, str] = {}
-        for nid, node in graph.nodes.items():
-            if node.kind in (NodeKind.CLASS, NodeKind.PROTOCOL, NodeKind.INTERFACE, NodeKind.SERVICE):
-                simple = node.qualified_name.rsplit(".", 1)[-1]
+        for nid, graph_node in graph.nodes.items():
+            if graph_node.kind in (
+                NodeKind.CLASS,
+                NodeKind.PROTOCOL,
+                NodeKind.INTERFACE,
+                NodeKind.SERVICE,
+            ):
+                simple = graph_node.qualified_name.rsplit(".", 1)[-1]
                 name_index.setdefault(simple, nid)
 
         for path in sorted(self.root.rglob("*.py")):
@@ -102,26 +114,29 @@ class DIAnalyzer:
             src_mod = f"mod:{module}"
             if src_mod not in graph.nodes:
                 continue
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
+            for ast_node in ast.walk(tree):
+                if not isinstance(ast_node, ast.Call):
                     continue
-                fname = _name_to_str(node.func)
+                fname = _name_to_str(ast_node.func)
                 if not fname:
                     continue
                 simple = fname.rsplit(".", 1)[-1]
                 short = simple
                 # REGISTERS: register(container, Impl) / register(Impl())
                 if short in _REGISTER_CALLS:
-                    tgt = self._resolve_arg_type(node, name_index, graph)
+                    tgt = self._resolve_arg_type(ast_node, name_index, graph)
                     if tgt:
                         graph.add_edge(
                             DependencyEdge(
-                                source=src_mod, target=tgt, kind=EdgeKind.REGISTERS,
+                                source=src_mod,
+                                target=tgt,
+                                kind=EdgeKind.REGISTERS,
                                 confidence=CONFIDENCE_STRONG,
                                 resolution=ResolutionStatus.RESOLVED,
                                 evidence=Evidence(
-                                    evidence_type="di_registration", file=str(rel),
-                                    line=node.lineno,
+                                    evidence_type="di_registration",
+                                    file=str(rel),
+                                    line=ast_node.lineno,
                                     reason=f"registration call: {fname}(...)",
                                 ),
                             )
@@ -130,18 +145,23 @@ class DIAnalyzer:
                         stats["di_bindings"] += 1
                 # FACTORY_CREATES: create_* / build_* / make_*
                 if any(short.startswith(p) for p in _FACTORY_PREFIXES) or short in {
-                    "create", "build", "make",
+                    "create",
+                    "build",
+                    "make",
                 }:
-                    tgt = self._resolve_arg_type(node, name_index, graph)
-                    if tgt and tgt.startswith("cls:"):
+                    tgt = self._resolve_arg_type(ast_node, name_index, graph)
+                    if tgt:
                         graph.add_edge(
                             DependencyEdge(
-                                source=src_mod, target=tgt, kind=EdgeKind.FACTORY_CREATES,
+                                source=src_mod,
+                                target=tgt,
+                                kind=EdgeKind.FACTORY_CREATES,
                                 confidence=CONFIDENCE_SUPPORTED,
                                 resolution=ResolutionStatus.FACTORY_RESOLVED,
                                 evidence=Evidence(
-                                    evidence_type="factory", file=str(rel),
-                                    line=node.lineno,
+                                    evidence_type="factory",
+                                    file=str(rel),
+                                    line=ast_node.lineno,
                                     reason=f"factory call: {fname}(...)",
                                 ),
                             )
@@ -174,7 +194,15 @@ class DIAnalyzer:
                 return tgt
         # keyword args: register(impl=SomeStrategy) / bind(implementation=X)
         for kw in call.keywords:
-            if kw.arg in {"impl", "implementation", "concrete", "instance", "obj", "strategy", "factory"}:
+            if kw.arg in {
+                "impl",
+                "implementation",
+                "concrete",
+                "instance",
+                "obj",
+                "strategy",
+                "factory",
+            }:
                 tgt = self._type_from_expr(kw.value, name_index, graph)
                 if tgt:
                     return tgt

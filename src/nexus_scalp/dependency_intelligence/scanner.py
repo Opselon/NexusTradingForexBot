@@ -42,21 +42,100 @@ from nexus_scalp.dependency_intelligence.models import (
 )
 
 _STDLIB_BASE = {
-    "abc", "argparse", "asyncio", "base64", "collections", "concurrent", "contextlib",
-    "copy", "csv", "datetime", "decimal", "enum", "functools", "hashlib", "http", "io",
-    "itertools", "json", "logging", "math", "os", "pathlib", "pickle", "platform",
-    "queue", "random", "re", "shutil", "signal", "socket", "sqlite3", "statistics",
-    "string", "struct", "subprocess", "sys", "threading", "time", "traceback",
-    "typing", "unittest", "urllib", "uuid", "warnings", "weakref", "xml", "yaml",
-    "zlib", "dataclasses", "inspect", "types", "gc", "tempfile", "glob", "fnmatch",
-    "textwrap", "pprint", "html", "email", "gzip", "bz2", "lzma", "codecs",
+    "abc",
+    "argparse",
+    "asyncio",
+    "base64",
+    "collections",
+    "concurrent",
+    "contextlib",
+    "copy",
+    "csv",
+    "datetime",
+    "decimal",
+    "enum",
+    "functools",
+    "hashlib",
+    "http",
+    "io",
+    "itertools",
+    "json",
+    "logging",
+    "math",
+    "os",
+    "pathlib",
+    "pickle",
+    "platform",
+    "queue",
+    "random",
+    "re",
+    "shutil",
+    "signal",
+    "socket",
+    "sqlite3",
+    "statistics",
+    "string",
+    "struct",
+    "subprocess",
+    "sys",
+    "threading",
+    "time",
+    "traceback",
+    "typing",
+    "unittest",
+    "urllib",
+    "uuid",
+    "warnings",
+    "weakref",
+    "xml",
+    "yaml",
+    "zlib",
+    "dataclasses",
+    "inspect",
+    "types",
+    "gc",
+    "tempfile",
+    "glob",
+    "fnmatch",
+    "textwrap",
+    "pprint",
+    "html",
+    "email",
+    "gzip",
+    "bz2",
+    "lzma",
+    "codecs",
 }
 
 _THIRD_PARTY = {
-    "fastapi", "uvicorn", "pydantic", "pydantic_settings", "typer", "rich", "yaml",
-    "numpy", "pandas", "polars", "torch", "sklearn", "scipy", "matplotlib", "networkx",
-    "sqlalchemy", "requests", "httpx", "aiohttp", "websockets", "structlog", "loguru",
-    "pandas_ta", "ta", "pytest", "psutil", "pywin32", "MetaTrader5",
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pydantic_settings",
+    "typer",
+    "rich",
+    "yaml",
+    "numpy",
+    "pandas",
+    "polars",
+    "torch",
+    "sklearn",
+    "scipy",
+    "matplotlib",
+    "networkx",
+    "sqlalchemy",
+    "requests",
+    "httpx",
+    "aiohttp",
+    "websockets",
+    "structlog",
+    "loguru",
+    "pandas_ta",
+    "ta",
+    "pytest",
+    "psutil",
+    "pywin32",
+    "MetaTrader5",
 }
 
 # Stdlib abstract bases that should NOT become graph nodes.
@@ -85,16 +164,20 @@ class _ModuleIndex:
             if parts[-1] == "__init__":
                 parts = parts[:-1]
             # prefix with pkg_root so module ids match import identifiers
-            mod_parts = parts[1:] if (parts and parts[0] == self.pkg_root) else [self.pkg_root, *parts]
+            mod_parts = (
+                parts[1:] if (parts and parts[0] == self.pkg_root) else [self.pkg_root, *parts]
+            )
             mod = ".".join(mod_parts)
             self.modules[mod] = path
             for i in range(1, len(mod_parts)):
                 self.pkg_dirs.add(".".join(mod_parts[:i]))
         for path in self.root.rglob("__init__.py"):
-            rel = path.relative_to(self.root).with_suffix("").parts[:-1]
-            if rel:
-                rel_parts = rel[1:] if (rel and rel[0] == self.pkg_root) else [self.pkg_root, *rel]
-                self.pkg_dirs.add(".".join(rel_parts))
+            rel_parts = list(path.relative_to(self.root).with_suffix("").parts[:-1])
+            if rel_parts:
+                pkg_parts = (
+                    rel_parts[1:] if rel_parts[0] == self.pkg_root else [self.pkg_root, *rel_parts]
+                )
+                self.pkg_dirs.add(".".join(pkg_parts))
 
     def resolve(self, dotted: str) -> str | None:
         if dotted in self.modules or dotted in self.pkg_dirs:
@@ -249,9 +332,7 @@ class Scanner:
                 continue
             self._pass2(path)
         res = ScanResult(graph=self.graph)
-        res.files_analyzed = sum(
-            1 for f in files if f.suffix == ".py" and f.parts[0] != "scratch"
-        )
+        res.files_analyzed = sum(1 for f in files if f.suffix == ".py" and f.parts[0] != "scratch")
         res.parse_errors = self.graph.metadata.get("parse_errors", [])
         res.duration_ms = round((time.time() - started) * 1000.0, 2)
         return res
@@ -310,9 +391,7 @@ class Scanner:
                 bases = [_name_to_str(b) for b in node.bases]
                 bases = [b for b in bases if b]
                 self._ensure_class_node(module, node.name, bases)
-                self._bases[(module, node.name)] = [
-                    (b, node.lineno) for b in bases
-                ]
+                self._bases[(module, node.name)] = [(b, node.lineno) for b in bases]
                 # Register referenced base classes so edges resolve even when
                 # the base is defined in another module.
                 for b in bases:
@@ -341,9 +420,21 @@ class Scanner:
                             tm, tc = _split_base(tname, module)
                             # skip primitive / generic type hints
                             if tc.lower() in {
-                                "int", "float", "str", "bool", "any", "none",
-                                "dict", "list", "tuple", "set", "optional",
-                                "union", "type", "callable", "object",
+                                "int",
+                                "float",
+                                "str",
+                                "bool",
+                                "any",
+                                "none",
+                                "dict",
+                                "list",
+                                "tuple",
+                                "set",
+                                "optional",
+                                "union",
+                                "type",
+                                "callable",
+                                "object",
                             }:
                                 continue
                             # Resolve bare names against the global class-name index.
@@ -351,9 +442,9 @@ class Scanner:
                                 tm = self._class_by_name[tname]
                                 tc = tname
                             self._ensure_class_node(tm, tc)
-                            self._ctors.setdefault(
-                                (module, node.name), []
-                            ).append((arg.arg, tname, sub.lineno))
+                            self._ctors.setdefault((module, node.name), []).append(
+                                (arg.arg, tname, sub.lineno)
+                            )
 
     # -- pass 2: edges --------------------------------------------------
 
@@ -372,8 +463,9 @@ class Scanner:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    self._emit_import(src_mod, module, rel, alias.name, node.lineno,
-                                     f"import {alias.name}")
+                    self._emit_import(
+                        src_mod, module, rel, alias.name, node.lineno, f"import {alias.name}"
+                    )
             elif isinstance(node, ast.ImportFrom):
                 self._emit_import_from(src_mod, module, rel, node)
 
@@ -401,9 +493,14 @@ class Scanner:
                     conf = CONFIDENCE_PROVEN
                 self.graph.add_edge(
                     DependencyEdge(
-                        source=src, target=tgt, kind=kind, confidence=conf,
+                        source=src,
+                        target=tgt,
+                        kind=kind,
+                        confidence=conf,
                         evidence=Evidence(
-                            evidence_type="symbol", file=rel, line=lineno,
+                            evidence_type="symbol",
+                            file=rel,
+                            line=lineno,
                             reason=f"class {c}({bname})",
                         ),
                     )
@@ -423,11 +520,15 @@ class Scanner:
                 if tgt in self.graph.nodes:
                     self.graph.add_edge(
                         DependencyEdge(
-                            source=src, target=tgt, kind=EdgeKind.INJECTS,
+                            source=src,
+                            target=tgt,
+                            kind=EdgeKind.INJECTS,
                             confidence=CONFIDENCE_PROVEN,
                             resolution=ResolutionStatus.RESOLVED,
                             evidence=Evidence(
-                                evidence_type="constructor", file=rel, line=lineno,
+                                evidence_type="constructor",
+                                file=rel,
+                                line=lineno,
                                 reason=f"constructor parameter '{_arg}' annotated as {tname}",
                             ),
                         )
@@ -435,11 +536,15 @@ class Scanner:
                 else:
                     self.graph.add_edge(
                         DependencyEdge(
-                            source=src, target=f"typehint:{tname}",
-                            kind=EdgeKind.INJECTS, confidence=CONFIDENCE_WEAK,
+                            source=src,
+                            target=f"typehint:{tname}",
+                            kind=EdgeKind.INJECTS,
+                            confidence=CONFIDENCE_WEAK,
                             resolution=ResolutionStatus.UNKNOWN,
                             evidence=Evidence(
-                                evidence_type="constructor", file=rel, line=lineno,
+                                evidence_type="constructor",
+                                file=rel,
+                                line=lineno,
                                 reason=f"constructor parameter '{_arg}' annotated as {tname} (class not in repo scope)",
                             ),
                         )
@@ -459,10 +564,13 @@ class Scanner:
                 self._ensure_module_node(resolved)
                 self.graph.add_edge(
                     DependencyEdge(
-                        source=src_mod, target=self._mid(resolved), kind=EdgeKind.IMPORT,
+                        source=src_mod,
+                        target=self._mid(resolved),
+                        kind=EdgeKind.IMPORT,
                         confidence=CONFIDENCE_PROVEN,
-                        evidence=Evidence(evidence_type="import", file=rel, line=lineno,
-                                         reason=raw),
+                        evidence=Evidence(
+                            evidence_type="import", file=rel, line=lineno, reason=raw
+                        ),
                     )
                 )
             else:
@@ -483,10 +591,13 @@ class Scanner:
                 self._ensure_module_node(resolved)
                 self.graph.add_edge(
                     DependencyEdge(
-                        source=src_mod, target=self._mid(resolved), kind=EdgeKind.IMPORT,
+                        source=src_mod,
+                        target=self._mid(resolved),
+                        kind=EdgeKind.IMPORT,
                         confidence=CONFIDENCE_PROVEN,
-                        evidence=Evidence(evidence_type="import", file=rel,
-                                         line=node.lineno, reason=raw),
+                        evidence=Evidence(
+                            evidence_type="import", file=rel, line=node.lineno, reason=raw
+                        ),
                     )
                 )
             else:
@@ -503,10 +614,13 @@ class Scanner:
                 self._ensure_module_node(resolved)
                 self.graph.add_edge(
                     DependencyEdge(
-                        source=src_mod, target=self._mid(resolved), kind=EdgeKind.IMPORT,
+                        source=src_mod,
+                        target=self._mid(resolved),
+                        kind=EdgeKind.IMPORT,
                         confidence=CONFIDENCE_PROVEN,
-                        evidence=Evidence(evidence_type="import", file=rel,
-                                         line=node.lineno, reason=raw),
+                        evidence=Evidence(
+                            evidence_type="import", file=rel, line=node.lineno, reason=raw
+                        ),
                     )
                 )
             else:
@@ -516,17 +630,23 @@ class Scanner:
         ext_name = ext_id.split(":", 1)[1]
         self.graph.add_node(
             DependencyNode(
-                id=ext_id, qualified_name=ext_name, display_name=ext_name,
-                kind=NodeKind.EXTERNAL, file=rel, layer=Layer.UNKNOWN,
-                criticality=Criticality.UNKNOWN, metadata={"external": True},
+                id=ext_id,
+                qualified_name=ext_name,
+                display_name=ext_name,
+                kind=NodeKind.EXTERNAL,
+                file=rel,
+                layer=Layer.UNKNOWN,
+                criticality=Criticality.UNKNOWN,
+                metadata={"external": True},
             )
         )
         self.graph.add_edge(
             DependencyEdge(
-                source=src_mod, target=ext_id, kind=EdgeKind.IMPORT,
+                source=src_mod,
+                target=ext_id,
+                kind=EdgeKind.IMPORT,
                 confidence=CONFIDENCE_PROVEN,
-                evidence=Evidence(evidence_type="import", file=rel, line=lineno,
-                                 reason=raw),
+                evidence=Evidence(evidence_type="import", file=rel, line=lineno, reason=raw),
             )
         )
 
@@ -534,18 +654,30 @@ class Scanner:
         uid = f"unresolved:{name}"
         self.graph.add_node(
             DependencyNode(
-                id=uid, qualified_name=name, display_name=name,
-                kind=NodeKind.EXTERNAL, file=rel, layer=Layer.UNKNOWN,
-                status=ResolutionStatus.UNRESOLVED, confidence=CONFIDENCE_WEAK,
+                id=uid,
+                qualified_name=name,
+                display_name=name,
+                kind=NodeKind.EXTERNAL,
+                file=rel,
+                layer=Layer.UNKNOWN,
+                status=ResolutionStatus.UNRESOLVED,
+                confidence=CONFIDENCE_WEAK,
                 metadata={"reason": "import not resolvable in repo"},
             )
         )
         self.graph.add_edge(
             DependencyEdge(
-                source=src_mod, target=uid, kind=EdgeKind.IMPORT,
-                confidence=CONFIDENCE_WEAK, resolution=ResolutionStatus.UNRESOLVED,
-                evidence=Evidence(evidence_type="import", file=rel, line=lineno,
-                                 reason=f"unresolved import: {raw}"),
+                source=src_mod,
+                target=uid,
+                kind=EdgeKind.IMPORT,
+                confidence=CONFIDENCE_WEAK,
+                resolution=ResolutionStatus.UNRESOLVED,
+                evidence=Evidence(
+                    evidence_type="import",
+                    file=rel,
+                    line=lineno,
+                    reason=f"unresolved import: {raw}",
+                ),
             )
         )
 

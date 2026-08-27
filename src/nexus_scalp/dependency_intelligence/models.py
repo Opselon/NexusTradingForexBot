@@ -10,7 +10,7 @@ score so the UI can rank and explain relationships honestly.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 # -------------------------------------------------------------------------
@@ -18,14 +18,14 @@ from typing import Any
 # -------------------------------------------------------------------------
 
 
-class NodeKind(str, Enum):
+class NodeKind(StrEnum):
     MODULE = "MODULE"
     PACKAGE = "PACKAGE"
     CLASS = "CLASS"
     FUNCTION = "FUNCTION"
     METHOD = "METHOD"
-    INTERFACE = "INTERFACE"      # ABC / abstract base
-    PROTOCOL = "PROTOCOL"        # typing.Protocol
+    INTERFACE = "INTERFACE"  # ABC / abstract base
+    PROTOCOL = "PROTOCOL"  # typing.Protocol
     SERVICE = "SERVICE"
     REPOSITORY = "REPOSITORY"
     FACTORY = "FACTORY"
@@ -37,7 +37,7 @@ class NodeKind(str, Enum):
     TEST = "TEST"
 
 
-class EdgeKind(str, Enum):
+class EdgeKind(StrEnum):
     IMPORT = "IMPORT"
     INHERITS = "INHERITS"
     IMPLEMENTS = "IMPLEMENTS"
@@ -56,8 +56,9 @@ class EdgeKind(str, Enum):
     TESTS = "TESTS"
 
 
-class ResolutionStatus(str, Enum):
+class ResolutionStatus(StrEnum):
     """DI binding resolution outcome (only meaningful for DI edges)."""
+
     RESOLVED = "RESOLVED"
     UNRESOLVED = "UNRESOLVED"
     AMBIGUOUS = "AMBIGUOUS"
@@ -68,7 +69,7 @@ class ResolutionStatus(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
-class Layer(str, Enum):
+class Layer(StrEnum):
     PRESENTATION = "presentation"
     APPLICATION = "application"
     DOMAIN = "domain"
@@ -80,7 +81,7 @@ class Layer(str, Enum):
     UNKNOWN = "unknown"
 
 
-class Criticality(str, Enum):
+class Criticality(StrEnum):
     CRITICAL = "CRITICAL"
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
@@ -105,7 +106,9 @@ CONFIDENCE_WEAK = 0.4
 
 @dataclass
 class Evidence:
-    evidence_type: str = "unknown"   # import | symbol | di_registration | constructor | factory | config | runtime
+    evidence_type: str = (
+        "unknown"  # import | symbol | di_registration | constructor | factory | config | runtime
+    )
     file: str = ""
     line: int = 0
     reason: str = ""

@@ -66,6 +66,10 @@ class IMT5Port(ABC):
         """Retrieves the latest available tick for a symbol."""
         pass
 
+    def get_tick(self, symbol: str) -> TickData:
+        """Backward-compatible alias for the latest available tick."""
+        return self.get_last_tick(symbol)
+
     @abstractmethod
     def get_historical_bars(
         self, symbol: str, timeframe: str = "M1", count: int = 100

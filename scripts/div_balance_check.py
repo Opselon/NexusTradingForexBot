@@ -93,7 +93,7 @@ def check_file(path: Path) -> tuple[bool, list[str]]:
     stack: list[tuple[str, int]] = []  # (tag, line_number)
     line = 1
     for m in TAG_RE.finditer(body):
-        slash, tag, attrs, selfclose = m.group(1), m.group(2).lower(), m.group(3), m.group(4)
+        slash, tag, _attrs, selfclose = m.group(1), m.group(2).lower(), m.group(3), m.group(4)
         line = raw.count("\n", 0, m.start()) + 1
         if tag not in PAIRED_TAGS:
             continue

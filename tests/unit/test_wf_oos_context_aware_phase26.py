@@ -133,6 +133,7 @@ def test_phase26_05_generic_fallback_identical() -> None:
     )
     assert res.fold_count == 3
 
+
 # ---------------------------------------------------------------------------
 # PHASE 29 (2026-08-25): WF/OOS data-volume honesty + adaptive folds.
 # A family too small for the requested fold count must produce an explicit

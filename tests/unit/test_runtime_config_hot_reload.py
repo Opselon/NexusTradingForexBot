@@ -282,6 +282,8 @@ class TestConfigDomains:
         assert isinstance(ac, AlgoConfig)
         assert ac.atr_sl_buffer_multiplier == 1.5
         assert ac.order_block_lookback_bars == 30
+
+
 class TestBug136BootModelPathRehydration:
     def test_boot_prefers_rehydrated_model_artifact_path(self) -> None:
         """BUG-136: LiveEngine boot must honor the persisted runtime snapshot's
@@ -296,7 +298,9 @@ class TestBug136BootModelPathRehydration:
                 model_artifact_path = "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
 
         class _Cfg:
-            model = type("M", (), {"model_artifact_path": "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"})()
+            model = type(
+                "M", (), {"model_artifact_path": "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"}
+            )()
 
         # Resolution order under test (mirrors live_engine.py BUG-136 block):
         resolved = _Cfg.model.model_artifact_path

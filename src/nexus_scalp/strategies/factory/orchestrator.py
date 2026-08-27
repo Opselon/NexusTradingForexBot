@@ -1134,9 +1134,8 @@ class StrategyFactory:
             # candidate in EVIDENCE_BUILDING with INSUFFICIENT_EVIDENCE
             # so it can be re-tested on more data instead of being
             # discarded as REJECTED. No gate threshold changes.
-            if (
-                lifecycle == "REJECTED"
-                and (wf_insufficient or self._is_evidence_only_failure(result, candidate))
+            if lifecycle == "REJECTED" and (
+                wf_insufficient or self._is_evidence_only_failure(result, candidate)
             ):
                 lifecycle = "EVIDENCE_BUILDING"
                 failed_reasons = [FailureReason.INSUFFICIENT_EVIDENCE.value]

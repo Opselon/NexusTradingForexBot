@@ -614,13 +614,13 @@ def sweep_stale_generations(
 def resume_generation(repo: Any, generation_id: str) -> dict[str, Any]:
     """PHASE 29: re-arm a FAILED generation for resumption (crash recovery).
 
-     Resets status to RUNNING with a fresh loop-state heartbeat so the
-     orchestrator's resume path can pick it up. Audit is preserved: the
-     GENERATION_SWEPT event and the FAILED interval stay in history, and the
-     reset emits its own GENERATION_RESUMED event. Callers gate on
-     population_target not yet met + config auto-resume; this function only
-     flips state. Returns {"status": "RESUMED"|"NOT_FOUND"|"NOT_FAILED",
-     "generation_id": gid}.
+    Resets status to RUNNING with a fresh loop-state heartbeat so the
+    orchestrator's resume path can pick it up. Audit is preserved: the
+    GENERATION_SWEPT event and the FAILED interval stay in history, and the
+    reset emits its own GENERATION_RESUMED event. Callers gate on
+    population_target not yet met + config auto-resume; this function only
+    flips state. Returns {"status": "RESUMED"|"NOT_FOUND"|"NOT_FAILED",
+    "generation_id": gid}.
     """
     import datetime as _dt
     import uuid as _uuid

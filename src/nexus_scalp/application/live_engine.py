@@ -89,9 +89,9 @@ from nexus_scalp.intelligence import (
     StrategyEvolutionEngine,
     TradeAutopsyEngine,
 )
-from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
+from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.model_lifecycle.champion import ChampionManager
 from nexus_scalp.model_lifecycle.models import ModelStatus
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
@@ -371,8 +371,10 @@ class LiveEngine:
         # "freshness.max_age_sec" (default 30.0s); values are documented so QA
         # can assert on them.
         self._freshness_max_age_sec: float = float(
-            getattr(config, "freshness", None) is not None
-            and getattr(config.freshness, "max_age_sec", 30.0)
+            (
+                getattr(config, "freshness", None) is not None
+                and getattr(config.freshness, "max_age_sec", 30.0)
+            )
             or 30.0
         )
         # Monotonic tick timestamp: strictly increasing wall-clock-ms of the
@@ -409,6 +411,7 @@ class LiveEngine:
         self._stale_state_detected_total: int = 0
         # In-flight worker tracker for non-blocking background dispatch
         self._inflight_workers: set[str] = set()
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
         # Buffers / engines
         symbol = config.execution.symbol
@@ -1932,33 +1935,38 @@ class LiveEngine:
     #: froze the whole tick loop (inference/features/AI-Hub) while web stayed
     #: responsive. With wait_for, a hung kick is abandoned (the thread may
     #: linger but is detached from the loop) and the loop keeps ticking.
-    WORKER_KICK_TIMEOUT_SEC: float = float(__import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "45"))
+    WORKER_KICK_TIMEOUT_SEC: float = float(
+        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "45")
+    )
 
     def _kick_worker(self, name: str, fn) -> None:
-            """Fire fn() in a background thread without blocking the tick loop.
+        """Fire fn() in a background thread without blocking the tick loop.
 
-            Uses an in-flight set to avoid duplicate concurrent executions of the
-            same worker (idempotent kick). Workers run via asyncio.to_thread and
-            detach immediately; errors are logged but never propagated.
-            """
-            if name in self._inflight_workers:
-                return  # previous cycle still running, skip duplicate kick
-            self._inflight_workers.add(name)
+        Uses an in-flight set to avoid duplicate concurrent executions of the
+        same worker (idempotent kick). Workers run via asyncio.to_thread and
+        detach immediately; errors are logged but never propagated.
+        """
+        if name in self._inflight_workers:
+            return  # previous cycle still running, skip duplicate kick
+        self._inflight_workers.add(name)
 
-            async def _run():
-                try:
-                    await asyncio.wait_for(asyncio.to_thread(fn), timeout=self.WORKER_KICK_TIMEOUT_SEC)
-                except asyncio.TimeoutError:
-                    logger.error(
-                        "[WORKER_KICK] event=TIMEOUT worker=%s timeout_sec=%s — detaching hung call",
-                        name, self.WORKER_KICK_TIMEOUT_SEC,
-                    )
-                except Exception as wkr_err:
-                    logger.warning("[WORKER_KICK] event=FAILED worker=%s error=%s", name, wkr_err)
-                finally:
-                    self._inflight_workers.discard(name)
+        async def _run():
+            try:
+                await asyncio.wait_for(asyncio.to_thread(fn), timeout=self.WORKER_KICK_TIMEOUT_SEC)
+            except TimeoutError:
+                logger.error(
+                    "[WORKER_KICK] event=TIMEOUT worker=%s timeout_sec=%s — detaching hung call",
+                    name,
+                    self.WORKER_KICK_TIMEOUT_SEC,
+                )
+            except Exception as wkr_err:
+                logger.warning("[WORKER_KICK] event=FAILED worker=%s error=%s", name, wkr_err)
+            finally:
+                self._inflight_workers.discard(name)
 
-            asyncio.create_task(_run())
+        task = asyncio.create_task(_run())
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     def _start_history_sync_worker(self) -> None:
         """Starts the broker-history sync worker (idempotent, isolated)."""
@@ -3382,16 +3390,12 @@ class LiveEngine:
                 if _b is not None:
                     x_np = np.array(feat_vals, dtype=np.float32).reshape(1, -1)
                     x_scaled = _b.scaler.transform(x_np)
-                    model_input_hash = hashlib.sha1(
-                        x_scaled.tobytes()
-                    ).hexdigest()[:16]
+                    model_input_hash = hashlib.sha1(x_scaled.tobytes()).hexdigest()[:16]
                 else:
                     model_input_hash = ""
             except Exception:
                 model_input_hash = ""
-            probs_list = (
-                probs.cpu().numpy().flatten().tolist() if probs is not None else []
-            )
+            probs_list = probs.cpu().numpy().flatten().tolist() if probs is not None else []
             model_output_hash = hashlib.sha1(
                 ("|".join(f"{v:.8g}" for v in probs_list)).encode()
             ).hexdigest()[:16]
@@ -4042,12 +4046,17 @@ class LiveEngine:
         try:
             radar_rec = rec
             if "feat_0" not in radar_rec:
-                radar_rec = self._rolling_feature_records[-1] if self._rolling_feature_records else None
+                radar_rec = (
+                    self._rolling_feature_records[-1] if self._rolling_feature_records else None
+                )
             if radar_rec is not None:
                 detected = self.setup_detector.detect(radar_rec, timestamp=last_bar.timestamp)
                 ranked = sorted(detected, key=lambda s: s.quality, reverse=True)
                 best = ranked[0] if ranked else None
-                _regime_val = getattr(getattr(self._last_regime_state, "regime_type", None), "value", None) or "UNKNOWN"
+                _regime_val = (
+                    getattr(getattr(self._last_regime_state, "regime_type", None), "value", None)
+                    or "UNKNOWN"
+                )
                 _news_state_val = None
                 try:
                     if getattr(self, "news_engine", None) is not None:
@@ -4065,9 +4074,15 @@ class LiveEngine:
                     "candidate_count": len(ranked),
                     "best_setup": best.to_contract() if best else None,
                     "setups": [s.to_contract() for s in ranked[:5]],
-                    "state": ("SETUP_READY" if best and best.quality >= self.setup_detector.min_quality else ("WATCHING" if ranked else "NO_SETUP")),
+                    "state": (
+                        "SETUP_READY"
+                        if best and best.quality >= self.setup_detector.min_quality
+                        else ("WATCHING" if ranked else "NO_SETUP")
+                    ),
                     "news_state": _news_state_val,
-                    "decision_reason": self._last_proposal.reason_code if getattr(self, "_last_proposal", None) else None,
+                    "decision_reason": self._last_proposal.reason_code
+                    if getattr(self, "_last_proposal", None)
+                    else None,
                     "updated_at": datetime.now(UTC).isoformat(),
                 }
         except Exception as radar_err:
@@ -4253,12 +4268,8 @@ class LiveEngine:
         max_age = float(self._freshness_max_age_sec)
         mkt_state, mkt_age = self._stage_freshness(self._last_tick_timestamp, max_age)
         feat_state, feat_age = self._stage_freshness(self.last_feature_update, max_age)
-        inf_state, inf_age = self._stage_freshness(
-            self.last_inference_timestamp, max_age
-        )
-        dec_state, dec_age = self._stage_freshness(
-            self.last_decision_timestamp, max_age
-        )
+        inf_state, inf_age = self._stage_freshness(self.last_inference_timestamp, max_age)
+        dec_state, dec_age = self._stage_freshness(self.last_decision_timestamp, max_age)
         # Overall health is the WORST of market/features/inference/decision.
         # BUGFIX-G29: the MARKET stage is now included. A dead tick feed
         # (market=STALE while is_connected() stays True) MUST surface as
@@ -4400,9 +4411,7 @@ class LiveEngine:
                 result["frozen_at"] = "MODEL_INPUT"
                 result["error"] = "bundle not initialized"
                 return result
-            x_scaled = _b.scaler.transform(
-                np.array(x_vec, dtype=np.float32).reshape(1, -1)
-            )
+            x_scaled = _b.scaler.transform(np.array(x_vec, dtype=np.float32).reshape(1, -1))
             model_input_hash = hashlib.sha1(x_scaled.tobytes()).hexdigest()[:16]
             result["stages"]["MODEL_INPUT"] = {
                 "changed": model_input_hash != self._last_model_input_hash,

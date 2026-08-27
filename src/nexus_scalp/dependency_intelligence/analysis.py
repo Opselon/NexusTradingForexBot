@@ -29,10 +29,20 @@ from nexus_scalp.dependency_intelligence.models import (
 
 # Edge kinds that represent a *dependency* (source depends on target).
 _DEP_KINDS = {
-    EdgeKind.IMPORT, EdgeKind.INHERITS, EdgeKind.IMPLEMENTS, EdgeKind.INJECTS,
-    EdgeKind.CONSTRUCTS, EdgeKind.CALLS, EdgeKind.USES, EdgeKind.RESOLVES,
-    EdgeKind.REGISTERS, EdgeKind.FACTORY_CREATES, EdgeKind.CONFIG_DEPENDS_ON,
-    EdgeKind.CONSUMES, EdgeKind.EVENT_PUBLISHES, EdgeKind.EVENT_CONSUMES,
+    EdgeKind.IMPORT,
+    EdgeKind.INHERITS,
+    EdgeKind.IMPLEMENTS,
+    EdgeKind.INJECTS,
+    EdgeKind.CONSTRUCTS,
+    EdgeKind.CALLS,
+    EdgeKind.USES,
+    EdgeKind.RESOLVES,
+    EdgeKind.REGISTERS,
+    EdgeKind.FACTORY_CREATES,
+    EdgeKind.CONFIG_DEPENDS_ON,
+    EdgeKind.CONSUMES,
+    EdgeKind.EVENT_PUBLISHES,
+    EdgeKind.EVENT_CONSUMES,
     EdgeKind.TESTS,
 }
 
@@ -45,6 +55,7 @@ _EXPOSE_KINDS = {EdgeKind.EXPOSES}
 # Architecture rules (configurable, evidence-based — not naming guesses)
 # -------------------------------------------------------------------------
 
+
 @dataclass
 class LayerRule:
     layer: str
@@ -53,22 +64,41 @@ class LayerRule:
 
 
 DEFAULT_LAYER_RULES: list[LayerRule] = [
-    LayerRule(Layer.PRESENTATION.value, can_depend_on=[
-        Layer.APPLICATION.value, Layer.DOMAIN.value, Layer.PORTS.value,
-        Layer.INFRASTRUCTURE.value,
-    ]),
-    LayerRule(Layer.APPLICATION.value, can_depend_on=[
-        Layer.DOMAIN.value, Layer.PORTS.value, Layer.INFRASTRUCTURE.value,
+    LayerRule(
+        Layer.PRESENTATION.value,
+        can_depend_on=[
+            Layer.APPLICATION.value,
+            Layer.DOMAIN.value,
+            Layer.PORTS.value,
+            Layer.INFRASTRUCTURE.value,
+        ],
+    ),
+    LayerRule(
         Layer.APPLICATION.value,
-    ]),
+        can_depend_on=[
+            Layer.DOMAIN.value,
+            Layer.PORTS.value,
+            Layer.INFRASTRUCTURE.value,
+            Layer.APPLICATION.value,
+        ],
+    ),
     LayerRule(Layer.DOMAIN.value, can_depend_on=[Layer.PORTS.value]),
     LayerRule(Layer.PORTS.value, can_depend_on=[]),
-    LayerRule(Layer.INFRASTRUCTURE.value, can_depend_on=[
-        Layer.DOMAIN.value, Layer.PORTS.value,
-    ]),
-    LayerRule(Layer.RUNTIME.value, can_depend_on=[
-        Layer.APPLICATION.value, Layer.INFRASTRUCTURE.value, Layer.DOMAIN.value,
-    ]),
+    LayerRule(
+        Layer.INFRASTRUCTURE.value,
+        can_depend_on=[
+            Layer.DOMAIN.value,
+            Layer.PORTS.value,
+        ],
+    ),
+    LayerRule(
+        Layer.RUNTIME.value,
+        can_depend_on=[
+            Layer.APPLICATION.value,
+            Layer.INFRASTRUCTURE.value,
+            Layer.DOMAIN.value,
+        ],
+    ),
     LayerRule(Layer.TOOLING.value, can_depend_on=[Layer.UNKNOWN.value]),
 ]
 
@@ -143,8 +173,13 @@ class GraphAnalyzer:
         for nid, node in self.graph.nodes.items():
             g.add_node(nid, **node.to_dict())
         for e in self.graph.edges:
-            g.add_edge(e.source, e.target, kind=e.kind.value,
-                       confidence=e.confidence, evidence=e.evidence.to_dict())
+            g.add_edge(
+                e.source,
+                e.target,
+                kind=e.kind.value,
+                confidence=e.confidence,
+                evidence=e.evidence.to_dict(),
+            )
         self._nx = g
         return g
 
@@ -164,10 +199,9 @@ class GraphAnalyzer:
                 instability = fan_out / (fan_in + fan_out)
             else:
                 instability = 0.0
-            out[nid] = Metrics(fan_in=fan_in, fan_out=fan_out,
-                               instability=round(instability, 4))
+            out[nid] = Metrics(fan_in=fan_in, fan_out=fan_out, instability=round(instability, 4))
         # centrality (degree-based; explicit + bounded)
-        for nid, m in out.items():
+        for _nid, m in out.items():
             m.centrality = round((m.fan_in + m.fan_out) / max(1, 2 * (n - 1)), 6)
         self._metrics = out
         return out
@@ -196,22 +230,28 @@ class GraphAnalyzer:
                     ev = d.get("evidence") or {}
                     if ev.get("file"):
                         locs.append(f"{ev['file']}:{ev.get('line', 0)}")
-            sev = "CRITICAL" if any(k in {"INJECTS", "REGISTERS", "FACTORY_CREATES"} for k in edge_types) else "HIGH"
-            cycles.append(CycleRecord(
-                cycle_id=f"CYC-{len(cycles)+1:03d}",
-                severity=sev,
-                path=list(cyc),
-                edge_types=sorted(set(edge_types)),
-                source_locations=sorted(set(locs)),
-                impact=(
-                    "Circular dependency can block construction / cause import-time "
-                    "failures or non-deterministic wiring."
-                ),
-                recommended_breakpoint=(
-                    "Extract an abstraction (Protocol/ABC) or move orchestration "
-                    "to a composition root to break the cycle at its weakest edge."
-                ),
-            ))
+            sev = (
+                "CRITICAL"
+                if any(k in {"INJECTS", "REGISTERS", "FACTORY_CREATES"} for k in edge_types)
+                else "HIGH"
+            )
+            cycles.append(
+                CycleRecord(
+                    cycle_id=f"CYC-{len(cycles) + 1:03d}",
+                    severity=sev,
+                    path=list(cyc),
+                    edge_types=sorted(set(edge_types)),
+                    source_locations=sorted(set(locs)),
+                    impact=(
+                        "Circular dependency can block construction / cause import-time "
+                        "failures or non-deterministic wiring."
+                    ),
+                    recommended_breakpoint=(
+                        "Extract an abstraction (Protocol/ABC) or move orchestration "
+                        "to a composition root to break the cycle at its weakest edge."
+                    ),
+                )
+            )
         # mark cycle membership
         members = {n for c in cycles for n in c.path}
         for nid, m in self.compute_metrics().items():
@@ -234,7 +274,8 @@ class GraphAnalyzer:
             s_layer = s.layer.value
             t_layer = t.layer.value
             if s_layer in (Layer.UNKNOWN.value, Layer.TEST.value) or t_layer in (
-                Layer.UNKNOWN.value, Layer.TEST.value,
+                Layer.UNKNOWN.value,
+                Layer.TEST.value,
             ):
                 continue
             rule = rule_map.get(s_layer)
@@ -242,21 +283,23 @@ class GraphAnalyzer:
                 continue
             allowed = set(rule.can_depend_on) | {s_layer}
             if t_layer not in allowed or t_layer in rule.forbidden:
-                violations.append(Violation(
-                    severity="MEDIUM",
-                    source=e.source,
-                    target=e.target,
-                    rule=f"layer:{s_layer}->{t_layer}",
-                    evidence=e.evidence.to_dict(),
-                    explanation=(
-                        f"{s_layer} module depends on {t_layer} module via "
-                        f"{e.kind.value} (not in allowed set)."
-                    ),
-                    remediation=(
-                        "Introduce an abstraction in the ports/domain layer or "
-                        "invert the dependency."
-                    ),
-                ))
+                violations.append(
+                    Violation(
+                        severity="MEDIUM",
+                        source=e.source,
+                        target=e.target,
+                        rule=f"layer:{s_layer}->{t_layer}",
+                        evidence=e.evidence.to_dict(),
+                        explanation=(
+                            f"{s_layer} module depends on {t_layer} module via "
+                            f"{e.kind.value} (not in allowed set)."
+                        ),
+                        remediation=(
+                            "Introduce an abstraction in the ports/domain layer or "
+                            "invert the dependency."
+                        ),
+                    )
+                )
         # annotate violation counts
         for nid, m in self.compute_metrics().items():
             m.violations = sum(1 for v in violations if v.source == nid)
@@ -289,15 +332,21 @@ class GraphAnalyzer:
             frontier = nxt
             depth += 1
         # classify impact kinds
-        test_impact = [n for n in (direct + transitive)
-                       if self.graph.nodes.get(n) and self.graph.nodes[n].kind == NodeKind.TEST]
-        api_impact = [n for n in (direct + transitive)
-                      if self.graph.nodes.get(n) and self.graph.nodes[n].kind == NodeKind.API_ENDPOINT]
+        test_impact = [
+            n
+            for n in (direct + transitive)
+            if self.graph.nodes.get(n) and self.graph.nodes[n].kind == NodeKind.TEST
+        ]
+        api_impact = [
+            n
+            for n in (direct + transitive)
+            if self.graph.nodes.get(n) and self.graph.nodes[n].kind == NodeKind.API_ENDPOINT
+        ]
         runtime_impact = [
-            n for n in (direct + transitive)
+            n
+            for n in (direct + transitive)
             if self.graph.nodes.get(n)
-            and self.graph.nodes[n].criticality
-            in (Criticality.CRITICAL, Criticality.HIGH)
+            and self.graph.nodes[n].criticality in (Criticality.CRITICAL, Criticality.HIGH)
         ]
         kind = "HIGH_RISK" if (test_impact or runtime_impact) else "TRANSITIVE"
         return {
@@ -370,10 +419,15 @@ class GraphAnalyzer:
                 scored.append((nid, round(score, 2), flags))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [
-            {"node_id": nid, "risk_score": s, "flags": flags,
-             "fan_in": metrics[nid].fan_in, "fan_out": metrics[nid].fan_out,
-             "instability": metrics[nid].instability,
-             "criticality": self.graph.nodes[nid].criticality.value}
+            {
+                "node_id": nid,
+                "risk_score": s,
+                "flags": flags,
+                "fan_in": metrics[nid].fan_in,
+                "fan_out": metrics[nid].fan_out,
+                "instability": metrics[nid].instability,
+                "criticality": self.graph.nodes[nid].criticality.value,
+            }
             for nid, s, flags in scored[:top_n]
         ]
 
@@ -396,11 +450,8 @@ def analyze_graph(graph: DependencyGraph) -> dict[str, Any]:
             "cycles": len(cycles),
             "violations": len(violations),
             "unresolved_imports": sum(
-                1 for n in graph.nodes.values()
-                if n.id.startswith("unresolved:")
+                1 for n in graph.nodes.values() if n.id.startswith("unresolved:")
             ),
-            "di_registrations": sum(
-                1 for e in graph.edges if e.kind.value == "REGISTERS"
-            ),
+            "di_registrations": sum(1 for e in graph.edges if e.kind.value == "REGISTERS"),
         },
     }

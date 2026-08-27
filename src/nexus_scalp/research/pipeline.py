@@ -72,8 +72,6 @@ def _select_family(dataset: ResearchDataset, candidate: StrategyCandidate) -> Re
     )
 
 
-
-
 def _extract_context_contract(candidate) -> dict | None:
     """PHASE 26: derive the evaluation context contract from a candidate DSL.
 
@@ -103,6 +101,7 @@ def _extract_context_contract(candidate) -> dict | None:
         raise ContextContractError(
             f"CONTEXT_CONTRACT_MISMATCH: contract extraction failed for {sid}: {exc}"
         ) from exc
+
 
 class ResearchPipeline:
     """
@@ -211,8 +210,10 @@ class ResearchPipeline:
         # evidence proves all stages consumed the identical semantic filter.
         from nexus_scalp.research.context_contract import (
             ContextContractError,
-            contract_hash as _contract_hash,
             filter_samples_by_contract,
+        )
+        from nexus_scalp.research.context_contract import (
+            contract_hash as _contract_hash,
         )
 
         _ctx_for_validation = _extract_context_contract(candidate)
@@ -233,8 +234,7 @@ class ResearchPipeline:
                     f"hash={_ctx_hash} matched=0/{len(family_ds.samples)}"
                 )
             logger.info(
-                "[CONTEXT_CONTRACT] event=GATES_SCOPED strategy_id=%s hash=%s "
-                "population=%d/%d",
+                "[CONTEXT_CONTRACT] event=GATES_SCOPED strategy_id=%s hash=%s population=%d/%d",
                 sid,
                 _ctx_hash,
                 len(_filtered),

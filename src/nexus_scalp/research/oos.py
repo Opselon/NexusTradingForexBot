@@ -68,9 +68,9 @@ class OOSGate:
                     list(dataset.samples), context_contract
                 )
                 if filtered:
-                    dataset_for_eval = dataset.model_copy(update={'samples': filtered})
+                    dataset_for_eval = dataset.model_copy(update={"samples": filtered})
                 else:
-                    context_diag['sufficient_evidence'] = False
+                    context_diag["sufficient_evidence"] = False
 
         split = split_temporal(
             dataset_for_eval,

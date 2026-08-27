@@ -445,9 +445,8 @@ def _contract_section(engine: Any) -> dict[str, Any]:
         # The class constants (scalp_v1/50) are bootstrap defaults, NOT truth;
         # fv.to_tensor_input() is BASE-50 only and must never represent the
         # live vector when a 70D assembly path exists.
-        actual_schema = (
-            getattr(engine, "effective_feature_schema_id", None)
-            or getattr(engine, "FEATURE_SCHEMA_ID", None)
+        actual_schema = getattr(engine, "effective_feature_schema_id", None) or getattr(
+            engine, "FEATURE_SCHEMA_ID", None
         )
         actual_dim = (
             getattr(engine, "_last_live_tensor_dim", None)
@@ -597,9 +596,7 @@ def _model_section(engine: Any) -> dict[str, Any]:
             # LOADED BUNDLE operates under (BUG-125 effective_* properties),
             # never the class bootstrap constants — those stay scalp_v1/50
             # even when a validated 70D artifact is serving.
-            "schema_id": getattr(
-                engine, "effective_feature_schema_id", None
-            )
+            "schema_id": getattr(engine, "effective_feature_schema_id", None)
             or getattr(engine, "FEATURE_SCHEMA_ID", None),
             "dimension": getattr(engine, "effective_feature_dim", None)
             or getattr(engine, "FEATURE_DIM", None),

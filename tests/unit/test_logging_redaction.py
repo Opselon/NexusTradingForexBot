@@ -5,7 +5,9 @@ from nexus_scalp.observability.logging import _redact_sensitive_fields
 
 def test_logging_redaction_hardening():
     # 1. Under-redaction fix: password in event string
-    out = _redact_sensitive_fields(None, "info", {"event": "MT5 login account 123456 password=hunter2"})
+    out = _redact_sensitive_fields(
+        None, "info", {"event": "MT5 login account 123456 password=hunter2"}
+    )
     assert "hunter2" not in out["event"]
     assert "[REDACTED_SECRET]" in out["event"]
 

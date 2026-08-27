@@ -48,7 +48,7 @@ PACKAGE_LAYER: dict[str, Layer] = {
 
 # Packages that are operationally critical to the live trading engine.
 CRITICAL_PACKAGES = {
-    "application",   # LiveEngine composition root lives here
+    "application",  # LiveEngine composition root lives here
     "execution",
     "risk",
     "market_data",
@@ -57,9 +57,9 @@ CRITICAL_PACKAGES = {
     "model_lifecycle",
     "mslie",
     "features",
-    "adapters",      # MT5 / DB adapters
+    "adapters",  # MT5 / DB adapters
     "accounting",
-    "web",           # API availability
+    "web",  # API availability
     "runtime_config" if False else "configuration",
 }
 

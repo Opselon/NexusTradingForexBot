@@ -163,9 +163,17 @@ def path_cmd(source: str, target: str) -> None:
 
 
 _DEP_SET = {
-    EdgeKind.IMPORT, EdgeKind.INHERITS, EdgeKind.IMPLEMENTS, EdgeKind.INJECTS,
-    EdgeKind.CONSTRUCTS, EdgeKind.CALLS, EdgeKind.USES, EdgeKind.RESOLVES,
-    EdgeKind.REGISTERS, EdgeKind.FACTORY_CREATES, EdgeKind.CONFIG_DEPENDS_ON,
+    EdgeKind.IMPORT,
+    EdgeKind.INHERITS,
+    EdgeKind.IMPLEMENTS,
+    EdgeKind.INJECTS,
+    EdgeKind.CONSTRUCTS,
+    EdgeKind.CALLS,
+    EdgeKind.USES,
+    EdgeKind.RESOLVES,
+    EdgeKind.REGISTERS,
+    EdgeKind.FACTORY_CREATES,
+    EdgeKind.CONFIG_DEPENDS_ON,
     EdgeKind.CONSUMES,
 }
 

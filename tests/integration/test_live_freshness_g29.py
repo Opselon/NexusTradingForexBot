@@ -66,8 +66,7 @@ def _make_engine(tmp_path):
             "freshness": {"enabled": True, "max_age_sec": 30.0},
         }
     )
-    engine = LiveEngine(config=config, adapter=adapter, audit_repo=repo,
-                        force_fresh_model=True)
+    engine = LiveEngine(config=config, adapter=adapter, audit_repo=repo, force_fresh_model=True)
     engine._inference_enabled = True
     engine.warmup_state = "READY"
     return engine, adapter
@@ -265,9 +264,13 @@ def test_materially_different_inputs_warn_on_frozen_output(tmp_path):
 def test_monotonic_tick_timestamp_advances(tmp_path):
     """Req 8 + 14: monotonic tick timestamp is strictly increasing across cycles."""
     engine, adapter = _make_engine(tmp_path)
-    engine._process_tick_pipeline(_tick(4628.0, 4628.5, datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)), _account(engine))
+    engine._process_tick_pipeline(
+        _tick(4628.0, 4628.5, datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)), _account(engine)
+    )
     first = engine._monotonic_tick_ms
-    engine._process_tick_pipeline(_tick(4630.0, 4630.5, datetime(2026, 1, 1, 0, 0, 5, tzinfo=UTC)), _account(engine))
+    engine._process_tick_pipeline(
+        _tick(4630.0, 4630.5, datetime(2026, 1, 1, 0, 0, 5, tzinfo=UTC)), _account(engine)
+    )
     second = engine._monotonic_tick_ms
     assert second > first
     assert engine._tick_sequence >= 2
@@ -306,6 +309,7 @@ def test_api_exposes_freshness_and_stale_flag(tmp_path):
 # ---------------------------------------------------------------------------
 def _account(engine):
     """Return a minimal AccountInfo-like object the pipeline tolerates."""
+
     class _Acct:
         balance = 10000.0
         equity = 10000.0
@@ -313,6 +317,7 @@ def _account(engine):
         margin_free = 10000.0
         margin_level = 100.0
         leverage = 100
+
     return _Acct()
 
 
@@ -501,5 +506,3 @@ def test_stale_counter_increments_on_every_freshness_poll():
     )
     # And it must be visible in the telemetry block of the freshness payload.
     assert engine.compute_live_freshness()["telemetry"]["stale_state_detected_total"] > before
-
-

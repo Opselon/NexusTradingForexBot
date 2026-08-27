@@ -1594,11 +1594,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             # never compute setups. Included in the canonical snapshot so REST
             # (/api/live/state), SSE (/api/ticks/stream) and WebSocket all carry
             # the SAME authoritative radar object (single source of truth).
-            "radar": (
-                getattr(engine, "_last_market_radar", None)
-                if engine is not None
-                else None
-            ),
+            "radar": (getattr(engine, "_last_market_radar", None) if engine is not None else None),
             "algo_config": algo_config_data,
             "liquidity": _liquidity_state_section(app.state.engine),
             "visual_overlays": {
@@ -1612,9 +1608,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: authoritative freshness of
             # every pipeline stage (market/features/inference/decision), each
             # FRESH|STALE|UNKNOWN independent of process uptime / state_version.
-            "live_freshness": (
-                engine.compute_live_freshness() if engine is not None else None
-            ),
+            "live_freshness": (engine.compute_live_freshness() if engine is not None else None),
             # UI stale-state flag: lets the frontend show an explicit STALE
             # banner instead of trusting state_version (which keeps climbing
             # even when intelligence is frozen).

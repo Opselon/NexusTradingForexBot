@@ -96,9 +96,7 @@ def _count_non_module(graph: Any) -> int:
 
 
 def _count_unresolved_di(graph: Any) -> int:
-    return sum(
-        1 for n in graph.nodes.values() if n.status.value == "UNRESOLVED"
-    )
+    return sum(1 for n in graph.nodes.values() if n.status.value == "UNRESOLVED")
 
 
 @router.get("/graph")
@@ -125,30 +123,34 @@ def dependency_node(node_id: str, req: Request) -> dict[str, Any]:
     metrics = analyzer.compute_metrics().get(node.id, None)
     # dependents (who depends on this node)
     dependents = [
-        e.source for e in graph.edges
-        if e.target == node.id and _is_dep_edge(e.kind.value)
+        e.source for e in graph.edges if e.target == node.id and _is_dep_edge(e.kind.value)
     ]
     dependencies = [
-        e.target for e in graph.edges
-        if e.source == node.id and _is_dep_edge(e.kind.value)
+        e.target for e in graph.edges if e.source == node.id and _is_dep_edge(e.kind.value)
     ]
     return {
         "node": node.to_dict(),
         "metrics": metrics.__dict__ if metrics else None,
         "dependencies": dependencies,
         "dependents": dependents,
-        "incident_edges": [
-            e.to_dict() for e in graph.edges
-            if e.source == node.id or e.target == node.id
-        ],
+        "incident_edges": [e.to_dict() for e in graph.edges if node.id in {e.source, e.target}],
     }
 
 
 def _is_dep_edge(kind: str) -> bool:
     return kind in {
-        "IMPORT", "INHERITS", "IMPLEMENTS", "INJECTS", "CONSTRUCTS",
-        "CALLS", "USES", "RESOLVES", "REGISTERS", "FACTORY_CREATES",
-        "CONFIG_DEPENDS_ON", "CONSUMES",
+        "IMPORT",
+        "INHERITS",
+        "IMPLEMENTS",
+        "INJECTS",
+        "CONSTRUCTS",
+        "CALLS",
+        "USES",
+        "RESOLVES",
+        "REGISTERS",
+        "FACTORY_CREATES",
+        "CONFIG_DEPENDS_ON",
+        "CONSUMES",
     }
 
 

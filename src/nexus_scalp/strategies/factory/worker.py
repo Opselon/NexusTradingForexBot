@@ -254,9 +254,7 @@ class AutonomousLoopWorker:
         try:
             self.factory.auto_resume_failed_generations()
         except Exception as err:
-            logger.warning(
-                "[STRATEGY_FACTORY] auto-resume failed non-fatally", error=str(err)
-            )
+            logger.warning("[STRATEGY_FACTORY] auto-resume failed non-fatally", error=str(err))
         persisted = get_loop_state(self.factory.audit_repo)
         generation_id = str(persisted.get("generation_id", "") or "")
         if not generation_id:
@@ -268,33 +266,38 @@ class AutonomousLoopWorker:
             # silently doing nothing. Never auto-creates generations; never
             # promotes anything to live.
             try:
-                from nexus_scalp.strategies.factory.store import list_generations, list_candidates
+                from nexus_scalp.strategies.factory.store import list_candidates, list_generations
 
                 failed = [
-                    g for g in (list_generations(self.factory._research_backend) or [])
+                    g
+                    for g in (list_generations(self.factory._research_backend) or [])
                     if str(g.get("status", "")) == "FAILED"
                 ]
-                for g in sorted(
-                    failed, key=lambda x: int(x.get("number", 0) or 0), reverse=True
-                ):
+                for g in sorted(failed, key=lambda x: int(x.get("number", 0) or 0), reverse=True):
                     gid = str(g.get("generation_id", "") or "")
-                    cands = list_candidates(
-                        self.factory._research_backend, generation_id=gid, limit=2000
-                    ) or []
+                    cands = (
+                        list_candidates(
+                            self.factory._research_backend, generation_id=gid, limit=2000
+                        )
+                        or []
+                    )
                     pending = [
-                        c for c in cands
+                        c
+                        for c in cands
                         if c.get("lifecycle") in ("GENERATED", None, "", "DISCOVERED", "RUNNING")
                     ]
                     if pending:
                         generation_id = gid
                         logger.info(
                             "[STRATEGY_FACTORY] event=RECOVERY_FALLBACK generation=%s pending=%s",
-                            gid, len(pending),
+                            gid,
+                            len(pending),
                         )
                         break
             except Exception as fb_err:
                 logger.warning(
-                    "[STRATEGY_FACTORY] recovery fallback failed non-fatally", error=str(fb_err),
+                    "[STRATEGY_FACTORY] recovery fallback failed non-fatally",
+                    error=str(fb_err),
                 )
         if not generation_id:
             # No active generation: nothing to resume.
