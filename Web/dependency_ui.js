@@ -24,12 +24,22 @@
 
   function showError(msg) {
     var e = $("global-error-overlay");
+    var graphOverlay = $("graph-loading-overlay");
+    var svg = $("graph-svg");
+
     if (!e) return;
     if (msg) {
-      e.textContent = msg;
+      e.innerHTML = '<div class="text-center p-6 bg-[#111a2e] rounded-xl border border-rose-900 shadow-2xl max-w-md"><div class="text-rose-500 font-bold mb-2">DEPENDENCY GRAPH UNAVAILABLE</div><div class="text-xs text-slate-300 mb-4">' + esc(msg) + '</div><button onclick="window.location.reload()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm font-semibold transition-colors">Retry</button></div>';
       e.classList.remove("hidden");
+      e.classList.add("flex");
+
+      // Stop the graph loading state visually to prevent hang UI
+      if (graphOverlay) graphOverlay.classList.add("hidden");
+      if (svg) svg.style.opacity = "0.1";
     } else {
       e.classList.add("hidden");
+      e.classList.remove("flex");
+      if (svg) svg.style.opacity = "1";
     }
   }
 
@@ -112,10 +122,36 @@
     });
 
     els["btn-focus"].onclick = function() { focusSelectedNode(); };
+
+    // Path mode setup
+    var pendingPathSource = null;
     els["btn-path"].onclick = function() { 
       var node = state.fullNodes.find(function (n) { return n.id === state.selectedNode; });
-      if (node) els["search-input"].value = node.qualified_name;
+      if (!node) return;
+      pendingPathSource = node.id;
+
+      els["inspector-title"].textContent = "PATH EXPLORER";
+      if (els["inspector-overview"]) els["inspector-overview"].classList.add("hidden");
+      if (els["inspector-node-view"]) els["inspector-node-view"].classList.add("hidden");
+      if (els["inspector-impact-view"]) els["inspector-impact-view"].classList.add("hidden");
+      els["inspector-path-view"].classList.remove("hidden");
+
+      $("path-source-node").textContent = node.qualified_name.split('.').pop();
+      $("path-target-node").textContent = "Select node from graph...";
+      $("path-results").innerHTML = "";
     };
+
+    // Re-purpose selection when path mode is active
+    var originalOnSelect = onNodeSelect;
+    onNodeSelect = function(id) {
+       if (pendingPathSource && !els["inspector-path-view"].classList.contains("hidden")) {
+          runPath(pendingPathSource, id);
+          pendingPathSource = null;
+          return;
+       }
+       originalOnSelect(id);
+    };
+
     els["btn-impact"].onclick = function() { runImpact(state.selectedNode); };
 
     els["btn-inspector-collapse"].onclick = function() {
@@ -135,6 +171,13 @@
     els["btn-show-cycles"].onclick = function() { els["filter-cycle"].checked = true; applyFilters(); };
     els["btn-show-unresolved"].onclick = function() { els["filter-unresolved"].checked = true; applyFilters(); };
     els["btn-show-critical"].onclick = function() { els["filter-critical"].checked = true; applyFilters(); };
+
+    // Explicit path finding execution via button if both nodes are selected
+    if (els["btn-execute-path"]) {
+      els["btn-execute-path"].onclick = function() {
+        // Find path logic handles this if pendingPathSource and target exist.
+      };
+    }
 
     // Keyboard shortcuts
     document.addEventListener("keydown", function(e) {
@@ -166,13 +209,24 @@
     if (!isBackground) setLoading(true);
     showError(null);
     api.summary().then(function (r) {
-      if (!r.ok) { showError("Summary failed: " + r.error + " (HTTP " + r.status + ")"); return r; }
+      if (!r.ok) {
+        // Stop execution but clear loader on error
+        setLoading(false);
+        showError("Summary failed: " + r.error + " (HTTP " + r.status + ")");
+        return Promise.reject(new Error("summary failed"));
+      }
       state.summary = r.data;
       renderHeader(r.data);
       renderHealthStrip(r.data);
       return api.graph();
     }).then(function (r) {
-      if (!r || !r.ok) { if (r && !r.ok) showError("Graph failed: " + r.error); return; }
+      if (!r || !r.ok) {
+        if (r && !r.ok) {
+           setLoading(false);
+           showError("Graph failed: " + r.error);
+        }
+        return Promise.reject(new Error("graph failed"));
+      }
       state.graph_data = r.data;
       populateFilters(r.data);
       drawGraph(r.data);
@@ -191,7 +245,9 @@
       state.lastUpdated = new Date();
     }).catch(function (err) {
       setLoading(false);
-      showError("Failed to load dependency data: " + (err && err.message ? err.message : err));
+      if (err.message !== "summary failed" && err.message !== "graph failed") {
+        showError("Failed to load dependency data: " + (err && err.message ? err.message : err));
+      }
     });
   }
 
@@ -356,10 +412,12 @@
     if (!q || q.length < 2) return;
     var matches = (state.fullNodes || []).filter(function (n) {
       return (n.qualified_name || "").toLowerCase().includes(q) || (n.display_name || "").toLowerCase().includes(q);
-    }).slice(0, 5);
-    if (matches.length > 0 && !state.selectedNode) {
-      // Auto-select first match
-      onNodeSelect(matches[0].id);
+    });
+    if (matches.length > 0) {
+      // Auto-select first match to trigger focus/zoom loop
+      var bestMatch = matches[0];
+      onNodeSelect(bestMatch.id);
+      focusSelectedNode();
     }
   }
 
@@ -371,6 +429,7 @@
     });
     els["search-input"].value = "";
     applyFilters();
+    clearSelection();
   }
 
   function clearSelection() {
@@ -380,9 +439,9 @@
     els["btn-focus"].disabled = true;
     els["btn-path"].disabled = true;
     els["btn-impact"].disabled = true;
-    els["inspector-overview"].classList.remove("hidden");
-    els["inspector-node-view"].classList.add("hidden");
-    els["inspector-title"].textContent = "System Overview";
+
+    // Reset to System Overview
+    renderInspectorOverview();
   }
 
   function onNodeSelect(id) {
@@ -404,79 +463,117 @@
   }
 
   function focusSelectedNode() {
-    if (!state.selectedNode) return;
+    if (!state.selectedNode || !state.graph) return;
     var node = (state.fullNodes || []).find(function (n) { return n.id === state.selectedNode; });
     if (!node) return;
     var p = state.graph.pos[state.selectedNode];
     if (!p) return;
-    // Center view on node
-    state.graph._view.x = p.x - 500;
-    state.graph._view.y = p.y - 350;
-    state.graph._view.k = Math.max(state.graph._view.k, 1.2);
+
+    var container = els["graph-svg"].parentElement;
+    var w = container.clientWidth || 1000;
+    var h = container.clientHeight || 700;
+
+    // Zoom and center calculation
+    state.graph._view.k = 1.8;
+    state.graph._view.x = -(p.x * state.graph._view.k) + (w / 2);
+    state.graph._view.y = -(p.y * state.graph._view.k) + (h / 2);
     state.graph._applyView();
   }
 
   function renderNodeInspector(d) {
     var n = d.node || {};
     var m = d.metrics || {};
-    els["inspector-title"].textContent = "Node Inspector";
-    els["inspector-overview"].classList.add("hidden");
+
+    // Update active view
+    els["inspector-title"].textContent = "NODE INSPECTOR";
+
+    if (els["inspector-overview"]) els["inspector-overview"].classList.add("hidden");
+    if (els["inspector-path-view"]) els["inspector-path-view"].classList.add("hidden");
+    if (els["inspector-impact-view"]) els["inspector-impact-view"].classList.add("hidden");
+
     els["inspector-node-view"].classList.remove("hidden");
     
-    els["node-identity"].textContent = n.qualified_name || "—";
+    // Identity block
+    var nameParts = (n.qualified_name || "—").split(".");
+    var shortName = nameParts.pop();
+    els["node-identity"].innerHTML = '<div>' + esc(shortName) + '</div><div class="text-xs font-normal nx-muted mt-1 font-mono">' + esc(n.qualified_name || "—") + '</div>';
+
     els["node-kind"].textContent = n.kind || "—";
+
+    if (n.kind === "EXTERNAL") els["node-kind"].className = "px-2 py-0.5 rounded text-white bg-slate-600";
+    else if (n.kind === "MODULE") els["node-kind"].className = "px-2 py-0.5 rounded text-white bg-purple-600";
+    else if (n.kind === "INTERFACE" || n.kind === "PROTOCOL") els["node-kind"].className = "px-2 py-0.5 rounded text-slate-900 bg-teal-400";
+    else els["node-kind"].className = "px-2 py-0.5 rounded text-slate-900 bg-sky-400";
+
     els["node-layer"].textContent = (n.layer || "—").toUpperCase();
-    els["node-criticality"].textContent = n.criticality || "—";
+
+    if (n.criticality === "CRITICAL") {
+      els["node-criticality"].innerHTML = '<span class="text-amber-500 flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> CRITICAL</span>';
+    } else if (m.in_cycle) {
+      els["node-criticality"].innerHTML = '<span class="text-rose-400 flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.27l5.67-5.67"></path></svg> CYCLE</span>';
+    } else {
+      els["node-criticality"].textContent = "";
+    }
     
     // Metrics
     els["node-metrics"].innerHTML = 
-      '<div class="nx-card p-3 text-center"><div class="text-2xl font-bold">' + (m.fan_in || 0) + '</div><div class="text-xs nx-muted">Fan-in</div></div>' +
-      '<div class="nx-card p-3 text-center"><div class="text-2xl font-bold">' + (m.fan_out || 0) + '</div><div class="text-xs nx-muted">Fan-out</div></div>' +
-      '<div class="nx-card p-3 text-center"><div class="text-2xl font-bold">' + (m.instability != null ? m.instability.toFixed(2) : "—") + '</div><div class="text-xs nx-muted">Instability</div></div>' +
-      '<div class="nx-card p-3 text-center"><div class="text-2xl font-bold">' + (m.centrality != null ? m.centrality.toFixed(2) : "—") + '</div><div class="text-xs nx-muted">Centrality</div></div>' +
-      '<div class="nx-card p-3 text-center col-span-2"><div class="text-2xl font-bold ' + (m.in_cycle ? "nx-severity-high" : "") + '">' + (m.in_cycle ? "YES" : "NO") + '</div><div class="text-xs nx-muted">In Cycle</div></div>';
+      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">FAN-IN</span><span class="font-bold">' + (m.fan_in || 0) + '</span></div>' +
+      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">FAN-OUT</span><span class="font-bold">' + (m.fan_out || 0) + '</span></div>' +
+      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">INSTABILITY</span><span class="font-bold">' + (m.instability != null ? m.instability.toFixed(2) : "—") + '</span></div>' +
+      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">CENTRALITY</span><span class="font-bold">' + (m.centrality != null ? m.centrality.toFixed(2) : "—") + '</span></div>';
     
     // Dependencies
-    var deps = (d.dependencies || []).slice(0, 8);
+    var deps = (d.dependencies || []);
     els["node-dependencies"].innerHTML = deps.length > 0 
-      ? deps.map(function (x) { return '<div class="text-xs mono py-1 cursor-pointer hover:text-blue-400" data-node="' + esc(x) + '">' + esc(x.split(":").pop()) + '</div>'; }).join("")
-      : '<div class="text-xs nx-muted">No direct dependencies</div>';
+      ? deps.map(function (x) { return '<div class="text-xs font-mono py-1 px-2 hover:bg-[#1e293b] rounded cursor-pointer truncate transition-colors text-sky-200" data-node="' + esc(x) + '" title="' + esc(x) + '">' + esc(x.split(":").pop()) + '</div>'; }).join("")
+      : '<div class="text-xs nx-muted px-2 py-1 italic">No direct dependencies</div>';
     els["node-dependencies"].querySelectorAll("[data-node]").forEach(function(el) {
       el.onclick = function() { onNodeSelect(this.getAttribute("data-node")); };
     });
     
     // Dependents
-    var dependents = (d.dependents || []).slice(0, 8);
+    var dependents = (d.dependents || []);
     els["node-dependents"].innerHTML = dependents.length > 0
-      ? dependents.map(function (x) { return '<div class="text-xs mono py-1 cursor-pointer hover:text-blue-400" data-node="' + esc(x) + '">' + esc(x.split(":").pop()) + '</div>'; }).join("")
-      : '<div class="text-xs nx-muted">No direct dependents</div>';
+      ? dependents.map(function (x) { return '<div class="text-xs font-mono py-1 px-2 hover:bg-[#1e293b] rounded cursor-pointer truncate transition-colors text-sky-200" data-node="' + esc(x) + '" title="' + esc(x) + '">' + esc(x.split(":").pop()) + '</div>'; }).join("")
+      : '<div class="text-xs nx-muted px-2 py-1 italic">No direct dependents</div>';
     els["node-dependents"].querySelectorAll("[data-node]").forEach(function(el) {
       el.onclick = function() { onNodeSelect(this.getAttribute("data-node")); };
     });
     
     // Evidence
     var edges = d.incident_edges || [];
-    var evRows = edges.slice(0, 8).map(function (e) {
+    var evRows = edges.map(function (e) {
       var ev = e.evidence || {};
-      return '<tr><td class="text-xs"><span class="nx-badge ' + (e.kind === "INJECTS" ? "badge-status-ok" : e.kind === "IMPLEMENTS" ? "badge-status-degraded" : "badge-status-degraded") + '">' + esc(e.kind) + '</span></td><td class="text-xs mono">' + esc(ev.file || "—") + ':' + esc(ev.line || 0) + '</td><td class="text-xs">' + esc(ev.reason || "—") + '</td></tr>';
+
+      var badgeClass = "badge-status-degraded";
+      if (e.kind === "INJECTS" || e.kind === "IMPLEMENTS") badgeClass = "badge-status-ok";
+      else if (e.kind === "IMPORTS") badgeClass = "badge-status-info";
+
+      return '<div class="mb-2 p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]">' +
+             '<div class="flex items-center justify-between mb-1"><span class="nx-badge text-[10px] ' + badgeClass + '">' + esc(e.kind) + '</span><span class="text-[10px] font-mono text-slate-400 truncate max-w-[150px]" title="' + esc(ev.file || "—") + '">' + esc(ev.file || "—").split('/').pop() + ':' + esc(ev.line || 0) + '</span></div>' +
+             '<div class="text-xs text-slate-300 font-mono mt-1 break-all">' + esc(ev.reason || "—") + '</div>' +
+             '</div>';
     }).join("");
+
     els["node-evidence"].innerHTML = evRows.length > 0
-      ? '<table class="nx-table">' + evRows + '</table>'
-      : '<div class="text-xs nx-muted">No edge evidence</div>';
+      ? evRows
+      : '<div class="text-xs nx-muted italic">No edge evidence available</div>';
   }
 
   function renderInspectorOverview() {
-    els["inspector-title"].textContent = "System Overview";
+    els["inspector-title"].textContent = "COMMAND CENTER";
+
     els["inspector-overview"].classList.remove("hidden");
-    els["inspector-node-view"].classList.add("hidden");
+    if (els["inspector-node-view"]) els["inspector-node-view"].classList.add("hidden");
+    if (els["inspector-path-view"]) els["inspector-path-view"].classList.add("hidden");
+    if (els["inspector-impact-view"]) els["inspector-impact-view"].classList.add("hidden");
     
     // Health
     var h = (state.summary && state.summary.health) || {};
     var html = '<div class="space-y-2">';
-    html += '<div class="flex items-center justify-between"><span class="text-sm nx-muted">Cycles</span><span class="font-medium">' + (h.cycles || 0) + '</span></div>';
-    html += '<div class="flex items-center justify-between"><span class="text-sm nx-muted">Unresolved</span><span class="font-medium">' + (h.unresolved_imports || 0) + '</span></div>';
-    html += '<div class="flex items-center justify-between"><span class="text-sm nx-muted">Violations</span><span class="font-medium">' + (h.architecture_violations || 0) + '</span></div>';
-    html += '<div class="flex items-center justify-between"><span class="text-sm nx-muted">DI Reg.</span><span class="font-medium">' + ((state.summary && state.summary.repository && state.summary.repository.di_registrations) || 0) + '</span></div>';
+    html += '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-400">CYCLES</span><span class="font-bold text-slate-200">' + (h.cycles || 0) + '</span></div>';
+    html += '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-400">UNRESOLVED</span><span class="font-bold text-slate-200">' + (h.unresolved_imports || 0) + '</span></div>';
+    html += '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-400">VIOLATIONS</span><span class="font-bold text-slate-200">' + (h.architecture_violations || 0) + '</span></div>';
     html += '</div>';
     els["overview-health"].innerHTML = html;
     
@@ -493,20 +590,20 @@
     if (state.filters.edgeType) activeFilters.push("Edge: " + state.filters.edgeType);
     
     var filtersHtml = activeFilters.length > 0
-      ? '<div class="flex flex-wrap gap-1">' + activeFilters.map(function(f) { return '<span class="nx-badge badge-status-degraded">' + esc(f) + '</span>'; }).join('') + '</div>'
-      : '<div class="text-xs nx-muted">No active filters</div>';
+      ? '<div class="flex flex-wrap gap-2">' + activeFilters.map(function(f) { return '<span class="px-2 py-0.5 rounded text-xs bg-cyan-900/40 text-cyan-400 border border-solid border-cyan-800">' + esc(f) + '</span>'; }).join('') + '</div>'
+      : '<div class="text-xs nx-muted italic">No active filters</div>';
     els["overview-filters"].innerHTML = filtersHtml;
     
     // Hotspots
     var hotspots = (state.summary && state.summary.hotspots) || [];
     var hotspotsHtml = hotspots.length > 0
       ? '<div class="space-y-2">' + hotspots.slice(0, 5).map(function(h) {
-          return '<div class="nx-card p-2 cursor-pointer hover:border-blue-400" data-node="' + esc(h.node_id) + '">' +
-            '<div class="text-xs font-medium">' + esc(h.node_id.split(":").pop()) + '</div>' +
-            '<div class="flex items-center gap-2 text-xs nx-muted mt-1"><span>Fan-in: ' + (h.fan_in || 0) + '</span><span>Fan-out: ' + (h.fan_out || 0) + '</span></div>' +
+          return '<div class="bg-[#1e293b] rounded p-2 border border-solid border-[#2b3a5e] cursor-pointer hover:border-[#38bdf8] transition-colors" data-node="' + esc(h.node_id) + '">' +
+            '<div class="text-[13px] font-bold text-slate-200 truncate" title="' + esc(h.node_id) + '">' + esc(h.node_id.split(".").pop()) + '</div>' +
+            '<div class="flex items-center gap-4 text-[10px] text-slate-400 mt-1 font-semibold tracking-wider"><span>FAN-IN: <span class="text-slate-200">' + (h.fan_in || 0) + '</span></span><span>FAN-OUT: <span class="text-slate-200">' + (h.fan_out || 0) + '</span></span></div>' +
             '</div>';
         }).join('') + '</div>'
-      : '<div class="text-xs nx-muted">No hotspots detected</div>';
+      : '<div class="text-xs nx-muted italic">No hotspots detected</div>';
     els["overview-hotspots"].innerHTML = hotspotsHtml;
     els["overview-hotspots"].querySelectorAll("[data-node]").forEach(function(el) {
       el.onclick = function() { onNodeSelect(this.getAttribute("data-node")); };
@@ -515,10 +612,14 @@
     // Cycles
     var cycles = state.cycles || [];
     var cyclesHtml = cycles.length > 0
-      ? '<div class="space-y-2">' + cycles.slice(0, 3).map(function(c) {
-          return '<div class="nx-card p-2"><div class="flex items-center justify-between"><span class="text-xs font-medium">' + esc(c.cycle_id) + '</span><span class="nx-badge badge-status-degraded">' + esc(c.severity) + '</span></div><div class="text-xs nx-muted mt-1 mono">' + (c.path || []).slice(0, 3).map(function(p) { return esc(p.split(":").pop()); }).join(" → ") + '</div></div>';
+      ? '<div class="space-y-2">' + cycles.slice(0, 5).map(function(c) {
+          var severityClass = c.severity === "CRITICAL" ? "text-rose-400" : (c.severity === "HIGH" ? "text-amber-400" : "text-sky-400");
+          return '<div class="bg-[#1e293b] rounded p-2 border border-solid border-[#2b3a5e] cursor-pointer hover:border-rose-400 transition-colors" data-cycle="' + esc(c.cycle_id) + '">' +
+            '<div class="flex items-center justify-between"><span class="text-xs font-bold text-slate-200">' + esc(c.cycle_id) + '</span><span class="text-[10px] font-bold ' + severityClass + '">' + esc(c.severity) + '</span></div>' +
+            '<div class="text-[10px] text-slate-400 mt-1 font-mono truncate">' + (c.path || []).map(function(p) { return esc(p.split(".").pop()); }).join(" → ") + '</div>' +
+            '</div>';
         }).join('') + '</div>'
-      : '<div class="text-xs nx-muted">No cycles detected</div>';
+      : '<div class="text-xs nx-muted italic">No cycles detected</div>';
     els["overview-cycles"].innerHTML = cyclesHtml;
   }
 
@@ -537,25 +638,94 @@
     var node = (state.fullNodes || []).find(function (n) { return n.id === nodeId; });
     if (!node) return;
     
+    // UI Transitions
+    els["inspector-title"].textContent = "IMPACT ANALYSIS";
+    if (els["inspector-overview"]) els["inspector-overview"].classList.add("hidden");
+    if (els["inspector-node-view"]) els["inspector-node-view"].classList.add("hidden");
+    if (els["inspector-path-view"]) els["inspector-path-view"].classList.add("hidden");
+    els["inspector-impact-view"].classList.remove("hidden");
+
     api.impact(nodeId).then(function (r) {
       if (!r.ok) {
         showError("Impact analysis failed: " + r.error);
         return;
       }
-      var d = r.data;
-      var html = '<div class="space-y-2">';
-      html += '<div class="nx-card p-3"><div class="font-medium mb-2">Impact Analysis: ' + esc(node.qualified_name) + '</div>';
-      html += '<div class="grid grid-cols-2 gap-2 text-xs">';
-      html += '<div><span class="nx-muted">Kind:</span> <span class="font-medium">' + esc(d.impact_kind || "—") + '</span></div>';
-      html += '<div><span class="nx-muted">Direct:</span> <span class="font-medium">' + (d.direct || []).length + '</span></div>';
-      html += '<div><span class="nx-muted">Transitive:</span> <span class="font-medium">' + (d.transitive || []).length + '</span></div>';
-      html += '<div><span class="nx-muted">Tests:</span> <span class="font-medium">' + (d.tests_likely_affected || []).length + '</span></div>';
-      html += '<div><span class="nx-muted">API Impact:</span> <span class="font-medium">' + (d.api_impact || []).length + '</span></div>';
-      html += '<div><span class="nx-muted">Runtime:</span> <span class="font-medium">' + (d.runtime_impact || []).length + '</span></div>';
-      html += '</div></div></div>';
+      var d = r.data || {};
+
+      var riskLevelEl = $("impact-risk-level");
+      if (d.impact_kind === "CRITICAL") {
+        riskLevelEl.innerHTML = '<span class="text-rose-500">CRITICAL RISK</span>';
+      } else if (d.impact_kind === "HIGH") {
+        riskLevelEl.innerHTML = '<span class="text-amber-500">HIGH RISK</span>';
+      } else {
+        riskLevelEl.innerHTML = '<span class="text-emerald-500">' + esc(d.impact_kind || "MODERATE RISK") + '</span>';
+      }
+
+      var html = '';
+      html += '<div class="bg-[#1e293b] rounded p-3 border border-solid border-[#2b3a5e] mb-3">';
+      html += '<div class="text-xs font-semibold text-slate-400 mb-1 tracking-wider">TARGET NODE</div>';
+      html += '<div class="text-sm font-bold text-slate-200">' + esc(node.qualified_name.split('.').pop()) + '</div>';
+      html += '<div class="text-[10px] font-mono text-slate-500 mt-1">' + esc(node.qualified_name) + '</div>';
+      html += '</div>';
+
+      html += '<div class="space-y-2">';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">DIRECT IMPACT</span><span class="font-bold text-slate-200">' + (d.direct || []).length + '</span></div>';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">TRANSITIVE IMPACT</span><span class="font-bold text-slate-200">' + (d.transitive || []).length + '</span></div>';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">TESTS AFFECTED</span><span class="font-bold text-slate-200">' + (d.tests_likely_affected || []).length + '</span></div>';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">API SURFACES</span><span class="font-bold text-slate-200">' + (d.api_impact || []).length + '</span></div>';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">RUNTIME CRITICAL</span><span class="font-bold text-slate-200">' + (d.runtime_impact || []).length + '</span></div>';
+      html += '</div>';
+
+      $("impact-results").innerHTML = html;
+    });
+  }
+
+  function runPath(sourceId, targetId) {
+    if (!sourceId || !targetId) return;
+
+    // UI Transitions
+    els["inspector-title"].textContent = "PATH EXPLORER";
+    if (els["inspector-overview"]) els["inspector-overview"].classList.add("hidden");
+    if (els["inspector-node-view"]) els["inspector-node-view"].classList.add("hidden");
+    if (els["inspector-impact-view"]) els["inspector-impact-view"].classList.add("hidden");
+    els["inspector-path-view"].classList.remove("hidden");
+
+    var sNode = (state.fullNodes || []).find(function (n) { return n.id === sourceId; });
+    var tNode = (state.fullNodes || []).find(function (n) { return n.id === targetId; });
+
+    $("path-source-node").textContent = sNode ? sNode.qualified_name.split('.').pop() : sourceId;
+    $("path-target-node").textContent = tNode ? tNode.qualified_name.split('.').pop() : targetId;
+
+    $("path-results").innerHTML = '<div class="text-xs text-center nx-muted py-4">Finding path...</div>';
+
+    api.path(sourceId, targetId).then(function (r) {
+      if (!r.ok) {
+        $("path-results").innerHTML = '<div class="text-xs text-rose-400 p-2 bg-rose-950/30 border border-solid border-rose-900/50 rounded">' + esc(r.error) + '</div>';
+        return;
+      }
+
+      var path = r.data || [];
+      if (path.length === 0) {
+        $("path-results").innerHTML = '<div class="text-xs nx-muted italic p-2 bg-[#1e293b] rounded">No path found.</div>';
+        return;
+      }
+
+      var html = '<div class="text-xs font-semibold tracking-wider text-emerald-400 mb-3">FOUND PATH (LENGTH: ' + path.length + ')</div>';
+      html += '<div class="space-y-1 relative before:absolute before:inset-y-0 before:left-3 before:w-px before:bg-[#2b3a5e]">';
+
+      path.forEach(function(step, idx) {
+        var nodeName = esc(step.split('.').pop());
+        html += '<div class="flex items-center gap-3 relative z-10">';
+        html += '<div class="w-6 h-6 rounded-full bg-[#1e293b] border-2 border-solid border-[#38bdf8] flex items-center justify-center text-[10px] font-bold shrink-0">' + (idx + 1) + '</div>';
+        html += '<div class="bg-[#1e293b] rounded px-3 py-1.5 border border-solid border-[#2b3a5e] text-xs font-mono truncate flex-1">' + nodeName + '</div>';
+        html += '</div>';
+      });
+
+      html += '</div>';
+      $("path-results").innerHTML = html;
       
-      els["inspector-content"].innerHTML = html;
-      els["inspector-title"].textContent = "Impact Analysis";
+      // Optionally highlight path on graph
+      if (state.graph) state.graph.setFocusHighlight(path);
     });
   }
 

@@ -31,6 +31,7 @@
     color:#7c8aa5; 
   }
   
+  .nx-severity-info { color:#38bdf8; }
   .nx-severity-high { color:#fbbf24; }
   .nx-severity-critical { color:#f87171; }
   .nx-severity-ok { color:#4ade80; }
@@ -46,7 +47,7 @@
   #graph-svg { 
     width:100%; 
     height:100%; 
-    background:#0a0f1d; 
+    background:#0b1120;
     border:1px solid #1f2a44; 
     border-radius:8px; 
     cursor:grab; 
@@ -56,9 +57,10 @@
   #graph-svg.dragging { cursor:grabbing; }
   
   .node-rect { cursor:pointer; }
-  .edge-line { stroke:#2b3a5e; stroke-width:1; }
-  .edge-line.hl { stroke:#38bdf8; stroke-width:2; }
-  .node-label { font-size:9px; fill:#9fb3d1; pointer-events:none; }
+  .edge-line { stroke:#1e293b; stroke-width:1.5; }
+  .edge-line.hl { stroke:#38bdf8; stroke-width:2.5; }
+  .node-label { font-size:10px; font-weight: 500; fill:#cbd5e1; pointer-events:none; }
+  .node-label-strong { font-size:11px; font-weight: 700; fill:#ffffff; pointer-events:none; }
   
   .nx-panel { 
     overflow:auto; 
@@ -81,10 +83,11 @@
     height:20px;
   }
   
-  .chip-severity-high { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; }
-  .chip-severity-critical { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
-  .chip-severity-ok { background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; }
-  .chip-severity-muted { background:#1e293b; color:#94a3b8; border:1px solid #334155; }
+  .chip-severity-high { background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3); }
+  .chip-severity-critical { background:rgba(248,113,113,0.15); color:#f87171; border:1px solid rgba(248,113,113,0.3); }
+  .chip-severity-ok { background:rgba(74,222,128,0.15); color:#4ade80; border:1px solid rgba(74,222,128,0.3); }
+  .chip-severity-info { background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3); }
+  .chip-severity-muted { background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.3); }
   
   table.nx-table { 
     width:100%; 
@@ -111,6 +114,41 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas; 
     font-size:12px; 
   }
+
+  /* Polyfills for missing Tailwind JIT classes */
+  .bg-\[\#1e293b\] { background-color: #1e293b; }
+  .bg-\[\#111a2e\] { background-color: #111a2e; }
+  .bg-\[\#1f2a44\] { background-color: #1f2a44; }
+  .border-\[\#1f2a44\] { border-color: #1f2a44; }
+  .border-\[\#2b3a5e\] { border-color: #2b3a5e; }
+  .text-\[\#e2e8f0\] { color: #e2e8f0; }
+  .text-\[10px\] { font-size: 10px; line-height: 14px; }
+  .text-\[13px\] { font-size: 13px; line-height: 18px; }
+  .max-w-\[150px\] { max-width: 150px; }
+
+  .text-amber-400 { color: #fbbf24; }
+  .text-amber-500 { color: #f59e0b; }
+  .text-cyan-400 { color: #22d3ee; }
+  .text-emerald-400 { color: #34d399; }
+  .text-emerald-500 { color: #10b981; }
+  .text-rose-400 { color: #fb7185; }
+  .text-rose-500 { color: #f43f5e; }
+  .text-sky-200 { color: #bae6fd; }
+  .text-sky-400 { color: #38bdf8; }
+  .text-slate-200 { color: #e2e8f0; }
+  .text-slate-300 { color: #cbd5e1; }
+  .text-slate-400 { color: #94a3b8; }
+  .text-slate-500 { color: #64748b; }
+  .text-slate-900 { color: #0f172a; }
+  .bg-slate-600 { background-color: #475569; }
+  .bg-purple-600 { background-color: #9333ea; }
+  .bg-teal-400 { background-color: #2dd4bf; }
+  .bg-sky-400 { background-color: #38bdf8; }
+  .border-rose-400 { border-color: #fb7185; }
+  .border-cyan-800 { border-color: #155e75; }
+  .border-rose-900\/50 { border-color: rgba(136, 19, 55, 0.5); }
+  .bg-cyan-900\/40 { background-color: rgba(22, 78, 99, 0.4); }
+  .bg-rose-950\/30 { background-color: rgba(76, 5, 25, 0.3); }
   
   .err { color:#f87171; } 
   .ok { color:#4ade80; } 
@@ -251,50 +289,74 @@
 </head>
 <body class="flex flex-col h-full">
   <!-- Header / System Health -->
-  <header class="nx-card p-4 flex items-center justify-between flex-wrap gap-2 border-b border-solid border-[#1f2a44]">
-    <div class="flex items-center gap-3">
-      <div class="text-xl font-bold">Dependency Intelligence</div>
-      <div class="nx-muted text-sm">NSE Architecture Graph • Live Repository Analysis</div>
+  <header class="nx-card px-6 py-4 flex items-center justify-between border-b border-solid border-[#1f2a44]">
+    <div class="flex flex-col">
+      <div class="text-xl font-bold tracking-tight">DEPENDENCY INTELLIGENCE</div>
+      <div class="nx-muted text-sm tracking-wide">NSE Architecture Graph • Live Repository Analysis</div>
     </div>
-    <div class="flex items-center gap-4 text-sm nx-muted" id="header-status">
+    <div class="flex items-center gap-4 text-sm font-medium nx-muted" id="header-status">
+      <div class="flex items-center gap-1">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+        <span>LIVE</span>
+      </div>
       <div id="scan-timestamp">—</div>
       <div>|</div>
       <div id="api-status">API: OK</div>
       <div>|</div>
       <div id="graph-version">v<span id="graph-version-number">—</span></div>
-      <button id="btn-refresh" class="nx-btn nx-btn-secondary px-3 py-1">Refresh</button>
-      <label class="nx-muted flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" id="cb-auto-refresh" /> Auto-refresh (30s)
+      <button id="btn-refresh" class="nx-btn nx-btn-secondary px-3 py-1">REFRESH</button>
+      <label class="nx-muted flex items-center gap-2 cursor-pointer text-xs">
+        <input type="checkbox" id="cb-auto-refresh" /> Auto (30s)
       </label>
     </div>
   </header>
   
   <!-- Health Strip -->
-  <div class="nx-card px-4 py-3 border-b border-solid border-[#1f2a44] flex flex-wrap items-center gap-4" id="health-strip">
-    <div class="flex items-center gap-2">
-      <div class="font-medium" id="health-status-text">HEALTH: </div>
-      <div id="health-status-chip" class="chip-severity-ok px-2 py-0.5 text-xs">OK</div>
+  <div class="nx-card px-6 py-3 border-b border-solid border-[#1f2a44] flex flex-wrap items-center" id="health-strip">
+    <!-- Primary Metrics -->
+    <div class="flex items-center gap-8 mr-8 border-r border-solid border-[#1f2a44] pr-8">
+      <div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">FILES</div>
+        <div class="text-xl font-bold" id="metric-files">0</div>
+      </div>
+      <div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">NODES</div>
+        <div class="text-xl font-bold" id="metric-nodes">0</div>
+      </div>
+      <div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">EDGES</div>
+        <div class="text-xl font-bold" id="metric-edges">0</div>
+      </div>
     </div>
-    <div class="flex-1 flex-wrap gap-4" id="health-metrics">
+
+    <!-- Secondary Metrics -->
+    <div class="flex items-center gap-6" id="health-metrics">
+      <div class="flex items-center gap-3">
+        <div class="font-bold tracking-wider text-sm" id="health-status-text">HEALTH:</div>
+        <div id="health-status-chip" class="chip-severity-ok px-3 py-1 text-xs font-bold rounded">OK</div>
+      </div>
+
+      <div class="w-px h-6 bg-[#1f2a44] mx-2"></div>
+
       <div class="flex items-center gap-2">
-        <div class="text-xs nx-muted">Cycles</div>
-        <div id="metric-cycles" class="font-medium nx-chip chip-severity-high">0</div>
+        <div id="metric-cycles" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">CYCLES</div>
       </div>
       <div class="flex items-center gap-2">
-        <div class="text-xs nx-muted">Unresolved</div>
-        <div id="metric-unresolved" class="font-medium nx-chip chip-severity-high">0</div>
+        <div id="metric-unresolved" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">UNRESOLVED</div>
       </div>
       <div class="flex items-center gap-2">
-        <div class="text-xs nx-muted">Violations</div>
-        <div id="metric-violations" class="font-medium nx-chip chip-severity-ok">0</div>
+        <div id="metric-violations" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">VIOLATIONS</div>
       </div>
       <div class="flex items-center gap-2">
-        <div class="text-xs nx-muted">DI Reg.</div>
-        <div id="metric-di-reg" class="font-medium nx-chip chip-severity-ok">0</div>
+        <div id="metric-di-reg" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">DI REG.</div>
       </div>
       <div class="flex items-center gap-2">
-        <div class="text-xs nx-muted">Hotspots</div>
-        <div id="metric-hotspots" class="font-medium nx-chip chip-severity-info">0</div>
+        <div id="metric-hotspots" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">HOTSPOTS</div>
       </div>
     </div>
   </div>
@@ -430,7 +492,11 @@
         <div class="nx-panel" id="inspector-content">
           <!-- System Overview (default state) -->
           <div class="space-y-4" id="inspector-overview">
-            <div class="nx-section-title">Repository Health</div>
+            <div class="text-xs nx-muted mb-4">
+              Select a node to inspect dependencies, dependents, evidence, impact, and runtime criticality.
+            </div>
+
+            <div class="nx-section-title">System Overview</div>
             <div class="space-y-2" id="overview-health">
               <!-- Health status will be populated here -->
             </div>
@@ -471,12 +537,10 @@
           <div class="hidden" id="inspector-node-view">
             <!-- Node identity -->
             <div class="space-y-4">
-              <div class="font-bold text-xl" id="node-identity"></div>
-              <div class="flex items-center gap-2 text-xs nx-muted" id="node-details">
-                <span id="node-kind"></span>
-                <span class="nx-divider">•</span>
-                <span id="node-layer"></span>
-                <span class="nx-divider">•</span>
+              <div class="font-bold text-lg leading-tight" id="node-identity"></div>
+              <div class="flex flex-wrap items-center gap-2 text-xs font-semibold tracking-wide" id="node-details">
+                <span id="node-kind" class="px-2 py-0.5 rounded bg-[#1e293b]"></span>
+                <span id="node-layer" class="nx-muted"></span>
                 <span id="node-criticality"></span>
               </div>
             </div>
@@ -484,19 +548,16 @@
             <div class="nx-divider"></div>
             
             <!-- Metrics -->
-            <div class="space-y-4">
-              <div class="nx-section-title">Metrics</div>
-              <div class="grid grid-cols-2 gap-4" id="node-metrics">
+            <div class="grid grid-cols-2 gap-2" id="node-metrics">
                 <!-- Metrics will be populated here -->
-              </div>
             </div>
             
             <div class="nx-divider"></div>
             
             <!-- Dependencies -->
-            <div class="space-y-4">
+            <div class="space-y-2">
               <div class="nx-section-title">Dependencies</div>
-              <div class="nx-panel" style="max-height:120px;" id="node-dependencies">
+              <div class="nx-panel space-y-1" style="max-height:160px;" id="node-dependencies">
                 <!-- Dependencies list -->
               </div>
             </div>
@@ -504,9 +565,9 @@
             <div class="nx-divider"></div>
             
             <!-- Dependents -->
-            <div class="space-y-4">
+            <div class="space-y-2">
               <div class="nx-section-title">Dependents</div>
-              <div class="nx-panel" style="max-height:120px;" id="node-dependents">
+              <div class="nx-panel space-y-1" style="max-height:160px;" id="node-dependents">
                 <!-- Dependents list -->
               </div>
             </div>
@@ -514,12 +575,43 @@
             <div class="nx-divider"></div>
             
             <!-- Evidence -->
-            <div class="space-y-4">
+            <div class="space-y-2">
               <div class="nx-section-title">Edge Evidence</div>
-              <div class="nx-panel" style="max-height:160px;" id="node-evidence">
+              <div class="nx-panel" style="max-height:200px;" id="node-evidence">
                 <!-- Evidence table -->
               </div>
             </div>
+          </div>
+
+          <!-- Path Explorer (hidden by default) -->
+          <div class="hidden" id="inspector-path-view">
+            <div class="nx-section-title">Path Analysis</div>
+            <div class="space-y-4 mt-2">
+              <div>
+                <label class="block text-xs font-semibold mb-1 nx-muted">From</label>
+                <div class="p-2 bg-[#1e293b] border border-solid border-[#2b3a5e] rounded text-sm text-[#e2e8f0]" id="path-source-node">None</div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 nx-muted">To</label>
+                <div class="p-2 bg-[#1e293b] border border-solid border-[#2b3a5e] rounded text-sm text-[#e2e8f0]" id="path-target-node">Select node...</div>
+              </div>
+              <button id="btn-execute-path" class="nx-btn nx-btn-secondary w-full py-2">FIND PATH</button>
+
+              <div class="nx-divider"></div>
+
+              <div id="path-results" class="space-y-2">
+                <!-- Results populated here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Impact Explorer (hidden by default) -->
+          <div class="hidden" id="inspector-impact-view">
+             <div class="nx-section-title">Impact Risk</div>
+             <div id="impact-risk-level" class="font-bold text-lg mb-4"></div>
+             <div class="space-y-3" id="impact-results">
+                <!-- Results populated here -->
+             </div>
           </div>
         </div>
       </div>
@@ -533,7 +625,7 @@
   </div>
   
   <!-- Global Error Overlay -->
-  <div class="nx-loading-overlay hidden nx-tooltip" id="global-error-overlay"></div>
+  <div class="nx-loading-overlay hidden" id="global-error-overlay"></div>
   
   <script src="/dependency_api.js"></script>
   <script src="/dependency_graph.js"></script>
