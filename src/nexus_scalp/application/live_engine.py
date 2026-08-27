@@ -407,6 +407,8 @@ class LiveEngine:
         self._inference_failures_total: int = 0
         self._decision_updates_total: int = 0
         self._stale_state_detected_total: int = 0
+        # In-flight worker tracker for non-blocking background dispatch
+        self._inflight_workers: set[str] = set()
 
         # Buffers / engines
         symbol = config.execution.symbol
@@ -1617,7 +1619,58 @@ class LiveEngine:
                                 exc_info=True,
                             )
                     else:
-                        logger.info("[WATCHDOG] Tick stream quiet. MT5 connection remains active.")
+                        # BUGFIX-G29: connection is *live* but the tick stream is
+                        # quiet (is_connected()==True while no new ticks arrive).
+                        # The old branch simply reset the timer and declared the
+                        # connection active, which masked a dead feed behind
+                        # health=READY for 26 minutes in production. Now we treat
+                        # a >15s quiet stream as a stalled ingestion: emit a
+                        # STALE incident and force a market-data resubscribe /
+                        # tick re-poll so ingestion actually restarts instead of
+                        # being hidden. This never trades — it only restores the
+                        # data feed; execution remains gated by the freshness
+                        # contract (live_freshness_gate).
+                        logger.warning(
+                            "[WATCHDOG] Tick stream stalled while MT5 reports "
+                            "connected (is_connected=True). Forcing market-data "
+                            "resubscribe / tick re-poll to restart ingestion."
+                        )
+                        self.emit_incident_telemetry(
+                            event_type="MT5_TICK_STREAM_STALLED",
+                            component="mt5",
+                            severity="HIGH",
+                            correlation_id="tick-stream",
+                        )
+                        try:
+                            # Re-subscribe symbols + re-poll fresh market state.
+                            if hasattr(self.adapter, "resubscribe_symbol") and callable(
+                                self.adapter.resubscribe_symbol
+                            ):
+                                self.adapter.resubscribe_symbol(symbol)
+                            elif hasattr(self.adapter, "subscribe_symbols") and callable(
+                                self.adapter.subscribe_symbols
+                            ):
+                                self.adapter.subscribe_symbols([symbol])
+                            # Probe a fresh tick so the aggregator/feature path
+                            # sees movement on the very next iteration.
+                            try:
+                                self.adapter.get_tick(symbol)
+                            except Exception:
+                                pass
+                            try:
+                                await self._resync_from_broker(symbol)
+                            except Exception as resync_err:
+                                logger.error(
+                                    "Watchdog stalled-stream resync failed",
+                                    error=str(resync_err),
+                                    exc_info=True,
+                                )
+                        except Exception as recon_err:
+                            logger.error(
+                                "Error during stalled-stream resubscribe",
+                                error=str(recon_err),
+                                exc_info=True,
+                            )
                     self._last_tick_processed_time = time.time()
 
                 # Account/tick refresh cadence: the account snapshot is
