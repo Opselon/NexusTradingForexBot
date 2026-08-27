@@ -32,34 +32,41 @@
     var groups = {};
     var order = [];
     this.nodes.forEach(function (n) {
-      var pkg = (n.qualified_name || n.id || "?").split(".")[0];
+      // Create logical clusters based on top level module, fallback to prefix
+      var parts = (n.qualified_name || n.id || "?").split(".");
+      var pkg = parts.length > 1 ? parts[0] + "." + parts[1] : parts[0];
       if (!groups[pkg]) { groups[pkg] = []; order.push(pkg); }
       groups[pkg].push(n);
     });
     var cx = 500, cy = 350;
-    var baseR = 240;
+    var baseR = 300; // expand base radius to avoid density wall
     var self = this;
+
+    // Calculate total node count to scale space
+    var totalNodes = this.nodes.length;
+    var spaceMultiplier = Math.max(1, Math.sqrt(totalNodes / 100));
+    baseR *= spaceMultiplier;
+
     order.forEach(function (pkg, gi) {
       var members = groups[pkg];
       var ang = (gi / Math.max(1, order.length)) * Math.PI * 2;
       var gx = cx + Math.cos(ang) * baseR;
       var gy = cy + Math.sin(ang) * baseR;
+
+      // Calculate cluster size
+      var clusterRadius = Math.max(40, Math.sqrt(members.length) * 15);
+
       members.forEach(function (n, mi) {
-        // Progressive density: at full zoom, show all; at medium, filter; at far, only clusters
-        var zoomFactor = Math.max(0.3, Math.min(1, self._view.k));
-        var isClusterNode = zoomFactor < 0.8 && mi > 0 && mi % 4 === 0;
-        var isFarNode = zoomFactor < 0.5;
-        var membersLength = members.length;
-        var clusterIdx = Math.floor(mi / 4);
-        var sub = membersLength > 1 ? (mi % 4 - 0.5) * 0.8 : 0;
-        var a2 = ang + sub;
-        var baseRad = isFarNode ? baseR * 0.3 : (isClusterNode ? baseR * 0.5 : baseR * 0.7);
-        var r = baseRad + (mi % 5) * 4;
-        var px = gx + Math.cos(a2) * (20 + (mi % 5) * 14);
-        var py = gy + Math.sin(a2) * (20 + (mi % 5) * 14);
+        // Distribute nodes in a golden spiral pattern inside the cluster
+        var phi = mi * 137.508 * (Math.PI / 180);
+        var r = Math.sqrt(mi) * (clusterRadius / Math.sqrt(Math.max(1, members.length)));
+
+        var px = gx + Math.cos(phi) * r;
+        var py = gy + Math.sin(phi) * r;
         self.pos[n.id] = { x: px, y: py, gx: gx, gy: gy, pkg: pkg };
       });
     });
+
     this.nodes.forEach(function (n) {
       if (!self.pos[n.id]) self.pos[n.id] = { x: cx, y: cy };
     });
@@ -92,9 +99,16 @@
       var line = document.createElementNS(SVGNS, "line");
       line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
       line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
-      var opacity = 0.3 + 0.7 * Math.max(0.3, Math.min(1, self._view.k));
+
+      var isHighlighted = self.selected && (e.source === self.selected || e.target === self.selected);
+      var opacity = isHighlighted ? 0.9 : 0.15 + (0.35 * Math.max(0.3, Math.min(1.5, self._view.k)));
+
       line.style.opacity = opacity;
-      line.setAttribute("class", "edge-line");
+      if (isHighlighted) {
+         line.setAttribute("class", "edge-line hl");
+      } else {
+         line.setAttribute("class", "edge-line");
+      }
       line.setAttribute("data-s", e.source);
       line.setAttribute("data-t", e.target);
       line.setAttribute("data-kind", e.kind || "");
@@ -110,36 +124,71 @@
       g.setAttribute("transform", "translate(" + p.x + "," + p.y + ")");
       g.setAttribute("data-id", n.id);
       
-      // Node radius based on kind and criticality
-      var r = 5;
-      if (n.criticality === "CRITICAL") r = 9;
-      else if (n.criticality === "HIGH") r = 7;
-      else if (n.kind === "CLASS" || n.kind === "PROTOCOL" || n.kind === "INTERFACE") r = 6;
-      else if (n.kind === "MODULE") r = 6;
+      // Progressive visibility fade based on zoom
+      if (!self.selected && self._view.k < 0.25 && n.kind === "CLASS") {
+         return; // Skip rendering tiny details at extreme far zoom
+      }
+
+      // Node styling based on kind and criticality
+      var r = 6;
+      if (n.criticality === "CRITICAL") r = 10;
+      else if (n.criticality === "HIGH") r = 8;
+      else if (n.kind === "MODULE") r = 8;
       else if (n.kind === "EXTERNAL") r = 4;
       
-      var color = "#38bdf8";
-      if (n.kind === "EXTERNAL") color = "#64748b";
-      else if (n.status === "UNRESOLVED") color = "#f87171";
-      else if (n.criticality === "CRITICAL") color = "#fbbf24";
-      else if (self.selected === n.id) color = "#fcd34d";
+      var color = "#38bdf8"; // Default CLASS
+      if (n.kind === "EXTERNAL") color = "#475569";
+      else if (n.kind === "MODULE") color = "#8b5cf6";
+      else if (n.kind === "INTERFACE" || n.kind === "PROTOCOL") color = "#2dd4bf";
+
+      if (n.status === "UNRESOLVED") color = "#ef4444";
+      if (n.criticality === "CRITICAL") color = "#f59e0b";
       
-      var c = document.createElementNS(SVGNS, "circle");
-      c.setAttribute("r", r);
-      c.setAttribute("fill", color);
-      c.setAttribute("stroke", n.id === self.selected ? "#fff" : "#0a0f1d");
-      c.setAttribute("stroke-width", n.id === self.selected ? "2.5" : "1.5");
-      g.appendChild(c);
+      var strokeColor = "#0f172a";
+      var strokeWidth = 1.5;
+
+      if (self.selected === n.id) {
+         color = "#e2e8f0";
+         strokeColor = "#38bdf8";
+         strokeWidth = 3;
+         r += 2;
+      }
+
+      // Node shape representation based on kind
+      var shape;
+      if (n.kind === "INTERFACE" || n.kind === "PROTOCOL") {
+        shape = document.createElementNS(SVGNS, "rect");
+        shape.setAttribute("x", -r);
+        shape.setAttribute("y", -r);
+        shape.setAttribute("width", r * 2);
+        shape.setAttribute("height", r * 2);
+        shape.setAttribute("rx", 2);
+      } else {
+        shape = document.createElementNS(SVGNS, "circle");
+        shape.setAttribute("r", r);
+      }
+
+      shape.setAttribute("fill", color);
+      shape.setAttribute("stroke", strokeColor);
+      shape.setAttribute("stroke-width", strokeWidth);
+      g.appendChild(shape);
+
+      // Label strategy based on hierarchy
+      var isImportant = n.criticality === "CRITICAL" || n.kind === "MODULE";
+      var showLabel = (self._view.k >= 0.8) || (self._view.k >= 0.4 && isImportant) || n.id === self.selected;
       
-      // Node label - only render at higher zoom or for selected nodes
-      var showLabel = self._view.k >= 0.5 || n.id === self.selected;
       if (showLabel) {
         var label = document.createElementNS(SVGNS, "text");
-        label.setAttribute("class", "node-label");
-        label.setAttribute("x", r + 4);
+        var baseClass = (isImportant || n.id === self.selected) ? "node-label-strong" : "node-label";
+        label.setAttribute("class", baseClass);
+        label.setAttribute("x", r + 6);
         label.setAttribute("y", 4);
-        // Truncate based on zoom
-        var labelText = (n.display_name || n.id).slice(0, Math.max(12, Math.min(32, Math.round(22 * self._view))));
+
+        // Render full labels for selected nodes, partial for others
+        var labelText = (n.display_name || n.id.split('.').pop());
+        if (n.id !== self.selected && self._view.k < 1.2) {
+           labelText = labelText.slice(0, 20) + (labelText.length > 20 ? "..." : "");
+        }
         label.textContent = labelText;
         g.appendChild(label);
       }
@@ -219,30 +268,13 @@
 
   GraphRenderer.prototype.focus = function (id) {
     this.selected = id;
-    var circles = this.svg.querySelectorAll("g.node-rect");
-    circles.forEach(function (g) {
-      var c = g.querySelector("circle");
-      if (g.getAttribute("data-id") === id) c.setAttribute("stroke", "#fff");
-      else c.setAttribute("stroke", "#0a0f1d");
-    });
-    // Highlight connected edges
-    var lines = this.svg.querySelectorAll("line.edge-line");
-    lines.forEach(function (l) {
-      var s = l.getAttribute("data-s"), t = l.getAttribute("data-t");
-      var conn = (s === id || t === id);
-      l.style.opacity = conn ? "1" : "0.3";
-    });
+    // Rerender entirely to apply the new visual scaling and label visibility rules for the selected node
+    this.render();
   };
 
   GraphRenderer.prototype.unfocus = function () {
     this.selected = null;
-    var circles = this.svg.querySelectorAll("g.node-rect");
-    circles.forEach(function (g) {
-      var c = g.querySelector("circle");
-      c.setAttribute("stroke", n.id === self.selected ? "#fff" : "#0a0f1d");
-    });
-    var lines = this.svg.querySelectorAll("line.edge-line");
-    lines.forEach(function (l) { l.style.opacity = "0.3"; });
+    this.render();
   };
 
   GraphRenderer.prototype._bindPan = function () {
@@ -281,6 +313,20 @@
   };
 
   GraphRenderer.prototype._showTooltip = function (el, id) {
+    if (this._hovered === id) return;
+    this._hovered = id;
+
+    // Highlight hover neighborhood
+    var svg = this.svg;
+    var lines = svg.querySelectorAll("line.edge-line");
+    lines.forEach(function (l) {
+      var s = l.getAttribute("data-s"), t = l.getAttribute("data-t");
+      if (s === id || t === id) {
+        l.style.opacity = "1";
+        l.classList.add("hover-hl");
+      }
+    });
+
     var tooltip = document.getElementById("graph-tooltip");
     var node = this.nodes.find(function (n) { return n.id === id; });
     if (!node) return;
@@ -296,6 +342,20 @@
   };
 
   GraphRenderer.prototype._hideTooltip = function () {
+    if (!this._hovered) return;
+    this._hovered = null;
+
+    // Restore edges opacity
+    var self = this;
+    var lines = this.svg.querySelectorAll("line.edge-line.hover-hl");
+    lines.forEach(function (l) {
+      l.classList.remove("hover-hl");
+      var s = l.getAttribute("data-s"), t = l.getAttribute("data-t");
+      var isSelected = self.selected && (s === self.selected || t === self.selected);
+      var opacity = isSelected ? 0.9 : 0.15 + (0.35 * Math.max(0.3, Math.min(1.5, self._view.k)));
+      l.style.opacity = opacity;
+    });
+
     var tooltip = document.getElementById("graph-tooltip");
     if (tooltip) tooltip.style.display = "none";
   };
