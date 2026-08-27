@@ -287,6 +287,9 @@ def _redact_value(value: Any) -> Any:
 
     def _scrub(match: re.Match[str]) -> str:
         token = match.group(0)
+        # Skip all-uppercase system event names / snake_case constants (e.g. GLOBAL_KILL_SWITCH_ACTIVATED)
+        if token.isupper() and "_" in token:
+            return token
         alnum_ratio = sum(1 for ch in token if ch.isalnum()) / len(token)
         if (
             alnum_ratio >= _ENTROPY_ALNUM_THRESHOLD
