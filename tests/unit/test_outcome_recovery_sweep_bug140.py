@@ -53,7 +53,6 @@ from nexus_scalp.experience.outcome_recovery_sweep import (
 )
 from nexus_scalp.research.dataset import ResearchDatasetBuilder
 
-
 # ---------------------------------------------------------------------------
 # Fixtures + seeding helpers
 # ---------------------------------------------------------------------------
@@ -231,8 +230,29 @@ class TestHistoricalOutcomeRecoverySweep:
         server_epoch = int(dec_ts.timestamp()) + 180 * 60
         seed_broker_order(repo, ticket=1001, state=4, position_id=5001, time_setup=server_epoch)
         # Fill deal (entry=0) at +1min, Close deal (entry=1, profit=100.0) at +5min
-        seed_deal(repo, 9001, 1001, 5001, entry=0, volume=0.1, price=2000.0, profit=0.0, epoch_sec=server_epoch + 60)
-        seed_deal(repo, 9002, 1001, 5001, entry=1, volume=0.1, price=2010.0, profit=100.0, epoch_sec=server_epoch + 300, commission=-1.0)
+        seed_deal(
+            repo,
+            9001,
+            1001,
+            5001,
+            entry=0,
+            volume=0.1,
+            price=2000.0,
+            profit=0.0,
+            epoch_sec=server_epoch + 60,
+        )
+        seed_deal(
+            repo,
+            9002,
+            1001,
+            5001,
+            entry=1,
+            volume=0.1,
+            price=2010.0,
+            profit=100.0,
+            epoch_sec=server_epoch + 300,
+            commission=-1.0,
+        )
 
         sweep = HistoricalOutcomeRecoverySweep(ledger=ledger)
         res = sweep.run()
@@ -272,8 +292,28 @@ class TestHistoricalOutcomeRecoverySweep:
         # position_id=0 on broker order (legacy sync state)
         seed_broker_order(repo, ticket=1002, state=4, position_id=0, time_setup=server_epoch)
         # deals carry position_id=7001 and order=1002
-        seed_deal(repo, 9011, 1002, 7001, entry=0, volume=0.1, price=2000.0, profit=0.0, epoch_sec=server_epoch + 60)
-        seed_deal(repo, 9012, 1002, 7001, entry=1, volume=0.1, price=1995.0, profit=-50.0, epoch_sec=server_epoch + 120)
+        seed_deal(
+            repo,
+            9011,
+            1002,
+            7001,
+            entry=0,
+            volume=0.1,
+            price=2000.0,
+            profit=0.0,
+            epoch_sec=server_epoch + 60,
+        )
+        seed_deal(
+            repo,
+            9012,
+            1002,
+            7001,
+            entry=1,
+            volume=0.1,
+            price=1995.0,
+            profit=-50.0,
+            epoch_sec=server_epoch + 120,
+        )
 
         sweep = HistoricalOutcomeRecoverySweep(ledger=ledger)
         res = sweep.run()
@@ -299,11 +339,30 @@ class TestHistoricalOutcomeRecoverySweep:
         # Legacy sync: broker order row has position_id=0.
         seed_broker_order(repo, ticket=1010, state=4, position_id=0, time_setup=server_epoch)
         # Entry deal: order=1010 (the dispatched ticket), position=7101, entry commission=-0.5.
-        seed_deal(repo, 9101, 1010, 7101, entry=0, volume=0.1, price=2000.0, profit=0.0, epoch_sec=server_epoch + 60, commission=-0.5)
+        seed_deal(
+            repo,
+            9101,
+            1010,
+            7101,
+            entry=0,
+            volume=0.1,
+            price=2000.0,
+            profit=0.0,
+            epoch_sec=server_epoch + 60,
+            commission=-0.5,
+        )
         # Close deal: DIFFERENT order ticket 1011, same position 7101, real loss.
         seed_deal(
-            repo, 9102, 1011, 7101, entry=1, volume=0.1, price=1984.0,
-            profit=-165.69, epoch_sec=server_epoch + 600, commission=-1.0,
+            repo,
+            9102,
+            1011,
+            7101,
+            entry=1,
+            volume=0.1,
+            price=1984.0,
+            profit=-165.69,
+            epoch_sec=server_epoch + 600,
+            commission=-1.0,
         )
 
         sweep = HistoricalOutcomeRecoverySweep(ledger=ledger)
@@ -377,7 +436,17 @@ class TestHistoricalOutcomeRecoverySweep:
         server_epoch = int(dec_ts.timestamp()) + 180 * 60
         seed_broker_order(repo, ticket=4001, state=4, position_id=6001, time_setup=server_epoch)
         # Entry deal ONLY (no exit deal)
-        seed_deal(repo, 9021, 4001, 6001, entry=0, volume=0.1, price=2000.0, profit=0.0, epoch_sec=server_epoch)
+        seed_deal(
+            repo,
+            9021,
+            4001,
+            6001,
+            entry=0,
+            volume=0.1,
+            price=2000.0,
+            profit=0.0,
+            epoch_sec=server_epoch,
+        )
 
         res = HistoricalOutcomeRecoverySweep(ledger=ledger).run()
         assert res.recovered == 0
@@ -393,8 +462,28 @@ class TestHistoricalOutcomeRecoverySweep:
         # Deal epoch set to 1 hour BEFORE decision
         bad_epoch = int((dec_ts - timedelta(hours=1)).timestamp()) + 180 * 60
         seed_broker_order(repo, ticket=5001, state=4, position_id=7001, time_setup=bad_epoch)
-        seed_deal(repo, 9031, 5001, 7001, entry=0, volume=0.1, price=2000.0, profit=0.0, epoch_sec=bad_epoch)
-        seed_deal(repo, 9032, 5001, 7001, entry=1, volume=0.1, price=2005.0, profit=50.0, epoch_sec=bad_epoch + 10)
+        seed_deal(
+            repo,
+            9031,
+            5001,
+            7001,
+            entry=0,
+            volume=0.1,
+            price=2000.0,
+            profit=0.0,
+            epoch_sec=bad_epoch,
+        )
+        seed_deal(
+            repo,
+            9032,
+            5001,
+            7001,
+            entry=1,
+            volume=0.1,
+            price=2005.0,
+            profit=50.0,
+            epoch_sec=bad_epoch + 10,
+        )
 
         res = HistoricalOutcomeRecoverySweep(ledger=ledger).run()
         assert res.recovered == 0
@@ -416,8 +505,28 @@ class TestHistoricalOutcomeRecoverySweep:
         seed_dispatch(repo, "req_idem", ticket=6001, ts=dec_ts)
         server_epoch = int(dec_ts.timestamp()) + 180 * 60
         seed_broker_order(repo, ticket=6001, state=4, position_id=8001, time_setup=server_epoch)
-        seed_deal(repo, 9041, 6001, 8001, entry=0, volume=0.1, price=2000.0, profit=0.0, epoch_sec=server_epoch)
-        seed_deal(repo, 9042, 6001, 8001, entry=1, volume=0.1, price=2010.0, profit=100.0, epoch_sec=server_epoch + 60)
+        seed_deal(
+            repo,
+            9041,
+            6001,
+            8001,
+            entry=0,
+            volume=0.1,
+            price=2000.0,
+            profit=0.0,
+            epoch_sec=server_epoch,
+        )
+        seed_deal(
+            repo,
+            9042,
+            6001,
+            8001,
+            entry=1,
+            volume=0.1,
+            price=2010.0,
+            profit=100.0,
+            epoch_sec=server_epoch + 60,
+        )
 
         first = HistoricalOutcomeRecoverySweep(ledger=ledger).run()
         assert first.recovered == 1
@@ -447,8 +556,28 @@ class TestHistoricalOutcomeRecoverySweep:
         seed_dispatch(repo, "req_ds_fill", ticket=8001, ts=dec_ts)
         server_epoch = int(dec_ts.timestamp()) + 180 * 60
         seed_broker_order(repo, ticket=8001, state=4, position_id=9001, time_setup=server_epoch)
-        seed_deal(repo, 9051, 8001, 9001, entry=0, volume=0.1, price=2000.0, profit=0.0, epoch_sec=server_epoch)
-        seed_deal(repo, 9052, 8001, 9001, entry=1, volume=0.1, price=2015.0, profit=150.0, epoch_sec=server_epoch + 120)
+        seed_deal(
+            repo,
+            9051,
+            8001,
+            9001,
+            entry=0,
+            volume=0.1,
+            price=2000.0,
+            profit=0.0,
+            epoch_sec=server_epoch,
+        )
+        seed_deal(
+            repo,
+            9052,
+            8001,
+            9001,
+            entry=1,
+            volume=0.1,
+            price=2015.0,
+            profit=150.0,
+            epoch_sec=server_epoch + 120,
+        )
 
         # Recover the trade
         HistoricalOutcomeRecoverySweep(ledger=ledger).run()
