@@ -118,17 +118,117 @@ class SignalPolicy:
         # never influences a decision.
         now_exec = current_tick.timestamp
         execution_id = f"EXEC-{now_exec:%Y%m%d}-{now_exec:%H%M%S}-{uuid.uuid4().hex[:6]}"
-        guardian_proposal = self._evaluate_guardian_gate(regime_state, current_tick, execution_id)
-        if guardian_proposal is not None:
-            return guardian_proposal
+        # Authoritative Regime Guardian Gate early in evaluation pipeline
+        is_guardian_active = False
+        if regime_state is not None:
+            regime_type = regime_state.regime_type
+            exec_type = regime_state.recommended_execution_type
+
+            # Unsafe regimes to block
+            UNSAFE_REGIMES = {
+                "HIGH_SPREAD_CHOP",
+                "UNKNOWN",
+                "MARKET_HALTED",
+                "LOW_LIQUIDITY",
+                "NEWS_LOCK",
+                "MACRO_NEWS_FREEZE",
+            }
+            reg_val = getattr(regime_type, "value", str(regime_type))
+            if reg_val in UNSAFE_REGIMES or exec_type == RecommendedExecutionType.FREEZE_ALL:
+                is_guardian_active = True
+
+        if is_guardian_active:
+            # Return detailed NO_TRADE proposal containing 'BLOCKED_BY_GUARDIAN'
+            return TradeProposal(
+                request_id=str(uuid.uuid4()),
+                execution_id=execution_id,
+                symbol=current_tick.symbol,
+                generated_at=current_tick.timestamp,
+                action=ActionType.NO_TRADE,
+                confidence=0.0,
+                proposed_entry=current_tick.bid,
+                stop_loss=current_tick.bid * 0.99,
+                take_profit=current_tick.bid * 1.01,
+                risk_reward_ratio=1.0,
+                reason_code="BLOCKED_BY_GUARDIAN_UNSAFE_REGIME",
+                model_action="NO_TRADE",
+                buy_probability=0.0,
+                sell_probability=0.0,
+                no_trade_probability=1.0,
+                regime=str(regime_state.regime_type.value if regime_state else "UNKNOWN"),
+                regime_confidence=float(regime_state.regime_probability if regime_state else 0.0),
+                risk_allowed=False,
+                guardian_status="ACTIVE",
+                rejection_reason="BLOCKED_BY_GUARDIAN_UNSAFE_REGIME",
+                final_action="NO_TRADE",
+                decision_stage="GUARDIAN_GATE",
+                blocked_by="REGIME_GUARDIAN",
+                htf_score=0.0,
+                smc_score=0.0,
+                confidence_before_filters=0.0,
+                confidence_after_filters=0.0,
+            )
 
         probs = probabilities.squeeze().tolist()
         if not isinstance(probs, list):
             probs = [probs]
 
-        dedup_proposal = self._evaluate_duplicate_tick(probs, current_tick, execution_id, regime_state)
-        if dedup_proposal is not None:
-            return dedup_proposal
+        # ---------------------------------------------------------------------
+        # TASK 5 FIX: micro-throttler / tick de-duplication.
+        # The hot path (50ms) is frequently invoked faster than the market feed
+        # produces quotes, so the same tick (identical timestamp, or identical
+        # bid AND ask) gets re-evaluated and re-logged, corrupting telemetry.
+        # We detect a duplicate and return a lightweight NO_TRADE proposal WITHOUT
+        # touching the persistent state (cooldown, last direction, price locks).
+        # ---------------------------------------------------------------------
+        tick_ts = current_tick.timestamp
+        tick_bid = float(getattr(current_tick, "bid", 0.0) or 0.0)
+        tick_ask = float(getattr(current_tick, "ask", 0.0) or 0.0)
+        is_duplicate = (
+            tick_ts is not None
+            and self._dedup_last_time is not None
+            and tick_ts == self._dedup_last_time
+        ) or (
+            tick_bid == self._dedup_last_bid and tick_ask == self._dedup_last_ask and tick_bid > 0.0
+        )
+        if is_duplicate:
+            _pb = probs[1] if len(probs) > 1 else 0.0
+            _ps = probs[2] if len(probs) > 2 else 0.0
+            _pnt = probs[0] if len(probs) > 0 else 0.0
+            return TradeProposal(
+                request_id=str(uuid.uuid4()),
+                execution_id=execution_id,
+                symbol=current_tick.symbol,
+                generated_at=current_tick.timestamp,
+                action=ActionType.NO_TRADE,
+                confidence=0.0,
+                proposed_entry=current_tick.bid,
+                stop_loss=current_tick.bid * 0.99,
+                take_profit=current_tick.bid * 1.01,
+                risk_reward_ratio=1.0,
+                reason_code="TICK_DUPLICATE_SUPPRESSED",
+                model_action="NO_TRADE",
+                buy_probability=float(_pb),
+                sell_probability=float(_ps),
+                no_trade_probability=float(_pnt),
+                regime=str(regime_state.regime_type.value if regime_state else "UNKNOWN"),
+                regime_confidence=float(regime_state.regime_probability if regime_state else 0.0),
+                risk_allowed=False,
+                guardian_status="IDLE",
+                rejection_reason="TICK_DUPLICATE_SUPPRESSED",
+                final_action="NO_TRADE",
+                decision_stage="DEDUP_GATE",
+                blocked_by="TICK_DEDUP",
+                htf_score=0.0,
+                smc_score=0.0,
+                confidence_before_filters=0.0,
+                confidence_after_filters=0.0,
+            )
+
+        # Record the freshest tick signature for the next call.
+        self._dedup_last_time = tick_ts
+        self._dedup_last_bid = tick_bid
+        self._dedup_last_ask = tick_ask
 
         raw_prob_buy = probs[1] if len(probs) > 1 else 0.0
         raw_prob_sell = probs[2] if len(probs) > 2 else 0.0
@@ -150,14 +250,32 @@ class SignalPolicy:
         regime_str = regime_type.value if regime_type else "UNKNOWN"
         regime_conf = float(regime_state.regime_probability) if regime_state else 0.0
 
-        (
-            active_positions_count,
-            active_pending_count,
-            pending_price,
-            pending_ticket,
-            live_tickets,
-            held_position_dirs,
-        ) = self._get_active_tickets_info(order_manager)
+        # Count active open positions and active pending orders matching symbol and magic
+        active_positions_count = 0
+        active_pending_count = 0
+        pending_price = None
+        pending_ticket = None
+        live_tickets: list[Any] = []
+        #: Held direction(s) of currently open positions, used by the AI Reversal veto.
+        held_position_dirs: dict[int, str] = {}
+
+        if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
+            live_tickets = order_manager.get_active_live_tickets()
+            for ticket_info in live_tickets:
+                t_symbol = ticket_info.get("symbol")
+                t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
+                t_type = ticket_info.get("type")
+                if t_symbol == "XAUUSD" and t_magic == 888101:
+                    if t_type == "POSITION":
+                        active_positions_count += 1
+                        t_ticket = ticket_info.get("ticket")
+                        t_dir = str(ticket_info.get("direction") or "").upper()
+                        if t_ticket is not None and t_dir:
+                            held_position_dirs[int(t_ticket)] = t_dir
+                    elif t_type == "PENDING":
+                        active_pending_count += 1
+                        pending_price = ticket_info.get("price")
+                        pending_ticket = ticket_info.get("ticket")
 
         # Initialize lock attributes if not present
         if not hasattr(self, "_locked_pending_ticket"):
@@ -209,27 +327,94 @@ class SignalPolicy:
                 self._last_active_direction_time = now
                 return reversal_proposal
 
-        throttle_proposal = self._evaluate_frequency_throttle(now, current_tick, regime_str, regime_conf)
-        if throttle_proposal is not None:
-            return throttle_proposal
+        # 1. Enforce ORDER_FREQUENCY_THROTTLED check (MIN_ORDER_INTERVAL_SECONDS = 60)
+        if self._last_signal_time is not None:
+            elapsed = (now - self._last_signal_time).total_seconds()
+            if elapsed < 60.0:
+                return self._build_no_trade(
+                    tick=current_tick,
+                    confidence=0.0,
+                    reason="ORDER_FREQUENCY_THROTTLED",
+                    regime_str=regime_str,
+                    regime_conf=regime_conf,
+                )
 
+        # 2. Strict Single-Position Exposure Gate (MAX_TOTAL_EXPOSURE = 1)
+        # Total of Active Open Positions + Active Pending Orders MUST NOT exceed 1.
         total_exposure = active_positions_count + active_pending_count
-        exposure_proposal = self._evaluate_exposure_limits(
-            total_exposure,
-            active_positions_count,
-            active_pending_count,
-            order_manager,
-            live_tickets,
-            target_entry_price,
-            current_tick,
-            regime_str,
-            regime_conf,
-            atr,
-            completed_bars,
-            now,
-        )
-        if exposure_proposal is not None:
-            return exposure_proposal
+
+        if total_exposure >= MAX_TOTAL_EXPOSURE:
+            # Check price proximity to find if we should return SAME_LEVEL_REENTRY_BLOCKED (threshold is $0.50)
+            is_same_level = False
+            if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
+                for ticket_info in live_tickets:
+                    t_symbol = ticket_info.get("symbol")
+                    t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
+                    t_price = ticket_info.get("price")
+                    if t_symbol == "XAUUSD" and t_magic == 888101 and t_price is not None:
+                        if abs(target_entry_price - t_price) < 0.50:
+                            is_same_level = True
+                            break
+
+            if is_same_level:
+                return self._build_no_trade(
+                    tick=current_tick,
+                    confidence=0.0,
+                    reason="SAME_LEVEL_REENTRY_BLOCKED",
+                    regime_str=regime_str,
+                    regime_conf=regime_conf,
+                )
+
+            # If we hold 1 active open position, block entries.
+            # blocked_by=EXECUTION_STATE_BLOCK: an execution-state block, NOT
+            # a model rejection — the learning engine must not learn "the
+            # model chose not to trade" from an unavailable execution slot.
+            if active_positions_count >= 1:
+                return self._build_no_trade(
+                    tick=current_tick,
+                    confidence=0.0,
+                    reason="MAX_EXPOSURE_REACHED",
+                    regime_str=regime_str,
+                    regime_conf=regime_conf,
+                    blocked_by="EXECUTION_STATE_BLOCK",
+                    decision_stage="EXPOSURE_GATE",
+                )
+
+            # If we hold 1 active pending order, check lock & price drift hysteresis
+            if active_pending_count >= 1:
+                # Calculate 50% Equilibrium price
+                swing_low_20 = current_tick.bid - atr
+                swing_high_20 = current_tick.ask + atr
+                if completed_bars is not None and len(completed_bars) >= 20:
+                    swing_low_20 = np.min([b.low for b in completed_bars[-20:]])
+                    swing_high_20 = np.max([b.high for b in completed_bars[-20:]])
+                new_eq_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
+
+                time_delta = (
+                    (now - self._locked_pending_time).total_seconds()
+                    if self._locked_pending_time is not None
+                    else 0.0
+                )
+                price_drift = (
+                    abs(new_eq_price - self._locked_pending_price)
+                    if self._locked_pending_price is not None
+                    else 0.0
+                )
+
+                # 30-SECOND PENDING LOCK: never cancel/recreate a live limit order unless
+                # it has been resting for more than 30s AND price has drifted >= 1.0 x ATR.
+                if time_delta <= PENDING_ORDER_LOCK_SECONDS or price_drift < (1.0 * atr):
+                    # Maintain the existing live limit order and return ActionType.NO_TRADE
+                    # (execution-state block, not model rejection).
+                    return self._build_no_trade(
+                        tick=current_tick,
+                        confidence=0.0,
+                        reason="PENDING_ORDER_LOCKED",
+                        regime_str=regime_str,
+                        regime_conf=regime_conf,
+                        blocked_by="EXECUTION_STATE_BLOCK",
+                        decision_stage="EXPOSURE_GATE",
+                    )
 
         tenkan = self._sanitize_float(feature_vector.tenkan_sen, current_tick.ask)
         kijun = self._sanitize_float(feature_vector.kijun_sen, current_tick.bid)
@@ -577,10 +762,134 @@ class SignalPolicy:
             support_zone_dist >= required_support_margin
         ) or is_strong_bearish_momentum
 
-        tick_sweep_proposal = self._evaluate_tick_sweep(
-            sweep_sig, current_tick, ofi, tick_velocity, raw_prob_buy, raw_prob_sell,
-            is_range_market, execution_id, now, atr, regime_str, regime_conf, trend_strength
-        )
+        # ----------------------------------------------------------------------
+        # PART 3: TICK LEVEL LIQUIDITY SWEEP EXECUTION
+        # ----------------------------------------------------------------------
+        tick_sweep_proposal = None
+        if self._last_tick_bid > 0.0:
+            price_pierced_liq = False
+            reversal_detected = False
+            direction = None
+
+            # Check if bid/ask pierced previous highs/lows and reversed quickly
+            if sweep_sig == 1 and current_tick.bid < self._last_tick_bid:
+                price_pierced_liq = True
+                reversal_detected = True
+                direction = "BUY"
+            elif sweep_sig == -1 and current_tick.ask > self._last_tick_ask:
+                price_pierced_liq = True
+                reversal_detected = True
+                direction = "SELL"
+
+            # Check OFI flips and velocity reverses
+
+            ofi_flip = ofi > 0 if direction == "BUY" else ofi < 0
+
+            velocity_reverses = tick_velocity > 5.0
+
+            # TRADE QUALITY GATE (2026-08-18, perf forensics): tick-level
+
+            # sweeps used to fire with ZERO model confidence - `confidence`
+
+            # is still 0.0 at this point (cand_confidence is computed later)
+
+            # and this path returned before the confidence gate ever ran.
+
+            # The audit ledger shows conf=0.00 entries losing -$189/-$190
+
+            # (1.5-ATR SL with no probability support). The sweep now
+
+            # requires the raw directional probability to clear the model
+
+            # confidence threshold (default 0.35) - still fast, but never
+
+            # at random-probability.
+
+            sweep_direction_prob = (
+                raw_prob_buy
+                if direction == "BUY"
+                else raw_prob_sell
+                if direction == "SELL"
+                else 0.0
+            )
+
+            sweep_conf_thresh = self.confidence_threshold + (
+                self.range_confidence_penalty if is_range_market else 0.0
+            )
+
+            sweep_has_confidence = sweep_direction_prob >= sweep_conf_thresh
+
+            if (
+                price_pierced_liq
+                and reversal_detected
+                and ofi_flip
+                and velocity_reverses
+                and sweep_has_confidence
+            ):
+                execution_mode = "TICK_SWEEP"
+
+                proposed_action = (
+                    ActionType.BUY_MARKET if direction == "BUY" else ActionType.SELL_MARKET
+                )
+
+                target_entry_price = current_tick.ask if direction == "BUY" else current_tick.bid
+
+                reason_code = f"TICK_LEVEL_LIQUIDITY_SWEEP_{direction}"
+
+                # Carry the REAL directional probability as the entry
+
+                # confidence (previously 0.0 - the ledger recorded conf=0.00
+
+                # entries with -$189/-$190 outcomes).
+
+                sweep_conf = float(sweep_direction_prob)
+
+                logger.info(
+                    f"TICK LEVEL SWEEP DETECTED: Emitting instant {proposed_action.value}! (prob={sweep_conf:.2f})"
+                )
+
+                # Build TradeProposal immediately
+
+                stop_loss = (
+                    target_entry_price - atr * 1.5
+                    if direction == "BUY"
+                    else target_entry_price + atr * 1.5
+                )
+
+                take_profit = (
+                    target_entry_price + atr * 3.0
+                    if direction == "BUY"
+                    else target_entry_price - atr * 3.0
+                )
+
+                actual_rr = round(
+                    abs(take_profit - target_entry_price)
+                    / max(abs(target_entry_price - stop_loss), 1e-5),
+                    2,
+                )
+
+                tick_sweep_proposal = TradeProposal(
+                    request_id=str(uuid.uuid4()),
+                    execution_id=execution_id,
+                    symbol=current_tick.symbol,
+                    generated_at=now,
+                    action=proposed_action,
+                    confidence=sweep_conf,
+                    proposed_entry=float(target_entry_price),
+                    stop_loss=float(stop_loss),
+                    take_profit=float(take_profit),
+                    risk_reward_ratio=float(actual_rr),
+                    reason_code=reason_code,
+                    regime=regime_str,
+                    regime_confidence=regime_conf,
+                    execution_mode=execution_mode,
+                    override_reason="TICK_VELOCITY_TRIGGERED",
+                    decision_stage="TICK_SWEEP_EXECUTION",
+                    htf_score=float(trend_strength),
+                    smc_score=sweep_conf,
+                    confidence_before_filters=sweep_conf,
+                    confidence_after_filters=sweep_conf,
+                )
 
         # Update last tick trackers
         self._last_tick_bid = current_tick.bid
@@ -591,14 +900,99 @@ class SignalPolicy:
             self._last_signal_time = now
             return tick_sweep_proposal
 
-        predictive_proposal = self._evaluate_predictive_limit(
-            valid_ob, smc_god_mode_active, total_exposure, order_block_type, current_tick,
-            atr, completed_bars, execution_id, now, confidence, confidence_before_filters,
-            regime_str, regime_conf, trend_strength
-        )
-        if predictive_proposal is not None:
+        # ======================================================================
+        # PART 2: PREDICTIVE LIMIT EXECUTION
+        # ======================================================================
+        # Exposure re-check: this path runs AFTER the strict exposure gate;
+        # a pending order placed by an earlier signal in the same bar must
+        # not let a SECOND limit slip through (observed 2026-08-18: second
+        # BUY_LIMIT dispatched ~96s after the previous one while the
+        # exposure gate had already seen the resting pending).
+        if valid_ob and not smc_god_mode_active and total_exposure < MAX_TOTAL_EXPOSURE:
+            # We don't wait for candle close; place limit order immediately on OB validation
+            execution_mode = "PREDICTIVE_LIMIT"
+            proposed_action = (
+                ActionType.BUY_LIMIT if order_block_type == 1 else ActionType.SELL_LIMIT
+            )
+
+            # OB Equilibrium (50%)
+            swing_low_20 = current_tick.bid - atr
+            swing_high_20 = current_tick.ask + atr
+            if completed_bars is not None and len(completed_bars) >= 20:
+                swing_low_20 = np.min([b.low for b in completed_bars[-20:]])
+                swing_high_20 = np.max([b.high for b in completed_bars[-20:]])
+            target_entry_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
+
+            # Ensure limit price is valid relative to current Ask/Bid to prevent MT5 10015 error
+            if proposed_action == ActionType.BUY_LIMIT and target_entry_price >= current_tick.ask:
+                target_entry_price = round(current_tick.ask - 0.12, 2)
+            elif (
+                proposed_action == ActionType.SELL_LIMIT and target_entry_price <= current_tick.bid
+            ):
+                target_entry_price = round(current_tick.bid + 0.12, 2)
+
+            # Stop Loss beyond deepest OB wick + ATR buffer
+            deepest_wick = (
+                swing_low_20 if proposed_action == ActionType.BUY_LIMIT else swing_high_20
+            )
+            stop_loss = (
+                round(deepest_wick - atr * self.algo_config.atr_sl_buffer_multiplier, 2)
+                if proposed_action == ActionType.BUY_LIMIT
+                else round(deepest_wick + atr * self.algo_config.atr_sl_buffer_multiplier, 2)
+            )
+
+            # Take Profit at nearest opposing liquidity
+            take_profit = (
+                round(swing_high_20, 2)
+                if proposed_action == ActionType.BUY_LIMIT
+                else round(swing_low_20, 2)
+            )
+
+            # Ensure valid targets and satisfy minimum RR
+            risk_amount = max(abs(target_entry_price - stop_loss), 1e-5)
+            active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
+            reward_amount = abs(take_profit - target_entry_price)
+            actual_rr = round(reward_amount / risk_amount, 2)
+
+            if actual_rr < active_min_rr:
+                # Expand Take Profit to satisfy risk engine
+                min_tp_dist = risk_amount * active_min_rr
+                take_profit = (
+                    round(target_entry_price + min_tp_dist, 2)
+                    if proposed_action == ActionType.BUY_LIMIT
+                    else round(target_entry_price - min_tp_dist, 2)
+                )
+                reward_amount = abs(take_profit - target_entry_price)
+                actual_rr = round(reward_amount / risk_amount, 2)
+
+            reason_code = f"PREDICTIVE_OB_{proposed_action.name}_EQUILIBRIUM"
+            logger.info(
+                f"PREDICTIVE LIMIT EXECUTED: Placing {proposed_action.value} at 50% Equilibrium {target_entry_price}!"
+            )
+
             self._last_signal_time = now
-            return predictive_proposal
+            return TradeProposal(
+                request_id=str(uuid.uuid4()),
+                execution_id=execution_id,
+                symbol=current_tick.symbol,
+                generated_at=now,
+                action=proposed_action,
+                confidence=float(confidence),
+                proposed_entry=float(target_entry_price),
+                stop_loss=float(stop_loss),
+                take_profit=float(take_profit),
+                risk_reward_ratio=float(actual_rr),
+                reason_code=reason_code,
+                regime=regime_str,
+                regime_confidence=regime_conf,
+                execution_mode=execution_mode,
+                override_reason="PREDICTIVE_OB_PLACEMENT",
+                decision_stage="PREDICTIVE_LIMIT_GENERATION",
+                htf_score=float(trend_strength),
+                smc_score=float(confidence),
+                confidence_before_filters=float(confidence_before_filters),
+                confidence_after_filters=float(confidence),
+            )
 
         # ----------------------------------------------------------------------
         # STANDARD DECISION FLOW (with SMC_GOD_MODE check)
@@ -1128,477 +1522,6 @@ class SignalPolicy:
             self._last_logged_action = final_proposal.action
 
         return final_proposal
-
-    def _evaluate_tick_sweep(
-        self,
-        sweep_sig: int,
-        current_tick: TickData,
-        ofi: float,
-        tick_velocity: float,
-        raw_prob_buy: float,
-        raw_prob_sell: float,
-        is_range_market: bool,
-        execution_id: str,
-        now: datetime,
-        atr: float,
-        regime_str: str,
-        regime_conf: float,
-        trend_strength: float,
-    ) -> TradeProposal | None:
-        if self._last_tick_bid <= 0.0:
-            return None
-
-        price_pierced_liq = False
-        reversal_detected = False
-        direction = None
-
-        if sweep_sig == 1 and current_tick.bid < self._last_tick_bid:
-            price_pierced_liq = True
-            reversal_detected = True
-            direction = "BUY"
-        elif sweep_sig == -1 and current_tick.ask > self._last_tick_ask:
-            price_pierced_liq = True
-            reversal_detected = True
-            direction = "SELL"
-
-        ofi_flip = ofi > 0 if direction == "BUY" else ofi < 0
-        velocity_reverses = tick_velocity > 5.0
-
-        sweep_direction_prob = (
-            raw_prob_buy
-            if direction == "BUY"
-            else raw_prob_sell
-            if direction == "SELL"
-            else 0.0
-        )
-
-        sweep_conf_thresh = self.confidence_threshold + (
-            self.range_confidence_penalty if is_range_market else 0.0
-        )
-
-        sweep_has_confidence = sweep_direction_prob >= sweep_conf_thresh
-
-        if (
-            price_pierced_liq
-            and reversal_detected
-            and ofi_flip
-            and velocity_reverses
-            and sweep_has_confidence
-        ):
-            execution_mode = "TICK_SWEEP"
-            proposed_action = (
-                ActionType.BUY_MARKET if direction == "BUY" else ActionType.SELL_MARKET
-            )
-            target_entry_price = current_tick.ask if direction == "BUY" else current_tick.bid
-            reason_code = f"TICK_LEVEL_LIQUIDITY_SWEEP_{direction}"
-            sweep_conf = float(sweep_direction_prob)
-
-            logger.info(
-                f"TICK LEVEL SWEEP DETECTED: Emitting instant {proposed_action.value}! (prob={sweep_conf:.2f})"
-            )
-
-            stop_loss = (
-                target_entry_price - atr * 1.5
-                if direction == "BUY"
-                else target_entry_price + atr * 1.5
-            )
-            take_profit = (
-                target_entry_price + atr * 3.0
-                if direction == "BUY"
-                else target_entry_price - atr * 3.0
-            )
-
-            actual_rr = round(
-                abs(take_profit - target_entry_price)
-                / max(abs(target_entry_price - stop_loss), 1e-5),
-                2,
-            )
-
-            return TradeProposal(
-                request_id=str(uuid.uuid4()),
-                execution_id=execution_id,
-                symbol=current_tick.symbol,
-                generated_at=now,
-                action=proposed_action,
-                confidence=sweep_conf,
-                proposed_entry=float(target_entry_price),
-                stop_loss=float(stop_loss),
-                take_profit=float(take_profit),
-                risk_reward_ratio=float(actual_rr),
-                reason_code=reason_code,
-                regime=regime_str,
-                regime_confidence=regime_conf,
-                execution_mode=execution_mode,
-                override_reason="TICK_VELOCITY_TRIGGERED",
-                decision_stage="TICK_SWEEP_EXECUTION",
-                htf_score=float(trend_strength),
-                smc_score=sweep_conf,
-                confidence_before_filters=sweep_conf,
-                confidence_after_filters=sweep_conf,
-            )
-        return None
-
-    def _evaluate_predictive_limit(
-        self,
-        valid_ob: bool,
-        smc_god_mode_active: bool,
-        total_exposure: int,
-        order_block_type: int,
-        current_tick: TickData,
-        atr: float,
-        completed_bars: list[Any] | None,
-        execution_id: str,
-        now: datetime,
-        confidence: float,
-        confidence_before_filters: float,
-        regime_str: str,
-        regime_conf: float,
-        trend_strength: float,
-    ) -> TradeProposal | None:
-        if valid_ob and not smc_god_mode_active and total_exposure < MAX_TOTAL_EXPOSURE:
-            execution_mode = "PREDICTIVE_LIMIT"
-            proposed_action = (
-                ActionType.BUY_LIMIT if order_block_type == 1 else ActionType.SELL_LIMIT
-            )
-
-            swing_low_20 = current_tick.bid - atr
-            swing_high_20 = current_tick.ask + atr
-            if completed_bars is not None and len(completed_bars) >= 20:
-                swing_low_20 = np.min([b.low for b in completed_bars[-20:]])
-                swing_high_20 = np.max([b.high for b in completed_bars[-20:]])
-            target_entry_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
-
-            if proposed_action == ActionType.BUY_LIMIT and target_entry_price >= current_tick.ask:
-                target_entry_price = round(current_tick.ask - 0.12, 2)
-            elif (
-                proposed_action == ActionType.SELL_LIMIT and target_entry_price <= current_tick.bid
-            ):
-                target_entry_price = round(current_tick.bid + 0.12, 2)
-
-            deepest_wick = (
-                swing_low_20 if proposed_action == ActionType.BUY_LIMIT else swing_high_20
-            )
-            stop_loss = (
-                round(deepest_wick - atr * self.algo_config.atr_sl_buffer_multiplier, 2)
-                if proposed_action == ActionType.BUY_LIMIT
-                else round(deepest_wick + atr * self.algo_config.atr_sl_buffer_multiplier, 2)
-            )
-
-            take_profit = (
-                round(swing_high_20, 2)
-                if proposed_action == ActionType.BUY_LIMIT
-                else round(swing_low_20, 2)
-            )
-
-            risk_amount = max(abs(target_entry_price - stop_loss), 1e-5)
-            active_min_rr = getattr(self.algo_config, "min_risk_reward_ratio", 1.8)
-            reward_amount = abs(take_profit - target_entry_price)
-            actual_rr = round(reward_amount / risk_amount, 2)
-
-            if actual_rr < active_min_rr:
-                min_tp_dist = risk_amount * active_min_rr
-                take_profit = (
-                    round(target_entry_price + min_tp_dist, 2)
-                    if proposed_action == ActionType.BUY_LIMIT
-                    else round(target_entry_price - min_tp_dist, 2)
-                )
-                reward_amount = abs(take_profit - target_entry_price)
-                actual_rr = round(reward_amount / risk_amount, 2)
-
-            reason_code = f"PREDICTIVE_OB_{proposed_action.name}_EQUILIBRIUM"
-            logger.info(
-                f"PREDICTIVE LIMIT EXECUTED: Placing {proposed_action.value} at 50% Equilibrium {target_entry_price}!"
-            )
-
-            return TradeProposal(
-                request_id=str(uuid.uuid4()),
-                execution_id=execution_id,
-                symbol=current_tick.symbol,
-                generated_at=now,
-                action=proposed_action,
-                confidence=float(confidence),
-                proposed_entry=float(target_entry_price),
-                stop_loss=float(stop_loss),
-                take_profit=float(take_profit),
-                risk_reward_ratio=float(actual_rr),
-                reason_code=reason_code,
-                regime=regime_str,
-                regime_confidence=regime_conf,
-                execution_mode=execution_mode,
-                override_reason="PREDICTIVE_OB_PLACEMENT",
-                decision_stage="PREDICTIVE_LIMIT_GENERATION",
-                htf_score=float(trend_strength),
-                smc_score=float(confidence),
-                confidence_before_filters=float(confidence_before_filters),
-                confidence_after_filters=float(confidence),
-            )
-        return None
-
-    def _evaluate_exposure_limits(
-        self,
-        total_exposure: int,
-        active_positions_count: int,
-        active_pending_count: int,
-        order_manager: Any,
-        live_tickets: list[Any],
-        target_entry_price: float,
-        current_tick: TickData,
-        regime_str: str,
-        regime_conf: float,
-        atr: float,
-        completed_bars: list[Any] | None,
-        now: datetime,
-    ) -> TradeProposal | None:
-        # 2. Strict Single-Position Exposure Gate (MAX_TOTAL_EXPOSURE = 1)
-        # Total of Active Open Positions + Active Pending Orders MUST NOT exceed 1.
-        if total_exposure >= MAX_TOTAL_EXPOSURE:
-            # Check price proximity to find if we should return SAME_LEVEL_REENTRY_BLOCKED (threshold is $0.50)
-            is_same_level = False
-            if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
-                for ticket_info in live_tickets:
-                    t_symbol = ticket_info.get("symbol")
-                    t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
-                    t_price = ticket_info.get("price")
-                    if t_symbol == "XAUUSD" and t_magic == 888101 and t_price is not None:
-                        if abs(target_entry_price - t_price) < 0.50:
-                            is_same_level = True
-                            break
-
-            if is_same_level:
-                return self._build_no_trade(
-                    tick=current_tick,
-                    confidence=0.0,
-                    reason="SAME_LEVEL_REENTRY_BLOCKED",
-                    regime_str=regime_str,
-                    regime_conf=regime_conf,
-                )
-
-            # If we hold 1 active open position, block entries.
-            # blocked_by=EXECUTION_STATE_BLOCK: an execution-state block, NOT
-            # a model rejection — the learning engine must not learn "the
-            # model chose not to trade" from an unavailable execution slot.
-            if active_positions_count >= 1:
-                return self._build_no_trade(
-                    tick=current_tick,
-                    confidence=0.0,
-                    reason="MAX_EXPOSURE_REACHED",
-                    regime_str=regime_str,
-                    regime_conf=regime_conf,
-                    blocked_by="EXECUTION_STATE_BLOCK",
-                    decision_stage="EXPOSURE_GATE",
-                )
-
-            # If we hold 1 active pending order, check lock & price drift hysteresis
-            if active_pending_count >= 1:
-                # Calculate 50% Equilibrium price
-                swing_low_20 = current_tick.bid - atr
-                swing_high_20 = current_tick.ask + atr
-                if completed_bars is not None and len(completed_bars) >= 20:
-                    swing_low_20 = np.min([b.low for b in completed_bars[-20:]])
-                    swing_high_20 = np.max([b.high for b in completed_bars[-20:]])
-                new_eq_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
-
-                time_delta = (
-                    (now - self._locked_pending_time).total_seconds()
-                    if self._locked_pending_time is not None
-                    else 0.0
-                )
-                price_drift = (
-                    abs(new_eq_price - self._locked_pending_price)
-                    if self._locked_pending_price is not None
-                    else 0.0
-                )
-
-                # 30-SECOND PENDING LOCK: never cancel/recreate a live limit order unless
-                # it has been resting for more than 30s AND price has drifted >= 1.0 x ATR.
-                if time_delta <= PENDING_ORDER_LOCK_SECONDS or price_drift < (1.0 * atr):
-                    # Maintain the existing live limit order and return ActionType.NO_TRADE
-                    # (execution-state block, not model rejection).
-                    return self._build_no_trade(
-                        tick=current_tick,
-                        confidence=0.0,
-                        reason="PENDING_ORDER_LOCKED",
-                        regime_str=regime_str,
-                        regime_conf=regime_conf,
-                        blocked_by="EXECUTION_STATE_BLOCK",
-                        decision_stage="EXPOSURE_GATE",
-                    )
-        return None
-
-    def _evaluate_frequency_throttle(
-        self,
-        now: datetime,
-        current_tick: TickData,
-        regime_str: str,
-        regime_conf: float,
-    ) -> TradeProposal | None:
-        # 1. Enforce ORDER_FREQUENCY_THROTTLED check (MIN_ORDER_INTERVAL_SECONDS = 60)
-        if self._last_signal_time is not None:
-            elapsed = (now - self._last_signal_time).total_seconds()
-            if elapsed < 60.0:
-                return self._build_no_trade(
-                    tick=current_tick,
-                    confidence=0.0,
-                    reason="ORDER_FREQUENCY_THROTTLED",
-                    regime_str=regime_str,
-                    regime_conf=regime_conf,
-                )
-        return None
-
-    def _get_active_tickets_info(self, order_manager: Any) -> tuple[int, int, float | None, int | None, list[Any], dict[int, str]]:
-        active_positions_count = 0
-        active_pending_count = 0
-        pending_price = None
-        pending_ticket = None
-        live_tickets: list[Any] = []
-        held_position_dirs: dict[int, str] = {}
-
-        if order_manager is not None and hasattr(order_manager, "get_active_live_tickets"):
-            live_tickets = order_manager.get_active_live_tickets()
-            for ticket_info in live_tickets:
-                t_symbol = ticket_info.get("symbol")
-                t_magic = ticket_info.get("magic") or ticket_info.get("magic_number")
-                t_type = ticket_info.get("type")
-                if t_symbol == "XAUUSD" and t_magic == 888101:
-                    if t_type == "POSITION":
-                        active_positions_count += 1
-                        t_ticket = ticket_info.get("ticket")
-                        t_dir = str(ticket_info.get("direction") or "").upper()
-                        if t_ticket is not None and t_dir:
-                            held_position_dirs[int(t_ticket)] = t_dir
-                    elif t_type == "PENDING":
-                        active_pending_count += 1
-                        pending_price = ticket_info.get("price")
-                        pending_ticket = ticket_info.get("ticket")
-        return (
-            active_positions_count,
-            active_pending_count,
-            pending_price,
-            pending_ticket,
-            live_tickets,
-            held_position_dirs,
-        )
-
-    def _evaluate_duplicate_tick(
-        self,
-        probs: list[float],
-        current_tick: TickData,
-        execution_id: str,
-        regime_state: MarketRegimeState | None,
-    ) -> TradeProposal | None:
-        # ---------------------------------------------------------------------
-        # TASK 5 FIX: micro-throttler / tick de-duplication.
-        # The hot path (50ms) is frequently invoked faster than the market feed
-        # produces quotes, so the same tick (identical timestamp, or identical
-        # bid AND ask) gets re-evaluated and re-logged, corrupting telemetry.
-        # We detect a duplicate and return a lightweight NO_TRADE proposal WITHOUT
-        # touching the persistent state (cooldown, last direction, price locks).
-        # ---------------------------------------------------------------------
-        tick_ts = current_tick.timestamp
-        tick_bid = float(getattr(current_tick, "bid", 0.0) or 0.0)
-        tick_ask = float(getattr(current_tick, "ask", 0.0) or 0.0)
-        is_duplicate = (
-            tick_ts is not None
-            and self._dedup_last_time is not None
-            and tick_ts == self._dedup_last_time
-        ) or (
-            tick_bid == self._dedup_last_bid and tick_ask == self._dedup_last_ask and tick_bid > 0.0
-        )
-        if is_duplicate:
-            _pb = probs[1] if len(probs) > 1 else 0.0
-            _ps = probs[2] if len(probs) > 2 else 0.0
-            _pnt = probs[0] if len(probs) > 0 else 0.0
-            return TradeProposal(
-                request_id=str(uuid.uuid4()),
-                execution_id=execution_id,
-                symbol=current_tick.symbol,
-                generated_at=current_tick.timestamp,
-                action=ActionType.NO_TRADE,
-                confidence=0.0,
-                proposed_entry=current_tick.bid,
-                stop_loss=current_tick.bid * 0.99,
-                take_profit=current_tick.bid * 1.01,
-                risk_reward_ratio=1.0,
-                reason_code="TICK_DUPLICATE_SUPPRESSED",
-                model_action="NO_TRADE",
-                buy_probability=float(_pb),
-                sell_probability=float(_ps),
-                no_trade_probability=float(_pnt),
-                regime=str(regime_state.regime_type.value if regime_state else "UNKNOWN"),
-                regime_confidence=float(regime_state.regime_probability if regime_state else 0.0),
-                risk_allowed=False,
-                guardian_status="IDLE",
-                rejection_reason="TICK_DUPLICATE_SUPPRESSED",
-                final_action="NO_TRADE",
-                decision_stage="DEDUP_GATE",
-                blocked_by="TICK_DEDUP",
-                htf_score=0.0,
-                smc_score=0.0,
-                confidence_before_filters=0.0,
-                confidence_after_filters=0.0,
-            )
-
-        # Record the freshest tick signature for the next call.
-        self._dedup_last_time = tick_ts
-        self._dedup_last_bid = tick_bid
-        self._dedup_last_ask = tick_ask
-        return None
-
-    def _evaluate_guardian_gate(
-        self,
-        regime_state: MarketRegimeState | None,
-        current_tick: TickData,
-        execution_id: str,
-    ) -> TradeProposal | None:
-        is_guardian_active = False
-        if regime_state is not None:
-            regime_type = regime_state.regime_type
-            exec_type = regime_state.recommended_execution_type
-
-            # Unsafe regimes to block
-            UNSAFE_REGIMES = {
-                "HIGH_SPREAD_CHOP",
-                "UNKNOWN",
-                "MARKET_HALTED",
-                "LOW_LIQUIDITY",
-                "NEWS_LOCK",
-                "MACRO_NEWS_FREEZE",
-            }
-            reg_val = getattr(regime_type, "value", str(regime_type))
-            if reg_val in UNSAFE_REGIMES or exec_type == RecommendedExecutionType.FREEZE_ALL:
-                is_guardian_active = True
-
-        if is_guardian_active:
-            return TradeProposal(
-                request_id=str(uuid.uuid4()),
-                execution_id=execution_id,
-                symbol=current_tick.symbol,
-                generated_at=current_tick.timestamp,
-                action=ActionType.NO_TRADE,
-                confidence=0.0,
-                proposed_entry=current_tick.bid,
-                stop_loss=current_tick.bid * 0.99,
-                take_profit=current_tick.bid * 1.01,
-                risk_reward_ratio=1.0,
-                reason_code="BLOCKED_BY_GUARDIAN_UNSAFE_REGIME",
-                model_action="NO_TRADE",
-                buy_probability=0.0,
-                sell_probability=0.0,
-                no_trade_probability=1.0,
-                regime=str(regime_state.regime_type.value if regime_state else "UNKNOWN"),
-                regime_confidence=float(regime_state.regime_probability if regime_state else 0.0),
-                risk_allowed=False,
-                guardian_status="ACTIVE",
-                rejection_reason="BLOCKED_BY_GUARDIAN_UNSAFE_REGIME",
-                final_action="NO_TRADE",
-                decision_stage="GUARDIAN_GATE",
-                blocked_by="REGIME_GUARDIAN",
-                htf_score=0.0,
-                smc_score=0.0,
-                confidence_before_filters=0.0,
-                confidence_after_filters=0.0,
-            )
-        return None
 
     def _evaluate_ai_reversal(
         self,
