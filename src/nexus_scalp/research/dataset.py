@@ -41,6 +41,7 @@ from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.lifecycle import (
     DEGRADED_TERMINAL_STATES,
     NON_TRADE_TERMINAL_STATES,
+    RECOVERY_SOURCE_BROKER_HISTORY,
     DecisionLifecycle,
     lifecycle_from_outcome,
 )
@@ -215,6 +216,44 @@ class ResearchDatasetBuilder:
         if not self._source_cache:
             self._source_cache = self._load_reconstruction_sources()
         return self._source_cache.get(rec.idempotency_key, "")
+
+    def _count_recovered_outcomes(self) -> int:
+        """Counts outcomes recovered by the BUG-140 historical sweep.
+
+        The sweep stamps RECOVERY_SOURCE_BROKER_HISTORY into
+        correlation_detail (reconstructed trades) or lifecycle_detail
+        (recovered terminal non-trades). Counted separately so
+        consumers can weigh repaired history honestly instead of it
+        blending invisibly into native outcomes.
+        """
+        repo = self.ledger.audit_repo
+        if not repo._is_sqlite:
+            return 0
+        try:
+            conn = sqlite3.connect(repo._db_path, timeout=10.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    "SELECT payload FROM audit_experience_outcomes "
+                    "WHERE is_closed = 1 LIMIT 100000;"
+                ).fetchall()
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning("[STRATEGY_RESEARCH] recovery marker load failed", error=str(e))
+            return 0
+        marker = RECOVERY_SOURCE_BROKER_HISTORY
+        n = 0
+        for r in rows:
+            try:
+                payload = json.loads(r["payload"] or "{}")
+            except Exception:
+                continue
+            cd = str(payload.get("correlation_detail") or "")
+            ld = str(payload.get("lifecycle_detail") or "")
+            if cd.startswith(marker) or ld.startswith(marker):
+                n += 1
+        return n
 
     # ------------------------------------------------------------------
     # Sample conversion + eligibility
@@ -473,9 +512,7 @@ class ResearchDatasetBuilder:
                     "total_decisions": ds_audit["total_records"],
                     "valid_research_samples": ds_audit["eligible"],
                     "terminal_non_trades": ds_audit["terminal_non_trades"],
-                    "recovered_outcomes": ds_audit["rejection_reasons"].get(
-                        "RECOVERED_OUTCOME", 0
-                    ),
+                    "recovered_outcomes": self._count_recovered_outcomes(),
                     "filled_outcome_missing": ds_audit["rejection_reasons"].get(
                         REASON_FILLED_OUTCOME_MISSING, 0
                     ),

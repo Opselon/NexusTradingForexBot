@@ -6062,3 +6062,15 @@ covered by regression test).
 4. Regression suite tests/unit/test_lifecycle_bug140.py (44 tests) - caught a REAL production defect in the committed wiring: emit_terminal_pending_outcome referenced DecisionLifecycle.TERMINAL_STATES (module constant, not an enum member) -> AttributeError on EVERY emission, making all terminal paths no-ops/crash paths in production. Fixed to import module-level TERMINAL_STATES (this commit).
 
 **Tests:** tests/unit/test_lifecycle_bug140.py 44/44 PASS; neighboring suites (task4 dataset, phase09b, experience intelligence, order manager exit bugs, execution architecture) 130/130 PASS.
+
+**Phase 2 (2026-08-29 Hermes-LifecycleFix): historical missing-outcome recovery.**
+
+Root cause: 273 decisions in audit_experiences had NO outcome row. Production DB forensic (read-only probe): 255 never dispatched (no audit_orders row), 11 canceled-unfilled, 7 FILLED-and-closed with full broker-deal evidence. Join chain discovered: decision.request_id -> audit_orders.order_id -> ticket -> audit_broker_orders.{position_id,state} -> audit_broker_deals.{position_id, order}. MT5 ORDER_STATE 2/4/5/6 = CANCELED/FILLED/REJECTED/EXPIRED; DEAL entry 0=in/1,2,3=out.
+
+Fix:
+1. src/nexus_scalp/experience/outcome_recovery_sweep.py: HistoricalOutcomeRecoverySweep. Idempotent, bounded, evidence-only. Reconstructs FILLED-and-closed trades from broker deal rows (R/PnL from broker truth; never fabricated), classifies CANCELED/EXPIRED/REJECTED by broker order state, SKIPS fill-without-close (open/incomplete) and no-dispatch-evidence (not guessed). Split-fill close deals with a DIFFERENT order ticket than the entry deal are recovered via a position_id-driven re-query (QA-found defect). Idempotent: UNIQUE idempotency_key; second pass scans 0.
+2. dataset.py: recovered_outcomes census now counts real RECOVERY_SOURCE_BROKER_HISTORY markers (was a dead RECOVERED_OUTCOME read).
+3. web/server.py: POST /api/research/recover-missing-outcomes (house-pattern request model; dry_run supported).
+4. tests/unit/test_outcome_recovery_sweep_bug140.py: 12 tests (full recovery, split-fill join, terminal states, open-position skip, causality refusal, no-dispatch skip, idempotency, dry-run, dataset census). QA added test_close_deal_different_order_ticket_recovered (documents the split-fill defect).
+
+Verification: 12 new PASS; neighboring suites 170 PASS. Real-data dry-run on artifacts/audit.db classifies 7 filled / 11 canceled / 255 no-dispatch (0 out of coverage).

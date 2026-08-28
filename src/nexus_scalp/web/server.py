@@ -300,6 +300,10 @@ class ToggleRequest(BaseModel):
     active: bool
 
 
+class OutcomeRecoveryRequest(BaseModel):
+    dry_run: bool = False
+
+
 class EngineModeRequest(BaseModel):
     mode: str
 
@@ -6239,7 +6243,32 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             log_web_error(logger, "/api", None, e, context={"msg": "Research self-heal failed"})
             return _err("INTERNAL_ERROR")
 
+    @app.post("/api/research/recover-missing-outcomes")
+    def trigger_outcome_recovery(req: OutcomeRecoveryRequest) -> dict[str, Any]:
+        """
+        BUG-140 P0-B: recovers decisions that never received an outcome row
+        by joining the dispatch log (audit_orders) to broker-history
+        evidence (audit_broker_orders/deals). Idempotent, bounded,
+        append-only; reconstructed R/PnL carry explicit sweep provenance.
+        Pass {"dry_run": true} to classify without writing.
+        """
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.experience.outcome_recovery_sweep import (
+                HistoricalOutcomeRecoverySweep,
+            )
+
+            sweep = HistoricalOutcomeRecoverySweep(ledger=engine.experience_ledger)
+            result = sweep.run(dry_run=bool(req.dry_run))
+            return {"available": True, "result": result.to_dict()}
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Outcome recovery failed"})
+            return _err("INTERNAL_ERROR")
+
     @app.post("/api/research/repair-outcomes")
+
     def trigger_outcome_repair() -> dict[str, Any]:
         """
         BUG-046: repairs historical zero-R closed outcomes from broker deal
