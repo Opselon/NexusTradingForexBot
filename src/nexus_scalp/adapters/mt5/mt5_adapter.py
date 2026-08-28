@@ -20,7 +20,7 @@ Key Enterprise Features & Hidden MT5 Mechanisms:
 import logging
 import sys
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any
 
 from nexus_scalp.adapters.mt5.diagnostics import (
     MT5CallDiagnostic,
@@ -62,12 +62,9 @@ from nexus_scalp.domain.models import (
 from nexus_scalp.market_data.bar_aggregator import BarData
 from nexus_scalp.ports.mt5_port import IMT5Port
 
-if TYPE_CHECKING:
-    import MetaTrader5 as mt5_module
-
 # Conditional dynamic import preventing Linux container import crashes
 HAS_NATIVE_MT5 = False
-mt5: Optional["mt5_module"] = None
+mt5: Any = None
 if sys.platform == "win32":
     try:
         import MetaTrader5 as mt5  # type: ignore[no-redef]
