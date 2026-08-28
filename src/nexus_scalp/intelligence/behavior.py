@@ -212,6 +212,421 @@ class BehaviorDetectionEngine:
     # Evidence-gated analysis entrypoint
     # ------------------------------------------------------------------
 
+    def _check_profit_giveback(
+        self,
+        ticket: str,
+        exp_id: str,
+        ticket_ctx: str,
+        giveback_pct: float,
+        mfe_r: float,
+        realized_r: float,
+    ) -> BehaviorDetection | None:
+        if giveback_pct >= self.greed_giveback_pct and mfe_r > 0.0:
+            conf = min(1.0, 0.5 + max(0.0, giveback_pct - self.greed_giveback_pct))
+            return self._detection(
+                "PROFIT_GIVEBACK",
+                ticket,
+                exp_id,
+                ticket_ctx,
+                BehaviorSeverity.MEDIUM,
+                conf,
+                {
+                    "explanation": "large favourable excursion surrendered before exit",
+                    "threshold": self.greed_giveback_pct,
+                    "actual": round(giveback_pct, 3),
+                    "expected": 0.0,
+                    "giveback_pct": round(giveback_pct, 3),
+                    "mfe_r": round(mfe_r, 3),
+                    "realized_r": round(realized_r, 3),
+                },
+            )
+        return None
+
+    def _check_early_exit(
+        self, ticket: str, exp_id: str, ticket_ctx: str, mfe_r: float, realized_r: float
+    ) -> BehaviorDetection | None:
+        if (
+            mfe_r >= self.early_exit_mfe_floor
+            and realized_r > 0.0
+            and (realized_r / mfe_r) < self.early_exit_capture_ceil
+        ):
+            return self._detection(
+                "EARLY_EXIT_PATTERN",
+                ticket,
+                exp_id,
+                ticket_ctx,
+                BehaviorSeverity.MEDIUM,
+                0.7,
+                {
+                    "explanation": "exited before the statistical target zone",
+                    "mfe_r": round(mfe_r, 3),
+                    "realized_r": round(realized_r, 3),
+                    "capture_ratio": round(realized_r / mfe_r, 3),
+                },
+            )
+        return None
+
+    def _check_late_exit(
+        self,
+        ticket: str,
+        exp_id: str,
+        ticket_ctx: str,
+        holding_duration_sec: float,
+        expected_duration_sec: float,
+        realized_r: float,
+        mae_r: float,
+    ) -> list[BehaviorDetection]:
+        detections = []
+        overhold_time = (
+            holding_duration_sec > expected_duration_sec * self.late_exit_hold_factor
+            and expected_duration_sec > 0.0
+        )
+        if overhold_time and realized_r <= 0.0:
+            detections.append(
+                self._detection(
+                    "LATE_EXIT_PATTERN",
+                    ticket,
+                    exp_id,
+                    ticket_ctx,
+                    BehaviorSeverity.HIGH,
+                    0.8,
+                    {
+                        "explanation": "held far beyond expected horizon while edge decayed",
+                        "holding_duration_sec": round(holding_duration_sec, 1),
+                        "expected_duration_sec": round(expected_duration_sec, 1),
+                    },
+                )
+            )
+            if (
+                abs(mae_r) >= self.recovery_mae_floor
+                and holding_duration_sec >= OVERHOLD_MIN_SECONDS
+            ):
+                detections.append(
+                    self._detection(
+                        "OVERHOLD_LOSER",
+                        ticket,
+                        exp_id,
+                        ticket_ctx,
+                        BehaviorSeverity.HIGH,
+                        0.85,
+                        {
+                            "explanation": (
+                                "position spent significant time below zero with the "
+                                "model/strategy invalidated and remained open well "
+                                "beyond the baseline"
+                            ),
+                            "threshold": {
+                                "min_hold": OVERHOLD_MIN_SECONDS,
+                                "hold_factor": self.late_exit_hold_factor,
+                                "mae_r_floor": self.recovery_mae_floor,
+                            },
+                            "actual": {
+                                "hold_seconds": round(holding_duration_sec, 1),
+                                "mae_r": round(mae_r, 3),
+                            },
+                            "expected": {
+                                "hold_seconds": round(expected_duration_sec, 1),
+                                "mae_r": 0.0,
+                            },
+                            "holding_duration_sec": round(holding_duration_sec, 1),
+                            "expected_duration_sec": round(expected_duration_sec, 1),
+                            "mae_r": round(mae_r, 3),
+                        },
+                    )
+                )
+        return detections
+
+    def _check_excessive_hold(
+        self,
+        ticket: str,
+        exp_id: str,
+        ticket_ctx: str,
+        holding_duration_sec: float,
+        strategy_baseline_median_sec: float | None,
+        strategy_baseline_mad_sec: float | None,
+    ) -> BehaviorDetection | None:
+        if (
+            strategy_baseline_median_sec is not None
+            and strategy_baseline_median_sec > 0.0
+            and strategy_baseline_mad_sec is not None
+        ):
+            baseline = float(strategy_baseline_median_sec)
+            mad = float(strategy_baseline_mad_sec)
+            if mad <= 1e-9:
+                mad = max(baseline * 0.25, 1.0)
+            z = (holding_duration_sec - baseline) / mad
+            if holding_duration_sec > baseline and z >= EXCESSIVE_HOLD_MAD_MULT:
+                return self._detection(
+                    "EXCESSIVE_HOLD_TIME",
+                    ticket,
+                    exp_id,
+                    ticket_ctx,
+                    BehaviorSeverity.LOW,
+                    min(0.9, 0.5 + z / 10.0),
+                    {
+                        "explanation": "hold duration is a robust outlier vs the "
+                        "strategy baseline (median + MAD)",
+                        "threshold": EXCESSIVE_HOLD_MAD_MULT,
+                        "actual": round(holding_duration_sec, 1),
+                        "expected": round(baseline, 1),
+                        "mad": round(mad, 1),
+                        "z_score": round(z, 2),
+                    },
+                )
+        return None
+
+    def _check_missed_breakeven(
+        self,
+        ticket: str,
+        exp_id: str,
+        ticket_ctx: str,
+        mfe_r: float,
+        mae_r: float,
+        realized_r: float,
+        sl_moved: bool,
+    ) -> BehaviorDetection | None:
+        if (
+            mfe_r >= MISSED_BE_MIN_MFE_R
+            and mae_r <= -MISSED_BE_REVERSAL_MAE_R
+            and realized_r < 0.0
+            and not sl_moved
+        ):
+            return self._detection(
+                "MISSED_BREAKEVEN",
+                ticket,
+                exp_id,
+                ticket_ctx,
+                BehaviorSeverity.HIGH,
+                0.8,
+                {
+                    "explanation": "trade reached a meaningful positive R then "
+                    "returned to a loss with no BE protection",
+                    "threshold": {
+                        "min_mfe_r": MISSED_BE_MIN_MFE_R,
+                        "reversal_mae_r": MISSED_BE_REVERSAL_MAE_R,
+                        "be_required": True,
+                    },
+                    "actual": {"mfe_r": round(mfe_r, 3), "mae_r": round(mae_r, 3)},
+                    "expected": {"stop_at_break_even": True},
+                    "mfe_r": round(mfe_r, 3),
+                    "mae_r": round(mae_r, 3),
+                },
+            )
+        return None
+
+    def _check_premature_breakeven(
+        self,
+        ticket: str,
+        exp_id: str,
+        ticket_ctx: str,
+        sl_moved: bool,
+        exit_mechanism: str,
+        mfe_r: float,
+        holding_duration_sec: float,
+    ) -> BehaviorDetection | None:
+        if (
+            sl_moved
+            and exit_mechanism.upper() in ("BREAK_EVEN_SL_HIT", "RISK_FREE_SL_HIT")
+            and mfe_r <= PREMATURE_BE_MAX_MFE_R
+            and holding_duration_sec >= PREMATURE_BE_MIN_HOLD_SEC
+        ):
+            return self._detection(
+                "PREMATURE_BREAKEVEN",
+                ticket,
+                exp_id,
+                ticket_ctx,
+                BehaviorSeverity.MEDIUM,
+                0.7,
+                {
+                    "explanation": "BE activated while MFE was still inside normal "
+                    "market noise, so normal fluctuation hit the BE stop",
+                    "threshold": {"max_mfe_r": PREMATURE_BE_MAX_MFE_R},
+                    "actual": {"mfe_r": round(mfe_r, 3)},
+                    "expected": {"mfe_r_floor": 0.0},
+                },
+            )
+        return None
+
+    def _check_model_reversal_ignored(
+        self,
+        ticket: str,
+        exp_id: str,
+        ticket_ctx: str,
+        model_flip: float,
+        model_conf_at_exit: float | None,
+        holding_duration_sec: float,
+        realized_r: float,
+    ) -> BehaviorDetection | None:
+        if (
+            model_flip >= 1.0
+            and model_conf_at_exit is not None
+            and model_conf_at_exit <= MODEL_REVERSAL_CONF_FLOOR
+            and holding_duration_sec >= MODEL_REVERSAL_MIN_HOLD_SEC
+            and realized_r < 0.0
+        ):
+            return self._detection(
+                "MODEL_REVERSAL_IGNORED",
+                ticket,
+                exp_id,
+                ticket_ctx,
+                BehaviorSeverity.HIGH,
+                0.8,
+                {
+                    "explanation": "model direction reversed materially and "
+                    "confidence collapsed while the position remained open",
+                    "threshold": {
+                        "conf_drop": MODEL_REVERSAL_CONF_DROP,
+                        "conf_floor": MODEL_REVERSAL_CONF_FLOOR,
+                    },
+                    "actual": {"conf_at_exit": round(model_conf_at_exit, 3)},
+                    "expected": {"conf_floor": 0.0},
+                    "model_flip": round(float(model_flip), 3),
+                },
+            )
+        return None
+
+    def _check_regime_change_ignored(
+        self,
+        ticket: str,
+        exp_id: str,
+        ticket_ctx: str,
+        regime_flip: float,
+        regime_at_exit: str,
+        holding_duration_sec: float,
+        realized_r: float,
+    ) -> BehaviorDetection | None:
+        if (
+            regime_flip >= 1.0
+            and regime_at_exit
+            and holding_duration_sec >= REGIME_CHANGE_MIN_HOLD_SEC
+            and realized_r < 0.0
+        ):
+            return self._detection(
+                "REGIME_CHANGE_IGNORED",
+                ticket,
+                exp_id,
+                ticket_ctx,
+                BehaviorSeverity.HIGH,
+                0.75,
+                {
+                    "explanation": "regime transitioned against the position and "
+                    "the system continued holding to a loss",
+                    "threshold": {"min_hold": REGIME_CHANGE_MIN_HOLD_SEC},
+                    "actual": {"regime_at_exit": regime_at_exit},
+                    "expected": {"regime": "compatible with entry"},
+                    "regime_flip": round(float(regime_flip), 3),
+                },
+            )
+        return None
+
+    def _check_liquidity_reversal_ignored(
+        self,
+        ticket: str,
+        exp_id: str,
+        ticket_ctx: str,
+        liquidity_sweep_opposite: bool,
+        holding_duration_sec: float,
+        realized_r: float,
+    ) -> BehaviorDetection | None:
+        if (
+            liquidity_sweep_opposite
+            and holding_duration_sec >= LIQUIDITY_REVERSAL_MIN_HOLD_SEC
+            and realized_r < 0.0
+        ):
+            return self._detection(
+                "LIQUIDITY_REVERSAL_IGNORED",
+                ticket,
+                exp_id,
+                ticket_ctx,
+                BehaviorSeverity.HIGH,
+                0.7,
+                {
+                    "explanation": "liquidity swept opposite the position and the "
+                    "system continued holding to a loss",
+                    "threshold": {"min_hold": LIQUIDITY_REVERSAL_MIN_HOLD_SEC},
+                    "actual": {"sweep_opposite": True},
+                    "expected": {"exit_on_sweep": True},
+                },
+            )
+        return None
+
+    def _check_risk_deviation(
+        self,
+        ticket: str,
+        exp_id: str,
+        ticket_ctx: str,
+        actual_risk_usd: float | None,
+        intended_risk_usd: float | None,
+    ) -> BehaviorDetection | None:
+        if (
+            actual_risk_usd is not None
+            and intended_risk_usd is not None
+            and intended_risk_usd > 0.0
+        ):
+            deviation = abs(actual_risk_usd - intended_risk_usd) / intended_risk_usd
+            if deviation > RISK_DEVIATION_TOLERANCE:
+                return self._detection(
+                    "RISK_DEVIATION",
+                    ticket,
+                    exp_id,
+                    ticket_ctx,
+                    BehaviorSeverity.MEDIUM,
+                    min(0.95, 0.5 + deviation),
+                    {
+                        "explanation": "actual risk deviates from the RiskEngine "
+                        "intended risk beyond tolerance",
+                        "threshold": RISK_DEVIATION_TOLERANCE,
+                        "actual": round(float(actual_risk_usd), 2),
+                        "expected": round(float(intended_risk_usd), 2),
+                        "deviation": round(deviation, 3),
+                    },
+                )
+        return None
+
+    def _check_exit_classification_anomaly(
+        self, ticket: str, exp_id: str, ticket_ctx: str, exit_mechanism: str, sl_moved: bool
+    ) -> BehaviorDetection | None:
+        mech = exit_mechanism.upper()
+        if mech in ("RISK_FREE_SL_HIT", "BREAK_EVEN_SL_HIT") and not sl_moved:
+            return self._detection(
+                "EXIT_CLASSIFICATION_ANOMALY",
+                ticket,
+                exp_id,
+                ticket_ctx,
+                BehaviorSeverity.MEDIUM,
+                0.9,
+                {
+                    "explanation": "exit recorded as risk-free/breakeven while "
+                    "was_sl_modified=false — the SL geometry contradicts the "
+                    "stored classification",
+                    "threshold": {"sl_modified": True},
+                    "actual": {"sl_modified": False, "exit_mechanism": mech},
+                    "expected": {"sl_modified": True},
+                },
+            )
+        return None
+
+    def _check_strategy_context_loss(
+        self, ticket: str, exp_id: str, ticket_ctx: str, record: ExperienceRecord | None
+    ) -> BehaviorDetection | None:
+        if record is not None and not getattr(record, "strategy_id", ""):
+            return self._detection(
+                "STRATEGY_CONTEXT_LOSS",
+                ticket,
+                exp_id,
+                ticket_ctx,
+                BehaviorSeverity.MEDIUM,
+                0.7,
+                {
+                    "explanation": "closed trade carries no strategy attribution — "
+                    "learning/attribution context was lost between entry and exit",
+                    "threshold": {"strategy_id": "present"},
+                    "actual": {"strategy_id": ""},
+                    "expected": {"strategy_id": "present"},
+                },
+            )
+        return None
+
     def analyze(
         self,
         ticket: str,
@@ -251,348 +666,85 @@ class BehaviorDetectionEngine:
         ticket_ctx = f"{getattr(record, 'symbol', '')}/{getattr(record, 'timeframe', '')}"
         exp_id = getattr(record, "experience_id", "") if record else ""
 
-        # -- PROFIT_GIVEBACK (formerly GREED_PATTERN) -------------------
-        if giveback_pct >= self.greed_giveback_pct and mfe_r > 0.0:
-            conf = min(1.0, 0.5 + max(0.0, giveback_pct - self.greed_giveback_pct))
-            detections.append(
-                self._detection(
-                    "PROFIT_GIVEBACK",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.MEDIUM,
-                    conf,
-                    {
-                        "explanation": "large favourable excursion surrendered before exit",
-                        "threshold": self.greed_giveback_pct,
-                        "actual": round(giveback_pct, 3),
-                        "expected": 0.0,
-                        "giveback_pct": round(giveback_pct, 3),
-                        "mfe_r": round(mfe_r, 3),
-                        "realized_r": round(realized_r, 3),
-                    },
-                )
-            )
-
-        # -- EARLY_EXIT_PATTERN -----------------------------------------
-        if (
-            mfe_r >= self.early_exit_mfe_floor
-            and realized_r > 0.0
-            and (realized_r / mfe_r) < self.early_exit_capture_ceil
+        if det := self._check_profit_giveback(
+            ticket, exp_id, ticket_ctx, giveback_pct, mfe_r, realized_r
         ):
-            detections.append(
-                self._detection(
-                    "EARLY_EXIT_PATTERN",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.MEDIUM,
-                    0.7,
-                    {
-                        "explanation": "exited before the statistical target zone",
-                        "mfe_r": round(mfe_r, 3),
-                        "realized_r": round(realized_r, 3),
-                        "capture_ratio": round(realized_r / mfe_r, 3),
-                    },
-                )
-            )
+            detections.append(det)
 
-        # -- LATE_EXIT_PATTERN / OVERHOLD_LOSER -------------------------
-        overhold_time = (
-            holding_duration_sec > expected_duration_sec * self.late_exit_hold_factor
-            and expected_duration_sec > 0.0
+        if det := self._check_early_exit(ticket, exp_id, ticket_ctx, mfe_r, realized_r):
+            detections.append(det)
+
+        detections.extend(
+            self._check_late_exit(
+                ticket,
+                exp_id,
+                ticket_ctx,
+                holding_duration_sec,
+                expected_duration_sec,
+                realized_r,
+                mae_r,
+            )
         )
-        if overhold_time and realized_r <= 0.0:
-            detections.append(
-                self._detection(
-                    "LATE_EXIT_PATTERN",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.HIGH,
-                    0.8,
-                    {
-                        "explanation": "held far beyond expected horizon while edge decayed",
-                        "holding_duration_sec": round(holding_duration_sec, 1),
-                        "expected_duration_sec": round(expected_duration_sec, 1),
-                    },
-                )
-            )
-            # OVERHOLD_LOSER = the same evidence + invalidation depth.
-            if (
-                abs(mae_r) >= self.recovery_mae_floor
-                and holding_duration_sec >= OVERHOLD_MIN_SECONDS
-            ):
-                detections.append(
-                    self._detection(
-                        "OVERHOLD_LOSER",
-                        ticket,
-                        exp_id,
-                        ticket_ctx,
-                        BehaviorSeverity.HIGH,
-                        0.85,
-                        {
-                            "explanation": (
-                                "position spent significant time below zero with the "
-                                "model/strategy invalidated and remained open well "
-                                "beyond the baseline"
-                            ),
-                            "threshold": {
-                                "min_hold": OVERHOLD_MIN_SECONDS,
-                                "hold_factor": self.late_exit_hold_factor,
-                                "mae_r_floor": self.recovery_mae_floor,
-                            },
-                            "actual": {
-                                "hold_seconds": round(holding_duration_sec, 1),
-                                "mae_r": round(mae_r, 3),
-                            },
-                            "expected": {
-                                "hold_seconds": round(expected_duration_sec, 1),
-                                "mae_r": 0.0,
-                            },
-                            "holding_duration_sec": round(holding_duration_sec, 1),
-                            "expected_duration_sec": round(expected_duration_sec, 1),
-                            "mae_r": round(mae_r, 3),
-                        },
-                    )
-                )
 
-        # -- EXCESSIVE_HOLD_TIME (robust strategy baseline outlier) ------
-        if (
-            strategy_baseline_median_sec is not None
-            and strategy_baseline_median_sec > 0.0
-            and strategy_baseline_mad_sec is not None
+        if det := self._check_excessive_hold(
+            ticket,
+            exp_id,
+            ticket_ctx,
+            holding_duration_sec,
+            strategy_baseline_median_sec,
+            strategy_baseline_mad_sec,
         ):
-            baseline = float(strategy_baseline_median_sec)
-            mad = float(strategy_baseline_mad_sec)
-            if mad <= 1e-9:
-                mad = max(baseline * 0.25, 1.0)  # degenerate MAD fallback
-            z = (holding_duration_sec - baseline) / mad
-            if holding_duration_sec > baseline and z >= EXCESSIVE_HOLD_MAD_MULT:
-                detections.append(
-                    self._detection(
-                        "EXCESSIVE_HOLD_TIME",
-                        ticket,
-                        exp_id,
-                        ticket_ctx,
-                        BehaviorSeverity.LOW,
-                        min(0.9, 0.5 + z / 10.0),
-                        {
-                            "explanation": "hold duration is a robust outlier vs the "
-                            "strategy baseline (median + MAD)",
-                            "threshold": EXCESSIVE_HOLD_MAD_MULT,
-                            "actual": round(holding_duration_sec, 1),
-                            "expected": round(baseline, 1),
-                            "mad": round(mad, 1),
-                            "z_score": round(z, 2),
-                        },
-                    )
-                )
+            detections.append(det)
 
-        # -- MISSED_BREAKEVEN -------------------------------------------
-        if (
-            mfe_r >= MISSED_BE_MIN_MFE_R
-            and mae_r <= -MISSED_BE_REVERSAL_MAE_R
-            and realized_r < 0.0
-            and not sl_moved
+        if det := self._check_missed_breakeven(
+            ticket, exp_id, ticket_ctx, mfe_r, mae_r, realized_r, sl_moved
         ):
-            detections.append(
-                self._detection(
-                    "MISSED_BREAKEVEN",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.HIGH,
-                    0.8,
-                    {
-                        "explanation": "trade reached a meaningful positive R then "
-                        "returned to a loss with no BE protection",
-                        "threshold": {
-                            "min_mfe_r": MISSED_BE_MIN_MFE_R,
-                            "reversal_mae_r": MISSED_BE_REVERSAL_MAE_R,
-                            "be_required": True,
-                        },
-                        "actual": {"mfe_r": round(mfe_r, 3), "mae_r": round(mae_r, 3)},
-                        "expected": {"stop_at_break_even": True},
-                        "mfe_r": round(mfe_r, 3),
-                        "mae_r": round(mae_r, 3),
-                    },
-                )
-            )
+            detections.append(det)
 
-        # -- PREMATURE_BREAKEVEN -----------------------------------------
-        if (
-            sl_moved
-            and exit_mechanism.upper() in ("BREAK_EVEN_SL_HIT", "RISK_FREE_SL_HIT")
-            and mfe_r <= PREMATURE_BE_MAX_MFE_R
-            and holding_duration_sec >= PREMATURE_BE_MIN_HOLD_SEC
+        if det := self._check_premature_breakeven(
+            ticket, exp_id, ticket_ctx, sl_moved, exit_mechanism, mfe_r, holding_duration_sec
         ):
-            detections.append(
-                self._detection(
-                    "PREMATURE_BREAKEVEN",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.MEDIUM,
-                    0.7,
-                    {
-                        "explanation": "BE activated while MFE was still inside normal "
-                        "market noise, so normal fluctuation hit the BE stop",
-                        "threshold": {"max_mfe_r": PREMATURE_BE_MAX_MFE_R},
-                        "actual": {"mfe_r": round(mfe_r, 3)},
-                        "expected": {"mfe_r_floor": 0.0},
-                    },
-                )
-            )
+            detections.append(det)
 
-        # -- MODEL_REVERSAL_IGNORED --------------------------------------
-        if (
-            model_flip >= 1.0
-            and model_conf_at_exit is not None
-            and model_conf_at_exit <= MODEL_REVERSAL_CONF_FLOOR
-            and holding_duration_sec >= MODEL_REVERSAL_MIN_HOLD_SEC
-            and realized_r < 0.0
+        if det := self._check_model_reversal_ignored(
+            ticket,
+            exp_id,
+            ticket_ctx,
+            model_flip,
+            model_conf_at_exit,
+            holding_duration_sec,
+            realized_r,
         ):
-            detections.append(
-                self._detection(
-                    "MODEL_REVERSAL_IGNORED",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.HIGH,
-                    0.8,
-                    {
-                        "explanation": "model direction reversed materially and "
-                        "confidence collapsed while the position remained open",
-                        "threshold": {
-                            "conf_drop": MODEL_REVERSAL_CONF_DROP,
-                            "conf_floor": MODEL_REVERSAL_CONF_FLOOR,
-                        },
-                        "actual": {"conf_at_exit": round(model_conf_at_exit, 3)},
-                        "expected": {"conf_floor": 0.0},
-                        "model_flip": round(float(model_flip), 3),
-                    },
-                )
-            )
+            detections.append(det)
 
-        # -- REGIME_CHANGE_IGNORED ----------------------------------------
-        if (
-            regime_flip >= 1.0
-            and regime_at_exit
-            and holding_duration_sec >= REGIME_CHANGE_MIN_HOLD_SEC
-            and realized_r < 0.0
+        if det := self._check_regime_change_ignored(
+            ticket,
+            exp_id,
+            ticket_ctx,
+            regime_flip,
+            regime_at_exit,
+            holding_duration_sec,
+            realized_r,
         ):
-            detections.append(
-                self._detection(
-                    "REGIME_CHANGE_IGNORED",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.HIGH,
-                    0.75,
-                    {
-                        "explanation": "regime transitioned against the position and "
-                        "the system continued holding to a loss",
-                        "threshold": {"min_hold": REGIME_CHANGE_MIN_HOLD_SEC},
-                        "actual": {"regime_at_exit": regime_at_exit},
-                        "expected": {"regime": "compatible with entry"},
-                        "regime_flip": round(float(regime_flip), 3),
-                    },
-                )
-            )
+            detections.append(det)
 
-        # -- LIQUIDITY_REVERSAL_IGNORED ----------------------------------
-        if (
-            liquidity_sweep_opposite
-            and holding_duration_sec >= LIQUIDITY_REVERSAL_MIN_HOLD_SEC
-            and realized_r < 0.0
+        if det := self._check_liquidity_reversal_ignored(
+            ticket, exp_id, ticket_ctx, liquidity_sweep_opposite, holding_duration_sec, realized_r
         ):
-            detections.append(
-                self._detection(
-                    "LIQUIDITY_REVERSAL_IGNORED",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.HIGH,
-                    0.7,
-                    {
-                        "explanation": "liquidity swept opposite the position and the "
-                        "system continued holding to a loss",
-                        "threshold": {"min_hold": LIQUIDITY_REVERSAL_MIN_HOLD_SEC},
-                        "actual": {"sweep_opposite": True},
-                        "expected": {"exit_on_sweep": True},
-                    },
-                )
-            )
+            detections.append(det)
 
-        # -- RISK_DEVIATION (canonical vs intended) ----------------------
-        if (
-            actual_risk_usd is not None
-            and intended_risk_usd is not None
-            and intended_risk_usd > 0.0
+        if det := self._check_risk_deviation(
+            ticket, exp_id, ticket_ctx, actual_risk_usd, intended_risk_usd
         ):
-            deviation = abs(actual_risk_usd - intended_risk_usd) / intended_risk_usd
-            if deviation > RISK_DEVIATION_TOLERANCE:
-                detections.append(
-                    self._detection(
-                        "RISK_DEVIATION",
-                        ticket,
-                        exp_id,
-                        ticket_ctx,
-                        BehaviorSeverity.MEDIUM,
-                        min(0.95, 0.5 + deviation),
-                        {
-                            "explanation": "actual risk deviates from the RiskEngine "
-                            "intended risk beyond tolerance",
-                            "threshold": RISK_DEVIATION_TOLERANCE,
-                            "actual": round(float(actual_risk_usd), 2),
-                            "expected": round(float(intended_risk_usd), 2),
-                            "deviation": round(deviation, 3),
-                        },
-                    )
-                )
+            detections.append(det)
 
-        # -- EXIT_CLASSIFICATION_ANOMALY ---------------------------------
-        mech = exit_mechanism.upper()
-        if mech in ("RISK_FREE_SL_HIT", "BREAK_EVEN_SL_HIT") and not sl_moved:
-            detections.append(
-                self._detection(
-                    "EXIT_CLASSIFICATION_ANOMALY",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.MEDIUM,
-                    0.9,
-                    {
-                        "explanation": "exit recorded as risk-free/breakeven while "
-                        "was_sl_modified=false — the SL geometry contradicts the "
-                        "stored classification",
-                        "threshold": {"sl_modified": True},
-                        "actual": {"sl_modified": False, "exit_mechanism": mech},
-                        "expected": {"sl_modified": True},
-                    },
-                )
-            )
+        if det := self._check_exit_classification_anomaly(
+            ticket, exp_id, ticket_ctx, exit_mechanism, sl_moved
+        ):
+            detections.append(det)
 
-        # -- STRATEGY_CONTEXT_LOSS ----------------------------------------
-        if record is not None and not getattr(record, "strategy_id", ""):
-            detections.append(
-                self._detection(
-                    "STRATEGY_CONTEXT_LOSS",
-                    ticket,
-                    exp_id,
-                    ticket_ctx,
-                    BehaviorSeverity.MEDIUM,
-                    0.7,
-                    {
-                        "explanation": "closed trade carries no strategy attribution — "
-                        "learning/attribution context was lost between entry and exit",
-                        "threshold": {"strategy_id": "present"},
-                        "actual": {"strategy_id": ""},
-                        "expected": {"strategy_id": "present"},
-                    },
-                )
-            )
+        if det := self._check_strategy_context_loss(ticket, exp_id, ticket_ctx, record):
+            detections.append(det)
 
         return detections
 
