@@ -126,7 +126,9 @@ class SignalPolicy:
         if not isinstance(probs, list):
             probs = [probs]
 
-        dedup_proposal = self._evaluate_duplicate_tick(probs, current_tick, execution_id, regime_state)
+        dedup_proposal = self._evaluate_duplicate_tick(
+            probs, current_tick, execution_id, regime_state
+        )
         if dedup_proposal is not None:
             return dedup_proposal
 
@@ -209,7 +211,9 @@ class SignalPolicy:
                 self._last_active_direction_time = now
                 return reversal_proposal
 
-        throttle_proposal = self._evaluate_frequency_throttle(now, current_tick, regime_str, regime_conf)
+        throttle_proposal = self._evaluate_frequency_throttle(
+            now, current_tick, regime_str, regime_conf
+        )
         if throttle_proposal is not None:
             return throttle_proposal
 
@@ -578,8 +582,19 @@ class SignalPolicy:
         ) or is_strong_bearish_momentum
 
         tick_sweep_proposal = self._evaluate_tick_sweep(
-            sweep_sig, current_tick, ofi, tick_velocity, raw_prob_buy, raw_prob_sell,
-            is_range_market, execution_id, now, atr, regime_str, regime_conf, trend_strength
+            sweep_sig,
+            current_tick,
+            ofi,
+            tick_velocity,
+            raw_prob_buy,
+            raw_prob_sell,
+            is_range_market,
+            execution_id,
+            now,
+            atr,
+            regime_str,
+            regime_conf,
+            trend_strength,
         )
 
         # Update last tick trackers
@@ -592,9 +607,20 @@ class SignalPolicy:
             return tick_sweep_proposal
 
         predictive_proposal = self._evaluate_predictive_limit(
-            valid_ob, smc_god_mode_active, total_exposure, order_block_type, current_tick,
-            atr, completed_bars, execution_id, now, confidence, confidence_before_filters,
-            regime_str, regime_conf, trend_strength
+            valid_ob,
+            smc_god_mode_active,
+            total_exposure,
+            order_block_type,
+            current_tick,
+            atr,
+            completed_bars,
+            execution_id,
+            now,
+            confidence,
+            confidence_before_filters,
+            regime_str,
+            regime_conf,
+            trend_strength,
         )
         if predictive_proposal is not None:
             self._last_signal_time = now
@@ -1165,11 +1191,7 @@ class SignalPolicy:
         velocity_reverses = tick_velocity > 5.0
 
         sweep_direction_prob = (
-            raw_prob_buy
-            if direction == "BUY"
-            else raw_prob_sell
-            if direction == "SELL"
-            else 0.0
+            raw_prob_buy if direction == "BUY" else raw_prob_sell if direction == "SELL" else 0.0
         )
 
         sweep_conf_thresh = self.confidence_threshold + (
@@ -1445,7 +1467,9 @@ class SignalPolicy:
                 )
         return None
 
-    def _get_active_tickets_info(self, order_manager: Any) -> tuple[int, int, float | None, int | None, list[Any], dict[int, str]]:
+    def _get_active_tickets_info(
+        self, order_manager: Any
+    ) -> tuple[int, int, float | None, int | None, list[Any], dict[int, str]]:
         active_positions_count = 0
         active_pending_count = 0
         pending_price = None

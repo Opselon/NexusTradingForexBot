@@ -470,7 +470,6 @@ def _contract_section(engine: Any) -> dict[str, Any]:
             bundle = None
         if bundle is not None:
             try:
-
                 model = bundle.model
                 out_shape = None
                 if hasattr(model, "classifier_out"):
