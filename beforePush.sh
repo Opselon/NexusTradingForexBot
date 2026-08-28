@@ -10,8 +10,15 @@ set -euo pipefail
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
+
+# Always use the repository toolchain, not a globally installed CLI.
+PYTHON_BIN="${PYTHON_BIN:-.venv/Scripts/python.exe}"
+RUFF=("$PYTHON_BIN" -m ruff)
+MYPY=("$PYTHON_BIN" -m mypy)
+PYTEST=("$PYTHON_BIN" -m pytest)
 
 write_step() {
     echo -e "\n========================================================"
@@ -33,7 +40,7 @@ write_failure() {
 # 1. RUFF LINT & AUTO-FIX
 # -----------------------------------------------------------------------------
 write_step "1/4: Running Ruff Lint (with auto-fix)..."
-if ruff check . --fix --unsafe-fixes; then
+if "${RUFF[@]}" check . --fix --unsafe-fixes; then
     write_success "Ruff Lint checks passed!"
 else
     write_failure "Ruff Lint found unfixable errors. Fix them manually before pushing."
@@ -43,7 +50,7 @@ fi
 # 2. RUFF FORMATTING
 # -----------------------------------------------------------------------------
 write_step "2/4: Running Ruff Format..."
-if ruff format . && ruff format --check .; then
+if "${RUFF[@]}" format . && "${RUFF[@]}" format --check .; then
     write_success "Code formatted cleanly according to PEP 8 / Ruff style!"
 else
     write_failure "Ruff formatting check failed."
@@ -53,7 +60,7 @@ fi
 # 3. MYPY TYPE CHECKING
 # -----------------------------------------------------------------------------
 write_step "3/4: Running Mypy Type Checker on 'src'..."
-if mypy src; then
+if "${MYPY[@]}" src; then
     write_success "Mypy static type verification passed with 0 errors!"
 else
     write_failure "Mypy type checking failed. Fix type mismatches before pushing."
@@ -68,7 +75,7 @@ write_step "4/4: Running Critical-Suite Tests & Generating Coverage..."
 # legacy gate). Mirrors beforePush.ps1 semantics.
 if [[ "$*" == *"-FullSuite"* ]]; then
     write_step "4/4b: FULL suite gate requested (all unit tests - slow)"
-    if pytest tests/unit/ -q --tb=short; then
+    if "${PYTEST[@]}" tests/unit/ -q --tb=short; then
         write_success "All tests passed successfully!"
     else
         write_failure "One or more pytest test cases failed."
@@ -82,7 +89,7 @@ else
     if [ ${#CRIT_FILES[@]} -eq 0 ]; then
         CRIT_FILES=("tests/unit/")
     fi
-    if pytest "${CRIT_FILES[@]}" -n auto --dist worksteal -q --tb=short; then
+    if "${PYTEST[@]}" "${CRIT_FILES[@]}" -n auto --dist worksteal -q --tb=short; then
         write_success "All critical-suite tests passed successfully!"
     else
         write_failure "One or more critical-suite test cases failed."
@@ -99,7 +106,7 @@ fi
 # rules (TASK-12 §5).
 write_step "5/5: Running Forensic Deploy Gate..."
 GATE_EXIT=0
-if .venv/Scripts/python.exe -m nexus_scalp.cli.main forensic --deploy-gate --json > artifacts/forensics/deploy_gate_result.json 2>&1; then
+if "$PYTHON_BIN" -m nexus_scalp.cli.main forensic --deploy-gate --json > artifacts/forensics/deploy_gate_result.json 2>&1; then
     write_success "Forensic deploy gate: ALLOW (no critical conditions)."
 else
     GATE_EXIT=$?
