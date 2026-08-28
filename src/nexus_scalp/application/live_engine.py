@@ -1099,7 +1099,10 @@ class LiveEngine:
             # the serving bundle). _load_or_create_bundle raises on dimension
             # mismatch and quarantines corrupt checkpoints.
             import asyncio
-            new_bundle = await asyncio.to_thread(self._load_or_create_bundle, model_path=new_path, force_fresh=False)
+
+            new_bundle = await asyncio.to_thread(
+                self._load_or_create_bundle, model_path=new_path, force_fresh=False
+            )
 
             def _warmup_and_hash():
                 # Warm-up: one forward pass validates the artifact end-to-end.
