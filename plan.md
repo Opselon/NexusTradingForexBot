@@ -1,30 +1,14 @@
-All tests are synchronous. So using `import asyncio; asyncio.run(...)` will perfectly work!
-
-Let's summarize the changes:
-1. `src/nexus_scalp/ports/mt5_port.py`
-Change `def connect(self) -> bool:` to `async def connect(self) -> bool:`.
-2. `src/nexus_scalp/adapters/paper/paper_adapter.py`
-Change `def connect(self) -> bool:` to `async def connect(self) -> bool:`.
-3. `src/nexus_scalp/adapters/mt5/remote_gateway.py`
-Change `def connect(self) -> bool:` to `async def connect(self) -> bool:` and replace `time.sleep(0.5)` with `await asyncio.sleep(0.5)`. Add `import asyncio` if missing.
-4. `src/nexus_scalp/adapters/mt5/mt5_adapter.py`
-Change `def connect(self) -> bool:` to `async def connect(self) -> bool:` and replace `_time.sleep(backoff_ms / 1000.0)` with `import asyncio; await asyncio.sleep(backoff_ms / 1000.0)`.
-5. `src/nexus_scalp/application/live_engine.py`
-Line 1446: `mt5_connected = await self.adapter.connect()`
-Line 1604: `await self.adapter.connect()`
-6. Tests
-```bash
-sed -i 's/adapter.connect()/import asyncio; asyncio.run(adapter.connect())/g' tests/integration/test_accounting_api.py
-sed -i 's/adapter.connect()/import asyncio; asyncio.run(adapter.connect())/g' tests/integration/test_experience_execution_boundary.py
-sed -i 's/adapter.connect()/import asyncio; asyncio.run(adapter.connect())/g' tests/integration/test_live_freshness_g29.py
-sed -i 's/paper.connect()/import asyncio; asyncio.run(paper.connect())/g' tests/integration/test_live_freshness_g29.py
-sed -i 's/adapter.connect()/import asyncio; asyncio.run(adapter.connect())/g' tests/unit/test_mt5_status_endpoint.py
-```
-
-Wait, if there are OTHER sync usages of `time.sleep` in `mt5_adapter.py` inside `modify_order`, `close_position`, etc. why aren't we making those async too?
-The prompt specifically identifies the reconnect function:
-"File: src/nexus_scalp/adapters/mt5/mt5_adapter.py:181"
-"Issue: Synchronous sleep in async MT5 reconnect"
-This only addresses `connect()`. It's better to stick precisely to the described issue rather than rewriting the entire `DirectMT5Adapter` and `OrderLifecycleManager` to be async.
-
-Let's request plan review!
+1. **Understand the Goal**: The objective is to add tests for the `format_worker_status` function in `src/nexus_scalp/accounting/worker.py`.
+2. **Review Existing Code**: `format_worker_status` takes an `AccountingWorker` instance and extracts its state (e.g., `running`, `cycle_count`, `interval_sec`, `last_cycle_start`, `last_cycle_duration`, and `last_error`) to create a dictionary.
+3. **Plan Test Cases**: Add a new test method to `tests/unit/test_accounting_core.py` (specifically under the class `TestAccountingWorker`).
+    - **Test 1**: Verify `format_worker_status` when the worker is just initialized (no cycles run, `last_cycle_start` and `last_cycle_duration` are `None` or falsy).
+    - **Test 2**: Verify `format_worker_status` after a cycle has run (where `last_cycle_start` has a datetime, `last_cycle_duration` has a float, and `last_error` is populated or empty).
+    - **Test 3**: Verify `format_worker_status` handling errors (where `last_error` is a string).
+4. **Implement**:
+    - Write a function `test_format_worker_status(self, core)` inside `TestAccountingWorker`.
+    - Instantiate an `AccountingWorker`.
+    - Call `format_worker_status` on the unstarted worker. Assert the expected dictionary values (e.g., `"status": "IDLE"`, `"last_cycle_start": None`, etc.).
+    - Mock or manually set `worker.running = True`, `worker.cycle_count = 5`, `worker.last_cycle_start = datetime(2023, 1, 1, 12, 0, tzinfo=UTC)`, `worker.last_cycle_duration = 1.234`, `worker.last_error = "Some error"`.
+    - Call `format_worker_status` again. Assert the expected dictionary values (e.g., `"status": "RUNNING"`, `"last_cycle_start": "2023-01-01T12:00:00+00:00"`, `"last_cycle_duration_ms": 1234.0`, etc.).
+5. **Pre-commit**: Complete pre commit steps to ensure proper testing, verification, review, and reflection are done.
+6. **Submit**: Create PR.

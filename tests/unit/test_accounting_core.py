@@ -35,6 +35,7 @@ from nexus_scalp.accounting import (
     PeriodKind,
     TradeOutcome,
 )
+from nexus_scalp.accounting.worker import format_worker_status
 from nexus_scalp.accounting.aggregation import _usd_per_point, compute_drawdown
 from nexus_scalp.accounting.models import AccountSnapshot, TradeRecord
 from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, _classify_stop, normalize_trade_row
@@ -1524,6 +1525,32 @@ class TestWorker:
             w.tick()
         after = len(core.load_trades())
         assert before == after == 1
+
+    def test_format_worker_status(self, core) -> None:
+        """Verify format_worker_status output in different states."""
+        w = AccountingWorker(core=core, interval_sec=30.0)
+
+        # Initial state (idle)
+        status_idle = format_worker_status(w)
+        assert status_idle["running"] is False
+        assert status_idle["cycle_count"] == 0
+        assert status_idle["interval_sec"] == 30.0
+        assert status_idle["last_cycle_start"] is None
+        assert status_idle["last_cycle_duration_ms"] is None
+        assert status_idle["last_error"] == ""
+
+        # Active state (running)
+        dt = datetime(2023, 1, 1, 12, 0, tzinfo=UTC)
+        w.running = True
+        w.cycle_count = 5
+        w.last_cycle_start = dt
+        w.last_cycle_duration = 1.234
+
+        status_running = format_worker_status(w)
+        assert status_running["running"] is True
+        assert status_running["cycle_count"] == 5
+        assert status_running["last_cycle_start"] == dt.isoformat()
+        assert status_running["last_cycle_duration_ms"] == 1234.0
 
 
 # ---------------------------------------------------------------------------
