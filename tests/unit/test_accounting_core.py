@@ -35,7 +35,7 @@ from nexus_scalp.accounting import (
     PeriodKind,
     TradeOutcome,
 )
-from nexus_scalp.accounting.aggregation import compute_drawdown
+from nexus_scalp.accounting.aggregation import _usd_per_point, compute_drawdown
 from nexus_scalp.accounting.models import AccountSnapshot, TradeRecord
 from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, normalize_trade_row
 from nexus_scalp.accounting.periods import (
@@ -765,6 +765,99 @@ class TestTradeNormalization:
         # per point = 500/5 = 100 USD; risk = |2000-1990| * 100 = 1000; R = 500/1000
         assert record.risk_usd == pytest.approx(1000.0)
         assert record.realized_r == pytest.approx(0.5)
+
+    def test_usd_per_point_mae_happy_path(self) -> None:
+        record = normalize_trade_row(
+            {
+                "ticket": 99,
+                "symbol": "XAUUSD",
+                "direction": "BUY",
+                "volume": 1.0,
+                "entry_price": 2000.0,
+                "exit_price": 2005.0,
+                "gross_pnl_usd": 500.0,
+                "net_pnl_usd": 500.0,
+                "mae": -5.0,
+                "MAE_usd": -10.0,
+                "status": "CLOSED",
+            }
+        )
+        assert _usd_per_point(record) == pytest.approx(2.0)
+
+    def test_usd_per_point_mfe_happy_path_when_mae_missing(self) -> None:
+        record = normalize_trade_row(
+            {
+                "ticket": 100,
+                "symbol": "XAUUSD",
+                "direction": "BUY",
+                "volume": 1.0,
+                "entry_price": 2000.0,
+                "exit_price": 2005.0,
+                "gross_pnl_usd": 500.0,
+                "net_pnl_usd": 500.0,
+                "mfe": 10.0,
+                "MFE_usd": 20.0,
+                "status": "CLOSED",
+            }
+        )
+        assert _usd_per_point(record) == pytest.approx(2.0)
+
+    def test_usd_per_point_missing_values(self) -> None:
+        record = normalize_trade_row(
+            {
+                "ticket": 101,
+                "symbol": "XAUUSD",
+                "direction": "BUY",
+                "volume": 1.0,
+                "entry_price": 2000.0,
+                "exit_price": 2005.0,
+                "gross_pnl_usd": 500.0,
+                "net_pnl_usd": 500.0,
+                "status": "CLOSED",
+            }
+        )
+        assert _usd_per_point(record) is None
+
+    def test_usd_per_point_tiny_values_filtered(self) -> None:
+        record = normalize_trade_row(
+            {
+                "ticket": 102,
+                "symbol": "XAUUSD",
+                "direction": "BUY",
+                "volume": 1.0,
+                "entry_price": 2000.0,
+                "exit_price": 2005.0,
+                "gross_pnl_usd": 500.0,
+                "net_pnl_usd": 500.0,
+                "mae": 1e-10,
+                "MAE_usd": 1e-10,
+                "mfe": 1e-10,
+                "MFE_usd": 1e-10,
+                "status": "CLOSED",
+            }
+        )
+        assert _usd_per_point(record) is None
+
+    def test_usd_per_point_zero_values_filtered(self) -> None:
+        record = normalize_trade_row(
+            {
+                "ticket": 103,
+                "symbol": "XAUUSD",
+                "direction": "BUY",
+                "volume": 1.0,
+                "entry_price": 2000.0,
+                "exit_price": 2005.0,
+                "gross_pnl_usd": 500.0,
+                "net_pnl_usd": 500.0,
+                "mae": 0.0,
+                "MAE_usd": 0.0,
+                "mfe": 0.0,
+                "MFE_usd": 0.0,
+                "status": "CLOSED",
+            }
+        )
+        assert _usd_per_point(record) is None
+
 
     def test_r_unknown_when_no_risk_basis(self) -> None:
         record = normalize_trade_row(
