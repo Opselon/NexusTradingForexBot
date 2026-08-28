@@ -204,6 +204,15 @@ class BacktestResult(BaseModel):
     strategy_version: str = Field(...)
     dataset_id: str = Field(...)
     assumptions: ExecutionAssumptions = Field(default_factory=ExecutionAssumptions)
+    #: BUG-140 Phase 5: explicit evaluation semantics. EMPIRICAL_REPLAY
+    #: = expectancy recomputed over RECORDED experiences (what the engine
+    #: does today); HISTORICAL_SIMULATION = strategy logic executed against
+    #: raw market data producing synthetic trades. The two are NOT
+    #: scientifically equivalent; consumers must never conflate them.
+    evaluation_mode: str = Field(
+        default="EMPIRICAL_REPLAY",
+        description="EMPIRICAL_REPLAY | HISTORICAL_SIMULATION",
+    )
 
     total_trades: int = Field(default=0, ge=0)
     wins: int = Field(default=0, ge=0)

@@ -12,7 +12,7 @@ degradation. A strategy that succeeds in only one fold is not robust.
 from __future__ import annotations
 
 from nexus_scalp.observability.logging import get_logger
-from nexus_scalp.research.metrics import compute_backtest
+from nexus_scalp.research.metrics import compute_backtest, compute_relative_degradation
 from nexus_scalp.research.models import (
     ExecutionAssumptions,
     ResearchDataset,
@@ -155,10 +155,8 @@ class WalkForwardEngine:
 
         avg_val = _avg(val_expects)
         avg_oos = _avg(oos_expects)
-        # Degradation: relative drop from avg validation to avg OOS.
-        degradation = 0.0
-        if avg_val != 0.0:
-            degradation = (avg_val - avg_oos) / abs(avg_val)
+        # Degradation: relative drop from avg validation to avg OOS (stable formula).
+        degradation = compute_relative_degradation(avg_val, avg_oos)
 
         total_folds = len(fold_results)
         passed = (

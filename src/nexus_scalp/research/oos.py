@@ -11,7 +11,7 @@ negative is REJECTED even if win rate is high (spec 34).
 from __future__ import annotations
 
 from nexus_scalp.observability.logging import get_logger
-from nexus_scalp.research.metrics import compute_backtest
+from nexus_scalp.research.metrics import compute_backtest, compute_relative_degradation
 from nexus_scalp.research.models import (
     ExecutionAssumptions,
     OOSResult,
@@ -97,9 +97,7 @@ class OOSGate:
 
         in_exp = in_bt.expectancy_r
         oos_exp = oos_bt.expectancy_r
-        degradation = 0.0
-        if in_exp != 0.0:
-            degradation = (in_exp - oos_exp) / abs(in_exp)
+        degradation = compute_relative_degradation(in_exp, oos_exp)
 
         oos_samples = len(split.oos)
         reasons: list[str] = []

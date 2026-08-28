@@ -28,6 +28,12 @@ from nexus_scalp.research.models import ResearchDataset, ResearchSample
 #: otherwise configured.
 DEFAULT_VALIDATION_FRAC: float = 0.2
 DEFAULT_OOS_FRAC: float = 0.2
+#: BUG-140 Phase 7: leakage guards are ENABLED by default (were 0.0).
+#: 300s purge = a typical M1 scalp holding window; 60s embargo breaks
+#: label-horizon dependence on the boundary sample. Callers may still
+#: pass 0.0 explicitly, but the default no longer leaks.
+DEFAULT_PURGE_SECONDS: float = 300.0
+DEFAULT_EMBARGO_SECONDS: float = 60.0
 
 
 @dataclass(frozen=True)

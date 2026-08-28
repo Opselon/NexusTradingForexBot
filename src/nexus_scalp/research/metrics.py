@@ -67,6 +67,39 @@ def drawdown_metrics(r_series: Sequence[float]) -> tuple[float, float, int]:
     return max_dd, max_dd_r, max(recovery_trades, 0)
 
 
+def compute_relative_degradation(
+    in_sample: float,
+    out_of_sample: float,
+    *,
+    epsilon: float = 1e-4,
+    clip_max: float = 10.0,
+) -> float:
+    """Stable relative degradation: (in_sample - out_of_sample) / |in_sample|.
+
+    BUG-140 Phase 6: the previous inline formula divided by |in_sample|
+    unchecked, so an in-sample expectancy near zero exploded the ratio
+    (e.g. avg_val=0.0001R, avg_oos=-0.001R -> degradation=-11.0 or worse),
+    making the OOS gate's  comparison meaningless.
+
+    Semantics (deterministic, signed):
+      * |in_sample| >= epsilon : true relative ratio, clipped to
+        [-clip_max, +clip_max] so a pathological ratio can never dominate
+        gate arithmetic downstream.
+      * |in_sample| <  epsilon  : the ratio is numerically meaningless;
+        return the SIGN of the drop only (+1.0 degraded, -1.0 improved,
+        0.0 negligible) — enough for the gate's  comparison without
+        fabricating a magnitude.
+    """
+    diff = float(in_sample) - float(out_of_sample)
+    denom = abs(float(in_sample))
+    if denom < epsilon:
+        if abs(diff) < epsilon:
+            return 0.0
+        return 1.0 if diff > 0.0 else -1.0
+    ratio = diff / denom
+    return max(-clip_max, min(clip_max, ratio))
+
+
 def max_consecutive_losses(r_series: Sequence[float]) -> int:
     best = 0
     run = 0

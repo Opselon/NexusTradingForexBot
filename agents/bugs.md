@@ -6074,3 +6074,15 @@ Fix:
 4. tests/unit/test_outcome_recovery_sweep_bug140.py: 12 tests (full recovery, split-fill join, terminal states, open-position skip, causality refusal, no-dispatch skip, idempotency, dry-run, dataset census). QA added test_close_deal_different_order_ticket_recovered (documents the split-fill defect).
 
 Verification: 12 new PASS; neighboring suites 170 PASS. Real-data dry-run on artifacts/audit.db classifies 7 filled / 11 canceled / 255 no-dispatch (0 out of coverage).
+
+**Phases 4-7 (2026-08-29 Hermes-LifecycleFix): research evidence semantics + stable degradation + leakage-guard defaults.**
+
+Root cause: relative degradation in walkforward.py and oos.py divided by |in_sample| unchecked - a near-zero in-sample expectancy (e.g. 0.0001R) exploded the ratio to thousands, making the OOS max-degradation comparison meaningless (documented latent bug from the forensic audit). Backtest semantics were implicit: ledger replay was indistinguishable from a market simulation in the evidence layer. Purge/embargo defaults were 0.0 (leakage guards disabled).
+
+Fix:
+1. metrics.compute_relative_degradation(): shared stable helper (epsilon floor + sign-fallback below epsilon + clip to [-10,+10]).
+2. walkforward.py + oos.py: inline unstable division replaced with the shared helper (same gate thresholds; only the math is now bounded).
+3. BacktestResult.evaluation_mode: explicit EMPIRICAL_REPLAY | HISTORICAL_SIMULATION field (default EMPIRICAL_REPLAY, which is what compute_backtest does) so UI/API/DB can never conflate ledger replay with a market simulation.
+4. splitting.py: DEFAULT_PURGE_SECONDS=300.0 / DEFAULT_EMBARGO_SECONDS=60.0 exported as the no-leakage default contract (callers may still pass 0.0 explicitly; thresholds untouched).
+
+Tests: tests/unit/test_evidence_semantics_bug140.py (6 tests, PASS). Neighboring research suites (task4 validation/dataset, phase09b, phase26 context-aware, phase21 observability) 107 PASS.
