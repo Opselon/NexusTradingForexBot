@@ -1357,8 +1357,13 @@ class AuditRepository:
             if batch:
                 try:
                     with conn:
-                        for query, args in batch:
-                            conn.execute(query, args)
+                        import itertools
+                        for query, group in itertools.groupby(batch, key=lambda x: x[0]):
+                            args_list = [item[1] for item in group]
+                            if len(args_list) == 1:
+                                conn.execute(query, args_list[0])
+                            else:
+                                conn.executemany(query, args_list)
                     for _ in batch:
                         q.task_done()
                 except Exception as e:
