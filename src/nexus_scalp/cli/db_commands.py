@@ -537,8 +537,7 @@ def _migration_template(domain: str, name: str) -> str:
         f"import sqlite3\n\n\n"
         f"def apply(conn: sqlite3.Connection, db_path: Path) -> None:\n"
         f'    """Apply the schema change (idempotent)."""\n'
-        f"    # TODO: implement\n"
-        f"    pass\n\n\n"
+        f"    raise NotImplementedError\n\n\n"
         f"def verify(conn: sqlite3.Connection, db_path: Path) -> bool:\n"
         f'    """Return True when the change is present."""\n'
         f"    return True\n\n\n"

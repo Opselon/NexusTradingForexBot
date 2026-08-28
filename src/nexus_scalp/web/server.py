@@ -22,6 +22,7 @@ from typing import Any
 import yaml
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from nexus_scalp.accounting import PeriodKind
@@ -424,6 +425,14 @@ def db_path_for_audit() -> str:
 def create_app(engine_ref: Any = None) -> FastAPI:
     """Creates and configures the FastAPI web server instance."""
     app = FastAPI(title="Nexus Scalp Engine Control Center", version="0.1.0")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # Store engine reference in app state
     app.state.engine = engine_ref
