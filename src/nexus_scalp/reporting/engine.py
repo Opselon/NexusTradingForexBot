@@ -1041,7 +1041,7 @@ class PerformanceReportEngine:
                 )
                 conn.execute("DELETE FROM _tmp_rpt_tickets")
                 conn.executemany(
-                    "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", [(t,) for t in tickets]
+                    "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", ((t,) for t in tickets)
                 )
 
                 rows = [
@@ -1112,7 +1112,7 @@ class PerformanceReportEngine:
                 )
                 conn.execute("DELETE FROM _tmp_rpt_tickets")
                 conn.executemany(
-                    "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", [(t,) for t in tickets]
+                    "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", ((t,) for t in tickets)
                 )
 
                 rows = [

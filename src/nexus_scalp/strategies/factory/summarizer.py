@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing import Any
 
 from nexus_scalp.strategies.factory.models import (
-    FailureReason,
     GenerationSummary,
     StrategyFamily,
 )
@@ -258,7 +257,6 @@ def format_summary_for_prompt(memory: dict[str, Any]) -> str:
 
 
 __all__ = [
-    "FailureReason",
     "GenerationSummary",
     "StrategyFamily",
     "build_summary",

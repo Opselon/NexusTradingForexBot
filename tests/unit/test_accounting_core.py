@@ -37,8 +37,9 @@ from nexus_scalp.accounting import (
 )
 from nexus_scalp.accounting.aggregation import _usd_per_point, compute_drawdown
 from nexus_scalp.accounting.models import AccountSnapshot, TradeRecord
-from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, normalize_trade_row
+from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, _classify_stop, normalize_trade_row
 from nexus_scalp.accounting.periods import (
+    _floor_day,
     ensure_utc,
     parse_sql_timestamp,
     period_bounds,
@@ -302,11 +303,30 @@ class TestPeriodBounds:
         b = period_bounds(PeriodKind.MONTH, datetime(2026, 12, 25, tzinfo=UTC))
         assert b.end == datetime(2027, 1, 1, tzinfo=UTC)
 
+    def test_start_sql_and_end_sql(self) -> None:
+        moment = datetime(2026, 8, 15, 14, 30, 0, tzinfo=UTC)
+        b = period_bounds(PeriodKind.DAY, moment)
+        assert b.start_sql == "2026-08-15 00:00:00"
+        assert b.end_sql == "2026-08-16 00:00:00"
+
     def test_year_bounds(self) -> None:
         b = period_bounds(PeriodKind.YEAR, datetime(2026, 8, 15, tzinfo=UTC))
         assert b.start == datetime(2026, 1, 1, tzinfo=UTC)
         assert b.end == datetime(2027, 1, 1, tzinfo=UTC)
         assert b.key == "2026"
+
+    def test_floor_day(self) -> None:
+        moment = datetime(2026, 8, 15, 14, 30, 45, 123456, tzinfo=UTC)
+        floored = _floor_day(moment)
+        assert floored == datetime(2026, 8, 15, 0, 0, 0, 0, tzinfo=UTC)
+        assert floored.hour == 0
+        assert floored.minute == 0
+        assert floored.second == 0
+        assert floored.microsecond == 0
+        assert floored.year == 2026
+        assert floored.month == 8
+        assert floored.day == 15
+        assert floored.tzinfo == UTC
 
     def test_naive_datetime_assumed_utc(self) -> None:
         naive = datetime(2026, 8, 15, 3, 0, 0)  # no tzinfo
@@ -326,12 +346,23 @@ class TestPeriodBounds:
         assert parse_sql_timestamp("2026-08-15 10:00:00").hour == 10
         assert parse_sql_timestamp("2026-08-15T10:00:00+00:00").hour == 10
         assert parse_sql_timestamp("2026-08-15T10:00:00Z").hour == 10
+        assert parse_sql_timestamp("2026-08-15").hour == 0
+        assert parse_sql_timestamp("2026-08-15").day == 15
+        assert parse_sql_timestamp("2026-08-15 10:00:00.123456").microsecond == 123456
         assert parse_sql_timestamp(None) is None
+        assert parse_sql_timestamp("") is None
+        assert parse_sql_timestamp("   ") is None
         assert parse_sql_timestamp("garbage") is None
+        assert parse_sql_timestamp("2026-13-45") is None
 
     def test_ensure_utc_converts_offsets(self) -> None:
         shifted = datetime(2026, 8, 15, 12, 0, 0, tzinfo=timezone(timedelta(hours=3)))
         assert ensure_utc(shifted).hour == 9
+
+    def test_period_bounds_sql_properties(self) -> None:
+        b = period_bounds(PeriodKind.DAY, datetime(2026, 8, 15, 14, 30, 0, tzinfo=UTC))
+        assert b.start_sql == "2026-08-15 00:00:00"
+        assert b.end_sql == "2026-08-16 00:00:00"
 
 
 from datetime import timezone  # noqa: E402
@@ -692,6 +723,131 @@ class TestClosureClassification:
     def test_emergency_close(self) -> None:
         cls, _ = classify_exit(self._row(exit_mechanism="PROFIT_GIVEBACK_PROTECTION"))
         assert cls is ExitClassification.EMERGENCY_EXIT
+
+
+
+
+class TestClassifyStopDirectly:
+    def test_unmodified_stop(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=1990.0,
+            was_sl_modified=False,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.INITIAL_STOP
+
+    def test_zero_prices_fallback(self) -> None:
+        cls1 = _classify_stop(
+            is_long=True,
+            entry=0.0,
+            initial_sl=0.0,
+            final_sl=0.0,
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls1 is ExitClassification.BREAKEVEN_STOP
+
+        cls2 = _classify_stop(
+            is_long=True,
+            entry=0.0,
+            initial_sl=0.0,
+            final_sl=0.0,
+            was_sl_modified=True,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        assert cls2 is ExitClassification.INITIAL_STOP
+
+    def test_trailing_stop_long(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=2010.0,
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.TRAILING_STOP
+
+    def test_trailing_stop_short(self) -> None:
+        cls = _classify_stop(
+            is_long=False,
+            entry=2000.0,
+            initial_sl=2010.0,
+            final_sl=1990.0,
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.TRAILING_STOP
+
+    def test_breakeven_stop_long(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=2000.1,  # within point_tolerance
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.BREAKEVEN_STOP
+
+    def test_breakeven_stop_short(self) -> None:
+        cls = _classify_stop(
+            is_long=False,
+            entry=2000.0,
+            initial_sl=2010.0,
+            final_sl=1999.9,  # within point_tolerance
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.BREAKEVEN_STOP
+
+    def test_tightened_stop_long(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=1995.0,
+            was_sl_modified=True,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        # It's a trailing stop because it moved more than tolerance,
+        # even though it didn't cross entry.
+        assert cls is ExitClassification.TRAILING_STOP
+
+    def test_tightened_stop_short(self) -> None:
+        cls = _classify_stop(
+            is_long=False,
+            entry=2000.0,
+            initial_sl=2010.0,
+            final_sl=2005.0,
+            was_sl_modified=True,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.TRAILING_STOP
+
+    def test_tiny_modification_initial_stop(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=1990.1,  # less than tolerance
+            was_sl_modified=True,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.INITIAL_STOP
 
 
 # ---------------------------------------------------------------------------

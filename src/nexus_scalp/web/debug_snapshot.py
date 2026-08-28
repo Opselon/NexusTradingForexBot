@@ -470,7 +470,6 @@ def _contract_section(engine: Any) -> dict[str, Any]:
             bundle = None
         if bundle is not None:
             try:
-                import torch  # noqa: F401
 
                 model = bundle.model
                 out_shape = None
@@ -541,7 +540,6 @@ def _model_section(engine: Any) -> dict[str, Any]:
             out["reason"] = "NO_MODEL_BUNDLE"
             return out
         import numpy as np
-        import torch  # noqa: F401
 
         scaler_ready = bool(getattr(bundle.scaler, "is_ready", lambda: False)())
         model = bundle.model
