@@ -70,6 +70,422 @@ class RuleMatrixEngine:
     # CORE EVALUATIONS
     # =========================================================================
 
+    def _eval_rule_fvg_sniper_fill(
+        self, tick: TickData, fv: FeatureVector
+    ) -> Optional[TradeProposal]:
+        params = self.get_params("RULE_FVG_SNIPER_FILL")
+        # Trigger: FVG is precisely tapped and active
+        fvg_bullish = getattr(fv, "fvg_bullish_active", False)
+        fvg_bearish = getattr(fv, "fvg_bearish_active", False)
+
+        # Since we tap the gap, we enter limit orders or market depending on setup
+        if fvg_bullish:
+            target_entry = tick.ask
+            return TradeProposal(
+                request_id="RULE_FVG_SNIPER_FILL_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.BUY_MARKET,
+                confidence=0.90,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry - 1.5, 2),
+                take_profit=round(target_entry + 2.5, 2),
+                risk_reward_ratio=1.67,
+                reason_code="RULE_FVG_SNIPER_FILL",
+            )
+        elif fvg_bearish:
+            target_entry = tick.bid
+            return TradeProposal(
+                request_id="RULE_FVG_SNIPER_FILL_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.SELL_MARKET,
+                confidence=0.90,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry + 1.5, 2),
+                take_profit=round(target_entry - 2.5, 2),
+                risk_reward_ratio=1.67,
+                reason_code="RULE_FVG_SNIPER_FILL",
+            )
+        return None
+
+    def _eval_rule_judas_swing_fade(
+        self, tick: TickData, fv: FeatureVector
+    ) -> Optional[TradeProposal]:
+        # Asian high/low fakeout followed by immediate rejection
+        broke_high = getattr(fv, "broke_previous_high", False)
+        broke_low = getattr(fv, "broke_previous_low", False)
+        disp = getattr(fv, "live_tick_displacement", 0.0)
+
+        # If broke high but displacement is strongly negative (rejection) -> Short
+        if broke_high and disp < -0.30:
+            target_entry = tick.bid
+            return TradeProposal(
+                request_id="RULE_JUDAS_SWING_FADE_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.SELL_MARKET,
+                confidence=0.88,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry + 1.8, 2),
+                take_profit=round(target_entry - 2.2, 2),
+                risk_reward_ratio=1.22,
+                reason_code="RULE_JUDAS_SWING_FADE",
+            )
+        # If broke low but displacement is strongly positive (rejection) -> Long
+        elif broke_low and disp > 0.30:
+            target_entry = tick.ask
+            return TradeProposal(
+                request_id="RULE_JUDAS_SWING_FADE_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.BUY_MARKET,
+                confidence=0.88,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry - 1.8, 2),
+                take_profit=round(target_entry + 2.2, 2),
+                risk_reward_ratio=1.22,
+                reason_code="RULE_JUDAS_SWING_FADE",
+            )
+        return None
+
+    def _eval_rule_orderblock_tap_reserve(
+        self, tick: TickData, fv: FeatureVector
+    ) -> Optional[TradeProposal]:
+        ob_type = getattr(fv, "order_block_type", 0)
+        # Check 50% tap mark of an unmitigated Order Block with volume checking
+        # ob_type = 1 (bullish OB), -1 (bearish OB)
+        if ob_type == 1:
+            target_entry = tick.ask
+            return TradeProposal(
+                request_id="RULE_ORDERBLOCK_TAP_RESERVE_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.BUY_MARKET,
+                confidence=0.85,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry - 1.2, 2),
+                take_profit=round(target_entry + 2.0, 2),
+                risk_reward_ratio=1.67,
+                reason_code="RULE_ORDERBLOCK_TAP_RESERVE",
+            )
+        elif ob_type == -1:
+            target_entry = tick.bid
+            return TradeProposal(
+                request_id="RULE_ORDERBLOCK_TAP_RESERVE_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.SELL_MARKET,
+                confidence=0.85,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry + 1.2, 2),
+                take_profit=round(target_entry - 2.0, 2),
+                risk_reward_ratio=1.67,
+                reason_code="RULE_ORDERBLOCK_TAP_RESERVE",
+            )
+        return None
+
+    def _eval_rule_wick_absorption_play(
+        self, tick: TickData, fv: FeatureVector
+    ) -> Optional[TradeProposal]:
+        # Leaves a long wick and next tick changes direction
+        disp = getattr(fv, "live_tick_displacement", 0.0)
+        # A rough heuristic for long wick absorption play
+        if disp > 0.80:  # rapid upward wick, looks like absorption, fade it
+            target_entry = tick.bid
+            return TradeProposal(
+                request_id="RULE_WICK_ABSORPTION_PLAY_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.SELL_MARKET,
+                confidence=0.80,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry + 1.0, 2),
+                take_profit=round(target_entry - 1.5, 2),
+                risk_reward_ratio=1.50,
+                reason_code="RULE_WICK_ABSORPTION_PLAY",
+            )
+        elif disp < -0.80:
+            target_entry = tick.ask
+            return TradeProposal(
+                request_id="RULE_WICK_ABSORPTION_PLAY_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.BUY_MARKET,
+                confidence=0.80,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry - 1.0, 2),
+                take_profit=round(target_entry + 1.5, 2),
+                risk_reward_ratio=1.50,
+                reason_code="RULE_WICK_ABSORPTION_PLAY",
+            )
+        return None
+
+    def _eval_rule_flash_momentum_scrape(
+        self, tick: TickData, regime_state: Optional[MarketRegimeState], probs: List[float]
+    ) -> Optional[TradeProposal]:
+        params = self.get_params("RULE_FLASH_MOMENTUM_SCRAPE")
+        tv = regime_state.tick_velocity_per_sec if regime_state else 0.0
+        # Velocity >= 15 ticks/sec or 99th percentile
+        if tv >= 15.0:
+            # Enter in the direction of momentum
+            action = ActionType.BUY_MARKET if probs[1] > probs[2] else ActionType.SELL_MARKET
+            target_entry = tick.ask if action == ActionType.BUY_MARKET else tick.bid
+            sl_dist = 1.5
+            return TradeProposal(
+                request_id="RULE_FLASH_MOMENTUM_SCRAPE_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=action,
+                confidence=0.95,
+                proposed_entry=target_entry,
+                stop_loss=round(
+                    target_entry - sl_dist
+                    if action == ActionType.BUY_MARKET
+                    else target_entry + sl_dist,
+                    2,
+                ),
+                take_profit=round(
+                    target_entry + sl_dist * 2.0
+                    if action == ActionType.BUY_MARKET
+                    else target_entry - sl_dist * 2.0,
+                    2,
+                ),
+                risk_reward_ratio=2.0,
+                reason_code="RULE_FLASH_MOMENTUM_SCRAPE",
+            )
+        return None
+
+    def _eval_rule_tick_imbalance_reversal(
+        self, tick: TickData, regime_state: Optional[MarketRegimeState]
+    ) -> Optional[TradeProposal]:
+        ofi = regime_state.order_flow_imbalance if regime_state else 0.0
+        # OFI extreme selling/buying exhaustion with price stabilization
+        if ofi <= -0.80:  # Extreme selling pressure, buy the stabilization
+            target_entry = tick.ask
+            return TradeProposal(
+                request_id="RULE_TICK_IMBALANCE_REVERSAL_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.BUY_MARKET,
+                confidence=0.87,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry - 1.1, 2),
+                take_profit=round(target_entry + 1.8, 2),
+                risk_reward_ratio=1.63,
+                reason_code="RULE_TICK_IMBALANCE_REVERSAL",
+            )
+        elif ofi >= 0.80:  # Extreme buying pressure, sell the stabilization
+            target_entry = tick.bid
+            return TradeProposal(
+                request_id="RULE_TICK_IMBALANCE_REVERSAL_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.SELL_MARKET,
+                confidence=0.87,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry + 1.1, 2),
+                take_profit=round(target_entry - 1.8, 2),
+                risk_reward_ratio=1.63,
+                reason_code="RULE_TICK_IMBALANCE_REVERSAL",
+            )
+        return None
+
+    def _eval_rule_news_spike_fade(
+        self, tick: TickData, fv: FeatureVector, regime_state: Optional[MarketRegimeState]
+    ) -> Optional[TradeProposal]:
+        if regime_state and regime_state.regime_type == RegimeType.MACRO_NEWS_FREEZE:
+            # News freeze, wait for pullback
+            disp = getattr(fv, "live_tick_displacement", 0.0)
+            if abs(disp) >= 2.5:  # massive move, fade it
+                action = ActionType.SELL_MARKET if disp > 0 else ActionType.BUY_MARKET
+                target_entry = tick.bid if action == ActionType.SELL_MARKET else tick.ask
+                return TradeProposal(
+                    request_id="RULE_NEWS_SPIKE_FADE_" + str(datetime.now().timestamp()),
+                    symbol=tick.symbol,
+                    generated_at=tick.timestamp,
+                    action=action,
+                    confidence=0.85,
+                    proposed_entry=target_entry,
+                    stop_loss=round(
+                        target_entry + 3.0
+                        if action == ActionType.SELL_MARKET
+                        else target_entry - 3.0,
+                        2,
+                    ),
+                    take_profit=round(
+                        target_entry - 4.5
+                        if action == ActionType.SELL_MARKET
+                        else target_entry + 4.5,
+                        2,
+                    ),
+                    risk_reward_ratio=1.50,
+                    reason_code="RULE_NEWS_SPIKE_FADE",
+                )
+        return None
+
+    def _eval_rule_end_of_hour_squeeze(
+        self, tick: TickData, probs: List[float]
+    ) -> Optional[TradeProposal]:
+        now_dt = datetime.now()
+        if now_dt.minute == 59:
+            # Hunts 1-minute moves at 59th minute
+            action = ActionType.BUY_MARKET if probs[1] > probs[2] else ActionType.SELL_MARKET
+            target_entry = tick.ask if action == ActionType.BUY_MARKET else tick.bid
+            return TradeProposal(
+                request_id="RULE_END_OF_HOUR_SQUEEZE_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=action,
+                confidence=0.82,
+                proposed_entry=target_entry,
+                stop_loss=round(
+                    target_entry - 1.5 if action == ActionType.BUY_MARKET else target_entry + 1.5,
+                    2,
+                ),
+                take_profit=round(
+                    target_entry + 2.0 if action == ActionType.BUY_MARKET else target_entry - 2.0,
+                    2,
+                ),
+                risk_reward_ratio=1.33,
+                reason_code="RULE_END_OF_HOUR_SQUEEZE",
+            )
+        return None
+
+    def _eval_rule_vwap_elastic_band(
+        self, tick: TickData, fv: FeatureVector
+    ) -> Optional[TradeProposal]:
+        # For simplicity, if cross-asset Z score is extremely stretched
+        z_score = getattr(fv, "cross_asset_z_score", 0.0)
+        if z_score >= 3.5:  # Stretch sell
+            target_entry = tick.bid
+            return TradeProposal(
+                request_id="RULE_VWAP_ELASTIC_BAND_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.SELL_MARKET,
+                confidence=0.91,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry + 1.5, 2),
+                take_profit=round(target_entry - 2.5, 2),
+                risk_reward_ratio=1.67,
+                reason_code="RULE_VWAP_ELASTIC_BAND",
+            )
+        elif z_score <= -3.5:  # Stretch buy
+            target_entry = tick.ask
+            return TradeProposal(
+                request_id="RULE_VWAP_ELASTIC_BAND_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.BUY_MARKET,
+                confidence=0.91,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry - 1.5, 2),
+                take_profit=round(target_entry + 2.5, 2),
+                risk_reward_ratio=1.67,
+                reason_code="RULE_VWAP_ELASTIC_BAND",
+            )
+        return None
+
+    def _eval_rule_bollinger_burst_fade(
+        self, tick: TickData, fv: FeatureVector
+    ) -> Optional[TradeProposal]:
+        # Extreme high/low indicator from features
+        at_high = getattr(fv, "is_at_extreme_high", False)
+        at_low = getattr(fv, "is_at_extreme_low", False)
+        if at_high:
+            target_entry = tick.bid
+            return TradeProposal(
+                request_id="RULE_BOLLINGER_BURST_FADE_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.SELL_MARKET,
+                confidence=0.84,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry + 1.6, 2),
+                take_profit=round(target_entry - 2.2, 2),
+                risk_reward_ratio=1.38,
+                reason_code="RULE_BOLLINGER_BURST_FADE",
+            )
+        elif at_low:
+            target_entry = tick.ask
+            return TradeProposal(
+                request_id="RULE_BOLLINGER_BURST_FADE_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.BUY_MARKET,
+                confidence=0.84,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry - 1.6, 2),
+                take_profit=round(target_entry + 2.2, 2),
+                risk_reward_ratio=1.38,
+                reason_code="RULE_BOLLINGER_BURST_FADE",
+            )
+        return None
+
+    def _eval_rule_gap_and_go_momentum(
+        self, tick: TickData, probs: List[float]
+    ) -> Optional[TradeProposal]:
+        # Check if Monday open and a gap occurred
+        now_dt = datetime.now()
+        if now_dt.weekday() == 0 and now_dt.hour == 0 and now_dt.minute == 0:
+            action = ActionType.BUY_MARKET if probs[1] > probs[2] else ActionType.SELL_MARKET
+            target_entry = tick.ask if action == ActionType.BUY_MARKET else tick.bid
+            return TradeProposal(
+                request_id="RULE_GAP_AND_GO_MOMENTUM_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=action,
+                confidence=0.81,
+                proposed_entry=target_entry,
+                stop_loss=round(
+                    target_entry - 1.5 if action == ActionType.BUY_MARKET else target_entry + 1.5,
+                    2,
+                ),
+                take_profit=round(
+                    target_entry + 2.0 if action == ActionType.BUY_MARKET else target_entry - 2.0,
+                    2,
+                ),
+                risk_reward_ratio=1.33,
+                reason_code="RULE_GAP_AND_GO_MOMENTUM",
+            )
+        return None
+
+    def _eval_rule_contrarian_retail_trap(
+        self, tick: TickData, fv: FeatureVector
+    ) -> Optional[TradeProposal]:
+        # Enter contrarian when retail screams buy/sell but tick volume is entirely passive
+        rsi = getattr(fv, "rsi_m15", 50.0) if hasattr(fv, "rsi_m15") else 50.0
+        if rsi > 85.0:  # retail overbought trap -> Short
+            target_entry = tick.bid
+            return TradeProposal(
+                request_id="RULE_CONTRARIAN_RETAIL_TRAP_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.SELL_MARKET,
+                confidence=0.89,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry + 1.4, 2),
+                take_profit=round(target_entry - 2.4, 2),
+                risk_reward_ratio=1.71,
+                reason_code="RULE_CONTRARIAN_RETAIL_TRAP",
+            )
+        elif rsi < 15.0:  # retail oversold trap -> Long
+            target_entry = tick.ask
+            return TradeProposal(
+                request_id="RULE_CONTRARIAN_RETAIL_TRAP_" + str(datetime.now().timestamp()),
+                symbol=tick.symbol,
+                generated_at=tick.timestamp,
+                action=ActionType.BUY_MARKET,
+                confidence=0.89,
+                proposed_entry=target_entry,
+                stop_loss=round(target_entry - 1.4, 2),
+                take_profit=round(target_entry + 2.4, 2),
+                risk_reward_ratio=1.71,
+                reason_code="RULE_CONTRARIAN_RETAIL_TRAP",
+            )
+        return None
+
     def evaluate_pre_trade_entry(
         self,
         tick: TickData,
@@ -82,405 +498,53 @@ class RuleMatrixEngine:
         returns the custom TradeProposal generated by that rule.
         Otherwise, returns None.
         """
-        # RULE 1: RULE_FVG_SNIPER_FILL
         if self.is_enabled("RULE_FVG_SNIPER_FILL"):
-            params = self.get_params("RULE_FVG_SNIPER_FILL")
-            # Trigger: FVG is precisely tapped and active
-            fvg_bullish = getattr(fv, "fvg_bullish_active", False)
-            fvg_bearish = getattr(fv, "fvg_bearish_active", False)
+            if proposal := self._eval_rule_fvg_sniper_fill(tick, fv):
+                return proposal
 
-            # Since we tap the gap, we enter limit orders or market depending on setup
-            if fvg_bullish:
-                target_entry = tick.ask
-                return TradeProposal(
-                    request_id="RULE_FVG_SNIPER_FILL_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.BUY_MARKET,
-                    confidence=0.90,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.5, 2),
-                    take_profit=round(target_entry + 2.5, 2),
-                    risk_reward_ratio=1.67,
-                    reason_code="RULE_FVG_SNIPER_FILL",
-                )
-            elif fvg_bearish:
-                target_entry = tick.bid
-                return TradeProposal(
-                    request_id="RULE_FVG_SNIPER_FILL_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.SELL_MARKET,
-                    confidence=0.90,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry + 1.5, 2),
-                    take_profit=round(target_entry - 2.5, 2),
-                    risk_reward_ratio=1.67,
-                    reason_code="RULE_FVG_SNIPER_FILL",
-                )
-
-        # RULE 2: RULE_JUDAS_SWING_FADE
         if self.is_enabled("RULE_JUDAS_SWING_FADE"):
-            # Asian high/low fakeout followed by immediate rejection
-            broke_high = getattr(fv, "broke_previous_high", False)
-            broke_low = getattr(fv, "broke_previous_low", False)
-            disp = getattr(fv, "live_tick_displacement", 0.0)
+            if proposal := self._eval_rule_judas_swing_fade(tick, fv):
+                return proposal
 
-            # If broke high but displacement is strongly negative (rejection) -> Short
-            if broke_high and disp < -0.30:
-                target_entry = tick.bid
-                return TradeProposal(
-                    request_id="RULE_JUDAS_SWING_FADE_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.SELL_MARKET,
-                    confidence=0.88,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry + 1.8, 2),
-                    take_profit=round(target_entry - 2.2, 2),
-                    risk_reward_ratio=1.22,
-                    reason_code="RULE_JUDAS_SWING_FADE",
-                )
-            # If broke low but displacement is strongly positive (rejection) -> Long
-            elif broke_low and disp > 0.30:
-                target_entry = tick.ask
-                return TradeProposal(
-                    request_id="RULE_JUDAS_SWING_FADE_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.BUY_MARKET,
-                    confidence=0.88,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.8, 2),
-                    take_profit=round(target_entry + 2.2, 2),
-                    risk_reward_ratio=1.22,
-                    reason_code="RULE_JUDAS_SWING_FADE",
-                )
-
-        # RULE 4: RULE_ORDERBLOCK_TAP_RESERVE
         if self.is_enabled("RULE_ORDERBLOCK_TAP_RESERVE"):
-            ob_type = getattr(fv, "order_block_type", 0)
-            # Check 50% tap mark of an unmitigated Order Block with volume checking
-            # ob_type = 1 (bullish OB), -1 (bearish OB)
-            if ob_type == 1:
-                target_entry = tick.ask
-                return TradeProposal(
-                    request_id="RULE_ORDERBLOCK_TAP_RESERVE_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.BUY_MARKET,
-                    confidence=0.85,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.2, 2),
-                    take_profit=round(target_entry + 2.0, 2),
-                    risk_reward_ratio=1.67,
-                    reason_code="RULE_ORDERBLOCK_TAP_RESERVE",
-                )
-            elif ob_type == -1:
-                target_entry = tick.bid
-                return TradeProposal(
-                    request_id="RULE_ORDERBLOCK_TAP_RESERVE_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.SELL_MARKET,
-                    confidence=0.85,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry + 1.2, 2),
-                    take_profit=round(target_entry - 2.0, 2),
-                    risk_reward_ratio=1.67,
-                    reason_code="RULE_ORDERBLOCK_TAP_RESERVE",
-                )
+            if proposal := self._eval_rule_orderblock_tap_reserve(tick, fv):
+                return proposal
 
-        # RULE 5: RULE_WICK_ABSORPTION_PLAY
         if self.is_enabled("RULE_WICK_ABSORPTION_PLAY"):
-            # Leaves a long wick and next tick changes direction
-            disp = getattr(fv, "live_tick_displacement", 0.0)
-            # A rough heuristic for long wick absorption play
-            if disp > 0.80:  # rapid upward wick, looks like absorption, fade it
-                target_entry = tick.bid
-                return TradeProposal(
-                    request_id="RULE_WICK_ABSORPTION_PLAY_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.SELL_MARKET,
-                    confidence=0.80,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry + 1.0, 2),
-                    take_profit=round(target_entry - 1.5, 2),
-                    risk_reward_ratio=1.50,
-                    reason_code="RULE_WICK_ABSORPTION_PLAY",
-                )
-            elif disp < -0.80:
-                target_entry = tick.ask
-                return TradeProposal(
-                    request_id="RULE_WICK_ABSORPTION_PLAY_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.BUY_MARKET,
-                    confidence=0.80,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.0, 2),
-                    take_profit=round(target_entry + 1.5, 2),
-                    risk_reward_ratio=1.50,
-                    reason_code="RULE_WICK_ABSORPTION_PLAY",
-                )
+            if proposal := self._eval_rule_wick_absorption_play(tick, fv):
+                return proposal
 
-        # RULE 6: RULE_FLASH_MOMENTUM_SCRAPE
         if self.is_enabled("RULE_FLASH_MOMENTUM_SCRAPE"):
-            params = self.get_params("RULE_FLASH_MOMENTUM_SCRAPE")
-            tv = regime_state.tick_velocity_per_sec if regime_state else 0.0
-            # Velocity >= 15 ticks/sec or 99th percentile
-            if tv >= 15.0:
-                # Enter in the direction of momentum
-                action = ActionType.BUY_MARKET if probs[1] > probs[2] else ActionType.SELL_MARKET
-                target_entry = tick.ask if action == ActionType.BUY_MARKET else tick.bid
-                sl_dist = 1.5
-                return TradeProposal(
-                    request_id="RULE_FLASH_MOMENTUM_SCRAPE_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=action,
-                    confidence=0.95,
-                    proposed_entry=target_entry,
-                    stop_loss=round(
-                        target_entry - sl_dist
-                        if action == ActionType.BUY_MARKET
-                        else target_entry + sl_dist,
-                        2,
-                    ),
-                    take_profit=round(
-                        target_entry + sl_dist * 2.0
-                        if action == ActionType.BUY_MARKET
-                        else target_entry - sl_dist * 2.0,
-                        2,
-                    ),
-                    risk_reward_ratio=2.0,
-                    reason_code="RULE_FLASH_MOMENTUM_SCRAPE",
-                )
+            if proposal := self._eval_rule_flash_momentum_scrape(tick, regime_state, probs):
+                return proposal
 
-        # RULE 7: RULE_TICK_IMBALANCE_REVERSAL
         if self.is_enabled("RULE_TICK_IMBALANCE_REVERSAL"):
-            ofi = regime_state.order_flow_imbalance if regime_state else 0.0
-            # OFI extreme selling/buying exhaustion with price stabilization
-            if ofi <= -0.80:  # Extreme selling pressure, buy the stabilization
-                target_entry = tick.ask
-                return TradeProposal(
-                    request_id="RULE_TICK_IMBALANCE_REVERSAL_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.BUY_MARKET,
-                    confidence=0.87,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.1, 2),
-                    take_profit=round(target_entry + 1.8, 2),
-                    risk_reward_ratio=1.63,
-                    reason_code="RULE_TICK_IMBALANCE_REVERSAL",
-                )
-            elif ofi >= 0.80:  # Extreme buying pressure, sell the stabilization
-                target_entry = tick.bid
-                return TradeProposal(
-                    request_id="RULE_TICK_IMBALANCE_REVERSAL_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.SELL_MARKET,
-                    confidence=0.87,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry + 1.1, 2),
-                    take_profit=round(target_entry - 1.8, 2),
-                    risk_reward_ratio=1.63,
-                    reason_code="RULE_TICK_IMBALANCE_REVERSAL",
-                )
+            if proposal := self._eval_rule_tick_imbalance_reversal(tick, regime_state):
+                return proposal
 
-        # RULE 18: RULE_NEWS_SPIKE_FADE (Entry)
         if self.is_enabled("RULE_NEWS_SPIKE_FADE"):
-            if regime_state and regime_state.regime_type == RegimeType.MACRO_NEWS_FREEZE:
-                # News freeze, wait for pullback
-                disp = getattr(fv, "live_tick_displacement", 0.0)
-                if abs(disp) >= 2.5:  # massive move, fade it
-                    action = ActionType.SELL_MARKET if disp > 0 else ActionType.BUY_MARKET
-                    target_entry = tick.bid if action == ActionType.SELL_MARKET else tick.ask
-                    return TradeProposal(
-                        request_id="RULE_NEWS_SPIKE_FADE_" + str(datetime.now().timestamp()),
-                        symbol=tick.symbol,
-                        generated_at=tick.timestamp,
-                        action=action,
-                        confidence=0.85,
-                        proposed_entry=target_entry,
-                        stop_loss=round(
-                            target_entry + 3.0
-                            if action == ActionType.SELL_MARKET
-                            else target_entry - 3.0,
-                            2,
-                        ),
-                        take_profit=round(
-                            target_entry - 4.5
-                            if action == ActionType.SELL_MARKET
-                            else target_entry + 4.5,
-                            2,
-                        ),
-                        risk_reward_ratio=1.50,
-                        reason_code="RULE_NEWS_SPIKE_FADE",
-                    )
+            if proposal := self._eval_rule_news_spike_fade(tick, fv, regime_state):
+                return proposal
 
-        # RULE 20: RULE_END_OF_HOUR_SQUEEZE (Entry)
         if self.is_enabled("RULE_END_OF_HOUR_SQUEEZE"):
-            now_dt = datetime.now()
-            if now_dt.minute == 59:
-                # Hunts 1-minute moves at 59th minute
-                action = ActionType.BUY_MARKET if probs[1] > probs[2] else ActionType.SELL_MARKET
-                target_entry = tick.ask if action == ActionType.BUY_MARKET else tick.bid
-                return TradeProposal(
-                    request_id="RULE_END_OF_HOUR_SQUEEZE_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=action,
-                    confidence=0.82,
-                    proposed_entry=target_entry,
-                    stop_loss=round(
-                        target_entry - 1.5
-                        if action == ActionType.BUY_MARKET
-                        else target_entry + 1.5,
-                        2,
-                    ),
-                    take_profit=round(
-                        target_entry + 2.0
-                        if action == ActionType.BUY_MARKET
-                        else target_entry - 2.0,
-                        2,
-                    ),
-                    risk_reward_ratio=1.33,
-                    reason_code="RULE_END_OF_HOUR_SQUEEZE",
-                )
+            if proposal := self._eval_rule_end_of_hour_squeeze(tick, probs):
+                return proposal
 
-        # RULE 26: RULE_VWAP_ELASTIC_BAND (Entry)
         if self.is_enabled("RULE_VWAP_ELASTIC_BAND"):
-            # For simplicity, if cross-asset Z score is extremely stretched
-            z_score = getattr(fv, "cross_asset_z_score", 0.0)
-            if z_score >= 3.5:  # Stretch sell
-                target_entry = tick.bid
-                return TradeProposal(
-                    request_id="RULE_VWAP_ELASTIC_BAND_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.SELL_MARKET,
-                    confidence=0.91,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry + 1.5, 2),
-                    take_profit=round(target_entry - 2.5, 2),
-                    risk_reward_ratio=1.67,
-                    reason_code="RULE_VWAP_ELASTIC_BAND",
-                )
-            elif z_score <= -3.5:  # Stretch buy
-                target_entry = tick.ask
-                return TradeProposal(
-                    request_id="RULE_VWAP_ELASTIC_BAND_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.BUY_MARKET,
-                    confidence=0.91,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.5, 2),
-                    take_profit=round(target_entry + 2.5, 2),
-                    risk_reward_ratio=1.67,
-                    reason_code="RULE_VWAP_ELASTIC_BAND",
-                )
+            if proposal := self._eval_rule_vwap_elastic_band(tick, fv):
+                return proposal
 
-        # RULE 27: RULE_BOLLINGER_BURST_FADE (Entry)
         if self.is_enabled("RULE_BOLLINGER_BURST_FADE"):
-            # Extreme high/low indicator from features
-            at_high = getattr(fv, "is_at_extreme_high", False)
-            at_low = getattr(fv, "is_at_extreme_low", False)
-            if at_high:
-                target_entry = tick.bid
-                return TradeProposal(
-                    request_id="RULE_BOLLINGER_BURST_FADE_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.SELL_MARKET,
-                    confidence=0.84,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry + 1.6, 2),
-                    take_profit=round(target_entry - 2.2, 2),
-                    risk_reward_ratio=1.38,
-                    reason_code="RULE_BOLLINGER_BURST_FADE",
-                )
-            elif at_low:
-                target_entry = tick.ask
-                return TradeProposal(
-                    request_id="RULE_BOLLINGER_BURST_FADE_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.BUY_MARKET,
-                    confidence=0.84,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.6, 2),
-                    take_profit=round(target_entry + 2.2, 2),
-                    risk_reward_ratio=1.38,
-                    reason_code="RULE_BOLLINGER_BURST_FADE",
-                )
+            if proposal := self._eval_rule_bollinger_burst_fade(tick, fv):
+                return proposal
 
-        # RULE 29: RULE_GAP_AND_GO_MOMENTUM (Entry)
         if self.is_enabled("RULE_GAP_AND_GO_MOMENTUM"):
-            # Check if Monday open and a gap occurred
-            now_dt = datetime.now()
-            if now_dt.weekday() == 0 and now_dt.hour == 0 and now_dt.minute == 0:
-                action = ActionType.BUY_MARKET if probs[1] > probs[2] else ActionType.SELL_MARKET
-                target_entry = tick.ask if action == ActionType.BUY_MARKET else tick.bid
-                return TradeProposal(
-                    request_id="RULE_GAP_AND_GO_MOMENTUM_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=action,
-                    confidence=0.81,
-                    proposed_entry=target_entry,
-                    stop_loss=round(
-                        target_entry - 1.5
-                        if action == ActionType.BUY_MARKET
-                        else target_entry + 1.5,
-                        2,
-                    ),
-                    take_profit=round(
-                        target_entry + 2.0
-                        if action == ActionType.BUY_MARKET
-                        else target_entry - 2.0,
-                        2,
-                    ),
-                    risk_reward_ratio=1.33,
-                    reason_code="RULE_GAP_AND_GO_MOMENTUM",
-                )
+            if proposal := self._eval_rule_gap_and_go_momentum(tick, probs):
+                return proposal
 
-        # RULE 30: RULE_CONTRARIAN_RETAIL_TRAP (Entry)
         if self.is_enabled("RULE_CONTRARIAN_RETAIL_TRAP"):
-            # Enter contrarian when retail screams buy/sell but tick volume is entirely passive
-            rsi = getattr(fv, "rsi_m15", 50.0) if hasattr(fv, "rsi_m15") else 50.0
-            if rsi > 85.0:  # retail overbought trap -> Short
-                target_entry = tick.bid
-                return TradeProposal(
-                    request_id="RULE_CONTRARIAN_RETAIL_TRAP_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.SELL_MARKET,
-                    confidence=0.89,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry + 1.4, 2),
-                    take_profit=round(target_entry - 2.4, 2),
-                    risk_reward_ratio=1.71,
-                    reason_code="RULE_CONTRARIAN_RETAIL_TRAP",
-                )
-            elif rsi < 15.0:  # retail oversold trap -> Long
-                target_entry = tick.ask
-                return TradeProposal(
-                    request_id="RULE_CONTRARIAN_RETAIL_TRAP_" + str(datetime.now().timestamp()),
-                    symbol=tick.symbol,
-                    generated_at=tick.timestamp,
-                    action=ActionType.BUY_MARKET,
-                    confidence=0.89,
-                    proposed_entry=target_entry,
-                    stop_loss=round(target_entry - 1.4, 2),
-                    take_profit=round(target_entry + 2.4, 2),
-                    risk_reward_ratio=1.71,
-                    reason_code="RULE_CONTRARIAN_RETAIL_TRAP",
-                )
+            if proposal := self._eval_rule_contrarian_retail_trap(tick, fv):
+                return proposal
 
         return None
 
