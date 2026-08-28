@@ -302,6 +302,12 @@ class TestPeriodBounds:
         b = period_bounds(PeriodKind.MONTH, datetime(2026, 12, 25, tzinfo=UTC))
         assert b.end == datetime(2027, 1, 1, tzinfo=UTC)
 
+    def test_start_sql_and_end_sql(self) -> None:
+        moment = datetime(2026, 8, 15, 14, 30, 0, tzinfo=UTC)
+        b = period_bounds(PeriodKind.DAY, moment)
+        assert b.start_sql == "2026-08-15 00:00:00"
+        assert b.end_sql == "2026-08-16 00:00:00"
+
     def test_year_bounds(self) -> None:
         b = period_bounds(PeriodKind.YEAR, datetime(2026, 8, 15, tzinfo=UTC))
         assert b.start == datetime(2026, 1, 1, tzinfo=UTC)
