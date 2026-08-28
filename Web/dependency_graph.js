@@ -217,6 +217,7 @@
   };
 
   GraphRenderer.prototype._getVisibleEdges = function () {
+    var self = this;
     var visible = [];
     this.edges.forEach(function (e) {
       var a = self.pos[e.source], b = self.pos[e.target];
