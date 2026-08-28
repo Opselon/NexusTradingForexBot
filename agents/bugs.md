@@ -6048,3 +6048,17 @@ covered by regression test).
 3. Corrected radar_rec missing check to `"feat_0" not in radar_rec` instead of truthiness.
 
 **Tests:** `tests/unit/test_market_radar_integration.py::test_radar_on_new_bar_no_mslie_engine` (NEW, PASS). Full integration suite PASS.
+
+## BUG-140 - Research outcome lifecycle gaps: missing terminal outcomes, opaque dataset eligibility, context-contract regime collapse (2026-08-29 Hermes-LifecycleFix)
+
+**Symptom:** The research funnel pooled only ~109 closed live outcomes; 273 experience decisions had no terminal outcome; 13 broker-filled cases lost their results; canceled/expired/rejected/never-dispatched orders were permanently MISSING_OUTCOME; discovery-family validation failed with CONTEXT_CONTRACT_EMPTY_POPULATION because ctx["regime"] (full regime taxonomy) was mapped into trend_states.
+
+**Root cause:** (a) The terminal outcome writer only fired on position death, so decisions that never became trades never terminated; (b) dataset classification collapsed every non-trade into generic MISSING_OUTCOME with no eligibility contract; (c) context-contract extraction conflated the regime and trend_state dimensions.
+
+**Fix:**
+1. Canonical DecisionLifecycle taxonomy + idempotent, causality-checked terminal outcome writer in ExperienceLedger (commit 7d2cf4a).
+2. OrderManager terminal pending-order bridge: NOT_DISPATCHED on exposure/lot block, REJECTED_UNFILLED on broker ticket=0, CANCELED/EXPIRED_UNFILLED on verified cancel and reconcile sweep (commit 7e94868).
+3. Lifecycle-aware dataset classification + P0-E explicit eligibility contract (census travels with every dataset) + P2 regime/trend split in context_contract (commit 9331df7).
+4. Regression suite tests/unit/test_lifecycle_bug140.py (44 tests) - caught a REAL production defect in the committed wiring: emit_terminal_pending_outcome referenced DecisionLifecycle.TERMINAL_STATES (module constant, not an enum member) -> AttributeError on EVERY emission, making all terminal paths no-ops/crash paths in production. Fixed to import module-level TERMINAL_STATES (this commit).
+
+**Tests:** tests/unit/test_lifecycle_bug140.py 44/44 PASS; neighboring suites (task4 dataset, phase09b, experience intelligence, order manager exit bugs, execution architecture) 130/130 PASS.
