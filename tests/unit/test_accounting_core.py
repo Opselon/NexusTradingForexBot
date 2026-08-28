@@ -35,10 +35,14 @@ from nexus_scalp.accounting import (
     PeriodKind,
     TradeOutcome,
 )
-from nexus_scalp.accounting.worker import format_worker_status
 from nexus_scalp.accounting.aggregation import _usd_per_point, compute_drawdown
 from nexus_scalp.accounting.models import AccountSnapshot, TradeRecord, _round_opt
-from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, _classify_stop, normalize_trade_row
+from nexus_scalp.accounting.normalize import (
+    _classify_stop,
+    classify_exit,
+    classify_outcome,
+    normalize_trade_row,
+)
 from nexus_scalp.accounting.periods import (
     _floor_day,
     ensure_utc,
@@ -46,6 +50,7 @@ from nexus_scalp.accounting.periods import (
     period_bounds,
     recent_periods,
 )
+from nexus_scalp.accounting.worker import format_worker_status
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.models import AccountInfo
 from nexus_scalp.experience.ledger import ExperienceLedger
@@ -724,8 +729,6 @@ class TestClosureClassification:
     def test_emergency_close(self) -> None:
         cls, _ = classify_exit(self._row(exit_mechanism="PROFIT_GIVEBACK_PROTECTION"))
         assert cls is ExitClassification.EMERGENCY_EXIT
-
-
 
 
 class TestClassifyStopDirectly:
@@ -1801,7 +1804,9 @@ class TestRoundOpt:
 
     def test_rounds_to_two_digits_by_default(self) -> None:
         assert _round_opt(3.14159) == 3.14
-        assert _round_opt(3.145) == 3.15  # Python 3 round behavior, could be 3.14 or 3.15 depending on float representation
+        assert (
+            _round_opt(3.145) == 3.15
+        )  # Python 3 round behavior, could be 3.14 or 3.15 depending on float representation
         assert _round_opt(3.1) == 3.1
         assert _round_opt(3) == 3.0
 
