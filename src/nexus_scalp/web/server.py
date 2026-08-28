@@ -22,6 +22,7 @@ from typing import Any
 import yaml
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from nexus_scalp.accounting import PeriodKind
@@ -424,6 +425,14 @@ def db_path_for_audit() -> str:
 def create_app(engine_ref: Any = None) -> FastAPI:
     """Creates and configures the FastAPI web server instance."""
     app = FastAPI(title="Nexus Scalp Engine Control Center", version="0.1.0")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # Store engine reference in app state
     app.state.engine = engine_ref
@@ -2927,13 +2936,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
                     try:
                         report = mig.run(on_progress=_on_progress)
-                    except Exception as exc:
-                        import traceback
+                    except Exception:
 
                         state["report"] = {
                             "status": "FAILED",
-                            "errors": [str(exc)],
-                            "trace": traceback.format_exc()[:2000],
+                            "code": "DB_MIGRATION_FAILED",
+                            
                         }
                         state["done"] = True
                         state["progress"] = 0.0
@@ -2947,16 +2955,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         state["provider_switched"] = True
                     else:
                         state["provider_switched"] = False
-                except Exception as exc:
-                    import traceback
+                except Exception:
 
                     app.state.db_migration_state = {
                         "done": True,
                         "progress": 0.0,
                         "report": {
                             "status": "FAILED",
-                            "errors": [str(exc)],
-                            "trace": traceback.format_exc()[:2000],
+                            "code": "DB_MIGRATION_FAILED",
+                            
                         },
                     }
 
@@ -3284,7 +3291,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         return out
 
     @app.post("/api/runtime-config/model-swap")
-    def model_hot_swap(payload: dict[str, Any]) -> dict[str, Any]:
+    async def model_hot_swap(payload: dict[str, Any]) -> dict[str, Any]:
         """Model artifact hot swap: load-validate-warm-atomic-swap.
 
         Payload: {"model_artifact_path": "..."}
@@ -3297,7 +3304,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         artifact = str(payload.get("model_artifact_path") or "").strip()
         if not artifact:
             raise HTTPException(status_code=422, detail="model_artifact_path required")
-        result = engine.hot_swap_model(artifact, source="WEB_UI")
+        result = await engine.hot_swap_model(artifact, source="WEB_UI")
         return result
 
     # ------------------------------------------------------------------

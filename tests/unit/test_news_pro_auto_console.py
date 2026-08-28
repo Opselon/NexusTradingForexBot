@@ -27,7 +27,9 @@ def test_provider_status_with_valid_provider():
     mock_ai_status.configured = True
 
     with patch("nexus_scalp.news.pro_auto.get_ai_status", return_value=mock_ai_status):
-        with patch("nexus_scalp.news.pro_auto.resolve_factory_provider", return_value=MockProviderFull()):
+        with patch(
+            "nexus_scalp.news.pro_auto.resolve_factory_provider", return_value=MockProviderFull()
+        ):
             result = provider_status_for_console(engine=None, settings_service=None)
 
             assert result["ai_status"]["state"] == "AVAILABLE"
@@ -61,7 +63,9 @@ def test_provider_status_with_partial_provider():
     mock_ai_status.configured = True
 
     with patch("nexus_scalp.news.pro_auto.get_ai_status", return_value=mock_ai_status):
-        with patch("nexus_scalp.news.pro_auto.resolve_factory_provider", return_value=MockProviderPartial()):
+        with patch(
+            "nexus_scalp.news.pro_auto.resolve_factory_provider", return_value=MockProviderPartial()
+        ):
             result = provider_status_for_console(engine=None, settings_service=None)
 
             assert result["ai_status"]["state"] == "MISCONFIGURED"

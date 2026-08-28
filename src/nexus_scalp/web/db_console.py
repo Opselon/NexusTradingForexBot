@@ -67,10 +67,10 @@ _ALLOWED_STATEMENT_PREFIXES = (
 )
 
 _QUICK_SQL: dict[str, str] = {
-    "top100": "SELECT * FROM {q_table} ORDER BY rowid LIMIT 100",
-    "count": "SELECT COUNT(*) AS row_count FROM {q_table}",
-    "recent": "SELECT * FROM {q_table} ORDER BY rowid DESC LIMIT 100",
-    "schema": "SELECT sql FROM sqlite_master WHERE type='table' AND name='{literal_table}'",
+    "top100": "SELECT * FROM {table} ORDER BY rowid LIMIT 100",
+    "count": "SELECT COUNT(*) AS row_count FROM {table}",
+    "recent": "SELECT * FROM {table} ORDER BY rowid DESC LIMIT 100",
+    "schema": "SELECT sql FROM sqlite_master WHERE type='table' AND name='{table}'",
     "integrity": "PRAGMA integrity_check",
     "tables": "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
 }
@@ -354,10 +354,9 @@ def console_rows(
         try:
             if not driver.table_exists(table):
                 return {"success": False, "error": f"table '{table}' not found"}
-            q_table = driver.quote_ident(table)
-            sql = f"SELECT * FROM {q_table} ORDER BY rowid LIMIT {limit} OFFSET {offset}"
+            sql = f'SELECT * FROM "{table}" ORDER BY rowid LIMIT {limit} OFFSET {offset}'
             if cfg and cfg.is_postgresql:
-                sql = f"SELECT * FROM {q_table} ORDER BY 1 LIMIT {limit} OFFSET {offset}"
+                sql = f'SELECT * FROM "{table}" ORDER BY 1 LIMIT {limit} OFFSET {offset}'
             rows = driver.query(sql)
             columns: list[str] = []
             if rows:
@@ -454,15 +453,18 @@ def console_quick(database: str = "audit", table: str = "", kind: str = "top100"
         template = _QUICK_SQL.get(kind)
         if template is None:
             return {"success": False, "error": f"unknown quick kind '{kind}'"}
-        driver, cfg = _driver_for(database)
+
+        driver, _ = _driver_for(database)
         if driver is None:
             return {"success": False, "error": f"unknown database '{database}'"}
+
         try:
-            q_table = driver.quote_ident(table)
-            literal_table = table.replace("'", "''")
-            sql = template.format(q_table=q_table, literal_table=literal_table)
+            if not driver.table_exists(table):
+                return {"success": False, "error": f"table '{table}' not found"}
         finally:
             driver.close()
+
+        sql = template.format(table=table)
         return console_query({"database": database, "sql": sql})
     except Exception as exc:
         return {"success": False, "error": str(exc)[:300]}

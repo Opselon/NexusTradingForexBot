@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+
 from nexus_scalp.news.ingest.deduplicator import compute_article_hash
 
 

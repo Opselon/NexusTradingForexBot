@@ -702,6 +702,7 @@ class TelegramNotifier:
         """HTTPS request that connects to `ip` but keeps `host` for SNI +
         Host header (the --resolve equivalent urllib lacks)."""
         context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         raw_sock = socket.create_connection((ip, 443), timeout=timeout)
         try:
             tls_sock = context.wrap_socket(raw_sock, server_hostname=host)
