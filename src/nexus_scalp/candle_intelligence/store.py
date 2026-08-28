@@ -350,8 +350,6 @@ class CandleIntelStore:
         file, WAL allows concurrent access)."""
         # Self-heal corrupted DB (candle_intel.db with bare candles(id) table) — see commit fde756b fix
         try:
-            import sqlite3 as _sqlite3  # noqa: F401
-
             probe_cur = (
                 self._conn.cursor() if hasattr(self, "_conn") and self._conn is not None else None
             )
