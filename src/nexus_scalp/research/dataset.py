@@ -38,6 +38,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.experience.ledger import ExperienceLedger
+from nexus_scalp.experience.lifecycle import (
+    DEGRADED_TERMINAL_STATES,
+    NON_TRADE_TERMINAL_STATES,
+    DecisionLifecycle,
+    lifecycle_from_outcome,
+)
 from nexus_scalp.experience.models import ExperienceRecord
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.models import ResearchDataset, ResearchSample
@@ -46,8 +52,20 @@ logger = get_logger("nexus_scalp.research.dataset")
 
 # ---------------------------------------------------------------------------
 # Rejection taxonomy (TASK-4). Each reason maps to a deterministic check.
+# P0-C (BUG-140): MISSING_OUTCOME now means "no outcome AND no known terminal
+# state" — i.e. genuinely unresolved evidence. Terminal non-trade states are
+# classified by their exact lifecycle (CANCELED_UNFILLED / EXPIRED_UNFILLED /
+# REJECTED_UNFILLED / REPLACED_UNFILLED / EXECUTION_FAILED / NOT_DISPATCHED)
+# and FILLED-but-result-lost is FILLED_OUTCOME_MISSING (recovery queue).
 # ---------------------------------------------------------------------------
 REASON_MISSING_OUTCOME = "MISSING_OUTCOME"
+REASON_NOT_DISPATCHED = "NOT_DISPATCHED"
+REASON_CANCELED_UNFILLED = "CANCELED_UNFILLED"
+REASON_EXPIRED_UNFILLED = "EXPIRED_UNFILLED"
+REASON_REJECTED_UNFILLED = "REJECTED_UNFILLED"
+REASON_REPLACED_UNFILLED = "REPLACED_UNFILLED"
+REASON_EXECUTION_FAILED = "EXECUTION_FAILED"
+REASON_FILLED_OUTCOME_MISSING = "FILLED_OUTCOME_MISSING"
 REASON_OUTCOME_PRECEDES_DECISION = "OUTCOME_PRECEDES_DECISION"
 REASON_MISSING_REALIZED_R = "MISSING_REALIZED_R"  # UNKNOWN R recorded as zero
 REASON_MISSING_REALIZED_PNL = "MISSING_REALIZED_PNL"  # UNKNOWN PnL recorded as zero
@@ -62,6 +80,17 @@ REASON_SCHEMA_MISMATCH = "SCHEMA_MISMATCH"
 REASON_MALFORMED_PROVENANCE = "MALFORMED_PROVENANCE"
 REASON_NON_FINITE_SAMPLE = "NON_FINITE_SAMPLE"
 
+#: Lifecycle state -> dataset rejection reason (deterministic map).
+_LIFECYCLE_REASON: dict[DecisionLifecycle, str] = {
+    DecisionLifecycle.NOT_DISPATCHED: REASON_NOT_DISPATCHED,
+    DecisionLifecycle.CANCELED_UNFILLED: REASON_CANCELED_UNFILLED,
+    DecisionLifecycle.EXPIRED_UNFILLED: REASON_EXPIRED_UNFILLED,
+    DecisionLifecycle.REJECTED_UNFILLED: REASON_REJECTED_UNFILLED,
+    DecisionLifecycle.REPLACED_UNFILLED: REASON_REPLACED_UNFILLED,
+    DecisionLifecycle.EXECUTION_FAILED: REASON_EXECUTION_FAILED,
+    DecisionLifecycle.FILLED_OUTCOME_MISSING: REASON_FILLED_OUTCOME_MISSING,
+}
+
 #: Outcome reconstruction sources that carry authoritative broker truth.
 #: Any other source (or none) means "no broker result captured" and the
 #: realized fields are not trustworthy (they may be zero-substituted).
@@ -75,13 +104,56 @@ _AUTHORITATIVE_RECONSTRUCTION_SOURCES = frozenset(
 _ZERO_R_TOL = 1e-9
 _ZERO_PNL_TOL = 1e-6
 
+#: Terminal NON-TRADE reasons: known, expected, permanent operational
+#: evidence — they are counted once, never re-logged per dataset build.
+_NON_TRADE_REASONS: frozenset[str] = frozenset(
+    {
+        REASON_NOT_DISPATCHED,
+        REASON_CANCELED_UNFILLED,
+        REASON_EXPIRED_UNFILLED,
+        REASON_REJECTED_UNFILLED,
+        REASON_REPLACED_UNFILLED,
+        REASON_EXECUTION_FAILED,
+    }
+)
+
 _RECOVERABLE_REASONS = frozenset(
     {
         REASON_MISSING_OUTCOME,
         REASON_MISSING_REALIZED_R,
         REASON_MISSING_REALIZED_PNL,
+        REASON_FILLED_OUTCOME_MISSING,
     }
 )
+
+#: Deterministic, human-readable detail for terminal lifecycle states.
+TERMINAL_DETAIL: dict[DecisionLifecycle, str] = {
+    DecisionLifecycle.NOT_DISPATCHED: "decision never dispatched to broker",
+    DecisionLifecycle.CANCELED_UNFILLED: "pending order canceled before any fill",
+    DecisionLifecycle.EXPIRED_UNFILLED: "pending order expired before any fill",
+    DecisionLifecycle.REJECTED_UNFILLED: "order rejected by broker before any fill",
+    DecisionLifecycle.REPLACED_UNFILLED: "pending order replaced/superseded before any fill",
+    DecisionLifecycle.EXECUTION_FAILED: "order dispatch failed (no broker ticket)",
+    DecisionLifecycle.FILLED_OUTCOME_MISSING: "broker fill known, outcome result lost",
+}
+
+#: P0-E dataset contract: explicit, versioned eligibility rules that travel
+#: with every dataset. A consumer can always answer "what entered research
+#: and why was everything else excluded" without reading code.
+ELIGIBILITY_RULES: dict[str, str] = {
+    "contract_version": "p0e-bug140-1",
+    "EXECUTED_CLOSED": "research eligible (realized R enters expectancy)",
+    "CANCELED_UNFILLED": "excluded (terminal non-trade; lifecycle evidence only)",
+    "EXPIRED_UNFILLED": "excluded (terminal non-trade; lifecycle evidence only)",
+    "REJECTED_UNFILLED": "excluded (terminal non-trade; lifecycle evidence only)",
+    "REPLACED_UNFILLED": "excluded (terminal non-trade; lifecycle evidence only)",
+    "EXECUTION_FAILED": "excluded (terminal non-trade; lifecycle evidence only)",
+    "NOT_DISPATCHED": "excluded (terminal non-trade; lifecycle evidence only)",
+    "FILLED_OUTCOME_MISSING": "excluded pending recovery (recovery queue)",
+    "MISSING_OUTCOME": "excluded (unresolved; recoverable finding)",
+    "ZERO_SUBSTITUTED": "excluded (UNKNOWN broker result may not pass as R=0)",
+    "fabricated_r": "forbidden - non-trade decisions never receive an R value",
+}
 
 
 def _sample_id(rec: ExperienceRecord) -> str:
@@ -152,10 +224,28 @@ class ResearchDatasetBuilder:
         """Deterministic eligibility audit for one closed experience.
 
         Returns (eligible, rejection_reason, detail). Never raises.
+
+        P0-C (BUG-140): records WITHOUT an outcome are first classified by
+        their terminal lifecycle (when known) instead of collapsing into a
+        generic MISSING_OUTCOME. Terminal non-trades are ineligible for
+        realized-R research (they are not trades) but are counted as explicit
+        lifecycle evidence; FILLED_OUTCOME_MISSING enters the recovery queue.
         """
-        # 1. Outcome presence.
+        # 1. Terminal lifecycle classification (outcome presence).
+        state = lifecycle_from_outcome(
+            is_executed=bool(rec.is_executed),
+            is_closed=bool(rec.is_closed),
+            exit_reason=getattr(rec, "exit_reason", "") or "",
+            decision_lifecycle="",
+        )
+        if state in NON_TRADE_TERMINAL_STATES or state in DEGRADED_TERMINAL_STATES:
+            reason = _LIFECYCLE_REASON[state]
+            detail = TERMINAL_DETAIL.get(state, state.value)
+            if state in DEGRADED_TERMINAL_STATES:
+                detail = "broker fill known, outcome result lost -> recovery queue"
+            return False, reason, detail
         if not rec.is_executed:
-            return False, REASON_MISSING_OUTCOME, "not executed"
+            return False, REASON_MISSING_OUTCOME, "not executed (terminal state unknown)"
         if not rec.is_closed:
             return False, REASON_MISSING_OUTCOME, "no recorded outcome"
 
@@ -266,25 +356,45 @@ class ResearchDatasetBuilder:
         return records
 
     def audit(self, records: list[ExperienceRecord] | None = None) -> dict[str, Any]:
-        """Full eligibility audit with structured rejection reasons."""
+        """Full eligibility audit with structured rejection reasons.
+
+        P0-C (BUG-140): terminal non-trades are counted as lifecycle evidence
+        WITHOUT a per-row rejection log (they are expected, known states —
+        not data anomalies). Only genuinely unresolved records
+        (MISSING_OUTCOME with no terminal state, FILLED_OUTCOME_MISSING,
+        zero-substitution) remain per-row recoverable findings.
+        """
         self._source_cache = {}
         records = records if records is not None else self._iter_records()
         eligible: list[ExperienceRecord] = []
         rejected: list[dict[str, Any]] = []
+        non_trade_count = 0
         for rec in records:
             if not (rec.is_executed and rec.is_closed):
-                rejected.append(
-                    {
-                        "trade_id": rec.experience_id,
-                        "idempotency_key": rec.idempotency_key,
-                        "strategy_id": rec.strategy_id,
-                        "rejection_reason": REASON_MISSING_OUTCOME,
-                        "rejection_stage": "dataset",
-                        "detail": "not executed/closed",
-                        "recoverable": True,
-                        "source": "ledger",
-                    }
+                # Classify by terminal lifecycle instead of a blanket
+                # MISSING_OUTCOME (P0-C). Known terminal non-trades are
+                # counted quietly; unknown hangs stay recoverable findings.
+                state = lifecycle_from_outcome(
+                    is_executed=bool(rec.is_executed),
+                    is_closed=bool(rec.is_closed),
+                    exit_reason=getattr(rec, "exit_reason", "") or "",
+                    decision_lifecycle="",
                 )
+                reason = _LIFECYCLE_REASON.get(state, REASON_MISSING_OUTCOME)
+                entry = {
+                    "trade_id": rec.experience_id,
+                    "idempotency_key": rec.idempotency_key,
+                    "strategy_id": rec.strategy_id,
+                    "rejection_reason": reason,
+                    "rejection_stage": "dataset",
+                    "detail": TERMINAL_DETAIL.get(state, "not executed/closed"),
+                    "recoverable": reason in _RECOVERABLE_REASONS,
+                    "source": "ledger",
+                }
+                if reason in _NON_TRADE_REASONS:
+                    non_trade_count += 1
+                else:
+                    rejected.append(entry)
                 continue
             ok, reason, detail = self.evaluate_sample(rec)
             if ok:
@@ -309,6 +419,7 @@ class ResearchDatasetBuilder:
             "total_records": len(records),
             "eligible": len(eligible),
             "rejected": len(rejected),
+            "terminal_non_trades": non_trade_count,
             "zero_substituted": top.get(REASON_MISSING_REALIZED_R, 0)
             + top.get(REASON_MISSING_REALIZED_PNL, 0),
             "rejection_reasons": top,
@@ -320,13 +431,23 @@ class ResearchDatasetBuilder:
         Builds the full research dataset from all closed experiences, causally
         ordered by decision_timestamp. Records failing the eligibility audit
         are excluded with structured rejection logs.
+
+        P0-C (BUG-140): terminal non-trades are EXCLUDED from realized-R
+        research (they are not trades and receive no fake R) but are counted
+        in the dataset's lifecycle census rather than re-logged row by row on
+        every build.
         """
         self._source_cache = {}
         samples: list[ResearchSample] = []
         seen: set[str] = set()
-        for rec in self._iter_records():
+        audit_all: list[ExperienceRecord] = list(self._iter_records())
+        # One deterministic full classification pass (no per-row info spam for
+        # known terminal non-trades; only unresolved evidence is logged).
+        for rec in audit_all:
             ok, reason, detail = self.evaluate_sample(rec)
             if not ok:
+                if reason in _NON_TRADE_REASONS:
+                    continue  # counted via audit(); expected lifecycle evidence
                 logger.info(
                     "[STRATEGY_RESEARCH] event=DATASET_REJECTED",
                     stage="dataset",
@@ -341,7 +462,31 @@ class ResearchDatasetBuilder:
             seen.add(rec.idempotency_key)
             samples.append(self._to_sample(rec))
         samples.sort(key=lambda s: s.decision_timestamp)
-        return self._dataset(dataset_id, samples)
+        ds = self._dataset(dataset_id, samples)
+        # P0-E (dataset contract): explicit, auditable evidence census that
+        # travels with the dataset. Deterministic and reproducible. The model
+        # is frozen, so the census is attached via an immutable copy.
+        ds_audit = self.audit(audit_all)
+        ds = ds.model_copy(
+            update={
+                "provenance_extra": {
+                    "total_decisions": ds_audit["total_records"],
+                    "valid_research_samples": ds_audit["eligible"],
+                    "terminal_non_trades": ds_audit["terminal_non_trades"],
+                    "recovered_outcomes": ds_audit["rejection_reasons"].get(
+                        "RECOVERED_OUTCOME", 0
+                    ),
+                    "filled_outcome_missing": ds_audit["rejection_reasons"].get(
+                        REASON_FILLED_OUTCOME_MISSING, 0
+                    ),
+                    "unresolved_missing_outcome": ds_audit["rejection_reasons"].get(
+                        REASON_MISSING_OUTCOME, 0
+                    ),
+                    "eligibility_rules": ELIGIBILITY_RULES,
+                }
+            }
+        )
+        return ds
 
     def build_for_strategy(
         self,

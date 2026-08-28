@@ -19,7 +19,7 @@ import json
 from typing import Any
 
 #: Contract keys that activate sample filtering when present and non-empty.
-_ACTIVE_KEYS = ("sessions", "trend_states", "volatility_regimes")
+_ACTIVE_KEYS = ("sessions", "trend_states", "volatility_regimes", "regime_states")
 
 #: Canonical session token mapping from DSL hypothesis text / context keys.
 _SESSION_TOKENS: dict[str, str] = {
@@ -77,6 +77,21 @@ def extract_context_contract(
     elif isinstance(rq, str) and rq.strip() and rq.strip().upper() not in ("ALL",):
         trend_states.add(rq.strip().upper())
 
+    # P2 (BUG-140): discovery candidates carry ctx["regime"] with the FULL
+    # market-regime taxonomy (e.g. RANGING_MEAN_REVERSION, TRENDING_MOMENTUM)
+    # while `filter_samples_by_contract` matches `trend_state` (BULLISH/
+    # BEARISH/NEUTRAL). A regime value is NOT a trend state: mapping it into
+    # `trend_states` produced a contract that matched ZERO samples and
+    # fail-loud rejected every discovery-family validation
+    # (CONTEXT_CONTRACT_EMPTY_POPULATION). Regime constraints are matched
+    # against the sample's `regime` attribute, so they travel in their own
+    # contract dimension. Only genuine trend tokens stay in trend_states.
+    regime_states: set[str] = set()
+    trend_only: set[str] = set()
+    _TREND_TOKENS = {"BULLISH", "BEARISH", "NEUTRAL"}
+    for token in trend_states:
+        (trend_only if token in _TREND_TOKENS else regime_states).add(token)
+
     volatility_regimes: set[str] = set()
     vf = ctx.get("volatility_filter") or ctx.get("volatility_regime")
     if isinstance(vf, dict):
@@ -108,10 +123,19 @@ def extract_context_contract(
                     volatility_regimes.add(canonical)
                     break
 
+    # P2 (BUG-140): re-split after hypothesis token filling so regime tokens
+    # never leak into trend_states (see comment above).
+    trend_only = {t for t in trend_states if t in _TREND_TOKENS}
+    regime_states.update(t for t in trend_states if t not in _TREND_TOKENS)
+
     return {
         "sessions": sorted(sessions),
-        "trend_states": sorted(trend_states),
+        "trend_states": sorted(trend_only),
         "volatility_regimes": sorted(volatility_regimes),
+        # P2 (BUG-140): first-class regime dimension. Full regime values
+        # (RANGING_MEAN_REVERSION / TRENDING_MOMENTUM / ...) are matched
+        # against the sample's `regime` attribute, NOT its trend_state.
+        "regime_states": sorted(regime_states),
     }
 
 
@@ -150,6 +174,8 @@ def filter_samples_by_contract(
       * session        -> membership in contract["sessions"]
       * trend_state    -> membership in contract["trend_states"]
       * volatility_regime -> membership in contract["volatility_regimes"]
+      * regime         -> membership in contract["regime_states"] (P2 BUG-140:
+        full market-regime taxonomy; separate from the trend_state dimension)
 
     Empty/missing scope lists are wildcards. Diagnostics always carry the
     original/matched counts so callers can record honest evidence; when no
@@ -159,6 +185,7 @@ def filter_samples_by_contract(
     sessions = {str(s).upper() for s in (contract.get("sessions") or [])}
     trends = {str(t).upper() for t in (contract.get("trend_states") or [])}
     vols = {str(v).upper() for v in (contract.get("volatility_regimes") or [])}
+    regimes = {str(g).upper() for g in (contract.get("regime_states") or [])}
 
     matched: list[Any] = []
     for s in samples:
@@ -167,6 +194,8 @@ def filter_samples_by_contract(
         if trends and str(getattr(s, "trend_state", "")).upper() not in trends:
             continue
         if vols and str(getattr(s, "volatility_regime", "")).upper() not in vols:
+            continue
+        if regimes and str(getattr(s, "regime", "")).upper() not in regimes:
             continue
         matched.append(s)
 

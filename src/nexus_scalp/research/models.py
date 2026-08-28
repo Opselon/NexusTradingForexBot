@@ -165,6 +165,11 @@ class ResearchDataset(BaseModel):
     Samples preserve causal ordering (decision_timestamp ascending) so temporal
     splits are meaningful. Provenance and feature-schema are preserved per
     sample, satisfying research data versioning (spec 26).
+
+    P0-E (BUG-140): `provenance_extra` carries the explicit dataset contract —
+    a deterministic evidence census (total decisions, valid research samples,
+    terminal non-trades, recovery-queue counts, eligibility rules) so no
+    consumer can mistake a filtered dataset for the full population.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -175,6 +180,8 @@ class ResearchDataset(BaseModel):
     samples: list[ResearchSample] = Field(default_factory=list)
     source_range: dict[str, str] = Field(default_factory=dict)
     schema_ids: list[str] = Field(default_factory=list)
+    #: P0-E: explicit eligibility/contract metadata (deterministic census).
+    provenance_extra: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("created_at")
     @classmethod
