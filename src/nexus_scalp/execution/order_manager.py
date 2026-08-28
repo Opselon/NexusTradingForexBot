@@ -37,6 +37,7 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.experience.lifecycle import DecisionLifecycle
 from nexus_scalp.experience.outcome_recovery import (
     classify_exit_with_evidence,
     reconstruct_broker_outcome,
@@ -45,6 +46,7 @@ from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 from nexus_scalp.ports.mt5_port import IMT5Port
+from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
 logger = get_logger("nexus_scalp.execution.order_manager")
@@ -523,6 +525,10 @@ class OrderLifecycleManager:
         #: Phase 14: tickets already reconciled from broker history (dedup guard
         #: for the reconciliation close-loop across repeated passes/restarts).
         self._reconcile_seen: dict[int, bool] = {}
+        #: P0-A (BUG-140): the most recent cancel reason per pending ticket so
+        #: the terminal outcome can distinguish CANCELED_UNFILLED from
+        #: EXPIRED_UNFILLED (AGE_EXPIRATION path).
+        self._pending_cancel_reasons: dict[int, str] = {}
         #: TASK-7: tickets the engine has positively closed or that the broker no
         #: longer reports. Once closed, NO protective modification may be issued for
         #: the ticket (invariant: a CLOSED position cannot receive further protective
@@ -864,6 +870,14 @@ class OrderLifecycleManager:
                 MAX_TOTAL_EXPOSURE,
                 action=getattr(action, "value", str(action)),
             )
+            # P0-A (BUG-140): the decision is terminal — it will never become a
+            # trade. Record NOT_DISPATCHED so the experience ledger cannot hang.
+            emit_terminal_pending_outcome(
+                experience_engine=self.experience_engine,
+                request_id=str(getattr(decision, "request_id", "") or ""),
+                state=DecisionLifecycle.NOT_DISPATCHED,
+                detail="MAX_EXPOSURE_REACHED at dispatch",
+            )
             return False
 
         # --- STRICT LOT SIZING CLAMP (HARD_MAX_LOTS + free margin pre-check) ---
@@ -873,6 +887,13 @@ class OrderLifecycleManager:
                 "LOT_SIZE_REJECTED: clamped volume is zero (insufficient free margin or invalid size)",
                 action=getattr(action, "value", str(action)),
                 symbol=symbol,
+            )
+            # P0-A (BUG-140): terminal NOT_DISPATCHED (never sent to broker).
+            emit_terminal_pending_outcome(
+                experience_engine=self.experience_engine,
+                request_id=str(getattr(decision, "request_id", "") or ""),
+                state=DecisionLifecycle.NOT_DISPATCHED,
+                detail="LOT_SIZE_REJECTED (zero volume after clamp)",
             )
             return False
 
@@ -930,6 +951,15 @@ class OrderLifecycleManager:
                     execution_mode=getattr(decision, "execution_mode", "STANDARD") or "STANDARD",
                     execution_id=getattr(decision, "execution_id", None),
                 )
+            else:
+                # P0-A (BUG-140): market dispatch refused (retcode/ticket=0) —
+                # the decision can never fill; record the terminal state.
+                emit_terminal_pending_outcome(
+                    experience_engine=self.experience_engine,
+                    request_id=str(getattr(decision, "request_id", "") or ""),
+                    state=DecisionLifecycle.REJECTED_UNFILLED,
+                    detail="broker refused market order at dispatch (ticket=0)",
+                )
             return ticket > 0
 
         elif action in (
@@ -976,6 +1006,14 @@ class OrderLifecycleManager:
             else:
                 logger.error(
                     f"Pending order dispatch rejected by broker server | Action: {action.value} | Lots: {volume}"
+                )
+                # P0-A (BUG-140): broker refused the pending order at dispatch —
+                # the decision can never fill; record the terminal state.
+                emit_terminal_pending_outcome(
+                    experience_engine=self.experience_engine,
+                    request_id=str(getattr(decision, "request_id", "") or ""),
+                    state=DecisionLifecycle.REJECTED_UNFILLED,
+                    detail="broker rejected pending order at dispatch (ticket=0)",
                 )
             return ticket > 0
 
@@ -1103,6 +1141,42 @@ class OrderLifecycleManager:
             parent_execution_id=order_id,
             family_size=len(family),
         )
+
+    # =========================================================================
+    # P0-A (BUG-140): TERMINAL PENDING-ORDER EXPERIENCE OUTCOMES
+    # -------------------------------------------------------------------------
+    # A decision that never becomes a trade MUST still terminate in the
+    # experience ledger with an explicit lifecycle state, otherwise the
+    # research dataset permanently reports MISSING_OUTCOME for it.
+    # =========================================================================
+
+    def _emit_terminal_for_pending(
+        self, ticket: int, state: Any, detail: str = ""
+    ) -> bool:
+        """Emits the terminal outcome for the decision that placed `ticket`.
+
+        The request_id is resolved from the staged entry context registry
+        (`_entry_order_ids[ticket]` is bound to the originating
+        decision.request_id at context-bind time). Idempotent: the ledger
+        refuses a second outcome for the same key, so repeated sweeps,
+        retries or restart replays cannot duplicate the row.
+        """
+        request_id = str(self._entry_order_ids.get(ticket, "") or "")
+        if not request_id:
+            # Nothing to attribute: the order was never bound to a tracked
+            # decision (e.g. manual order) — nothing to record, no fabrication.
+            return False
+        written = emit_terminal_pending_outcome(
+            experience_engine=self.experience_engine,
+            request_id=request_id,
+            state=state,
+            detail=detail or f"broker ticket {ticket} terminal",
+            broker_order_id=str(ticket),
+        )
+        if written:
+            # The lifecycle is closed: drop the ephemeral cancel-reason note.
+            self._pending_cancel_reasons.pop(ticket, None)
+        return written
 
     # =========================================================================
     # MODULE B: AI POSITION REVERSAL PROTOCOL
@@ -1464,6 +1538,15 @@ class OrderLifecycleManager:
                 ticket,
                 sent,
             )
+            # P0-A (BUG-140): the pending order is terminal at the broker. Emit
+            # the terminal experience outcome so the originating decision can
+            # never hang without classification (CANCELED vs EXPIRED by reason).
+            state_lifecycle = (
+                DecisionLifecycle.EXPIRED_UNFILLED
+                if "AGE" in self._pending_cancel_reasons.get(ticket, "")
+                else DecisionLifecycle.CANCELED_UNFILLED
+            )
+            self._emit_terminal_for_pending(ticket=ticket, state=state_lifecycle)
             self._pending_orders_setup_time.pop(ticket, None)
             try:
                 self.refresh_live_tickets_cache(symbol=symbol)
@@ -1584,6 +1667,40 @@ class OrderLifecycleManager:
                     "[RECONCILE] pending query failed (isolated)",
                     error=str(pending_err),
                 )
+            # P0-A (BUG-140): pendings that were tracked internally but are now
+            # GONE from the broker view AND were not removed by our own verified
+            # cancel took a broker-side terminal path (EXPIRED at TTL, REJECTED
+            # by the broker, or CANCELED through an external/manual action).
+            # Emit the terminal outcome so the decision cannot hang forever.
+            # Idempotent at the ledger; the fill path (POSITION bind) removes
+            # the ticket from _pending_cancel_reasons before this sweep could
+            # ever misfire for a filled order (fills appear as POSITIONs here,
+            # not PENDINGs, and bind their own lifecycle).
+            try:
+                previous_pendings = {
+                    int(t)
+                    for t, info in self._live_tickets_cache.items()
+                    if info.get("type") == "PENDING"
+                }
+                current_pendings = set(new_cache)
+                vanished = previous_pendings - current_pendings
+                for gone_ticket in sorted(vanished):
+                    reason = self._pending_cancel_reasons.get(gone_ticket, "")
+                    if "AGE" in reason:
+                        gone_state = DecisionLifecycle.EXPIRED_UNFILLED
+                    elif reason:
+                        # We cancelled it ourselves (verified path already
+                        # emitted; the ledger dedup guard makes this a no-op).
+                        gone_state = DecisionLifecycle.CANCELED_UNFILLED
+                    else:
+                        gone_state = DecisionLifecycle.EXPIRED_UNFILLED
+                    self._emit_terminal_for_pending(
+                        ticket=gone_ticket,
+                        state=gone_state,
+                        detail=f"reconcile sweep: pending vanished from broker view (last_reason={reason or 'none'})",
+                    )
+            except Exception as sweep_err:
+                logger.error("[RECONCILE] terminal pending sweep failed (isolated)", error=str(sweep_err))
             self._live_tickets_cache = new_cache
 
     def reconcile_pending_state(
@@ -4073,6 +4190,9 @@ class OrderLifecycleManager:
                 if should_cancel:
                     # BUG-072/073: broker-verified cancellation — the slot is
                     # released only after broker state confirms the removal.
+                    # P0-A (BUG-140): remember WHY so the terminal outcome can
+                    # distinguish CANCELED_UNFILLED from EXPIRED_UNFILLED.
+                    self._pending_cancel_reasons[ticket] = cancel_reason
                     cancelled_ok = self.cancel_pending_order_verified(ticket=ticket, symbol=symbol)
                     if cancelled_ok:
                         logger.info(
