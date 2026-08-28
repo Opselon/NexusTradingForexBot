@@ -218,9 +218,10 @@
 
   GraphRenderer.prototype._getVisibleEdges = function () {
     var self = this;
+    var positions = self.pos || {};
     var visible = [];
-    this.edges.forEach(function (e) {
-      var a = self.pos[e.source], b = self.pos[e.target];
+    (self.edges || []).forEach(function (e) {
+      var a = positions[e.source], b = positions[e.target];
       if (!a || !b) return;
       // Always show edges connected to selected node
       if (self.selected && (e.source === self.selected || e.target === self.selected)) {
