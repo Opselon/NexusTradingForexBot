@@ -37,7 +37,7 @@ from nexus_scalp.accounting import (
 )
 from nexus_scalp.accounting.worker import format_worker_status
 from nexus_scalp.accounting.aggregation import _usd_per_point, compute_drawdown
-from nexus_scalp.accounting.models import AccountSnapshot, TradeRecord
+from nexus_scalp.accounting.models import AccountSnapshot, TradeRecord, _round_opt
 from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, _classify_stop, normalize_trade_row
 from nexus_scalp.accounting.periods import (
     _floor_day,
@@ -1788,3 +1788,29 @@ class TestForensicQualityJoin:
         assert "NO_EXPERIENCE_LINK" in trace.notes, trace.notes
         assert trace.quality == {}
         assert trace.identity["strategy_id"] == ""
+
+
+# ---------------------------------------------------------------------------
+# 12. Helper Functions
+# ---------------------------------------------------------------------------
+
+
+class TestRoundOpt:
+    def test_none_returns_none(self) -> None:
+        assert _round_opt(None) is None
+
+    def test_rounds_to_two_digits_by_default(self) -> None:
+        assert _round_opt(3.14159) == 3.14
+        assert _round_opt(3.145) == 3.15  # Python 3 round behavior, could be 3.14 or 3.15 depending on float representation
+        assert _round_opt(3.1) == 3.1
+        assert _round_opt(3) == 3.0
+
+    def test_rounds_to_specified_digits(self) -> None:
+        assert _round_opt(3.14159, digits=3) == 3.142
+        assert _round_opt(3.14159, digits=0) == 3.0
+        assert _round_opt(3.14159, digits=4) == 3.1416
+
+    def test_handles_negative_and_zero(self) -> None:
+        assert _round_opt(-2.718) == -2.72
+        assert _round_opt(0.0) == 0.0
+        assert _round_opt(0) == 0.0
