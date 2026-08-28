@@ -154,7 +154,9 @@ class ResearchDatasetBuilder:
         Returns (eligible, rejection_reason, detail). Never raises.
         """
         # 1. Outcome presence.
-        if not rec.is_executed or not rec.is_closed:
+        if not rec.is_executed:
+            return False, REASON_MISSING_OUTCOME, "not executed"
+        if not rec.is_closed:
             return False, REASON_MISSING_OUTCOME, "no recorded outcome"
 
         # 2. Causality.
