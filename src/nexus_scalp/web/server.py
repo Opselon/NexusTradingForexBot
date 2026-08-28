@@ -2927,8 +2927,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
                     try:
                         report = mig.run(on_progress=_on_progress)
-                    except Exception as exc:
-                        import traceback
+                    except Exception:
 
                         state["report"] = {
                             "status": "FAILED",
@@ -2947,8 +2946,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         state["provider_switched"] = True
                     else:
                         state["provider_switched"] = False
-                except Exception as exc:
-                    import traceback
+                except Exception:
 
                     app.state.db_migration_state = {
                         "done": True,
