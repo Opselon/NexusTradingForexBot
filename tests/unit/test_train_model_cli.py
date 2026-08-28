@@ -9,9 +9,11 @@ any 18D truncation or dimension mismatch.
 from datetime import UTC, datetime, timedelta
 
 import polars as pl
+from pathlib import Path
+
 import pytest
 
-from cli.train_model import reconstruct_features_and_bars
+from cli.train_model import load_raw_ticks, reconstruct_features_and_bars
 from nexus_scalp.training.walk_forward_trainer import WalkForwardTrainer
 
 
@@ -101,3 +103,54 @@ def test_cli_feature_cols_compatibility_with_walk_forward_trainer() -> None:
     message = str(exc_info.value)
     assert str(WalkForwardTrainer.NUM_FEATURES) in message
     assert "18" in message
+
+
+def test_load_raw_ticks_success(tmp_path: Path) -> None:
+    """Verifies that load_raw_ticks successfully reads and concatenates parquet files."""
+    symbol = "XAUUSD"
+    symbol_dir = tmp_path / symbol
+    symbol_dir.mkdir(parents=True)
+
+    start_time = datetime(2025, 1, 1, 10, 0, 0, tzinfo=UTC)
+
+    df1 = pl.DataFrame({
+        "timestamp": [start_time, start_time + timedelta(seconds=5)],
+        "bid": [2600.0, 2600.1],
+        "ask": [2600.3, 2600.4]
+    })
+
+    df2 = pl.DataFrame({
+        "timestamp": [start_time + timedelta(minutes=10), start_time + timedelta(minutes=10, seconds=5)],
+        "bid": [2601.0, 2601.1],
+        "ask": [2601.3, 2601.4]
+    })
+
+    df1.write_parquet(symbol_dir / "ticks_part1.parquet")
+    df2.write_parquet(symbol_dir / "ticks_part2.parquet")
+
+    result_df = load_raw_ticks(data_dir=tmp_path, symbol=symbol)
+
+    # Should contain ticks from both files
+    assert len(result_df) == len(df1) + len(df2)
+
+    # Verify concatenated DataFrame maintains correctness
+    assert result_df["timestamp"].is_sorted()
+
+
+def test_load_raw_ticks_dir_not_found(tmp_path: Path) -> None:
+    """Verifies that load_raw_ticks raises FileNotFoundError if directory doesn't exist."""
+    with pytest.raises(FileNotFoundError, match="Raw tick data directory not found"):
+        load_raw_ticks(data_dir=tmp_path, symbol="XAUUSD")
+
+
+def test_load_raw_ticks_no_parquet_files(tmp_path: Path) -> None:
+    """Verifies that load_raw_ticks raises ValueError if no parquet files are found."""
+    symbol = "XAUUSD"
+    symbol_dir = tmp_path / symbol
+    symbol_dir.mkdir(parents=True)
+
+    # Create a non-parquet file
+    (symbol_dir / "ticks.csv").touch()
+
+    with pytest.raises(ValueError, match="No parquet files found"):
+        load_raw_ticks(data_dir=tmp_path, symbol=symbol)
