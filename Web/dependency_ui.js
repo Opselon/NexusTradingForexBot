@@ -386,6 +386,13 @@
       return visIds[e.source] && visIds[e.target];
     });
     state.graph.setLayout(nodes, edges);
+    // The primary graph is ready here; hide its blocking overlay immediately.
+    var graphOverlay = $("graph-loading-overlay");
+    if (graphOverlay) {
+      graphOverlay.classList.add("hidden");
+      graphOverlay.style.display = "none";
+      graphOverlay.setAttribute("aria-hidden", "true");
+    }
     if (state.selectedNode && visIds[state.selectedNode]) {
       state.graph.focus(state.selectedNode);
     }
