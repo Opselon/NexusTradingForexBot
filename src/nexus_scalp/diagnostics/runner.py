@@ -37,8 +37,6 @@ def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
         if sys.platform.startswith("win"):
             # taskkill reliably kills the tree on Windows.
             try:
-                import ctypes  # noqa: F401
-
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                     stdout=subprocess.DEVNULL,
