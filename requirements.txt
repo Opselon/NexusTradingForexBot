@@ -53,4 +53,4 @@ pytest-cov>=4.1.0                  # Code test coverage metrics calculator
 ruff>=0.2.0                        # Ultra-fast Rust-based linter and formatter
 mypy>=1.8.0                        # Static type-checking analyzer
 types-pyyaml>=6.0.12               # Type hints for PyYAML library
-Pygments>=2.19.2
+

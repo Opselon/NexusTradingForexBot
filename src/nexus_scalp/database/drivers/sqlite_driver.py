@@ -141,7 +141,7 @@ class SQLiteDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            rows = c.execute(f"PRAGMA table_info({table})").fetchall()
+            rows = c.execute(f"PRAGMA table_info({self.quote_ident(table)})").fetchall()
             return [dict(r) for r in rows]
         finally:
             if own:
@@ -247,13 +247,17 @@ class SQLiteDriver(DatabaseDriver):
         """Portable upsert: SQLite uses INSERT OR REPLACE (native)."""
         cols = list(row.keys())
         qmarks = ",".join("?" for _ in cols)
-        sql = f"INSERT OR REPLACE INTO {table} ({','.join(cols)}) VALUES ({qmarks})"
+        table_sql = self.quote_ident(table)
+        columns_sql = ",".join(self.quote_ident(col) for col in cols)
+        sql = f"INSERT OR REPLACE INTO {table_sql} ({columns_sql}) VALUES ({qmarks})"
         self.execute(sql, [row[c] for c in cols], conn=conn)
 
     def insert_ignore(self, table: str, row: dict[str, Any], conn: Any = None) -> None:
         cols = list(row.keys())
         qmarks = ",".join("?" for _ in cols)
-        sql = f"INSERT OR IGNORE INTO {table} ({','.join(cols)}) VALUES ({qmarks})"
+        table_sql = self.quote_ident(table)
+        columns_sql = ",".join(self.quote_ident(col) for col in cols)
+        sql = f"INSERT OR IGNORE INTO {table_sql} ({columns_sql}) VALUES ({qmarks})"
         self.execute(sql, [row[c] for c in cols], conn=conn)
 
     # -- transactions / locking ------------------------------------------

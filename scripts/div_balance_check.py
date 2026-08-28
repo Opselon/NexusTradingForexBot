@@ -45,7 +45,10 @@ PAIRED_TAGS = {
     "style",
     "template",
 }
-TAG_RE = re.compile(r"<\s*(/?)\s*([a-zA-Z0-9]+)([^>]*?)(/?)>", re.DOTALL)
+# Match only one HTML tag at a time.  Attribute text cannot contain angle
+# brackets, preventing pathological backtracking and handling whitespace in
+# closing tags such as ``</script\t>`` correctly.
+TAG_RE = re.compile(r"<\s*(/?)\s*([a-zA-Z][a-zA-Z0-9]*)(?:\s+[^<>]*?)?\s*(/?)>")
 
 
 class _HTMLStripper(HTMLParser):

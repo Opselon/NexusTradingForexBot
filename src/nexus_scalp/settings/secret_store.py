@@ -192,7 +192,9 @@ class SecureSecretStore:
         data = self._load()
         data[name] = payload
         self._save(data)
-        logger.info("[SECRET_STORE] secret stored name=%s scheme=%s", name, scheme)
+        # Do not place secret identifiers in logs: callers may use names that
+        # themselves reveal credential purpose or tenant information.
+        logger.info("[SECRET_STORE] secret stored")
 
     def get_secret(self, name: str) -> str | None:
         """Return the decrypted secret, or None when absent/unreadable."""

@@ -701,8 +701,13 @@ class TelegramNotifier:
     ) -> Any:
         """HTTPS request that connects to `ip` but keeps `host` for SNI +
         Host header (the --resolve equivalent urllib lacks)."""
-        context = ssl.create_default_context()
+        # Explicitly construct a client context so legacy TLS versions are
+        # never implicitly enabled by a platform/OpenSSL default.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.maximum_version = ssl.TLSVersion.MAXIMUM_SUPPORTED
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
         raw_sock = socket.create_connection((ip, 443), timeout=timeout)
         try:
             tls_sock = context.wrap_socket(raw_sock, server_hostname=host)

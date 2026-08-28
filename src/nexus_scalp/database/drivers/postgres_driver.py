@@ -410,13 +410,16 @@ class PostgreSQLDriver(DatabaseDriver):
                 return
             placeholders = ",".join("%s" for _ in cols)
             col_list = ",".join(cols)
-            sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
+            table_sql = self.quote_ident(table)
+            col_list = ",".join(self.quote_ident(col) for col in cols)
+            sql = f"INSERT INTO {table_sql} ({col_list}) VALUES ({placeholders})"
             hit = self._conflict_target(table, c, cols)
             if hit:
                 target, _in_row = hit
                 updates = ",".join(f"{cn} = EXCLUDED.{cn}" for cn in cols if cn not in target)
                 if updates:
-                    sql += f" ON CONFLICT ({','.join(target)}) DO UPDATE SET {updates}"
+                    target_sql = ",".join(self.quote_ident(col) for col in target)
+                    sql += f" ON CONFLICT ({target_sql}) DO UPDATE SET {updates}"
                 else:
                     sql += " ON CONFLICT DO NOTHING"
             else:
@@ -434,8 +437,10 @@ class PostgreSQLDriver(DatabaseDriver):
         try:
             cols = list(row.keys())
             placeholders = ",".join("%s" for _ in cols)
+            table_sql = self.quote_ident(table)
+            columns_sql = ",".join(self.quote_ident(col) for col in cols)
             sql = (
-                f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders}) "
+                f"INSERT INTO {table_sql} ({columns_sql}) VALUES ({placeholders}) "
                 "ON CONFLICT DO NOTHING"
             )
             c.execute(sql, list(row.values()))
