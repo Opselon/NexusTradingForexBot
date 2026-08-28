@@ -230,6 +230,9 @@
       state.graph_data = r.data;
       populateFilters(r.data);
       drawGraph(r.data);
+      // The graph is the primary payload; do not keep the whole page blocked
+      // while optional cycle/violation panels finish loading.
+      setLoading(false);
       return api.cycles();
     }).then(function (r) {
       if (!r || !r.ok) return;

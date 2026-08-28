@@ -220,7 +220,9 @@
     var self = this;
     var positions = self.pos || {};
     var visible = [];
+    var maxEdges = 1400;
     (self.edges || []).forEach(function (e) {
+      if (visible.length >= maxEdges && !self.selected && (!self._focusHighlight || self._focusHighlight.size === 0)) return;
       var a = positions[e.source], b = positions[e.target];
       if (!a || !b) return;
       // Always show edges connected to selected node
