@@ -2932,8 +2932,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
                         state["report"] = {
                             "status": "FAILED",
-                            "errors": [str(exc)],
-                            "trace": traceback.format_exc()[:2000],
+                            "code": "DB_MIGRATION_FAILED",
+                            
                         }
                         state["done"] = True
                         state["progress"] = 0.0
@@ -2955,8 +2955,8 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "progress": 0.0,
                         "report": {
                             "status": "FAILED",
-                            "errors": [str(exc)],
-                            "trace": traceback.format_exc()[:2000],
+                            "code": "DB_MIGRATION_FAILED",
+                            
                         },
                     }
 

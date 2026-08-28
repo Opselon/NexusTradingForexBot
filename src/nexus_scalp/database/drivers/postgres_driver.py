@@ -204,7 +204,7 @@ class PostgreSQLDriver(DatabaseDriver):
             pk_rows = c.execute(
                 "SELECT a.attname FROM pg_index i "
                 "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
-                "WHERE i.indrelid = %s::regclass AND i.indisprimary",
+                "WHERE i.indrelid = (SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = %s AND n.nspname = 'public') AND i.indisprimary",
                 (table,),
             ).fetchall()
             pks = {r[0] for r in pk_rows}
@@ -481,7 +481,7 @@ class PostgreSQLDriver(DatabaseDriver):
         )
 
     def row_count(self, table: str, conn: Any = None) -> int:
-        return int(self.scalar(f"SELECT COUNT(*) FROM {table}", conn=conn) or 0)
+        return int(self.scalar(f"SELECT COUNT(*) FROM {self.quote_ident(table)}", conn=conn) or 0)
 
     def ping(self, conn: Any = None) -> bool:
         try:

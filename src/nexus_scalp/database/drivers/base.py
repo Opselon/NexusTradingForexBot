@@ -18,6 +18,7 @@ Portability rules enforced by this boundary:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import re
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -46,7 +47,9 @@ class DatabaseDriver(ABC):
         return ",".join(f"%s{i}" for i in range(count))  # pyformat
 
     def quote_ident(self, ident: str) -> str:
-        """Quote a SQL identifier for this provider."""
+        """Validate and quote a simple SQL identifier."""
+        if not isinstance(ident, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ident) is None:
+            raise ValueError("invalid SQL identifier")
         return f'"{ident}"'
 
     def transaction(self, conn: Any = None):
