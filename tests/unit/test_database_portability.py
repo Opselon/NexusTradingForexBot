@@ -559,7 +559,7 @@ class TestDbConsoleDatabases:
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
-            pytest.skip("audit is on PostgreSQL; db_console rows test requires SQLite audit_ledger")
+            pytest.skip("audit is on PostgreSQL; db_console rows test requires SQLite application_settings")
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
@@ -571,7 +571,7 @@ class TestDbConsoleDatabases:
         c = TestClient(app)
         r = c.get(
             "/api/db/console/rows",
-            params={"database": "audit", "table": "audit_ledger", "limit": 5, "offset": 0},
+            params={"database": "audit", "table": "application_settings", "limit": 5, "offset": 0},
         )
         body = r.json()
         assert body["success"] is True
@@ -580,7 +580,7 @@ class TestDbConsoleDatabases:
         # the guard: even a silly limit cannot exceed MAX_ROWS
         r2 = c.get(
             "/api/db/console/rows",
-            params={"database": "audit", "table": "audit_ledger", "limit": 999999},
+            params={"database": "audit", "table": "application_settings", "limit": 999999},
         )
         assert len(r2.json()["rows"]) <= MAX_ROWS
 
@@ -589,7 +589,7 @@ class TestDbConsoleDatabases:
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
-            pytest.skip("audit is on PostgreSQL; columns test requires SQLite audit_ledger")
+            pytest.skip("audit is on PostgreSQL; columns test requires SQLite application_settings")
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
@@ -599,10 +599,10 @@ class TestDbConsoleDatabases:
         app = FastAPI()
         app.include_router(router)
         c = TestClient(app)
-        r = c.get("/api/db/console/columns", params={"database": "audit", "table": "audit_ledger"})
+        r = c.get("/api/db/console/columns", params={"database": "audit", "table": "application_settings"})
         body = r.json()
         assert body["success"] is True
-        assert any(col["name"] == "ticket" for col in body["columns"])
+        assert any(col["name"] == "key" for col in body["columns"])
         assert all("type" in col for col in body["columns"])
 
 
@@ -612,7 +612,7 @@ class TestDbConsoleQueryGuard:
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
-            pytest.skip("audit is on PostgreSQL; query test requires SQLite audit_ledger")
+            pytest.skip("audit is on PostgreSQL; query test requires SQLite application_settings")
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
@@ -624,7 +624,7 @@ class TestDbConsoleQueryGuard:
         c = TestClient(app)
         r = c.post(
             "/api/db/console/query",
-            json={"database": "audit", "sql": "SELECT COUNT(*) AS n FROM audit_ledger"},
+            json={"database": "audit", "sql": "SELECT COUNT(*) AS n FROM application_settings"},
         )
         body = r.json()
         assert body["success"] is True
@@ -640,10 +640,10 @@ class TestDbConsoleQueryGuard:
         app.include_router(router)
         c = TestClient(app)
         for bad in (
-            "DROP TABLE audit_ledger",
-            "INSERT INTO audit_ledger VALUES (1)",
-            "DELETE FROM audit_ledger",
-            "UPDATE audit_ledger SET x=1",
+            "DROP TABLE application_settings",
+            "INSERT INTO application_settings VALUES (1)",
+            "DELETE FROM application_settings",
+            "UPDATE application_settings SET x=1",
         ):
             r = c.post("/api/db/console/query", json={"database": "audit", "sql": bad})
             body = r.json()
@@ -661,7 +661,7 @@ class TestDbConsoleQueryGuard:
         c = TestClient(app)
         r = c.post(
             "/api/db/console/query",
-            json={"database": "audit", "sql": "SELECT 1; DROP TABLE audit_ledger"},
+            json={"database": "audit", "sql": "SELECT 1; DROP TABLE application_settings"},
         )
         assert r.json()["success"] is False
 
@@ -670,7 +670,7 @@ class TestDbConsoleQueryGuard:
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
-            pytest.skip("audit is on PostgreSQL; quick-sql test requires SQLite audit_ledger")
+            pytest.skip("audit is on PostgreSQL; quick-sql test requires SQLite application_settings")
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
@@ -682,7 +682,7 @@ class TestDbConsoleQueryGuard:
         c = TestClient(app)
         r = c.get(
             "/api/db/console/quick",
-            params={"database": "audit", "table": "audit_ledger", "kind": "top100"},
+            params={"database": "audit", "table": "application_settings", "kind": "top100"},
         )
         body = r.json()
         assert body["success"] is True
