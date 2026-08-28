@@ -326,8 +326,14 @@ class TestPeriodBounds:
         assert parse_sql_timestamp("2026-08-15 10:00:00").hour == 10
         assert parse_sql_timestamp("2026-08-15T10:00:00+00:00").hour == 10
         assert parse_sql_timestamp("2026-08-15T10:00:00Z").hour == 10
+        assert parse_sql_timestamp("2026-08-15").hour == 0
+        assert parse_sql_timestamp("2026-08-15").day == 15
+        assert parse_sql_timestamp("2026-08-15 10:00:00.123456").microsecond == 123456
         assert parse_sql_timestamp(None) is None
+        assert parse_sql_timestamp("") is None
+        assert parse_sql_timestamp("   ") is None
         assert parse_sql_timestamp("garbage") is None
+        assert parse_sql_timestamp("2026-13-45") is None
 
     def test_ensure_utc_converts_offsets(self) -> None:
         shifted = datetime(2026, 8, 15, 12, 0, 0, tzinfo=timezone(timedelta(hours=3)))
