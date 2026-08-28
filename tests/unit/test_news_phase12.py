@@ -248,7 +248,9 @@ class TestDeduplication:
 
     def test_11b_normalized_url_strips_noise(self):
         assert normalize_url("https://www.example.com/article/") == "example.com/article"
-        assert normalize_url("http://example.com/article?utm_source=twitter") == "example.com/article"
+        assert (
+            normalize_url("http://example.com/article?utm_source=twitter") == "example.com/article"
+        )
         assert normalize_url("https://example.com/article#comments") == "example.com/article"
         assert normalize_url("  https://www.example.com/article/?q=1  ") == "example.com/article"
         assert normalize_url("https://example.com/ARTICLE") == "example.com/article"

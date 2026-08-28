@@ -1,8 +1,10 @@
-import pytest
 from unittest.mock import MagicMock, patch
 
-from nexus_scalp.news.pro_auto import provider_status_for_console
+import pytest
+
 from nexus_scalp.news.ai_service import NewsAIStatus, NewsAIStatusState
+from nexus_scalp.news.pro_auto import provider_status_for_console
+
 
 @patch("nexus_scalp.news.pro_auto.get_ai_status")
 @patch("nexus_scalp.news.pro_auto.resolve_factory_provider")
@@ -16,7 +18,7 @@ def test_provider_status_for_console_success(mock_resolve_provider, mock_get_ai_
         model="test_model",
         base_url="https://test.url",
         source="test_source",
-        detail="OK"
+        detail="OK",
     )
     mock_get_ai_status.return_value = mock_status
 
@@ -39,6 +41,7 @@ def test_provider_status_for_console_success(mock_resolve_provider, mock_get_ai_
 
     mock_get_ai_status.assert_called_once_with(None, None)
     mock_resolve_provider.assert_called_once_with(None, None)
+
 
 @patch("nexus_scalp.news.pro_auto.get_ai_status")
 @patch("nexus_scalp.news.pro_auto.resolve_factory_provider")
@@ -67,9 +70,12 @@ def test_provider_status_for_console_no_provider(mock_resolve_provider, mock_get
     mock_get_ai_status.assert_called_once_with(None, None)
     mock_resolve_provider.assert_called_once_with(None, None)
 
+
 @patch("nexus_scalp.news.pro_auto.get_ai_status")
 @patch("nexus_scalp.news.pro_auto.resolve_factory_provider")
-def test_provider_status_for_console_provider_unavailable(mock_resolve_provider, mock_get_ai_status):
+def test_provider_status_for_console_provider_unavailable(
+    mock_resolve_provider, mock_get_ai_status
+):
     # Setup mocks
     mock_status = NewsAIStatus(
         configured=True,
