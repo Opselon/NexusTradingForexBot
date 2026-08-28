@@ -59,12 +59,12 @@
     var overlay = $("graph-loading-overlay");
     var globalOverlay = $("global-loading-overlay");
     if (overlay) {
-      if (loading) overlay.classList.remove("hidden");
-      else overlay.classList.add("hidden");
+      if (loading) { overlay.classList.remove("hidden"); overlay.style.display = "flex"; }
+      else { overlay.classList.add("hidden"); overlay.style.display = "none"; }
     }
     if (globalOverlay) {
-      if (loading && !state.graph) globalOverlay.classList.remove("hidden");
-      else globalOverlay.classList.add("hidden");
+      if (loading && !state.graph) { globalOverlay.classList.remove("hidden"); globalOverlay.style.display = "flex"; }
+      else { globalOverlay.classList.add("hidden"); globalOverlay.style.display = "none"; }
     }
   }
 
