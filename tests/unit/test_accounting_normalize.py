@@ -1,5 +1,7 @@
 import pytest
+
 from nexus_scalp.accounting.normalize import _is_long
+
 
 def test_is_long():
     """Test that _is_long correctly identifies long direction strings."""

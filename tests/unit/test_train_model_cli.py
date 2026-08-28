@@ -7,10 +7,9 @@ any 18D truncation or dimension mismatch.
 """
 
 from datetime import UTC, datetime, timedelta
-
-import polars as pl
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 from cli.train_model import load_raw_ticks, reconstruct_features_and_bars
@@ -113,17 +112,24 @@ def test_load_raw_ticks_success(tmp_path: Path) -> None:
 
     start_time = datetime(2025, 1, 1, 10, 0, 0, tzinfo=UTC)
 
-    df1 = pl.DataFrame({
-        "timestamp": [start_time, start_time + timedelta(seconds=5)],
-        "bid": [2600.0, 2600.1],
-        "ask": [2600.3, 2600.4]
-    })
+    df1 = pl.DataFrame(
+        {
+            "timestamp": [start_time, start_time + timedelta(seconds=5)],
+            "bid": [2600.0, 2600.1],
+            "ask": [2600.3, 2600.4],
+        }
+    )
 
-    df2 = pl.DataFrame({
-        "timestamp": [start_time + timedelta(minutes=10), start_time + timedelta(minutes=10, seconds=5)],
-        "bid": [2601.0, 2601.1],
-        "ask": [2601.3, 2601.4]
-    })
+    df2 = pl.DataFrame(
+        {
+            "timestamp": [
+                start_time + timedelta(minutes=10),
+                start_time + timedelta(minutes=10, seconds=5),
+            ],
+            "bid": [2601.0, 2601.1],
+            "ask": [2601.3, 2601.4],
+        }
+    )
 
     df1.write_parquet(symbol_dir / "ticks_part1.parquet")
     df2.write_parquet(symbol_dir / "ticks_part2.parquet")

@@ -1,10 +1,12 @@
 import hashlib
 import hmac
 import json
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, UTC
 
 from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
+
 
 def test_verify_request_signature_valid():
     secret = "test_secret_123"
@@ -23,6 +25,7 @@ def test_verify_request_signature_valid():
 
     assert adapter.verify_request_signature(body, timestamp, valid_signature) is True
 
+
 def test_verify_request_signature_invalid():
     secret = "test_secret_123"
     adapter = RemoteMT5GatewayAdapter(secret_token=secret)
@@ -31,6 +34,7 @@ def test_verify_request_signature_invalid():
     body = json.dumps({"action": "ping"}).encode("utf-8")
 
     assert adapter.verify_request_signature(body, timestamp, "invalid_sig") is False
+
 
 def test_verify_request_signature_wrong_body():
     secret = "test_secret_123"
@@ -51,6 +55,7 @@ def test_verify_request_signature_wrong_body():
     # Verify with tampered body
     assert adapter.verify_request_signature(tampered_body, timestamp, valid_signature) is False
 
+
 def test_verify_request_signature_wrong_timestamp():
     secret = "test_secret_123"
     adapter = RemoteMT5GatewayAdapter(secret_token=secret)
@@ -67,6 +72,7 @@ def test_verify_request_signature_wrong_timestamp():
     ).hexdigest()
 
     assert adapter.verify_request_signature(body, timestamp2, valid_signature) is False
+
 
 def test_verify_request_signature_empty_body():
     secret = "test_secret_123"
