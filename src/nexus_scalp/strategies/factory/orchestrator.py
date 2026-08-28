@@ -58,7 +58,6 @@ from nexus_scalp.strategies.factory.models import (
     FactoryCandidate,
     FactoryStage,
     FailureReason,
-    GenerationMode,
     LoopState,
     StrategyFamily,
 )
@@ -1766,7 +1765,6 @@ MAX_GENERATIONS_READ = 1000
 
 __all__ = [
     "EvolutionConfig",
-    "GenerationMode",
     "LoopState",
     "StrategyFactory",
 ]
