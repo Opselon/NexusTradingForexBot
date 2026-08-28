@@ -47,7 +47,7 @@ class DatabaseDriver(ABC):
 
     def quote_ident(self, ident: str) -> str:
         """Quote a SQL identifier for this provider."""
-        return f'"{ident}"'
+        return f'"{ident.replace("\"", "\"\"")}"'
 
     def transaction(self, conn: Any = None):
         """Context manager for an atomic unit of work (savepoint-friendly).
