@@ -37,7 +37,7 @@ from nexus_scalp.accounting import (
 )
 from nexus_scalp.accounting.aggregation import _usd_per_point, compute_drawdown
 from nexus_scalp.accounting.models import AccountSnapshot, TradeRecord
-from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, normalize_trade_row
+from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, _classify_stop, normalize_trade_row
 from nexus_scalp.accounting.periods import (
     ensure_utc,
     parse_sql_timestamp,
@@ -692,6 +692,131 @@ class TestClosureClassification:
     def test_emergency_close(self) -> None:
         cls, _ = classify_exit(self._row(exit_mechanism="PROFIT_GIVEBACK_PROTECTION"))
         assert cls is ExitClassification.EMERGENCY_EXIT
+
+
+
+
+class TestClassifyStopDirectly:
+    def test_unmodified_stop(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=1990.0,
+            was_sl_modified=False,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.INITIAL_STOP
+
+    def test_zero_prices_fallback(self) -> None:
+        cls1 = _classify_stop(
+            is_long=True,
+            entry=0.0,
+            initial_sl=0.0,
+            final_sl=0.0,
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls1 is ExitClassification.BREAKEVEN_STOP
+
+        cls2 = _classify_stop(
+            is_long=True,
+            entry=0.0,
+            initial_sl=0.0,
+            final_sl=0.0,
+            was_sl_modified=True,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        assert cls2 is ExitClassification.INITIAL_STOP
+
+    def test_trailing_stop_long(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=2010.0,
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.TRAILING_STOP
+
+    def test_trailing_stop_short(self) -> None:
+        cls = _classify_stop(
+            is_long=False,
+            entry=2000.0,
+            initial_sl=2010.0,
+            final_sl=1990.0,
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.TRAILING_STOP
+
+    def test_breakeven_stop_long(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=2000.1,  # within point_tolerance
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.BREAKEVEN_STOP
+
+    def test_breakeven_stop_short(self) -> None:
+        cls = _classify_stop(
+            is_long=False,
+            entry=2000.0,
+            initial_sl=2010.0,
+            final_sl=1999.9,  # within point_tolerance
+            was_sl_modified=True,
+            risk_free_flag=True,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.BREAKEVEN_STOP
+
+    def test_tightened_stop_long(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=1995.0,
+            was_sl_modified=True,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        # It's a trailing stop because it moved more than tolerance,
+        # even though it didn't cross entry.
+        assert cls is ExitClassification.TRAILING_STOP
+
+    def test_tightened_stop_short(self) -> None:
+        cls = _classify_stop(
+            is_long=False,
+            entry=2000.0,
+            initial_sl=2010.0,
+            final_sl=2005.0,
+            was_sl_modified=True,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.TRAILING_STOP
+
+    def test_tiny_modification_initial_stop(self) -> None:
+        cls = _classify_stop(
+            is_long=True,
+            entry=2000.0,
+            initial_sl=1990.0,
+            final_sl=1990.1,  # less than tolerance
+            was_sl_modified=True,
+            risk_free_flag=False,
+            point_tolerance=0.2,
+        )
+        assert cls is ExitClassification.INITIAL_STOP
 
 
 # ---------------------------------------------------------------------------
