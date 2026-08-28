@@ -3284,7 +3284,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         return out
 
     @app.post("/api/runtime-config/model-swap")
-    def model_hot_swap(payload: dict[str, Any]) -> dict[str, Any]:
+    async def model_hot_swap(payload: dict[str, Any]) -> dict[str, Any]:
         """Model artifact hot swap: load-validate-warm-atomic-swap.
 
         Payload: {"model_artifact_path": "..."}
@@ -3297,7 +3297,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         artifact = str(payload.get("model_artifact_path") or "").strip()
         if not artifact:
             raise HTTPException(status_code=422, detail="model_artifact_path required")
-        result = engine.hot_swap_model(artifact, source="WEB_UI")
+        result = await engine.hot_swap_model(artifact, source="WEB_UI")
         return result
 
     # ------------------------------------------------------------------

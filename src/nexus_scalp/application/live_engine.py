@@ -1073,7 +1073,7 @@ class LiveEngine:
         except Exception as e:
             logger.error("[MODEL] provenance registration failed (isolated)", error=str(e))
 
-    def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
+    async def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
         """Atomically swap the serving model artifact (safe hot swap).
 
         Loads + validates + warms the NEW bundle FIRST; only on success the
@@ -1081,7 +1081,6 @@ class LiveEngine:
         In-flight inference completes against the old bundle under the
         bundle lock. Never replaces a healthy model with an invalid artifact.
         """
-        import hashlib
 
         new_path = Path(new_artifact_path)
         old_path = Path(self.config.model.model_artifact_path)
@@ -1099,22 +1098,32 @@ class LiveEngine:
             # Load + validate the NEW bundle in isolation (never touching
             # the serving bundle). _load_or_create_bundle raises on dimension
             # mismatch and quarantines corrupt checkpoints.
-            new_bundle = self._load_or_create_bundle(model_path=new_path, force_fresh=False)
-            # Warm-up: one forward pass validates the artifact end-to-end.
-            import numpy as np
-            import torch
+            import asyncio
 
-            warm = np.zeros((1, int(new_bundle.model.num_features)), dtype=np.float32)
-            warm = new_bundle.scaler.transform(warm)
-            with torch.inference_mode():
-                new_bundle.model(torch.tensor(warm, dtype=torch.float32))
+            new_bundle = await asyncio.to_thread(
+                self._load_or_create_bundle, model_path=new_path, force_fresh=False
+            )
 
-            # Compute artifact hash for traceability (model version/hash)
-            h = hashlib.sha256()
-            with open(new_path, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    h.update(chunk)
-            artifact_hash = h.hexdigest()[:16]
+            def _warmup_and_hash():
+                # Warm-up: one forward pass validates the artifact end-to-end.
+                import hashlib
+
+                import numpy as np
+                import torch
+
+                warm = np.zeros((1, int(new_bundle.model.num_features)), dtype=np.float32)
+                warm = new_bundle.scaler.transform(warm)
+                with torch.inference_mode():
+                    new_bundle.model(torch.tensor(warm, dtype=torch.float32))
+
+                # Compute artifact hash for traceability (model version/hash)
+                h = hashlib.sha256()
+                with open(new_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(65536), b""):
+                        h.update(chunk)
+                return h.hexdigest()[:16]
+
+            artifact_hash = await asyncio.to_thread(_warmup_and_hash)
 
             # ATOMIC SWAP under the bundle lock: new bundle replaces old.
             with self._bundle_lock:
