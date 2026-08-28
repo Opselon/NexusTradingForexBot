@@ -15,7 +15,6 @@ import hashlib
 import hmac
 import json
 import time
-import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from typing import Any
