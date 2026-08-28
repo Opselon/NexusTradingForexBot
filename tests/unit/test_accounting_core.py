@@ -39,6 +39,7 @@ from nexus_scalp.accounting.aggregation import _usd_per_point, compute_drawdown
 from nexus_scalp.accounting.models import AccountSnapshot, TradeRecord
 from nexus_scalp.accounting.normalize import classify_exit, classify_outcome, _classify_stop, normalize_trade_row
 from nexus_scalp.accounting.periods import (
+    _floor_day,
     ensure_utc,
     parse_sql_timestamp,
     period_bounds,
@@ -307,6 +308,19 @@ class TestPeriodBounds:
         assert b.start == datetime(2026, 1, 1, tzinfo=UTC)
         assert b.end == datetime(2027, 1, 1, tzinfo=UTC)
         assert b.key == "2026"
+
+    def test_floor_day(self) -> None:
+        moment = datetime(2026, 8, 15, 14, 30, 45, 123456, tzinfo=UTC)
+        floored = _floor_day(moment)
+        assert floored == datetime(2026, 8, 15, 0, 0, 0, 0, tzinfo=UTC)
+        assert floored.hour == 0
+        assert floored.minute == 0
+        assert floored.second == 0
+        assert floored.microsecond == 0
+        assert floored.year == 2026
+        assert floored.month == 8
+        assert floored.day == 15
+        assert floored.tzinfo == UTC
 
     def test_naive_datetime_assumed_utc(self) -> None:
         naive = datetime(2026, 8, 15, 3, 0, 0)  # no tzinfo
