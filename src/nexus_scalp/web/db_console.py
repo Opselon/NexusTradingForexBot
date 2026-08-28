@@ -453,6 +453,17 @@ def console_quick(database: str = "audit", table: str = "", kind: str = "top100"
         template = _QUICK_SQL.get(kind)
         if template is None:
             return {"success": False, "error": f"unknown quick kind '{kind}'"}
+
+        driver, _ = _driver_for(database)
+        if driver is None:
+            return {"success": False, "error": f"unknown database '{database}'"}
+
+        try:
+            if not driver.table_exists(table):
+                return {"success": False, "error": f"table '{table}' not found"}
+        finally:
+            driver.close()
+
         sql = template.format(table=table)
         return console_query({"database": database, "sql": sql})
     except Exception as exc:
