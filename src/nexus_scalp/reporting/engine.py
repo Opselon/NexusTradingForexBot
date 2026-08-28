@@ -1034,22 +1034,23 @@ class PerformanceReportEngine:
         tickets = [str(t.ticket) for t in closed]
         if not tickets:
             return BehavioralSection(state="NO_DATA")
-        placeholders = ",".join("?" for _ in tickets[:500])
         try:
             with self.core._connect() as conn:
+                conn.execute("CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)")
+                conn.execute("DELETE FROM _tmp_rpt_tickets")
+                conn.executemany("INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", [(t,) for t in tickets])
+
                 rows = [
                     dict(r)
                     for r in conn.execute(
-                        f"SELECT behavior_key, pattern, severity, confidence, evidence "
-                        f"FROM behavior_detections WHERE ticket IN ({placeholders})",
-                        tuple(tickets[:500]),
+                        "SELECT behavior_key, pattern, severity, confidence, evidence "
+                        "FROM behavior_detections d JOIN _tmp_rpt_tickets t ON d.ticket = t.ticket"
                     )
                 ]
                 analysis = [
                     dict(r)
                     for r in conn.execute(
-                        f"SELECT * FROM behavior_analysis WHERE ticket IN ({placeholders})",
-                        tuple(tickets[:500]),
+                        "SELECT * FROM behavior_analysis a JOIN _tmp_rpt_tickets t ON a.ticket = t.ticket"
                     )
                 ]
         except Exception as err:
@@ -1100,22 +1101,23 @@ class PerformanceReportEngine:
         tickets = [str(t.ticket) for t in closed]
         if not tickets:
             return AnomalyStateSection(state="NO_DATA")
-        placeholders = ",".join("?" for _ in tickets[:500])
         try:
             with self.core._connect() as conn:
+                conn.execute("CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)")
+                conn.execute("DELETE FROM _tmp_rpt_tickets")
+                conn.executemany("INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", [(t,) for t in tickets])
+
                 rows = [
                     dict(r)
                     for r in conn.execute(
-                        f"SELECT anomaly_type, severity, algorithm_version "
-                        f"FROM anomaly_events WHERE ticket IN ({placeholders})",
-                        tuple(tickets[:500]),
+                        "SELECT anomaly_type, severity, algorithm_version "
+                        "FROM anomaly_events e JOIN _tmp_rpt_tickets t ON e.ticket = t.ticket"
                     )
                 ]
                 analysis = [
                     dict(r)
                     for r in conn.execute(
-                        f"SELECT * FROM behavior_analysis WHERE ticket IN ({placeholders})",
-                        tuple(tickets[:500]),
+                        "SELECT * FROM behavior_analysis a JOIN _tmp_rpt_tickets t ON a.ticket = t.ticket"
                     )
                 ]
         except Exception as err:
