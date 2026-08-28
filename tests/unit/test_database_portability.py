@@ -559,7 +559,9 @@ class TestDbConsoleDatabases:
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
-            pytest.skip("audit is on PostgreSQL; db_console rows test requires SQLite application_settings")
+            pytest.skip(
+                "audit is on PostgreSQL; db_console rows test requires SQLite application_settings"
+            )
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
@@ -599,7 +601,9 @@ class TestDbConsoleDatabases:
         app = FastAPI()
         app.include_router(router)
         c = TestClient(app)
-        r = c.get("/api/db/console/columns", params={"database": "audit", "table": "application_settings"})
+        r = c.get(
+            "/api/db/console/columns", params={"database": "audit", "table": "application_settings"}
+        )
         body = r.json()
         assert body["success"] is True
         assert any(col["name"] == "key" for col in body["columns"])
@@ -670,7 +674,9 @@ class TestDbConsoleQueryGuard:
 
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
-            pytest.skip("audit is on PostgreSQL; quick-sql test requires SQLite application_settings")
+            pytest.skip(
+                "audit is on PostgreSQL; quick-sql test requires SQLite application_settings"
+            )
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient

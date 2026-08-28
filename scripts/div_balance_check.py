@@ -21,9 +21,29 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 PAIRED_TAGS = {
-    "div", "section", "article", "header", "footer", "main", "aside", "nav",
-    "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th", "form",
-    "button", "select", "script", "style", "template",
+    "div",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "main",
+    "aside",
+    "nav",
+    "ul",
+    "ol",
+    "li",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "td",
+    "th",
+    "form",
+    "button",
+    "select",
+    "script",
+    "style",
+    "template",
 }
 TAG_RE = re.compile(r"<\s*(/?)\s*([a-zA-Z0-9]+)([^>]*?)(/?)>", re.DOTALL)
 
@@ -79,7 +99,9 @@ def check_file(path: Path) -> tuple[bool, list[str]]:
                 continue
             top_tag, top_line = stack[-1]
             if top_tag != tag:
-                issues.append(f"line {line}: MISMATCHED close </{tag}> (top of stack is <{top_tag}> opened at line {top_line})")
+                issues.append(
+                    f"line {line}: MISMATCHED close </{tag}> (top of stack is <{top_tag}> opened at line {top_line})"
+                )
                 for i in range(len(stack) - 1, -1, -1):
                     if stack[i][0] == tag:
                         del stack[i]
@@ -113,4 +135,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
-

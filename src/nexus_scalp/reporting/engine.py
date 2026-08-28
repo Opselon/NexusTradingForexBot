@@ -1036,9 +1036,13 @@ class PerformanceReportEngine:
             return BehavioralSection(state="NO_DATA")
         try:
             with self.core._connect() as conn:
-                conn.execute("CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)")
+                conn.execute(
+                    "CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)"
+                )
                 conn.execute("DELETE FROM _tmp_rpt_tickets")
-                conn.executemany("INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", [(t,) for t in tickets])
+                conn.executemany(
+                    "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", [(t,) for t in tickets]
+                )
 
                 rows = [
                     dict(r)
@@ -1103,9 +1107,13 @@ class PerformanceReportEngine:
             return AnomalyStateSection(state="NO_DATA")
         try:
             with self.core._connect() as conn:
-                conn.execute("CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)")
+                conn.execute(
+                    "CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)"
+                )
                 conn.execute("DELETE FROM _tmp_rpt_tickets")
-                conn.executemany("INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", [(t,) for t in tickets])
+                conn.executemany(
+                    "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", [(t,) for t in tickets]
+                )
 
                 rows = [
                     dict(r)

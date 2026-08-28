@@ -1,6 +1,5 @@
-import time
 import sqlite3
-import random
+import time
 
 # setup database
 conn = sqlite3.connect(":memory:")
@@ -14,6 +13,7 @@ for i in range(10000):
 
 tickets = [f"TICKET_{i}" for i in range(5000)]
 
+
 def method_chunk_loop():
     rows = []
     analysis = []
@@ -22,13 +22,20 @@ def method_chunk_loop():
         placeholders = ",".join("?" * len(chunk))
 
         # detections
-        for r in conn.execute(f"SELECT ticket, pattern FROM behavior_detections WHERE ticket IN ({placeholders})", tuple(chunk)):
+        for r in conn.execute(
+            f"SELECT ticket, pattern FROM behavior_detections WHERE ticket IN ({placeholders})",
+            tuple(chunk),
+        ):
             rows.append(r)
 
         # analysis
-        for r in conn.execute(f"SELECT ticket, evidence_coverage FROM behavior_analysis WHERE ticket IN ({placeholders})", tuple(chunk)):
+        for r in conn.execute(
+            f"SELECT ticket, evidence_coverage FROM behavior_analysis WHERE ticket IN ({placeholders})",
+            tuple(chunk),
+        ):
             analysis.append(r)
     return len(rows), len(analysis)
+
 
 def method_temp_table():
     rows = []
@@ -38,14 +45,19 @@ def method_temp_table():
     conn.execute("DELETE FROM tmp_tickets")
     conn.executemany("INSERT INTO tmp_tickets (ticket) VALUES (?)", [(t,) for t in tickets])
 
-    for r in conn.execute("SELECT behavior_detections.ticket, pattern FROM behavior_detections JOIN tmp_tickets ON behavior_detections.ticket = tmp_tickets.ticket"):
+    for r in conn.execute(
+        "SELECT behavior_detections.ticket, pattern FROM behavior_detections JOIN tmp_tickets ON behavior_detections.ticket = tmp_tickets.ticket"
+    ):
         rows.append(r)
 
-    for r in conn.execute("SELECT behavior_analysis.ticket, evidence_coverage FROM behavior_analysis JOIN tmp_tickets ON behavior_analysis.ticket = tmp_tickets.ticket"):
+    for r in conn.execute(
+        "SELECT behavior_analysis.ticket, evidence_coverage FROM behavior_analysis JOIN tmp_tickets ON behavior_analysis.ticket = tmp_tickets.ticket"
+    ):
         analysis.append(r)
 
     # conn.execute("DROP TABLE tmp_tickets")
     return len(rows), len(analysis)
+
 
 t0 = time.time()
 for _ in range(100):

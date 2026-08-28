@@ -1,5 +1,12 @@
 import pytest
-from nexus_scalp.accounting.retention import giveback_ratio, mfe_capture_ratio, giveback, cohort_capture_report
+
+from nexus_scalp.accounting.retention import (
+    cohort_capture_report,
+    giveback,
+    giveback_ratio,
+    mfe_capture_ratio,
+)
+
 
 class TestGivebackRatio:
     def test_normal_giveback(self):
@@ -33,6 +40,7 @@ class TestGivebackRatio:
         # (1e-10 - 0) / max(1e-10, 1e-9) = 1e-10 / 1e-9 = 0.1
         assert val == pytest.approx(0.1)
 
+
 class TestMfeCaptureRatio:
     def test_normal_capture(self):
         assert mfe_capture_ratio(mfe=100.0, realized_profit=60.0) == pytest.approx(0.6)
@@ -41,6 +49,7 @@ class TestMfeCaptureRatio:
         assert mfe_capture_ratio(mfe=0.0, realized_profit=0.0) is None
         assert mfe_capture_ratio(mfe=-10.0, realized_profit=-20.0) is None
 
+
 class TestGiveback:
     def test_normal_giveback(self):
         assert giveback(mfe=100.0, realized_profit=80.0) == pytest.approx(20.0)
@@ -48,6 +57,7 @@ class TestGiveback:
     def test_zero_or_negative_mfe(self):
         assert giveback(mfe=0.0, realized_profit=0.0) is None
         assert giveback(mfe=-10.0, realized_profit=-20.0) is None
+
 
 class TestCohortCaptureReport:
     def test_empty_records(self):
@@ -60,9 +70,9 @@ class TestCohortCaptureReport:
 
     def test_valid_records(self):
         records = [
-            (80.0, 100.0),   # capture 0.8, giveback 0.2
-            (0.0, 50.0),     # capture 0.0, giveback 1.0
-            (-50.0, 50.0),   # capture -1.0, giveback 2.0
+            (80.0, 100.0),  # capture 0.8, giveback 0.2
+            (0.0, 50.0),  # capture 0.0, giveback 1.0
+            (-50.0, 50.0),  # capture -1.0, giveback 2.0
             (-20.0, -10.0),  # MFE < 0, excluded from ratios
         ]
         report = cohort_capture_report(records)

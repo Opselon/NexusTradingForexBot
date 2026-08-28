@@ -21,8 +21,8 @@ from typing import Any
 
 import yaml
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from nexus_scalp.accounting import PeriodKind
@@ -2937,11 +2937,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     try:
                         report = mig.run(on_progress=_on_progress)
                     except Exception:
-
                         state["report"] = {
                             "status": "FAILED",
                             "code": "DB_MIGRATION_FAILED",
-                            
                         }
                         state["done"] = True
                         state["progress"] = 0.0
@@ -2956,14 +2954,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     else:
                         state["provider_switched"] = False
                 except Exception:
-
                     app.state.db_migration_state = {
                         "done": True,
                         "progress": 0.0,
                         "report": {
                             "status": "FAILED",
                             "code": "DB_MIGRATION_FAILED",
-                            
                         },
                     }
 

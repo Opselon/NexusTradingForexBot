@@ -858,7 +858,6 @@ class TestTradeNormalization:
         )
         assert _usd_per_point(record) is None
 
-
     def test_r_unknown_when_no_risk_basis(self) -> None:
         record = normalize_trade_row(
             {

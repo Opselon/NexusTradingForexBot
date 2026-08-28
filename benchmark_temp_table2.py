@@ -1,5 +1,5 @@
-import time
 import sqlite3
+import time
 
 # setup database
 conn = sqlite3.connect(":memory:")
@@ -13,6 +13,7 @@ for i in range(10000):
 
 tickets = [f"TICKET_{i}" for i in range(5000)]
 
+
 def method_chunk_loop():
     rows = []
     analysis = []
@@ -20,12 +21,19 @@ def method_chunk_loop():
         chunk = tickets[start : start + 500]
         placeholders = ",".join("?" for _ in chunk)
 
-        for r in conn.execute(f"SELECT anomaly_type FROM anomaly_events WHERE ticket IN ({placeholders})", tuple(chunk)):
+        for r in conn.execute(
+            f"SELECT anomaly_type FROM anomaly_events WHERE ticket IN ({placeholders})",
+            tuple(chunk),
+        ):
             rows.append(r)
 
-        for r in conn.execute(f"SELECT evidence_coverage FROM behavior_analysis WHERE ticket IN ({placeholders})", tuple(chunk)):
+        for r in conn.execute(
+            f"SELECT evidence_coverage FROM behavior_analysis WHERE ticket IN ({placeholders})",
+            tuple(chunk),
+        ):
             analysis.append(r)
     return len(rows), len(analysis)
+
 
 def method_temp_table():
     rows = []
@@ -34,13 +42,18 @@ def method_temp_table():
     conn.execute("DELETE FROM _tmp_rpt_tickets")
     conn.executemany("INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", [(t,) for t in tickets])
 
-    for r in conn.execute("SELECT anomaly_type FROM anomaly_events e JOIN _tmp_rpt_tickets t ON e.ticket = t.ticket"):
+    for r in conn.execute(
+        "SELECT anomaly_type FROM anomaly_events e JOIN _tmp_rpt_tickets t ON e.ticket = t.ticket"
+    ):
         rows.append(r)
 
-    for r in conn.execute("SELECT evidence_coverage FROM behavior_analysis b JOIN _tmp_rpt_tickets t ON b.ticket = t.ticket"):
+    for r in conn.execute(
+        "SELECT evidence_coverage FROM behavior_analysis b JOIN _tmp_rpt_tickets t ON b.ticket = t.ticket"
+    ):
         analysis.append(r)
 
     return len(rows), len(analysis)
+
 
 t0 = time.time()
 for _ in range(100):

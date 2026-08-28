@@ -1358,6 +1358,7 @@ class AuditRepository:
                 try:
                     with conn:
                         import itertools
+
                         for query, group in itertools.groupby(batch, key=lambda x: x[0]):
                             args_list = [item[1] for item in group]
                             if len(args_list) == 1:
