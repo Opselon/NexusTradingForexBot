@@ -49,9 +49,31 @@ class OOSGate:
         oos_frac: float = 0.2,
         purge_seconds: float = 0.0,
         embargo_seconds: float = 0.0,
+        context_contract: dict | None = None,
     ) -> OOSResult:
+        # PHASE 26 (strategy-aware validation): scope the evaluation
+        # population to the strategy's declared market conditions when a
+        # contract is supplied. Thresholds are untouched; only the sample
+        # population changes, and the diagnostics travel on the result.
+        dataset_for_eval = dataset
+        context_diag: dict = {}
+        if context_contract:
+            from nexus_scalp.research.context_contract import (
+                filter_samples_by_contract,
+                has_active_contract,
+            )
+
+            if has_active_contract(context_contract):
+                filtered, context_diag = filter_samples_by_contract(
+                    list(dataset.samples), context_contract
+                )
+                if filtered:
+                    dataset_for_eval = dataset.model_copy(update={"samples": filtered})
+                else:
+                    context_diag["sufficient_evidence"] = False
+
         split = split_temporal(
-            dataset,
+            dataset_for_eval,
             val_frac=val_frac,
             oos_frac=oos_frac,
             embargo_seconds=embargo_seconds,
@@ -117,4 +139,5 @@ class OOSGate:
             oos_win_rate=round(oos_bt.win_rate, 6),
             status=status,
             reason=reason,
+            context_diagnostics=(context_diag or None),
         )

@@ -1,0 +1,37 @@
+{
+  "samples": [
+    {
+      "t": 500,
+      "total": "—",
+      "fleetRows": 0,
+      "canvasNonBlank": true
+    },
+    {
+      "t": 1500,
+      "total": "—",
+      "fleetRows": 0,
+      "canvasNonBlank": true
+    },
+    {
+      "t": 3000,
+      "total": "—",
+      "fleetRows": 0,
+      "canvasNonBlank": true
+    },
+    {
+      "t": 5000,
+      "total": "—",
+      "fleetRows": 0,
+      "canvasNonBlank": true
+    },
+    {
+      "t": 8000,
+      "total": "—",
+      "fleetRows": 0,
+      "canvasNonBlank": true
+    }
+  ],
+  "consoleAll": [
+    "[warning] Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently"
+  ]
+}

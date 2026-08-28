@@ -22,6 +22,7 @@ from typing import Any
 import yaml
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from nexus_scalp.accounting import PeriodKind
@@ -162,13 +163,34 @@ def _resolve_web_root() -> Path:
     operators can see which bundle is served.
     """
     import os
+    import sys
 
     override = os.environ.get("NEXUS_WEB_DIR")
     if override:
         return Path(override)
+    # Frozen (PyInstaller) — _MEIPASS is the _internal dir next to the exe
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        cand = Path(meipass) / "Web"
+        if cand.is_dir():
+            return cand
     packaged = Path(__file__).resolve().parent.parent.parent.parent / "_internal" / "Web"
     if packaged.is_dir():
         return packaged
+    # Portable layout: exe next to _internal/Web (onedir)
+    try:
+        exe_dir = Path(sys.executable).resolve().parent
+        alt = exe_dir / "_internal" / "Web"
+        if alt.is_dir():
+            return alt
+        alt2 = exe_dir / "Web"
+        if alt2.is_dir() and (alt2 / "index.html").exists():
+            return alt2
+    except Exception:
+        pass
+    repo_web = Path(__file__).resolve().parent.parent.parent.parent / "Web"
+    if repo_web.is_dir():
+        return repo_web
     return Path("Web") if Path("Web").is_dir() else packaged
 
 
@@ -404,6 +426,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     """Creates and configures the FastAPI web server instance."""
     app = FastAPI(title="Nexus Scalp Engine Control Center", version="0.1.0")
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     # Store engine reference in app state
     app.state.engine = engine_ref
     app.state.server_state = ServerState()
@@ -513,8 +543,31 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             engine_status = "STOPPED"
             details["engine"] = "engine loop is not running"
         elif warmup == "READY" and inference_enabled:
-            engine_status = "READY"
-            details["engine"] = f"engine running · warmup READY · inference ENABLED ({mode})"
+            # BUGFIX-G29: process liveness (warmup READY + inference ENABLED)
+            # is NOT proof of live market data. If the engine's own freshness
+            # model reports the pipeline STALE (frozen tick feed / frozen
+            # inference) while the process stays up, surface HEALTH=STALE plus
+            # the live_freshness contract so the dashboard can never present a
+            # stale price/inference as current. This never bypasses a guard;
+            # it only downgrades the *reported* health signal.
+            _fresh = None
+            try:
+                if engine is not None and hasattr(engine, "compute_live_freshness"):
+                    _fresh = engine.compute_live_freshness()
+            except Exception:
+                _fresh = None
+            if _fresh is not None and _fresh.get("overall") == "STALE":
+                engine_status = "STALE"
+                _stages = _fresh.get("market", {})
+                details["engine"] = (
+                    f"engine running · warmup READY · inference ENABLED ({mode}) "
+                    f"· BUT live_freshness=STALE (market={_stages.get('state')}, "
+                    f"age_ms={_stages.get('age_ms')}) — process alive, intelligence NOT fresh"
+                )
+                details["live_freshness"] = _fresh
+            else:
+                engine_status = "READY"
+                details["engine"] = f"engine running · warmup READY · inference ENABLED ({mode})"
         else:
             engine_status = "WARMING_UP"
             details["engine"] = f"engine running · warmup {warmup} · inference BLOCKED ({mode})"
@@ -618,6 +671,33 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         subsystems["model"] = model_status
         details["model"] = model_detail
 
+        # --- NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: LIVE INFERENCE FRESHNESS ---
+        # Process being READY + model bundle loaded is NOT proof that the
+        # feature->inference->decision chain is live. A frozen chain (ticks
+        # move but features/inference are stale) must surface as STALE here,
+        # independent of uptime / state_version / HTTP 200.
+        inference_fresh_status = "UNKNOWN"
+        inference_fresh_detail = "engine not attached"
+        if engine is not None:
+            try:
+                fresh = engine.compute_live_freshness()
+                inf = fresh.get("inference", {}).get("state")
+                dec = fresh.get("decision", {}).get("state")
+                overall_fresh = fresh.get("overall")
+                inference_fresh_status = str(overall_fresh)
+                inference_fresh_detail = (
+                    f"inference={inf} decision={dec} "
+                    f"(features_age_ms={fresh.get('features', {}).get('age_ms')}, "
+                    f"inference_age_ms={fresh.get('inference', {}).get('age_ms')})"
+                )
+            except Exception as e:
+                inference_fresh_status = "UNKNOWN"
+                inference_fresh_detail = f"freshness introspection failed: {e}"
+        # Allow STALE/UNKNOWN to win at the same rank weight as the model
+        # subsystem so a frozen chain cannot be masked by a READY bundle.
+        subsystems["inference_freshness"] = inference_fresh_status
+        details["inference_freshness"] = inference_fresh_detail
+
         # --- news ---
         if engine is None or not getattr(engine, "_news_enabled", False):
             news_status = "DISABLED"
@@ -681,7 +761,22 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def _runtime_version_block(state: Any) -> dict[str, Any]:
         """Version-consistency block for /api/status (TASK-9 production
         release layer): real backend/build data, never hardcoded; reports
-        VERSION_INCONSISTENCY on drift (brief sections 15/52)."""
+        VERSION_INCONSISTENCY on drift (brief sections 15/52).
+
+        PHASE 28 HOT-PATH FIX: this block runs PRAGMA integrity_check +
+        drift fingerprinting + artifact hashing across 3 DBs — measured
+        ~270-1000ms SYNCHRONOUSLY. get_system_state() (which includes this
+        block) is called by the SSE loop EVERY 0.2s ON THE EVENT LOOP, which
+        starved the tick coroutine and froze inference/features/AI-Hub.
+        The block is now cached for 60s: DB schema versions change only on
+        migrations, so a 1-minute TTL cannot hide a real drift while keeping
+        the event loop free. First call still computes fresh data.
+        """
+        now_mono = time.monotonic()
+        cached = getattr(state, "_version_block_cache", None)
+        if cached is not None and (now_mono - cached[0]) < 60.0:
+            return cached[1]
+
         from nexus_scalp.release.versioning import (
             RuntimeVersionBlock,
             default_db_versions_provider,
@@ -700,6 +795,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             db_provider=default_db_versions_provider,
             web_dir=web_dir,
         ).build()
+
+    def _runtime_version_block_cached(state: Any) -> dict[str, Any]:
+        block = _runtime_version_block(state)
+        try:
+            state._version_block_cache = (time.monotonic(), block)
+        except Exception:
+            pass
+        return block
+
+    def _runtime_version_block_stateful(state: Any) -> dict[str, Any]:
+        now_mono = time.monotonic()
+        cached = getattr(state, "_version_block_cache", None)
+        if cached is not None and (now_mono - cached[0]) < 60.0:
+            return cached[1]
+        return _runtime_version_block_cached(state)
 
     # Helper function to get live data from engine or return explicit unavailable state
     def get_system_state() -> dict[str, Any]:
@@ -1026,10 +1136,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                             model_meta["artifact_path"] = str(bundle.artifact_path)
                             model_meta["architecture"] = "ScalpNet"
                             model_meta["feature_schema_id"] = getattr(
-                                engine, "FEATURE_SCHEMA_ID", "scalp_v1"
+                                engine,
+                                "effective_feature_schema_id",
+                                getattr(engine, "FEATURE_SCHEMA_ID", "scalp_v1"),
                             )
                             model_meta["feature_dimension"] = getattr(
-                                engine, "FEATURE_DIM", len(FEATURE_NAMES)
+                                engine,
+                                "effective_feature_dim",
+                                getattr(engine, "FEATURE_DIM", len(FEATURE_NAMES)),
                             )
                             model_meta["scaler_ready"] = bool(
                                 getattr(bundle.scaler, "is_ready", lambda: False)()
@@ -1079,10 +1193,20 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     context={"msg": "Failed to fetch engine sync predictions/features"},
                 )
 
-        # Create structured features objects (50-dim schema-driven; missing
-        # values are reported as explicit null, never as fake zeros).
+        # BUG-125: Build feature payload using the effective contract names
+        # (50D scalp_v1 or 70D scalp_v3 — determined by the loaded bundle).
+        try:
+            eff_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
+            if eff_dim == 70:
+                from nexus_scalp.features.schema_contract import canonical_feature_names
+
+                feature_names_for_payload = list(canonical_feature_names())
+            else:
+                feature_names_for_payload = list(FEATURE_NAMES)
+        except Exception:
+            feature_names_for_payload = list(FEATURE_NAMES)
         features_payload = []
-        for i, name in enumerate(FEATURE_NAMES):
+        for i, name in enumerate(feature_names_for_payload):
             if i < len(features_values):
                 val = features_values[i]
                 status = "VALID" if _classify_feature(val)[1] == "VALID" else "NAN"
@@ -1459,6 +1583,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "bid": bid,
             "ask": ask,
             "spread": spread,
+            "price_digits": getattr(getattr(engine, "_symbol_info", None), "digits", None)
+            if engine
+            else None,
             "atr": atr,
             "regime": regime,
             "account": account_data,
@@ -1471,6 +1598,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "ai_confidence": ai_confidence,
             "ai_reason": ai_reason,
             "predictions": predictions_payload,
+            # Market Radar (BUG-138): backend-authoritative ranked setup list.
+            # Pure passthrough of LiveEngine._last_market_radar - the UI/SSE/WS
+            # never compute setups. Included in the canonical snapshot so REST
+            # (/api/live/state), SSE (/api/ticks/stream) and WebSocket all carry
+            # the SAME authoritative radar object (single source of truth).
+            "radar": (getattr(engine, "_last_market_radar", None) if engine is not None else None),
             "algo_config": algo_config_data,
             "liquidity": _liquidity_state_section(app.state.engine),
             "visual_overlays": {
@@ -1481,7 +1614,19 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "order_lines": order_lines,
             },
             "health": _build_health_section(app.state, now_mono),
-            "versioning": _runtime_version_block(app.state),
+            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: authoritative freshness of
+            # every pipeline stage (market/features/inference/decision), each
+            # FRESH|STALE|UNKNOWN independent of process uptime / state_version.
+            "live_freshness": (engine.compute_live_freshness() if engine is not None else None),
+            # UI stale-state flag: lets the frontend show an explicit STALE
+            # banner instead of trusting state_version (which keeps climbing
+            # even when intelligence is frozen).
+            "is_stale": (
+                bool(engine.compute_live_freshness().get("overall") == "STALE")
+                if engine is not None
+                else False
+            ),
+            "versioning": _runtime_version_block_stateful(app.state),
             "diagnostics": {
                 "state_age_sec": None,
                 "tick_age_sec": _age_sec(now_mono, tick_timestamp),
@@ -1518,6 +1663,53 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_index() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html")
 
+    @app.get("/command_center.html")
+    def serve_command_center_html() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center.html")
+
+    @app.get("/dependency")
+    def serve_dependency_dashboard() -> FileResponse:
+        """Dependency Intelligence developer dashboard (NSE engineering)."""
+        return FileResponse(WEB_DIR / "dependency.html")
+
+    @app.get("/dependency.html")
+    def serve_dependency_dashboard_html() -> FileResponse:
+        return FileResponse(WEB_DIR / "dependency.html")
+
+    @app.get("/dependency_api.js")
+    def serve_dependency_api_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "dependency_api.js")
+
+    @app.get("/dependency_graph.js")
+    def serve_dependency_graph_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "dependency_graph.js")
+
+    @app.get("/dependency_ui.js")
+    def serve_dependency_ui_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "dependency_ui.js")
+
+    @app.get("/command_center_ui.js")
+    def serve_command_center_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center_ui.js")
+
+    # FORENSIC FIX (Nexus-Forensic-01): command_center.html loads
+    # command_center_spatial.js / command_center_console.js /
+    # command_center_timemachine.js but server.py previously had NO routes
+    # for them -> GET 404 -> window.NX.spatial/tm/console undefined ->
+    # DOMContentLoaded handler throws and the entire CC renders blank.
+    # These three routes restore asset resolution (verified 404 -> 200).
+    @app.get("/command_center_spatial.js")
+    def serve_command_center_spatial_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center_spatial.js")
+
+    @app.get("/command_center_console.js")
+    def serve_command_center_console_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center_console.js")
+
+    @app.get("/command_center_timemachine.js")
+    def serve_command_center_timemachine_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "command_center_timemachine.js")
+
     @app.get("/styles.css")
     def serve_styles() -> FileResponse:
         return FileResponse(WEB_DIR / "styles.css")
@@ -1532,6 +1724,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         response.headers["X-UI-Bundle-Sha256"] = _ui_bundle_sha256()
         response.headers["X-UI-Bundle-Source"] = "REPO" if _web_root_is_repo() else "PACKAGED"
         return response
+
+    @app.get("/news_intelligence.js")
+    def serve_news_intel() -> FileResponse:
+        return FileResponse(WEB_DIR / "news_intelligence.js")
+
+    @app.get("/forensic_console.js")
+    def serve_forensic() -> FileResponse:
+        return FileResponse(WEB_DIR / "forensic_console.js")
 
     @app.get("/api_client.js")
     def serve_api_client() -> FileResponse:
@@ -2147,7 +2347,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "autopsies": state.get("intel_autopsies"),
                 "worker_status": state.get("intel_worker_status"),
             },
+            # Market Radar (BUG-138): sourced from the canonical get_system_state()
+            # snapshot (same backend _last_market_radar passthrough) so REST, SSE
+            # and WebSocket share one authoritative radar object.
+            "radar": state.get("radar"),
             "predictions": state.get("predictions", []),
+            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: authoritative per-stage
+            # freshness + UI stale flag (mirrors get_system_state() so REST,
+            # SSE and WebSocket all carry the same truth).
+            "live_freshness": state.get("live_freshness"),
+            "is_stale": state.get("is_stale", False),
             "mt5": {
                 "connection": {},
                 "diagnostics": {},
@@ -2727,13 +2936,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
                     try:
                         report = mig.run(on_progress=_on_progress)
-                    except Exception as exc:
-                        import traceback
+                    except Exception:
 
                         state["report"] = {
                             "status": "FAILED",
-                            "errors": [str(exc)],
-                            "trace": traceback.format_exc()[:2000],
+                            "code": "DB_MIGRATION_FAILED",
+                            
                         }
                         state["done"] = True
                         state["progress"] = 0.0
@@ -2747,16 +2955,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         state["provider_switched"] = True
                     else:
                         state["provider_switched"] = False
-                except Exception as exc:
-                    import traceback
+                except Exception:
 
                     app.state.db_migration_state = {
                         "done": True,
                         "progress": 0.0,
                         "report": {
                             "status": "FAILED",
-                            "errors": [str(exc)],
-                            "trace": traceback.format_exc()[:2000],
+                            "code": "DB_MIGRATION_FAILED",
+                            
                         },
                     }
 
@@ -3084,7 +3291,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         return out
 
     @app.post("/api/runtime-config/model-swap")
-    def model_hot_swap(payload: dict[str, Any]) -> dict[str, Any]:
+    async def model_hot_swap(payload: dict[str, Any]) -> dict[str, Any]:
         """Model artifact hot swap: load-validate-warm-atomic-swap.
 
         Payload: {"model_artifact_path": "..."}
@@ -3097,7 +3304,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         artifact = str(payload.get("model_artifact_path") or "").strip()
         if not artifact:
             raise HTTPException(status_code=422, detail="model_artifact_path required")
-        result = engine.hot_swap_model(artifact, source="WEB_UI")
+        result = await engine.hot_swap_model(artifact, source="WEB_UI")
         return result
 
     # ------------------------------------------------------------------
@@ -3914,7 +4121,19 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         nan_count = 0
         inf_count = 0
 
-        for idx, name in enumerate(FEATURE_NAMES):
+        # BUG-125: use effective contract names for the debug features endpoint
+        try:
+            eff_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
+            if eff_dim == 70:
+                from nexus_scalp.features.schema_contract import canonical_feature_names
+
+                _debug_feature_names = list(canonical_feature_names())
+            else:
+                _debug_feature_names = list(FEATURE_NAMES)
+        except Exception:
+            _debug_feature_names = list(FEATURE_NAMES)
+
+        for idx, name in enumerate(_debug_feature_names):
             raw = raw_values[idx] if idx < len(raw_values) else 0.0
             value, status = _classify_feature(raw)
             if status == "NAN":
@@ -3960,7 +4179,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         waiting for a live signal.
         """
         engine = app.state.engine
-        expected_dim = len(FEATURE_NAMES)
+        expected_dim = (
+            getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
+            if engine
+            else len(FEATURE_NAMES)
+        )
 
         features = req.features
         source = "REQUEST"
@@ -4135,15 +4358,28 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "No feature vector computed yet (waiting for first tick).",
                     )
                 else:
+                    # PHASE 28: fv.to_tensor_input() is the BASE-50 contract.
+                    # The live model path consumes the assembled vector
+                    # (_last_live_tensor_dim = base50 + news10 + liquidity10
+                    # when a 70D bundle serves). Compare like-for-like:
+                    # base50 against BASE dimension, assembled vs effective.
                     values = list(fv.to_tensor_input())
                     bad = sum(1 for v in values if _classify_feature(v)[1] != "VALID")
-                    dim_ok = len(values) == len(FEATURE_NAMES)
+                    eff_dim = getattr(engine, "effective_feature_dim", len(FEATURE_NAMES))
+                    live_dim = getattr(engine, "_last_live_tensor_dim", None)
+                    if live_dim is not None:
+                        # A 70D assembly ran: the base block (50) feeding it is
+                        # correct by definition; judge the engine on its own
+                        # recorded live tensor width instead of mixing contracts.
+                        dim_ok = int(live_dim) in (len(values), eff_dim)
+                    else:
+                        dim_ok = len(values) == eff_dim or eff_dim == len(FEATURE_NAMES)
                     if not dim_ok:
                         add(
                             "Feature Engine",
                             "UNHEALTHY",
-                            f"Dimensionality contract violated: {len(values)} != {len(FEATURE_NAMES)}.",
-                            {"dimensions": len(values), "expected": len(FEATURE_NAMES)},
+                            f"Dimensionality contract violated: {len(values)} != {eff_dim}.",
+                            {"dimensions": len(values), "expected": eff_dim},
                         )
                     elif bad:
                         add(
@@ -4445,6 +4681,41 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 "timestamp": datetime.now(UTC).isoformat(),
                 "available": False,
                 "reason": "DEBUG_SNAPSHOT_ERROR",
+            }
+
+    @app.get("/api/debug/freshness")
+    def get_debug_freshness() -> dict[str, Any]:
+        """NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: live-freshness + no-cache diagnostic.
+
+        Returns the authoritative per-stage freshness (market/features/
+        inference/decision) AND runs the observational no-cache
+        diagnose_freshness() that re-fetches fresh market state, rebuilds
+        features, the 70D tensor, and runs fresh inference to localize exactly
+        where the chain froze. Purely diagnostic; never touches the live order
+        path or any safety control.
+        """
+        try:
+            engine = app.state.engine
+            if engine is None:
+                return {
+                    "available": False,
+                    "reason": "ENGINE_NOT_ATTACHED",
+                    "frozen_at": "UNKNOWN",
+                }
+            fresh = engine.compute_live_freshness()
+            diagnostic = engine.diagnose_freshness()
+            return {
+                "available": True,
+                "live_freshness": fresh,
+                "diagnostic": diagnostic,
+                "checked_at": datetime.now(UTC).isoformat(),
+            }
+        except Exception as exc:
+            _log_err(exc, "Freshness diagnostic failed", endpoint="/api/debug/freshness")
+            return {
+                "available": False,
+                "reason": "FRESHNESS_DIAGNOSTIC_ERROR",
+                "frozen_at": "UNKNOWN",
             }
 
     @app.get("/api/debug/snapshots")
@@ -5795,6 +6066,166 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return serialize_enums({"available": True, "result": result})
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Research validate failed"})
+            return _err("INTERNAL_ERROR")
+
+    @app.post("/api/research/promote")
+    def promote_strategy_lifecycle(payload: dict[str, Any]) -> dict[str, Any]:
+        """Operator-triggered lifecycle promotion for a VALIDATED strategy.
+
+        RC4 repair: the explicit VALIDATED -> SHADOW -> ACTIVE promotion path
+        had NO production caller. This endpoint is the ONLY operator-driven
+        entry point for advancing a strategy's persisted lifecycle state.
+
+        SAFETY (do NOT weaken):
+          * Never auto-promotes. Every call requires an explicit `actor`.
+          * `target_lifecycle` must be SHADOW or ACTIVE; the registry's state
+            machine rejects illegal jumps (e.g. VALIDATED -> ACTIVE, or
+            promoting a REJECTED/DEGRADED strategy) so an unvalidated or
+            rejected strategy can never reach ACTIVE here.
+          * `actor` is recorded in the validation lineage for auditability.
+
+        Payload:
+            strategy_id     : str  (required)
+            target_lifecycle: "SHADOW" | "ACTIVE"  (required)
+            actor           : str  (required; explicit operator identity)
+            reason          : str  (optional; recorded in lineage)
+        """
+        engine = _research()
+        if engine is None:
+            return {"available": False}
+        try:
+            from nexus_scalp.research.lifecycle import LifecycleError
+            from nexus_scalp.research.models import CandidateLifecycle
+            from nexus_scalp.research.registry import StrategyRegistry
+
+            strategy_id = str(payload.get("strategy_id", "") or "").strip()
+            target_str = str(payload.get("target_lifecycle", "") or "").strip().upper()
+            actor = str(payload.get("actor", "") or "").strip()
+            reason = str(payload.get("reason", "") or "").strip()
+
+            if not strategy_id or not target_str:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={"reason": "strategy_id and target_lifecycle are required"},
+                )
+            # Explicit operator identity is mandatory — no implicit/system promotion.
+            if not actor:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={"reason": "actor is required for explicit operator promotion"},
+                )
+            try:
+                target_lifecycle = CandidateLifecycle(target_str)
+            except ValueError:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={
+                        "reason": (
+                            f"target_lifecycle must be SHADOW or ACTIVE (got {target_str!r})"
+                        )
+                    },
+                )
+            if target_lifecycle not in (
+                CandidateLifecycle.SHADOW,
+                CandidateLifecycle.ACTIVE,
+            ):
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={
+                        "reason": (
+                            "operator promotion target must be SHADOW or ACTIVE; "
+                            "VALIDATED is reached only by the validation pipeline"
+                        )
+                    },
+                )
+
+            registry = getattr(engine, "strategy_registry", None) or StrategyRegistry(engine.audit)
+            existing = registry.get(strategy_id)
+            if existing is None:
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={"reason": "strategy not found in registry", "strategy_id": strategy_id},
+                )
+            # Confirmation gate: the persisted validation truth must be intact
+            # before ANY operator promotion. A VALIDATED row with missing /
+            # failed gates (or a REJECTED verdict score) can NEVER advance —
+            # this makes activating an unvalidated or rejected strategy
+            # structurally impossible through this endpoint.
+            invariant = registry.invariant_check(existing)
+            if not invariant.get("valid", False):
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={
+                        "reason": "validation-truth invariant check failed",
+                        "strategy_id": strategy_id,
+                        "problems": invariant.get("problems", []),
+                    },
+                )
+            # Activation re-proves the FULL validation truth: a SHADOW row is
+            # probed as VALIDATED so missing/failed OOS / walk-forward /
+            # robustness / score evidence blocks ACTIVATION itself, not just
+            # entry into shadow.
+            if target_lifecycle == CandidateLifecycle.ACTIVE:
+                truth_probe = existing.model_copy(
+                    update={"lifecycle": CandidateLifecycle.VALIDATED}
+                )
+                activation_invariant = registry.invariant_check(truth_probe)
+                if not activation_invariant.get("valid", False):
+                    return _err(
+                        "PROMOTION_BLOCKED",
+                        extra={
+                            "reason": "ACTIVATION requires intact validation truth",
+                            "strategy_id": strategy_id,
+                            "problems": activation_invariant.get("problems", []),
+                        },
+                    )
+            # The registry state machine enforces: VALIDATED->SHADOW and
+            # SHADOW->ACTIVE only; any other source or target is refused.
+            updated = registry.transition_lifecycle(
+                strategy_id=strategy_id,
+                target=target_lifecycle,
+                reason=f"operator_promotion:actor={actor}" + (f":{reason}" if reason else ""),
+            )
+            if updated is None:
+                # Either the strategy is unknown, or the transition was illegal
+                # (e.g. skipping SHADOW, or promoting REJECTED/DEGRADED). The
+                # caller must first reach VALIDATED via /api/research/validate
+                # and SHADOW via a prior explicit call.
+                return _err(
+                    "PROMOTION_BLOCKED",
+                    extra={
+                        "reason": (
+                            "strategy not found or illegal transition (must reach "
+                            "VALIDATED via validation, then SHADOW, then ACTIVE)"
+                        ),
+                        "strategy_id": strategy_id,
+                        "target_lifecycle": target_str,
+                    },
+                )
+            return serialize_enums(
+                {
+                    "available": True,
+                    "promoted": True,
+                    "strategy_id": updated.strategy_id,
+                    "lifecycle": updated.lifecycle,
+                    "actor": actor,
+                    "entry": updated.model_dump(mode="json"),
+                }
+            )
+        except LifecycleError as e:
+            log_web_error(
+                logger,
+                "/api/research/promote",
+                None,
+                e,
+                context={"msg": "Strategy lifecycle promotion blocked by state machine"},
+            )
+            return _err(
+                "PROMOTION_BLOCKED",
+                extra={"reason": "illegal lifecycle transition", "detail": str(e)},
+            )
+        except Exception as e:
+            log_web_error(logger, "/api", None, e, context={"msg": "Research promote failed"})
             return _err("INTERNAL_ERROR")
 
     @app.post("/api/research/self-heal")
@@ -7184,19 +7615,30 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         return engine.news_engine
 
     @app.get("/api/news")
-    def get_news(limit: int = 50, include_duplicates: bool = False) -> dict[str, Any]:
-        """Live news feed (canonical articles)."""
+    def get_news(
+        limit: int = 50, include_duplicates: bool = False, status: str | None = None
+    ) -> dict[str, Any]:
+        """Live news feed (canonical articles).
+
+        `status` filters by article_status (ACTIVE / IRRELEVANT). When omitted,
+        the default view excludes IRRELEVANT articles for operator focus while
+        historical/irrelevant data remains reachable via status=ALL/IRRELEVANT.
+        """
         news = _news()
         if news is None:
             return {"available": False}
         try:
-            rows = news.db.list_articles(limit=limit, include_duplicates=include_duplicates)
+            status_filter = status if status and status.upper() not in ("ALL", "NONE") else None
+            rows = news.db.list_articles(
+                limit=limit, include_duplicates=include_duplicates, status_filter=status_filter
+            )
             from nexus_scalp.news.analysis.keywords import keyword_hits_for_article
 
             out = []
             for r in rows:
                 analysis = news.db.get_analysis(r["article_id"])
                 consensus = news.db.get_consensus(r["article_id"])
+                ai = news.db.get_ai_analysis(r["article_id"])
                 out.append(
                     {
                         "article_id": r["article_id"],
@@ -7208,13 +7650,16 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         "importance": r["importance"],
                         "importance_score": r["importance_score"],
                         "is_duplicate": bool(r["is_duplicate"]),
+                        "article_status": str(r.get("article_status", "ACTIVE") or "ACTIVE"),
                         "evidence_sources": r["evidence_sources"],
                         "analysis": analysis,
+                        "ai_analysis": ai,
                         "consensus": consensus,
                         "keyword_hits": keyword_hits_for_article(r),
                     }
                 )
-            return {"available": True, "articles": out}
+            status_counts = news.db.count_articles_by_status()
+            return {"available": True, "articles": out, "status_counts": status_counts}
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "News feed failed"})
             return _err("INTERNAL_ERROR")
@@ -7430,6 +7875,165 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             )
             return {"success": False, "error": "LIQUIDITY_TOGGLE_FAILED"}
 
+    @app.get("/api/news/toggle-state")
+    def get_news_toggle_state() -> dict[str, Any]:
+        """Current news toggle state (Pro Hot Reload — read side).
+
+        Returns {enabled, runtime_version, source}. Enabled is authoritative:
+        engine._news_enabled + snapshot truth (never UI-only).
+        """
+        engine = app.state.engine
+        try:
+            enabled = bool(getattr(engine, "_news_enabled", False)) if engine else False
+            snap = None
+            runtime_version = None
+            if engine is not None and hasattr(engine, "runtime_config"):
+                snap = engine.runtime_config.get_snapshot()
+                runtime_version = snap.version
+                # snapshot enabled is the validated persisted value
+                enabled = bool(snap.news.enabled)
+            return {
+                "success": True,
+                "enabled": enabled,
+                "runtime_version": runtime_version,
+                "source": getattr(snap, "source", "") if snap else "",
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/news/toggle-state", None, e)
+            return {"success": False, "enabled": False, "error": "NEWS_TOGGLE_STATE_FAILED"}
+
+    @app.post("/api/news/toggle")
+    def set_news_toggle(payload: dict[str, Any]) -> dict[str, Any]:
+        """Pro Hot Reload: enable/disable the News Intelligence engine live.
+
+        Flow: UI toggle -> POST {enabled} -> runtime_config.apply(news.enabled)
+        -> atomic snapshot swap -> _sync_runtime_config -> engine hot-swap
+        (construct / tear down worker+gate) -> new toggle state returned.
+        Never restarts the engine; never touches orders/risk/execution.
+        News can still never force a trade (bounded gate invariant).
+        """
+        engine = app.state.engine
+        if engine is None or not hasattr(engine, "runtime_config"):
+            raise HTTPException(status_code=400, detail="Trading Engine offline.")
+        raw = payload.get("enabled")
+        if raw is None:
+            raise HTTPException(status_code=422, detail="enabled (bool) required")
+        desired = bool(raw)
+        try:
+            report = engine.apply_runtime_update(
+                {"news.enabled": desired}, source="WEB_NEWS_TOGGLE", actor="web"
+            )
+            if not report.success:
+                return {
+                    "success": False,
+                    "enabled": bool(getattr(engine, "_news_enabled", False)),
+                    "error": report.reason or "NEWS_TOGGLE_REJECTED",
+                    "runtime_version": engine.runtime_config.get_version(),
+                }
+            snap = engine.runtime_config.get_snapshot()
+            # /api/news/health-style payload for the UI badge
+            return {
+                "success": True,
+                "enabled": bool(snap.news.enabled),
+                "runtime_version": snap.version,
+                "source": snap.source,
+                "worker_interval_sec": snap.news.worker_interval_sec,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            log_web_error(logger, "/api/news/toggle", None, e)
+            return {
+                "success": False,
+                "enabled": bool(getattr(engine, "_news_enabled", False)),
+                "error": "NEWS_TOGGLE_FAILED",
+            }
+
+    # ------------------------------------------------------------------
+    # News Auto Analysis (local deterministic, NO API key / NO endpoint).
+    # UI can ENABLE or DISABLE it. OFF (default) = worker still ingests
+    # and refreshes context, but skips automatic deterministic analysis
+    # cycles. ON = every worker cycle analyzes recent unanalyzed articles
+    # with the local rule-based engine for more accuracy downstream.
+    # Manual POST /api/news/analyze/{id} always works regardless.
+    # ------------------------------------------------------------------
+    @app.get("/api/news/auto-analysis")
+    def get_news_auto_analysis() -> dict[str, Any]:
+        """Current News Auto Analysis toggle (read side)."""
+        engine = app.state.engine
+        try:
+            enabled = False
+            snap = None
+            runtime_version = None
+            if engine is not None and hasattr(engine, "runtime_config"):
+                snap = engine.runtime_config.get_snapshot()
+                runtime_version = snap.version
+                enabled = bool(getattr(snap.news, "auto_analysis_enabled", False))
+            else:
+                enabled = (
+                    bool(getattr(engine, "_news_auto_analysis_enabled", False)) if engine else False
+                )
+            # also surface worker gate truth when available
+            worker_gate = None
+            if engine is not None and getattr(engine, "news_worker", None) is not None:
+                worker_gate = bool(getattr(engine.news_worker, "auto_analysis_enabled", enabled))
+            return {
+                "success": True,
+                "enabled": enabled,
+                "worker_enabled": worker_gate,
+                "runtime_version": runtime_version,
+                "source": getattr(snap, "source", "") if snap else "",
+            }
+        except Exception as e:
+            log_web_error(logger, "/api/news/auto-analysis", None, e)
+            return {"success": False, "enabled": False, "error": "NEWS_AUTO_ANALYSIS_STATE_FAILED"}
+
+    @app.post("/api/news/auto-analysis")
+    def set_news_auto_analysis(payload: dict[str, Any]) -> dict[str, Any]:
+        """Enable/disable News Auto Analysis (hot-reload, persisted)."""
+        engine = app.state.engine
+        if engine is None or not hasattr(engine, "runtime_config"):
+            raise HTTPException(status_code=400, detail="Trading Engine offline.")
+        raw = payload.get("enabled") if isinstance(payload, dict) else None
+        if raw is None:
+            raise HTTPException(status_code=422, detail="enabled (bool) required")
+        desired = bool(raw)
+        try:
+            report = engine.apply_runtime_update(
+                {"news.auto_analysis_enabled": desired},
+                source="WEB_NEWS_AUTO_ANALYSIS",
+                actor="web",
+            )
+            if not report.success:
+                cur = bool(getattr(engine, "_news_auto_analysis_enabled", False))
+                return {
+                    "success": False,
+                    "enabled": cur,
+                    "error": report.reason or "NEWS_AUTO_ANALYSIS_REJECTED",
+                    "runtime_version": engine.runtime_config.get_version(),
+                }
+            snap = engine.runtime_config.get_snapshot()
+            # _sync already propagated to worker; re-read worker truth
+            worker_gate = None
+            if getattr(engine, "news_worker", None) is not None:
+                worker_gate = bool(getattr(engine.news_worker, "auto_analysis_enabled", desired))
+            return {
+                "success": True,
+                "enabled": bool(snap.news.auto_analysis_enabled),
+                "worker_enabled": worker_gate,
+                "runtime_version": snap.version,
+                "source": snap.source,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            log_web_error(logger, "/api/news/auto-analysis", None, e)
+            return {
+                "success": False,
+                "enabled": bool(getattr(engine, "_news_auto_analysis_enabled", False)),
+                "error": "NEWS_AUTO_ANALYSIS_FAILED",
+            }
+
     @app.get("/api/news/state")
     def get_news_state() -> dict[str, Any]:
         """Current news state (NORMAL/ELEVATED/HIGH_IMPACT/CONFLICTED/
@@ -7520,17 +8124,49 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return _err("INTERNAL_ERROR")
 
     @app.post("/api/news/analyze/{article_id}")
-    def post_news_analyze(article_id: str) -> dict[str, Any]:
-        """AI Analyze: enqueue a background analysis job (never blocks)."""
+    def post_news_analyze(article_id: str, request: Request) -> dict[str, Any]:
+        """AI Analyze: enqueue a background analysis job (never blocks).
+
+        Idempotent: already-analyzed stories return SKIPPED_ALREADY_ANALYZED
+        unless ?force=true is passed. Prevents re-analysis confusion.
+        """
         news = _news()
         if news is None:
             return {"available": False}
+        force = False
+        try:
+            force = bool((request.query_params.get("force", "false")).lower() == "true")
+        except Exception:
+            pass
+        # Idempotent short-circuit: don't re-queue already-analyzed stories
+        try:
+            if not force:
+                art = news.db.get_article(article_id)
+                ah = str((art or {}).get("article_hash") or "")
+                if art and ah and news.db.is_analyzed_hash(ah):
+                    return {
+                        "available": True,
+                        "ok": True,
+                        "status": "SKIPPED_ALREADY_ANALYZED",
+                        "article_id": article_id,
+                        "reason": "hash already analyzed",
+                    }
+                if news.db.get_analysis(article_id) is not None:
+                    return {
+                        "available": True,
+                        "ok": True,
+                        "status": "SKIPPED_ALREADY_ANALYZED",
+                        "article_id": article_id,
+                        "reason": "article already analyzed",
+                    }
+        except Exception:
+            pass
         engine = app.state.engine
         try:
             if engine and getattr(engine, "news_worker", None) is not None:
                 job = engine.news_worker.enqueue_analysis(article_id, priority=0.9)
                 return {"available": True, **job}
-            result = news.analyze_article_id(article_id)
+            result = news.analyze_article_id(article_id, force=force)
             return {"available": True, **result}
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "News analyze failed"})
@@ -7584,6 +8220,52 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return {"available": True, **news.self_heal()}
         except Exception:
             return _err("INTERNAL_ERROR")
+
+    # =========================================================================
+    # STRATEGY FACTORY (2026-08-20): autonomous strategy evolution control room.
+    # Routed views over the factory store; never touches the live path.
+    # =========================================================================
+    from nexus_scalp.web.factory_routes import router as factory_router
+
+    app.include_router(factory_router)
+
+    # =========================================================================
+    # DEPENDENCY INTELLIGENCE (2026-08-27): canonical import + DI + architecture
+    # graph for NSE engineering/debugging. AST-only, never boots the engine.
+    # =========================================================================
+    from nexus_scalp.web.dependency_routes import router as dependency_router
+
+    app.include_router(dependency_router)
+    # Thin handlers over the News AI service; reuses the Factory LLM provider.
+    # =========================================================================
+    from nexus_scalp.web.news_intelligence_routes import router as news_intel_router
+
+    app.include_router(news_intel_router)
+
+    # =========================================================================
+    # DATABASE MANAGEMENT console (2026-08-20): SSMS-style explorer + SQL
+    # console + API keys. Provider-abstracted; serves SQLite now and
+    # PostgreSQL after the provider switch. Read-only by contract.
+    # =========================================================================
+    from nexus_scalp.web.db_console import router as db_console_router
+
+    app.include_router(db_console_router)
+
+    # =========================================================================
+    # STRATEGY COMMAND CENTER (2026-08-23): spatial 2.5D lifecycle observability.
+    # Read-only projections over the authoritative registry; never mutates
+    # domain state and never fabricates eligibility or attribution.
+    # =========================================================================
+    from nexus_scalp.web.command_center_integration import (
+        register_command_center_routes,
+    )
+
+    register_command_center_routes(
+        app,
+        _research,
+        serialize_enums,
+        _err,
+    )
 
     @app.get("/api/news/keywords")
     def get_news_keywords(top_n: int = 25, category: str = "", q: str = "") -> dict[str, Any]:
@@ -7808,22 +8490,5 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 await asyncio.sleep(0.2)
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
-
-    # =========================================================================
-    # STRATEGY FACTORY (2026-08-20): autonomous strategy evolution control room.
-    # Routed views over the factory store; never touches the live path.
-    # =========================================================================
-    from nexus_scalp.web.factory_routes import router as factory_router
-
-    app.include_router(factory_router)
-
-    # =========================================================================
-    # DATABASE MANAGEMENT console (2026-08-20): SSMS-style explorer + SQL
-    # console + API keys. Provider-abstracted; serves SQLite now and
-    # PostgreSQL after the provider switch. Read-only by contract.
-    # =========================================================================
-    from nexus_scalp.web.db_console import router as db_console_router
-
-    app.include_router(db_console_router)
 
     return app

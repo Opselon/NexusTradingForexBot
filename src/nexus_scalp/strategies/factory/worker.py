@@ -33,6 +33,7 @@ from nexus_scalp.strategies.factory.store import (
     emit_event,
     get_loop_state,
     set_loop_state,
+    sweep_stale_generations,
 )
 
 logger = get_logger("nexus_scalp.strategies.factory.worker")
@@ -233,13 +234,77 @@ class AutonomousLoopWorker:
         Returns the resume result; idempotent (no duplicated experiments —
         already-evaluated candidates are skipped).
         """
+        # P1 hardening: sweep orphaned RUNNING generations before resuming the
+        # current one, so a stale (previously-crashed) run cannot be mistaken
+        # for an active generation. Idempotent and bounded. Wrapped in try/except
+        # so storage/DB transient issues do not abort worker startup (A5).
+        swept_ids: list[str] = []
+        try:
+            # Route the sweeper through the SAME backend the orchestrator
+            # reads/writes (isolated StrategyResearchStore when injected,
+            # else the legacy audit-repo queue) so generations are swept in
+            # the database that actually owns them.
+            sweep = sweep_stale_generations(self.factory._research_backend, max_age_minutes=30)
+            swept_ids = sweep.get("swept", [])
+        except Exception as err:
+            logger.warning("[STRATEGY_FACTORY] recovery sweeper failed non-fatally", error=str(err))
+        # PHASE 29: sweeper-killed generations are no longer dead ends — when
+        # config.auto_resume is true, re-arm every FAILED generation whose
+        # population_target was never met (exception-isolated like the sweep).
+        try:
+            self.factory.auto_resume_failed_generations()
+        except Exception as err:
+            logger.warning("[STRATEGY_FACTORY] auto-resume failed non-fatally", error=str(err))
         persisted = get_loop_state(self.factory.audit_repo)
         generation_id = str(persisted.get("generation_id", "") or "")
         if not generation_id:
+            # PHASE 29 (crash-recovery completeness): a crash can wipe the
+            # loop-state checkpoint BEFORE the generation row is updated,
+            # leaving the newest FAILED generation with unevaluated
+            # candidates. Fall back to the newest FAILED generation that has
+            # pending (GENERATED) candidates and resume it instead of
+            # silently doing nothing. Never auto-creates generations; never
+            # promotes anything to live.
+            try:
+                from nexus_scalp.strategies.factory.store import list_candidates, list_generations
+
+                failed = [
+                    g
+                    for g in (list_generations(self.factory._research_backend) or [])
+                    if str(g.get("status", "")) == "FAILED"
+                ]
+                for g in sorted(failed, key=lambda x: int(x.get("number", 0) or 0), reverse=True):
+                    gid = str(g.get("generation_id", "") or "")
+                    cands = (
+                        list_candidates(
+                            self.factory._research_backend, generation_id=gid, limit=2000
+                        )
+                        or []
+                    )
+                    pending = [
+                        c
+                        for c in cands
+                        if c.get("lifecycle") in ("GENERATED", None, "", "DISCOVERED", "RUNNING")
+                    ]
+                    if pending:
+                        generation_id = gid
+                        logger.info(
+                            "[STRATEGY_FACTORY] event=RECOVERY_FALLBACK generation=%s pending=%s",
+                            gid,
+                            len(pending),
+                        )
+                        break
+            except Exception as fb_err:
+                logger.warning(
+                    "[STRATEGY_FACTORY] recovery fallback failed non-fatally",
+                    error=str(fb_err),
+                )
+        if not generation_id:
             # No active generation: nothing to resume.
-            return {"status": "NOTHING_TO_RESUME"}
+            return {"status": "NOTHING_TO_RESUME", "swept": swept_ids}
         result = self.factory.resume_generation(generation_id)
         result["resumed_state"] = persisted.get("state")
+        result["swept"] = swept_ids
         return result
 
     # ------------------------------------------------------------------

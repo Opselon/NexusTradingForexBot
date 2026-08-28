@@ -28,7 +28,6 @@ import pytest
 
 from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
 from nexus_scalp.features.schema_contract import (
-    DIMENSION,
     NEWS_10D_NAMES,
     canonical_feature_names,
     feature_schema_hash,
@@ -453,7 +452,6 @@ def test_03_19_golden_artifact_agreement() -> None:
 def test_03_33_ds_build_verify_roundtrip() -> None:
     """A built 70D dataset must pass verify_70d_artifact end-to-end
     (regression: int(pl.DataFrame.sum()) TypeError; schema hash stamp)."""
-    import numpy as np
 
     from nexus_scalp.model_generation.artifact_store import ArtifactStore
     from nexus_scalp.model_generation.schema_v2 import (

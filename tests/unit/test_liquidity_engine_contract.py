@@ -19,7 +19,6 @@ from nexus_scalp.features.liquidity_engine import (
     build_60d_vector,
     compute_liquidity_features,
     detect_confirmed_swings,
-    equal_high_low_strengths,
     liquidity_atr,
     validate_60d_liquidity_vector,
 )

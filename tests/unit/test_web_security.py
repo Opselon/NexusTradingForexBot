@@ -15,10 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
-import sqlite3
-from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI, Request

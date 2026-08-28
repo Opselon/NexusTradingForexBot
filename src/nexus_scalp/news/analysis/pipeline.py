@@ -34,6 +34,7 @@ from nexus_scalp.news.models import (
     NewsAnalysisStatus,
     NewsDirection,
     NewsImpactHorizon,
+    NewsImportance,
     NewsNovelty,
     normalize_datetime,
 )
@@ -190,8 +191,113 @@ class NewsAnalysisPipeline:
     # Per-article analysis
     # ------------------------------------------------------------------
 
-    def analyze_article(self, article: Any) -> NewsAnalysisResult:
-        """Runs the full staged pipeline for one canonical article."""
+    def analyze_article(self, article: Any, *, force: bool = False) -> NewsAnalysisResult:
+        """Runs the full staged pipeline for one canonical article.
+
+        Idempotent: if this article_hash was already analyzed, returns a cached
+        SKIPPED result without overwriting the existing analysis (prevents
+        re-analysis confusion when the same story re-enters via filters).
+        Pass force=True for explicit user-requested re-analysis (bypasses tombstone).
+        """
+        # Idempotent guard before allocating a new run_id/analysis_id
+        if not force:
+            try:
+                ah = str(
+                    getattr(article, "article_hash", "")
+                    or getattr(article, "articleHash", "")
+                    or ""
+                )
+                aid = str(getattr(article, "article_id", "") or "")
+                if ah and self.db.is_analyzed_hash(ah):
+                    logger.info(
+                        "[NEWS_ANALYSIS] event=SKIP_ALREADY_ANALYZED article_id=%s hash=%s",
+                        aid,
+                        ah[:12],
+                    )
+                    # Return a synthetic SKIPPED result that won't overwrite the real one
+                    existing = self.db.get_analysis(aid) if aid else None
+                    if existing:
+                        # Build a result mirroring the stored one so callers get truthful ids
+                        from nexus_scalp.news.models import NewsAnalysisStatus as _St
+
+                        return NewsAnalysisResult(
+                            analysis_id=str(existing.get("analysis_id", "")),
+                            article_id=aid,
+                            run_id=str(existing.get("run_id", "")),
+                            status=_St.COMPLETE,
+                            local_only=bool(existing.get("local_only", 1)),
+                            provider=str(existing.get("provider", "local")),
+                            summary=str(existing.get("summary", "")),
+                            entities=[],
+                            topics=[],
+                            direction=NewsDirection.NEUTRAL,
+                            impact_strength=float(existing.get("impact_strength", 0) or 0),
+                            confidence=float(existing.get("confidence", 0) or 0),
+                            horizon=NewsImpactHorizon.MACRO,
+                            importance=existing.get("importance", "MINOR"),
+                            importance_score=float(existing.get("importance_score", 0) or 0),
+                            relevance_to_xauusd=float(existing.get("relevance_to_xauusd", 0) or 0),
+                            relevance_to_usd=float(existing.get("relevance_to_usd", 0) or 0),
+                            impacts=[],
+                            novelty=NewsNovelty.NEW,
+                        )
+                    # Hash known but no row for this article_id (re-ingested under new id): block re-analysis
+                    return NewsAnalysisResult(
+                        analysis_id=f"skip_{aid or ah[:8]}",
+                        article_id=aid or ah,
+                        run_id="skip",
+                        status=NewsAnalysisStatus.COMPLETE,
+                        local_only=True,
+                        provider="skip",
+                        summary="SKIPPED_ALREADY_ANALYZED",
+                        entities=[],
+                        topics=[],
+                        direction=NewsDirection.NEUTRAL,
+                        impact_strength=0.0,
+                        confidence=0.0,
+                        horizon=NewsImpactHorizon.MACRO,
+                        importance=NewsImportance.MINOR,
+                        importance_score=0.0,
+                        relevance_to_xauusd=0.0,
+                        relevance_to_usd=0.0,
+                        impacts=[],
+                        novelty=NewsNovelty.NEW,
+                    )
+                if aid and self.db.get_analysis(aid) is not None:
+                    existing2 = self.db.get_analysis(aid) or {}
+                    if ah:
+                        try:
+                            self.db.remember_analyzed_hash(
+                                ah,
+                                title=str(getattr(article, "title", "")),
+                                analysis_id=str(existing2.get("analysis_id", "")),
+                            )
+                        except Exception:
+                            pass
+                    logger.info("[NEWS_ANALYSIS] event=SKIP_ALREADY_ANALYZED article_id=%s", aid)
+                    return NewsAnalysisResult(
+                        analysis_id=str(existing2.get("analysis_id", "")),
+                        article_id=aid,
+                        run_id=str(existing2.get("run_id", "")),
+                        status=NewsAnalysisStatus.COMPLETE,
+                        local_only=bool(existing2.get("local_only", 1)),
+                        provider=str(existing2.get("provider", "local")),
+                        summary=str(existing2.get("summary", "")),
+                        entities=[],
+                        topics=[],
+                        direction=NewsDirection.NEUTRAL,
+                        impact_strength=float(existing2.get("impact_strength", 0) or 0),
+                        confidence=float(existing2.get("confidence", 0) or 0),
+                        horizon=NewsImpactHorizon.MACRO,
+                        importance=existing2.get("importance", "MINOR"),
+                        importance_score=float(existing2.get("importance_score", 0) or 0),
+                        relevance_to_xauusd=float(existing2.get("relevance_to_xauusd", 0) or 0),
+                        relevance_to_usd=float(existing2.get("relevance_to_usd", 0) or 0),
+                        impacts=[],
+                        novelty=NewsNovelty.NEW,
+                    )
+            except Exception:
+                pass
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         analysis_id = f"ana_{uuid.uuid4().hex[:12]}"
         self.db.start_run(run_id)
@@ -376,14 +482,31 @@ class NewsAnalysisPipeline:
     # ------------------------------------------------------------------
 
     def analyze_recent_unanalyzed(self, limit: int = 20) -> list[NewsAnalysisResult]:
-        """Analyzes the most recent articles that lack an analysis row."""
+        """Analyzes the most recent articles that lack an analysis row.
+
+        Idempotent: tombstoned hashes (already analyzed) are skipped even if
+        the article was re-ingested under a new id and would otherwise pass
+        the 'no analysis row' filter.
+        """
         articles = self.db.list_articles(limit=100)
         results: list[NewsAnalysisResult] = []
         for art in articles:
             if len(results) >= limit:
                 break
+            ah_tmp = str(art.get("article_hash") or "")
+            if ah_tmp and self.db.is_analyzed_hash(ah_tmp):
+                continue
             existing = self.db.get_analysis(art["article_id"])
             if existing:
+                try:
+                    if ah_tmp:
+                        self.db.remember_analyzed_hash(
+                            ah_tmp,
+                            title=str(art.get("title", "")),
+                            analysis_id=str(existing.get("analysis_id", "")),
+                        )
+                except Exception:
+                    pass
                 continue
             from nexus_scalp.news.models import NewsArticle
 

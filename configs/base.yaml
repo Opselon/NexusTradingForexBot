@@ -1,16 +1,18 @@
 execution:
-  symbol: "EURUSD"
+  symbol: "XAUUSD"
   mode: "PAPER"
   timeframe: "M1"
   magic_number: 999101
-  max_slippage_points: 10
+  max_slippage_points: 30
 
 risk:
-  max_account_drawdown_pct: 2.5
+  max_account_drawdown_pct: 2.0
   risk_per_trade_pct: 0.5
   max_concurrent_positions: 1
-  max_spread_points: 20
+  max_spread_points: 60
   enforce_stop_loss: true
+  max_margin_usage_pct: 10.0
+  max_allowed_lots: 2.0
 
 mt5:
   timeout_ms: 5000
@@ -18,9 +20,9 @@ mt5:
   portable_mode: false
 
 model:
-  confidence_threshold: 0.75
+  confidence_threshold: 0.35
   feature_schema_version: "v1.0"
-  model_artifact_path: "artifacts/models/scalp/EURUSD/v1.0.0/model.pt"
+  model_artifact_path: "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
   # TASK-01-60D-LIQUIDITY: explicit switch. false -> existing 50D behavior;
   # true -> 60D liquidity feature layer for candidate pipelines.
   liquidity_features_enabled: false

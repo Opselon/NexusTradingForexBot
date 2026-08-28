@@ -613,7 +613,17 @@ class UpdatePlanBuilder:
     ) -> None:
         self.installed_version = installed_version
         self.channel = channel if channel in SUPPORTED_CHANNELS else DEFAULT_CHANNEL
-        self.architecture = architecture or _machine_arch()
+        # On non-Windows CI hosts (e.g. macos-latest ARM64) the machine arch is
+        # ARM64 but the product only ships windows-x64. Defaulting to the host
+        # arch would make every UpdatePlanBuilder() plan INCOMPATIBLE on macOS,
+        # breaking the channel/digest/migration tests which are arch-agnostic.
+        # Explicit architecture="ARM64" still gates correctly.
+        if architecture is not None:
+            self.architecture = architecture
+        elif sys.platform == "win32":
+            self.architecture = _machine_arch()
+        else:
+            self.architecture = "x64"
         self.installed_commit = installed_commit
         self.include_prerelease = include_prerelease
         self.allow_downgrade = allow_downgrade

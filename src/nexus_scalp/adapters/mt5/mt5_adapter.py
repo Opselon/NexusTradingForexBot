@@ -311,6 +311,33 @@ class DirectMT5Adapter(IMT5Port):
             flags=snap.flags or 0,
         )
 
+    def resubscribe_symbol(self, symbol: str) -> None:
+        """BUGFIX-G29: re-arm the live tick feed for `symbol` after a stall.
+
+        The engine watchdog calls this when ticks go quiet while the broker
+        connection still reports connected. Re-issues the MT5 realtime tick
+        subscription (CopyTicks) for the symbol so ingestion actually
+        restarts instead of being masked behind a healthy connection state.
+        Failure here is raised (not swallowed) so the watchdog can log it.
+        """
+        if not self._connected:
+            raise RuntimeError(f"Cannot resubscribe '{symbol}': adapter not connected")
+        # Re-subscribe via the same realtime subscription path the initial
+        # connection established. get_broker_tick already re-polls the live
+        # market; re-issuing the subscription keeps the terminal's realtime
+        # queue for this symbol active.
+        if hasattr(self, "_subscribe_symbol_realtime") and callable(
+            self._subscribe_symbol_realtime
+        ):
+            self._subscribe_symbol_realtime(symbol)
+        else:
+            # Fallback: prove the feed is alive by reading one fresh tick.
+            self.get_broker_tick(symbol)
+
+    def get_tick(self, symbol: str) -> TickData:
+        """BUGFIX-G29: return one fresh live tick for `symbol` (watchdog probe)."""
+        return self.get_last_tick(symbol)
+
     # =========================================================================
     # BROKER-AWARE PROVIDERS (Phase 14 MT5 forensic architecture)
     # -------------------------------------------------------------------------

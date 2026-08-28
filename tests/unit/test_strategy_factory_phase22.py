@@ -62,7 +62,6 @@ from nexus_scalp.strategies.factory.models import (
     CandidateSource,
     EvolutionConfig,
     FactoryCandidate,
-    FactoryStage,
     FailureReason,
     LoopState,
     StrategyDsl,
@@ -74,10 +73,6 @@ from nexus_scalp.strategies.factory.store import (
     get_loop_state,
     list_candidates,
     list_events,
-    list_failures,
-    list_generations,
-    set_loop_state,
-    upsert_candidate,
 )
 from nexus_scalp.strategies.factory.worker import AutonomousLoopWorker
 
@@ -356,7 +351,7 @@ def test_generation_persisted(audit_repo):
 
 def test_mutation_preserves_validity(audit_repo):
     """Spec 7: mutation never produces an invalid strategy."""
-    from nexus_scalp.strategies.factory.dsl import dsl_hash, generate_template_candidates
+    from nexus_scalp.strategies.factory.dsl import generate_template_candidates
     from nexus_scalp.strategies.factory.evolution import mutate
 
     dsl = generate_template_candidates(1)[0]
@@ -537,14 +532,20 @@ def test_resume_generation_skips_evaluated(audit_repo):
     assert result["status"] == "RESUMED"
     # the first was evaluated (lifecycle != GENERATED); pending = the rest
     cands = list_candidates(audit_repo, generation_id=gen["generation_id"])
-    pending = [c for c in cands if c.get("lifecycle") in ("GENERATED", None, "")]
+    pending = [
+        c for c in cands if c.get("lifecycle") in ("GENERATED", None, "", "DISCOVERED", "RUNNING")
+    ]
     eval_n = [c for c in cands if c.get("lifecycle") not in ("GENERATED", None, "")]
     assert pending or eval_n
     # every candidate row has a non-GENERATED lifecycle after resume completes
     # (resumed ones got evaluated in this call)
     flush(audit_repo)
     cands2 = list_candidates(audit_repo, generation_id=gen["generation_id"])
-    non_generated = [c for c in cands2 if c.get("lifecycle") not in ("GENERATED", None, "")]
+    non_generated = [
+        c
+        for c in cands2
+        if c.get("lifecycle") not in ("GENERATED", None, "", "DISCOVERED", "RUNNING")
+    ]
     assert len(non_generated) >= 2  # the original + at least one resumed
 
 

@@ -1,0 +1,82 @@
+name: JS Tests
+
+# Frontend unit-test gate for the buildless vanilla-JS SPA under Web/.
+# NSE has NO bundler (no webpack/vite/TS): app.js is plain browser JS, and
+# tests/js/*.test.js are node runnable with a tiny window/document shim.
+# ci.yml covers Python (ruff/mypy/pytest); this runs the JS logic tests that
+# ci.yml does not touch. Mirrors the js-tests need from the requested set.
+
+on:
+  push:
+    branches: [ci-tests]
+    tags-ignore: ["v*"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# One JS run per ref; a new push supersedes the old.
+concurrency:
+  group: js-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Diff/poll pattern from the requested set uses read-only contents.
+permissions:
+  contents: read
+
+env:
+  # Advisory-only Telegram wiring (never printed, never fails CI).
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  USER_ID: ${{ secrets.USER_ID }}
+
+jobs:
+  js-tests:
+    name: Frontend JS Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # Syntax gate: every shipped Web/*.js must parse cleanly. The patch/CRLF
+      # trap (BUG-068 family) corrupts JS silently — catch it before tests.
+      - name: Syntax gate (node --check on all Web JS)
+        run: |
+          fail=0
+          for f in Web/app.js Web/api_client.js Web/forensic_console.js; do
+            if [ -f "$f" ]; then
+              echo "checking $f"
+              node --check "$f" || { echo "SYNTAX FAIL: $f"; fail=1; }
+            fi
+          done
+          exit $fail
+
+      # Pure-logic unit tests (tests/js/*.test.js). They load Web/*.js with a
+      # window/document shim and assert exported derivation/normalization logic.
+      - name: Run JS unit tests
+        run: |
+          shopt -s nullglob
+          files=(tests/js/*.test.js)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No JS tests found; skipping."
+            exit 0
+          fi
+          fail=0
+          for t in "${files[@]}"; do
+            echo "==> $t"
+            node "$t" || fail=1
+          done
+          exit $fail
+
+      # Advisory Telegram note (never fails CI).
+      - name: Telegram - JS tests finished
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py --results ci-results js-finished || true

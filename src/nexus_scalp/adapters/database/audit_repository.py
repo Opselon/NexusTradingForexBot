@@ -726,6 +726,15 @@ class AuditRepository:
             crash mid-cycle resumes from the last checkpoint instead of redoing
             history.
         """
+        self._create_table_position_lifecycle_events(conn)
+        self._create_table_trade_autopsies(conn)
+        self._create_table_behavior_detections(conn)
+        self._create_table_behavior_analysis(conn)
+        self._create_table_strategy_evolution_candidates(conn)
+        self._create_table_intelligence_worker_state(conn)
+        self._create_factory_tables(conn)
+
+    def _create_table_position_lifecycle_events(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS position_lifecycle_events (
@@ -756,6 +765,16 @@ class AuditRepository:
             except Exception:
                 pass
 
+        for index_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_lifecycle_ticket ON position_lifecycle_events(ticket, sequence);",
+            "CREATE INDEX IF NOT EXISTS idx_lifecycle_type ON position_lifecycle_events(event_type);",
+        ):
+            try:
+                conn.execute(index_sql)
+            except Exception:
+                pass
+
+    def _create_table_trade_autopsies(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS trade_autopsies (
@@ -801,6 +820,14 @@ class AuditRepository:
             except Exception:
                 pass
 
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_autopsy_strategy ON trade_autopsies(strategy_id);"
+            )
+        except Exception:
+            pass
+
+    def _create_table_behavior_detections(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS behavior_detections (
@@ -828,6 +855,16 @@ class AuditRepository:
             except Exception:
                 pass
 
+        for index_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_behavior_ticket ON behavior_detections(ticket);",
+            "CREATE INDEX IF NOT EXISTS idx_behavior_pattern ON behavior_detections(pattern);",
+        ):
+            try:
+                conn.execute(index_sql)
+            except Exception:
+                pass
+
+    def _create_table_behavior_analysis(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS behavior_analysis (
@@ -886,6 +923,7 @@ class AuditRepository:
             except Exception:
                 pass
 
+    def _create_table_strategy_evolution_candidates(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS strategy_evolution_candidates (
@@ -905,7 +943,14 @@ class AuditRepository:
             );
             """
         )
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_evolution_status ON strategy_evolution_candidates(status);"
+            )
+        except Exception:
+            pass
 
+    def _create_table_intelligence_worker_state(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS intelligence_worker_state (
@@ -917,6 +962,8 @@ class AuditRepository:
             );
             """
         )
+
+    def _create_factory_tables(self, conn: sqlite3.Connection) -> None:
         # =====================================================================
         # STRATEGY FACTORY research memory (2026-08-20) — append-only records.
         # The factory ORCHESTRATES generation/evolution over the research
@@ -957,6 +1004,14 @@ class AuditRepository:
             );
             """
         )
+        # PHASE 25 (2026-08-25): ensure context_matrices on factory_candidates
+        try:
+            from nexus_scalp.strategies.factory.store import ensure_factory_context_columns
+
+            ensure_factory_context_columns(conn)
+        except Exception:
+            pass
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS factory_failures (
@@ -1042,22 +1097,6 @@ class AuditRepository:
         except Exception:
             pass
 
-        for index_sql in (
-            "CREATE INDEX IF NOT EXISTS idx_lifecycle_ticket "
-            "ON position_lifecycle_events(ticket, sequence);",
-            "CREATE INDEX IF NOT EXISTS idx_lifecycle_type "
-            "ON position_lifecycle_events(event_type);",
-            "CREATE INDEX IF NOT EXISTS idx_autopsy_strategy ON trade_autopsies(strategy_id);",
-            "CREATE INDEX IF NOT EXISTS idx_behavior_ticket ON behavior_detections(ticket);",
-            "CREATE INDEX IF NOT EXISTS idx_behavior_pattern ON behavior_detections(pattern);",
-            "CREATE INDEX IF NOT EXISTS idx_evolution_status "
-            "ON strategy_evolution_candidates(status);",
-        ):
-            try:
-                conn.execute(index_sql)
-            except Exception:
-                pass
-
     def _create_research_tables(self, conn: sqlite3.Connection) -> None:
         """
         Creates the PHASE 09B Strategy Research / Backtest / Validation schema.
@@ -1094,6 +1133,14 @@ class AuditRepository:
             );
             """
         )
+        # PHASE 25 (2026-08-25): ensure context_matrices on strategy_registry
+        try:
+            from nexus_scalp.research.store import ensure_registry_context_columns
+
+            ensure_registry_context_columns(conn)
+        except Exception:
+            pass
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS research_runs (
@@ -1310,8 +1357,13 @@ class AuditRepository:
             if batch:
                 try:
                     with conn:
-                        for query, args in batch:
-                            conn.execute(query, args)
+                        import itertools
+                        for query, group in itertools.groupby(batch, key=lambda x: x[0]):
+                            args_list = [item[1] for item in group]
+                            if len(args_list) == 1:
+                                conn.execute(query, args_list[0])
+                            else:
+                                conn.executemany(query, args_list)
                     for _ in batch:
                         q.task_done()
                 except Exception as e:

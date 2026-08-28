@@ -180,6 +180,8 @@ class TelegramReportScheduler:
         now = now if now is not None else time.monotonic()
         if not self.config.enabled:
             return False
+        if self._last_sent_at == 0.0:
+            return True
         return (now - self._last_sent_at) >= self.config.interval_sec
 
     def _fingerprint(self, check: dict[str, Any]) -> str:

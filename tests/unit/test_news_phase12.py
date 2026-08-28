@@ -54,8 +54,8 @@ from nexus_scalp.news.ingest import (
     NewsDeduplicator,
     NewsScheduler,
     canonicalize_item,
-    compute_article_hash,
     normalize_title,
+    normalize_url,
 )
 from nexus_scalp.news.models import (
     CurrentNewsContext,
@@ -245,6 +245,17 @@ class TestDeduplication:
         # lowercase canonical form (case-insensitive identity)
         assert normalize_title("  FED   RAISES  RATES!!! ") == "fed raises rates"
         assert normalize_title("The Fed and the ECB vs markets: update") == "fed ecb markets update"
+
+    def test_11b_normalized_url_strips_noise(self):
+        assert normalize_url("https://www.example.com/article/") == "example.com/article"
+        assert (
+            normalize_url("http://example.com/article?utm_source=twitter") == "example.com/article"
+        )
+        assert normalize_url("https://example.com/article#comments") == "example.com/article"
+        assert normalize_url("  https://www.example.com/article/?q=1  ") == "example.com/article"
+        assert normalize_url("https://example.com/ARTICLE") == "example.com/article"
+        assert normalize_url(None) == ""
+        assert normalize_url("") == ""
 
     def test_12_updated_article_creates_version_not_overwrite(self, seeded_db):
         engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
@@ -1108,7 +1119,6 @@ class TestLiveIntegration:
         """impact_timeline groups impacts into time buckets with direction sums."""
         from nexus_scalp.news.analysis.pipeline import NewsAnalysisPipeline
         from nexus_scalp.news.ingest import NewsIngestor
-        from nexus_scalp.news.models import NewsDirection
         from nexus_scalp.news.sources import SourceFetchResult
 
         now = datetime.now(UTC)

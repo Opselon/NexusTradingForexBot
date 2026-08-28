@@ -437,15 +437,31 @@ def _contract_section(engine: Any) -> dict[str, Any]:
     actual_classes = None
     actual_input = None
     vector_len = None
+    live_tensor_schema = None
     if engine is not None:
-        actual_schema = getattr(engine, "FEATURE_SCHEMA_ID", None)
-        actual_dim = getattr(engine, "FEATURE_DIM", None)
+        # PHASE 28 (bundle-authoritative contract): "actual" = what the runtime
+        # REALLY operates under — the BUG-125 effective_* contract of the
+        # loaded bundle and the engine's own recorded live-tensor dimension.
+        # The class constants (scalp_v1/50) are bootstrap defaults, NOT truth;
+        # fv.to_tensor_input() is BASE-50 only and must never represent the
+        # live vector when a 70D assembly path exists.
+        actual_schema = getattr(engine, "effective_feature_schema_id", None) or getattr(
+            engine, "FEATURE_SCHEMA_ID", None
+        )
+        actual_dim = (
+            getattr(engine, "_last_live_tensor_dim", None)
+            or getattr(engine, "effective_feature_dim", None)
+            or getattr(engine, "FEATURE_DIM", None)
+        )
+        live_tensor_schema = getattr(engine, "_last_live_tensor_schema", None)
         fv = getattr(engine, "_last_fv", None)
-        if fv is not None:
+        if fv is not None and getattr(engine, "_last_live_tensor_dim", None) is None:
             try:
                 vector_len = len(fv.to_tensor_input())
             except Exception:
                 vector_len = None
+        else:
+            vector_len = actual_dim
         bundle = None
         try:
             with engine._bundle_lock:
@@ -502,6 +518,7 @@ def _contract_section(engine: Any) -> dict[str, Any]:
         "actual_input_dimension": actual_input,
         "actual_schema_id": actual_schema,
         "live_vector_len": vector_len,
+        "live_tensor_schema": live_tensor_schema,
         "dimension_match": dim_ok,
         "schema_hash_match": hash_ok,
         "classes_match": classes_ok,
@@ -575,8 +592,14 @@ def _model_section(engine: Any) -> dict[str, Any]:
             "available": True,
             "model_id": getattr(champ, "model_id", None) if champ else None,
             "model_version": getattr(champ, "model_version", None) if champ else None,
-            "schema_id": getattr(engine, "FEATURE_SCHEMA_ID", None),
-            "dimension": getattr(engine, "FEATURE_DIM", None),
+            # PHASE 28 (bundle-authoritative contract): report the schema the
+            # LOADED BUNDLE operates under (BUG-125 effective_* properties),
+            # never the class bootstrap constants — those stay scalp_v1/50
+            # even when a validated 70D artifact is serving.
+            "schema_id": getattr(engine, "effective_feature_schema_id", None)
+            or getattr(engine, "FEATURE_SCHEMA_ID", None),
+            "dimension": getattr(engine, "effective_feature_dim", None)
+            or getattr(engine, "FEATURE_DIM", None),
             "schema_hash": getattr(engine, "FEATURE_SCHEMA_HASH", None)
             or _feature_registry().get("schema_hash"),
             "scaler_hash": scaler_hash,
@@ -911,6 +934,16 @@ def _policy_section(engine: Any) -> dict[str, Any]:
     )
     out["request_id"] = getattr(proposal, "request_id", None) if proposal else None
     out["regime"] = regime_name
+    # Regime decision diagnostics (BUG-132): expose measured inputs + which
+    # decision conditions are firing so the UI shows WHY a regime was chosen,
+    # not just the final label.
+    if regime is not None and hasattr(regime, "decision_diagnostics"):
+        try:
+            out["regime_diagnostics"] = regime.decision_diagnostics()
+        except Exception:
+            out["regime_diagnostics"] = None
+    else:
+        out["regime_diagnostics"] = None
     out["proposal_generated_at"] = (
         getattr(proposal, "generated_at", None).isoformat()
         if proposal and getattr(proposal, "generated_at", None)

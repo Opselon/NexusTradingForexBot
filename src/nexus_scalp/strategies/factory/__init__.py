@@ -15,6 +15,11 @@ engine, never allows an LLM candidate to bypass deterministic validation and
 never promotes a strategy to ACTIVE automatically.
 """
 
+from nexus_scalp.strategies.factory.benchmark import (
+    benchmark_subset_for_candidate,
+    build_benchmark_artifact,
+    candidate_coverage_stats,
+)
 from nexus_scalp.strategies.factory.dsl import (
     DSL_SCHEMA_VERSION,
     SUPPORTED_TIMEFRAMES,
@@ -30,6 +35,7 @@ from nexus_scalp.strategies.factory.evolution import (
     crossover,
     explore,
     mutate,
+    mutate_with_action,
 )
 from nexus_scalp.strategies.factory.models import (
     CandidateResult,
@@ -125,8 +131,11 @@ __all__ = [
     "StrategyFamily",
     "ValidationVerdict",
     "adapt_probabilities",
+    "benchmark_subset_for_candidate",
+    "build_benchmark_artifact",
     "build_feature_catalog",
     "build_summary",
+    "candidate_coverage_stats",
     "canonicalize_dsl",
     "crossover",
     "dimension_score",
@@ -148,6 +157,7 @@ __all__ = [
     "list_runs",
     "memory_summary",
     "mutate",
+    "mutate_with_action",
     "population_diversity",
     "provider_usage_total",
     "rank_strategies",

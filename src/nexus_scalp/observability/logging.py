@@ -130,6 +130,28 @@ _SENSITIVE_KEY_FRAGMENTS = (
     "access_id",
 )
 
+#: Fragments that look secret-bearing but are NOT secrets. Substring matching
+#: on _SENSITIVE_KEY_FRAGMENTS would wrongly redact these (BUG-126-class
+#: over-redaction): e.g. "author", "authored_by", "token_bucket" (a rate-limit
+#: counter, not a credential). These are excluded from key-based redaction.
+_NON_SECRET_KEY_FRAGMENTS = (
+    "author",
+    "authored_by",
+    "token_bucket",
+    "authority",
+)
+
+#: Secret-shaped assignment catch-all for trusted string values (event/message/
+#: exc_info). These keys are intentionally NOT scrubbed by the high-entropy
+#: catch-all (which requires >=24-char high-entropy runs), so short/medium
+#: secrets like password=SECRET would otherwise leak. Redacts assignment-style
+#: `key=value` / `key: value` and bare telemetry-shaped secrets.
+_SECRET_ASSIGN_RE = re.compile(
+    r"(?i)(?:password|passwd|secret|token|api[_-]?key|apikey|private[_-]?key|"
+    r"bot[_-]?token|access[_-]?id|bearer|authorization|credential)"
+    r"\s*[:=]\s*['\\\"]?[^\s'\\\"]{2,}"
+)
+
 #: High-entropy catch-all (BUG-121 discipline): >=24 char runs that are
 #: >=75% alnum with Shannon entropy >=3.2 bits/char are treated as secrets.
 #: ANSI escape sequence stripper for FILE output (rich ExceptionRenderer
@@ -252,12 +274,22 @@ def _shannon_entropy(value: str) -> float:
 
 
 def _redact_value(value: Any) -> Any:
-    """High-entropy catch-all for string values (BUG-121 discipline)."""
+    """Secret-assignment scrub + high-entropy catch-all for string values.
+
+    First pass: redact short/medium secret-bearing assignments (password=SECRET,
+    TELEGRAM_BOT_TOKEN=..., bearer ..., etc.) that the >=24-char high-entropy
+    catch-all would otherwise miss. Second pass: the high-entropy blob catcher.
+    """
     if not isinstance(value, str) or not value:
         return value
 
+    val = _SECRET_ASSIGN_RE.sub("[REDACTED_SECRET]", value)
+
     def _scrub(match: re.Match[str]) -> str:
         token = match.group(0)
+        # Skip all-uppercase system event names / snake_case constants (e.g. GLOBAL_KILL_SWITCH_ACTIVATED)
+        if token.isupper() and "_" in token:
+            return token
         alnum_ratio = sum(1 for ch in token if ch.isalnum()) / len(token)
         if (
             alnum_ratio >= _ENTROPY_ALNUM_THRESHOLD
@@ -266,7 +298,7 @@ def _redact_value(value: Any) -> Any:
             return "[REDACTED_SECRET]"
         return token
 
-    return _HIGH_ENTROPY_RE.sub(_scrub, value)
+    return _HIGH_ENTROPY_RE.sub(_scrub, val)
 
 
 def _redact_sensitive_fields(
@@ -274,13 +306,27 @@ def _redact_sensitive_fields(
     method_name: str,
     event_dict: MutableMapping[str, Any],
 ) -> MutableMapping[str, Any]:
-    """Centralized redaction: secret-bearing KEYS and high-entropy VALUES."""
+    """Centralized redaction: secret-bearing KEYS and high-entropy VALUES.
+
+    Two layers (BUG-121/BUG-126 discipline, hardened 2026-08-26):
+      * Key-based: a key containing a secret fragment is redacted ENTIRELY,
+        unless the key contains a known non-secret fragment (author /
+        authored_by / token_bucket / authority) — prevents over-redaction of
+        benign fields.
+      * Value-based: every string value (including trusted keys event/message/
+        exc_info) is scanned for secret-shaped assignments AND high-entropy
+        blob runs. This closes the under-redaction gap where short secrets in
+        trusted free text passed through cleartext.
+    """
     for key in list(event_dict.keys()):
         lower = str(key).lower()
+        # Benign keys that merely contain secret-like substrings are never masked.
+        if any(frag in lower for frag in _NON_SECRET_KEY_FRAGMENTS):
+            continue
         if any(frag in lower for frag in _SENSITIVE_KEY_FRAGMENTS):
             event_dict[key] = "[REDACTED_SECRET]"
             continue
-        if isinstance(event_dict[key], str) and key not in _TRUSTED_STRING_KEYS:
+        if isinstance(event_dict[key], str):
             scrubbed = _redact_value(event_dict[key])
             if scrubbed is not event_dict[key]:
                 event_dict[key] = scrubbed

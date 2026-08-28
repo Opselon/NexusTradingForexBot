@@ -42,6 +42,28 @@ logger = get_logger("nexus_scalp.strategies.factory.store")
 
 MAX_READ_LIMIT = 2000
 
+#: PHASE 25 (2026-08-25): JSON column carrying the per-candidate context
+#: matrices {session_matrix, hourly_matrix, weekday_matrix, regime_matrix}.
+CONTEXT_MATRICES_COLUMN = "context_matrices"
+
+
+def ensure_factory_context_columns(conn: sqlite3.Connection) -> None:
+    """Idempotent ALTER TABLE for the context-matrices evidence columns.
+
+    SQLite has no ``ADD COLUMN IF NOT EXISTS``; the codebase-standard
+    try/except pattern (see audit_repository research_runs migration) makes
+    the operation idempotent: an existing column raises OperationalError
+    ("duplicate column name") which is swallowed, a missing column is added.
+    Safe to call on every schema check / startup.
+    """
+    try:
+        conn.execute(
+            f"ALTER TABLE factory_candidates ADD COLUMN {CONTEXT_MATRICES_COLUMN} "
+            "TEXT DEFAULT '{}';"
+        )
+    except Exception:
+        pass  # column already exists (idempotent) or table not created yet
+
 
 def _json(value: Any) -> str:
     if value is None:
@@ -139,12 +161,13 @@ def upsert_candidate(repo: Any, candidate: dict[str, Any]) -> bool:
         INSERT INTO factory_candidates (
             candidate_id, definition_hash, generation_id, source, operator,
             parent_ids, family, population_index, dsl, structural, lifecycle,
-            failure_reasons, llm_response_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            failure_reasons, llm_response_id, created_at, context_matrices
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(candidate_id) DO UPDATE SET
             structural=excluded.structural,
             lifecycle=excluded.lifecycle,
-            failure_reasons=excluded.failure_reasons;
+            failure_reasons=excluded.failure_reasons,
+            context_matrices=excluded.context_matrices;
     """
     try:
         repo._queue.put_nowait(
@@ -165,6 +188,7 @@ def upsert_candidate(repo: Any, candidate: dict[str, Any]) -> bool:
                     _json(candidate.get("failure_reasons")),
                     candidate.get("llm_response_id", ""),
                     candidate.get("created_at", _now()),
+                    _json(candidate.get("context_matrices")),
                 ),
             )
         )
@@ -244,11 +268,29 @@ def emit_event(repo: Any, event: dict[str, Any]) -> bool:
 
 
 def record_run(repo: Any, run: dict[str, Any]) -> bool:
-    """Record a research run — audit queue (legacy) or isolated store."""
+    """Record a research run — audit queue (legacy) or isolated store.
+
+    BENCHMARK (2026-08-21): when `benchmark` is present in `run`, it is
+    stashed in the result_summary under the `benchmark` key so the API can
+    surface strategy-aware backtests (per-candidate filtered dataset, OOS /
+    walk-forward explainability) without re-running the pipeline.
+    """
     if _is_store_backend(repo):
         return repo.record_run(run)
     if not repo._is_sqlite:
         return False
+    # Merge benchmark into result_summary (AI-facing backtest payload)
+    result_summary: Any = run.get("result_summary")
+    benchmark = run.get("benchmark")
+    if benchmark and isinstance(result_summary, dict):
+        result_summary = {**result_summary, "benchmark": benchmark}
+    elif benchmark and isinstance(run.get("score"), dict):
+        # Also attach benchmark when result_summary is a score/lifecycle dict
+        result_summary = {
+            "benchmark": benchmark,
+            "score": run.get("score"),
+            "lifecycle": run.get("lifecycle"),
+        }
     sql = """
         INSERT INTO factory_runs (
             run_id, generation_id, strategy_id, experiment_kind,
@@ -267,7 +309,7 @@ def record_run(repo: Any, run: dict[str, Any]) -> bool:
                     run.get("experiment_kind", "GENERATE"),
                     run.get("executed_at", _now()),
                     _json(run.get("config")),
-                    _json(run.get("result_summary")),
+                    _json(result_summary),
                 ),
             )
         )
@@ -394,6 +436,250 @@ def list_generations(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
         return []
     finally:
         conn.close()
+
+
+# ------------------------------------------------------------------
+# Stale-generation sweeper (P1 hardening, 2026-08-23)
+# ------------------------------------------------------------------
+
+
+def get_loop_states(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
+    """List loop control states — audit DB (legacy) or isolated store."""
+    if _is_store_backend(repo):
+        return repo.get_loop_states(limit=limit) if hasattr(repo, "get_loop_states") else []
+    conn = _conn(repo)
+    if conn is None:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT * FROM factory_loop_state ORDER BY updated_at DESC LIMIT ?;", (limit,)
+        ).fetchall()
+        return [_row_safe(dict(r)) for r in rows]
+    except Exception as e:
+        logger.error("[STRATEGY_FACTORY] get_loop_states failed", error=str(e))
+        return []
+    finally:
+        conn.close()
+
+
+def sweep_stale_generations(
+    repo: Any,
+    max_age_minutes: int = 30,
+    limit: int = 200,
+    resume_stale: bool | None = None,
+) -> dict[str, Any]:
+    """Mark orphaned RUNNING generations as FAILED (P1 lifecycle hardening).
+
+    Freshness is keyed off the **loop-state heartbeat**
+    (``factory_loop_state.updated_at`` / ``checkpoint``), NOT
+    ``factory_generations.created_at``: the generation row itself is never
+    refreshed mid-run (ON CONFLICT updates only status/completed_at/config),
+    so a legitimate 45-minute LLM generation is indistinguishable from an
+    orphan by creation time alone. The autonomous loop writes its loop-state
+    checkpoint on every cycle, so an alive run always has a recent heartbeat.
+    When no heartbeat exists for a generation, created_at is used as fallback.
+
+    Semantics:
+    * NEVER touches COMPLETED/FAILED/CANCELLED rows — only RUNNING.
+    * Idempotent: already-swept (FAILED) rows are never touched twice.
+    * Bounded: inspects at most ``limit`` most-recent generations.
+    * Auditable: logs event=GENERATION_SWEPT with swept ids (info level).
+    * PHASE 29: every swept generation is emitted as RESUMABLE — its event
+      payload carries ``resumable=True`` and the return dict gains a
+      parallel ``resumable`` id list. Status stays FAILED (audit preserved);
+       actual resumption is a separate explicit step
+      (resume_generation / orchestrator auto-resume), never silent.
+    * Does NOT fabricate completion: stale means FAILED (crash) and
+      ``completed_at`` is deliberately left NULL — resume_generation()
+      ignores header status and only re-evaluates unevaluated candidates,
+      so a crashed-but-finished generation can still be reconciled to
+      COMPLETED by complete_generation().
+
+    Returns {"swept": [generation_id...], "inspected": n}.
+    """
+    import datetime as _dt
+    import os as _os
+
+    # PHASE 29: RESUME_STALE=true (env or explicit param) marks every sweep
+    # candidate as resumable; default keeps the legacy kill-only behavior.
+    if resume_stale is None:
+        resume_stale = _os.environ.get("RESUME_STALE", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+    if _is_store_backend(repo):
+        gens = repo.list_generations(limit=limit)
+        try:
+            loop_states = (
+                {ls.get("generation_id"): ls for ls in (repo.get_loop_states() or [])}
+                if hasattr(repo, "get_loop_states")
+                else {}
+            )
+        except Exception:
+            loop_states = {}
+    else:
+        gens = list_generations(repo, limit=limit)
+        try:
+            loop_states = {ls.get("generation_id"): ls for ls in (get_loop_states(repo) or [])}
+        except Exception:
+            loop_states = {}
+    now = _dt.datetime.now(_dt.UTC)
+    swept: list[str] = []
+    resumable: list[str] = []
+    inspected = 0
+    for g in gens:
+        inspected += 1
+        status = str(g.get("status", "") or "").upper()
+        if status != "RUNNING":
+            continue
+        gid = str(g.get("generation_id", "") or "")
+        if not gid:
+            continue
+        # Freshness = loop-state heartbeat; fall back to created_at.
+        ls = loop_states.get(gid) or {}
+        heartbeat_raw = ls.get("updated_at") or g.get("created_at")
+        age_min: float | None = None
+        try:
+            if isinstance(heartbeat_raw, str):
+                text = str(heartbeat_raw).strip().replace("Z", "+00:00")
+                hb_ts = _dt.datetime.fromisoformat(text)
+                if hb_ts.tzinfo is None:
+                    hb_ts = hb_ts.replace(tzinfo=_dt.UTC)
+            elif isinstance(heartbeat_raw, _dt.datetime):
+                hb_ts = heartbeat_raw
+            else:
+                hb_ts = None
+            if hb_ts is not None:
+                age_min = (now - hb_ts).total_seconds() / 60.0
+        except Exception:
+            age_min = None
+        if age_min is None:
+            # Unparseable heartbeat: conservative skip (never sweep unknown).
+            continue
+        if age_min < float(max_age_minutes):
+            continue  # alive (recent heartbeat) — never swept
+        updated = upsert_generation(
+            repo,
+            {
+                "generation_id": gid,
+                "number": int(g.get("number", 0) or 0),
+                "mode": str(g.get("mode", "MANUAL")),
+                "parent_generation": str(g.get("parent_generation", "") or ""),
+                "population_target": int(g.get("population_target", 0) or 0),
+                "created_at": g.get("created_at") or now.isoformat(),
+                # Do NOT set completed_at: a crash is FAILED, not completed.
+                "status": "FAILED",
+                "config": g.get("config") or {},
+            },
+        )
+        if updated:
+            swept.append(gid)
+            if resume_stale:
+                resumable.append(gid)
+            try:
+                import uuid as _uuid
+
+                emit_event(
+                    repo,
+                    {
+                        "event_id": str(_uuid.uuid4()),
+                        "generation_id": gid,
+                        "candidate_id": "",
+                        "event_type": "GENERATION_SWEPT",
+                        "message": f"Stale RUNNING generation {gid} marked FAILED by startup sweeper",
+                        "payload": {
+                            "generation_id": gid,
+                            "status": "FAILED",
+                            "resumable": bool(resume_stale),
+                        },
+                        "created_at": now.isoformat(),
+                    },
+                )
+            except Exception:
+                pass
+    if swept:
+        logger.info(
+            "[STRATEGY_FACTORY] event=GENERATION_SWEPT swept=%d ids=%s",
+            len(swept),
+            ",".join(swept[:10]),
+        )
+    return {
+        "swept": swept,
+        "inspected": inspected,
+        "resumable": resumable,
+    }
+
+
+def resume_generation(repo: Any, generation_id: str) -> dict[str, Any]:
+    """PHASE 29: re-arm a FAILED generation for resumption (crash recovery).
+
+    Resets status to RUNNING with a fresh loop-state heartbeat so the
+    orchestrator's resume path can pick it up. Audit is preserved: the
+    GENERATION_SWEPT event and the FAILED interval stay in history, and the
+    reset emits its own GENERATION_RESUMED event. Callers gate on
+    population_target not yet met + config auto-resume; this function only
+    flips state. Returns {"status": "RESUMED"|"NOT_FOUND"|"NOT_FAILED",
+    "generation_id": gid}.
+    """
+    import datetime as _dt
+    import uuid as _uuid
+
+    gen = get_generation(repo, generation_id)
+    if not gen:
+        return {"status": "NOT_FOUND", "generation_id": generation_id}
+    if str(gen.get("status", "") or "").upper() != "FAILED":
+        return {"status": "NOT_FAILED", "generation_id": generation_id}
+    now = _dt.datetime.now(_dt.UTC).isoformat()
+    updated = upsert_generation(
+        repo,
+        {
+            "generation_id": generation_id,
+            "number": int(gen.get("number", 0) or 0),
+            "mode": str(gen.get("mode", "MANUAL")),
+            "parent_generation": str(gen.get("parent_generation", "") or ""),
+            "population_target": int(gen.get("population_target", 0) or 0),
+            "created_at": gen.get("created_at") or now,
+            "status": "RUNNING",
+            "config": gen.get("config") or {},
+        },
+    )
+    if not updated:
+        return {"status": "ERROR", "generation_id": generation_id}
+    # Fresh heartbeat: an immediate post-resume sweep must not re-kill it.
+    try:
+        set_loop_state(
+            repo,
+            {
+                "state": "RUNNING",
+                "generation_id": generation_id,
+                "checkpoint": {"resumed_at": now},
+                "updated_at": now,
+                "last_error": "",
+            },
+        )
+    except Exception:
+        pass
+    try:
+        emit_event(
+            repo,
+            {
+                "event_id": str(_uuid.uuid4()),
+                "generation_id": generation_id,
+                "candidate_id": "",
+                "event_type": "GENERATION_RESUMED",
+                "message": f"Generation {generation_id} re-armed RUNNING by resume_generation",
+                "payload": {"generation_id": generation_id, "status": "RUNNING"},
+                "created_at": now,
+            },
+        )
+    except Exception:
+        pass
+    logger.info(
+        "[STRATEGY_FACTORY] event=GENERATION_RESUMED generation_id=%s",
+        generation_id,
+    )
+    return {"status": "RESUMED", "generation_id": generation_id}
 
 
 def list_candidates(
@@ -566,6 +852,77 @@ def get_loop_state(repo: Any) -> dict[str, Any]:
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Operator accounting persistence (G28 TARGET 2)
+#
+# ``factory_loop_state`` doubles as the crash-safe home for cumulative
+# operator evidence: a DEDICATED scope row (``operator_stats``) stores the
+# merged operator/action counters + behavioral clone-cluster registry as JSON
+# in its ``checkpoint`` column. The autonomous control row (scope
+# 'autonomous') is intentionally left alone — its checkpoint is rewritten by
+# every start/pause/stop transition and must stay loop-control-only.
+# ---------------------------------------------------------------------------
+
+OPERATOR_STATS_SCOPE = "operator_stats"
+
+
+def set_operator_stats(repo: Any, payload: dict[str, Any]) -> bool:
+    """Persist cumulative operator/accounting state — either backend."""
+    if _is_store_backend(repo):
+        setter = getattr(repo, "set_operator_stats", None)
+        if setter is not None:
+            return setter(payload)
+    if not repo._is_sqlite:
+        return False
+    sql = """
+        INSERT INTO factory_loop_state (
+            scope, state, generation_id, checkpoint, updated_at, last_error
+        ) VALUES (?, 'ACTIVE', '', ?, ?, '')
+        ON CONFLICT(scope) DO UPDATE SET
+            checkpoint=excluded.checkpoint,
+            updated_at=excluded.updated_at;
+    """
+    try:
+        repo._queue.put_nowait((sql, (OPERATOR_STATS_SCOPE, _json(payload), _now())))
+        return True
+    except Exception as e:
+        logger.error("[STRATEGY_FACTORY] set_operator_stats failed", error=str(e))
+        return False
+
+
+def get_operator_stats(repo: Any) -> dict[str, Any]:
+    """Read cumulative operator/accounting state ({} when absent)."""
+    if _is_store_backend(repo):
+        getter = getattr(repo, "get_operator_stats", None)
+        if getter is not None:
+            try:
+                return getter() or {}
+            except Exception as e:
+                logger.error("[STRATEGY_FACTORY] get_operator_stats failed", error=str(e))
+                return {}
+    conn = _conn(repo)
+    if conn is None:
+        return {}
+    try:
+        row = conn.execute(
+            "SELECT checkpoint FROM factory_loop_state WHERE scope=? LIMIT 1;",
+            (OPERATOR_STATS_SCOPE,),
+        ).fetchone()
+        if row is None:
+            return {}
+        raw = row["checkpoint"]
+        text = str(raw or "").strip()
+        if not text or text.lower() in ("null", "{}"):
+            return {}
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception as e:
+        logger.error("[STRATEGY_FACTORY] get_operator_stats failed", error=str(e))
+        return {}
+    finally:
+        conn.close()
+
+
 def provider_usage_total(repo: Any) -> dict[str, Any]:
     """Aggregate LLM provider usage — audit DB (legacy) or isolated store."""
     if _is_store_backend(repo):
@@ -605,6 +962,7 @@ def _row_safe(row: dict[str, Any]) -> dict[str, Any]:
         "payload",
         "result_summary",
         "checkpoint",
+        "context_matrices",
     ):
         if col in out:
             raw = out[col]
@@ -622,6 +980,7 @@ __all__ = [
     "get_candidate_structural",
     "get_generation",
     "get_loop_state",
+    "get_operator_stats",
     "list_candidates",
     "list_events",
     "list_failures",
@@ -632,6 +991,7 @@ __all__ = [
     "record_provider_usage",
     "record_run",
     "set_loop_state",
+    "set_operator_stats",
     "upsert_candidate",
     "upsert_generation",
 ]

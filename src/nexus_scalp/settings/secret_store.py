@@ -192,7 +192,7 @@ class SecureSecretStore:
         data = self._load()
         data[name] = payload
         self._save(data)
-        logger.info("[SECRET_STORE] secret %s stored (scheme=%s)", name, scheme)
+        logger.info("[SECRET_STORE] secret stored name=%s scheme=%s", name, scheme)
 
     def get_secret(self, name: str) -> str | None:
         """Return the decrypted secret, or None when absent/unreadable."""

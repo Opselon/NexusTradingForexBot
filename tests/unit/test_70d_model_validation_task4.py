@@ -373,8 +373,6 @@ def test_70d_model_12_deterministic_training_smoke() -> None:
     import subprocess
     import sys
 
-    from nexus_scalp.model_generation.experiment_factory import ExperimentFactory
-
     script = r"""
 import numpy as np, polars as pl
 from nexus_scalp.model_generation.experiment_factory import ExperimentFactory

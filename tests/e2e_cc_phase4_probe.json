@@ -1,0 +1,53 @@
+{
+  "status404_resources": [],
+  "console404": [],
+  "panel_ids": [
+    "scc-total",
+    "scc-active",
+    "scc-valid",
+    "scc-blocked",
+    "scc-fleet-note",
+    "scc-eval-metrics",
+    "scc-research-bottleneck",
+    "scc-lifecycle-filter",
+    "scc-fit-all",
+    "scc-reset-cam",
+    "scc-focus-selected",
+    "scc-focus-stage",
+    "scc-focus-active",
+    "scc-focus-blocked",
+    "scc-spatial-canvas",
+    "scc-spatial-empty",
+    "scc-tm-bar",
+    "scc-tm-play",
+    "scc-tm-slider",
+    "scc-tm-label",
+    "scc-fleet-tbody",
+    "scc-console-pause",
+    "scc-bottleneck",
+    "scc-console-search",
+    "scc-console-sev",
+    "scc-console-family",
+    "scc-console-type",
+    "scc-console-strategy",
+    "scc-console-gen",
+    "scc-console-from",
+    "scc-console-to",
+    "scc-console-autoscroll",
+    "scc-console-live",
+    "scc-console-body",
+    "scc-inspector-drawer",
+    "scc-insp-title",
+    "scc-insp-content"
+  ],
+  "inspector_probe": {
+    "probes": {
+      "NX": "object",
+      "CC": "undefined",
+      "CommandCenter": "undefined",
+      "cc": "undefined",
+      "scc": "undefined"
+    },
+    "hasInspectorEl": true
+  }
+}

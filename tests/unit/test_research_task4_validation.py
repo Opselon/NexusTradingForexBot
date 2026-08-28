@@ -30,7 +30,6 @@ from nexus_scalp.research.pipeline import ResearchPipeline, _select_family
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.robustness import RobustnessEngine
 from nexus_scalp.research.scoring import compute_strategy_score
-from nexus_scalp.research.walkforward import WalkForwardEngine
 from nexus_scalp.research.worker import ResearchWorker
 
 try:
@@ -271,3 +270,131 @@ def test_no_automatic_active(repo):
         CandidateLifecycle.DISCOVERED.value,
     )
     assert result["lifecycle"] != CandidateLifecycle.ACTIVE.value
+
+
+# ===========================================================================
+# Agent 3 (ValidationFlow) gate-semantics + propagation tests
+# ===========================================================================
+
+
+def test_rs26_oos_hard_gate_blocks_validation(repo):
+    """TEST-RS-26: a candidate with negative OOS expectancy is REJECTED even
+    when in-sample and every other gate looks healthy."""
+    ledger = ExperienceLedger(repo)
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    for i in range(40):
+        rec = make_record(f"in{i}", ts=base + timedelta(hours=i))
+        ledger.record_experience(rec)
+        ledger.record_outcome(make_outcome(rec, 0.5))
+    for i in range(10):
+        # OOS period strongly negative -> gate must hard-fail.
+        rec = make_record(f"oos{i}", ts=base + timedelta(hours=50 + i))
+        ledger.record_experience(rec)
+        ledger.record_outcome(make_outcome(rec, -0.8))
+    repo._queue.join()
+    ds = ResearchDatasetBuilder(ledger).build()
+    oos = OOSGate().evaluate(ds, "s1", "v1", oos_frac=0.25)
+    assert oos.status == "FAIL"
+    bt = BacktestEngine().run(ds, "s1", "v1", use_split=True)
+    score = compute_strategy_score(ds, backtest=bt, walkforward=None, oos=oos, robustness=None)
+    assert score.verdict == "REJECTED"
+    assert "OOS_FAILURE" in score.reasons
+
+
+def test_rs27_small_sample_never_validated(repo):
+    """TEST-RS-27: the evidence floor is a HARD gate — small-sample candidates
+    with positive in-sample/OOS are INCONCLUSIVE, never VALIDATED."""
+    ledger = ExperienceLedger(repo)
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    for i in range(15):
+        rec = make_record(f"sm{i}", ts=base + timedelta(hours=i))
+        ledger.record_experience(rec)
+        ledger.record_outcome(make_outcome(rec, 0.4))
+    repo._queue.join()
+    ds = ResearchDatasetBuilder(ledger).build()
+    bt = BacktestEngine().run(ds, "s1", "v1", use_split=True)
+    # Simulate a passing OOS + robustness; only the sample floor should bite.
+    oos_pass = type(
+        "O",
+        (),
+        {
+            "status": "PASS",
+            "reason": "",
+            "oos_expectancy_r": 0.3,
+            "in_sample_expectancy_r": 0.3,
+            "oos_samples": 12,
+        },
+    )()
+    rob_pass = type("R", (), {"status": "PASS", "reason": "", "max_degradation": 0.0})()
+    wf = type("W", (), {"passed": True, "degradation": 0.0})()
+    score = compute_strategy_score(
+        ds, backtest=bt, walkforward=wf, oos=oos_pass, robustness=rob_pass
+    )
+    # 15 trades < MIN_EVIDENCE_SAMPLES (100) -> must NOT be VALIDATED.
+    assert score.verdict != "VALIDATED"
+    assert score.verdict in ("INCONCLUSIVE", "REJECTED")
+
+
+def test_rs28_resolved_candidate_not_reevaluated(repo):
+    """TEST-RS-28 (propagation/no-op): once the worker has discovered a
+    candidate in-session, subsequent cycles over the SAME dataset are genuine
+    no-ops (the full gate chain is NOT re-executed every tick)."""
+    ledger = ExperienceLedger(repo)
+    seed_experiences(ledger, repo, 26, prefix="rs28")
+    repo._queue.join()
+    pipeline = ResearchPipeline(ResearchDatasetBuilder(ledger), StrategyRegistry(repo))
+    worker = ResearchWorker(repo, ledger, pipeline, interval_sec=0.0)
+    worker.start()
+    first = worker.tick()
+    assert first is True and worker.last_work_done is True
+    # Same data: the just-discovered candidate must be skipped (no-op).
+    second = worker.tick()
+    assert second is True and worker.last_work_done is False
+    worker.stop()
+
+
+def test_rs29_stranded_discovered_is_drained(repo):
+    """TEST-RS-29 (RC1 drain contract): a DISCOVERED candidate left unresolved
+    by a PRIOR process is picked up on the first tick of a fresh worker, then
+    never re-queued for re-validation."""
+    import sqlite3
+
+    ledger = ExperienceLedger(repo)
+    seed_experiences(ledger, repo, 26, prefix="rs29")
+    repo._queue.join()
+    # Simulate a prior process that discovered but never validated.
+    conn = sqlite3.connect(repo._db_path)
+    conn.execute(
+        "INSERT INTO strategy_registry (strategy_id, strategy_version, "
+        "feature_schema_id, feature_dimension, lifecycle, context_definition, "
+        "parent_strategy_ids, created_at, updated_at) VALUES "
+        "('STRAT-B37B42FF21','vc34040dcde69','scalp_v1',50,'DISCOVERED','{}',"
+        "'[]','2026-01-01T00:00:00+00:00','2026-01-01T00:00:00+00:00')"
+    )
+    conn.commit()
+    conn.close()
+    # Fresh worker process (does not know the stranded id yet).
+    pipeline = ResearchPipeline(ResearchDatasetBuilder(ledger), StrategyRegistry(repo))
+    worker = ResearchWorker(repo, ledger, pipeline, interval_sec=0.0)
+    worker.start()
+    assert worker.tick() is True and worker.last_work_done is True  # drain
+    assert worker.tick() is True and worker.last_work_done is False  # no-op
+    worker.stop()
+
+
+def test_rs30_worker_noop_is_genuine_not_skipped(repo):
+    """TEST-RS-30: verifies the no-op is a true decision (candidate already
+    seen this session) and not an exception-swallowed skip. The cycle still
+    runs and reports work_done=False explicitly."""
+    ledger = ExperienceLedger(repo)
+    seed_experiences(ledger, repo, 26, prefix="rs30")
+    repo._queue.join()
+    pipeline = ResearchPipeline(ResearchDatasetBuilder(ledger), StrategyRegistry(repo))
+    worker = ResearchWorker(repo, ledger, pipeline, interval_sec=0.0)
+    worker.start()
+    worker.tick()
+    # Force a second discovery pass directly: it must report no pending work.
+    pending = worker._refresh_discovery()
+    assert pending is False
+    assert worker.last_error == ""
+    worker.stop()

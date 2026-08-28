@@ -5,10 +5,7 @@ Verifies position sizing math, safety ceilings, micro exceptions, scaling,
 free-margin clamps, and boundary/safety protection rules.
 """
 
-import math
 from datetime import UTC, datetime
-
-import pytest
 
 from nexus_scalp.configuration.config import RiskConfig
 from nexus_scalp.domain.enums import ActionType
@@ -168,7 +165,7 @@ def test_stop_loss_scaling() -> None:
     for dist in sl_distances:
         entry = 2000.0
         sl = entry - dist
-        volume, reason = engine.calculate_dynamic_volume(
+        volume, _reason = engine.calculate_dynamic_volume(
             entry=entry, sl=sl, account=account, symbol_info=symbol_info, risk_pct=1.0
         )
 
@@ -225,7 +222,7 @@ def test_equity_scaling() -> None:
             margin_free=equity * 2.0,
             currency="USD",
         )
-        volume, reason = engine.calculate_dynamic_volume(
+        volume, _reason = engine.calculate_dynamic_volume(
             entry=2000.0,
             sl=1999.50,  # Tight SL
             account=account,
@@ -283,7 +280,7 @@ def test_risk_invariance() -> None:
 
     entry = 2000.0
     sl = 1995.0
-    volume, reason = engine.calculate_dynamic_volume(
+    volume, _reason = engine.calculate_dynamic_volume(
         entry=entry, sl=sl, account=account, symbol_info=symbol_info, risk_pct=1.5
     )
 
@@ -530,7 +527,7 @@ def test_risk_tier_contract_matches_documented_tables() -> None:
         (100000.0, 10.0),  # >= 10k -> HARD_MAX_LOTS parity
     ]
     for equity, expected_cap in cases:
-        volume, reason = engine.calculate_dynamic_volume(
+        _volume, _reason = engine.calculate_dynamic_volume(
             entry=2000.0,
             sl=1999.0,  # 1.0 distance -> raw lots = equity*1%/100
             account=acct(equity),
@@ -600,7 +597,7 @@ def test_default_max_allowed_lots_matches_hard_max() -> None:
     )
     # Raw lots at 1% risk, 1.0 SL distance = 10.0 lots; the directional
     # exposure cap must never exceed 10.0
-    volume, reason = engine.calculate_dynamic_volume(
+    volume, _reason = engine.calculate_dynamic_volume(
         entry=2000.0, sl=1999.0, account=account, symbol_info=symbol_info, risk_pct=1.0
     )
     assert volume <= 10.0 + 1e-9

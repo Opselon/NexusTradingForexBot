@@ -616,7 +616,6 @@ def news_incidents(news_db_path: str) -> dict[str, Any]:
                 conn,
                 "SELECT direction, COUNT(*) AS n FROM news_analysis "
                 "JOIN news_articles a ON a.article_id = news_analysis.article_id "
-                "WHERE a.published_at >= date('now', '-2 days') "
                 "GROUP BY direction",
             )
         except sqlite3.Error:

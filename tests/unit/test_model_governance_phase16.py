@@ -16,19 +16,17 @@ rather than object existence.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from nexus_scalp.governance.alignment import (
     challenger_input_for,
-    feature_parity,
     news_context_hash,
     vectorize_news_context,
 )
 from nexus_scalp.governance.evidence import (
-    backtest_live_divergence,
     brier_score,
     calibration_buckets,
     detect_drift,
@@ -36,9 +34,7 @@ from nexus_scalp.governance.evidence import (
     outcome_for_decision,
 )
 from nexus_scalp.governance.load_gate import (
-    ModelLoadGate,
     evaluate_load_gate,
-    read_manifest_file,
     sha256_hex,
 )
 from nexus_scalp.governance.models import (
@@ -177,7 +173,6 @@ class TestChallengerGates:
 
     def test_lg06_scaler_mismatch_blocks_challenger(self, tmp_path):
         import numpy as np
-        import torch
 
         art, _ = self._valid_artifact(tmp_path, dim=50)
         sca = tmp_path / "scaler.npz"
@@ -191,7 +186,6 @@ class TestChallengerGates:
         assert res.error_code == GovernanceErrorCode.SCALER_MISMATCH
 
     def test_lg07_feature_dimension_mismatch_blocks_challenger(self, tmp_path):
-        import torch
 
         art, sca = self._valid_artifact(tmp_path, dim=60)
         mf = make_manifest(
@@ -291,7 +285,6 @@ class TestShadowIsolation:
 
     def test_lg11_shadow_exception_cannot_stop_champion(self, golden_50d):
         from nexus_scalp.governance.shadow_runtime import GovernanceShadowRuntime
-        from nexus_scalp.shadow.challenger import ChallengerRuntime
 
         class BoomRuntime:  # a challenger whose infer() explodes
             ref = None
@@ -507,7 +500,7 @@ class TestGoldenAndHealth:
 
     def test_lg25_model_state_survives_restart(self, temp_audit_repo):
         """Governance state is persisted; a fresh store sees it."""
-        from nexus_scalp.governance.models import PromotionState, PromotionTransition
+        from nexus_scalp.governance.models import PromotionState
         from nexus_scalp.governance.store import GovernanceStore
 
         s1 = GovernanceStore(audit_repo=temp_audit_repo)
@@ -1136,7 +1129,7 @@ class TestGovernance70:
     def test_gov12_promotion_audit_record(self, gov_engine, tmp_path):
         from nexus_scalp.governance.transaction import execute_promotion_transaction
 
-        eng, store, _ = gov_engine
+        _eng, store, _ = gov_engine
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
             artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
@@ -1197,7 +1190,7 @@ class TestGovernance70:
             execute_promotion_transaction,
         )
 
-        eng, store, _ = gov_engine
+        _eng, store, _ = gov_engine
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
             artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
@@ -1364,9 +1357,8 @@ class TestGovernance70:
 
     def test_gov18_research_result_immutable(self, gov_engine, tmp_path):
         """A corrected research result is a NEW version; the original is preserved."""
-        from nexus_scalp.governance.verify import verify_candidate
 
-        art, sca = _make_artifact(tmp_path, dim=50)
+        art, _sca = _make_artifact(tmp_path, dim=50)
         h = __import__("hashlib").sha256(open(art, "rb").read()).hexdigest()
         mf_v1 = _full_manifest(artifact_hash=h, model_version="v1", oos_result="PASS")
         mf_v2 = _full_manifest(artifact_hash=h, model_version="v2", oos_result="REJECT")
@@ -1378,7 +1370,7 @@ class TestGovernance70:
     def test_gov19_post_promotion_monitoring(self, gov_engine, tmp_path):
         from nexus_scalp.governance.transaction import execute_promotion_transaction
 
-        eng, store, _ = gov_engine
+        _eng, store, _ = gov_engine
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
             artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
@@ -1436,7 +1428,7 @@ class TestGovernance70:
             execute_promotion_transaction,
         )
 
-        eng, store, _ = gov_engine
+        _eng, store, _ = gov_engine
         art, sca = _make_artifact(tmp_path, dim=50)
         mf = _full_manifest(
             artifact_hash=__import__("hashlib").sha256(open(art, "rb").read()).hexdigest(),
@@ -1504,7 +1496,7 @@ class TestGovernance70:
         governance engine has NO performance-based auto-rollback at all."""
         import inspect
 
-        eng, store, _ = gov_engine
+        eng, _store, _ = gov_engine
         src = inspect.getsource(type(eng).rollback)
         assert "actor" in src  # operator-explicit path
         # the engine has NO automatic performance trigger (no such method)
@@ -1658,7 +1650,7 @@ class TestGovernance70:
 
     def test_gov30_restart_safe_governance_state(self, gov_engine):
         """Governance state survives a store restart (same DB)."""
-        eng, store, repo = gov_engine
+        eng, _store, repo = gov_engine
         from nexus_scalp.governance.models import PromotionState
         from nexus_scalp.governance.store import GovernanceStore
 

@@ -208,7 +208,7 @@ def make_obs_fixture(
 
 class TestGateObservability:
     def test_gates_created_per_gate_type(self, temp_audit_repo):
-        builder, reg, pipe, obs = make_obs_fixture(temp_audit_repo)
+        builder, _reg, pipe, obs = make_obs_fixture(temp_audit_repo)
         ds = builder.build()
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         assert cands, "fixture must discover a candidate"
@@ -223,7 +223,7 @@ class TestGateObservability:
         assert GateType.SCORING.value in types
 
     def test_gate_status_lifecycle(self, temp_audit_repo):
-        builder, reg, pipe, obs = make_obs_fixture(temp_audit_repo)
+        builder, _reg, pipe, obs = make_obs_fixture(temp_audit_repo)
         ds = builder.build()
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         pipe.validate_candidate(cands[0], ds, run_id="RUN-TESTGATE")
@@ -296,7 +296,7 @@ class TestGateObservability:
 
 class TestTimelineEvents:
     def test_events_persisted(self, temp_audit_repo):
-        builder, reg, pipe, obs = make_obs_fixture(temp_audit_repo)
+        builder, _reg, pipe, obs = make_obs_fixture(temp_audit_repo)
         ds = builder.build()
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         pipe.validate_candidate(cands[0], ds, run_id="RUN-EVENTS")
@@ -324,7 +324,7 @@ class TestTimelineEvents:
 
 class TestEvidenceVault:
     def test_every_gate_stores_evidence(self, temp_audit_repo):
-        builder, reg, pipe, obs = make_obs_fixture(temp_audit_repo)
+        builder, _reg, pipe, obs = make_obs_fixture(temp_audit_repo)
         ds = builder.build()
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         pipe.validate_candidate(cands[0], ds, run_id="RUN-EV")
@@ -350,7 +350,7 @@ class TestEvidenceVault:
 
 class TestResearchRuns:
     def test_runs_immutable_append_only(self, temp_audit_repo):
-        builder, reg, pipe, obs = make_obs_fixture(temp_audit_repo)
+        builder, _reg, pipe, obs = make_obs_fixture(temp_audit_repo)
         ds = builder.build()
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         pipe.validate_candidate(cands[0], ds, run_id="RUN-1ST")
@@ -361,7 +361,7 @@ class TestResearchRuns:
         assert "RUN-1ST" in ids and "RUN-2ND" in ids  # both preserved, never overwritten
 
     def test_run_status_and_outcome(self, temp_audit_repo):
-        builder, reg, pipe, obs = make_obs_fixture(temp_audit_repo)
+        builder, _reg, pipe, obs = make_obs_fixture(temp_audit_repo)
         ds = builder.build()
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         pipe.validate_candidate(cands[0], ds, run_id="RUN-STATUS")
@@ -373,7 +373,7 @@ class TestResearchRuns:
 
 class TestReproducibilitySnapshot:
     def test_snapshot_captured(self, temp_audit_repo):
-        builder, reg, pipe, obs = make_obs_fixture(temp_audit_repo)
+        builder, _reg, pipe, obs = make_obs_fixture(temp_audit_repo)
         ds = builder.build()
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         pipe.validate_candidate(cands[0], ds, run_id="RUN-SNAP")
@@ -422,7 +422,7 @@ class TestBlockedReason:
 
 class TestRegistryInvariants:
     def test_validated_requires_all_gates(self, temp_audit_repo):
-        builder, reg, pipe, obs = make_obs_fixture(temp_audit_repo)
+        builder, reg, pipe, _obs = make_obs_fixture(temp_audit_repo)
         ds = builder.build()
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         pipe.validate_candidate(cands[0], ds, run_id="RUN-INV-V")
@@ -567,9 +567,8 @@ class TestEndToEnd:
         assert any(e["event_type"] == "STRATEGY_BLOCKED" for e in events)
 
     def test_one_click_trace(self, temp_audit_repo):
-        from nexus_scalp.research.observability import _registry_blocked_reason
 
-        builder, reg, pipe, obs = make_obs_fixture(temp_audit_repo)
+        builder, _reg, pipe, obs = make_obs_fixture(temp_audit_repo)
         ds = builder.build()
         cands = discover_candidates(ds.samples, dataset_id=ds.dataset_id)
         pipe.validate_candidate(cands[0], ds, run_id="RUN-TRACE")

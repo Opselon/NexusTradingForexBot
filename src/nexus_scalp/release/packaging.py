@@ -34,6 +34,7 @@ def checksums_file(paths: list[Path], out: Path, *, base_dir: Path | None = None
         except ValueError:
             rel = p.name
         lines.append(f"{sha256_file(p)}  {rel}")
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(sorted(lines)) + "\n", encoding="utf-8")
     return out
 
@@ -231,6 +232,7 @@ def generate_manifest(
             if a.exists()
         ],
     }
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
     return out
 
@@ -271,6 +273,7 @@ def generate_sbom(
         "packages": [{"name": name, "versionInfo": ver} for name, ver in sorted(deps.items())],
     }
     if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(sbom, indent=2), encoding="utf-8")
     return sbom
 

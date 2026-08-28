@@ -31,7 +31,6 @@ from nexus_scalp.shadow.shadow70.health import (
 from nexus_scalp.shadow.shadow70.models import (
     LIQUIDITY_FEATURE_NAMES,
     LIQUIDITY_SLICE,
-    SHADOW70_DIMENSION,
     Shadow70FeatureProvenance,
 )
 from nexus_scalp.shadow.shadow70.runtime import Shadow70Runtime

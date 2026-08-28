@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexus-scalp-engine"
-version = "9.0.0"
+version = "9.0.2"
 description = "Production-grade, high-frequency, multi-timeframe scalp trading engine using PyTorch and MetaTrader 5"
 authors = [
     { name = "Nexus Quantitative Engineering Team", email = "quant@nexus-trading.internal" }
@@ -28,6 +28,7 @@ dependencies = [
     "httpx>=0.26.0,<1.0.0",
     "MetaTrader5>=5.0.45; platform_system == 'Windows'",
     "feedparser>=6.0.0,<7.0.0; python_version >= '3.11'",
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,7 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.5.0",
+    "Pygments>=2.19.2",
     "ruff==0.16.3",
     "mypy>=1.8.0",
     "types-pyyaml>=6.0.12",
@@ -93,6 +95,7 @@ ignore = [
 "NexusTradingForexBot.py" = ["E402"]
 "main.py" = ["E402"]
 "src/nexus_scalp/web/server.py" = ["RUF006", "E402"]
+"tests/unit/test_accounting_pnl_regression.py" = ["N801"]
 "tests/*" = [
     "PLR2004",
     "PLC0415",

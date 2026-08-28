@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS — Strategy Command Center (Visual)</title>
+    <link rel="stylesheet" href="tailwind.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-darkBg text-gray-100 font-sans min-h-screen">
+
+<!-- ============ GLOBAL OVERVIEW STRIP ============ -->
+<div class="flex flex-wrap gap-4 items-center px-4 py-3 border-b border-borderClr bg-panelBg">
+    <h1 class="text-sm font-bold text-white tracking-wide">🛰 STRATEGY COMMAND CENTER</h1>
+    <div><span class="text-[9px] text-textMuted">TOTAL</span> <b id="scc-total" class="text-accentCyan text-sm font-mono">—</b></div>
+    <div><span class="text-[9px] text-textMuted">ACTIVE</span> <b id="scc-active" class="text-emerald-400 text-sm font-mono">—</b></div>
+    <div><span class="text-[9px] text-textMuted">VALIDATED</span> <b id="scc-valid" class="text-lime-400 text-sm font-mono">—</b></div>
+    <div><span class="text-[9px] text-textMuted">BLOCKED</span> <b id="scc-blocked" class="text-rose-400 text-sm font-mono">—</b></div>
+    <div id="scc-fleet-note" class="text-[9px] text-textMuted font-mono border border-borderClr px-2 py-0.5 rounded bg-darkBg" title="Authoritative registry size returned by /api/command-center/overview">Fleet: — strategies</div>
+
+    <!-- Transient evaluation-pipeline metrics (scope: transient runs, NOT lifecycle) -->
+    <div id="scc-eval-metrics" class="text-[10px] min-w-[180px] border-l border-borderClr pl-3"></div>
+    <!-- Honest RESEARCH BOTTLENECK explanation (shown only when upper layers empty) -->
+    <div id="scc-research-bottleneck" class="hidden"></div>
+
+    <!-- Lifecycle filter (honest subset of real backend states) -->
+    <div class="flex items-center gap-1 ml-2">
+        <span class="text-[9px] text-textMuted">FILTER</span>
+        <select id="scc-lifecycle-filter" class="bg-darkBg border border-borderClr rounded px-1.5 py-1 text-[10px] font-mono focus:outline-none focus:border-accentCyan">
+            <option value="ALL">ALL LIFECYCLES</option>
+            <option value="DISCOVERED">DISCOVERED</option>
+            <option value="BACKTESTING">BACKTESTING</option>
+            <option value="VALIDATING">VALIDATING</option>
+            <option value="OOS_TESTING">OOS_TESTING</option>
+            <option value="ROBUSTNESS_TESTING">ROBUSTNESS_TESTING</option>
+            <option value="VALIDATED">VALIDATED</option>
+            <option value="SHADOW">SHADOW</option>
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="REJECTED">REJECTED</option>
+            <option value="DEGRADED">DEGRADED</option>
+            <option value="RETIRED">RETIRED</option>
+        </select>
+    </div>
+
+    <div class="ml-auto flex items-center gap-2 flex-wrap">
+        <!-- 3D CAMERA CONTROLS -->
+        <div class="flex items-center gap-1 px-1 py-0.5 rounded border border-borderClr/60">
+            <span class="text-[8px] font-black tracking-widest text-textMuted mr-1 uppercase">Camera</span>
+            <button id="scc-fit-all" class="px-2.5 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">FIT ALL</button>
+            <button id="scc-reset-cam" class="px-2.5 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">RESET CAM</button>
+            <button id="scc-focus-selected" class="px-2.5 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">FOCUS SEL</button>
+        </div>
+
+        <div class="h-6 w-px bg-borderClr/70"></div>
+
+        <!-- STATE TOGGLES / FILTERS -->
+        <div class="flex items-center gap-1 px-1 py-0.5 rounded border border-borderClr/60">
+            <span class="text-[8px] font-black tracking-widest text-textMuted mr-1 uppercase">View</span>
+            <button id="scc-focus-stage" class="px-2.5 py-1 rounded bg-panelBg text-gray-300 border border-borderClr text-xs font-bold hover:border-accentCyan/40 transition">STAGE</button>
+            <button id="scc-focus-active" class="px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-bold hover:bg-emerald-500/20 transition">LIVE</button>
+            <button id="scc-focus-blocked" class="px-2.5 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 text-xs font-bold hover:bg-rose-500/20 transition">BLOCKED</button>
+            <button onclick="window.NX.scc.load()" class="px-2.5 py-1 rounded bg-accentCyan/10 text-accentCyan border border-accentCyan/30 text-xs font-bold hover:bg-accentCyan/20 transition">REFRESH</button>
+        </div>
+    </div>
+</div>
+
+<div class="flex" style="height: calc(100vh - 56px);">
+
+    <!-- ============ SPATIAL 2.5D CANVAS ============ -->
+    <div class="flex-1 relative bg-[#0b1220] overflow-hidden">
+        <canvas id="scc-spatial-canvas" class="w-full h-full block"></canvas>
+
+        <!-- Explicit empty-state overlay (shown only when zero nodes match) -->
+        <div id="scc-spatial-empty" class="hidden absolute inset-0 flex items-center justify-center bg-[#0b1220]/80 z-20"></div>
+
+        <!-- TIME MACHINE OVERLAY -->
+        <div id="scc-tm-bar" class="absolute bottom-2 left-2 right-2 bg-panelBg/95 backdrop-blur border border-borderClr rounded-lg px-4 py-2 flex items-center gap-3 z-10">
+            <button id="scc-tm-play" onclick="window.NX.tm.togglePlay()" class="px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-black hover:bg-emerald-500/20 transition">PLAY</button>
+            <input type="range" id="scc-tm-slider" min="0" max="100" value="0" oninput="window.NX.tm.scrub(this.value)" class="flex-1 accent-cyan-400 cursor-pointer">
+            <span id="scc-tm-label" class="text-[10px] font-mono text-textMuted whitespace-nowrap">—</span>
+        </div>
+
+        <!-- LEGEND (real lifecycle zones; structural cues, not color-only) -->
+        <div class="absolute top-2 right-2 scc-panel-elevated rounded-xl p-3.5 z-10 space-y-1.5 text-xs">
+            <p class="text-[10px] font-black text-accentCyan tracking-wider uppercase mb-2 border-b border-borderClr pb-1">Lifecycle Legend</p>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-full bg-slate-500 inline-block shadow"></span> DISCOVERED</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-full bg-sky-500 inline-block shadow"></span> BACKTESTING</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-full bg-cyan-500 inline-block shadow"></span> VALIDATING</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-full bg-teal-500 inline-block shadow"></span> OOS_TESTING</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-full bg-green-500 inline-block shadow"></span> ROBUSTNESS_TESTING</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-full bg-lime-500 inline-block shadow"></span> VALIDATED</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-full bg-yellow-500 inline-block shadow"></span> SHADOW</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block shadow"></span> ACTIVE (LIVE)</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-sm bg-rose-500 inline-block shadow"></span> REJECTED (square)</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-sm bg-orange-500 inline-block shadow"></span> DEGRADED (square)</div>
+            <div class="text-[11px] flex items-center gap-2 font-sans"><span class="w-3 h-3 rounded-sm bg-stone-500 inline-block shadow"></span> RETIRED (square)</div>
+            <p class="text-[9px] text-textMuted mt-2 pt-1 border-t border-borderClr font-mono">Size=evidence · Health=stem · Gates=rings · Eval=dark dots (BT/WF/OOS/ROB/SCR) · ?=unmeasured</p>
+        </div>
+    </div>
+
+    <!-- ============ FLEET TABLE PANEL ============ -->
+    <div class="w-[420px] shrink-0 border-l border-borderClr bg-panelBg overflow-y-auto flex flex-col">
+        <p class="px-3 py-2 text-[10px] font-bold text-textMuted border-b border-borderClr tracking-wider">STRATEGY FLEET (AUTHORITATIVE)</p>
+        <table class="w-full text-xs">
+            <thead class="bg-darkBg sticky top-0 z-10">
+                <tr class="text-left text-textMuted">
+                    <th class="px-3 py-2 text-[9px] font-black">STRATEGY</th>
+                    <th class="px-3 py-2 text-[9px] font-black">STATE</th>
+                    <th class="px-3 py-2 text-[9px] font-black">HEALTH</th>
+                    <th class="px-3 py-2 text-[9px] font-black">EXECUTION</th>
+                </tr>
+            </thead>
+            <tbody id="scc-fleet-tbody"></tbody>
+        </table>
+
+        <!-- DEBUG CONSOLE -->
+        <div class="border-t border-borderClr mt-auto">
+            <div class="px-3 py-2 flex items-center justify-between border-b border-borderClr">
+                <p class="text-[10px] font-bold text-textMuted tracking-wider">DEBUG CONSOLE</p>
+                <div class="flex gap-1">
+                    <button id="scc-console-pause" onclick="window.NX.console.togglePause()" class="px-2 py-0.5 rounded bg-panelBg text-gray-300 border border-borderClr text-[9px] font-bold hover:border-accentCyan/40">PAUSE</button>
+                    <button onclick="window.NX.console.clear()" class="px-2 py-0.5 rounded bg-panelBg text-gray-300 border border-borderClr text-[9px] font-bold hover:border-rose-500/40">CLEAR</button>
+                </div>
+            </div>
+
+            <!-- Bottleneck visualization (real /fleet evidence) -->
+            <div id="scc-bottleneck" class="bg-panelBg text-[10px]"></div>
+
+            <!-- Filters: search + severity + event type + strategy + generation + time range -->
+            <div class="px-2 py-1.5 flex flex-wrap gap-1 border-b border-borderClr">
+                <input id="scc-console-search" placeholder="search events..." oninput="window.NX.console.applyFilters()"
+                       class="flex-1 min-w-[120px] bg-darkBg border border-borderClr rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-accentCyan">
+                <select id="scc-console-sev" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
+                    <option value="ALL">SEV:ALL</option>
+                    <option value="ERROR">ERROR</option>
+                    <option value="WARN">WARN</option>
+                    <option value="INFO">INFO</option>
+                </select>
+                <select id="scc-console-family" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
+                    <option value="ALL">FAMILY:ALL</option>
+                    <option value="CANDIDATE_LIFECYCLE">CANDIDATE_LIFECYCLE</option>
+                    <option value="EVALUATION_PROGRESS">EVALUATION_PROGRESS</option>
+                    <option value="VALIDATION_RESULT">VALIDATION_RESULT</option>
+                    <option value="GENERATION_EVENT">GENERATION_EVENT</option>
+                    <option value="SYSTEM_RECOVERY">SYSTEM_RECOVERY</option>
+                </select>
+                <select id="scc-console-type" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
+                    <option value="ALL">TYPE:ALL</option>
+                    <option value="RESEARCH_FAILURE">RESEARCH_FAILURE</option>
+                    <option value="VALIDATION_FAILURE">VALIDATION_FAILURE</option>
+                    <option value="WALK_FORWARD_FAILURE">WALK_FORWARD_FAILURE</option>
+                    <option value="OOS_FAILURE">OOS_FAILURE</option>
+                    <option value="DATA_FAILURE">DATA_FAILURE</option>
+                    <option value="SYSTEM_ERROR">SYSTEM_ERROR</option>
+                    <option value="STALE_RUN_RECOVERY">STALE_RUN_RECOVERY</option>
+                    <option value="GENERATION_COMPLETED">GENERATION_COMPLETED</option>
+                    <option value="LIFECYCLE_TRANSITION">LIFECYCLE_TRANSITION</option>
+                    <option value="EXPECTED_REJECTION">EXPECTED_REJECTION</option>
+                </select>
+            </div>
+            <div class="px-2 py-1.5 flex flex-wrap gap-1 border-b border-borderClr">
+                <select id="scc-console-strategy" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]"><option value="">ALL STRATEGIES</option></select>
+                <select id="scc-console-gen" onchange="window.NX.console.applyFilters()" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]"><option value="ALL">ALL GENERATIONS</option></select>
+                <input id="scc-console-from" type="datetime-local" onchange="window.NX.console.applyFilters()" title="time from" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
+                <input id="scc-console-to" type="datetime-local" onchange="window.NX.console.applyFilters()" title="time to" class="bg-darkBg border border-borderClr rounded px-1 text-[10px]">
+            </div>
+            <div class="px-2 py-1 flex gap-1 border-b border-borderClr">
+                <button id="scc-console-autoscroll" onclick="window.NX.console.setAutoScroll(document.getElementById('scc-console-autoscroll').textContent.indexOf('ON')<0)" class="px-2 py-0.5 rounded bg-panelBg text-gray-300 border border-borderClr text-[9px] font-bold">AUTO-SCROLL: ON</button>
+                <button id="scc-console-live" onclick="window.NX.console.jumpToLive()" class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold">JUMP TO LIVE</button>
+            </div>
+            <div id="scc-console-body" class="overflow-y-auto" style="max-height: 220px;" onscroll="window.NX.console.detectTailScroll()"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ============ INSPECTOR DRAWER ============ -->
+<div id="scc-inspector-drawer" class="fixed top-0 right-0 w-[480px] max-w-full h-full bg-panelBg border-l-2 border-borderClr shadow-2xl z-[999] translate-x-full transition-transform duration-200 flex flex-col">
+    <div class="px-4 py-3 border-b border-borderClr flex items-center justify-between">
+        <h3 id="scc-insp-title" class="text-sm font-bold text-accentCyan m-0">Strategy Inspector</h3>
+        <button onclick="window.NX.scc.closeInspector()" class="text-textMuted hover:text-white text-lg leading-none">×</button>
+    </div>
+    <div id="scc-insp-content" class="flex-1 overflow-y-auto p-4"></div>
+</div>
+
+<script src="api_client.js"></script>
+<script src="command_center_spatial.js"></script>
+<script src="command_center_console.js"></script>
+<script src="command_center_timemachine.js"></script>
+<script src="command_center_ui.js"></script>
+<script>
+  // Bootstrap: this page is a STANDALONE CC surface. command_center_ui.js already
+  // auto-boots when it finds #scc-spatial-canvas and is NOT embedded in the
+  // dashboard. Wire inspector selection from the spatial renderer.
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.NX && window.NX.spatial) {
+      window.NX.spatial.setOnSelect((id) => {
+        if (window.NX && window.NX.scc) window.NX.scc.inspect(id);
+      });
+    }
+  });
+</script>
+</body>
+</html>

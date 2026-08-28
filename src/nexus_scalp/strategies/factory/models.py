@@ -117,6 +117,12 @@ class FailureReason(StrEnum):
     UNSUPPORTED_TIMEFRAME = "UNSUPPORTED_TIMEFRAME"
     LOOKAHEAD_RISK = "LOOKAHEAD_RISK"
     INSUFFICIENT_TRADES = "INSUFFICIENT_TRADES"
+    # PHASE 25 (2026-08-25): backtest failed ONLY on low trade count /
+    # small sample while expectancy stayed positive. Distinct from
+    # NEGATIVE_EXPECTANCY (a genuine edge failure): the candidate is parked
+    # in lifecycle EVIDENCE_BUILDING for re-evaluation on more data instead
+    # of being terminally REJECTED. Does NOT relax any gate threshold.
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
     NEGATIVE_EXPECTANCY = "NEGATIVE_EXPECTANCY"
     EXCESSIVE_DRAWDOWN = "EXCESSIVE_DRAWDOWN"
     LOW_PROFIT_FACTOR = "LOW_PROFIT_FACTOR"
@@ -131,6 +137,12 @@ class FailureReason(StrEnum):
     EXECUTION_SENSITIVITY = "EXECUTION_SENSITIVITY"
     DATA_QUALITY_FAILURE = "DATA_QUALITY_FAILURE"
     PROVIDER_FAILURE = "PROVIDER_FAILURE"
+    # Semantic pre-screen skip: the candidate's behavioral-preview signature
+    # matches a known pathological clone cluster (>= CLONE_MIN_CLUSTER_SIZE
+    # members, 0 OOS passes). Counted, observable, REVERSIBLE — the candidate
+    # is NOT rejected (kept for audit); it is simply not re-evaluated. Does NOT
+    # weaken any validation gate (spec G28 / MUTATION_OPERATOR_FORENSIC).
+    CLONE_SKIPPED = "CLONE_SKIPPED"
 
 
 class RankDimension(StrEnum):
@@ -421,3 +433,18 @@ class EvolutionConfig(BaseModel):
     # stagnation / diversification (spec 56 / 57)
     stagnation_diversity_floor: float = Field(default=0.25, ge=0.0, le=1.0)
     exploration_boost: float = Field(default=0.15, ge=0.0, le=0.5)
+
+    # Semantic clone pre-screen (G28 TARGET 1): before the authoritative
+    # pipeline runs, a candidate whose behavioral-preview signature matches a
+    # known cluster with >= clone_cluster_min_members members and 0 OOS passes
+    # is skipped (CLONE_SKIPPED). Pure budget rescue — never weakens a gate;
+    # disable to restore evaluate-everything behavior (reversible).
+    clone_prescreen_enabled: bool = Field(default=True)
+    clone_cluster_min_members: int = Field(default=50, ge=2)
+
+    # PHASE 29 (2026-08-25): on startup the sweeper marks stale RUNNING
+    # generations FAILED; when auto_resume is true the orchestrator re-arms
+    # every FAILED generation whose population_target was never met via
+    # store.resume_generation() (fresh heartbeat + GENERATION_RESUMED event).
+    # Default false keeps the legacy kill-only behavior. Audit preserved.
+    auto_resume: bool = Field(default=False)

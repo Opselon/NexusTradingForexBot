@@ -175,13 +175,21 @@ class RSSNewsSourceAdapter(NewsSourceAdapter):
         # key first so feeds without an `updated` field never raise the
         # DeprecationWarning, then fall back to `published` (identical value).
         updated = getattr(entry, "updated", "") if "updated" in entry else published
+        body = (
+            getattr(entry, "content", [{}])[0].get("value", "")
+            if getattr(entry, "content", None)
+            else ""
+        )
+        # Many RSS feeds put the whole article text in <description>/summary
+        # with no <content:encoded>. Persist it into body as fallback so
+        # downstream analysis and the LLM prompt always see real content.
+        if not (body or "").strip():
+            body = summary
         return {
             "title": title.strip(),
             "url": link,
             "summary": summary,
-            "body": getattr(entry, "content", [{}])[0].get("value", "")
-            if getattr(entry, "content", None)
-            else "",
+            "body": body,
             "published_at": self._parse_dt(published),
             "updated_at": self._parse_dt(updated),
             "categories": [
@@ -217,7 +225,7 @@ class RSSNewsSourceAdapter(NewsSourceAdapter):
                             "title": _text("title"),
                             "url": link,
                             "summary": _text("description") or _text("summary"),
-                            "body": "",
+                            "body": _text("description") or _text("summary"),
                             "published_at": self._parse_dt(_text("pubDate") or _text("published")),
                             "updated_at": self._parse_dt(_text("updated")),
                             "categories": [],

@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from nexus_scalp.features.scalp_features import FeatureVector
 
 
@@ -210,7 +208,6 @@ def test_perf01_no_recompute_between_ticks() -> None:
 
 
 def test_perf01_new_bar_republishes() -> None:
-    from datetime import timedelta
 
     bars = _make_bars(60)
     eng = _FakeEngine(bars)

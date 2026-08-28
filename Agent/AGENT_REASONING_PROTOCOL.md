@@ -100,7 +100,12 @@ Before EVERY change, walk this sequence. Skipping a step is a defect.
 - Execution/risk touched? → state hot-path impact, blocking behavior, failure
   isolation, broker interaction, safety implications (multi-agent contract §9).
 - ML/features touched? → document dimensions, schema version, compatibility,
-  replay impact, dataset/live parity.
+  replay impact, dataset/live parity. News Intelligence? → provider reuse
+  (Factory `complete_json`), prompt grounding + injection defense, response
+  validation, separate AI table (never overwrite deterministic truth),
+  recoverable status + audit, bounded batch. Forensic UI? → `NX.api` only,
+  `normalizeError` (no raw fetch text in DOM), KPIs via `deriveKpis` from
+  ONE array, distinct loading/empty/error/loaded, concurrency/dedup guards.
 - Parallel agents? → other sessions edit the same tree right now. Preserve
   unknown WIP; never `reset --hard` / `clean -fd` on unknown work; re-check
   `git status` immediately before staging.
@@ -163,14 +168,30 @@ Regression Prevention
 
 ### Symptom
 - Capture the EXACT observed behavior, timestamps, log lines
-  (`[MT5_CALL]`, `[POSITION_EXIT_EVAL]`, `[EXPERIENCE_OUTCOME]`, structured
-  fields), and DB state. A symptom without evidence is a rumor.
+  (`[MT5_CALL]`, `[POSITION_EXIT_EVAL]`, `[EXPERIENCE_OUTCOME]`, `[NEWS_AI]`,
+  `[NEWS_PRUNE]`, `[UI_ERROR]` with `component/action/endpoint`, structured
+  fields), and DB state (including `news_ai_analysis`, `news_prune_audit`,
+  `article_status`). A symptom without evidence is a rumor.
+- For News/Forensic symptoms, capture the AI status (`GET /api/news/ai-status`
+  — NOT_CONFIGURED/AVAILABLE/UNAVAILABLE/MISCONFIGURED), per-article
+  `analysis_status` (completed/completed_insufficient/failed/reused), and the
+  frontend state machine (idle/analyzing/done vs loading/empty/error).
 - Check `agents/bugs.md` for the same symptom class FIRST (e.g. BUG-054
   payload contracts, BUG-072/074 exposure locks, BUG-081 exit classification,
   BUG-088 DEAL_REASON inversion, BUG-111 wall-clock timestamps, BUG-118
-  champion caching, BUG-119 mode lifecycle, BUG-122 frozen cp1252).
+  champion caching, BUG-119 mode lifecycle, BUG-122 frozen cp1252). For News
+  Intelligence / Forensic UI, also check: `news/ai_service.py` validation &
+  provider reuse (never a second LLM config), `news/database.py` recoverable
+  `article_status` + `news_prune_audit`, `Web/forensic_console.js` single-source
+  KPI derivation + `normalizeError`, `Web/news_intelligence.js` state machine
+  + bounded batch + auto-prune recoverability.
 
 ### Reproduction
+- For frontend symptoms (KPI impossible state, `TypeError: Failed to fetch`
+  in DOM, modal focus loss, filter divergence), reproduce via the browser
+  console: inspect `NX.Forensic.model.deriveKpis(INC_STATE.incidents)` vs the
+  header, check `NX.Forensic.normalizeError` paths, and verify `requestSeq`
+  / `analyzing[articleId]` dedup — never patch by hand-editing the DOM.
 - Write a minimal probe in `scratch/` (name it VERB_WHAT:
   `probe_*` / `repro_*` / `root_proof_*`; keep probes and their output
   OUT of the repo root; scratch/ is excluded from ruff — do not leave
@@ -191,7 +212,9 @@ Regression Prevention
   - Exit: broker DEAL → classify_exit_with_evidence → ledger +
     telegram canonical close.
 - Identify the FIRST divergence from expected truth (value lineage: incidents/
-  lineage.py, forensics experience-gap).
+  lineage.py, forensics experience-gap, news `news_ai_analysis` vs
+  deterministic `news_analysis` + `news_prune_audit` trail, forensic
+  `deriveKpis` vs stale separate counters).
 
 ### Root Cause
 - The root cause is the earliest point where reality diverged — not the
@@ -202,7 +225,11 @@ Regression Prevention
   (BUG-058).
 - Distinguish BROKER truth vs LOCAL state vs DERIVED truth. Broker wins
   (INV-011); derived tables are rebuildable; raw evidence is immutable
-  (INV-007).
+  (INV-007). For News Intelligence: deterministic truth (`news_analysis`)
+  vs AI interpretation (`news_ai_analysis`) — AI never overwrites truth;
+  recoverable `ACTIVE/IRRELEVANT` with audit, never deletion. For Forensic:
+  authoritative list vs derived KPIs — never dual counters; raw fetch errors
+  vs normalized toasts — never `String(e)` in DOM.
 
 ### Fix
 - Minimal, layered, in the correct owner: risk fixes in RiskEngine, execution
@@ -252,6 +279,18 @@ Regression Prevention
    "n/a"), NO fake LIVE mode, NO invented news signals
    (NEWS_INCONCLUSIVE_NO_OVERLAP is the honest verdict), NO silent
    fallbacks without logs, NO claimed VERIFIED without running it.
+7b. **Break News Intelligence honesty.** Never duplicate the LLM provider/
+   secret store; never expose the Factory API key to the frontend or logs;
+   never overwrite deterministic `news_analysis` with AI output; never treat
+   article body as instructions (injection); never auto-classify existing
+   rows as IRRELEVANT on first run (migration default ACTIVE); never delete
+   originals when marking IRRELEVANT (always recoverable + audited).
+7c. **Break Forensic UI honesty.** Never compute KPIs from a separate counter
+   vs the list (use `deriveKpis` from ONE array); never render raw
+   `TypeError: Failed to fetch` / `String(e)` to the page (use
+   `NX.Forensic.normalizeError` + toast); never call raw `fetch()` from a
+   feature module (use `NX.api.*`); never fabricate task submissions or
+   Stop Bot success before backend confirmation.
 8. **Silently swallow failures.** Every failure path is visible: structured
    log with event/code/reason, error_state on snapshots, sanitized HTTP
    error envelopes (never `str(e)` to clients, BUG-040).
@@ -262,7 +301,13 @@ Regression Prevention
 2. **Preserve contracts** (`agents/contracts.md`) — extend versioned
    contracts additively; bump versions when semantics change; never silently
    break a consumer.
-3. **Add observability** with the repo's structured vocabulary
+3. **Respect the buildless frontend contract:** `Web/` is vanilla JS
+   with no bundler; feature modules (`forensic_console.js`,
+   `news_intelligence.js`) attach to `window.NX.*` via IIFE; validate with
+   `node --check Web/*.js`, use `NX.api` + `NX.Forensic` helpers, keep
+   `index.html` div/section nesting balanced (BUG-068/BUG-120) — verify with
+   a strict stack parser, never hand-edit deeply-nested divs.
+3b. **Add observability** with the repo's structured vocabulary
    (`[MODULE] event=... key=value`), correlation ids, and secret redaction
    (`_redact_secrets`).
 4. **Test edge cases** — zero/empty/None/NaN/Inf, restarts, parallel agents,

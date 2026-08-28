@@ -11,8 +11,6 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 sys.path.insert(0, "src")
 
 from nexus_scalp.mslie import (

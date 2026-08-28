@@ -2118,6 +2118,56 @@ Added `@app.get("/api_client.js")` → `FileResponse(WEB_DIR / "api_client.js")`
 
 ---
 
+## BUG-135 — Stale Node.js Assumptions (phantom `node_modules`, no build recipe)
+
+- **Status**: FIXED (2026-08-22, Node Runtime Role Audit)
+- **Severity**: LOW (hygiene / architectural clarity; no runtime impact)
+- **Confidence**: HIGH
+- **Verified**: `tests/unit/test_node_runtime_role.py` (12 tests pass)
+
+### Symptom
+Repository carried Node.js-shaped artifacts that implied a Node runtime dependency
+the app does not have:
+  * `.dockerignore` / `.gitignore` referenced `node_modules` / `Web/node_modules` that
+    do not exist (no `package.json`, no bundler).
+  * The Tailwind build recipe lived only in a commit message + prose docs (BUG-047),
+    making it non-reproducible and drift-prone.
+  * A user could open the project locally with no Node installed and everything still
+    worked -- but no single doc stated WHY, leaving Node's purpose ambiguous.
+
+### Root Cause
+Node.js is used ONLY at build/dev/test time (Tailwind compile via `npx`, plus the
+`node --check` + `tests/js/*.test.js` gate in `.github/workflows/js-tests.yml`). The
+engine and Web UI runtime require NO Node: the UI is a buildless vanilla-JS SPA served
+entirely by FastAPI (routes in `src/nexus_scalp/web/server.py`). Stale ignore rules and
+an undocumented build recipe made this non-obvious.
+
+### Fix
+- `scripts/build/build_tailwind.py` (NEW): canonical, reproducible Tailwind build.
+  Pins `tailwindcss@3`, uses ephemeral `npx` (no committed `node_modules`), version-gates
+  Node >= 18, and rebuilds the exact `Web/tailwind.css` the runtime serves.
+- `.dockerignore` / `.gitignore` `node_modules` lines re-pointed to the real Playwright
+  dev test habitat (`node_modules/playwright*`) so they are truthful.
+- `README.md` `## How to Run` + `## Technology Stack` + `## Repository Structure` updated
+  with a `### Node.js & the Web UI (build/dev/test-only)` subsection.
+- `agents/skill.md` + `agents/decisions/DEC-0002-nodejs-runtime-role.md`: documented
+  decision (Outcome B -- Node is build/dev/test-only, NOT runtime).
+
+### Regression Guards
+- `tests/unit/test_node_runtime_role.py::test_buildless_assets_present`
+- `tests/unit/test_node_runtime_role.py::test_browser_js_has_no_bundler_or_cdn_refs`
+- `tests/unit/test_node_runtime_role.py::test_web_ui_served_without_node`
+- `tests/unit/test_node_runtime_role.py::test_no_package_json_runtime_marker`
+- `tests/unit/test_node_runtime_role.py::test_node_not_referenced_by_engine_runtime`
+- `tests/unit/test_node_runtime_role.py::test_build_tailwind_script_locatable`
+- `tests/unit/test_node_runtime_role.py::test_js_tests_workflow_declares_buildless`
+
+### Verification
+`python scripts/build/build_tailwind.py` -> OK (rebuilt Web/tailwind.css, pinned v3).
+`pytest tests/unit/test_node_runtime_role.py` -> 12 passed.
+
+---
+
 ## BUG-047 — Tailwind Play CDN Runtime Dependency (`cdn.tailwindcss.com`)
 
 - **Status**: FIXED (2026-08-17, Phase 14 completion)
@@ -5803,3 +5853,198 @@ REVERSAL DSL in 24.8s (2301 tokens, 0 failures). Commits 1fa2fd2 + 6f20a52.
   Fri 22:00 UTC - Sun 21:00 UTC weekend rule + tick freshness is the
   pragmatic approximation (documented in the module).
 - Period CONTENT stays UTC-canonical; only the LABEL/context is UI-localized.
+### BUG-132 (Hermes-RegimeCal, 2026-08-21) — XAUUSD regime classifier mis-calibrated + hysteresis absorbing-state + tick_velocity-as-volatility
+
+#### Symptoms
+- UI showed `RANGING_MEAN_REVERSION` almost constantly for XAUUSD even when the
+  market was clearly trending or volatile. The other four regimes (TRENDING,
+  VOLATILITY_EXPANSION, HIGH_SPREAD_CHOP, MACRO_NEWS_FREEZE) were rarely or never
+  reachable on real data.
+- A high tick feed rate with a flat price falsely classified VOLATILITY_EXPANSION.
+- Once TRENDING (or CHOP) was entered it stuck — the regime never relaxed back to
+  RANGING when conditions normalized.
+
+#### Root causes (3 distinct)
+1. **Calibration**: thresholds were tuned for a wide-spread, high-tick-rate,
+   more volatile instrument, not XAUUSD. Measured on 100k real XAUUSD M1 bars
+   (data/raw/XAUUSD_M1.parquet, 2026-05-01..08-17):
+   - spread_usd p50=$0.04, p90=$0.20, p95=$0.24, p99=$0.34, max=$6.22. Old CHOP
+     enter was $0.50 -> fired on <0.5% of bars.
+   - 5-min realized vol (rv_5m) p50=0.00062, p90=0.00128, p95=0.00160, p99=0.00250.
+     Old VOL enter was rv>=0.0015 OR tick_vel>=15/s -> fired on <1% of bars
+     (real tick_vel p99=13.9/s, max=32/s, so 15/s was almost never crossed).
+   - 5-min |cumulative return| p50=0.00044, p90=0.00131. Old price_trend 0.0005
+     + rv_trend_floor 0.000525 were reachable but the absorbing hysteresis below
+     suppressed the TRENDING signal in steady state.
+2. **Hysteresis absorbing-state bug**: `_apply_hysteresis` required a confidence
+   margin (`candidate_prob >= stable_prob + switch_prob_margin`) for EVERY switch
+   out of a safe regime. RANGING always reports prob ~0.60-0.90, so once a
+   TRENDING/CHOP state reached prob ~0.8 it could NEVER be left (RANGING candidate
+   prob could never exceed it). TRENDING_MEAN_REVERSION became a sticky trap.
+3. **tick_velocity semantics**: `tick_velocity` (feed update rate) was an OR-gate
+   for VOLATILITY_EXPANSION. High feed + flat price -> false VOLATILITY_EXPANSION;
+   low feed + big move -> missed. It measures feed activity, not volatility.
+
+#### Fix (commit <SHA>)
+- Recalibrated all thresholds from the real XAUUSD distributions (values + rationale
+  inline in `MarketRegimeClassifier.__init__`):
+  - spread_chop_enter=0.25 / exit=0.18 (was 0.50/0.40)
+  - rv_expand_enter=0.0013 / exit=0.0010 (was 0.0015/0.0011)
+  - tick_vel_expand_enter=20.0 / exit=15.0 (was 15/11) — retained ONLY as a very
+    high-bar secondary trigger, far above any observed XAUUSD feed rate, so it no
+    longer drives classification on normal data.
+  - price_trend_threshold=0.0010 (was 0.0005); rv_trend_floor=0.0004 (was 0.000525).
+  - live_engine._init_regime_classifier updated to the new spread band.
+- Fixed the hysteresis gate: the confidence margin is now required ONLY when
+  ESCALATING into a more-active regime (RANGING->TRENDING/VOL, TRENDING->VOL);
+  de-escalation back to RANGING is gated by the Schmitt exit bands + min-hold,
+  not by an unreachable probability margin. UNSAFE regimes (CHOP/NEWS) always
+  bypass the margin so the FREEZE_ALL guard can never get stuck (safety-critical).
+  Added `_REGIME_ACTIVITY` ordinal to classify escalations.
+- `tick_velocity_per_sec` retained as a context field; it is no longer a standalone
+  volatility signal. Downstream `policy.py`/`rule_matrix.py` momentum uses are
+  unaffected (they read the field as feed/momentum context, which is still valid).
+- Added `decision_diagnostics()` to the classifier (thresholds + live measured
+  metrics + which conditions are firing) and surfaced it as `regime_diagnostics`
+  in the debug snapshot so operators can see WHY a regime was selected.
+
+#### Evidence / calibration
+- Probe: scratch/calibrate_regime_realdata.py reconstructs deterministic tick
+  streams from the canonical XAUUSD_M1.parquet (Brownian-bridge per-bar, density-
+  faithful feed rate) and runs the REAL classifier. Calibration JSONs in
+  scratch/calibration/.
+- Before (old thresholds, fixed hysteresis) vs After (new evidenced thresholds),
+  identical 20k-bar replay:
+  - RANGING 75.4% -> 82.2%; TRENDING 23.9% -> 16.3%; VOLATILITY 0.38% -> 1.16%;
+    CHOP 0.26% -> 0.35%; transitions 2426 -> 2391.
+  - Candidate (pre-hysteresis) VOLATILITY 3.6% -> 6.3%; TRENDING 34.6% -> 13.9%.
+  - Key result: with the hysteresis fix, BOTH old and new thresholds give sane,
+    non-pathological distributions; the old thresholds were *mostly* defensible on
+    real data — the absorbing-state bug was the dominant cause of the constant
+    RANGING and the false VOLATILITY-on-flat-price reports.
+
+#### Verification
+- 19 deterministic regression tests: tests/unit/test_regime_calibration_bug132.py
+  (calm/trend-up/trend-down/volatility/chop/news, high-feed-flat NOT vol,
+  low-feed-real-vol detected, boundary conditions, hysteresis enter/exit,
+  non-absorbing de-escalation for all three special regimes, all-five-reachable,
+  tick_velocity retained as context, recalibrated defaults asserted).
+- ruff + ruff format + mypy src clean; debug-snapshot integration import-checked.
+
+#### Remaining risk / assumptions
+- Thresholds assume the live feed exposes spread in USD and tick_velocity
+  approximates real feed rate (validated against XAUUSD_M1 parquet). Other
+  symbols would need their own calibration pass (thresholds are constructor args).
+- The trend gate still requires BOTH cumulative displacement AND a realized-vol
+  floor; a perfectly smooth, zero-noise trend would not trigger TRENDING. This is
+  intentional (a smooth climb with no volatility is not a "momentum" regime), but
+  means very slow grind trends may read as RANGING — acceptable per the task
+  ("a regime may legitimately be rare").
+- synthetic probe reconstruction is an APPROXIMATION of intrabar noise; the
+  distributional conclusions are validated against the 5-min aggregate of the
+  real bars, not only the reconstructed ticks.
+
+
+## BUG-135 — LiquidityGovernor reported false MODEL_INPUT_DIMENSION_MISMATCH after a successful 70D hot-swap (2026-08-24 Nexus-Coder)
+
+**Symptom:** UI Liquidity Intelligence panel kept showing Model Compatibility
+BLOCK (MODEL_INPUT_DIMENSION_MISMATCH) with model 50D (scalp_v1) even after
+POST /api/runtime-config/model-swap successfully loaded the 70D bundle
+(artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt, scalp_v3/dim=70,
+verified serving in /api/live/state model section).
+
+**Root cause:** LiquidityGovernor._model_contract() resolved the model side of
+the compatibility verdict from engine.model_registry.current and
+champion_manager.champion_or_none() provenance FIRST. hot_swap_model() swaps
+engine._bundle + config.model.model_artifact_path + RuntimeConfig but does NOT
+re-register those provenance rows, so the verdict was computed against the
+STALE 50D champion registration while the actually-serving bundle was 70D.
+
+**Fix (88cea11):** _model_contract() now reads engine._bundle first via the
+BUG-125 artifact-driven authoritative contract properties
+(effective_feature_dim / effective_feature_schema_id); registry/champion
+provenance are fallbacks only. Real 50D bundles still BLOCK correctly.
+
+**Tests:** test_liq_false_block_01_bundle_70d_overrides_stale_registry (PASS),
+test_liq_false_block_02_real_50d_bundle_still_blocked (negative control).
+Reviewer: PASS (nexus-reviewer). Note: running server must restart to load
+the fixed module; hot-swap path itself unchanged.
+
+
+## BUG-136 — 70D model hot-swap lost after engine restart (boot ignored rehydrated runtime model_artifact_path) (2026-08-25 Nexus-Main)
+
+**Symptom:** After BUG-135, the UI STILL showed BLOCK
+(MODEL_INPUT_DIMENSION_MISMATCH). Investigation proved the running engine was
+serving artifacts/models/scalp/XAUUSD/v1.0.0/model.pt (50D scalp_v1) even
+though RuntimeConfig's persistent store held model.model_artifact_path =
+70d_liquidity/model.pt from the earlier hot-swap.
+
+**Root cause:** Split-brain persistence. hot_swap_model() correctly persisted
+the new path via runtime_config.apply -> PersistentConfigStore, but
+LiveEngine.__init__ loaded the initial bundle from the bootstrap
+AppConfig.model_artifact_path default and never consulted the rehydrated
+snapshot at boot. Every restart reverted the serving bundle to the 50D default.
+BUG-135's bundle-first governor then truthfully reported the mismatch.
+
+**Fix (aa56671):** LiveEngine boot resolves model_path from
+runtime_config.get_snapshot().model.model_artifact_path first; falls back to
+config.model.model_artifact_path when absent (mirrors the _news_enabled boot
+pattern). Regression tests added for both resolution branches.
+
+**Tests:** test_runtime_config_hot_reload.py TestBug136BootModelPathRehydration
+(+2). LIVE restart proof: /api/live/state artifact=70d_liquidity/model.pt,
+scalp_v3/dim=70, liquidity compatibility PASS / SCHEMA_DIMENSION_MATCH.
+Reviewer: PASS (nexus-reviewer, false-block fix chain).
+## BUG-137 — Intel Hub / Debug contract section crashed when engine offline (unbound live_tensor_schema) (2026-08-26 Nexus-Main)
+
+**Symptom:** /api/debug/state emitted a warning and the contract section
+failed to build when app.state.engine was None (pre-start / offline / no
+connected engine). The Intelligence Hub therefore had no live 70D contract
+status surface, which reads as a stale or missing contractual signal.
+
+**Root cause:** _contract_section (web/debug_snapshot.py) assigned
+live_tensor_schema inside the `if engine is not None:` branch only, but
+returned it unconditionally in the contract dict. With engine=None the
+local was never bound -> NameError -> the whole contract section raised
+and degraded to an error payload instead of explicit UNAVAILABLE markers.
+This is exactly the class of defect that makes the Intel Hub render
+stale/broken contract state: a missing binding turns the contract
+telemetry into a no-op rather than a truthful 'not running' signal.
+
+**Fix:** Initialize live_tensor_schema = None at function scope
+(debug_snapshot.py _contract_section) so every code path emits the
+contract section with explicit unavailable markers (live_tensor_schema
+= None, status = 70D CONTRACT BROKEN when dim unknown), never a crash.
+Telemetry now stays honest on every path; the real running engine path
+was already correct and is unchanged.
+
+**Tests:** tests/unit/test_debug_snapshot_phase20.py::
+test_contract_section_engine_none_no_unbound_var (NEW, PASS). Full
+test_debug_snapshot_phase20.py suite (37 tests) PASS. Smoke probe
+scratch/probe_intelligence_pipeline_smoke.py confirms /api/debug/state and
+/api/live/state both 200 with engine=None. Reviewer: N/A (1-line fix,
+covered by regression test).
+## BUG-138 — Market Radar / SetupDetector had zero live consumers (missing integration) (2026-08-26 Nexus-Main)
+
+**Symptom:** The Intel Hub UI / Web Panel had no Market Radar setup rankings or structured entry zone / invalidation data, even though the `SetupDetector` subsystem existed in `model_generation/setup_detector.py`.
+
+**Root cause:** Missing integration. `SetupDetector` was exclusively used by `sample_maker.py` for offline training data labeling. The live engine never invoked it, no API endpoint exposed its results, and the UI had no telemetry stream for it.
+
+**Fix:**
+1. Hooked `SetupDetector` into `LiveEngine._on_new_bar` so completed-bar feature records are evaluated on bar-close cadence.
+2. Stored the ranked setup list as `self._last_market_radar` on the engine (pure + causal, failure-isolated).
+3. Exposed `radar` in the canonical `/api/live/state` response graph (`server.py`) so the Web Panel / Intel Hub consumes real structured setup rankings (`best_setup`, `setups`, `candidate_count`, `state`).
+
+**Tests:** `tests/unit/test_market_radar_integration.py` (NEW, PASS). Full integration suite (48 tests) PASS. Reviewer: PASS (nexus-reviewer).
+## BUG-139 — Market Radar bar-hook used `rec` unbound when mslie_engine was None (2026-08-26 Nexus-Main)
+
+**Symptom:** When wiring Market Radar in `LiveEngine._on_new_bar`, the radar block was nested inside `if ms is not None:` and referenced `rec` before `rec` was defined -> `NameError` / `BAR_DETECT_FAILED` warning logged, leaving `_last_market_radar` as None.
+
+**Root cause:** Scoping mismatch. `rec` was constructed later in `_on_new_bar`, while radar ran inside an optional engine block. Falsy checks on `feat_0` also dropped zero-valued feature items.
+
+**Fix:**
+1. Build `rec` and `x50` unconditionally right at the top of `_on_new_bar` (independent of MSLIE).
+2. Run Market Radar unconditionally after `rec` is ready.
+3. Corrected radar_rec missing check to `"feat_0" not in radar_rec` instead of truthiness.
+
+**Tests:** `tests/unit/test_market_radar_integration.py::test_radar_on_new_bar_no_mslie_engine` (NEW, PASS). Full integration suite PASS.

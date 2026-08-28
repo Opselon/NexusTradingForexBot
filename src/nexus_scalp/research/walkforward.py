@@ -49,9 +49,60 @@ class WalkForwardEngine:
         val_frac: float = 0.2,
         purge_seconds: float = 0.0,
         embargo_seconds: float = 0.0,
+        context_contract: dict | None = None,
     ) -> WalkForwardResult:
+        # PHASE 26: strategy-aware sample filtering (reconstructed after
+        # accidental working-tree loss; mirrors restored oos.py contract).
+        dataset_for_folds = dataset
+        context_diag: dict = {}
+        if context_contract:
+            from nexus_scalp.research.context_contract import (
+                filter_samples_by_contract,
+                has_active_contract,
+            )
+
+            if has_active_contract(context_contract):
+                filtered, context_diag = filter_samples_by_contract(
+                    list(dataset.samples), context_contract
+                )
+                if filtered:
+                    dataset_for_folds = dataset.model_copy(update={"samples": filtered})
+                else:
+                    context_diag["sufficient_evidence"] = False
+
+        # PHASE 29 (data-volume honesty): when the population cannot support
+        # the requested fold count, compute an ADAPTIVE fold number and, if
+        # even one fold is impossible, return an explicit insufficient_reason
+        # instead of a silent passed=False with zeroed metrics. The orchestrator
+        # maps this to EVIDENCE_BUILDING (more data needed) — never REJECTED.
+        min_needed = (n_splits + 2) * 3  # mirrors splitting.walk_forward_folds guard
+        if len(dataset_for_folds.samples) < min_needed:
+            reason = (
+                f"FAMILY_TOO_SMALL_FOR_FOLDS: {len(dataset_for_folds.samples)} samples "
+                f"< {min_needed} required for {n_splits} folds"
+            )
+            logger.warning(
+                "[WALK_FORWARD] event=INSUFFICIENT_SAMPLES strategy_id=%s samples=%s needed=%s",
+                strategy_id,
+                len(dataset_for_folds.samples),
+                min_needed,
+            )
+            result = WalkForwardResult(
+                strategy_id=strategy_id,
+                strategy_version=strategy_version,
+                dataset_id=dataset.dataset_id,
+                folds=[],
+                passed=False,
+                avg_val_expectancy_r=0.0,
+                avg_oos_expectancy_r=0.0,
+                degradation=0.0,
+                context_diagnostics=context_diag or None,
+                insufficient_reason=reason,
+            )
+            return result
+
         folds = walk_forward_folds(
-            dataset,
+            dataset_for_folds,
             n_splits=n_splits,
             val_frac=val_frac,
             embargo_seconds=embargo_seconds,
@@ -135,6 +186,7 @@ class WalkForwardEngine:
             avg_val_expectancy_r=round(avg_val, 6),
             avg_oos_expectancy_r=round(avg_oos, 6),
             degradation=round(degradation, 6),
+            context_diagnostics=(context_diag or None),
         )
 
 

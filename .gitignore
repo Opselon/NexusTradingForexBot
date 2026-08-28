@@ -283,7 +283,12 @@ FakesAssemblies/
 
 # Node.js Tools for Visual Studio
 .ntvs_analysis.dat
-node_modules/
+# Node.js dev/test habitat (Playwright E2E only — NOT a runtime dependency).
+# The NSE Web UI is a buildless vanilla-JS SPA served by FastAPI; there is no
+# package.json / bundler / committed node_modules. See agents/decisions/DEC-0002.
+node_modules/playwright*
+node_modules/.bin/playwright*
+# (there is no other node_modules in this repo; do NOT add a blanket node_modules/)
 
 # Visual Studio 6 build log
 *.plg

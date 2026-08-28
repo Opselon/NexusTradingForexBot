@@ -12,13 +12,10 @@ import re
 import zipfile
 from pathlib import Path
 
-import pytest
-
 from nexus_scalp.release import environment as renv
 from nexus_scalp.release import evaluate as reval
 from nexus_scalp.release import health as rhealth
 from nexus_scalp.release import packaging as rpkg
-from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release import repair as rrepair
 from nexus_scalp.release import update as rupdate
 from nexus_scalp.release import verify as rverify
@@ -360,3 +357,40 @@ def rdiag_export(tmp_path: Path) -> Path:
         return rdiag.export_diagnostics(workspace=tmp_path)
     except Exception:  # pragma: no cover
         return tmp_path / "fallback.zip"
+
+
+def test_cli_setup_contract_and_web_endpoints(monkeypatch: object) -> None:
+    from typer.testing import CliRunner
+
+    import nexus_scalp.release.evaluate as reval
+    from nexus_scalp.cli.main import app
+    from nexus_scalp.release import exit_codes as xc
+
+    # Ensure evaluation verdict is never BLOCKED in this contract unit test
+    monkeypatch.setattr(reval, "overall_verdict", lambda results: ("PASS", []))
+
+    runner = CliRunner()
+    user_input = chr(10).join(["PAPER", "XAUUSD", ""])
+    res = runner.invoke(app, ["setup", "--json"], input=user_input)
+    assert res.exit_code == xc.EXIT_OK
+
+    raw_lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+    data = None
+    for i in range(len(raw_lines)):
+        try:
+            data = json.loads(chr(10).join(raw_lines[i:]))
+            break
+        except Exception:
+            continue
+    assert data is not None
+    assert data["mode"] == "PAPER"
+    assert data["symbol"] == "XAUUSD"
+    assert data["port"] == 8080
+    assert "web_endpoints" in data
+    assert any("8080" in ep for ep in data["web_endpoints"])
+    assert any("localhost" in ep or "127.0.0.1" in ep for ep in data["web_endpoints"])
+
+    res_human = runner.invoke(app, ["setup"], input=user_input)
+    assert res_human.exit_code == xc.EXIT_OK
+    assert "Web Dashboard Endpoints (Port 8080):" in res_human.stdout
+    assert "http://" in res_human.stdout

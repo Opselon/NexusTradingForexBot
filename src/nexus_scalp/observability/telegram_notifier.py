@@ -546,19 +546,32 @@ class TelegramNotifier:
                 record.description = outcome["safe_message"]
                 record.category = outcome["category"]
                 record.retryable = outcome["retryable"]
-                logger.warning(
-                    "[TELEGRAM] event=SEND_FAILED notification_id=%s correlation_id=%s "
-                    "attempt=%d category=%s retryable=%s http_status=%s "
-                    "telegram_error_code=%s safe_reason=%s",
-                    record.notification_id,
-                    record.correlation_id,
-                    record.attempts,
-                    outcome["category"],
-                    outcome["retryable"],
-                    outcome["http_status"],
-                    outcome["telegram_error_code"],
-                    outcome["safe_message"][:120],
-                )
+                # DEDUPLICATED is an expected filter (GENERIC coalescing), not an error.
+                # Downgrade from WARNING/ERROR to DEBUG so the console is not spammed
+                # (the user's 11:32 log had ~10 FAILED_FINAL in 1s for duplicates).
+                if outcome["category"] == "DEDUPLICATED":
+                    logger.debug(
+                        "[TELEGRAM] event=DEDUP_SUPPRESSED notification_id=%s correlation_id=%s "
+                        "http_status=%s safe_reason=%s",
+                        record.notification_id,
+                        record.correlation_id,
+                        outcome["http_status"],
+                        outcome["safe_message"][:120],
+                    )
+                else:
+                    logger.warning(
+                        "[TELEGRAM] event=SEND_FAILED notification_id=%s correlation_id=%s "
+                        "attempt=%d category=%s retryable=%s http_status=%s "
+                        "telegram_error_code=%s safe_reason=%s",
+                        record.notification_id,
+                        record.correlation_id,
+                        record.attempts,
+                        outcome["category"],
+                        outcome["retryable"],
+                        outcome["http_status"],
+                        outcome["telegram_error_code"],
+                        outcome["safe_message"][:120],
+                    )
                 if not outcome["retryable"] or retries >= self.maximum_retries:
                     break
                 retries += 1
@@ -599,18 +612,28 @@ class TelegramNotifier:
         self._failed_count += 1
         self._last_failure = time.time()
         self._last_failure_category = record.category
-        logger.error(
-            "[TELEGRAM] event=FAILED_FINAL notification_id=%s correlation_id=%s "
-            "category=%s http_status=%s telegram_error_code=%s retryable=%s "
-            "safe_reason=%s",
-            record.notification_id,
-            record.correlation_id,
-            record.category,
-            record.http_status,
-            record.telegram_error_code,
-            record.retryable,
-            record.description[:160],
-        )
+        # DEDUPLICATED is expected coalescing, not a failure — debug only.
+        # The previous spam was ~10 FAILED_FINAL/1s at the same timestamp.
+        if record.category == "DEDUPLICATED":
+            logger.debug(
+                "[TELEGRAM] event=DEDUP_FINAL notification_id=%s correlation_id=%s safe_reason=%s",
+                record.notification_id,
+                record.correlation_id,
+                record.description[:160],
+            )
+        else:
+            logger.error(
+                "[TELEGRAM] event=FAILED_FINAL notification_id=%s correlation_id=%s "
+                "category=%s http_status=%s telegram_error_code=%s retryable=%s "
+                "safe_reason=%s",
+                record.notification_id,
+                record.correlation_id,
+                record.category,
+                record.http_status,
+                record.telegram_error_code,
+                record.retryable,
+                record.description[:160],
+            )
         self._invoke_callback(record)
 
     def _invoke_callback(self, record: NotificationRecord) -> None:
@@ -679,6 +702,7 @@ class TelegramNotifier:
         """HTTPS request that connects to `ip` but keeps `host` for SNI +
         Host header (the --resolve equivalent urllib lacks)."""
         context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         raw_sock = socket.create_connection((ip, 443), timeout=timeout)
         try:
             tls_sock = context.wrap_socket(raw_sock, server_hostname=host)

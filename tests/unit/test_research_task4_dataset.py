@@ -14,10 +14,7 @@ import pytest
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.research.dataset import (
-    REASON_MISSING_OUTCOME,
-    REASON_MISSING_REALIZED_PNL,
     REASON_MISSING_REALIZED_R,
-    REASON_OUTCOME_PRECEDES_DECISION,
     ResearchDatasetBuilder,
 )
 from nexus_scalp.research.discovery import (

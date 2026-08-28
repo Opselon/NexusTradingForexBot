@@ -1,17 +1,11 @@
-import os
-import sqlite3
-import tempfile
-import time
 from datetime import UTC, datetime, timedelta
 
-import pytest
 import torch
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
-from nexus_scalp.configuration.config import AlgoConfig, RiskConfig
-from nexus_scalp.domain.enums import ActionType, OrderType
-from nexus_scalp.domain.models import AccountInfo, Position, SymbolInfo, TickData, TradeOrder
-from nexus_scalp.execution.order_manager import ExitMechanism, OrderLifecycleManager, PositionState
+from nexus_scalp.domain.enums import OrderType
+from nexus_scalp.domain.models import Position, SymbolInfo, TickData
+from nexus_scalp.execution.order_manager import OrderLifecycleManager, PositionState
 
 
 class MockMT5Adapter:

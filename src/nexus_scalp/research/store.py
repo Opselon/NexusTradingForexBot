@@ -21,6 +21,27 @@ logger = get_logger("nexus_scalp.research.store")
 
 MAX_READ_LIMIT = 2000
 
+#: PHASE 25 (2026-08-25): JSON column carrying context matrices
+#: {session_matrix, hourly_matrix, weekday_matrix, regime_matrix} on every
+#: registry entry so discovery quality can be analyzed per market condition.
+CONTEXT_MATRICES_COLUMN = "context_matrices"
+
+
+def ensure_registry_context_columns(conn: sqlite3.Connection) -> None:
+    """Idempotent ALTER TABLE adding ``context_matrices`` to strategy_registry.
+
+    Mirrors the audit_repository migration pattern: duplicate-column errors
+    are swallowed so repeated calls are no-ops; fresh databases gain the
+    column immediately after CREATE TABLE.
+    """
+    try:
+        conn.execute(
+            f"ALTER TABLE strategy_registry ADD COLUMN {CONTEXT_MATRICES_COLUMN} "
+            "TEXT DEFAULT '{}';"
+        )
+    except Exception:
+        pass  # column already exists (idempotent) or table not created yet
+
 
 def _json_text_safe(value: Any) -> str:
     """Normalizes a JSON-text column read from a registry row.
@@ -57,6 +78,7 @@ def _registry_row_safe(row: dict[str, Any]) -> dict[str, Any]:
         "score",
         "validation_lineage",
         "retirement_reason",
+        "context_matrices",
     ):
         if col in out:
             out[col] = _json_text_safe(out[col])
@@ -403,8 +425,17 @@ def self_heal_research(repo: AuditRepository, registry) -> int:
                 from nexus_scalp.research.models import CandidateLifecycle
 
                 repair = entry.model_copy(update={"lifecycle": CandidateLifecycle.REJECTED})
-                registry.upsert(repair)
-                repaired += 1
+                # Respect the upsert result: only count REAL repairs (the
+                # regression guard can refuse SHADOW/ACTIVE→REJECTED; those
+                # rows need the administrative transition_lifecycle path).
+                if registry.upsert(repair):
+                    repaired += 1
+                else:
+                    logger.warning(
+                        "[STRATEGY_RESEARCH] self-heal refused by regression guard",
+                        strategy_id=entry.strategy_id,
+                        lifecycle=entry.lifecycle.value,
+                    )
     except Exception as e:
         logger.error("[STRATEGY_RESEARCH] self-heal failed", error=str(e))
     return repaired

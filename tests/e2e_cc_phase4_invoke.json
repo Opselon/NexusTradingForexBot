@@ -1,0 +1,22 @@
+{
+  "res": {
+    "steps": [
+      "calling NX.scc.load()",
+      "load() returned: undefined"
+    ],
+    "header": {
+      "total": "500",
+      "blocked": "500",
+      "fleetNote": "Fleet: 500 strategies"
+    },
+    "fleetRowsInDom": 500,
+    "evalMetricsText": "EVALUATION PIPELINE (SCOPE: TRANSIENT RUNS)0 runningBACKTEST100% pass · 0% fail · n=500WALK_FORWARD1% pass · 99% fail · n=500OOS11% pass · 89% fail · n=500ROBUSTNESS100% pass · 0% fail · n=500SCORE0% pass · 89% fail · n=500",
+    "lastFleet": 500,
+    "spatialData": 500,
+    "canvas": {
+      "w": 896,
+      "h": 844
+    }
+  },
+  "consoleAll": []
+}

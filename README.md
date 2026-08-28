@@ -46,9 +46,9 @@ Two ways:
    Python, pip or PyTorch. First run opens the **setup wizard** (`nexus setup`):
    compatibility report → mode (**default: PAPER**, never silently LIVE) →
    symbol → health check.
-   > ⚠️ *No release has been published yet* — the release pipeline is fully built
-   > and CI-ready (`.github/workflows/release.yml`, tag `vX.Y.Z` = publish), but
-   > GitHub currently has **zero releases** until the first version tag is pushed.
+   > 🚀 **v9.0.0 Production Release Ready:** The release pipeline (`.github/workflows/release.yml`) builds
+   > packaged Windows x64 binaries (`NexusScalpEngine-<version>-win-x64-setup.exe` and portable `.zip`) with
+   > automated SHA-256 digests and release manifests.
 
 2. **Developers — run from source (see below).**
 
@@ -105,12 +105,17 @@ pytest tests/unit -q
 
 ### Start the application
 
+#### 🖱️ Portable EXE (Direct Launch)
+Simply **double-click** `NexusScalpEngine.exe` (or run it bare from the command line). It launches immediately in **PAPER** simulation mode (XAUUSD Gold), runs startup health & migration pre-flights, and spins up the Web UI Dashboard without closing.
+
+#### ⌨️ CLI Launch Commands
 ```text
-nexus start                      # PAPER mode (default, safe)
-nexus start --mode shadow        # live market data, zero orders
-nexus start --mode live          # REAL execution — explicit confirmation required
-nexus start --config configs/live.yaml --port 8080
-nexus start --daemon             # background process
+NexusScalpEngine.exe             # Bare launch -> Starts directly in PAPER mode (Safe)
+nexus start                      # Starts engine in PAPER mode (default, safe)
+nexus start --mode shadow        # Live market data feed, zero orders (mirroring)
+nexus start --mode live          # REAL execution — explicit interactive confirmation required
+nexus start --port 8080          # Custom Web Dashboard port (default: 8080)
+nexus start --daemon             # Run as detached background daemon
 ```
 
 From source (same commands via the installed console script, or):
@@ -141,6 +146,25 @@ python NexusTradingForexBot.py --gateway               # force ZMQ remote-gatewa
 ### Stop
 
 `nexus stop` (stops a `--daemon` background engine — pidfile-based) ·
+### Node.js & the Web UI (build/dev/test-only)
+
+The Control Center is a **buildless vanilla-JS SPA** served entirely by the Python
+FastAPI process (routes `/`, `/app.js`, `/styles.css`, `/api_client.js`,
+`/tailwind.css`). **Node.js is NOT a runtime dependency** and is never started by the
+launcher. You can run the engine and open the UI with Node.js uninstalled.
+
+Node is used **only** at build/dev/test time:
+- **Tailwind build (optional):** `python scripts/build/build_tailwind.py` recompiles
+  `Web/tailwind.css` from `Web/tailwind_input.css` + `tailwind.config.js` (pins
+  `tailwindcss@3`, fetches it ephemerally via `npx` \u2014 no committed `node_modules`).
+  Skip this unless you change the theme palette; the committed CSS is what ships.
+- **JS syntax/test gate (CI):** `.github/workflows/js-tests.yml` runs `node --check`
+  on `Web/*.js` and `tests/js/*.test.js`.
+- **E2E (CI only):** Playwright (in `.gitignore`d `node_modules/`) \u2014 never the runtime.
+
+See `agents/decisions/DEC-0002-nodejs-runtime-role.md` for the full forensic rationale.
+Do not add a Node dev server, web server, or `npm run` step to the launch path.
+
 `nexus restart` · foreground runs stop with `Ctrl+C` (graceful teardown).
 
 ### Update / Repair / Remove
@@ -296,7 +320,7 @@ The **Control Center** (`http://127.0.0.1:8080`) shows: live M1 chart (900-bar w
 
 ## Technology Stack
 
-Python 3.11 · PyTorch (TCN + self-attention) · FastAPI + WebSockets/SSE · MetaTrader 5 (native Win32 IPC + ZMQ gateway) · SQLite WAL · Polars/PyArrow · Pydantic · structlog · Typer/Rich CLI · Docker (dev/gateway) · GitHub Actions CI (ruff, mypy, pytest, CodeQL, Trivy, release).
+Python 3.11 · PyTorch (TCN + self-attention) · FastAPI + WebSockets/SSE · MetaTrader 5 (native Win32 IPC + ZMQ gateway) · SQLite WAL · Polars/PyArrow · Pydantic · structlog · Typer/Rich CLI · Docker (dev/gateway) · GitHub Actions CI (ruff, mypy, pytest, CodeQL, Trivy, release). Node.js is a build/dev/test-only tool (Tailwind compile + JS test gate); it is not part of the running engine or Web UI.
 
 ---
 
@@ -306,11 +330,12 @@ Python 3.11 · PyTorch (TCN + self-attention) · FastAPI + WebSockets/SSE · Met
 src/nexus_scalp/   Core engine (hexagonal packages: domain, ports, adapters, features,
                    models, signals, risk, execution, application, research, shadow, news, …)
 tests/             Unit + integration suites (tests/unit, tests/integration, tests/helpers)
-Web/               Control Center UI (index.html, app.js, styles.css)
+Web/               Control Center UI \u2014 buildless SPA (index.html, app.js, styles.css); served by FastAPI, no Node runtime.
 agents/            Agent architecture docs, bug ledger, contracts, taskboard
 docs/              Deep technical documentation (release, migrations, 70D series, forensics)
 configs/           base.yaml · live.yaml.example
 scripts/           Build/release scripts (scripts/build/), quality gates, docker wrappers (start/doctor/reset/backup)
+                   scripts/build/build_tailwind.py = reproducible Tailwind build (Node build-only).
 pics/              Screenshots
 docker/            entrypoint.sh · healthcheck.sh
 docker-compose.yml  Core + redis stack (SQLite; no postgres) — see docs/docker.md

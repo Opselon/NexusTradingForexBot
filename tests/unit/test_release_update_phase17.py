@@ -42,7 +42,6 @@ Spec reference: TASK-9 sections 3-56.  TEST-UP-01..35 acceptance mapping:
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import threading
 import time
@@ -53,7 +52,7 @@ from typing import Any
 import pytest
 
 from nexus_scalp.release import updater as upd
-from nexus_scalp.release.metadata import get_version_info, parse_version
+from nexus_scalp.release.metadata import parse_version
 
 
 # ---------------------------------------------------------------------------
@@ -1171,6 +1170,7 @@ def test_up55_e2e_check_download_verify_install(tmp_path: Path) -> None:
             update_home=home,
             installed_version="9.0.0",
             channel="stable",
+            architecture="x64",
         )
         api = f"http://127.0.0.1:{server.port}/releases"
 

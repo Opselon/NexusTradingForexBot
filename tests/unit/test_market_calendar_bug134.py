@@ -12,11 +12,11 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from nexus_scalp.accounting.market_calendar import (
+    _weekday_utc,
     current_trading_day,
     day_bounds_utc,
     market_state,
@@ -96,3 +96,27 @@ def test_day_bounds_utc_half_open() -> None:
     assert s == _utc(2026, 8, 20)
     assert e == _utc(2026, 8, 21)
     assert (e - s) == timedelta(days=1)
+
+
+def test_weekday_utc_returns_correct_day() -> None:
+    # Monday
+    mon = _utc(2024, 1, 1)  # Jan 1, 2024 is a Monday
+    assert _weekday_utc(mon) == 0
+    # Tuesday
+    tue = _utc(2024, 1, 2)
+    assert _weekday_utc(tue) == 1
+    # Wednesday
+    wed = _utc(2024, 1, 3)
+    assert _weekday_utc(wed) == 2
+    # Thursday
+    thu = _utc(2024, 1, 4)
+    assert _weekday_utc(thu) == 3
+    # Friday
+    fri = _utc(2024, 1, 5)
+    assert _weekday_utc(fri) == 4
+    # Saturday
+    sat = _utc(2024, 1, 6)
+    assert _weekday_utc(sat) == 5
+    # Sunday
+    sun = _utc(2024, 1, 7)
+    assert _weekday_utc(sun) == 6

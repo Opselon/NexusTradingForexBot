@@ -44,8 +44,8 @@ UPSERT_ENTRY_SQL = """
         discovery_source, discovery_window, context_definition,
         parent_strategy_ids, lifecycle, backtest, walkforward, oos, robustness,
         score, confidence, sample_count, validation_lineage, retirement_reason,
-        created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, updated_at, context_matrices
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(strategy_id, strategy_version) DO UPDATE SET
         feature_schema_id=excluded.feature_schema_id,
         feature_dimension=excluded.feature_dimension,
@@ -63,7 +63,8 @@ UPSERT_ENTRY_SQL = """
         sample_count=excluded.sample_count,
         validation_lineage=excluded.validation_lineage,
         retirement_reason=excluded.retirement_reason,
-        updated_at=excluded.updated_at;
+        updated_at=excluded.updated_at,
+        context_matrices=excluded.context_matrices;
 """
 
 
@@ -78,7 +79,7 @@ class StrategyRegistry:
     # ------------------------------------------------------------------
 
     def upsert(
-        self, entry: StrategyRegistryEntry, forbid_lifecycle_regression: bool = False
+        self, entry: StrategyRegistryEntry, forbid_lifecycle_regression: bool = True
     ) -> bool:
         """
         Persists a registry entry.
@@ -89,10 +90,13 @@ class StrategyRegistry:
           row carries a context_definition that differs from the new entry's,
           the upsert is REFUSED (returns False) instead of silently replacing
           the definition under the same version.
-        * `forbid_lifecycle_regression=True` additionally refuses replacing a
-          terminal/advanced lifecycle (VALIDATED / SHADOW / ACTIVE / REJECTED /
-          DEGRADED / RETIRED) with a weaker one (DISCOVERED etc.) — seeding and
-          re-validation must never downgrade established validation truth.
+        * Lifecycle regression protection is ON by default (P2 hardening,
+          2026-08-23): refuses replacing a terminal/advanced lifecycle
+          (VALIDATED / SHADOW / ACTIVE / REJECTED / DEGRADED / RETIRED) with a
+          weaker one (DISCOVERED etc.) — seeding and re-validation must never
+          downgrade established validation truth. Callers that legitimately
+          need an administrative downgrade must pass
+          `forbid_lifecycle_regression=False` explicitly (audited exception).
         """
         if not self.audit_repo._is_sqlite:
             return False
@@ -136,6 +140,7 @@ class StrategyRegistry:
             entry.retirement_reason,
             entry.created_at.isoformat(),
             entry.updated_at.isoformat(),
+            _json(getattr(entry, "context_matrices", None) or {}),
         )
         try:
             if hasattr(self.audit_repo, "_queue"):
@@ -304,7 +309,14 @@ class StrategyRegistry:
                 ],
             }
         )
-        self.upsert(updated)
+        # P2 hardening note: transition_lifecycle is the EXPLICIT administrative
+        # recovery/operations path — legality is already enforced by the state
+        # machine above (transition()). The regression guard must not silently
+        # block legal operational descents (ACTIVE→DEGRADED/RETIRED,
+        # SHADOW→DEGRADED/REJECTED), so persistence bypasses the default
+        # forbid_lifecycle_regression=True here. Plain upsert() callers keep
+        # full protection.
+        self.upsert(updated, forbid_lifecycle_regression=False)
         return updated
 
     # ------------------------------------------------------------------
@@ -349,6 +361,10 @@ class StrategyRegistry:
             context = json.loads(row["context_definition"] or "{}")
             parents = json.loads(row["parent_strategy_ids"] or "[]")
             lineage = json.loads(row["validation_lineage"] or "[]")
+            try:
+                c_mat = json.loads(row["context_matrices"] or "{}")
+            except Exception:
+                c_mat = {}
 
             return StrategyRegistryEntry(
                 strategy_id=row["strategy_id"],
@@ -369,6 +385,7 @@ class StrategyRegistry:
                 sample_count=int(row["sample_count"] or 0),
                 validation_lineage=lineage if isinstance(lineage, list) else [],
                 retirement_reason=row["retirement_reason"] or "",
+                context_matrices=c_mat if isinstance(c_mat, dict) else {},
                 created_at=created,
                 updated_at=updated,
             )
@@ -386,6 +403,13 @@ def _is_stronger(current: CandidateLifecycle, proposed: CandidateLifecycle) -> b
     """
     _strength = {
         CandidateLifecycle.DISCOVERED: 1,
+        # PHASE 25 evidence-track states: pre-validation tier (never a
+        # downgrade target from VALIDATED+; never blocks regression guard).
+        CandidateLifecycle.INITIAL_TESTING: 1,
+        CandidateLifecycle.EVIDENCE_BUILDING: 1,
+        CandidateLifecycle.WALK_FORWARD_READY: 1,
+        CandidateLifecycle.OOS_READY: 1,
+        CandidateLifecycle.ROBUSTNESS_READY: 1,
         CandidateLifecycle.BACKTESTING: 1,
         CandidateLifecycle.VALIDATING: 1,
         CandidateLifecycle.OOS_TESTING: 1,
@@ -397,7 +421,19 @@ def _is_stronger(current: CandidateLifecycle, proposed: CandidateLifecycle) -> b
         CandidateLifecycle.REJECTED: 2,
         CandidateLifecycle.RETIRED: 2,
     }
-    return _strength.get(current, 0) > _strength.get(proposed, 0)
+    if _strength.get(current, 0) > _strength.get(proposed, 0):
+        return True
+    # Peer-tier truth-rewrite hole (P2 hardening review A4): VALIDATED and
+    # REJECTED share strength rank 2; a plain upsert must not silently flip
+    # established validation truth between them (REJECTED->VALIDATED or
+    # VALIDATED->REJECTED). Real changes go through the pipeline register
+    # path with fresh evidence, or the explicit administrative
+    # transition_lifecycle() path.
+    _peer_truth = {CandidateLifecycle.VALIDATED, CandidateLifecycle.REJECTED}
+    # Same-state writes are evidence REFRESHES (new backtest/OOS payloads on
+    # an unchanged lifecycle) and must pass; only cross-peer truth rewrites
+    # are refused.
+    return current in _peer_truth and proposed in _peer_truth and current is not proposed
 
 
 def _json(value: Any) -> str:

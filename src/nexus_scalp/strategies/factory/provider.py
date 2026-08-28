@@ -44,7 +44,7 @@ LLM_TEMPERATURE_KEY: str = "factory.llm_temperature"
 
 #: Prompt template version — every candidate records which prompt version
 #: produced it (spec 86). Bump when the DSL grammar/prompt changes.
-PROMPT_VERSION: str = "factory-dsl-v3"
+PROMPT_VERSION: str = "factory-dsl-v3.1"
 
 #: Default openai-compatible endpoint suffix.
 _CHAT_COMPLETIONS_PATH = "/chat/completions"
@@ -243,6 +243,96 @@ class LLMGenerationProvider:
     # Response parsing (repair-once, then reject safely — spec 34)
     # ------------------------------------------------------------------
 
+    def complete_json(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        response_format_json: bool = True,
+    ) -> dict[str, Any] | None:
+        """Generic single JSON-object completion (reused by News Intelligence AI
+        analysis and any other JSON-producing task).
+
+        Returns a parsed dict, or None on ANY failure (unconfigured / network /
+        HTTP / malformed JSON). Never raises. The API key stays server-side in
+        the secret store and is never logged.
+        """
+        if not self.available():
+            return None
+        if self._budget_exhausted():
+            self.usage.last_error = "request budget exhausted"
+            return None
+        try:
+            import httpx
+        except ImportError:  # pragma: no cover
+            logger.warning("[STRATEGY_FACTORY] httpx unavailable")
+            return None
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "temperature": self.temperature if temperature is None else float(temperature),
+            "max_tokens": self.max_tokens if max_tokens is None else int(max_tokens),
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        if response_format_json:
+            payload["response_format"] = {"type": "json_object"}
+        url = f"{self.api_base_url}{_CHAT_COMPLETIONS_PATH}"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        started = time.perf_counter()
+        self.usage.requests += 1
+        self._window_requests += 1
+        try:
+            resp = httpx.post(url, json=payload, headers=headers, timeout=self.request_timeout_sec)
+        except Exception as e:
+            self.usage.failures += 1
+            self.usage.last_error = f"NETWORK:{type(e).__name__}"
+            logger.warning("[STRATEGY_FACTORY] provider network failure", error=type(e).__name__)
+            return None
+        latency_ms = (time.perf_counter() - started) * 1000.0
+        self.usage.last_latency_ms = latency_ms
+        self.usage.total_latency_ms += latency_ms
+        if resp.status_code != 200:
+            self.usage.failures += 1
+            self.usage.last_error = f"HTTP:{resp.status_code}"
+            logger.warning("[STRATEGY_FACTORY] provider HTTP failure", status=resp.status_code)
+            return None
+        body = resp.text
+        marker = body.rfind("data: [DONE]")
+        if marker > 0:
+            body = body[:marker].rstrip()
+        try:
+            data = json.loads(body)
+        except Exception:
+            self.usage.failures += 1
+            self.usage.last_error = "BAD_JSON_RESPONSE"
+            return None
+        usage = data.get("usage") or {}
+        self.usage.prompt_tokens += int(usage.get("prompt_tokens", 0) or 0)
+        self.usage.completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+        self.usage.total_tokens += int(usage.get("total_tokens", 0) or 0)
+        content = ""
+        try:
+            content = (data["choices"][0]["message"]["content"] or "").strip()
+        except (KeyError, IndexError, TypeError):
+            return None
+        parsed = self._try_parse(content)
+        if isinstance(parsed, dict):
+            return parsed
+        repaired = self._repair(content)
+        parsed = self._try_parse(repaired)
+        if isinstance(parsed, dict):
+            return parsed
+        self.usage.last_error = "NO_VALID_JSON_IN_RESPONSE"
+        return None
+
     def _extract_dsl_list(self, content: str) -> list[dict[str, Any]]:
         if not content:
             return []
@@ -298,13 +388,20 @@ class LLMGenerationProvider:
     # ------------------------------------------------------------------
 
     def _build_messages(self, context: dict[str, Any], n: int) -> tuple[str, str]:
-        """Builds the LONG structured generation prompt (prompt v3).
+        """Builds the LONG structured generation prompt (prompt v3.1, 2026-08-21).
 
         The prompt teaches the model the EXACT post-generation pipeline the
         engine runs on every candidate: GENERATE -> VALIDATE -> BACKTEST ->
         WALK-FORWARD -> OOS -> ROBUSTNESS -> SCORE -> RANK -> ELITE -> EVOLVE.
         The model proposes HYPOTHESES only; the engine measures everything
         (spec 34/35/69/70/83/86).
+
+        v3.1 upgrade (2026-08-21): the prompt now includes the BENCHMARK
+        surface (strategy-aware backtests via DSL filter coverage, walk-forward
+        repr, OOS explainability) so the model understands HOW its hypotheses
+        will be graded and what the API returns for AI ranking — and it is
+        told to diversify thresholds not just families (the pre-fix failure
+        was threshold-homogeneity leading to 40 identical scores).
         """
         feature_list = ", ".join(context.get("feature_ids") or [])
         timeframes = ", ".join(context.get("timeframes") or [])
@@ -312,6 +409,17 @@ class LLMGenerationProvider:
         max_cond = context.get("max_conditions", 9)
         max_feat = context.get("max_features", 6)
         max_tf = context.get("max_timeframes", 1)
+        benchmark_note = (
+            "BENCHMARK (how each hypothesis is graded, 2026-08-21): every candidate is backtested "
+            "against ITS OWN ledger slice — the DSL filters are evaluated over real historical 50D "
+            "feature_snapshot vectors (same vectors the live ScalpFeatureEngine produced) to select only "
+            "the samples the strategy would have entered; walk-forward and OOS each re-run on that slice. "
+            "The API GET /api/factory/benchmarks?generation_id=Gx returns {coverage_pct, backtest {expectancy_r, "
+            "profit_factor}, walk_forward {pass_rate, degradation}, oos {status, reason}, score {final_score, verdict}, "
+            "primary_failure, decision} per candidate. Threshold choices MATTER — a filter `dist_to_ema > 0.7` "
+            "vs `> 0.0` yields a different slice and a different score; diversify thresholds. "
+        )
+        # PROMPT_VERSION is declared at module top; bump doc comment only here.
         schema_fields = """{
   "schema_version": "1.0",
   "hypothesis": {
@@ -353,7 +461,7 @@ class LLMGenerationProvider:
             "elite pool (bounded by elite_size).\n"
             " 10. EVOLVE - the next generation preserves elites and mutates/crosses/"
             "explores around them.\n"
-            "\n"
+            "\n" + benchmark_note + "\n"
             "HARD RULES:\n"
             "1. Use ONLY features from the approved catalog below. NEVER invent indicators.\n"
             "2. Every strategy MUST declare no_future_data: true - signals are computed on "

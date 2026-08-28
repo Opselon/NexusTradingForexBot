@@ -293,7 +293,7 @@ class SQLiteDriver(DatabaseDriver):
         )
 
     def row_count(self, table: str, conn: Any = None) -> int:
-        return int(self.scalar(f"SELECT COUNT(*) FROM {table}", conn=conn) or 0)
+        return int(self.scalar(f"SELECT COUNT(*) FROM {self.quote_ident(table)}", conn=conn) or 0)
 
     def ping(self, conn: Any = None) -> bool:
         try:

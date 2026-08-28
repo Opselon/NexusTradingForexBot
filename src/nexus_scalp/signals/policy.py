@@ -1009,11 +1009,21 @@ class SignalPolicy:
             if active_conf >= getattr(self.algo_config, "high_confidence_threshold", 0.70):
                 act_rr = getattr(self.algo_config, "min_rr_high_confidence", 1.2)
 
+            base_thr = self.confidence_threshold
+            surv_adj = 0.10 if survival_mode else 0.0
+            range_pen = self.range_confidence_penalty if is_range_market else 0.0
+            eff_thr = active_threshold
+
             risk_checks_dict = {
                 "zone_quality": float(active_conf),
                 "min_zone_quality": float(self.algo_config.ai_zone_confidence_threshold),
                 "rr": float(cand_actual_rr if cand_actual_rr is not None else 1.0),
                 "min_rr": float(act_rr),
+                "model_confidence": float(confidence),
+                "base_threshold": float(base_thr),
+                "range_penalty": float(range_pen),
+                "survival_mode_adjustment": float(surv_adj),
+                "effective_threshold": float(eff_thr),
             }
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
@@ -1290,8 +1300,17 @@ class SignalPolicy:
 
         if confidence < active_threshold and proposed_action != ActionType.NO_TRADE:
             decision_stage = "CONFIDENCE_GATE"
+            base_thr = self.confidence_threshold
+            surv_adj = 0.10 if survival_mode else 0.0
+            range_pen = self.range_confidence_penalty if is_range_market else 0.0
+            eff_thr = active_threshold
+            reason_msg = (
+                f"INSUFFICIENT_CONFIDENCE: Model Confidence ({confidence:.2f}) < "
+                f"Effective Threshold ({eff_thr:.2f}) [Base: {base_thr:.2f}, "
+                f"Range Penalty: +{range_pen:.2f}, Survival Mode: +{surv_adj:.2f}]"
+            )
             return build_nt(
-                f"INSUFFICIENT_CONFIDENCE ({confidence:.2f} < {active_threshold:.2f})",
+                reason_msg,
                 blocked_by_filter="CONFIDENCE_FAIL",
             )
 

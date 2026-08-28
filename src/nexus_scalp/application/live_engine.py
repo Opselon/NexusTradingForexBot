@@ -66,7 +66,7 @@ from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import PreTradeExperienceDecision
 from nexus_scalp.experience.provenance import ModelRegistry
 from nexus_scalp.experience.retriever import ExperienceRetriever
-from nexus_scalp.features.liquidity_runtime import LiquidityGovernor, SourceKind
+from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
 from nexus_scalp.features.regime_classifier import MarketRegimeClassifier, MarketRegimeState
 from nexus_scalp.features.scalp_features import FeatureVector, ScalpFeatureEngine
 from nexus_scalp.features.schema import active_columns, active_dimension, active_schema
@@ -91,6 +91,7 @@ from nexus_scalp.intelligence import (
 )
 from nexus_scalp.labeling.triple_barrier import TripleBarrierLabeler
 from nexus_scalp.market_data.bar_aggregator import BarAggregator
+from nexus_scalp.model_generation.setup_detector import SetupDetector
 from nexus_scalp.model_lifecycle.champion import ChampionManager
 from nexus_scalp.model_lifecycle.models import ModelStatus
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
@@ -157,11 +158,24 @@ class ScalerBundle:
     def is_ready(self) -> bool:
         return self.mean is not None and self.std is not None
 
-    def transform_50d(self, x_1x50: np.ndarray) -> np.ndarray:
+    def dimension(self) -> int | None:
+        """Declared scaler width (mean/std length) or None when not ready."""
+        if self.mean is None or self.std is None:
+            return None
+        try:
+            return int(self.mean.shape[0])
+        except Exception:
+            return None
+
+    def transform(self, x: np.ndarray) -> np.ndarray:
+        """Dimension-agnostic scaler (70D/50D/60D) - clips tails to [-5,+5]."""
         if not self.is_ready():
-            return x_1x50
-        # clip to avoid tail explosion
-        return np.clip((x_1x50 - self.mean) / self.std, -5.0, 5.0)
+            return x
+        return np.clip((x - self.mean) / self.std, -5.0, 5.0)
+
+    def transform_50d(self, x_1x50: np.ndarray) -> np.ndarray:
+        """Backward-compat alias: delegates to the dimension-agnostic transform."""
+        return self.transform(x_1x50)
 
 
 @dataclass(frozen=True)
@@ -186,6 +200,64 @@ class LiveEngine:
     FEATURE_DIM: int = active_dimension()
     FEATURE_COLS: tuple[str, ...] = active_columns()
     FEATURE_SCHEMA_ID: str = active_schema().schema_id
+
+    # ------------------------------------------------------------------
+    # BUG-125: EFFECTIVE MODEL CONTRACT - artifact-driven, not class-frozen.
+    #
+    # The class constants above are the BOOTSTRAP default (scalp_v1/50D).
+    # The authoritative live contract is derived from the LOADED BUNDLE:
+    # a validated 70D artifact (scaler width 70 + tensor width 70) drives
+    # effective_feature_dim=70 / effective_feature_schema_id=scalp_v3, so
+    # the canonical 70D tensor (Base 0..49 | News 50..59 | Liquidity
+    # 60..69) is assembled for inference. With the 50D Champion loaded the
+    # effective contract stays scalp_v1/50D and behavior is byte-identical
+    # to the pre-BUG-125 hot path. One source of truth: the bundle itself.
+    # ------------------------------------------------------------------
+
+    @property
+    def effective_feature_dim(self) -> int:
+        """Authoritative feature width of the LOADED model bundle.
+
+        Resolution order: scaler width (mean/std length) > model tensor
+        width (num_features) > class bootstrap default. Never raises -- a
+        probe failure falls back to the class default (50D-safe).
+        """
+        try:
+            with self._bundle_lock:
+                b = self._bundle
+            if b is not None:
+                d = b.scaler.dimension() if hasattr(b.scaler, "dimension") else None
+                if isinstance(d, int) and d > 0:
+                    return d
+                nf = int(getattr(b.model, "num_features", 0) or 0)
+                if nf > 0:
+                    return nf
+        except Exception:
+            pass
+        return int(self.__class__.FEATURE_DIM)
+
+    @property
+    def effective_feature_schema_id(self) -> str:
+        """Schema id bound to the LOADED model's dimension.
+
+        70D bundles bind to the canonical scalp_v3 contract
+        (features/schema_contract.py); everything else keeps the ACTIVE
+        schema id (scalp_v1). This is the single authoritative mapping --
+        no duplicated hardcoded dimensions anywhere in the engine.
+        """
+        try:
+            if self.effective_feature_dim == 70:
+                from nexus_scalp.features.schema_contract import SCHEMA_ID as _SCHEMA_70D
+
+                return _SCHEMA_70D
+        except Exception:
+            pass
+        return str(self.__class__.FEATURE_SCHEMA_ID)
+
+    @property
+    def effective_feature_cols(self) -> tuple[str, ...]:
+        """Ordered feat_* columns for the effective contract."""
+        return tuple(f"feat_{i}" for i in range(self.effective_feature_dim))
 
     def __init__(
         self,
@@ -282,6 +354,64 @@ class LiveEngine:
 
         # Diagnostics & Heartbeat
         self._last_radar_log_time: float = 0.0
+
+        # =====================================================================
+        # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: LIVE-FRESHNESS TRUTH MODEL
+        # ---------------------------------------------------------------------
+        # Root cause (proven from telemetry 2026-08-26): ticks advance
+        # (tick_age_sec ~0.5s) but features/inference/proposal timestamps were
+        # FROZEN at 06:25:42 for >770s while the engine reported health=READY
+        # and an ever-increasing state_version. state_version / uptime /
+        # HTTP 200 are NOT proof of intelligence freshness. This block exposes
+        # the real freshness of every pipeline stage and is purely
+        # observational at the instrumentation site (it never blocks trading).
+        # =====================================================================
+        # Freshness config (BUGFIX-G29): upper bounds (seconds) beyond which a
+        # stage is reported STALE. Tunable via runtime_config key
+        # "freshness.max_age_sec" (default 30.0s); values are documented so QA
+        # can assert on them.
+        self._freshness_max_age_sec: float = float(
+            (
+                getattr(config, "freshness", None) is not None
+                and getattr(config.freshness, "max_age_sec", 30.0)
+            )
+            or 30.0
+        )
+        # Monotonic tick timestamp: strictly increasing wall-clock-ms of the
+        # most recent MARKET tick observed on the live path. Exposes that the
+        # data feed itself is moving independently of feature/inference age.
+        self._monotonic_tick_ms: int = 0
+        self._last_tick_timestamp: datetime | None = None
+        # Observed (engine-snapshot) stage timestamps - authoritative for
+        # change-detection / staleness.
+        self.last_feature_update: datetime | None = None
+        self.last_inference_timestamp: datetime | None = None
+        self.last_decision_timestamp: datetime | None = None
+        self.last_successful_inference: datetime | None = None
+        self.last_failed_inference: datetime | None = None
+        # Monotonic sequence ids: increment only when the STAGE actually
+        # re-ran on NEW substantive input (not on heartbeat). Lets the UI/QA
+        # prove inference progressed without trusting timestamps alone.
+        self._tick_sequence: int = 0
+        self._feature_sequence: int = 0
+        self._inference_sequence: int = 0
+        self._decision_sequence: int = 0
+        # Deterministic change-detection hashes (volatile timestamps excluded)
+        # so the coordinator can prove exactly where state becomes frozen.
+        self._last_raw_market_hash: str = ""
+        self._last_feature_hash: str = ""
+        self._last_model_input_hash: str = ""
+        self._last_model_output_hash: str = ""
+        # Telemetry counters (mission requirement)
+        self._market_updates_total: int = 0
+        self._feature_builds_total: int = 0
+        self._inference_runs_total: int = 0
+        self._inference_failures_total: int = 0
+        self._decision_updates_total: int = 0
+        self._stale_state_detected_total: int = 0
+        # In-flight worker tracker for non-blocking background dispatch
+        self._inflight_workers: set[str] = set()
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
         # Buffers / engines
         symbol = config.execution.symbol
@@ -723,6 +853,22 @@ class LiveEngine:
             self.mslie_engine = None
         self._last_mslie_vector: Any | None = None
         self._last_news_gate: Any | None = None
+        # News enabled is AUTHORITATIVE from the runtime snapshot (persisted
+        # toggle), not from the bootstrap yaml alone — so a restart respects
+        # the operator's UI choice. LiveEngine bootstraps from config then
+        # rehydrates; override with the snapshot truth if present.
+        self._news_enabled = bool(getattr(config, "news", None) and config.news.enabled)
+        self._news_auto_analysis_enabled = bool(
+            getattr(getattr(config, "news", None), "auto_analysis_enabled", False)
+        )
+        try:
+            _news_snap = self.runtime_config.get_snapshot().news
+            self._news_enabled = bool(_news_snap.enabled)
+            self._news_auto_analysis_enabled = bool(
+                getattr(_news_snap, "auto_analysis_enabled", False)
+            )
+        except Exception:
+            pass
         if self._news_enabled:
             try:
                 from nexus_scalp.news import NewsEngine, NewsGate, NewsWorker
@@ -734,6 +880,13 @@ class LiveEngine:
                     interval_sec=float(getattr(news_config, "worker_interval_sec", 60)),
                     max_queue=int(getattr(news_config, "max_queue_size", 1000)),
                 )
+                # News Auto Analysis — seed worker gate from snapshot/bootstrap (no API key needed)
+                try:
+                    self.news_worker.auto_analysis_enabled = bool(
+                        getattr(self, "_news_auto_analysis_enabled", False)
+                    )
+                except Exception:
+                    pass
                 self.news_gate = NewsGate(config=news_config)
                 logger.info("[NEWS] event=CONSTRUCTED status=ENABLED")
             except Exception as news_err:
@@ -799,6 +952,9 @@ class LiveEngine:
         # Web / UI Synchronization states to act as single source of truth
         self._last_tick: TickData | None = None
         self._last_fv: FeatureVector | None = None
+        # Market Radar (Hunter SetupDetector) - live, bar-close cadence (BUG-138 fix).
+        self.setup_detector = SetupDetector()
+        self._last_market_radar: dict[str, Any] | None = None
         self._last_model_input_tensor: list[float] | None = None
         self._last_regime_state: MarketRegimeState | None = None
         self._last_probs: torch.Tensor | None = None
@@ -822,8 +978,20 @@ class LiveEngine:
         self._last_chart_snapshot_overlays: dict[str, Any] | None = None
         self._last_chart_snapshot_time: float = 0.0
 
-        # Preload model/scaler bundle (pre-flight)
-        model_path = Path(self.config.model.model_artifact_path)
+        # Preload model/scaler bundle (pre-flight).
+        # BUG-136: honor the REHYDRATED runtime snapshot model_artifact_path
+        # (persisted via hot-swap / runtime-config apply) at boot; fall back
+        # to the bootstrap default only when no persisted value exists.
+        # Without this, a restart reverts to the 50D default bundle while the
+        # persistent store expects 70D -> false MODEL_INPUT_DIMENSION_MISMATCH.
+        model_path_str = self.config.model.model_artifact_path
+        try:
+            _md_snap = self.runtime_config.get_snapshot().model.model_artifact_path
+            if _md_snap:
+                model_path_str = str(_md_snap)
+        except Exception:
+            pass
+        model_path = Path(model_path_str)
         self._bundle = self._load_or_create_bundle(
             model_path=model_path, force_fresh=self.force_fresh_model
         )
@@ -887,24 +1055,25 @@ class LiveEngine:
         """
         Stamps the active model identity onto future experiences.
 
-        Called at startup and after every hot-swap. Historical experiences keep
-        the provenance of the model that produced them and are never rewritten.
+        BUG-125: the advertised schema/dimension are taken from the
+        authoritative bundle when present, not from the class default.
         """
         try:
+            eff_id = str(self.effective_feature_schema_id)
+            eff_dim = int(self.effective_feature_dim)
             provenance = self.model_registry.register_model(
                 artifact_path=model_path,
                 model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
-                feature_schema_id=self.FEATURE_SCHEMA_ID,
-                feature_dimension=self.FEATURE_DIM,
+                feature_schema_id=eff_id,
+                feature_dimension=eff_dim,
                 config_version=str(getattr(self.runtime_config, "get_version", lambda: 0)()),
                 replaced=replaced,
             )
             self.experience_engine.set_provenance(provenance)
         except Exception as e:
-            # Provenance is observability, never a live-path dependency.
             logger.error("[MODEL] provenance registration failed (isolated)", error=str(e))
 
-    def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
+    async def hot_swap_model(self, new_artifact_path: str, *, source: str = "WEB_UI") -> dict:
         """Atomically swap the serving model artifact (safe hot swap).
 
         Loads + validates + warms the NEW bundle FIRST; only on success the
@@ -912,7 +1081,6 @@ class LiveEngine:
         In-flight inference completes against the old bundle under the
         bundle lock. Never replaces a healthy model with an invalid artifact.
         """
-        import hashlib
 
         new_path = Path(new_artifact_path)
         old_path = Path(self.config.model.model_artifact_path)
@@ -930,22 +1098,32 @@ class LiveEngine:
             # Load + validate the NEW bundle in isolation (never touching
             # the serving bundle). _load_or_create_bundle raises on dimension
             # mismatch and quarantines corrupt checkpoints.
-            new_bundle = self._load_or_create_bundle(model_path=new_path, force_fresh=False)
-            # Warm-up: one forward pass validates the artifact end-to-end.
-            import numpy as np
-            import torch
+            import asyncio
 
-            warm = np.zeros((1, self.FEATURE_DIM), dtype=np.float32)
-            warm = new_bundle.scaler.transform_50d(warm)
-            with torch.inference_mode():
-                new_bundle.model(torch.tensor(warm, dtype=torch.float32))
+            new_bundle = await asyncio.to_thread(
+                self._load_or_create_bundle, model_path=new_path, force_fresh=False
+            )
 
-            # Compute artifact hash for traceability (model version/hash)
-            h = hashlib.sha256()
-            with open(new_path, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    h.update(chunk)
-            artifact_hash = h.hexdigest()[:16]
+            def _warmup_and_hash():
+                # Warm-up: one forward pass validates the artifact end-to-end.
+                import hashlib
+
+                import numpy as np
+                import torch
+
+                warm = np.zeros((1, int(new_bundle.model.num_features)), dtype=np.float32)
+                warm = new_bundle.scaler.transform(warm)
+                with torch.inference_mode():
+                    new_bundle.model(torch.tensor(warm, dtype=torch.float32))
+
+                # Compute artifact hash for traceability (model version/hash)
+                h = hashlib.sha256()
+                with open(new_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(65536), b""):
+                        h.update(chunk)
+                return h.hexdigest()[:16]
+
+            artifact_hash = await asyncio.to_thread(_warmup_and_hash)
 
             # ATOMIC SWAP under the bundle lock: new bundle replaces old.
             with self._bundle_lock:
@@ -1453,7 +1631,58 @@ class LiveEngine:
                                 exc_info=True,
                             )
                     else:
-                        logger.info("[WATCHDOG] Tick stream quiet. MT5 connection remains active.")
+                        # BUGFIX-G29: connection is *live* but the tick stream is
+                        # quiet (is_connected()==True while no new ticks arrive).
+                        # The old branch simply reset the timer and declared the
+                        # connection active, which masked a dead feed behind
+                        # health=READY for 26 minutes in production. Now we treat
+                        # a >15s quiet stream as a stalled ingestion: emit a
+                        # STALE incident and force a market-data resubscribe /
+                        # tick re-poll so ingestion actually restarts instead of
+                        # being hidden. This never trades — it only restores the
+                        # data feed; execution remains gated by the freshness
+                        # contract (live_freshness_gate).
+                        logger.warning(
+                            "[WATCHDOG] Tick stream stalled while MT5 reports "
+                            "connected (is_connected=True). Forcing market-data "
+                            "resubscribe / tick re-poll to restart ingestion."
+                        )
+                        self.emit_incident_telemetry(
+                            event_type="MT5_TICK_STREAM_STALLED",
+                            component="mt5",
+                            severity="HIGH",
+                            correlation_id="tick-stream",
+                        )
+                        try:
+                            # Re-subscribe symbols + re-poll fresh market state.
+                            if hasattr(self.adapter, "resubscribe_symbol") and callable(
+                                self.adapter.resubscribe_symbol
+                            ):
+                                self.adapter.resubscribe_symbol(symbol)
+                            elif hasattr(self.adapter, "subscribe_symbols") and callable(
+                                self.adapter.subscribe_symbols
+                            ):
+                                self.adapter.subscribe_symbols([symbol])
+                            # Probe a fresh tick so the aggregator/feature path
+                            # sees movement on the very next iteration.
+                            try:
+                                self.adapter.get_tick(symbol)
+                            except Exception:
+                                pass
+                            try:
+                                await self._resync_from_broker(symbol)
+                            except Exception as resync_err:
+                                logger.error(
+                                    "Watchdog stalled-stream resync failed",
+                                    error=str(resync_err),
+                                    exc_info=True,
+                                )
+                        except Exception as recon_err:
+                            logger.error(
+                                "Error during stalled-stream resubscribe",
+                                error=str(recon_err),
+                                exc_info=True,
+                            )
                     self._last_tick_processed_time = time.time()
 
                 # Account/tick refresh cadence: the account snapshot is
@@ -1501,7 +1730,7 @@ class LiveEngine:
                 # work; it can never block the tick loop.
                 if self._accounting_worker_started:
                     try:
-                        await asyncio.to_thread(self.accounting_worker.tick)
+                        self._kick_worker("ACCOUNTING", self.accounting_worker.tick)
                     except Exception:
                         # Worker failure is fully isolated; never disturb ticks.
                         pass
@@ -1647,7 +1876,7 @@ class LiveEngine:
                 # (watermark + overlap, idempotent). Never on the tick path.
                 if self._history_sync_started:
                     try:
-                        await asyncio.to_thread(self.history_sync_worker.tick)
+                        self._kick_worker("HISTORY_SYNC", self.history_sync_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[HISTORY_SYNC_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
@@ -1656,7 +1885,7 @@ class LiveEngine:
                 # failure can never disturb the tick loop.
                 if self._intelligence_worker_started:
                     try:
-                        await asyncio.to_thread(self.intelligence_worker.tick)
+                        self._kick_worker("INTELLIGENCE", self.intelligence_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[INTELLIGENCE_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
@@ -1665,7 +1894,7 @@ class LiveEngine:
                 # pipeline; a failure here can never disturb trading.
                 if self._research_worker_started:
                     try:
-                        await asyncio.to_thread(self.research_worker.tick)
+                        self._kick_worker("RESEARCH", self.research_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[RESEARCH_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
@@ -1673,21 +1902,21 @@ class LiveEngine:
                 # bounded to worker threads; training can NEVER block ticks).
                 if self._training_worker_started:
                     try:
-                        await asyncio.to_thread(self.training_worker.tick)
+                        self._kick_worker("TRAINING", self.training_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[TRAINING_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
                 # PHASE 11: shadow-aggregation worker kick (bounded, isolated).
                 if self._shadow_worker_started:
                     try:
-                        await asyncio.to_thread(self.shadow_worker.tick)
+                        self._kick_worker("SHADOW", self.shadow_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[SHADOW_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
                 # PHASE 12: news intelligence worker kick (bounded, isolated).
                 if self._news_enabled and self._news_worker_started:
                     try:
-                        await asyncio.to_thread(self.news_worker.tick)
+                        self._kick_worker("NEWS", self.news_worker.tick)
                     except Exception as wkr_err:
                         logger.warning("[NEWS_WORKER] event=KICK_FAILED error=%s", wkr_err)
 
@@ -1708,6 +1937,45 @@ class LiveEngine:
                 await asyncio.sleep(1.0)
 
         await self._shutdown_async()
+
+    #: PHASE 28: per-call timeout for background worker kicks executed via
+    #: asyncio.to_thread inside run_loop. A hung C-extension call (MT5 IPC,
+    #: sqlite C lock) previously parked a to_thread future forever, which
+    #: froze the whole tick loop (inference/features/AI-Hub) while web stayed
+    #: responsive. With wait_for, a hung kick is abandoned (the thread may
+    #: linger but is detached from the loop) and the loop keeps ticking.
+    WORKER_KICK_TIMEOUT_SEC: float = float(
+        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "45")
+    )
+
+    def _kick_worker(self, name: str, fn) -> None:
+        """Fire fn() in a background thread without blocking the tick loop.
+
+        Uses an in-flight set to avoid duplicate concurrent executions of the
+        same worker (idempotent kick). Workers run via asyncio.to_thread and
+        detach immediately; errors are logged but never propagated.
+        """
+        if name in self._inflight_workers:
+            return  # previous cycle still running, skip duplicate kick
+        self._inflight_workers.add(name)
+
+        async def _run():
+            try:
+                await asyncio.wait_for(asyncio.to_thread(fn), timeout=self.WORKER_KICK_TIMEOUT_SEC)
+            except TimeoutError:
+                logger.error(
+                    "[WORKER_KICK] event=TIMEOUT worker=%s timeout_sec=%s — detaching hung call",
+                    name,
+                    self.WORKER_KICK_TIMEOUT_SEC,
+                )
+            except Exception as wkr_err:
+                logger.warning("[WORKER_KICK] event=FAILED worker=%s error=%s", name, wkr_err)
+            finally:
+                self._inflight_workers.discard(name)
+
+        task = asyncio.create_task(_run())
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     def _start_history_sync_worker(self) -> None:
         """Starts the broker-history sync worker (idempotent, isolated)."""
@@ -1853,13 +2121,19 @@ class LiveEngine:
 
     def _init_regime_classifier(self, symbol: str) -> MarketRegimeClassifier:
         """
-        Initializes the MarketRegimeClassifier matching its active constructor signature.
+        Initializes the MarketRegimeClassifier with XAUUSD-evidenced calibration.
+
+        Thresholds were recalibrated from 100k real XAUUSD M1 bars (2026-05..08)
+        in BUG-132. The classifier defaults already encode those values, so we
+        only override the two that differ from the constructor defaults
+        (spread hysteresis band + hold/markup margins) to keep a single source of
+        truth in the classifier module.
         """
         try:
             return MarketRegimeClassifier(
                 symbol=symbol,
-                spread_chop_enter_usd=0.50,
-                spread_chop_exit_usd=0.40,
+                spread_chop_enter_usd=0.25,
+                spread_chop_exit_usd=0.18,
                 min_regime_hold_sec=4.0,
                 switch_prob_margin=0.10,
             )
@@ -1877,11 +2151,39 @@ class LiveEngine:
         scaler = self._load_scaler_artifacts(model_path=model_path)
         return ModelBundle(model=model, scaler=scaler, artifact_path=model_path)
 
+    def _expected_num_features_for_artifact(self, model_path: Path) -> int:
+        """Infer expected input width from the on-disk artifact, falling back to class default.
+
+        When the checkpoint exists, its ``input_projection.weight.shape[1]`` is
+        the source of truth (covers 50D + 70D). On cold-start (no file) the
+        class ``FEATURE_DIM`` is kept so first-time users still bootstrap 50D.
+        """
+        try:
+            if model_path.exists():
+                probe = torch.load(model_path, map_location="cpu")
+                w = probe.get("input_projection.weight") if isinstance(probe, dict) else None
+                if w is not None and hasattr(w, "shape") and len(w.shape) == 2:
+                    return int(w.shape[1])
+        except Exception:
+            pass
+        # BUG-125 regression: tests call via LiveEngine._expected_num_features_for_artifact(None, path)
+        # (unbound with self=None on macOS). Handle None gracefully.
+        if self is None:
+            return int(LiveEngine.FEATURE_DIM)
+        return int(self.__class__.FEATURE_DIM)
+
     def _load_or_initialize_model_weights(self, model_path: Path, force_fresh: bool) -> ScalpNet:
+        """Loads model.pt if present, validating against the artifact's own declared width.
+
+        BUG-125: the width gate now validates against the checkpoint's own
+        declared tensor width (artifact-driven contract selection) instead of
+        the process-wide 50D default.
         """
-        Loads model.pt if present, validates 50D contract, otherwise creates and saves.
-        """
-        model = ScalpNet(num_features=self.FEATURE_DIM, num_classes=4)
+        if force_fresh:
+            expected_dim = int(self.__class__.FEATURE_DIM)
+        else:
+            expected_dim = self._expected_num_features_for_artifact(model_path)
+        model = ScalpNet(num_features=expected_dim, num_classes=4)
         model.eval()
 
         if model_path.exists() and not force_fresh:
@@ -1906,10 +2208,12 @@ class LiveEngine:
                 )
 
             model.load_state_dict(state_dict)
-            logger.info("Loaded model weights", path=str(model_path))
+            logger.info("Loaded model weights", path=str(model_path), expected_dim=expected_dim)
             return model
 
-        logger.info("Initializing fresh model weights", path=str(model_path))
+        logger.info(
+            "Initializing fresh model weights", path=str(model_path), expected_dim=expected_dim
+        )
         self._save_model_weights_atomic(model, model_path)
         return model
 
@@ -1924,9 +2228,12 @@ class LiveEngine:
             mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
             std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
 
-            if mean.shape[0] != self.FEATURE_DIM or std.shape[0] != self.FEATURE_DIM:
+            # BUG-125: scaler width must match the MODEL's declared width
+            expected_dim = self._expected_num_features_for_artifact(model_path)
+            if mean.shape[0] != expected_dim or std.shape[0] != expected_dim:
                 raise RuntimeError(
-                    f"Scaler dim invalid: mean{mean.shape} std{std.shape} expected ({self.FEATURE_DIM},)"
+                    f"Scaler dim invalid: mean{mean.shape} std{std.shape} "
+                    f"expected ({expected_dim},) for artifact {model_path.name}"
                 )
 
             logger.info(
@@ -2195,6 +2502,71 @@ class LiveEngine:
             self._news_worker_started = False
             logger.error("[NEWS_WORKER] event=START status=FAILED", error=str(err))
 
+    def _start_news_engine_from_snapshot(self, snap: Any) -> None:
+        """Hot-reload helper: (re)construct the news engine + worker + gate.
+
+        Used by _sync_runtime_config when the operator enables news from the
+        UI without restarting. Fully isolated like the bootstrap constructor:
+        a failure leaves the subsystem disabled and trading unaffected.
+        """
+        from nexus_scalp.news import NewsEngine, NewsGate, NewsWorker
+        from nexus_scalp.news.config import NewsConfig, NewsPollingConfig
+
+        cfg = NewsConfig(
+            enabled=True,
+            worker_interval_sec=int(snap.news.worker_interval_sec),
+            max_queue_size=int(snap.news.max_queue_size),
+            polling=NewsPollingConfig(
+                fast_interval_sec=int(snap.news.poll_fast_interval_sec),
+                medium_interval_sec=int(snap.news.poll_medium_interval_sec),
+                slow_interval_sec=int(snap.news.poll_slow_interval_sec),
+            ),
+        )
+        self.news_engine = NewsEngine(config=cfg)
+        self.news_worker = NewsWorker(
+            engine=self.news_engine,
+            interval_sec=float(snap.news.worker_interval_sec),
+            max_queue=int(snap.news.max_queue_size),
+        )
+        # seed auto-analysis gate from snapshot
+        try:
+            self.news_worker.auto_analysis_enabled = bool(
+                getattr(snap.news, "auto_analysis_enabled", False)
+            )
+            self._news_auto_analysis_enabled = bool(self.news_worker.auto_analysis_enabled)
+        except Exception:
+            pass
+        self.news_gate = NewsGate(config=cfg)
+        self._news_enabled = True
+        self._news_worker_started = False
+        # Start the worker if the engine is already running.
+        if getattr(self, "_running", False):
+            self._start_news_worker()
+        logger.info(
+            "[NEWS] event=HOT_RELOAD_CONSTRUCTED status=ENABLED runtime_version=%d",
+            getattr(snap, "version", 0),
+        )
+
+    def _stop_news_engine_hot(self) -> None:
+        """Hot-reload helper: tear down the news worker + engine + gate.
+
+        Called when the operator disables news from the UI. Stops the worker
+        (even if _news_enabled is still True — the guard in _stop_news_worker
+        would otherwise early-return).
+        """
+        try:
+            if self.news_worker is not None and self._news_worker_started:
+                self._news_worker_started = False
+                try:
+                    self.news_worker.stop()
+                except Exception:
+                    pass
+        finally:
+            self._news_enabled = False
+            self.news_engine = None
+            self.news_worker = None
+            self.news_gate = None
+
     async def _stop_news_worker(self) -> None:
         """Stops the news worker (idempotent, never raises)."""
         if not self._news_enabled or not self._news_worker_started:
@@ -2367,6 +2739,9 @@ class LiveEngine:
         # live tick must CONTINUE the broker's current minute, not mint a
         # duplicate stale bar with the same timestamp.
         last_seeded = self.aggregator.reseed(hist_m1_bars)
+        completed_init = self.aggregator.get_completed_bars()
+        if completed_init:
+            self._warm_liquidity_from_bars(completed_init, atr=1.5)
 
         completed = self.aggregator.get_completed_bars()
         if len(completed) >= 55:
@@ -2447,6 +2822,9 @@ class LiveEngine:
             or []
         )
         last_seeded = self.aggregator.reseed(hist_m1)
+        completed_resync = self.aggregator.get_completed_bars()
+        if completed_resync:
+            self._warm_liquidity_from_bars(completed_resync, atr=1.5)
         if last_seeded is None:
             logger.warning("[RESYNC] SKIPPED reason=NO_BROKER_BARS")
             return
@@ -2624,6 +3002,44 @@ class LiveEngine:
             nw = getattr(self, "news_worker", None)
             if nw is not None and snap.news.worker_interval_sec > 0:
                 nw.interval_sec = float(snap.news.worker_interval_sec)
+            # News enabled toggle (Pro Hot Reload): hot-swap the worker/gate
+            # next time _sync_runtime_config runs (either via apply or tick).
+            desired_news = bool(snap.news.enabled)
+            if desired_news != self._news_enabled:
+                if desired_news:
+                    try:
+                        self._start_news_engine_from_snapshot(snap)
+                        logger.info(
+                            "[NEWS] event=HOT_RELOAD_ENABLED runtime_version=%d", snap.version
+                        )
+                    except Exception as ne:
+                        logger.error("[NEWS] event=HOT_RELOAD_ENABLE_FAILED error=%s", ne)
+                else:
+                    try:
+                        self._stop_news_engine_hot()
+                        logger.info(
+                            "[NEWS] event=HOT_RELOAD_DISABLED runtime_version=%d", snap.version
+                        )
+                    except Exception as ne:
+                        logger.error("[NEWS] event=HOT_RELOAD_DISABLE_FAILED error=%s", ne)
+            # News Auto Analysis (local deterministic, no API key) — live-tunable
+            desired_auto = bool(getattr(snap.news, "auto_analysis_enabled", False))
+            if desired_auto != getattr(self, "_news_auto_analysis_enabled", False):
+                self._news_auto_analysis_enabled = desired_auto
+                # propagate to worker gate (cheap, no restart)
+                nw2 = getattr(self, "news_worker", None)
+                if nw2 is not None and hasattr(nw2, "auto_analysis_enabled"):
+                    nw2.auto_analysis_enabled = desired_auto
+                logger.info(
+                    "[NEWS_AUTO] event=HOT_RELOAD_TOGGLE enabled=%s runtime_version=%d",
+                    desired_auto,
+                    snap.version,
+                )
+            else:
+                # keep worker in sync every tick (handles worker reconstructed)
+                nw2 = getattr(self, "news_worker", None)
+                if nw2 is not None and hasattr(nw2, "auto_analysis_enabled"):
+                    nw2.auto_analysis_enabled = desired_auto
             # Rule matrix cache TTL (live-tunable; the engine uses
             # refresh_cache(force) with the TTL as a default — the attr
             # is set when the engine reads it each refresh)
@@ -2656,6 +3072,48 @@ class LiveEngine:
     # Hot-path tick pipeline
     # -------------------------
 
+    def _warm_liquidity_from_bars(
+        self,
+        bars: list[Any],
+        *,
+        atr: float | None = None,
+        source: Any = None,
+    ) -> None:
+        """Causal-safe liquidity snapshot from COMPLETED bars.
+
+        Called on every new-bar cadence (including during warmup, so the
+        LiquidityGovernor never stays UNAVAILABLE/NOT_RUN/INVALID once
+        bars exist) and after a broker reseed / cold-start warm from the
+        seeded history. Pure numpy, no I/O, no DB, no execution authority
+        (INV-020: liquidity is information-only). A failure is isolated and
+        logged; it never disturbs trading and never fabricates a state.
+        """
+        gov = getattr(self, "liquidity_governor", None)
+        if gov is None or not getattr(gov, "enabled", False):
+            return
+        if not bars:
+            return
+        try:
+            from nexus_scalp.features.liquidity_runtime import SourceKind
+
+            last = bars[-1]
+            mid = float(getattr(last, "close", 0.0) or 0.0)
+            decision_at = getattr(last, "timestamp", None)
+            use_atr = float(atr) if (atr is not None and float(atr) > 0) else 1.5
+            src = source if source is not None else SourceKind.LIVE_MARKET_STATE
+            gov.compute_from_engine(
+                bars=bars,
+                mid_price=mid,
+                atr=use_atr,
+                decision_at=decision_at,
+                source=src,
+            )
+        except Exception as liq_exc:  # isolated; trading unaffected
+            logger.warning(
+                "[LIQUIDITY] event=WARM_COMPUTE_FAILED error=%s (isolated; trading unaffected)",
+                liq_exc,
+            )
+
     def _process_tick_pipeline(self, tick: TickData, account: AccountInfo) -> None:
         try:
             # RUNTIME CONFIGURATION: re-sync services each tick. This is
@@ -2674,6 +3132,16 @@ class LiveEngine:
             fv = self.feature_engine.compute_from_bars(
                 completed_bars=completed_bars, current_tick=tick
             )
+            # TASK-02-70D-INTEGRATION: liquidity snapshot from COMPLETED bars.
+            # Runs BEFORE the HTF warmup gate so the governor becomes
+            # AVAILABLE/VALID as soon as bars exist instead of staying
+            # UNAVAILABLE / NOT_RUN / INVALID through the whole warmup window
+            # (INV-020: information-only, pure numpy, failure-isolated).
+            if completed_bars:
+                self._warm_liquidity_from_bars(
+                    completed_bars,
+                    atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
+                )
 
             if is_new_bar and completed_bars:
                 self._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
@@ -2869,6 +3337,91 @@ class LiveEngine:
 
             self.audit.log_signal(proposal)
 
+            # =====================================================================
+            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: SAFETY FRESHNESS GATE
+            # ---------------------------------------------------------------------
+            # Runs AFTER all model/experience/news/intelligence gates. If the
+            # feature->inference->decision chain is proven STALE (frozen), the
+            # proposal is converted to NO_TRADE / BLOCKED_BY_STALE so a frozen
+            # intelligence state can NEVER masquerade as a live BUY/SELL. This
+            # is a pure downgrade to NO_TRADE; it relaxes NO existing guard and
+            # fabricates NO confidence. It is the only production touchpoint of
+            # the freshness model.
+            # =====================================================================
+            proposal, _fresh_blocked = self.live_freshness_gate(proposal)
+            if _fresh_blocked:
+                logger.warning(
+                    "[FRESHNESS_GATE] event=BLOCKED reason=BLOCKED_BY_STALE "
+                    "(inference chain frozen; proposal downgraded to NO_TRADE)"
+                )
+
+            # =====================================================================
+            # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: FRESHNESS INSTRUMENTATION
+            # ---------------------------------------------------------------------
+            # Purely OBSERVATIONAL bookkeeping at the live sync point. Records
+            # the authoritative stage timestamps, bumps monotonic sequence ids
+            # ONLY when the substantive input/output actually changed (so the
+            # UI/QA can prove inference progressed without trusting
+            # state_version), and stores change-detection hashes. This does NOT
+            # gate or block trading; gates live in `live_freshness_gate()`.
+            # =====================================================================
+            import hashlib
+
+            now_utc = datetime.now(UTC)
+            # Monotonic tick timestamp: strictly increasing ms of the newest
+            # market tick on the live path.
+            tick_ms = int(tick.timestamp.timestamp() * 1000.0)
+            if tick_ms > self._monotonic_tick_ms:
+                self._monotonic_tick_ms = tick_ms
+                self._last_tick_timestamp = tick.timestamp
+                self._tick_sequence += 1
+                self._market_updates_total += 1
+            # Deterministic raw-market hash (price/spread/regime, NOT timestamp)
+            raw_market = (
+                f"{tick.bid:.5f}|{tick.ask:.5f}|{tick.last:.5f}|"
+                f"{getattr(tick, 'spread', '')}|{regime_state}"
+            )
+            raw_market_hash = hashlib.sha1(raw_market.encode()).hexdigest()[:16]
+            # Feature change detection
+            feat_vals = list(getattr(fv, "to_tensor_input", lambda: [])())
+            feature_hash = hashlib.sha1(
+                ("|".join(f"{v:.6g}" for v in feat_vals)).encode()
+            ).hexdigest()[:16]
+            self.last_feature_update = now_utc
+            self._feature_builds_total += 1
+            if feature_hash != self._last_feature_hash:
+                self._feature_sequence += 1
+                self._last_feature_hash = feature_hash
+            # Model input + output change detection
+            with self._bundle_lock:
+                _b = self._bundle
+            try:
+                if _b is not None:
+                    x_np = np.array(feat_vals, dtype=np.float32).reshape(1, -1)
+                    x_scaled = _b.scaler.transform(x_np)
+                    model_input_hash = hashlib.sha1(x_scaled.tobytes()).hexdigest()[:16]
+                else:
+                    model_input_hash = ""
+            except Exception:
+                model_input_hash = ""
+            probs_list = probs.cpu().numpy().flatten().tolist() if probs is not None else []
+            model_output_hash = hashlib.sha1(
+                ("|".join(f"{v:.8g}" for v in probs_list)).encode()
+            ).hexdigest()[:16]
+            self.last_inference_timestamp = now_utc
+            self.last_successful_inference = now_utc
+            self._inference_runs_total += 1
+            if model_input_hash and model_input_hash != self._last_model_input_hash:
+                self._inference_sequence += 1
+                self._last_model_input_hash = model_input_hash
+            if model_output_hash != self._last_model_output_hash:
+                self._last_model_output_hash = model_output_hash
+            self._last_raw_market_hash = raw_market_hash
+            # Decision stage
+            self.last_decision_timestamp = getattr(proposal, "generated_at", now_utc)
+            self._decision_updates_total += 1
+            self._decision_sequence += 1
+
             # Update synchronization properties for the Web backend
             self._last_tick = tick
             self._last_fv = fv
@@ -2905,27 +3458,7 @@ class LiveEngine:
                 proposal=proposal,
             )
 
-            # TASK-02-70D-INTEGRATION: liquidity snapshot on the bar-close
-            # cadence (pure numpy; no I/O; information-only). The governor
-            # stores the REAL 10 values and derives status from timestamps.
-            if getattr(self, "liquidity_governor", None) is not None and is_new_bar:
-                try:
-                    self.liquidity_governor.compute_from_engine(
-                        bars=completed_bars,
-                        mid_price=float(tick.bid),
-                        atr=float(fv.atr_m1),
-                        decision_at=tick.timestamp,
-                        # BUG-111: the source of THIS computation is the
-                        # live market state — never the governor's stale
-                        # prior _source (which defaulted to UNAVAILABLE and
-                        # corrupted the first live snapshot's provenance).
-                        source=SourceKind.LIVE_MARKET_STATE,
-                    )
-                except Exception as liq_exc:
-                    logger.warning(
-                        "[LIQUIDITY] event=ENGINE_HOOK_FAILED error=%s (isolated; trading unaffected)",
-                        liq_exc,
-                    )
+            # (Liquidity governor is pre-warmed on every tick/new-bar above)
 
             # Extract and update real SMC overlays for the live chart canvas.
             # Recomputed ONLY when the completed-bar series changes (new bar)
@@ -3496,6 +4029,75 @@ class LiveEngine:
                 logger.error("[CANDLE_INTEL] bar feed failed (isolated)", error=str(ci_err))
 
         # ---------------------------------------------------------------------
+        # Build the canonical 50D feature record for THIS bar (always available,
+        # independent of MSLIE). Used by the Market Radar detector below and the
+        # rolling retrain buffer. NOTE: rec must be defined BEFORE the radar block
+        # (BUG-139: prior nesting inside the mslie_engine conditional left `rec`
+        # unbound when mslie_engine was None -> BAR_DETECT_FAILED).
+        x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
+        rec = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
+        rec.update(
+            close=last_bar.close,
+            high=last_bar.high,
+            low=last_bar.low,
+            open=last_bar.open,
+            spread=(tick.ask - tick.bid),
+            atr_m1=fv.atr_m1,
+        )
+        if self._governance_reference_vector is None:
+            self._governance_reference_vector = [float(v) for v in x50]
+
+        # ---------------------------------------------------------------------
+        # Market Radar (Hunter SetupDetector) - live, bar-close cadence (BUG-138).
+        # Runs on the SAME completed-bar feature record as the sample-maker uses,
+        # but here for the LIVE path. Pure + causal; failure-isolated. Stores the
+        # ranked setup list as _last_market_radar for the Intel Hub / Web Panel.
+        try:
+            radar_rec = rec
+            if "feat_0" not in radar_rec:
+                radar_rec = (
+                    self._rolling_feature_records[-1] if self._rolling_feature_records else None
+                )
+            if radar_rec is not None:
+                detected = self.setup_detector.detect(radar_rec, timestamp=last_bar.timestamp)
+                ranked = sorted(detected, key=lambda s: s.quality, reverse=True)
+                best = ranked[0] if ranked else None
+                _regime_val = (
+                    getattr(getattr(self._last_regime_state, "regime_type", None), "value", None)
+                    or "UNKNOWN"
+                )
+                _news_state_val = None
+                try:
+                    if getattr(self, "news_engine", None) is not None:
+                        _nc = self.news_engine.current_context()
+                        if _nc is not None:
+                            _ns = getattr(_nc, "state", None)
+                            _news_state_val = getattr(_ns, "value", None) or str(_ns)
+                except Exception:
+                    _news_state_val = None
+                self._last_market_radar = {
+                    "symbol": tick.symbol,
+                    "timestamp": last_bar.timestamp.isoformat(),
+                    "bar_timestamp": last_bar.timestamp.isoformat(),
+                    "regime": str(_regime_val),
+                    "candidate_count": len(ranked),
+                    "best_setup": best.to_contract() if best else None,
+                    "setups": [s.to_contract() for s in ranked[:5]],
+                    "state": (
+                        "SETUP_READY"
+                        if best and best.quality >= self.setup_detector.min_quality
+                        else ("WATCHING" if ranked else "NO_SETUP")
+                    ),
+                    "news_state": _news_state_val,
+                    "decision_reason": self._last_proposal.reason_code
+                    if getattr(self, "_last_proposal", None)
+                    else None,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+        except Exception as radar_err:
+            logger.warning("[RADAR] event=BAR_DETECT_FAILED error=%s", radar_err)
+
+        # ---------------------------------------------------------------------
         # MSLIE: market perception on the bar-close cadence (pure numpy, no
         # I/O, no DB — INV-001). The engine produces the structured
         # MarketIntelligenceFeatureVectorV1 for the debug UI / AI models.
@@ -3519,20 +4121,6 @@ class LiveEngine:
                     ms_err,
                 )
 
-        x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
-        # TASK-6: capture the canonical reference vector for feature parity
-        # (live vs offline/replay baseline, spec 6).
-        if self._governance_reference_vector is None:
-            self._governance_reference_vector = [float(v) for v in x50]
-        rec = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
-        rec.update(
-            close=last_bar.close,
-            high=last_bar.high,
-            low=last_bar.low,
-            open=last_bar.open,
-            spread=(tick.ask - tick.bid),
-            atr_m1=fv.atr_m1,
-        )
         self._rolling_feature_records.append(rec)
         self._bars_since_last_retrain += 1
 
@@ -3547,6 +4135,328 @@ class LiveEngine:
             except RuntimeError:
                 pass
 
+    def _validate_feature_vector(self, features: Sequence[float], context: str) -> list[float]:
+        """Schema-gated validation dispatching to 50D or 70D gate."""
+        eff = int(self.effective_feature_dim)
+        if eff == 70 and len(features) == 70:
+            from nexus_scalp.features.schema_contract import (
+                feature_schema_hash,
+                validate_70d_vector,
+            )
+
+            return validate_70d_vector(
+                list(features), schema_hash=feature_schema_hash(), context=context
+            )
+        return self.__class__._validate_50d_tensor(features, context=context)
+
+    def _build_live_feature_vector(self, fv) -> tuple[list[float], dict[str, float]]:
+        """Assembles the canonical live tensor (50D or 70D) for this tick.
+
+        50D CHAMPION (scalp_v1/50D): returns the 50D vector; liquidity is
+        never injected. 70D CHAMPION (validated 70D model): assembles
+        0..49 Base + 50..59 News + 60..69 Liquidity (causal, VALID only).
+        STALE/INVALID liquidity raises so the caller can degrade safely.
+        """
+        import time as _time
+
+        _t0 = _time.perf_counter()
+        base50 = fv.to_tensor_input()
+        base50 = self._validate_50d_tensor(base50, context="live_base50")
+        _t_base = _time.perf_counter()
+
+        eff_dim = int(self.effective_feature_dim)
+        if eff_dim != 70:
+            return base50, {
+                "feature_ms": round((_t_base - _t0) * 1e3, 3),
+                "liquidity_ms": 0.0,
+                "news_ms": 0.0,
+                "assembly_ms": 0.0,
+            }
+
+        # News 10D (indices 50..59): same canonical projection as training.
+        news10: list[float]
+        try:
+            from nexus_scalp.features.features70 import news_10d_from_context
+
+            news_ctx = None
+            if (
+                getattr(self, "_news_enabled", False)
+                and getattr(self, "news_engine", None) is not None
+            ):
+                try:
+                    news_ctx = self.news_engine.current_context()
+                    if hasattr(news_ctx, "model_dump"):
+                        news_ctx = news_ctx.model_dump()
+                except Exception:
+                    news_ctx = None
+            if news_ctx is None:
+                news10 = [0.0] * 10
+            else:
+                if not isinstance(news_ctx, dict):
+                    news_ctx = dict(news_ctx) if hasattr(news_ctx, "__dict__") else {}
+                news10 = news_10d_from_context(news_ctx)
+        except Exception:
+            news10 = [0.0] * 10
+        _t_news = _time.perf_counter()
+
+        # Liquidity 10D (indices 60..69): real, causal, causality-checked.
+        liq10: list[float] | None = None
+        gov = getattr(self, "liquidity_governor", None)
+        if gov is not None:
+            snap = getattr(gov, "last_snapshot", None)
+            causal = getattr(gov, "causal_state", lambda: "INVALID")()
+            if snap is not None and causal == "VALID":
+                try:
+                    vec = list(snap.features)
+                    if len(vec) == 10 and all(-3.0 <= float(v) <= 3.0 for v in vec):
+                        liq10 = [float(v) for v in vec]
+                except Exception:
+                    liq10 = None
+        _t_liq = _time.perf_counter()
+
+        if liq10 is None:
+            raise RuntimeError(
+                "70D inference requested but liquidity snapshot is not VALID "
+                "(stale/missing) - refusing to feed fabricated values into the 70D model"
+            )
+
+        try:
+            from nexus_scalp.features.liquidity_runtime import build_70d_vector
+
+            vec70 = build_70d_vector(base50, family_10=news10, liquidity_10=liq10)
+        except Exception as e:
+            raise RuntimeError(f"70D assembly failed: {e}") from e
+        _t_asm = _time.perf_counter()
+        try:
+            from nexus_scalp.features.schema_contract import (
+                feature_schema_hash,
+                validate_70d_vector,
+            )
+
+            validate_70d_vector(vec70, schema_hash=feature_schema_hash(), context="live_70d")
+        except Exception as e:
+            raise RuntimeError(f"70D contract validation failed: {e}") from e
+        return vec70, {
+            "feature_ms": round((_t_base - _t0) * 1e3, 3),
+            "news_ms": round((_t_news - _t_base) * 1e3, 3),
+            "liquidity_ms": round((_t_liq - _t_news) * 1e3, 3),
+            "assembly_ms": round((_t_asm - _t_liq) * 1e3, 3),
+        }
+
+    # ==================================================================
+    # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: LIVE-FRESHNESS TRUTH MODEL
+    # ------------------------------------------------------------------
+    # These methods make "PROCESS ALIVE" != "INTELLIGENCE ALIVE" explicit.
+    # compute_live_freshness() is pure read (no side effects, no trading
+    # impact). live_freshness_gate() is the ONLY place a decision is allowed
+    # to be downgraded to BLOCKED_BY_STALE for safety; it never relaxes or
+    # bypasses any existing risk guard.
+    # ==================================================================
+
+    def _stage_freshness(
+        self, stamp: datetime | None, max_age_sec: float
+    ) -> tuple[str, float | None]:
+        """Return (state, age_ms) for one stage given its last-update stamp."""
+        if stamp is None:
+            return "UNKNOWN", None
+        age = (datetime.now(UTC) - stamp).total_seconds()
+        if age < 0:
+            age = 0.0
+        if age > max_age_sec:
+            return "STALE", round(age * 1000.0, 1)
+        return "FRESH", round(age * 1000.0, 1)
+
+    def compute_live_freshness(self) -> dict[str, Any]:
+        """Authoritative freshness of every pipeline stage (observational).
+
+        Stages: market / features / inference / decision. Each is FRESH,
+        STALE, or UNKNOWN, independent of process uptime, state_version, or
+        HTTP 200. Carries monotonic sequence ids + change-detection hashes
+        so the coordinator proves exactly where state froze.
+        """
+        max_age = float(self._freshness_max_age_sec)
+        mkt_state, mkt_age = self._stage_freshness(self._last_tick_timestamp, max_age)
+        feat_state, feat_age = self._stage_freshness(self.last_feature_update, max_age)
+        inf_state, inf_age = self._stage_freshness(self.last_inference_timestamp, max_age)
+        dec_state, dec_age = self._stage_freshness(self.last_decision_timestamp, max_age)
+        # Overall health is the WORST of market/features/inference/decision.
+        # BUGFIX-G29: the MARKET stage is now included. A dead tick feed
+        # (market=STALE while is_connected() stays True) MUST surface as
+        # overall=STALE so live_freshness_gate() halts execution — process
+        # liveness (warmup READY / inference ENABLED / HTTP 200) is NOT proof
+        # of live market data. A frozen inference chain must also surface even
+        # though the process is up.
+        stage_states = [mkt_state, feat_state, inf_state, dec_state]
+        if "STALE" in stage_states:
+            overall = "STALE"
+            # BUGFIX-G29 (DevOps follow-up #1): the telemetry gauge must count
+            # EVERY live STALE epoch, not only the proposal/gate path. compute_live_freshness()
+            # is the authoritative observational call that runs on every /api/status
+            # poll; incrementing here guarantees stale_state_detected_total is accurate
+            # even when the decision gate is not reached (e.g. ticks freeze before a
+            # proposal is built). The gate still independently bumps on its own STALE hit.
+            self._stale_state_detected_total += 1
+        elif "UNKNOWN" in stage_states:
+            overall = "UNKNOWN"
+        else:
+            overall = "FRESH"
+        return {
+            "market": {"state": mkt_state, "age_ms": mkt_age},
+            "features": {"state": feat_state, "age_ms": feat_age},
+            "inference": {"state": inf_state, "age_ms": inf_age},
+            "decision": {"state": dec_state, "age_ms": dec_age},
+            "overall": overall,
+            "max_age_sec": max_age,
+            "sequences": {
+                "tick": self._tick_sequence,
+                "feature": self._feature_sequence,
+                "inference": self._inference_sequence,
+                "decision": self._decision_sequence,
+            },
+            "monotonic_tick_ms": self._monotonic_tick_ms,
+            "hashes": {
+                "raw_market": self._last_raw_market_hash,
+                "feature": self._last_feature_hash,
+                "model_input": self._last_model_input_hash,
+                "model_output": self._last_model_output_hash,
+            },
+            "telemetry": {
+                "market_updates_total": self._market_updates_total,
+                "feature_builds_total": self._feature_builds_total,
+                "inference_runs_total": self._inference_runs_total,
+                "inference_failures_total": self._inference_failures_total,
+                "decision_updates_total": self._decision_updates_total,
+                "stale_state_detected_total": self._stale_state_detected_total,
+            },
+        }
+
+    def live_freshness_gate(self, proposal: Any) -> tuple[Any, bool]:
+        """Safety gate: downgrade a live proposal when inference is STALE.
+
+        Returns (proposal, blocked). When the inference/feature chain is STALE
+        (frozen) the engine MUST NOT present a live BUY/SELL as if it were
+        current. It converts the action to NO_TRADE with a distinct reason
+        code BLOCKED_BY_STALE so the UI can separate "model predicted X but
+        guard blocked" from "no live intelligence". This NEVER weakens an
+        existing guard and NEVER fabricates confidence - it only blocks on
+        confirmed staleness. The last-known model probability is preserved in
+        the proposal for diagnosis but confidence is reported 0.0 so the UI
+        does not show a stale 22.1% as live.
+        """
+        fresh = self.compute_live_freshness()
+        overall = fresh.get("overall")
+        if overall != "STALE":
+            return proposal, False
+        self._stale_state_detected_total += 1
+        try:
+            return (
+                proposal.model_copy(
+                    update={
+                        "action": ActionType.NO_TRADE,
+                        "confidence": 0.0,
+                        "reason_code": "BLOCKED_BY_STALE",
+                    }
+                ),
+                True,
+            )
+        except Exception:
+            # Defensive: if proposal is not copyable, still block decision.
+            return proposal, True
+
+    def diagnose_freshness(self) -> dict[str, Any]:
+        """No-cache live-freshness diagnostic (observational only).
+
+        Fetches FRESH market state, builds FRESH features, assembles the FRESH
+        70D tensor, runs FRESH inference, and compares hashes at every stage
+        to localize the freeze. Does NOT mutate the live proposal/order path
+        and does NOT bypass any production safety control.
+        """
+        import hashlib
+
+        result: dict[str, Any] = {
+            "frozen_at": None,
+            "stages": {},
+            "error": None,
+        }
+        try:
+            # 1) MARKET: pull a fresh tick straight from the adapter.
+            tick = self.adapter.get_tick(self.config.execution.symbol)
+            if tick is None:
+                result["frozen_at"] = "MARKET"
+                result["error"] = "adapter.get_tick returned None"
+                return result
+            completed_bars = self.aggregator.get_completed_bars()
+            fv = self.feature_engine.compute_from_bars(
+                completed_bars=completed_bars, current_tick=tick
+            )
+            mkt_hash = hashlib.sha1(
+                f"{tick.bid:.5f}|{tick.ask:.5f}|{tick.last:.5f}".encode()
+            ).hexdigest()[:16]
+            feat_vals = list(getattr(fv, "to_tensor_input", lambda: [])())
+            feat_hash = hashlib.sha1(
+                ("|".join(f"{v:.6g}" for v in feat_vals)).encode()
+            ).hexdigest()[:16]
+            changed_market = mkt_hash != self._last_raw_market_hash
+            changed_feat = feat_hash != self._last_feature_hash
+            result["stages"]["MARKET"] = {
+                "changed": changed_market,
+                "hash": mkt_hash,
+            }
+            result["stages"]["FEATURES"] = {
+                "changed": changed_feat,
+                "hash": feat_hash,
+            }
+            if not changed_market:
+                result["frozen_at"] = "MARKET"
+                return result
+            if not changed_feat:
+                result["frozen_at"] = "FEATURES"
+                return result
+            # 2) MODEL INPUT: re-run real assembly + scaler.
+            x_vec, _ = self._build_live_feature_vector(fv)
+            with self._bundle_lock:
+                _b = self._bundle
+            if _b is None:
+                result["frozen_at"] = "MODEL_INPUT"
+                result["error"] = "bundle not initialized"
+                return result
+            x_scaled = _b.scaler.transform(np.array(x_vec, dtype=np.float32).reshape(1, -1))
+            model_input_hash = hashlib.sha1(x_scaled.tobytes()).hexdigest()[:16]
+            result["stages"]["MODEL_INPUT"] = {
+                "changed": model_input_hash != self._last_model_input_hash,
+                "hash": model_input_hash,
+            }
+            # 3) MODEL OUTPUT: fresh inference.
+            probs = self._run_inference_tensor(x_scaled)
+            probs_list = probs.cpu().numpy().flatten().tolist()
+            model_output_hash = hashlib.sha1(
+                ("|".join(f"{v:.8g}" for v in probs_list)).encode()
+            ).hexdigest()[:16]
+            result["stages"]["MODEL_OUTPUT"] = {
+                "changed": model_output_hash != self._last_model_output_hash,
+                "hash": model_output_hash,
+                "probs": probs_list,
+            }
+            # Localize the freeze.
+            for stage in ("MARKET", "FEATURES", "MODEL_INPUT", "MODEL_OUTPUT"):
+                if not result["stages"][stage]["changed"]:
+                    result["frozen_at"] = stage
+                    break
+        except Exception as e:
+            result["error"] = f"{type(e).__name__}: {e}"
+            result["frozen_at"] = result["frozen_at"] or "UNKNOWN"
+        return result
+
+    def _run_inference_tensor(self, x_scaled: Any) -> torch.Tensor:
+        """Helper: run the model on an already-scaled tensor (diagnostic)."""
+        import torch as _torch
+
+        x = _torch.tensor(x_scaled, dtype=_torch.float32)
+        x = _torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+        with self._bundle_lock:
+            model = self._bundle.model
+        return model(x)
+
     def _infer_probabilities(self, fv) -> torch.Tensor:
         import time as _time
 
@@ -3557,16 +4467,43 @@ class LiveEngine:
         _trace.mark(LatencyStage.T0_MARKET_EVENT)
         _trace.mark(LatencyStage.T1_FEATURE_START)
 
-        x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="live_inference")
+        # BUG-125: Canonical live tensor: 50D for the production Champion,
+        # 70D when a validated 70D model is hot-swapped. Assembly does
+        # per-family telemetry bookkeeping and validates the liquidity snapshot.
+        try:
+            x_vec, asm_timings = self._build_live_feature_vector(fv)
+            self._last_live_tensor_dim = len(x_vec)
+            self._last_live_tensor_schema = self.effective_feature_schema_id
+            self._last_70d_assembly_timings = asm_timings
+        except RuntimeError as asm_err:
+            if int(self.effective_feature_dim) == 70:
+                logger.warning(
+                    "[INFERENCE] 70D assembly failed - inference blocked for this tick",
+                    error=str(asm_err),
+                )
+                self._last_70d_assembly_timings = {}
+                self._last_live_tensor_dim = 70
+                self._last_live_tensor_schema = self.effective_feature_schema_id
+                raise
+            # Non-70D defensive fallback
+            logger.warning(
+                "[INFERENCE] feature assembly failed - falling back to 50D", error=str(asm_err)
+            )
+            x_vec = self._validate_50d_tensor(
+                fv.to_tensor_input(), context="live_inference_fallback_50d"
+            )
+            self._last_70d_assembly_timings = {}
+            self._last_live_tensor_dim = len(x_vec)
+            self._last_live_tensor_schema = "scalp_v1"
         _trace.mark(LatencyStage.T2_FEATURE_DONE)
-        x_np = np.array(x50, dtype=np.float32).reshape(1, -1)
+        x_np = np.array(x_vec, dtype=np.float32).reshape(1, -1)
 
         with self._bundle_lock:
             bundle = self._bundle
         if bundle is None:
             raise RuntimeError("Model bundle not initialized")
 
-        x_np = bundle.scaler.transform_50d(x_np)
+        x_np = bundle.scaler.transform(x_np)
         _trace.mark(LatencyStage.T3_SCALER_DONE)
         x = torch.tensor(x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
@@ -3946,7 +4883,7 @@ class LiveEngine:
         sample_x_np = (
             df_labeled.select(feature_cols).tail(20).to_numpy().astype(np.float32, copy=False)
         )
-        sample_x_np = bundle.scaler.transform_50d(sample_x_np)
+        sample_x_np = bundle.scaler.transform(sample_x_np)
         x = torch.tensor(sample_x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -3957,7 +4894,7 @@ class LiveEngine:
         # Test 2/3: calibrated class distribution
         test_df = df_labeled.tail(100)
         test_x_np = test_df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
-        test_x_np = bundle.scaler.transform_50d(test_x_np)
+        test_x_np = bundle.scaler.transform(test_x_np)
         tx = torch.tensor(test_x_np, dtype=torch.float32)
         tx = torch.nan_to_num(tx, nan=0.0, posinf=1.0, neginf=-1.0)
 
@@ -4015,7 +4952,7 @@ class LiveEngine:
         try:
             test_df = df_labeled.tail(100)
             test_x_np = test_df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
-            test_x_np = bundle.scaler.transform_50d(test_x_np)
+            test_x_np = bundle.scaler.transform(test_x_np)
             tx = torch.tensor(test_x_np, dtype=torch.float32)
             tx = torch.nan_to_num(tx, nan=0.0, posinf=1.0, neginf=-1.0)
             with torch.inference_mode():

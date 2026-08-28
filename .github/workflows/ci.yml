@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: [main, develop, ci-tests]
+    tags-ignore: ["v*"]
   pull_request:
     branches: [main, develop]
+  schedule:
+    # Weekly meta-scan: catch CI-wiring drift / dependency-world changes that
+    # don't touch code (e.g. a workflow edited by hand, an action SHA bump, a
+    # base-image/linter version shift). Maps to scheduled drift detection.
+    - cron: "13 5 * * 1"   # Every Monday 05:13 UTC
   workflow_dispatch:
     inputs:
       full:
@@ -21,6 +27,7 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.11"
+
   # Canonical per-run results directory. Every check writes ONLY into its own
   # subdirectory; the tree is wiped and recreated at the start of every run so
   # no result from a previous run can leak into this one.
@@ -34,6 +41,42 @@ env:
   USER_ID: ${{ secrets.USER_ID }}
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # CI self-integrity — runs BEFORE every other job. This is the meta-test of
+  # CI itself (task - 2/3/32/33): it statically analyzes every workflow in
+  # .github/workflows and fails the run if any of these invariants break:
+  #   * a step references needs.<job>.outputs.<name> that is never declared
+  #   * a job uses a local composite action without a prior actions/checkout
+  #   * a matrix leg would upload a colliding artifact name
+  #   * a required gate has an empty / always-false if (silent skip)
+  #   * a missing YAML parse / undefined job reference
+  # It also runs the canonical change classifier (classify_changes.py) so the
+  # SAME lane formula every job later branches on is exercised here.
+  # ---------------------------------------------------------------------------
+  ci-integrity:
+    name: CI Integrity and Change Classification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install workflow analyzer deps
+        run: python -m pip install --upgrade pip pyyaml
+
+      - name: Workflow static integrity scan
+        run: |
+          python scripts/ci/check_workflows.py --format text --strict
+
+      - name: Classify changes (sanity check of the canonical classifier)
+        run: |
+          python scripts/ci/classify_changes.py --files "src/nexus_scalp/risk/risk_engine.py Web/app.js Dockerfile .github/workflows/ci.yml"
+
   # ---------------------------------------------------------------------------
   # Fast, essential checks — run on every push/PR to main|develop.
   # Every validation step follows the same pattern:
@@ -128,7 +171,8 @@ jobs:
           # The huge historical suite was aggressively reduced (2335 -> ~1400
           # tests) and is no longer the default CI gate (see heavy-ci for the
           # surviving extended suites on ci-tests / manual dispatch).
-          readarray -t CRIT_FILES < tests/critical_suite.txt
+          CRIT_FILES=()
+          while IFS= read -r line || [[ -n "$line" ]]; do line="${line%%#*}"; line="$(echo "$line" | xargs)"; [[ -n "$line" ]] && CRIT_FILES+=("$line"); done < tests/critical_suite.txt
                     # Parallelized with pytest-xdist: serial gate measured about 15
                     # minutes locally (torch import plus heavy model suites) and sat
                     # close to the 20 minute job timeout.  The -n auto flag cut the
@@ -285,7 +329,48 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
 
-      # -------- Final gate: fail the job if any check failed (real exit codes) --------
+      # -------- Machine-readable review status (one predictable schema) -------
+      # Emitted as each job completes so aggregators / PR comments can merge
+      # structured status without reassembling mutable JSON in a single env
+      # var at workflow startup (task - 22/24). Schema is canonical across jobs.
+      - name: Emit review-status.json
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, time
+          root = os.environ["CI_RESULTS_DIR"]
+          info_dir = os.path.join(root, "run-info")
+          def load(name):
+              try:
+                  with open(os.path.join(info_dir, name), encoding="utf-8") as fh:
+                      return json.load(fh)
+              except Exception:
+                  return {}
+          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "coverage"]
+          details = []
+          status = "passed"
+          for c in checks:
+              d = load(c + ".json")
+              s = d.get("status", "skipped")
+              if s in ("failed", "errored"):
+                  status = "failed"
+              details.append({"check": c, "status": s, "detail": d.get("detail", "")})
+          payload = {
+              "job": "quality",
+              "status": status,
+              "workflow": os.environ.get("GITHUB_WORKFLOW", "CI"),
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "sha": os.environ.get("GITHUB_SHA", ""),
+              "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "details": details,
+          }
+          os.makedirs(info_dir, exist_ok=True)
+          with open(os.path.join(info_dir, "review-status.json"), "w", encoding="utf-8") as fh:
+              json.dump(payload, fh, indent=2)
+          print("review-status.json ->", status)
+          PY
+
+      # -------- Final gate: fail the job if any check failed (real exit codes) -------
       - name: Fail job if any check failed
         if: always()
         run: |
@@ -402,6 +487,10 @@ jobs:
                     tests/unit/test_research_registry_null_score_bug075.py \
                     tests/unit/test_research_task4_dataset.py \
                     tests/unit/test_research_task4_validation.py \
+                    tests/unit/test_nse_lifecycle_regression_matrix.py \
+                    tests/unit/test_lifecycle_verdict_mapping.py \
+                    tests/unit/test_lifecycle_e2e_v3.py \
+                    tests/unit/test_hardening_p1_p2.py \
                     tests/unit/test_model_benchmark_phase13b.py \
                     tests/unit/test_model_generation_phase13.py \
                     tests/integration/test_research_api.py \

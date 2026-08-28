@@ -852,46 +852,62 @@ class LiquidityGovernor:
         model_id: str | None = None
         model_order_hash: str | None = None
         if engine is not None:
-            registry = getattr(engine, "model_registry", None)
-            try:
-                prov = registry.current if registry is not None else None
-            except Exception:
-                prov = None
-            if prov is not None:
-                model_schema = getattr(prov, "feature_schema_id", None) or model_schema
-                model_dim = getattr(prov, "feature_dimension", None) or model_dim
-                model_version = getattr(prov, "model_version", None) or model_version
-                model_id = getattr(prov, "model_id", None) or model_id
-            manager = getattr(engine, "champion_manager", None)
-            if manager is not None:
-                champ = None
-                try:
-                    champ = manager.champion_or_none()
-                except Exception:
-                    champ = None
-                if champ is not None and getattr(champ, "available", False):
-                    info = getattr(champ, "info", None)
-                    model_schema = getattr(champ, "feature_schema_id", None) or model_schema
-                    model_dim = getattr(champ, "feature_dimension", None) or model_dim
-                    model_hash = getattr(champ, "artifact_hash", None) or model_hash
-                    model_version = getattr(champ, "model_version", None) or model_version
-                    model_id = getattr(champ, "model_id", None) or model_id
-                    if info is not None:
-                        model_input_dim = getattr(info, "actual_input_dimension", None)
-            if model_schema is None:
-                model_schema = getattr(engine, "FEATURE_SCHEMA_ID", None)
-            if model_dim is None:
-                model_dim = getattr(engine, "FEATURE_DIM", None)
             bundle = getattr(engine, "_bundle", None)
             if bundle is not None:
+                try:
+                    dim_fn = getattr(engine, "effective_feature_dim", None)
+                    model_dim = (
+                        dim_fn()
+                        if callable(dim_fn)
+                        else getattr(engine, "effective_feature_dim", None)
+                    )
+                    schema_fn = getattr(engine, "effective_feature_schema_id", None)
+                    model_schema = (
+                        schema_fn()
+                        if callable(schema_fn)
+                        else getattr(engine, "effective_feature_schema_id", None)
+                    )
+                except Exception:
+                    pass
                 art = getattr(bundle, "artifact_path", None)
-                if art is not None and model_hash is None:
+                if art is not None:
                     try:
                         from nexus_scalp.experience.provenance import fingerprint_artifact
 
                         model_hash = fingerprint_artifact(art) or None
                     except Exception:
                         model_hash = None
+            if model_schema is None or model_dim is None:
+                registry = getattr(engine, "model_registry", None)
+                try:
+                    prov = registry.current if registry is not None else None
+                except Exception:
+                    prov = None
+                if prov is not None:
+                    model_schema = getattr(prov, "feature_schema_id", None) or model_schema
+                    model_dim = getattr(prov, "feature_dimension", None) or model_dim
+                    model_version = getattr(prov, "model_version", None) or model_version
+                    model_id = getattr(prov, "model_id", None) or model_id
+                manager = getattr(engine, "champion_manager", None)
+                if manager is not None:
+                    champ = None
+                    try:
+                        champ = manager.champion_or_none()
+                    except Exception:
+                        champ = None
+                    if champ is not None and getattr(champ, "available", False):
+                        info = getattr(champ, "info", None)
+                        model_schema = getattr(champ, "feature_schema_id", None) or model_schema
+                        model_dim = getattr(champ, "feature_dimension", None) or model_dim
+                        model_hash = getattr(champ, "artifact_hash", None) or model_hash
+                        model_version = getattr(champ, "model_version", None) or model_version
+                        model_id = getattr(champ, "model_id", None) or model_id
+                        if info is not None:
+                            model_input_dim = getattr(info, "actual_input_dimension", None)
+            if model_schema is None:
+                model_schema = getattr(engine, "FEATURE_SCHEMA_ID", None)
+            if model_dim is None:
+                model_dim = getattr(engine, "FEATURE_DIM", None)
         return {
             "model_schema_id": model_schema,
             "model_dimension": model_dim,

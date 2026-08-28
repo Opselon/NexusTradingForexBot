@@ -37,6 +37,7 @@ from nexus_scalp.research.models import (
     CandidateLifecycle,
     ResearchDataset,
     ResearchRun,
+    WalkForwardResult,
 )
 from nexus_scalp.research.oos import OOSGate
 from nexus_scalp.research.registry import StrategyRegistry
@@ -69,6 +70,37 @@ def _select_family(dataset: ResearchDataset, candidate: StrategyCandidate) -> Re
         source_range=dataset.source_range,
         schema_ids=dataset.schema_ids,
     )
+
+
+def _extract_context_contract(candidate) -> dict | None:
+    """PHASE 26: derive the evaluation context contract from a candidate DSL.
+
+    Reads candidate.context_definition (the persisted DSL context block).
+    Returns None when no explicit session/regime/volatility claim exists,
+    so generic candidates keep the legacy global evaluation path.
+    """
+    try:
+        from nexus_scalp.research.context_contract import (
+            ContextContractError,
+            extract_context_contract,
+            has_active_contract,
+        )
+
+        ctx = getattr(candidate, "context_definition", None) or {}
+        hyp = (ctx.get("hypothesis") if isinstance(ctx, dict) else None) or {}
+        contract = extract_context_contract(ctx if isinstance(ctx, dict) else {}, hyp)
+        if not has_active_contract(contract):
+            return None
+        return contract
+    except ContextContractError:
+        raise
+    except Exception as exc:
+        # PHASE 27 fail-loud: extraction errors must NEVER silently degrade a
+        # declared-context strategy to global evaluation.
+        sid = getattr(candidate, "strategy_id", "?")
+        raise ContextContractError(
+            f"CONTEXT_CONTRACT_MISMATCH: contract extraction failed for {sid}: {exc}"
+        ) from exc
 
 
 class ResearchPipeline:
@@ -170,6 +202,43 @@ class ResearchPipeline:
                 strategy_id=sid,
                 family_samples=len(family_ds.samples),
                 dataset_samples=len(dataset.samples),
+            )
+
+        # PHASE 27 CONSISTENCY: derive ONE canonical context contract up front
+        # and scope EVERY gate (backtest, WF, OOS) to the SAME population.
+        # contract_hash is stamped into each gate result so the registry
+        # evidence proves all stages consumed the identical semantic filter.
+        from nexus_scalp.research.context_contract import (
+            ContextContractError,
+            filter_samples_by_contract,
+        )
+        from nexus_scalp.research.context_contract import (
+            contract_hash as _contract_hash,
+        )
+
+        _ctx_for_validation = _extract_context_contract(candidate)
+        _ctx_hash = _contract_hash(_ctx_for_validation) if _ctx_for_validation else None
+        _ctx_ds_for_gates = None
+        if _ctx_for_validation:
+            _filtered, _ctx_diag = filter_samples_by_contract(
+                list(family_ds.samples), _ctx_for_validation
+            )
+            if _filtered:
+                _ctx_ds_for_gates = family_ds.model_copy(update={"samples": _filtered})
+            else:
+                # PHASE 27 F1 (fail-loud): a declared-context strategy whose
+                # family contains ZERO matching samples must ABSTAIN — never
+                # silently validate on the global population.
+                raise ContextContractError(
+                    f"CONTEXT_CONTRACT_EMPTY_POPULATION: {sid} "
+                    f"hash={_ctx_hash} matched=0/{len(family_ds.samples)}"
+                )
+            logger.info(
+                "[CONTEXT_CONTRACT] event=GATES_SCOPED strategy_id=%s hash=%s population=%d/%d",
+                sid,
+                _ctx_hash,
+                len(_filtered),
+                len(family_ds.samples),
             )
 
         # One unique run per validation attempt (never overwrite prior runs).
@@ -291,12 +360,14 @@ class ResearchPipeline:
             gate = obs.start_gate(gate.gate_id)
             obs.record_event(sid, run_id, "GATE_STARTED", "backtest started", gate_id=gate.gate_id)
         bt = self.backtest.run(
-            family_ds,
+            _ctx_ds_for_gates if _ctx_ds_for_gates is not None else family_ds,
             strategy_id=sid,
             strategy_version=version,
             use_split=True,
         )
         bt_data = bt.model_dump(mode="json")
+        bt_data["context_contract_hash"] = _ctx_hash
+        bt_data["contract_consistent"] = True
         if bt.total_trades == 0:
             logger.warning("[STRATEGY_VALIDATION] event=ABORTED empty dataset", strategy_id=sid)
             if obs is not None:
@@ -392,15 +463,43 @@ class ResearchPipeline:
             obs.record_event(
                 sid, run_id, "GATE_STARTED", "walk-forward started", gate_id=gate.gate_id
             )
-        wf = self.walkforward.validate(
-            family_ds,
-            strategy_id=sid,
-            strategy_version=version,
-            n_splits=n_folds,
-            purge_seconds=purge_seconds,
-            embargo_seconds=embargo_seconds,
+        # PHASE 27: WF consumes the SAME canonical contract-scoped dataset as
+        # the backtest gate (single extraction upstream). Thresholds unchanged.
+        # PHASE 29 ADAPTIVE FOLDS: request only what the family population can
+        # actually support (splitting.walk_forward_folds needs n >= (splits+2)*3,
+        # so a 60-sample family supports 2 folds, not the configured 3). When even
+        # one fold is impossible we skip WF with an explicit insufficient_reason
+        # instead of passing zeros through. No gate threshold changes: this only
+        # prevents structurally-impossible fold requests.
+        _wf_ds = _ctx_ds_for_gates if _ctx_ds_for_gates is not None else family_ds
+        max_folds = min(
+            n_folds,
+            max(1, (len(_wf_ds.samples) // 15) - 2),
         )
+        if max_folds < 1:
+            wf = WalkForwardResult(
+                strategy_id=sid,
+                strategy_version=version,
+                dataset_id=family_ds.dataset_id,
+                folds=[],
+                passed=False,
+                insufficient_reason=(
+                    f"FAMILY_TOO_SMALL_FOR_FOLDS: {len(_wf_ds.samples)} samples "
+                    "cannot form any walk-forward fold"
+                ),
+            )
+        else:
+            wf = self.walkforward.validate(
+                _wf_ds,
+                strategy_id=sid,
+                strategy_version=version,
+                n_splits=max_folds,
+                purge_seconds=purge_seconds,
+                embargo_seconds=embargo_seconds,
+            )
         wf_data = wf.model_dump(mode="json")
+        wf_data["context_contract_hash"] = _ctx_hash
+        wf_data["contract_consistent"] = True
         if obs is not None:
             wf_status = GateStatus.PASSED if wf.passed else GateStatus.FAILED
             wf_reason = ""
@@ -445,14 +544,18 @@ class ResearchPipeline:
             obs.record_event(sid, run_id, "GATE_QUEUED", "OOS queued", gate_id=gate.gate_id)
             gate = obs.start_gate(gate.gate_id)
             obs.record_event(sid, run_id, "GATE_STARTED", "OOS started", gate_id=gate.gate_id)
+        # PHASE 27: OOS consumes the SAME contract-scoped dataset (single
+        # extraction upstream; hash stamped for registry evidence).
         oos = self.oos_gate.evaluate(
-            family_ds,
+            _ctx_ds_for_gates if _ctx_ds_for_gates is not None else family_ds,
             strategy_id=sid,
             strategy_version=version,
             purge_seconds=purge_seconds,
             embargo_seconds=embargo_seconds,
         )
         oos_data = oos.model_dump(mode="json")
+        oos_data["context_contract_hash"] = _ctx_hash
+        oos_data["contract_consistent"] = True
         if obs is not None:
             oos_status = GateStatus.PASSED if oos.status == "PASS" else GateStatus.FAILED
             gate = obs.finish_gate(
@@ -541,12 +644,31 @@ class ResearchPipeline:
             family_ds, backtest=bt, walkforward=wf, oos=oos, robustness=rob
         )
         score_data = score.model_dump(mode="json")
+
+        # Lifecycle verdict mapping (lifecycle-repair 2026-08-23): the previous
+        # else-branch collapsed any non-terminal verdict back to DISCOVERED,
+        # which re-queued the candidate for validation every cycle and left
+        # Validated=0 forever. Every non-passing verdict is now an explicit
+        # REJECTED with a recorded reason — DISCOVERED is never re-entered
+        # after gates have run, and no threshold is weakened.
         if score.verdict == "VALIDATED":
             final_lifecycle = CandidateLifecycle.VALIDATED
         elif score.verdict == "REJECTED":
             final_lifecycle = CandidateLifecycle.REJECTED
+        elif score.verdict == "INCONCLUSIVE":
+            final_lifecycle = CandidateLifecycle.REJECTED
+            logger.warning(
+                "[STRATEGY_VALIDATION] event=VERDICT_INCONCLUSIVE_REJECTED",
+                strategy_id=sid,
+                score=score.final_score,
+            )
         else:
-            final_lifecycle = CandidateLifecycle.DISCOVERED
+            final_lifecycle = CandidateLifecycle.REJECTED
+            logger.warning(
+                "[STRATEGY_VALIDATION] event=UNKNOWN_VERDICT_REJECTED",
+                strategy_id=sid,
+                verdict=score.verdict,
+            )
         if obs is not None:
             gate = obs.create_gate(
                 sid,

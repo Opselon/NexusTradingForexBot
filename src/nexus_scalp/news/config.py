@@ -69,6 +69,7 @@ class NewsConfig(BaseModel):
     """Complete News subsystem configuration."""
 
     enabled: bool = True
+    auto_analysis_enabled: bool = False  # local deterministic analysis; no API key needed
     db_path: str = "artifacts/news.db"
     max_articles_per_fetch: int = Field(default=200, ge=1, le=2000)
     max_queue_size: int = Field(default=1000, ge=10, le=10000)

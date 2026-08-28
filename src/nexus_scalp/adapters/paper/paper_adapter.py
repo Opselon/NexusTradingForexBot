@@ -77,6 +77,17 @@ class PaperMT5Adapter(IMT5Port):
         upper = (symbol or "").upper()
         return any(upper.startswith(prefix) for prefix in _METAL_PREFIXES)
 
+    def _ensure_symbol(self, symbol: str) -> None:
+        """BUGFIX-G29: confirm `symbol` is tracked by the simulated feed.
+
+        The paper feed emits ticks for any symbol on demand, so this is a
+        lightweight guard that keeps `resubscribe_symbol` uniform across
+        adapters and surfaces an explicit error for an unconfigured symbol
+        instead of silently producing nothing.
+        """
+        if not symbol:
+            raise ValueError("resubscribe_symbol requires a non-empty symbol")
+
     def _quote_digits(self, symbol: str) -> int:
         return 2 if self._symbol_is_metal(symbol) else 5
 
@@ -299,6 +310,24 @@ class PaperMT5Adapter(IMT5Port):
         to_utc: Any = None,
     ) -> list[TickHistorySnapshot]:
         return []
+
+    def resubscribe_symbol(self, symbol: str) -> None:
+        """BUGFIX-G29: re-arm the live tick feed for `symbol`.
+
+        Paper simulation keeps emitting ticks via ``get_last_tick``; this is a
+        no-op that confirms the symbol is still in the simulated feed so the
+        engine watchdog can call it uniformly across adapters (the real MT5
+        adapter re-issues ``subscribe_symbols`` / CopyTicks under the hood).
+        """
+        self._ensure_symbol(symbol)
+
+    def get_tick(self, symbol: str) -> TickData:
+        """BUGFIX-G29: return one fresh tick for `symbol` (live feed probe).
+
+        The watchdog uses this after a stall to prove the feed is alive again.
+        Delegates to the same generator ``get_last_tick`` uses.
+        """
+        return self.get_last_tick(symbol)
 
     # ------------------------------------------------------------------
     # Account & instrument metadata

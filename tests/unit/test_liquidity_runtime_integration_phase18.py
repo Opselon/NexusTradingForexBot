@@ -47,7 +47,6 @@ import pytest
 
 from nexus_scalp.features.liquidity_engine import (
     BASE_50D,
-    LIQUIDITY_DIM,
     LIQUIDITY_FEATURE_NAMES,
     compute_liquidity_features,
 )
@@ -59,7 +58,6 @@ from nexus_scalp.features.liquidity_runtime import (
     LiquiditySnapshot,
     ModelCompatibility,
     build_70d_vector,
-    build_model_compatibility_contract,
     model_schema_family,
     resolve_model_compatibility,
 )
@@ -1139,3 +1137,66 @@ def test_liq_bug123_16_real_liquidity_values_fill_60_69() -> None:
         assert meta["index"] == 60 + list(LIQUIDITY_FEATURE_NAMES).index(name)
         assert meta["validity"] == "finite"
         assert math.isfinite(meta["value"])
+
+
+def test_liq_false_block_01_bundle_70d_overrides_stale_registry() -> None:
+    """REGRESSION (2026-08-24 false-BLOCK): after a 70D hot-swap, the serving
+    bundle is the authoritative model contract. Even if model_registry /
+    champion_manager still expose the legacy 50D champion provenance, the
+    governor MUST read engine._bundle (effective_feature_dim=70) and report
+    PASS - never a stale MODEL_INPUT_DIMENSION_MISMATCH."""
+
+    class _Bundle70:
+        artifact_path = "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
+
+    class _StaleRegEngine:
+        # Stale registry/champion still claim scalp_v1/50D post-swap:
+        model_registry = None
+        champion_manager = None
+
+        _bundle = _Bundle70()
+
+        @property
+        def effective_feature_dim(self) -> int:
+            return 70
+
+        @property
+        def effective_feature_schema_id(self) -> str:
+            return "scalp_v3"
+
+    gov = LiquidityGovernor(enabled=True)
+    gov.bind_engine(_StaleRegEngine())
+    mc = gov.model_compatibility()
+    assert mc["result"] == ModelCompatibility.PASS.value, mc
+    assert mc["model_dimension"] == 70, mc
+    assert mc["model_schema_id"] == "scalp_v3", mc
+    assert mc["reason"] == "SCHEMA_DIMENSION_MATCH", mc
+
+
+def test_liq_false_block_02_real_50d_bundle_still_blocked() -> None:
+    """Negative control: a genuinely 50D serving bundle must STILL block
+    (validation is not bypassed). The authoritative contract is the bundle."""
+
+    class _Bundle50:
+        artifact_path = "artifacts/models/scalp/XAUUSD/50d_main/model.pt"
+
+    class _Real50Engine:
+        model_registry = None
+        champion_manager = None
+
+        _bundle = _Bundle50()
+
+        @property
+        def effective_feature_dim(self) -> int:
+            return 50
+
+        @property
+        def effective_feature_schema_id(self) -> str:
+            return "scalp_v1"
+
+    gov = LiquidityGovernor(enabled=True)
+    gov.bind_engine(_Real50Engine())
+    mc = gov.model_compatibility()
+    assert mc["result"] == ModelCompatibility.BLOCK.value, mc
+    assert mc["reason"] == "MODEL_INPUT_DIMENSION_MISMATCH", mc
+    assert mc["model_dimension"] == 50, mc

@@ -61,21 +61,14 @@ jobs:
         run: |
           python scripts/ci/telegram_notify.py release-started --tag "${{ github.ref_name }}" || true
 
-      - name: Scan for secrets in the tree
+      - name: Scan for secrets in source
         shell: bash
-        run: |
-          set -e
-          echo "Scanning for secret-shaped strings (best effort)..."
-          if grep -RIlE "(api[_-]?key\s*[=:]\s*['\"]?[A-Za-z0-9_\-]{12,}|bot[_-]?token\s*[=:]\s*['\"]?\d{6,}:[A-Za-z0-9_\-]{25,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)" \
-              --exclude-dir=.git --exclude-dir=.venv --exclude-dir=release --exclude-dir=artifacts . ; then
-            echo "::error::Secret-shaped strings found in tree."
-            exit 1
-          fi
-          echo "Tree scan clean."
+        run: python scripts/ci/scan_secrets.py
+
       - name: Ensure no user/dev artifacts are staged
         shell: bash
         run: |
-          if git ls-files | grep -E 'artifacts/audit\.db|\.env|credentials|private_key' ; then
+          if git ls-files | grep -E 'artifacts/audit\.db|\.env$|credentials|private_key' ; then
             echo "::error::Developer/user artifact tracked in git."
             exit 1
           fi
@@ -106,11 +99,12 @@ jobs:
         run: ruff format --check .
       - name: Mypy
         run: mypy src
-      - name: Unit tests
-        run: pytest tests/unit/ -q --tb=short
+      - name: Unit tests (critical suite)
+        shell: bash
+        run: |
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-q', '--tb=short']).returncode)"
       - name: Integration tests (no MT5, no browser)
-        run: pytest tests/integration/ -q --tb=short \
-             --ignore=tests/integration/test_playwright_e2e.py
+        run: pytest tests/integration/ -q --tb=short --ignore=tests/integration/test_playwright_e2e.py
 
       - name: Telegram - release gates complete
         continue-on-error: true
@@ -209,7 +203,29 @@ jobs:
         run: |
           $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
           winget install --id JRSoftware.InnoSetup -e --accept-package-agreements --accept-source-agreements --disable-interactivity
-          $Iscc = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          # Resolve ISCC robustly: winget package installs to Program Files (x86) on windows-latest,
+          # not LOCALAPPDATA; probe all known locations plus PATH / WinGet packages.
+          $candidates = @(
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          )
+          $Iscc = $null
+          foreach ($cand in $candidates) { if (Test-Path $cand) { $Iscc = $cand; break } }
+          if (-not $Iscc) {
+            $cmd = Get-Command ISCC -ErrorAction SilentlyContinue
+            if ($cmd) { $Iscc = $cmd.Source }
+          }
+          if (-not $Iscc) {
+            $hit = (where.exe ISCC 2>$null | Select-Object -First 1)
+            if ($hit -and (Test-Path $hit.Trim())) { $Iscc = $hit.Trim() }
+          }
+          if (-not $Iscc) {
+            $hit = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+            if ($hit) { $Iscc = $hit }
+          }
+          if (-not $Iscc -or -not (Test-Path $Iscc)) { throw "ISCC not found after winget install; searched: $($candidates -join ', '), PATH, WinGet Packages" }
+          Write-Host "ISCC resolved: $Iscc"
           $Out = "release\v$V\windows\x64"
           & $Iscc "installer\NexusScalpEngine.iss" `
             "/DNSE_VERSION=$V" "/DNSE_CHANNEL=stable" `

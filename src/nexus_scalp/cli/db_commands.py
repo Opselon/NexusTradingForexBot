@@ -439,6 +439,77 @@ def make_db_app(
         if failed:
             raise typer.Exit(1)
 
+    @app.command("doctor")
+    def db_doctor(
+        database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """READ-ONLY database health diagnostics (never writes).
+
+        Aggregates per-domain schema version, migration state, integrity,
+        tamper detection and drift into a READY/DEGRADED/BLOCKED verdict.
+        For repair use `nse db repair` (explicit action).
+        """
+        import sqlite3
+
+        from nexus_scalp.release.paths import get_runtime_workspace
+
+        ws = workspace or get_runtime_workspace()
+        engines = _engine(database, workspace, app_version=app_version, git_commit=git_commit)
+        payload: dict[str, Any] = {}
+        overall = "READY"
+        for name, eng in engines.items():
+            st = eng.status()
+            verdict = st.get("migration_state") or "READY"
+            if verdict in (
+                "DB_READY",
+                "READY",
+                "DB_MIGRATION_NOT_REQUIRED",
+                "DB_MIGRATION_SUCCEEDED",
+                "DB_UP_TO_DATE",
+            ):
+                verdict_txt = "READY"
+            elif verdict in ("DB_BLOCKED", "BLOCKED", "DB_DOWNGRADE_BLOCKED"):
+                verdict_txt = "BLOCKED"
+            else:
+                verdict_txt = "DEGRADED"
+            entry: dict[str, Any] = {
+                "database": name,
+                "verdict": verdict_txt,
+                "current_version": st.get("current_version"),
+                "expected_version": st.get("expected_version"),
+                "pending_count": st.get("pending_count"),
+                "migration_state": st.get("migration_state"),
+                "tamper_detected": st.get("tamper_detected", False),
+                "drift": st.get("drift", []),
+            }
+            db_file = ws / "artifacts" / f"{name}.db"
+            if not db_file.exists():
+                db_file = ws / "artifacts" / "audit.db"
+            try:
+                con = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=2)
+                try:
+                    integ = con.execute("PRAGMA integrity_check").fetchone()
+                    entry["integrity"] = integ[0] if integ else "unknown"
+                    dv = con.execute("PRAGMA data_version").fetchone()
+                    entry["data_version"] = dv[0] if dv else None
+                finally:
+                    con.close()
+            except sqlite3.Error as e:
+                entry["integrity"] = f"error: {e}"
+                if verdict_txt == "READY":
+                    verdict_txt = "DEGRADED"
+                    entry["verdict"] = verdict_txt
+            payload[name] = entry
+            if verdict_txt == "BLOCKED":
+                overall = "BLOCKED"
+            elif verdict_txt == "DEGRADED" and overall != "BLOCKED":
+                overall = "DEGRADED"
+        payload["_overall"] = overall
+        _emit(payload, json_mode, plain_title="DATABASE DOCTOR")
+        if overall == "BLOCKED":
+            raise typer.Exit(1)
+
     @app.command("create-migration")
     def db_create_migration(
         database: str = typer.Option(..., "--database", "-d", help="audit|news|candle_intel"),
@@ -466,8 +537,7 @@ def _migration_template(domain: str, name: str) -> str:
         f"import sqlite3\n\n\n"
         f"def apply(conn: sqlite3.Connection, db_path: Path) -> None:\n"
         f'    """Apply the schema change (idempotent)."""\n'
-        f"    # TODO: implement\n"
-        f"    pass\n\n\n"
+        f"    raise NotImplementedError\n\n\n"
         f"def verify(conn: sqlite3.Connection, db_path: Path) -> bool:\n"
         f'    """Return True when the change is present."""\n'
         f"    return True\n\n\n"

@@ -56,6 +56,7 @@ class NewsWorker:
         self.last_error: str = ""
         self._last_run_ts: float = 0.0
         self._cancel_requested: bool = False
+        self.auto_analysis_enabled: bool = False
 
         # bounded, deduplicated, priority job queue (article_id, priority)
         self._jobs: queue.PriorityQueue[tuple[float, str, float]] = queue.PriorityQueue(
@@ -177,30 +178,49 @@ class NewsWorker:
             # 1. ingestion pass (bounded sources)
             ingest_stats = self.engine.ingest_cycle(max_sources=8)
 
-            # 2. analysis: queue recent unanalyzed articles (priority-aware),
-            #    then drain a bounded number this cycle.
-            self._queue_recent_unanalyzed()
+            # 2. analysis — PRO AUTO when ON: drain ALL pending via Factory LLM
+            #    (pro prompt + local fallback + junk purge) so variables are
+            #    accurate and the DB stays clear. OFF = ingest-only, cheap.
             analyzed = 0
-            for _ in range(ANALYZE_PER_CYCLE):
-                article_id = self._drain_next(time.time())
-                if article_id is None:
-                    break
-                retries = self._retries.get(article_id, 0)
-                if retries >= 3:
-                    self._retries.pop(article_id, None)
-                    logger.error(
-                        "[NEWS_WORKER] event=FAILED article_id=%s retries_exhausted", article_id
+            _pro_summary: dict[str, Any] | None = None
+            if getattr(self, "auto_analysis_enabled", False):
+                try:
+                    from nexus_scalp.news.pro_auto import run_pro_cycle as _run_pro_cycle
+
+                    _svc = getattr(
+                        getattr(self.engine, "live_engine", None), "settings_service", None
                     )
-                    continue
-                result = self.engine.analyze_article_id(article_id)
-                if result.get("ok"):
-                    self._retries.pop(article_id, None)
-                    analyzed += 1
-                else:
-                    self._retries[article_id] = retries + 1
-                    # backoff: re-enqueue with lower priority after delay
-                    if retries + 1 < 3:
-                        self._enqueue(article_id, priority=0.3)
+                    _pro_summary = _run_pro_cycle(
+                        self.engine.db,
+                        engine=self.engine,
+                        settings_service=_svc,
+                        limit=200,
+                        prune_junk=True,
+                    )
+                    analyzed = int(_pro_summary.get("analyzed", 0) or 0)
+                except Exception as _pro_err:
+                    logger.warning("[NEWS_WORKER] PRO cycle fallback to local", error=str(_pro_err))
+                    self._queue_recent_unanalyzed()
+                    for _ in range(ANALYZE_PER_CYCLE):
+                        article_id = self._drain_next(time.time())
+                        if article_id is None:
+                            break
+                        retries = self._retries.get(article_id, 0)
+                        if retries >= 3:
+                            self._retries.pop(article_id, None)
+                            logger.error(
+                                "[NEWS_WORKER] event=FAILED article_id=%s retries_exhausted",
+                                article_id,
+                            )
+                            continue
+                        result = self.engine.analyze_article_id(article_id)
+                        if result.get("ok"):
+                            self._retries.pop(article_id, None)
+                            analyzed += 1
+                        else:
+                            self._retries[article_id] = retries + 1
+                            if retries + 1 < 3:
+                                self._enqueue(article_id, priority=0.3)
 
             self.last_cycle_duration = time.perf_counter() - started
             self.last_error = ""
@@ -231,13 +251,33 @@ class NewsWorker:
             return False
 
     def _queue_recent_unanalyzed(self) -> None:
-        """Queues recent articles lacking analysis (bounded, deduped)."""
+        """Queues recent articles lacking analysis (bounded, deduped, idempotent).
+
+        Skips tombstoned analyzed hashes so re-ingested stories never re-queue.
+        """
         try:
             articles = self.engine.db.list_articles(limit=50, include_duplicates=False)
             for art in articles:
                 if len(self._queued_ids) >= self.max_queue:
                     break
+                ah = str(art.get("article_hash") or "")
+                try:
+                    if ah and self.engine.db.is_analyzed_hash(ah):
+                        continue
+                except Exception:
+                    pass
                 if self.engine.db.get_analysis(art["article_id"]):
+                    # Backfill tombstone so future re-ingest of same hash stays suppressed
+                    try:
+                        if ah:
+                            ex = self.engine.db.get_analysis(art["article_id"]) or {}
+                            self.engine.db.remember_analyzed_hash(
+                                ah,
+                                title=str(art.get("title", "")),
+                                analysis_id=str(ex.get("analysis_id", "")),
+                            )
+                    except Exception:
+                        pass
                     continue
                 priority = float(art.get("importance_score", 0.0) or 0.3)
                 self._enqueue(art["article_id"], priority=priority)
@@ -250,7 +290,33 @@ class NewsWorker:
 
     def enqueue_analysis(self, article_id: str, priority: float = 0.5) -> dict[str, Any]:
         """API-triggered analysis job (AI Analyze button). Returns job status
-        without blocking; the worker processes it in the background."""
+        without blocking; the worker processes it in the background.
+
+        Idempotent: already-analyzed stories return SKIPPED_ALREADY_ANALYZED
+        instead of re-queuing (prevents AI confusion on duplicate fetches).
+        """
+        # Idempotent: don't re-queue already-analyzed stories
+        try:
+            art = self.engine.db.get_article(article_id)
+            ah = str((art or {}).get("article_hash") or "")
+            if art and ah and self.engine.db.is_analyzed_hash(ah):
+                return {
+                    "ok": True,
+                    "article_id": article_id,
+                    "status": "SKIPPED_ALREADY_ANALYZED",
+                    "worker_running": self.running,
+                    "reason": "hash already analyzed",
+                }
+            if self.engine.db.get_analysis(article_id) is not None:
+                return {
+                    "ok": True,
+                    "article_id": article_id,
+                    "status": "SKIPPED_ALREADY_ANALYZED",
+                    "worker_running": self.running,
+                    "reason": "article already analyzed",
+                }
+        except Exception:
+            pass
         added = self._enqueue(article_id, priority=priority)
         return {
             "ok": True,

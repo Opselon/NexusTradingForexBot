@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dependency Intelligence — NSE Architecture</title>
+<link rel="stylesheet" href="/tailwind.css" />
+<style>
+  html, body { 
+    background:#0b1120; 
+    color:#e2e8f0; 
+    font-family: ui-sans-serif, system-ui, sans-serif; 
+    margin:0; 
+    padding:0; 
+    height:100vh; 
+    overflow:hidden;
+  }
+  
+  .nx-card { 
+    background:#111a2e; 
+    border:1px solid #1f2a44; 
+    border-radius:8px; 
+  }
+  
+  .nx-kpi { 
+    font-size:1.8rem; 
+    font-weight:700; 
+  }
+  
+  .nx-muted { 
+    color:#7c8aa5; 
+  }
+  
+  .nx-severity-info { color:#38bdf8; }
+  .nx-severity-high { color:#fbbf24; }
+  .nx-severity-critical { color:#f87171; }
+  .nx-severity-ok { color:#4ade80; }
+  .nx-severity-muted { color:#94a3b8; }
+  
+  #graph-container { 
+    flex:1; 
+    min-height:0; 
+    overflow:hidden; 
+    position:relative;
+  }
+  
+  #graph-svg { 
+    width:100%; 
+    height:100%; 
+    background:#0b1120;
+    border:1px solid #1f2a44; 
+    border-radius:8px; 
+    cursor:grab; 
+    touch-action:none;
+  }
+  
+  #graph-svg.dragging { cursor:grabbing; }
+  
+  .node-rect { cursor:pointer; }
+  .edge-line { stroke:#1e293b; stroke-width:1.5; }
+  .edge-line.hl { stroke:#38bdf8; stroke-width:2.5; }
+  .node-label { font-size:10px; font-weight: 500; fill:#cbd5e1; pointer-events:none; }
+  .node-label-strong { font-size:11px; font-weight: 700; fill:#ffffff; pointer-events:none; }
+  
+  .nx-panel { 
+    overflow:auto; 
+    scrollbar-width:thin; 
+    scrollbar-color:#374151 #111a2e;
+  }
+  
+  .nx-panel::-webkit-scrollbar { width:8px; }
+  .nx-panel::-webkit-scrollbar-track { background:#111a2e; }
+  .nx-panel::-webkit-scrollbar-thumb { background:#374151; border-radius:4px; }
+  
+  .nx-chip { 
+    display:inline-flex; 
+    align-items:center; 
+    padding:2px 8px; 
+    border-radius:12px; 
+    font-size:11px; 
+    font-weight:500; 
+    margin:2px; 
+    height:20px;
+  }
+  
+  .chip-severity-high { background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.3); }
+  .chip-severity-critical { background:rgba(248,113,113,0.15); color:#f87171; border:1px solid rgba(248,113,113,0.3); }
+  .chip-severity-ok { background:rgba(74,222,128,0.15); color:#4ade80; border:1px solid rgba(74,222,128,0.3); }
+  .chip-severity-info { background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3); }
+  .chip-severity-muted { background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.3); }
+  
+  table.nx-table { 
+    width:100%; 
+    border-collapse:collapse; 
+    font-size:12px; 
+  }
+  
+  table.nx-table th { 
+    background:#1e293b; 
+    font-weight:600; 
+    text-align:left; 
+    padding:6px 8px; 
+    border-bottom:1px solid #1f2a44;
+  }
+  
+  table.nx-table td { 
+    padding:6px 8px; 
+    border-bottom:1px solid #1f2a44; 
+  }
+  
+  table.nx-table tr:hover td { background:#1e293b; }
+  
+  .mono { 
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas; 
+    font-size:12px; 
+  }
+
+  /* Polyfills for missing Tailwind JIT classes */
+  .bg-\[\#1e293b\] { background-color: #1e293b; }
+  .bg-\[\#111a2e\] { background-color: #111a2e; }
+  .bg-\[\#1f2a44\] { background-color: #1f2a44; }
+  .border-\[\#1f2a44\] { border-color: #1f2a44; }
+  .border-\[\#2b3a5e\] { border-color: #2b3a5e; }
+  .text-\[\#e2e8f0\] { color: #e2e8f0; }
+  .text-\[10px\] { font-size: 10px; line-height: 14px; }
+  .text-\[13px\] { font-size: 13px; line-height: 18px; }
+  .max-w-\[150px\] { max-width: 150px; }
+
+  .text-amber-400 { color: #fbbf24; }
+  .text-amber-500 { color: #f59e0b; }
+  .text-cyan-400 { color: #22d3ee; }
+  .text-emerald-400 { color: #34d399; }
+  .text-emerald-500 { color: #10b981; }
+  .text-rose-400 { color: #fb7185; }
+  .text-rose-500 { color: #f43f5e; }
+  .text-sky-200 { color: #bae6fd; }
+  .text-sky-400 { color: #38bdf8; }
+  .text-slate-200 { color: #e2e8f0; }
+  .text-slate-300 { color: #cbd5e1; }
+  .text-slate-400 { color: #94a3b8; }
+  .text-slate-500 { color: #64748b; }
+  .text-slate-900 { color: #0f172a; }
+  .bg-slate-600 { background-color: #475569; }
+  .bg-purple-600 { background-color: #9333ea; }
+  .bg-teal-400 { background-color: #2dd4bf; }
+  .bg-sky-400 { background-color: #38bdf8; }
+  .border-rose-400 { border-color: #fb7185; }
+  .border-cyan-800 { border-color: #155e75; }
+  .border-rose-900\/50 { border-color: rgba(136, 19, 55, 0.5); }
+  .bg-cyan-900\/40 { background-color: rgba(22, 78, 99, 0.4); }
+  .bg-rose-950\/30 { background-color: rgba(76, 5, 25, 0.3); }
+  
+  .err { color:#f87171; } 
+  .ok { color:#4ade80; } 
+  .warn { color:#fbbf24; } 
+  .info { color:#60a5fa; }
+  
+  input, select, button, textarea { 
+    background:#0a0f1d; 
+    border:1px solid #2b3a5e; 
+    color:#e2e8f0; 
+    border-radius:6px; 
+    padding:6px 10px; 
+    font-size:13px; 
+  }
+  
+  input:focus, select:focus, button:focus, textarea:focus { 
+    outline:none; 
+    border-color:#38bdf8; 
+    ring-color:#38bdf8; 
+  }
+  
+  button.nx-btn { 
+    cursor:pointer; 
+    font-weight:600; 
+    transition:all 0.15s ease; 
+  }
+  
+  button.nx-btn:hover { 
+    background:#16223c; 
+    transform:translateY(-1px); 
+  }
+  
+  button.nx-btn:active { 
+    transform:translateY(0); 
+  }
+  
+  button.nx-btn-secondary { 
+    background:#1e293b; 
+    border:1px solid #374151; 
+  }
+  
+  button.nx-btn-secondary:hover { 
+    background:#253047; 
+  }
+  
+  .nx-tooltip { 
+    position:absolute; 
+    background:#1e293b; 
+    border:1px solid #374151; 
+    border-radius:6px; 
+    padding:8px 12px; 
+    font-size:13px; 
+    z-index:1000; 
+    pointer-events:none; 
+    max-width:280px; 
+    word-wrap:break-word; 
+  }
+  
+  .nx-tooltip-title { 
+    font-weight:600; 
+    margin-bottom:4px; 
+    display:flex; 
+    align-items:center; 
+    gap:4px; 
+  }
+  
+  .nx-tooltip-section { 
+    margin-top:12px; 
+    font-size:12px; 
+    color:#94a3b8; 
+  }
+  
+  .nx-tooltip-section-title { 
+    font-weight:600; 
+    margin-bottom:4px; 
+    color:#e2e8f0; 
+  }
+  
+  .nx-loading-overlay { 
+    position:absolute; 
+    top:0; 
+    left:0; 
+    right:0; 
+    bottom:0; 
+    background:rgba(11,17,32,0.8); 
+    display:flex; 
+    align-items:center; 
+    justify-content:center; 
+    z-index:900; 
+  }
+  
+  .nx-loading-spinner { 
+    width:32px; 
+    height:32px; 
+    border:3px solid #374151; 
+    border-top-color:#38bdf8; 
+    border-radius:50%; 
+    animation:spin 1s linear infinite; 
+  }
+  
+  @keyframes spin {
+    to { transform:rotate(360deg); }
+  }
+  
+  .nx-section-title { 
+    font-size:14px; 
+    font-weight:600; 
+    text-transform:uppercase; 
+    letter-spacing:0.5px; 
+    color:#94a3b8; 
+    margin-bottom:12px; 
+  }
+  
+  .nx-section-content { 
+    padding:0 16px; 
+  }
+  
+  .nx-divider { 
+    height:1px; 
+    background:#1e293b; 
+    margin:16px 0; 
+  }
+  
+  .nx-badge { 
+    display:inline-flex; 
+    align-items:center; 
+    gap:4px; 
+    font-size:11px; 
+    font-weight:500; 
+    padding:2px 8px; 
+    border-radius:10px; 
+  }
+  
+  .badge-status-ok { background:#064e3b; color:#6ee7b7; }
+  .badge-status-degraded { background:#92400e; color:#fbbf24; }
+  .badge-status-error { background:#991b1b; color:#f87171; }
+</style>
+</head>
+<body class="flex flex-col h-full">
+  <!-- Header / System Health -->
+  <header class="nx-card px-6 py-4 flex items-center justify-between border-b border-solid border-[#1f2a44]">
+    <div class="flex flex-col">
+      <div class="text-xl font-bold tracking-tight">DEPENDENCY INTELLIGENCE</div>
+      <div class="nx-muted text-sm tracking-wide">NSE Architecture Graph • Live Repository Analysis</div>
+    </div>
+    <div class="flex items-center gap-4 text-sm font-medium nx-muted" id="header-status">
+      <div class="flex items-center gap-1">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+        <span>LIVE</span>
+      </div>
+      <div id="scan-timestamp">—</div>
+      <div>|</div>
+      <div id="api-status">API: OK</div>
+      <div>|</div>
+      <div id="graph-version">v<span id="graph-version-number">—</span></div>
+      <button id="btn-refresh" class="nx-btn nx-btn-secondary px-3 py-1">REFRESH</button>
+      <label class="nx-muted flex items-center gap-2 cursor-pointer text-xs">
+        <input type="checkbox" id="cb-auto-refresh" /> Auto (30s)
+      </label>
+    </div>
+  </header>
+  
+  <!-- Health Strip -->
+  <div class="nx-card px-6 py-3 border-b border-solid border-[#1f2a44] flex flex-wrap items-center" id="health-strip">
+    <!-- Primary Metrics -->
+    <div class="flex items-center gap-8 mr-8 border-r border-solid border-[#1f2a44] pr-8">
+      <div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">FILES</div>
+        <div class="text-xl font-bold" id="metric-files">0</div>
+      </div>
+      <div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">NODES</div>
+        <div class="text-xl font-bold" id="metric-nodes">0</div>
+      </div>
+      <div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">EDGES</div>
+        <div class="text-xl font-bold" id="metric-edges">0</div>
+      </div>
+    </div>
+
+    <!-- Secondary Metrics -->
+    <div class="flex items-center gap-6" id="health-metrics">
+      <div class="flex items-center gap-3">
+        <div class="font-bold tracking-wider text-sm" id="health-status-text">HEALTH:</div>
+        <div id="health-status-chip" class="chip-severity-ok px-3 py-1 text-xs font-bold rounded">OK</div>
+      </div>
+
+      <div class="w-px h-6 bg-[#1f2a44] mx-2"></div>
+
+      <div class="flex items-center gap-2">
+        <div id="metric-cycles" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">CYCLES</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="metric-unresolved" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">UNRESOLVED</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="metric-violations" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">VIOLATIONS</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="metric-di-reg" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">DI REG.</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="metric-hotspots" class="font-bold text-lg">0</div>
+        <div class="text-xs nx-muted font-semibold tracking-wider">HOTSPOTS</div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Main Workspace -->
+  <main class="flex-1 flex overflow-hidden">
+    <!-- Left Sidebar: Controls & Filters -->
+    <aside class="w-64 bg-[#111a2e] border-r border-solid border-[#1f2a44] px-4 py-4 overflow-y-auto flex-shrink-0" id="left-sidebar">
+      <div class="space-y-4">
+        <!-- Search -->
+        <div class="space-y-2">
+          <label class="block text-sm font-medium mb-1">Search</label>
+          <div class="relative">
+            <input type="text" id="search-input" placeholder="Search modules, classes, interfaces..." class="w-full" />
+            <svg class="absolute inset-y-0 left-2.5 pt-0.5" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </div>
+        </div>
+        
+        <!-- View Controls -->
+        <div class="space-y-2">
+          <label class="block text-sm font-medium mb-1">View</label>
+          <div class="flex flex-wrap gap-2">
+            <button id="btn-fit" class="nx-btn nx-btn-secondary px-3 py-1 flex-1">Fit</button>
+            <button id="btn-reset" class="nx-btn nx-btn-secondary px-3 py-1 flex-1">Reset</button>
+            <button id="btn-zoom-in" class="nx-btn nx-btn-secondary px-3 py-1 flex-1">+</button>
+            <button id="btn-zoom-out" class="nx-btn nx-btn-secondary px-3 py-1 flex-1">−</button>
+          </div>
+        </div>
+        
+        <!-- Filters -->
+        <div class="space-y-2">
+          <label class="block text-sm font-medium mb-1">Filters</label>
+          <div class="space-y-2">
+            <label class="block text-xs font-medium mb-1">Layers</label>
+            <select id="filter-layer" class="w-full">
+              <option value="">All Layers</option>
+            </select>
+          </div>
+          <div class="space-y-2">
+            <label class="block text-xs font-medium mb-1">Node Types</label>
+            <select id="filter-node-type" class="w-full">
+              <option value="">All Types</option>
+            </select>
+          </div>
+          <div class="space-y-2">
+            <label class="block text-xs font-medium mb-1">Edge Types</label>
+            <select id="filter-edge-type" class="w-full">
+              <option value="">All Types</option>
+            </select>
+          </div>
+        </div>
+        
+        <!-- Analysis Filters -->
+        <div class="space-y-3 pt-3 border-t border-solid border-[#1f2a44]">
+          <label class="block text-sm font-medium mb-1">Analysis</label>
+          <div class="flex flex-wrap gap-2">
+            <label class="nx-badge flex items-center cursor-pointer">
+              <input type="checkbox" id="filter-cycle" /> Cycles
+            </label>
+            <label class="nx-badge flex items-center cursor-pointer">
+              <input type="checkbox" id="filter-unresolved" /> Unresolved
+            </label>
+            <label class="nx-badge flex items-center cursor-pointer">
+              <input type="checkbox" id="filter-critical" /> Critical
+            </label>
+            <label class="nx-badge flex items-center cursor-pointer">
+              <input type="checkbox" id="filter-hotspot" /> Hotspots
+            </label>
+            <label class="nx-badge flex items-center cursor-pointer">
+              <input type="checkbox" id="filter-di" /> DI Reg.
+            </label>
+            <label class="nx-badge flex items-center cursor-pointer">
+              <input type="checkbox" id="filter-registrations" /> Registrations
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Legend -->
+      <div class="mt-6 pt-4 border-t border-solid border-[#1f2a44]">
+        <div class="nx-section-title">Legend</div>
+        <div class="nx-section-content text-xs space-y-2" id="legend-content">
+          <!-- Will be populated dynamically -->
+        </div>
+      </div>
+    </aside>
+    
+    <!-- Main Content: Graph + Inspector -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- Graph Toolbar -->
+      <div class="nx-card px-3 py-2 flex items-center justify-between border-b border-solid border-[#1f2a44]" id="graph-toolbar">
+        <div class="flex items-center gap-2 text-xs nx-muted" id="graph-status">
+          Ready
+        </div>
+        <div class="flex items-center gap-2">
+          <div id="selection-info" class="nx-muted">Nothing selected</div>
+          <button id="btn-focus" class="nx-btn nx-btn-secondary px-3 py-1" disabled>Focus</button>
+          <button id="btn-path" class="nx-btn nx-btn-secondary px-3 py-1" disabled>Path</button>
+          <button id="btn-impact" class="nx-btn nx-btn-secondary px-3 py-1" disabled>Impact</button>
+        </div>
+      </div>
+      
+      <!-- Graph Container -->
+      <div class="flex-1 flex-1 overflow-hidden" id="graph-container">
+        <div class="nx-loading-overlay" id="graph-loading-overlay">
+          <div class="nx-loading-spinner"></div>
+          <div class="nx-mt-2 text-sm nx-muted">Loading dependency graph...</div>
+        </div>
+        <svg id="graph-svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="nx-tooltip" id="graph-tooltip" role="tooltip"></div>
+      </div>
+      
+      <!-- Graph Info Bar -->
+      <div class="nx-card px-3 py-2 border-t border-solid border-[#1f2a44] text-xs nx-muted" id="graph-info-bar">
+        <div id="graph-info-left" class="flex items-center gap-4"></div>
+        <div id="graph-info-right" class="flex items-center gap-4"></div>
+      </div>
+    </aside>
+    
+    <!-- Right Inspector Panel -->
+    <aside class="w-80 bg-[#111a2e] border-l border-solid border-[#1f2a44] px-4 py-4 overflow-y-auto flex-shrink-0" id="right-inspector">
+      <div class="space-y-4">
+        <!-- Inspector Header -->
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold text-lg" id="inspector-title">System Overview</h3>
+          <button id="btn-inspector-collapse" class="nx-btn nx-btn-secondary px-2 py-1 text-xs" title="Collapse inspector">−</button>
+        </div>
+        
+        <!-- Inspector Content -->
+        <div class="nx-panel" id="inspector-content">
+          <!-- System Overview (default state) -->
+          <div class="space-y-4" id="inspector-overview">
+            <div class="text-xs nx-muted mb-4">
+              Select a node to inspect dependencies, dependents, evidence, impact, and runtime criticality.
+            </div>
+
+            <div class="nx-section-title">System Overview</div>
+            <div class="space-y-2" id="overview-health">
+              <!-- Health status will be populated here -->
+            </div>
+            
+            <div class="nx-divider"></div>
+            
+            <div class="nx-section-title">Active Filters</div>
+            <div class="space-y-2" id="overview-filters">
+              <!-- Active filters will be populated here -->
+            </div>
+            
+            <div class="nx-divider"></div>
+            
+            <div class="nx-section-title">Top Hotspots</div>
+            <div class="space-y-2" id="overview-hotspots">
+              <!-- Top hotspots will be populated here -->
+            </div>
+            
+            <div class="nx-divider"></div>
+            
+            <div class="nx-section-title">Cycles</div>
+            <div class="space-y-2" id="overview-cycles">
+              <!-- Cycle info will be populated here -->
+            </div>
+            
+            <div class="nx-divider"></div>
+            
+            <div class="nx-section-title">Quick Actions</div>
+            <div class="space-y-2" id="overview-actions">
+              <!-- Quick action buttons -->
+              <button id="btn-show-cycles" class="nx-btn nx-btn-secondary w-full text-left">Show Cycles</button>
+              <button id="btn-show-unresolved" class="nx-btn nx-btn-secondary w-full text-left mt-2">Show Unresolved</button>
+              <button id="btn-show-critical" class="nx-btn nx-btn-secondary w-full text-left mt-2">Show Critical</button>
+            </div>
+          </div>
+          
+          <!-- Node Inspector (hidden by default) -->
+          <div class="hidden" id="inspector-node-view">
+            <!-- Node identity -->
+            <div class="space-y-4">
+              <div class="font-bold text-lg leading-tight" id="node-identity"></div>
+              <div class="flex flex-wrap items-center gap-2 text-xs font-semibold tracking-wide" id="node-details">
+                <span id="node-kind" class="px-2 py-0.5 rounded bg-[#1e293b]"></span>
+                <span id="node-layer" class="nx-muted"></span>
+                <span id="node-criticality"></span>
+              </div>
+            </div>
+            
+            <div class="nx-divider"></div>
+            
+            <!-- Metrics -->
+            <div class="grid grid-cols-2 gap-2" id="node-metrics">
+                <!-- Metrics will be populated here -->
+            </div>
+            
+            <div class="nx-divider"></div>
+            
+            <!-- Dependencies -->
+            <div class="space-y-2">
+              <div class="nx-section-title">Dependencies</div>
+              <div class="nx-panel space-y-1" style="max-height:160px;" id="node-dependencies">
+                <!-- Dependencies list -->
+              </div>
+            </div>
+            
+            <div class="nx-divider"></div>
+            
+            <!-- Dependents -->
+            <div class="space-y-2">
+              <div class="nx-section-title">Dependents</div>
+              <div class="nx-panel space-y-1" style="max-height:160px;" id="node-dependents">
+                <!-- Dependents list -->
+              </div>
+            </div>
+            
+            <div class="nx-divider"></div>
+            
+            <!-- Evidence -->
+            <div class="space-y-2">
+              <div class="nx-section-title">Edge Evidence</div>
+              <div class="nx-panel" style="max-height:200px;" id="node-evidence">
+                <!-- Evidence table -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Path Explorer (hidden by default) -->
+          <div class="hidden" id="inspector-path-view">
+            <div class="nx-section-title">Path Analysis</div>
+            <div class="space-y-4 mt-2">
+              <div>
+                <label class="block text-xs font-semibold mb-1 nx-muted">From</label>
+                <div class="p-2 bg-[#1e293b] border border-solid border-[#2b3a5e] rounded text-sm text-[#e2e8f0]" id="path-source-node">None</div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1 nx-muted">To</label>
+                <div class="p-2 bg-[#1e293b] border border-solid border-[#2b3a5e] rounded text-sm text-[#e2e8f0]" id="path-target-node">Select node...</div>
+              </div>
+              <button id="btn-execute-path" class="nx-btn nx-btn-secondary w-full py-2">FIND PATH</button>
+
+              <div class="nx-divider"></div>
+
+              <div id="path-results" class="space-y-2">
+                <!-- Results populated here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Impact Explorer (hidden by default) -->
+          <div class="hidden" id="inspector-impact-view">
+             <div class="nx-section-title">Impact Risk</div>
+             <div id="impact-risk-level" class="font-bold text-lg mb-4"></div>
+             <div class="space-y-3" id="impact-results">
+                <!-- Results populated here -->
+             </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+  
+  <!-- Global Loading Overlay -->
+  <div class="nx-loading-overlay hidden" id="global-loading-overlay">
+    <div class="nx-loading-spinner"></div>
+    <div class="nx-mt-2 text-sm nx-muted">Loading dependency data...</div>
+  </div>
+  
+  <!-- Global Error Overlay -->
+  <div class="nx-loading-overlay hidden" id="global-error-overlay"></div>
+  
+  <script src="/dependency_api.js"></script>
+  <script src="/dependency_graph.js"></script>
+  <script src="/dependency_ui.js"></script>
+</body>
+</html>

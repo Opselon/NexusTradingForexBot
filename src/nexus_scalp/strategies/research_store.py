@@ -170,11 +170,13 @@ DDL_FACTORY_LOOP_STATE = """
 CREATE TABLE IF NOT EXISTS factory_loop_state (
     scope TEXT PRIMARY KEY,
     state TEXT DEFAULT 'STOPPED',
+    generation_id TEXT DEFAULT '',
     reason TEXT DEFAULT '',
     last_cycle_at TEXT DEFAULT '',
     cycle_count INTEGER DEFAULT 0,
     checkpoint TEXT DEFAULT '{}',
-    updated_at TEXT DEFAULT ''
+    updated_at TEXT DEFAULT '',
+    last_error TEXT DEFAULT ''
 );
 """
 
@@ -344,9 +346,28 @@ class StrategyResearchStore:
                     f'CREATE INDEX IF NOT EXISTS "{idx_name}" ON {table} ({cols})',
                     conn=conn,
                 )
+            # Safe forward migration for existing factory_loop_state tables
+            # that predate the generation_id / last_error columns (mission
+            # NEXUS-STRATEGY-FACTORY-PERSISTENCE-RECOVERY-G29). ALTER is a
+            # no-op if the columns already exist; we swallow the duplicate-
+            # column OperationalError so ensure_schema stays idempotent.
+            for col, col_def in (
+                ("generation_id", "TEXT DEFAULT ''"),
+                ("last_error", "TEXT DEFAULT ''"),
+            ):
+                try:
+                    self.driver.execute(
+                        f"ALTER TABLE factory_loop_state ADD COLUMN {col} {col_def};",
+                        conn=conn,
+                    )
+                except Exception:
+                    # Column already present (fresh schema) or provider does
+                    # not support ALTER — either way schema is correct.
+                    pass
             self._set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             self._set_meta(conn, "provider", self.config.provider.value)
             self.driver.commit(conn)
+            self._schema_ready = True
         finally:
             conn.close()
 
@@ -531,11 +552,13 @@ class StrategyResearchStore:
                 {
                     "scope": str(loop.get("scope", "default")),
                     "state": str(loop.get("state", "STOPPED")),
+                    "generation_id": str(loop.get("generation_id", "")),
                     "reason": str(loop.get("reason", "")),
                     "last_cycle_at": str(loop.get("last_cycle_at", "")),
                     "cycle_count": int(loop.get("cycle_count", 0)),
                     "checkpoint": _json(loop.get("checkpoint")),
                     "updated_at": str(loop.get("updated_at", _now())),
+                    "last_error": str(loop.get("last_error", "")),
                 },
                 conn=conn,
             )
@@ -633,6 +656,47 @@ class StrategyResearchStore:
         if not row:
             return {"scope": scope, "state": "STOPPED"}
         return _row_safe(dict(row))
+
+    def set_operator_stats(self, payload: dict[str, Any]) -> bool:
+        """Persist cumulative operator/accounting state (G28 TARGET 2).
+
+        Stored in a dedicated ``operator_stats`` scope row's ``checkpoint``
+        JSON column so the autonomous control row (scope 'autonomous') is
+        never disturbed.
+        """
+        return self._write(
+            lambda conn: self.driver.upsert(
+                "factory_loop_state",
+                {
+                    "scope": "operator_stats",
+                    "state": "ACTIVE",
+                    "generation_id": "",
+                    "last_cycle_at": "",
+                    "cycle_count": 0,
+                    "checkpoint": _json(payload),
+                    "updated_at": str(_now()),
+                },
+                conn=conn,
+            )
+        )
+
+    def get_operator_stats(self) -> dict[str, Any]:
+        """Read cumulative operator/accounting state ({} when absent)."""
+        row = self.driver.query_one(
+            "SELECT checkpoint FROM factory_loop_state WHERE scope = ?",
+            ("operator_stats",),
+        )
+        if not row:
+            return {}
+        raw = row.get("checkpoint")
+        text = str(raw or "").strip()
+        if not text or text.lower() in ("null", "{}"):
+            return {}
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
     def provider_usage_total(self) -> dict[str, Any]:
         row = self.driver.query_one(

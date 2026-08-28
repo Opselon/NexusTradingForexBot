@@ -20,7 +20,6 @@ replicates the old 4-event synthetic shortcut.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import numpy as np
 import polars as pl

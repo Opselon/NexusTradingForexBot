@@ -42,7 +42,6 @@ from nexus_scalp.experience.models import (
     ExperienceRecord,
     FeatureSnapshot,
     ModelProvenance,
-    PositionBehavior,
     StrategyContext,
     StrategyLifecycle,
     StrategyScore,
@@ -573,7 +572,7 @@ def test_15_retirement_then_gated_recovery(temp_audit_repo, components):
 
 def test_16_experience_changes_the_decision(temp_audit_repo, components, sample_feature_vector):
     """With no history: untouched. With bad history: rejected."""
-    ledger, _, retriever, engine = components
+    ledger, _, _retriever, engine = components
     ctx = engine.build_proposal_context(make_proposal("req_ctx"), sample_feature_vector)
 
     p1, d1 = engine.evaluate_proposal(make_proposal("req_a"), sample_feature_vector)
@@ -602,7 +601,7 @@ def test_17_degraded_strategy_is_penalized_not_rejected(
     temp_audit_repo, components, sample_feature_vector
 ):
     """Degradation reduces influence; it does not hard-block."""
-    ledger, _, retriever, engine = components
+    ledger, _, _retriever, engine = components
     ctx = engine.build_proposal_context(make_proposal("req_ctx"), sample_feature_vector)
     seed_closed_trades(
         temp_audit_repo,
@@ -636,7 +635,7 @@ def test_18_retired_strategy_rejection_happens_before_order_placement(
 
     from nexus_scalp.execution.order_manager import OrderLifecycleManager
 
-    ledger, _, retriever, engine = components
+    ledger, _, _retriever, engine = components
     ctx = engine.build_proposal_context(make_proposal("req_ctx"), sample_feature_vector)
     seed_closed_trades(
         temp_audit_repo,
@@ -688,7 +687,7 @@ def test_20_position_management_actions_are_never_gated(
 
     Regression guard for BUG-010.
     """
-    ledger, _, retriever, engine = components
+    ledger, _, _retriever, engine = components
     ctx = engine.build_proposal_context(make_proposal("req_ctx"), sample_feature_vector)
     seed_closed_trades(
         temp_audit_repo,

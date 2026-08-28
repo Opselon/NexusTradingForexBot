@@ -30,9 +30,22 @@ SMALL_SAMPLE_FLOOR: int = 8
 
 
 class CandidateLifecycle(StrEnum):
-    """Research lifecycle of a strategy candidate (spec 19)."""
+    """Research lifecycle of a strategy candidate (spec 19).
+
+    PHASE 25 evidence lifecycle (2026-08-25): DISCOVERED may route into the
+    evidence-building track instead of a hard rejection when a candidate
+    fails ONLY on sample size (INSUFFICIENT_TRADES / small-sample floors).
+    The evidence states are strictly PRE-validation: they never satisfy the
+    live-trade eligibility gate (require_validation_gate) and never weaken
+    any WF/OOS/robustness threshold.
+    """
 
     DISCOVERED = "DISCOVERED"
+    INITIAL_TESTING = "INITIAL_TESTING"
+    EVIDENCE_BUILDING = "EVIDENCE_BUILDING"
+    WALK_FORWARD_READY = "WALK_FORWARD_READY"
+    OOS_READY = "OOS_READY"
+    ROBUSTNESS_READY = "ROBUSTNESS_READY"
     BACKTESTING = "BACKTESTING"
     VALIDATING = "VALIDATING"
     OOS_TESTING = "OOS_TESTING"
@@ -47,7 +60,16 @@ class CandidateLifecycle(StrEnum):
 
 #: Lifecycle states that may never become live.
 _INELIGIBLE: frozenset[CandidateLifecycle] = frozenset(
-    {CandidateLifecycle.REJECTED, CandidateLifecycle.RETIRED, CandidateLifecycle.DEGRADED}
+    {
+        CandidateLifecycle.REJECTED,
+        CandidateLifecycle.RETIRED,
+        CandidateLifecycle.DEGRADED,
+        CandidateLifecycle.INITIAL_TESTING,
+        CandidateLifecycle.EVIDENCE_BUILDING,
+        CandidateLifecycle.WALK_FORWARD_READY,
+        CandidateLifecycle.OOS_READY,
+        CandidateLifecycle.ROBUSTNESS_READY,
+    }
 )
 
 
@@ -243,6 +265,12 @@ class WalkForwardResult(BaseModel):
     avg_val_expectancy_r: float = Field(default=0.0)
     avg_oos_expectancy_r: float = Field(default=0.0)
     degradation: float = Field(default=0.0)
+    #: PHASE 26 strategy-aware validation: transparency block describing the
+    #: context contract applied to the fold population (None = global eval).
+    context_diagnostics: dict[str, Any] | None = Field(default=None)
+    #: PHASE 29: explicit reason when WF could not form folds (family too
+    #: small) instead of a silent passed=False with zeroed metrics.
+    insufficient_reason: str | None = Field(default=None)
 
     @property
     def fold_count(self) -> int:
@@ -263,6 +291,8 @@ class OOSResult(BaseModel):
     oos_win_rate: float = Field(default=0.0)
     status: str = Field(...)  # PASS | FAIL
     reason: str = Field(default="")
+    #: PHASE 26 strategy-aware validation: context contract diagnostics.
+    context_diagnostics: dict[str, Any] | None = Field(default=None)
 
 
 class RobustnessResult(BaseModel):
@@ -333,6 +363,11 @@ class StrategyRegistryEntry(BaseModel):
     sample_count: int = Field(default=0, ge=0)
     validation_lineage: list[str] = Field(default_factory=list)
     retirement_reason: str = Field(default="")
+    #: PHASE 25 (2026-08-25): per-candidate context matrices
+    #: {session_matrix, hourly_matrix, weekday_matrix, regime_matrix} from
+    #: research.context_analysis.compute_context_matrices — discovery-quality
+    #: evidence keyed by market condition (persisted as JSON TEXT).
+    context_matrices: dict[str, Any] = Field(default_factory=dict)
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
