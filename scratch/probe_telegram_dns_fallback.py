@@ -84,7 +84,6 @@ assert "dns_poisoned" in h
 print("6) health_state.dns_poisoned OK")
 
 # --- 7) REAL end-to-end send via the notifier (live network, normal DNS) ---
-# Token loaded from environment — never hardcode secrets in tracked files.
 TOKEN = os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")
 ADMIN = os.getenv("NEXUS_TELEGRAM_ADMIN_ID", "5094837833")
 
@@ -102,4 +101,5 @@ if TOKEN:
     live.shutdown(timeout=1.0)
 else:
     print("7) Skipping live end-to-end probe (NEXUS_TELEGRAM_BOT_TOKEN environment variable not set)")
+
 print("ALL PROBES PASSED")
