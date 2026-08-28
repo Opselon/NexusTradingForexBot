@@ -333,6 +333,11 @@ class TestPeriodBounds:
         shifted = datetime(2026, 8, 15, 12, 0, 0, tzinfo=timezone(timedelta(hours=3)))
         assert ensure_utc(shifted).hour == 9
 
+    def test_period_bounds_sql_properties(self) -> None:
+        b = period_bounds(PeriodKind.DAY, datetime(2026, 8, 15, 14, 30, 0, tzinfo=UTC))
+        assert b.start_sql == "2026-08-15 00:00:00"
+        assert b.end_sql == "2026-08-16 00:00:00"
+
 
 from datetime import timezone  # noqa: E402
 
