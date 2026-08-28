@@ -29,6 +29,7 @@ from typing import Any
 from nexus_scalp.experience.intelligence import ExperienceIntelligenceEngine
 from nexus_scalp.experience.lifecycle import (
     LIFECYCLE_PAYLOAD_KEY,
+    TERMINAL_STATES,
     DecisionLifecycle,
     build_terminal_non_trade_outcome,
 )
@@ -66,7 +67,7 @@ def emit_terminal_pending_outcome(
     """
     if experience_engine is None or not request_id:
         return False
-    if state not in DecisionLifecycle.TERMINAL_STATES or state in (
+    if state not in TERMINAL_STATES or state in (
         DecisionLifecycle.FILLED_CLOSED,
         DecisionLifecycle.REPAIRED,
     ):
