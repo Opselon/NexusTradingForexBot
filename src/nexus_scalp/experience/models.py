@@ -380,6 +380,14 @@ class ExperienceOutcome(BaseModel):
     #: gross profit, commission, swap, SL/TP timeline). Stored in the outcome
     #: payload so the reconstructed close survives position-state cleanup.
     broker_outcome: BrokerOutcome | None = Field(default=None)
+    #: P0-A (BUG-140): canonical DecisionLifecycle marker for terminal
+    #: non-trade outcomes (CANCELED_UNFILLED / EXPIRED_UNFILLED /
+    #: NOT_DISPATCHED / ...). Empty for classic broker-close outcomes, whose
+    #: lifecycle is derived from is_executed/is_closed.
+    decision_lifecycle: str = Field(default="", description="DecisionLifecycle value")
+    lifecycle_detail: str = Field(
+        default="", description="Diagnostic detail for the terminal lifecycle state"
+    )
 
     @field_validator("outcome_timestamp")
     @classmethod

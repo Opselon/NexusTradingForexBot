@@ -254,6 +254,58 @@ class ExperienceLedger:
             logger.error("[EXPERIENCE] OUTCOME queue failure", error=str(e))
             return False
 
+    def record_terminal_outcome(self, outcome: ExperienceOutcome) -> bool:
+        """
+        P0-A (BUG-140): persists the TERMINAL outcome for a decision after an
+        in-ledger idempotency check.
+
+        Guarantees, beyond the storage-level UNIQUE(idempotency_key):
+          1. If an outcome already exists for the key, nothing is written and
+             False is returned (duplicate cancel callbacks, recovery replays
+             and restart sweeps can never create a second outcome row).
+          2. A terminal non-trade outcome NEVER overwrites an existing
+             authoritative trade outcome (the pre-check refuses first).
+          3. Causality is enforced: outcome_timestamp >= decision_timestamp.
+          4. The decision row is never modified; the outcome layer only
+             appends (Phase 08 immutability contract).
+
+        Returns True when a NEW outcome row was queued, False otherwise
+        (already present / invalid / non-sqlite backend).
+        """
+        if not self.audit_repo._is_sqlite:
+            return False
+        key = outcome.idempotency_key
+        if not key:
+            logger.warning("[EXPERIENCE] TERMINAL_OUTCOME rejected: empty idempotency_key")
+            return False
+        try:
+            decision = self.get_experience_by_key(key)
+        except Exception as e:
+            logger.error("[EXPERIENCE] TERMINAL_OUTCOME decision lookup failed", error=str(e))
+            return False
+        if decision is None:
+            # No decision snapshot: an outcome with no decision would fabricate
+            # evidence; refused with diagnostics (same contract as record_outcome).
+            logger.warning(
+                "[EXPERIENCE] TERMINAL_OUTCOME rejected: no decision snapshot",
+                idempotency_key=key,
+            )
+            return False
+        if outcome.outcome_timestamp < decision.decision_timestamp:
+            logger.error(
+                "[EXPERIENCE] CAUSALITY_REJECTED terminal outcome precedes decision",
+                idempotency_key=key,
+            )
+            return False
+        if self.has_outcome(key):
+            self.duplicate_count += 1
+            logger.info(
+                "[EXPERIENCE] TERMINAL_OUTCOME idempotent skip (outcome already present)",
+                idempotency_key=key,
+            )
+            return False
+        return self.record_outcome(outcome)
+
     def repair_outcome(self, outcome: ExperienceOutcome, repair_reason: str = "") -> bool:
         """
         BUG-046: corrects a previously-recorded OUTCOME (derived layer only).
