@@ -290,6 +290,15 @@ def _redact_value(value: Any) -> Any:
         # Skip all-uppercase system event names / snake_case constants (e.g. GLOBAL_KILL_SWITCH_ACTIVATED)
         if token.isupper() and "_" in token:
             return token
+        # BUG-141b: structlog renders "key=VALUE" as ONE token, so the
+        # all-uppercase guard above never matches (the key prefix makes the
+        # token mixed-case) and legitimate key=value observability pairs
+        # (e.g. event=BLOCKED_NOT_CONFIGURED severity=INFO) were entropy-
+        # redacted. Apply the same constant-shape guard to the VALUE part.
+        if "=" in token:
+            _key, _, val_part = token.partition("=")
+            if val_part.isupper() and "_" in val_part:
+                return token
         alnum_ratio = sum(1 for ch in token if ch.isalnum()) / len(token)
         if (
             alnum_ratio >= _ENTROPY_ALNUM_THRESHOLD

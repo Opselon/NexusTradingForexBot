@@ -25,3 +25,26 @@ def test_logging_redaction_hardening():
     out3 = _redact_sensitive_fields(None, "info", {"mt5_password": "xyz", "api_key": "123"})
     assert out3["mt5_password"] == "[REDACTED_SECRET]"
     assert out3["api_key"] == "[REDACTED_SECRET]"
+
+
+def test_logging_redaction_structlog_key_value_constants_preserved_bug141b():
+    """BUG-141b: structlog renders "key=VALUE" as ONE token, so the all-uppercase
+    constant guard never matched (key prefix breaks isupper) and observability
+    pairs (event=..., severity=..., reason=...) were entropy-redacted. The
+    value-part guard must preserve them while secret semantics stay intact."""
+    from nexus_scalp.observability.logging import _redact_value
+
+    line = (
+        "[TELEGRAM] event=BLOCKED_NOT_CONFIGURED severity=INFO "
+        "reason=BOT_TOKEN_OR_ADMIN_MISSING correlation_id=- blocked_since_start=1"
+    )
+    out = _redact_value(line)
+    assert "event=BLOCKED_NOT_CONFIGURED" in out
+    assert "severity=INFO" in out
+    assert "reason=BOT_TOKEN_OR_ADMIN_MISSING" in out
+    assert "blocked_since_start=1" in out
+
+    # Secret-assignment + blob semantics intact
+    assert "hunter2" not in _redact_value("password= hunter2SuperSecretValue42")
+    blob = "gAAAAABmZ8k2xQ9tR7uPqW3vXyZ1aB4cD6eF8gH0jK2lM4nO6pQ8rS0tU2vW4xY6zA8bC0dE"
+    assert "[REDACTED_SECRET]" in _redact_value(blob)
