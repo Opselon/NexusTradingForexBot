@@ -1,0 +1,52 @@
+bars loaded: 100000 rows, 2026-05-01 17:15:00+00:00 .. 2026-08-17 19:24:00+00:00
+smoke window: 3000 rows, 2026-08-13 13:25:00+00:00 .. 2026-08-17 19:24:00+00:00
+pre-restore sha256: 0872ae0b85b3c74b
+2026-08-29 18:56:01 [info     ] Purged Triple-Barrier 3-Class Labeling Complete buy_labels=159 embargo_bars=3 evaluated_samples=675 friction_usd=$0.35 no_trade_labels=2634 sell_labels=153 skipped_invalid_atr=0 total_samples=2946
+2026-08-29 18:56:04 [info     ] Initiating production walk-forward training active_class_boost=3.0 device=cpu num_features=70 num_folds=2 purge_gap=15 scaling_enabled=True seed=42 total_rows=2946 trainable_rows=675
+2026-08-29 18:56:04 [info     ] Class Weights computed for fine-tuning class_counts=[108, 52, 60, 0] is_online_fine_tune=True num_classes=4 total_samples=220 weights=[1.0, 1.0, 1.0, 1.0]
+2026-08-29 18:56:04 [info     ] Walk-forward fold complete     batch_size=22 best_val_loss=1.276292 fold=1 sharpe_proxy=-7.499 test_rows=87 total_folds=2 train_rows=220
+2026-08-29 18:56:04 [info     ] Class Weights computed for fine-tuning class_counts=[127, 53, 41, 0] is_online_fine_tune=True num_classes=4 total_samples=221 weights=[1.0, 1.0, 1.0, 1.0]
+2026-08-29 18:56:04 [info     ] Walk-forward fold complete     batch_size=22 best_val_loss=1.335592 fold=2 sharpe_proxy=0.000 test_rows=87 total_folds=2 train_rows=221
+2026-08-29 18:56:04 [info     ] === MODEL DIAGNOSTICS ===
+2026-08-29 18:56:04 [info     ] class_id mapping (self.label_map):
+2026-08-29 18:56:04 [info     ] {'NO_TRADE': 0, 'BUY_MARKET': 1, 'SELL_MARKET': 2}
+2026-08-29 18:56:04 [info     ] Inference class mapping (self.inverse_label_map):
+2026-08-29 18:56:04 [info     ] {0: 'NO_TRADE', 1: 'BUY_MARKET', 2: 'SELL_MARKET'}
+2026-08-29 18:56:04 [info     ] Verifying training labels distribution label_mapping={'NO_TRADE': 0, 'BUY_MARKET': 1, 'SELL_MARKET': 2} train_labels_counts=[363, 159, 153]
+2026-08-29 18:56:04 [info     ] Out-of-sample global metrics   profit_factor=0.40 total_oos_samples=174 total_oos_trades=12 trade_rate=6.9% win_rate=25.0%
+2026-08-29 18:56:04 [info     ] Initiating final production training on full trainable dataset
+2026-08-29 18:56:04 [info     ] Class Weights computed for fine-tuning class_counts=[363, 159, 153, 0] is_online_fine_tune=False num_classes=4 total_samples=675 weights=[4.106574851903133e-05, 0.00015041955339256674, 0.0001528286375105381, 3.9996557235717773]
+2026-08-29 18:56:04 [info     ] === POST-TRAINING VERIFICATION ===
+2026-08-29 18:56:04 [info     ] Raw Logits: [[0.043315619230270386, 0.2506912052631378, 0.11922892183065414, -0.2410670816898346], [-0.021877184510231018, 0.22209647297859192, 0.10804543644189835, -0.197953999042511], [-0.05695677921175957, 0.22318080067634583, 0.20494778454303741, -0.23794260621070862], [0.025563791394233704, 0.2460467368364334, 0.23648196458816528, -0.2150423526763916], [-0.0012072175741195679, 0.26895302534103394, 0.29357820749282837, -0.2161385416984558]]
+2026-08-29 18:56:04 [info     ] Softmax Probabilities: [[0.24619673192501068, 0.30293145775794983, 0.26561403274536133, 0.18525777757167816], [0.23509474098682404, 0.3000539243221283, 0.2677118182182312, 0.19713953137397766], [0.22435802221298218, 0.2968956232070923, 0.29153138399124146, 0.1872149109840393], [0.2343214750289917, 0.29212358593940735, 0.28934282064437866, 0.1842121183872223], [0.22423487901687622, 0.29378679394721985, 0.3011111617088318, 0.18086715042591095]]
+2026-08-29 18:56:04 [info     ] ==================================
+2026-08-29 18:56:04 [info     ] Model checkpoint saved atomically path=artifacts\models\scalp\XAUUSD\70d_liquidity\model.pt
+2026-08-29 18:56:04 [info     ] Scaler artifact saved atomically mean_shape=(70,) path=artifacts\models\scalp\XAUUSD\70d_liquidity\model.scaler.npz std_shape=(70,)
+2026-08-29 18:56:04 [info     ] Training metadata saved atomically path=artifacts\models\scalp\XAUUSD\70d_liquidity\model.meta.json
+2026-08-29 18:56:04 [info     ] Production training complete   model_path=artifacts\models\scalp\XAUUSD\70d_liquidity\model.pt scaler_path=artifacts\models\scalp\XAUUSD\70d_liquidity\model.scaler.npz
+2026-08-29 18:56:04 [info     ] Initialized High-Performance SQLite WAL storage db_path=artifacts/audit.db
+2026-08-29 18:56:04 [info     ] [MODEL] REGISTERED             artifact_fingerprint=2b98f333cf1e3f77 feature_dimension=70 feature_schema=scalp_v3 model_id=scalp_70d_liquidity_scalp_v3_70d model_version=1.0.0
+2026-08-29 18:56:04 [info     ] [THREE_MODEL] candidate registered: scalp_70d_liquidity
+2026-08-29 18:56:04 [info     ] [MODEL] event=STATUS           model_id=scalp_70d_liquidity_scalp_v3_70d reason='three-model pipeline: trained + benchmark evidence' status=CHALLENGER version=1.0.0
+2026-08-29 18:56:05 [info     ] [THREE_MODEL] variant=70d_liquidity schema=scalp_v3 dim=70 folds=2 elapsed=0.2s artifact=artifacts\models\scalp\XAUUSD\70d_liquidity\model.pt
+== report ==
+{
+  "variant": "70d_liquidity",
+  "schema_id": "scalp_v3",
+  "dimension": 70,
+  "artifact": {
+    "model": "artifacts\\models\\scalp\\XAUUSD\\70d_liquidity\\model.pt",
+    "scaler": "artifacts\\models\\scalp\\XAUUSD\\70d_liquidity\\model.scaler.npz",
+    "meta": "artifacts\\models\\scalp\\XAUUSD\\70d_liquidity\\model.meta.json"
+  },
+  "benchmark_path": "artifacts\\model_generation\\three_model\\benchmark_70d_liquidity.json",
+  "benchmark": {
+    "status": "EVIDENCE_WRITTEN"
+  },
+  "elapsed_sec": 0.22,
+  "gate": "EVIDENCE_WRITTEN"
+}
+walk_forward: {"num_folds": 2, "trainable_rows": 675}
+post head: (128, 70) scaler: {'mean': (70,), 'std': (70,)} meta dim: 70
+post-restore sha256: 2b98f333cf1e3f77
+RESTORE OK
