@@ -699,12 +699,16 @@ class LiveEngine:
         # production Champion is NEVER touched by candidate training; a
         # Challenger is validated and compared but never auto-promoted.
         # =====================================================================
+        initial_art_path = Path(self.config.model.model_artifact_path)
+        declared_dim = self._declared_contract_dim_for_path(initial_art_path) or self.FEATURE_DIM
+        declared_schema = "scalp_v3" if declared_dim == 70 else self.FEATURE_SCHEMA_ID
+
         self.champion_manager = ChampionManager(
-            artifact_path=self.config.model.model_artifact_path,
+            artifact_path=str(initial_art_path),
             model_id="primary_scalp",
-            model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0")),
-            feature_schema_id=self.FEATURE_SCHEMA_ID,
-            feature_dimension=self.FEATURE_DIM,
+            model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0" if declared_dim != 70 else "v3.0")),
+            feature_schema_id=declared_schema,
+            feature_dimension=declared_dim,
             num_classes=4,
         )
         self.training_run_store = TrainingRunStore(audit_repo=self.audit)
