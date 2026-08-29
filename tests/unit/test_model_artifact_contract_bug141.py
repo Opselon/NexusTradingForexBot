@@ -30,8 +30,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
-torch = pytest.importorskip("torch")
+import torch
 
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.models.scalp_net import ScalpNet
@@ -47,8 +46,8 @@ def _sha(path: Path) -> str:
 def _stub() -> SimpleNamespace:
     """Minimal engine stand-in: bundle lock + the REAL declaration resolver."""
     s = SimpleNamespace(_bundle_lock=threading.Lock())
-    s._declared_contract_dim_for_path = (
-        lambda p: LiveEngine._declared_contract_dim_for_path(None, p)
+    s._declared_contract_dim_for_path = lambda p: LiveEngine._declared_contract_dim_for_path(
+        None, p
     )
     return s
 
@@ -75,13 +74,18 @@ def tmp_70d_bundle() -> Path:
 
 class TestDeclaredContractDim:
     def test_141_01_declared_from_meta_70d(self) -> None:
-        assert LiveEngine._declared_contract_dim_for_path(None, ART / "70d_liquidity" / "model.pt") == 70
+        assert (
+            LiveEngine._declared_contract_dim_for_path(None, ART / "70d_liquidity" / "model.pt")
+            == 70
+        )
 
     def test_141_02_declared_from_meta_50d(self) -> None:
         assert LiveEngine._declared_contract_dim_for_path(None, ART / "v1.0.0" / "model.pt") == 50
 
     def test_141_03_cold_start_returns_none(self, tmp_path: Path) -> None:
-        assert LiveEngine._declared_contract_dim_for_path(None, tmp_path / "none" / "model.pt") is None
+        assert (
+            LiveEngine._declared_contract_dim_for_path(None, tmp_path / "none" / "model.pt") is None
+        )
 
     def test_141_04_scaler_fallback_when_no_meta(self, tmp_path: Path) -> None:
         d = tmp_path / "scaler_only"
@@ -123,9 +127,7 @@ class TestForceFreshSeeding:
     def test_141_08_force_fresh_seeds_declared_70d_path(self, tmp_70d_bundle: Path) -> None:
         tmp_70d_bundle.unlink()  # remove checkpoint, keep meta+scaler declaration
         eng = _engine()
-        m = LiveEngine._load_or_initialize_model_weights(
-            eng, tmp_70d_bundle, force_fresh=True
-        )
+        m = LiveEngine._load_or_initialize_model_weights(eng, tmp_70d_bundle, force_fresh=True)
         assert m.input_projection.weight.shape[1] == 70
 
     def test_141_09_force_fresh_cold_start_still_50d(self, tmp_path: Path) -> None:
