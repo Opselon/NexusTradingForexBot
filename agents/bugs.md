@@ -6086,3 +6086,51 @@ Fix:
 4. splitting.py: DEFAULT_PURGE_SECONDS=300.0 / DEFAULT_EMBARGO_SECONDS=60.0 exported as the no-leakage default contract (callers may still pass 0.0 explicitly; thresholds untouched).
 
 Tests: tests/unit/test_evidence_semantics_bug140.py (6 tests, PASS). Neighboring research suites (task4 validation/dataset, phase09b, phase26 context-aware, phase21 observability) 107 PASS.
+
+## BUG-141 — 70D bundle clobbered by 50D checkpoint write; no width-contract guard on artifact writers (2026-08-29 Nexus-Main)
+
+**Symptom:** logs/error/2026-08-29: MODEL INTEGRITY_FAILURE SCALER_DIMENSION_MISMATCH
+(scaler 70D vs model 50D) on artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt;
+champion rejected; ~70 FRESHNESS_GATE BLOCKED_BY_STALE warnings; zero live inference
+all session. Warning 1 (scaler fallback) + warning 2 (champion unavailable) same root.
+
+**Evidence:** sha256(70d_liquidity/model.pt) == sha256(v1.0.0/model.pt) ==
+sha256(EURUSD/v1.0.0/model.pt) == 0872ae0b85b3c74b... (1,325,291 B, head (128,50))
+while genuine 70D checkpoints are 1,335,531 B (head (128,70), cf. 70d_news). The
+genuine 70D artifact (live and healthy after BUG-136, aa56671) was overwritten
+2026-08-27 18:36; v1.0.0 + EURUSD v1.0.0 were re-stamped 2026-08-24 06:46. All
+three are byte-identical copies of the 50D champion checkpoint — a COPY, not a
+fresh-seed (fresh ScalpNet(50) hashes differently). Exact executing session
+unproven (engine logs for 08-24/08-27 are not on disk); writer mechanism PROVEN:
+only two code paths write model.pt — force-fresh seeding and
+_trigger_async_online_fine_tune/_reinitialize_collapsed_model via
+_save_model_weights_atomic — and neither checked the in-memory model width
+against the target path's declared contract, so a desynced (50D-serving,
+70D-path) state silently persisted 50D weights over the genuine 70D artifact.
+
+**Fix (this commit):** width-contract guards on BOTH writer classes:
+1. `_declared_contract_dim_for_path` — declared width from meta.json ->
+   scaler.npz -> checkpoint, None on cold-start.
+2. `_save_model_weights_atomic` refuses (CRITICAL log, no write, no residue) a
+   save whose input width contradicts the target path's declared contract
+   (fail-open only on probe error, never on mismatch).
+3. force-fresh seeding uses the path's declared width (50D class default only
+   on cold-start) — force_fresh can no longer mint a 50D file into a declared-
+   70D path.
+4. `_reinitialize_collapsed_model` re-seeds at the declared width.
+
+**Tests:** tests/unit/test_model_artifact_contract_bug141.py (9 tests: declared
+resolution meta/scaler/cold-start, refuse-mismatch byte-exact preservation,
+compatible-write success, unrestricted cold path, force-fresh 70D seeding,
+cold-start 50D bootstrap). Temp-copy artifacts only.
+
+**Recovery (follow-up commit):** genuine 70D bundle regenerated via the
+canonical three_model.train_variant("70d_liquidity") purged walk-forward
+trainer (user-directed 70D focus; restoring 70d_news/model.pt or promoting
+unvalidated wf_candidate/liq70_proof would violate the feature-semantics /
+research-safety contracts).
+
+**Root cause status:** writer mechanism + artifact identity PROVEN; executing
+session UNKNOWN (logs rotated). Risk: HIGH (model contract). VERIFIED: unit
+probes + 9-test regression suite. NOT VERIFIED: live restart (needs engine
+restart by operator).

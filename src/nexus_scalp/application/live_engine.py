@@ -2172,6 +2172,45 @@ class LiveEngine:
             return int(LiveEngine.FEATURE_DIM)
         return int(self.__class__.FEATURE_DIM)
 
+    def _declared_contract_dim_for_path(self, model_path: Path) -> int | None:
+        """BUG-141: DECLARED feature width for an artifact path (meta.json first).
+
+        Reads the bundle's own declaration (model.meta.json -> scaler npz ->
+        existing checkpoint, in that order) instead of the process-wide class
+        default. Returns None when the path carries no declaration yet
+        (cold-start) so first-run bootstrap semantics are unchanged.
+        """
+        import json as _json
+
+        try:
+            meta_path = model_path.with_suffix(".meta.json")
+            if meta_path.exists():
+                with open(meta_path, encoding="utf-8") as fh:
+                    meta = _json.load(fh)
+                dim = meta.get("feature_schema_dimension") or meta.get("num_features")
+                if isinstance(dim, int) and dim > 0:
+                    return dim
+        except Exception:
+            pass
+        try:
+            scaler_path = model_path.with_suffix(".scaler.npz")
+            if scaler_path.exists():
+                data = np.load(scaler_path)
+                shape = tuple(np.asarray(data["mean"]).shape)
+                if shape and shape[0] > 0:
+                    return int(shape[0])
+        except Exception:
+            pass
+        try:
+            if model_path.exists():
+                probe = torch.load(model_path, map_location="cpu")
+                w = probe.get("input_projection.weight") if isinstance(probe, dict) else None
+                if w is not None and hasattr(w, "shape") and len(w.shape) == 2:
+                    return int(w.shape[1])
+        except Exception:
+            pass
+        return None
+
     def _load_or_initialize_model_weights(self, model_path: Path, force_fresh: bool) -> ScalpNet:
         """Loads model.pt if present, validating against the artifact's own declared width.
 
@@ -2180,7 +2219,12 @@ class LiveEngine:
         the process-wide 50D default.
         """
         if force_fresh:
-            expected_dim = int(self.__class__.FEATURE_DIM)
+            # BUG-141: seed the width the PATH's declared contract demands
+            # (meta/scaler/checkpoint), not the process-wide class default -
+            # force_fresh must never mint a 50D file into a declared-70D path.
+            expected_dim = self._declared_contract_dim_for_path(model_path) or int(
+                self.__class__.FEATURE_DIM
+            )
         else:
             expected_dim = self._expected_num_features_for_artifact(model_path)
         model = ScalpNet(num_features=expected_dim, num_classes=4)
@@ -2253,7 +2297,31 @@ class LiveEngine:
             return ScalerBundle(mean=None, std=None)
 
     def _save_model_weights_atomic(self, model: ScalpNet, model_path: Path) -> None:
-        """Saves current PyTorch model weights state_dict atomically to disk with thread lock and logging."""
+        """Saves current PyTorch model weights state_dict atomically to disk with thread lock and logging.
+
+        BUG-141 guard: refuses to persist weights whose input width contradicts
+        the target path's DECLARED contract (meta/scaler/checkpoint). A
+        desynced runtime state must never silently overwrite a bundle with a
+        mismatched-dimension artifact (the 2026-08-27 70d_liquidity clobber
+        class). Mismatch -> CRITICAL log + no write (artifact preserved).
+        """
+        try:
+            model_width = int(model.input_projection.weight.shape[1])
+            declared = self._declared_contract_dim_for_path(model_path)
+            if declared is not None and declared != model_width:
+                logger.critical(
+                    "[BUG141_GUARD] event=ARTIFACT_WIDTH_CONTRACT_REFUSED",
+                    path=str(model_path),
+                    model_width=model_width,
+                    declared_dim=declared,
+                )
+                return
+        except Exception as guard_err:  # never block the save on guard failure
+            logger.warning(
+                "[BUG141_GUARD] contract probe failed (save proceeds)",
+                error=str(guard_err),
+                path=str(model_path),
+            )
         with self._bundle_lock:
             try:
                 model_path.parent.mkdir(parents=True, exist_ok=True)
@@ -5014,7 +5082,10 @@ class LiveEngine:
                 no_trade_pct=round(dist["no_trade_pct"], 1),
             )
             model_path = Path(self.config.model.model_artifact_path)
-            fresh = ScalpNet(num_features=self.FEATURE_DIM, num_classes=4)
+            fresh = ScalpNet(
+                num_features=self._declared_contract_dim_for_path(model_path) or self.FEATURE_DIM,
+                num_classes=4,
+            )
             fresh.eval()
             with self._bundle_lock:
                 self._bundle = ModelBundle(
