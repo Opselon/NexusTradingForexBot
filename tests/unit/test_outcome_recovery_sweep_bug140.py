@@ -215,10 +215,16 @@ def seed_deal(
 
 class TestHistoricalOutcomeRecoverySweep:
     def test_broker_epoch_helper(self):
-        # GMT+3 server time: 1784141119 -> UTC is 3 hours earlier
+        # audit_broker_deals.time is already stored as a real UTC epoch (the
+        # broker-history sync retains the raw broker timestamp; see
+        # broker_history.normalize_deal_row / _utc_epoch_sec). The sweep must
+        # NOT re-apply the GMT+3 server offset — that double-correction pushed
+        # close times 3h before the decision and silently refused valid trades
+        # (BUG-140: exp_e0e212d5 refused via CAUSALITY_REFUSED_PRE_DECISION).
         dt = _broker_epoch_to_utc(1784141119)
         assert dt is not None
         assert dt.tzinfo == UTC
+        assert dt == datetime.fromtimestamp(1784141119, tz=UTC)
         assert _broker_epoch_to_utc(0) is None
 
     def test_filled_and_closed_trade_full_recovery(self, repo, ledger):
@@ -227,7 +233,7 @@ class TestHistoricalOutcomeRecoverySweep:
         rec = seed_decision(ledger, "req_fill_1", dec_ts, entry=2000.0, sl=1990.0, tp=2020.0)
         seed_dispatch(repo, "req_fill_1", ticket=1001, ts=dec_ts)
         # Server epoch for GMT+3 (decision_ts + 3h = 13:00 server)
-        server_epoch = int(dec_ts.timestamp()) + 180 * 60
+        server_epoch = int(dec_ts.timestamp())
         seed_broker_order(repo, ticket=1001, state=4, position_id=5001, time_setup=server_epoch)
         # Fill deal (entry=0) at +1min, Close deal (entry=1, profit=100.0) at +5min
         seed_deal(
@@ -288,7 +294,7 @@ class TestHistoricalOutcomeRecoverySweep:
         dec_ts = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
         rec = seed_decision(ledger, "req_fallback", dec_ts)
         seed_dispatch(repo, "req_fallback", ticket=1002, ts=dec_ts)
-        server_epoch = int(dec_ts.timestamp()) + 180 * 60
+        server_epoch = int(dec_ts.timestamp())
         # position_id=0 on broker order (legacy sync state)
         seed_broker_order(repo, ticket=1002, state=4, position_id=0, time_setup=server_epoch)
         # deals carry position_id=7001 and order=1002
@@ -335,7 +341,7 @@ class TestHistoricalOutcomeRecoverySweep:
         dec_ts = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
         rec = seed_decision(ledger, "req_split_order", dec_ts, entry=2000.0, sl=1990.0, tp=2020.0)
         seed_dispatch(repo, "req_split_order", ticket=1010, ts=dec_ts)
-        server_epoch = int(dec_ts.timestamp()) + 180 * 60
+        server_epoch = int(dec_ts.timestamp())
         # Legacy sync: broker order row has position_id=0.
         seed_broker_order(repo, ticket=1010, state=4, position_id=0, time_setup=server_epoch)
         # Entry deal: order=1010 (the dispatched ticket), position=7101, entry commission=-0.5.
@@ -433,7 +439,7 @@ class TestHistoricalOutcomeRecoverySweep:
         dec_ts = datetime(2026, 8, 1, 13, 0, tzinfo=UTC)
         seed_decision(ledger, "req_open", dec_ts)
         seed_dispatch(repo, "req_open", ticket=4001, ts=dec_ts)
-        server_epoch = int(dec_ts.timestamp()) + 180 * 60
+        server_epoch = int(dec_ts.timestamp())
         seed_broker_order(repo, ticket=4001, state=4, position_id=6001, time_setup=server_epoch)
         # Entry deal ONLY (no exit deal)
         seed_deal(
@@ -459,8 +465,8 @@ class TestHistoricalOutcomeRecoverySweep:
         dec_ts = datetime(2026, 8, 1, 14, 0, tzinfo=UTC)
         seed_decision(ledger, "req_bad_caus", dec_ts)
         seed_dispatch(repo, "req_bad_caus", ticket=5001, ts=dec_ts)
-        # Deal epoch set to 1 hour BEFORE decision
-        bad_epoch = int((dec_ts - timedelta(hours=1)).timestamp()) + 180 * 60
+        # Deal epoch set to 1 hour BEFORE decision (raw UTC, no offset).
+        bad_epoch = int((dec_ts - timedelta(hours=1)).timestamp())
         seed_broker_order(repo, ticket=5001, state=4, position_id=7001, time_setup=bad_epoch)
         seed_deal(
             repo,
@@ -503,7 +509,7 @@ class TestHistoricalOutcomeRecoverySweep:
         dec_ts = datetime(2026, 8, 1, 16, 0, tzinfo=UTC)
         seed_decision(ledger, "req_idem", dec_ts)
         seed_dispatch(repo, "req_idem", ticket=6001, ts=dec_ts)
-        server_epoch = int(dec_ts.timestamp()) + 180 * 60
+        server_epoch = int(dec_ts.timestamp())
         seed_broker_order(repo, ticket=6001, state=4, position_id=8001, time_setup=server_epoch)
         seed_deal(
             repo,
@@ -554,7 +560,7 @@ class TestHistoricalOutcomeRecoverySweep:
         dec_ts = datetime(2026, 8, 1, 18, 0, tzinfo=UTC)
         seed_decision(ledger, "req_ds_fill", dec_ts)
         seed_dispatch(repo, "req_ds_fill", ticket=8001, ts=dec_ts)
-        server_epoch = int(dec_ts.timestamp()) + 180 * 60
+        server_epoch = int(dec_ts.timestamp())
         seed_broker_order(repo, ticket=8001, state=4, position_id=9001, time_setup=server_epoch)
         seed_deal(
             repo,

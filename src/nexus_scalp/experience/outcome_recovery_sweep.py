@@ -76,18 +76,12 @@ _ORDER_STATE_REJECTED = 5
 #: Matches the OutcomeRepairJob convention; injectable for tests/other symbols.
 DEFAULT_CONTRACT_SIZE = 100.0
 
-#: Server-local (GMT+3) epoch -> UTC conversion used by the broker-history
-#: copy (audit_broker_orders.time_setup / audit_broker_deals.time).
-_BROKER_SERVER_UTC_OFFSET_MINUTES = 180
-
 
 def _broker_epoch_to_utc(epoch_sec: int) -> datetime | None:
     if not epoch_sec:
         return None
     try:
-        return datetime.fromtimestamp(
-            int(epoch_sec) - _BROKER_SERVER_UTC_OFFSET_MINUTES * 60, tz=UTC
-        )
+        return datetime.fromtimestamp(int(epoch_sec), tz=UTC)
     except (OverflowError, OSError, ValueError):
         return None
 
