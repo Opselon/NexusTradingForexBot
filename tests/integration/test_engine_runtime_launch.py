@@ -138,9 +138,13 @@ def scan_and_report() -> int:
     except OSError:
         lines = []
     for line in lines:
-        if re.search(r"\b(ERROR|CRITICAL|FATAL)\b", line, re.IGNORECASE) or "Traceback" in line:
+        # BUG-141c: severity must appear in its bracketed structlog slot
+        # ("[error    ]", "[warning  ]") - a bare word match flagged news titles
+        # like "... Critical Third Parties ..." as ENGINE ERRORS and poisoned
+        # failure.json/FIX_PROMPT (2026-08-29).
+        if re.search(r"\[\s*(ERROR|CRITICAL|FATAL)\s*]", line) or "Traceback" in line:
             problems["errors"].append(line)
-        elif re.search(r"\bWARNING\b", line, re.IGNORECASE):
+        elif re.search(r"\[\s*WARNING\s*]", line):
             problems["warnings"].append(line)
 
     # 2) Engine-launch smoke: the same construction NexusTradingForexBot does.
