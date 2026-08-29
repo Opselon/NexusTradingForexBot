@@ -696,6 +696,14 @@ class ExperienceIntelligenceEngine:
 
             record = self.ledger.get_experience_by_key(key)
             if record is None:
+                # BUG-140 E2E finding: the pre-trade decision row is queued to
+                # the async audit writer; an outcome arriving before the worker
+                # flushed it (fast fill / instant terminal path) must NOT be
+                # dropped as an orphan. Drain the queue once and retry the
+                # lookup before refusing with NO_DECISION_SNAPSHOT.
+                self.ledger.flush_pending()
+                record = self.ledger.get_experience_by_key(key)
+            if record is None:
                 # No decision snapshot: recording an orphan outcome would
                 # fabricate evidence with no context, so it is refused - but
                 # with full diagnostics.

@@ -1328,6 +1328,33 @@ class AuditRepository:
         except Exception:
             pass
 
+    def flush(self, timeout_sec: float = 5.0) -> bool:
+        """Boundedly drains the background write queue.
+
+        Guarantees that every audit write enqueued on THIS thread is durable
+        before the caller proceeds. Required for read-after-write sequences
+        such as: pre-trade experience queued -> post-trade outcome immediately
+        recorded (the outcome lookup reads the DB and would otherwise miss the
+        still-queued decision snapshot, BUG-140 E2E finding).
+
+        Bounded by `timeout_sec` so a stalled worker can never deadlock a
+        live-path caller; returns True only when the queue fully drained.
+        """
+        if not self._is_sqlite:
+            return True
+        try:
+            deadline = time.monotonic() + max(0.0, float(timeout_sec))
+            # queue.Queue.join() has no timeout; poll the unfinished count so a
+            # stalled worker can never deadlock a live-path caller.
+            while self._queue.unfinished_tasks > 0:
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(0.005)
+            return True
+        except Exception as e:
+            logger.error("Audit flush failed", error=str(e))
+            return False
+
     def _start_background_worker(self) -> None:
         """Starts the dedicated background thread for zero-latency database inserts."""
         self._running = True

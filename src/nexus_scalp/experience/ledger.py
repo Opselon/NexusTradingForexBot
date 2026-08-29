@@ -137,6 +137,30 @@ class ExperienceLedger:
         self.outcome_count: int = 0
 
     # ------------------------------------------------------------------
+    # Read-consistency helper
+    # ------------------------------------------------------------------
+
+    def flush_pending(self, timeout_sec: float = 5.0) -> bool:
+        """
+        Boundedly drains the audit write queue so queued decision rows become
+        readable before a dependent read (read-after-write consistency).
+
+        BUG-140 E2E finding: an outcome arriving immediately after its
+        pre-trade experience (fast fill / instant terminal path) previously
+        hit NO_DECISION_SNAPSHOT because the pre-trade row was still queued.
+        Fully exception-isolated: a flush failure must never disrupt the
+        live trading path.
+        """
+        try:
+            flush = getattr(self.audit_repo, "flush", None)
+            if callable(flush):
+                return bool(flush(timeout_sec))
+            return False
+        except Exception as e:
+            logger.error("[EXPERIENCE] flush_pending failed", error=str(e))
+            return False
+
+    # ------------------------------------------------------------------
     # Write path
     # ------------------------------------------------------------------
 
@@ -280,6 +304,11 @@ class ExperienceLedger:
             return False
         try:
             decision = self.get_experience_by_key(key)
+            if decision is None:
+                # Read-after-write consistency: the decision row may still be
+                # queued (BUG-140 E2E finding). Drain once before refusing.
+                self.flush_pending()
+                decision = self.get_experience_by_key(key)
         except Exception as e:
             logger.error("[EXPERIENCE] TERMINAL_OUTCOME decision lookup failed", error=str(e))
             return False

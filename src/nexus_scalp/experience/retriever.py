@@ -38,6 +38,13 @@ logger = get_logger("nexus_scalp.experience.retriever")
 #: Minimum context similarity accepted for hierarchical (non-exact) matching.
 MIN_GENERALIZED_SIMILARITY: float = 0.60
 
+#: An exact strategy-family match must hold at least this many causally valid
+#: samples before sibling-context evidence is NOT blended in. Below it, the
+#: family is too thin to act alone, so context-similar evidence from other
+#: strategy families in the same regime/session/setup enriches retrieval
+#: (BUG-140 E2E finding). Sample-size safeguards remain in the decision gate.
+MIN_FAMILY_SAMPLES_FOR_EXACT_ONLY: int = 5
+
 #: Canonical setup families derived from the existing entry-reason taxonomy.
 SETUP_FAMILIES: tuple[str, ...] = (
     "SMC_GOD_MODE",
@@ -217,9 +224,16 @@ class ExperienceRetriever:
             limit=bounded_k,
             before_timestamp=decision_timestamp,
         )
-        if exact:
+        if len(exact) >= MIN_FAMILY_SAMPLES_FOR_EXACT_ONLY:
             return exact, 1.0
 
+        # Young strategy family (or none): augment strategy-specific evidence
+        # with causally-valid, context-similar sibling evidence so regime /
+        # session / setup knowledge can still inform the next decision
+        # (BUG-140 E2E finding: a 1-sample exact match previously hid 60
+        # relevant regime-matched outcomes from the decision gate).
+        seen_ids = {r.experience_id for r in exact}
+        merged = list(exact)
         candidates = self.ledger.get_experiences_for_symbol(
             symbol=context.symbol,
             limit=bounded_k * 2,
@@ -227,17 +241,28 @@ class ExperienceRetriever:
         )
         scored: list[tuple[ExperienceRecord, float]] = []
         for rec in candidates:
+            if rec.experience_id in seen_ids:
+                continue
             sim = self._calculate_context_similarity(context, rec.context)
             if sim >= MIN_GENERALIZED_SIMILARITY:
                 scored.append((rec, sim))
 
-        if not scored:
+        if not merged and not scored:
             return [], 0.0
 
+        if not scored:
+            # Exact-only family, but below the exact-only threshold: still
+            # return what exists rather than fabricating similarity.
+            return exact, 1.0
+
         scored.sort(key=lambda pair: pair[1], reverse=True)
-        top = scored[:bounded_k]
-        avg_sim = float(sum(s for _, s in top) / len(top))
-        return [r for r, _ in top], round(avg_sim, 4)
+        remaining = bounded_k - len(merged)
+        top = scored[:max(0, remaining)]
+        merged.extend(r for r, _ in top)
+
+        sims = [1.0] * len(exact) + [s for _, s in top]
+        avg_sim = float(sum(sims) / len(sims)) if sims else 0.0
+        return merged, round(avg_sim, 4)
 
     @staticmethod
     def _calculate_context_similarity(c1: StrategyContext, c2: StrategyContext) -> float:
