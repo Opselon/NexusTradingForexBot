@@ -26,7 +26,7 @@ mt5:
 model:
   confidence_threshold: 0.35      # آستانه اطمینان مدل هوش مصنوعی پایتورچ
   feature_schema_version: "v1.0"  # نسخه ویژگی‌ها
-  model_artifact_path: "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
+  model_artifact_path: "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
 
 news:
   enabled: true

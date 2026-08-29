@@ -126,7 +126,7 @@ class AlgorithmSnapshot:
 class ModelSnapshot:
     confidence_threshold: float = 0.35
     feature_schema_version: str = "v1.0"
-    model_artifact_path: str = "artifacts/models/scalp/XAUUSD/v1.0.0/model.pt"
+    model_artifact_path: str = "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
     liquidity_features_enabled: bool = False
     model_version: str = ""
     model_hash: str = ""
