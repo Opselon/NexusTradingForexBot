@@ -706,7 +706,13 @@ class LiveEngine:
         self.champion_manager = ChampionManager(
             artifact_path=str(initial_art_path),
             model_id="primary_scalp",
-            model_version=str(getattr(self.config.model, "feature_schema_version", "v1.0" if declared_dim != 70 else "v3.0")),
+            model_version=str(
+                getattr(
+                    self.config.model,
+                    "feature_schema_version",
+                    "v1.0" if declared_dim != 70 else "v3.0",
+                )
+            ),
             feature_schema_id=declared_schema,
             feature_dimension=declared_dim,
             num_classes=4,
