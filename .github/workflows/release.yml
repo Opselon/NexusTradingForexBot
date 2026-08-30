@@ -257,6 +257,7 @@ jobs:
       - name: Checksums + manifest + SBOM
         shell: pwsh
         run: |
+          $V = $env:NSE_VERSION
           $Out = $env:NSE_OUT
 
           New-Item -ItemType Directory -Force -Path "$Out\checksums" | Out-Null
