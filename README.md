@@ -46,9 +46,9 @@ Two ways:
    Python, pip or PyTorch. First run opens the **setup wizard** (`nexus setup`):
    compatibility report → mode (**default: PAPER**, never silently LIVE) →
    symbol → health check.
-   > 🚀 **v9.0.0 Production Release Ready:** The release pipeline (`.github/workflows/release.yml`) builds
-   > packaged Windows x64 binaries (`NexusScalpEngine-<version>-win-x64-setup.exe` and portable `.zip`) with
-   > automated SHA-256 digests and release manifests.
+   > 🚀 **v9.0.3 Production Release Ready:** The release pipeline (`.github/workflows/release.yml`) builds
+   > packaged Windows x64 binaries (`NexusScalpEngine-9.0.3-win-x64-setup.exe` and portable `.zip`) with
+   > automated SHA-256 digests, release manifests, and SBOMs.
 
 2. **Developers — run from source (see below).**
 
@@ -365,10 +365,10 @@ troubleshooting — incl. slow-network/apt-retry notes). Windows helpers:
 
 ## Status
 
-- **Version:** 9.0.0 (semver, single canonical source: `pyproject.toml` → stamped into every build artifact).
-- **State:** Production-hardened runtime; packaged **release pending first v-tag publish** (pipeline complete).
-- **Major capabilities:** live MT5 execution, shadow/candidate pipeline, closed-loop research, news gate, control-center UI, self-update/rollback.
-- **Active limitations:** no published release yet · 70D research series candidate-only with negative OOS evidence · Windows x64 only · news engine opt-in.
+- **Version:** 9.0.3 (semver, single canonical source: `pyproject.toml` → stamped into every build artifact).
+- **State:** Production-hardened runtime; **v9.0.3 published** via the hardened release pipeline (canonical artifact naming contract: `NexusScalpEngine-<version>-win-x64.zip` / `-setup.exe`, SHA-256 checksums, release manifest + SBOM, embedded manifest in the portable bundle, post-publish release verification).
+- **Major capabilities:** live MT5 execution with **account-identity fail-safe** (connect refuses a terminal logged into a different account than configured — BUG-142), shadow/candidate pipeline, closed-loop research, news gate, control-center UI, self-update/rollback.
+- **Active limitations:** 70D research series candidate-only with negative OOS evidence · Windows x64 only · news engine opt-in.
 
 ---
 
