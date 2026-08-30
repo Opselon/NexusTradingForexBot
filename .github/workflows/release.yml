@@ -434,9 +434,9 @@ jobs:
           if not assets:
               print("NO ASSETS UPLOADED")
               ok = False
-          print(f"verified release: tag={data.get(\"tag_name\")} assets={len(assets)}")
+          print(f'verified release: tag={data.get("tag_name")} assets={len(assets)}')
           for a in assets:
-              print(f"  asset: {a.get(\"name\")} {a.get(\"size\")} bytes")
+              print(f'  asset: {a.get("name")} {a.get("size")} bytes')
           print("VERIFIED" if ok else "VERIFICATION FAILED")
           sys.exit(0 if ok else 1)
           PY
