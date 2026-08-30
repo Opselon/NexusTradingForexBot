@@ -1621,13 +1621,17 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: authoritative freshness of
             # every pipeline stage (market/features/inference/decision), each
             # FRESH|STALE|UNKNOWN independent of process uptime / state_version.
-            "live_freshness": (engine.compute_live_freshness() if engine is not None else None),
+            "live_freshness": (
+                engine.compute_live_freshness()
+                if engine is not None and hasattr(engine, "compute_live_freshness")
+                else None
+            ),
             # UI stale-state flag: lets the frontend show an explicit STALE
             # banner instead of trusting state_version (which keeps climbing
             # even when intelligence is frozen).
             "is_stale": (
                 bool(engine.compute_live_freshness().get("overall") == "STALE")
-                if engine is not None
+                if engine is not None and hasattr(engine, "compute_live_freshness")
                 else False
             ),
             "versioning": _runtime_version_block_stateful(app.state),
