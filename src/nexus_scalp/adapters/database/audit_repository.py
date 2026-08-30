@@ -1755,7 +1755,17 @@ class AuditRepository:
                     (int(ticket),),
                 ).fetchone()
                 return row is not None
-        except Exception:
+        except Exception as e:
+            # FORENSIC REPAIR: never silent. The Phase 14 reconciliation
+            # close-loop uses this pre-check; a broken/unavailable audit DB
+            # must be visible in the logs (the False sentinel semantics are
+            # preserved so callers keep their fallback behavior).
+            logger.error(
+                "has_ledger_opened failed (ticket=%s): %s",
+                ticket,
+                e,
+                exc_info=True,
+            )
             return False
 
     def count_ledger_opened_unclosed(self) -> int:
@@ -1776,7 +1786,15 @@ class AuditRepository:
                     "AND COALESCE(exit_price, 0) = 0;"
                 ).fetchone()
                 return int(row[0]) if row else 0
-        except Exception:
+        except Exception as e:
+            # FORENSIC REPAIR: never silent — a failing reconciliation pre-check
+            # that silently returned -1 would hide audit-DB unavailability.
+            # The -1 sentinel semantics are preserved for the caller fallback.
+            logger.error(
+                "count_ledger_opened_unclosed failed: %s",
+                e,
+                exc_info=True,
+            )
             return -1
 
     def get_broker_deals_for_position(self, position_id: int) -> list[dict[str, Any]]:
@@ -1802,7 +1820,16 @@ class AuditRepository:
                     "ORDER BY time ASC;",
                     (int(position_id),),
                 ).fetchall()
-        except Exception:
+        except Exception as e:
+            # FORENSIC REPAIR: never silent — a failing durable-deal capture read
+            # must be observable so a missing autopsy row is NOT mistaken for
+            # 'no deals'. The [] sentinel semantics are preserved.
+            logger.error(
+                "get_broker_deals_for_position failed (position_id=%s): %s",
+                position_id,
+                e,
+                exc_info=True,
+            )
             return []
         out: list[dict[str, Any]] = []
         for r in rows:
@@ -1839,7 +1866,14 @@ class AuditRepository:
                     (int(ticket),),
                 ).fetchone()
                 return dict(row) if row is not None else None
-        except Exception:
+        except Exception as e:
+            # FORENSIC REPAIR: never silent.
+            logger.error(
+                "get_ledger_opened failed (ticket=%s): %s",
+                ticket,
+                e,
+                exc_info=True,
+            )
             return None
 
     def log_ledger_closed(

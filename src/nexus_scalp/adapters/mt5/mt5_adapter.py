@@ -228,6 +228,27 @@ class DirectMT5Adapter(IMT5Port):
                 )
                 return False
 
+        # Verify account identity if an expected account is configured
+        if self._account is not None:
+            acc_info = mt5.account_info()
+            if acc_info is not None:
+                actual_login = getattr(acc_info, "login", None)
+                if actual_login is not None and int(actual_login) != int(self._account):
+                    logger.critical(
+                        "MT5 ACCOUNT MISMATCH: configured expected account %s does not match "
+                        "actual terminal logged-in account %s. Failing safe to prevent live trading on wrong account.",
+                        self._account,
+                        actual_login,
+                    )
+                    mt5.shutdown()
+                    self._connected = False
+                    self._conn_state.set_state(
+                        MT5ConnectionState.AUTHENTICATION_ERROR,
+                        f"account mismatch: expected {self._account}, got {actual_login}",
+                    )
+                    return False
+                self._conn_state.set_account(acc_info)
+
         self._connected = True
         self._conn_state.set_state(MT5ConnectionState.CONNECTED, "connected")
         logger.info("Successfully connected to MT5 Terminal process.")

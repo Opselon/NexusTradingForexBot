@@ -6134,3 +6134,27 @@ research-safety contracts).
 session UNKNOWN (logs rotated). Risk: HIGH (model contract). VERIFIED: unit
 probes + 9-test regression suite. NOT VERIFIED: live restart (needs engine
 restart by operator).
+## BUG-142 — No MT5 account-identity verification at connect + silent audit read failures (2026-08-30 Nexus-Main forensic repair)
+
+- Category: EXECUTION_SAFETY / PERSISTENCE
+- Symptom: DirectMT5Adapter.connect() never compared the terminal's actual
+  logged-in account (account_info().login) against the configured expected
+  account (cfg.mt5.account). If the terminal had a different account open
+  (or login() was skipped because credentials were unset), the engine could
+  dispatch live orders to the WRONG account. Separately, four integrity-
+  relevant AuditRepository read helpers (has_ledger_opened,
+  count_ledger_opened_unclosed, get_ledger_opened,
+  get_broker_deals_for_position) swallowed exceptions and returned their
+  degraded sentinel (False/-1/None/[]) with zero logging — a broken audit DB
+  masqueraded as 'nothing to reconcile' / 'no deals'.
+- Root cause: connect() flow ended at login-ok without an identity check;
+  read helpers used bare `except Exception: return sentinel`.
+- Fix: (1) connect() now calls account_info() after initialize+login and
+  fails safe on mismatch (AUTHENTICATION_ERROR, shutdown, connect()==False)
+  whenever an expected account is configured; verified login is recorded via
+  conn_state.set_account(). (2) All four helpers now log the exception with
+  exc_info=True before returning the unchanged sentinel semantics.
+- Tests: tests/unit/test_forensic_repair_account_and_audit.py (6 tests:
+  mismatch fails safe + blocks dispatch, matching account connects, no
+  expectation preserves legacy behavior, all four helpers log on DB error,
+  healthy-DB behavior unchanged).
