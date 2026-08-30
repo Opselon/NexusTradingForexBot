@@ -6134,7 +6134,10 @@ research-safety contracts).
 session UNKNOWN (logs rotated). Risk: HIGH (model contract). VERIFIED: unit
 probes + 9-test regression suite. NOT VERIFIED: live restart (needs engine
 restart by operator).
-## BUG-142 — No MT5 account-identity verification at connect + silent audit read failures (2026-08-30 Nexus-Main forensic repair)
+## BUG-143 — Release workflow Checksums step fails unhelpfully when installer/zip artifact is missing or empty; added explicit pre-flight validation (2026-08-30 Nexus-Main)
+- Symptom: GitHub Actions release workflow failed with `Cannot find path 'D:\a\...\NexusScalpEngine--win-x64.zip' because it does not exist` (note empty version variable segment in the missing path, caused by step-output scope truncation or silent failure of the packaging/installer step).
+- Root Cause: Get-FileHash fails with an unhelpful filesystem path error when an artifact is missing, hiding which upstream build/installer step actually failed or produced an empty file.
+- Fix: Added robust pre-flight validation loop in `release.yml` Checksums step that checks `Test-Path` and file size (`> 100KB`), throwing clear `BUG143_MISSING_ARTIFACT` or `BUG143_EMPTY_ARTIFACT` errors pointing directly to the expected producer step.
 
 - Category: EXECUTION_SAFETY / PERSISTENCE
 - Symptom: DirectMT5Adapter.connect() never compared the terminal's actual

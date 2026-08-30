@@ -260,6 +260,9 @@ jobs:
           $V = $env:NSE_VERSION
           $Out = $env:NSE_OUT
 
+          # Pre-flight (BUG-143): every checksummed artifact must exist AND be
+          # non-trivially sized BEFORE Get-FileHash runs, so a silently failed
+          # producer step cannot surface as a bare "Cannot find path" here.
           New-Item -ItemType Directory -Force -Path "$Out\checksums" | Out-Null
           $Artifacts = @(
             "$Out\portable\NexusScalpEngine.exe",
@@ -267,6 +270,19 @@ jobs:
             "$Out\NexusScalpEngine-$V-win-x64.zip",
             "$Out\NexusScalpEngine-$V-win-x64-setup.exe"
           )
+          foreach ($a in $Artifacts) {
+            if (-not (Test-Path $a)) {
+              $step = if ($a -like '*-setup.exe') { 'Installer (Inno Setup)' }
+                      elseif ($a -like '*.zip') { 'Stage release tree' }
+                      else { 'build step' }
+              throw "BUG143_MISSING_ARTIFACT: '$a' does not exist (expected producer step: '$step')"
+            }
+            $len = (Get-Item $a).Length
+            Write-Host "artifact: $a ($len bytes)"
+            if ($len -lt 100KB) {
+              throw "BUG143_EMPTY_ARTIFACT: '$a' is only $len bytes — producer step likely failed silently"
+            }
+          }
           $lines = foreach ($a in $Artifacts) {
                       $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
                       $rel = [System.IO.Path]::GetRelativePath("$PWD\$Out", $a)
