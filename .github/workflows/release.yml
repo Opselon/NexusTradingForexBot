@@ -82,12 +82,25 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     timeout-minutes: 25
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
+      # Resolve the canonical version ONCE (from pyproject.toml, already
+      # proven consistent with the tag by the validate job) and publish it as
+      # a job output so the build job never re-derives it with ad-hoc grep.
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          V="$(grep -E '^version = ' pyproject.toml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          if [ -z "$V" ]; then echo "::error::Could not resolve version from pyproject.toml"; exit 1; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved release version: $V"
       - name: Install deps
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -119,6 +132,13 @@ jobs:
     runs-on: windows-latest
     needs: gates
     timeout-minutes: 60
+    env:
+      # Single source of truth for the staged release tree + artifact names.
+      # Every later step derives paths from THIS output; no ad-hoc re-derivation.
+      NSE_VERSION: ${{ needs.gates.outputs.version }}
+      NSE_PLATFORM: windows
+      NSE_ARCH: x64
+      NSE_OUT: release/v${{ needs.gates.outputs.version }}/windows/x64
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -137,7 +157,7 @@ jobs:
       - name: Write build-info.json
         shell: pwsh
         run: |
-          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
+          $V = $env:NSE_VERSION
           $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
           $commit = (git rev-parse --short HEAD)
           $dirty = if ((git status --porcelain | Measure-Object).Count -gt 0) { $true } else { $false }
@@ -184,8 +204,8 @@ jobs:
       - name: Stage release tree
         shell: pwsh
         run: |
-          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
-          $Out = "release\v$V\windows\x64"
+          $V = $env:NSE_VERSION
+          $Out = $env:NSE_OUT
           New-Item -ItemType Directory -Force -Path "$Out\portable" | Out-Null
           Copy-Item "release\build\windows-x64\onedir\NexusScalpEngine\*" "$Out\portable" -Recurse -Force
           New-Item -ItemType Directory -Force -Path "$Out\portable\docs" | Out-Null
@@ -195,13 +215,17 @@ jobs:
           Set-Content "$Out\portable\README.txt" "Nexus Scalp Engine portable - v$V"
           New-Item -ItemType Directory -Force -Path "$Out\cli" | Out-Null
           Copy-Item "release\build\windows-x64\onefile\NexusScalpEngine-CLI.exe" "$Out\cli" -Force
+          # Canonical artifact naming (single source of truth):
+          #   portable zip: NexusScalpEngine-<version>-win-x64.zip
+          #   installer:    NexusScalpEngine-<version>-win-x64-setup.exe
           $zip = "$Out\NexusScalpEngine-$V-win-x64.zip"
           Compress-Archive -Path "$Out\portable\*" -DestinationPath $zip
           Write-Host "staged: $Out"
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
-          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
+          $V = $env:NSE_VERSION
+          $Out = $env:NSE_OUT
           winget install --id JRSoftware.InnoSetup -e --accept-package-agreements --accept-source-agreements --disable-interactivity
           # Resolve ISCC robustly: winget package installs to Program Files (x86) on windows-latest,
           # not LOCALAPPDATA; probe all known locations plus PATH / WinGet packages.
@@ -226,7 +250,6 @@ jobs:
           }
           if (-not $Iscc -or -not (Test-Path $Iscc)) { throw "ISCC not found after winget install; searched: $($candidates -join ', '), PATH, WinGet Packages" }
           Write-Host "ISCC resolved: $Iscc"
-          $Out = "release\v$V\windows\x64"
           & $Iscc "installer\NexusScalpEngine.iss" `
             "/DNSE_VERSION=$V" "/DNSE_CHANNEL=stable" `
             "/DNSE_SOURCE_DIR=$PWD\$Out\portable" "/DNSE_OUTPUT_DIR=$PWD\$Out"
@@ -234,8 +257,8 @@ jobs:
       - name: Checksums + manifest + SBOM
         shell: pwsh
         run: |
-          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
-          $Out = "release\v$V\windows\x64"
+          $Out = $env:NSE_OUT
+
           New-Item -ItemType Directory -Force -Path "$Out\checksums" | Out-Null
           $Artifacts = @(
             "$Out\portable\NexusScalpEngine.exe",
@@ -254,15 +277,15 @@ jobs:
       - name: Embed release manifest in portable bundle
         shell: pwsh
         run: |
-          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = \"([^\"]+)\"', '$1'
-          $Out = "release\v$V\windows\x64"
+          $Out = $env:NSE_OUT
+
           Copy-Item "$Out\manifests\release-manifest.json" "$Out\portable\release-manifest.json" -Force
           Write-Host "manifest embedded in portable tree"
       - name: verify-release (full self-check incl. secrets)
         shell: pwsh
         run: |
-          $V = (grep -E '^version = ' pyproject.toml | head -1) -replace '^version = "([^"]+)"', '$1'
-          $Out = "release\v$V\windows\x64"
+          $Out = $env:NSE_OUT
+
           python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import verify as v; r=v.verify_release(Path(r'$Out\portable')); print('OVERALL', r['overall']); [print(c['status'], c['check']) for c in r['checks']]; sys.exit(0 if r['valid'] else 1)"
       - name: Upload release artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
