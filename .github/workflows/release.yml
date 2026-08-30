@@ -309,8 +309,12 @@ jobs:
         with:
           name: nexus-release-windows-x64
           path: |
-            release/v*/windows/x64/**/*
-            !release/v*/windows/x64/portable/**/*        # zip carries portable
+            release/v*/windows/x64/NexusScalpEngine-*.zip
+            release/v*/windows/x64/NexusScalpEngine-*-setup.exe
+            release/v*/windows/x64/cli/NexusScalpEngine-CLI.exe
+            release/v*/windows/x64/checksums/SHA256SUMS.txt
+            release/v*/windows/x64/manifests/release-manifest.json
+            release/v*/windows/x64/sbom/sbom.spdx.json
           retention-days: 14
 
   # ---------------------------------------------------------------------------
@@ -374,7 +378,32 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           body_path: notes.md
           files: |
-            release-assets/**/*
+            release-assets/**/*.zip
+            release-assets/*-setup.exe
+            release-assets/**/*.exe
+            release-assets/**/*.txt
+            release-assets/**/*.json
+
+      - name: Undraft release (post-publish safety)
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          # Publish a draft release left behind by a partial upload failure so
+          # the tag is never stranded invisible (publish-verify step needs 200).
+          RESP="$(curl -sS -o /tmp/undraft.json -w "%{http_code}" \
+            -X PATCH \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/${{ github.repository }}/releases/tags/$TAG" \
+            -d '{"draft": false}')" || RESP="000"
+          if [ "$RESP" = "200" ]; then
+            DRAFT=$(python -c "import json;print(json.load(open('/tmp/undraft.json')).get('draft'))")
+            echo "release for $TAG now draft=$DRAFT"
+          else
+            echo "::warning::undraft PATCH returned HTTP $RESP (release may not exist yet)"
+          fi
 
       - name: Verify published release (post-release check)
         if: always()

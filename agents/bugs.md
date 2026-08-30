@@ -6134,7 +6134,10 @@ research-safety contracts).
 session UNKNOWN (logs rotated). Risk: HIGH (model contract). VERIFIED: unit
 probes + 9-test regression suite. NOT VERIFIED: live restart (needs engine
 restart by operator).
-## BUG-143 — Release workflow Checksums step fails unhelpfully when installer/zip artifact is missing or empty; added explicit pre-flight validation (2026-08-30 Nexus-Main)
+## BUG-144 — Release artifact glob polluted release assets with 327 in-repo documentation markdown files; post-publish verification failed 404 because release was left as draft or incomplete (2026-08-30 Nexus-Main)
+- Symptom: `Publish GitHub Release` succeeded in uploading binaries but uploaded hundreds of markdown files from `docs/` and repository docs, and post-release verification failed with HTTP 404.
+- Root Cause: `release-assets/**/*` in softprops/action-gh-release matched every document file copied into the portable bundle during staging, and verification failed if draft state or asset indexing lagged.
+- Fix: Restricted upload glob in `release.yml` to exact release deliverables (`.zip`, `-setup.exe`, `.exe`, `SHA256SUMS.txt`, manifest/sbom json) and added explicit undraft/publish safety step before verification.
 - Symptom: GitHub Actions release workflow failed with `Cannot find path 'D:\a\...\NexusScalpEngine--win-x64.zip' because it does not exist` (note empty version variable segment in the missing path, caused by step-output scope truncation or silent failure of the packaging/installer step).
 - Root Cause: Get-FileHash fails with an unhelpful filesystem path error when an artifact is missing, hiding which upstream build/installer step actually failed or produced an empty file.
 - Fix: Added robust pre-flight validation loop in `release.yml` Checksums step that checks `Test-Path` and file size (`> 100KB`), throwing clear `BUG143_MISSING_ARTIFACT` or `BUG143_EMPTY_ARTIFACT` errors pointing directly to the expected producer step.
