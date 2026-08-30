@@ -26,7 +26,6 @@ from nexus_scalp.experience.evaluator import StrategyEvaluator
 from nexus_scalp.experience.intelligence import ExperienceIntelligenceEngine
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.lifecycle import DecisionLifecycle
-from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.experience.models import (
     ExecutionContext,
     ExperienceOutcome,
@@ -37,6 +36,7 @@ from nexus_scalp.experience.models import (
     StrategyContext,
 )
 from nexus_scalp.experience.outcome_recovery_sweep import HistoricalOutcomeRecoverySweep
+from nexus_scalp.experience.retriever import ExperienceRetriever
 from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.research.backtest import BacktestEngine
 from nexus_scalp.research.candidates import StrategyCandidate

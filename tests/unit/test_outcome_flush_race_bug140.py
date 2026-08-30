@@ -35,7 +35,7 @@ def repo(tmp_path):
     r.close()
 
 
-def _record(request_id: str) -> "object":
+def _record(request_id: str) -> object:
     from nexus_scalp.experience.models import ExperienceRecord
 
     ts = datetime.now(UTC)

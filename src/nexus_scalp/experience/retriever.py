@@ -257,7 +257,7 @@ class ExperienceRetriever:
 
         scored.sort(key=lambda pair: pair[1], reverse=True)
         remaining = bounded_k - len(merged)
-        top = scored[:max(0, remaining)]
+        top = scored[: max(0, remaining)]
         merged.extend(r for r, _ in top)
 
         sims = [1.0] * len(exact) + [s for _, s in top]

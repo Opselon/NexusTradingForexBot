@@ -173,9 +173,7 @@ class TestLifecycleTaxonomy:
         sorted(NON_TRADE_TERMINAL_STATES | DEGRADED_TERMINAL_STATES, key=lambda s: s.value),
     )
     def test_terminal_non_trade_outcome_fields(self, state: DecisionLifecycle):
-        out = build_terminal_non_trade_outcome(
-            idempotency_key="exp_k1", state=state, detail="d"
-        )
+        out = build_terminal_non_trade_outcome(idempotency_key="exp_k1", state=state, detail="d")
         assert out.idempotency_key == "exp_k1"
         assert out.is_executed is False
         assert out.is_closed is True
@@ -358,7 +356,12 @@ class TestEmitTerminalPendingOutcome:
             )
             is False
         )
-        assert emit_terminal_pending_outcome(experience_engine=None, request_id="req_x", state=DecisionLifecycle.NOT_DISPATCHED) is False
+        assert (
+            emit_terminal_pending_outcome(
+                experience_engine=None, request_id="req_x", state=DecisionLifecycle.NOT_DISPATCHED
+            )
+            is False
+        )
         assert (
             emit_terminal_pending_outcome(
                 experience_engine=engine, request_id="", state=DecisionLifecycle.NOT_DISPATCHED
@@ -441,9 +444,12 @@ class TestOrderManagerTerminalWiring:
         om = self._manager(repo, ledger)
         om._entry_order_ids[777] = "req_pend"
 
-        assert om._emit_terminal_for_pending(
-            777, DecisionLifecycle.CANCELED_UNFILLED, "verified cancel"
-        ) is True
+        assert (
+            om._emit_terminal_for_pending(
+                777, DecisionLifecycle.CANCELED_UNFILLED, "verified cancel"
+            )
+            is True
+        )
         row = merged(ledger, "exp_req_pend")
         assert row is not None
         assert row.exit_reason == REASON_CANCELED_UNFILLED
@@ -582,9 +588,7 @@ class TestDatasetLifecycleEligibility:
 
 class TestContextContractRegimeSplit:
     def test_regime_token_lands_in_regime_states_not_trend(self):
-        contract = extract_context_contract(
-            {"regime": {"require": "RANGING_MEAN_REVERSION"}}, None
-        )
+        contract = extract_context_contract({"regime": {"require": "RANGING_MEAN_REVERSION"}}, None)
         assert contract["regime_states"] == ["RANGING_MEAN_REVERSION"]
         assert contract["trend_states"] == []
 
@@ -597,7 +601,7 @@ class TestContextContractRegimeSplit:
         # Discovery-family samples carry the FULL regime taxonomy on
         # sample.regime while sample.trend_state stays BULLISH/BEARISH/NEUTRAL.
         seed_experiences(ledger, repo, 2, prefix="reg_ok", r_values=[0.5, -0.3])
-        for rec in ledger.get_experiences_for_strategy("strat_fam", limit=10):
+        for _rec in ledger.get_experiences_for_strategy("strat_fam", limit=10):
             pass  # default helper regime is RANGING_MEAN_REVERSION via make_record
         builder = ResearchDatasetBuilder(ledger)
         ds = builder.build()
@@ -606,9 +610,7 @@ class TestContextContractRegimeSplit:
         assert all(s.regime == "RANGING_MEAN_REVERSION" for s in samples)
         assert all(s.trend_state == "BULLISH" for s in samples)
 
-        contract = extract_context_contract(
-            {"regime": {"require": "RANGING_MEAN_REVERSION"}}, None
-        )
+        contract = extract_context_contract({"regime": {"require": "RANGING_MEAN_REVERSION"}}, None)
         matches, _diag = filter_samples_by_contract(samples, contract)
         assert len(matches) == 2  # pre-fix this was 0 (CONTEXT_CONTRACT_EMPTY_POPULATION)
 

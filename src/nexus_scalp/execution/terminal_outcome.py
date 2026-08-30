@@ -37,6 +37,7 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.execution.terminal_outcome")
 
+
 #: Map a dispatch failure reason to the canonical terminal lifecycle state.
 def lifecycle_for_dispatch_failure(*, dispatched: bool, broker_rejected: bool) -> DecisionLifecycle:
     if broker_rejected:
@@ -108,7 +109,7 @@ def emit_terminal_pending_outcome(
 
 
 __all__ = [
+    "LIFECYCLE_PAYLOAD_KEY",
     "emit_terminal_pending_outcome",
     "lifecycle_for_dispatch_failure",
-    "LIFECYCLE_PAYLOAD_KEY",
 ]

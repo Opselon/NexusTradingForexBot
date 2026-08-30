@@ -6268,7 +6268,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return _err("INTERNAL_ERROR")
 
     @app.post("/api/research/repair-outcomes")
-
     def trigger_outcome_repair() -> dict[str, Any]:
         """
         BUG-046: repairs historical zero-R closed outcomes from broker deal

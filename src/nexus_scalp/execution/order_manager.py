@@ -37,6 +37,7 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
 from nexus_scalp.experience.lifecycle import DecisionLifecycle
 from nexus_scalp.experience.outcome_recovery import (
     classify_exit_with_evidence,
@@ -46,7 +47,6 @@ from nexus_scalp.features.scalp_features import FeatureVector
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 from nexus_scalp.ports.mt5_port import IMT5Port
-from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
 logger = get_logger("nexus_scalp.execution.order_manager")
@@ -1150,9 +1150,7 @@ class OrderLifecycleManager:
     # research dataset permanently reports MISSING_OUTCOME for it.
     # =========================================================================
 
-    def _emit_terminal_for_pending(
-        self, ticket: int, state: Any, detail: str = ""
-    ) -> bool:
+    def _emit_terminal_for_pending(self, ticket: int, state: Any, detail: str = "") -> bool:
         """Emits the terminal outcome for the decision that placed `ticket`.
 
         The request_id is resolved from the staged entry context registry
@@ -1700,7 +1698,9 @@ class OrderLifecycleManager:
                         detail=f"reconcile sweep: pending vanished from broker view (last_reason={reason or 'none'})",
                     )
             except Exception as sweep_err:
-                logger.error("[RECONCILE] terminal pending sweep failed (isolated)", error=str(sweep_err))
+                logger.error(
+                    "[RECONCILE] terminal pending sweep failed (isolated)", error=str(sweep_err)
+                )
             self._live_tickets_cache = new_cache
 
     def reconcile_pending_state(
