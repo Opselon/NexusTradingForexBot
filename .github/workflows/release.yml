@@ -226,6 +226,37 @@ jobs:
           $zip = "$Out\NexusScalpEngine-$V-win-x64.zip"
           Compress-Archive -Path "$Out\portable\*" -DestinationPath $zip
           Write-Host "staged: $Out"
+      # BUG-166 pre-stage: the installer EMBEDS the verification contract
+      # (SHA256SUMS.txt + release-manifest.json) into the installed tree so
+      # post-install `verify-release` self-verifies (BUG-160). The FULL
+      # contract files cannot exist yet (they hash the installer itself),
+      # so pre-stage a SUBSET over the already-staged portable + CLI + zip
+      # payloads. Portable hashes are byte-identical in the final generation,
+      # so post-install verification of those entries stays semantically
+      # valid; the Checksums step below still regenerates the complete
+      # release SHA256SUMS.txt (incl. setup.exe, BUG-143 pre-flight intact).
+      - name: Pre-stage verification contract for installer (BUG-166)
+        shell: pwsh
+        run: |
+          $V = $env:NSE_VERSION
+          $Out = $env:NSE_OUT
+          New-Item -ItemType Directory -Force -Path "$Out\checksums" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$Out\manifests" | Out-Null
+          $Subset = @(
+            "$Out\portable\NexusScalpEngine.exe",
+            "$Out\cli\NexusScalpEngine-CLI.exe",
+            "$Out\NexusScalpEngine-$V-win-x64.zip"
+          )
+          foreach ($a in $Subset) {
+            if (-not (Test-Path $a)) { throw "BUG166_MISSING_PRESTAGE_ARTIFACT: '$a'" }
+          }
+          $lines = foreach ($a in $Subset) {
+            $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
+            $rel = [System.IO.Path]::GetRelativePath("$PWD\$Out", $a)
+            "$h  $rel"
+          }
+          Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
+          python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); print('pre-stage contract ok')"
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |

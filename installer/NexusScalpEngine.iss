@@ -68,14 +68,16 @@ Source: "{#NSE_SOURCE_DIR}\*"; DestDir: "{app}"; Flags: recursesubdirs createall
 ; Always ship a safe (PAPER) config template that the first-run wizard copies.
 Source: "..\configs\base.yaml"; DestDir: "{localappdata}\NexusScalpEngine\config"; Flags: onlyifdoesntexist uninsneveruninstall
 Source: "..\docs\*"; DestDir: "{app}\docs"; Flags: recursesubdirs createallsubdirs ignoreversion
-; BUG-160: ship the release verification contract INSIDE the installed tree so
-; post-install `verify-release` can actually self-verify. Both files are staged
-; by release.yml BEFORE the installer step (Checksums+manifest runs first; the
-; manifest is additionally embedded in the portable bundle). skipifsource
-; doesntexist keeps installation resilient if staging order ever changes -
-; verify-release then reports the gap honestly instead of failing hard.
-Source: "{#NSE_OUTPUT_DIR}\checksums\SHA256SUMS.txt"; DestDir: "{app}"; Flags: skipifsource doesntexist ignoreversion
-Source: "{#NSE_OUTPUT_DIR}\manifests\release-manifest.json"; DestDir: "{app}"; Flags: skipifsource doesntexist ignoreversion
+; BUG-160/BUG-166: ship the release verification contract INSIDE the
+; installed tree so post-install `verify-release` can self-verify. The
+; full SHA256SUMS.txt/manifest are generated AFTER this step (they hash
+; the installer itself), so release.yml PRE-STAGES a contract subset
+; (portable + cli + zip hashes, manifest without the setup.exe entry)
+; into checksums/ + manifests/ BEFORE invoking ISCC. skipifsourcedoesntexist
+; keeps installation resilient if pre-staging ever changes - verify-release
+; then reports the gap honestly instead of failing hard.
+Source: "{#NSE_OUTPUT_DIR}\checksums\SHA256SUMS.txt"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#NSE_OUTPUT_DIR}\manifests\release-manifest.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\Nexus Scalp Engine"; Filename: "{app}\{#MyAppExeName}"
