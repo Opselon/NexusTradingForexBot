@@ -6448,3 +6448,21 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - LESSON: silent excepts hide dead code paths until they invert a safety decision (the dead
   loader import silently selected the wrong artifact); identity checks must verify the
   artifact the CONFIG SERVES, not the newest registry row - registry newest != runtime truth.
+## BUG-160 CODER ROOT-CAUSE ADDENDUM (2026-08-31 Hermes-Coder)
+- The .iss embedding alone (46516bb/19f47de pre-stage) does NOT close BUG-160:
+  ReleaseVerifier._manifest_checksums() resolved the recorded
+  RELEASE-ROOT-RELATIVE paths (portable/..., cli/...) against sums.parent.
+  CI-staged tree: sums.parent == release root -> PASS (why CI stayed green).
+  Installed tree: sums.parent == install dir -> <install>/portable/... MISSING
+  -> post-install verify-release FAIL (proven with offline 3-layout matrix:
+  CI-top FAIL/portable PASS/embedded FAIL pre-fix).
+- Fix (2b4a47c): _resolve_sums_base() walks up until EVERY recorded path is
+  satisfiable; _sums_rel_candidates() remaps a leading portable/|cli/ segment
+  onto the install root (embedded layout); _locate_recorded_artifact() shared
+  by manifest + sums verification; locator extended for CI top-level layout.
+- Tamper detection intact: modified EXE still FAIL MISMATCH (new regression
+  test). 4 tests in tests/unit/test_release_system.py, wired into
+  tests/critical_suite.txt.
+- Verification: 3-layout matrix post-fix all PASS; pytest release_system(27)
+  + release_hardening(15) PASS; ruff/format/mypy PASS. BUG-161 .iss CRLF blob
+  landed via 2d675c4 (absorbed, verified crlf=150 lf_only=0).
