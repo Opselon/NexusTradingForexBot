@@ -20,6 +20,7 @@ dependencies = [
     "typer>=0.9.0,<1.0.0",
     "rich>=13.7.0,<16.0.0",
     "polars>=0.20.0,<2.0.0",
+    "networkx>=3.0,<4.0",
     "pyarrow>=15.0.0,<26.0.0",
     "numpy>=1.26.0,<3.0.0",
     "torch>=2.2.0,<3.0.0",
@@ -52,6 +53,9 @@ web = [
 release = [
     "pyinstaller>=6.0.0",
     "feedparser>=6.0.0,<7.0.0",
+]
+postgres = [
+    "psycopg[binary]>=3.1,<4.0",
 ]
 
 [project.scripts]

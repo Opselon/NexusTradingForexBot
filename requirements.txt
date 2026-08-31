@@ -27,9 +27,9 @@ torch>=2.2.0,<3.0.0                # PyTorch deep learning library for model inf
 # ------------------------------------------------------------------------------
 # Observability, Logging & Terminal Interface
 # ------------------------------------------------------------------------------
-structlog>=24.1.0,<25.0.0          # Non-blocking structured JSON logging pipeline
+structlog>=24.1.0,<27.0.0          # Non-blocking structured JSON logging pipeline
 typer>=0.9.0,<1.0.0                # Ergonomic CLI framework
-rich>=13.7.0,<14.0.0               # Colored terminal presentation and status tables
+rich>=13.7.0,<16.0.0               # Colored terminal presentation and status tables
 
 # ------------------------------------------------------------------------------
 # MetaTrader 5 Broker Adapter (Windows Platform Conditional)
@@ -50,7 +50,7 @@ feedparser>=6.0.0,<7.0.0           # RSS/Atom news feed parsing (Phase 12)
 pytest>=8.0.0                      # Automated unit and integration testing runner
 pytest-asyncio>=0.23.0             # Asyncio event loop testing extension for pytest
 pytest-cov>=4.1.0                  # Code test coverage metrics calculator
-ruff>=0.2.0                        # Ultra-fast Rust-based linter and formatter
+ruff==0.16.3                       # Ultra-fast Rust-based linter and formatter
 mypy>=1.8.0                        # Static type-checking analyzer
 types-pyyaml>=6.0.12               # Type hints for PyYAML library
 

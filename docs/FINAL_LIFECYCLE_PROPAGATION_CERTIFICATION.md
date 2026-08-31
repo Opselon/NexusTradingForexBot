@@ -143,8 +143,8 @@ The lifecycle **filter** dropdown (`scc-lifecycle-filter`) re-filters the **spat
 
 - **Browser:** Chromium (Playwright), real headless, real DOM + Canvas2D pixel readback.
 - **URL:** `http://127.0.0.1:8082/command_center.html`
-- **Screenshot evidence:** `tests/cc_phase4_populated.png` (fully populated UI) and `tests/cc_phase4_screenshot.png` (early blank state demonstrating D-SLOW-SPATIAL).
-- **Harness artifacts:** `tests/e2e_cc_phase4_result.json` (API + 12-test matrix), `tests/e2e_cc_phase4_populated.json` (30.9s load→populate proof), `tests/e2e_cc_phase4_interactive.json` (inspector click, filter, restart, adversarial), `tests/e2e_cc_phase4_deep.json` / `render.json` / `net.json` / `trace.json` / `apilog.json` / `loadwrap.json` / `boot.json` / `timing.json` (root-cause probes).
+- **Screenshot evidence:** `scratch/e2e_cc_archive/cc_phase4_populated.png` (fully populated UI) and `scratch/e2e_cc_archive/cc_phase4_screenshot.png` (early blank state demonstrating D-SLOW-SPATIAL).
+- **Harness artifacts (archived 2026-08-31 to scratch/e2e_cc_archive/):** `e2e_cc_phase4_result.json` (API + 12-test matrix), `e2e_cc_phase4_populated.json` (30.9s load→populate proof), `e2e_cc_phase4_interactive.json` (inspector click, filter, restart, adversarial), `e2e_cc_phase4_deep.json` / `render.json` / `net.json` / `trace.json` / `apilog.json` / `loadwrap.json` / `boot.json` / `timing.json` (root-cause probes).
 - This is a **real browser run**, not a static analysis. Phase-3's prior cert crash is superseded.
 
 ---

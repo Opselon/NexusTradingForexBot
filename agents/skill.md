@@ -144,7 +144,7 @@ Run the CI-mirror gate before any push (mirrors `.github/workflows/ci.yml`):
 ./beforePush.ps1 -Fix -SkipPush
 ```
 
-Gates (async): **ruff lint** `ruff check`, **ruff format** check, **mypy** `src --junit-xml`, **pytest** critical suite (`tests/critical_suite.txt` via `tests/helpers/run_critical.py`, `pytest -n <RAM-aware> --dist loadgroup --cov=src` + junit/coverage/html), then `ci-results/` summary + deploy gate.
+Gates (async): **ruff lint** `ruff check`, **ruff format** check, **mypy** `src --junit-xml`, **pytest** critical suite (`tests/critical_suite.txt` manifest consumed directly by pytest/beforePush — no wrapper script exists, `pytest -n <RAM-aware> --dist loadgroup --cov=src` + junit/coverage/html), then `ci-results/` summary + deploy gate.
 
 Targeted suites for risky areas:
 - Features/70D: `pytest tests/unit -k \"70 or schema or inference or liquidity\"`
