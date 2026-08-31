@@ -6557,6 +6557,25 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - VERIFIED: py_compile/ruff/format/mypy PASS; test_live_reactivity_bug169 3 PASS;
   policy suite + regime calibration + market radar + pipeline-health + freshness
   G29 + walk-forward + research-task4 all PASS; pushed c4a1eca on main.
+## BUG-174 - historical missing-outcome orphans kept flooding DATASET_REJECTED; recovery sweep was manual-only + skipped gate-rejection evidence (2026-08-31 Nexus-Main)
+- FOUND (21:01 restart): 308 DATASET_REJECTED MISSING_OUTCOME lines in ONE dataset build.
+  Roots: (1) the BUG-140 P0-B HistoricalOutcomeRecoverySweep existed but was only a
+  manual web API, never run automatically, so pre-P0-A orphan decisions re-logged
+  on every build; (2) sweep skipped orphans with no dispatch row, but 59 of them
+  carry an audit_signals EXPERIENCE_/TRADE_INTELLIGENCE_GATE row = POSITIVE proof
+  the decision was refused before dispatch (never could dispatch); (3) new find:
+  _evaluate_predictive_limit proposals carried model_action=None, so the BUG-169b
+  live pre-dispatch NOT_DISPATCHED writer never matched predictive rejections.
+- FIX (fd7545d): sweep runs once per startup inside _startup_experience_self_heal
+  (to_thread, bounded 2000, append-only, failure-isolated); gate-rejection orphans
+  backfilled NOT_DISPATCHED with the gate stage in the detail; unknown-provenance
+  orphans still skipped (no fabrication); predictive-limit proposal now carries
+  model_action + probabilities so the live writer matches them going forward.
+- SCHEMA-LABEL NOTE (user query scalp_v3/50D): census label means scalp_v3
+  provenance with the 50-value BASE snapshot (70D = base50 + news10 + liquidity10
+  assembled at inference). Expected shape, not a violation.
+- VERIFIED: 4 new tests PASS (backfill/idempotent/dry-run/70D decomposition) +
+  closed-loop BUG-140 integration + policy + BUG-169 suites PASS; ruff/mypy PASS.
 ## BUG-170/171/172/173 CODER REPAIR ADDENDUM (2026-08-31 Hermes-Coder)
 - BUG-170: _spawn_daemon now claims nexus.pid atomically via
   os.open(O_CREAT|O_EXCL); the TOCTOU race is closed (probe: 2 spawns -> 1).
