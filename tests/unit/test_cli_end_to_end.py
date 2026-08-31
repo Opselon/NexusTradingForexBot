@@ -890,31 +890,36 @@ def test_e2e_46_model_dataset_build_with_news_empty_db_warns_all_zero(
     assert "all-zero" in res.stdout, "empty news DB must warn that news context is neutral"
 
 
-def test_e2e_47_bug150_with_news_without_news_db_crashes_operational_error(
+def test_e2e_47_bug150_with_news_without_news_db_degrades_gracefully(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """BUG-150 pin: the ``Path('')`` sentinel normalizes to ``Path('.')``
-    (truthy + exists) so the DB branch opens ``.`` as the news DB and crashes
-    instead of degrading to the documented all-zero warning."""
+    """BUG-150 FIXED: bare ``--with-news`` (no --news-db) resolves the default
+    to artifacts/news.db; when that file is absent the command degrades to the
+    documented all-zero warning (news ON == news OFF) — never the old crash
+    that opened the CURRENT DIRECTORY as a sqlite database."""
     _isolated_cwd(tmp_path, monkeypatch)
     (tmp_path / "artifacts").mkdir()
     bars = _make_bars_csv(tmp_path, rows=300, seed=5)
     res = _invoke(["model-dataset-build", "--bars", str(bars), "--with-news"])
-    assert res.exit_code == xc.EXIT_RUNTIME
-    assert type(res.exception).__name__ == "OperationalError"
+    assert res.exit_code == xc.EXIT_OK
+    assert "no --news file or --news-db found" in res.stdout
+    assert "Dataset built" in res.stdout
 
 
-def test_e2e_48_bug151_model_train_3_references_missing_pipeline_module(
+def test_e2e_48_bug151_model_train_3_uses_canonical_pipeline_module(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """BUG-151 pin: model-train-3 imports the nonexistent
-    ``three_model_pipeline`` module (canonical module is ``three_model``)."""
+    """BUG-151 FIXED: model-train-3 imports the CANONICAL ``three_model``
+    module (train_all); the bogus ``three_model_pipeline`` import is gone and
+    an invalid --variant is rejected with the usage exit code, not a crash."""
     _isolated_cwd(tmp_path, monkeypatch)
     import importlib
 
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("nexus_scalp.model_generation.three_model_pipeline")
-    assert not Path("three_model_pipeline.py").exists()
+    mod = importlib.import_module("nexus_scalp.model_generation.three_model")
+    assert hasattr(mod, "train_all")
+    res = _invoke(["model-train-3", "--variant", "nope"])
+    assert res.exit_code == xc.EXIT_USAGE
+    assert "50d_main" in res.stdout
 
 
 def test_e2e_49_model_lifecycle_error_paths_exit_runtime_with_panels(

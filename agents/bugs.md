@@ -6168,11 +6168,48 @@ restart by operator).
 ## BUG-150 — `model-dataset-build --with-news` crashes when no explicit `--news-db` is given (2026-08-31 Nexus-Main)
 - Symptom: `nexus model-dataset-build --bars x.csv --with-news` (no `--news-db`) dies with `sqlite3.OperationalError: unable to open database file` instead of degrading to the documented all-zero news warning.
 - Root cause: the option sentinel is `Path("")`, which normalizes to `Path('.')` (truthy AND `.exists() == True`), so the DB branch is taken and `NewsDatabase(Path('.'))` tries to open the current directory as a SQLite file. PROVEN by probe (`repr(Path('')) -> WindowsPath('.')`) + crash traceback at cli/main.py:2473.
-- Fix (pending): treat empty `Path` options as unset (`if str(news_db)` before `.exists()`), or default to the canonical `artifacts/news.db` anchor.
+- Fix (2026-08-31, same pass): empty sentinel is now resolved to the canonical `artifacts/news.db` (`if str(news_db) in ('', '.')`); a missing file degrades to the documented all-zero warning (news ON == news OFF). VERIFIED by test_e2e_47.
 - Pinned by: tests/unit/test_cli_end_to_end.py::test_e2e_47 (regression pin; flip to happy-path once fixed).
 
 ## BUG-151 — `model-train-3` imports nonexistent `three_model_pipeline` module — every invocation crashes (2026-08-31 Nexus-Main)
 - Symptom: any `nexus model-train-3 ...` invocation raises `ModuleNotFoundError: No module named 'nexus_scalp.model_generation.three_model_pipeline'` (cli/main.py:2704).
 - Root cause: the canonical module is `nexus_scalp/model_generation/three_model.py` (`train_variant`/`write_variants_index` functions); the CLI was written against a `ThreeModelPipeline` class that never existed in the tree.
-- Fix (pending): either add a thin `ThreeModelPipeline` adapter in `three_model.py` delegating to `train_variant(...)`, or rewire the CLI to call `train_variant` per `--variant`.
+- Fix (2026-08-31, same pass): CLI rewired to the canonical `from nexus_scalp.model_generation.three_model import train_all`; invalid `--variant` now rejected with EXIT_USAGE instead of crashing. VERIFIED by test_e2e_48.
 - Pinned by: tests/unit/test_cli_end_to_end.py::test_e2e_48 (regression pin; flip to smoke invocation once fixed).
+
+## BUG-146 — Setup wizard crashed at database step: AuditRepository has no initialize_schema(); only audit+news were provisioned (2026-08-31 Nexus-Main)
+- Symptom: `NexusScalpEngine-CLI.exe setup` failed with "Setup step failed / database / 'AuditRepository' object has no attribute 'initialize_schema'" — the wizard aborted on EVERY fresh machine.
+- Root cause: `repair.py` called `repo.initialize_schema()` / `ndb.initialize_schema()` which do not exist (both repositories create their schema inside `__init__`). Additionally only audit (+optional news) were provisioned — candle_intel.db, strategies.db and app_settings.db were never created by setup/repair.
+- Fix: `_ensure_database`/`_ensure_news_database` rely on constructor-side schema init; added `_ensure_candle_intel_database` (CandleIntelStore anchored to the workspace artifacts dir), `_ensure_strategies_database` (StrategyResearchStore.ensure_schema with explicit DatabaseConfig) and `_ensure_settings_database` (SettingsDatabase at the canonical settings path). `repair --news-db/--no-news-db` is now a real option (default True).
+- Tests: tests/unit/test_packaged_db_and_mode_bug146_149.py (provisions all canonical DBs; initialize_schema pin).
+
+## BUG-147 — Packaged CLI was crippled and reported the wrong version (2026-08-31 Nexus-Main)
+- Symptom: `NexusScalpEngine-CLI.exe start` died with "No module named 'numpy'" (engine import path); banner showed "v9.0.0"; port-in-use surfaced as a raw uvicorn traceback + exit 1.
+- Root cause: the onefile build EXCLUDED numpy/polars/torch/MetaTrader5 while `cli start` legitimately imports the engine via LiveEngine; version fell back to stale dist metadata (9.0.0) because no build-info.json was bundled; no friendly pre-check for a busy web port.
+- Fix: release.yml onefile build is now the FULL engine binary (collect uvicorn/fastapi, hidden imports torch/polars/MetaTrader5, --add-data build-info.json). cli_shim.py reconfigures stdio to UTF-8 (BUG-145 parity). _start_web_and_engine probes 127.0.0.1:port and prints an actionable panel (`nexus stop` / --port N) before uvicorn starts. Repo dist metadata refreshed via pip install -e .
+- Verification: frozen onefile `start --mode paper` boots the full engine (migrations, paper connect, warmup, workers) — previously impossible.
+
+## BUG-148 — UI/console execution-mode mismatch: paper start showed paper, UI switch to LIVE stayed PAPER (2026-08-31 Nexus-Main)
+- Symptom: engine started with `--mode paper` connected the REAL MT5 adapter; switching mode from the dashboard changed config but the runtime stayed PAPER (and vice versa); banner title hardcoded "— PAPER · XAUUSD" regardless of actual mode/symbol.
+- Root cause: adapter choice was independent of the selected mode; the settings-DB `execution.mode` silently overrode the operator's explicit `--mode` at boot; `/api/engine/mode` only wrote config values and never swapped the execution boundary.
+- Fix: (1) `LiveEngine(mode_override=...)` — explicit operator mode is authoritative for the process lifetime (`_mode_override`), persisted DB value cannot flip it. (2) `LiveEngine.set_execution_mode(mode, source)` HOT switch swaps the adapter boundary PaperMT5Adapter <-> DirectMT5Adapter (updates order_manager.adapter too) and re-derives `_runtime_mode` truthfully. (3) `start --mode paper` builds the simulation adapter (double-click can never touch the broker). (4) `/api/engine/mode` routes through set_execution_mode + maps legacy SIMULATION->PAPER. (5) UI selector options are now PAPER/SHADOW/LIVE; welcome banner title shows the actual mode+symbol.
+- Safety: adapter swap never grants order authority by itself — RiskEngine/OrderLifecycleManager remain the only dispatch path; in PAPER the adapter is a simulation so no real order is possible.
+- Tests: mode_override beats persisted settings; hot swap to PAPER swaps adapter + order_manager reference.
+
+## BUG-149 — Packaged EXE anchored databases to the process CWD instead of the bundle (2026-08-31 Nexus-Main)
+- Symptom: frozen EXE launched from an arbitrary directory created a SECOND artifacts tree in that directory (audit.db/news.db/candle_intel.db in the wrong place); UI panels empty.
+- Root cause: `default_sqlite_path()` used raw `os.getcwd()`; AuditRepository kept relative sqlite URLs; NewsConfig.resolve_db_path and CandleIntelStore resolved relative paths against CWD.
+- Fix: new `release.paths.get_artifacts_dir()` (exe bundle when frozen, repo root in dev). default_sqlite_path, AuditRepository relative URLs, NewsConfig.resolve_db_path and CandleIntelStore relative db_path all anchor to it. Verified on the frozen binary: logs show `...\onefile\artifacts\audit.db` and `...\candle_intel.db`.
+- Tests: default path ignores CWD; relative AuditRepository URL anchors to the canonical artifacts dir with real schema present.
+
+## BUG-150 — `model-dataset-build --with-news` opened the CURRENT DIRECTORY as the news DB (2026-08-31 Nexus-Main)
+- Symptom: bare `--with-news` crashed (sqlite3.OperationalError / polars ComputeError parquet) instead of using the documented default artifacts/news.db.
+- Root cause: `Path("")` sentinel normalizes to Path(".") which is truthy and `.exists()` -> True, so the code tried to read "." as a database/parquet file.
+- Fix: sentinel resolved to `Path("artifacts/news.db")` for --news-db; the --news file branch ignores the empty sentinel too. Degradation path is now the documented all-zero warning (news ON == news OFF).
+- Tests: test_e2e_47 covers the graceful degrade + successful dataset build.
+
+## BUG-151 — `model-train-3` imported a nonexistent module and never ran (2026-08-31 Nexus-Main)
+- Symptom: every invocation crashed with ModuleNotFoundError: three_model_pipeline.
+- Root cause: canonical module is `nexus_scalp.model_generation.three_model` (train_all/train_variant); the CLI referenced a pipeline class that does not exist.
+- Fix: CLI imports train_all, validates --variant (50d_main|70d_news|70d_liquidity, usage error otherwise), loads the canonical bars parquet (data/raw/XAUUSD_M1.parquet with a clear missing-file error), and reports per-variant gate status + overall result.
+- Tests: test_e2e_48 pins the canonical import + usage-error path.
