@@ -78,10 +78,22 @@ DEFAULT_DB_FILES: dict[str, str] = {
 
 
 def default_sqlite_path(domain: str, workspace: str | None = None) -> str:
-    """Canonical SQLite file path for a persistence domain."""
+    """Canonical SQLite file path for a persistence domain.
+
+    BUG-149: when no explicit workspace is given the path is anchored to the
+    canonical artifacts directory (release.paths.get_artifacts_dir), which is
+    the exe bundle for frozen runs and the repo root for source runs — never
+    the raw process CWD (a packaged EXE launched from an arbitrary directory
+    previously created a SECOND artifacts tree in that directory).
+    """
     import os
 
-    ws = workspace or os.getcwd()
+    if workspace is not None:
+        ws = workspace
+    else:
+        from nexus_scalp.release.paths import get_artifacts_dir
+
+        ws = str(get_artifacts_dir().parent)
     return os.path.join(ws, "artifacts", DEFAULT_DB_FILES.get(domain, f"{domain}.db"))
 
 

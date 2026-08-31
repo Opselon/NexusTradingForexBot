@@ -63,8 +63,15 @@ class RepairEngine:
         results.append(self._ensure_dirs())
         results.append(self._ensure_config(recreate=recreate_dirs))
         results.append(self._ensure_database())
+        # BUG-146: EVERY canonical persistence domain is provisioned by setup
+        # and repair (never only audit). with_news keeps its legacy meaning
+        # (news is included in the default pass now; the flag remains for
+        # callers that pass False explicitly to skip it).
         if with_news:
             results.append(self._ensure_news_database())
+        results.append(self._ensure_candle_intel_database())
+        results.append(self._ensure_strategies_database())
+        results.append(self._ensure_settings_database())
         results.append(self._ensure_models())
         results.append(self._ensure_logs())
         return results
@@ -108,7 +115,9 @@ class RepairEngine:
             from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
             repo = AuditRepository(db_url=f"sqlite:///{db}")
-            repo.initialize_schema()  # type: ignore[attr-defined]
+            # BUG-146: AuditRepository creates its schema in __init__
+            # (_setup_storage); it has no initialize_schema() method. Calling
+            # the nonexistent method aborted the whole setup wizard.
             repo.close()
             return RepairResult("database", "OK", f"initialized {db}")
         except Exception as e:
@@ -122,11 +131,70 @@ class RepairEngine:
             from nexus_scalp.news.database import NewsDatabase  # type: ignore[import-not-found]
 
             ndb = NewsDatabase(db_path=str(news_db))
-            ndb.initialize_schema()  # type: ignore[attr-defined]
+            # NewsDatabase also initializes its schema in __init__.
             ndb.close()
             return RepairResult("news_db", "OK", f"initialized {news_db}")
         except Exception as e:
             return RepairResult("news_db", "FAILED", str(e))
+
+    def _ensure_candle_intel_database(self) -> RepairResult:
+        """BUG-146: pre-create the candle intelligence DB (candle_intel.db).
+
+        Anchors the store explicitly to THIS workspace's artifacts dir — the
+        store's own CWD-anchoring would put the DB in the process CWD's
+        artifacts (wrong for a frozen EXE launched from elsewhere).
+        """
+        db = self.workspace / "artifacts" / "candle_intel.db"
+        if db.exists():
+            return RepairResult("candle_intel_db", "OK", "existing candle_intel.db preserved")
+        try:
+            from nexus_scalp.candle_intelligence.config import CandleIntelligenceConfig
+            from nexus_scalp.candle_intelligence.store import CandleIntelStore
+
+            cfg = CandleIntelligenceConfig(db_path=str(db))
+            store = CandleIntelStore(cfg)
+            store.close()
+            return RepairResult("candle_intel_db", "OK", f"initialized {db}")
+        except Exception as e:
+            return RepairResult("candle_intel_db", "FAILED", str(e))
+
+    def _ensure_strategies_database(self) -> RepairResult:
+        """BUG-146: pre-create the strategy research DB (strategies.db).
+
+        Anchored explicitly to THIS workspace's artifacts dir.
+        """
+        db = self.workspace / "artifacts" / "strategies.db"
+        if db.exists():
+            return RepairResult("strategies_db", "OK", "existing strategies.db preserved")
+        try:
+            from nexus_scalp.database.config import DatabaseConfig
+            from nexus_scalp.strategies.research_store import StrategyResearchStore
+
+            store = StrategyResearchStore(DatabaseConfig.for_sqlite("strategies", path=str(db)))
+            store.ensure_schema()
+            if hasattr(store, "close"):
+                store.close()
+            return RepairResult("strategies_db", "OK", f"initialized {db}")
+        except Exception as e:
+            return RepairResult("strategies_db", "FAILED", str(e))
+
+    def _ensure_settings_database(self) -> RepairResult:
+        """BUG-146: pre-create the isolated settings DB (app_settings.db)."""
+        try:
+            from nexus_scalp.settings.paths import settings_db_path
+
+            db = settings_db_path()
+            if db.exists():
+                return RepairResult(
+                    "settings_db", "OK", f"existing app_settings.db preserved ({db})"
+                )
+            from nexus_scalp.settings.service import SettingsDatabase
+
+            sdb = SettingsDatabase(db_path=db)
+            sdb.close()
+            return RepairResult("settings_db", "OK", f"initialized {db}")
+        except Exception as e:
+            return RepairResult("settings_db", "FAILED", str(e))
 
     def _ensure_models(self) -> RepairResult:
         model_dir = self.workspace / "artifacts" / "models"

@@ -2666,22 +2666,34 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     # POST /api/engine/mode
     # UI source-of-control: the dashboard's execution-mode selector.
-    # Persists the requested mode in the settings DB (canonical store,
-    # HOT_RESTRICTED) and applies it to the live engine config. The
-    # runtime badge is derived from ACTUAL connection state downstream.
+    # BUG-148: routes through the ENGINE's hot set_execution_mode() so the
+    # operator choice is authoritative, the adapter boundary actually swaps
+    # (PAPER simulation <-> LIVE broker), and the runtime badge is re-derived
+    # from real connection state immediately. Persists in the settings DB and
+    # runtime-config store so the choice survives restart.
     @app.post("/api/engine/mode")
     def set_engine_mode(req: EngineModeRequest) -> dict[str, Any]:
         engine = app.state.engine
         if not engine:
             raise HTTPException(status_code=400, detail="Trading Engine reference not loaded.")
         wanted = req.mode.strip().upper()
+        # BUG-148: the UI ships SIMULATION/REPLAY labels (legacy); map them to
+        # the canonical ExecutionMode values so the selector always works.
+        legacy_map = {"SIMULATION": "PAPER"}
+        wanted = legacy_map.get(wanted, wanted)
         allowed = {m.value for m in ExecutionMode}
         if wanted not in allowed:
             raise HTTPException(
                 status_code=422,
                 detail=f"Invalid execution mode '{req.mode}' (allowed: {', '.join(sorted(allowed))})",
             )
-        engine.config.execution.mode = ExecutionMode(wanted)
+        target = ExecutionMode(wanted)
+        if hasattr(engine, "set_execution_mode"):
+            result = engine.set_execution_mode(target, source="WEB_UI")
+            if not result.get("success"):
+                raise HTTPException(status_code=500, detail=result)
+        else:
+            engine.config.execution.mode = target
         from nexus_scalp.settings import load_settings_service
 
         svc = getattr(engine, "settings_service", None) or load_settings_service()
@@ -2699,13 +2711,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             engine.runtime_config.apply(
                 {"execution.mode": wanted}, source="WEB_ENGINE_MODE", actor="web"
             )
-        # Apply the mode truthfully: refresh runtime derivation while
-        # preserving the real connection state (never fake LIVE).
-        if hasattr(engine, "_update_runtime_mode"):
-            try:
-                engine._update_runtime_mode()
-            except Exception:
-                pass
         return {
             "success": True,
             "mode": wanted,

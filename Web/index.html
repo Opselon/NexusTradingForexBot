@@ -61,9 +61,9 @@
                                 <span class="text-xs text-textMuted block">MODE</span>
                                 <div class="flex items-center gap-2">
                                     <select id="execution-mode-selector" class="bg-darkBg border border-borderClr text-accentCyan text-xs rounded px-2 py-1 font-bold focus:outline-none focus:border-accentCyan cursor-pointer transition">
+                                        <option value="PAPER">PAPER (SIM)</option>
+                                        <option value="SHADOW">SHADOW (no orders)</option>
                                         <option value="LIVE">LIVE TRADING</option>
-                                        <option value="SIMULATION">SIMULATION</option>
-                                        <option value="REPLAY">HIST_REPLAY</option>
                                     </select>
                                     <span id="runtime-mode-badge" title="Real runtime mode derived from MT5 connection state" class="text-[10px] px-2 py-0.5 rounded font-black bg-rose-500/10 text-rose-400 border border-rose-500/30">UNKNOWN</span>
                                 </div>

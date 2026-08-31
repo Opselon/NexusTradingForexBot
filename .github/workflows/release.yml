@@ -185,9 +185,14 @@ jobs:
       - name: PyInstaller onefile CLI
         shell: pwsh
         run: |
+          # BUG-147: the CLI is now the FULL engine-capable binary (no heavy
+          # excludes) - `nexus start` must load the real engine (numpy/
+          # polars/torch) exactly like the onedir EXE. build-info.json is
+          # stamped so version identity is truthful in the frozen binary.
           python -m PyInstaller --noconfirm --clean --onefile --name NexusScalpEngine-CLI `
-            --exclude-module "torch" --exclude-module "polars" --exclude-module "numpy" `
-            --exclude-module "pyarrow" --exclude-module "MetaTrader5" `
+            --add-data "$PWD\build-info.json;." `
+            --collect-submodules "uvicorn" --collect-submodules "fastapi" `
+            --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
             --distpath "release\build\windows-x64\onefile" `
             --workpath "release\build\windows-x64\work-cli" `
             --specpath "release\build\windows-x64" `

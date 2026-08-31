@@ -96,6 +96,18 @@ def get_runtime_workspace() -> Path:
     return Path.cwd()
 
 
+def get_artifacts_dir() -> Path:
+    """Canonical writable artifacts directory (databases/models/logs).
+
+    BUG-149: packaged (frozen) runs MUST anchor artifacts to the bundle
+    directory (exe_dir/artifacts), never to the process CWD, so a launch
+    from an arbitrary working directory (double-click, shortcut, another
+    shell) still reads/writes ONE canonical artifact tree. Source/dev runs
+    keep the repo-root convention (CWD == repo root).
+    """
+    return get_runtime_workspace() / "artifacts"
+
+
 def ensure_user_dirs() -> None:
     """Create the user-data directory skeleton (idempotent, never deletes)."""
     for d in (

@@ -265,9 +265,13 @@ class LiveEngine:
         adapter: IMT5Port,
         audit_repo: AuditRepository | None = None,
         force_fresh_model: bool = False,
+        mode_override: ExecutionMode | None = None,
     ) -> None:
         self.config = config
         self.adapter = adapter
+        # BUG-148: explicit operator mode (CLI --mode). Highest authority at
+        # boot — beats any persisted settings-DB execution.mode value.
+        self._mode_override: ExecutionMode | None = mode_override
         # BUG-130: pre-declare the order manager BEFORE any init section can
         # fail. A construction exception mid-__init__ must never leave
         # run_loop reaching for a missing attribute — the guard below treats
@@ -339,6 +343,9 @@ class LiveEngine:
         #: Real runtime execution mode - updated from connection state, never
         #: blindly trusted from config (task section 8: mode must be real).
         self._runtime_mode: str = ""
+        # BUG-148: UI/CLI mode authority fallback (safety default for direct
+        # construction paths that bypass the explicit mode_override kwarg).
+        self._mode_override = self._mode_override or None
 
         self._consecutive_losses: int = 0
         self._survival_mode_active: bool = False
@@ -485,14 +492,25 @@ class LiveEngine:
         # when the user changed it from the dashboard (UI == source of
         # control). Falls back to the YAML/config default otherwise so a
         # fresh install keeps its documented default.
-        try:
-            mode_row = self.settings_service.db.get("execution.mode")
-            if mode_row is not None and mode_row.value is not None:
-                persisted_mode = str(mode_row.value).strip().upper()
-                if persisted_mode in {m.value for m in ExecutionMode}:
-                    self.config.execution.mode = ExecutionMode(persisted_mode)
-        except Exception as _mode_err:
-            logger.warning("[SETTINGS] execution.mode override failed (non-fatal): %s", _mode_err)
+        # BUG-148: an EXPLICIT operator mode (CLI --mode / dashboard set) is
+        # the highest authority — a persisted DB value must never silently
+        # override the operator's explicit start choice.
+        if self._mode_override is None:
+            try:
+                mode_row = self.settings_service.db.get("execution.mode")
+                if mode_row is not None and mode_row.value is not None:
+                    persisted_mode = str(mode_row.value).strip().upper()
+                    if persisted_mode in {m.value for m in ExecutionMode}:
+                        self.config.execution.mode = ExecutionMode(persisted_mode)
+            except Exception as _mode_err:
+                logger.warning(
+                    "[SETTINGS] execution.mode override failed (non-fatal): %s", _mode_err
+                )
+        else:
+            self.config.execution.mode = self._mode_override
+            logger.info(
+                "[MODE] explicit operator override honored mode=%s", self._mode_override.value
+            )
 
         self.notifier = TelegramNotifier(
             bot_token=bot_token,
@@ -5165,6 +5183,89 @@ class LiveEngine:
         else:
             self._runtime_mode = mode
         logger.info("[MODE] runtime_mode=%s configured_mode=%s", self._runtime_mode, mode)
+
+    def set_execution_mode(self, mode: ExecutionMode, *, source: str = "WEB_UI") -> dict:
+        """BUG-148: HOT execution-mode switch (operator authority, UI + CLI).
+
+        Records the explicit operator choice (beats any persisted value for
+        this process lifetime), re-derives the runtime badge truthfully, and
+        swaps the execution adapter when the new mode requires a different
+        execution boundary (PAPER/SHADOW -> simulation; LIVE -> real broker).
+
+        Trading safety: swapping the adapter NEVER enables live order
+        dispatch by itself — order authority remains RiskEngine +
+        OrderLifecycleManager. In PAPER the adapter is a simulation, so no
+        real order can ever be placed regardless of what the UI shows.
+        """
+        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+        if not isinstance(mode, ExecutionMode):
+            return {"success": False, "reason": "INVALID_MODE"}
+        old_mode = self.config.execution.mode
+        self._mode_override = mode
+        self.config.execution.mode = mode
+        logger.info(
+            "[MODE] HOT_SWAP_REQUESTED source=%s old=%s new=%s",
+            source,
+            old_mode.value,
+            mode.value,
+        )
+
+        # Adapter boundary swap: PAPER/SHADOW => simulation adapter (safe);
+        # LIVE => real MT5 adapter. The adapter is rebuilt only when its
+        # execution boundary actually changes (never mid-order: dispatch
+        # runs on this same loop thread, so the swap is sequential).
+        wants_simulation = mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW)
+        is_simulation = isinstance(self.adapter, PaperMT5Adapter)
+        swapped = False
+        try:
+            if wants_simulation and not is_simulation:
+                old_adapter = self.adapter
+                if hasattr(old_adapter, "disconnect"):
+                    old_adapter.disconnect()
+                new_adapter = PaperMT5Adapter(
+                    initial_balance=float(getattr(self, "_last_balance", 0.0) or 0.0) or 10000.0
+                )
+                self.adapter = new_adapter
+                self.order_manager.adapter = new_adapter
+                self.order_manager.mt5_adapter = new_adapter
+                new_adapter.connect()
+                swapped = True
+            elif not wants_simulation and is_simulation:
+                if hasattr(self.adapter, "disconnect"):
+                    self.adapter.disconnect()
+                from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
+
+                mt5_cfg = getattr(self.config, "mt5", None)
+                new_adapter = DirectMT5Adapter(
+                    account=getattr(mt5_cfg, "account", None),
+                    password=getattr(mt5_cfg, "password", None),
+                    server=getattr(mt5_cfg, "server", None),
+                    timeout=getattr(mt5_cfg, "timeout_ms", 5000),
+                    retries=getattr(mt5_cfg, "retries", 3),
+                )
+                self.adapter = new_adapter
+                self.order_manager.adapter = new_adapter
+                self.order_manager.mt5_adapter = new_adapter
+                new_adapter.connect()
+                swapped = True
+        except Exception as swap_err:
+            logger.error("[MODE] adapter swap failed (isolated): %s", swap_err)
+            return {
+                "success": False,
+                "reason": "ADAPTER_SWAP_FAILED",
+                "detail": str(swap_err),
+                "mode": mode.value,
+            }
+
+        self._update_runtime_mode()
+        return {
+            "success": True,
+            "mode": mode.value,
+            "previous_mode": old_mode.value,
+            "adapter_swapped": swapped,
+            "runtime_mode": self._runtime_mode,
+        }
 
     def _notify_startup(self, account: AccountInfo | None) -> None:
         if not account:

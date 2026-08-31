@@ -20,6 +20,7 @@ import threading
 import time
 from collections import deque
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from nexus_scalp.candle_intelligence.config import CandleIntelligenceConfig
@@ -303,6 +304,14 @@ class CandleIntelStore:
         elif not self.config.db_path:
             self._config = load_database_config("candle_intel")
             self.config.db_path = self._config.sqlite_connect_path
+        elif not Path(self.config.db_path).is_absolute():
+            # BUG-149: a relative default ("artifacts/candle_intel.db") anchors
+            # to the canonical runtime workspace (bundle when frozen), never
+            # the raw process CWD.
+            from nexus_scalp.release.paths import get_runtime_workspace
+
+            self.config.db_path = str(get_runtime_workspace() / self.config.db_path)
+            self._config = DatabaseConfig.for_sqlite("candle_intel", path=self.config.db_path)
         else:
             self._config = DatabaseConfig.for_sqlite("candle_intel", path=self.config.db_path)
         self._db_path = self.config.db_path

@@ -284,7 +284,10 @@ def _welcome_panel(
         f"[dim]Press Ctrl+C to stop safely  ·  [cyan]nexus doctor[/cyan] for health  ·  [cyan]nexus update[/cyan] for updates[/dim]"
     )
     title = Text("NEXUS TRADING FOREX BOT", style="bold white")
-    title.append("  —  PAPER  ·  XAUUSD", style="dim cyan")
+    # BUG-148: the panel title must reflect the ACTUAL selected mode/symbol —
+    # it previously hard-coded "— PAPER · XAUUSD" even in LIVE/SHADOW or for
+    # other symbols, contradicting the mode line right below it.
+    title.append(f"  —  {mode}  ·  {symbol}", style="dim cyan")
     console.print(
         Panel(
             body,
@@ -873,7 +876,9 @@ def settings_cmd(
 @app.command("repair")
 def repair_cmd(
     database: bool = False,
-    news_db: bool = False,
+    news_db: bool = typer.Option(
+        True, "--news-db/--no-news-db", help="Provision artifacts/news.db too (BUG-146)."
+    ),
     force_recreate: bool = typer.Option(
         False, "--recreate-config", help="Restore config from template (keeps DBs)."
     ),
@@ -2005,6 +2010,8 @@ def start_cmd(
         return
 
     cfg.execution.mode = chosen
+    # BUG-148: record the operator's EXPLICIT start mode so a persisted
+    # settings-DB value can never silently flip it at boot.
     try:
         from nexus_scalp.settings.service import SettingsService
 
@@ -2035,7 +2042,7 @@ def start_cmd(
             endpoints=endpoints,
             animate=animate,
         )
-    _run_engine(cfg, gateway=gateway, port=port)
+    _run_engine(cfg, gateway=gateway, port=port, mode_override=chosen)
 
 
 def _spawn_daemon(cmd: list[str]) -> None:
@@ -2074,7 +2081,9 @@ def _spawn_daemon(cmd: list[str]) -> None:
     )
 
 
-def _run_engine(cfg: AppConfig, *, gateway: bool, port: int) -> None:
+def _run_engine(
+    cfg: AppConfig, *, gateway: bool, port: int, mode_override: ExecutionMode | None = None
+) -> None:
     # TASK-10 startup migration gate: apply safe pending schema migrations
     # BEFORE the engine enters READY (§6/§7). Same canonical engine as `nexus db`.
     try:
@@ -2131,7 +2140,20 @@ def _run_engine(cfg: AppConfig, *, gateway: bool, port: int) -> None:
         raise typer.Exit(xc.EXIT_RUNTIME) from None
 
     adapter: IMT5Port
-    if gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
+    # BUG-148: adapter boundary must match the operator-selected mode. PAPER
+    # starts use the simulation adapter so a double-click/bare `start` can
+    # NEVER touch the real broker even when MT5 credentials are configured.
+    if mode_override == ExecutionMode.PAPER and not gateway:
+        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+        console.print(
+            Panel(
+                "[green]PAPER mode — simulation adapter (no broker connection)[/green]",
+                border_style="green",
+            )
+        )
+        adapter = PaperMT5Adapter(symbol=cfg.execution.symbol)
+    elif gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
         console.print(
             Panel("[yellow]Using Remote MT5 Gateway Adapter[/yellow]", border_style="yellow")
         )
@@ -2149,16 +2171,45 @@ def _run_engine(cfg: AppConfig, *, gateway: bool, port: int) -> None:
             timeout=cfg.mt5.timeout_ms,
             retries=cfg.mt5.retries,
         )
-    engine = LiveEngine(config=cfg, adapter=adapter)
+    engine = LiveEngine(
+        config=cfg,
+        adapter=adapter,
+        # BUG-148: the operator's explicit --mode is authoritative for this
+        # process — a persisted settings-DB value cannot override it at boot.
+        mode_override=mode_override,
+    )
     _start_web_and_engine(engine, cfg, port)
 
 
 def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     import asyncio
 
+    # BUG-147: friendly port-in-use failure. A bare bind error looked like a
+    # crash ("Process completed with exit code 1"); now the operator gets the
+    # actual cause + the exact remediation (busy PID or --port override).
+    import socket as _socket
+
     import uvicorn
 
     from nexus_scalp.web.server import create_app
+
+    probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    try:
+        if probe.connect_ex(("127.0.0.1", port)) == 0:
+            console.print(
+                _error_panel(
+                    "Web port already in use",
+                    f"127.0.0.1:{port} is occupied by another process.",
+                    hint=(
+                        "Another engine instance may be running — use `nexus stop`, "
+                        f"kill that PID, or start with `--port {port + 1}`."
+                    ),
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+    finally:
+        probe.close()
 
     # DOCKER-REPAIR: NSE_LOG_LEVEL (DEBUG|INFO|WARNING|ERROR) drives the
     # structlog config used by `nexus start` (default INFO when unset).
@@ -2412,6 +2463,12 @@ def model_dataset_build(
     df = pl.read_csv(bars_csv) if bars_csv.suffix.lower() == ".csv" else pl.read_parquet(bars_csv)
     news_frame = None
     if with_news:
+        # BUG-150: the empty-Path sentinel ``Path("")`` normalizes to Path(".")
+        # (truthy + "exists"), so a bare --with-news used to open the CURRENT
+        # DIRECTORY as the news DB and crash with sqlite3.OperationalError.
+        # Resolve the default to the canonical artifacts/news.db instead.
+        if str(news_db) in ("", "."):
+            news_db = Path("artifacts/news.db")
         if news_db.exists():
             from nexus_scalp.model_generation.news_bridge import (
                 build_news_frame_from_db,
@@ -2453,7 +2510,10 @@ def model_dataset_build(
                             border_style="green",
                         )
                     )
-        elif news_csv.exists():
+        elif news_csv.exists() and str(news_csv) not in ("", "."):
+            # BUG-150 companion: never treat the Path("") sentinel (-> ".") as
+            # a real news file; read_parquet(".") produced a bogus parquet
+            # crash. Only read when the user actually named a file.
             news_frame = (
                 pl.read_csv(news_csv)
                 if news_csv.suffix.lower() == ".csv"
@@ -2650,9 +2710,20 @@ def model_train_3(
     BenchmarkRunner evidence gate, then is registered in the model lifecycle
     as CHALLENGER (shadow-eligible / hot-swappable via the shadow70 attach
     """
-    from nexus_scalp.model_generation.three_model_pipeline import ThreeModelPipeline
+    # BUG-151: the pipeline lives in ``three_model`` (there has never been a
+    # ``three_model_pipeline`` module) — every invocation used to crash with
+    # ModuleNotFoundError before any training could start.
+    from nexus_scalp.model_generation.three_model import train_all
 
-    pipe = ThreeModelPipeline()
+    if variant and variant not in ("50d_main", "70d_news", "70d_liquidity"):
+        msg = f"unknown variant '{variant}' (allowed: 50d_main, 70d_news, 70d_liquidity)"
+        if json_mode:
+            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
+        else:
+            console.print(
+                _error_panel("Invalid variant", msg, hint="Empty --variant trains all three")
+            )
+        raise typer.Exit(xc.EXIT_USAGE) from None
     try:
         with Progress(
             SpinnerColumn(style="cyan"),
@@ -2661,7 +2732,28 @@ def model_train_3(
             console=console,
         ) as progress:
             progress.add_task("train", total=None)
-            result = pipe.run(variant=variant or None, smoke=smoke, folds=folds, epochs=epochs)
+            bars_path = Path("data/raw/XAUUSD_M1.parquet")
+            if not bars_path.exists():
+                raise FileNotFoundError(
+                    f"canonical bars file missing: {bars_path} — run the data pipeline first"
+                )
+            import polars as pl
+
+            bars_frame = pl.read_parquet(bars_path)
+            reports = train_all(
+                bars_frame,
+                variants=[variant] if variant else None,
+                num_folds=folds,
+                epochs=epochs,
+                smoke=smoke,
+            )
+            by_variant = {r["variant"]: r for r in reports}
+            result = {
+                "overall": "PASS"
+                if all(r.get("gate") in ("PASS", "COMPLETED", "READY") for r in reports)
+                else "EVIDENCE_WRITTEN",
+                "variants": by_variant,
+            }
     except Exception as e:
         if json_mode:
             _emit({"error": str(e), "exit_code": xc.EXIT_RUNTIME}, True)

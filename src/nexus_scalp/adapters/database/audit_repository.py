@@ -18,6 +18,7 @@ import queue
 import sqlite3
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from nexus_scalp.adapters.database.broker_history import (
@@ -76,6 +77,20 @@ class AuditRepository:
         self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
         self._running = False
         self._worker_thread: threading.Thread | None = None
+
+        # BUG-149: the legacy relative default ("sqlite:///artifacts/audit.db")
+        # anchors to the raw process CWD. When frozen, anchor to the canonical
+        # runtime workspace (exe bundle) so every launch — double-click,
+        # shortcut, any shell CWD — uses ONE canonical artifact tree. Source
+        # runs (CWD == repo root) keep identical behavior.
+        if self._is_sqlite and self._db_path and not Path(self._db_path).is_absolute():
+            try:
+                from nexus_scalp.release.paths import get_runtime_workspace
+
+                self._db_path = str(get_runtime_workspace() / self._db_path)
+            except Exception:
+                pass
+            self._db_url = f"sqlite:///{self._db_path}"
 
         # Retention policy (BUG-054). TEST env defaults: disposable signal
         # rows 7 days, POSITION_MOVING 3 days, guard telemetry 13 days.

@@ -84,9 +84,15 @@ class NewsConfig(BaseModel):
         """Resolves the news DB path relative to the repository root.
 
         Follows the repository convention of ``artifacts/`` for databases.
+        BUG-149: with no explicit repo_root the base anchors to the canonical
+        runtime workspace (exe bundle when frozen, repo root in dev) instead
+        of the raw process CWD.
         """
         p = Path(self.db_path)
         if p.is_absolute():
             return p
-        base = repo_root or Path.cwd()
-        return base / p
+        if repo_root is None:
+            from nexus_scalp.release.paths import get_runtime_workspace
+
+            repo_root = get_runtime_workspace()
+        return repo_root / p

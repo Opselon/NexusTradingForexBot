@@ -328,9 +328,7 @@ class HealthEngine:
         cfg = self._load_config()
         model_dim_from_schema = None
         if cfg is not None and cfg is not False:
-            model_dim_from_schema = getattr(
-                getattr(cfg, "model", None), "feature_dimension", None
-            )
+            model_dim_from_schema = getattr(getattr(cfg, "model", None), "feature_dimension", None)
         runtime_dim = getattr(cfg, "model", None)
         if runtime_id == CONTRACT_ID:
             from nexus_scalp.features.schema_contract import DIMENSION as CONTRACT_DIM
@@ -358,7 +356,10 @@ class HealthEngine:
             sd = torch.load(candidate, map_location="cpu", weights_only=True)
         except Exception as e:
             return HealthEntry(
-                "MODEL_CONTRACT", "WARNING", f"could not load artifact: {e}", "Run `nexus model-doctor`."
+                "MODEL_CONTRACT",
+                "WARNING",
+                f"could not load artifact: {e}",
+                "Run `nexus model-doctor`.",
             )
         state = sd.get("state_dict", sd) if isinstance(sd, dict) else sd
         model_schema_id: str | None = None
@@ -367,9 +368,7 @@ class HealthEngine:
             meta = sd.get("metadata") or sd.get("model_metadata") or {}
             model_schema_id = meta.get("schema_id") or meta.get("feature_schema_id")
             model_dim = (
-                meta.get("dimension")
-                or meta.get("feature_dimension")
-                or model_dim_from_schema
+                meta.get("dimension") or meta.get("feature_dimension") or model_dim_from_schema
             )
         if model_dim is None:
             try:
@@ -380,9 +379,7 @@ class HealthEngine:
                     model_dim = int(first_w.shape[-1])
             except Exception:
                 model_dim = None
-        compat = resolve_model_compatibility(
-            model_schema_id, model_dim, runtime_id, runtime_dim
-        )
+        compat = resolve_model_compatibility(model_schema_id, model_dim, runtime_id, runtime_dim)
         result = compat.get("result")
         reason = compat.get("reason", "unknown")
         if result == "BLOCK":
