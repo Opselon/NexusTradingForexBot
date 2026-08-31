@@ -6420,3 +6420,31 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - **Fix:** (1) Restored `forensic_cmd` in src/nexus_scalp/cli/main.py verbatim from 716c458 (lines ~1325-1420), preserving all options (--snapshot --deploy-gate --trend --gap --report --json) and the exit-code contract (0 ALLOW/ALLOW_WITH_WARNING, 1 BLOCK, 2 REVIEW_REQUIRED, 3 FORENSIC_ENGINE_UNAVAILABLE), adapted to current _emit/console/_error_panel conventions, placed with the lifecycle commands, BUG-162 comment attached. In --deploy-gate mode the JSON payload (incl. 'decision' and 'exit_code') is now ALWAYS emitted on stdout even when human panels are printed. (2) Fail-safe hardening of BOTH gate hooks: on any non-zero gate exit the result file must contain a '"decision"' payload — if absent the hook forces the fail-safe BLOCK path (GATE_EXIT=3 / $gateExit=3) instead of trusting a usage-error exit 2 as REVIEW. No health rules re-implemented in the hooks (TASK-12 §5).
 - **Regression tests:** tests/unit/test_bug162_forensic_cli_gate.py (5 tests: CliRunner `forensic --deploy-gate --json` contract, subprocess `python -m nexus_scalp.cli.main forensic --deploy-gate --json` contract, CLI-inventory / no 'No such command', gate artifact decision-payload). Fails-before on pre-fix HEAD: 5/5 FAILED, pytest rc=1; passes-after: 5/5 passed, rc=0.
 - **Severity:** P1 (release-quality gate fail-open) | **Status:** FIXED-PENDING-VERIFICATION | **Discovered-by:** Hermes-Main | **Fixed-by:** Hermes-Coder
+## BUG-166 - deploy-gate CHECK-GOV-02 false CRITICAL: dead import + hardcoded artifact + wrong identity rule (2026-08-31 Hermes-Coder)
+- FOUND (BUG-162 verification, post-restore): `nexus forensic --deploy-gate` exited 1 BLOCK on
+  a healthy repo - CHECK-GOV-02 "current champion fingerprint 2b98f333... diverges from disk
+  hash 0872ae0b..." with zero tracebacks. A deploy gate that false-BLOCKs on a consistent
+  system is a P1: it either trains operators to bypass the gate (fail-open by habit) or
+  blocks valid deploys outright.
+- ROOT CAUSE (3 stacked defects in _champion_artifact_info / check_champion_identity):
+  1. config-path probe imported the NONEXISTENT module nexus_scalp.configuration.loader -
+     the silent `except Exception` swallowed it forever (dead code since landing).
+  2. Fallback hardcoded artifacts/models/scalp/XAUUSD/v1.0.0/model.pt - ignoring whatever
+     the user config (nexus.yaml) or base.yaml actually points at.
+  3. Identity rule compared disk hash only against the NEWEST registry row; a 70d candidate
+     registered ahead of a config flip makes the true serving artifact (registered, matching
+     an older row) look like a CRITICAL identity mismatch.
+- FIX: probe precedence now mirrors the runtime engine: user config (get_user_config_path /
+  nexus.yaml) first, then repo base.yaml template, then defaults. Identity verdict = serving
+  disk hash matched against ANY champion registry fingerprint (12-hex prefix) -> verified;
+  newest-row-vs-disk divergence alone is registry-hygiene DEGRADED, not identity CRITICAL;
+  CRITICAL only when the serving artifact matches NO champion fingerprint.
+- VERIFIED: fails-before (exit 1 BLOCK, critical=1, blocking=[CHECK-GOV-02]) / passes-after
+  (critical=0, blocking=[], GOV-02 -> DEGRADED with honest evidence: 4 stale champion
+  fingerprints listed - real hygiene finding, non-blocking). Gate decision now
+  REVIEW_REQUIRED (correct policy: DEGRADED/UNKNOWN -> review, never silent pass). 135
+  forensic/monitoring tests green (test_forensic_monitoring_task11,
+  test_post70d_monitoring_activation, test_bug162_forensic_cli_gate); ruff/format/py_compile clean.
+- LESSON: silent excepts hide dead code paths until they invert a safety decision (the dead
+  loader import silently selected the wrong artifact); identity checks must verify the
+  artifact the CONFIG SERVES, not the newest registry row - registry newest != runtime truth.
