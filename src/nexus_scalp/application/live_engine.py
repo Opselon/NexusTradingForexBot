@@ -968,11 +968,55 @@ class LiveEngine:
             embargo_bars=3,
         )
 
+        # BUG-169 (2026-08-31 live forensics): the trainer was bound to the
+        # CLASS bootstrap contract (scalp_v1/50D) while the LOADED artifact
+        # is the 70D champion — every online fine-tune fed a (N,50) matrix
+        # into a 70-input Linear head and crashed with
+        # "mat1 and mat2 shapes cannot be multiplied (10x50 and 70x128)"
+        # (60 failures on 2026-08-31 alone; each attempt also hit the
+        # WalkForwardTrainer scaler save while the engine held the artifact,
+        # logging WinError 5). Bind the trainer to the EFFECTIVE contract of
+        # the loaded bundle instead. The rolling buffer records are rebuilt
+        # on the same effective contract (records are written from the
+        # validated live tensor), so frame validation stays consistent.
+        # This is a NO-OP while the 50D champion is loaded.
+        try:
+            with self._bundle_lock:
+                _b0 = self._bundle
+            _eff_dim0 = int(
+                _b0.scaler.dimension()
+                if _b0 is not None and hasattr(_b0.scaler, "dimension")
+                else (getattr(_b0.model, "num_features", 0) if _b0 is not None else 0) or 0
+            )
+        except Exception:
+            _eff_dim0 = 0
+        if _eff_dim0 > 0 and _eff_dim0 != self.trainer.num_features:
+            from nexus_scalp.features.schema import FEATURE_SCHEMAS as _FS
+
+            _schema70 = _FS.resolve("scalp_v3") if _eff_dim0 == 70 else None
+            if _schema70 is not None and _schema70.dimension == _eff_dim0:
+                self.trainer.feature_schema = _schema70
+                self.trainer.num_features = _eff_dim0
+                logger.info(
+                    "[ONLINE_TRAIN] trainer rebound to loaded-bundle contract",
+                    artifact_dim=_eff_dim0,
+                    schema=_schema70.schema_id,
+                )
+            else:
+                logger.warning(
+                    "[ONLINE_TRAIN] loaded artifact dim %s has no registered schema; "
+                    "online fine-tune will self-disable (no width crash, no clobber)",
+                    _eff_dim0,
+                )
+                self._online_train_disabled = True
+
         self._rolling_feature_records: deque[dict] = deque(maxlen=4000)
         self._retrain_interval_bars: int = 50
         self._bars_since_last_retrain: int = 0
         self._retrain_task: asyncio.Task | None = None
         self._retrain_inflight: bool = False
+        # BUG-169: throttle timestamp for the width-mismatch warning (set on first use).
+        self._online_train_width_warn_at: float = 0.0
 
         # Hedging tracker to avoid spamming multiple limit orders per ticket
         self._hedged_tickets: set[int] = set()
@@ -1751,6 +1795,26 @@ class LiveEngine:
                     self._update_runtime_mode()
                     self._last_snapshot_refresh = time.time()
 
+                # BUG-169: duplicate-tick early return. The MT5 last-tick poll
+                # returns the SAME quote between feed updates; re-running the
+                # full pipeline (features + policy + telemetry + audit) on it
+                # burns the loop thread and logs NO_TRADE conf=0.0
+                # (TICK_DUPLICATE_SUPPRESSED) as if it were a fresh decision,
+                # which is what the UI then displays. A duplicate carries ZERO
+                # new information: keep the previous proposal/state untouched
+                # and service the heartbeat workers below.
+                if (
+                    tick.timestamp == getattr(self, "_pipeline_last_ts", None)
+                    and float(tick.bid) == getattr(self, "_pipeline_last_bid", 0.0)
+                    and float(tick.ask) == getattr(self, "_pipeline_last_ask", 0.0)
+                ):
+                    await self._service_pipeline_workers(now_t=time.time())
+                    await asyncio.sleep(0.05)
+                    continue
+                self._pipeline_last_ts = tick.timestamp
+                self._pipeline_last_bid = float(tick.bid)
+                self._pipeline_last_ask = float(tick.ask)
+
                 self._process_tick_pipeline(tick=tick, account=live_account)
                 self._last_tick_processed_time = time.time()
                 # PHASE 08: accounting worker kick (throttled internally). This
@@ -1965,6 +2029,36 @@ class LiveEngine:
                 await asyncio.sleep(1.0)
 
         await self._shutdown_async()
+
+    async def _service_pipeline_workers(self, *, now_t: float) -> None:
+        """BUG-169: heartbeat maintenance normally piggybacked on the tick
+        iteration. On a duplicate tick the pipeline is skipped, but these
+        time-throttled housekeeping duties MUST still run — otherwise a quiet
+        feed would starve them. Contains only the throttled, non-trading
+        cycles (purge / hygiene / incidents / daily summary); the worker KICKS
+        are idempotent via _inflight_workers and keep their full cadence."""
+
+        # BUG-054: audit retention purge (throttled ~6h, bounded batched
+        # deletes, NEVER on the tick path).
+        if now_t - self._last_audit_purge_time >= self._audit_purge_interval_sec:
+            self._last_audit_purge_time = now_t
+            try:
+                await asyncio.to_thread(self.audit.purge_old_audit_data)
+            except Exception:
+                logger.error("Audit retention purge failed (isolated)")
+
+        # TASK-13: incident response cycle (throttled ~60s, INV-019).
+        if now_t - self._last_incident_time >= self._incident_interval_sec:
+            self._last_incident_time = now_t
+            try:
+                if self._incident_worker is None:
+                    self._ensure_incident_worker()
+                if self._incident_worker is not None:
+                    await asyncio.to_thread(self._incident_worker.tick)
+            except Exception as inc_err:
+                logger.warning(
+                    "[INCIDENT_WORKER] event=CYCLE_FAILED (isolated)", error=str(inc_err)
+                )
 
     #: PHASE 28: per-call timeout for background worker kicks executed via
     #: asyncio.to_thread inside run_loop. A hung C-extension call (MT5 IPC,
@@ -3229,24 +3323,60 @@ class LiveEngine:
                 completed_bars=completed_bars, current_tick=tick
             )
             # TASK-02-70D-INTEGRATION: liquidity snapshot from COMPLETED bars.
-            # Runs BEFORE the HTF warmup gate so the governor becomes
-            # AVAILABLE/VALID as soon as bars exist instead of staying
-            # UNAVAILABLE / NOT_RUN / INVALID through the whole warmup window
-            # (INV-020: information-only, pure numpy, failure-isolated).
+            # BUG-169 (2026-08-31, live latency forensics): the governor is
+            # IDEMPOTENT per completed-bar series — its only inputs are the
+            # bars + their last close + the bar ATR, none of which change
+            # between new bars. Recomputing it on EVERY tick burned
+            # p50=67ms / p95=655ms / p99=982ms (max 5.0s) of the LOOP THREAD
+            # per call (~12.5k calls/day), which was the dominant source of
+            # the slow/sticky live decision loop (measured 2026-08-31 log).
+            # Now: compute only on a new M1 bar (or first availability), and
+            # else reuse the last snapshot. Information-freshness is
+            # unchanged (the inputs literally cannot change between bars);
+            # INV-020 (information-only, failure-isolated) still holds.
             if completed_bars:
-                self._warm_liquidity_from_bars(
-                    completed_bars,
-                    atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
+                _liq_new_bar = is_new_bar or (
+                    self.liquidity_governor is not None
+                    and self.liquidity_governor.last_snapshot is None
                 )
+                if _liq_new_bar:
+                    self._warm_liquidity_from_bars(
+                        completed_bars,
+                        atr=float(getattr(fv, "atr_m1", 0.0) or 0.0),
+                    )
 
             if is_new_bar and completed_bars:
                 self._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
 
             # Regime state (Module 1)
-            regime_state: MarketRegimeState = self.regime_classifier.classify_tick(
-                current_tick=tick,
-                is_macro_news_window=False,
+            # BUG-169: skip RE-EVALUATION for a duplicate tick (identical
+            # bid/ask + timestamp). The metrics are functionally idempotent,
+            # but classify_tick() PUSHES the duplicate into its rolling
+            # rings (_ts/_log_ret/_ofi), double-counting it and skewing
+            # tick_velocity + rv_5m + norm_ofi. This duplicates the dedup
+            # predicate from SignalPolicy._evaluate_duplicate_tick on
+            # purpose: the classifier must stay a pure per-tick consumer.
+            _tick_dupe = tick.timestamp == getattr(self, "_regime_last_ts", None) or (
+                float(tick.bid) == getattr(self, "_regime_last_bid", 0.0)
+                and float(tick.ask) == getattr(self, "_regime_last_ask", 0.0)
+                and float(tick.bid) > 0.0
             )
+            if _tick_dupe:
+                regime_state: MarketRegimeState = getattr(
+                    self, "_regime_last_state", None
+                ) or self.regime_classifier.classify_tick(
+                    current_tick=tick,
+                    is_macro_news_window=False,
+                )
+            else:
+                regime_state = self.regime_classifier.classify_tick(
+                    current_tick=tick,
+                    is_macro_news_window=False,
+                )
+                self._regime_last_ts = tick.timestamp
+                self._regime_last_bid = float(tick.bid)
+                self._regime_last_ask = float(tick.ask)
+                self._regime_last_state = regime_state
 
             # Manage open positions
             # NOTE (Phase 15 exit audit): `probs` and `regime_state` are threaded
@@ -3433,13 +3563,52 @@ class LiveEngine:
 
             self.audit.log_signal(proposal)
 
+            # =================================================================
+            # BUG-169: TERMINAL OUTCOME FOR PRE-DISPATCH REJECTIONS.
+            # -----------------------------------------------------------------
+            # The Phase 08/09 gates convert an ENTRY proposal to NO_TRADE
+            # BEFORE any dispatch. The experience row for that decision was
+            # already written (_record_decision_experience), so without a
+            # terminal outcome it hangs in the ledger as MISSING_OUTCOME
+            # forever (295 rows / 22k log lines on 2026-08-31). Emit an
+            # explicit NOT_DISPATCHED outcome for entry proposals that the
+            # pre-trade stack rejected. Idempotent via the ledger's unique
+            # key; failure-isolated (learning never disturbs trading).
+            # =================================================================
+            if (
+                proposal.action == ActionType.NO_TRADE
+                and str(getattr(proposal, "model_action", "") or "") != "NO_TRADE"
+                and proposal.decision_stage
+                in ("EXPERIENCE_INTELLIGENCE_GATE", "TRADE_INTELLIGENCE_GATE")
+                and self.experience_engine is not None
+            ):
+                try:
+                    from nexus_scalp.execution.terminal_outcome import (
+                        emit_terminal_pending_outcome,
+                    )
+                    from nexus_scalp.experience.lifecycle import (
+                        DecisionLifecycle as DecisionLifecycleAlias,
+                    )
+
+                    emit_terminal_pending_outcome(
+                        experience_engine=self.experience_engine,
+                        request_id=str(getattr(proposal, "request_id", "") or ""),
+                        state=DecisionLifecycleAlias.NOT_DISPATCHED,
+                        detail=f"pre-dispatch gate rejection: {proposal.rejection_reason or proposal.reason_code}",
+                    )
+                except Exception as _term_err:
+                    logger.debug(
+                        "[TERMINAL_OUTCOME] pre-dispatch emission skipped",
+                        error=str(_term_err),
+                    )
+
             # =====================================================================
             # NEXUS-LIVE-INFERENCE-FROZEN-STATE-G29: SAFETY FRESHNESS GATE
             # ---------------------------------------------------------------------
             # Runs AFTER all model/experience/news/intelligence gates. If the
             # feature->inference->decision chain is proven STALE (frozen), the
             # proposal is converted to NO_TRADE / BLOCKED_BY_STALE so a frozen
-            # intelligence state can NEVER masquerade as a live BUY/SELL. This
+            # intelligence state can NEVER masquerade as a live BUY/SELL.
             # is a pure downgrade to NO_TRADE; it relaxes NO existing guard and
             # fabricates NO confidence. It is the only production touchpoint of
             # the freshness model.
@@ -4219,6 +4388,32 @@ class LiveEngine:
 
         self._rolling_feature_records.append(rec)
         self._bars_since_last_retrain += 1
+
+        # BUG-169: width guard for the online fine-tune path. The buffer
+        # records carry the 50D tensor (feat_0..feat_49, class contract);
+        # feeding them to a 70-input model head crashed with
+        # "mat1 and mat2 shapes cannot be multiplied (10x50 and 70x128)" on
+        # EVERY retrain window while the 70D champion was loaded (60
+        # failures on 2026-08-31) and each crash burned a scaler-save
+        # attempt against the artifact the engine holds (WinError 5).
+        # Gate: fine-tune only when the trainer's bound width matches the
+        # actual record width; the __init__ rebind covers the 70D case
+        # via FEATURE_COLS on the effective contract.
+        if len(rec) - 6 != self.trainer.num_features or getattr(
+            self, "_online_train_disabled", False
+        ):
+            if self._bars_since_last_retrain >= self._retrain_interval_bars and (
+                not getattr(self, "_online_train_width_warn_at", 0.0)
+                or time.time() - self._online_train_width_warn_at >= 3600.0
+            ):
+                self._online_train_width_warn_at = time.time()
+                logger.warning(
+                    "[ONLINE_TRAIN] SKIPPED width-contract mismatch "
+                    "record_width=%s trainer_width=%s (BUG-169 guard)",
+                    len(rec) - 6,
+                    self.trainer.num_features,
+                )
+            return
 
         if (
             self._bars_since_last_retrain >= self._retrain_interval_bars

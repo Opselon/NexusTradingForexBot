@@ -96,6 +96,10 @@ class SignalPolicy:
         self._dedup_last_time: datetime | None = None
         self._dedup_last_bid: float = 0.0
         self._dedup_last_ask: float = 0.0
+        # BUG-169: last NON-duplicate evaluation's proposal, surfaced on a
+        # duplicate tick instead of a synthetic NO_TRADE conf=0.0 (which the
+        # UI displayed as the Active Intelligence Output).
+        self._last_real_proposal: TradeProposal | None = None
 
     def evaluate_probabilities(
         self,
@@ -1153,6 +1157,13 @@ class SignalPolicy:
             self._last_telemetry_time = now
             self._last_logged_action = final_proposal.action
 
+        # BUG-169: remember the latest REAL (non-duplicate) evaluation so a
+        # duplicate tick can re-surface it instead of a fabricated NO_TRADE.
+        if final_proposal is not None and getattr(final_proposal, "decision_stage", "") != (
+            "DEDUP_GATE"
+        ):
+            self._last_real_proposal = final_proposal
+
         return final_proposal
 
     def _evaluate_tick_sweep(
@@ -1529,6 +1540,24 @@ class SignalPolicy:
             tick_bid == self._dedup_last_bid and tick_ask == self._dedup_last_ask and tick_bid > 0.0
         )
         if is_duplicate:
+            # BUG-169: a duplicate tick carries ZERO new information, so the
+            # engine now skips the whole pipeline for it (LiveEngine early
+            # return). If the policy is STILL reached with a duplicate (e.g.
+            # another caller, or the engine guard is bypassed), surface the
+            # LAST REAL decision instead of a synthetic NO_TRADE conf=0.0 —
+            # the fabricated proposal was what the UI displayed as the
+            # "Active Intelligence Output", hiding the actual fresh decision
+            # and freezing the displayed confidence at 0.00%. The duplicate
+            # still never touches cooldown/direction/price-lock state.
+            last = getattr(self, "_last_real_proposal", None)
+            if last is not None:
+                return last.model_copy(
+                    update={
+                        "request_id": str(uuid.uuid4()),
+                        "execution_id": execution_id,
+                        "generated_at": current_tick.timestamp,
+                    }
+                )
             _pb = probs[1] if len(probs) > 1 else 0.0
             _ps = probs[2] if len(probs) > 2 else 0.0
             _pnt = probs[0] if len(probs) > 0 else 0.0
