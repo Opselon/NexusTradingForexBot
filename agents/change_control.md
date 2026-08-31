@@ -883,3 +883,24 @@ Why: user brief — SSMS-like Database Management UI (tables + ready buttons bel
 Migration: none — read-only surface; no schema change.
 Verification: VERIFIED — 42 passed/10 skipped in test_database_portability.py (1.34s), ruff+mypy clean, live TestClient probes on real artifacts DBs, node --check on both JS files.
 Risk: low — read-only; no hot-path changes.
+
+## CHG-0032 - Large-file decomposition & debug-friendly architecture refactor (2026-08-31 Nexus-Main)
+
+Change: structural decomposition of oversized source modules into responsibility-based domain packages with thin
+compatibility facades. NO runtime behavior change (CLI/API/DB/config/model/logging/exit codes all preserved).
+Phases: 1 forensic inventory (Researcher) -> 2 target-tree design (Main) -> 3 staged per-domain implementation (Coder,
+one coherent commit per domain) -> 4 adversarial review (Reviewer) -> 5 QA regression gate (QA). Candidates ranked by
+evidence, not LOC alone; order_manager.py and live_engine.py DEFERRED (convention-locked hot path, INV-001/INV-004).
+Scope: TBD per Phase-1 inventory - expected src/nexus_scalp/cli/main.py, forensics/checks.py, release/updater.py,
+adapters/database/audit_repository.py, web/server.py (P0 caution: REST/SSE/WS surface); docs/architecture/debug-map.md (new);
+tests reorganized with source ownership. Parallel WIP in .github/workflows/release.yml + src/nexus_scalp/release/metadata.py
+(BUG-166/174, release-identity owner) is EXCLUDED from this change.
+Why: user-directed decomposition mission - lower cognitive load, clear ownership, debug-first navigation. Recent user-side
+hunts (BUG-160/162/166/170-173) all landed in cli/release code where giant files hid failure modes.
+Migration: none - no DB/schema/contract/feature changes permitted; public APIs preserved via facades; import graph checked
+after each split (no cycles).
+Verification: ruff check + ruff format --check + mypy src per step; targeted per-domain pytest; full critical suite via
+beforePush before push; CLI --help/status real-execution smoke; behavior-preservation audit (before/after outputs).
+Risk: MEDIUM - structure-only but touches CLI/release/forensics paths with fresh bug history (BUG-160/162/166/170-173);
+mitigated by staged commits, facades, and regression gates per domain.
+Status: PROPOSED -> IMPLEMENTING (Phase 1 dispatched)
