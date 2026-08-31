@@ -209,9 +209,8 @@ class ScalpNet(nn.Module):
 
         logits = self.classifier(h_dense)
 
-        # Return raw logits during training or when explicitly requested
+        # Loss functions need raw logits; live execution needs probabilities.
+        # The 4-class order (NO_TRADE/BUY/SELL/WAIT) is fixed by the policy.
         if return_logits or self.training:
             return logits
-
-        # Softmax probability distribution output during live execution
         return F.softmax(logits, dim=-1)

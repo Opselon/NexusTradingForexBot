@@ -42,7 +42,11 @@ def normalize_history_dt(value: Any) -> Any:
 
 class AuditRepository:
     """
-    Enterprise Append-Only Audit Store with Async Disk I/O processing.
+    Append-only audit store. All writes are enqueued to a single background
+    worker thread (the hot path never touches SQLite); callers doing
+    read-after-write sequences must flush() first. The ~20
+    ``except Exception: pass`` blocks inside schema migration are expected
+    control flow (duplicate column/index), not swallowed errors.
     """
 
     def __init__(

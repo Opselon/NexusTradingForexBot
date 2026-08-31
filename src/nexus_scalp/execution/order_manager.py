@@ -3603,18 +3603,23 @@ class OrderLifecycleManager:
         min_cnt = getattr(self.algo_config, "min_observation_count", 10)
 
         if cand_info is None or cand_info[0] != target_state:
-            # Initialize or reset candidate state
+            # First sighting of a target state starts (or restarts) the debounce
+            # window: a transition applies only after the candidate holds the target
+            # for min_confirmation_duration AND min_observation_count sightings.
+            # Emergency transitions bypass this debounce (handled above).
             self._state_transition_candidates[ticket] = (target_state, now, 1)
             return current_state
 
-        # Increment count
+        # Repeat sightings increment the counter only; the window timer is never
+        # reset, so a flapping candidate cannot delay a genuine transition forever.
         cand_state, first_attempt_time, count = cand_info
         new_count = count + 1
         self._state_transition_candidates[ticket] = (cand_state, first_attempt_time, new_count)
 
         elapsed = (now - first_attempt_time).total_seconds()
 
-        # Both count AND time requirements must be satisfied (Requirement 5)
+        # Both the time AND observation-count thresholds must be met; requiring
+        # either alone would let a burst of ticks confirm a transition instantly.
         if elapsed >= min_dur and new_count >= min_cnt:
             logger.info(
                 "[STATE MACHINE TRANSITIONED]",
@@ -3668,7 +3673,9 @@ class OrderLifecycleManager:
             recovery_score = evidence.get("recovery_score", 0.50)
             adverse_score = evidence.get("adverse_score", 0.50)
 
-            # Check if budget/horizon is already exhausted
+            # Recovery attempts are budget-capped per ticket: once the budget is
+            # spent (or adverse excursion blows past 0.80) stop managing the loss
+            # and hard-exit instead of giving the recovery path more rope.
             budget_remaining = self._recovery_budget_remaining.get(ticket, 1.0)
 
             if budget_remaining <= 0.0 or adverse_score > 0.80:

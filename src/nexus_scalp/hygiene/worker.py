@@ -634,10 +634,9 @@ class CleanupExecutor:
                                 (cutoff, batch_limit),
                             )
                     total += int(cur.rowcount)
-                    # Decrement the GLOBAL budget after every batch, not just
-                    # after the table loop — otherwise a single large table
-                    # exhausts the whole budget (hyg34: 5005 rows with a 2000
-                    # budget).
+                    # The GLOBAL deletion budget is consumed per batch, not per table: a
+                    # single oversized table must not starve the other tables'
+                    # cleanup budget in this cycle.
                     global_remaining -= int(cur.rowcount)
                     if cur.rowcount < batch_limit:
                         break

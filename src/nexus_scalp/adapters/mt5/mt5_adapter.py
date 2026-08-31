@@ -1484,7 +1484,6 @@ class DirectMT5Adapter(IMT5Port):
             10031: "NO_CONNECTION - No connection with trade server",
         }
         return retcode_map.get(retcode, f"UNKNOWN_MT5_RETCODE ({retcode})")
-        return retcode_map.get(retcode, f"UNKNOWN_MT5_RETCODE ({retcode})")
 
     def _assert_connected(self) -> None:
         if not self._connected or not HAS_NATIVE_MT5 or mt5 is None:

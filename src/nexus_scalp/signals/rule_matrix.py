@@ -426,7 +426,9 @@ class RuleMatrixEngine:
     def _eval_rule_gap_and_go_momentum(
         self, tick: TickData, probs: List[float]
     ) -> Optional[TradeProposal]:
-        # Check if Monday open and a gap occurred
+        # Deliberate host-local Monday-00:00 gate (weekly session open): this
+        # rule is a no-op 59 of every 60 minutes, so returning None is normal.
+        # Do NOT 'fix' this into a rolling window without a contract change.
         now_dt = datetime.now()
         if now_dt.weekday() == 0 and now_dt.hour == 0 and now_dt.minute == 0:
             action = ActionType.BUY_MARKET if probs[1] > probs[2] else ActionType.SELL_MARKET

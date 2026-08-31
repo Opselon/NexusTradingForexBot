@@ -11,7 +11,8 @@ candidates for research/backtesting.
 
 from __future__ import annotations
 
-# Import the strategy modules so their import-time registration runs.
+# Importing the modules triggers their import-time registration; removing
+# these imports silently empties builtin_candidates().
 from nexus_scalp.strategies import (
     base,  # noqa: F401
     ichimoku,  # noqa: F401

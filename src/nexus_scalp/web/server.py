@@ -285,7 +285,6 @@ class ServerState:
             return max(0.0, time.monotonic() - self.last_bars_at)
 
 
-# Define API request bodies
 class ModifyPositionRequest(BaseModel):
     ticket: int
     stop_loss: float

@@ -214,7 +214,8 @@ class NewsAnalysisPipeline:
                         aid,
                         ah[:12],
                     )
-                    # Return a synthetic SKIPPED result that won't overwrite the real one
+                    # Idempotent re-entry: mirror the stored analysis instead of
+                    # re-running the pipeline or overwriting the original result.
                     existing = self.db.get_analysis(aid) if aid else None
                     if existing:
                         # Build a result mirroring the stored one so callers get truthful ids
