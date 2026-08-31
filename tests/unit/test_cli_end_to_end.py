@@ -232,7 +232,9 @@ def test_e2e_05_doctor_fix_repairs_then_reverifies_to_ready() -> None:
     # dependency, not a CLI defect (human TTY gets default=True on Enter).
     res = _invoke(["doctor", "--fix", "--yes", "--json"])
     assert res.exit_code == xc.EXIT_OK
-    data = json.loads(res.stdout)
+    # BUG-158 (2/2): repair progress lines precede the JSON document; use
+    # the trailing-JSON parser like every other mixed-output test.
+    data = _parse_json_output(res)
     assert {"checks", "overall", "repair"} <= set(data)
     assert data["overall"] in ("READY", "DEGRADED", "PASS")
 

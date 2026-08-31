@@ -6340,3 +6340,13 @@ restart by operator).
 - Fix: model-experiment-create now checks store.read_dataset(dataset_id) is None BEFORE creating and exits with EXIT_USAGE + "Dataset not found / Run nexus model-dataset-build first" panel. model-train keeps its hard-fail path for races.
 - Verified: repo-source CLI now exits 2 with the clean panel (E2E clean-client harness); ruff/format/compile green.
 - Lesson: CLI is the contract boundary — every `<id>` option that references an artifact must be validated at the boundary with an actionable error, never inside a trainer.
+
+### BUG-158 addendum (2/2, same day Hermes-DevOps): CI #471 surfaced a second layer of the
+same defect - `doctor --fix --yes --json` prints repair PROGRESS lines ("Repairing fixable
+issues...", per-action OK/lines) BEFORE the final JSON document, so e2e_05's raw
+`json.loads(res.stdout)` raised JSONDecodeError (stdout starts with "
+Repairing...").
+Fix: e2e_05 now uses the suite's trailing-JSON helper `_parse_json_output`, like every
+other mixed-output test. Verified CI-equivalent (clean LOCALAPPDATA, CliRunner EOF stdin):
+RC=0, JSON parsed, overall READY, 20 checks. Root-cause chain now fully closed:
+EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
