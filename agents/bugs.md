@@ -6240,3 +6240,25 @@ restart by operator).
   py_compile clean. Tests are version-proof for future bumps.
 - LESSON: any CLI/release test that compares a manifest/tag against the INSTALLED version
   must pin get_version_info (or an equivalent seam); never let it read the live tree.
+## BUG-155 - CLI update exit-code contract was unguarded against version-comparison drift (2026-08-31 Hermes-Coder)
+- FOUND: QA's BUG-154 fix (57496bf) pinned get_version_info so the SECURITY_BLOCKED/INCOMPATIBLE
+  tests stop inheriting the live pyproject version, but the OPPOSITE branches of the update
+  contract (tag == installed -> NO_UPDATE exit 0; tag older -> downgrade-blocked NO_UPDATE exit 0)
+  still had no regression guard anywhere. A future refactor of UpdatePlanBuilder's version
+  comparison (or a new pre-comparison short-circuit in cli/main.py) could silently move the
+  documented CLI_EXIT_CODES v1 semantics (docs/RELEASE.md) in either direction.
+- FIX: added two evergreen drift guards to tests/unit/test_cli_end_to_end.py (now 68 tests):
+  * test_e2e_67: manifest tag == pinned installed (9.0.4) MUST short-circuit NO_UPDATE, exit 0.
+  * test_e2e_68: manifest tag (9.0.3) OLDER than pinned installed (9.0.4) MUST return
+    NO_UPDATE with downgrade_blocked=true, exit 0.
+  Both pin get_version_info and use the offline --manifest path: no network, no live-tree
+  version coupling, evergreen against future bumps in BOTH directions (the coupling BUG-154
+  removed cannot return through these tests).
+- WIRING: tests/unit/test_cli_end_to_end.py appended to tests/critical_suite.txt (46 entries) -
+  closes the CI blind spot QA proved (file was invisible to ci.yml, release.yml gates AND
+  beforePush default pytest target). One manifest line now guards the CLI e2e surface in all
+  three gates.
+- VERIFIED: full file 68/68 passed; ruff check + ruff format --check clean; py_compile clean;
+  bump-furnace test (pyproject temporarily -> 9.0.5, restored byte-exact): suite stayed 68/68.
+- LESSON: exit-code contracts need drift guards on BOTH sides of a comparison branch - pinning
+  one side (BUG-154) leaves the other side free to move silently.
