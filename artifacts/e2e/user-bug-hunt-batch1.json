@@ -1,0 +1,52 @@
+{
+  "run_id": "FC-20260831-user-hunt",
+  "phase": "DEEP USER-SIDE BUG HUNT (steer directive 2026-08-31)",
+  "new_bugs": [
+    {
+      "id": "BUG-170", "severity": "P2", "status": "FIX_DISPATCHED (Coder deleg_ae8eb222)",
+      "title": "pidfile TOCTOU race in _spawn_daemon — two concurrent `nexus start` both spawn engines",
+      "root_cause": "check-then-write on nexus.pid with no lock",
+      "user_impact": "second engine web-bind crash or duplicate paper-broker sessions",
+      "fails_before": "two-thread probe on same pidfile: ['SEES-RUNNING','STARTED'] at 20ms skew; true-concurrent both STARTED",
+      "fix_target": "atomic lock/create in _spawn_daemon + regression test in tests/unit/test_user_hunt_bug170_171_173.py"
+    },
+    {
+      "id": "BUG-171", "severity": "P2", "status": "FIX_DISPATCHED (Coder deleg_ae8eb222)",
+      "title": "updater resume appends FULL body onto prefix when intermediary ignores Range — never converges, misleading SHA-mismatch error",
+      "root_cause": "download() never checks response status/Content-Range before appending",
+      "user_impact": "update download fails with wrong error on Range-ignoring proxies; retry loop cannot converge",
+      "fails_before": "real local HTTP server ignoring Range: 1000-byte .part + full 1500-byte body -> 2500-byte file, hash mismatch (probe verified)",
+      "fix_target": "detect non-206 (200/416) -> restart hash from zero or clear part; bounded retries preserved"
+    },
+    {
+      "id": "BUG-172", "severity": "P3", "status": "OPEN_DOCUMENTED",
+      "title": "`nexus stop` on dead/stale pidfile prints green 'Engine stopped' success even when taskkill rc=128 process-not-found (rc discarded, check=False)",
+      "user_impact": "misleading success panel; PID-reuse window means wrong-process kill is unreported",
+      "evidence": "probe: taskkill /PID 4194303 -> rc 128 'not found'; CLI ignores and prints success (test_e2e_29 asserts the misleading behavior)",
+      "fix_plan": "inspect taskkill result; 'not found' -> report 'engine already stopped (stale pidfile)', still unlink pidfile"
+    },
+    {
+      "id": "BUG-173", "severity": "P2", "status": "FIX_DISPATCHED (Coder deleg_ae8eb222)",
+      "title": "`nexus update rollback` with no backup -> FAILED_SAFE but exit 0 + human panel 'Rollback: None' (human/JSON disagree)",
+      "root_cause": "FAILED_SAFE in ok_states of _update_exit_code; human branch prints report['status'] which is absent in rollback reports",
+      "user_impact": "scripted callers see success; human user sees empty panel on a failed rollback",
+      "fails_before": "live CLI run: EXIT=0, JSON state=FAILED_SAFE error_code=NO_BACKUP, human panel shows None (reproduced twice)",
+      "fix_target": "non-zero exit for FAILED_SAFE, warning panel with state+error_message, ROLLED_BACK stays exit 0"
+    }
+  ],
+  "false_confidence_tests": [
+    "tests/unit/test_cli_end_to_end.py::test_e2e_28_start_daemon_json_spawns_detached_command — monkeypatches _spawn_daemon; packaging/entry-point breakage would pass green",
+    "tests/unit/test_cli_end_to_end.py::test_e2e_29_stop_handles_missing_and_stale_pidfiles — asserts 'Engine stopped' success for a DEAD pid (BUG-172 behavior enshrined)",
+    "tests/unit/test_cli_end_to_end.py::test_e2e_18_update_rollback_without_backup_is_failed_safe_exit_ok — asserts exit==OK for FAILED_SAFE (BUG-173 behavior enshrined)"
+  ],
+  "investigated_clear": [
+    "os.kill(pid,0) on Windows does NOT kill (probe: child survived) — liveness check itself safe",
+    "update check same/older version + downgrade path: verified contract (release 9.0.5 vs installed 9.0.3, UPDATE_AVAILABLE; LIVE-block + rollback engine reachable via update rollback)",
+    "updater LIVE-safety: assert_safe_to_update BLOCKs LIVE engine (updater.py:979-987); quiesce protocol explicit",
+    "hot-reload: RuntimeConfigStore.apply is atomic whole-or-nothing, unknown keys rejected, type violations rejected (probes), cross-field drawdown>=risk-per-trade enforced; WEB save endpoint returns rejection reason to caller",
+    "config-validate misleading output: flags missing optional sections rules/telemetry that don't exist in AppConfig schema (cosmetic P4, not filed as bug — sections genuinely optional)",
+    "verify-release: FAIL covers missing/tampered/stale assets + identity mismatch + secrets; WARN/SKIP enumerated but never silently downgraded to PASS"
+  ],
+  "ownership_note": "live_engine.py + signals/policy.py dirty-tree = BUG-169 (dedup tick / online-trainer width) in flight by another agent; not touched",
+  "stop_condition": "hunt continues while evidence returns from 5 discovery subagents; fixes batch-push after verification"
+}
