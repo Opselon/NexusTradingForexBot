@@ -204,8 +204,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "onedir version failed" }
           $h = & "release\build\windows-x64\onedir\NexusScalpEngine\NexusScalpEngine.exe" health --json | Out-String
           if ($h -notmatch '"overall"') { throw "health JSON missing" }
-          & "release\build\windows-x64\onefile\NexusScalpEngine-CLI.exe" version --plain
-          if ($LASTEXITCODE -ne 0) { throw "onefile CLI failed" }
+          # BUG-174 tripwire (Part 8/12): the onefile CLI must report STAMPED
+          # identity, not Commit None + a runtime-generated timestamp. The
+          # build-info.json payload (--add-data) unpacks into sys._MEIPASS and
+          # get_build_info_file() must find it; if it cannot, the CLI falls
+          # back to now() and its timestamp changes between runs - exactly
+          # the v9.0.5 defect this catches at build time.
+          $cli = "release\build\windows-x64\onefile\NexusScalpEngine-CLI.exe"
+          $v1 = & $cli version --json | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "onefile CLI version --json failed" }
+          $vi1 = $v1 | ConvertFrom-Json
+          $v2 = & $cli version --json | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "onefile CLI version --json (2nd) failed" }
+          $vi2 = $v2 | ConvertFrom-Json
+          $bi = Get-Content "$PWD\build-info.json" -Raw | ConvertFrom-Json
+          if (-not $vi1.commit) { throw "CLI_EXE_IDENTITY_UNSTAMPED: commit is None (BUG-174 regression)" }
+          if ($vi1.build_timestamp -ne $vi2.build_timestamp) { throw "CLI_EXE_IDENTITY_RUNTIME_TIMESTAMP: build_timestamp changed between invocations ($($vi1.build_timestamp) -> $($vi2.build_timestamp))" }
+          if ($vi1.commit -ne $bi.git_commit) { throw "CLI_EXE_IDENTITY_MISMATCH: CLI commit $($vi1.commit) != build-info commit $($bi.git_commit)" }
+          if ($vi1.build_timestamp -ne $bi.build_timestamp) { throw "CLI_EXE_TIMESTAMP_MISMATCH: identity diverges from stamped build-info" }
+          Write-Host "CLI identity stamped: commit $($vi1.commit) timestamp $($vi1.build_timestamp)"
       - name: Stage release tree
         shell: pwsh
         run: |

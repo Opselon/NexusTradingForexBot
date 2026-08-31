@@ -323,3 +323,34 @@ def test_get_version_info_never_invents_commit_when_stamped(
     assert info["commit"] == "cafef00"
     assert info["build_timestamp"] == "2020-01-01T00:00:00+00:00"
     assert info["version"] == "1.2.3"
+
+
+# ---------------------------------------------------------------------------
+# Part 6/8 — EXE smoke-step identity tripwire exists in release.yml
+# (the build-time executable-level guard that would have caught BUG-174)
+# ---------------------------------------------------------------------------
+def test_release_yml_exe_smoke_asserts_stamped_cli_identity() -> None:
+    """The EXE smoke step must assert CLI stamped identity, not just exit codes.
+
+    On v9.0.5 the smoke step passed while the CLI binary reported Commit None
+    and a runtime-generated timestamp (BUG-174) — exit-code-only coverage was
+    the §46 blind spot. The step must now throw on: commit None, a timestamp
+    that changes between two invocations, or identity diverging from the
+    stamped build-info.json (the same file the manifest is derived from).
+    """
+    src = RELEASE_YML.read_text(encoding="utf-8")
+    assert "CLI_EXE_IDENTITY_UNSTAMPED" in src, (
+        "smoke step missing Commit-None tripwire (BUG-174 detector)"
+    )
+    assert "CLI_EXE_IDENTITY_RUNTIME_TIMESTAMP" in src, (
+        "smoke step missing runtime-timestamp differential tripwire"
+    )
+    assert "CLI_EXE_IDENTITY_MISMATCH" in src, "smoke step missing commit-vs-build-info comparison"
+    assert "version --json" in src, "smoke step must read machine-readable identity"
+    # tripwire must live in the smoke step (before Stage release tree)
+    smoke_idx = src.find("EXE smoke tests")
+    stage_idx = src.find("name: Stage release tree")
+    tripwire_idx = src.find("CLI_EXE_IDENTITY_UNSTAMPED")
+    assert 0 < smoke_idx < tripwire_idx < stage_idx, (
+        "identity tripwire must run inside the EXE smoke step"
+    )
