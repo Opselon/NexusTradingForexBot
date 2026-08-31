@@ -6164,3 +6164,15 @@ restart by operator).
   mismatch fails safe + blocks dispatch, matching account connects, no
   expectation preserves legacy behavior, all four helpers log on DB error,
   healthy-DB behavior unchanged).
+
+## BUG-150 — `model-dataset-build --with-news` crashes when no explicit `--news-db` is given (2026-08-31 Nexus-Main)
+- Symptom: `nexus model-dataset-build --bars x.csv --with-news` (no `--news-db`) dies with `sqlite3.OperationalError: unable to open database file` instead of degrading to the documented all-zero news warning.
+- Root cause: the option sentinel is `Path("")`, which normalizes to `Path('.')` (truthy AND `.exists() == True`), so the DB branch is taken and `NewsDatabase(Path('.'))` tries to open the current directory as a SQLite file. PROVEN by probe (`repr(Path('')) -> WindowsPath('.')`) + crash traceback at cli/main.py:2473.
+- Fix (pending): treat empty `Path` options as unset (`if str(news_db)` before `.exists()`), or default to the canonical `artifacts/news.db` anchor.
+- Pinned by: tests/unit/test_cli_end_to_end.py::test_e2e_47 (regression pin; flip to happy-path once fixed).
+
+## BUG-151 — `model-train-3` imports nonexistent `three_model_pipeline` module — every invocation crashes (2026-08-31 Nexus-Main)
+- Symptom: any `nexus model-train-3 ...` invocation raises `ModuleNotFoundError: No module named 'nexus_scalp.model_generation.three_model_pipeline'` (cli/main.py:2704).
+- Root cause: the canonical module is `nexus_scalp/model_generation/three_model.py` (`train_variant`/`write_variants_index` functions); the CLI was written against a `ThreeModelPipeline` class that never existed in the tree.
+- Fix (pending): either add a thin `ThreeModelPipeline` adapter in `three_model.py` delegating to `train_variant(...)`, or rewire the CLI to call `train_variant` per `--variant`.
+- Pinned by: tests/unit/test_cli_end_to_end.py::test_e2e_48 (regression pin; flip to smoke invocation once fixed).
