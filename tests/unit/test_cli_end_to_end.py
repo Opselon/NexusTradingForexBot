@@ -427,14 +427,28 @@ def test_e2e_17_update_doctor_json_overall_with_named_checks(
     assert data["overall"] in ("READY", "NOT READY")
 
 
-def test_e2e_18_update_rollback_without_backup_is_failed_safe_exit_ok(
+def test_e2e_18_update_rollback_without_backup_is_failed_safe_exit_runtime(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """BUG-173: a rollback that could NOT restore (no backup) is a FAILURE
+    for scripted callers: exit code must be non-zero while the report
+    keeps its FAILED_SAFE state for introspection. ROLLED_BACK stays 0."""
     _isolated_cwd(tmp_path, monkeypatch)
     res = _invoke(["update", "rollback", "--json"])
-    assert res.exit_code == xc.EXIT_OK
     data = json.loads(res.stdout)
-    assert data["state"] in ("FAILED_SAFE", "ROLLED_BACK")
+    if data["state"] == "FAILED_SAFE":
+        assert res.exit_code == xc.EXIT_RUNTIME, (res.exit_code, data)
+        assert data.get("error_code") == "NO_BACKUP"
+    else:
+        assert data["state"] == "ROLLED_BACK"
+        assert res.exit_code == xc.EXIT_OK
+    # Human/JSON parity: the human panel must also reflect the failure
+    # (never a green success panel on a failed rollback).
+    res_human = _invoke(["update", "rollback"])
+    if data["state"] == "FAILED_SAFE":
+        assert res_human.exit_code == xc.EXIT_RUNTIME
+        assert "Rollback" in res_human.stdout
+        assert "None" not in res_human.stdout.split("Rollback")[-1][:120]
 
 
 def test_e2e_19_update_unknown_subcommand_is_usage_error(
@@ -630,9 +644,16 @@ def test_e2e_29_stop_handles_missing_and_stale_pidfiles(
     assert "No pidfile" in res_none.stdout
     pidfile = data_root / "nexus.pid"
     pidfile.write_text("999999", encoding="utf-8")  # dead pid
+    # BUG-172: a dead pid is NOT a successful stop — the engine was
+    # already gone. The CLI must say so honestly (warning panel), still
+    # clean the stale pidfile, and stay exit-OK (stopping a stopped
+    # engine is not an error).
     res_stale = _invoke(["stop"])
     assert res_stale.exit_code == xc.EXIT_OK
-    assert "Engine stopped" in res_stale.stdout
+    assert "already stopped" in res_stale.stdout
+    assert "Engine stopped" not in res_stale.stdout, (
+        "green success panel on a dead pid misleads the user"
+    )
     assert not pidfile.exists(), "stale pidfile must be removed"
 
 

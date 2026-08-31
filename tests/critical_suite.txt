@@ -56,3 +56,4 @@ tests/unit/test_research_task4_dataset.py
 tests/unit/test_experience_intelligence.py
 tests/unit/test_liquidity_runtime_integration_phase18.py
 tests/unit/test_70d_inference_validator_task3.py
+tests/unit/test_user_hunt_bug170_171.py

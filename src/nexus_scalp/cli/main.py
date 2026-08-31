@@ -1058,7 +1058,12 @@ def _update_exit_code(report: dict[str, Any]) -> int:
     8 rollback
     """
     status = str(report.get("status") or report.get("state") or "")
-    ok_states = ("COMPLETED", "NO_UPDATE", "ROLLED_BACK", "FAILED_SAFE", "IDLE")
+    # BUG-173: FAILED_SAFE means the operation did NOT succeed (e.g. a
+    # rollback with no backup). It must never read as success to scripted
+    # callers. ROLLED_BACK stays a controlled success (exit 0).
+    if status == "FAILED_SAFE":
+        return xc.EXIT_RUNTIME
+    ok_states = ("COMPLETED", "NO_UPDATE", "ROLLED_BACK", "IDLE")
     if status in ok_states:
         return xc.EXIT_OK
     if status == "ROLLED_BACK":
@@ -1417,7 +1422,23 @@ def update_cmd(
                 )
             raise typer.Exit(xc.EXIT_RUNTIME) from None
         if not json_mode:
-            console.print(_success_panel("Rollback", str(report.get("status"))))
+            # BUG-173: rollback reports carry `state`, not `status`; the old
+            # panel printed None on every rollback. Surface the real state
+            # and, on failure, the actionable error instead of a green panel.
+            state = str(report.get("state") or report.get("status") or "UNKNOWN")
+            error_message = str(report.get("error_message") or "").strip()
+            if state in ("ROLLED_BACK", "COMPLETED") and report.get("restored", True):
+                console.print(_success_panel("Rollback", state))
+            else:
+                console.print(
+                    _error_panel(
+                        f"Rollback not performed (state: {state})",
+                        error_message
+                        or "No previous application snapshot available; user data untouched.",
+                        hint="Create a backup first: nexus db backup (then retry the update)",
+                        exit_code=_update_exit_code(report),
+                    )
+                )
         _update_json_exit(report, json_mode)
         return
     if subcommand == "doctor":
@@ -2193,7 +2214,25 @@ def _spawn_daemon(cmd: list[str]) -> None:
     data_root = rpaths.get_data_root()
     data_root.mkdir(parents=True, exist_ok=True)
     pidfile = _pidfile()
-    if pidfile.exists():
+    # BUG-170: atomic claim. The old check-then-write let two concurrent
+    # `nexus start` invocations both pass the liveness check and both
+    # spawn an engine (web-bind crash / duplicate sessions). os.open with
+    # O_CREAT|O_EXCL makes exactly ONE racer own the pidfile; losers then
+    # re-read it and report the winner as the running engine.
+    claimed = False
+    try:
+        fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        claimed = True
+    except FileExistsError:
+        claimed = False
+    except OSError:
+        # Fall back to legacy behavior only when O_EXCL itself is
+        # unsupported (never on CPython/Windows or POSIX) — keep failing
+        # loudly rather than silently spawning twice.
+        raise
+
+    if not claimed:
+        # Someone else owns the pidfile: liveness-check THEIR pid.
         try:
             old = int(pidfile.read_text().strip())
             os.kill(old, 0)
@@ -2205,9 +2244,22 @@ def _spawn_daemon(cmd: list[str]) -> None:
             )
             return
         except (OSError, ValueError):
+            # Stale pidfile: remove it and retry the atomic claim ONCE.
             pidfile.unlink(missing_ok=True)
-    with open(pidfile, "w", encoding="utf-8") as f:
-        f.write(str(os.getpid()))
+            try:
+                fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                claimed = True
+            except FileExistsError:
+                console.print(
+                    Panel(
+                        "[yellow]Another nexus start is spawning right now. Use nexus stop first.[/yellow]",
+                        border_style="yellow",
+                    )
+                )
+                return
+    if claimed:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
     # Reparent via the same interpreter; the child runs foreground logic.
     subprocess.Popen(
         cmd,
@@ -2451,17 +2503,51 @@ def stop_cmd() -> None:
         console.print(_error_panel("Bad pidfile", str(pidfile), hint="Removing stale pidfile"))
         pidfile.unlink(missing_ok=True)
         return
+    stopped = False
+    already_gone = False
+    error_text = ""
     try:
         if sys.platform == "win32":
-            subprocess.run(
+            # BUG-172: the taskkill result was discarded, so a DEAD pid
+            # (rc=128 process-not-found) printed a green success panel and
+            # a PID-reuse kill of the WRONG process went unreported.
+            kill = subprocess.run(
                 ["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False
             )
+            out = ((kill.stdout or b"") + (kill.stderr or b"")).decode(errors="replace")
+            if kill.returncode == 0:
+                stopped = True
+            elif kill.returncode == 128 or "not found" in out.lower():
+                already_gone = True
+            else:
+                error_text = out.strip()[:200] or f"taskkill rc={kill.returncode}"
         else:
             os.kill(pid, 15)
+            stopped = True
+    except ProcessLookupError:  # POSIX: pid already gone
+        already_gone = True
     except OSError as e:
-        console.print(_error_panel("Could not stop", str(e)))
+        error_text = str(e)
     pidfile.unlink(missing_ok=True)
-    console.print(_success_panel("Engine stopped", f"pid {pid}", border="green"))
+    if stopped:
+        console.print(_success_panel("Engine stopped", f"pid {pid}", border="green"))
+    elif already_gone:
+        console.print(
+            Panel(
+                f"[yellow]Engine already stopped (stale pidfile, pid {pid}).[/yellow]",
+                border_style="yellow",
+            )
+        )
+    else:
+        console.print(
+            _error_panel(
+                "Could not stop",
+                error_text or f"unknown failure stopping pid {pid}",
+                hint=f'Verify the process manually: tasklist /FI "PID eq {pid}"',
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
 
 
 @app.command("restart")
