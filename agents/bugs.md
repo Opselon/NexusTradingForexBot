@@ -6314,3 +6314,22 @@ restart by operator).
 - LESSON: when one subsystem declares a condition OPTIONAL and another gate-keeps it
   CRITICAL, fresh environments are structurally UNHEALTHY by construction - health
   verdicts must be consistent across repair/health/contract checkers for the SAME input.
+
+## BUG-158 - e2e_05 doctor --fix hit the interactive confirm on fresh environments; CliRunner EOF aborted the CLI (2026-08-31 Hermes-DevOps)
+- FOUND: CI #470 (5f713d8, after the BUG-157 health fix) STILL failed test_e2e_05 with
+  SystemExit 1. Two-layer machine-state dependency: (a) BUG-157 MODEL FAIL on fresh envs,
+  fixed separately; (b) with fixable fails present (no ~/.nexusscalpengine/config/nexus.yaml
+  on CI) doctor --fix calls typer.confirm(); CliRunner(input=None) hits EOF -> Abort ->
+  exit 1 before any repair runs. Dev machines passed because the user config already
+  exists -> no fixable fails -> no prompt.
+- ROOT CAUSE: test exercised the interactive path without supplying stdin or --yes; the
+  CLI behavior itself is CORRECT (human TTY: Enter accepts default=True; EOF abort is the
+  documented click/typer contract).
+- FIX (test-side, tests/unit/test_cli_end_to_end.py::test_e2e_05): invoke with --yes
+  (the CLI's documented auto-confirm repair flag) -> deterministic, non-interactive,
+  still exercises RepairEngine + re-verify path. No source change.
+- VERIFIED: CI-equivalent simulation (clean LOCALAPPDATA, CliRunner input=None, repo CWD):
+  doctor --fix --yes --json -> RC=0, overall READY, 0 FAILs, repair executed; local full
+  suite re-run; ruff check/format + py_compile clean.
+- LESSON: e2e tests of interactive commands must either feed stdin or pass the documented
+  non-interactive flag; an unattended confirm() is an EOF time bomb in ANY headless runner.

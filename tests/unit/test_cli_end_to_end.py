@@ -226,7 +226,11 @@ def test_e2e_04_doctor_json_reports_20_checks_plus_environment() -> None:
 
 
 def test_e2e_05_doctor_fix_repairs_then_reverifies_to_ready() -> None:
-    res = _invoke(["doctor", "--fix", "--json"])
+    # BUG-158: --yes makes the repair non-interactive. Without it, a fresh
+    # environment (no user config yet) has fixable fails and the doctor
+    # prompts; CliRunner EOF then raises Abort -> exit 1. Machine-state
+    # dependency, not a CLI defect (human TTY gets default=True on Enter).
+    res = _invoke(["doctor", "--fix", "--yes", "--json"])
     assert res.exit_code == xc.EXIT_OK
     data = json.loads(res.stdout)
     assert {"checks", "overall", "repair"} <= set(data)
