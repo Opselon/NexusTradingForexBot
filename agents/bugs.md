@@ -6621,3 +6621,13 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - LESSON: a test that fails because of junk in an ignored directory is a junk problem, not
   a test problem - clean the environment, never delete the coverage; skipif reasons must
   state the environmental fact truthfully so the gap stays visible.
+
+
+## BUG-177 - high-entropy log redaction corrupted benign dataset-rejection detail (2026-08-31 Hermes-Main)
+
+- **Severity:** P2 | **Status:** FIXED-PENDING-VERIFICATION | **Discovered-by:** Reviewer (scratch/reviewer_user_hunt_2026-08-31.md, commit 1f60832) | **Fixed-by:** Hermes-Main (small patch, direct)
+- **Symptom:** 162 log lines on 2026-08-31 rendered "zero-substituted outcome (reconstruction_source=NONE)" as "zero-substituted outcome ([REDACTED_SECRET])" — the NONE-vs-authoritative distinction the dataset-rejection detail exists to show was destroyed, and a false secret implication was injected.
+- **Root cause:** research/dataset.py:312 emitted the detail in key=VALUE shape with value NONE (mixed-case token); observability/logging.py _scrub spares UPPER_SNAKE constants only, so the token hit the high-entropy catcher and was rewritten.
+- **Fix:** rephrase the detail without the key=VALUE shape: "zero-substituted outcome; reconstruction source: NONE" (research/dataset.py). Redactor semantics untouched (no guard widening).
+- **Regression evidence:** py_compile PASS; ruff check + format PASS; mypy PASS; 78 incident/outcome-recovery tests PASS; 15 logging redaction tests PASS (redactor behavior unchanged).
+- **Note:** Reviewer assigned BUG-177 as candidate id; re-grepped tail immediately before writing (free), registered here per contract section 41.

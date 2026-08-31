@@ -309,7 +309,12 @@ class ResearchDatasetBuilder:
             return (
                 False,
                 REASON_MISSING_REALIZED_R,
-                f"zero-substituted outcome (reconstruction_source={src or 'NONE'})",
+                # BUG-177: the old "key=NONE" spelling collided with the
+                # high-entropy log redactor (a bare NONE value is not an
+                # UPPER_SNAKE constant and was rewritten to [REDACTED_SECRET],
+                # destroying the NONE-vs-authoritative distinction the log
+                # exists to show). Phrase it without the key=value shape.
+                f"zero-substituted outcome; reconstruction source: {src or 'NONE'}",
             )
         if not authoritative and is_zero_r and not is_zero_pnl:
             return (
