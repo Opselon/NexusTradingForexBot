@@ -129,9 +129,19 @@ def get_build_info_file() -> Path | None:
     if frozen:
         # A packaged EXE MUST report ITS OWN bundle identity — never the CWD
         # (version truth, BUG-092/093). Source/dev runs keep repo-cwd first.
+        # BUG-174: PyInstaller ONEFILE bundles unpack --add-data payloads
+        # (build-info.json) into the runtime extraction dir ``sys._MEIPASS``
+        # (a %TEMP%\\_MEIxxxx dir), NOT next to the EXE. Without this
+        # candidate the CLI could never see its stamped identity and fell
+        # back to Commit None + a runtime-generated timestamp. The onedir
+        # path is unchanged (payloads land in _internal/).
+        meipass = getattr(sys, "_MEIPASS", None)
         candidates = [
             exe_base / "build-info.json",
             exe_base / "_internal" / "build-info.json",
+            *(  # onefile payload dir (empty string guard: never match cwd)
+                [Path(meipass) / "build-info.json"] if meipass else []
+            ),
             Path.cwd() / "build-info.json",
             Path(__file__).resolve().parent.parent.parent.parent.parent / "build-info.json",
         ]

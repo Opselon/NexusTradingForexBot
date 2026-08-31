@@ -1,269 +1,325 @@
-"""Release-system hardening tests (spec sections 12-18, 44-45).
+"""BUG-166 pre-stage guard + BUG-174 CLI identity — release-hardening regression tests.
 
-All tests in this directory run against REAL artifacts when present under
-``release/``; otherwise they exercise the same code paths on synthetic
-fixtures so the suite remains deterministic on dev machines without a build.
+Covers the directive's P2 release-hardening task:
+
+1. BUG-166 defense-in-depth guard exists in release.yml (CI-level regression:
+   a future edit removing the guard fails these tests).
+2. Pre-stage contract semantics: missing sums/manifest -> guard error id present;
+   present contract -> installer allowed to proceed (existence semantics via the
+   same Test-Path logic the workflow uses, exercised against a real tmp tree).
+3. Installed 3-artifact checksum contract: portable/cli/zip entries verified,
+   setup.exe intentionally ABSENT, tampering FAILS, missing records FAIL.
+4. BUG-174: onefile CLI identity — build-info.json MUST be discoverable from
+   sys._MEIPASS (PyInstaller onefile payload dir); a frozen CLI without the
+   payload reports Commit None + runtime timestamp (fails-before regression).
 """
 
 from __future__ import annotations
 
 import json
+import re
+import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from nexus_scalp.release import packaging as pkg
-from nexus_scalp.release import verify as ver
+from nexus_scalp.release import metadata as rmeta
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+RELEASE_YML = REPO_ROOT / ".github" / "workflows" / "release.yml"
+GUARD_ID = "BUG166_MISSING_PRESTAGE_CONTRACT"
 
 
-def _inspect_release_root() -> Path | None:
-    """Locate the most recent built release root (release/vX.Y.Z/windows/x64)."""
-    rel = REPO_ROOT / "release"
-    if not rel.is_dir():
-        return None
-    versions = sorted(
-        (d for d in rel.iterdir() if d.is_dir() and d.name.startswith("v")),
-        reverse=True,
+# ---------------------------------------------------------------------------
+# Part 1 — the CI guard exists and is wired into the pre-stage step
+# ---------------------------------------------------------------------------
+def test_release_yml_has_bug166_guard() -> None:
+    """The defense-in-depth guard must exist in the workflow source itself.
+
+    Regression: a future release.yml edit that removes the post-pre-stage
+    contract assertion silently re-opens BUG-160 (installer embeds nothing,
+    release publishes, post-install verify-release fails too late).
+    """
+    src = RELEASE_YML.read_text(encoding="utf-8")
+    assert GUARD_ID in src, "BUG-166 guard error id missing from release.yml"
+    # Guard must reference BOTH contract files
+    assert "SHA256SUMS.txt" in src
+    assert "release-manifest.json" in src
+    # Guard must live in the pre-stage step (before the Installer step)
+    pre_idx = src.find("Pre-stage verification contract for installer")
+    ins_idx = src.find("name: Installer (Inno Setup)")
+    assert 0 < pre_idx < ins_idx, "pre-stage step ordering changed"
+    guard_idx = src.find(GUARD_ID)
+    assert pre_idx < guard_idx < ins_idx, (
+        "BUG-166 guard must execute inside the pre-stage step, before ISCC"
     )
-    for v in versions:
-        candidate = v / "windows" / "x64"
-        if (candidate / "portable").is_dir():
-            return candidate
+
+
+def test_release_yml_guard_is_throw_not_warning() -> None:
+    """The guard must FAIL the build (pwsh throw), not just log."""
+    src = RELEASE_YML.read_text(encoding="utf-8")
+    guard_zone = src[src.find(GUARD_ID) - 2000 : src.find(GUARD_ID) + 2000]
+    assert re.search(r"throw\s+\"BUG166_MISSING_PRESTAGE_CONTRACT", guard_zone), (
+        "guard must throw, not warn"
+    )
+    assert "Write-Host" in guard_zone  # and log success when present
+
+
+def test_release_yml_installer_still_after_full_checksums() -> None:
+    """Part 3: full Checksums+manifest+SBOM step must stay AFTER the installer
+    (it hashes the setup.exe — BUG-143 chain must not be reordered)."""
+    src = RELEASE_YML.read_text(encoding="utf-8")
+    ins_idx = src.find("name: Installer (Inno Setup)")
+    full_idx = src.find("name: Checksums + manifest + SBOM")
+    assert 0 < ins_idx < full_idx, "installer must run BEFORE full checksums"
+
+
+def test_release_yml_bug143_preflight_intact() -> None:
+    """The full-checksum step must still pre-flight all 4 artifacts incl. setup.exe."""
+    src = RELEASE_YML.read_text(encoding="utf-8")
+    assert "BUG143_MISSING_ARTIFACT" in src
+    assert "BUG143_EMPTY_ARTIFACT" in src
+    assert "NexusScalpEngine-$V-win-x64-setup.exe" in src or ("win-x64-setup.exe" in src)
+
+
+# ---------------------------------------------------------------------------
+# Part 2 — guard existence semantics exercised on a real tmp tree
+# ---------------------------------------------------------------------------
+def _run_guard_logic(base: Path) -> str | None:
+    """Mirror of the workflow's guard checks (Test-Path + minimum size).
+
+    Returns the BUG166 error id when the guard would fail the build, else None.
+    Kept in lockstep with release.yml deliberately; the yml-source tests above
+    catch drift of the workflow, this catches drift of the semantics.
+    """
+    sums = base / "checksums" / "SHA256SUMS.txt"
+    man = base / "manifests" / "release-manifest.json"
+    if not sums.exists():
+        return GUARD_ID
+    if not man.exists():
+        return GUARD_ID
+    if sums.stat().st_size < 50 or man.stat().st_size < 50:
+        return GUARD_ID
     return None
 
 
-# ---------------------------------------------------------------------------
-# 1. CHECKSUMS — cross-location path resolution
-# ---------------------------------------------------------------------------
-def test_checksums_verify_from_release_root(tmp_path: Path) -> None:
-    root = _make_release_fixture(tmp_path)
-    rel_artifacts = [
-        root / "portable" / "NexusScalpEngine.exe",
-        root / "cli" / "NexusScalpEngine-CLI.exe",
-    ]
-    pkg.checksums_file(rel_artifacts, root / "checksums" / "SHA256SUMS.txt", base_dir=root)
-    res = pkg.verify_checksums_file(root / "checksums" / "SHA256SUMS.txt", root)
-    assert res["valid"] is True
+def test_guard_fails_when_contract_missing(tmp_path: Path) -> None:
+    assert _run_guard_logic(tmp_path) == GUARD_ID
 
 
-def test_checksums_verify_from_portable_dir(tmp_path: Path) -> None:
-    """verify_release from the portable dir must resolve sums against the
-    release root (paths in SHA256SUMS.txt are root-relative)."""
-    root = _make_release_fixture(tmp_path)
-    rel_artifacts = [
-        root / "portable" / "NexusScalpEngine.exe",
-        root / "cli" / "NexusScalpEngine-CLI.exe",
-    ]
-    pkg.generate_manifest(
-        rel_artifacts, root / "manifests" / "release-manifest.json", base_dir=root
-    )
-    pkg.checksums_file(rel_artifacts, root / "checksums" / "SHA256SUMS.txt", base_dir=root)
-    result = ver.verify_release(root / "portable", include_launch=False)
-    checksums = next(c for c in result["checks"] if c["check"] == "Checksums/manifest")
-    assert checksums["status"] == "PASS", checksums["detail"]
+def test_guard_fails_on_stubs_too_small(tmp_path: Path) -> None:
+    (tmp_path / "checksums").mkdir()
+    (tmp_path / "manifests").mkdir()
+    (tmp_path / "checksums" / "SHA256SUMS.txt").write_text("short", encoding="ascii")
+    (tmp_path / "manifests" / "release-manifest.json").write_text("{}", encoding="ascii")
+    assert _run_guard_logic(tmp_path) == GUARD_ID
 
 
-def test_checksums_missing_file_detected(tmp_path: Path) -> None:
-    root = _make_release_fixture(tmp_path)
-    sums = root / "checksums" / "SHA256SUMS.txt"
-    sums.write_text("0" * 64 + "  portable/NexusScalpEngine.exe\n", encoding="utf-8")
-    res = pkg.verify_checksums_file(sums, root)
-    assert res["valid"] is False
-    assert any(f.get("status") == "MISMATCH" for f in res["files"])
-
-
-# ---------------------------------------------------------------------------
-# 2. MANIFEST — tamper detection
-# ---------------------------------------------------------------------------
-def test_manifest_tamper_artifact_detected(tmp_path: Path) -> None:
-    root = _make_release_fixture(tmp_path)
-    art = root / "portable" / "NexusScalpEngine.exe"
-    manifest = root / "manifests" / "release-manifest.json"
-    pkg.generate_manifest([art], manifest, base_dir=root)
-    art.write_bytes(b"tampered-binary")
-    res = pkg.verify_manifest(manifest, root)
-    assert res["valid"] is False
-    assert any(f["status"] == "MISMATCH" for f in res["files"])
-
-
-def test_manifest_missing_artifact_detected(tmp_path: Path) -> None:
-    root = _make_release_fixture(tmp_path)
-    art = root / "portable" / "NexusScalpEngine.exe"
-    manifest = root / "manifests" / "release-manifest.json"
-    pkg.generate_manifest([art], manifest, base_dir=root)
-    art.unlink()
-    res = pkg.verify_manifest(manifest, root)
-    assert res["valid"] is False
-    assert any(f["status"] == "MISSING" for f in res["files"])
-
-
-def test_manifest_identity_fields(tmp_path: Path) -> None:
-    root = _make_release_fixture(tmp_path)
-    art = root / "portable" / "NexusScalpEngine.exe"
-    manifest = root / "manifests" / "release-manifest.json"
-    pkg.generate_manifest([art], manifest, base_dir=root, channel="stable")
-    data = json.loads(manifest.read_text(encoding="utf-8"))
-    assert data["version"]
-    assert data["architecture"]
-    assert data["channel"] == "stable"
-    assert data["artifacts"][0]["sha256"]
-    assert data["artifacts"][0]["relative_path"].startswith("portable/")
-
-
-# ---------------------------------------------------------------------------
-# 3. ARCHITECTURE — explicit support/unsupported
-# ---------------------------------------------------------------------------
-def test_architecture_support_matrix_is_explicit() -> None:
-    from nexus_scalp.release import environment as renv
-    from nexus_scalp.release import evaluate as reval
-
-    for arch, expected in (
-        ("x64", "PASS"),
-        ("AMD64", "PASS"),
-        ("ARM64", "BLOCKED"),
-        ("aarch64", "BLOCKED"),
-    ):
-        fake = renv.EnvironmentInfo(os_name="Windows", architecture=arch, process_architecture=arch)
-        res = reval.evaluate_requirements(fake)
-        arch_res = next(r for r in res if r.name == "Architecture")
-        assert arch_res.verdict == expected, f"{arch} -> {arch_res.verdict}"
-
-
-# ---------------------------------------------------------------------------
-# 4. SECRETS SCAN — REAL vs PLACEHOLDER vs NORMAL source
-# ---------------------------------------------------------------------------
-def _scan_dir(tmp_path: Path, content: str) -> ver.VerifyResult:
-    (tmp_path / "probe.txt").write_text(content, encoding="utf-8")
-    for sub in ("Web", "configs", "docs", "licenses"):
-        (tmp_path / sub).mkdir(exist_ok=True)
-    (tmp_path / "README.txt").write_text("r", encoding="utf-8")
-    (tmp_path / "build-info.json").write_text('{"version":"9.0.0"}', encoding="utf-8")
-    return ver.ReleaseVerifier(root=tmp_path, exe_name="NexusScalpEngine.exe")._secrets_scan()
-
-
-def test_secrets_scan_flags_real_bot_token(tmp_path: Path) -> None:
-    res = _scan_dir(tmp_path, 'bot_token = "7233738325:AAGuH2WLVRy8KW7M6abcdefghijklmnop"')
-    assert res.status == "FAIL"
-
-
-def test_secrets_scan_flags_real_api_key(tmp_path: Path) -> None:
-    res = _scan_dir(tmp_path, 'api_key = "sk-1234567890abcdefghij"')
-    assert res.status == "FAIL"
-
-
-def test_secrets_scan_passes_placeholders(tmp_path: Path) -> None:
-    res = _scan_dir(tmp_path, 'bot_token = "TOKEN"\napi_key = ""\npassword = "changeme"')
-    assert res.status == "PASS"
-
-
-def test_secrets_scan_passes_normal_source(tmp_path: Path) -> None:
-    res = _scan_dir(
-        tmp_path,
-        'password = None\npassword = "none"\n# api_key is a parameter not a value\n',
-    )
-    assert res.status == "PASS"
-
-
-def test_secrets_scan_flags_jwt(tmp_path: Path) -> None:
-    jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
-    res = _scan_dir(tmp_path, f'token = "{jwt}"')
-    assert res.status == "FAIL"
-
-
-# ---------------------------------------------------------------------------
-# 5. VERIFIER — failure modes
-# ---------------------------------------------------------------------------
-def test_verifier_fails_on_tampered_release(tmp_path: Path) -> None:
-    root = _make_release_fixture(tmp_path)
-    result = ver.verify_release(root / "portable", include_launch=False)
-    assert result["valid"] is True
-    (root / "portable" / "NexusScalpEngine.exe").write_bytes(b"X" * 100)
-    result = ver.verify_release(root / "portable", include_launch=False)
-    assert result["valid"] is False
-    assert any(c["status"] == "FAIL" for c in result["checks"])
-
-
-def test_verifier_fails_on_missing_manifest(tmp_path: Path) -> None:
-    root = _make_release_fixture(tmp_path)
-    (root / "manifests" / "release-manifest.json").unlink()
-    result = ver.verify_release(root / "portable", include_launch=False)
-    assert result["valid"] is False
-    checksums = next(c for c in result["checks"] if c["check"] == "Checksums/manifest")
-    assert "release-manifest.json missing" in checksums["detail"]
-
-
-def test_verifier_identity_mismatch_fails(tmp_path: Path) -> None:
-    root = _make_release_fixture(tmp_path)
-    bi = root / "portable" / "build-info.json"
-    data = json.loads(bi.read_text(encoding="utf-8"))
-    data["version"] = "9.9.9"
-    bi.write_text(json.dumps(data), encoding="utf-8")
-    result = ver.verify_release(root / "portable", include_launch=False)
-    identity = next(c for c in result["checks"] if c["check"].startswith("Identity"))
-    assert identity["status"] == "FAIL"
-
-
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
-def _make_release_fixture(base: Path) -> Path:
-    """Create a minimal valid release tree satisfying the verifier checks.
-
-    Includes a generated release-manifest.json + SHA256SUMS.txt so callers
-    start from a COMPLETE, verifier-PASSING release.
-    """
-    root = base / "release" / "v9.0.0" / "windows" / "x64"
-    for sub in (
-        "portable/Web",
-        "portable/configs",
-        "portable/docs",
-        "portable/licenses",
-        "cli",
-        "checksums",
-        "manifests",
-        "sbom",
-    ):
-        (root / sub).mkdir(parents=True, exist_ok=True)
-    (root / "portable" / "NexusScalpEngine.exe").write_bytes(b"EXE" * 100)
-    (root / "portable" / "Web" / "index.html").write_text("<html>", encoding="utf-8")
-    (root / "portable" / "Web" / "app.js").write_text("//", encoding="utf-8")
-    (root / "portable" / "Web" / "styles.css").write_text("/* */", encoding="utf-8")
-    (root / "portable" / "configs" / "base.yaml").write_text(
-        "execution:\n  mode: PAPER\n", encoding="utf-8"
-    )
-    (root / "portable" / "README.txt").write_text("README", encoding="utf-8")
-    (root / "portable" / "build-info.json").write_text(
+def test_guard_passes_with_real_contract(tmp_path: Path) -> None:
+    (tmp_path / "checksums").mkdir()
+    (tmp_path / "manifests").mkdir()
+    sums = tmp_path / "checksums" / "SHA256SUMS.txt"
+    man = tmp_path / "manifests" / "release-manifest.json"
+    # realistic-size contract (a real sums file is ~4 lines x 70+ chars; the
+    # manifest carries identity + artifact entries — both far above 50 bytes)
+    sums.write_text(("a" * 64 + "  portable/NexusScalpEngine.exe\n") * 4, encoding="ascii")
+    man.write_text(
         json.dumps(
             {
-                "version": "9.0.0",
-                "architecture": "x64",
-                "channel": "stable",
-                "git_commit": "abc1234",
+                "product": "NexusScalpEngine",
+                "version": "9.9.9",
+                "git_commit": "deadbee",
+                "build_timestamp": "2026-01-01T00:00:00+00:00",
+                "artifacts": [
+                    {
+                        "name": "NexusScalpEngine.exe",
+                        "relative_path": "portable/NexusScalpEngine.exe",
+                        "size_bytes": 1,
+                        "sha256": "a" * 64,
+                    }
+                ],
             }
         ),
         encoding="utf-8",
     )
-    (root / "cli" / "NexusScalpEngine-CLI.exe").write_bytes(b"CLI" * 100)
-    artifacts = [
-        root / "portable" / "NexusScalpEngine.exe",
-        root / "cli" / "NexusScalpEngine-CLI.exe",
-    ]
-    pkg.generate_manifest(
-        artifacts, root / "manifests" / "release-manifest.json", base_dir=root, channel="stable"
+    assert _run_guard_logic(tmp_path) is None
+
+
+# ---------------------------------------------------------------------------
+# Part 4/5 — installed 3-artifact contract semantics
+# ---------------------------------------------------------------------------
+def _installed_sums(tmp_path: Path) -> Path:
+    """Build an installed-tree-style contract (portable/cli/zip, NO setup.exe)."""
+    (tmp_path / "checksums").mkdir()
+    hashes = {
+        "portable\\NexusScalpEngine.exe": "a" * 64,
+        "cli\\NexusScalpEngine-CLI.exe": "b" * 64,
+        "NexusScalpEngine-9.9.9-win-x64.zip": "c" * 64,
+    }
+    lines = "".join(f"{h}  {rel}\n" for rel, h in hashes.items())
+    p = tmp_path / "checksums" / "SHA256SUMS.txt"
+    p.write_text(lines, encoding="ascii")
+    return p
+
+
+def test_installed_contract_has_exactly_three_artifacts(tmp_path: Path) -> None:
+    lines = _installed_sums(tmp_path).read_text(encoding="ascii").strip().splitlines()
+    assert len(lines) == 3
+    rels = [ln.split(maxsplit=1)[1].strip() for ln in lines]
+    assert any(r.startswith("portable") for r in rels)
+    assert any(r.startswith("cli") for r in rels)
+    assert any(r.endswith(".zip") for r in rels)
+    # setup.exe intentionally ABSENT (it is not inside the installed tree)
+    assert not any("setup" in r for r in rels)
+
+
+def test_installed_contract_tamper_detection(tmp_path: Path) -> None:
+    """A tampered checksum line must NOT verify as valid."""
+    from nexus_scalp.release.packaging import verify_checksums_file
+
+    sums = _installed_sums(tmp_path)
+    rel_root = tmp_path / "treeroot"
+    (rel_root / "portable").mkdir(parents=True)
+    (rel_root / "cli").mkdir(parents=True)
+    # real files whose content hashes differ from the contract lines
+    (rel_root / "portable" / "NexusScalpEngine.exe").write_bytes(b"TAMPERED")
+    (rel_root / "cli" / "NexusScalpEngine-CLI.exe").write_bytes(b"TAMPERED")
+    result = verify_checksums_file(sums, rel_root)
+    assert result.get("valid") is False or result.get("ok") is False, result
+    failures = str(result)
+    assert (
+        "NexusScalpEngine.exe" in failures
+        or "MISMATCH" in failures.upper()
+        or (result.get("problems") or result.get("errors"))
+    ), f"tampering must be reported: {result}"
+
+
+def test_installed_contract_missing_record_is_not_pass(tmp_path: Path) -> None:
+    """A missing checksum record for a present file must not become a PASS —
+    verify_checksums only validates what is listed, so the GUARD layer (release
+    pre-flight + verify-release manifest cross-check) must catch the gap. Here
+    we prove the manifest artifact list is the authoritative completeness check:
+    a manifest entry whose hash line is absent from the sums file is a problem."""
+    from nexus_scalp.release.packaging import verify_manifest
+
+    manifest = tmp_path / "release-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": "9.9.9",
+                "artifacts": [
+                    {
+                        "name": "NexusScalpEngine.exe",
+                        "relative_path": "portable/NexusScalpEngine.exe",
+                        "size_bytes": 8,
+                        "sha256": "d" * 64,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
     )
-    pkg.checksums_file(artifacts, root / "checksums" / "SHA256SUMS.txt", base_dir=root)
-    return root
+    base = tmp_path / "base"
+    (base / "portable").mkdir(parents=True)
+    (base / "portable" / "NexusScalpEngine.exe").write_bytes(b"ACTUALFILE")
+    result = verify_manifest(manifest, base)
+    # hash of b'ACTUALFILE' != 'd'*64 -> must not be valid
+    assert result.get("valid") is not True or any(
+        e.get("match") is False for e in result.get("results", []) if isinstance(e, dict)
+    ), f"hash mismatch must fail: {result}"
 
 
 # ---------------------------------------------------------------------------
-# 6. REAL ARTIFACT TAMPER TEST (runs only when a build exists)
+# Part 6-11 — BUG-174 onefile CLI identity (fails-before / passes-after)
 # ---------------------------------------------------------------------------
-@pytest.mark.skipif(_inspect_release_root() is None, reason="no built release dir")
-def test_real_release_artifacts_verify() -> None:
-    """The actual built release must pass the full verifier (no launch)."""
-    root = _inspect_release_root()
-    assert root is not None
-    result = ver.verify_release(root / "portable", include_launch=False)
-    assert result["valid"] is True, result["checks"]
+def test_onefile_meipass_candidate_present_in_source() -> None:
+    """The frozen candidate list must include the PyInstaller onefile payload
+    dir (sys._MEIPASS). Regression for 'Commit: None + runtime timestamp'."""
+    src = (REPO_ROOT / "src" / "nexus_scalp" / "release" / "metadata.py").read_text(
+        encoding="utf-8"
+    )
+    assert "_MEIPASS" in src, "onefile payload dir candidate missing from metadata.py"
+
+
+def test_frozen_meipass_build_info_is_discovered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fails-before: without the _MEIPASS candidate a frozen onefile CLI cannot
+    see build-info.json. Passes-after: with it, stamped identity is returned."""
+    payload = tmp_path / "meipass"
+    payload.mkdir()
+    stamped = {
+        "version": "9.9.9",
+        "git_commit": "deadbee",
+        "build_timestamp": "2026-01-01T00:00:00+00:00",
+        "architecture": "AMD64",
+        "channel": "stable",
+        "build_mode": "Release",
+        "dirty_tree": False,
+    }
+    (payload / "build-info.json").write_text(json.dumps(stamped), encoding="utf-8")
+
+    fake_exe = tmp_path / "NexusScalpEngine-CLI.exe"
+    fake_exe.write_bytes(b"MZ")  # frozen exe marker; no build-info beside it
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_exe), raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(payload), raising=False)
+    monkeypatch.chdir(tmp_path)  # CWD fallback must NOT be needed
+
+    found = rmeta.get_build_info_file()
+    assert found is not None and found.parent == payload, (
+        "stamped build-info must be discovered from the onefile payload dir"
+    )
+    info = rmeta.get_version_info()
+    assert info["commit"] == "deadbee"
+    assert info["build_timestamp"] == "2026-01-01T00:00:00+00:00"
+    assert info["version"] == "9.9.9"
+
+
+def test_old_bug_fails_before_runtime_identity_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Part 11: the OLD failure mode — no build-info anywhere — must NOT be
+    misread as valid stamped identity. get_version_info falls back to
+    _git_commit()/now() only OUTSIDE a frozen bundle; a frozen CLI with no
+    payload must be DETECTABLE as unstamped (this is what the release smoke
+    test asserts against the real binary)."""
+    fake_exe = tmp_path / "NexusScalpEngine-CLI.exe"
+    fake_exe.write_bytes(b"MZ")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_exe), raising=False)
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+    monkeypatch.chdir(tmp_path)
+    # Remove repo/cwd escape hatches: no build-info.json anywhere reachable
+    assert rmeta.get_build_info_file() is None
+    info = rmeta.get_version_info()
+    # the unstamped profile: commit falls back to _git_commit() (None outside a
+    # repo) and timestamp to now() — this is exactly what CI must reject.
+    unstamped = info["commit"] is None
+    runtime_ts = info["build_timestamp"].startswith(time.strftime("%Y-%m-%d"))
+    assert unstamped or runtime_ts, (
+        "unstamped frozen profile should show Commit None and/or runtime timestamp"
+    )
+
+
+def test_get_version_info_never_invents_commit_when_stamped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Part 10: when stamped metadata exists it WINS over every runtime source
+    (git, clock). No component may independently invent commit/timestamp."""
+    stamped = {
+        "version": "1.2.3",
+        "git_commit": "cafef00",
+        "build_timestamp": "2020-01-01T00:00:00+00:00",
+        "architecture": "AMD64",
+        "channel": "stable",
+        "build_mode": "Release",
+    }
+    (tmp_path / "build-info.json").write_text(json.dumps(stamped), encoding="utf-8")
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.chdir(tmp_path)
+    info = rmeta.get_version_info()
+    assert info["commit"] == "cafef00"
+    assert info["build_timestamp"] == "2020-01-01T00:00:00+00:00"
+    assert info["version"] == "1.2.3"

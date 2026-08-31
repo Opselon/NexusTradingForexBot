@@ -257,6 +257,23 @@ jobs:
           }
           Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
           python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); print('pre-stage contract ok')"
+          # BUG-166 defense-in-depth: the Inno `skipifsourcedoesntexist` flag is
+          # resilience, NOT protection. If either contract file failed to be
+          # written, the installer would silently embed nothing and post-install
+          # verify-release would report "build without verification" AFTER the
+          # release was already published. Fail the build HERE instead.
+          if (-not (Test-Path "$Out\checksums\SHA256SUMS.txt")) {
+            throw "BUG166_MISSING_PRESTAGE_CONTRACT: checksums/SHA256SUMS.txt missing after pre-stage"
+          }
+          if (-not (Test-Path "$Out\manifests\release-manifest.json")) {
+            throw "BUG166_MISSING_PRESTAGE_CONTRACT: manifests/release-manifest.json missing after pre-stage"
+          }
+          $sumsLen = (Get-Item "$Out\checksums\SHA256SUMS.txt").Length
+          $manLen = (Get-Item "$Out\manifests\release-manifest.json").Length
+          if ($sumsLen -lt 50 -or $manLen -lt 50) {
+            throw "BUG166_MISSING_PRESTAGE_CONTRACT: contract file suspiciously small (sums=$sumsLen bytes, manifest=$manLen bytes)"
+          }
+          Write-Host "BUG166 pre-stage contract verified: SHA256SUMS.txt ($sumsLen bytes) + release-manifest.json ($manLen bytes)"
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
