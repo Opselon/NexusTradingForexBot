@@ -5237,17 +5237,17 @@ class LiveEngine:
                 from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
 
                 mt5_cfg = getattr(self.config, "mt5", None)
-                new_adapter = DirectMT5Adapter(
+                new_adapter_direct: IMT5Port = DirectMT5Adapter(
                     account=getattr(mt5_cfg, "account", None),
                     password=getattr(mt5_cfg, "password", None),
                     server=getattr(mt5_cfg, "server", None),
                     timeout=getattr(mt5_cfg, "timeout_ms", 5000),
                     retries=getattr(mt5_cfg, "retries", 3),
                 )
-                self.adapter = new_adapter
-                self.order_manager.adapter = new_adapter
-                self.order_manager.mt5_adapter = new_adapter
-                new_adapter.connect()
+                self.adapter = new_adapter_direct
+                self.order_manager.adapter = new_adapter_direct
+                self.order_manager.mt5_adapter = new_adapter_direct
+                new_adapter_direct.connect()
                 swapped = True
         except Exception as swap_err:
             logger.error("[MODE] adapter swap failed (isolated): %s", swap_err)

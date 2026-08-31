@@ -21,7 +21,7 @@ if __name__ == "__main__":
     # UTF-8 with replacement so the UI can never hard-kill the launch.
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr,attr-defined]
         except Exception:
             pass
     # Double-click / bare-EXE parity: `NexusScalpEngine.exe` with NO args

@@ -12,7 +12,11 @@ for root in roots:
     if not root.exists():
         continue
     for f in root.rglob("*"):
-        if not f.is_file() or any(part in ignored_subdirs for part in f.parts) or f.suffix == ".pyc":
+        if (
+            not f.is_file()
+            or any(part in ignored_subdirs for part in f.parts)
+            or f.suffix == ".pyc"
+        ):
             continue
         try:
             txt = f.read_text(errors="ignore")

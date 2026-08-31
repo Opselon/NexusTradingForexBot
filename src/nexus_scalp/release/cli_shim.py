@@ -23,7 +23,7 @@ if __name__ == "__main__":
     # never hard-kill the launch (double-click + CLI parity).
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr,attr-defined]
         except Exception:
             pass
     app()

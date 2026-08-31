@@ -6213,3 +6213,14 @@ restart by operator).
 - Root cause: canonical module is `nexus_scalp.model_generation.three_model` (train_all/train_variant); the CLI referenced a pipeline class that does not exist.
 - Fix: CLI imports train_all, validates --variant (50d_main|70d_news|70d_liquidity, usage error otherwise), loads the canonical bars parquet (data/raw/XAUUSD_M1.parquet with a clear missing-file error), and reports per-variant gate status + overall result.
 - Tests: test_e2e_48 pins the canonical import + usage-error path.
+## BUG-152 — Release tag v9.0.4 cut before version bump; release gate correctly blocked (2026-08-31 Hermes/Main)
+- Symptom: Release run #17 failed at "Validate tag & version": tag=9.0.4 pyproject=9.0.3 (exit 1); zero assets published; E2E artifact chain blocked.
+- Root cause: commit d21df07 (BUG-146..151 hardening) was tagged v9.0.4 without bumping pyproject.toml version in the same commit.
+- Gate verdict: release gate behaved CORRECTLY; the process defect is the release procedure (tag must always be cut on a commit whose pyproject already matches).
+- Fix: version bump 9.0.3 -> 9.0.4 committed FIRST, then tag v9.0.4 re-cut on the bump commit (tag-ancestry rule), Release re-run verified end-to-end.
+- Lesson: any release-hardening commit that changes release behavior must bump pyproject version atomically in the same commit.
+## BUG-153 — Period-series contract tests were time bombs; fixture day slid out of the rolling 14-day window (2026-08-31 Hermes/Main)
+- Symptom: CI runs 463/464/465 failed tests/integration/test_mt5_accounting_api_contract.py::TestAccountPerformanceEndpoint::{test_period_report_has_real_financials, test_period_series_has_points} — "seeded broker history must appear in at least one period" (assert 0 >= 1). Same tests passed locally 2026-08-30.
+- Root cause: MT5 fixture trades are stamped 2026-08-17 (server-local epoch capture) and the tests anchor a rolling DAY/14 window at utc_now(); once "now" slid past 2026-08-31 every bucket became has_data=False. Production code unchanged — pure test time bomb.
+- Fix: freeze the accounting clock (monkeypatch nexus_scalp.accounting.periods.utc_now -> 2026-08-17T12:00Z) inside both series tests. No production change.
+- Lesson: any test asserting rolling-window aggregation over fixed-dated fixtures must pin the clock, never trust the host date.

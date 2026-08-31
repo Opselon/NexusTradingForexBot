@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 import pytest
 
 from nexus_scalp.accounting import AccountingCore
+from nexus_scalp.accounting import periods as _accounting_periods
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from tests.helpers.mt5_fixtures import EXPECTED, fixture_objects
 
@@ -68,7 +69,7 @@ class TestAccountPerformanceEndpoint:
         assert totals["loss_count"] == EXPECTED["losses"]
         assert totals["win_rate"] is not None and totals["win_rate"] > 0.0
 
-    def test_period_report_has_real_financials(self, client) -> None:
+    def test_period_report_has_real_financials(self, client, monkeypatch) -> None:
         """
         Period report must present real financials whenever ANY historical data
         exists in the range - never synthetic zeros. The DAY window depends on
@@ -76,6 +77,15 @@ class TestAccountPerformanceEndpoint:
         so the authoritative check is the aggregate series + totals endpoints,
         which aggregate across all seeded history instead of a single window.
         """
+        # BUG-153: the fixture's trades live on 2026-08-17; a rolling 14-day
+        # window anchored to "now" eventually slides past them (time bomb).
+        # Freeze the accounting clock to the fixture capture day so the test
+        # stays deterministic forever.
+        monkeypatch.setattr(
+            _accounting_periods,
+            "utc_now",
+            lambda: datetime(2026, 8, 17, 12, 0, tzinfo=UTC),
+        )
         res = client.get("/api/account/performance/DAY/series?count=14")
         assert res.status_code == 200
         periods = res.json()["periods"]
@@ -86,7 +96,12 @@ class TestAccountPerformanceEndpoint:
             assert p["total_trades"] > 0
             assert p["net_pnl"] is not None
 
-    def test_period_series_has_points(self, client) -> None:
+    def test_period_series_has_points(self, client, monkeypatch) -> None:
+        monkeypatch.setattr(
+            _accounting_periods,
+            "utc_now",
+            lambda: datetime(2026, 8, 17, 12, 0, tzinfo=UTC),
+        )
         res = client.get("/api/account/performance/DAY/series?count=14")
         assert res.status_code == 200
         periods = res.json()["periods"]

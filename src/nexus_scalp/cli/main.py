@@ -2763,7 +2763,7 @@ def model_train_3(
     if json_mode:
         _emit(result, True)
         raise typer.Exit(0 if result.get("overall") == "PASS" else 1)
-    for v, r in result.get("variants", {}).items():
+    for v, r in result.get("variants", {}).items():  # type: ignore[union-attr]
         style = "green" if r.get("status") == "PASS" else "red"
         console.print(f"[{style}]{r.get('status'):5}[/{style}] {v:16} {r.get('detail', '')}")
 
