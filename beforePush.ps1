@@ -661,7 +661,21 @@ if (-not $SkipGate) {
     & $VenvPy -m nexus_scalp.cli.main forensic --deploy-gate --json *> $GateOut
     $gateExit = $LASTEXITCODE
     $g = $null
-    try { $g = Get-Content $GateOut -Raw | ConvertFrom-Json } catch { }
+    # BUG-167: the gate CLI may prepend a persistence warning line (e.g.
+    # 'result persistence failed ... Permission denied' when its atomic
+    # write hits a Windows file lock) into this file, which breaks a strict
+    # ConvertFrom-Json with 'Extra data' and turned REVIEW_REQUIRED into an
+    # UNVERIFIABLE fail-safe BLOCK. Extract the outermost JSON object that
+    # carries 'decision' before parsing (mirrors beforePush.sh grep).
+    try {
+        $gateRaw = Get-Content $GateOut -Raw
+        if ($gateRaw -match '\{[^{}]*"decision"[\s\S]*\}') {
+            $gateJson = $Matches[0]
+            $g = $gateJson | ConvertFrom-Json
+        } else {
+            $g = $gateRaw | ConvertFrom-Json
+        }
+    } catch { $g = $null }
     # BUG-162 fail-safe: on ANY non-zero exit the result file must carry a real
     # gate payload ('decision'); a usage error (e.g. missing CLI command, exit 2)
     # masquerading as REVIEW_REQUIRED is a fail-safe BLOCK (§39), not a warning.

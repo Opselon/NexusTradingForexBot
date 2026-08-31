@@ -6448,6 +6448,22 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - LESSON: silent excepts hide dead code paths until they invert a safety decision (the dead
   loader import silently selected the wrong artifact); identity checks must verify the
   artifact the CONFIG SERVES, not the newest registry row - registry newest != runtime truth.
+## BUG-167 - beforePush.ps1 forensic-gate parse was strict while the CLI can pollute its own result file (2026-08-31 Hermes-Coder)
+- FOUND: beforePush_20260831_182023 aborted at stage 7/8 with 'Forensic gate UNVERIFIABLE -
+  result file has no decision payload (fail-safe BLOCK)'. The CLI had actually decided
+  REVIEW_REQUIRED (exit 2, healthy path per BUG-166 fix) but its persistence warning
+  '[DEPLOY_GATE] result persistence failed ... Permission denied' (Windows file-lock on the
+  atomic write) landed in the SAME redirected file, prepended to the JSON. The .ps1 hook's
+  strict ConvertFrom-Json threw 'Extra data' -> no decision -> forced exit 3.
+- ASYMMETRY: beforePush.sh already tolerates this (grep '"decision"'); the .ps1 hook was the
+  only strict parser. One gate, two parsers, two verdicts - a divergence class, not a one-off.
+- FIX: .ps1 hook now extracts the outermost JSON object carrying 'decision' before parsing
+  (regex mirroring the .sh grep), falling back to strict parse; parse failure still forces
+  the fail-safe exit 3 (no weakening of the block path).
+- VERIFIED: PowerShell parse probe on the polluted real artifact returns
+  decision=REVIEW_REQUIRED; the fail-safe path is untouched when no JSON exists.
+- LESSON: when two hooks parse one artifact, their parsers must share tolerance semantics -
+  a strict/loose parser pair turns a warning line into a contradictory gate verdict.
 ## BUG-160 CODER ROOT-CAUSE ADDENDUM (2026-08-31 Hermes-Coder)
 - The .iss embedding alone (46516bb/19f47de pre-stage) does NOT close BUG-160:
   ReleaseVerifier._manifest_checksums() resolved the recorded
