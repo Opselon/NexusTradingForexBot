@@ -1,6 +1,6 @@
-"""CLI END-TO-END tests (TASK-CLI-E2E, 2026-08-31 Nexus-Main) — 66 tests.
+"""CLI END-TO-END tests (TASK-CLI-E2E, 2026-08-31 Nexus-Main) — 68 tests.
 
-Exactly 66 end-to-end tests over the canonical Typer CLI
+Exactly 68 end-to-end tests over the canonical Typer CLI
 (``nexus_scalp.cli.main.app``) driven through ``typer.testing.CliRunner`` —
 every command group, its answers (prompts/confirmations), its input/output
 contract and its stable exit codes (docs/RELEASE.md):
@@ -1293,3 +1293,68 @@ def test_e2e_66_exit_code_contract_holds_across_command_families(
         encoding="utf-8",
     )
     assert _invoke(["update", "--manifest", str(manifest), "--json"]).exit_code == xc.EXIT_UPDATE
+
+
+# ---------------------------------------------------------------------------
+# BUG-155 drift guards (2026-08-31 Hermes-Coder): the version-comparison
+# branches of the update contract (UpdatePlanBuilder) short-circuit BEFORE
+# digest/asset evaluation and MUST keep their exit semantics:
+#     tag == installed         -> NO_UPDATE, exit 0
+#     tag OLDER than installed -> NO_UPDATE (downgrade_blocked), exit 0
+# These guards pin that contract so a future bump or refactor that moves
+# these exit codes fails loudly here and forces an explicit CLI_EXIT_CODES
+# v1 contract review (docs/RELEASE.md) instead of a silent behavior change.
+# Both tests are hermetic: manifest path (no network), pinned
+# get_version_info, evergreen against future version bumps in both
+# directions (the coupling BUG-154 removed must never come back).
+
+
+def test_e2e_67_update_tag_equals_installed_is_no_update_exit_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tag == installed short-circuits NO_UPDATE with EXIT_OK (BUG-155 drift guard)."""
+    _isolated_cwd(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "nexus_scalp.cli.main.get_version_info",
+        lambda: {
+            "version": "9.0.4",
+            "architecture": "x64",
+            "channel": "stable",
+            "commit": None,
+        },
+    )
+    manifest = tmp_path / "m.json"
+    manifest.write_text(
+        json.dumps({"assets": [], "tag_name": "v9.0.4", "prerelease": False, "body": ""}),
+        encoding="utf-8",
+    )
+    res = _invoke(["update", "--manifest", str(manifest), "--json"])
+    assert res.exit_code == xc.EXIT_OK
+    data = json.loads(res.stdout)
+    assert data["status"] == "NO_UPDATE"
+
+
+def test_e2e_68_update_tag_older_than_installed_downgrade_blocked_is_no_update_exit_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tag OLDER than installed -> downgrade blocked, still NO_UPDATE/EXIT_OK (BUG-155)."""
+    _isolated_cwd(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "nexus_scalp.cli.main.get_version_info",
+        lambda: {
+            "version": "9.0.4",
+            "architecture": "x64",
+            "channel": "stable",
+            "commit": None,
+        },
+    )
+    manifest = tmp_path / "m.json"
+    manifest.write_text(
+        json.dumps({"assets": [], "tag_name": "v9.0.3", "prerelease": False, "body": ""}),
+        encoding="utf-8",
+    )
+    res = _invoke(["update", "--manifest", str(manifest), "--json"])
+    assert res.exit_code == xc.EXIT_OK
+    data = json.loads(res.stdout)
+    assert data["status"] == "NO_UPDATE"
+    assert data.get("downgrade_blocked") is True

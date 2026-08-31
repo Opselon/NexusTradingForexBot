@@ -43,3 +43,4 @@ tests/unit/test_regime_calibration_bug132.py
 tests/unit/test_accounting_deduplication.py
 tests/unit/test_accounting_pnl_regression.py
 tests/unit/test_accounting_timezone.py
+tests/unit/test_cli_end_to_end.py
