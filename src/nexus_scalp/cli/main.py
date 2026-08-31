@@ -2233,8 +2233,23 @@ def _spawn_daemon(cmd: list[str]) -> None:
 
     if not claimed:
         # Someone else owns the pidfile: liveness-check THEIR pid.
+        # BUG-170-hardening: between O_EXCL creation and the pid write the
+        # file is briefly EMPTY. Reading it then yields ValueError -> the
+        # old code treated a live claim as stale, unlinked the winner's
+        # pidfile, re-claimed and spawned a SECOND engine (CI flake,
+        # run 33433361894). Give the winner a short grace window to write
+        # the pid before declaring the file stale.
+        pid_text: str | None = None
+        for _ in range(25):  # ~0.5s total
+            try:
+                pid_text = pidfile.read_text().strip()
+            except OSError:
+                pid_text = None
+            if pid_text:
+                break
+            time.sleep(0.02)
         try:
-            old = int(pidfile.read_text().strip())
+            old = int(pid_text or "")
             os.kill(old, 0)
             console.print(
                 Panel(
@@ -2244,7 +2259,10 @@ def _spawn_daemon(cmd: list[str]) -> None:
             )
             return
         except (OSError, ValueError):
-            # Stale pidfile: remove it and retry the atomic claim ONCE.
+            # Dead pid (OSError) or stale empty file after the grace window
+            # (ValueError): remove it and retry the atomic claim ONCE. A
+            # pid we just read is re-checked with kill() above, so this
+            # path can no longer race a live claim's write.
             pidfile.unlink(missing_ok=True)
             try:
                 fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)

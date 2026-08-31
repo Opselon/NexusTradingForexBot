@@ -6631,3 +6631,18 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - **Fix:** rephrase the detail without the key=VALUE shape: "zero-substituted outcome; reconstruction source: NONE" (research/dataset.py). Redactor semantics untouched (no guard widening).
 - **Regression evidence:** py_compile PASS; ruff check + format PASS; mypy PASS; 78 incident/outcome-recovery tests PASS; 15 logging redaction tests PASS (redactor behavior unchanged).
 - **Note:** Reviewer assigned BUG-177 as candidate id; re-grepped tail immediately before writing (free), registered here per contract section 41.
+## BUG-179 - CI flake pair: audit-flush sleep race + BUG-170 test stale-claim window (2026-08-31 Agent GitHub Manager)
+- FOUND (CI run 33433361894 on a3dd73a, quality job): two red tests that were green locally 13/13 and in beforePush:
+  1) test_performance_report_intelligence.py::TestMAEMFEMissing::test_mae_mfe_missing - 'assert None == 0.0'.
+     ROOT CAUSE: _flush() was a 0.4s SLEEP racing the AuditRepository background writer (flush_interval 0.05s).
+     Under xdist worker load the sleep elapsed before the row landed -> empty ledger -> avg_mae_usd None.
+  2) test_user_hunt_bug170_171.py::test_bug170_concurrent_spawn_claims_single_engine - '2 engines spawned'.
+     ROOT CAUSE (real production window, not just test): in _spawn_daemon the loser read the pidfile between
+     the winner's O_EXCL claim and its pid WRITE; the empty read raised ValueError -> misclassified as stale ->
+     unlink -> re-claim -> second spawn. The test just caught the production race the fix itself still had.
+- FIX: (1) _flush now calls audit.flush(timeout_sec=5.0) (bounded drain) with the sleep kept only as fallback;
+  (2) _spawn_daemon loser waits up to ~0.5s (25 x 20ms) for the pid text before declaring the file stale, and
+  the comment now documents the empty-file grace window. 12/12 stress runs + full user_hunt + cli_e2e suites green.
+- LESSON: read-after-write against the async audit store must use flush(), never sleep(); an O_EXCL claim whose
+  value write is not atomic must give the winner a bounded grace window before declaring staleness.
+- Severity: P2 (test determinism + a real but narrow race window) | Status: FIXED | Fixed-by: Agent GitHub Manager

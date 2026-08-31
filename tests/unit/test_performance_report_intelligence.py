@@ -96,9 +96,15 @@ def core(audit):
 
 
 def _flush(audit: AuditRepository, seconds: float = 0.4) -> None:
-    import time
+    # BUG-179: a wall-clock sleep is a flush RACE against the audit writer
+    # thread (loss observed on a loaded CI runner, run 33433361894:
+    # test_mae_mfe_missing saw an empty ledger -> avg_mae_usd None).
+    # Prefer the repository's bounded drain; keep the sleep only as a
+    # fallback for backends where flush() is a no-op.
+    if not audit.flush(timeout_sec=5.0):
+        import time
 
-    time.sleep(seconds)
+        time.sleep(seconds)
 
 
 def _ledger_closed(
