@@ -228,6 +228,88 @@ class ReleaseVerifier:
             "Identity (version/arch/channel)", "PASS", "build-info.json consistent with manifest"
         )
 
+    def _sums_rel_candidates(self, rel: str) -> list[str]:
+        """Possible spellings of a recorded artifact path for THIS bundle.
+
+        SHA256SUMS.txt / release-manifest.json record paths relative to
+        the CI release root (payload under "portable/", CLI under "cli/").
+        When the verifier runs against the INSTALL dir (embedded layout -
+        BUG-160), that payload IS the install dir, so the leading
+        "portable/" segment maps onto the root itself.
+        """
+        rel = rel.replace("\\", "/")
+        candidates = [rel]
+        if rel.startswith("portable/"):
+            candidates.append(rel[len("portable/") :])
+        elif rel.startswith("cli/"):
+            candidates.append(rel[len("cli/") :])
+        return candidates
+
+    def _locate_recorded_artifact(
+        self, rel: str, sums_base: Path, release_root: Path
+    ) -> Path | None:
+        """Find a recorded artifact across CI-staged and embedded layouts.
+
+        Order: install root verbatim -> release root verbatim (CI-staged)
+        -> sums base verbatim -> candidate spellings under the sums base
+        (embedded: strip the portable/|cli/ prefix). First hit wins.
+        """
+        for base in (self.root, release_root, sums_base):
+            candidate = base / rel
+            try:
+                if candidate.exists():
+                    return candidate
+            except OSError:
+                continue
+        for spelling in self._sums_rel_candidates(rel):
+            candidate = sums_base / spelling
+            try:
+                if candidate.exists():
+                    return candidate
+            except OSError:
+                continue
+        return None
+
+    def _resolve_sums_base(self, sums: Path) -> Path:
+        """Directory the artifact paths inside SHA256SUMS.txt are relative to.
+
+        The checksums file stores RELEASE-ROOT-relative paths
+        (portable/NexusScalpEngine.exe, cli/NexusScalpEngine-CLI.exe).
+        Candidates: the sums' own directory (CI-staged root), its parent
+        (release root when sums sit in checksums/), and the grandparent.
+        The first candidate satisfying EVERY recorded path (across all
+        path spellings) wins; when none does, the sums' own directory is
+        kept so verification FAILS with explicit MISSING entries instead
+        of silently passing.
+        """
+        rels: list[str] = []
+        try:
+            for raw_line in sums.read_text(encoding="utf-8").splitlines():
+                stripped = raw_line.strip()
+                if not stripped:
+                    continue
+                parts = stripped.split("  ", 1)
+                if len(parts) == 2 and parts[1]:
+                    rels.append(parts[1].strip())
+        except OSError:
+            return sums.parent
+        if not rels:
+            return sums.parent
+
+        for candidate in (sums.parent, sums.parent.parent, sums.parent.parent.parent):
+            try:
+                if all(
+                    any(
+                        (candidate / spelling).exists()
+                        for spelling in self._sums_rel_candidates(rel)
+                    )
+                    for rel in rels
+                ):
+                    return candidate
+            except OSError:
+                continue
+        return sums.parent
+
     def _manifest_checksums(self) -> VerifyResult:
         """Verify the release manifest + SHA256SUMS.txt.
 
@@ -237,18 +319,32 @@ class ReleaseVerifier:
         dir, the portable dir or the repo root.
         """
         # Locate manifest: <portable>/release-manifest.json OR
-        # <release-root>/manifests/release-manifest.json.
+        # <release-root>/manifests/release-manifest.json. Post-install
+        # (BUG-160) both files live INSIDE the install dir, embedded by
+        # the installer; CI-staged trees keep them under manifests/ +
+        # checksums/ relative to the release root.
         release_root = self.root.parent
         manifest = self.root / "release-manifest.json"
         sums = self.root / "SHA256SUMS.txt"
         if not manifest.exists():
-            candidate = release_root / "manifests" / "release-manifest.json"
+            candidate = self.root / "manifests" / "release-manifest.json"
+            if not candidate.exists():
+                candidate = release_root / "manifests" / "release-manifest.json"
             if candidate.exists():
                 manifest = candidate
         if not sums.exists():
-            candidate = release_root / "checksums" / "SHA256SUMS.txt"
+            candidate = self.root / "checksums" / "SHA256SUMS.txt"
+            if not candidate.exists():
+                candidate = release_root / "checksums" / "SHA256SUMS.txt"
             if candidate.exists():
                 sums = candidate
+        # BUG-160 root cause: SHA256SUMS.txt / release-manifest.json record
+        # artifact paths RELATIVE TO THE RELEASE ROOT
+        # (portable/NexusScalpEngine.exe, cli/...). sums.parent only EQUALS
+        # that root on the CI-staged tree; for an embedded (post-install)
+        # layout sums.parent == the install dir and every relative path
+        # would resolve to <install>/portable/... -> MISSING.
+        sums_base = self._resolve_sums_base(sums)
         problems: list[str] = []
         if manifest.exists():
             try:
@@ -259,27 +355,36 @@ class ReleaseVerifier:
                     if not p.exists():
                         p = release_root / rel
                     if not p.exists():
+                        # Embedded install layout: the recorded
+                        # portable/<name> path maps onto the install root
+                        # itself (BUG-160).
+                        for spelling in self._sums_rel_candidates(rel):
+                            if (sums_base / spelling).exists():
+                                p = sums_base / spelling
+                                break
+                    if not p.exists():
                         problems.append(f"manifest file missing: {rel}")
             except Exception as e:
                 problems.append(f"manifest unreadable: {e}")
         else:
             problems.append("release-manifest.json missing (build without verification)")
         if sums.exists():
-            from .packaging import verify_checksums_file
+            from .packaging import sha256_file
 
-            # Resolve sums against the release root (the base the paths in
-            # SHA256SUMS.txt are relative to): try release_root, then the
-            # sums' own directory as fallback.
-            base = release_root
-            if not (base / "portable").exists() and (sums.parent / "portable").exists():
-                base = sums.parent
-            res = verify_checksums_file(sums, base)
-            if not res["valid"]:
-                problems.extend(
-                    f"checksum: {f.get('file', f.get('name', '?'))} {f.get('status', '?')}"
-                    for f in res["files"]
-                    if f.get("status") != "OK"
-                )
+            for line in sums.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                parts = line.split("  ", 1)
+                if len(parts) != 2:
+                    problems.append(f"checksum line malformed: {line[:40]}")
+                    continue
+                expect, rel = parts[0].strip(), parts[1].strip()
+                f = self._locate_recorded_artifact(rel, sums_base, release_root)
+                if f is None:
+                    problems.append(f"checksum: {rel} MISSING")
+                    continue
+                if sha256_file(f).lower() != expect.lower():
+                    problems.append(f"checksum: {rel} MISMATCH")
         else:
             problems.append("SHA256SUMS.txt missing")
         if problems:

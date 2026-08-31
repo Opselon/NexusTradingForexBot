@@ -50,3 +50,4 @@ tests/unit/test_outcome_flush_race_bug140.py
 tests/unit/test_outcome_recovery_sweep_bug140.py
 tests/unit/test_nse_lifecycle_regression_matrix.py
 tests/unit/test_lifecycle_event_projection.py
+tests/unit/test_release_system.py

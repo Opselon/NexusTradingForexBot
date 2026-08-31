@@ -394,3 +394,122 @@ def test_cli_setup_contract_and_web_endpoints(monkeypatch: object) -> None:
     assert res_human.exit_code == xc.EXIT_OK
     assert "Web Dashboard Endpoints (Port 8080):" in res_human.stdout
     assert "http://" in res_human.stdout
+
+
+# ---------------------------------------------------------------------------
+# 2b. BUILD SYSTEM — BUG-160: checksum/manifest resolution across layouts
+# ---------------------------------------------------------------------------
+def _bug160_embedded_tree(tmp_path: Path) -> Path:
+    """Post-install layout: manifest + SHA256SUMS EMBEDDED in the install
+    dir (the tree the BUG-160 .iss lines produce); recorded paths remain
+    RELEASE-ROOT-relative (portable/...) exactly as release.yml writes them.
+    """
+    import hashlib
+
+    root = tmp_path / "installed"
+    root.mkdir()
+    exe = root / "NexusScalpEngine.exe"
+    exe.write_bytes(b"MZ" + b"\x00" * 128)
+    sha = hashlib.sha256(exe.read_bytes()).hexdigest()
+    (root / "SHA256SUMS.txt").write_text(
+        f"{sha}  portable/NexusScalpEngine.exe\n", encoding="utf-8"
+    )
+    (root / "release-manifest.json").write_text(
+        json.dumps(
+            {
+                "version": "9.0.4",
+                "architecture": "AMD64",
+                "channel": "stable",
+                "git_commit": "0e93d05",
+                "artifacts": [
+                    {
+                        "name": "NexusScalpEngine.exe",
+                        "relative_path": "portable/NexusScalpEngine.exe",
+                        "sha256": sha,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_verify_checksums_resolve_from_installed_layout(tmp_path: Path) -> None:
+    """BUG-160: verify-release inside the INSTALLED tree must PASS the
+    checksum check — recorded release-root-relative paths (portable/...)
+    remap onto the install dir; fail-before proof for the v9.0.4 install.
+    """
+    root = _bug160_embedded_tree(tmp_path)
+    result = rverify.verify_release(root, include_launch=False)
+    cks = next(c for c in result["checks"] if c["check"] == "Checksums/manifest")
+    assert cks["status"] == "PASS", cks["detail"]
+
+
+def test_verify_checksums_detects_tamper_in_installed_layout(tmp_path: Path) -> None:
+    """The remap must not weaken tamper detection: a modified EXE still
+    fails the checksum verification inside the installed layout."""
+    root = _bug160_embedded_tree(tmp_path)
+    (root / "NexusScalpEngine.exe").write_bytes(b"MZ" + b"\xff" * 128)
+    result = rverify.verify_release(root, include_launch=False)
+    cks = next(c for c in result["checks"] if c["check"] == "Checksums/manifest")
+    assert cks["status"] == "FAIL"
+    assert "MISMATCH" in cks["detail"]
+
+
+def test_verify_checksums_resolve_from_ci_staged_release_root(tmp_path: Path) -> None:
+    """CI top-level invocation: verifier root = the release root itself
+    (manifest in manifests/, sums in checksums/, payload in portable/) —
+    recorded paths must resolve against the release root."""
+    import hashlib
+
+    root = tmp_path / "rel"
+    (root / "portable").mkdir(parents=True)
+    (root / "checksums").mkdir()
+    (root / "manifests").mkdir()
+    exe = root / "portable" / "NexusScalpEngine.exe"
+    exe.write_bytes(b"MZ" + b"\x01" * 128)
+    sha = hashlib.sha256(exe.read_bytes()).hexdigest()
+    (root / "checksums" / "SHA256SUMS.txt").write_text(
+        f"{sha}  portable/NexusScalpEngine.exe\n", encoding="utf-8"
+    )
+    (root / "manifests" / "release-manifest.json").write_text(
+        json.dumps(
+            {
+                "artifacts": [
+                    {
+                        "name": "NexusScalpEngine.exe",
+                        "relative_path": "portable/NexusScalpEngine.exe",
+                        "sha256": sha,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    verifier = rverify.ReleaseVerifier(root=root, exe_name="NexusScalpEngine.exe")
+    results = verifier._manifest_checksums()
+    assert results.status == "PASS", results.detail
+
+
+def test_sums_base_resolution_prefers_tree_satisfying_all_paths(tmp_path: Path) -> None:
+    """_resolve_sums_base walks up until EVERY recorded path exists under
+    the base, and keeps the sums dir (explicit MISSING) when none does."""
+    import hashlib
+
+    root = tmp_path / "rel"
+    (root / "checksums").mkdir(parents=True)
+    (root / "portable").mkdir()
+    exe = root / "portable" / "NexusScalpEngine.exe"
+    exe.write_bytes(b"MZ" + b"\x02" * 128)
+    sha = hashlib.sha256(exe.read_bytes()).hexdigest()
+    sums = root / "checksums" / "SHA256SUMS.txt"
+    sums.write_text(f"{sha}  portable/NexusScalpEngine.exe\n", encoding="utf-8")
+    verifier = rverify.ReleaseVerifier(root=tmp_path, exe_name="NexusScalpEngine.exe")
+    assert verifier._resolve_sums_base(sums) == root
+
+    orphan = tmp_path / "orphan"
+    (orphan / "checksums").mkdir(parents=True)
+    orphan_sums = orphan / "checksums" / "SHA256SUMS.txt"
+    orphan_sums.write_text(f"{sha}  portable/Ghost.exe\n", encoding="utf-8")
+    assert verifier._resolve_sums_base(orphan_sums) == orphan / "checksums"
