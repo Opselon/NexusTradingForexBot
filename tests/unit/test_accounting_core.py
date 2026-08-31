@@ -404,7 +404,10 @@ class TestSnapshots:
         audit.log_account_snapshot(acc, 10000.0)
         # Same balance within 60s -> throttled, no second row
         audit.log_account_snapshot(acc, 10000.0)
-        _flush(audit)
+        # BUG-162: a fixed sleep races the background AuditDB worker under
+        # xdist load (CI run #475 observed even the FIRST row missing).
+        # flush() is the bounded read-after-write primitive - use it.
+        assert audit.flush(timeout_sec=5.0), "audit queue did not drain"
         snaps = core.load_snapshots()
         assert len(snaps) == 1
 
