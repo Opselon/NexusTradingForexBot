@@ -14,6 +14,9 @@ import pytest
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.research.dataset import (
+    REASON_INVALID_PNL,
+    REASON_INVALID_R,
+    REASON_MISSING_OUTCOME,
     REASON_MISSING_REALIZED_R,
     ResearchDatasetBuilder,
 )
@@ -295,3 +298,71 @@ def test_rs26_split_fills_not_double_counted(repo):
     ds = ResearchDatasetBuilder(ledger).build()
     assert len(ds.samples) == 2  # two distinct experiences, one observation each
     assert len({s.idempotency_key for s in ds.samples}) == 2
+
+
+def test_rs15_losing_trades_are_retained_as_research_samples(repo):
+    """TEST-RS-15 (learning-loop battery): a LOSING trade (negative realized R
+    with authoritative broker reconstruction) must enter the research dataset.
+    The learning system must not train only on winners."""
+    ledger = ExperienceLedger(repo)
+    rec = make_record("rs15a", ts=datetime(2024, 4, 1, tzinfo=UTC))
+    ledger.record_experience(rec)
+    ledger.record_outcome(make_outcome(rec, -1.2, broker_source="BROKER_DEALS"))
+    repo._queue.join()
+    ds = ResearchDatasetBuilder(ledger).build()
+    assert len(ds.samples) == 1, "a losing trade is valid learning evidence"
+    s = ds.samples[0]
+    assert s.realized_r == pytest.approx(-1.2)
+    ok, reason, _ = ResearchDatasetBuilder(ledger).evaluate_sample(
+        ledger.get_experience_by_key(rec.idempotency_key)
+    )
+    assert ok and reason == ""
+
+
+def test_rs16_nonfinite_outcome_rejected_never_trained(repo):
+    """TEST-RS-16 (learning-loop battery): NaN/Inf realized PnL/R from a
+    corrupted outcome must never enter a training dataset. Two defense
+    layers are pinned: (1) persistence round-trip - pydantic serializes
+    non-finite floats as JSON null, the outcome payload cannot rehydrate,
+    the ledger logs [EXPERIENCE] INVALID outcome payload and returns the
+    record WITHOUT an outcome (excluded as MISSING_OUTCOME); (2) the
+    in-memory eligibility audit rejects finite-guard violations as
+    INVALID_PNL / INVALID_R before any dataset build. The append-only rows
+    themselves are preserved (rejection is exclusion, not deletion)."""
+    ledger = ExperienceLedger(repo)
+    rec_nan = make_record("rs16a", ts=datetime(2024, 5, 1, tzinfo=UTC))
+    ledger.record_experience(rec_nan)
+    ledger.record_outcome(make_outcome(rec_nan, float("nan")))
+    rec_inf = make_record("rs16b", ts=datetime(2024, 5, 1, tzinfo=UTC) + timedelta(hours=1))
+    ledger.record_experience(rec_inf)
+    ledger.record_outcome(make_outcome(rec_inf, float("inf")))
+    repo._queue.join()
+    builder = ResearchDatasetBuilder(ledger)
+    # Layer 1: corrupted outcome payloads cannot rehydrate from the ledger.
+    merged_nan = ledger.get_experience_by_key(rec_nan.idempotency_key)
+    ok_nan, reason_nan, _ = builder.evaluate_sample(merged_nan)
+    assert not ok_nan and reason_nan == REASON_MISSING_OUTCOME
+    assert merged_nan.is_closed is False
+    merged_inf = ledger.get_experience_by_key(rec_inf.idempotency_key)
+    ok_inf, reason_inf, _ = builder.evaluate_sample(merged_inf)
+    assert not ok_inf and reason_inf == REASON_MISSING_OUTCOME
+    assert builder.build().samples == [], "non-finite outcomes never reach research"
+    # Layer 2: an in-memory record carrying the non-finite outcome is
+    # rejected by the explicit finite guards (evaluate_sample never sees a
+    # non-finite value from persisted data, so exercise it in memory).
+    ok_mem, reason_mem, _ = builder.evaluate_sample(
+        rec_nan.with_outcome(make_outcome(rec_nan, float("nan")))
+    )
+    assert not ok_mem and reason_mem == REASON_INVALID_PNL
+    # evaluate_sample gates PnL BEFORE R, so an inf PnL reports
+    # INVALID_PNL; exercise INVALID_R with finite PnL + inf R (frozen
+    # model -> model_copy, the repo's immutable-update convention).
+    ok_mem_inf, reason_mem_inf, _ = builder.evaluate_sample(
+        rec_inf.with_outcome(
+            make_outcome(rec_inf, 0.5).model_copy(update={"realized_r_multiple": float("inf")})
+        )
+    )
+    assert not ok_mem_inf and reason_mem_inf == REASON_INVALID_R
+    # The corrupted rows survive append-only.
+    assert ledger.get_experience_by_key(rec_nan.idempotency_key) is not None
+    assert ledger.get_experience_by_key(rec_inf.idempotency_key) is not None

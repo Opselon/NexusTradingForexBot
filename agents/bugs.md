@@ -6482,3 +6482,39 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - Verification: 3-layout matrix post-fix all PASS; pytest release_system(27)
   + release_hardening(15) PASS; ruff/format/mypy PASS. BUG-161 .iss CRLF blob
   landed via 2d675c4 (absorbed, verified crlf=150 lf_only=0).
+## BUG-168 - core learning-loop suites ran in NO CI gate; winners-only training
+  evidence had zero standing regression (2026-08-31 Hermes-Coder, directive #69 battery)
+- FOUND (full-project ML learning-loop battery, directive 2026-08-31): FOUR suites that
+  ARE the experience->dataset->training contract were absent from
+  tests/critical_suite.txt and therefore invisible to ci.yml, tests-os.yml, release.yml
+  and beforePush simultaneously (same blind-spot class as BUG-165):
+  test_research_task4_dataset.py (14 tests: eligibility taxonomy, zero-substitution
+  refusal, duplicate economic-trade collapse), test_experience_intelligence.py (54 tests:
+  loss retention, idempotent outcomes, decision immutability, correction events),
+  test_liquidity_runtime_integration_phase18.py (88 tests: 70D assembly, model
+  compatibility blocks), test_70d_inference_validator_task3.py (22 tests: feature
+  order/hash/nonfinite inference gates).
+- ALSO: no standing test pinned that LOSING trades are retained as research samples
+  (directive #14/#36: a dataset builder that silently trained only on winners would have
+  passed every gate) and no test pinned the empty-dataset / degenerate-split hard-FAIL
+  path of CandidateTrainer (directive #23/#39) or the feature-ORDER rejection of
+  InferenceValidator (directive #41: dimension-only validation is insufficient).
+- FIX (tests only, no production behavior change needed - the defenses already existed):
+  1) wired the 4 suites into tests/critical_suite.txt (56 entries, LF-pinned, same commit
+  per the BUG-165 lesson);
+  2) tests/unit/test_research_task4_dataset.py += TEST-RS-15 (losing trade realized_r=-1.2
+  with authoritative BROKER_DEALS reconstruction stays ELIGIBLE and enters the dataset)
+  and TEST-RS-16 (NaN/Inf outcome two-layer defense: persistence layer cannot rehydrate
+  non-finite JSON nulls -> excluded as MISSING_OUTCOME; in-memory eligibility audit
+  rejects as INVALID_PNL/INVALID_R with PnL gated before R; append-only rows preserved);
+  3) tests/unit/test_model_generation_phase13.py += TestTrainingEmptyDatasetGuards
+  (empty polars frame -> FAILED 'empty dataset'; single-row frame -> FAILED 'empty
+  train/val split' - never a fake-success model);
+  4) tests/unit/test_70d_inference_validator_task3.py += TEST-70D-PARITY-23b (swapped
+  liquidity names 62/63 -> RejectionCode.FEATURE_ORDER_MISMATCH; canonical tuple incl.
+  60=bsl/61=ssl/62=eqh_strength/63=eql_strength passes).
+- VERIFICATION: 6/6 new tests PASS standalone; full target suites re-run: task4 dataset
+  16/16, inference_validator 24/24, schema_reconciliation 26/26 (2 env-skips),
+  liquidity_phase18 88/88, phase13+experience_intelligence 96/96; ruff/format/mypy PASS;
+  CRLF integrity asserted post-write (no \r\r, crlf==lf, trailing newline).
+- Severity: P2 (regression-net coverage gap, not a runtime defect) | Status: FIXED | Fixed-by: Hermes-Coder

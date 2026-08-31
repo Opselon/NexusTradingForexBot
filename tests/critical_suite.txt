@@ -51,3 +51,8 @@ tests/unit/test_outcome_recovery_sweep_bug140.py
 tests/unit/test_nse_lifecycle_regression_matrix.py
 tests/unit/test_lifecycle_event_projection.py
 tests/unit/test_release_system.py
+# BUG-166 (learning-loop battery): core experience/dataset/contract suites ran in NO pipeline
+tests/unit/test_research_task4_dataset.py
+tests/unit/test_experience_intelligence.py
+tests/unit/test_liquidity_runtime_integration_phase18.py
+tests/unit/test_70d_inference_validator_task3.py

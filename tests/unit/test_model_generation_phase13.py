@@ -1343,3 +1343,35 @@ class TestTask5ChampionSafety:
         mgr = ChampionManager(artifact_path="does/not/exist/model.pt")
         champ = mgr.champion_or_none()
         assert champ is None
+
+
+class TestTrainingEmptyDatasetGuards:
+    """Learning-loop battery: training on zero usable samples must be a hard
+    FAILED status (never a fake-success model)."""
+
+    def test_board_empty_dataset_fails_training(self, store: ArtifactStore):
+        from nexus_scalp.model_generation.models import ExperimentConfig
+
+        exp = ExperimentConfig(
+            experiment_id="exp_empty",
+            dataset_id="ds",
+            architecture="MLP_V2",
+            architecture_parameters={"input_dim": 2},
+        )
+        res = CandidateTrainer(store=store).train_candidate(exp, pl.DataFrame())
+        assert res["status"] == "FAILED"
+        assert "empty" in res.get("error", "")
+
+    def test_board_degenerate_split_fails_training(self, store: ArtifactStore):
+        from nexus_scalp.model_generation.models import ExperimentConfig
+
+        exp = ExperimentConfig(
+            experiment_id="exp_tiny",
+            dataset_id="ds",
+            architecture="MLP_V2",
+            architecture_parameters={"input_dim": 2},
+        )
+        tiny = pl.DataFrame({"label": [0], "feat_0": [1.0], "feat_1": [2.0]})
+        res = CandidateTrainer(store=store).train_candidate(exp, tiny)
+        assert res["status"] == "FAILED"
+        assert "empty train/val split" in res.get("error", "")

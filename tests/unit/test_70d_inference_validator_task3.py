@@ -251,3 +251,28 @@ def test_validator_result_shape() -> None:
     assert d["ok"] is True
     assert d["dimension"] == 70
     assert d["schema_id"] == "scalp_v3"
+
+
+def test_p23b_wrong_feature_order_blocked() -> None:
+    """TEST-70D-PARITY-23b (learning-loop battery): a dimensionally valid but
+    semantically REORDERED vector is rejected when names are provided.
+    Dimension-only validation is insufficient - order is the contract."""
+    from nexus_scalp.features.schema_contract import canonical_feature_names
+
+    names = list(canonical_feature_names())
+    # Swap the two most easily confused liquidity slots: 62 eqh / 63 eql
+    names[62], names[63] = names[63], names[62]
+    r = _validator().validate(_vec70(), feature_names=names, context="order-test")
+    assert r.ok is False
+    assert r.code == RejectionCode.FEATURE_ORDER_MISMATCH
+
+
+def test_p23b_canonical_feature_order_passes() -> None:
+    """TEST-70D-PARITY-23b: canonical names (incl. liquidity 60=bsl, 61=ssl,
+    62=eqh_strength, 63=eql_strength) validate cleanly."""
+    from nexus_scalp.features.schema_contract import canonical_feature_names
+
+    r = _validator().validate(
+        _vec70(), feature_names=list(canonical_feature_names()), context="order-ok"
+    )
+    assert r.ok is True
