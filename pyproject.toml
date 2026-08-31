@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nexus-scalp-engine"
-version = "9.0.3"
+version = "9.0.4"
 description = "Production-grade, high-frequency, multi-timeframe scalp trading engine using PyTorch and MetaTrader 5"
 authors = [
     { name = "Nexus Quantitative Engineering Team", email = "quant@nexus-trading.internal" }
