@@ -475,6 +475,13 @@ class ResearchDatasetBuilder:
         research (they are not trades and receive no fake R) but are counted
         in the dataset's lifecycle census rather than re-logged row by row on
         every build.
+
+        BUG-164: the build-path rejection log covers ONLY the recoverable
+        data-integrity taxonomy (MISSING_OUTCOME on an unresolved hang,
+        FILLED_OUTCOME_MISSING, zero-substitution). NOT_EXECUTED terminal
+        rows are counted in `audit()['rejection_reasons']` WITHOUT any
+        per-row info log — the expected-state per-row emission was a
+        permanent, growing log flood on every build.
         """
         self._source_cache = {}
         samples: list[ResearchSample] = []
@@ -485,16 +492,18 @@ class ResearchDatasetBuilder:
         for rec in audit_all:
             ok, reason, detail = self.evaluate_sample(rec)
             if not ok:
-                if reason in _NON_TRADE_REASONS:
-                    continue  # counted via audit(); expected lifecycle evidence
-                logger.info(
-                    "[STRATEGY_RESEARCH] event=DATASET_REJECTED",
-                    stage="dataset",
-                    trade_id=rec.experience_id,
-                    reason=reason,
-                    detail=detail[:120],
-                    recoverable=reason in _RECOVERABLE_REASONS,
-                )
+                if reason in _RECOVERABLE_REASONS:
+                    logger.info(
+                        "[STRATEGY_RESEARCH] event=DATASET_REJECTED",
+                        stage="dataset",
+                        trade_id=rec.experience_id,
+                        reason=reason,
+                        detail=detail[:120],
+                        recoverable=True,
+                    )
+                # Everything else (terminal non-trade lifecycle states) is
+                # expected, permanent evidence: counted via audit(), never
+                # re-logged per row on every build (BUG-164).
                 continue
             if rec.idempotency_key in seen:
                 continue

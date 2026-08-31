@@ -4269,6 +4269,12 @@ class OrderLifecycleManager:
                             should_cancel = True
 
                         if should_cancel and pending_ticket:
+                            # BUG-140/BUG-164: remember WHY so the verified-cancel
+                            # terminal outcome classifies CANCELED_UNFILLED (not
+                            # the reconcile-sweep default EXPIRED_UNFILLED).
+                            self._pending_cancel_reasons[pending_ticket] = (
+                                "FALLING_KNIFE_PROTECTION"
+                            )
                             # BUG-072/073: broker-verified cancellation.
                             if self.cancel_pending_order_verified(
                                 ticket=pending_ticket, symbol=symbol
