@@ -6224,3 +6224,19 @@ restart by operator).
 - Root cause: MT5 fixture trades are stamped 2026-08-17 (server-local epoch capture) and the tests anchor a rolling DAY/14 window at utc_now(); once "now" slid past 2026-08-31 every bucket became has_data=False. Production code unchanged — pure test time bomb.
 - Fix: freeze the accounting clock (monkeypatch nexus_scalp.accounting.periods.utc_now -> 2026-08-17T12:00Z) inside both series tests. No production change.
 - Lesson: any test asserting rolling-window aggregation over fixed-dated fixtures must pin the clock, never trust the host date.
+
+## BUG-154 - CLI update e2e tests inherited the live pyproject version and silently passed / failed on version bump (2026-08-31 Hermes-DevOps)
+- FOUND: after the 9.0.4 version bump, tests/unit/test_cli_end_to_end.py::test_e2e_21 and
+  ::test_e2e_66 changed behavior WITHOUT any code change: their update --manifest fixtures
+  used tag v9.0.4 == the freshly bumped installed version, so UpdatePlanBuilder short-circuits
+  NO_UPDATE (exit 0) and the security-block contract assertions failed (0 != 5).
+- ROOT CAUSE: tests read the installed version from the live tree (pyproject build-info path)
+  instead of pinning it - same version-coupled time-bomb class as BUG-153, triggered by the
+  release bump itself rather than the calendar.
+- FIX: both tests now monkeypatch nexus_scalp.cli.main.get_version_info to a pinned
+  installed version 9.0.3 < manifest tag v9.0.4, so the plan always reaches the
+  INCOMPATIBLE/SECURITY_BLOCKED path under test regardless of the live pyproject version.
+- VERIFIED: full 66-test file passes (66 passed) after the fix; ruff check + format clean;
+  py_compile clean. Tests are version-proof for future bumps.
+- LESSON: any CLI/release test that compares a manifest/tag against the INSTALLED version
+  must pin get_version_info (or an equivalent seam); never let it read the live tree.

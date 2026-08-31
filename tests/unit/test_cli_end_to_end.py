@@ -457,6 +457,19 @@ def test_e2e_21_update_manifest_unverifiable_asset_is_security_blocked(
 ) -> None:
     """No resolvable SHA-256 → update refuses (no silent fallback)."""
     _isolated_cwd(tmp_path, monkeypatch)
+    # BUG-154: pin the INSTALLED version below the manifest tag. The plan
+    # builder short-circuits NO_UPDATE (exit 0) when target == installed,
+    # so these tests must never inherit the live pyproject version
+    # (same version-coupled time-bomb class as BUG-153).
+    monkeypatch.setattr(
+        "nexus_scalp.cli.main.get_version_info",
+        lambda: {
+            "version": "9.0.3",
+            "architecture": "x64",
+            "channel": "stable",
+            "commit": None,
+        },
+    )
     manifest = tmp_path / "m.json"
     manifest.write_text(
         json.dumps(
@@ -1261,6 +1274,19 @@ def test_e2e_66_exit_code_contract_holds_across_command_families(
     )
     # 5: update-not-applicable family (newer release whose asset list cannot
     # satisfy the identity/security checks → INCOMPATIBLE/SECURITY_BLOCKED)
+    # BUG-154: pin the INSTALLED version below the manifest tag. The plan
+    # builder short-circuits NO_UPDATE (exit 0) when target == installed,
+    # so these tests must never inherit the live pyproject version
+    # (same version-coupled time-bomb class as BUG-153).
+    monkeypatch.setattr(
+        "nexus_scalp.cli.main.get_version_info",
+        lambda: {
+            "version": "9.0.3",
+            "architecture": "x64",
+            "channel": "stable",
+            "commit": None,
+        },
+    )
     manifest = tmp_path / "m.json"
     manifest.write_text(
         json.dumps({"assets": [], "tag_name": "v9.0.4", "prerelease": False, "body": ""}),
