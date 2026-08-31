@@ -325,13 +325,28 @@ def _champion_artifact_info() -> dict[str, Any]:
         root = Path(app_data_root() if callable(app_data_root) else app_data_root)
     except Exception:
         root = Path.cwd()
-    # Config-driven artifact path first.
+    # BUG-166: the config-driven artifact probe imported the nonexistent
+    # `nexus_scalp.configuration.loader` module, so the silent except
+    # always fired and the check fell back to the hardcoded v1.0.0
+    # artifact. The CURRENT champion (config-driven 70d_liquidity) then
+    # looked "missing on disk" against its registry fingerprint -> false
+    # CHECK-GOV-02 CRITICAL -> deploy-gate BLOCK on a healthy system.
+    # Resolve the path the way the runtime does: AppConfig.load_from_yaml
+    # (base.yaml next to the workspace root), falling back to defaults.
     artifact_path: str = ""
     try:
-        from nexus_scalp.configuration.loader import load_config  # type: ignore[import-not-found]
+        from nexus_scalp.configuration.config import AppConfig
+        from nexus_scalp.release.paths import get_user_config_path
 
-        cfg = load_config()
-        artifact_path = str(getattr(cfg.model, "model_artifact_path", ""))
+        # BUG-166: same precedence as the runtime engine (cli start):
+        # user config (nexus.yaml) first, then the repo base.yaml
+        # template, then schema defaults. Probing only the template made
+        # every user-config-driven deployment read the wrong artifact.
+        for _cfg_src in (get_user_config_path(), root / "configs" / "base.yaml"):
+            if not Path(_cfg_src).exists():
+                continue
+            artifact_path = str(AppConfig.load_from_yaml(Path(_cfg_src)).model.model_artifact_path)
+            break
     except Exception:
         artifact_path = ""
     candidates: list[Path] = []
@@ -2096,13 +2111,15 @@ def check_champion_identity() -> CheckResult:
         "schema_dimensions": sorted(schema_dims),
         "champion_row_count": len(champions),
     }
-    current_mismatch = bool(
-        current_hash
-        and disk_hash
-        and not disk_hash.startswith(current_hash[:12])
-        and not current_hash.startswith(disk_hash[:12])
-    )
-    if current_mismatch:
+    # BUG-166: the identity question is "does the disk artifact the
+    # runtime CONFIG points at match a registered champion fingerprint"
+    # - not "does it match the newest registry row". The newest row can
+    # describe an artifact the config never switched to serve (e.g. a
+    # 70d candidate registered ahead of a config flip). Serving hash
+    # present in the champion set => identity VERIFIED (fingerprint
+    # match), divergent newest row => registry-hygiene DEGRADED below.
+    disk_matches_any = bool(disk_hash and any(h[:12] == disk_hash[:12] for h in reg_hashes))
+    if not disk_matches_any:
         return CheckResult(
             "CHECK-GOV-02",
             HealthStatus.CRITICAL,
