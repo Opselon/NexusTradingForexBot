@@ -2640,11 +2640,20 @@ def model_validate(
     from nexus_scalp.model_generation import ValidationFactory
 
     store = _mg_store()
-    try:
-        frame = store.read_dataset(dataset_id)
-    except Exception as e:
-        console.print(_error_panel("Dataset not found", str(e)))
-        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    # BUG-164: read_dataset returns None for an absent artifact (never
+    # raises), so this except never fired and `frame["label"]` crashed
+    # with a raw "'NoneType' object is not subscriptable" traceback.
+    # Fail fast with the clean dataset-not-found contract instead.
+    frame = store.read_dataset(dataset_id)
+    if frame is None:
+        console.print(
+            _error_panel(
+                "Dataset not found",
+                dataset_id,
+                hint="Run `nexus model-dataset-build` first, then pass its dataset id",
+            )
+        )
+        raise typer.Exit(xc.EXIT_USAGE) from None
     import numpy as np
 
     labels = frame["label"].to_numpy().astype(np.int64)
