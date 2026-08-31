@@ -110,7 +110,13 @@ if "$PYTHON_BIN" -m nexus_scalp.cli.main forensic --deploy-gate --json > artifac
     write_success "Forensic deploy gate: ALLOW (no critical conditions)."
 else
     GATE_EXIT=$?
-    if [ "$GATE_EXIT" -eq 1 ]; then
+    # BUG-162 fail-safe: on ANY non-zero exit the result file must carry a real
+    # gate payload ('"decision"'); a usage error (e.g. missing CLI command, exit 2)
+    # masquerading as REVIEW_REQUIRED is a fail-safe BLOCK (§39), not a warning.
+    if ! grep -q '"decision"' artifacts/forensics/deploy_gate_result.json 2>/dev/null; then
+        GATE_EXIT=3
+        write_failure "Forensic gate UNVERIFIABLE — result file has no decision payload (fail-safe BLOCK). See artifacts/forensics/deploy_gate_result.json"
+    elif [ "$GATE_EXIT" -eq 1 ]; then
         write_failure "Forensic deploy gate BLOCKED deployment (CRITICAL checks). See artifacts/forensics/deploy_gate_result.json"
     elif [ "$GATE_EXIT" -eq 2 ]; then
         echo -e "\n${YELLOW} ⚠ Forensic deploy gate: REVIEW REQUIRED (DEGRADED/UNKNOWN conditions). See artifacts/forensics/deploy_gate_result.json${NC}"

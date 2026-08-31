@@ -1599,6 +1599,150 @@ def update_cmd(
     _update_json_exit(report, json_mode)
 
 
+# =============================================================================
+# TASK-11/12: POST-70D FORENSIC MONITORING + DEPLOY GATE
+# -----------------------------------------------------------------------------
+# nexus forensic                       -> full health matrix dashboard
+# nexus forensic --deploy-gate         -> canonical deploy gate (exit-code)
+# nexus forensic --snapshot            -> persisted FORENSIC_HEALTH_SNAPSHOT
+# nexus forensic --trend               -> current vs previous snapshot diff
+# nexus forensic --gap                 -> experience->outcome gap forensics
+# nexus forensic --report              -> bounded periodic Telegram report
+# BUG-162 (2026-08-31): this command was accidentally deleted in 999276c,
+# leaving the beforePush gate hooks calling a nonexistent command (typer exit
+# 2 masqueraded as REVIEW_REQUIRED -> fail-open). Restored verbatim from
+# 716c458, adapted to current _emit/console conventions. Exit-code contract
+# (deploy-gate): 0 ALLOW/ALLOW_WITH_WARNING, 1 BLOCK, 2 REVIEW_REQUIRED,
+# 3 FORENSIC_ENGINE_UNAVAILABLE (fail-safe block, deploy_gate.py §39).
+# =============================================================================
+@app.command("forensic")
+def forensic_cmd(
+    snapshot: bool = typer.Option(
+        False, "--snapshot", help="Persist and print the FORENSIC_HEALTH_SNAPSHOT as JSON."
+    ),
+    deploy_gate: bool = typer.Option(
+        False,
+        "--deploy-gate",
+        help="Canonical deploy gate: exit 0 allowed, 1 block, 2 review, 3 engine unavailable.",
+    ),
+    trend: bool = typer.Option(
+        False, "--trend", help="Compare the latest snapshot against the previous (read-only)."
+    ),
+    gap: bool = typer.Option(False, "--gap", help="Experience->outcome gap forensics (read-only)."),
+    report: bool = typer.Option(
+        False, "--report", help="Run one bounded periodic Telegram forensic report cycle."
+    ),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """TASK-11/12 post-70D forensic health matrix + canonical deploy gate (read-only)."""
+    from nexus_scalp.forensics import (
+        ForensicHealthEngine,
+        analyze_experience_gap,
+        latest_trend,
+        persist_gap_report,
+        run_deploy_gate,
+    )
+
+    engine = ForensicHealthEngine()
+
+    if deploy_gate:
+        result = run_deploy_gate(engine)
+        payload = result.to_dict()
+        payload["exit_code"] = result.exit_code
+        # Always machine-readable: gate hooks parse artifacts/forensics/
+        # deploy_gate_result.json (or the redirected stdout) for "decision".
+        _emit(payload, True)
+        if not json_mode:
+            if payload["exit_code"] == 1:
+                console.print(
+                    _error_panel(
+                        "Deployment blocked",
+                        "Critical forensic checks failed:\n"
+                        + "\n".join(f"  • {c}" for c in payload["blocking_checks"]),
+                        hint="See artifacts/forensics/deploy_gate_result.json",
+                        exit_code=payload["exit_code"],
+                    )
+                )
+            elif payload["exit_code"] == 2:
+                console.print(
+                    _success_panel(
+                        "Deployment requires review",
+                        "DEGRADED/UNKNOWN forensic conditions — inspect before shipping.\n"
+                        "[dim]Fix: see artifacts/forensics/deploy_gate_result.json[/dim]",
+                        border="yellow",
+                    )
+                )
+            elif payload["exit_code"] == 3:
+                console.print(
+                    _error_panel(
+                        "Forensic engine unavailable",
+                        str(payload.get("engine_error") or "unknown engine error"),
+                        hint="Deployment cannot be verified — fail-safe block (§39)",
+                        exit_code=payload["exit_code"],
+                    )
+                )
+        raise typer.Exit(payload["exit_code"])
+
+    if trend:
+        t = latest_trend(Path("artifacts") / "forensics")
+        _emit(t, as_json=json_mode, plain=not json_mode)
+        return
+
+    if gap:
+        rep = analyze_experience_gap()
+        persist_gap_report(rep)
+        _emit(rep.to_dict(), as_json=json_mode, plain=not json_mode)
+        return
+
+    if report:
+        from nexus_scalp.forensics import TelegramReportScheduler
+
+        sched = TelegramReportScheduler()
+        outcome = sched.run_once(engine)
+        _emit(outcome, as_json=json_mode, plain=not json_mode)
+        return
+
+    if snapshot:
+        rec = engine.snapshot(persist=True)
+        _emit(rec.to_dict(), as_json=json_mode, plain=not json_mode)
+        return
+
+    dash = engine.dashboard()
+    if json_mode:
+        _emit(dash, True)
+        return
+    table = Table(title="SYSTEM FORENSIC HEALTH", box=box.SIMPLE)
+    table.add_column("Group", style="bold white")
+    table.add_column("Status", style="bold")
+    table.add_column("Check", style="dim")
+    table.add_column("Detail", style="dim")
+    for group, status in dash["groups"].items():
+        table.add_row(group, _verdict_style(status), "", "")
+    console.print(table)
+    console.print(
+        Panel(
+            f"Overall: [bold]{dash['overall']}[/bold]  "
+            f"CRITICAL={dash['critical_count']} WARNING={dash['warning_count']} "
+            f"DEGRADED={dash['degraded_count']} UNKNOWN={dash['unknown_count']}",
+            border_style="red" if dash["critical_count"] else "yellow",
+            title="Forensic health",
+        )
+    )
+    problems = [
+        (r["check_id"], r["status"], r["evidence"])
+        for r in dash["rows"].values()
+        if r["status"] not in ("PASS",)
+    ]
+    if problems:
+        pt = Table(title="Non-passing checks (evidence)", box=box.SIMPLE)
+        pt.add_column("Check", style="bold white")
+        pt.add_column("Status", style="bold")
+        pt.add_column("Evidence", style="dim")
+        for cid, status, evidence in problems:
+            pt.add_row(cid, _verdict_style(status), evidence[:160])
+        console.print(pt)
+
+
 @app.command("release")
 def release_cmd(
     subcommand: str = typer.Argument(None, help="info — release metadata of the installed client"),

@@ -662,17 +662,32 @@ if (-not $SkipGate) {
     $gateExit = $LASTEXITCODE
     $g = $null
     try { $g = Get-Content $GateOut -Raw | ConvertFrom-Json } catch { }
-    $gateDecision = if ($g) { $g.decision } else { "UNKNOWN" }
-    $ck = if ($g) { $g.check_count } else { 0 }
-    $crit = if ($g) { $g.critical_count } else { 0 }
-    $warnC = if ($g) { $g.warning_count } else { 0 }
-    $degr = if ($g) { $g.degraded_count } else { 0 }
-    if ($gateExit -eq 0) {
+    # BUG-162 fail-safe: on ANY non-zero exit the result file must carry a real
+    # gate payload ('decision'); a usage error (e.g. missing CLI command, exit 2)
+    # masquerading as REVIEW_REQUIRED is a fail-safe BLOCK (§39), not a warning.
+    $hasDecision = ($null -ne $g -and $g.PSObject.Properties['decision'])
+    if ($gateExit -ne 0 -and -not $hasDecision) {
+        $gateExit = 3
+        $gateDecision = "FORENSIC_ENGINE_UNAVAILABLE"
+        $g = $null
+        Write-Fail "forensic-gate" "Forensic gate UNVERIFIABLE - result file has no decision payload (fail-safe BLOCK). Evidence: $GateOut" $gateExit
+    } elseif ($gateExit -eq 0) {
+        $gateDecision = if ($g) { $g.decision } else { "UNKNOWN" }
+        $ck = if ($g) { $g.check_count } else { 0 }
+        $crit = if ($g) { $g.critical_count } else { 0 }
+        $warnC = if ($g) { $g.warning_count } else { 0 }
+        $degr = if ($g) { $g.degraded_count } else { 0 }
         Write-Success "Forensic deploy gate: ALLOW - $gateDecision ($ck checks, 0 critical, $warnC warnings)."
     } elseif ($gateExit -eq 2) {
+        $gateDecision = if ($g) { $g.decision } else { "UNKNOWN" }
+        $ck = if ($g) { $g.check_count } else { 0 }
+        $crit = if ($g) { $g.critical_count } else { 0 }
+        $warnC = if ($g) { $g.warning_count } else { 0 }
+        $degr = if ($g) { $g.degraded_count } else { 0 }
         Write-Warn "Forensic deploy gate: REVIEW REQUIRED - $gateDecision ($ck checks, $crit critical, $warnC warnings, $degr degraded)."
         Write-Info "Evidence: $GateOut"
     } else {
+        $gateDecision = if ($g) { $g.decision } else { "UNKNOWN" }
         Write-Fail "forensic-gate" "Forensic deploy gate exit $gateExit ($gateDecision). Evidence: $GateOut" $gateExit
     }
 } else {
