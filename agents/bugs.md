@@ -6557,3 +6557,25 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - VERIFIED: py_compile/ruff/format/mypy PASS; test_live_reactivity_bug169 3 PASS;
   policy suite + regime calibration + market radar + pipeline-health + freshness
   G29 + walk-forward + research-task4 all PASS; pushed c4a1eca on main.
+## BUG-170/171/172/173 CODER REPAIR ADDENDUM (2026-08-31 Hermes-Coder)
+- BUG-170: _spawn_daemon now claims nexus.pid atomically via
+  os.open(O_CREAT|O_EXCL); the TOCTOU race is closed (probe: 2 spawns -> 1).
+- BUG-171: SafeDownloader._validate_resume_response interprets the HTTP
+  status/Content-Range: 206 with matching start -> resume (BUG-122 hash
+  seeding preserved); 200/416/ambiguous -> restart from zero. A Range-
+  ignoring proxy no longer produces prefix+full-body corruption that
+  failed SHA verification forever (probe: 2600/1600 -> clean 1600 + OK).
+- BUG-172: stop_cmd inspects taskkill rc: 128/'not found' -> 'already
+  stopped (stale pidfile)' warning (exit OK); other failures -> error
+  panel + exit 1. Dead-pid green success panel eliminated.
+- BUG-173: _update_exit_code(FAILED_SAFE) -> EXIT_RUNTIME (1);
+  rollback human panel reads `state` (was `status`=None) and shows the
+  actionable error instead of a green success panel.
+- False-confidence tests REWRITTEN (not weakened): test_e2e_18 asserted
+  exit-OK for FAILED_SAFE; test_e2e_29 asserted 'Engine stopped' on a
+  dead pid. Both now assert the honest contracts. New regression net:
+  tests/unit/test_user_hunt_bug170_171.py (6 tests, incl. real localhost
+  HTTP servers for 200/206/416 resume semantics). Wired into
+  tests/critical_suite.txt.
+- Commit: 3814a4d. Verification: fails-before probes + pytest (76 e2e +
+  6 new) + ruff/format/mypy PASS.
