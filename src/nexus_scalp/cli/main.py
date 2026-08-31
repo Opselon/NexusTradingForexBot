@@ -2561,8 +2561,21 @@ def model_experiment_create(
     """Create a bounded experiment on a dataset artifact."""
     from nexus_scalp.model_generation import ExperimentFactory
 
+    store = _mg_store()
+    # A dataset must EXIST before an experiment can bind to it; creating a
+    # ghost experiment that later crashes `model-train` with a raw traceback
+    # is a bad contract (E2E BUG-159). Fail fast with a clean user error.
+    if store.read_dataset(dataset_id) is None:
+        console.print(
+            _error_panel(
+                "Dataset not found",
+                dataset_id,
+                hint="Run `nexus model-dataset-build` first, then pass its dataset id",
+            )
+        )
+        raise typer.Exit(xc.EXIT_USAGE) from None
     try:
-        cfg = ExperimentFactory(store=_mg_store()).create(dataset_id, template=template)
+        cfg = ExperimentFactory(store=store).create(dataset_id, template=template)
     except Exception as e:
         console.print(_error_panel("Could not create experiment", str(e)))
         raise typer.Exit(xc.EXIT_RUNTIME) from None

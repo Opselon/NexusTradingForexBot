@@ -6333,3 +6333,10 @@ restart by operator).
   suite re-run; ruff check/format + py_compile clean.
 - LESSON: e2e tests of interactive commands must either feed stdin or pass the documented
   non-interactive flag; an unattended confirm() is an EOF time bomb in ANY headless runner.
+## BUG-159 — model-experiment-create accepted a nonexistent dataset and produced a ghost experiment (2026-08-31 Hermes-Main, E2E cert)
+- Found by: production E2E certification of the DOWNLOADED v9.0.4 artifact (clean-client dir, real CLI subprocesses).
+- Repro: `nexus model-experiment-create --dataset ds_nonexistent00` -> exit 0 + "Experiment created" (bound to a dataset that does not exist); the follow-up `nexus model-train --experiment <ghost>` then crashed with a raw pyinstaller traceback: AttributeError: 'NoneType' object has no attribute 'is_empty' (ArtifactStore.read_dataset returns None by convention; CLI model-train assumed a frame).
+- Root cause: ExperimentFactory.create() never verified dataset existence; CLI model-experiment-create passed the unverified id through (cli/main.py:2565). read_dataset()'s None convention is correct for tests; the CLI layer is the boundary that must translate it into a user error.
+- Fix: model-experiment-create now checks store.read_dataset(dataset_id) is None BEFORE creating and exits with EXIT_USAGE + "Dataset not found / Run nexus model-dataset-build first" panel. model-train keeps its hard-fail path for races.
+- Verified: repo-source CLI now exits 2 with the clean panel (E2E clean-client harness); ruff/format/compile green.
+- Lesson: CLI is the contract boundary — every `<id>` option that references an artifact must be validated at the boundary with an actionable error, never inside a trainer.
