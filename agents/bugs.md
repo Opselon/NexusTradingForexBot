@@ -6350,3 +6350,13 @@ Fix: e2e_05 now uses the suite's trailing-JSON helper `_parse_json_output`, like
 other mixed-output test. Verified CI-equivalent (clean LOCALAPPDATA, CliRunner EOF stdin):
 RC=0, JSON parsed, overall READY, 20 checks. Root-cause chain now fully closed:
 EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
+## BUG-160 — installed tree lacks release-manifest.json / SHA256SUMS.txt; post-install verify-release FAILs (2026-08-31 Hermes-Main, E2E cert)
+- Found by: production E2E cert — Inno Setup silent install (/DIR=) of the published v9.0.4 setup.exe, then `nexus verify-release` from the installed dir.
+- Evidence: verify-release FAIL exit 4: "release-manifest.json missing (build without verification); SHA256SUMS.txt missing". The same EXE in the CI-staged tree (portable/ + cli/ + zip + setup + checksums/ + manifests/) passes ALL 8 checks (reproduced 1:1 in simtree).
+- Root cause: release.yml embeds release-manifest.json into the portable bundle ("Embed release manifest in portable bundle") but the INNO SETUP script does not package release-manifest.json or SHA256SUMS.txt into the installed tree; verify-release therefore cannot self-verify post-install.
+- Fix (proposal, packaging-only): ship both files inside the installer payload (or document the flag) so post-install verify-release is meaningful; installer change must be gated by verify-release on the installed tree in CI.
+- Severity: P2 (non-blocker; artifact identity is already certified via GitHub SHA256SUMS).
+## BUG-161 — Inno Setup /DIR= treats %VAR% literally; E2E harness must expand env vars itself (2026-08-31 Hermes-Main, E2E cert)
+- Symptom: `/DIR="%LOCALAPPDATA%\Temp\...\installed"` created a literal `%LOCALAPPDATA%` subfolder inside the harness CWD (registry InstallLocation confirmed the literal path).
+- Root cause: Inno Setup does not expand Windows env-var syntax; it expects `{userappdata}` constants or a pre-expanded path. Harness defect, not product defect.
+- Fix: expand variables before passing (or use Inno constants); re-install with expanded path verified correct (installed2/, registry InstallLocation exact).
