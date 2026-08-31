@@ -1,0 +1,59 @@
+"""Typer application factory — THE canonical ``nexus`` CLI object.
+
+WHERE/WHY: constructs the ``app`` (Typer) at IMPORT TIME and attaches every
+sub-application: ``db`` + ``db-portability`` (TASK-10/11), ``incidents`` (TASK-12),
+``analyze`` (G29) and ``dependency``. Importing this module builds the full command
+tree — same side effect the monolithic cli/main.py always had (release/packaged_main.py
+and release/cli_shim.py rely on import-time construction; CHG-0032 Step 1 keeps that
+contract byte-identical).
+
+BOUNDARY: app wiring ONLY. Command bodies live in the sibling modules (doctor,
+update_cli, engine_boot, wizard) which import ``app`` from here and register
+themselves via decorators. Do NOT put engine/boot logic or presentation code here.
+
+USED BY: cli.doctor, cli.update_cli, cli.engine_boot, cli.wizard, cli.main (facade),
+release.packaged_main, release.cli_shim, pyproject entry point ``nse``.
+
+DO-NOT-PUT-HERE: command implementation bodies, styling/palette code, update-engine glue.
+"""
+
+from __future__ import annotations
+
+import typer
+
+from nexus_scalp.cli.analyze_commands import register_analyze_commands
+from nexus_scalp.cli.db_commands import db_app, make_portability_app
+from nexus_scalp.cli.dependency_commands import register_dependency_commands
+from nexus_scalp.cli.incident_commands import incidents_app
+from nexus_scalp.release.metadata import PRODUCT_DISPLAY
+
+app = typer.Typer(
+    name="nexus",
+    help=f"{PRODUCT_DISPLAY} - operational & release console",
+    add_completion=False,
+    rich_markup_mode="rich",
+)
+
+# ---------------------------------------------------------------------------
+# DB migration & schema management (TASK-10) — same canonical engine as startup
+# ---------------------------------------------------------------------------
+# TASK-10 ``db`` group; TASK-11 hygiene registers as a SUBCOMMAND of ``db``
+# so the spec surface is ``nexus db hygiene status|plan|run|pause|resume|history``.
+app.add_typer(db_app, name="db", help="Database schema migration & management (TASK-10).")
+
+# DATABASE PORTABILITY (``nexus db-portability ...``) — SQLite <-> PostgreSQL workflow.
+app.add_typer(
+    make_portability_app(),
+    name="db-portability",
+    help="DATABASE PORTABILITY: provider status, config, SQLite->PostgreSQL migration.",
+)
+# TASK-12 incident response & forensic diagnostics (``nexus incidents ...``).
+app.add_typer(
+    incidents_app,
+    name="incidents",
+    help="Incident response & forensic diagnostics (TASK-12) — read-only by default.",
+)
+# G29: Enterprise Code Analyzer (``nse analyze``)
+register_analyze_commands(app)
+# Dependency Intelligence (``nse dependency``)
+register_dependency_commands(app)
