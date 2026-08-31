@@ -1,0 +1,59 @@
+{
+  "run_id": "FC-20260831-fullsystem",
+  "generated_utc": "2026-08-31T00:00:00Z",
+  "directive": "MASTER FULL-SYSTEM FORENSIC, E2E, REPAIR & PRODUCTION CERTIFICATION (user directive 2026-08-31)",
+  "baseline": {
+    "commit": "0e93d05",
+    "branch": "main",
+    "version": "9.0.4",
+    "latest_tag": "v9.0.4",
+    "prior_cert": "scratch/e2e-report-v9.0.4.md (ACCEPT_WITH_NOTES on downloaded v9.0.4 artifacts)",
+    "critical_suite_gate": "beforePush CRITICAL suite PASS at 0e93d05 (rerun during FC, proc_3a4e968dbba5, exit 0)"
+  },
+  "matrix": {
+    "CLI": "CARRY_FORWARD_PASS + RECHECK (BUG-162: forensic gate command deleted in 999276c — repair in flight)",
+    "INSTALLER": "CARRY_FORWARD_PASS (BUG-160 P2 open: manifest/sums omitted from installed tree)",
+    "DATABASE": "CARRY_FORWARD_PASS (v9.0.4 cert: create/migrate/write/read/restart/idempotent)",
+    "DATA": "CARRY_FORWARD_PASS",
+    "DATASET": "CARRY_FORWARD_PASS (deterministic rebuild hash verified)",
+    "TRAINING": "CARRY_FORWARD_PASS (real CLI train on downloaded binary)",
+    "MODEL": "CARRY_FORWARD_PASS (inspect/doctor integrity OK)",
+    "SERVING": "CARRY_FORWARD_PASS (0.73ms e2e inference debug probe)",
+    "BACKTEST": "CARRY_FORWARD_PASS (model-validate gates behaved conservatively)",
+    "WALK_FORWARD": "PHASE1_AUDIT (Reviewer FC-0RV in flight)",
+    "OOS": "PHASE1_AUDIT (Reviewer FC-0RV in flight)",
+    "RISK": "PHASE1_AUDIT (bypass audit in flight)",
+    "EXECUTION": "CARRY_FORWARD_PASS (PAPER path; no live broker per directive)",
+    "RECOVERY": "PHASE1_E2E (harness plan from QA FC-0Q)",
+    "API": "CARRY_FORWARD_PASS (249 paths, /health + /api/status 200)",
+    "UI": "PHASE1_AUDIT (Researcher wiring map in flight)",
+    "CONFIGURATION": "PHASE1_AUDIT (Coder reachability audit in flight)",
+    "HOT_RELOAD": "PHASE1_AUDIT",
+    "LOGGING": "CARRY_FORWARD_PASS (0 tracebacks in v9.0.4 run)",
+    "SECURITY": "CARRY_FORWARD_PASS (verify-release secrets scan PASS)",
+    "ASYNC": "PHASE1_AUDIT (Coder hot-path integrity check in flight)",
+    "PERFORMANCE": "MEASURED_NO_SLA (CLI cold 7.6-10s, db <1s, dataset 10.3s, train 12.1s, validate 9.4s)",
+    "SLA": "UNDEFINED_BY_DOCS (docs/RELEASE.md defines no thresholds — flagged, not invented)",
+    "PACKAGING": "PASS_WITH_FINDINGS (BUG-160 P2, BUG-161 P3)",
+    "GITHUB_RELEASE": "CARRY_FORWARD_PASS (6 deliverables, checksums MATCH, sbom present)",
+    "GITHUB_DOWNLOAD": "CARRY_FORWARD_PASS (downloaded artifacts used for cert legs)",
+    "CLEAN_INSTALL": "CARRY_FORWARD_PASS (empty-dir install + uninstall both directions)",
+    "CROSS_SYSTEM_E2E": "PARTIAL (ML chain + serving + runtime proven; experience→retrain loop under audit)"
+  },
+  "defects": [
+    {"id": "BUG-162", "severity": "P1", "status": "REPAIR_IN_FLIGHT", "title": "Canonical `nexus forensic --deploy-gate` CLI command deleted in 999276c; both quality gates fail-open on engine-unavailable", "discovered_by": "Hermes-Main", "root_cause": "PROVEN", "evidence": "git log -S def forensic_cmd -> 999276c only; 34->31 commands; artifacts/forensics/deploy_gate_result.json contains typer usage error; beforePush.sh:109 / beforePush.ps1:661 call sites; fail-open path prints ALL CHECKS PASSED on exit 2"},
+    {"id": "BUG-160", "severity": "P2", "status": "OPEN_SCHEDULED", "title": "Installed tree omits release-manifest.json + SHA256SUMS.txt; post-install verify-release FAILs", "root_cause": "MOST_LIKELY (ISS [Files] mirrors source dir without explicit manifest adds; build stage embeds manifest only at portable root)", "owner": "Hermes-DevOps FC-0D"},
+    {"id": "BUG-161", "severity": "P3", "status": "OPEN_DOCUMENTED", "title": "Inno /DIR= treats %VAR% literally (harness note)"}
+  ],
+  "phase0_delegation": {
+    "FC-0R_researcher": "system map + code-path proof (running)",
+    "FC-0D_devops": "release/CI/updater inventory + BUG-160 root cause (running)",
+    "FC-0Q_qa": "convergence + SLA registry + bounded harness plan (running)",
+    "FC-0C_coder": "silent-exception sweep + hot-path + config reachability (running)",
+    "FC-0RV_reviewer": "leakage/contract adversarial audit (running)"
+  },
+  "stop_condition_check": {
+    "met": false,
+    "blockers": ["BUG-162 repair + verification pending", "Phase 0/1 evidence pending for PHASE1_AUDIT legs"]
+  }
+}
