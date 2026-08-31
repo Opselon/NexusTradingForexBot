@@ -6518,3 +6518,42 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   liquidity_phase18 88/88, phase13+experience_intelligence 96/96; ruff/format/mypy PASS;
   CRLF integrity asserted post-write (no \r\r, crlf==lf, trailing newline).
 - Severity: P2 (regression-net coverage gap, not a runtime defect) | Status: FIXED | Fixed-by: Hermes-Coder
+
+## BUG-169 - live decision loop too slow/sticky: per-tick liquidity recompute + duplicate-tick re-pipeline + 70D fine-tune width crash (2026-08-31 Nexus-Main)
+- FOUND (live-log forensics, 2026-08-31 XAUUSD): user reported the 1m scalp engine
+  'moves slow, BUY stays BUY, values change too slowly, UI shows NO_TRADE conf 0.00'.
+  Measured: [LIQUIDITY] FEATURE_CALCULATION_OK p50=67ms p95=655ms p99=982ms max=5.0s
+  ON THE LOOP THREAD x ~12.5k/day although the governor's inputs (completed bars +
+  bar ATR) only change on a new M1 bar; MT5 last-tick poll re-pipelined the SAME
+  quote every ~50ms; duplicate ticks were pushed into the regime classifier's
+  rolling rings (skewing tick_velocity/rv_5m/ofi) and SignalPolicy fabricated a
+  NO_TRADE conf=0.0 (TICK_DUPLICATE_SUPPRESSED, 18,331/day in guard telemetry)
+  that OVERWROTE engine._last_proposal - the UI displayed it as the Active
+  Intelligence Output. Separate crash loop: online fine-tune fed 50D buffer rows
+  into the 70D champion head -> 'mat1 and mat2 shapes cannot be multiplied
+  (10x50 and 70x128)' x60 on 2026-08-31, each attempt also hitting the
+  WalkForwardTrainer scaler save while the engine held the artifact (WinError 5).
+- ROOT CAUSES: (1) liquidity governor treated as per-tick work although idempotent
+  per bar; (2) no duplicate-tick gate ahead of the pipeline; (3) DEDUP_GATE
+  proposal replaced the displayed decision instead of re-surfacing the last real
+  one; (4) WalkForwardTrainer bound to the CLASS bootstrap schema (scalp_v1/50D)
+  while the loaded artifact was 70D; (5) pre-dispatch gate rejections (Phase 08
+  EXPERIENCE / Phase 09 suitability) wrote an experience row but never a terminal
+  outcome -> 295 MISSING_OUTCOME rows -> 22,301 DATASET_REJECTED log lines/day.
+- FIX (commit c4a1eca, tests/unit/test_live_reactivity_bug169.py):
+  live_engine: liquidity computed only on new M1 bar (or first availability);
+  duplicate-tick early return with state untouched + _service_pipeline_workers
+  heartbeat; regime classifier fed only fresh ticks; trainer rebound to the
+  loaded-bundle contract (70D -> scalp_v3) + per-bar width guard that SKIPS the
+  fine-tune (hourly warning) instead of crashing; NOT_DISPATCHED terminal outcome
+  emitted for pre-dispatch EXPERIENCE/TRADE intelligence gate rejections.
+  policy: duplicate tick re-surfaces the LAST REAL proposal (fresh ids/timestamp)
+  instead of a fabricated NO_TRADE conf=0.0; dedup still never touches
+  cooldown/direction/price-lock state.
+- HONEST SCOPE NOTE: reactivity and telemetry honesty were the deliverables.
+  Trading frequency remains governed by the model's near-uniform probabilities
+  (buy ~0.27-0.34 vs threshold 0.40-0.50 + range penalty) and the DEGRADED
+  strategy gate - those are model-quality matters, deliberately NOT bypassed.
+- VERIFIED: py_compile/ruff/format/mypy PASS; test_live_reactivity_bug169 3 PASS;
+  policy suite + regime calibration + market radar + pipeline-health + freshness
+  G29 + walk-forward + research-task4 all PASS; pushed c4a1eca on main.
