@@ -904,3 +904,44 @@ beforePush before push; CLI --help/status real-execution smoke; behavior-preserv
 Risk: MEDIUM - structure-only but touches CLI/release/forensics paths with fresh bug history (BUG-160/162/166/170-173);
 mitigated by staged commits, facades, and regression gates per domain.
 Status: PROPOSED -> IMPLEMENTING (Phase 1 dispatched)
+
+## CHG-0032-A1 — SCOPE LOCK ruling (2026-08-31, user directive via Nexus-Main)
+
+RULING: APPROVED WITH BINDING SCOPE NOTES for TASK-ARCH-DECOMP.
+
+CURRENT PASS (approved order, Coder authorized):
+1. src/nexus_scalp/cli/main.py — package split + facade (app_factory.py, update_cli.py, engine_boot.py, doctor.py,
+   wizard.py, styling.py per Phase-1 contract); main.py re-exports app + console; module-level import-time app
+   construction MUST remain (release/packaged_main.py + cli_shim.py import `app` at import; 12 importers).
+2. src/nexus_scalp/forensics/checks.py — domain split; ALL check_* public names preserved via compatibility
+   aliases (engine.py + tests alias the module as `C`); no check-semantics redesign (BUG-166 class rule: probe
+   fallback semantics stay byte-identical while moving).
+3. src/nexus_scalp/web/server.py — LAST, highest risk. EXISTING flat route convention: web/<domain>_routes.py
+   (pattern already proven by factory_routes.py / news_intelligence_routes.py). NO web/routes/ nested package.
+   Facade MUST re-export the verified surface: create_app, WEB_DIR, canonical_json, serialize_enums,
+   safe_error_payload, log_web_error, new_request_id, _find_non_json_fields. The 28 API test files must NOT be
+   modified to compensate for an incomplete facade.
+
+DEFERRED — DO NOT TOUCH (no split/refactor/rename/formatting-only mutation/threshold change):
+- signals/policy.py — foreign uncommitted WIP (BUG-054); separate controlled change later.
+- execution/order_manager.py — hot-path convention lock (INV-004 OrderManager authority), BUG-105 init-order
+  sensitivity, parallel-agent churn.
+- application/live_engine.py — hot-path convention lock (INV-001), DI composition root, parallel-agent churn;
+  BUG-105 engine-launch gate: tests/integration/test_engine_runtime_launch.py MANDATORY after every
+  live_engine step in ANY future authorized task.
+
+OUT OF SCOPE this pass (not authorized): adapters/database/audit_repository.py, release/updater.py,
+web/debug_snapshot.py, and all other Phase-1 candidates (P2/P3 leave-alone set included).
+
+Per-step gates (binding): py_compile; module-specific tests; ruff check; ruff format --check; mypy src.
+Web step additionally: ALL 28 API test files + integration API suites run STANDALONE/SEQUENTIAL
+(artifacts/audit.db collision — a combined run is NOT validation evidence). Critical-suite-only evidence is
+NOT sufficient for the web step.
+
+Baseline protection: before/after every step record git status / git diff --stat / git diff -- <targets> /
+git diff --check; never absorb or revert parallel-owner changes; commit per responsibility with <AGENT>: title;
+re-add own files immediately before commit (parallel restore --staged hazard).
+
+Precedence note: user ruling supersedes researcher P0 ranking where they differ (checks.py P2 -> approved Step 2;
+audit_repository.py P0 / updater.py P1 -> OUT OF SCOPE this pass).
+Status: IMPLEMENTING (Step 1 dispatch)
