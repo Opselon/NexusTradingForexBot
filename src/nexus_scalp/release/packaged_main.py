@@ -16,6 +16,14 @@ import sys
 from nexus_scalp.cli.main import app
 
 if __name__ == "__main__":
+    # BUG-145: packaged EXE under a double-click console (cp1252/cp437) crashed
+    # with UnicodeEncodeError on the rich banner glyphs. Reconfigure stdio to
+    # UTF-8 with replacement so the UI can never hard-kill the launch.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except Exception:
+            pass
     # Double-click / bare-EXE parity: `NexusScalpEngine.exe` with NO args
     # must start the engine (default PAPER), not print `Missing command`.
     # This matches NexusTradingForexBot.py legacy no-args-run and README
