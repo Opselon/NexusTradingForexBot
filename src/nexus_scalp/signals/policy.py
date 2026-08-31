@@ -165,7 +165,8 @@ class SignalPolicy:
             held_position_dirs,
         ) = self._get_active_tickets_info(order_manager)
 
-        # Initialize lock attributes if not present
+        # Guard against construction paths that bypass __init__: these
+        # attributes must exist before the pending-order lock below reads them.
         if not hasattr(self, "_locked_pending_ticket"):
             self._locked_pending_ticket = None
         if not hasattr(self, "_locked_pending_price"):
@@ -175,7 +176,9 @@ class SignalPolicy:
         if not hasattr(self, "_last_signal_time"):
             self._last_signal_time = None
 
-        # Lock tracking
+        # Same-level re-entry lockout: pin the pending order (ticket, price,
+        # time) while it exists so no second entry at the same level can be
+        # generated until the pending order resolves.
         if pending_ticket is not None:
             if self._locked_pending_ticket != pending_ticket:
                 self._locked_pending_ticket = pending_ticket
@@ -306,7 +309,6 @@ class SignalPolicy:
         )
         guardian_status = "ACTIVE" if is_guardian_active else "IDLE"
 
-        # Initialize execution metadata
         execution_mode = "STANDARD"
         override_reason = None
         blocked_by = None
@@ -345,8 +347,7 @@ class SignalPolicy:
             elif not is_range_market or abs(ofi) >= 0.15:
                 cand_action = "SELL_MARKET"
 
-        # Initialize confidence upfront
-        confidence = 0.0
+        confidence = 0.0  # no-trade default until a candidate clears the gate
 
         # Calculate candidate confidence
         cand_confidence = 0.0

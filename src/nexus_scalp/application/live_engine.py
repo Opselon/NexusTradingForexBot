@@ -1509,10 +1509,10 @@ class LiveEngine:
         """
         Main tick ingestion loop.
         """
-        # BUG-130: resilient MT5 startup connect. The adapter itself retries
-        # initialize() (bounded, backoff); here we additionally give a cold
-        # terminal up to 3 outer attempts so a transient IPC timeout
-        # (-10005) while the terminal is launching never kills the engine.
+        # Resilient MT5 startup connect: the adapter itself retries
+        # initialize() (bounded, backoff); the loop adds up to 3 OUTER attempts
+        # so a transient IPC timeout (-10005) while the terminal is still
+        # launching never kills the engine at boot.
         # Every attempt is surfaced to the console + Telegram so the operator
         # SEES the retry in progress (perfect-UI-UX requirement).
         import time as _time  # noqa: F401 - reserved for backoff timing telemetry
@@ -2501,7 +2501,8 @@ class LiveEngine:
             )
             sample_fv = self.feature_engine.compute_from_bars(completed_bars, last_tick)
 
-            # Check if HTF features are in default cold start fallback states
+            # 0.0 is the documented HTF cold-start fallback value (not a real
+            # reading); counting fallbacks here quantifies warmup progress.
             if sample_fv.htf_h4_trend == 0.0:
                 htf_fallbacks += 1
                 logger.warning(
@@ -2896,6 +2897,37 @@ class LiveEngine:
             if total == 0:
                 logger.info("[SELF_HEAL] COMPLETE", status="SKIPPED_EMPTY_LEDGER")
                 return
+            # BUG-174: historical orphan backfill. Decisions created BEFORE the
+            # P0-A writers existed (and predictive-limit gate rejections whose
+            # model_action was unset before BUG-169b) never received a terminal
+            # outcome -> they re-log as MISSING_OUTCOME on every dataset build
+            # (308 lines on the 21:01 restart alone). Run the evidence-based
+            # recovery sweep once per startup: it classifies from broker truth
+            # (dispatch log -> audit_broker_orders/deals) and appends terminal
+            # outcomes through the idempotent ledger. Bounded + append-only;
+            # a failure here is isolated and logged.
+            try:
+                from nexus_scalp.experience.outcome_recovery_sweep import (
+                    HistoricalOutcomeRecoverySweep,
+                )
+
+                sweep_result = await asyncio.to_thread(
+                    HistoricalOutcomeRecoverySweep(ledger=self.experience_ledger).run,
+                    False,
+                )
+                sd = sweep_result.to_dict()
+                logger.info(
+                    "[EXPERIENCE] ORPHAN_RECOVERY_SWEEP complete scanned=%s recovered=%s "
+                    "skipped_no_dispatch=%s skipped_still_live=%s",
+                    sd.get("scanned", 0),
+                    sd.get("recovered", 0),
+                    sd.get("skipped_no_dispatch", 0),
+                    sd.get("skipped_still_live", 0),
+                )
+            except Exception as sweep_err:
+                logger.error(
+                    "[EXPERIENCE] ORPHAN_RECOVERY_SWEEP failed (isolated)", error=str(sweep_err)
+                )
             rebuilt = await asyncio.to_thread(self.experience_engine.self_heal)
             logger.info("[EXPERIENCE] DERIVED INTELLIGENCE READY", strategies=len(rebuilt))
         except Exception as e:
@@ -3440,7 +3472,9 @@ class LiveEngine:
                         logger.warning("[INFERENCE] BLOCKED\nreason=HTF_WARMUP_INCOMPLETE")
                         self._last_inference_blocked_log = curr_t
 
-                    # Return NO_TRADE proposal safely when inference is blocked
+                    # Fail closed: with no inference (cold warmup or disabled)
+                    # there must never be a trade decision, so a NO_TRADE proposal
+                    # keeps the downstream pipeline contracts satisfied.
                     proposal = TradeProposal(
                         request_id=f"blocked_{int(curr_t)}",
                         symbol=tick.symbol,

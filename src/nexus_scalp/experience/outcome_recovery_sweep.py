@@ -168,9 +168,31 @@ class HistoricalOutcomeRecoverySweep:
                    LIMIT ?""",
                 (self.max_decisions,),
             ).fetchall()
-            return [dict(r) for r in rows]
+            out = [dict(r) for r in rows]
         finally:
             conn.close()
+        # BUG-174: attach pre-dispatch gate-rejection evidence. A decision whose
+        # audit_signals row landed in EXPERIENCE_INTELLIGENCE_GATE /
+        # TRADE_INTELLIGENCE_GATE was deterministically refused BEFORE any
+        # dispatch could exist, so "no dispatch row" IS the expected truth for
+        # it (not unknown provenance). The engine has emitted NOT_DISPATCHED
+        # for these live since BUG-169b; this covers historical rows.
+        conn = self._connect()
+        try:
+            for dec in out:
+                row = conn.execute(
+                    """SELECT decision_stage FROM audit_signals
+                       WHERE request_id = ?
+                         AND decision_stage IN
+                             ('EXPERIENCE_INTELLIGENCE_GATE', 'TRADE_INTELLIGENCE_GATE')
+                       LIMIT 1""",
+                    (str(dec.get("request_id", "") or ""),),
+                ).fetchone()
+                if row is not None:
+                    dec["gate_rejection_stage"] = row["decision_stage"]
+        finally:
+            conn.close()
+        return out
 
     def _dispatch_tickets(self, conn: sqlite3.Connection, request_id: str) -> list[str]:
         """Broker tickets recorded by the engine's own dispatch log."""
@@ -314,6 +336,25 @@ class HistoricalOutcomeRecoverySweep:
         request_id = str(dec.get("request_id", "") or "")
         tickets = self._dispatch_tickets(conn, request_id)
         if not tickets:
+            # BUG-174: a recorded PRE-DISPATCH GATE REJECTION is positive
+            # evidence the decision was refused before any dispatch could
+            # exist — the engine's own audit_signals row proves it (Phase 08
+            # EXPERIENCE_INTELLIGENCE_GATE / Phase 09 TRADE_INTELLIGENCE_GATE).
+            # For these, "no dispatch row" is the EXPECTED truth, not unknown
+            # provenance, so append the honest NOT_DISPATCHED terminal outcome
+            # (the live writer has done exactly this since BUG-169b).
+            if dec.get("gate_rejection_stage"):
+                self._emit_terminal(
+                    dec,
+                    DecisionLifecycle.NOT_DISPATCHED,
+                    result,
+                    dry_run=dry_run,
+                    detail=(
+                        f"{dec['gate_rejection_stage']}: pre-dispatch gate rejection "
+                        "(audit_signals evidence; BUG-174 backfill)"
+                    ),
+                )
+                return
             # No dispatch evidence: honest state is "unknown provenance" — the
             # live P0-A wiring classifies NOT_DISPATCHED at the moment it
             # actually happens. Backfilling without evidence would guess.
@@ -567,12 +608,13 @@ class HistoricalOutcomeRecoverySweep:
         result: RecoverySweepResult,
         *,
         dry_run: bool,
+        detail: str = "",
     ) -> None:
         key = str(dec.get("idempotency_key", ""))
         outcome = build_terminal_non_trade_outcome(
             idempotency_key=key,
             state=state,
-            detail=f"{RECOVERY_SOURCE_BROKER_HISTORY}: broker order state evidence",
+            detail=detail or f"{RECOVERY_SOURCE_BROKER_HISTORY}: broker order state evidence",
         )
         if dry_run:
             pass
