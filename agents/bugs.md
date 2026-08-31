@@ -6286,3 +6286,31 @@ restart by operator).
   ruff check + format clean; py_compile clean.
 - LESSON: path-anchoring guards must treat URI pseudo-paths (`:memory:`, `file:`) as
   NOT-relative-filesystem-paths; an existence/absolute check alone is not enough.
+
+## BUG-157 - check_model treated an absent model artifact as CRITICAL FAIL; every fresh install / CI runner was NOT READY (2026-08-31 Hermes-DevOps)
+- FOUND: CI run #468 (1ba9904) failed tests/unit/test_cli_end_to_end.py::test_e2e_05 with
+  exit 1 != 0 the FIRST time the new CLI e2e suite actually ran on CI - proving the wiring
+  value (the suite was silently invisible to CI before 1ba9904). The test asserts
+  `doctor --fix --json` reaches READY/DEGRADED; on a fresh checkout there is no user config
+  (fixable, repaired from configs/base.yaml) but MODEL FAILed "no model artifact found":
+  artifacts/ is gitignored and neither CI nor the release payload ships a model.pt, so
+  overall() = NOT READY (MODEL is in CRITICAL_CATEGORIES) and doctor --fix exits 1.
+  Local runs passed only because the dev machine has artifacts/models/* - a machine-state
+  dependency, the exact CI-blind-spot class this loop exists to eliminate.
+- ROOT CAUSE: contract inconsistency INSIDE the release health layer: RepairEngine declares
+  models "external/optional until training runs" (repair.py _ensure_models) and
+  check_model_contract treats an absent artifact as WARNING (health.py), but check_model
+  was the lone FAIL for the same condition. Two checks in one engine disagreed.
+- FIX (src/nexus_scalp/release/health.py check_model): absent-artifact verdict FAIL ->
+  WARNING ("external/optional until training runs"), aligned with repair.py and
+  check_model_contract. A CONFIGURED-but-missing artifact path (user pointed at a deleted
+  bundle) still FAILs via the candidate.exists() arm - no silent weakening of a real
+  misconfiguration. Operational health-semantics alignment only; NO domain/trading logic
+  touched. Escalated to Nexus-Main for sign-off via room (src/ change under DevOps authority).
+- VERIFIED: (1) simulated CI doctor --fix (clean LOCALAPPDATA + repo CWD): RC=0, overall
+  READY, zero FAILs; (2) empty-workspace HealthEngine probe: MODEL WARNING, configured-missing
+  arm intact; (3) pytest test_cli_end_to_end.py + test_release_system.py full pass; ruff
+  check/format clean; py_compile clean.
+- LESSON: when one subsystem declares a condition OPTIONAL and another gate-keeps it
+  CRITICAL, fresh environments are structurally UNHEALTHY by construction - health
+  verdicts must be consistent across repair/health/contract checkers for the SAME input.

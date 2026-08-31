@@ -283,10 +283,19 @@ class HealthEngine:
             if matches:
                 candidate = matches[0]
         if candidate is None or not candidate.exists():
+            # BUG-157: absent artifact is OPTIONAL, not CRITICAL. The repo's
+            # own contracts disagreed: RepairEngine declares models
+            # "external/optional until training runs" (repair.py) and
+            # check_model_contract treats an absent artifact as WARNING
+            # (below). check_model was the lone FAIL - which made every fresh
+            # install and every CI runner NOT READY (doctor --fix exit 1),
+            # since neither ships a model.pt. A missing-but-CONFIGURED path
+            # (user pointed at a deleted artifact) stays FAIL via the
+            # candidate.exists() arm below.
             return HealthEntry(
                 "MODEL",
-                "FAIL",
-                "no model artifact found (bundled or downloaded)",
+                "WARNING",
+                "no model artifact found — external/optional until training runs",
                 "Run `nexus setup`/`nexus repair --model` to initialize from the release bundle.",
             )
         try:
