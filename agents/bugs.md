@@ -6658,3 +6658,13 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - **PASSES-AFTER:** tests/unit/test_bug175_model_validate_probs.py 6/6 PASS (real candidate oos_acc=0.558 matching reviewer's independent measurement; in-test trained MLP candidate -> CHALLENGER_ELIGIBLE via CLI; cross-schema -> SCHEMA_MISMATCH panel + exit 1, no REJECTED, no traceback; corrupted weights -> clean load-failure panel + exit 1; ghost-dataset BUG-164 contract unchanged).
 - **VERIFIED:** py_compile PASS; ruff check + format PASS; mypy PASS on touched file; targeted suites (bug175 net 6 + bug164 2) PASS.
 - **Scope note:** no 50D feature-precompute pipeline added (out of scope); sequence-path candidates get the SAME real-prob replay (bench_e_v1 oos=0.8238 via CLI).
+
+
+## BUG-176 - model-dataset-build --schema was declared but ignored; raw-bars user path died with a raw traceback (2026-08-31 Hermes-Coder)
+
+- **Severity:** P1 | **Status:** FIXED-PENDING-VERIFICATION | **Discovered-by:** Reviewer (scratch/reviewer_user_hunt_2026-08-31.md, commit 1f60832; evidence p11/p12) | **Fixed-by:** Hermes-Coder
+- **Symptom:**  accepted silently (exit 0) while a scalp_v1 dataset was built (option never threaded; SampleFactory defaults scalp_v1). Separately, the documented user path with plain-OHLCV bars (data/raw/XAUUSD_M1.parquet) crashed with the labeler raw ValueError (no actionable message). e2e fixtures fabricating feat_0..49+atr hid both (false confidence).
+- **Root cause:** doctor.py model_dataset_build declared --schema but never resolved/validated it nor passed feature_schema_id into SampleFactory; no pre-compute contract check on the input frame.
+- **Fix:** resolve --schema against FEATURE_SCHEMAS (unknown id -> Unknown schema panel + EXIT_USAGE listing valid ids); thread feature_schema.schema_id into SampleFactory; fail fast with an actionable panel when the input lacks the schema-required feat_* columns or any atr column (names the missing set + points at the feature-engine contract) instead of a raw traceback.
+- **Regression tests:** tests/unit/test_bug176_schema_flag.py (5 tests: bogus schema rejected with usage exit; valid schema honored with schema-width frame; raw-bars input -> clean contract panel, no traceback in stdout/stderr). Fails-before captured by Reviewer probes (p11/p12).
+- **Verification:** 5/5 PASS; ruff/format/mypy/py_compile gates on touched files PASS (Coder report; Main re-ran the suite green).
