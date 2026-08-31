@@ -6371,3 +6371,44 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - Root cause: single wall-clock sample of 20 forward passes on a loaded CI/local machine; an xdist scheduling stall lands inside exactly one sample and the 2x gate (intended as a regression bound) fires on scheduler noise, not model cost. Parameter-delta asserts (frozen evidence) were fine.
 - Fix: warm both models (3 iters) to exclude lazy-init, take best-of-3 10-iteration samples (min filters out scheduler noise), relax the sanity gate to 50x best-vs-best. The brief-43 latency REPORT contract is unchanged; pathological regressions (CPU-fallback storms) still trip the bound.
 - Lesson: wall-clock performance asserts must never single-sample under parallel runners — best-of-N plus generous pathological bound, or move the gate to a dedicated benchmark job with resource isolation.
+## BUG-164 — model-validate ghost dataset crashed with a raw NoneType traceback (2026-08-31 Hermes-Coder, E2E follow-up)
+- FOUND (probing the BUG-159 family for the same ghost-input class): live CLI
+  `model-validate --model X --dataset ds_absent` exited 1 with a raw rich TRACEBACK panel —
+  `TypeError: 'NoneType' object is not subscriptable` at `frame["label"]`. Same defect class
+  as BUG-159 (ghost artifact -> raw crash instead of a clean user error), one command over.
+- ROOT CAUSE: ArtifactStore.read_dataset returns None for an absent artifact (documented
+  convention), so `model-validate`'s `except Exception` around read_dataset NEVER fired;
+  None flowed to `frame["label"]` outside any guard. Probed on a live store: absent -> None,
+  manifest-only -> None, corrupt parquet -> raises (the only case the old except covered).
+- SIBLING AUDIT of the read_dataset call sites: model-experiment-create guarded (BUG-159),
+  model-replay guarded inside SampleReplay (FileNotFoundError, "not found or empty" panel,
+  exit 1 — verified clean), model-train fails cleanly via train_candidate's empty/missing
+  checks. model-validate was the only unguarded site. Fixed: None -> "Dataset not found"
+  panel + remediation hint, EXIT_USAGE (2), consistent with model-experiment-create.
+- FIX: explicit `frame is None` guard before first frame use; except retained for genuine
+  read errors (corrupt parquet).
+- VERIFIED: fails-before/passes-after live CLI probe (exit 1 + traceback -> exit 2 + clean
+  panel, no traceback); 2-test regression file tests/unit/test_model_cli_ghost_inputs_bug164.py
+  green (also pins model-train ghost-experiment contract: exit 1, clean panel, no traceback);
+  ruff check + format clean; py_compile clean.
+- LESSON: an `except` around a function whose documented convention is "absent -> None"
+  guards only the RAISE paths, never the absence path — check the None convention at every
+  call site, and audit siblings when a ghost-input contract bug is found (BUG-159 -> 164).
+## BUG-165 - BUG-140 P0 regression suite was wired into NO CI gate (2026-08-31 Hermes-DevOps)
+- Symptom: the terminal-pending-outcome P0 fix (7e94868) + 64-test regression suite
+  (416b276: test_lifecycle_bug140, test_outcome_flush_race_bug140,
+  test_outcome_recovery_sweep_bug140; + test_nse_lifecycle_regression_matrix,
+  test_lifecycle_event_projection) ran ONLY on demand. All three pipelines that gate
+  pytest (ci.yml, tests-os.yml, release.yml) source tests/critical_suite.txt - none of
+  the five files were listed, so a regression in the learning-loop's terminal-outcome
+  writer could merge fully green (directive 70: every P0 fix needs a gate-backed regression).
+- Root cause: test-reduction-era wiring missed the bug140 files; suite ownership does not
+  auto-extend the manifest (same class as researcher note: a new file not added to
+  critical_suite.txt runs in NO pipeline).
+- Fix: append the five files to tests/critical_suite.txt (single manifest for ci.yml +
+  tests-os.yml + release.yml). Tests are flush()-based (BUG-140/BUG-162 deterministic
+  read-after-write primitive) - no sleep-race import into the CI gate.
+- Verification: 64/64 standalone PASS locally (2026-08-31); xdist smoke before push;
+  CI run green on this commit is the gate-side proof.
+- Lesson: any regression file for a P0 bug lands TOGETHER with its critical_suite.txt
+  wiring in the same commit - the manifest is the only CI/test/release pytest source.

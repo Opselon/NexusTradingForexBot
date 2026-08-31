@@ -44,3 +44,9 @@ tests/unit/test_accounting_deduplication.py
 tests/unit/test_accounting_pnl_regression.py
 tests/unit/test_accounting_timezone.py
 tests/unit/test_cli_end_to_end.py
+# BUG-165: BUG-140 terminal-outcome P0 regression net (Hermes-DevOps, 2026-08-31)
+tests/unit/test_lifecycle_bug140.py
+tests/unit/test_outcome_flush_race_bug140.py
+tests/unit/test_outcome_recovery_sweep_bug140.py
+tests/unit/test_nse_lifecycle_regression_matrix.py
+tests/unit/test_lifecycle_event_projection.py
