@@ -354,3 +354,56 @@ def test_release_yml_exe_smoke_asserts_stamped_cli_identity() -> None:
     assert 0 < smoke_idx < tripwire_idx < stage_idx, (
         "identity tripwire must run inside the EXE smoke step"
     )
+
+
+# ---------------------------------------------------------------------------
+# Reviewer residual gap #2: restore the Tier-4 real-artifact verify test that
+# d10e8f6 dropped when the stale (gitignored) release/v9.0.0 junk tree broke it.
+# The junk tree is removed from the dev machine; this test is skipif-guarded so
+# it runs wherever a real built release root exists (dev build dir or CI
+# artifact checkout), and exercises verify_release end-to-end: PASS on the
+# genuine tree, FAIL after any single-artifact tamper (checksums remain
+# authoritative per Part 13 — identity is supplementary provenance).
+# ---------------------------------------------------------------------------
+def _find_release_root() -> Path | None:
+    """Most recent release/vX.Y.Z/windows/x64 root carrying a portable bundle."""
+    rel = REPO_ROOT / "release"
+    if not rel.is_dir():
+        return None
+    for v in sorted(
+        (d for d in rel.iterdir() if d.is_dir() and d.name.startswith("v")), reverse=True
+    ):
+        candidate = v / "windows" / "x64"
+        if (candidate / "portable" / "NexusScalpEngine.exe").is_file():
+            return candidate
+    return None
+
+
+@pytest.mark.skipif(_find_release_root() is None, reason="no built release dir on this machine")
+def test_real_release_artifacts_verify_passes_then_fails_on_tamper(tmp_path: Path) -> None:
+    """Real built release must pass verify-release (no launch); any artifact
+    tamper must FAIL. Restores the environment-weakened coverage d10e8f6
+    dropped (reviewer residual gap #2) — now honest: PASS on real tree,
+    FAIL on tamper, skip with a truthful reason when no build exists."""
+    import hashlib
+    import shutil
+
+    from nexus_scalp.release import verify as rverify
+
+    root = _find_release_root()
+    assert root is not None
+    result = rverify.verify_release(root / "portable", include_launch=False)
+    assert result["valid"] is True, result["checks"]
+
+    # Tamper a COPY of the real tree — the genuine artifacts stay untouched.
+    sandbox = tmp_path / "tampered"
+    shutil.copytree(root / "portable", sandbox)
+    exe = sandbox / "NexusScalpEngine.exe"
+    original = exe.read_bytes()
+    exe.write_bytes(original + b"\0tamper")
+    tampered = rverify.verify_release(sandbox, include_launch=False)
+    cks = next(c for c in tampered["checks"] if c["check"] == "Checksums/manifest")
+    assert cks["status"] == "FAIL", cks
+    assert "MISMATCH" in cks["detail"] or "MISSING" in cks["detail"], cks["detail"]
+    # sha256 of the original is what the sums file records — sanity invariant
+    assert len(hashlib.sha256(original).hexdigest()) == 64

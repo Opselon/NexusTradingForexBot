@@ -6598,3 +6598,26 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   tests/critical_suite.txt.
 - Commit: 3814a4d. Verification: fails-before probes + pytest (76 e2e +
   6 new) + ruff/format/mypy PASS.
+## BUG-178 - stale empty release/v9.0.0 junk tree + dropped real-artifact verify test (2026-08-31 Hermes-Coder)
+- FOUND: the dev machine carried a gitignored release/v9.0.0 tree of 549 EMPTY directories
+  (portable/Web, portable/_internal skeletons, zero files) - leftovers of an old onedir
+  packaging run. _inspect_release_root() in the pre-d10e8f6 hardening suite found it,
+  ran verify_release against the hollow tree, and the resulting false failure caused the
+  test to be DROPPED entirely instead of the junk being cleaned - environment-weakened
+  coverage (reviewer residual gap #2).
+- FIX (two parts):
+  1. Removed release/v9.0.0 from the dev machine (549 empty dirs, 0 files, gitignored -
+     repo root clean per mandate; no tracked content affected).
+  2. Restored the Tier-4 real-artifact test in tests/release/test_release_hardening.py
+     with HONEST semantics: skipif-guarded (truthful skip reason 'no built release dir'),
+     PASS on a genuine built root (verify_release, include_launch=False), and a
+     fails-on-tamper leg that copies the real tree to tmp, appends bytes to the EXE, and
+     asserts Checksums/manifest FAIL with MISMATCH - restoring the tamper tripwire the
+     dropped test had lost.
+- VERIFIED: 15 passed + 1 skipped (truthful skip, no build dir at cleanup time) on the dev
+  machine; the test body was separately proven live by materializing a real-root-shaped
+  fixture (release/v9.9.9/windows/x64) -> verify PASS, then removed. ruff/format/py_compile
+  clean.
+- LESSON: a test that fails because of junk in an ignored directory is a junk problem, not
+  a test problem - clean the environment, never delete the coverage; skipif reasons must
+  state the environmental fact truthfully so the gap stays visible.
