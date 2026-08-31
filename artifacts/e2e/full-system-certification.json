@@ -41,10 +41,19 @@
     "CROSS_SYSTEM_E2E": "PARTIAL (ML chain + serving + runtime proven; experience→retrain loop under audit)"
   },
   "defects": [
-    {"id": "BUG-162", "severity": "P1", "status": "REPAIR_IN_FLIGHT", "title": "Canonical `nexus forensic --deploy-gate` CLI command deleted in 999276c; both quality gates fail-open on engine-unavailable", "discovered_by": "Hermes-Main", "root_cause": "PROVEN", "evidence": "git log -S def forensic_cmd -> 999276c only; 34->31 commands; artifacts/forensics/deploy_gate_result.json contains typer usage error; beforePush.sh:109 / beforePush.ps1:661 call sites; fail-open path prints ALL CHECKS PASSED on exit 2"},
-    {"id": "BUG-160", "severity": "P2", "status": "OPEN_SCHEDULED", "title": "Installed tree omits release-manifest.json + SHA256SUMS.txt; post-install verify-release FAILs", "root_cause": "MOST_LIKELY (ISS [Files] mirrors source dir without explicit manifest adds; build stage embeds manifest only at portable root)", "owner": "Hermes-DevOps FC-0D"},
-    {"id": "BUG-161", "severity": "P3", "status": "OPEN_DOCUMENTED", "title": "Inno /DIR= treats %VAR% literally (harness note)"}
+    {"id": "BUG-162", "severity": "P1", "status": "FIXED_VERIFIED_BY_MAIN", "title": "Canonical `nexus forensic --deploy-gate` CLI command deleted in 999276c; both quality gates fail-open on engine-unavailable", "discovered_by": "Hermes-Main", "root_cause": "PROVEN", "fix_commit": "78c685e", "verification": "5/5 regression tests PASS (fails-before: 5/5 FAIL on 46516bb); gate JSON now carries decision payload; both hooks fail-safe (no decision = BLOCK)"},
+    {"id": "BUG-166", "severity": "P2", "status": "FIXED_VERIFIED_BY_MAIN", "title": "CHECK-GOV-02 champion probe imported nonexistent configuration.loader -> silent fallback to hardcoded artifact -> false CHAMPION_IDENTITY_MISMATCH CRITICAL BLOCK on healthy system", "root_cause": "PROVEN", "fix_commit": "19f47de (with installer pre-stage for BUG-160)", "verification": "post-fix gate: decision REVIEW_REQUIRED, critical_count 0 (was false BLOCK); registry DEGRADED hygiene rows are genuine (4 stale fingerprints)"},
+    {"id": "BUG-160", "severity": "P2", "status": "FIX_IN_PROGRESS (release/verify.py + tests dirty from parallel agent; ISS + release.yml pre-stage landed 19f47de)", "title": "Installed tree omits release-manifest.json + SHA256SUMS.txt; post-install verify-release FAILs", "root_cause": "CONFIRMED (installer mirror lacked explicit contract files; verify.py resolved sums against wrong base)"},
+    {"id": "BUG-161", "severity": "P3", "status": "OPEN_DOCUMENTED", "title": "Inno /DIR= treats %VAR% literally (harness note)"},
+    {"id": "BUG-163", "severity": "P2", "status": "FIXED (9ca777b batch)", "title": "latency-ratio benchmark wall-clock lottery under CI load"},
+    {"id": "BUG-164", "severity": "P2", "status": "FIXED (63320fa)", "title": "model-validate ghost dataset raw NoneType crash -> clean EXIT_USAGE"},
+    {"id": "BUG-165", "severity": "P1", "status": "FIXED (5a2fd40)", "title": "BUG-140 P0 regression suite wired into NO CI gate"}
   ],
+  "notes": {
+    "gate_semantics": "0 ALLOW / 1 BLOCK / 2 REVIEW / 3 ENGINE-UNAVAILABLE; hooks now BLOCK on payload without 'decision'",
+    "current_gate_state": "REVIEW_REQUIRED: 3 DEGRADED (News source failures, Governance stale champion fingerprints) + 3 UNKNOWN (FeatureContract/Liquidity no data, Trace no logs) — genuine environment/registry hygiene, not gate defects",
+    "version": "pyproject bumped 9.0.5 (9ca777b) per BUG-152 atomicity rule for next release train"
+  },
   "phase0_delegation": {
     "FC-0R_researcher": "system map + code-path proof (running)",
     "FC-0D_devops": "release/CI/updater inventory + BUG-160 root cause (running)",

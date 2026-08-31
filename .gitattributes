@@ -66,3 +66,4 @@ tests/critical_suite.txt text eol=lf
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+installer/*.iss -text
