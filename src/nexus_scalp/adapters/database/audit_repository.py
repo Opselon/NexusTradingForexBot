@@ -83,7 +83,17 @@ class AuditRepository:
         # runtime workspace (exe bundle) so every launch — double-click,
         # shortcut, any shell CWD — uses ONE canonical artifact tree. Source
         # runs (CWD == repo root) keep identical behavior.
-        if self._is_sqlite and self._db_path and not Path(self._db_path).is_absolute():
+        # BUG-156: in-memory URIs are NOT filesystem paths — they must be
+        # excluded from workspace anchoring. Anchoring ":memory:" produced
+        # "CWD/:memory:" -> a nonexistent file path, and every
+        # "sqlite:///:memory:" AuditRepository raised OperationalError.
+        if (
+            self._is_sqlite
+            and self._db_path
+            and self._db_path != ":memory:"
+            and not self._db_path.startswith("file:")
+            and not Path(self._db_path).is_absolute()
+        ):
             try:
                 from nexus_scalp.release.paths import get_runtime_workspace
 

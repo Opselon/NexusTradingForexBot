@@ -6262,3 +6262,27 @@ restart by operator).
   bump-furnace test (pyproject temporarily -> 9.0.5, restored byte-exact): suite stayed 68/68.
 - LESSON: exit-code contracts need drift guards on BOTH sides of a comparison branch - pinning
   one side (BUG-154) leaves the other side free to move silently.
+## BUG-156 - BUG-149 workspace anchoring broke every `sqlite:///:memory:` AuditRepository (2026-08-31 Hermes-Coder)
+- FOUND: d21df07 (BUG-149) anchored ALL relative SQLite paths to the runtime workspace; the
+  guard checked only `not Path(db_path).is_absolute()` and missed the in-memory pseudo-path.
+  `:memory:` (normalized to `file::memory:?cache=shared` just above) was anchored to
+  `<CWD>/:memory:` -> nonexistent file -> `sqlite3.OperationalError: unable to open database
+  file` in AuditRepository.__init__ for EVERY `sqlite:///:memory:` construction.
+- SYMPTOM: 10 critical-suite failures in beforePush_20260831_132259 (test_execution_architecture
+  ::test_pending_order_manager_and_falling_knife + 9 tests in test_order_manager_exit_bugs);
+  surfaced only after CLI-e2e wiring grew the gate surface - a shipped defect since d21df07
+  (10:41), masked until 13:22 because parallel runs 10:12/10:37 predated d21df07 or ran a
+  non-colliding subset.
+- FIX: audit_repository.py anchoring guard now EXCLUDES in-memory URIs
+  (`db_path != ":memory:"` and `not startswith("file:")`); filesystem anchoring unchanged.
+  Also audited the 5 sibling get_runtime_workspace() anchoring sites (candle store, news
+  config, diagnostics, health, repair): they anchor config-declared FILE paths, not
+  pseudo-URIs - not affected.
+- REGRESSION GUARD: direct pytest + a live construction/write/read/close probe on
+  `sqlite:///:memory:` (row persisted through the queue worker via the shared-cache conn)
+  - passes after fix, OperationalError before.
+- VERIFIED: test_order_manager_exit_bugs.py + test_execution_architecture.py +
+  test_log_autopsy_fixes.py + test_adaptive_position_management.py all green;
+  ruff check + format clean; py_compile clean.
+- LESSON: path-anchoring guards must treat URI pseudo-paths (`:memory:`, `file:`) as
+  NOT-relative-filesystem-paths; an existence/absolute check alone is not enough.
