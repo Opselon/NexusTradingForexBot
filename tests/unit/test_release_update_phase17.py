@@ -881,8 +881,16 @@ def test_up49_resume_hash_full_partial(tmp_path: Path) -> None:
     part.write_bytes(payload[:200])
 
     class _FakeResp:
+        """BUG-171-honest 206 fake: a resume is only honored when the
+        response carries a verifiable status + Content-Range. The old
+        header-less fake enshrined exactly the blind-append trust that
+        BUG-171 removes."""
+
+        status = 206
+
         def __init__(self, data: bytes) -> None:
             self._data = data
+            self.headers = {"Content-Range": f"bytes 200-{len(payload) - 1}/{len(payload)}"}
 
         def read(self, n: int = -1) -> bytes:
             if n < 0:
@@ -897,6 +905,7 @@ def test_up49_resume_hash_full_partial(tmp_path: Path) -> None:
             return False
 
     def fake_urlopen(req: Any, timeout: int | None = None) -> _FakeResp:  # type: ignore[no-untyped-def]
+        assert (req.headers or {}).get("Range") == "bytes=200-", "resume must send Range"
         return _FakeResp(payload[200:])
 
     monkeypatch = None  # noqa: F841  (used via direct assignment below)
