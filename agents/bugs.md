@@ -6770,3 +6770,19 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   py_compile + ruff + mypy + targeted pytest green; running-engine error cadence matched the
   retrain interval (1/min) confirming the guard was never engaged.
 - Severity: P1 (live learning loop dead + scaler-save exception storm) | Status: FIXED | Fixed-by: Hermes-Main
+## BUG-183 - production research path ran with purge/embargo disabled despite BUG-140 Phase-7 leakage constants (2026-09-01 Hermes-Main)
+- FOUND: splitting.py declares DEFAULT_PURGE_SECONDS=300 / DEFAULT_EMBARGO_SECONDS=60
+  ('leakage guards ENABLED by default', asserted by test_evidence_semantics_bug140) but every
+  production consumer defaulted to 0.0: ResearchPipeline.validate_candidate, OOSGate.evaluate,
+  WalkForwardEngine.validate, BacktestEngine.run(use_split=True). Only explicit callers could
+  get guards; research worker / strategies factory / web validate endpoints never passed them.
+  _record_run also hardcoded purge/embargo 0.0 into the persisted run config (false provenance).
+- IMPACT: label-horizon leakage across train/val and train/OOS boundaries in every default
+  backtest/walk-forward/OOS evaluation (P1, evidence-quality defect; direct ml-pipeline audit finding).
+- FIX: all four consumers default to the splitting constants; backtest.run forwards both to
+  split_temporal; _record_run takes and records the effective values. No gate thresholds touched.
+- REGRESSION: tests/unit/test_research_purge_defaults_bug183.py (signature defaults, run-config
+  records effective values, boundary-crossing-horizon purge semantics). BEFORE=FAIL AFTER=PASS.
+- VERIFICATION: ruff check+format, mypy (4 files), targeted pytest 25 passed incl. evidence
+  semantics + task4 validation + lifecycle bug140 + bug174 backfill suites. Commit 11ea316.
+- Severity: P1 | Status: FIXED | Fixed-by: Hermes-Main
