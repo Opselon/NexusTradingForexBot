@@ -1319,11 +1319,13 @@ class TestNoTradingMutation:
         import re
         from pathlib import Path
 
-        server = Path("src/nexus_scalp/web/server.py").read_text(encoding="utf-8")
-        # every diagnostics route is read-only: GET, or the POST reconcile
-        # audit (runs forensic probes + updates incident records; never
-        # touches trading/positions/orders/risk — spec 43 audit action).
-        seg = server[server.index("/api/diagnostics") :]
+        # CHG-0032-A1 Step-3D: the diagnostics routes now live in
+        # diagnostics_state_routes.py (extracted verbatim from server.py);
+        # the read-only assertion follows the routes to their owner module.
+        mod = Path("src/nexus_scalp/web/diagnostics_state_routes.py").read_text(
+            encoding="utf-8"
+        )
+        seg = mod[mod.index("/api/diagnostics") :]
         for m in re.finditer(r'@app\.(get|post|put|delete|patch)\("/api/diagnostics[^"]*"\)', seg):
             assert m.group(1) in ("get", "post"), f"diagnostics route not read-only: {m.group(0)}"
             if m.group(1) == "post":
