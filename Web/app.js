@@ -12378,6 +12378,7 @@ function factoryConsoleClear() {
 }
 
 async function loadFactoryStatus() {
+    loadFactoryFeatureHealth();
     try {
         const res = await NX.api.get('/api/factory/status', { component: 'StrategyFactory', action: 'STATUS' });
         const data = factoryRes(res, { available: false, reason: 'UNKNOWN' });
@@ -12610,6 +12611,120 @@ async function loadFactoryLlmConfig() {
     } catch (err) {
         console.warn('factory llm config load failed', err);
         setFactoryLlmStatus(false, 'ERROR');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CHG-0034: Strategy Factory feature toggle + provider health (THE one control)
+// ---------------------------------------------------------------------------
+
+function renderFactoryFeatureState(snap) {
+    // snap = /api/factory/provider-health body
+    const stateEl = document.getElementById('factory-feature-state');
+    const provEl = document.getElementById('factory-provider-state');
+    const reasonBox = document.getElementById('factory-disable-reason');
+    const reasonText = document.getElementById('factory-disable-reason-text');
+    const hintBox = document.getElementById('factory-toggle-hint');
+    if (!stateEl) return;
+    const userOn = !!snap.user_enabled;
+    const autoOff = !!snap.auto_disabled;
+    const effective = !!snap.effective_enabled;
+    let label, cls;
+    if (autoOff) {
+        label = 'AUTO-DISABLED';
+        cls = 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+        reasonBox.classList.remove('hidden');
+        reasonText.textContent = 'Reason: ' + (snap.auto_disabled_reason || 'UNKNOWN') +
+            (snap.auto_disabled_detail ? ' — ' + snap.auto_disabled_detail : '');
+    } else if (!userOn) {
+        label = 'DISABLED BY USER';
+        cls = 'bg-slate-500/20 text-slate-300 border-slate-500/30';
+        reasonBox.classList.add('hidden');
+    } else if (effective) {
+        label = 'ENABLED';
+        cls = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+        reasonBox.classList.add('hidden');
+    } else {
+        label = 'UNAVAILABLE';
+        cls = 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+        reasonBox.classList.add('hidden');
+    }
+    stateEl.textContent = label;
+    stateEl.className = 'text-[11px] font-black px-2 py-1 rounded border ' + cls;
+    const gate = snap.gate || {};
+    const provState = gate.effective_state || (effective ? 'READY' : 'OFF');
+    provEl.textContent = 'provider: ' + provState +
+        (gate.circuit_open ? ' (circuit open)' : '') +
+        ' · key: ' + (snap.api_key_present ? 'SET (hidden)' : 'MISSING');
+    // Button affordances follow the state (steer 13: no hammering).
+    const enBtn = document.getElementById('factory-toggle-enable');
+    const disBtn = document.getElementById('factory-toggle-disable');
+    if (enBtn) enBtn.disabled = userOn && !autoOff;
+    if (disBtn) disBtn.disabled = !userOn;
+}
+
+async function loadFactoryFeatureHealth() {
+    try {
+        const res = await NX.api.get('/api/factory/provider-health', { component: 'StrategyFactory', action: 'PROVIDER_HEALTH' });
+        const data = factoryRes(res, null);
+        if (data) renderFactoryFeatureState(data);
+    } catch (err) {
+        console.warn('factory provider-health load failed', err);
+    }
+}
+
+async function factorySetFeature(enabled) {
+    const hintBox = document.getElementById('factory-toggle-hint');
+    if (hintBox) hintBox.classList.add('hidden');
+    try {
+        const res = await NX.api.post('/api/factory/provider-toggle', { enabled: !!enabled }, { component: 'StrategyFactory', action: 'FACTORY_TOGGLE' });
+        const data = factoryRes(res, null);
+        if (!data) {
+            if (hintBox) { hintBox.textContent = 'Toggle failed: backend unavailable.'; hintBox.classList.remove('hidden'); }
+            return;
+        }
+        const blocked = data.enable_blocked;
+        if (enabled && blocked) {
+            // steer 13: enable with missing config must NOT hammer the provider.
+            if (hintBox) {
+                hintBox.textContent = 'Cannot enable: ' + (blocked.message || 'provider configuration incomplete.') +
+                    ' Configure the provider settings below, then enable again.';
+                hintBox.classList.remove('hidden');
+            }
+        }
+        if (data.state) renderFactoryFeatureState(Object.assign({}, data.state, { gate: (data.state.gate) }));
+        await loadFactoryFeatureHealth();
+        factoryLog(enabled ? 'ok' : 'warn', 'Strategy Factory ' + (enabled ? 'ENABLED' : 'DISABLED by user') + ' (trading engine unaffected)');
+    } catch (err) {
+        console.warn('factory toggle failed', err);
+        if (hintBox) { hintBox.textContent = 'Toggle error — see console.'; hintBox.classList.remove('hidden'); }
+    }
+}
+
+async function factoryTestProvider() {
+    const hintBox = document.getElementById('factory-toggle-hint');
+    if (hintBox) { hintBox.textContent = 'Testing provider (one controlled request)…'; hintBox.classList.remove('hidden'); }
+    try {
+        const res = await NX.api.post('/api/factory/provider-test', {}, { component: 'StrategyFactory', action: 'PROVIDER_TEST' });
+        const data = factoryRes(res, null);
+        if (!hintBox) return;
+        if (data && data.provider_state === 'READY') {
+            hintBox.textContent = 'Provider READY (' + (data.latency_ms ?? '--') + ' ms, model ' + (data.model || '--') + ').';
+            hintBox.className = 'hidden mt-2 text-[11px] font-mono rounded border p-2 bg-emerald-500/10 border-emerald-500/30 text-emerald-200';
+        } else if (data && data.provider_state === 'UNAVAILABLE') {
+            hintBox.textContent = 'Provider UNAVAILABLE — ' + (data.reason || 'unknown');
+            hintBox.className = 'hidden mt-2 text-[11px] font-mono rounded border p-2 bg-rose-500/10 border-rose-500/30 text-rose-200';
+        } else if (data && data.reason) {
+            hintBox.textContent = 'Test skipped: ' + data.reason;
+            hintBox.className = 'hidden mt-2 text-[11px] font-mono rounded border p-2 bg-amber-500/10 border-amber-500/30 text-amber-200';
+        } else {
+            hintBox.textContent = 'Test failed: backend unavailable.';
+            hintBox.className = 'hidden mt-2 text-[11px] font-mono rounded border p-2 bg-rose-500/10 border-rose-500/30 text-rose-200';
+        }
+        hintBox.classList.remove('hidden');
+        await loadFactoryFeatureHealth();
+    } catch (err) {
+        console.warn('factory provider test failed', err);
     }
 }
 

@@ -1473,6 +1473,34 @@
                         </div>
                     </div>
 
+                    <!-- CHG-0034: Strategy Factory user toggle (THE one control) -->
+                    <div class="bg-darkBg/40 border border-borderClr/60 rounded-lg p-4 mb-4" id="factory-toggle-card">
+                        <div class="flex justify-between items-center gap-4 flex-wrap">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest text-textMuted font-sans">Strategy Factory — external provider feature</div>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <span id="factory-feature-state" class="text-[11px] font-black px-2 py-1 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">UNKNOWN</span>
+                                    <span id="factory-provider-state" class="text-[10px] font-mono text-textMuted">provider: --</span>
+                                </div>
+                                <div id="factory-disable-reason" class="hidden mt-2 text-[11px] leading-relaxed font-mono rounded border p-2
+                                    bg-rose-500/10 border-rose-500/30 text-rose-200">
+                                    <div class="font-bold">AUTO-DISABLED</div>
+                                    <div id="factory-disable-reason-text">Reason: --</div>
+                                    <div class="text-textMuted mt-1">No effect on: MT5 · 70D local model · trading engine · risk · positions. Configure the provider, then enable Strategy Factory again.</div>
+                                </div>
+                                <div id="factory-toggle-hint" class="hidden mt-2 text-[11px] font-mono rounded border p-2 bg-amber-500/10 border-amber-500/30 text-amber-200"></div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button id="factory-toggle-enable" onclick="factorySetFeature(true)"
+                                    class="bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 rounded px-3 py-1.5 text-xs font-bold hover:bg-emerald-500/20 transition">Enable</button>
+                                <button id="factory-toggle-disable" onclick="factorySetFeature(false)"
+                                    class="bg-rose-500/10 text-rose-300 border border-rose-500/30 rounded px-3 py-1.5 text-xs font-bold hover:bg-rose-500/20 transition">Disable</button>
+                                <button onclick="factoryTestProvider()" title="ONE controlled probe request"
+                                    class="bg-darkBg hover:bg-borderClr border border-borderClr text-accentCyan px-3 py-1.5 rounded text-xs font-bold transition">Test Provider</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- LLM Provider config (realtime assisted generation) -->
                     <div class="bg-darkBg/40 border border-accentCyan/25 rounded-lg p-4 mb-4">
                         <div class="flex justify-between items-center mb-3">
