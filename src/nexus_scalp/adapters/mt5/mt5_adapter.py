@@ -704,14 +704,36 @@ class DirectMT5Adapter(IMT5Port):
         from_utc: Any = None,
         to_utc: Any = None,
     ) -> list[TickHistorySnapshot]:
-        """Tick history via copy_ticks_from / copy_ticks_range (UTC)."""
+        """Tick history via copy_ticks_from / copy_ticks_range.
+
+        BUG-188 (2026-09-01 live certification probe): the terminal resolves
+        copy_ticks_range boundaries in SERVER-LOCAL time while the package
+        converts datetime arguments as UTC epoch; the returned epochs are
+        then converted back by ``broker_epoch_to_utc`` (-BROKER_SERVER_
+        UTC_OFFSET_MINUTES). Passing UTC request boundaries unshifted
+        therefore returned ticks shifted a net -180min out of the requested
+        window. The INPUT boundary is normalized to the broker timebase
+        (+BROKER_SERVER_UTC_OFFSET_MINUTES) here — symmetric with the OUTPUT
+        conversion and with the established history_deals_get /
+        history_orders_get window convention — so callers keep UTC semantics:
+        request [from_utc, to_utc] ⇒ receive ticks stamped inside that
+        real-UTC window.
+        """
         if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
             return []
         req_count = max(1, min(int(count), 100_000))
         if from_utc is not None:
             from_dt = normalize_utc(from_utc)
             to_dt = normalize_utc(to_utc) if to_utc is not None else datetime.now(UTC)
-            if from_dt is None or to_dt < from_dt:
+            if from_dt is None or to_dt is None or to_dt < from_dt:
+                return []
+            # BUG-188: shift the INPUT window into the broker timebase so the
+            # terminal's server-local resolution lands on the requested UTC
+            # range after the OUTPUT-side epoch conversion. Range sanity is
+            # re-checked AFTER the shift.
+            from_dt = from_dt + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+            to_dt = to_dt + timedelta(minutes=BROKER_SERVER_UTC_OFFSET_MINUTES)
+            if to_dt < from_dt:
                 return []
             raw, diag = run_mt5_call(
                 "copy_ticks_range",
@@ -724,7 +746,7 @@ class DirectMT5Adapter(IMT5Port):
                 "copy_ticks_from",
                 lambda: mt5.copy_ticks_from(
                     symbol,
-                    datetime.now(UTC) - timedelta(hours=1),
+                    datetime.now(UTC),
                     req_count,
                     mt5.COPY_TICKS_ALL,
                 ),
