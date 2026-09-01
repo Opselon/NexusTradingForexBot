@@ -1086,3 +1086,39 @@ Why: user confidence-pipeline-repair brief 2026-09-02. Contracts touched:
 CONFIDENCE_SEMANTICS v2 (risk_checks +confidence_source). Risk: MEDIUM
 (hot-path decision semantics; mitigated by fallback + full gate battery).
 Status: COMPLETE
+
+## CHG-0043 - Replay-on-Chart: historical session controller + no-future-data certification (2026-09-02, Hermes-Main)
+
+Change: user replay-on-chart brief. (1) SURGICAL behavior-preserving refactor of
+research/streaming_replay.py: extract per-event processing + run-finalization so
+ONE decision path serves both run() and a new stepwise controller (no second
+engine, no second execution model). (2) research/replay_session.py =
+REPLAY_SESSION v1: ReplayContract (replay_id/dataset_id/window/model identity/
+schema/policy/risk identity/git_commit/replay_mode=BAR_REPLAY), authoritative
+ReplayClock (event time only), step/play/pause/reset/seek/checkpoint with
+equivalence tests, bounded decision-trace ring (per-decision: timestamp, price,
+probs, confidence, action, regime, gates, first blocking gate, candidate
+geometry), causal regime wiring (MarketRegimeClassifier on replay ticks,
+guarded by regime_enabled flag, default preserves current behavior),
+checkpoints every N bars (full state: bars window, policy state, regime rings,
+equity, position, counters). (3) web/replay_routes.py: POST /api/replay/session,
+POST /api/replay/control, GET /api/replay/state, GET /api/replay/report —
+serves persisted truth (research_run_snapshots v2 + evidence JSON). (4) Web/
+replay panel: KNOWN-vs-UNKNOWN chart semantics, decision drill-down, NO_TRADE
+reasons. (5) Tests: future-mutation invariance A-F (price/news/liquidity/
+volume/regime-labels/db-rows), seek==sequential, checkpoint equivalence, 70D
+mapping, model fingerprint, E2E DB reconciliation, clock-contract (no
+datetime.now in decision path), END_OF_DATA, step determinism.
+Scope: src/nexus_scalp/research/{streaming_replay.py,replay_session.py(new)},
+web/replay_routes.py(new), Web/{index.html,app.js}, tests/unit/test_replay_session_*.py,
+tests/integration/test_replay_e2e_reconciliation.py, artifacts/forensics/*,
+agents/*. NOT touched: signals/policy.py, features/regime_classifier.py,
+execution/order_manager.py (foreign Agent-5 WIP), application/live_engine.py,
+adapters/mt5, provider_gate, installer WIP, settings.
+Why: brief 2026-09-02 — chart must be the operator surface of the REAL
+historical decision pipeline with ZERO future-data leakage.
+Contracts touched: STREAMING_REPLAY v1 (refactor, hash-equivalence proven),
+REPLAY_SESSION v1 (new), REPLAY_API v1 (new), RESEARCH_RUN_SNAPSHOT v2 (reused).
+Risk: MEDIUM (touches certified engine file; mitigated by pre/post hash
+equivalence on real data + full research-family suite green).
+Status: IMPLEMENTING
