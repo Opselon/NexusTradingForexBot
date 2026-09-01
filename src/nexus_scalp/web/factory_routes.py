@@ -409,10 +409,15 @@ def factory_llm_config_save(
             # network probe (steer 66: hot reload must not disrupt the engine).
             new_provider._gate.reconfigure()
             factory.provider = new_provider
+        else:
+            # CHG-0039: web-only mode (no in-process factory) — still
+            # clear stale gate state so a rotated key is never shadowed
+            # by the previous credential's AUTH_FAILED.
+            from nexus_scalp.strategies.factory.provider_gate import get_provider_gate
+
+            get_provider_gate().reconfigure()
             logger.info(
-                "[STRATEGY_FACTORY] LLM provider hot-rebuilt",
-                configured=new_provider.available(),
-                model=new_provider.model,
+                "[STRATEGY_FACTORY] LLM config saved (web-only mode) — gate reconfigured",
             )
         return serialize_enums(_ok(result))
     except Exception as e:
@@ -571,14 +576,24 @@ def factory_provider_health(request: Request) -> dict[str, Any]:
         from nexus_scalp.web.server import serialize_enums
 
         svc = _settings_svc(request) or load_settings_service()
-        snap = svc.factory_health_snapshot()
         factory = _factory(request)
         gate_state: dict[str, Any] = {}
+        gate_auto: dict[str, Any] | None = None
         if factory is not None and getattr(factory, "provider", None) is not None:
             try:
                 gate_state = factory.provider._gate.health_snapshot()
+                # CHG-0039: the gate is the RUNTIME authority for
+                # auto-disable — merge its truth into the top-level
+                # fields so the UI can never show ENABLED while the gate
+                # is AUTO_DISABLED (state-ownership defect, live-confirmed).
+                gate_auto = {
+                    "auto_disabled": bool(gate_state.get("auto_disabled")),
+                    "auto_disabled_reason": gate_state.get("auto_disabled_reason") or "",
+                    "auto_disabled_detail": gate_state.get("auto_disabled_detail") or "",
+                }
             except Exception as gate_err:
                 gate_state = {"error": type(gate_err).__name__}
+        snap = svc.factory_health_snapshot(runtime_override=gate_auto)
         worker = _worker(request)
         snap["gate"] = gate_state
         snap["worker_running"] = bool(worker.running) if worker is not None else False
@@ -685,6 +700,12 @@ def factory_provider_test(request: Request) -> dict[str, Any]:
                 request_timeout_sec=min(30.0, float(cfg.get("request_timeout_sec", 30.0))),
                 enabled_getter=lambda: True,
             )
+        # CHG-0039: config present -> clear stale gate state BEFORE the
+        # single probe so a rotated credential can be verified without
+        # pressing Enable first. Still exactly ONE network request.
+        from nexus_scalp.strategies.factory.provider_gate import get_provider_gate
+
+        get_provider_gate().reconfigure()
         result = provider._gate.execute(
             "probe:test-provider",
             lambda: _test_probe_request(provider),

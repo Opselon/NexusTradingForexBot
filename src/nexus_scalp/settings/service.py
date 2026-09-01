@@ -778,10 +778,27 @@ class SettingsService:
             correlation_id=cid,
         )
 
-    def factory_health_snapshot(self) -> dict[str, Any]:
-        """Secret-free combined state for the UI / health endpoint."""
+    def factory_health_snapshot(
+        self,
+        runtime_override: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Secret-free combined state for the UI / health endpoint.
+
+        ``runtime_override`` (CHG-0039): the provider gate is the
+        RUNTIME authority for auto-disable; the settings DB only
+        persists USER INTENT. When the caller supplies gate truth
+        (``auto_disabled``/``auto_disabled_reason``/``detail``), it
+        overrides the persisted layer so the UI can never show
+        ENABLED while the gate is AUTO_DISABLED (state ownership
+        defect fixed 2026-09-01).
+        """
         user_enabled = self.get_factory_enabled()
         auto = self.factory_auto_disable_state()
+        if runtime_override is not None:
+            auto = dict(auto)
+            auto["auto_disabled"] = bool(runtime_override.get("auto_disabled"))
+            auto["reason"] = str(runtime_override.get("auto_disabled_reason") or "")
+            auto["detail"] = str(runtime_override.get("auto_disabled_detail") or "")
         try:
             cfg_status = self.factory_llm_config_status()
         except Exception:
