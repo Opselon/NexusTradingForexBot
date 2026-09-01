@@ -37,6 +37,10 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.execution.protection_ledger import (
+    PositionProtectionLedger,
+    PositionProtectionState,
+)
 from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
 from nexus_scalp.experience.lifecycle import DecisionLifecycle
 from nexus_scalp.experience.outcome_recovery import (
@@ -222,59 +226,8 @@ class LSFTicketState:
     trail_applied: float = 0.0
 
 
-@dataclass
-class PositionProtectionState:
-    """
-    Deterministic, per-ticket profit-protection state machine.
-
-    Bound to the MT5 ticket (never a global/shared variable) so protection decisions
-    are idempotent across repeated management passes. Every field is a fact about
-    THIS ticket only.
-    """
-
-    #: Monotonic high-water mark of floating PnL in account currency. Never decreases
-    #: while the position remains open.
-    peak_win_usd: float = 0.0
-    #: True only after the broker CONFIRMED the breakeven SL modification, or after the
-    #: observed broker-side SL was found to already sit at/beyond the breakeven level.
-    was_sl_modified: bool = False
-    #: True once profit-giveback protection has armed for this ticket.
-    profit_giveback_triggered: bool = False
-    #: True once a close request for this ticket was accepted by the adapter.
-    close_requested: bool = False
-    #: Monotonic-clock stamp of the last CONSOLE telemetry emission (never gates audit).
-    last_telemetry_log_time: float = 0.0
-    #: Monotonic-clock stamp of the last breakeven FAILURE log, used only to avoid log
-    #: spam on every loop iteration. It never gates the retry itself.
-    last_be_failure_log_time: float = 0.0
-    #: Monotonic-clock stamp of the last breakeven MODIFY attempt. Gates retries so
-    #: a broker-rejected modification cannot hammer the terminal every tick.
-    last_be_attempt_time: float = 0.0
-    #: Breakeven price level actually locked in (0.0 until computed).
-    breakeven_sl_price: float = 0.0
-
-    def update_peak(self, current_pnl_usd: float) -> float:
-        """Applies the monotonic peak invariant and returns the resulting peak."""
-        try:
-            pnl = float(current_pnl_usd)
-        except (TypeError, ValueError):
-            return self.peak_win_usd
-        if math.isnan(pnl) or math.isinf(pnl):
-            return self.peak_win_usd
-        self.peak_win_usd = max(self.peak_win_usd, pnl)
-        return self.peak_win_usd
-
-    def retention_ratio(self, current_pnl_usd: float) -> float:
-        """
-        Fraction of peak profit still retained. Returns 1.0 when no positive peak
-        exists yet, so an unarmed position can never mis-fire the giveback logic.
-        """
-        if self.peak_win_usd <= 0.0:
-            return 1.0
-        try:
-            return float(current_pnl_usd) / self.peak_win_usd
-        except (TypeError, ValueError):
-            return 1.0
+# PositionProtectionState moved to execution/protection_ledger.py
+# (P0 seam S1); imported below. Facade name preserved for compatibility.
 
 
 @dataclass
@@ -511,7 +464,10 @@ class OrderLifecycleManager:
         #: Ticket -> deterministic profit-protection state machine (monotonic peak
         #: profit, breakeven lock confirmation, giveback arming, close idempotency,
         #: console-telemetry clock). Keyed strictly by MT5 ticket.
-        self._protection_state: dict[int, PositionProtectionState] = {}
+        # P0 seam S1: per-ticket protection state now lives in the ledger
+        # (execution/protection_ledger.py). Access stays via
+        # self.get_protection_state() — signature and semantics unchanged.
+        self._protection_ledger = PositionProtectionLedger()
         #: Ticket -> exit mechanism forced by the engine (AI reversal, hold decay, ...)
         #: which overrides the broker-history heuristic during the autopsy write.
         self._forced_exit_mechanisms: dict[int, str] = {}
@@ -1824,15 +1780,10 @@ class OrderLifecycleManager:
         """
         Returns (creating on first use) the protection state bound to this MT5 ticket.
 
-        State is per-ticket by construction, never a shared/global variable, so two
-        concurrently tracked positions can never contaminate each other's peak profit
-        or protection flags.
+        Delegates to the protection ledger (P0 seam S1); signature and
+        lazy-creation semantics unchanged.
         """
-        state = self._protection_state.get(ticket)
-        if state is None:
-            state = PositionProtectionState()
-            self._protection_state[ticket] = state
-        return state
+        return self._protection_ledger.get(ticket)
 
     def _resolve_pip_size(self, symbol_info: SymbolInfo | None) -> float:
         """
@@ -1956,7 +1907,7 @@ class OrderLifecycleManager:
         Lowest (BUY) / highest (SELL) stop price any later mechanism is allowed to set,
         i.e. the confirmed breakeven lock. Returns 0.0 when no lock is active.
         """
-        state = self._protection_state.get(ticket)
+        state = self._protection_ledger.get(ticket)
         if state is None or not state.was_sl_modified:
             return 0.0
         return state.breakeven_sl_price
