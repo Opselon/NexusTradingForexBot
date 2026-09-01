@@ -1058,3 +1058,31 @@ Contracts touched: TICK_DATASET_META v2, TICK_COUNTERFACTUAL v1. Risk: LOW
 (research-only, no live path).
 Status: COMPLETE
 
+
+## CHG-0042 - Confidence-semantics repair: policy gate measures trained-class directional share (2026-09-02, Hermes-Main)
+
+Change: SignalPolicy now normalizes the candidate's OWN-side directional
+probability over the TRAINED classes (BUY+SELL+NO_TRADE) before comparing it
+with the existing thresholds (0.40 base / 0.50 range - UNCHANGED). The
+4-logit head's WAIT slice (never a training label: TripleBarrierLabeler
+3-class + LABEL_SCHEMA_3CLASS_V1; online fine-tune class_counts [.., 0]) no
+longer dilutes directional confidence. Degenerate vectors (zero/non-finite
+mass, malformed width) fall back to the pre-fix raw semantics instead of
+manufacturing confidence; prob_no_trade is sanitized like its siblings
+(NaN-slice poisoning found by the new regression net). confidence_source
+(DIRECTIONAL_NORMALIZED | RAW_FALLBACK) is stamped into every proposal's
+risk_checks for explainability.
+Evidence: NO_TRADE forensic e1f95e5 (0/464 candidates pass; all-time max raw
+probability 0.357 < 0.40); counterfactual artifacts/forensics/
+confidence_repair_counterfactual_20260902.json (BEFORE 0 passers, AFTER 13
+on the same recorded set, 0 in RANGING - consistent with the ~32 all-data
+projection; no threshold tuning).
+Scope: src/nexus_scalp/signals/policy.py,
+tests/unit/test_confidence_semantics_repair.py (13),
+tests/unit/test_policy.py (telemetry assertions to the repaired measure).
+NOT touched: regime_classifier, order_manager, live_engine, risk engine,
+70D contract/artifacts, provider gate, installer, observability contract.
+Why: user confidence-pipeline-repair brief 2026-09-02. Contracts touched:
+CONFIDENCE_SEMANTICS v2 (risk_checks +confidence_source). Risk: MEDIUM
+(hot-path decision semantics; mitigated by fallback + full gate battery).
+Status: COMPLETE

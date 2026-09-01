@@ -6998,3 +6998,17 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   news_10d_from_context; keep news_10d_from_context for training-frame dicts whose
   keys are the canonical schema keys. Regression: RED->GREEN test pins the parity.
 
+
+## BUG-191 - NaN model slice poisoned candidate confidence into NaN (2026-09-02 Hermes-Main, found by confidence-repair regression net)
+
+- SEVERITY: P3 (crash-class on malformed model output; never observed live)
+- STATUS: FIXED (commit with CHG-0042)
+- Mechanism: policy.py kept prob_no_trade raw (no _sanitize_float) while
+  prob_buy/prob_sell were sanitized. A NaN WAIT/NO_TRADE slice from the model
+  made the candidate-side measure NaN -> TradeProposal(confidence=nan) ->
+  pydantic ValidationError on the tick loop path.
+- Fix: prob_no_trade sanitized like its siblings; _directional_confidence
+  falls back to raw semantics on non-finite mass; regression
+  test_case_f_nan_input_uses_fallback_not_crash.
+- Reproduce: evaluate_probabilities([nan, 0.4, 0.3, 0.3]) raised before the
+  fix; returns a finite-confidence proposal after.
