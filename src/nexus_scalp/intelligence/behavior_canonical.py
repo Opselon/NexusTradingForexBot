@@ -25,7 +25,6 @@ from nexus_scalp.intelligence.behavior_detect import (
     EXCESSIVE_HOLD_MIN_SAMPLE,
     INSERT_ANALYSIS_SQL,
     INSERT_ANOMALY_SQL,
-    BehaviorDetection,
     BehaviorDetectionEngine,
     _json_default,
     _jsonable,
@@ -33,6 +32,7 @@ from nexus_scalp.intelligence.behavior_detect import (
 from nexus_scalp.intelligence.models import (
     AnomalyEvent,
     BehaviorAnalysis,
+    BehaviorDetection,
 )
 from nexus_scalp.observability.logging import get_logger
 
