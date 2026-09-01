@@ -6933,3 +6933,32 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - Secrets: no key value ever appears in health payloads, logs, or UI (redact_url
   strips credential userinfo/key params; snapshot carries api_key_present only).
 
+## BUG-188 - get_tick_history input window double-conversion: UTC boundaries passed unshifted to copy_ticks_range (2026-09-01, Hermes-Main live certification probe)
+
+- CLASS: broker timebase (BUG-070 family, OUTPUT-side fixed 2026-08-18 but the
+  INPUT-side fix was applied to history_orders_get/history_deals_get only).
+- DISCOVERED BY: CHG-0036 live certification probe (bounded, read-only,
+  XAUUSD 5-minute window). Requested UTC window 18:40:41..18:45:41 returned
+  ticks stamped 15:40:41..15:45:40 UTC — an exact -180min shift; every tick
+  was classified out-of-range (2990/2990). Disambiguation probe: requesting
+  (start+180min, end+180min) returned ticks stamped EXACTLY inside the
+  originally requested real-UTC window (18:50:04..18:52:03 for a
+  18:50..18:52 request). Root cause: MetaTrader5 package converts datetime
+  arguments via timestamp() (UTC epoch), but the terminal resolves tick
+  history boundaries in SERVER-LOCAL time; the returned epochs are then
+  converted back by broker_epoch_to_utc (-180min) => net -3h data shift for
+  every get_tick_history(from_utc, to_utc) caller.
+- SCOPE: research tick acquisition boundary (mt5_tick_dataset.acquire_ticks).
+  get_tick_history had NO production consumers other than the research
+  acquisition boundary at HEAD (ports/paper stubs return []); live tick
+  streaming (symbol_info_tick) unaffected.
+- FIX: mt5_adapter.get_tick_history normalizes INPUT boundaries to the
+  broker timebase (+BROKER_SERVER_UTC_OFFSET_MINUTES) symmetric with the
+  OUTPUT conversion (broker_epoch_to_utc -180min), matching the established
+  history_deals_get/history_orders_get convention. Snapshot epochs keep the
+  single OUTPUT-side conversion; no duplicate shift.
+- Regression: tests/unit/test_mt5_tick_boundary_bug188.py (UTC pass-through
+  on the offset, timestamp-unit handling, range containment after fix,
+  failure/empty semantics, port-parity). Live re-probe post-fix: window
+  containment 0 out-of-range, ordering non-decreasing, quotes sane.
+

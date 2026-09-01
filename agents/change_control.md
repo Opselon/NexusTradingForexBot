@@ -975,3 +975,28 @@ Risk: MEDIUM (research-only subsystem; zero live-trading surface; replay never s
 Required tests: freeze identity captured+re-verified post-run, future-data poison (pre-cutoff state unchanged), replay determinism (two runs byte-identical ledger), chunk determinism (1 chunk == N chunks), resume determinism, no order_send in replay, direction-aware pricing, tick SL/TP first-touch, bar/tick difference classification, offline-after-acquisition, model-offline inference, provenance immutability across champion change, empty/future-range honest outcomes.
 Status: IMPLEMENTING
 
+## CHG-0036 - LIVE MT5 tick acquisition certification + BUG-188 boundary fix (2026-09-01, Hermes-Main)
+
+Change: closes the CHG-0035 explicitly-unverified residual (acquire_ticks
+against a REAL terminal) via a bounded read-only live probe, then the
+smallest safe boundary fix for the discovered BUG-188 double-conversion
+(input window +180min in get_tick_history, symmetric with broker_epoch_to_utc
+output conversion), plus targeted offline regression tests
+(tests/unit/test_mt5_tick_boundary_bug188.py) and a sanitized certification
+evidence artifact (artifacts/forensics/mt5_tick_certification.json - no
+market-data dumps, no credentials).
+Scope: src/nexus_scalp/adapters/mt5/mt5_adapter.py (get_tick_history input
+boundary ONLY), tests/unit/test_mt5_tick_boundary_bug188.py (new),
+artifacts/forensics/mt5_tick_certification.json (new, sanitized), agents/*
+registries. NOT touched: research engine semantics (event_source/
+streaming_replay/forward_test), provenance schema, walk-forward, backtest,
+strategy core, risk engine, provider gate, installer, UI.
+Why: user certification brief 2026-09-01 (live probe A-F checks; live/stub
+parity; smallest boundary fix; no scope creep).
+Contracts touched: MT5_TICK_HISTORY_INPUT_TIMEBASE v2 (input boundary now
+broker-timebase-shifted, symmetric with output conversion). NOT touched:
+MT5_TICK_DATASET v1 cache identity/fingerprint semantics, HistoricalEventSource.
+Risk: LOW (single function input-boundary normalization; offline-tested;
+parity with the already-proven history-deal window convention).
+Status: COMPLETE
+
