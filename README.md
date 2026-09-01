@@ -52,6 +52,32 @@ Two ways:
 
 2. **Developers — run from source (see below).**
 
+3. **PowerShell one-line install — the source bootstrap installer (no Python, no Git, no admin).**
+
+   Downloads and provisions everything user-scoped (Python via uv, Git if missing,
+   the engine source from GitHub, a managed venv, dependencies, the `nexus` command
+   on PATH) with safe-update, repair, recovery and a machine-readable stage protocol:
+
+   ```powershell
+   iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install.ps1)
+   ```
+
+   or download and run with options:
+
+   ```powershell
+   irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install.ps1 -OutFile install.ps1
+   .\install.ps1                        # full install (no admin)
+   .\install.ps1 -Repair                # repair runtime without touching user data
+   .\install.ps1 -DryRun                # show the plan as JSON, mutate nothing
+   .\install.ps1 -Manifest              # list the installer's 12 stages (JSON)
+   .\install.ps1 -Commit <sha>          # reproducible pin (Commit > Tag > Branch)
+   ```
+
+   Installs under `%LOCALAPPDATA%\Nexus` (override with `-NexusHome`); user config
+   in `%LOCALAPPDATA%\Nexus\config` always survives reinstall/updates. Full parameter
+   reference: [`docs/INSTALL_WINDOWS.md`](docs/INSTALL_WINDOWS.md) · architecture:
+   [`docs/INSTALLER_ARCHITECTURE.md`](docs/INSTALLER_ARCHITECTURE.md).
+
 Release details: [`docs/RELEASE.md`](docs/RELEASE.md) · build pipeline:
 `.github/workflows/release.yml` · build scripts: `scripts/build/`.
 
