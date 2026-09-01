@@ -1,0 +1,81 @@
+{
+  "audit": "crash-safety-audit",
+  "generated_utc": "2026-09-01T05:30:00Z",
+  "head_at_generation": "d065e13",
+  "verdict": "HARDENED_WITH_GAPS",
+  "scope": {
+    "files_scanned_by_static_check": 359,
+    "phase0_findings_total": 1868,
+    "patterns": {
+      "except_exception_generic": 1344,
+      "bare_except": 0,
+      "base_exception": 0,
+      "create_task_sites": 4,
+      "thread_spawns": 8,
+      "check_false": 15,
+      "while_true": 10,
+      "timeout_none": 0
+    }
+  },
+  "boundary_assessments": [
+    {"subsystem": "startup", "score": "GREEN", "evidence": ["launcher doctor FAIL->exit1", "_preflight_or_raise panel", "MT5_CONNECT failed->shutdown", "engine runtime launch test mandatory (BUG-105 gate)"]},
+    {"subsystem": "config", "score": "GREEN", "evidence": ["runtime store validate_field", "hot-reload reject keeps old snapshot", "INV-010 telegram route"]},
+    {"subsystem": "DI", "score": "YELLOW", "evidence": ["no generic DI container; construction-order bugs covered by init-order tests (BUG-105/130)"]},
+    {"subsystem": "database", "score": "GREEN", "evidence": ["audit worker batch-failure log + task_done drain", "BUG-142 exc_info read helpers", "transactional migrator restores bytes"]},
+    {"subsystem": "filesystem", "score": "YELLOW", "evidence": ["BUG-149/156 workspace anchoring", "no disk-full injection test"]},
+    {"subsystem": "market_data", "score": "GREEN", "evidence": ["get_last_tick raises (no fake ticks)", "G29 stalled-stream resubscribe", "watchdog reconnect"]},
+    {"subsystem": "candles", "score": "GREEN", "evidence": ["reseed REPLACE+ALIGN", "duplicate suppression BUG-169"]},
+    {"subsystem": "features", "score": "GREEN", "evidence": ["to_tensor_input width-raise", "NaN/Inf sanitize+clip logged"]},
+    {"subsystem": "contract_50d", "score": "GREEN", "evidence": ["_validate_50d_tensor double gate", "width!=50 RuntimeError"]},
+    {"subsystem": "contract_70d", "score": "GREEN", "evidence": ["validate_70d_vector dim/finite/bounds/hash raises", "liquidity INVALID -> refuse (no fabricated vector)"]},
+    {"subsystem": "tensor", "score": "GREEN", "evidence": ["BUG-175 cross-schema regression pins real RuntimeError", "never pre-resize"]},
+    {"subsystem": "model_load", "score": "GREEN", "evidence": ["BUG-141 width-contract writer guard", "manifest hash + declared-scaler hard fail"]},
+    {"subsystem": "model_inference", "score": "GREEN", "evidence": ["in-trade failure isolated with exc_info, probs=None, stops continue", "freshness gate blocks stale decisions"]},
+    {"subsystem": "gpu_cpu", "score": "YELLOW", "evidence": ["device pick tested", "no OOM/driver injection test"]},
+    {"subsystem": "regime", "score": "GREEN", "evidence": ["classifier suites", "UNKNOWN retained, never invented"]},
+    {"subsystem": "liquidity", "score": "GREEN", "evidence": ["LIQUIDITY_RUNTIME v2 status matrix", "FEATURE_DISABLED vs UNAVAILABLE distinction"]},
+    {"subsystem": "strategy", "score": "GREEN", "evidence": ["0 except-Exception in policy.py", "NO_TRADE default on any gap"]},
+    {"subsystem": "risk", "score": "GREEN", "evidence": ["INVALID_* fail-closed reason codes", "clamp fallback bounded + logged", "broker-native verification provenance"]},
+    {"subsystem": "execution", "score": "GREEN", "evidence": ["ambiguous-fill broker-truth probe", "pending fingerprint idempotency", "SAFE_MODE after 3 rejections"]},
+    {"subsystem": "news", "score": "GREEN", "evidence": ["per-source backoff health", "worker FAILURE exc_info"]},
+    {"subsystem": "workers", "score": "GREEN", "evidence": ["telegram crash capture + heartbeat", "audit batch drain", "candle/shadow70 backpressure telemetry"]},
+    {"subsystem": "async", "score": "GREEN", "evidence": ["WORKER_KICK timeout detach", "tracked _retrain_task + web run_loop task", "gather(return_exceptions=False)"]},
+    {"subsystem": "web_api", "score": "GREEN", "evidence": ["web/errors.py safe envelope + request_id", "middleware 500 sanitize", "log_web_error traceback"]},
+    {"subsystem": "sse", "score": "GREEN", "evidence": ["BUG-110 serialization error frame + counters", "stream survives client failures"]},
+    {"subsystem": "cli", "score": "GREEN", "evidence": ["exit-code contract suites", "BUG-173 FAILED_SAFE exit 1 + honest panel"]},
+    {"subsystem": "diagnostics", "score": "GREEN", "evidence": ["infrastructure failure forces status=error", "CHECK-RAISED UNKNOWN row never PASS"]},
+    {"subsystem": "release", "score": "GREEN", "evidence": ["4-layout verify matrix + tamper probe (BUG-178 restore)", "BUG-174 identity tripwire"]},
+    {"subsystem": "updater", "score": "GREEN", "evidence": ["state machine + ROLLBACK_REQUIRED crash recovery", "BUG-171 resume semantics probes", "BUG-170 atomic pid claim + grace window"]},
+    {"subsystem": "shutdown", "score": "GREEN", "evidence": ["ordered guarded teardown", "audit close drains queue", "cleanup never masks primary error"]}
+  ],
+  "failure_injections_executed": [
+    {"probe": "BUG-175 fabricated-metrics", "method": "direct ValidationFactory validate with probabilities=None vs LocalModelRuntime real probs", "result": "REPRODUCED then fixed by 18057c3 regression net; fabricated oos=0.0 REJECTED vs real oos=0.3829 metrics on cand_05d5e65879bc5748"},
+    {"probe": "policy NameError (unbound prob_* in _evaluate_predictive_limit)", "method": "direct call probe + mypy name-defined check", "result": "REPRODUCED (NameError) -> quarantined as coder-quarantine stash 2949560, claimed+fixed same day (mypy clean at 01:00)"}
+  ],
+  "static_check": {
+    "tool": "scripts/ci/anti_crash_static.py",
+    "violations": 0,
+    "warnings": 604,
+    "report_file": "artifacts/forensics/anti_crash_static_report.json",
+    "warning_breakdown": {"HANDLER_NO_TRACE": 594, "SPAWN_NO_DONE_CALLBACK": 8, "CHECK_FALSE_DISCARDED": 2},
+    "allowlist": {"migration_pass_prefixes": ["audit_repository.py", "strategies/factory/store.py"], "inline_marker": "anti-crash: allow"}
+  },
+  "regression_nets": [
+    "tests/unit/test_bug175_model_validate_probs.py (6)",
+    "tests/unit/test_bug176_schema_flag.py (5)",
+    "tests/unit/test_user_hunt_bug170_171.py (6)",
+    "tests/unit/test_bug162_forensic_cli_gate.py",
+    "tests/unit/test_model_artifact_contract_bug141.py",
+    "tests/unit/test_missing_outcome_backfill_bug174.py",
+    "tests/unit/test_live_reactivity_bug169.py",
+    "tests/unit/test_release_system.py (27)"
+  ],
+  "residual_gaps": [
+    {"id": "GAP-1", "desc": "~594 handlers log without traceback (majority reviewed-EXPECTED best-effort/migration contexts)", "priority": "P2", "action": "triage hot-path files first, add exc_info"},
+    {"id": "GAP-2", "desc": "8 thread spawns rely on in-loop capture, no central done-callback aggregation", "priority": "P3", "action": "optional watchdog aggregation"},
+    {"id": "GAP-3", "desc": "BUG-164 regression does not pin 'Dataset not found' panel text", "priority": "P2", "action": "pin panel text"},
+    {"id": "GAP-4", "desc": "model-replay prediction error inside payload with exit 0 (misleading success)", "priority": "P2", "action": "BUG-175 family follow-up"},
+    {"id": "GAP-5", "desc": "no GPU OOM/driver or disk-full injection tests", "priority": "P3", "action": "add boundary probes"}
+  ],
+  "handoff_notes": "Code-slice hardening (sections 5-7 of the master brief) was NOT executed by this pass: the live swarm (CHG-0032-A1 decomposition, BUG-175/176/177/178/179 owners) held exclusive in-flight ownership of every target file during the window; racing them would have violated the multi-agent git contract. This pass delivered the conflict-free layer: real probes that fed two confirmed bugs to their owners, the static anti-crash check (section 48), and the two required documents + this audit artifact."
+}
