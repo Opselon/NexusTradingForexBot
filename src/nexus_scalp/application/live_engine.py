@@ -310,9 +310,14 @@ class LiveEngine:
         rec: dict[str, Any] = {f"feat_{i}": float(base[i]) for i in range(len(base))}
 
         if record_dim >= 60:
-            # News 10D (indices 50..59): canonical projection, cache-only
-            # read (INV-001). Absent context is the documented DISABLED
-            # projection (0.0 x10), never a fabrication of live data.
+            # News 10D (indices 50..59): CANONICAL projection, cache-only
+            # read (INV-001). BUG-190: the raw CurrentNewsContext.model_dump()
+            # uses different key names than the canonical training schema
+            # (active_event_count / bullish_score / bearish_score / state /
+            # missing novelty) - the canonical mapping (vectorize_news_context
+            # -> build_news_10) is the single projection, matching inference.
+            # Absent context is the documented DISABLED projection (0.0 x10),
+            # never a fabrication of live data.
             news10: list[float]
             try:
                 news_ctx: Any = None
@@ -322,18 +327,15 @@ class LiveEngine:
                 ):
                     try:
                         news_ctx = self.news_engine.current_context()
-                        if hasattr(news_ctx, "model_dump"):
-                            news_ctx = news_ctx.model_dump()
                     except Exception:
                         news_ctx = None
                 if news_ctx is None:
                     news10 = [0.0] * 10
                 else:
-                    from nexus_scalp.features.features70 import news_10d_from_context
+                    from nexus_scalp.governance.alignment import vectorize_news_context
+                    from nexus_scalp.shadow.shadow70.news_provider import build_news_10
 
-                    news10 = news_10d_from_context(
-                        news_ctx if isinstance(news_ctx, dict) else dict(news_ctx)
-                    )
+                    news10, _ = build_news_10(vectorize_news_context(news_ctx))
             except Exception as news_err:  # isolated; refuse > fabricate
                 logger.warning("[ONLINE_TRAIN] event=NEWS_BLOCK_UNAVAILABLE error=%s", news_err)
                 news10 = [0.0] * 10
@@ -4715,10 +4717,19 @@ class LiveEngine:
                 "assembly_ms": 0.0,
             }
 
-        # News 10D (indices 50..59): same canonical projection as training.
+        # News 10D (indices 50..59): CANONICAL projection of the live context.
+        # BUG-190 (fidelity audit): a raw CurrentNewsContext.model_dump() has
+        # DIFFERENT key names than the canonical training-frame schema
+        # (active_event_count vs active_high_impact_events, bullish_score/
+        # bearish_score vs bullish/bearish_pressure, state-as-string vs
+        # news_state encoding, novelty absent) - feeding it straight into
+        # news_10d_from_context zeroes/loses 4 of 10 slots. The canonical
+        # named mapping (vectorize_news_context -> build_news_10, the same
+        # mapping shadow70 and the debug feature matrix already use) is the
+        # single projection for live inference.
         news10: list[float]
         try:
-            from nexus_scalp.features.features70 import news_10d_from_context
+            from nexus_scalp.shadow.shadow70.news_provider import build_news_10
 
             news_ctx = None
             if (
@@ -4727,16 +4738,14 @@ class LiveEngine:
             ):
                 try:
                     news_ctx = self.news_engine.current_context()
-                    if hasattr(news_ctx, "model_dump"):
-                        news_ctx = news_ctx.model_dump()
                 except Exception:
                     news_ctx = None
             if news_ctx is None:
                 news10 = [0.0] * 10
             else:
-                if not isinstance(news_ctx, dict):
-                    news_ctx = dict(news_ctx) if hasattr(news_ctx, "__dict__") else {}
-                news10 = news_10d_from_context(news_ctx)
+                from nexus_scalp.governance.alignment import vectorize_news_context
+
+                news10, _ = build_news_10(vectorize_news_context(news_ctx))
         except Exception:
             news10 = [0.0] * 10
         _t_news = _time.perf_counter()
