@@ -259,6 +259,30 @@ class LiveEngine:
         """Ordered feat_* columns for the effective contract."""
         return tuple(f"feat_{i}" for i in range(self.effective_feature_dim))
 
+    def _retrain_record_dim(self) -> int:
+        """BUG-185: contract width for rolling-retrain buffer records.
+
+        The buffer is consumed ONLY by the online fine-tune path, whose
+        trainer is rebound to the LOADED bundle's contract (BUG-182B).
+        Records must therefore be built at the bundle's width — the class
+        bootstrap (FEATURE_DIM) is only correct while the bundle is None
+        or matches it. Never raises; falls back to the class contract so
+        pre-bundle construction phases keep their existing behavior.
+        """
+        try:
+            with self._bundle_lock:
+                b = self._bundle
+            if b is not None:
+                d = b.scaler.dimension() if hasattr(b.scaler, "dimension") else None
+                if isinstance(d, int) and d > 0:
+                    return d
+                nf = int(getattr(b.model, "num_features", 0) or 0)
+                if nf > 0:
+                    return nf
+        except Exception:
+            pass
+        return int(self.__class__.FEATURE_DIM)
+
     def __init__(
         self,
         config: AppConfig,
@@ -2923,11 +2947,13 @@ class LiveEngine:
                 sd = sweep_result.to_dict()
                 logger.info(
                     "[EXPERIENCE] ORPHAN_RECOVERY_SWEEP complete scanned=%s recovered=%s "
-                    "skipped_no_dispatch=%s skipped_still_live=%s",
+                    "unknown_provenance=%s still_live=%s excluded=%s reconciled=%s",
                     sd.get("scanned", 0),
                     sd.get("recovered", 0),
-                    sd.get("skipped_no_dispatch", 0),
+                    sd.get("unknown_provenance", 0),
                     sd.get("skipped_still_live", 0),
+                    sd.get("excluded_by_filter", 0),
+                    sd.get("reconciled", False),
                 )
             except Exception as sweep_err:
                 logger.error(
@@ -2986,7 +3012,13 @@ class LiveEngine:
                 )
                 fv = self.feature_engine.compute_from_bars(window, synthetic_tick)
                 x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="cold_start_warmup")
-                record = {f"feat_{idx}": float(x50[idx]) for idx in range(self.FEATURE_DIM)}
+                # BUG-185: the retrain buffer must carry the LOADED bundle's
+                # contract width, not the class bootstrap - a 70D champion
+                # otherwise gets a permanently 50D buffer and every online
+                # fine-tune is silently width-skipped (BUG-169 guard).
+                record = {
+                    f"feat_{idx}": float(x50[idx]) for idx in range(self._retrain_record_dim())
+                }
                 record.update(
                     close=b.close,
                     high=b.high,
@@ -3070,7 +3102,9 @@ class LiveEngine:
             )
             fv = self.feature_engine.compute_from_bars(window, synthetic_tick)
             x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="broker_resync")
-            record = {f"feat_{idx}": float(x50[idx]) for idx in range(self.FEATURE_DIM)}
+            # BUG-185: width follows the loaded bundle contract (see
+            # _retrain_record_dim) - same rationale as cold-start warmup.
+            record = {f"feat_{idx}": float(x50[idx]) for idx in range(self._retrain_record_dim())}
             record.update(
                 close=last.close,
                 high=last.high,
@@ -4340,7 +4374,11 @@ class LiveEngine:
         # (BUG-139: prior nesting inside the mslie_engine conditional left `rec`
         # unbound when mslie_engine was None -> BAR_DETECT_FAILED).
         x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
-        rec = {f"feat_{i}": float(x50[i]) for i in range(self.FEATURE_DIM)}
+        # BUG-185: the canonical per-bar retrain record must carry the
+        # LOADED bundle's contract width (70D champion => feat_0..feat_69),
+        # not the class 50D bootstrap; otherwise the BUG-169 width guard
+        # silently skips every online fine-tune while a 70D model serves.
+        rec = {f"feat_{i}": float(x50[i]) for i in range(self._retrain_record_dim())}
         rec.update(
             close=last_bar.close,
             high=last_bar.high,
@@ -4439,6 +4477,10 @@ class LiveEngine:
         # Gate: fine-tune only when the trainer's bound width matches the
         # actual record width; the __init__ rebind covers the 70D case
         # via FEATURE_COLS on the effective contract.
+        # BUG-185: a record width that disagrees with the rebound trainer
+        # width is a CONTRACT SPLIT (buffer built 50D vs trainer bound 70D),
+        # not a routine case - surface it loudly once per hour instead of
+        # silently starving the 70D online-learning loop.
         if len(rec) - 6 != self.trainer.num_features or getattr(
             self, "_online_train_disabled", False
         ):
@@ -4447,9 +4489,13 @@ class LiveEngine:
                 or time.time() - self._online_train_width_warn_at >= 3600.0
             ):
                 self._online_train_width_warn_at = time.time()
-                logger.warning(
-                    "[ONLINE_TRAIN] SKIPPED width-contract mismatch "
-                    "record_width=%s trainer_width=%s (BUG-169 guard)",
+                # BUG-185: CRITICAL, not WARNING - this split starves the
+                # online-learning loop for the loaded contract entirely.
+                logger.critical(
+                    "[ONLINE_TRAIN] SKIPPED width-contract split "
+                    "record_width=%s trainer_width=%s (BUG-169 guard, BUG-185 "
+                    "record-contract violation - buffer builder did not follow "
+                    "the loaded bundle contract)",
                     len(rec) - 6,
                     self.trainer.num_features,
                 )

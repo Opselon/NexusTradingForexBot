@@ -6804,4 +6804,29 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   bool/str elements are CRITICAL). Owner: Nexus-Main to route in the next repair window.
 - Severity: P2 | Status: OPEN | Found-by: Nexus-Reviewer + Nexus-Main (probe)
 
-- ADJUDICATION (2026-09-01, QA + Researcher + Reviewer converged): the reviewer's ORIGINAL 'check_feature_contract_vector baseline TypeError' finding was RETRACTED with evidence — it was an executor call-contract artifact (zero-arg call of the only check_* with a REQUIRED parameter), not a code defect; INFO residue: engine.py's uniform zero-arg iteration assumption does not hold for this one check (deserves a comment in a future touch). BUG-184 stands as a DIFFERENT, independently confirmed defect (duck-typing hole). ±3-bound question CLOSED by QA probe: [±6.0]→CRITICAL, [3.001]→CRITICAL, [±3.0]→PASS — the OOB path fires exactly per its evidence text; no schema-owner question needed.
+- ADJUDICATION (2026-09-01, QA + Researcher + Reviewer converged): the reviewer's ORIGINAL 'check_feature_contract_vector baseline TypeError' finding was RETRACTED with evidence — it was an executor call-contract artifact (zero-arg call of the only check_* with a REQUIRED parameter), not a code defect; INFO residue: engine.py's uniform zero-arg iteration assumption does not hold for this one check (deserves a comment in a future touch). BUG-184 stands as a DIFFERENT, independently confirmed defect (duck-typing hole). ±3-bound question CLOSED by QA probe: [±6.0]→CRITICAL, [3.001]→CRITICAL, [±3.0]→PASS — the OOB path fires exactly per its evidence text; no schema-owner question needed.## BUG-185 - rolling retrain buffer is class-contract-locked to 50D: every online fine-tune silently skipped while a 70D champion serves (2026-09-01 Hermes-Main)
+- SYMPTOM (2026-09-01 warning log, 16,598 entries): 154x "Async retrain failed
+  mat1 (Nx50) vs 70x128" from the 09:21 process (pre-BUG-182B code), then ZERO
+  retrain attempts from the 11:22 process — ASYNC RETRAIN START absent entirely
+  while buffer_size had already passed 762 in the old process.
+- ROOT CAUSE (proven by code-path reconstruction, three independent sites):
+  the canonical per-bar record is built from the CLASS bootstrap contract —
+  live_engine.py:4345 `rec = {f"feat_{i}" ... for i in range(self.FEATURE_DIM)}`
+  (FEATURE_DIM = active_dimension() = scalp_v1/50D, features/schema.py:95) —
+  while the BUG-182B init rebind (live_engine.py:1056-1074) correctly rebinds
+  the TRAINER to the loaded 70D bundle. Result: the BUG-169 width guard at
+  :4442 (len(rec)-6=50 != trainer.num_features=70) skips EVERY retrain
+  silently — the throttled skip-warning fires at most 1x/hour, so no visible
+  error. The 50D records can never train the 70D champion and the 70D online
+  learning loop is DEAD, not crashing (worse: silent).
+- WHY THE OLD CRASH: the pre-11:22 process ran pre-BUG-182B code (fix commit
+  01ba1b0 10:18:52 > boot 09:21) where trainer stayed 50D-bound and the guard
+  PASSED (50==50) feeding 50D rows into the 70-input head => matmul crash per
+  bar + WinError 5 scaler-save storm (engine held the artifact). The restart
+  converted a LOUD crash into a SILENT skip — fix incomplete, not wrong.
+- FIX (this commit): make the record builders emit the EFFECTIVE (loaded
+  bundle) contract width — rec builders read effective_feature_dim, and the
+  width guard becomes a loud invariant check (record width must equal trainer
+  width, else CRITICAL log once). Records built before the bundle loads keep
+  the class contract; buffer is width-homogeneous by construction.
+- Regression: tests/unit/test_bug185_record_contract_alignment.py
