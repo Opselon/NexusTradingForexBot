@@ -111,6 +111,9 @@ def load_model_artifacts(model_path: str | Path) -> ModelArtifacts:
 
     The model input width comes from the checkpoint's own declared tensor
     width (BUG-125 convention) — never from a filename or class default.
+
+    Weights load STRICT (ScalpNet(state_dict) → eval) so a corrupted or
+    foreign checkpoint fails the session instead of predicting garbage.
     """
     import torch
 
@@ -130,8 +133,17 @@ def load_model_artifacts(model_path: str | Path) -> ModelArtifacts:
     if w is None or not hasattr(w, "shape") or len(w.shape) != 2:
         raise ValueError(f"model artifact has no input_projection.weight: {p}")
     num_features = int(w.shape[1])
-    model = ScalpNet(num_features=num_features, num_classes=4)
-    model.load_state_dict(probe)
+    head_dim = int(w.shape[0])
+    try:
+        model = ScalpNet(
+            num_features=num_features, num_classes=4, hidden_dim=head_dim
+        )
+        model.load_state_dict(probe)  # strict: any mismatch = hard failure
+    except (RuntimeError, ValueError) as e:
+        raise ValueError(
+            f"model artifact failed strict ScalpNet load (corrupted/foreign "
+            f"checkpoint): {p}: {e}"
+        ) from e
     model.eval()
     return ModelArtifacts(
         model_path=p,
