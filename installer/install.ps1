@@ -680,6 +680,34 @@ function Install-Uv {
             $installerOutput += "--- uv installer source: GitHub releases ---"
             $installerOutput += @($ghOut | ForEach-Object { "$_" })
         }
+        # Rung 3: salvage an existing uv.exe. When the installers cannot run
+        # at all (network fully blocked) but a working uv already exists --
+        # on PATH, or at ~/.local/bin (the astral default when UV_INSTALL_DIR
+        # was ignored) -- copy it into the managed location so the
+        # managed-first invariant holds. Verify the salvaged binary actually
+        # runs before trusting it.
+        if (-not (Test-Path $managedUv)) {
+            $existingUv = $null
+            $uvOnPath = Get-Command uv -CommandType Application -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($uvOnPath -and $uvOnPath.Source -and (Test-Path $uvOnPath.Source)) {
+                $existingUv = $uvOnPath.Source
+            }
+            if (-not $existingUv) {
+                $defaultUv = Join-Path $env:USERPROFILE ".local\bin\uv.exe"
+                if (Test-Path $defaultUv) { $existingUv = $defaultUv }
+            }
+            if ($existingUv) {
+                Write-Info "Salvaging existing uv from $existingUv"
+                try {
+                    Copy-Item $existingUv $managedUv -Force
+                    $null = & $managedUv --version
+                } catch {
+                    Write-Info "Existing uv at $existingUv could not be salvaged: $_"
+                    Remove-Item $managedUv -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
 
         $ErrorActionPreference = $prevEAP
 
@@ -901,6 +929,45 @@ function Set-GitBashEnvVar {
     }
     Write-WarnMsg "Could not locate bash.exe - Nexus shell integration may need NEXUS_GIT_BASH_PATH set manually"
 }
+function Test-MandatoryAslrEnabled {
+    # Return true only when Windows reports system-wide ForceRelocateImages=ON.
+    # Mandatory ASLR lets bash.exe start while every msys-2.0.dll child fails
+    # during fork/spawn - reinstalling Git cannot fix it; only a per-program
+    # Set-ProcessMitigation exception (or disabling the policy) can.
+    try {
+        $cmd = Get-Command Get-ProcessMitigation -ErrorAction SilentlyContinue
+        if (-not $cmd) { return $false }
+        $mitigations = & $cmd -System
+        $value = $mitigations.Aslr.ForceRelocateImages
+        return ($null -ne $value -and $value.ToString().ToUpperInvariant() -eq "ON")
+    } catch {
+        return $false
+    }
+}
+
+function New-GitBashAslrFailureReason {
+    # Actionable, copy-pasteable remediation for the Mandatory ASLR failure class.
+    param([Parameter(Mandatory = $true)][string]$BashPath)
+
+    $binDir = Split-Path -Path $BashPath -Parent
+    $gitRoot = if ((Split-Path -Path $binDir -Leaf) -ine "bin") {
+        Split-Path -Path $binDir -Parent
+    } else {
+        $usr = Split-Path -Path $binDir -Parent
+        if ((Split-Path -Path $usr -Leaf) -ieq "usr") { Split-Path -Path $usr -Parent } else { $usr }
+    }
+    $escapedRoot = $gitRoot -replace "'", "''"
+    return @(
+        "Git Bash at $BashPath cannot launch required MSYS child processes because"
+        "Windows Mandatory ASLR (ForceRelocateImages) is enabled system-wide."
+        "Reinstalling Git will not change this policy. Open PowerShell as Administrator and run:"
+        "`$gitRoot = '$escapedRoot'"
+        'Get-Item "$gitRoot\bin\bash.exe", "$gitRoot\usr\bin\*.exe" -ErrorAction SilentlyContinue | ForEach-Object { Set-ProcessMitigation -Name $_.FullName -Disable ForceRelocateImages }'
+        "Then re-run the Nexus installer. If the override is blocked, ask your Windows"
+        "administrator to allow this per-program exception."
+    ) -join [Environment]::NewLine
+}
+
 
 function Install-Git {
     # Priority: existing git on PATH -> managed PortableGit (user-scoped).
@@ -914,14 +981,20 @@ function Install-Git {
             Write-Success "Git Bash can launch MSYS programs"
             return $true
         }
-        Write-WarnMsg "System Git Bash probe failed; trying a Nexus-managed PortableGit install instead..."
+        if ($Script:GitBashPath -and (Test-MandatoryAslrEnabled)) {
+            $aslrReason = New-GitBashAslrFailureReason -BashPath $Script:GitBashPath
+            Write-ErrMsg $aslrReason
+            Write-Info "Falling back to a Nexus-managed PortableGit install (its bash probe is re-checked after install)..."
+        } else {
+            Write-WarnMsg "System Git Bash probe failed; trying a Nexus-managed PortableGit install instead..."
+        }
     }
 
     Write-Info "Downloading PortableGit to $NexusHome\git\ (no admin required)..."
     try {
         $arch = Get-WindowsArch
-        $gitTag = "v2.51.0.windows.1"
-        $gitVer = "2.51.0"
+        $gitTag = "v2.56.0.windows.1"
+        $gitVer = "2.56.0"
         if ($arch -eq "arm64") {
             $assetName = "PortableGit-$gitVer-arm64.7z.exe"
         } elseif ($arch -eq "x64") {
