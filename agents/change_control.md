@@ -1008,3 +1008,24 @@ Why: user steer 2026-09-01 (post-certification): deterministic recovery lifecycl
 Contracts: PROVIDER_HEALTH_GATE v1 extended (runtime authority semantics); SETTINGS_DB factory.* v2 semantics clarified (intent persisted, runtime transient). BUG-189 (UI/backend state contradiction) filed.
 Risk: LOW-MEDIUM (state reporting + recovery paths; no trading, no 70D, no rate-limit/circuit behavior changes).
 Status: IMPLEMENTING
+## CHG-0038 - Data-to-decision fidelity audit: tick->bar->70D->inference->policy->ledger (2026-09-01, Hermes-Main)
+
+Change: full fidelity audit from certified live ticks to simulated outcome, with a
+machine-readable tensor audit, deterministic causality probes, inference-parity
+measurement, policy parity, NO_TRADE first-gate attribution, DB reconciliation and a
+bounded counterfactual; one genuine defect found (BUG-190 live news-block key mismatch)
+with a minimal boundary fix + RED->GREEN regression test
+(tests/unit/test_fidelity_data_to_decision.py, 13 tests).
+Scope: src/nexus_scalp/application/live_engine.py (news projection call sites ONLY:
+_build_live_feature_vector + _build_retrain_record), tests/unit/test_fidelity_data_to_decision.py,
+artifacts/forensics/fidelity_audit_20260901.json, agents/* registries.
+NOT touched: policy.py, risk engine, regime classifier, event_source/streaming_replay/
+forward_test (CHG-0035 certified paths), provenance schema, walk-forward, backtest,
+provider gate, installer, observability (Agent-2), CLI/docs owners.
+Why: user fidelity-audit brief 2026-09-01 (find the FIRST divergence between real ticks
+and the engine's interpretation; fix only evidence-backed defects).
+Contracts touched: LIVE_NEWS_10D_PROJECTION v2 (engine now uses the canonical named
+projection). Risk: LOW (mapping parity fix; bit-identical outputs on the current
+smoke-grade artifact verified pre/post).
+Status: COMPLETE
+

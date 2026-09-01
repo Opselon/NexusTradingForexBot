@@ -6971,3 +6971,30 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - Fix (CHG-0039): the gate is the single RUNTIME authority for auto-disable; the settings DB persists USER INTENT only (deliberate: transient failures must NOT survive credential rotation or restart). factory_health_snapshot() accepts runtime_override; /api/factory/provider-health merges gate truth into the authoritative top-level fields; llm-config save reconfigures the process singleton even in web-only mode; provider-test reconfigures before the single probe so a rotated key is verifiable without pressing Enable first.
 - Regression: tests/unit/test_provider_lifecycle_hardening.py (18 tests: state ownership, rotation lifecycle, restart matrix A-E, probe boundedness, secret leakage).
 - Secrets: verified no key value in merged snapshot, gate snapshot, or logs.
+## BUG-190 - live 70D news block key mismatch: inference path reads raw CurrentNewsContext.model_dump() (4/10 slots wrong) (2026-09-01, Hermes-Main fidelity audit)
+
+- CLASS: train/live feature-key divergence inside the scalp_v3 news family (indices 50..59).
+- DISCOVERED BY: CHG-0038 data-to-decision fidelity audit (first live-capture tensor diff;
+  RED test tests/unit/test_fidelity_data_to_decision.py::test_engine_news_projection_must_match_canonical_projection).
+- MECHANISM: LiveEngine._build_live_feature_vector (70D branch) and the BUG-185
+  _build_retrain_record feed CurrentNewsContext.model_dump() directly into
+  features70.news_10d_from_context, which reads the TRAINING-frame keys. The live
+  CurrentNewsContext model uses DIFFERENT names: active_event_count (vs
+  active_high_impact_events), bullish_score/bearish_score (vs bullish_pressure/
+  bearish_pressure), state (vs news_state - and it serializes as a STRING, not the
+  0..5 encoding), novelty (absent). Result: live inference + online-retrain records
+  carry [0, 1, 1, 0, 0, conflict, 0, fresh, conf, 0] where the canonical projection
+  (governance.alignment.vectorize_news_context + shadow70.build_news_10, the mapping
+  ALREADY used by the shadow70 observation path and the debug feature matrix) yields
+  [count, 1, 1, bull, bear, conflict, novelty, fresh, conf, state_enc].
+- IMPACT: with the smoke-grade 70d_liquidity bundle (trained on an all-zero news
+  block; scaler std[50:60]=0.001) every nonzero live news value saturates to the
+  +5 clip, so the four wrong slots are numerically absorbed at THIS artifact - the
+  divergence is silent today but becomes decision-relevant the moment a
+  news-aware 70D bundle (trained with nonzero news) is promoted. Also poisons
+  online-retrain records (BUG-185 part3 builder) the same way.
+- FIX: route BOTH live-path news projections through the canonical mapping
+  (vectorize_news_context -> build_news_10) instead of raw model_dump +
+  news_10d_from_context; keep news_10d_from_context for training-frame dicts whose
+  keys are the canonical schema keys. Regression: RED->GREEN test pins the parity.
+
