@@ -31,6 +31,7 @@ import logging
 import pytest
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
 from nexus_scalp.experience.decision_evidence import (
     EVIDENCE_DISPATCH_TICKET,
     EVIDENCE_GATE_REJECTION,
@@ -40,7 +41,6 @@ from nexus_scalp.experience.decision_evidence import (
 )
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.lifecycle import DecisionLifecycle
-from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
 from nexus_scalp.research.dataset import (
     REASON_NOT_DISPATCHED,
     REASON_UNKNOWN_PROVENANCE,
