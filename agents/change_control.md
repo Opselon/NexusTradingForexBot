@@ -1171,3 +1171,51 @@ Why: user OSS-Grade adversarial QA brief 2026-09-02. Contracts touched: none new
 OBSERVABILITY_LOG_CONTRACT). Risk: LOW (test-only surface + two-line type guards on
 malformed-input paths; valid-input behavior byte-identical).
 Status: IMPLEMENTING
+
+CHANGE-ID: CHG-0043-P2 (addendum, part 2 scope detail)
+Agent: Hermes-Main
+Task: TASK-REPLAY-ON-CHART
+Scope additions (2026-09-02):
+  - research/replay_session.py: ReplaySession controller (REPLAY_SESSION v1):
+    ReplayContract identity (fingerprinted, deterministic replay_id),
+    authoritative event-clock, play/pause/step_tick/step_bar/reset/seek,
+    checkpoints every N bars (full state snapshot), bounded decision-trace
+    ring with per-decision evidence (probs, confidence, action, regime,
+    gates, candidate geometry), regime_enabled flag (default False preserves
+    legacy byte-parity; True wires the PRODUCTION MarketRegimeClassifier fed
+    ONLY by replay events - regime state then flows to FrozenPolicyRunner
+    (guardian gate live) and RiskEngine (replay regime state)).
+  - web/replay_routes.py: REPLAY_API v1 (session/control/state/report).
+  - Web/: replay panel (KNOWN/UNKNOWN chart semantics, decision drill-down).
+  - tests: mutation-invariance A-F, seek/checkpoint equivalence, clock
+    contract, E2E reconciliation.
+NOT touched: policy/regime/execution/live_engine internals (identity and
+  semantics consumed as-is per brief section 10: replay reveals truth, does
+  not modify it).
+Status: IMPLEMENTING
+
+
+## CHG-0043 - Versioned read-only API platform /api/v1 (TASK-API-PLATFORM) (2026-09-02, Hermes-Main)
+
+Change: NEW subsystem src/nexus_scalp/api/v1/* exposing ~40 real, read-only API
+capabilities over EXISTING backends (audit repository, incident store, research
+store/registry, shadow stores, feature schema contract, release metadata, config
+pydantic models, live engine observability attributes) mounted at /api/v1 via a
+single include_router in web/server.py create_app. Standardized error envelope
+(reuses web/errors.py safe_error_payload contract + X-Request-ID), one pagination
+model (page/page_size, bounded), UTC ISO-8601 timestamps, capabilities discovery,
+request-id continuation. Mutation surface deliberately ZERO (no trading actions).
+Developer tooling: nexus api CLI group (consumes the same HTTP contracts via
+TestClient-embedded mode), scripts/dev/api_smoke.py, api_contract_check.py,
+api_snapshot.py, api_diff.py. Tests: contract suite (happy/validation/empty/
+not-found/dependency-unavailable/pagination/filters), bounded property-style
+pagination tests, security checks (no secret keys, no stack traces), OpenAPI
+quality gate. docs/API_PLATFORM.md developer reference.
+Why: user API-platform brief 2026-09-02 (40+ real capabilities; no duplicates of
+existing 257 routes; truthful data only - NO fake fallbacks).
+Scope: NEW files only + 1-line include_router in web/server.py + pyproject/CI
+additive rows. NOT touched: strategy, risk policy, execution internals, order
+manager, live_engine hot path, model artifacts, 70D contract, installer, settings.
+Contracts touched: API_PLATFORM v1 (new). Risk: LOW (read-only, additive, new
+prefix; existing 257 routes and UI untouched).
+Status: IN_PROGRESS
