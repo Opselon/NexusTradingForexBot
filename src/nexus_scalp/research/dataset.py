@@ -37,6 +37,10 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus_scalp.experience.decision_evidence import (
+    EVIDENCE_GATE_REJECTION,
+    resolve_decision_evidence,
+)
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.lifecycle import (
     DEGRADED_TERMINAL_STATES,
@@ -60,6 +64,7 @@ logger = get_logger("nexus_scalp.research.dataset")
 # and FILLED-but-result-lost is FILLED_OUTCOME_MISSING (recovery queue).
 # ---------------------------------------------------------------------------
 REASON_MISSING_OUTCOME = "MISSING_OUTCOME"
+REASON_UNKNOWN_PROVENANCE = "UNKNOWN_PROVENANCE"  # BUG-185: no deterministic evidence
 REASON_NOT_DISPATCHED = "NOT_DISPATCHED"
 REASON_CANCELED_UNFILLED = "CANCELED_UNFILLED"
 REASON_EXPIRED_UNFILLED = "EXPIRED_UNFILLED"
@@ -142,7 +147,7 @@ TERMINAL_DETAIL: dict[DecisionLifecycle, str] = {
 #: with every dataset. A consumer can always answer "what entered research
 #: and why was everything else excluded" without reading code.
 ELIGIBILITY_RULES: dict[str, str] = {
-    "contract_version": "p0e-bug140-1",
+    "contract_version": "p0e-bug185-1",
     "EXECUTED_CLOSED": "research eligible (realized R enters expectancy)",
     "CANCELED_UNFILLED": "excluded (terminal non-trade; lifecycle evidence only)",
     "EXPIRED_UNFILLED": "excluded (terminal non-trade; lifecycle evidence only)",
@@ -152,6 +157,11 @@ ELIGIBILITY_RULES: dict[str, str] = {
     "NOT_DISPATCHED": "excluded (terminal non-trade; lifecycle evidence only)",
     "FILLED_OUTCOME_MISSING": "excluded pending recovery (recovery queue)",
     "MISSING_OUTCOME": "excluded (unresolved; recoverable finding)",
+    # BUG-185: unknown-provenance orphans carry NO deterministic evidence
+    # (no dispatch row, no gate signal). Nothing to recover honestly ->
+    # classified once as UNKNOWN_PROVENANCE, never fabricated as
+    # NOT_DISPATCHED, never re-logged per build.
+    "UNKNOWN_PROVENANCE": "excluded (no deterministic dispatch/gate evidence; honest unknown)",
     "ZERO_SUBSTITUTED": "excluded (UNKNOWN broker result may not pass as R=0)",
     "fabricated_r": "forbidden - non-trade decisions never receive an R value",
 }
@@ -173,6 +183,11 @@ class ResearchDatasetBuilder:
         self.ledger = ledger
         #: idempotency_key -> reconstruction_source (loaded once per audit/build)
         self._source_cache: dict[str, str] = {}
+        #: BUG-185 classify-once cache: idempotency_keys whose UNKNOWN_
+        #: PROVENANCE one-line classification was already logged in THIS
+        #: process. Prevents the permanent per-cycle (60s) re-spam of the
+        #: same historical unknown-provenance orphan rows on every build.
+        self._unknown_provenance_logged: set[str] = set()
 
     # ------------------------------------------------------------------
     # Provenance loading (bounded, one query per audit/build)
@@ -259,6 +274,32 @@ class ResearchDatasetBuilder:
     # Sample conversion + eligibility
     # ------------------------------------------------------------------
 
+    def _evidence_for(self, rec: ExperienceRecord):
+        """Canonical dispatch-provenance evidence for a ledger orphan.
+
+        BUG-185: opens its own bounded read connection to the SAME audit DB
+        the ledger/recovery sweep use (single DB path — proven identical) and
+        delegates to experience.decision_evidence.resolve_decision_evidence,
+        the ONE resolver shared with the recovery sweep (P0-M parity).
+        Returns None when the backend is not SQLite (no evidence possible).
+        """
+        repo = self.ledger.audit_repo
+        if not getattr(repo, "_is_sqlite", False):
+            return None
+        try:
+            conn = sqlite3.connect(repo._db_path, timeout=10.0)
+            try:
+                return resolve_decision_evidence(conn, rec.request_id)
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(
+                "[STRATEGY_RESEARCH] evidence resolution failed (treated as unknown)",
+                error=str(e),
+                trade_id=rec.experience_id,
+            )
+            return None
+
     def evaluate_sample(self, rec: ExperienceRecord) -> tuple[bool, str, str]:
         """Deterministic eligibility audit for one closed experience.
 
@@ -269,6 +310,12 @@ class ResearchDatasetBuilder:
         generic MISSING_OUTCOME. Terminal non-trades are ineligible for
         realized-R research (they are not trades) but are counted as explicit
         lifecycle evidence; FILLED_OUTCOME_MISSING enters the recovery queue.
+
+        BUG-185: an outcome-less record whose canonical evidence verdict is
+        GATE_REJECTION is NOT unknown — it is a proven pre-dispatch refusal
+        and reports NOT_DISPATCHED deterministically. A record with
+        NO_EVIDENCE reports UNKNOWN_PROVENANCE (honest unknown; never
+        fabricated into NOT_DISPATCHED and never re-logged per build).
         """
         # 1. Terminal lifecycle classification (outcome presence).
         state = lifecycle_from_outcome(
@@ -283,10 +330,21 @@ class ResearchDatasetBuilder:
             if state in DEGRADED_TERMINAL_STATES:
                 detail = "broker fill known, outcome result lost -> recovery queue"
             return False, reason, detail
-        if not rec.is_executed:
-            return False, REASON_MISSING_OUTCOME, "not executed (terminal state unknown)"
-        if not rec.is_closed:
-            return False, REASON_MISSING_OUTCOME, "no recorded outcome"
+        if not rec.is_executed or not rec.is_closed:
+            # No outcome row: consult the CANONICAL evidence resolver (the
+            # same one the recovery sweep uses — P0-M semantic parity).
+            ev = self._evidence_for(rec)
+            if ev is not None and ev.evidence == EVIDENCE_GATE_REJECTION:
+                return (
+                    False,
+                    REASON_NOT_DISPATCHED,
+                    f"pre-dispatch gate rejection ({ev.pre_dispatch_gate})",
+                )
+            if ev is not None and ev.evidence == "DISPATCH_TICKET":
+                # Dispatched but no outcome and no broker-terminal state the
+                # sweep could use yet: genuinely unresolved (recovery queue).
+                return False, REASON_MISSING_OUTCOME, "dispatched; outcome not yet resolved"
+            return False, REASON_UNKNOWN_PROVENANCE, "no dispatch/gate evidence (honest unknown)"
 
         # 2. Causality.
         if rec.outcome_timestamp is None or rec.outcome_timestamp < rec.decision_timestamp:
@@ -497,7 +555,27 @@ class ResearchDatasetBuilder:
         for rec in audit_all:
             ok, reason, detail = self.evaluate_sample(rec)
             if not ok:
-                if reason in _RECOVERABLE_REASONS:
+                if reason == REASON_UNKNOWN_PROVENANCE:
+                    # BUG-185 classify-once: honest unknown provenance is a
+                    # PERMANENT classification (no evidence can ever appear
+                    # retroactively for it beyond a recovery-sweep run), so it
+                    # is logged once per key per process and afterwards only
+                    # counted in the census. This kills the 240-lines-per-60s
+                    # DATASET_REJECTED spam without hiding anything: the
+                    # classification is durably recorded in the dataset
+                    # census (`unknown_provenance` counter + eligibility
+                    # rules v2 contract).
+                    if rec.idempotency_key not in self._unknown_provenance_logged:
+                        self._unknown_provenance_logged.add(rec.idempotency_key)
+                        logger.info(
+                            "[STRATEGY_RESEARCH] event=ORPHAN_CLASSIFIED_UNKNOWN",
+                            stage="dataset",
+                            trade_id=rec.experience_id,
+                            reason=reason,
+                            detail=detail[:120],
+                            recoverable=False,
+                        )
+                elif reason in _RECOVERABLE_REASONS:
                     logger.info(
                         "[STRATEGY_RESEARCH] event=DATASET_REJECTED",
                         stage="dataset",
@@ -532,6 +610,11 @@ class ResearchDatasetBuilder:
                     ),
                     "unresolved_missing_outcome": ds_audit["rejection_reasons"].get(
                         REASON_MISSING_OUTCOME, 0
+                    ),
+                    # BUG-185: honest unknown-provenance census travels with
+                    # the dataset (classified once, never re-spammed).
+                    "unknown_provenance": ds_audit["rejection_reasons"].get(
+                        REASON_UNKNOWN_PROVENANCE, 0
                     ),
                     "eligibility_rules": ELIGIBILITY_RULES,
                 }

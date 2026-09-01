@@ -43,6 +43,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus_scalp.experience.decision_evidence import (
+    EVIDENCE_GATE_REJECTION,
+    resolve_decision_evidence,
+)
 from nexus_scalp.experience.lifecycle import (
     RECOVERY_SOURCE_BROKER_HISTORY,
     DecisionLifecycle,
@@ -97,6 +101,7 @@ class RecoverySweepResult:
     expired_recovered: int = 0
     rejected_recovered: int = 0
     skipped_no_dispatch: int = 0
+    unknown_provenance: int = 0
     skipped_still_live: int = 0
     skipped_no_close_deals: int = 0
     skipped_causality: int = 0
@@ -113,12 +118,32 @@ class RecoverySweepResult:
             "expired_recovered": self.expired_recovered,
             "rejected_recovered": self.rejected_recovered,
             "skipped_no_dispatch": self.skipped_no_dispatch,
+            "unknown_provenance": self.unknown_provenance,
             "skipped_still_live": self.skipped_still_live,
             "skipped_no_close_deals": self.skipped_no_close_deals,
             "skipped_causality": self.skipped_causality,
             "skipped_ambiguous": self.skipped_ambiguous,
             "skipped_invalid": self.skipped_invalid,
         }
+        # BUG-185 observability contract: the summary must reconcile —
+        # scanned == recovered + unknown_provenance + still_live + excluded
+        # (excluded = every other skip bucket). Any drift is a bug, so expose
+        # the computed remainder explicitly.
+        excluded = (
+            self.skipped_no_dispatch
+            + self.skipped_no_close_deals
+            + self.skipped_causality
+            + self.skipped_ambiguous
+            + self.skipped_invalid
+        )
+        d["excluded_by_filter"] = excluded
+        d["reconciled"] = (
+            self.scanned
+            == self.recovered
+            + self.unknown_provenance
+            + self.skipped_still_live
+            + excluded
+        )
         d["rows"] = self.rows[:200]
         return d
 
@@ -154,6 +179,14 @@ class HistoricalOutcomeRecoverySweep:
         return conn
 
     def _missing_outcome_decisions(self) -> list[dict[str, Any]]:
+        """Orphan decisions enriched with the CANONICAL evidence verdict.
+
+        BUG-185: evidence classification is delegated to
+        ``experience.decision_evidence.resolve_decision_evidence`` — the single
+        resolver the dataset builder also uses — so the sweep's notion of
+        "gate-rejection proven / dispatch proven / unknown" can never drift
+        from the dataset builder's again.
+        """
         conn = self._connect()
         try:
             rows = conn.execute(
@@ -169,27 +202,12 @@ class HistoricalOutcomeRecoverySweep:
                 (self.max_decisions,),
             ).fetchall()
             out = [dict(r) for r in rows]
-        finally:
-            conn.close()
-        # BUG-174: attach pre-dispatch gate-rejection evidence. A decision whose
-        # audit_signals row landed in EXPERIENCE_INTELLIGENCE_GATE /
-        # TRADE_INTELLIGENCE_GATE was deterministically refused BEFORE any
-        # dispatch could exist, so "no dispatch row" IS the expected truth for
-        # it (not unknown provenance). The engine has emitted NOT_DISPATCHED
-        # for these live since BUG-169b; this covers historical rows.
-        conn = self._connect()
-        try:
+            # BUG-185: canonical evidence resolution (single source of truth).
             for dec in out:
-                row = conn.execute(
-                    """SELECT decision_stage FROM audit_signals
-                       WHERE request_id = ?
-                         AND decision_stage IN
-                             ('EXPERIENCE_INTELLIGENCE_GATE', 'TRADE_INTELLIGENCE_GATE')
-                       LIMIT 1""",
-                    (str(dec.get("request_id", "") or ""),),
-                ).fetchone()
-                if row is not None:
-                    dec["gate_rejection_stage"] = row["decision_stage"]
+                ev = resolve_decision_evidence(conn, str(dec.get("request_id", "") or ""))
+                dec["evidence"] = ev
+                if ev.evidence == EVIDENCE_GATE_REJECTION:
+                    dec["gate_rejection_stage"] = ev.pre_dispatch_gate
         finally:
             conn.close()
         return out
@@ -336,13 +354,12 @@ class HistoricalOutcomeRecoverySweep:
         request_id = str(dec.get("request_id", "") or "")
         tickets = self._dispatch_tickets(conn, request_id)
         if not tickets:
-            # BUG-174: a recorded PRE-DISPATCH GATE REJECTION is positive
-            # evidence the decision was refused before any dispatch could
-            # exist — the engine's own audit_signals row proves it (Phase 08
-            # EXPERIENCE_INTELLIGENCE_GATE / Phase 09 TRADE_INTELLIGENCE_GATE).
-            # For these, "no dispatch row" is the EXPECTED truth, not unknown
-            # provenance, so append the honest NOT_DISPATCHED terminal outcome
-            # (the live writer has done exactly this since BUG-169b).
+            # BUG-174/BUG-185: a recorded PRE-DISPATCH GATE REJECTION is
+            # positive evidence the decision was refused before any dispatch
+            # could exist — the canonical evidence resolver (shared with the
+            # dataset builder) classified this decision as GATE_REJECTION,
+            # so append the honest NOT_DISPATCHED terminal outcome (the live
+            # writer has done exactly this since BUG-169b).
             if dec.get("gate_rejection_stage"):
                 self._emit_terminal(
                     dec,
@@ -358,6 +375,9 @@ class HistoricalOutcomeRecoverySweep:
             # No dispatch evidence: honest state is "unknown provenance" — the
             # live P0-A wiring classifies NOT_DISPATCHED at the moment it
             # actually happens. Backfilling without evidence would guess.
+            # BUG-185: counted as unknown_provenance in the reconciled summary
+            # (scanned == recovered + unknown + still_live + excluded math).
+            result.unknown_provenance += 1
             result.skipped_no_dispatch += 1
             return
         broker_orders = self._broker_orders(conn, tickets)

@@ -67,6 +67,16 @@ def emit_terminal_pending_outcome(
     Returns True only when a NEW terminal outcome row was queued.
     """
     if experience_engine is None or not request_id:
+        # BUG-185: this skip MUST be observable. Production forensics
+        # (2026-09-01, exp_662cf14a) showed a gate-rejected decision with a
+        # REJECT log, no outcome row and no warning — a silent skip is
+        # indistinguishable from a never-run writer during an incident.
+        logger.warning(
+            "[TERMINAL_OUTCOME] event=SKIPPED reason=missing_engine_or_request_id",
+            has_engine=experience_engine is not None,
+            has_request_id=bool(request_id),
+            state=state.value if hasattr(state, "value") else str(state),
+        )
         return False
     if state not in TERMINAL_STATES or state in (
         DecisionLifecycle.FILLED_CLOSED,

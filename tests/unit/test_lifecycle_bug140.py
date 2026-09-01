@@ -568,7 +568,11 @@ class TestDatasetLifecycleEligibility:
         assert census["filled_outcome_missing"] == 1
         assert census["unresolved_missing_outcome"] == 1
         rules = census["eligibility_rules"]
-        assert rules["contract_version"] == "p0e-bug140-1"
+        # BUG-185: the eligibility contract moved to v2 (adds the honest
+        # UNKNOWN_PROVENANCE exclusion). The new census key is asserted in
+        # tests/unit/test_bug185_terminal_state_resolver.py.
+        assert rules["contract_version"] == "p0e-bug185-1"
+        assert "UNKNOWN_PROVENANCE" in rules
         assert rules["EXECUTED_CLOSED"].startswith("research eligible")
         assert "forbidden" in rules["fabricated_r"]
 
