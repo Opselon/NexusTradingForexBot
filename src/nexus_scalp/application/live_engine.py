@@ -283,6 +283,50 @@ class LiveEngine:
             pass
         return int(self.__class__.FEATURE_DIM)
 
+    def _rebind_trainer_to_bundle(self) -> None:
+        """BUG-185: bind the online trainer to the LOADED bundle's contract.
+
+        Extracted from __init__ (BUG-182B moved the call here). Called at
+        boot AND from every bundle-mutation site (hot swap, promotion,
+        rollback, collapse recovery) so a contract-width change can never
+        leave the trainer bound to the previous width. No-op while widths
+        already agree; self-disables online training when the artifact dim
+        has no registered schema (fail-safe, never fabricates).
+        """
+        try:
+            with self._bundle_lock:
+                _b0 = self._bundle
+            _eff_dim0 = int(
+                _b0.scaler.dimension()
+                if _b0 is not None and hasattr(_b0.scaler, "dimension")
+                else (getattr(_b0.model, "num_features", 0) if _b0 is not None else 0) or 0
+            )
+        except Exception:
+            _eff_dim0 = 0
+        if _eff_dim0 > 0 and _eff_dim0 != self.trainer.num_features:
+            # BUG-185: resolve by DIMENSION (module-level schema_for_dimension),
+            # not by hard-coding scalp_v3 for 70 — the registry owns the
+            # mapping and a 50D rebind (hot-swap back) must also restore
+            # scalp_v1.
+            from nexus_scalp.features.schema import schema_for_dimension as _sfd
+
+            _schema = _sfd(_eff_dim0)
+            if _schema is not None and _schema.dimension == _eff_dim0:
+                self.trainer.feature_schema = _schema
+                self.trainer.num_features = _eff_dim0
+                logger.info(
+                    "[ONLINE_TRAIN] trainer rebound to loaded-bundle contract",
+                    artifact_dim=_eff_dim0,
+                    schema=_schema.schema_id,
+                )
+            else:
+                logger.warning(
+                    "[ONLINE_TRAIN] loaded artifact dim %s has no registered schema; "
+                    "online fine-tune will self-disable (no width crash, no clobber)",
+                    _eff_dim0,
+                )
+                self._online_train_disabled = True
+
     def __init__(
         self,
         config: AppConfig,
@@ -1067,35 +1111,10 @@ class LiveEngine:
         # on the same effective contract (records are written from the
         # validated live tensor), so frame validation stays consistent.
         # This is a NO-OP while the 50D champion is loaded.
-        try:
-            with self._bundle_lock:
-                _b0 = self._bundle
-            _eff_dim0 = int(
-                _b0.scaler.dimension()
-                if _b0 is not None and hasattr(_b0.scaler, "dimension")
-                else (getattr(_b0.model, "num_features", 0) if _b0 is not None else 0) or 0
-            )
-        except Exception:
-            _eff_dim0 = 0
-        if _eff_dim0 > 0 and _eff_dim0 != self.trainer.num_features:
-            from nexus_scalp.features.schema import FEATURE_SCHEMAS as _FS
-
-            _schema70 = _FS.resolve("scalp_v3") if _eff_dim0 == 70 else None
-            if _schema70 is not None and _schema70.dimension == _eff_dim0:
-                self.trainer.feature_schema = _schema70
-                self.trainer.num_features = _eff_dim0
-                logger.info(
-                    "[ONLINE_TRAIN] trainer rebound to loaded-bundle contract",
-                    artifact_dim=_eff_dim0,
-                    schema=_schema70.schema_id,
-                )
-            else:
-                logger.warning(
-                    "[ONLINE_TRAIN] loaded artifact dim %s has no registered schema; "
-                    "online fine-tune will self-disable (no width crash, no clobber)",
-                    _eff_dim0,
-                )
-                self._online_train_disabled = True
+        # BUG-185: shared rebind helper - hot-swap/promotion/rollback can
+        # also change the serving contract, so the trainer must rebind on
+        # every bundle mutation, not only at boot.
+        self._rebind_trainer_to_bundle()
 
         # PHASE 08: register the model that is actually serving live inference.
         # This is metadata only - the experience ledger constructed above is
@@ -1229,6 +1248,9 @@ class LiveEngine:
             # ATOMIC SWAP under the bundle lock: new bundle replaces old.
             with self._bundle_lock:
                 self._bundle = new_bundle
+            # BUG-185: the new artifact may declare a different contract
+            # width - rebind the online trainer before anything retrains.
+            self._rebind_trainer_to_bundle()
             self.config.model.model_artifact_path = new_artifact_path
             self._register_active_model(model_path=new_path, replaced=True)
             # Surface model version/hash on the runtime snapshot
@@ -1365,6 +1387,7 @@ class LiveEngine:
         with self._bundle_lock:
             bundle = self._load_or_create_bundle(model_path=model_path, force_fresh=False)
             self._bundle = bundle
+        self._rebind_trainer_to_bundle()  # BUG-185: width may have changed
         self._register_active_model(model_path=model_path, replaced=True)
         logger.info(
             "[MODEL_GOVERNANCE] event=PROMOTION_EXECUTED",
@@ -1387,6 +1410,7 @@ class LiveEngine:
         with self._bundle_lock:
             bundle = self._load_or_create_bundle(model_path=model_path, force_fresh=False)
             self._bundle = bundle
+        self._rebind_trainer_to_bundle()  # BUG-185: width may have changed
         self._register_active_model(model_path=model_path, replaced=True)
         logger.info(
             "[MODEL_GOVERNANCE] event=ROLLBACK_EXECUTED",
@@ -3212,6 +3236,9 @@ class LiveEngine:
             self._bundle = ModelBundle(
                 model=updated_model, scaler=scaler, artifact_path=bundle.artifact_path
             )
+        # BUG-185: same-contract swap today, but the rebind is cheap and
+        # keeps the trainer bound if the artifact contract ever changes.
+        self._rebind_trainer_to_bundle()
 
         self._run_model_diagnostics_and_summary(df_labeled=df_labeled, feature_cols=feature_cols)
 
@@ -5227,6 +5254,8 @@ class LiveEngine:
                 self._bundle = ModelBundle(
                     model=updated_model, scaler=scaler, artifact_path=bundle.artifact_path
                 )
+            # BUG-185: rebind is a cheap no-op when the width is unchanged.
+            self._rebind_trainer_to_bundle()
 
             # PHASE 08: the model artifact was just rewritten. Re-register its
             # provenance so NEW experiences carry the new identity. Existing
@@ -5405,6 +5434,9 @@ class LiveEngine:
                     scaler=self._bundle.scaler if self._bundle else None,
                     artifact_path=model_path,
                 )
+            # BUG-185: the fresh model was seeded at the PATH-declared
+            # contract width - rebind the trainer to it.
+            self._rebind_trainer_to_bundle()
             self._save_model_weights_atomic(fresh, model_path)
             self._register_active_model(model_path=model_path, replaced=True)
             logger.warning("[MODEL] COLLAPSE_RECOVERY_COMPLETE - fresh weights serving live ticks")

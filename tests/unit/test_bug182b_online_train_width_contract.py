@@ -36,18 +36,34 @@ def _engine_init_fn() -> ast.FunctionDef:
 
 
 def test_bug182b_rebind_runs_after_bundle_load() -> None:
-    """The BUG-169 trainer rebind must read a LOADED bundle, not None."""
+    """The BUG-169 trainer rebind must read a LOADED bundle, not None.
+
+    BUG-185 refactor: the rebind logic lives in the shared
+    _rebind_trainer_to_bundle() helper (called from every bundle-mutation
+    site). The invariant is unchanged: __init__ must invoke the helper AFTER
+    _load_or_create_bundle, and the helper must carry the rebind.
+    """
     src = _engine_source()
     init = _engine_init_fn()
     seg = ast.get_source_segment(src, init) or ""
-    rebind_at = seg.find("[ONLINE_TRAIN] trainer rebound")
+    helper_call_at = seg.find("self._rebind_trainer_to_bundle()")
     load_at = seg.find("_load_or_create_bundle(")
     assert load_at != -1, "bundle load not found in __init__"
-    assert rebind_at != -1, "trainer rebind not found in __init__ (BUG-182B regression)"
-    assert rebind_at > load_at, (
+    assert helper_call_at != -1, (
+        "__init__ no longer calls _rebind_trainer_to_bundle (BUG-182B/BUG-185 regression)"
+    )
+    assert helper_call_at > load_at, (
         "trainer rebind runs BEFORE the bundle load -> rebind sees None and silently "
         "skips (the BUG-182B init-order bug)"
     )
+    # The helper itself must contain the actual rebind (log + schema assign).
+    helper_at = src.find("def _rebind_trainer_to_bundle(")
+    assert helper_at != -1, "_rebind_trainer_to_bundle helper missing"
+    helper_seg = src[helper_at : src.find("\n    def ", helper_at)]
+    assert "[ONLINE_TRAIN] trainer rebound" in helper_seg, (
+        "rebind log moved out of the helper (BUG-182B regression)"
+    )
+    assert "trainer.num_features" in helper_seg and "trainer.feature_schema" in helper_seg
 
 
 def test_bug182b_retrain_paths_use_effective_cols() -> None:

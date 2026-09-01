@@ -33,8 +33,9 @@ def engine_like():
         def __init__(self):
             self._bundle = None
 
-    # bind the real method
+    # bind the real methods
     _EngineLike._retrain_record_dim = LiveEngine._retrain_record_dim
+    _EngineLike._rebind_trainer_to_bundle = LiveEngine._rebind_trainer_to_bundle
     return _EngineLike, _Bundle
 
 
@@ -87,3 +88,61 @@ def test_per_bar_record_width_matches_trainer_after_rebind(engine_like):
     rec.update(close=1.0, high=1.0, low=1.0, open=1.0, spread=0.2, atr_m1=1.0)
     trainer_width = 70  # post-BUG-182B rebind
     assert len(rec) - 6 == trainer_width
+
+
+def test_rebind_helper_updates_trainer_width(engine_like, monkeypatch):
+    """The extracted _rebind_trainer_to_bundle must move the trainer to the
+    loaded bundle's width (BUG-185: hot-swap across widths must rebind)."""
+    from nexus_scalp.application import live_engine as le
+    from nexus_scalp.features.schema import FEATURE_SCHEMAS
+
+    eng_cls, bundle_cls = engine_like
+
+    class _Trainer:
+        num_features = 50
+        feature_schema = FEATURE_SCHEMAS.resolve("scalp_v1")
+
+    e = eng_cls()
+    e.trainer = _Trainer()
+    e._online_train_disabled = False
+    logs = []
+    monkeypatch.setattr(le.logger, "info", lambda *a, **k: logs.append(("info", a, k)))
+    monkeypatch.setattr(le.logger, "warning", lambda *a, **k: logs.append(("warn", a, k)))
+
+    e._bundle = bundle_cls(70)
+    e._rebind_trainer_to_bundle()
+    assert e.trainer.num_features == 70
+    assert e.trainer.feature_schema.dimension == 70
+    assert any(l[0] == "info" for l in logs)
+
+    # 50D bundle -> trainer follows back to the 50D schema
+    e._bundle = bundle_cls(50)
+    e._rebind_trainer_to_bundle()
+    assert e.trainer.num_features == 50
+    assert e.trainer.feature_schema.dimension == 50
+
+
+def test_rebind_helper_self_disables_on_unknown_width(engine_like, monkeypatch):
+    from nexus_scalp.application import live_engine as le
+
+    eng_cls, _ = engine_like
+
+    class _Trainer:
+        num_features = 50
+        feature_schema = None
+
+    e = eng_cls()
+    e.trainer = _Trainer()
+    e._online_train_disabled = False
+    warns = []
+    monkeypatch.setattr(le.logger, "warning", lambda *a, **k: warns.append(k))
+
+    # bundle dim 99 has no registered schema -> self-disable, no crash
+    e._bundle = SimpleNamespace(
+        scaler=SimpleNamespace(dimension=lambda: 99),
+        model=SimpleNamespace(num_features=99),
+    )
+    e._rebind_trainer_to_bundle()
+    assert e.trainer.num_features == 50  # unchanged
+    assert e._online_train_disabled is True
+    assert warns
