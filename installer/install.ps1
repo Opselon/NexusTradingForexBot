@@ -73,6 +73,13 @@ param(
     # --- Post-install mode ----------------------------------------------------
     [switch]$PostInstall,
 
+    # Repair mode: verify + repair runtime/deps/PATH/config WITHOUT destroying
+    # user data. Implemented as a targeted stage subset.
+    [switch]$Repair,
+
+    # Dry-run: plan only - print what WOULD run as JSON, mutate nothing.
+    [switch]$DryRun,
+
     # Skip optional heavyweight optional stages (none mandatory in Nexus today)
     [switch]$SkipOptional
 )
@@ -1903,6 +1910,60 @@ function Invoke-PostInstallMode {
     Write-Success "Post-install complete"
 }
 
+function Invoke-RepairMode {
+    # Repair (task C-11): re-verify + repair runtime pieces without touching
+    # user data. Subset of stages chosen to be safe to re-run any time:
+    #   runtime (uv+python) -> venv (transactional recreate) -> dependencies
+    #   -> path (shim+PATH registration) -> verify. Repository/config/state
+    #   are intentionally NOT forced: the repo is user-checkout territory
+    #   (safe update semantics apply), config is create-if-missing anyway.
+    Write-Banner
+    $repairStages = @("runtime", "venv", "dependencies", "path", "verify", "state")
+    Initialize-InstallerLog
+    foreach ($name in $repairStages) {
+        $def = Get-InstallStage -Name $name
+        if (-not $def) { throw "repair: unknown stage $name" }
+        Invoke-Stage -StageDef $def
+    }
+    if (-not $Json) {
+        Write-Completion
+    } else {
+        $summary = [ordered]@{
+            ok               = $true
+            mode             = "repair"
+            protocol_version = $Script:ProtocolVersionValue
+            nexus_home       = $NexusHome
+        }
+        $summary | ConvertTo-Json -Compress | Write-Output
+    }
+}
+
+function Invoke-DryRunMode {
+    # Dry-run (task C-11): print the plan as JSON, mutate NOTHING. Reuses the
+    # manifest + resolved-paths report so drivers can display exactly what a
+    # real run would do. Detection-only probes (environment) are NOT run even
+    # though they are technically non-mutating, because the writability probe
+    # creates the NexusHome directory - the dry-run must not.
+    $plan = [ordered]@{
+        ok               = $true
+        mode             = "dry-run"
+        protocol_version = $Script:ProtocolVersionValue
+        installer_version = $Script:InstallerVersion
+        nexus_home       = $NexusHome
+        install_dir      = $InstallDir
+        python_requested = $PythonVersion
+        branch           = $Branch
+        commit           = if ($Commit) { $Commit } else { $null }
+        tag              = if ($Tag) { $Tag } else { $null }
+        no_venv          = [bool]$NoVenv
+        would_run_stages = @($Script:InstallStages | ForEach-Object {
+            [ordered]@{ name = $_.Name; title = $_.Title; category = $_.Category }
+        })
+        note             = "no mutation performed; run without -DryRun to execute this plan"
+    }
+    $plan | ConvertTo-Json -Depth 5 -Compress | Write-Output
+}
+
 # ============================================================================
 # Stage protocol (single source of truth)
 # ============================================================================
@@ -2106,6 +2167,12 @@ function Invoke-AllStages {
 
 function Invoke-FullInstall {
     Write-Banner
+    # First install vs update/repair/downgrade differentiation (steer 154): the
+    # repository stage itself selects the safe path (update-in-place when a
+    # valid checkout exists, fresh acquisition otherwise); the banner report
+    # tells the user which mode actually ran.
+    $script:_InstallMode = if (Test-NexusRepoValid -Repo $InstallDir) { "update" } else { "first-install" }
+    Write-Info "Install mode: $script:_InstallMode (target: $InstallDir)"
     Invoke-AllStages
     if (-not $Json) {
         Write-Completion
@@ -2115,6 +2182,7 @@ function Invoke-FullInstall {
             protocol_version = $Script:ProtocolVersionValue
             nexus_home       = $NexusHome
             install_dir      = $InstallDir
+            mode             = $script:_InstallMode
         }
         $summary | ConvertTo-Json -Compress | Write-Output
     }
@@ -2245,6 +2313,39 @@ try {
 
     if ($PostInstall) {
         Invoke-PostInstallMode
+        exit 0
+    }
+
+    if ($DryRun) {
+        if ($PSBoundParameters.ContainsKey("Stage") -or $Repair) {
+            Write-ErrMsg "Cannot use -DryRun with -Stage or -Repair"
+            exit 1
+        }
+        Invoke-DryRunMode
+        exit 0
+    }
+
+    if ($Repair) {
+        if ($PSBoundParameters.ContainsKey("Stage")) {
+            Write-ErrMsg "Cannot use -Repair and -Stage simultaneously"
+            exit 1
+        }
+        Step-OutOfInstallDir
+        $lockAcquired = Wait-NexusInstallerLock
+        if (-not $lockAcquired) {
+            if ($Script:_DriverMode) {
+                $frame = [ordered]@{ ok = $false; skipped = $true; reason = "another installer holds the install lock" }
+                $frame | ConvertTo-Json -Compress | Write-Output
+            } else {
+                Write-ErrMsg "Another installer is running against $NexusHome - exiting."
+            }
+            exit 0
+        }
+        try {
+            Invoke-RepairMode
+        } finally {
+            Release-NexusInstallerLock
+        }
         exit 0
     }
 
