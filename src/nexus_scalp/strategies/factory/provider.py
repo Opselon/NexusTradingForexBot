@@ -24,11 +24,20 @@ never logs it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
-from typing import Any
+from typing import Any, Callable
 
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.strategies.factory.provider_gate import (
+    GateResult,
+    ProviderGate,
+    ProviderState,
+    execute_http_post,
+    get_provider_gate,
+    redact_url,
+)
 from nexus_scalp.settings.secret_store import SecureSecretStore
 
 logger = get_logger("nexus_scalp.strategies.factory.provider")
@@ -114,6 +123,8 @@ class LLMGenerationProvider:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         secret_store: SecureSecretStore | None = None,
         seed: int = 20260820,
+        gate: ProviderGate | None = None,
+        enabled_getter: Callable[[], bool] | None = None,
     ) -> None:
         self.api_base_url = api_base_url.rstrip("/")
         self.model = model
@@ -125,6 +136,14 @@ class LLMGenerationProvider:
         self.prompt_text = prompt_text
         self.usage = ProviderUsage()
         self._api_key = api_key or self._load_key(secret_store)
+        # CHG-0034: ONE global gate; config validated at construction
+        # (NO network). A permanent config error auto-disables the gate
+        # instantly (BUG-187) — no request is ever attempted.
+        self._gate = gate or get_provider_gate()
+        self._enabled_getter = enabled_getter
+        self._config_reason, self._config_detail = self._gate.validate_config(
+            self._api_key, self.api_base_url, self.model
+        )
         self._window_start: float = time.time()
         self._window_requests = 0
 
@@ -138,8 +157,18 @@ class LLMGenerationProvider:
             return ""
 
     def available(self) -> bool:
-        """True only when base URL + model + key are all configured."""
-        return bool(self.api_base_url and self.model and self._api_key)
+        """True only when config is valid, user-enabled, and the gate is
+        neither auto-disabled nor circuit-open (deterministic fallback
+        otherwise). Rate-limited/degraded still counts as available —
+        the gate paces those conditions automatically."""
+        if not (self.api_base_url and self.model and self._api_key):
+            return False
+        if self._enabled_getter is not None and not self._enabled_getter():
+            return False
+        snap = self._gate.health_snapshot()
+        if snap["auto_disabled"]:
+            return False
+        return snap["effective_state"] != ProviderState.CIRCUIT_OPEN.value
 
     def _budget_exhausted(self) -> bool:
         return self.usage.requests >= self.max_requests_per_generation
@@ -168,12 +197,6 @@ class LLMGenerationProvider:
             self.usage.last_error = "request budget exhausted"
             return []
 
-        try:
-            import httpx
-        except ImportError:  # pragma: no cover
-            logger.warning("[STRATEGY_FACTORY] httpx unavailable")
-            return []
-
         system, user = self._build_messages(prompt_context, n)
         payload = {
             "model": self.model,
@@ -194,32 +217,28 @@ class LLMGenerationProvider:
         started = time.perf_counter()
         self.usage.requests += 1
         self._window_requests += 1
-        try:
-            resp = httpx.post(url, json=payload, headers=headers, timeout=self.request_timeout_sec)
-        except Exception as e:
-            self.usage.failures += 1
-            self.usage.last_error = f"NETWORK:{type(e).__name__}"
-            logger.warning("[STRATEGY_FACTORY] provider network failure", error=type(e).__name__)
+        result = execute_http_post(
+            self._gate,
+            url,
+            payload=payload,
+            headers=headers,
+            timeout=self.request_timeout_sec,
+            request_key=self._request_key(payload),
+            single_flight=True,
+        )
+        self._absorb_gate_result(result)
+        if not result.ok:
+            logger.warning(
+                "[STRATEGY_FACTORY] provider request failed",
+                category=result.category.value,
+                state=result.state.value,
+                reason=result.reason,
+                attempts=result.attempts,
+                url=redact_url(url),
+            )
             return []
-        latency_ms = (time.perf_counter() - started) * 1000.0
-        self.usage.last_latency_ms = latency_ms
-        self.usage.total_latency_ms += latency_ms
-
-        if resp.status_code != 200:
-            self.usage.failures += 1
-            self.usage.last_error = f"HTTP:{resp.status_code}"
-            logger.warning("[STRATEGY_FACTORY] provider HTTP failure", status=resp.status_code)
-            return []
-
-        try:
-            body = resp.text
-            # Some compatible endpoints append SSE framing to the JSON body
-            # (e.g. "}data: [DONE]") — strip it before parsing.
-            marker = body.rfind("data: [DONE]")
-            if marker > 0:
-                body = body[:marker].rstrip()
-            data = json.loads(body)
-        except Exception:
+        data = result.data
+        if not isinstance(data, dict):
             self.usage.failures += 1
             self.usage.last_error = "BAD_JSON_RESPONSE"
             return []
@@ -264,12 +283,6 @@ class LLMGenerationProvider:
         if self._budget_exhausted():
             self.usage.last_error = "request budget exhausted"
             return None
-        try:
-            import httpx
-        except ImportError:  # pragma: no cover
-            logger.warning("[STRATEGY_FACTORY] httpx unavailable")
-            return None
-
         payload: dict[str, Any] = {
             "model": self.model,
             "temperature": self.temperature if temperature is None else float(temperature),
@@ -289,28 +302,28 @@ class LLMGenerationProvider:
         started = time.perf_counter()
         self.usage.requests += 1
         self._window_requests += 1
-        try:
-            resp = httpx.post(url, json=payload, headers=headers, timeout=self.request_timeout_sec)
-        except Exception as e:
-            self.usage.failures += 1
-            self.usage.last_error = f"NETWORK:{type(e).__name__}"
-            logger.warning("[STRATEGY_FACTORY] provider network failure", error=type(e).__name__)
+        result = execute_http_post(
+            self._gate,
+            url,
+            payload=payload,
+            headers=headers,
+            timeout=self.request_timeout_sec,
+            request_key=self._request_key(payload),
+            single_flight=True,
+        )
+        self._absorb_gate_result(result)
+        if not result.ok:
+            logger.warning(
+                "[STRATEGY_FACTORY] provider request failed",
+                category=result.category.value,
+                state=result.state.value,
+                reason=result.reason,
+                attempts=result.attempts,
+                url=redact_url(url),
+            )
             return None
-        latency_ms = (time.perf_counter() - started) * 1000.0
-        self.usage.last_latency_ms = latency_ms
-        self.usage.total_latency_ms += latency_ms
-        if resp.status_code != 200:
-            self.usage.failures += 1
-            self.usage.last_error = f"HTTP:{resp.status_code}"
-            logger.warning("[STRATEGY_FACTORY] provider HTTP failure", status=resp.status_code)
-            return None
-        body = resp.text
-        marker = body.rfind("data: [DONE]")
-        if marker > 0:
-            body = body[:marker].rstrip()
-        try:
-            data = json.loads(body)
-        except Exception:
+        data = result.data
+        if not isinstance(data, dict):
             self.usage.failures += 1
             self.usage.last_error = "BAD_JSON_RESPONSE"
             return None
@@ -332,6 +345,23 @@ class LLMGenerationProvider:
             return parsed
         self.usage.last_error = "NO_VALID_JSON_IN_RESPONSE"
         return None
+
+    def _request_key(self, payload: dict[str, Any]) -> str:
+        """Content fingerprint for single-flight dedup (CHG-0034)."""
+        try:
+            blob = json.dumps(payload, sort_keys=True, default=str)
+        except Exception:
+            blob = str(sorted(payload.keys()))
+        return "llm:" + hashlib.sha1(blob.encode("utf-8")).hexdigest()[:24]
+
+    def _absorb_gate_result(self, result: GateResult) -> None:
+        """Maps the gate outcome onto the usage/cost ledger."""
+        self.usage.last_latency_ms = result.duration_ms
+        self.usage.total_latency_ms += result.duration_ms
+        if result.ok:
+            return
+        self.usage.failures += result.attempts or 1
+        self.usage.last_error = f"{result.category.value}:{result.reason}"[:160]
 
     def _extract_dsl_list(self, content: str) -> list[dict[str, Any]]:
         if not content:
