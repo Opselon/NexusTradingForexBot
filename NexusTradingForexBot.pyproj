@@ -337,6 +337,7 @@
     <Compile Include="src\nexus_scalp\research\debug_intelligence.py" />
     <Compile Include="src\nexus_scalp\research\discovery.py" />
     <Compile Include="src\nexus_scalp\research\event_projection.py" />
+    <Compile Include="src\nexus_scalp\research\event_source.py" />
     <Compile Include="src\nexus_scalp\research\evidence.py" />
     <Compile Include="src\nexus_scalp\research\leakage.py" />
     <Compile Include="src\nexus_scalp\research\lifecycle.py" />
@@ -387,6 +388,7 @@
     <Compile Include="src\nexus_scalp\strategies\factory\models.py" />
     <Compile Include="src\nexus_scalp\strategies\factory\orchestrator.py" />
     <Compile Include="src\nexus_scalp\strategies\factory\provider.py" />
+    <Compile Include="src\nexus_scalp\strategies\factory\provider_gate.py" />
     <Compile Include="src\nexus_scalp\strategies\factory\ranking.py" />
     <Compile Include="src\nexus_scalp\strategies\factory\store.py" />
     <Compile Include="src\nexus_scalp\strategies\factory\summarizer.py" />
@@ -401,6 +403,7 @@
     <Compile Include="src\nexus_scalp\web\command_center_integration.py" />
     <Compile Include="src\nexus_scalp\web\command_center_routes.py" />
     <Compile Include="src\nexus_scalp\web\db_console.py" />
+    <Compile Include="src\nexus_scalp\web\debug_research_routes.py" />
     <Compile Include="src\nexus_scalp\web\debug_snapshot.py" />
     <Compile Include="src\nexus_scalp\web\dependency_routes.py" />
     <Compile Include="src\nexus_scalp\web\diagnostics_state_routes.py" />
@@ -421,6 +424,8 @@
     <Compile Include="tests\helpers\mt5_fixtures.py" />
     <Compile Include="tests\helpers\runtime_70d_probe.py" />
     <Compile Include="tests\helpers\shadow70_fixtures.py" />
+    <Compile Include="tests\installer\conftest.py" />
+    <Compile Include="tests\installer\test_installer_protocol.py" />
     <Compile Include="tests\integration\test_accounting_api.py" />
     <Compile Include="tests\integration\test_database_execution_audit.py" />
     <Compile Include="tests\integration\test_end_to_end_closed_loop_bug140.py" />
@@ -631,6 +636,7 @@
     <Folder Include="src\nexus_scalp\" />
     <Folder Include="tests\ci\" />
     <Folder Include="tests\helpers\" />
+    <Folder Include="tests\installer\" />
     <Folder Include="tests\integration\" />
     <Folder Include="tests\release\" />
     <Folder Include="tests\unit\" />
@@ -804,6 +810,8 @@
     <Content Include="docs\G28_IMPLEMENTATION_CERTIFICATION.md" />
     <Content Include="docs\GATE_STEP2_REPORT.md" />
     <Content Include="docs\INFERENCE_LATENCY_FORENSIC_FINAL.md" />
+    <Content Include="docs\INSTALL_WINDOWS.md" />
+    <Content Include="docs\INSTALLER_ARCHITECTURE.md" />
     <Content Include="docs\LIFECYCLE_PROPAGATION_ARCHITECTURE.md" />
     <Content Include="docs\LIFECYCLE_PROPAGATION_FORENSIC.md" />
     <Content Include="docs\LIQUIDITY_60D.md" />
@@ -850,6 +858,7 @@
     <Content Include="docs\task5_feature_quality_report.md" />
     <Content Include="docs\TASK_13_GIT_SURVEILLANCE_FINAL.md" />
     <Content Include="docs\TRADE_AVAILABILITY_FORENSIC_FINAL.md" />
+    <Content Include="installer\install.ps1" />
     <Content Include="installer\NexusScalpEngine.iss" />
     <Content Include="NexusTradingForexBot.pyproj" />
     <Content Include="NexusTradingForexBot.slnx" />
