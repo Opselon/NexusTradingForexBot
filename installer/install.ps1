@@ -1991,6 +1991,36 @@ function Invoke-NexusVerify {
         } else {
             $problems += "nexus CLI entry point not found in venv\Scripts"
         }
+
+        # 2b. Version consistency (closure steer 7): the CLI-reported version
+        # must match the repository's pyproject version. A mismatch means the
+        # CLI is reporting a stamped BUILD identity (frozen artifact) or stale
+        # metadata rather than the installed checkout - report it as a problem
+        # so an install never passes verification while versions disagree.
+        $venvPython = Get-VenvPython
+        $ErrorActionPreference = "Continue"
+        $probeScript = "from nexus_scalp.release.metadata import get_version_info; print(get_version_info()['version'])"
+        $cliVersion = (& $venvPython -c $probeScript 2>$null)
+        $ErrorActionPreference = "Stop"
+        if ($cliVersion) {
+            $cliVersion = ("$cliVersion").Trim()
+            $projVer = $null
+            try {
+                $projVer = (& $venvPython -c "import tomllib; print(tomllib.load(open(r'$InstallDir\pyproject.toml','rb'))['project']['version'])" 2>$null)
+                if ($projVer) { $projVer = ("$projVer").Trim() }
+            } catch { }
+            if ($projVer) {
+                if ($cliVersion -eq $projVer) {
+                    Write-Success "Version consistency: CLI $cliVersion == pyproject $projVer"
+                } else {
+                    $problems += "version mismatch: CLI reports $cliVersion but repository pyproject declares $projVer (the CLI identity likely comes from a stamped build-info.json, not the installed checkout)"
+                }
+            } else {
+                Write-WarnMsg "Could not read pyproject version for consistency check (CLI reports $cliVersion)"
+            }
+        } else {
+            Write-WarnMsg "Could not probe the CLI-reported version for consistency check"
+        }
     }
 
     # 3. Repository present.
@@ -2034,27 +2064,93 @@ function Test-Mt5Available {
 
 function Invoke-EnsureMode {
     param([string]$Deps)
+    # Ensure contract (closure steer 13-17): ensure = detect + INSTALL if
+    # missing + verify. Every branch must end with a real verification of a
+    # working artifact, not an observation.
     foreach ($depRaw in ($Deps -split ",")) {
         $dep = $depRaw.Trim()
         switch ($dep) {
             "python" {
                 Resolve-UvCmd
                 if (-not (Test-Python)) { Write-ErrMsg "python could not be provisioned"; exit 1 }
+                $probePath = & $Script:UvCmd python find $PythonVersion 2>$null
+                if (-not $probePath) { Write-ErrMsg "python provisioned but not resolvable"; exit 1 }
+                Write-Success "ensure python: verified ($(& $probePath --version 2>$null))"
             }
             "git" {
                 if (-not (Install-Git)) { Write-ErrMsg "git could not be provisioned"; exit 1 }
+                if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-ErrMsg "ensure git: no working git after provision"; exit 1 }
+                Write-Success "ensure git: verified ($(& git --version 2>$null))"
             }
             "mt5" {
-                if (Test-Mt5Available) {
-                    Write-Success "MetaTrader5 Python package importable (integration is the application's responsibility)"
-                } else {
-                    Write-Info "MetaTrader5 package not importable - it is a platform-conditional pyproject dependency on Windows; run -Stage dependencies in a venv, or install manually: pip install MetaTrader5"
-                    Write-Info "NOTE: the MT5 terminal itself is NEVER installed or modified by the Nexus installer."
+                # Scope: the MetaTrader5 PYTHON PACKAGE only. The MT5 terminal
+                # itself is NEVER installed/modified/started by the installer.
+                $venvPython = Get-VenvPython
+                if (-not $venvPython -or -not (Test-Path $venvPython)) {
+                    Write-ErrMsg "ensure mt5 requires the managed venv - run install.ps1 first (or -Stage venv)"
+                    exit 1
                 }
+                if (-not (Test-Mt5Available)) {
+                    Write-Info "MetaTrader5 package not importable - installing the Python package into the managed venv..."
+                    Resolve-UvCmd
+                    $env:UV_PYTHON = $venvPython
+                    $env:VIRTUAL_ENV = Join-Path $NexusHome "venv"
+                    Invoke-NativeWithRelaxedErrorAction { & $Script:UvCmd pip install "MetaTrader5>=5.0.45" 2>&1 | Out-Null }
+                    if ($LASTEXITCODE -ne 0) { Write-ErrMsg "pip install MetaTrader5 failed (exit $LASTEXITCODE)"; exit 1 }
+                }
+                if (-not (Test-Mt5Available)) { Write-ErrMsg "ensure mt5: package still not importable after install"; exit 1 }
+                Write-Success "ensure mt5: MetaTrader5 Python package verified (terminal itself is never touched by the installer)"
             }
             "node" {
-                [void](Test-Node)
-                if (-not $Script:HasNode) { Write-ErrMsg "node not available (optional for Nexus)"; exit 1 }
+                # Node is OPTIONAL for Nexus (no package.json in the repo).
+                # Ensure = real install when missing: portable user-scoped
+                # Node zip into NexusHome\node, PATH-registered.
+                $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+                $nodeOk = $false
+                if ($nodeCmd) {
+                    $version = & node --version 2>$null
+                    if (Test-NodeVersionOk $version) { $nodeOk = $true; Write-Success "ensure node: existing system Node $version verified" }
+                    else { Write-WarnMsg "system Node $version unsupported (require >= 18); installing managed Node instead" }
+                }
+                $managedNode = Join-Path $NexusHome "node\node.exe"
+                if (-not $nodeOk -and (Test-Path $managedNode) -and (Test-NodeVersionOk (& $managedNode --version 2>$null))) {
+                    $nodeOk = $true
+                    $env:Path = (Join-Path $NexusHome "node") + ";$env:Path"
+                    Write-Success "ensure node: managed Node $(& $managedNode --version 2>$null) verified"
+                }
+                if (-not $nodeOk) {
+                    $arch = Get-WindowsArch
+                    $indexUrl = "https://nodejs.org/dist/latest-v22.x/"
+                    try {
+                        Write-Info "Downloading portable Node.js v22 ($arch) to $NexusHome\node\ ..."
+                        $indexPage = Invoke-WebRequest -Uri $indexUrl -UseBasicParsing
+                        $zipName = ($indexPage.Content | Select-String -Pattern "node-v22\.\d+\.\d+-win-${arch}\.zip" -AllMatches).Matches[0].Value
+                        if (-not $zipName) { throw "could not resolve a Node v22 win-$arch zip from $indexUrl" }
+                        $session = [Guid]::NewGuid().ToString("N")
+                        $zipPath = Join-Path $env:TEMP "nexus-node-$session.zip"
+                        $extractDir = Join-Path $env:TEMP "nexus-node-extract-$session"
+                        Invoke-NexusDownload -Url "${indexUrl}${zipName}" -Destination $zipPath -TimeoutSec 600
+                        Expand-NexusZipSafe -ZipPath $zipPath -Destination $extractDir
+                        $extracted = Get-ChildItem $extractDir -Directory | Select-Object -First 1
+                        if (-not $extracted) { throw "Node zip did not contain the expected directory" }
+                        $nodeDir = Join-Path $NexusHome "node"
+                        if (Test-Path $nodeDir) { Remove-Item -Recurse -Force $nodeDir -ErrorAction SilentlyContinue }
+                        Move-Item -LiteralPath $extracted.FullName -Destination $nodeDir -Force
+                        Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
+                        Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
+                        $env:Path = "$nodeDir;$env:Path"
+                        Add-UserPathEntry -Entry $nodeDir
+                        if (-not (Test-NodeVersionOk (& $nodeDir\node.exe --version 2>$null))) {
+                            throw "managed Node installed but version probe failed"
+                        }
+                        $nodeOk = $true
+                        Write-Success "ensure node: managed Node $(& $nodeDir\node.exe --version 2>$null) installed (user-scoped)"
+                    } catch {
+                        Write-ErrMsg "ensure node: portable install failed: $($_.Exception.Message)"
+                        Write-Info "Install manually from https://nodejs.org/en/download/ (Node is OPTIONAL for Nexus)"
+                        exit 1
+                    }
+                }
             }
             default {
                 Write-ErrMsg "Unknown dependency: '$dep'. Supported: python, git, mt5, node"
