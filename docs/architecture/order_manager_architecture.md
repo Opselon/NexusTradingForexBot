@@ -129,3 +129,34 @@ RC=0) — order_lifecycle, execution_architecture, hardened_protocol,
 adaptive_position_management, winner_protection_geometry_sprint,
 order_manager_exit_bugs, trade_lifecycle_task3, lifecycle_bug140,
 log_autopsy_fixes, accounting_hedging, rule_matrix.
+
+
+## 12. S2 PositionStateMachine — extraction record (Agent-5, post-S3)
+
+- New modules: execution/position_states.py (the 11-state enum, single
+  source; facade re-exports), execution/position_state_machine.py
+  (PositionStateMachine: _states + _candidates + transition_with_hysteresis,
+  verbatim rules; hysteresis params injected via a getter — the machine owns
+  state + rules, NOT config/broker).
+- Facade: order_manager.transition_state_with_hysteresis is a one-line
+  delegate (same signature); compatibility @properties expose the machine's
+  LIVE dicts under the historical names (_position_states /
+  _state_transition_candidates) — live_engine's bool check and 6 test sites
+  unchanged; cleanup calls _state_machine.drop_ticket() inside the atomic
+  teardown.
+- State graph (actual): first observation seeds a safe neutral state
+  (profit-side targets -> PROFIT_UNPROTECTED, else LOSS_RECOVERY_CANDIDATE)
+  except emergency targets (LOSS_HARD_EXIT / PROFIT_GIVEBACK_CRITICAL) which
+  bypass with zero latency incl. on first observation; same-state
+  observation cancels the candidate; normal transitions require BOTH
+  min_confirmation_duration AND min_observation_count (window never resets);
+  confirmation logs [STATE MACHINE TRANSITIONED].
+- Coupling before/after: the machine owns NO recovery/protection state —
+  evidence-based evaluate stage stays in the manager and READS budget
+  remaining (S3 view) + SL-modified/protection facts; the machine receives
+  only the resulting target state. Clean read-only/command boundary.
+- Verification: 10-test golden (written pre-extraction against the original
+  methods, green post) + 12 execution suites RC=0; perf probe 1.634us per
+  repeat-observation transition (O(1), no I/O).
+- Remaining seams: S4 intelligence/metrics calculators; S6
+  manage_active_positions decomposition (last, after S4).
