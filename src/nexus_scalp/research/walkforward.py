@@ -19,7 +19,11 @@ from nexus_scalp.research.models import (
     WalkForwardFold,
     WalkForwardResult,
 )
-from nexus_scalp.research.splitting import walk_forward_folds
+from nexus_scalp.research.splitting import (
+    DEFAULT_EMBARGO_SECONDS,
+    DEFAULT_PURGE_SECONDS,
+    walk_forward_folds,
+)
 
 logger = get_logger("nexus_scalp.research.walkforward")
 
@@ -47,8 +51,8 @@ class WalkForwardEngine:
         strategy_version: str,
         n_splits: int = 3,
         val_frac: float = 0.2,
-        purge_seconds: float = 0.0,
-        embargo_seconds: float = 0.0,
+        purge_seconds: float = DEFAULT_PURGE_SECONDS,
+        embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
         context_contract: dict | None = None,
     ) -> WalkForwardResult:
         # PHASE 26: strategy-aware sample filtering (reconstructed after

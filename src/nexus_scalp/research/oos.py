@@ -17,7 +17,11 @@ from nexus_scalp.research.models import (
     OOSResult,
     ResearchDataset,
 )
-from nexus_scalp.research.splitting import split_temporal
+from nexus_scalp.research.splitting import (
+    DEFAULT_EMBARGO_SECONDS,
+    DEFAULT_PURGE_SECONDS,
+    split_temporal,
+)
 
 logger = get_logger("nexus_scalp.research.oos")
 
@@ -47,8 +51,8 @@ class OOSGate:
         strategy_version: str,
         val_frac: float = 0.2,
         oos_frac: float = 0.2,
-        purge_seconds: float = 0.0,
-        embargo_seconds: float = 0.0,
+        purge_seconds: float = DEFAULT_PURGE_SECONDS,
+        embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
         context_contract: dict | None = None,
     ) -> OOSResult:
         # PHASE 26 (strategy-aware validation): scope the evaluation

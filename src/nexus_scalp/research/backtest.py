@@ -21,7 +21,11 @@ from nexus_scalp.research.models import (
     ExecutionAssumptions,
     ResearchDataset,
 )
-from nexus_scalp.research.splitting import split_temporal
+from nexus_scalp.research.splitting import (
+    DEFAULT_EMBARGO_SECONDS,
+    DEFAULT_PURGE_SECONDS,
+    split_temporal,
+)
 
 logger = get_logger("nexus_scalp.research.backtest")
 
@@ -40,6 +44,8 @@ class BacktestEngine:
         use_split: bool = False,
         val_frac: float = 0.2,
         oos_frac: float = 0.2,
+        purge_seconds: float = DEFAULT_PURGE_SECONDS,
+        embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
         split: object | None = None,
     ) -> BacktestResult:
         """
@@ -51,7 +57,13 @@ class BacktestEngine:
         """
         samples = dataset.samples
         if use_split:
-            tsplit = split_temporal(dataset, val_frac=val_frac, oos_frac=oos_frac)
+            tsplit = split_temporal(
+                dataset,
+                val_frac=val_frac,
+                oos_frac=oos_frac,
+                purge_seconds=purge_seconds,
+                embargo_seconds=embargo_seconds,
+            )
             samples = tsplit.train + tsplit.validation
 
         logger.info(

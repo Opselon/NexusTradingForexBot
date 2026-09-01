@@ -43,6 +43,10 @@ from nexus_scalp.research.oos import OOSGate
 from nexus_scalp.research.registry import StrategyRegistry
 from nexus_scalp.research.robustness import RobustnessEngine
 from nexus_scalp.research.scoring import compute_strategy_score
+from nexus_scalp.research.splitting import (
+    DEFAULT_EMBARGO_SECONDS,
+    DEFAULT_PURGE_SECONDS,
+)
 from nexus_scalp.research.walkforward import WalkForwardEngine
 
 logger = get_logger("nexus_scalp.research.pipeline")
@@ -158,8 +162,8 @@ class ResearchPipeline:
         candidate: StrategyCandidate,
         dataset: ResearchDataset,
         n_folds: int = 3,
-        purge_seconds: float = 0.0,
-        embargo_seconds: float = 0.0,
+        purge_seconds: float = DEFAULT_PURGE_SECONDS,
+        embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
         run_id: str | None = None,
         strategy_configuration: dict | None = None,
         random_seed: int | None = None,
@@ -833,6 +837,8 @@ class ResearchPipeline:
         status: str = "COMPLETED",
         run_outcome: str = "INCONCLUSIVE",
         snapshot_id: str = "",
+        purge_seconds: float = DEFAULT_PURGE_SECONDS,
+        embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
         gates: list[str] | None = None,
     ) -> None:
         import json
@@ -845,8 +851,8 @@ class ResearchPipeline:
             strategy_version=candidate.strategy_version,
             config={
                 "n_folds": 3,
-                "purge_seconds": 0.0,
-                "embargo_seconds": 0.0,
+                "purge_seconds": purge_seconds,
+                "embargo_seconds": embargo_seconds,
             },
             result_summary=summary,
             status=status,
