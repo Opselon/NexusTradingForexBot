@@ -1530,22 +1530,78 @@ function Install-Venv {
         throw
     }
 
-    # Commit the transaction: clean parked trees whose handles were released.
+    # DEFERRED commit (Hermes #83149 pattern): write a pending-backup marker
+    # instead of deleting immediately. The parked tree stays as the rollback
+    # source until the DEPENDENCIES stage verifies (Commit-VenvTransaction),
+    # so a dependency failure can restore the previous working venv.
     if ($venvParked) {
-        Remove-Item -LiteralPath (Join-Path $NexusHome $venvBackupName) -Recurse -Force -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath (Join-Path $NexusHome $venvBackupName)) {
-            Write-WarnMsg "Old venv still held by a process; parked at $venvBackupName (will be cleaned by a later install)"
-        }
+        $utf8NoBom0 = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText((Join-Path $NexusHome "state\venv.pending-backup"), $venvBackupName, $utf8NoBom0)
+        Write-Info "Previous venv parked at $venvBackupName until the dependency install is verified"
     }
-    # Clean stale parked venvs from earlier runs (older than 10 minutes).
-    Get-ChildItem $NexusHome -Directory -Filter "venv.stale.*" -ErrorAction SilentlyContinue |
-        Where-Object { $_.LastWriteTime -lt (Get-Date).AddMinutes(-10) } |
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    # Clean stale parked venvs from earlier runs (older than 10 minutes),
+    # but NEVER sweep while a pending-backup marker exists: that tree is
+    # the rollback source until the dependencies stage commits it.
+    $pendingMarker = Join-Path $NexusHome "state\venv.pending-backup"
+    if (-not (Test-Path -LiteralPath $pendingMarker -PathType Leaf)) {
+        Get-ChildItem $NexusHome -Directory -Filter "venv.stale.*" -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -lt (Get-Date).AddMinutes(-10) } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # ============================================================================
 # Python dependencies (pyproject.toml is the single source of truth)
 # ============================================================================
+function Get-PendingVenvBackup {
+    # Rollback source recorded by Install-Venv. Returns the parked directory
+    # name, or $null when there is nothing to roll back to. A marker pointing
+    # at a directory that no longer exists is stale - drop it.
+    $markerPath = Join-Path $NexusHome "state\venv.pending-backup"
+    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { return $null }
+    $name = (Get-Content -LiteralPath $markerPath -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($name) { $name = $name.Trim() }
+    if (-not $name -or -not (Test-Path -LiteralPath (Join-Path $NexusHome $name))) {
+        Remove-Item -LiteralPath $markerPath -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    return $name
+}
+
+function Complete-VenvTransaction {
+    # Commit: dependency install + audit passed, so the previous venv is no
+    # longer needed as a rollback source. Best-effort delete; a tree still
+    # held open just stays parked for the next install's sweep.
+    $backupName = Get-PendingVenvBackup
+    if (-not $backupName) { return }
+    $backupPath = Join-Path $NexusHome $backupName
+    Remove-Item -LiteralPath $backupPath -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $backupPath) {
+        Write-WarnMsg "Old venv parked at $backupName (a process still holds files in it); it will be cleaned up on the next install"
+    }
+    Remove-Item -LiteralPath (Join-Path $NexusHome "state\venv.pending-backup") -Force -ErrorAction SilentlyContinue
+}
+
+function Restore-VenvBackup {
+    # Rollback: the dependency stage failed after Install-Venv replaced the
+    # venv. Park the unusable replacement and restore the previous working
+    # venv so Nexus stays usable (Hermes #83149 class).
+    $backupName = Get-PendingVenvBackup
+    if (-not $backupName) { return }
+    try {
+        if (Test-Path -LiteralPath (Join-Path $NexusHome "venv")) {
+            $failedVenvName = "venv.failed.{0}-{1}" -f (Get-Date -Format "yyyyMMddHHmmss"), ([Guid]::NewGuid().ToString("N"))
+            Rename-Item -LiteralPath (Join-Path $NexusHome "venv") -NewName $failedVenvName -ErrorAction Stop
+            Write-WarnMsg "Failed replacement parked at $failedVenvName"
+        }
+        Rename-Item -LiteralPath (Join-Path $NexusHome $backupName) -NewName "venv" -ErrorAction Stop
+        Remove-Item -LiteralPath (Join-Path $NexusHome "state\venv.pending-backup") -Force -ErrorAction SilentlyContinue
+        Write-WarnMsg "Restored previous virtual environment after failed dependency install"
+    } catch {
+        Write-WarnMsg "Could not restore previous venv (still parked at $backupName): $($_.Exception.Message)"
+    }
+}
+
 
 function Install-PythonDependencies {
     if ($NoVenv) {
@@ -1759,8 +1815,14 @@ print(json.dumps(out))
                 Write-ErrMsg "dependency FAILED: $($p.package) - $($p.reason)"
             }
         }
+        # Dependency failure while a venv transaction is open: restore the
+        # previous working venv before surfacing the error (Hermes #83149).
+        Restore-VenvBackup
         throw "Dependency audit failed: $($audit.failed) required package(s) not healthy (see state\packages.json)"
     }
+
+    # Audit passed: commit the deferred venv transaction (delete parked tree).
+    Complete-VenvTransaction
 
     # Entry-point verification: the venv must expose the nexus CLI shim.
     $nexusExe = Join-Path $NexusHome "venv\Scripts\nexus.exe"
@@ -1868,7 +1930,14 @@ function Copy-ConfigTemplates {
         $src = Join-Path $repoConfigDir $t.Source
         $dst = Join-Path $configDir $t.Target
         if (Test-Path $dst) {
-            Write-Info "Config already exists, keeping it: $dst"
+                Write-Info "Config already exists, keeping it: $dst"
+                # Drift hint: a newer template may exist in the checkout -
+                # surface it as informational, NEVER overwrite user config.
+                try {
+                    if ((Get-Item -LiteralPath $src).Length -ne (Get-Item -LiteralPath $dst).Length) {
+                        Write-Info "  (template differs from your config - compare with: $src)"
+                    }
+                } catch { }
         } elseif (Test-Path $src) {
             Copy-Item -LiteralPath $src -Destination $dst
             Write-Success "Created $dst from template"
