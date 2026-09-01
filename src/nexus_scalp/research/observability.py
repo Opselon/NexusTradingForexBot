@@ -586,6 +586,11 @@ class ResearchObservabilityStore:
                 snapshot.configuration_hash,
                 snapshot.fingerprint(),
                 snapshot.captured_at.isoformat(),
+                # CHG-0035 (v2): identity columns; empty = NOT_RECORDED
+                snapshot.feature_schema_id,
+                int(snapshot.feature_dimension) if snapshot.feature_dimension else 0,
+                snapshot.model_id,
+                snapshot.git_commit,
             ),
         )
         return snapshot.fingerprint()
@@ -625,6 +630,18 @@ class ResearchObservabilityStore:
                 "configuration_hash": row["configuration_hash"] or "",
                 "research_hash": row["research_hash"] or "",
                 "captured_at": row["captured_at"] or "",
+                # CHG-0035 (v2): keys exist only when the column was migrated;
+                # older rows read as NOT_RECORDED ("" / 0) — honest, never invented.
+                "feature_schema_id": (
+                    row["feature_schema_id"] if "feature_schema_id" in row.keys() else ""
+                )
+                or "",
+                "feature_dimension": (
+                    row["feature_dimension"] if "feature_dimension" in row.keys() else 0
+                )
+                or 0,
+                "model_id": (row["model_id"] if "model_id" in row.keys() else "") or "",
+                "git_commit": (row["git_commit"] if "git_commit" in row.keys() else "") or "",
             }
         except Exception as e:
             logger.error("[RESEARCH_OBS] snapshot load failed", run=research_run_id, error=str(e))
@@ -999,8 +1016,9 @@ _INSERT_SNAPSHOT_SQL = """
         feature_schema_version, model_version, model_hash, rule_matrix_version,
         runtime_configuration_version, backtest_engine_version,
         validation_engine_version, random_seed, research_prompt_version,
-        engine_version, configuration_hash, research_hash, captured_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        engine_version, configuration_hash, research_hash, captured_at,
+        feature_schema_id, feature_dimension, model_id, git_commit
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(research_run_id) DO NOTHING;
 """
 

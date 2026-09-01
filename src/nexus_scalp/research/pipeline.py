@@ -256,6 +256,46 @@ class ResearchPipeline:
 
         if obs is not None:
             # Capture the reproducibility snapshot FIRST (spec 9/45).
+            # CHG-0035: the configuration now carries the RESOLVED identity
+            # (schema/model/commit) so build_run_snapshot records what this
+            # run ACTUALLY used — not placeholders.
+            identity_cfg: dict[str, Any] = dict(strategy_configuration or {})
+            try:
+                from nexus_scalp.features.schema_contract import (
+                    SCHEMA_ID as _SID,
+                )
+                from nexus_scalp.features.schema_contract import (
+                    feature_schema_hash as _FSH,
+                )
+
+                identity_cfg.setdefault("feature_schema_id", _SID)
+                identity_cfg.setdefault("feature_schema_hash", _FSH())
+            except Exception:
+                pass
+            try:
+                from nexus_scalp.release.metadata import _git_commit as _git
+
+                identity_cfg.setdefault("git_commit", _git() or "")
+            except Exception:
+                pass
+            try:
+                from pathlib import Path as _ConfigPath
+
+                from nexus_scalp.configuration.config import AppConfig
+
+                _yaml = _ConfigPath("configs/live.yaml")
+                _cfg = AppConfig.load_from_yaml(_yaml) if _yaml.exists() else AppConfig()
+                _art = str(_cfg.model.model_artifact_path or "")
+                if _art:
+                    identity_cfg.setdefault("model_id", _art)
+                    try:
+                        from nexus_scalp.research.streaming_replay import _sha256_file
+
+                        identity_cfg.setdefault("model_hash", _sha256_file(_ConfigPath(_art)))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             fingerprint = ""
             try:
                 snapshot = build_run_snapshot(
@@ -263,7 +303,7 @@ class ResearchPipeline:
                     version,
                     candidate.model_dump(mode="json"),
                     family_ds,
-                    configuration=strategy_configuration or {},
+                    configuration=identity_cfg,
                     random_seed=random_seed,
                 )
                 fingerprint = obs.store_run_snapshot(run_id, snapshot)

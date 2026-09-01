@@ -1356,6 +1356,22 @@ class AuditRepository:
             )
         except Exception:
             pass
+        # CHG-0035 provenance hardening (RESEARCH_RUN_SNAPSHOT v2): identity
+        # columns beyond the v1 contract. ADD COLUMN guarded (idempotent —
+        # expected control flow on already-migrated DBs). Existing rows stay
+        # empty = NOT_RECORDED (honest); no backfill invention.
+        for col_def in [
+            ("feature_schema_id", "TEXT"),
+            ("feature_dimension", "INTEGER"),
+            ("model_id", "TEXT"),
+            ("git_commit", "TEXT"),
+        ]:
+            try:
+                conn.execute(
+                    f"ALTER TABLE research_run_snapshots ADD COLUMN {col_def[0]} {col_def[1]};"
+                )
+            except Exception:
+                pass
 
     def flush(self, timeout_sec: float = 5.0) -> bool:
         """Boundedly drains the background write queue.

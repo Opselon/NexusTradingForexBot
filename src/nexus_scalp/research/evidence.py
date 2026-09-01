@@ -226,7 +226,16 @@ class ResearchGate(BaseModel):
 
 
 class ResearchRunSnapshot(BaseModel):
-    """Immutable reproducibility fingerprint captured at run start (spec 9 / 45)."""
+    """Immutable reproducibility fingerprint captured at run start (spec 9 / 45).
+
+    CHG-0035 (RESEARCH_RUN_SNAPSHOT v2): model/feature identity is captured
+    from AUTHORITATIVE sources at snapshot time — feature_schema_id/dimension
+    from the live schema contract, model_id from the caller's resolved
+    artifact, git_commit from the working tree (release.metadata). Empty
+    string = NOT_RECORDED (consumers render NOT_RECORDED); values are never
+    invented. Completed snapshots are immutable: changing the active
+    champion later does not rewrite historical rows.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -247,6 +256,12 @@ class ResearchRunSnapshot(BaseModel):
     research_prompt_version: str = Field(default="")
     engine_version: str = Field(default="")
     configuration_hash: str = Field(default="")
+    #: v2 provenance (CHG-0035): canonical schema identity + resolved model
+    #: artifact id + code version. Empty = NOT_RECORDED, never fabricated.
+    feature_schema_id: str = Field(default="")
+    feature_dimension: int = Field(default=0)
+    model_id: str = Field(default="")
+    git_commit: str = Field(default="")
     captured_at: datetime = Field(default_factory=_utc_now)
 
     @field_validator("captured_at")
@@ -255,7 +270,12 @@ class ResearchRunSnapshot(BaseModel):
         return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)
 
     def fingerprint(self) -> str:
-        """Deterministic research hash over the whole snapshot (spec 64)."""
+        """Deterministic research hash over the whole snapshot (spec 64).
+
+        CHG-0035: the v2 identity fields are included so two runs that
+        differ ONLY in schema/model/commit identity get different research
+        hashes (no 'same experiment ID, different config' ambiguity).
+        """
         return stable_digest(
             {
                 "strategy_id": self.strategy_id,
@@ -270,6 +290,10 @@ class ResearchRunSnapshot(BaseModel):
                 "backtest_engine_version": self.backtest_engine_version,
                 "validation_engine_version": self.validation_engine_version,
                 "configuration_hash": self.configuration_hash,
+                "feature_schema_id": self.feature_schema_id,
+                "feature_dimension": self.feature_dimension,
+                "model_id": self.model_id,
+                "git_commit": self.git_commit,
             }
         )
 
@@ -288,6 +312,13 @@ def build_run_snapshot(
     Captures the reproducibility snapshot for one run from the live candidate
     definition + the actual dataset artifact used. Never fabricated: fields
     absent from the inputs stay empty strings (consumers render NOT_RECORDED).
+
+    CHG-0035: model/schema identity resolves from AUTHORITATIVE sources when
+    the caller did not supply them — the canonical feature schema contract
+    (schema id + dimension + hash) and the working-tree git commit. Model
+    identity (model_id/model_version/model_hash) is accepted ONLY from the
+    caller's resolved artifact configuration; when absent it stays empty
+    (NOT_RECORDED) because guessing a filename is not provenance (§36/§35).
     """
     dataset_version = getattr(dataset, "dataset_id", "") or ""
     dataset_hash = ""
@@ -300,6 +331,58 @@ def build_run_snapshot(
             dataset_hash = ""
 
     config = configuration or {}
+
+    # --- CHG-0035: authoritative schema identity (never invented) ---
+    schema_id_v = str(config.get("feature_schema_id", "") or "")
+    schema_dim_v = int(config.get("feature_dimension", 0) or 0)
+    schema_hash_v = str(config.get("feature_schema_hash", "") or "")
+    if not schema_id_v:
+        try:
+            from nexus_scalp.features.schema_contract import (
+                SCHEMA_ID as _SID,
+            )
+            from nexus_scalp.features.schema_contract import (
+                canonical_registry_json,
+            )
+
+            schema_id_v = _SID
+            if not schema_hash_v:
+                schema_hash_v = stable_digest(canonical_registry_json())[:32]
+        except Exception:
+            schema_hash_v = schema_hash_v or ""
+        if not schema_hash_v:
+            try:
+                from nexus_scalp.features.schema_contract import feature_schema_hash
+
+                schema_hash_v = feature_schema_hash()
+            except Exception:
+                pass
+    if schema_dim_v <= 0:
+        try:
+            from nexus_scalp.features.schema import active_dimension
+
+            schema_dim_v = int(active_dimension())
+        except Exception:
+            schema_dim_v = 0
+    feature_schema_version_v = str(config.get("feature_schema_version", "") or "")
+    if not feature_schema_version_v:
+        try:
+            from nexus_scalp.features.schema_contract import SCHEMA_VERSION as _SVER2
+
+            feature_schema_version_v = _SVER2
+        except Exception:
+            pass
+
+    # --- CHG-0035: code version (git commit of the working tree) ---
+    git_commit_v = str(config.get("git_commit", "") or "")
+    if not git_commit_v:
+        try:
+            from nexus_scalp.release.metadata import _git_commit as _git
+
+            git_commit_v = _git() or ""
+        except Exception:
+            git_commit_v = ""
+
     return ResearchRunSnapshot(
         strategy_id=strategy_id,
         strategy_version=strategy_version,
@@ -307,7 +390,7 @@ def build_run_snapshot(
         strategy_configuration=_sort(config.get("strategy_configuration", {})),
         dataset_version=dataset_version,
         dataset_hash=dataset_hash,
-        feature_schema_version=str(config.get("feature_schema_version", "")),
+        feature_schema_version=feature_schema_version_v,
         model_version=str(config.get("model_version", "")),
         model_hash=str(config.get("model_hash", "")),
         rule_matrix_version=str(config.get("rule_matrix_version", "")),
@@ -318,6 +401,10 @@ def build_run_snapshot(
         research_prompt_version=str(config.get("research_prompt_version", "")),
         engine_version=engine_version,
         configuration_hash=stable_digest(config or {}),
+        feature_schema_id=schema_id_v,
+        feature_dimension=schema_dim_v,
+        model_id=str(config.get("model_id", "")),
+        git_commit=git_commit_v,
     )
 
 
