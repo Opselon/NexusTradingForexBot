@@ -101,18 +101,33 @@ class MT5TickDataset:
         start: datetime,
         end: datetime,
         chunk_minutes: int = DEFAULT_CHUNK_MINUTES,
+        git_commit: str = "",
+        adapter_name: str = "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contract)",
     ) -> str:
         """Pulls historical ticks in bounded chunks and caches them.
 
         ``adapter`` is a CONNECTED DirectMT5Adapter (or any object exposing
         ``get_tick_history(symbol, count, from_utc, to_utc)`` — the probed
         surface). Returns the dataset_id. Idempotent per window identity.
+
+        CHG-0041 (TICK_DATASET_META v2): provenance now records the adapter
+        surface name, the acquisition wall-clock time and the git commit;
+        existing cached datasets are reused as-is (no overlapping
+        re-download) unless ``force`` is set.
         """
         start = _utc(start)
         end = _utc(end)
         if end <= start:
             raise ValueError("acquire_ticks: end must be after start")
         ds_id = dataset_id(symbol, "ticks", start, end)
+        existing = self._load_meta(ds_id)
+        if existing is not None and self._data_path(ds_id).exists():
+            logger.info(
+                "[MT5_TICK_DATASET] event=CACHE_HIT dataset=%s records=%s",
+                ds_id,
+                existing.get("records"),
+            )
+            return ds_id
         records: list[dict[str, Any]] = []
         cur = start
         step = timedelta(minutes=max(1, chunk_minutes))
@@ -165,8 +180,12 @@ class MT5TickDataset:
                 "records": len(records),
                 "incomplete": sum(1 for r in records if r.get("_incomplete")),
                 "dataset_fingerprint": fp,
-                "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contract)",
+                "source": adapter_name,
                 "acquired_at": datetime.now(UTC).isoformat(),
+                # CHG-0041 TICK_DATASET_META v2 provenance
+                "meta_version": 2,
+                "git_commit": git_commit,
+                "chunk_minutes": max(1, chunk_minutes),
             },
         )
         return ds_id
