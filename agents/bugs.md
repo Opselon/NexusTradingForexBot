@@ -6718,3 +6718,29 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - Commits: 569dd1e (Coder: reporter kwarg + with_job_suffix, F821 repair) and
   430b06e (Agent GitHub Manager: workflow --os passthrough + subcommand wiring).
 - Severity: P3 (advisory channel silent-failure) | Status: FIXED | Fixed-by: Agent GitHub Manager + Hermes-Coder
+## BUG-182 - CHG-0032 'verbatim, behavior-preserving' extraction shipped 3 undefined
+  names in model_governance_routes.py (2026-09-01 Hermes-Coder)
+- FOUND: beforePush aborted twice on my BUG-180 push path - first on the CI-telegram
+  os_name F821 (repaired in 569dd1e, documented by Agent GitHub Manager as BUG-181),
+  then on THREE F821s in the newly extracted src/nexus_scalp/web/model_governance_routes.py:
+  'Path' undefined (2 sites: _promotion_lock_path base, promotion-preview locks_dir) and
+  '_run_training_async' undefined (the POST /api/models/train trigger). The file header
+  claims 'extracted VERBATIM ... behavior-preserving' - the extractor dropped the module
+  import surface along with the code. The file is imported by server.py:6311, so a green
+  import hid a runtime NameError on the first train trigger (fail-late landmine).
+- ROOT CAUSE: verbatim extraction with no import-surface diffing and no smoke import of
+  the extracted module before commit (ruff F821 was the only detector, and it ran in
+  the gate that was skipped when the WIP was first committed untracked).
+- FIX (Hermes-Coder): + from pathlib import Path to the import block; re-homed
+  _run_training_async VERBATIM from server.py HEAD (module-level helper of the extracted
+  routes; asyncio.to_thread wrapper); ruff format trailing blank line. Kept parallel
+  ownership: did NOT touch server.py / cli/* WIP of CHG-0032-A1.
+- VERIFICATION: py_compile OK; ruff check+format clean; module imports cleanly
+  (register_model_governance_routes + _run_training_async callable, signature verified);
+  test_model_governance_phase16 60/60 PASS; content byte-identical to the repair
+  Nexus-Main absorbed into 6213d23 (verified by sorted diff). Full beforePush re-run:
+  gate green, commits pushed (f5f20cc + 569dd1e + 430b06e lineage).
+- LESSON: any 'verbatim extraction' must diff the import surface (ruff F821 + import
+  smoke test) BEFORE commit - the header promise is not evidence (directive: prove every
+  critical connection).
+- Severity: P1 (unlintable import + runtime NameError on a trigger endpoint) | Status: FIXED | Fixed-by: Hermes-Coder
