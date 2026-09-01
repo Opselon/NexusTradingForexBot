@@ -18,9 +18,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def real_commands() -> set[str]:
-    from nexus_scalp.cli.main import app
-
     import typer
+
+    from nexus_scalp.cli.main import app
 
     click_root = typer.main.get_command(app)
     return set(click_root.commands.keys())
@@ -39,7 +39,12 @@ def main() -> int:
     referenced = referenced_commands(readme) | referenced_commands(cli_md)
 
     # Whitelist: prose references that are not commands (e.g. "nexus-style").
-    allowed_non_commands = {"start", "starte", "stop", "help"}  # start/stop/help ARE commands; 'starte' is the typo test fixture name, not a doc claim
+    allowed_non_commands = {
+        "start",
+        "starte",
+        "stop",
+        "help",
+    }  # start/stop/help ARE commands; 'starte' is the typo test fixture name, not a doc claim
     imaginary = sorted(referenced - real - allowed_non_commands)
 
     missing_docs = sorted({"help", "version", "doctor", "status", "update", "repair"} - referenced)
