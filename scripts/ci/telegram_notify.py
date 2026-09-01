@@ -49,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--results", default=str(REPO_ROOT / "ci-results"))
     parser.add_argument("--chat-id", default="")
     parser.add_argument("--bot-token", default="")
+    parser.add_argument("--os", dest="os_name", default="")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("run-started").set_defaults(
@@ -56,6 +57,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub.add_parser("run-finished").set_defaults(
         func=lambda a: _emit(_reporter(a).notify_run_finished())
+    )
+    # OS-matrix variant (tests-os.yml): same payload as run-finished,
+    # tagged with the runner OS so the channel shows which leg finished.
+    sub.add_parser("os-finished").set_defaults(
+        func=lambda a: _emit(_reporter(a).notify_run_finished(os_name=getattr(a, "os_name", "")))
     )
     sub.add_parser("test-summary").set_defaults(
         func=lambda a: _emit(_reporter(a).notify_test_summary())

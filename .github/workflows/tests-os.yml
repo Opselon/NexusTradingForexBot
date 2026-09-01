@@ -81,4 +81,4 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          python scripts/ci/telegram_notify.py --results ci-results os-finished || true
+          python scripts/ci/telegram_notify.py --results ci-results os-finished --os "${{ matrix.os }}" || true
