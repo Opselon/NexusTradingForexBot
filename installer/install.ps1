@@ -1145,7 +1145,10 @@ function Invoke-RepoUpdate {
 function Install-RepoFromZip {
     # ZIP fallback: download the ref's archive, validate structure, extract
     # zip-slip-safely to a temp dir, then atomically move into place. Initialize
-    # git metadata so future updates still work.
+    # git metadata so future updates still work. When the post-ZIP fetch cannot
+    # pin a resolvable HEAD (offline git transport), record source_mode=zip +
+    # git_tracking=degraded honestly in state - never pretend this equals a
+    # normal clone.
     param([string]$RefKind, [string]$RefValue)
     Write-WarnMsg "Git clone failed - downloading ZIP archive instead ($RefKind $RefValue)..."
 
@@ -1197,6 +1200,7 @@ function Install-RepoFromZip {
                 & git config core.autocrlf false 2>$null
                 & git remote add origin $Script:RepoUrlHttps 2>$null
                 $fetchRef = if ($RefKind -eq "commit") { $RefValue } elseif ($RefKind -eq "tag") { "refs/tags/$RefValue" } else { $RefValue }
+                $gitTracked = $false
                 & git fetch --depth 1 origin $fetchRef 2>$null
                 if ($LASTEXITCODE -eq 0) {
                     if ($RefKind -in @("commit", "tag")) {
@@ -1204,11 +1208,18 @@ function Install-RepoFromZip {
                     } else {
                         & git checkout -f -B $RefValue FETCH_HEAD 2>$null
                     }
-                    if ($LASTEXITCODE -eq 0) { Write-Success "ZIP checkout pinned to $fetchRef" }
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Success "ZIP checkout pinned to $fetchRef"
+                        $gitTracked = $true
+                    }
                     else { Write-WarnMsg "ZIP extracted but git checkout failed - code is in place, update tracking degraded" }
                 } else {
                     Write-WarnMsg "ZIP extracted but git fetch failed - code is in place, update tracking degraded"
                 }
+                # Honest provenance (closure steer 56): record HOW the source was
+                # acquired so diagnostics never conflate ZIP with a real clone.
+                $Script:_SourceMode = "zip"
+                $Script:_GitTracking = if ($gitTracked) { "ok" } else { "degraded" }
             } finally {
                 Pop-Location
             }
@@ -1932,6 +1943,8 @@ function Write-InstallState {
         python                = if ($pyVersion) { "$pyVersion" } else { $null }
         git                   = if ($gitVersion) { "$gitVersion" } else { $null }
         last_successful_stage = $lastOk
+        source_mode           = if ($Script:_SourceMode) { $Script:_SourceMode } else { "git" }
+        git_tracking          = if ($Script:_GitTracking) { $Script:_GitTracking } else { "ok" }
         stages                = $stageRecords
     }
 
@@ -2409,6 +2422,8 @@ function Write-InstallStateFromSession {
         nexus_home            = $NexusHome
         install_dir           = $InstallDir
         last_successful_stage = $StageDef.Name
+        source_mode           = if ($Script:_SourceMode) { $Script:_SourceMode } else { "git" }
+        git_tracking          = if ($Script:_GitTracking) { $Script:_GitTracking } else { "ok" }
         stages                = $stageRecords
     }
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
