@@ -263,11 +263,52 @@ class RuntimeCleanupScheduler:
         )
         path = persist_initial_audit(report, self.repo_root)
         self._audit_done = True
-        logger.info(
-            "[DB_HYGIENE] event=INITIAL_AUDIT_COMPLETE verdict=%s path=%s",
-            report.get("verdict", "UNKNOWN"),
-            path,
-        )
+        # AGENT-2 (2026-09-01): actionable summary in the log itself (spec §12)
+        # — an operator must not need to open the report JSON to understand
+        # WHY the verdict is ACTION_REQUIRED and WHAT is recommended. All
+        # numbers come from the real report; nothing is invented.
+        totals = report.get("totals", {})
+        violations = int(totals.get("violations", 0) or 0)
+        orphans = int(totals.get("orphans", 0) or 0)
+        duplicates = int(totals.get("duplicates", 0) or 0)
+        ih = report.get("index_health_summary", {}) or {}
+        missing_idx = sum(int(v.get("missing", 0) or 0) for v in ih.values())
+        if violations:
+            # first violation detail (rule/table) from the real report
+            first_rule = ""
+            first_table = ""
+            for db_info in (report.get("per_database") or {}).values():
+                details = (db_info.get("consistency") or {}).get("violation_details") or []
+                if details:
+                    first_rule = str(details[0].get("rule_id", ""))
+                    first_table = str(details[0].get("table", ""))
+                    break
+            logger.info(
+                "[DB_HYGIENE] event=INITIAL_AUDIT_COMPLETE verdict=%s "
+                "consistency_violations=%d orphans=%d duplicates=%d "
+                "missing_indexes=%d first_violation=%s/%s "
+                "recommended_action=review_report_manual_repair "
+                "auto_delete=DISABLED (AUDIT_ONLY) path=%s",
+                report.get("verdict", "UNKNOWN"),
+                violations,
+                orphans,
+                duplicates,
+                missing_idx,
+                first_rule or "-",
+                first_table or "-",
+                path,
+            )
+        else:
+            logger.info(
+                "[DB_HYGIENE] event=INITIAL_AUDIT_COMPLETE verdict=%s "
+                "consistency_violations=0 orphans=%d duplicates=%d "
+                "missing_indexes=%d path=%s",
+                report.get("verdict", "UNKNOWN"),
+                orphans,
+                duplicates,
+                missing_idx,
+                path,
+            )
         return report
 
     def _index_health_report(self) -> dict[str, Any]:

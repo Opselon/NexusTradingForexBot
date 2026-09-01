@@ -308,7 +308,24 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         self._last_blocked_log_time: float = 0.0
         self._blocked_log_count: int = 0
 
-        self.start_worker()
+        # AGENT-2 (2026-09-01): dormant worker when Telegram is disabled.
+        # Previously the queue worker thread started UNCONDITIONALLY, so
+        # enabled=False produced a running worker, an INFO heartbeat line
+        # every ~5s, and a BLOCKED_NOT_CONFIGURED failure on every send()
+        # (production: 494 heartbeat lines + 9 blocked warnings in one day).
+        # Dormant mode: no worker thread, no heartbeat, and send() fails
+        # fast with the rate-limited BLOCKED_NOT_CONFIGURED warning while
+        # still recording truthful config_error counters for health_state().
+        if self.enabled:
+            self.start_worker()
+        else:
+            self._worker_running = False
+            logger.info(
+                "[TELEGRAM_WORKER] event=DORMANT reason=DISABLED "
+                "token_present=%s admin_id_present=%s",
+                bool(bot_token),
+                bool(self.admin_id),
+            )
 
     # =====================================================================
     # Worker lifecycle (spec §10: never die silently)

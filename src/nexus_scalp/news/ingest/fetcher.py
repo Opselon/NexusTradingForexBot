@@ -91,6 +91,23 @@ class NewsFetcher:
         health = self._load_health(source_id)
 
         if self._backed_off(health, now):
+            # AGENT-2 (2026-09-01): backoff skips are aggregated, not silent.
+            # A source in long backoff (BLS 403: backoff now ~3600s) previously
+            # returned "backoff active" with NO log at all, so an operator
+            # could not see how often the source was skipped or when it last
+            # failed. Count it; the recovery/summary is reported at INFO by
+            # the ingest cycle via per-source SUCCESS lines. Bounded cost.
+            health["backoff_skips"] = int(health.get("backoff_skips", 0)) + 1
+            # Persist counters on the DB row only occasionally to avoid a
+            # write per skip (skip path is read-mostly).
+            if health["backoff_skips"] % 10 == 0:
+                self._save_health(source_id, health)
+            logger.debug(
+                "[NEWS_FETCH] source=%s status=BACKOFF_SKIP skips=%d until=%s",
+                source_id,
+                health["backoff_skips"],
+                health.get("backoff_until", ""),
+            )
             return SourceFetchResult(ok=False, error="backoff active", status=None)
 
         # Restore conditional-GET validators persisted from the last success so
@@ -149,15 +166,36 @@ class NewsFetcher:
             ).isoformat()
             health["rate_limited"] = False
             self._save_health(source_id, health)
-            logger.warning(
-                "[NEWS_FETCH] source=%s status=FAILURE error=%s failures=%d",
-                source_id,
-                result.error,
-                health["consecutive_failures"],
-            )
+            # AGENT-2 (2026-09-01): first failure and every failure while
+            # backoff is still short are WARNINGs (actionable, tells the
+            # operator the source is failing NOW). Once the exponential
+            # backoff exceeds the poll interval the failure is expected for
+            # a long window — log it at INFO with the backoff window named,
+            # so the truth stays visible without one WARNING line per poll
+            # for a source that is down for the next hour. The SUCCESS after
+            # failures path always logs at INFO (recovery visibility).
+            if backoff_sec <= 300.0:
+                logger.warning(
+                    "[NEWS_FETCH] source=%s status=FAILURE error=%s failures=%d backoff_sec=%.0f",
+                    source_id,
+                    result.error,
+                    health["consecutive_failures"],
+                    backoff_sec,
+                )
+            else:
+                logger.info(
+                    "[NEWS_FETCH] source=%s status=FAILURE_DEGRADED error=%s failures=%d "
+                    "backoff_sec=%.0f next_retry_at=%s",
+                    source_id,
+                    result.error,
+                    health["consecutive_failures"],
+                    backoff_sec,
+                    health["backoff_until"],
+                )
             return result
 
         # success
+        recovered = int(health.get("consecutive_failures", 0)) > 0
         health.update(
             consecutive_failures=0,
             last_success_at=datetime.now(UTC).isoformat(),
@@ -165,6 +203,7 @@ class NewsFetcher:
             rate_limited=False,
             retry_after_sec=0.0,
             backoff_until="",
+            backoff_skips=0,
             healthy=True,
         )
         self._save_health(source_id, health)
@@ -176,6 +215,17 @@ class NewsFetcher:
                 source_id,
             )
         else:
+            # AGENT-2 (2026-09-01): a SUCCESS after >=1 failures is the
+            # one RECOVERED event (spec §7) — INFO with the previous failure
+            # count so operators see the source came back.
+            if recovered:
+                logger.info(
+                    "[NEWS_FETCH] source=%s status=RECOVERED items=%d "
+                    "previous_failures=%s (source healthy again)",
+                    source_id,
+                    len(result.items),
+                    recovered,
+                )
             logger.info(
                 "[NEWS_FETCH] source=%s status=SUCCESS items=%d",
                 source_id,

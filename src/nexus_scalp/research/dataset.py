@@ -550,6 +550,17 @@ class ResearchDatasetBuilder:
         samples: list[ResearchSample] = []
         seen: set[str] = set()
         audit_all: list[ExperienceRecord] = list(self._iter_records())
+        # AGENT-2 (2026-09-01): batch aggregation for repeated classification
+        # events. The research worker rebuilds the dataset every ~60s and the
+        # whole ledger re-classifies each time; a per-key classify-once cache
+        # cannot survive a restart (per-PROCESS state vs per-DAY log files),
+        # so identical events re-flood the day's log (observed: 729 lines for
+        # the same 243 trade ids). Semantics are UNCHANGED — only the log
+        # representation: first occurrence logs immediately, repeats count
+        # into a bounded aggregate flushed ONCE at the end of this build.
+        from nexus_scalp.observability.event_aggregator import EventBatchAggregator
+
+        agg = EventBatchAggregator()
         # One deterministic full classification pass (no per-row info spam for
         # known terminal non-trades; only unresolved evidence is logged).
         for rec in audit_all:
@@ -565,7 +576,14 @@ class ResearchDatasetBuilder:
                     # classification is durably recorded in the dataset
                     # census (`unknown_provenance` counter + eligibility
                     # rules v2 contract).
-                    if rec.idempotency_key not in self._unknown_provenance_logged:
+                    first = agg.add(
+                        event="ORPHAN_CLASSIFIED_UNKNOWN",
+                        reason=reason,
+                        stage="dataset",
+                        recoverable=False,
+                        trade_id=rec.experience_id,
+                    )
+                    if first and rec.idempotency_key not in self._unknown_provenance_logged:
                         self._unknown_provenance_logged.add(rec.idempotency_key)
                         logger.info(
                             "[STRATEGY_RESEARCH] event=ORPHAN_CLASSIFIED_UNKNOWN",
@@ -576,13 +594,12 @@ class ResearchDatasetBuilder:
                             recoverable=False,
                         )
                 elif reason in _RECOVERABLE_REASONS:
-                    logger.info(
-                        "[STRATEGY_RESEARCH] event=DATASET_REJECTED",
-                        stage="dataset",
-                        trade_id=rec.experience_id,
+                    agg.add(
+                        event="DATASET_REJECTED",
                         reason=reason,
-                        detail=detail[:120],
+                        stage="dataset",
                         recoverable=True,
+                        trade_id=rec.experience_id,
                     )
                 # Everything else (terminal non-trade lifecycle states) is
                 # expected, permanent evidence: counted via audit(), never
@@ -592,6 +609,12 @@ class ResearchDatasetBuilder:
                 continue
             seen.add(rec.idempotency_key)
             samples.append(self._to_sample(rec))
+        # Flush aggregate summaries at the build boundary (spec §16): one
+        # batch summary per (event, reason, stage, recoverable) signature,
+        # preserving count/sample_ids/first_seen/last_seen — information is
+        # aggregated, never discarded. only_repeats=True: singletons were
+        # already logged at first occurrence.
+        agg.flush(logger.info, only_repeats=True)
         samples.sort(key=lambda s: s.decision_timestamp)
         ds = self._dataset(dataset_id, samples)
         # P0-E (dataset contract): explicit, auditable evidence census that

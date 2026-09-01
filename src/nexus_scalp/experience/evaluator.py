@@ -82,6 +82,23 @@ class StrategyEvaluator:
         self.degrade_expectancy_threshold_r = degrade_expectancy_threshold_r
         self.recovery_expectancy_threshold_r = recovery_expectancy_threshold_r
         self.recovery_confidence_threshold = recovery_confidence_threshold
+        # AGENT-2: bounded edge-triggered DEGRADED log state per family.
+        self._degraded_log_ts: dict[str, float] = {}
+
+    def _should_repeat_degraded(self, strategy_id: str, min_gap_sec: float = 600.0) -> bool:
+        """True at most once per min_gap_sec per family (bounded repetition)."""
+        import time as _time
+
+        now = _time.monotonic()
+        last = self._degraded_log_ts.get(strategy_id, 0.0)
+        if now - last >= min_gap_sec:
+            self._degraded_log_ts[strategy_id] = now
+            # bounded memory: keep only the most recent 512 families
+            if len(self._degraded_log_ts) > 512:
+                oldest = min(self._degraded_log_ts, key=lambda k: self._degraded_log_ts[k])
+                self._degraded_log_ts.pop(oldest, None)
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Evaluation
@@ -417,13 +434,24 @@ class StrategyEvaluator:
         if recent_expectancy_r < self.degrade_expectancy_threshold_r or (
             recency_expectancy_r < self.degrade_expectancy_threshold_r
         ):
-            logger.info(
-                "[STRATEGY] DEGRADED",
-                strategy_id=strategy_id,
-                samples=sample_count,
-                recent_expectancy_r=round(recent_expectancy_r, 4),
-                recency_expectancy_r=round(recency_expectancy_r, 4),
-            )
+            # AGENT-2 (2026-09-01): edge-triggered lifecycle logging. The
+            # DEGRADED transition is emitted when the family ENTERS degraded
+            # state; while it STAYS degraded the line repeats at most once
+            # per family per rebuild cycle (registry state), and the
+            # RECOVERED path (probation) already logs the way back. Severity
+            # stays INFO by business design: degradation is a legitimate
+            # intelligence signal, not an operational fault. Classification
+            # logic is UNTOUCHED — only log repetition is bounded.
+            was_degraded = current_state == StrategyLifecycle.DEGRADED
+            if not was_degraded or self._should_repeat_degraded(strategy_id):
+                logger.info(
+                    "[STRATEGY] DEGRADED",
+                    strategy_id=strategy_id,
+                    samples=sample_count,
+                    recent_expectancy_r=round(recent_expectancy_r, 4),
+                    recency_expectancy_r=round(recency_expectancy_r, 4),
+                    transition="ENTERED" if not was_degraded else "STILL_DEGRADED",
+                )
             return StrategyLifecycle.DEGRADED, 0
 
         if sample_count < self.min_samples_validated:
