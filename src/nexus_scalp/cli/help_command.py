@@ -57,18 +57,26 @@ def register_help_command(app: typer.Typer) -> None:
         if not topic:
             import sys as _sys
 
-            import click as _click
+            # typer bundles its OWN vendored click; mixing the standalone click
+            # Context with the vendored-tree command is a type-level mismatch
+            # (and a real runtime hazard across click versions). Always take
+            # Context from the SAME module the command tree was built with.
+            from typer import _click as _typer_click
 
             if _sys.platform.startswith("win"):
                 # Some Click/Typer combos dislike --help re-entry under the
                 # shim; render into stdout without standalone re-invocation.
-                _click.echo(click_root.get_help(_click.Context(click_root, info_name="nexus")))
+                _typer_click.echo(
+                    click_root.get_help(_typer_click.Context(click_root, info_name="nexus"))  # type: ignore[arg-type]
+                )
                 raise typer.Exit(0)
             click_root.main(args=["--help"], standalone_mode=False)
             raise typer.Exit(0)
 
-        # Topic form: render that command's own --help.
-        cmd = click_root.commands.get(topic) if click_root.commands else None
+        # Topic form: render that command's own --help. The vendored-click
+        # MultiCommand exposes `commands`; getattr guard keeps mypy happy.
+        commands_map = getattr(click_root, "commands", None)
+        cmd = commands_map.get(topic) if commands_map else None
         if cmd is None:
             from nexus_scalp.cli.styling import console as _console
 

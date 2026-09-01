@@ -83,6 +83,27 @@ Release details: [`docs/RELEASE.md`](docs/RELEASE.md) · build pipeline:
 
 ---
 
+## CLI (after any install path)
+
+`nexus` is the application command — installation lifecycle lives in
+`install.ps1`, everything you *operate* lives in `nexus`.
+
+```powershell
+nexus help            # same authoritative surface as --help (+ 'nexus help start')
+nexus version         # build identity (--json / --plain)
+nexus doctor          # full read-only diagnostics (--json for tooling)
+nexus status          # health + environment + version
+nexus config          # inspect/validate active configuration (secrets masked)
+nexus start           # PAPER mode by default — never LIVE silently
+nexus update          # honest check/download/verify/install flow (NO_UPDATE when current)
+nexus repair          # repair non-destructive derived state; never deletes user data
+```
+
+Full command reference, exit-code contract and JSON mode:
+[`docs/CLI.md`](docs/CLI.md).
+
+---
+
 ## Requirements
 
 - **OS:** Windows 10/11 **x64** for the native MT5 adapter. **Windows ARM64 is NOT supported**
