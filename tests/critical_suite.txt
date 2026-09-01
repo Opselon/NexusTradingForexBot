@@ -58,3 +58,6 @@ tests/unit/test_liquidity_runtime_integration_phase18.py
 tests/unit/test_70d_inference_validator_task3.py
 tests/unit/test_user_hunt_bug170_171.py
 tests/release/test_release_hardening.py
+# BUG-183: purge/embargo leakage-guard defaults wired into the production research path (Hermes-DevOps, 2026-09-01)
+tests/unit/test_research_purge_defaults_bug183.py
+tests/unit/test_evidence_semantics_bug140.py
