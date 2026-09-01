@@ -62,7 +62,7 @@ Test: primary regression evidence.
 
 | Gap | Evidence | Risk | Next action |
 |---|---|---|---|
-| ~594 `except Exception` sites log without traceback (best-effort contexts, migrations) | `artifacts/forensics/anti_crash_static_report.json` `HANDLER_NO_TRACE` | P2 observability debt; majority reviewed-EXPECTED | triage hot-path files first (live_engine, order_manager, server) then add `exc_info=True` |
+| 381 silent handlers (except-Exception: pass/continue/return-default) now flagged as P1 violations by the static check | `artifacts/forensics/anti_crash_static_report.json` (rev-2 regex) | P1 tracking / P2 per-site (majority are reviewed fail-safe defaults) | triage top files: live_engine (48), debug_snapshot (16), pro_auto (13), server (13) — add `exc_info`, truthful state, or `# anti-crash: allow` |
 | 8 thread-spawn sites without `add_done_callback` | same report `SPAWN_NO_DONE_CALLBACK` | LOW each (all capture crashes in-loop) — but none is centrally monitored | optional watchdog aggregation task |
 | 2 `check=False` subprocess sites with wide windows | same report | LOW (runner kills tree + status TIMEOUT) | narrow result-inspection window |
 | BUG-164 regression does not pin the "Dataset not found" panel text | reviewer report (1f60832) | P2 test confidence | pin panel text |
@@ -104,5 +104,6 @@ Test: primary regression evidence.
 | shutdown | GREEN | ordered guarded teardown tests |
 
 Verdict: **HARDENED_WITH_GAPS** — no known silent-crash / false-success /
-lost-traceback path on any P0 boundary; remaining work is observability
-debt (P2/P3) tracked above, not a safety hole.
+lost-traceback path on any P0 boundary; the honest caveat is the tracked
+381-site silent-handler backlog (see residual gaps), which is observability/
+documentation debt on mostly-fail-safe sites, not a proven safety hole.

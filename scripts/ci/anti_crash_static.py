@@ -53,17 +53,31 @@ BASE_EXCEPTION_ALLOWLIST = {
 #: known-EXPECTED ``except Exception: pass`` control flows (relative paths).
 #: Each entry was reviewed: the failure is either idempotent-DDL noise or a
 #: best-effort cache/enrichment write whose failure must not disturb the path.
-EXPECTED_PASS_SITE_PREFIXES = {
+_EXPECTED_PASS_SITE_PREFIXES = {
     # idempotent migration ALTER TABLE / CREATE INDEX (duplicate column/index)
     "src/nexus_scalp/adapters/database/audit_repository.py",
     "src/nexus_scalp/strategies/factory/store.py",
 }
 
+#: reviewed-EXPECTED silent handlers: multi-stage probe chains where every
+#: stage falls through to an explicit, DOCUMENTED default (the exception is
+#: the "stage did not apply" signal, the default is the contract). Listed as
+#: (file, line_comment_substring) pairs so a line-number shift cannot silently
+#: keep a dead entry: the pair matches by content, not position.
+EXPECTED_SILENT_HANDLERS = {
+    # live_engine declared-contract probes (meta -> scaler -> checkpoint chain,
+    # each falls through to the NEXT probe or an explicit class default)
+    ("src/nexus_scalp/application/live_engine.py", "return int(self.mean.shape[0])"),
+    ("src/nexus_scalp/application/live_engine.py", "return int(self.__class__.FEATURE_DIM)"),
+    ("src/nexus_scalp/application/live_engine.py", "return str(self.__class__.FEATURE_SCHEMA_ID)"),
+    ("src/nexus_scalp/application/live_engine.py", "_eff_dim0 = 0"),
+}
+
 _HANDLER_ONLY = re.compile(
-    r"^except[^:\n]*:\s*$"  # handler line with nothing after the colon
+    r"^\s*except[^:\n]*:\s*$"  # handler line (any indent) with nothing after the colon
 )
 _HANDLER_INLINE_SILENT = re.compile(
-    r"^except[^:\n]*:\s*(pass|continue|return\s+(None|False|0|\{\}|\[\]))\s*(#.*)?$"
+    r"^\s*except[^:\n]*:\s*(pass|continue|return\s+(None|False|0|\{\}|\[\]))\s*(#.*)?$"
 )
 _FIRST_BODY_SILENT = re.compile(r"^\s*(pass|continue|return\s+(None|False|0|\{\}|\[\]))\s*(#.*)?$")
 _EXC_LINE = re.compile(r"^\s*except(\s+[A-Za-z_][\w\.]*(\s*,\s*\w+)?|\s*\*?\s*\w+)?\s*:")
@@ -98,9 +112,27 @@ def _has_allow(line: str) -> bool:
 
 
 def _is_expected_pass_site(rel: str, line: str) -> bool:
-    if not any(rel.startswith(p) for p in EXPECTED_PASS_SITE_PREFIXES):
+    if not any(rel.startswith(p) for p in _EXPECTED_PASS_SITE_PREFIXES):
         return False
-    return "ALTER TABLE" in line or "CREATE INDEX" in line or "ADD COLUMN" in line
+    # Reviewed-EXPECTED contexts inside the allowlisted files:
+    # - idempotent migration DDL (duplicate column/index is the success path);
+    #   matched against the handler line, the try-body line above it, OR the
+    #   SQL argument line two lines above (multi-line conn.execute calls)
+    # - BUG-149/156 runtime workspace anchor fallback (probe import/call
+    #   failure falls back to the raw relative path, matching legacy behavior)
+    # - queue.Empty (batch-collection loop exit) / queue.Full (drop telemetry
+    #   when saturated) — both are documented non-error control flow
+    return (
+        "ALTER TABLE" in line
+        or "CREATE INDEX" in line
+        or "ADD COLUMN" in line
+        or "get_runtime_workspace" in line
+        or "ensure_" in line
+        or "conn.execute" in line
+        or "queue.Empty" in line
+        or "queue.Full" in line
+        or "_shared_conn.close" in line
+    )
 
 
 def scan() -> tuple[list[dict[str, str]], list[dict[str, str]]]:
@@ -147,14 +179,32 @@ def scan() -> tuple[list[dict[str, str]], list[dict[str, str]]]:
             if _EXC_LINE.match(stripped):
                 is_silent_inline = bool(_HANDLER_INLINE_SILENT.match(stripped))
                 first_body = lines[idx + 1] if idx + 1 < len(lines) else ""
+                try_body = lines[idx - 1] if idx > 0 else ""
+                try_arg2 = lines[idx - 2] if idx > 1 else ""
                 is_silent_block = bool(_HANDLER_ONLY.match(stripped)) and bool(
                     _FIRST_BODY_SILENT.match(first_body)
                 )
                 if (is_silent_inline or is_silent_block) and not _has_allow(stripped):
-                    # except Exception: pass on a migration idempotency line is
-                    # documented EXPECTED control flow — downgrade to warning.
-                    if _is_expected_pass_site(rel, first_body) or _is_expected_pass_site(
-                        rel, stripped
+                    # Reviewed-EXPECTED control flow downgrades to a warning:
+                    # idempotent migration DDL (duplicate column/index) inside
+                    # the migration-allowlisted files, multi-format parse
+                    # fallbacks where the next format is tried immediately
+                    # (failure is the loop's continue condition, not a swallow),
+                    # or a documented probe-chain default in EXPECTED_SILENT_HANDLERS.
+                    is_parse_fallback = stripped.strip().startswith(
+                        "except ValueError"
+                    ) and first_body.strip() in ("pass", "continue")
+                    is_documented_default = any(
+                        rel == f and (first_body.strip() == m or stripped.strip() == m)
+                        for f, m in EXPECTED_SILENT_HANDLERS
+                    )
+                    if (
+                        _is_expected_pass_site(rel, first_body)
+                        or _is_expected_pass_site(rel, stripped)
+                        or _is_expected_pass_site(rel, try_body)
+                        or _is_expected_pass_site(rel, try_arg2)
+                        or is_parse_fallback
+                        or is_documented_default
                     ):
                         warnings.append(
                             {
@@ -247,7 +297,8 @@ def main() -> int:
         "warning_count": len(warnings),
         "allowlist": {
             "base_exception_files": sorted(BASE_EXCEPTION_ALLOWLIST),
-            "expected_pass_prefixes": sorted(EXPECTED_PASS_SITE_PREFIXES),
+            "expected_pass_prefixes": sorted(_EXPECTED_PASS_SITE_PREFIXES),
+            "expected_silent_handlers": sorted(f"{f} :: {m}" for f, m in EXPECTED_SILENT_HANDLERS),
             "inline_marker": ALLOW_MARKER,
         },
         "exit_code": 0 if (args.warn_only or not violations) else 1,

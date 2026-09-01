@@ -18,47 +18,298 @@
     }
   },
   "boundary_assessments": [
-    {"subsystem": "startup", "score": "GREEN", "evidence": ["launcher doctor FAIL->exit1", "_preflight_or_raise panel", "MT5_CONNECT failed->shutdown", "engine runtime launch test mandatory (BUG-105 gate)"]},
-    {"subsystem": "config", "score": "GREEN", "evidence": ["runtime store validate_field", "hot-reload reject keeps old snapshot", "INV-010 telegram route"]},
-    {"subsystem": "DI", "score": "YELLOW", "evidence": ["no generic DI container; construction-order bugs covered by init-order tests (BUG-105/130)"]},
-    {"subsystem": "database", "score": "GREEN", "evidence": ["audit worker batch-failure log + task_done drain", "BUG-142 exc_info read helpers", "transactional migrator restores bytes"]},
-    {"subsystem": "filesystem", "score": "YELLOW", "evidence": ["BUG-149/156 workspace anchoring", "no disk-full injection test"]},
-    {"subsystem": "market_data", "score": "GREEN", "evidence": ["get_last_tick raises (no fake ticks)", "G29 stalled-stream resubscribe", "watchdog reconnect"]},
-    {"subsystem": "candles", "score": "GREEN", "evidence": ["reseed REPLACE+ALIGN", "duplicate suppression BUG-169"]},
-    {"subsystem": "features", "score": "GREEN", "evidence": ["to_tensor_input width-raise", "NaN/Inf sanitize+clip logged"]},
-    {"subsystem": "contract_50d", "score": "GREEN", "evidence": ["_validate_50d_tensor double gate", "width!=50 RuntimeError"]},
-    {"subsystem": "contract_70d", "score": "GREEN", "evidence": ["validate_70d_vector dim/finite/bounds/hash raises", "liquidity INVALID -> refuse (no fabricated vector)"]},
-    {"subsystem": "tensor", "score": "GREEN", "evidence": ["BUG-175 cross-schema regression pins real RuntimeError", "never pre-resize"]},
-    {"subsystem": "model_load", "score": "GREEN", "evidence": ["BUG-141 width-contract writer guard", "manifest hash + declared-scaler hard fail"]},
-    {"subsystem": "model_inference", "score": "GREEN", "evidence": ["in-trade failure isolated with exc_info, probs=None, stops continue", "freshness gate blocks stale decisions"]},
-    {"subsystem": "gpu_cpu", "score": "YELLOW", "evidence": ["device pick tested", "no OOM/driver injection test"]},
-    {"subsystem": "regime", "score": "GREEN", "evidence": ["classifier suites", "UNKNOWN retained, never invented"]},
-    {"subsystem": "liquidity", "score": "GREEN", "evidence": ["LIQUIDITY_RUNTIME v2 status matrix", "FEATURE_DISABLED vs UNAVAILABLE distinction"]},
-    {"subsystem": "strategy", "score": "GREEN", "evidence": ["0 except-Exception in policy.py", "NO_TRADE default on any gap"]},
-    {"subsystem": "risk", "score": "GREEN", "evidence": ["INVALID_* fail-closed reason codes", "clamp fallback bounded + logged", "broker-native verification provenance"]},
-    {"subsystem": "execution", "score": "GREEN", "evidence": ["ambiguous-fill broker-truth probe", "pending fingerprint idempotency", "SAFE_MODE after 3 rejections"]},
-    {"subsystem": "news", "score": "GREEN", "evidence": ["per-source backoff health", "worker FAILURE exc_info"]},
-    {"subsystem": "workers", "score": "GREEN", "evidence": ["telegram crash capture + heartbeat", "audit batch drain", "candle/shadow70 backpressure telemetry"]},
-    {"subsystem": "async", "score": "GREEN", "evidence": ["WORKER_KICK timeout detach", "tracked _retrain_task + web run_loop task", "gather(return_exceptions=False)"]},
-    {"subsystem": "web_api", "score": "GREEN", "evidence": ["web/errors.py safe envelope + request_id", "middleware 500 sanitize", "log_web_error traceback"]},
-    {"subsystem": "sse", "score": "GREEN", "evidence": ["BUG-110 serialization error frame + counters", "stream survives client failures"]},
-    {"subsystem": "cli", "score": "GREEN", "evidence": ["exit-code contract suites", "BUG-173 FAILED_SAFE exit 1 + honest panel"]},
-    {"subsystem": "diagnostics", "score": "GREEN", "evidence": ["infrastructure failure forces status=error", "CHECK-RAISED UNKNOWN row never PASS"]},
-    {"subsystem": "release", "score": "GREEN", "evidence": ["4-layout verify matrix + tamper probe (BUG-178 restore)", "BUG-174 identity tripwire"]},
-    {"subsystem": "updater", "score": "GREEN", "evidence": ["state machine + ROLLBACK_REQUIRED crash recovery", "BUG-171 resume semantics probes", "BUG-170 atomic pid claim + grace window"]},
-    {"subsystem": "shutdown", "score": "GREEN", "evidence": ["ordered guarded teardown", "audit close drains queue", "cleanup never masks primary error"]}
+    {
+      "subsystem": "startup",
+      "score": "GREEN",
+      "evidence": [
+        "launcher doctor FAIL->exit1",
+        "_preflight_or_raise panel",
+        "MT5_CONNECT failed->shutdown",
+        "engine runtime launch test mandatory (BUG-105 gate)"
+      ]
+    },
+    {
+      "subsystem": "config",
+      "score": "GREEN",
+      "evidence": [
+        "runtime store validate_field",
+        "hot-reload reject keeps old snapshot",
+        "INV-010 telegram route"
+      ]
+    },
+    {
+      "subsystem": "DI",
+      "score": "YELLOW",
+      "evidence": [
+        "no generic DI container; construction-order bugs covered by init-order tests (BUG-105/130)"
+      ]
+    },
+    {
+      "subsystem": "database",
+      "score": "GREEN",
+      "evidence": [
+        "audit worker batch-failure log + task_done drain",
+        "BUG-142 exc_info read helpers",
+        "transactional migrator restores bytes"
+      ]
+    },
+    {
+      "subsystem": "filesystem",
+      "score": "YELLOW",
+      "evidence": [
+        "BUG-149/156 workspace anchoring",
+        "no disk-full injection test"
+      ]
+    },
+    {
+      "subsystem": "market_data",
+      "score": "GREEN",
+      "evidence": [
+        "get_last_tick raises (no fake ticks)",
+        "G29 stalled-stream resubscribe",
+        "watchdog reconnect"
+      ]
+    },
+    {
+      "subsystem": "candles",
+      "score": "GREEN",
+      "evidence": [
+        "reseed REPLACE+ALIGN",
+        "duplicate suppression BUG-169"
+      ]
+    },
+    {
+      "subsystem": "features",
+      "score": "GREEN",
+      "evidence": [
+        "to_tensor_input width-raise",
+        "NaN/Inf sanitize+clip logged"
+      ]
+    },
+    {
+      "subsystem": "contract_50d",
+      "score": "GREEN",
+      "evidence": [
+        "_validate_50d_tensor double gate",
+        "width!=50 RuntimeError"
+      ]
+    },
+    {
+      "subsystem": "contract_70d",
+      "score": "GREEN",
+      "evidence": [
+        "validate_70d_vector dim/finite/bounds/hash raises",
+        "liquidity INVALID -> refuse (no fabricated vector)"
+      ]
+    },
+    {
+      "subsystem": "tensor",
+      "score": "GREEN",
+      "evidence": [
+        "BUG-175 cross-schema regression pins real RuntimeError",
+        "never pre-resize"
+      ]
+    },
+    {
+      "subsystem": "model_load",
+      "score": "GREEN",
+      "evidence": [
+        "BUG-141 width-contract writer guard",
+        "manifest hash + declared-scaler hard fail"
+      ]
+    },
+    {
+      "subsystem": "model_inference",
+      "score": "GREEN",
+      "evidence": [
+        "in-trade failure isolated with exc_info, probs=None, stops continue",
+        "freshness gate blocks stale decisions"
+      ]
+    },
+    {
+      "subsystem": "gpu_cpu",
+      "score": "YELLOW",
+      "evidence": [
+        "device pick tested",
+        "no OOM/driver injection test"
+      ]
+    },
+    {
+      "subsystem": "regime",
+      "score": "GREEN",
+      "evidence": [
+        "classifier suites",
+        "UNKNOWN retained, never invented"
+      ]
+    },
+    {
+      "subsystem": "liquidity",
+      "score": "GREEN",
+      "evidence": [
+        "LIQUIDITY_RUNTIME v2 status matrix",
+        "FEATURE_DISABLED vs UNAVAILABLE distinction"
+      ]
+    },
+    {
+      "subsystem": "strategy",
+      "score": "GREEN",
+      "evidence": [
+        "0 except-Exception in policy.py",
+        "NO_TRADE default on any gap"
+      ]
+    },
+    {
+      "subsystem": "risk",
+      "score": "GREEN",
+      "evidence": [
+        "INVALID_* fail-closed reason codes",
+        "clamp fallback bounded + logged",
+        "broker-native verification provenance"
+      ]
+    },
+    {
+      "subsystem": "execution",
+      "score": "GREEN",
+      "evidence": [
+        "ambiguous-fill broker-truth probe",
+        "pending fingerprint idempotency",
+        "SAFE_MODE after 3 rejections"
+      ]
+    },
+    {
+      "subsystem": "news",
+      "score": "GREEN",
+      "evidence": [
+        "per-source backoff health",
+        "worker FAILURE exc_info"
+      ]
+    },
+    {
+      "subsystem": "workers",
+      "score": "GREEN",
+      "evidence": [
+        "telegram crash capture + heartbeat",
+        "audit batch drain",
+        "candle/shadow70 backpressure telemetry"
+      ]
+    },
+    {
+      "subsystem": "async",
+      "score": "GREEN",
+      "evidence": [
+        "WORKER_KICK timeout detach",
+        "tracked _retrain_task + web run_loop task",
+        "gather(return_exceptions=False)"
+      ]
+    },
+    {
+      "subsystem": "web_api",
+      "score": "GREEN",
+      "evidence": [
+        "web/errors.py safe envelope + request_id",
+        "middleware 500 sanitize",
+        "log_web_error traceback"
+      ]
+    },
+    {
+      "subsystem": "sse",
+      "score": "GREEN",
+      "evidence": [
+        "BUG-110 serialization error frame + counters",
+        "stream survives client failures"
+      ]
+    },
+    {
+      "subsystem": "cli",
+      "score": "GREEN",
+      "evidence": [
+        "exit-code contract suites",
+        "BUG-173 FAILED_SAFE exit 1 + honest panel"
+      ]
+    },
+    {
+      "subsystem": "diagnostics",
+      "score": "GREEN",
+      "evidence": [
+        "infrastructure failure forces status=error",
+        "CHECK-RAISED UNKNOWN row never PASS"
+      ]
+    },
+    {
+      "subsystem": "release",
+      "score": "GREEN",
+      "evidence": [
+        "4-layout verify matrix + tamper probe (BUG-178 restore)",
+        "BUG-174 identity tripwire"
+      ]
+    },
+    {
+      "subsystem": "updater",
+      "score": "GREEN",
+      "evidence": [
+        "state machine + ROLLBACK_REQUIRED crash recovery",
+        "BUG-171 resume semantics probes",
+        "BUG-170 atomic pid claim + grace window"
+      ]
+    },
+    {
+      "subsystem": "shutdown",
+      "score": "GREEN",
+      "evidence": [
+        "ordered guarded teardown",
+        "audit close drains queue",
+        "cleanup never masks primary error"
+      ]
+    }
   ],
   "failure_injections_executed": [
-    {"probe": "BUG-175 fabricated-metrics", "method": "direct ValidationFactory validate with probabilities=None vs LocalModelRuntime real probs", "result": "REPRODUCED then fixed by 18057c3 regression net; fabricated oos=0.0 REJECTED vs real oos=0.3829 metrics on cand_05d5e65879bc5748"},
-    {"probe": "policy NameError (unbound prob_* in _evaluate_predictive_limit)", "method": "direct call probe + mypy name-defined check", "result": "REPRODUCED (NameError) -> quarantined as coder-quarantine stash 2949560, claimed+fixed same day (mypy clean at 01:00)"}
+    {
+      "probe": "BUG-175 fabricated-metrics",
+      "method": "direct ValidationFactory validate with probabilities=None vs LocalModelRuntime real probs",
+      "result": "REPRODUCED then fixed by 18057c3 regression net; fabricated oos=0.0 REJECTED vs real oos=0.3829 metrics on cand_05d5e65879bc5748"
+    },
+    {
+      "probe": "policy NameError (unbound prob_* in _evaluate_predictive_limit)",
+      "method": "direct call probe + mypy name-defined check",
+      "result": "REPRODUCED (NameError) -> quarantined as coder-quarantine stash 2949560, claimed+fixed same day (mypy clean at 01:00)"
+    },
+    {
+      "probe": "static-checker adversarial self-test",
+      "method": "inline harness: two-line 'except Exception: return None' + pass-then-more-statement cases vs the real is_ready site",
+      "result": "FOUND HOLE: handler patterns were not indent-anchored -> real two-line silent handlers escaped (0 flagged); FIXED (indent-anchored _HANDLER_ONLY/_HANDLER_INLINE_SILENT) -> 381 real sites now flagged"
+    }
   ],
   "static_check": {
     "tool": "scripts/ci/anti_crash_static.py",
-    "violations": 0,
-    "warnings": 604,
+    "violations": 381,
+    "warnings": 287,
     "report_file": "artifacts/forensics/anti_crash_static_report.json",
-    "warning_breakdown": {"HANDLER_NO_TRACE": 594, "SPAWN_NO_DONE_CALLBACK": 8, "CHECK_FALSE_DISCARDED": 2},
-    "allowlist": {"migration_pass_prefixes": ["audit_repository.py", "strategies/factory/store.py"], "inline_marker": "anti-crash: allow"}
+    "warning_breakdown": {
+      "SPAWN_NO_DONE_CALLBACK": 8,
+      "CHECK_FALSE_DISCARDED": 2,
+      "note": "after regex fix (indent-anchored handler patterns) + try-body/arg context matching: silent-handler sites became P1 VIOLATIONS (381 tracked); HANDLER_NO_TRACE backlog reclassified into violations"
+    },
+    "allowlist": {
+      "migration_pass_prefixes": [
+        "audit_repository.py",
+        "strategies/factory/store.py"
+      ],
+      "inline_marker": "anti-crash: allow"
+    },
+    "violation_breakdown": {
+      "SILENT_HANDLER": 381,
+      "top_files": {
+        "live_engine.py": 48,
+        "web/debug_snapshot.py": 16,
+        "news/pro_auto.py": 13,
+        "web/server.py": 13,
+        "candle_intelligence/store.py": 11,
+        "database/engine.py": 10,
+        "release/environment.py": 10,
+        "release/updater.py": 9,
+        "execution/order_manager.py": 8
+      }
+    }
   },
   "regression_nets": [
     "tests/unit/test_bug175_model_validate_probs.py (6)",
@@ -71,11 +322,36 @@
     "tests/unit/test_release_system.py (27)"
   ],
   "residual_gaps": [
-    {"id": "GAP-1", "desc": "~594 handlers log without traceback (majority reviewed-EXPECTED best-effort/migration contexts)", "priority": "P2", "action": "triage hot-path files first, add exc_info"},
-    {"id": "GAP-2", "desc": "8 thread spawns rely on in-loop capture, no central done-callback aggregation", "priority": "P3", "action": "optional watchdog aggregation"},
-    {"id": "GAP-3", "desc": "BUG-164 regression does not pin 'Dataset not found' panel text", "priority": "P2", "action": "pin panel text"},
-    {"id": "GAP-4", "desc": "model-replay prediction error inside payload with exit 0 (misleading success)", "priority": "P2", "action": "BUG-175 family follow-up"},
-    {"id": "GAP-5", "desc": "no GPU OOM/driver or disk-full injection tests", "priority": "P3", "action": "add boundary probes"}
+    {
+      "id": "GAP-1",
+      "desc": "381 silent handlers (except Exception: pass/continue/return-None-False-0) remain in engine code - each now TRACKED as a P1 violation by scripts/ci/anti_crash_static.py; majority are reviewed best-effort/observability contexts but lack the inline allow marker",
+      "priority": "P1 (tracking) / P2 (per-site risk: most are fail-safe defaults)",
+      "action": "triage top files first (live_engine 48, debug_snapshot 16, pro_auto 13, server 13): add exc_info logging, convert to documented allow markers, or add truthful state updates; gate strictness optional via --warn-only until backlog cleared"
+    },
+    {
+      "id": "GAP-2",
+      "desc": "8 thread spawns rely on in-loop capture, no central done-callback aggregation",
+      "priority": "P3",
+      "action": "optional watchdog aggregation"
+    },
+    {
+      "id": "GAP-3",
+      "desc": "BUG-164 regression does not pin 'Dataset not found' panel text",
+      "priority": "P2",
+      "action": "pin panel text"
+    },
+    {
+      "id": "GAP-4",
+      "desc": "model-replay prediction error inside payload with exit 0 (misleading success)",
+      "priority": "P2",
+      "action": "BUG-175 family follow-up"
+    },
+    {
+      "id": "GAP-5",
+      "desc": "no GPU OOM/driver or disk-full injection tests",
+      "priority": "P3",
+      "action": "add boundary probes"
+    }
   ],
   "handoff_notes": "Code-slice hardening (sections 5-7 of the master brief) was NOT executed by this pass: the live swarm (CHG-0032-A1 decomposition, BUG-175/176/177/178/179 owners) held exclusive in-flight ownership of every target file during the window; racing them would have violated the multi-agent git contract. This pass delivered the conflict-free layer: real probes that fed two confirmed bugs to their owners, the static anti-crash check (section 48), and the two required documents + this audit artifact."
 }

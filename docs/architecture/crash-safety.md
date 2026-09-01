@@ -1,6 +1,7 @@
 # Crash-Safety Architecture (NSE)
 
-> Status: HARDENED_WITH_GAPS baseline documented 2026-09-01.
+> Status: HARDENED_WITH_GAPS baseline documented 2026-09-01 (rev 2 — checker
+> regex fix + 381-site silent-handler backlog tracked as P1 violations).
 > Owner: Nexus-Main (crash-containment master pass).
 > Scope: the failure contract of every major execution boundary, from process
 > startup through model tensor execution, trading execution, Web/API, updater,
@@ -43,8 +44,21 @@ behavior. The two sanctioned classes today:
    trading decisions; the loss itself is logged at error/warning level.
 
 Static enforcement: `scripts/ci/anti_crash_static.py` (section 48 check).
-Violations fail the run; reviewed-and-accepted sites carry an inline
-`# anti-crash: allow (<reason>)` marker or live in the documented allowlist.
+P1 violations (bare except, BaseException outside deliberate boundaries,
+silent handlers `pass/continue/return None/False/0/{}` — including the
+two-line indented form) fail the run; reviewed-and-accepted sites carry an
+inline `# anti-crash: allow (<reason>)` marker or live in the documented
+allowlists (migration DDL files, `EXPECTED_SILENT_HANDLERS` probe chains).
+
+**Baseline status (honest):** the first checker revision had an
+indent-anchoring hole — two-line silent handlers escaped detection. An
+adversarial self-test caught it; the fix surfaces **381 real silent-handler
+sites** (top: `live_engine.py` 48, `debug_snapshot.py` 16, `pro_auto.py` 13,
+`server.py` 13). Most are reviewed fail-safe defaults or observability-only
+writes, but until each carries either truthful state logging or an explicit
+allow marker, the check's default mode reports them. Use `--warn-only` to
+downgrade to advisory while the backlog is triaged (see the audit JSON,
+`residual_gaps[0]`).
 
 ---
 
