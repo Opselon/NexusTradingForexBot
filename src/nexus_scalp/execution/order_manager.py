@@ -30,13 +30,14 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import Enum
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.execution.position_state_machine import PositionStateMachine
+from nexus_scalp.execution.position_states import PositionState
 from nexus_scalp.execution.protection_ledger import (
     PositionProtectionLedger,
     PositionProtectionState,
@@ -174,21 +175,8 @@ class ExitMechanism:
     PROFIT_GIVEBACK_PROTECTION = "PROFIT_GIVEBACK_PROTECTION"
 
 
-class PositionState(Enum):
-    """The 11 explicit in-trade lifecycles."""
-
-    PROFIT_UNPROTECTED = "PROFIT_UNPROTECTED"
-    PROFIT_PROTECTED = "PROFIT_PROTECTED"
-    PROFIT_TRAILING = "PROFIT_TRAILING"
-    PROFIT_GIVEBACK_WARNING = "PROFIT_GIVEBACK_WARNING"
-    PROFIT_GIVEBACK_CRITICAL = "PROFIT_GIVEBACK_CRITICAL"
-
-    LOSS_EARLY = "LOSS_EARLY"
-    LOSS_RECOVERY_CANDIDATE = "LOSS_RECOVERY_CANDIDATE"
-    LOSS_RECOVERY_CONFIRMED = "LOSS_RECOVERY_CONFIRMED"
-    LOSS_RECOVERY_FAILING = "LOSS_RECOVERY_FAILING"
-    LOSS_EXIT_PRESSURE = "LOSS_EXIT_PRESSURE"
-    LOSS_HARD_EXIT = "LOSS_HARD_EXIT"
+# PositionState moved to execution/position_states.py (P0 seam S2);
+# imported below — facade name preserved for compatibility.
 
 
 @dataclass
@@ -421,10 +409,15 @@ class OrderLifecycleManager:
 
         # Bounded trajectory history (ticket -> deque[PositionEvaluationStep])
         self._trajectory_history: dict[int, deque[PositionEvaluationStep]] = {}
-        # Active position states (ticket -> PositionState)
-        self._position_states: dict[int, PositionState] = {}
-        # Hysteresis state transition candidates (ticket -> (candidate_state, first_attempt_time, attempt_count))
-        self._state_transition_candidates: dict[int, tuple[PositionState, datetime, int]] = {}
+        # P0 seam S2: position lifecycle state lives in PositionStateMachine
+        # (execution/position_state_machine.py). Compatibility properties below
+        # expose the live dicts under the historical names.
+        self._state_machine = PositionStateMachine(
+            lambda: (
+                getattr(self.algo_config, "min_confirmation_duration", 2.5),
+                getattr(self.algo_config, "min_observation_count", 10),
+            )
+        )
 
         # Recovery tracking dictionaries
         # P0 seam S3: recovery-budget state lives in RecoveryBudgetLedger
@@ -3488,6 +3481,21 @@ class OrderLifecycleManager:
 
         return False, ""
 
+    # ------------------------------------------------------------------
+    # P0 seam S2 compatibility surface: the historical attribute names
+    # resolve to the state machine's LIVE dicts (same objects — external
+    # readers and tests keep working with no duplication).
+    # ------------------------------------------------------------------
+    @property
+    def _position_states(self) -> dict[int, PositionState]:
+        return self._state_machine._states
+
+    @property
+    def _state_transition_candidates(
+        self,
+    ) -> dict[int, tuple[PositionState, datetime, int]]:
+        return self._state_machine._candidates
+
     def transition_state_with_hysteresis(
         self,
         ticket: int,
@@ -3498,96 +3506,8 @@ class OrderLifecycleManager:
         Manages state transitions with count-based and time-based hysteresis debouncing.
         Emergency/safety/catastrophic giveback states bypass debouncing with zero latency.
         """
-        current_state = self._position_states.get(ticket)
-        if current_state is None:
-            # BUGFIX: First initialization - Default to a safe neutral state.
-            # NEVER allow a critical exit state on tick 1 to bypass hysteresis debounce,
-            # EXCEPT the emergency bypass states: a LOSS_HARD_EXIT / PROFIT_GIVEBACK_CRITICAL
-            # verdict on the very first observation (e.g. a restart where a split leg is
-            # already deep past its recovery budget) must still be honored immediately
-            # rather than reset to a "hold" state that silently keeps trading a
-            # position that has already exhausted its protection.
-            if target_state in (
-                PositionState.LOSS_HARD_EXIT,
-                PositionState.PROFIT_GIVEBACK_CRITICAL,
-            ):
-                self._position_states[ticket] = target_state
-                self._state_transition_candidates.pop(ticket, None)
-                return target_state
-
-            safe_initial_state = (
-                PositionState.PROFIT_UNPROTECTED
-                if target_state
-                in (
-                    PositionState.PROFIT_PROTECTED,
-                    PositionState.PROFIT_TRAILING,
-                    PositionState.PROFIT_UNPROTECTED,
-                )
-                else PositionState.LOSS_RECOVERY_CANDIDATE
-            )
-
-            self._position_states[ticket] = safe_initial_state
-            self._state_transition_candidates[ticket] = (target_state, now, 1)
-            return safe_initial_state
-
-        if current_state == target_state:
-            self._state_transition_candidates.pop(ticket, None)
-            return current_state
-
-        # SAFETY IMMEDIATE BYPASS STATES
-        # Catastrophic drawdowns, critical givebacks, hard exits transition immediately with zero latency.
-        bypass_states = {
-            PositionState.PROFIT_GIVEBACK_CRITICAL,
-            PositionState.LOSS_HARD_EXIT,
-        }
-        if target_state in bypass_states:
-            logger.info(
-                "[HYSTERESIS BYPASS - EMERGENCY TRANSITION]",
-                ticket=ticket,
-                from_state=current_state.value,
-                to_state=target_state.value,
-            )
-            self._position_states[ticket] = target_state
-            self._state_transition_candidates.pop(ticket, None)
-            return target_state
-
-        # DEBOUNCING FOR NORMAL TRANSITIONS (Requirement 5)
-        cand_info = self._state_transition_candidates.get(ticket)
-        min_dur = getattr(self.algo_config, "min_confirmation_duration", 2.5)
-        min_cnt = getattr(self.algo_config, "min_observation_count", 10)
-
-        if cand_info is None or cand_info[0] != target_state:
-            # First sighting of a target state starts (or restarts) the debounce
-            # window: a transition applies only after the candidate holds the target
-            # for min_confirmation_duration AND min_observation_count sightings.
-            # Emergency transitions bypass this debounce (handled above).
-            self._state_transition_candidates[ticket] = (target_state, now, 1)
-            return current_state
-
-        # Repeat sightings increment the counter only; the window timer is never
-        # reset, so a flapping candidate cannot delay a genuine transition forever.
-        cand_state, first_attempt_time, count = cand_info
-        new_count = count + 1
-        self._state_transition_candidates[ticket] = (cand_state, first_attempt_time, new_count)
-
-        elapsed = (now - first_attempt_time).total_seconds()
-
-        # Both the time AND observation-count thresholds must be met; requiring
-        # either alone would let a burst of ticks confirm a transition instantly.
-        if elapsed >= min_dur and new_count >= min_cnt:
-            logger.info(
-                "[STATE MACHINE TRANSITIONED]",
-                ticket=ticket,
-                from_state=current_state.value,
-                to_state=target_state.value,
-                elapsed_sec=round(elapsed, 1),
-                observations=new_count,
-            )
-            self._position_states[ticket] = target_state
-            self._state_transition_candidates.pop(ticket, None)
-            return target_state
-
-        return current_state
+        # P0 seam S2: transition rules live in the state machine (verbatim).
+        return self._state_machine.transition_with_hysteresis(ticket, target_state, now)
 
     def _evaluate_candidate_state(
         self,
@@ -6283,15 +6203,14 @@ class OrderLifecycleManager:
             self._entry_regime_state,
             self._net_pnl_by_ticket,
             self._exit_mechanism_by_ticket,
-            # New state structures
+            # New state structures (position state owned by the machine; dropped below)
             self._trajectory_history,
-            self._position_states,
-            self._state_transition_candidates,
             # Recovery structures (owned by the ledger; dropped below)
             self._closed_tickets,
             self._exit_pending_final_reason,
         ):
             tracker.pop(ticket, None)
         self._recovery_ledger.drop_ticket(ticket)
+        self._state_machine.drop_ticket(ticket)
         with self._live_tickets_lock:
             self._live_tickets_cache.pop(ticket, None)
