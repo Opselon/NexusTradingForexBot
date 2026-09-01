@@ -95,7 +95,16 @@ def warm_engine(tmp_path, monkeypatch):
     engine.warmup_state = "INIT"
     engine._inference_enabled = False
     engine.server_state = None
-    engine.liquidity_governor = None  # warm path does not require it
+    # BUG-185 P3: the canonical record builder requires a VALID liquidity
+    # snapshot for the 70D block. Wire the REAL governor (enabled) — the
+    # warm path populates it from the seeded bars via
+    # _warm_liquidity_from_bars(); no snapshot is fabricated here.
+    from nexus_scalp.features.liquidity_runtime import LiquidityGovernor
+
+    engine.liquidity_governor = LiquidityGovernor(enabled=True)
+    engine.liquidity_governor.bind_engine(engine)
+    engine._news_enabled = False
+    engine.news_engine = None
     engine.symbol = "XAUUSD"
 
     # Load the REAL bundle via the engine's own loader (read-only w.r.t. files:

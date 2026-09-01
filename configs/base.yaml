@@ -25,7 +25,7 @@ model:
   model_artifact_path: "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
   # TASK-01-60D-LIQUIDITY: explicit switch. false -> existing 50D behavior;
   # true -> 60D liquidity feature layer for candidate pipelines.
-  liquidity_features_enabled: false
+  liquidity_features_enabled: true
 
 algo:
   atr_sl_buffer_multiplier: 1.5

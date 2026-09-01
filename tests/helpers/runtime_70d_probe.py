@@ -375,23 +375,44 @@ def build_feature_pipeline_trace(
         trace["validate_50d_ok"] = False
         trace["validate_70d_ok"] = None
 
-    # 6) RETRAIN RECORD construction — the exact warmup/resync/new-bar shape:
-    #    {feat_i: base[i]} for i in range(_retrain_record_dim()). This is the
-    #    stage that IndexErrors in production when widths diverge.
+    # 6) RETRAIN RECORD construction — via the REAL production builder.
+    #    BUG-185 P3: production no longer re-implements the record dict
+    #    inline ({feat_i: base[i] for i in range(rec_dim)} — the IndexError
+    #    class); it routes through LiveEngine._build_retrain_record, the
+    #    canonical base|news|liquidity assembly with the refusal guard.
+    #    The probe binds the SAME real method on the stub (mirroring the
+    #    other stages) so the trace observes the repaired path, never a
+    #    re-implementation of it.
     try:
+        from nexus_scalp.application.live_engine import LiveEngine
+
         stub = build_engine_stub_with_real_methods(70)
+        stub._validate_50d_tensor = LiveEngine._validate_50d_tensor.__get__(stub)
         rec_dim = int(stub._retrain_record_dim())
+        stub._news_enabled = False
+        stub.news_engine = None
+        # Stage 2 already produced a REAL governor snapshot (LIQUIDITY_CALCULATION_OK);
+        # attach THAT governor so the canonical builder sees a VALID causal state —
+        # exactly what the live engine provides on the bar-close cadence.
+        stub.liquidity_governor = gov
+        record = None
         record_error = None
         try:
-            record = {f"feat_{idx}": float(base[idx]) for idx in range(rec_dim)}
-            record.update(close=1.0, high=1.0, low=1.0, open=1.0, spread=0.20, atr_m1=1.0)
-        except IndexError as exc:
-            record = None
-            record_error = f"IndexError at idx={exc.__class__.__name__}: {exc}"
+            record = LiveEngine._build_retrain_record(
+                stub,
+                base50=base,
+                fv=fv,
+                bar=last,
+                spread=0.20,
+                context="probe_retrain_record",
+            )
+        except Exception as exc:
+            record_error = f"{type(exc).__name__}: {exc}"
         trace["retrain_record_dim"] = rec_dim
-        trace["retrain_record_built_dim"] = (len(record) - 6) if record is not None else None
+        trace["retrain_record_built_dim"] = (len(record) - 6) if isinstance(record, dict) else None
         trace["retrain_record_error"] = record_error
         trace["retrain_record_producer_width"] = len(base)
+        trace["retrain_record_source"] = "LiveEngine._build_retrain_record"
     except Exception as exc:
         trace["retrain_probe_error"] = f"{type(exc).__name__}: {exc}"
 

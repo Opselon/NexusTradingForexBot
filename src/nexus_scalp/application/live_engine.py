@@ -283,6 +283,114 @@ class LiveEngine:
             pass
         return int(self.__class__.FEATURE_DIM)
 
+    def _build_retrain_record(
+        self,
+        *,
+        base50: Sequence[float],
+        fv: Any,
+        bar: Any,
+        spread: float,
+        context: str,
+    ) -> dict[str, Any]:
+        """BUG-185 PART-3: canonical retrain-buffer record assembly.
+
+        A 70D champion record MUST carry the full canonical scalp_v3
+        geometry (Base 0..49 | News 50..59 | Liquidity 60..69) — NOT a
+        50-element base slice indexed over a 70-wide range (the IndexError
+        class). Base features are validated exactly as the live inference
+        path validates them; News 10D uses the SAME canonical projection as
+        the live 70D assembly (news_10d_from_context); Liquidity 10D is the
+        governor's real causal snapshot (VALID + 10 floats + bounds). When
+        the real liquidity block is not yet available the record is REFUSED
+        (None) — never zero-filled — so no fabricated liquidity row can
+        ever enter online training (INV-009 / no-silent-pad rule).
+        """
+        record_dim = self._retrain_record_dim()
+        base = self._validate_50d_tensor(base50, context=context)
+        rec: dict[str, Any] = {f"feat_{i}": float(base[i]) for i in range(len(base))}
+
+        if record_dim >= 60:
+            # News 10D (indices 50..59): canonical projection, cache-only
+            # read (INV-001). Absent context is the documented DISABLED
+            # projection (0.0 x10), never a fabrication of live data.
+            news10: list[float]
+            try:
+                news_ctx: Any = None
+                if (
+                    getattr(self, "_news_enabled", False)
+                    and getattr(self, "news_engine", None) is not None
+                ):
+                    try:
+                        news_ctx = self.news_engine.current_context()
+                        if hasattr(news_ctx, "model_dump"):
+                            news_ctx = news_ctx.model_dump()
+                    except Exception:
+                        news_ctx = None
+                if news_ctx is None:
+                    news10 = [0.0] * 10
+                else:
+                    from nexus_scalp.features.features70 import news_10d_from_context
+
+                    news10 = news_10d_from_context(
+                        news_ctx if isinstance(news_ctx, dict) else dict(news_ctx)
+                    )
+            except Exception as news_err:  # isolated; refuse > fabricate
+                logger.warning("[ONLINE_TRAIN] event=NEWS_BLOCK_UNAVAILABLE error=%s", news_err)
+                news10 = [0.0] * 10
+            for j, v in enumerate(news10):
+                rec[f"feat_{50 + j}"] = float(v)
+
+        if record_dim >= 70:
+            # Liquidity 10D (indices 60..69): REAL causal snapshot only.
+            gov = getattr(self, "liquidity_governor", None)
+            snap = getattr(gov, "last_snapshot", None) if gov is not None else None
+            causal = (
+                getattr(gov, "causal_state", lambda: "INVALID")() if gov is not None else "INVALID"
+            )
+            liq10: list[float] | None = None
+            if snap is not None and causal == "VALID":
+                try:
+                    vec = list(snap.features)
+                    if len(vec) == 10 and all(-3.0 <= float(v) <= 3.0 for v in vec):
+                        liq10 = [float(v) for v in vec]
+                except Exception:
+                    liq10 = None
+            if liq10 is None:
+                # Same refusal contract as the live 70D inference path:
+                # no snapshot / stale -> SKIP the record (never fabricate).
+                logger.warning(
+                    "[ONLINE_TRAIN] event=RECORD_SKIPPED reason=LIQUIDITY_SNAPSHOT_NOT_VALID "
+                    "causal=%s context=%s (no fabricated liquidity enters training)",
+                    causal,
+                    context,
+                )
+                return None
+
+            for j, v in enumerate(liq10):
+                rec[f"feat_{60 + j}"] = float(v)
+
+        if len(rec) != record_dim:
+            # Defensive safety net (NOT the primary fix): structured refusal
+            # instead of a raw IndexError / partial record.
+            logger.error(
+                "[ONLINE_TRAIN] event=FEATURE_CONTRACT_MISMATCH expected_dim=%s "
+                "actual_dim=%s context=%s action=SKIP",
+                record_dim,
+                len(rec),
+                context,
+            )
+            return None
+
+        rec.update(
+            close=bar.close,
+            high=bar.high,
+            low=bar.low,
+            open=bar.open,
+            spread=spread,
+            atr_m1=fv.atr_m1,
+        )
+        return rec
+
     def _rebind_trainer_to_bundle(self) -> None:
         """BUG-185: bind the online trainer to the LOADED bundle's contract.
 
@@ -3035,22 +3143,20 @@ class LiveEngine:
                     volume=b.tick_volume,
                 )
                 fv = self.feature_engine.compute_from_bars(window, synthetic_tick)
-                x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="cold_start_warmup")
-                # BUG-185: the retrain buffer must carry the LOADED bundle's
-                # contract width, not the class bootstrap - a 70D champion
-                # otherwise gets a permanently 50D buffer and every online
-                # fine-tune is silently width-skipped (BUG-169 guard).
-                record = {
-                    f"feat_{idx}": float(x50[idx]) for idx in range(self._retrain_record_dim())
-                }
-                record.update(
-                    close=b.close,
-                    high=b.high,
-                    low=b.low,
-                    open=b.open,
+                # BUG-185 PART-3: 70D champion => the record carries the full
+                # canonical scalp_v3 geometry (Base|News|Liquidity) via the
+                # shared builder; the builder REFUSES (returns None) when the
+                # real liquidity snapshot is not yet VALID instead of indexing
+                # a 50-element base over a 70-wide range (IndexError class).
+                record = self._build_retrain_record(
+                    base50=fv.to_tensor_input(),
+                    fv=fv,
+                    bar=b,
                     spread=0.20,
-                    atr_m1=fv.atr_m1,
+                    context="cold_start_warmup",
                 )
+                if record is None:
+                    continue
                 self._rolling_feature_records.append(record)
 
         self.evaluate_warmup_readiness(symbol, h1_bars, h4_bars)
@@ -3125,19 +3231,17 @@ class LiveEngine:
                 volume=last.tick_volume,
             )
             fv = self.feature_engine.compute_from_bars(window, synthetic_tick)
-            x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="broker_resync")
-            # BUG-185: width follows the loaded bundle contract (see
-            # _retrain_record_dim) - same rationale as cold-start warmup.
-            record = {f"feat_{idx}": float(x50[idx]) for idx in range(self._retrain_record_dim())}
-            record.update(
-                close=last.close,
-                high=last.high,
-                low=last.low,
-                open=last.open,
+            # BUG-185 PART-3: shared canonical record builder (see
+            # _cold_start_warmup); refuses instead of fabricating.
+            record = self._build_retrain_record(
+                base50=fv.to_tensor_input(),
+                fv=fv,
+                bar=last,
                 spread=0.20,
-                atr_m1=fv.atr_m1,
+                context="broker_resync",
             )
-            self._rolling_feature_records.append(record)
+            if record is not None:
+                self._rolling_feature_records.append(record)
 
         self.sync_chart_state()
         logger.info(
@@ -4400,22 +4504,44 @@ class LiveEngine:
         # rolling retrain buffer. NOTE: rec must be defined BEFORE the radar block
         # (BUG-139: prior nesting inside the mslie_engine conditional left `rec`
         # unbound when mslie_engine was None -> BAR_DETECT_FAILED).
-        x50 = self._validate_50d_tensor(fv.to_tensor_input(), context="new_bar_record")
-        # BUG-185: the canonical per-bar retrain record must carry the
-        # LOADED bundle's contract width (70D champion => feat_0..feat_69),
-        # not the class 50D bootstrap; otherwise the BUG-169 width guard
-        # silently skips every online fine-tune while a 70D model serves.
-        rec = {f"feat_{i}": float(x50[i]) for i in range(self._retrain_record_dim())}
-        rec.update(
-            close=last_bar.close,
-            high=last_bar.high,
-            low=last_bar.low,
-            open=last_bar.open,
+        # BUG-185 PART-3: the canonical per-bar retrain record is built by the
+        # shared builder — full scalp_v3 geometry when a 70D champion serves
+        # (Base 0..49 | News 50..59 | Liquidity 60..69), 50D base otherwise.
+        # The builder REFUSES (None) when the real liquidity snapshot is not
+        # VALID — never zero-fills — and its width guard turns any residual
+        # contract split into a structured FEATURE_CONTRACT_MISMATCH (SKIP),
+        # not a raw IndexError.
+        rec = self._build_retrain_record(
+            base50=fv.to_tensor_input(),
+            fv=fv,
+            bar=last_bar,
             spread=(tick.ask - tick.bid),
-            atr_m1=fv.atr_m1,
+            context="new_bar_record",
         )
+        if rec is None:
+            # 70D record refused (liquidity not VALID yet): keep the legacy
+            # 50D observability record so the radar/UI keep working; it is
+            # simply NOT appended to the retrain buffer by this path (the
+            # width guard below keeps starvation loud).
+            rec = {
+                f"feat_{i}": float(v)
+                for i, v in enumerate(
+                    self._validate_50d_tensor(
+                        fv.to_tensor_input(), context="new_bar_record_fallback_50d"
+                    )
+                )
+            }
+            rec.update(
+                close=last_bar.close,
+                high=last_bar.high,
+                low=last_bar.low,
+                open=last_bar.open,
+                spread=(tick.ask - tick.bid),
+                atr_m1=fv.atr_m1,
+            )
         if self._governance_reference_vector is None:
-            self._governance_reference_vector = [float(v) for v in x50]
+            _ref = self._validate_50d_tensor(fv.to_tensor_input(), context="governance_reference")
+            self._governance_reference_vector = [float(v) for v in _ref]
 
         # ---------------------------------------------------------------------
         # Market Radar (Hunter SetupDetector) - live, bar-close cadence (BUG-138).

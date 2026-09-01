@@ -76,7 +76,11 @@ class ModelConfig(BaseModel):
     #: available to candidate pipelines. The switch NEVER silently alters
     #: schema expectations: enabled input schemas are explicitly 60D
     #: (scalp_liquidity_v1) and manifests record feature_dimension=60.
-    liquidity_features_enabled: bool = False
+    #: BUG-185 P3: default is now True — the production contract is the 70D
+    #: scalp_v3 champion (Base|News|Liquidity); the governor's causal snapshot
+    #: must be VALID for 70D records/inference. 50D is legacy; explicit config
+    #: (live.yaml / runtime settings DB) can still override.
+    liquidity_features_enabled: bool = True
 
 
 class AlgoConfig(BaseModel):
