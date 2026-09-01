@@ -33,7 +33,6 @@ Separation from the basic worker:
 from __future__ import annotations
 
 import uuid
-from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
@@ -49,6 +48,12 @@ from nexus_scalp.news.ai_service import (
 from nexus_scalp.news.analysis.local import LocalNewsAnalyzer
 from nexus_scalp.news.database import NewsDatabase
 from nexus_scalp.news.models import NewsArticle, NewsNovelty, normalize_datetime
+from nexus_scalp.news.pro_auto_console import (
+    _console_push,
+    console_latest_seq,
+    console_status,  # noqa: F401
+    get_console_history,  # noqa: F401
+)
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.news.pro_auto")
@@ -73,40 +78,8 @@ PRO_SYSTEM_PROMPT = (
 # Bounded in-process console ring — the News tab streams this via REST.
 # Also persisted into news console table would bloat; we keep last N in
 # memory and expose it via the server route so answers are traceable.
-_CONSOLE: deque[dict[str, Any]] = deque(maxlen=500)
-_CONSOLE_SEQ: int = 0
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _console_push(entry: dict[str, Any]) -> None:
-    global _CONSOLE_SEQ  # noqa: PLW0603
-    _CONSOLE_SEQ += 1
-    entry.setdefault("seq", _CONSOLE_SEQ)
-    entry.setdefault("ts", _now_iso())
-    _CONSOLE.append(entry)
-
-
-def get_console_history(limit: int = 200, since_seq: int = 0) -> list[dict[str, Any]]:
-    """Return console entries after since_seq (bounded, never unbounded)."""
-    bounded = max(1, min(int(limit), 500))
-    try:
-        since = int(since_seq)
-    except Exception:
-        since = 0
-    out: list[dict[str, Any]] = []
-    for e in list(_CONSOLE):
-        if int(e.get("seq", 0)) > since:
-            out.append(dict(e))
-            if len(out) >= bounded:
-                break
-    return out
-
-
-def console_status() -> dict[str, Any]:
-    return {"size": len(_CONSOLE), "latest_seq": _CONSOLE_SEQ, "available": True}
+# Console telemetry ring extracted to news/pro_auto_console.py (P2-B);
+# re-exported below for compatibility. _console_push call sites unchanged.
 
 
 def _resolve_settings_service(engine: Any | None, settings_service: Any | None) -> Any | None:
@@ -831,7 +804,7 @@ def run_pro_cycle(
         "via_llm": llm_used,
         "via_local": local_used,
         "junk": junk,
-        "console_seq": _CONSOLE_SEQ,
+        "console_seq": console_latest_seq(),
     }
     _console_push({"kind": "cycle_done", **summary})
     try:
