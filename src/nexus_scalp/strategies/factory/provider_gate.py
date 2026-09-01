@@ -165,6 +165,9 @@ class GateConfig:
     #: Max queued waiters (acquire backlog) before rejecting with
     #: RATE_LIMITED (bounded queue — steer section 28).
     max_queue: int = 8
+    #: Max seconds a single-flight FOLLOWER waits for the leader's
+    #: outcome before the request is deferred (never unbounded blocking).
+    single_flight_wait_sec: float = 60.0
 
 
 @dataclass
@@ -498,6 +501,18 @@ class ProviderGate:
         dedup, and the circuit. Never raises into the caller.
         """
         started = self._clock()
+        # Auto-disable short-circuit BEFORE anything else (steer 24):
+        # a permanently misconfigured gate never sends, never queues.
+        c = self._circuit
+        if c.auto_disabled:
+            return GateResult(
+                ok=False,
+                category=FailureCategory.AUTH_ERROR
+                if c.auto_disabled_reason is DisableReason.AUTH_FAILED
+                else FailureCategory.CONFIG_ERROR,
+                state=ProviderState.AUTO_DISABLED,
+                reason=c.auto_disabled_detail or c.auto_disabled_reason.value,
+            )
         try:
             result = self._execute_inner(request_key, send, single_flight=single_flight)
         except Exception as e:  # pragma: no cover - absolute isolation guarantee
@@ -550,27 +565,35 @@ class ProviderGate:
                 logger.info("[PROVIDER_GATE] event=HALF_OPEN probe=armed")
 
         # 2. Single-flight dedup (steer section 30): identical concurrent
-        #    logical requests share ONE external call.
+        #    logical requests share ONE external call. NOTE: the follower's
+        #    wait() MUST happen OUTSIDE self._lock — waiting while holding
+        #    the gate lock deadlocks the leader's post-send accounting.
         if single_flight:
-            waiter = _SingleFlightWaiter()
+            follower: _SingleFlightWaiter | None = None
             with self._lock:
                 waiters = self._single_flight.get(request_key)
                 if waiters is not None:
-                    waiters.append(waiter)
+                    # FOLLOWER: register, then wait OUTSIDE the lock
+                    # (bounded — steer 28); a timeout defers instead of
+                    # blocking indefinitely.
+                    follower = _SingleFlightWaiter()
+                    waiters.append(follower)
                     self.metrics["provider_single_flight_reused_total"] += 1
-                    # Wait for the leader's outcome (bounded by its own retry
-                    # budget); leader broadcasts to all waiters.
-                    return waiter.wait()
-                self._single_flight[request_key] = [waiter]
+                else:
+                    # LEADER: we own this request key while in flight.
+                    self._single_flight[request_key] = []
+            if follower is not None:
+                return follower.wait(timeout=self.cfg.single_flight_wait_sec)
             try:
                 result = self._execute_gated(send)
             finally:
                 with self._lock:
-                    group = self._single_flight.pop(request_key, None)
-            if group:
-                waiter.broadcast(result)
-                # Include followers in our own return path? No — we return
-                # the leader result directly (we ARE the leader).
+                    followers = self._single_flight.pop(request_key, None)
+            # Broadcast to all registered followers; the leader returns
+            # its own result directly.
+            if followers:
+                for f in followers:
+                    f.broadcast(result)
             return result
         return self._execute_gated(send)
 
@@ -806,15 +829,15 @@ class _SingleFlightWaiter:
         self._event = threading.Event()
         self._result: GateResult | None = None
 
-    def wait(self, timeout: float = 900.0) -> GateResult:
+    def wait(self, timeout: float = 60.0) -> GateResult:
         self._event.wait(timeout)
         if self._result is not None:
             return self._result
         return GateResult(
             ok=False,
-            category=FailureCategory.UNKNOWN,
+            category=FailureCategory.RATE_LIMITED,
             state=ProviderState.DEGRADED,
-            reason="single-flight leader did not report",
+            reason="single-flight leader still in flight; request deferred",
         )
 
     def broadcast(self, result: GateResult) -> None:
