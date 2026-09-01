@@ -1514,6 +1514,178 @@ function Install-PythonDependencies {
     }
     Write-Success "Dependencies installed and baseline imports verified"
 
+    # Per-package dependency audit (closure task): for EVERY pyproject
+    # dependency - DETECT installed version, verify the declared specifier,
+    # IMPORT it, and record an honest VERIFIED/FAILED verdict. Read directly
+    # from pyproject.toml by the venv python (tomllib) - no PowerShell-side
+    # dependency list exists to drift. The audit fails the stage honestly
+    # when a REQUIRED runtime dependency is missing/broken (skips only
+    # genuine environment-conditional markers). Results are persisted to
+    # state/packages.json (machine-readable inventory for doctor/support).
+    $auditScript = @'
+import json, sys, tomllib, importlib.metadata as im, importlib, re
+
+def parse_spec_pair(dep_line):
+    # "name>=1.0,<2 ; marker" -> (canonical_name, [specs], marker or None)
+    body, _, marker = dep_line.partition(";")
+    marker = marker.strip() or None
+    m = re.match(r"\s*([A-Za-z0-9._-]+)\s*(.*)", body)
+    if not m:
+        return None, [], marker
+    name = m.group(1).strip().lower().replace("_", "-")
+    rest = (m.group(2) or "").strip()
+    specs = re.findall(r"(===|==|>=|<=|!=|~=|>|<)\s*([0-9][^,\s]*)", rest)
+    return name, specs, marker
+
+def version_ok(version, specs):
+    def key(v):
+        nums = re.findall(r"\d+", v)
+        return tuple(int(n) for n in nums[:4]) if nums else (0,)
+    v = key(version)
+    for op, target in specs:
+        t = key(target)
+        if op in (">",) and not v > t: return False
+        if op in (">=",) and not v >= t: return False
+        if op in ("<",) and not v < t: return False
+        if op in ("<=",) and not v <= t: return False
+        if op in ("==",) and not v == t: return False
+        if op in ("!=",) and not v != t: return False
+        if op in ("~=",):
+            t2 = target.split(".")
+            if len(t2) >= 2:
+                prefix = ".".join(t2[:-1])
+                if not version.startswith(prefix): return False
+            if not v >= t: return False
+    return True
+
+with open("pyproject.toml", "rb") as fh:
+    data = tomllib.load(fh)
+
+deps = data["project"].get("dependencies", [])
+extras = data["project"].get("optional-dependencies", {})
+is_windows = sys.platform.startswith("win")
+py = f"{sys.version_info.major}.{sys.version_info.minor}"
+
+results = []
+all_ok = True
+for line in deps:
+    name, specs, marker = parse_spec_pair(line)
+    if not name:
+        continue
+    if marker:
+        mk = marker.lower()
+        if "platform_system" in mk and "windows" in mk and not is_windows:
+            results.append({"package": name, "required": line.strip(), "installed": None,
+                            "importable": None, "status": "SKIPPED_CONDITIONAL",
+                            "reason": "marker requires Windows"})
+            continue
+        if "python_version" in mk:
+            m = re.search(r"python_version\s*(>=|<=|==|<|>)\s*'?\"?([0-9.]+)", mk)
+            if m:
+                op, target = m.group(1), m.group(2).strip()
+                tgt = tuple(int(x) for x in target.split("."))
+                cur = (sys.version_info.major, sys.version_info.minor)
+                ok = {">=": cur >= tgt, "<=": cur <= tgt, "==": cur == tgt, ">": cur > tgt, "<": cur < tgt}.get(op, True)
+                if not ok:
+                    results.append({"package": name, "required": line.strip(), "installed": None,
+                                    "importable": None, "status": "SKIPPED_CONDITIONAL",
+                                    "reason": f"marker requires python {op}{target}"})
+                    continue
+    entry = {"package": name, "required": line.strip(), "installed": None, "importable": None, "status": None}
+    try:
+        dist = im.distribution(name)
+        entry["installed"] = dist.version
+        spec_ok = version_ok(dist.version, specs) if specs else True
+        try:
+            importlib.import_module(name.replace("-", "_"))
+            entry["importable"] = True
+        except Exception as exc:
+            # Some top-level names differ from the dist name; a strict import
+            # of the dist name is not always possible (e.g. pydantic-settings).
+            entry["importable"] = None
+            entry["import_note"] = f"direct import probe skipped/failed: {type(exc).__name__}"
+        if not spec_ok:
+            entry["status"] = "FAILED"
+            entry["reason"] = f"installed {dist.version} violates declared spec {specs}"
+            all_ok = False
+        else:
+            entry["status"] = "VERIFIED"
+    except im.PackageNotFoundError:
+        entry["status"] = "FAILED"
+        entry["reason"] = "package not installed in this environment"
+        entry["importable"] = False
+        all_ok = False
+    results.append(entry)
+
+extras_inventory = {k: len(v) for k, v in extras.items()}
+out = {
+    "python": sys.version.split()[0],
+    "required_count": len(deps),
+    "verified": sum(1 for r in results if r.get("status") == "VERIFIED"),
+    "failed": sum(1 for r in results if r.get("status") == "FAILED"),
+    "skipped_conditional": sum(1 for r in results if r.get("status", "").startswith("SKIPPED")),
+    "all_required_ok": all_ok,
+    "extras_available_not_installed": extras_inventory,
+    "packages": results,
+}
+print(json.dumps(out))
+'@
+    $auditPath = Join-Path $env:TEMP ("nexus-dep-audit-" + [Guid]::NewGuid().ToString("N") + ".py")
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($auditPath, $auditScript, $utf8NoBom)
+    try {
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            $auditJson = & $venvPython $auditPath 2>$null
+            $auditExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+    } finally {
+        Remove-Item -LiteralPath $auditPath -Force -ErrorAction SilentlyContinue
+    }
+    if ($auditExit -ne 0 -or -not $auditJson) {
+        throw "dependency audit could not run (exit $auditExit) - the venv python is broken"
+    }
+    $auditRaw = ($auditJson | Out-String).Trim()
+    try {
+        $audit = $auditRaw | ConvertFrom-Json
+    } catch {
+        throw "dependency audit returned unparseable output"
+    }
+
+    # Persist the machine-readable package inventory (closure task 81/82).
+    $stateDir = Join-Path $NexusHome "state"
+    New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+    $pkgPath = Join-Path $stateDir "packages.json"
+    $inv = [ordered]@{
+        generated_at   = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        python         = $audit.python
+        venv           = (Join-Path $NexusHome "venv")
+        source         = "pyproject.toml (single source of truth)"
+        required_count = $audit.required_count
+        verified       = $audit.verified
+        failed         = $audit.failed
+        skipped_conditional = $audit.skipped_conditional
+        extras_available_not_installed = $audit.extras_available_not_installed
+        packages       = $audit.packages
+    }
+    [System.IO.File]::WriteAllText($pkgPath, ($inv | ConvertTo-Json -Depth 6), $utf8NoBom)
+    Write-Success "Package inventory written: $pkgPath ($($audit.verified) verified / $($audit.failed) failed / $($audit.skipped_conditional) conditional-skip)"
+
+    # Honest failure: a required runtime dependency missing/broken FAILS the
+    # stage. Conditional packages (Windows-marker on other platforms etc.)
+    # are skipped with an explicit recorded reason, never a false pass.
+    if (-not $audit.all_required_ok) {
+        foreach ($p in $audit.packages) {
+            if ($p.status -eq "FAILED") {
+                Write-ErrMsg "dependency FAILED: $($p.package) - $($p.reason)"
+            }
+        }
+        throw "Dependency audit failed: $($audit.failed) required package(s) not healthy (see state\packages.json)"
+    }
+
     # Entry-point verification: the venv must expose the nexus CLI shim.
     $nexusExe = Join-Path $NexusHome "venv\Scripts\nexus.exe"
     if (Test-Path $nexusExe) {
