@@ -6838,3 +6838,26 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   sites; schema resolution switched from hard-coded scalp_v3@70 to dimension-driven
   schema_for_dimension() (50D hot-swap restores scalp_v1). BUG-182B AST regression
   updated for the helper-based invariant (same ordering contract). 6 tests green.
+
+- PART 3 (2026-09-01, live-repair pass, commit b873c04): the record builders were
+  still sourcing ONLY the base-50D producer vector (fv.to_tensor_input()) while
+  iterating range(_retrain_record_dim()) - a 70D champion made _cold_start_warmup
+  crash with IndexError at idx=50 (4 fatal launcher events 13:03-13:34 2026-09-01;
+  reproduced by Agent 2's runtime harness: tests/helpers/runtime_70d_probe.py +
+  tests/integration/test_runtime_70d_warmup.py). ROOT CAUSE: the inference path
+  assembles the canonical scalp_v3 70D vector (build_70d_vector) but the retrain
+  path bypassed canonical assembly entirely. FIX: ONE canonical builder
+  LiveEngine._build_retrain_record() now serves ALL THREE record sites
+  (cold_start_warmup / broker_resync / new_bar): Base 0..49 via _validate_50d_tensor,
+  News 50..59 via the canonical news_10d_from_context projection (same as inference),
+  Liquidity 60..69 from the governor's real causal snapshot (VALID + bounds). The
+  builder REFUSES (None) when the snapshot is not VALID - records are skipped, never
+  zero-filled (INV-009); a residual width split logs FEATURE_CONTRACT_MISMATCH
+  action=SKIP instead of a raw IndexError. liquidity_features_enabled default is now
+  True (config.py + base.yaml) because 70D records/inference REQUIRE the governor's
+  VALID snapshot; live.yaml + settings DB still override. Agent 2's 3 red harness
+  cases green WITHOUT weakening assertions (probe stage-6 now observes the REAL
+  builder per its own non-interference contract). Regression: the Agent-2 suites
+  (test_runtime_70d_contract_probe / test_runtime_70d_warmup / observability P1+P2)
+  19/19 PASS; bug185+bug182b suites PASS; 70d suites 70 passed/2 skipped; runtime
+  launch test PASS (no ERROR/WARNING).
