@@ -1024,6 +1024,14 @@ function Invoke-RepoUpdate {
     Write-Info "Existing installation found, updating..."
     $autostashRef = ""
     $stashCreated = $false
+    # Protocol isolation: caller GIT_* env vars (GIT_DIR/GIT_INDEX_FILE/
+    # GIT_WORK_TREE/...) redirect every child git command at the CALLER's
+    # repository. Clear them for the duration and restore on exit.
+    $savedGitEnv = @{}
+    foreach ($gitVar in @('GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR')) {
+        $savedGitEnv[$gitVar] = [Environment]::GetEnvironmentVariable($gitVar)
+        if ($savedGitEnv[$gitVar]) { Remove-Item "Env:$gitVar" -ErrorAction SilentlyContinue }
+    }
     try {
         Push-Location $InstallDir
         $prevEAP = $ErrorActionPreference
@@ -1229,6 +1237,20 @@ function Install-Repository {
     if (-not $didUpdate) {
         $cloneSuccess = $false
 
+        # CRITICAL (protocol isolation): capture the CALLER's repo environment.
+        # Under irm|iex or -File inside a git checkout, $env:GIT_DIR /
+        # GIT_INDEX_FILE / GIT_WORK_TREE leak from the caller's shell and
+        # redirect EVERY child git command at the CALLER's repository - here
+        # they turned `git status` inside our PowerShell test-runner session
+        # into the caller repo's status. Clear them for the duration and
+        # restore on exit so the installer's git operations always target the
+        # Nexus install tree, never the caller's repo.
+        $savedGitEnv = @{}
+        foreach ($gitVar in @('GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR')) {
+            $savedGitEnv[$gitVar] = [Environment]::GetEnvironmentVariable($gitVar)
+            if ($savedGitEnv[$gitVar]) { Remove-Item "Env:$gitVar" -ErrorAction SilentlyContinue }
+        }
+
         # Git for Windows atomic-write fix (AV / OneDrive / NTFS filter drivers).
         $env:GIT_CONFIG_COUNT = "1"
         $env:GIT_CONFIG_KEY_0 = "windows.appendAtomically"
@@ -1262,6 +1284,9 @@ function Install-Repository {
             }
         } finally {
             $ErrorActionPreference = $prevEAP
+            foreach ($gitVar in $savedGitEnv.Keys) {
+                if ($savedGitEnv[$gitVar]) { [Environment]::SetEnvironmentVariable($gitVar, $savedGitEnv[$gitVar]) }
+            }
         }
 
         if (-not $cloneSuccess) {
@@ -1929,7 +1954,16 @@ function Get-InstallStage {
 }
 
 function Step-OutOfInstallDir {
-    # Windows refuses to delete a directory a shell is cd'd inside.
+    # Two hazards live in the process CWD:
+    #   1. Windows refuses to delete a directory any shell is cd'd inside.
+    #   2. Git discovers the working repo by walking UP from the CWD. When the
+    #      installer is launched from inside a git checkout (any child of a
+    #      repo shell, which is the normal pytest/dev-machine case), every
+    #      bare `git <cmd>` the installer runs resolves against the CALLER's
+    #      repository - leaking the caller's status into installer output and
+    #      pointing update/clone git operations at the wrong repo. GIT_DIR etc.
+    #      are cleared too, but the CWD walk-up happens whenever the CWD is
+    #      inside a repo, so move the process CWD to a repo-free anchor first.
     try {
         $currentResolved = (Get-Location).ProviderPath
         $installResolved = $null
@@ -1937,6 +1971,12 @@ function Step-OutOfInstallDir {
             $installResolved = (Resolve-Path $InstallDir -ErrorAction SilentlyContinue).ProviderPath
         }
         if ($installResolved -and $currentResolved.ToLower().StartsWith($installResolved.ToLower())) {
+            Set-Location $env:USERPROFILE
+            return
+        }
+        # Also step out when the CWD is inside ANY git work tree (repo walk-up
+        # hazard). %USERPROFILE% is outside a checkout for every supported layout.
+        if (Test-Path (Join-Path $currentResolved ".git")) {
             Set-Location $env:USERPROFILE
         }
     } catch { }
