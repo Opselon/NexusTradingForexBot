@@ -290,3 +290,13 @@ scanned/deleted/archived/quarantined, errors). Invariants:
    migration engine, never the runtime worker.
 6. Telegram hygiene reports are cooldown-gated (telegram_min_interval_sec)
    — the engine never spams the operator for small cleanups.
+## INV-024 - The external provider gate is optional-intelligence-only and never blocks trading (CHG-0034, 2026-09-01)
+
+All outbound external LLM/provider traffic (Strategy Factory generation, News AI
+analysis) MUST pass through the single global ProviderGate
+(strategies/factory/provider_gate.py). The gate may pace, bound, retry, dedup,
+or disable EXTERNAL requests only. It MUST NEVER: block or slow the market-data,
+70D inference, strategy, risk, or execution paths; change trading thresholds on
+provider failure; or expose provider secrets. Provider failure degrades ONLY the
+optional external-intelligence feature (deterministic/local fallbacks continue).
+Proven by tests/unit/test_provider_gate_hardening.py (trading-isolation class).

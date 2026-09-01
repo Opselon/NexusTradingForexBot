@@ -6872,3 +6872,64 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - FIX: installer/install.ps1 removed the post-hoc skip classifier; stage workers own
   their skipped semantics via explicit skip channels only.
 - Tests: tests/installer/test_stage_protocol.py (skip semantics + protocol invariants).
+## BUG-186 - provider 429 storm: no 429 handling + multi-layer retry amplification (2026-09-01 Nexus-Main)
+
+- SEVERITY: P1 | STATUS: FIXED (commit b1a9bfb series, CHG-0034)
+- Symptom: repeated HTTP 429 from the configured OpenAI-compatible provider while
+  Strategy Factory / News AI kept issuing requests; no backoff, no Retry-After, no
+  circuit breaker anywhere in the provider path.
+- Evidence (code probes at HEAD 5d22188): provider.py generate_dsls/complete_json made
+  ONE bare httpx.post per call with only `if resp.status_code != 200` handling (no
+  429 special-case, zero 'Retry-After'/'backoff'/'circuit' strings in the module);
+  news/ai_service soft-retried each article x2 (pro_auto.py:412-435) and the news
+  worker re-queued failed articles up to x3 (worker.py:208-223) -> N articles x
+  2 retries x 3 requeues = up to 6N provider hits during an outage; two independent
+  HTTP send paths (factory provider + news DefaultExternalAnalyzer) bypassed any
+  shared pacing.
+- Root cause: the optional external-provider subsystem had NO global gate: no
+  normalized failure classification, no rate limiting, no bounded retry owner, no
+  circuit breaker, no dedup; every layer retried independently (amplification).
+- Fix (CHG-0034): strategies/factory/provider_gate.py = ONE global ProviderGate
+  (token-bucket rate limit, bounded semaphore, bounded retries with Retry-After +
+  exponential backoff + jitter, circuit breaker AVAILABLE/RATE_LIMITED/DEGRADED/
+  CIRCUIT_OPEN/HALF_OPEN with cooldown, single-flight dedup, bounded queue with
+  staleness defer). provider.py routes BOTH request methods through it; httpx
+  transport retries are not layered; the news provider resolves through the same
+  provider (ai_service) so News AI cannot bypass the gate.
+- Regression tests: tests/unit/test_provider_gate_hardening.py (429-then-recover,
+  sustained-429-opens-circuit-NOT-permanent-disable, half-open probe recovery,
+  rate-limiter pacing, Retry-After parsing; 30 tests, 30/30 PASS).
+- Trading impact: NONE (INV-024) - the gate runs only on off-loop external paths.
+
+## BUG-187 - Strategy Factory had no user toggle and no explainable auto-disable (2026-09-01 Nexus-Main)
+
+- SEVERITY: P1 | STATUS: FIXED (commit b1a9bfb series, CHG-0034)
+- Symptom: with a missing/empty API key or an invalid host the engine kept treating
+  the provider as merely 'not configured' (deterministic fallback) with no UI state,
+  no actionable reason surfaced, and no way for the user to explicitly disable the
+  external feature; repeated provider attempts could only be stopped by clearing
+  the key.
+- Evidence: settings/service.py factory_llm_config_status() exposed configured/
+  api_key_present but NO enabled flag and NO auto-disable state; web/factory_routes
+  had no toggle endpoint; provider.available() was purely a config-presence check.
+- Root cause: user intent (enable/disable) and runtime health (config/auth/circuit)
+  were never modeled as separate layers, so neither user control nor automatic
+  self-disable could exist.
+- Fix (CHG-0034): settings keys factory.enabled (user intent, default TRUE) +
+  factory.auto_disabled{,_reason,_at,_detail} (runtime layer, idempotent);
+  factory_effective_enabled() = user AND NOT auto; permanent config/auth errors
+  auto-disable instantly with NO network call (gate.validate_config at provider
+  construction, execute() short-circuit); web endpoints GET provider-health,
+  POST provider-toggle (enable blocked with actionable reason when config
+  incomplete - no hammering), POST provider-test (ONE controlled gated probe);
+  UI Strategy Factory card with ENABLED / DISABLED BY USER / AUTO-DISABLED +
+  reason panel and explicit 'no effect on MT5 / 70D / trading engine / risk /
+  positions' statement; all builders (live_engine, ai_service, llm-config
+  hot-rebuild) honor effective_enabled.
+- Regression tests: TestUserToggle + TestConfigValidation in
+  test_provider_gate_hardening.py (default enabled, user disable stops feature
+  only, auto-disable explainable + idempotent, re-enable clears auto-disable,
+  missing-key never calls send).
+- Secrets: no key value ever appears in health payloads, logs, or UI (redact_url
+  strips credential userinfo/key params; snapshot carries api_key_present only).
+
