@@ -1,0 +1,26 @@
+# DOC-TERMINOLOGY
+# Canonical multilingual terminology for the Nexus documentation platform.
+# Source language: English. Product/module names are NEVER translated.
+# Checked for consistency by scripts/docs/check_translations.py.
+#
+# Format: term;fa;es;ar;de
+Feature Vector;بردار ویژگی;Vector de características;متجه السمات;Merkmalsvektor
+Feature Contract;قرارداد ویژگی;Contrato de características;عقد السمات;Merkmalsvertrag
+Model Registry;ثبت مدل;Registro de modelos;سجل النماذج;Modellregistrierung
+Serving Bundle;بسته سرو;Paquete de servicio;حزمة الخدمة;Serving-Paket
+Replay;بازپخش;Replay;إعادة التشغيل;Replay
+Shadow Runtime;زمان‌حجاب سایه;Runtime en sombra;وقت التشغيل الظل;Shadow-Laufzeit
+Walk-Forward;پیش‌رونده;Walk-Forward;التحقق المتحرك;Walk-Forward
+Out-of-Sample;خارج نمونه;Fuera de muestra;خارج العينة;Out-of-Sample
+Counterfactual;خلاف‌واقع;Contrafactual;مضاد الحقيقة;Kontrafaktisch
+Regime;رژیم بازار;Régimen;النظام السعري;Marktregime
+Risk Engine;موتور ریسک;Motor de riesgo;محرك المخاطر;Risikomotor
+Execution;اجرا;Ejecución;التنفيذ;Ausführung
+Observability;مشاهده‌پذیری;Observabilidad;قابلية المراقبة;Beobachtbarkeit
+Provenance;منشأ;Procedencia;المصدر;Herkunft
+Certification;گواهی‌سازی;Certificación;التصديق;Zertifizierung
+Runtime Truth;حقیقت زمان اجرا;Verdad del runtime;حقيقة وقت التشغيل;Laufzeit-Wahrheit
+Champion;قهرمان;Campeón;البطل;Champion
+Challenger;چلنجر;Challenger;المنافس;Challenger
+Load Gate;دروازه بارگذاری;Puerta de carga;بوابة التحميل;Load-Gate
+Deploy Gate;دروازه استقرار;Puerta de despliegue;بوابة النشر;Deploy-Gate
