@@ -5227,12 +5227,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # =========================================================================
     from nexus_scalp.web.intelligence_routes import (
         register_intelligence_routes,
+    )
+    from nexus_scalp.web.intelligence_routes import (
         router as intelligence_router,
     )
 
     register_intelligence_routes(app)
     app.include_router(intelligence_router)
-
 
     def _research() -> Any:
         """Returns the research pipeline when available."""
@@ -6114,7 +6115,6 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     from nexus_scalp.web import model_governance_routes as _mgr
 
     app.include_router(_mgr.router)
-
 
     # =========================================================================
     # PHASE 12: NEWS INTELLIGENCE API (read + control, isolated subsystem)
