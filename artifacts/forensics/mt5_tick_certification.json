@@ -1,0 +1,85 @@
+{
+  "certification": "CHG-0036 LIVE MT5 tick acquisition certification",
+  "data_quality_observations": {
+    "duplicate_timestamp_policy": "MEASURED AND REPORTED ONLY - no project threshold exists for live tick duplicates; data is never silently altered",
+    "gap_policy": "gaps are informational (sessions/weekends); largest observed 2s in the probe window",
+    "timezone": "UTC (broker epoch - 180min via broker_epoch_to_utc; input boundaries +180min since BUG-188 fix)"
+  },
+  "defect_discovered": {
+    "classification": "ADAPTER_DEFECT",
+    "disambiguation_probe": "requesting (start+180min, end+180min) returned ticks stamped exactly inside the originally requested real-UTC window (double-conversion proven)",
+    "id": "BUG-188",
+    "pre_fix_evidence": {
+      "out_of_range_count": 2990,
+      "requested_window_utc": {
+        "end": "2026-09-01T18:45:41.835566+00:00",
+        "minutes": 5,
+        "start": "2026-09-01T18:40:41.835566+00:00"
+      },
+      "returned_first_last_utc": [
+        "2026-09-01T15:40:41+00:00",
+        "2026-09-01T15:45:40+00:00"
+      ],
+      "shift_minutes": -180,
+      "tick_count": 2990
+    },
+    "summary": "get_tick_history passed UTC request boundaries unshifted to copy_ticks_range (terminal resolves server-local) => net -180min data shift after the BUG-070 output conversion."
+  },
+  "fix": {
+    "boundary": "mt5_adapter.get_tick_history input window +BROKER_SERVER_UTC_OFFSET_MINUTES (symmetric with broker_epoch_to_utc output conversion; matches history_deals_get/history_orders_get convention)",
+    "regression_tests": "tests/unit/test_mt5_tick_boundary_bug188.py (10 PASS, offline)"
+  },
+  "generated_at": "2026-09-01T18:59:32.190745+00:00",
+  "git_commit_at_fix_verification": "b2a4a4a",
+  "operator_note": "Read-only live probes executed manually against the real terminal; NOT a CI dependency.",
+  "post_fix_verification": {
+    "classification": "DEFECT_FOUND",
+    "duplicate_full_tick_count": 0,
+    "duplicate_timestamp_count": 2536,
+    "largest_gap_sec": 2.0,
+    "ordering_violations": 0,
+    "out_of_range_count": 4,
+    "out_of_range_detail": "4 ticks at the window's first second (server-second resolution vs sub-second request edge) - honest boundary semantics, zero net shift",
+    "price_validity": {
+      "crossed_quotes_ask_lt_bid": 0,
+      "non_finite_or_nonpositive": 0
+    },
+    "requested_window_utc": {
+      "end": "2026-09-01T18:59:31.559950+00:00",
+      "minutes": 5,
+      "start": "2026-09-01T18:54:31.559950+00:00"
+    },
+    "returned_first_last_utc": [
+      "2026-09-01T18:54:31+00:00",
+      "2026-09-01T18:59:30+00:00"
+    ],
+    "tick_count": 2835
+  },
+  "probe_protocol": {
+    "calls": "1x acquire_ticks per probe (2 total incl. post-fix re-probe) + 1x disambiguation probe",
+    "chunks": 3,
+    "disallowed_calls": [
+      "order_send",
+      "order_check",
+      "order modify/remove",
+      "account mutation"
+    ],
+    "order_send_executed": false,
+    "read_only": true,
+    "symbol": "XAUUSD",
+    "window_minutes": 5
+  },
+  "research_integration_boundary": {
+    "adapter_side_feature_or_signal_generation": false,
+    "flow": "live ticks -> TickEventSource -> StreamingReplayEngine -> causal 70D validation -> local inference -> SignalPolicy -> RiskEngine -> simulated fill/ledger",
+    "mt5_import_in_research_stack": false,
+    "order_send_in_acquisition_path": false
+  },
+  "terminal": {
+    "classification": "AVAILABLE",
+    "connected": true,
+    "package_version": "5.0.6090"
+  },
+  "verdict": "CERTIFIED",
+  "verdict_note": "Live bounded probe executed successfully pre- and post-fix against the real terminal; BUG-188 fixed and re-verified. Certification is point-in-time (terminal availability is environmental)."
+}
