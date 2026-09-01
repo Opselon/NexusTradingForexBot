@@ -6668,3 +6668,28 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - **Fix:** resolve --schema against FEATURE_SCHEMAS (unknown id -> Unknown schema panel + EXIT_USAGE listing valid ids); thread feature_schema.schema_id into SampleFactory; fail fast with an actionable panel when the input lacks the schema-required feat_* columns or any atr column (names the missing set + points at the feature-engine contract) instead of a raw traceback.
 - **Regression tests:** tests/unit/test_bug176_schema_flag.py (5 tests: bogus schema rejected with usage exit; valid schema honored with schema-width frame; raw-bars input -> clean contract panel, no traceback in stdout/stderr). Fails-before captured by Reviewer probes (p11/p12).
 - **Verification:** 5/5 PASS; ruff/format/mypy/py_compile gates on touched files PASS (Coder report; Main re-ran the suite green).
+## BUG-180 - online fine-tune battery had no standing guard for poisoned-buffer
+  finiteness or checkpoint round-trip (2026-08-31 Hermes-Coder, directive #69 battery tranche 2)
+- FOUND (learning-loop battery tranche 2, directives #42/#43/#30): the production online
+  path (WalkForwardTrainer.fine_tune_online, wired to LiveEngine._trigger_async_online_fine_tune)
+  had exactly ONE direct test; nothing pinned (a) that an all-NaN feature buffer cannot
+  persist non-finite tensors into the ACTIVE model checkpoint, (b) that the atomic
+  checkpoint + scaler survive a save -> unload -> reload cycle with byte-equivalent
+  values (in-memory validation is not evidence - directive #30).
+- ROOT CAUSE (coverage, not behavior - the defenses verified correct):
+  _extract_X_y sanitises NaN/Inf via np.nan_to_num; _save_checkpoint maps tensors to CPU
+  and writes atomically (tmp + replace); _save_scaler validates dim + finiteness before
+  atomic replace; but no test locked any of it, so a future refactor could silently
+  regress the serving artifact (BUG-141 width-clobber class).
+- FIX (tests only):
+  tests/unit/test_walk_forward_trainer.py +=
+  test_wf_fine_tune_rolls_back_on_all_nan_buffer (all-NaN buffer: returned model weights
+  fully finite; if a checkpoint was written it contains finite tensors only; rollback
+  to baseline is an acceptable fail-safe outcome - contract is finiteness),
+  test_wf_checkpoint_roundtrip_persists_exact_weights (checkpoint reloads byte-equal
+  into a fresh ScalpNet; scaler.npz round-trips EXACT mean/std vs _load_scaler with
+  no refit drift).
+- VERIFICATION: 3/3 in file (2 new) PASS standalone + full file; ruff check + format
+  clean; mypy walk_forward_trainer.py clean; CRLF integrity asserted by byte probes
+  (crlf count == lf count, no doubled-CR bytes, trailing newline preserved).
+- Severity: P2 (regression-net gap on the live-serving training path) | Status: FIXED | Fixed-by: Hermes-Coder
