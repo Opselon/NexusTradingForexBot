@@ -6962,3 +6962,12 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   failure/empty semantics, port-parity). Live re-probe post-fix: window
   containment 0 out-of-range, ordering non-decreasing, quotes sane.
 
+## BUG-189 - UI showed ENABLED while gate was AUTO_DISABLED: settings-layer auto-disable had no production writer (2026-09-01 Nexus-Main, live-confirmed)
+
+- SEVERITY: P2 (operator-facing state contradiction; zero trading impact)
+- STATUS: FIXED (commit series with CHG-0039)
+- Evidence (LIVE, engine booted 22:10 2026-09-01): /api/factory/provider-health returned top-level user_enabled=true / auto_disabled=false / effective_enabled=true while the nested gate block reported provider_state=AUTO_DISABLED, auto_disabled=true, reason=AUTH_FAILED (real HTTP 401 from the provider). The UI label derives from the settings layer -> operator sees ENABLED + 'provider: AUTO_DISABLED' simultaneously.
+- Root cause: two state owners. The settings DB persisted an auto_disabled flag that NO production code path ever wrote (record_factory_auto_disabled has zero production callers - only tests), while the actual runtime disable lived only in the ProviderGate singleton. Health assembled settings truth without the gate.
+- Fix (CHG-0039): the gate is the single RUNTIME authority for auto-disable; the settings DB persists USER INTENT only (deliberate: transient failures must NOT survive credential rotation or restart). factory_health_snapshot() accepts runtime_override; /api/factory/provider-health merges gate truth into the authoritative top-level fields; llm-config save reconfigures the process singleton even in web-only mode; provider-test reconfigures before the single probe so a rotated key is verifiable without pressing Enable first.
+- Regression: tests/unit/test_provider_lifecycle_hardening.py (18 tests: state ownership, rotation lifecycle, restart matrix A-E, probe boundedness, secret leakage).
+- Secrets: verified no key value in merged snapshot, gate snapshot, or logs.

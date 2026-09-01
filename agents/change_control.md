@@ -1000,3 +1000,11 @@ Risk: LOW (single function input-boundary normalization; offline-tested;
 parity with the already-proven history-deal window convention).
 Status: COMPLETE
 
+## CHG-0039 - Provider gate lifecycle hardening: state ownership, credential rotation recovery, restart semantics (2026-09-01 Nexus-Main)
+
+Change: POST-CERTIFICATION lifecycle layer on top of live-certified CHG-0034 (rate-limit/circuit implementation NOT reopened). Forensic pass found and fixed: DEFECT-1 (live-confirmed): settings-layer auto_disabled had NO production writer, so the health payload/UI showed ENABLED while the gate was AUTO_DISABLED. Fix: the gate is the RUNTIME authority; factory_health_snapshot(runtime_override=...) merges gate truth into the authoritative top-level fields (provider-health endpoint). DEFECT-2: transient auto-disable must never be persisted (sticky across key rotation forbidden) - settings DB keeps USER INTENT only; record_/clear_ methods remain for API compatibility. DEFECT-3: llm-config save in web-only mode (no in-process factory) never reconfigured the gate - now the process singleton is reconfigured on every save. DEFECT-4: provider-test while AUTO_DISABLED could not verify a rotated key - the probe path now reconfigures the singleton first (still EXACTLY ONE network request).
+Scope: settings/service.py (snapshot runtime_override), web/factory_routes.py (health merge + web-only reconfigure + probe reconfigure), tests/unit/test_provider_lifecycle_hardening.py (new, 18 tests), agents/*.
+Why: user steer 2026-09-01 (post-certification): deterministic recovery lifecycle, state consistency, restart semantics, operator UX truthfulness.
+Contracts: PROVIDER_HEALTH_GATE v1 extended (runtime authority semantics); SETTINGS_DB factory.* v2 semantics clarified (intent persisted, runtime transient). BUG-189 (UI/backend state contradiction) filed.
+Risk: LOW-MEDIUM (state reporting + recovery paths; no trading, no 70D, no rate-limit/circuit behavior changes).
+Status: IMPLEMENTING
