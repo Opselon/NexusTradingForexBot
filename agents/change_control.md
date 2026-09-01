@@ -1219,3 +1219,41 @@ manager, live_engine hot path, model artifacts, 70D contract, installer, setting
 Contracts touched: API_PLATFORM v1 (new). Risk: LOW (read-only, additive, new
 prefix; existing 257 routes and UI untouched).
 Status: IN_PROGRESS
+
+## CHG-0044 - JSON developer-contract layer over /api/v1 (TASK-API-CONTRACTS) (2026-09-02, Nexus-Contracts)
+
+Change: machine-readable contract system for the developer-facing /api/v1
+platform (extends CHG-0043 TASK-API-PLATFORM; the route surface, envelope,
+pagination and error contracts it defines are consumed as-is, never
+duplicated):
+  - src/nexus_scalp/api/v1/contracts.py: CONTRACT REGISTRY - one decorator-
+    registered source of truth (contract_id, version, status, owner, schema
+    ref, endpoint binding, evidence backend, introduced, replacement);
+    duplicate-ID and duplicate-endpoint detection at registration time.
+  - src/nexus_scalp/api/v1/schemas.py: PYDANTIC-DRIVEN JSON SCHEMA for every
+    registered contract (generated from typed models, draft 2020-12); schema
+    artifacts exposed via /api/v1/contracts/{id}/schema.
+  - src/nexus_scalp/api/v1/examples.py + tests/fixtures/api/: at least one
+    valid, secret-free example + deterministic fixtures per contract
+    (clearly synthetic test data only - NEVER production values).
+  - scripts/dev/validate_json_contracts.py: discovers registry, loads
+    schemas, validates examples + fixtures, detects duplicate contract IDs,
+    exit-code contract for CI (0=pass).
+  - scripts/dev/json_contract_diff.py: schema-vs-schema breaking-change
+    classifier (removed required field, type change, enum narrowing,
+    nullable->non-nullable, property removal) with PATCH/MINOR/MAJOR verdict.
+  - scripts/dev/api_snapshot.py: endpoint inventory + contract map + schema
+    hashes (reproducible API surface snapshot).
+  - src/nexus_scalp/api/v1/redaction.py: reusable secret redaction for
+    examples/fixtures/diagnostics exports + secret scan over the whole
+    contract corpus.
+  - tests/unit/test_api_v1_contract_*.py: schema validity, example validity,
+    fixture validity, API->contract integration (TestClient over real
+    endpoints), NOT_RECORDED semantics, pagination/units/timestamps, secret
+    scan, registry integrity.
+  - docs/API_PLATFORM.md: contract reference (WHAT/WHO/WHEN/consume/versions).
+NOT touched: strategy, risk, execution, order manager, live engine hot path,
+model artifacts, 70D contract, installer, settings, Web/, existing routes.
+Truthfulness rule: contracts document REAL fields from REAL backends; missing
+evidence stays NOT_RECORDED/null with explicit semantics - never fabricated.
+Status: IN_PROGRESS
