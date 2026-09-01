@@ -218,7 +218,10 @@ def walk_candidate(
     distance; RR_NOT_RECORDED when the row lacks valid geometry.
     """
     horizon = timedelta(minutes=horizon_minutes)
-    end_limit = cand.timestamp + horizon
+    cand_ts = (
+        cand.timestamp if cand.timestamp.tzinfo is not None else cand.timestamp.replace(tzinfo=UTC)
+    )
+    end_limit = cand_ts + horizon
 
     # hypothetical entry price on the entry side (spread paid)
     first = ticks[0] if ticks else None
@@ -242,9 +245,17 @@ def walk_candidate(
 
     if entry_price is not None and entry_tick is not None:
         for t in ticks:
-            if t.timestamp < entry_tick.timestamp:
+            t_ts = (
+                t.timestamp if t.timestamp.tzinfo is not None else t.timestamp.replace(tzinfo=UTC)
+            )
+            e_ts = (
+                entry_tick.timestamp
+                if entry_tick.timestamp.tzinfo is not None
+                else entry_tick.timestamp.replace(tzinfo=UTC)
+            )
+            if t_ts < e_ts:
                 continue
-            if t.timestamp > end_limit:
+            if t_ts > end_limit:
                 break
             ticks_seen += 1
             last_ts = t.timestamp
@@ -263,13 +274,23 @@ def walk_candidate(
                     else t.ask <= cand.take_profit
                 )
                 if hit:
-                    time_to_target = (t.timestamp - cand.timestamp).total_seconds()
+                    hit_ts = (
+                        t.timestamp
+                        if t.timestamp.tzinfo is not None
+                        else t.timestamp.replace(tzinfo=UTC)
+                    )
+                    time_to_target = (hit_ts - cand.timestamp).total_seconds()
             if time_to_stop is None and cand.stop_loss > 0:
                 hit = (
                     t.bid <= cand.stop_loss if cand.direction == "BUY" else t.ask >= cand.stop_loss
                 )
                 if hit:
-                    time_to_stop = (t.timestamp - cand.timestamp).total_seconds()
+                    hit_ts = (
+                        t.timestamp
+                        if t.timestamp.tzinfo is not None
+                        else t.timestamp.replace(tzinfo=UTC)
+                    )
+                    time_to_stop = (hit_ts - cand.timestamp).total_seconds()
 
     # theoretical R at the BEST point (MFE-based potential) AND at walk end;
     # the classification uses the walk-end mark (honest full-horizon result)
@@ -287,7 +308,7 @@ def walk_candidate(
         theoretical_r = final_r
 
     coverage_sec = (
-        (min(last_ts, end_limit) - cand.timestamp).total_seconds() if last_ts is not None else 0.0
+        (min(last_ts, end_limit) - cand_ts).total_seconds() if last_ts is not None else 0.0
     )
     outcome, basis = _classify(
         cand=cand,
@@ -345,16 +366,19 @@ def _classify(
     if coverage_sec < horizon_sec * 0.5:
         return OutcomeClass.INCONCLUSIVE, "INSUFFICIENT_FUTURE_COVERAGE"
     if isinstance(theoretical_r, str) or theoretical_r is None:
-        # no recorded geometry: excursion-based fallback (never fabricate R)
+        # no recorded geometry: excursion-based fallback (never fabricate R).
+        # The 1.8R proxy mirrors the production RiskEngine min_rr (1.8): a
+        # candidate whose favorable excursion dominated adverse by the
+        # required reward ratio would plausibly have hit its target.
         contract = 100.0
         risk_usd = (risk_distance or 0.0) * contract
+        if mfe > 0 and mfe >= abs(mae) * 1.8:
+            return OutcomeClass.FALSE_REJECTION, "EXCURSION_MFE_DOMINATED_1.8R"
+        if mae < 0 and abs(mae) >= mfe * 1.8:
+            return OutcomeClass.CORRECT_REJECTION, "EXCURSION_MAE_DOMINATED_1.8R"
         if risk_usd <= 0:
             return OutcomeClass.INCONCLUSIVE, RR_NOT_RECORDED
         rr_proxy = (mfe / abs(mae)) if mae < 0 else (99.0 if mfe > 0 else 0.0)
-        if mfe >= abs(mae) * 1.8 and mfe > 0:
-            return OutcomeClass.FALSE_REJECTION, "EXCURSION_MFE_DOMINATED_1.8R"
-        if abs(mae) >= mfe * 1.8 and mae < 0:
-            return OutcomeClass.CORRECT_REJECTION, "EXCURSION_MAE_DOMINATED_1.8R"
         return OutcomeClass.INCONCLUSIVE, f"NO_GEOMETRY_RR_PROXY={rr_proxy:.2f}"
     if theoretical_r >= R_WIN_THRESHOLD:
         return OutcomeClass.FALSE_REJECTION, f"R={theoretical_r:.2f}>=+0.5"
@@ -364,8 +388,10 @@ def _classify(
 
 
 def _tick_at_or_after(ticks: list[Tick], ts: datetime) -> Tick | None:
+    ts_norm = ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
     for t in ticks:
-        if t.timestamp >= ts:
+        t_ts = t.timestamp if t.timestamp.tzinfo is not None else t.timestamp.replace(tzinfo=UTC)
+        if t_ts >= ts_norm:
             return t
     return None
 
