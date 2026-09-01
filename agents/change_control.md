@@ -945,3 +945,12 @@ re-add own files immediately before commit (parallel restore --staged hazard).
 Precedence note: user ruling supersedes researcher P0 ranking where they differ (checks.py P2 -> approved Step 2;
 audit_repository.py P0 / updater.py P1 -> OUT OF SCOPE this pass).
 Status: IMPLEMENTING (Step 1 dispatch)
+## CHG-0033 - Observability & Forensic Trace Audit (audit-only, no code) (2026-08-31 Hermes-ObsForensic)
+
+Change: AUDIT-ONLY deliverable - docs/architecture/observability-map.md + artifacts/forensics/observability-audit.json (OBS-001..016 gap ledger, reconstruction scorecard, 10-scenario black-box reconstruction results). NO runtime code, trading, model, release, or config changes; zero-behavior-impact by construction (two additive docs + registry rows).
+Scope: docs/architecture/observability-map.md (new), artifacts/forensics/observability-audit.json (new), agents/taskboard.md (TASK-OBS-AUDIT row), agents/change_control.md (this entry).
+Why: user-mandated forensic observability audit - determine whether a developer can reconstruct incidents from runtime evidence alone; evidence-based gap ledger for future fixes (P0: redaction eats EXEC- ids, correlation ids never bound; P1: dead /api/debug/trace audit_db import, silent DB batch drops, EXPERIENCE execution_id 0%%, update chain json-only).
+Migration: none - no schema/contract/feature change; OBSERVABILITY_AUDIT v1 is a documentation artifact.
+Verification: black-box reconstruction of 10 scenarios from runtime evidence (logs 190MB severity-split, 9 DBs, incidents, update-state.json, live API :8081 probes incl. X-Request-ID echo + dead debug/trace endpoint, real CLI execution); 6 parallel read-only code sweeps for every claim; no runtime claims made.
+Risk: LOW - additive docs only. Recommended fixes are listed for future authorized tasks, NOT implemented (audit-only mandate).
+Status: VERIFIED (audit artifacts complete; no runtime verification applicable)
