@@ -692,6 +692,11 @@ class SignalPolicy:
                 "range_penalty": float(range_pen),
                 "survival_mode_adjustment": float(surv_adj),
                 "effective_threshold": float(eff_thr),
+                # CHG-0043 decision-evidence: the quoting state this decision
+                # saw (ask-bid, USD). Observability only — never a decision
+                # input (INV-018); the audit row persists it for the
+                # counterfactual engine's spread stratification.
+                "spread_usd": float(current_spread),
             }
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
@@ -1099,6 +1104,8 @@ class SignalPolicy:
                     "rr": float(actual_rr),
                     "min_rr": float(active_min_rr),
                     "confidence_source": confidence_source,
+                    # CHG-0043 decision-evidence spread stamp (see build_nt).
+                    "spread_usd": float(current_spread),
                 }
 
                 final_proposal = TradeProposal(
@@ -1667,6 +1674,13 @@ class SignalPolicy:
                 take_profit=current_tick.bid * 1.01,
                 risk_reward_ratio=1.0,
                 reason_code="BLOCKED_BY_GUARDIAN_UNSAFE_REGIME",
+                # CHG-0043 decision-evidence: the guardian fires BEFORE
+                # inference (pre-model freeze), so no direction or model
+                # probabilities exist yet. Recorded honestly as
+                # NOT_RECORDED/absent — never fabricated from later state.
+                # sentinel SL/TP are documented placeholders, NOT real
+                # geometry (the counterfactual engine must treat them as
+                # geometry_unavailable_before_gate).
                 model_action="NO_TRADE",
                 buy_probability=0.0,
                 sell_probability=0.0,
@@ -1683,6 +1697,13 @@ class SignalPolicy:
                 smc_score=0.0,
                 confidence_before_filters=0.0,
                 confidence_after_filters=0.0,
+                risk_checks={
+                    # pre-model block: quoting state IS known even though the
+                    # model never ran (spread observable without inference).
+                    "spread_usd": float(round(max(0.0, current_tick.ask - current_tick.bid), 2)),
+                    "geometry_unavailable_before_gate": True,
+                    "confidence_source": "PRE_MODEL_GUARDIAN",
+                },
             )
         return None
 

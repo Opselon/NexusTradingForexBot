@@ -203,6 +203,18 @@ class AuditRepository:
             ("smc_score", "REAL"),
             ("confidence_before_filters", "REAL"),
             ("confidence_after_filters", "REAL"),
+            # CHG-0043 decision-evidence completeness: the model-preferred
+            # direction + raw probability block, captured at decision time so
+            # every rejected candidate is counterfactually reconstructable.
+            # NOT_RECORDED ("") for pre-repair rows — never backfilled from
+            # future data.
+            ("preferred_direction", "TEXT"),
+            ("raw_prob_buy", "REAL"),
+            ("raw_prob_sell", "REAL"),
+            ("raw_prob_no_trade", "REAL"),
+            ("raw_prob_wait", "REAL"),
+            ("confidence_source", "TEXT"),
+            ("spread_usd", "REAL"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE audit_signals ADD COLUMN {col_def[0]} {col_def[1]};")
@@ -1528,6 +1540,38 @@ class AuditRepository:
         sell_prob = float(getattr(proposal, "sell_probability", 0.0) or 0.0)
         no_trade_prob = float(getattr(proposal, "no_trade_probability", 0.0) or 0.0)
 
+        # CHG-0043 decision-evidence completeness: capture the RAW probability
+        # block + the model-preferred direction AT DECISION TIME. The
+        # preferred direction is whatever the model recorded as its candidate
+        # action (model_action) — a genuine NO_TRADE abstention stays
+        # NOT_RECORDED (""); direction is NEVER derived from the eventual
+        # market move. confidence_source comes from the confidence-semantics
+        # repair (risk_checks.confidence_source) so raw vs normalized
+        # semantics stay distinguishable. spread_usd documents the quoting
+        # state the decision saw (ask-bid).
+        preferred_direction = ""
+        ma = model_action.upper()
+        if "BUY" in ma:
+            preferred_direction = "BUY"
+        elif "SELL" in ma:
+            preferred_direction = "SELL"
+        try:
+            rc = proposal.risk_checks if isinstance(proposal.risk_checks, dict) else {}
+            confidence_source = str(rc.get("confidence_source", "") or "")
+        except Exception:
+            confidence_source = ""
+        # spread the decision actually saw: the proposal carries the raw model
+        # probabilities but not the tick; policy stamps spread into its
+        # rejection telemetry via current_spread — recover it from the
+        # proposal's risk_checks when present, else derive from proposed_entry
+        # vs the guard sentinel (never invent: absent -> NOT_RECORDED/None).
+        spread_usd = None
+        try:
+            if "spread_usd" in (rc or {}):
+                spread_usd = float(rc["spread_usd"])
+        except Exception:
+            spread_usd = None
+
         # Minimal forensic payload (BUG-054): no full proposal dump, no
         # duplicate fields already present as structured columns.
         payload_json = json.dumps(
@@ -1567,8 +1611,8 @@ class AuditRepository:
             INSERT INTO audit_signals
             (request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload,
              execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters,
-             signal_dedup_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(signal_dedup_key) DO NOTHING
         """
         args = (
@@ -1591,6 +1635,14 @@ class AuditRepository:
             getattr(proposal, "confidence_before_filters", 0.0),
             getattr(proposal, "confidence_after_filters", 0.0),
             self._signal_dedup_key(proposal),
+            # CHG-0043 decision-evidence columns ("" / None = NOT_RECORDED)
+            preferred_direction,
+            buy_prob,
+            sell_prob,
+            no_trade_prob,
+            None,  # raw_prob_wait: WAIT slice not exposed on the proposal contract (never invented)
+            confidence_source,
+            spread_usd,
         )
 
         try:
