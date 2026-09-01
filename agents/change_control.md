@@ -1029,3 +1029,32 @@ projection). Risk: LOW (mapping parity fix; bit-identical outputs on the current
 smoke-grade artifact verified pre/post).
 Status: COMPLETE
 
+## CHG-0041 - Research tick store + NO_TRADE counterfactual engine (2026-09-01, Hermes-Main)
+
+Change: closes the CHG-0038 counterfactual small-N gap. (1) mt5_tick_dataset.py
+extended: TICK_DATASET_META v2 provenance (source, acquisition_time, adapter
+surface, git_commit, requested window, fingerprint), overlap dedup (only
+missing sub-windows fetched, merged chronologically), immutable fingerprinted
+parquet. (2) research/counterfactual.py = TICK_COUNTERFACTUAL v1: joins
+audit_signals NO_TRADE rows (decision id, timestamp, action=NO_TRADE,
+confidence, entry/SL/TP geometry, regime, gate, model probs) with the tick
+store; hypothetical entry at T via the CERTIFIED direction-aware semantics
+(BUY@ASK/SELL@BID); tick-walk to SL/TP/horizon: MFE/MAE (favorable/adverse
+price excursion), future return, cost = entry spread, time-to-target,
+time-to-stop, RR_NOT_RECORDED when geometry absent; classification
+FALSE_REJECTION / CORRECT_REJECTION / MISSED_LOSER / INCONCLUSIVE with
+evidence-based rules (R>=+0.5R = rejected winner, R<=-0.5R = would-be loser,
+insufficient coverage = INCONCLUSIVE); stratification by gate/regime/
+confidence band/session/direction; fingerprinted deterministic outputs.
+(3) tests/unit/test_counterfactual_engine.py (offline, synthetic deterministic
+ticks + decision fixtures). (4) evidence artifact
+artifacts/forensics/no_trade_counterfactual_20260901.json.
+Scope: src/nexus_scalp/research/{counterfactual.py,mt5_tick_dataset.py},
+tests/unit/test_counterfactual_engine.py, artifacts/forensics/*, agents/*.
+NOT touched: policy, risk, regime engine, execution adapters, certified
+replay/forward-test paths, observability, installer, CLI owners' WIP.
+Why: user counterfactual-engine brief 2026-09-01; prior sample N=17 INCONCLUSIVE.
+Contracts touched: TICK_DATASET_META v2, TICK_COUNTERFACTUAL v1. Risk: LOW
+(research-only, no live path).
+Status: COMPLETE
+
