@@ -1,0 +1,172 @@
+{
+ "generated": "2026-09-01T23:59+00:00",
+ "window_since": "2026-08-31",
+ "author": "Hermes-Main (NO_TRADE forensic pass)",
+ "total_signals": 1648,
+ "funnel": [
+  {
+   "stage": "GUARDIAN_GATE",
+   "blocked_by": "REGIME_GUARDIAN",
+   "count": 597,
+   "pct": 36.2
+  },
+  {
+   "stage": "CONFIDENCE_GATE",
+   "blocked_by": "CONFIDENCE_FAIL",
+   "count": 464,
+   "pct": 28.2
+  },
+  {
+   "stage": "STANDARD_EVAL",
+   "blocked_by": null,
+   "count": 356,
+   "pct": 21.6
+  },
+  {
+   "stage": "SR_MARGIN_FILTER",
+   "blocked_by": "SR_RESISTANCE_MARGIN_FAIL",
+   "count": 49,
+   "pct": 3.0
+  },
+  {
+   "stage": "EXPERIENCE_INTELLIGENCE_GATE",
+   "blocked_by": "EXPERIENCE_DEGRADED",
+   "count": 48,
+   "pct": 2.9
+  },
+  {
+   "stage": "TRADE_INTELLIGENCE_GATE",
+   "blocked_by": "SUITABILITY_GATE",
+   "count": 44,
+   "pct": 2.7
+  },
+  {
+   "stage": "HTF_TREND_FILTER",
+   "blocked_by": "HTF_TREND_CONFL_FAIL",
+   "count": 33,
+   "pct": 2.0
+  },
+  {
+   "stage": "PREDICTIVE_LIMIT_GENERATION",
+   "blocked_by": null,
+   "count": 17,
+   "pct": 1.0
+  },
+  {
+   "stage": "SR_MARGIN_FILTER",
+   "blocked_by": "SR_SUPPORT_MARGIN_FAIL",
+   "count": 12,
+   "pct": 0.7
+  },
+  {
+   "stage": "EXPOSURE_GATE",
+   "blocked_by": "EXECUTION_STATE_BLOCK",
+   "count": 9,
+   "pct": 0.5
+  },
+  {
+   "stage": "STANDARD_EVAL",
+   "blocked_by": "RANGE_FILTER",
+   "count": 7,
+   "pct": 0.4
+  },
+  {
+   "stage": "NO_TRADE_BUILDER",
+   "blocked_by": null,
+   "count": 6,
+   "pct": 0.4
+  },
+  {
+   "stage": "FINAL_DECISION",
+   "blocked_by": null,
+   "count": 3,
+   "pct": 0.2
+  },
+  {
+   "stage": "STANDARD_EVAL",
+   "blocked_by": "ASYMMETRIC_RR_LIMIT",
+   "count": 3,
+   "pct": 0.2
+  }
+ ],
+ "probability_stats": {
+  "n": 1090,
+  "buy": {
+   "p05": 0.2464,
+   "p50": 0.3171,
+   "p95": 0.3331,
+   "max": 0.3464
+  },
+  "sell": {
+   "p05": 0.2424,
+   "p50": 0.264,
+   "p95": 0.3124,
+   "max": 0.3566
+  },
+  "no_trade": {
+   "p05": 0.2069,
+   "p50": 0.2237,
+   "p95": 0.2755
+  },
+  "triple_sum_mean": 0.805
+ },
+ "confidence_gate": {
+  "candidates_blocked": 464,
+  "max_directional_prob_ever": 0.3566,
+  "effective_threshold_range_regime": 0.5,
+  "effective_threshold_other": 0.4,
+  "renorm_counterfactual_passers": {
+   "TRENDING_MOMENTUM": 28,
+   "VOLATILITY_EXPANSION": 4
+  },
+  "note": "4-class head vs 3-class thresholds; WAIT logit absorbs ~0.21 mass"
+ },
+ "accepted_outcome_by_confidence_cohort": {
+  "0.0": {
+   "n": 232,
+   "sum_pnl": -4170.64,
+   "win_pct": 14.7
+  },
+  "0.35-0.5": {
+   "n": 8,
+   "sum_pnl": -258.04,
+   "win_pct": 37.5
+  },
+  "0.5+": {
+   "n": 37,
+   "sum_pnl": -1244.88,
+   "win_pct": 8.1
+  },
+  "<0.35": {
+   "n": 45,
+   "sum_pnl": -731.42,
+   "win_pct": 40.0
+  }
+ },
+ "hidden_gates": {
+  "phase08_experience": {
+   "count": 48,
+   "blocked_by": "EXPERIENCE_DEGRADED",
+   "evidence": "DEGRADED families have n=5-6 samples only"
+  },
+  "phase09_suitability": {
+   "count": 44,
+   "blocked_by": "SUITABILITY_GATE",
+   "threshold": "score<0.40"
+  },
+  "news_gate": {
+   "state": "HIGH_IMPACT active",
+   "penalty": "conf*0.5 capped 0.10, weak setups blocked"
+  },
+  "guardian": {
+   "count": 596,
+   "regime": "HIGH_SPREAD_CHOP (spread >= $0.25 Schmitt)"
+  }
+ },
+ "verdict_inputs": {
+  "regime_classifier": "correct, non-sticky (4s hysteresis, safe de-escalation)",
+  "guardian_spread_chop": "legitimate (live spreads $0.30-0.35 observed in blocked hours)",
+  "data_freshness": "tick/features/inference/proposal age < 3s (live API diagnostics)",
+  "log_redaction": "execution_id/request_id entropy-redacted in EXEC_TRACE lines; 'ked_by=None' is a copy/wrap artifact of blocked_by=None"
+ }
+}
