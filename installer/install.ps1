@@ -1116,7 +1116,7 @@ function Invoke-RepoUpdate {
                         Write-WarnMsg "Local changes were restored on top of the updated codebase (review git status if behavior surprises)."
                     } else {
                         Write-ErrMsg "Update succeeded but restoring local changes hit conflicts. Your stashed changes are PRESERVED."
-                        foreach ($file in $conflicted) { Write-Host "  conflicted: $file" }
+                        foreach ($file in $conflicted) { Write-Diag "conflicted: $file" }
                         Write-Info "Restore later with: git -C `"$InstallDir`" stash apply $autostashRef"
                     }
                 } finally {
@@ -1472,16 +1472,16 @@ function Install-PythonDependencies {
         $env:VIRTUAL_ENV = Join-Path $NexusHome "venv"
         $env:UV_PYTHON = $venvPython
 
-        & $Script:UvCmd pip install -e "." 2>&1 | ForEach-Object { "$_" } | Write-Host -ForegroundColor DarkGray
+        & $Script:UvCmd pip install -e "." 2>&1 | ForEach-Object { "$_" } | Write-Diag
         $code = $LASTEXITCODE
         if ($code -ne 0) {
             # Tiered fallback: [web] extra (UI server), then core-only.
             Write-WarnMsg "Core editable install failed (exit $code); trying [web] extra tier..."
-            & $Script:UvCmd pip install -e ".[web]" 2>&1 | ForEach-Object { "$_" } | Write-Host -ForegroundColor DarkGray
+            & $Script:UvCmd pip install -e ".[web]" 2>&1 | ForEach-Object { "$_" } | Write-Diag
             $code = $LASTEXITCODE
             if ($code -ne 0) {
                 Write-WarnMsg "[web] tier failed (exit $code); trying core-only tier..."
-                & $Script:UvCmd pip install -e . --no-deps 2>&1 | ForEach-Object { "$_" } | Write-Host -ForegroundColor DarkGray
+                & $Script:UvCmd pip install -e . --no-deps 2>&1 | ForEach-Object { "$_" } | Write-Diag
                 $code = $LASTEXITCODE
                 if ($code -ne 0) { throw "Failed to install nexus-scalp-engine dependencies even at the core tier (exit $code)" }
                 Write-WarnMsg "Core-only tier installed with --no-deps; run 'install.ps1 -Stage dependencies' after network issues are resolved"
@@ -1712,6 +1712,17 @@ function Write-InstallState {
     New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
     $statePath = Join-Path $stateDir "install.json"
 
+    # Resume support (task C-11): merge with the PREVIOUS state so the fields
+    # of stages that were never re-run in this session survive. A stage that
+    # ran writes its own per-stage record; the state file becomes a durable
+    # stage-progress ledger a driver can use to resume a partial install.
+    $previous = $null
+    if (Test-Path -LiteralPath $statePath) {
+        try {
+            $previous = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+        } catch { $previous = $null }
+    }
+
     $gitVersion = $null
     try { $gitVersion = (& git --version 2>$null) } catch { }
     $pyVersion = $null
@@ -1720,6 +1731,25 @@ function Write-InstallState {
         try { $pyVersion = (& $venvPython --version 2>$null) } catch { }
     }
     $repoSha = Get-RepoHeadSha -Repo $InstallDir
+
+    # Per-stage evidence: merge this session's results over the previous ones.
+    $stageRecords = [ordered]@{}
+    if ($previous -and $previous.stages) {
+        foreach ($prop in $previous.stages.PSObject.Properties) {
+            $stageRecords[$prop.Name] = $prop.Value
+        }
+    }
+    foreach ($key in $Script:_StageResults.Keys) {
+        $stageRecords[$key] = $Script:_StageResults[$key]
+    }
+    # Determine the furthest successful stage for resume semantics.
+    $lastOk = $LastStage
+    if (-not $lastOk) {
+        foreach ($s in $Script:InstallStages) {
+            $rec = $stageRecords[$s.Name]
+            if ($rec -and $rec.ok) { $lastOk = $s.Name }
+        }
+    }
 
     $state = [ordered]@{
         installer_version     = $Script:InstallerVersion
@@ -1730,12 +1760,16 @@ function Write-InstallState {
         repo_head             = $repoSha
         python                = if ($pyVersion) { "$pyVersion" } else { $null }
         git                   = if ($gitVersion) { "$gitVersion" } else { $null }
-        last_successful_stage = $LastStage
+        last_successful_stage = $lastOk
+        stages                = $stageRecords
     }
 
-    # BOM-less UTF-8 so JSON parsers on any runtime accept the file.
+    # BOM-less UTF-8 so JSON parsers on any runtime accept the file. Atomic
+    # replace: write to a temp file, then rename (crash cannot truncate state).
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 4), $utf8NoBom)
+    $tmpState = "$statePath.tmp-$PID"
+    [System.IO.File]::WriteAllText($tmpState, ($state | ConvertTo-Json -Depth 6), $utf8NoBom)
+    Move-Item -LiteralPath $tmpState -Destination $statePath -Force
     Write-Success "Install state written: $statePath"
 }
 
@@ -2012,6 +2046,14 @@ function Invoke-Stage {
         Write-Log "STAGE FAILED: $($StageDef.Name): $($_.Exception.Message)"
     } finally {
         $result.duration_ms = [int]([DateTime]::UtcNow - $start).TotalMilliseconds
+        # Durable per-stage evidence (task C-11): every stage result is
+        # recorded on the session ledger and flushed to state/install.json,
+        # so a partial install's progress survives process death.
+        if (-not $Script:_StageResults) { $Script:_StageResults = @{} }
+        $Script:_StageResults[$StageDef.Name] = $result
+        if ($result.ok) {
+            try { Write-InstallStateFromSession } catch { }
+        }
         if ($Json -or $PSBoundParameters.ContainsKey("Stage") -or $Script:_DriverMode) {
             # Protocol mode: every stage emits exactly one JSON frame on
             # stdout. Human diagnostics already went to stderr/human channels.
@@ -2022,6 +2064,36 @@ function Invoke-Stage {
         }
     }
     if ($threw) { throw $threw }
+}
+
+function Write-InstallStateFromSession {
+    # Flush per-stage progress to disk without recomputing repo/venv facts:
+    # fast, best-effort, called after each successful stage (task C-11).
+    $stateDir = Join-Path $NexusHome "state"
+    New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+    $statePath = Join-Path $stateDir "install.json"
+    $previous = $null
+    if (Test-Path -LiteralPath $statePath) {
+        try { $previous = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json } catch { }
+    }
+    $stageRecords = [ordered]@{}
+    if ($previous -and $previous.stages) {
+        foreach ($prop in $previous.stages.PSObject.Properties) { $stageRecords[$prop.Name] = $prop.Value }
+    }
+    foreach ($key in $Script:_StageResults.Keys) { $stageRecords[$key] = $Script:_StageResults[$key] }
+    $state = [ordered]@{
+        installer_version     = $Script:InstallerVersion
+        protocol_version      = $Script:ProtocolVersionValue
+        installed_at          = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        nexus_home            = $NexusHome
+        install_dir           = $InstallDir
+        last_successful_stage = $StageDef.Name
+        stages                = $stageRecords
+    }
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    $tmpState = "$statePath.tmp-$PID"
+    [System.IO.File]::WriteAllText($tmpState, ($state | ConvertTo-Json -Depth 6), $utf8NoBom)
+    Move-Item -LiteralPath $tmpState -Destination $statePath -Force
 }
 
 function Invoke-AllStages {
@@ -2094,6 +2166,71 @@ function Write-Completion {
 # without running an install (tests/installer/*).
 if ($MyInvocation.InvocationName -eq ".") { return }
 
+# ============================================================================
+# Install lock (single-writer guarantee)
+# ============================================================================
+# Prevents two concurrent installers from mutating the same installation.
+# Concurrency test contract (task C-9): both -Json processes targeting one
+# home must survive: exactly one runs stages, the other exits 0 with a
+# well-formed JSON frame (ok=false, skipped=true, reason=lock held).
+
+$Script:_LockOwned = $false
+$Script:_LockFile = $null
+
+function Wait-NexusInstallerLock {
+    # Try to acquire <NexusHome>\state\installer.lock exclusively. Windows
+    # file locks are mandatory: a second open with 'FileShare.None' fails, so
+    # a crashed installer releases the lock automatically when its handle
+    # dies (no stale-lock cleanup problem). Retry briefly before reporting.
+    $lockPath = Join-Path $NexusHome "state\installer.lock"
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $lockPath) | Out-Null
+    } catch { }
+    $maxWaitMs = 5000
+    $waitedMs = 0
+    while ($true) {
+        try {
+            $stream = [System.IO.File]::Open(
+                $lockPath,
+                [System.IO.FileMode]::OpenOrCreate,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::None)
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes(("pid=$PID;started=" + (Get-Date).ToUniversalTime().ToString("o")))
+            $stream.Write($bytes, 0, $bytes.Length)
+            $stream.Flush()
+            $Script:_LockFile = $stream
+            $Script:_LockOwned = $true
+            return $true
+        } catch {
+            if ($waitedMs -ge $maxWaitMs) { return $false }
+            Start-Sleep -Milliseconds 250
+            $waitedMs += 250
+        }
+    }
+}
+
+function Release-NexusInstallerLock {
+    if ($Script:_LockFile) {
+        try { $Script:_LockFile.Dispose() } catch { }
+        $Script:_LockFile = $null
+        $Script:_LockOwned = $false
+    }
+}
+
+function Test-LockHeldByOtherProcess {
+    # Cheap probe for the concurrent-driver test: can a second exclusive
+    # open succeed right now? Returns $true when SOMEONE holds the lock.
+    $lockPath = Join-Path $NexusHome "state\installer.lock"
+    if (-not (Test-Path $lockPath)) { return $false }
+    try {
+        $s = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
+        $s.Dispose()
+        return $false
+    } catch {
+        return $true
+    }
+}
+
 $Script:_DriverMode = [bool]($Json -or $PSBoundParameters.ContainsKey("Stage"))
 
 try {
@@ -2154,12 +2291,51 @@ try {
         }
         Step-OutOfInstallDir
         Initialize-InstallerLog
-        Invoke-Stage -StageDef $def
+        # Single-writer lock (task C-9): mutating stages must not run when
+        # another installer holds the lock. Deliberate skip: ok=true frame
+        # with skipped=true + reason, exit 0 (never an error-shaped exit).
+        if ($Stage -ne "environment") {
+            $lockAcquired = Wait-NexusInstallerLock
+            if (-not $lockAcquired) {
+                $Script:_StageEmittedErrorFrame = $true  # authoritative frame below; suppress double-emit
+                $frame = [ordered]@{
+                    stage       = $Stage
+                    ok          = $true
+                    skipped     = $true
+                    reason      = "another installer holds the install lock ($NexusHome\state\installer.lock)"
+                    duration_ms = 0
+                }
+                if ($Script:_DriverMode) { $frame | ConvertTo-Json -Compress | Write-Output }
+                else { Write-WarnMsg "Skipped stage $Stage - another installer holds the install lock." }
+                exit 0
+            }
+        }
+        try {
+            Invoke-Stage -StageDef $def
+        } finally {
+            Release-NexusInstallerLock
+        }
         exit 0
     }
 
     # Default: full install.
-    Invoke-FullInstall
+    $lockAcquired = Wait-NexusInstallerLock
+    if (-not $lockAcquired) {
+        $Script:_StageEmittedErrorFrame = $true
+        $frame = [ordered]@{
+            ok          = $false
+            skipped     = $true
+            reason      = "another installer holds the install lock ($NexusHome\state\installer.lock)"
+        }
+        if ($Script:_DriverMode) { $frame | ConvertTo-Json -Compress | Write-Output }
+        else { Write-ErrMsg "Another installer is running against $NexusHome - exiting." }
+        exit 0
+    }
+    try {
+        Invoke-FullInstall
+    } finally {
+        Release-NexusInstallerLock
+    }
 } catch {
     if ($Script:_DriverMode) {
         # Protocol mode: emit a structured error frame ONLY if the stage
