@@ -191,6 +191,13 @@ def resolve_factory_provider(
         return None
     if not (cfg.get("api_base_url") and cfg.get("model") and cfg.get("api_key")):
         return None
+    # CHG-0034: honor Strategy Factory user intent + auto-disable so the
+    # news AI path cannot bypass the global provider gate (steer 18/70).
+    try:
+        if not svc.factory_effective_enabled():
+            return None
+    except AttributeError:
+        pass  # older settings service without CHG-0034 API
     try:
         from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
 
@@ -202,10 +209,19 @@ def resolve_factory_provider(
             secret_store=getattr(svc, "secrets", None),
             request_timeout_sec=cfg.get("request_timeout_sec", 300.0),
             max_requests_per_generation=cfg.get("max_requests_per_generation", 60),
+            enabled_getter=lambda: _factory_enabled_safe(svc),
         )
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("[NEWS_AI] provider build failed", error=str(e))
         return None
+
+
+def _factory_enabled_safe(svc: Any) -> bool:
+    """CHG-0034: boolean enabled_getter tolerant of older services."""
+    try:
+        return bool(svc.factory_effective_enabled())
+    except Exception:
+        return True
 
 
 def get_ai_status(

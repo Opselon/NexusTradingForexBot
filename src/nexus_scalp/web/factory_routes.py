@@ -55,6 +55,14 @@ def _ok(payload: dict[str, Any]) -> dict[str, Any]:
     return {"available": True, **payload}
 
 
+def _factory_enabled_safe(svc: Any) -> bool:
+    """CHG-0034: enabled_getter tolerant of older settings services."""
+    try:
+        return bool(svc.factory_effective_enabled())
+    except Exception:
+        return True
+
+
 def _err(reason: str) -> dict[str, Any]:
     return {"available": False, "reason": reason}
 
@@ -395,7 +403,11 @@ def factory_llm_config_save(
                 secret_store=svc.secrets,
                 request_timeout_sec=cfg.get("request_timeout_sec", 300.0),
                 max_requests_per_generation=cfg.get("max_requests_per_generation", 60),
+                enabled_getter=lambda: _factory_enabled_safe(svc),
             )
+            # CHG-0034: config changed -> the gate re-validates WITHOUT a
+            # network probe (steer 66: hot reload must not disrupt the engine).
+            new_provider._gate.reconfigure()
             factory.provider = new_provider
             logger.info(
                 "[STRATEGY_FACTORY] LLM provider hot-rebuilt",

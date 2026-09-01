@@ -299,6 +299,14 @@ def _redact_value(value: Any) -> Any:
             _key, _, val_part = token.partition("=")
             if val_part.isupper() and "_" in val_part:
                 return token
+            # AGENT-2 (2026-09-01): a purely numeric (or signed decimal)
+            # value can never be a secret, and the KEY name itself supplies
+            # all the token's entropy — 'consistency_violations=1' measured
+            # 3.63 bits >= 3.2 threshold and was redacted in the live log
+            # (DB_HYGIENE audit summary lost its counts). Numbers are not
+            # credentials: exempt them like the constant-shape guard above.
+            if val_part and all(ch.isdigit() or ch in "+-.,%" for ch in val_part):
+                return token
         alnum_ratio = sum(1 for ch in token if ch.isalnum()) / len(token)
         if (
             alnum_ratio >= _ENTROPY_ALNUM_THRESHOLD

@@ -1251,6 +1251,18 @@ class LiveEngine:
             cfg = svc.get_factory_llm_config()
             if not cfg.get("api_key") or not cfg.get("api_base_url") or not cfg.get("model"):
                 return None
+            # CHG-0034: honor user intent + runtime auto-disable (INV-024:
+            # additive guard only — this method is on the factory build path,
+            # NEVER the trading tick path). A disabled feature builds no
+            # provider -> deterministic generators are used automatically.
+            try:
+                if not svc.factory_effective_enabled():
+                    logger.info(
+                        "[STRATEGY_FACTORY] provider build skipped (effective_enabled=false)"
+                    )
+                    return None
+            except AttributeError:
+                pass  # older settings service without CHG-0034 API
             return LLMGenerationProvider(
                 api_base_url=cfg["api_base_url"],
                 model=cfg["model"],

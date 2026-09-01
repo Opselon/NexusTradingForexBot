@@ -48,3 +48,28 @@ def test_logging_redaction_structlog_key_value_constants_preserved_bug141b():
     assert "hunter2" not in _redact_value("password= hunter2SuperSecretValue42")
     blob = "gAAAAABmZ8k2xQ9tR7uPqW3vXyZ1aB4cD6eF8gH0jK2lM4nO6pQ8rS0tU2vW4xY6zA8bC0dE"
     assert "[REDACTED_SECRET]" in _redact_value(blob)
+
+
+def test_numeric_key_value_pairs_are_never_entropy_redacted():
+    """AGENT-2 (2026-09-01): 'consistency_violations=1' measured 3.63 bits over
+    the whole token (the KEY supplies the entropy) and was redacted in the live
+    DB_HYGIENE audit summary — numeric observability values are not secrets."""
+    from nexus_scalp.observability.logging import _redact_value
+
+    keep = [
+        "consistency_violations=1 orphans=3755 duplicates=3",
+        "count=243",
+        "failures=67",
+        "retry_after_sec=60.0",
+        "queue_size=0 sent=0 failed=1",
+    ]
+    for s in keep:
+        assert "[REDACTED_SECRET]" not in _redact_value(s), s
+
+    # secrets still redacted (regression guard on the same code path)
+    for s in [
+        "password=hunter2secret",
+        "bot_token=123456:ABC-DEF1234",
+        "api_key=sk-123456789abcdefghij0123456789",
+    ]:
+        assert "[REDACTED_SECRET]" in _redact_value(s), s
