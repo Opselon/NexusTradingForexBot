@@ -36,11 +36,18 @@ import nexus_scalp.cli.engine_boot as engine_boot  # noqa: PLR0402  (full path =
 import nexus_scalp.cli.update_cli as update_cli  # noqa: PLR0402  (re-exports only; command registration happens via doctor's parity import)
 import nexus_scalp.cli.wizard as wizard  # noqa: PLR0402  (full path = graph edge)
 
+# `nexus help` word-form (docs/CLI.md UX contract): registered early so it
+# sits near the top of the command list; renders the same Click surface as
+# --help (no duplicate help text can drift). See cli/help_command.py.
+from nexus_scalp.cli.app_factory import app
+from nexus_scalp.cli.help_command import register_help_command
+
+register_help_command(app)
+
 # CHG-0032-A1 help-order parity: the monolith registered the legacy config-validate
 # duplicate + model-* family AFTER start/stop/restart/run. doctor defers that block;
 # it registers here, after engine_boot commands.
 doctor._register_late_commands()
-from nexus_scalp.cli.app_factory import app
 from nexus_scalp.cli.engine_boot import _pidfile, _run_engine, _spawn_daemon
 from nexus_scalp.cli.styling import console
 from nexus_scalp.cli.update_cli import _update_exit_code, _update_orchestrator
