@@ -677,9 +677,7 @@ class SettingsService:
 
     def factory_effective_enabled(self) -> bool:
         """user_enabled AND NOT auto_disabled (steer section 7)."""
-        return self.get_factory_enabled() and not self.factory_auto_disable_state()[
-            "auto_disabled"
-        ]
+        return self.get_factory_enabled() and not self.factory_auto_disable_state()["auto_disabled"]
 
     def set_factory_enabled(
         self,
