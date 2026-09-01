@@ -1057,7 +1057,10 @@ function Invoke-RepoUpdate {
                 }
                 $stashName = "nexus-install-autostash-" + (Get-Date -Format "yyyyMMdd-HHmmss")
                 Write-Info "Local changes detected, stashing before update..."
-                & git stash push --include-untracked -m $stashName 2>$null
+                # git stash push writes its "Saved working directory..." banner
+                # to STDOUT (not stderr) - in driver mode that would corrupt
+                # the JSON stdout contract. Capture it explicitly.
+                $null = & git stash push --include-untracked -m $stashName 2>$null
                 if ($LASTEXITCODE -eq 0) {
                     $autostashRef = "stash@{0}"
                     $stashCreated = $true
@@ -1093,9 +1096,9 @@ function Invoke-RepoUpdate {
                 & git checkout --detach "refs/tags/$Tag" 2>$null
                 if ($LASTEXITCODE -ne 0) { throw "git checkout tag $Tag failed (exit $LASTEXITCODE)" }
             } else {
-                & git checkout $Branch 2>$null
+                & git checkout $Branch 2>&1 | ForEach-Object { "$_" } | Out-Null
                 if ($LASTEXITCODE -ne 0) { throw "git checkout $Branch failed (exit $LASTEXITCODE)" }
-                & git pull --ff-only origin $Branch 2>$null
+                & git pull --ff-only origin $Branch 2>&1 | ForEach-Object { "$_" } | Out-Null
                 if ($LASTEXITCODE -ne 0) {
                     # Managed checkout: divergence blocks ff-only. Local work is
                     # already stashed, so resetting to origin loses nothing.
@@ -1119,7 +1122,9 @@ function Invoke-RepoUpdate {
                     $restoreExit = $LASTEXITCODE
                     $conflicted = @(& git diff --name-only --diff-filter=U 2>$null | Where-Object { $_ -and "$_".Trim() })
                     if (($restoreExit -eq 0) -and ($conflicted.Count -eq 0)) {
-                        & git stash drop $autostashRef 2>$null
+                        # "Dropped stash@{0}..." goes to git STDOUT - capture it
+                        # so the driver-mode JSON stream stays pure.
+                        $null = & git stash drop $autostashRef 2>$null
                         Write-WarnMsg "Local changes were restored on top of the updated codebase (review git status if behavior surprises)."
                     } else {
                         Write-ErrMsg "Update succeeded but restoring local changes hit conflicts. Your stashed changes are PRESERVED."

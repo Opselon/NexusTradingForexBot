@@ -1322,9 +1322,7 @@ class TestNoTradingMutation:
         # CHG-0032-A1 Step-3D: the diagnostics routes now live in
         # diagnostics_state_routes.py (extracted verbatim from server.py);
         # the read-only assertion follows the routes to their owner module.
-        mod = Path("src/nexus_scalp/web/diagnostics_state_routes.py").read_text(
-            encoding="utf-8"
-        )
+        mod = Path("src/nexus_scalp/web/diagnostics_state_routes.py").read_text(encoding="utf-8")
         seg = mod[mod.index("/api/diagnostics") :]
         for m in re.finditer(r'@app\.(get|post|put|delete|patch)\("/api/diagnostics[^"]*"\)', seg):
             assert m.group(1) in ("get", "post"), f"diagnostics route not read-only: {m.group(0)}"

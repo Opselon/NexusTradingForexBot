@@ -135,14 +135,11 @@ def load_model_artifacts(model_path: str | Path) -> ModelArtifacts:
     num_features = int(w.shape[1])
     head_dim = int(w.shape[0])
     try:
-        model = ScalpNet(
-            num_features=num_features, num_classes=4, hidden_dim=head_dim
-        )
+        model = ScalpNet(num_features=num_features, num_classes=4, hidden_dim=head_dim)
         model.load_state_dict(probe)  # strict: any mismatch = hard failure
     except (RuntimeError, ValueError) as e:
         raise ValueError(
-            f"model artifact failed strict ScalpNet load (corrupted/foreign "
-            f"checkpoint): {p}: {e}"
+            f"model artifact failed strict ScalpNet load (corrupted/foreign checkpoint): {p}: {e}"
         ) from e
     model.eval()
     return ModelArtifacts(

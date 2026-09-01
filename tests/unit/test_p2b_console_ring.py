@@ -4,6 +4,7 @@ After the extraction these exercise nexus_scalp.news.pro_auto_console
 directly AND via the pro_auto facade re-export (both paths must work —
 brief #21/#73 contract-test rule).
 """
+
 from __future__ import annotations
 
 import importlib

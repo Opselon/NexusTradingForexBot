@@ -28,7 +28,6 @@ from nexus_scalp.domain.models import Position, SymbolInfo, TickData
 from nexus_scalp.execution import order_manager as om_module
 from nexus_scalp.execution.order_manager import OrderLifecycleManager
 
-
 # ---------------------------------------------------------------------------
 # Local adapter with controllable fills + protection state reconciliation
 # ---------------------------------------------------------------------------
@@ -130,8 +129,13 @@ def test_be_trigger_requires_r_floor_not_flat_15():
     adapter.positions = [pos]
     _prime_risk(om, 9101, 250.0)
     om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
-    om.apply_breakeven_lock(pos=pos, symbol_info=adapter.get_symbol_info("XAUUSD"), atr=0.0,
-                            min_stop_gap=0.0, current_tick=_tick(2000.30, 2000.32))
+    om.apply_breakeven_lock(
+        pos=pos,
+        symbol_info=adapter.get_symbol_info("XAUUSD"),
+        atr=0.0,
+        min_stop_gap=0.0,
+        current_tick=_tick(2000.30, 2000.32),
+    )
     assert not om.get_protection_state(9101).was_sl_modified
     assert adapter.modifications == []
 
@@ -145,8 +149,11 @@ def test_be_trigger_fires_once_r_floor_reached():
     _prime_risk(om, 9102, 250.0)
     om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
     applied = om.apply_breakeven_lock(
-        pos=pos, symbol_info=adapter.get_symbol_info("XAUUSD"), atr=0.0,
-        min_stop_gap=0.0, current_tick=_tick(2000.55, 2000.57),
+        pos=pos,
+        symbol_info=adapter.get_symbol_info("XAUUSD"),
+        atr=0.0,
+        min_stop_gap=0.0,
+        current_tick=_tick(2000.55, 2000.57),
     )
     assert applied
     assert om.get_protection_state(9102).was_sl_modified
@@ -166,8 +173,11 @@ def test_be_trigger_flat_floor_still_works_without_risk_provenance():
     # no _initial_risks seeded
     om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
     applied = om.apply_breakeven_lock(
-        pos=pos, symbol_info=adapter.get_symbol_info("XAUUSD"), atr=0.0,
-        min_stop_gap=0.0, current_tick=_tick(2000.60, 2000.62),
+        pos=pos,
+        symbol_info=adapter.get_symbol_info("XAUUSD"),
+        atr=0.0,
+        min_stop_gap=0.0,
+        current_tick=_tick(2000.60, 2000.62),
     )
     assert applied
     assert om.get_protection_state(9103).was_sl_modified
@@ -185,8 +195,11 @@ def test_be_atr_alternative_trigger_unchanged():
     # 1.5 ATR on 1.0 lot with ATR=$20 -> $3000 trigger... use small ATR so the
     # ATR threshold is ~$18: ATR=0.12 -> 1.5*0.12*100oz*1.0 = $18
     applied = om.apply_breakeven_lock(
-        pos=pos, symbol_info=adapter.get_symbol_info("XAUUSD"), atr=0.12,
-        min_stop_gap=0.0, current_tick=_tick(2000.60, 2000.62),
+        pos=pos,
+        symbol_info=adapter.get_symbol_info("XAUUSD"),
+        atr=0.12,
+        min_stop_gap=0.0,
+        current_tick=_tick(2000.60, 2000.62),
     )
     assert applied
 
@@ -211,8 +224,15 @@ def test_be_lock_offset_sell_side_mirrors():
     adapter = SprintMockAdapter()
     om = _manager(adapter)
     pos = Position(
-        ticket=9106, symbol="XAUUSD", type=OrderType.SELL, volume=0.5,
-        price_open=2000.00, sl=2005.00, tp=1990.00, profit=100.0, magic=888101,
+        ticket=9106,
+        symbol="XAUUSD",
+        type=OrderType.SELL,
+        volume=0.5,
+        price_open=2000.00,
+        sl=2005.00,
+        tp=1990.00,
+        profit=100.0,
+        magic=888101,
     )
     sl = om.calculate_breakeven_sl(pos, adapter.get_symbol_info("XAUUSD"))
     assert sl == pytest.approx(1999.94, abs=1e-6)
@@ -252,7 +272,9 @@ def test_micro_profit_noise_zone_still_disarmed():
     adapter.positions = [pos]
     _tick_now = _tick(2000.05, 2000.07)
     om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
-    score, active, reason = om.evaluate_profit_giveback(9300, current_pnl_usd=5.0, base_hold_score=80)
+    score, active, reason = om.evaluate_profit_giveback(
+        9300, current_pnl_usd=5.0, base_hold_score=80
+    )
     assert not active
 
 
@@ -267,7 +289,9 @@ def test_giveback_closes_when_retention_breaks_new_floor():
     adapter.positions = [pos_peak]
     om.refresh_protection_state(pos_peak, adapter.get_symbol_info("XAUUSD"))
     # erosion: retention 40% < 60% floor -> protection demands the cut
-    score, active, reason = om.evaluate_profit_giveback(9400, current_pnl_usd=60.0, base_hold_score=80)
+    score, active, reason = om.evaluate_profit_giveback(
+        9400, current_pnl_usd=60.0, base_hold_score=80
+    )
     assert active
     assert "PROFIT_RETENTION_BREACH" in reason or "NEGATIVE_PNL" in reason
 
@@ -281,7 +305,9 @@ def test_sprint_constants_contract():
     assert om_module.BREAKEVEN_TRIGGER_R == pytest.approx(0.15)
     assert om_module.BREAKEVEN_LOCK_PIPS == pytest.approx(0.60)
     assert om_module.TIERED_GIVEBACK_RETENTION_FLOOR == (
-        (0.50, 0.60), (1.00, 0.70), (1.50, 0.80),
+        (0.50, 0.60),
+        (1.00, 0.70),
+        (1.50, 0.80),
     )
     # unchanged invariants (do not let a future edit silently shift the arm point)
     assert om_module.TIERED_GIVEBACK_ARM_R == pytest.approx(0.50)

@@ -34,6 +34,7 @@ pytestmark = pytest.mark.skipif(
 # PowerShell helpers
 # ---------------------------------------------------------------------------
 
+
 def find_powershell() -> str:
     for candidate in ("pwsh.exe", "powershell.exe"):
         path = shutil.which(candidate)
@@ -48,10 +49,24 @@ PS = find_powershell()
 def run_installer(*args: str, timeout: int = 180) -> subprocess.CompletedProcess:
     """Run install.ps1 with -NonInteractive and capture stdout/stderr separately."""
     cmd = [
-        PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-File", str(INSTALLER), *args,
+        PS,
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(INSTALLER),
+        *args,
     ]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
 
 
 def parse_json_stdout(result: subprocess.CompletedProcess) -> dict:
@@ -65,10 +80,23 @@ def run_ps_expression(expression: str, timeout: int = 120) -> subprocess.Complet
     """Run a PowerShell expression that dot-sources the installer for helper tests."""
     dot_source = f'. "{INSTALLER.as_posix()}"'
     cmd = [
-        PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-Command", f"{dot_source}; {expression}",
+        PS,
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        f"{dot_source}; {expression}",
     ]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
 
 
 def unique_home(tmp_path: Path) -> str:
@@ -78,6 +106,7 @@ def unique_home(tmp_path: Path) -> str:
 # ---------------------------------------------------------------------------
 # Syntax validation
 # ---------------------------------------------------------------------------
+
 
 class TestSyntax:
     def test_parses_under_current_powershell(self):
@@ -89,7 +118,12 @@ class TestSyntax:
         )
         result = subprocess.run(
             [PS, "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace",
+            capture_output=True,
+            text=True,
+            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
         assert result.stdout.strip() == "CLEAN", result.stdout
 
@@ -102,6 +136,7 @@ class TestSyntax:
 # ---------------------------------------------------------------------------
 # Protocol surfaces (no mutation)
 # ---------------------------------------------------------------------------
+
 
 class TestProtocolSurfaces:
     def test_protocol_version_outputs_integer(self):
@@ -118,8 +153,18 @@ class TestProtocolSurfaces:
         stages = manifest["stages"]
         assert isinstance(stages, list) and len(stages) >= 10
         expected_names = {
-            "environment", "runtime", "git", "node", "repository", "venv",
-            "dependencies", "node-deps", "config", "path", "verify", "state",
+            "environment",
+            "runtime",
+            "git",
+            "node",
+            "repository",
+            "venv",
+            "dependencies",
+            "node-deps",
+            "config",
+            "path",
+            "verify",
+            "state",
         }
         assert expected_names <= {s["name"] for s in stages}
         for stage in stages:
@@ -163,6 +208,7 @@ class TestProtocolSurfaces:
 # Stage execution frames (machine-readable contract)
 # ---------------------------------------------------------------------------
 
+
 class TestStageFrames:
     def test_environment_stage_frame_shape(self, tmp_path):
         home = unique_home(tmp_path)
@@ -191,7 +237,9 @@ class TestStageFrames:
         home = unique_home(tmp_path)
         result = run_installer("-Stage", "environment", "-NexusHome", home, "-Json")
         stdout_lines = [ln for ln in result.stdout.strip().splitlines() if ln.strip()]
-        assert len(stdout_lines) == 1, f"stdout must be exactly one JSON frame, got: {stdout_lines[:3]}"
+        assert len(stdout_lines) == 1, (
+            f"stdout must be exactly one JSON frame, got: {stdout_lines[:3]}"
+        )
         json.loads(stdout_lines[0])
         assert "[OK]" not in result.stdout and "->" not in result.stdout
 
@@ -199,6 +247,7 @@ class TestStageFrames:
 # ---------------------------------------------------------------------------
 # Helper functions (dot-sourced, isolated)
 # ---------------------------------------------------------------------------
+
 
 class TestHelpers:
     def test_convertto_longpath_expands_83_alias(self):
@@ -253,7 +302,9 @@ class TestHelpers:
         )
         result = run_ps_expression(expr)
         assert "OK" in result.stdout, result.stdout
-        assert (dest / "repo" / "pyproject.toml").read_text(encoding="utf-8").startswith("[project]")
+        assert (
+            (dest / "repo" / "pyproject.toml").read_text(encoding="utf-8").startswith("[project]")
+        )
 
     def test_add_user_path_entry_is_idempotent_and_preserves_order(self, tmp_path):
         """PATH mutation helper: dedup + order preservation against a scratch hive."""
@@ -281,6 +332,7 @@ class TestHelpers:
 # Idempotency (real stage double-run in an isolated home)
 # ---------------------------------------------------------------------------
 
+
 class TestIdempotency:
     def test_config_stage_is_idempotent_and_preserves_user_edits(self, tmp_path):
         """Config stage: create-if-missing; second run must keep user edits."""
@@ -297,14 +349,18 @@ class TestIdempotency:
         assert live.exists()
         live.write_text("# user custom edit - must survive\nmode: paper\n", encoding="utf-8")
 
-        second = run_installer("-Stage", "config", "-NexusHome", home, "-InstallDir", str(tmp_path / "engine-src"))
+        second = run_installer(
+            "-Stage", "config", "-NexusHome", home, "-InstallDir", str(tmp_path / "engine-src")
+        )
         assert second.returncode == 0
         content = live.read_text(encoding="utf-8")
         assert "user custom edit" in content, "installer overwrote user config!"
 
     def test_state_stage_writes_install_json(self, tmp_path):
         home = unique_home(tmp_path)
-        result = run_installer("-Stage", "state", "-NexusHome", home, "-InstallDir", str(tmp_path / "engine-src"))
+        result = run_installer(
+            "-Stage", "state", "-NexusHome", home, "-InstallDir", str(tmp_path / "engine-src")
+        )
         assert result.returncode == 0
         frame = parse_json_stdout(result)
         assert frame["ok"] is True
@@ -322,6 +378,7 @@ class TestIdempotency:
 # Env-gated E2E: real repository acquisition (network)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.slow
 class TestRepositoryE2E:
     @pytest.fixture(autouse=True)
@@ -333,7 +390,13 @@ class TestRepositoryE2E:
         home = unique_home(tmp_path)
         engine = tmp_path / "engine"
         result = run_installer(
-            "-Stage", "repository", "-NexusHome", home, "-InstallDir", str(engine), "-Json",
+            "-Stage",
+            "repository",
+            "-NexusHome",
+            home,
+            "-InstallDir",
+            str(engine),
+            "-Json",
             timeout=900,
         )
         assert result.returncode == 0, result.stderr[-800:]
@@ -348,6 +411,7 @@ class TestRepositoryE2E:
 # Install lock (single-writer concurrency, task C-9 contract)
 # ---------------------------------------------------------------------------
 
+
 class TestInstallLock:
     def test_concurrent_stage_drivers_both_survive_with_wellformed_output(self, tmp_path):
         """Both -Json processes must exit cleanly; exactly one runs the stage,
@@ -361,17 +425,24 @@ class TestInstallLock:
         results = {}
 
         def runner(idx):
-            results[idx] = run_installer("-Stage", "state", "-NexusHome", home, "-InstallDir", str(engine), "-Json")
+            results[idx] = run_installer(
+                "-Stage", "state", "-NexusHome", home, "-InstallDir", str(engine), "-Json"
+            )
 
         t1 = threading.Thread(target=runner, args=(1,))
         t2 = threading.Thread(target=runner, args=(2,))
-        t1.start(); t2.start(); t1.join(180); t2.join(180)
+        t1.start()
+        t2.start()
+        t1.join(180)
+        t2.join(180)
 
         assert 1 in results and 2 in results
         frames = []
         for idx in (1, 2):
             r = results[idx]
-            assert r.returncode in (0, 1), f"runner {idx} rc={r.returncode} stderr={r.stderr[-200:]}"
+            assert r.returncode in (0, 1), (
+                f"runner {idx} rc={r.returncode} stderr={r.stderr[-200:]}"
+            )
             stdout = r.stdout.strip()
             assert stdout, f"runner {idx} produced no stdout"
             try:

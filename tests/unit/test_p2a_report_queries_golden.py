@@ -6,6 +6,7 @@ Fixture mirrors test_performance_report_intelligence.py construction
 (AuditRepository tmp sqlite -> AccountingCore) so the golden runs over the
 real AuditRepository -> AccountingCore -> PerformanceReportEngine chain.
 """
+
 from __future__ import annotations
 
 import gc

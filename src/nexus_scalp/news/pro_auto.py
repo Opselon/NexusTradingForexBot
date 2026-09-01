@@ -54,9 +54,56 @@ from nexus_scalp.news.pro_auto_console import (
     console_status,  # noqa: F401
     get_console_history,  # noqa: F401
 )
+from nexus_scalp.observability.event_aggregator import EventBatchAggregator
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.news.pro_auto")
+
+# ---------------------------------------------------------------------------
+# AGENT-2 (2026-09-01): 'LLM empty' log aggregation (spec §13-§21 of the
+# observability contract). Production evidence (logs/warning 2026-09-01):
+# 914 per-article WARNING lines for the SAME cycle-level condition — the
+# Factory LLM provider was unavailable (429 storm → circuit open → 401
+# auto-disable) and every article fell back to the local analyzer. Each
+# line carried failures=0/requests=0/last_error='' (the provider was never
+# even attempted), i.e. zero marginal signal beyond the first.
+#
+# Representation ONLY (analysis behavior unchanged — local fallback always
+# runs): first occurrence logs immediately (timeliness, spec §21); repeats
+# count into a bounded aggregate flushed at the PRO cycle boundary with
+# count + last_error distribution + sample_ids (spec §15/§20). Cache is
+# process-local: a restart re-logs the condition once (spec §25).
+# ---------------------------------------------------------------------------
+_llm_empty_aggregator = EventBatchAggregator(sample_ids=5)
+
+
+def _log_llm_empty(
+    *, article_id: str, raw_type: str, raw_len: int, last_error: str, requests: int, failures: int
+) -> None:
+    """Aggregated representation of the per-article LLM-unavailable fallback."""
+    first = _llm_empty_aggregator.add(
+        event="LLM_EMPTY",
+        reason=last_error or "NO_ATTEMPT_PROVIDER_UNAVAILABLE",
+        stage="pro_auto",
+        recoverable=True,
+        trade_id=article_id,
+    )
+    if first:
+        logger.warning(
+            "[PRO_AUTO] LLM empty",
+            article_id=article_id,
+            raw_type=raw_type,
+            raw_len=raw_len,
+            last_error=last_error,
+            requests=requests,
+            failures=failures,
+        )
+
+
+def flush_llm_empty_aggregate() -> int:
+    """Emits ONE batch summary per (reason) signature at the cycle boundary."""
+    return _llm_empty_aggregator.flush(logger.info, only_repeats=True)
+
 
 # ---------------------------------------------------------------------------
 # PRO prompt — strict JSON, injection-defended, accurate variable mapping.
@@ -421,8 +468,7 @@ def run_pro_auto_analysis_for_article(
                             "via": "local",
                         }
                     )
-                    logger.warning(
-                        "[PRO_AUTO] LLM empty",
+                    _log_llm_empty(
                         article_id=article_id,
                         raw_type=_raw_type,
                         raw_len=_raw_len,
@@ -445,8 +491,7 @@ def run_pro_auto_analysis_for_article(
                         "via": "local",
                     }
                 )
-                logger.warning(
-                    "[PRO_AUTO] LLM empty",
+                _log_llm_empty(
                     article_id=article_id,
                     raw_type=_raw_type,
                     raw_len=_raw_len,
@@ -806,6 +851,11 @@ def run_pro_cycle(
         "junk": junk,
         "console_seq": console_latest_seq(),
     }
+    # AGENT-2: flush the cycle-level LLM-empty aggregate (spec §23: cycle
+    # boundary). One summary per reason signature — count + sample ids +
+    # first/last seen — preserving full visibility of the degraded window
+    # without one WARNING line per article.
+    flush_llm_empty_aggregate()
     _console_push({"kind": "cycle_done", **summary})
     try:
         db.load_worker_state()  # no-op, ensures db reachable

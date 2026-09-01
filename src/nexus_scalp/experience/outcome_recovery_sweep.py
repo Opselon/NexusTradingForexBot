@@ -139,10 +139,7 @@ class RecoverySweepResult:
         d["excluded_by_filter"] = excluded
         d["reconciled"] = (
             self.scanned
-            == self.recovered
-            + self.unknown_provenance
-            + self.skipped_still_live
-            + excluded
+            == self.recovered + self.unknown_provenance + self.skipped_still_live + excluded
         )
         d["rows"] = self.rows[:200]
         return d
