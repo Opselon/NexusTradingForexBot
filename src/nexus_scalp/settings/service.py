@@ -99,6 +99,15 @@ FACTORY_LLM_TEMPERATURE = "factory.llm_temperature"
 FACTORY_LLM_REQUEST_TIMEOUT = "factory.llm_request_timeout_sec"
 FACTORY_LLM_MAX_REQUESTS = "factory.llm_max_requests_per_generation"
 
+# CHG-0034 (2026-09-01): Strategy Factory user intent + runtime
+# auto-disable state. user_intent vs runtime_health separation:
+# effective_enabled = user_enabled AND NOT auto_disabled.
+FACTORY_ENABLED = "factory.enabled"
+FACTORY_AUTO_DISABLED = "factory.auto_disabled"
+FACTORY_AUTO_DISABLED_REASON = "factory.auto_disabled_reason"
+FACTORY_AUTO_DISABLED_AT = "factory.auto_disabled_at"
+FACTORY_AUTO_DISABLED_DETAIL = "factory.auto_disabled_detail"
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS application_settings (
     key          TEXT PRIMARY KEY,
@@ -634,6 +643,164 @@ class SettingsService:
             "success": True,
             "correlation_id": cid,
             "status": self.factory_llm_config_status(),
+        }
+
+    # ------------------------------------------------- Factory enable state
+    # CHG-0034: ONE user control (Strategy Factory ENABLED/DISABLED) with
+    # an explainable auto-disable layer. Secrets NEVER appear here.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_bool_setting(value: Any, default: bool) -> bool:
+        if value is None:
+            return default
+        return str(value).strip().lower() in {"true", "1", "1.0", "on", "yes", "enabled"}
+
+    def get_factory_enabled(self) -> bool:
+        """User intent: Strategy Factory external provider ENABLED/DISABLED.
+        Default TRUE (enabled) — the historical behavior."""
+        row = self.db.get(FACTORY_ENABLED)
+        return self._parse_bool_setting(row.value if row else None, default=True)
+
+    def factory_auto_disable_state(self) -> dict[str, Any]:
+        """Runtime auto-disable layer (BUG-187): idempotent, explainable."""
+        row = self.db.get(FACTORY_AUTO_DISABLED)
+        auto = self._parse_bool_setting(row.value if row else None, default=False)
+        reason_row = self.db.get(FACTORY_AUTO_DISABLED_REASON)
+        at_row = self.db.get(FACTORY_AUTO_DISABLED_AT)
+        detail_row = self.db.get(FACTORY_AUTO_DISABLED_DETAIL)
+        return {
+            "auto_disabled": auto,
+            "reason": str(reason_row.value) if (auto and reason_row) else "",
+            "detail": str(detail_row.value) if (auto and detail_row) else "",
+            "at": float(at_row.value) if (auto and at_row and at_row.value) else 0.0,
+        }
+
+    def factory_effective_enabled(self) -> bool:
+        """user_enabled AND NOT auto_disabled (steer section 7)."""
+        return self.get_factory_enabled() and not self.factory_auto_disable_state()[
+            "auto_disabled"
+        ]
+
+    def set_factory_enabled(
+        self,
+        enabled: bool,
+        *,
+        actor: str = "web",
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist the SINGLE user control for the Strategy Factory.
+
+        Enabling clears any stale auto-disable flag (the gate re-validates
+        config without network); disabling stops new provider requests
+        immediately. The trading engine is NEVER affected (INV-024).
+        Returns the safe health snapshot (never a secret)."""
+        cid = correlation_id or new_correlation_id("factory-toggle")
+        self.db.set(
+            FACTORY_ENABLED,
+            "true" if bool(enabled) else "false",
+            value_type="str",
+            source="USER_SETTINGS",
+            actor=actor,
+            correlation_id=cid,
+        )
+        if enabled:
+            self.clear_factory_auto_disabled(actor=actor, correlation_id=cid)
+        logger.info(
+            "[STRATEGY_FACTORY] event=TOGGLE actor=%s enabled=%s trading_engine=UNAFFECTED",
+            actor,
+            bool(enabled),
+        )
+        return self.factory_health_snapshot()
+
+    def record_factory_auto_disabled(
+        self,
+        reason: str,
+        *,
+        detail: str = "",
+        actor: str = "provider_gate",
+        correlation_id: str | None = None,
+    ) -> None:
+        """Persist an automatic disable (idempotent — no repeated events)."""
+        current = self.factory_auto_disable_state()
+        if current["auto_disabled"] and current["reason"] == reason:
+            return
+        cid = correlation_id or new_correlation_id("factory-auto-disable")
+        self.db.set(
+            FACTORY_AUTO_DISABLED,
+            "true",
+            value_type="str",
+            source="SYSTEM",
+            actor=actor,
+            correlation_id=cid,
+        )
+        self.db.set(
+            FACTORY_AUTO_DISABLED_REASON,
+            str(reason),
+            value_type="str",
+            source="SYSTEM",
+            actor=actor,
+            correlation_id=cid,
+        )
+        self.db.set(
+            FACTORY_AUTO_DISABLED_AT,
+            repr(time.time()),
+            value_type="float",
+            source="SYSTEM",
+            actor=actor,
+            correlation_id=cid,
+        )
+        self.db.set(
+            FACTORY_AUTO_DISABLED_DETAIL,
+            str(detail)[:400],
+            value_type="str",
+            source="SYSTEM",
+            actor=actor,
+            correlation_id=cid,
+        )
+        logger.error(
+            "[STRATEGY_FACTORY] event=AUTO_DISABLED reason=%s detail=%s trading_engine=UNAFFECTED",
+            reason,
+            str(detail)[:200],
+        )
+
+    def clear_factory_auto_disabled(
+        self,
+        *,
+        actor: str = "web",
+        correlation_id: str | None = None,
+    ) -> None:
+        """Clears the auto-disable layer (user enable / config change)."""
+        cid = correlation_id or new_correlation_id("factory-auto-clear")
+        self.db.set(
+            FACTORY_AUTO_DISABLED,
+            "false",
+            value_type="str",
+            source="USER_SETTINGS",
+            actor=actor,
+            correlation_id=cid,
+        )
+
+    def factory_health_snapshot(self) -> dict[str, Any]:
+        """Secret-free combined state for the UI / health endpoint."""
+        user_enabled = self.get_factory_enabled()
+        auto = self.factory_auto_disable_state()
+        try:
+            cfg_status = self.factory_llm_config_status()
+        except Exception:
+            cfg_status = {}
+        effective = bool(user_enabled and not auto["auto_disabled"])
+        return {
+            "feature": "strategy_factory",
+            "user_enabled": user_enabled,
+            "auto_disabled": auto["auto_disabled"],
+            "auto_disabled_reason": auto["reason"],
+            "auto_disabled_detail": auto["detail"],
+            "auto_disabled_at": auto["at"],
+            "effective_enabled": effective,
+            "api_key_present": bool(cfg_status.get("api_key_present")),
+            "base_url": str(cfg_status.get("base_url", "")),
+            "model": str(cfg_status.get("model", "")),
+            "trading_engine": "UNAFFECTED",
         }
 
     # ------------------------------------------------------------ Migration
