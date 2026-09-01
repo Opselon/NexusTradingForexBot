@@ -28,7 +28,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-from nexus_scalp.cli.app_factory import app
+from nexus_scalp.cli.app_factory import _resolve_facade_seam, app
 from nexus_scalp.cli.styling import (
     MODE_ALIASES,
     _banner,
@@ -223,7 +223,7 @@ def uninstall_cmd(
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
     """Uninstall helper (data safety: keep-data is the default)."""
-    info = get_version_info()
+    info = _resolve_facade_seam("get_version_info", get_version_info)()
     data_root = rpaths.get_data_root()
     msg = f"Uninstall {info['version']} ({info['channel']})  ·  data in {data_root} will be {'kept' if keep_data else 'removed'}"
     if json_mode:

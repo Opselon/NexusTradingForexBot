@@ -19,6 +19,9 @@ DO-NOT-PUT-HERE: command implementation bodies, styling/palette code, update-eng
 
 from __future__ import annotations
 
+import sys
+from typing import Any
+
 import typer
 
 from nexus_scalp.cli.analyze_commands import register_analyze_commands
@@ -57,3 +60,20 @@ app.add_typer(
 register_analyze_commands(app)
 # Dependency Intelligence (``nse dependency``)
 register_dependency_commands(app)
+
+
+def _resolve_facade_seam(name: str, default: Any) -> Any:
+    """Late-binding seam for test monkeypatching through the cli.main facade.
+
+    Historical contract (CHG-0032 Step 1): tests patch attributes on the
+    ``nexus_scalp.cli.main`` module (e.g. get_version_info, _run_engine,
+    _spawn_daemon). After the decomposition the command bodies live in sibling
+    modules, so they resolve these seams AT CALL TIME from the facade when it is
+    present in ``sys.modules`` - cycle-free (no static import of cli.main; the
+    import graph stays acyclic with the facade as leaf) and patch-transparent
+    (unpatched callers resolve to ``default``).
+    """
+    module = sys.modules.get("nexus_scalp.cli.main")
+    if module is not None and hasattr(module, name):
+        return getattr(module, name)
+    return default

@@ -34,7 +34,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from nexus_scalp.cli.app_factory import app
+from nexus_scalp.cli.app_factory import _resolve_facade_seam, app
 from nexus_scalp.cli.styling import _banner, _emit, _error_panel, _success_panel, console
 from nexus_scalp.release import exit_codes as xc
 from nexus_scalp.release import update as rupdate
@@ -48,7 +48,7 @@ from nexus_scalp.release.metadata import get_version_info
 #   nexus update [--channel stable|beta|nightly] [--dry-run] [--force] [--yes] [--json]
 # ---------------------------------------------------------------------------
 def _update_orchestrator() -> rupdater.UpdateOrchestrator:
-    info = get_version_info()
+    info = _resolve_facade_seam("get_version_info", get_version_info)()
     return rupdater.UpdateOrchestrator(
         channel=info.get("channel") or "stable",
         architecture=info.get("architecture"),
@@ -110,7 +110,7 @@ def _update_json_exit(report: dict[str, Any], json_mode: bool, code: int | None 
 
 def _update_human_check(report: dict[str, Any]) -> None:
     """Human-readable update-check output (spec 2/34)."""
-    info = get_version_info()
+    info = _resolve_facade_seam("get_version_info", get_version_info)()
     ch_disp = f"[cyan]{info.get('channel') or 'stable'}[/cyan]"
     status = str(report.get("status") or "UNKNOWN")
     status_style = (
@@ -227,7 +227,7 @@ def update_cmd(
                     )
                 )
             raise typer.Exit(xc.EXIT_RUNTIME) from None
-        info = get_version_info()
+        info = _resolve_facade_seam("get_version_info", get_version_info)()
         try:
             available = rupdate.load_available_releases(manifest)
         except Exception as e:
@@ -629,7 +629,6 @@ def update_cmd(
     _update_json_exit(report, json_mode)
 
 
-@app.command("release")
 def release_cmd(
     subcommand: str = typer.Argument(None, help="info — release metadata of the installed client"),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
@@ -684,3 +683,13 @@ def release_cmd(
             table.add_row("Installed release", "[dim]none recorded yet[/dim]")
         console.print(table)
     raise typer.Exit(xc.EXIT_OK) from None
+
+
+def _register_release_command() -> None:
+    """CHG-0032-A1 help-order parity: the monolith registered release AFTER
+    forensic (update 1140 -> forensic 1639 -> release 1767). update_cli import
+    happens between verify-release and forensic, so ``release`` must be
+    registered late by the doctor module once forensic_cmd exists.
+    Idempotent; no-op after first call."""
+    if "release" not in {c.name for c in app.registered_commands}:
+        app.command("release")(release_cmd)

@@ -29,13 +29,19 @@ import os  # re-export: tests use cmain.os
 import subprocess  # re-export: tests use cmain.subprocess
 import time  # re-export: tests use cmain.time
 
-from nexus_scalp.cli import (
-    doctor,
-    engine_boot,
-    update_cli,
-    wizard,
-)
+# Full-path module imports: each import REGISTERS its commands on app (side
+# effect) and gives the dependency graph the same module edges the monolith had.
+import nexus_scalp.cli.doctor as doctor  # noqa: PLR0402  (full path = graph edge)
+import nexus_scalp.cli.engine_boot as engine_boot  # noqa: PLR0402  (full path = graph edge)
+import nexus_scalp.cli.update_cli as update_cli  # noqa: PLR0402  (re-exports only; command registration happens via doctor's parity import)
+import nexus_scalp.cli.wizard as wizard  # noqa: PLR0402  (full path = graph edge)
+
+# CHG-0032-A1 help-order parity: the monolith registered the legacy config-validate
+# duplicate + model-* family AFTER start/stop/restart/run. doctor defers that block;
+# it registers here, after engine_boot commands.
+doctor._register_late_commands()
 from nexus_scalp.cli.app_factory import app
+from nexus_scalp.cli.engine_boot import _pidfile, _run_engine, _spawn_daemon
 from nexus_scalp.cli.styling import console
 from nexus_scalp.cli.update_cli import _update_exit_code, _update_orchestrator
 from nexus_scalp.cli.wizard import _get_network_endpoints
@@ -44,6 +50,9 @@ from nexus_scalp.release.metadata import get_version_info  # re-export: tests pa
 
 __all__ = [
     "_get_network_endpoints",
+    "_pidfile",
+    "_run_engine",
+    "_spawn_daemon",
     "_update_exit_code",
     "_update_orchestrator",
     "app",

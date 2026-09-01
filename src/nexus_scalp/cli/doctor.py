@@ -38,7 +38,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from nexus_scalp.cli.app_factory import app
+from nexus_scalp.cli.app_factory import _resolve_facade_seam, app
 from nexus_scalp.cli.styling import (
     _banner,
     _emit,
@@ -67,7 +67,7 @@ def version_cmd(
     plain: bool = typer.Option(False, "--plain", help="Plain text, no ANSI."),
 ) -> None:
     """Show canonical version + build identity."""
-    info = get_version_info()
+    info = _resolve_facade_seam("get_version_info", get_version_info)()
     if json_mode:
         from nexus_scalp.release.versioning import RuntimeVersionBlock
 
@@ -786,6 +786,13 @@ def verify_cmd(
 # (deploy-gate): 0 ALLOW/ALLOW_WITH_WARNING, 1 BLOCK, 2 REVIEW_REQUIRED,
 # 3 FORENSIC_ENGINE_UNAVAILABLE (fail-safe block, deploy_gate.py §39).
 # =============================================================================
+# CHG-0032-A1 help-order parity: monolith order was verify-release(1004) ->
+# update(1140) -> forensic(1639) -> release(1767). update_cli import here
+# registers update; release registration is DEFERRED to the hook below
+# forensic_cmd. (update_cli_parity_import)
+import nexus_scalp.cli.update_cli as _update_cli_parity  # noqa: E402
+
+
 @app.command("forensic")
 def forensic_cmd(
     snapshot: bool = typer.Option(
@@ -917,533 +924,609 @@ def forensic_cmd(
 # ---------------------------------------------------------------------------
 # doctor parity: config-validate
 # ---------------------------------------------------------------------------
-@app.command("config-validate")
-def config_validate_cmd(
-    config_path: Path = typer.Option(
-        Path("configs/base.yaml"), "--config", "-c", help="Path to YAML config to validate."
-    ),
-    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
-) -> None:
-    """Validate syntax, schema, version migration, missing keys & secret masking."""
-    import yaml
-
-    target = config_path.resolve()
-    report: dict[str, Any] = {
-        "path": str(target),
-        "exists": target.exists(),
-        "valid": False,
-        "missing_keys": [],
-        "secrets_masked": {
-            "mt5_password": "PRES" if target.exists() else "ABS",
-            "telegram_token": "PRES" if target.exists() else "ABS",
-        },
-        "env_validation": {
-            "telegram_token_env": bool(os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")),
-            "telegram_admin_env": bool(os.getenv("NEXUS_TELEGRAM_ADMIN_ID")),
-        },
-    }
-    if not target.exists():
-        if json_mode:
-            _emit(report, True)
-        else:
-            console.print(_error_panel("Config not found", str(target), hint="Run nexus setup"))
-        raise typer.Exit(1) from None
-
-    try:
-        raw_data = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
-        cfg = AppConfig.load_from_yaml(target)
-        report["valid"] = True
-        report["symbol"] = cfg.execution.symbol
-        report["mode"] = cfg.execution.mode.value
-        report["feature_schema"] = cfg.model.feature_schema_version
-        expected_sections = {"mt5", "execution", "risk", "model", "telemetry", "news", "rules"}
-        missing_secs = sorted(expected_sections - set(raw_data.keys()))
-        report["missing_sections"] = missing_secs
-        if json_mode:
-            _emit(report, True)
-            return
-        console.print(_success_panel("Config Security & Schema Validation Passed", str(target)))
-        console.print(f"  · Symbol: [bold]{cfg.execution.symbol}[/bold]")
-        console.print(f"  · Mode:   [bold]{cfg.execution.mode.value}[/bold]")
-        console.print(f"  · Schema: [bold]{cfg.model.feature_schema_version}[/bold]")
-        if missing_secs:
-            console.print(f"  · [yellow]Missing optional sections: {missing_secs}[/yellow]")
-        console.print("  · Secrets masked: [green]YES (no plaintext secrets leaked)[/green]")
-    except Exception as e:
-        report["error"] = str(e)
-        if json_mode:
-            _emit(report, True)
-        else:
-            console.print(_error_panel("Config validation failed", str(e), hint=f"Fix {target}"))
-        raise typer.Exit(1) from None
+# CHG-0032-A1: release now registers AFTER forensic (monolith order).
+_update_cli_parity._register_release_command()
 
 
-# =============================================================================
-# PHASE 13: MODEL GENERATION MIGRATION — artifact-first model factory CLI
-# -----------------------------------------------------------------------------
-# nse dataset build / experiment create / train / inspect / validate /
-# replay / doctor — all operate on filesystem artifacts (no DB required).
-# =============================================================================
+# CHG-0032-A1 help-order parity: the monolith registered this whole block
+# (legacy config-validate duplicate + model-* family) AFTER start/stop/restart/run
+# (engine_boot). Registration is deferred to _register_late_commands(), invoked by
+# the facade after engine_boot import. Function bodies are UNCHANGED (verbatim).
+def _register_late_commands() -> None:
+    if any(c.name == "model-dataset-build" for c in app.registered_commands):
+        return
+    _late_block()
 
 
-def _mg_store() -> Any:
-    from nexus_scalp.model_generation import ArtifactStore, default_artifact_root
+def _late_block() -> None:
+    @app.command("config-validate")
+    def config_validate_cmd(
+        config_path: Path = typer.Option(
+            Path("configs/base.yaml"), "--config", "-c", help="Path to YAML config to validate."
+        ),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """Validate syntax, schema, version migration, missing keys & secret masking."""
+        import yaml
 
-    return ArtifactStore(default_artifact_root())
-
-
-@app.command("model-dataset-build")
-def model_dataset_build(
-    bars_csv: Path = typer.Option(Path(""), "--bars", "-b", help="CSV/parquet of raw bars"),
-    symbol: str = typer.Option("XAUUSD", "--symbol"),
-    timeframe: str = typer.Option("M5", "--timeframe"),
-    schema: str = typer.Option("scalp_v1", "--schema", help="feature schema id"),
-    with_news: bool = typer.Option(False, "--with-news", help="attach news context"),
-    news_csv: Path = typer.Option(Path(""), "--news", "-n", help="news frame parquet/csv"),
-    news_db: Path = typer.Option(
-        Path(""), "--news-db", help="export the news database (artifacts/news.db) into the frame"
-    ),
-) -> None:
-    """Build a dataset artifact (deterministic, artifact-first).
-
-    News context is attached when ``--with-news``.  The news frame may be
-    given explicitly (``--news``) OR exported from the News subsystem's
-    database (``--news-db``, default ``artifacts/news.db``) via the
-    causally-correct bridge (model_generation.news_bridge).
-    """
-    import polars as pl
-
-    from nexus_scalp.model_generation import DatasetFactory
-
-    if not bars_csv.exists():
-        console.print(
-            _error_panel("No bars file", str(bars_csv), hint="Pass --bars path/to/bars.csv")
-        )
-        raise typer.Exit(1) from None
-    df = pl.read_csv(bars_csv) if bars_csv.suffix.lower() == ".csv" else pl.read_parquet(bars_csv)
-    news_frame = None
-    if with_news:
-        # BUG-150: the empty-Path sentinel ``Path("")`` normalizes to Path(".")
-        # (truthy + "exists"), so a bare --with-news used to open the CURRENT
-        # DIRECTORY as the news DB and crash with sqlite3.OperationalError.
-        # Resolve the default to the canonical artifacts/news.db instead.
-        if str(news_db) in ("", "."):
-            news_db = Path("artifacts/news.db")
-        if news_db.exists():
-            from nexus_scalp.model_generation.news_bridge import (
-                build_news_frame_from_db,
-                news_benchmark_readiness,
-            )
-            from nexus_scalp.news.database import NewsDatabase
-
-            news_frame = build_news_frame_from_db(NewsDatabase(news_db))
-            console.print(
-                f"[cyan]News frame exported from DB:[/cyan] {news_db} "
-                f"rows={news_frame.height if news_frame is not None else 0}"
-            )
-            if news_frame is None or news_frame.is_empty():
-                console.print(
-                    Panel(
-                        "[yellow]News database contains NO analysis records — the dataset "
-                        "will carry all-zero news context (news ON == news OFF). "
-                        "Collect real news first.[/yellow]",
-                        border_style="yellow",
-                    )
-                )
+        target = config_path.resolve()
+        report: dict[str, Any] = {
+            "path": str(target),
+            "exists": target.exists(),
+            "valid": False,
+            "missing_keys": [],
+            "secrets_masked": {
+                "mt5_password": "PRES" if target.exists() else "ABS",
+                "telegram_token": "PRES" if target.exists() else "ABS",
+            },
+            "env_validation": {
+                "telegram_token_env": bool(os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")),
+                "telegram_admin_env": bool(os.getenv("NEXUS_TELEGRAM_ADMIN_ID")),
+            },
+        }
+        if not target.exists():
+            if json_mode:
+                _emit(report, True)
             else:
+                console.print(_error_panel("Config not found", str(target), hint="Run nexus setup"))
+            raise typer.Exit(1) from None
+
+        try:
+            raw_data = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+            cfg = AppConfig.load_from_yaml(target)
+            report["valid"] = True
+            report["symbol"] = cfg.execution.symbol
+            report["mode"] = cfg.execution.mode.value
+            report["feature_schema"] = cfg.model.feature_schema_version
+            expected_sections = {"mt5", "execution", "risk", "model", "telemetry", "news", "rules"}
+            missing_secs = sorted(expected_sections - set(raw_data.keys()))
+            report["missing_sections"] = missing_secs
+            if json_mode:
+                _emit(report, True)
+                return
+            console.print(_success_panel("Config Security & Schema Validation Passed", str(target)))
+            console.print(f"  · Symbol: [bold]{cfg.execution.symbol}[/bold]")
+            console.print(f"  · Mode:   [bold]{cfg.execution.mode.value}[/bold]")
+            console.print(f"  · Schema: [bold]{cfg.model.feature_schema_version}[/bold]")
+            if missing_secs:
+                console.print(f"  · [yellow]Missing optional sections: {missing_secs}[/yellow]")
+            console.print("  · Secrets masked: [green]YES (no plaintext secrets leaked)[/green]")
+        except Exception as e:
+            report["error"] = str(e)
+            if json_mode:
+                _emit(report, True)
+            else:
+                console.print(
+                    _error_panel("Config validation failed", str(e), hint=f"Fix {target}")
+                )
+            raise typer.Exit(1) from None
+
+    # =============================================================================
+    # PHASE 13: MODEL GENERATION MIGRATION — artifact-first model factory CLI
+    # -----------------------------------------------------------------------------
+    # nse dataset build / experiment create / train / inspect / validate /
+    # replay / doctor — all operate on filesystem artifacts (no DB required).
+    # =============================================================================
+
+    def _mg_store() -> Any:
+        from nexus_scalp.model_generation import ArtifactStore, default_artifact_root
+
+        return ArtifactStore(default_artifact_root())
+
+    @app.command("model-dataset-build")
+    def model_dataset_build(
+        bars_csv: Path = typer.Option(Path(""), "--bars", "-b", help="CSV/parquet of raw bars"),
+        symbol: str = typer.Option("XAUUSD", "--symbol"),
+        timeframe: str = typer.Option("M5", "--timeframe"),
+        schema: str = typer.Option("scalp_v1", "--schema", help="feature schema id"),
+        with_news: bool = typer.Option(False, "--with-news", help="attach news context"),
+        news_csv: Path = typer.Option(Path(""), "--news", "-n", help="news frame parquet/csv"),
+        news_db: Path = typer.Option(
+            Path(""),
+            "--news-db",
+            help="export the news database (artifacts/news.db) into the frame",
+        ),
+    ) -> None:
+        """Build a dataset artifact (deterministic, artifact-first).
+
+        News context is attached when ``--with-news``.  The news frame may be
+        given explicitly (``--news``) OR exported from the News subsystem's
+        database (``--news-db``, default ``artifacts/news.db``) via the
+        causally-correct bridge (model_generation.news_bridge).
+        """
+        import polars as pl
+
+        from nexus_scalp.features.schema import FEATURE_SCHEMAS
+        from nexus_scalp.model_generation import DatasetFactory
+
+        # BUG-176: --schema was DECLARED BUT IGNORED (the value never reached
+        # DatasetFactory/SampleFactory, which default to scalp_v1), so a bogus
+        # id was silently accepted and a DIFFERENT schema was built (exit 0).
+        # Validate the id against the feature schema registry at parse time.
+        try:
+            feature_schema = FEATURE_SCHEMAS.resolve(schema)
+        except KeyError:
+            console.print(
+                _error_panel(
+                    "Unknown schema",
+                    schema,
+                    hint=(
+                        "valid schema ids: "
+                        + ", ".join(s.schema_id for s in FEATURE_SCHEMAS.list_schemas())
+                    ),
+                    exit_code=xc.EXIT_USAGE,
+                )
+            )
+            raise typer.Exit(xc.EXIT_USAGE) from None
+
+        if not bars_csv.exists():
+            console.print(
+                _error_panel("No bars file", str(bars_csv), hint="Pass --bars path/to/bars.csv")
+            )
+            raise typer.Exit(1) from None
+        df = (
+            pl.read_csv(bars_csv)
+            if bars_csv.suffix.lower() == ".csv"
+            else pl.read_parquet(bars_csv)
+        )
+
+        # BUG-176 companion: the dataset factory requires PRE-COMPUTED feature
+        # columns (feat_0..feat_{n-1} per the schema) + an ATR column. Feeding it
+        # plain OHLCV bars (e.g. data/raw/XAUUSD_M1.parquet) used to surface the
+        # labeler's raw "ValueError: DataFrame must contain either 'atr_m1' or
+        # 'atr' column." traceback. Fail fast with an actionable contract panel.
+        required = [f"feat_{i}" for i in range(feature_schema.dimension)]
+        missing_feat = [c for c in required if c not in df.columns]
+        missing_atr = [c for c in ("atr_m1", "atr") if c not in df.columns] == ["atr_m1", "atr"]
+        if missing_feat or (
+            not missing_atr and "atr_m1" not in df.columns and "atr" not in df.columns
+        ):
+            need: list[str] = []
+            if missing_feat:
+                need.append(
+                    f"{len(missing_feat)} feature columns ({missing_feat[0]}..{missing_feat[-1]})"
+                )
+            if "atr_m1" not in df.columns and "atr" not in df.columns:
+                need.append("atr_m1 (or atr)")
+            console.print(
+                _error_panel(
+                    "Raw bars are missing required pre-computed columns",
+                    f"schema {feature_schema.schema_id} requires {len(required)} feature "
+                    f"columns + ATR; missing: {', '.join(need)}",
+                    hint=(
+                        "Run the feature engine first (ScalpFeatureEngine / features pipeline) "
+                        "to compute feat_* + atr columns, or export bars WITH features. "
+                        "See docs/forensic-docs/modules/cli/main.md (model-dataset-build "
+                        "input contract) — this command does NOT compute features from raw OHLCV."
+                    ),
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        news_frame = None
+        if with_news:
+            # BUG-150: the empty-Path sentinel ``Path("")`` normalizes to Path(".")
+            # (truthy + "exists"), so a bare --with-news used to open the CURRENT
+            # DIRECTORY as the news DB and crash with sqlite3.OperationalError.
+            # Resolve the default to the canonical artifacts/news.db instead.
+            if str(news_db) in ("", "."):
+                news_db = Path("artifacts/news.db")
+            if news_db.exists():
+                from nexus_scalp.model_generation.news_bridge import (
+                    build_news_frame_from_db,
+                    news_benchmark_readiness,
+                )
+                from nexus_scalp.news.database import NewsDatabase
+
+                news_frame = build_news_frame_from_db(NewsDatabase(news_db))
+                console.print(
+                    f"[cyan]News frame exported from DB:[/cyan] {news_db} "
+                    f"rows={news_frame.height if news_frame is not None else 0}"
+                )
+                if news_frame is None or news_frame.is_empty():
+                    console.print(
+                        Panel(
+                            "[yellow]News database contains NO analysis records — the dataset "
+                            "will carry all-zero news context (news ON == news OFF). "
+                            "Collect real news first.[/yellow]",
+                            border_style="yellow",
+                        )
+                    )
+                else:
+                    gate = news_benchmark_readiness(news_frame)
+                    if not gate["ready"]:
+                        console.print(
+                            Panel(
+                                "[yellow]NEWS READINESS GATE: NOT READY — the news frame does not "
+                                "satisfy the real-data requirements (non-neutral > 0, XAUUSD > 0, "
+                                "multiple events, distinct vectors). News context in this dataset "
+                                "may be uninformative. Do NOT use it for a news benchmark.[/yellow]",
+                                border_style="yellow",
+                            )
+                        )
+                        console.print(f"[yellow]Failed checks: {gate['checks']}[/yellow]")
+                    else:
+                        console.print(
+                            Panel(
+                                "[green]NEWS READINESS GATE: READY — real news context.[/green]",
+                                border_style="green",
+                            )
+                        )
+            elif news_csv.exists() and str(news_csv) not in ("", "."):
+                # BUG-150 companion: never treat the Path("") sentinel (-> ".") as
+                # a real news file; read_parquet(".") produced a bogus parquet
+                # crash. Only read when the user actually named a file.
+                news_frame = (
+                    pl.read_csv(news_csv)
+                    if news_csv.suffix.lower() == ".csv"
+                    else pl.read_parquet(news_csv)
+                )
+                from nexus_scalp.model_generation.news_bridge import news_benchmark_readiness
+
                 gate = news_benchmark_readiness(news_frame)
                 if not gate["ready"]:
                     console.print(
                         Panel(
-                            "[yellow]NEWS READINESS GATE: NOT READY — the news frame does not "
-                            "satisfy the real-data requirements (non-neutral > 0, XAUUSD > 0, "
-                            "multiple events, distinct vectors). News context in this dataset "
-                            "may be uninformative. Do NOT use it for a news benchmark.[/yellow]",
+                            "[yellow]NEWS READINESS GATE: NOT READY for --news file — the frame "
+                            "does not satisfy the real-data requirements. "
+                            "Do NOT use it for a news benchmark.[/yellow]",
                             border_style="yellow",
                         )
                     )
-                    console.print(f"[yellow]Failed checks: {gate['checks']}[/yellow]")
-                else:
-                    console.print(
-                        Panel(
-                            "[green]NEWS READINESS GATE: READY — real news context.[/green]",
-                            border_style="green",
-                        )
-                    )
-        elif news_csv.exists() and str(news_csv) not in ("", "."):
-            # BUG-150 companion: never treat the Path("") sentinel (-> ".") as
-            # a real news file; read_parquet(".") produced a bogus parquet
-            # crash. Only read when the user actually named a file.
-            news_frame = (
-                pl.read_csv(news_csv)
-                if news_csv.suffix.lower() == ".csv"
-                else pl.read_parquet(news_csv)
-            )
-            from nexus_scalp.model_generation.news_bridge import news_benchmark_readiness
-
-            gate = news_benchmark_readiness(news_frame)
-            if not gate["ready"]:
+            else:
                 console.print(
                     Panel(
-                        "[yellow]NEWS READINESS GATE: NOT READY for --news file — the frame "
-                        "does not satisfy the real-data requirements. "
-                        "Do NOT use it for a news benchmark.[/yellow]",
+                        "[yellow]--with-news given but no --news file or --news-db found; "
+                        "news context will be all-zero (news ON == news OFF).[/yellow]",
                         border_style="yellow",
                     )
                 )
-        else:
+        store = _mg_store()
+        # BUG-176: the user-selected schema is now THREADed into the factory (it
+        # was declared but ignored before — SampleFactory silently built scalp_v1).
+        from nexus_scalp.model_generation.sample_factory import SampleFactory
+
+        handle = DatasetFactory(
+            store=store,
+            sample_factory=SampleFactory(feature_schema_id=feature_schema.schema_id),
+        ).build(df, symbol=symbol, timeframe=timeframe, news_frame=news_frame)
+        console.print(
+            _success_panel(
+                "Dataset built",
+                f"{handle['dataset_id']}  rows={handle['counts']['total']}",
+                border="green",
+            )
+        )
+        _emit(handle, as_json=False, plain=True)
+
+    @app.command("model-experiment-create")
+    def model_experiment_create(
+        dataset_id: str = typer.Option(..., "--dataset", help="dataset artifact id"),
+        template: str = typer.Option("baseline_scalpnet_v1", "--template"),
+    ) -> None:
+        """Create a bounded experiment on a dataset artifact."""
+        from nexus_scalp.model_generation import ExperimentFactory
+
+        store = _mg_store()
+        # A dataset must EXIST before an experiment can bind to it; creating a
+        # ghost experiment that later crashes `model-train` with a raw traceback
+        # is a bad contract (E2E BUG-159). Fail fast with a clean user error.
+        if store.read_dataset(dataset_id) is None:
             console.print(
-                Panel(
-                    "[yellow]--with-news given but no --news file or --news-db found; "
-                    "news context will be all-zero (news ON == news OFF).[/yellow]",
-                    border_style="yellow",
+                _error_panel(
+                    "Dataset not found",
+                    dataset_id,
+                    hint="Run `nexus model-dataset-build` first, then pass its dataset id",
                 )
             )
-    store = _mg_store()
-    handle = DatasetFactory(store=store).build(
-        df, symbol=symbol, timeframe=timeframe, news_frame=news_frame
-    )
-    console.print(
-        _success_panel(
-            "Dataset built",
-            f"{handle['dataset_id']}  rows={handle['counts']['total']}",
-            border="green",
-        )
-    )
-    _emit(handle, as_json=False, plain=True)
-
-
-@app.command("model-experiment-create")
-def model_experiment_create(
-    dataset_id: str = typer.Option(..., "--dataset", help="dataset artifact id"),
-    template: str = typer.Option("baseline_scalpnet_v1", "--template"),
-) -> None:
-    """Create a bounded experiment on a dataset artifact."""
-    from nexus_scalp.model_generation import ExperimentFactory
-
-    store = _mg_store()
-    # A dataset must EXIST before an experiment can bind to it; creating a
-    # ghost experiment that later crashes `model-train` with a raw traceback
-    # is a bad contract (E2E BUG-159). Fail fast with a clean user error.
-    if store.read_dataset(dataset_id) is None:
+            raise typer.Exit(xc.EXIT_USAGE) from None
+        try:
+            cfg = ExperimentFactory(store=store).create(dataset_id, template=template)
+        except Exception as e:
+            console.print(_error_panel("Could not create experiment", str(e)))
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
         console.print(
-            _error_panel(
-                "Dataset not found",
-                dataset_id,
-                hint="Run `nexus model-dataset-build` first, then pass its dataset id",
+            _success_panel(
+                "Experiment created",
+                f"{cfg.experiment_id}  arch={cfg.architecture}",
+                border="green",
             )
         )
-        raise typer.Exit(xc.EXIT_USAGE) from None
-    try:
-        cfg = ExperimentFactory(store=store).create(dataset_id, template=template)
-    except Exception as e:
-        console.print(_error_panel("Could not create experiment", str(e)))
-        raise typer.Exit(xc.EXIT_RUNTIME) from None
-    console.print(
-        _success_panel(
-            "Experiment created", f"{cfg.experiment_id}  arch={cfg.architecture}", border="green"
-        )
-    )
-    _emit(cfg.model_dump(mode="json"), as_json=False, plain=True)
+        _emit(cfg.model_dump(mode="json"), as_json=False, plain=True)
 
+    @app.command("model-train")
+    def model_train(
+        experiment_id: str = typer.Option(..., "--experiment"),
+        model_id: str = typer.Option("", "--model-id"),
+    ) -> None:
+        """Train a candidate from an experiment (never touches Champion)."""
+        from nexus_scalp.model_generation import CandidateTrainer, ExperimentFactory
 
-@app.command("model-train")
-def model_train(
-    experiment_id: str = typer.Option(..., "--experiment"),
-    model_id: str = typer.Option("", "--model-id"),
-) -> None:
-    """Train a candidate from an experiment (never touches Champion)."""
-    from nexus_scalp.model_generation import CandidateTrainer, ExperimentFactory
-
-    store = _mg_store()
-    try:
-        exp = ExperimentFactory(store=store).load(experiment_id)
-        frame = store.read_dataset(exp.dataset_id)
-    except Exception as e:
-        console.print(_error_panel("Could not load experiment/dataset", str(e)))
-        raise typer.Exit(xc.EXIT_RUNTIME) from None
-    res = CandidateTrainer(store=store).train_candidate(exp, frame, model_id=model_id or None)
-    if res["status"] == "FAILED":
-        console.print(_error_panel("Training failed", str(res.get("error", ""))))
-        raise typer.Exit(1) from None
-    console.print(
-        _success_panel("Training complete", f"model={res.get('model_id')}", border="green")
-    )
-    _emit(res, as_json=False, plain=True)
-
-
-@app.command("model-inspect")
-def model_inspect(model_id: str = typer.Option(..., "--model")) -> None:
-    """Inspect a model artifact manifest + integrity."""
-    store = _mg_store()
-    man = store.read_model_manifest(model_id)
-    if not man:
-        console.print(_error_panel("Model not found", model_id, hint="Check --model id"))
-        raise typer.Exit(1) from None
-    v = store.verify_artifact(model_id)
-    style = "green" if v["ok"] else "red"
-    console.print(
-        Panel(
-            f"[bold {style}]{'OK' if v['ok'] else 'FAIL'}[/bold {style}]  {model_id}  integrity={v['ok']}",
-            border_style=style,
-        )
-    )
-    _emit({"manifest": man, "integrity": v}, as_json=False, plain=True)
-
-
-@app.command("model-validate")
-def model_validate(
-    model_id: str = typer.Option(..., "--model"),
-    dataset_id: str = typer.Option(..., "--dataset"),
-) -> None:
-    """Validate a candidate artifact against its dataset (OOS/regime/collapse)."""
-    from nexus_scalp.model_generation import ValidationFactory
-
-    store = _mg_store()
-    # BUG-164: read_dataset returns None for an absent artifact (never
-    # raises), so this except never fired and `frame["label"]` crashed
-    # with a raw "'NoneType' object is not subscriptable" traceback.
-    # Fail fast with the clean dataset-not-found contract instead.
-    frame = store.read_dataset(dataset_id)
-    if frame is None:
+        store = _mg_store()
+        try:
+            exp = ExperimentFactory(store=store).load(experiment_id)
+            frame = store.read_dataset(exp.dataset_id)
+        except Exception as e:
+            console.print(_error_panel("Could not load experiment/dataset", str(e)))
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        res = CandidateTrainer(store=store).train_candidate(exp, frame, model_id=model_id or None)
+        if res["status"] == "FAILED":
+            console.print(_error_panel("Training failed", str(res.get("error", ""))))
+            raise typer.Exit(1) from None
         console.print(
-            _error_panel(
-                "Dataset not found",
-                dataset_id,
-                hint="Run `nexus model-dataset-build` first, then pass its dataset id",
+            _success_panel("Training complete", f"model={res.get('model_id')}", border="green")
+        )
+        _emit(res, as_json=False, plain=True)
+
+    @app.command("model-inspect")
+    def model_inspect(model_id: str = typer.Option(..., "--model")) -> None:
+        """Inspect a model artifact manifest + integrity."""
+        store = _mg_store()
+        man = store.read_model_manifest(model_id)
+        if not man:
+            console.print(_error_panel("Model not found", model_id, hint="Check --model id"))
+            raise typer.Exit(1) from None
+        v = store.verify_artifact(model_id)
+        style = "green" if v["ok"] else "red"
+        console.print(
+            Panel(
+                f"[bold {style}]{'OK' if v['ok'] else 'FAIL'}[/bold {style}]  {model_id}  integrity={v['ok']}",
+                border_style=style,
             )
         )
-        raise typer.Exit(xc.EXIT_USAGE) from None
-    # BUG-175: the model must actually RUN here. Passing probabilities=None
-    # made every gate that needs predictions fall to 0.0 with a
-    # NO_PROBABILITIES note — a fabricated REJECTED even for a good model
-    # (no candidate could ever become CHALLENGER_ELIGIBLE via this command),
-    # and a cross-schema width mismatch stayed invisible inside it.
-    # Compute REAL probabilities from the artifact (same replay as
-    # model_generation.benchmark._predict_probs) and fail fast with an
-    # explicit error when the artifact cannot be loaded or the dataset
-    # width does not match the model's expected input.
-    import numpy as np
+        _emit({"manifest": man, "integrity": v}, as_json=False, plain=True)
 
-    labels = frame["label"].to_numpy().astype(np.int64)
-    try:
-        probabilities = _predict_candidate_probs(store, model_id, frame)
-    except typer.Exit:
-        raise
-    except Exception as e:  # artifact load failure is a runtime error, never 0.0
+    @app.command("model-validate")
+    def model_validate(
+        model_id: str = typer.Option(..., "--model"),
+        dataset_id: str = typer.Option(..., "--dataset"),
+    ) -> None:
+        """Validate a candidate artifact against its dataset (OOS/regime/collapse)."""
+        from nexus_scalp.model_generation import ValidationFactory
+
+        store = _mg_store()
+        # BUG-164: read_dataset returns None for an absent artifact (never
+        # raises), so this except never fired and `frame["label"]` crashed
+        # with a raw "'NoneType' object is not subscriptable" traceback.
+        # Fail fast with the clean dataset-not-found contract instead.
+        frame = store.read_dataset(dataset_id)
+        if frame is None:
+            console.print(
+                _error_panel(
+                    "Dataset not found",
+                    dataset_id,
+                    hint="Run `nexus model-dataset-build` first, then pass its dataset id",
+                )
+            )
+            raise typer.Exit(xc.EXIT_USAGE) from None
+        # BUG-175: the model must actually RUN here. Passing probabilities=None
+        # made every gate that needs predictions fall to 0.0 with a
+        # NO_PROBABILITIES note — a fabricated REJECTED even for a good model
+        # (no candidate could ever become CHALLENGER_ELIGIBLE via this command),
+        # and a cross-schema width mismatch stayed invisible inside it.
+        # Compute REAL probabilities from the artifact (same replay as
+        # model_generation.benchmark._predict_probs) and fail fast with an
+        # explicit error when the artifact cannot be loaded or the dataset
+        # width does not match the model's expected input.
+        import numpy as np
+
+        labels = frame["label"].to_numpy().astype(np.int64)
+        try:
+            probabilities = _predict_candidate_probs(store, model_id, frame)
+        except typer.Exit:
+            raise
+        except Exception as e:  # artifact load failure is a runtime error, never 0.0
+            console.print(
+                _error_panel(
+                    "Model artifact could not be loaded",
+                    f"{model_id}: {e}",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        vf = ValidationFactory()
+        try:
+            vr = vf.validate(model_id, "cli", frame, probabilities, labels)
+        except Exception as e:
+            console.print(_error_panel("Validation failed", str(e)))
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        color = "green" if vr.passed else "red"
         console.print(
-            _error_panel(
-                "Model artifact could not be loaded",
-                f"{model_id}: {e}",
-                exit_code=xc.EXIT_RUNTIME,
+            Panel(
+                f"[bold {color}]{vr.verdict}[/bold {color}]  passed={vr.passed}", border_style=color
             )
         )
-        raise typer.Exit(xc.EXIT_RUNTIME) from None
-    vf = ValidationFactory()
-    try:
-        vr = vf.validate(model_id, "cli", frame, probabilities, labels)
-    except Exception as e:
-        console.print(_error_panel("Validation failed", str(e)))
-        raise typer.Exit(xc.EXIT_RUNTIME) from None
-    color = "green" if vr.passed else "red"
-    console.print(
-        Panel(f"[bold {color}]{vr.verdict}[/bold {color}]  passed={vr.passed}", border_style=color)
-    )
-    _emit(vr.model_dump(mode="json"), as_json=False, plain=True)
+        _emit(vr.model_dump(mode="json"), as_json=False, plain=True)
 
+    def _predict_candidate_probs(store: Any, model_id: str, frame: Any) -> Any:
+        """Replays the candidate over the dataset frame -> (N, C) probabilities.
 
-def _predict_candidate_probs(store: Any, model_id: str, frame: Any) -> Any:
-    """Replays the candidate over the dataset frame -> (N, C) probabilities.
+        Mirrors ``model_generation.benchmark._predict_probs``: manifest-driven
+        news columns, persisted scaler transform, 2D snapshot path for
+        legacy/MLP heads and a causal window path for sequence architectures.
+        Raises ``ValueError`` on a dataset/model width mismatch (the CLI turns
+        it into the explicit SCHEMA_MISMATCH panel) and any artifact-load error
+        upward (the CLI turns it into the load-failure panel).
+        """
+        import numpy as np
+        import torch
 
-    Mirrors ``model_generation.benchmark._predict_probs``: manifest-driven
-    news columns, persisted scaler transform, 2D snapshot path for
-    legacy/MLP heads and a causal window path for sequence architectures.
-    Raises ``ValueError`` on a dataset/model width mismatch (the CLI turns
-    it into the explicit SCHEMA_MISMATCH panel) and any artifact-load error
-    upward (the CLI turns it into the load-failure panel).
-    """
-    import numpy as np
-    import torch
+        from nexus_scalp.model_generation.runtime import LocalModelRuntime
 
-    from nexus_scalp.model_generation.runtime import LocalModelRuntime
-
-    rt = LocalModelRuntime(store=store).load(model_id)
-    mm = store.read_model_manifest(model_id) or {}
-    news_enabled = bool(mm.get("news_enabled", False))
-    base_dim = int(mm.get("feature_dimension", 0) or 0)
-    metadata = mm.get("build_metadata", {}) or {}
-    input_dim = int(metadata.get("input_dimension", base_dim) or base_dim)
-    feat_cols = [c for c in frame.columns if c.startswith("feat_")]
-    news_cols = (
-        [c for c in frame.columns if c.startswith("news_") and c != "news_context_schema_id"]
-        if news_enabled
-        else []
-    )
-    width = len(feat_cols) + len(news_cols)
-    if width != input_dim:
-        # Fail FAST and LOUD: a width mismatch previously surfaced as a
-        # silent fabricated REJECTED (oos 0.0) instead of an error.
-        raise ValueError(
-            f"SCHEMA_MISMATCH: model expects {input_dim} features, "
-            f"dataset provides {width} "
-            f"(feat={len(feat_cols)}, news={len(news_cols)}, "
-            f"model_schema={mm.get('feature_schema_id', '?')})"
+        rt = LocalModelRuntime(store=store).load(model_id)
+        mm = store.read_model_manifest(model_id) or {}
+        news_enabled = bool(mm.get("news_enabled", False))
+        base_dim = int(mm.get("feature_dimension", 0) or 0)
+        metadata = mm.get("build_metadata", {}) or {}
+        input_dim = int(metadata.get("input_dimension", base_dim) or base_dim)
+        feat_cols = [c for c in frame.columns if c.startswith("feat_")]
+        news_cols = (
+            [c for c in frame.columns if c.startswith("news_") and c != "news_context_schema_id"]
+            if news_enabled
+            else []
         )
-    if width == 0:
-        raise ValueError("dataset frame carries no feat_* columns to replay")
-
-    arch = str(mm.get("architecture_id", "LEGACY_SCALPNET_V1"))
-    is_seq_arch = arch == "TCN_ATTENTION_V1"
-    if is_seq_arch:
-        # sequence path: reuse SequenceBuilder for the same causal windows
-        # the sequence trainer trained on (never a fake 2D shortcut).
-        from nexus_scalp.model_generation.sequence import SequenceBuilder
-
-        builder = SequenceBuilder(seq_len=16)
-        seqdata = builder.build(frame, news_enabled=news_enabled)
-        valid = seqdata["valid"]
-        X = seqdata["X"][valid]
-        if valid.sum() == 0:
+        width = len(feat_cols) + len(news_cols)
+        if width != input_dim:
+            # Fail FAST and LOUD: a width mismatch previously surfaced as a
+            # silent fabricated REJECTED (oos 0.0) instead of an error.
             raise ValueError(
-                "sequence replay produced 0 valid windows (check timestamp/symbol columns)"
+                f"SCHEMA_MISMATCH: model expects {input_dim} features, "
+                f"dataset provides {width} "
+                f"(feat={len(feat_cols)}, news={len(news_cols)}, "
+                f"model_schema={mm.get('feature_schema_id', '?')})"
             )
+        if width == 0:
+            raise ValueError("dataset frame carries no feat_* columns to replay")
+
+        arch = str(mm.get("architecture_id", "LEGACY_SCALPNET_V1"))
+        is_seq_arch = arch == "TCN_ATTENTION_V1"
+        if is_seq_arch:
+            # sequence path: reuse SequenceBuilder for the same causal windows
+            # the sequence trainer trained on (never a fake 2D shortcut).
+            from nexus_scalp.model_generation.sequence import SequenceBuilder
+
+            builder = SequenceBuilder(seq_len=16)
+            seqdata = builder.build(frame, news_enabled=news_enabled)
+            valid = seqdata["valid"]
+            X = seqdata["X"][valid]
+            if valid.sum() == 0:
+                raise ValueError(
+                    "sequence replay produced 0 valid windows (check timestamp/symbol columns)"
+                )
+            if rt._scaler is not None:
+                mean, std = rt._scaler
+                X = ((X - mean) / (std + 1e-8)).astype(np.float32)
+            with torch.inference_mode():
+                logits = rt._model(torch.from_numpy(X))
+                probs = torch.softmax(logits, dim=-1).numpy()
+            # align to the FULL frame (invalid windows get a zero row) so the
+            # per-class comparison uses the SAME sample set as the 2D path
+            full = np.zeros((frame.height, probs.shape[1]), dtype=np.float32)
+            rows = np.where(valid)[0]
+            full[rows] = probs
+            return full
+
+        X = frame.select(feat_cols + news_cols).to_numpy().astype(np.float32)
         if rt._scaler is not None:
             mean, std = rt._scaler
-            X = ((X - mean) / (std + 1e-8)).astype(np.float32)
+            X = (X - mean) / (std + 1e-8)
         with torch.inference_mode():
             logits = rt._model(torch.from_numpy(X))
-            probs = torch.softmax(logits, dim=-1).numpy()
-        # align to the FULL frame (invalid windows get a zero row) so the
-        # per-class comparison uses the SAME sample set as the 2D path
-        full = np.zeros((frame.height, probs.shape[1]), dtype=np.float32)
-        rows = np.where(valid)[0]
-        full[rows] = probs
-        return full
+            return torch.softmax(logits, dim=-1).numpy()
 
-    X = frame.select(feat_cols + news_cols).to_numpy().astype(np.float32)
-    if rt._scaler is not None:
-        mean, std = rt._scaler
-        X = (X - mean) / (std + 1e-8)
-    with torch.inference_mode():
-        logits = rt._model(torch.from_numpy(X))
-        return torch.softmax(logits, dim=-1).numpy()
+    @app.command("model-replay")
+    def model_replay(
+        dataset_id: str = typer.Option(..., "--dataset"),
+        sample_id: str = typer.Option(..., "--sample"),
+        model_id: str = typer.Option("", "--model"),
+    ) -> None:
+        """Replay one sample (historical context + optional model prediction)."""
+        from nexus_scalp.model_generation import SampleReplay
 
-
-@app.command("model-replay")
-def model_replay(
-    dataset_id: str = typer.Option(..., "--dataset"),
-    sample_id: str = typer.Option(..., "--sample"),
-    model_id: str = typer.Option("", "--model"),
-) -> None:
-    """Replay one sample (historical context + optional model prediction)."""
-    from nexus_scalp.model_generation import SampleReplay
-
-    try:
-        rec = SampleReplay(store=_mg_store()).replay(
-            dataset_id, sample_id, model_id=model_id or None
-        )
-    except Exception as e:
-        console.print(_error_panel("Replay failed", str(e)))
-        raise typer.Exit(xc.EXIT_RUNTIME) from None
-    _emit(rec, as_json=False, plain=True)
-
-
-@app.command("model-doctor")
-def model_doctor(model_id: str = typer.Option(..., "--model")) -> None:
-    """Run the model doctor: integrity + load + metadata health."""
-    from nexus_scalp.model_generation import LocalModelRuntime
-
-    store = _mg_store()
-    v = store.verify_artifact(model_id)
-    if not v["ok"]:
-        console.print(
-            _error_panel(
-                "Model failed integrity",
-                f"{model_id}: {v.get('reason')}",
-                exit_code=xc.EXIT_RUNTIME,
+        try:
+            rec = SampleReplay(store=_mg_store()).replay(
+                dataset_id, sample_id, model_id=model_id or None
             )
-        )
-        raise typer.Exit(1) from None
-    try:
-        rt = LocalModelRuntime(store=store).load(model_id)
-        console.print(_success_panel("Model healthy", model_id, border="green"))
-        _emit({"integrity": v, "health": rt.health()}, as_json=False, plain=True)
-    except Exception as e:
-        console.print(_error_panel("Model failed to load", str(e), exit_code=xc.EXIT_RUNTIME))
-        raise typer.Exit(1) from None
+        except Exception as e:
+            console.print(_error_panel("Replay failed", str(e)))
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        _emit(rec, as_json=False, plain=True)
 
+    @app.command("model-doctor")
+    def model_doctor(model_id: str = typer.Option(..., "--model")) -> None:
+        """Run the model doctor: integrity + load + metadata health."""
+        from nexus_scalp.model_generation import LocalModelRuntime
 
-@app.command("model-train-3")
-def model_train_3(
-    variant: str = typer.Option(
-        "", "--variant", help="50d_main | 70d_news | 70d_liquidity (empty = all)"
-    ),
-    smoke: bool = typer.Option(
-        False, "--smoke", help="Small quick validation run (2 folds, 1 epoch)."
-    ),
-    folds: int = typer.Option(34, "--folds", help="Walk-forward folds (full run)."),
-    epochs: int = typer.Option(10, "--epochs", help="Epochs per fold (full run)."),
-    json_mode: bool = typer.Option(False, "--json", help="JSON output."),
-) -> None:
-    """Train the 3-model matrix (50D-main / 70D+news / 70D+liquidity).
-
-    Every variant runs the canonical purged walk-forward trainer + the
-    BenchmarkRunner evidence gate, then is registered in the model lifecycle
-    as CHALLENGER (shadow-eligible / hot-swappable via the shadow70 attach
-    """
-    # BUG-151: the pipeline lives in ``three_model`` (there has never been a
-    # ``three_model_pipeline`` module) — every invocation used to crash with
-    # ModuleNotFoundError before any training could start.
-    from nexus_scalp.model_generation.three_model import train_all
-
-    if variant and variant not in ("50d_main", "70d_news", "70d_liquidity"):
-        msg = f"unknown variant '{variant}' (allowed: 50d_main, 70d_news, 70d_liquidity)"
-        if json_mode:
-            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
-        else:
+        store = _mg_store()
+        v = store.verify_artifact(model_id)
+        if not v["ok"]:
             console.print(
-                _error_panel("Invalid variant", msg, hint="Empty --variant trains all three")
-            )
-        raise typer.Exit(xc.EXIT_USAGE) from None
-    try:
-        with Progress(
-            SpinnerColumn(style="cyan"),
-            TextColumn("[bold cyan]Training 3-model matrix…[/bold cyan]"),
-            transient=True,
-            console=console,
-        ) as progress:
-            progress.add_task("train", total=None)
-            bars_path = Path("data/raw/XAUUSD_M1.parquet")
-            if not bars_path.exists():
-                raise FileNotFoundError(
-                    f"canonical bars file missing: {bars_path} — run the data pipeline first"
+                _error_panel(
+                    "Model failed integrity",
+                    f"{model_id}: {v.get('reason')}",
+                    exit_code=xc.EXIT_RUNTIME,
                 )
-            import polars as pl
-
-            bars_frame = pl.read_parquet(bars_path)
-            reports = train_all(
-                bars_frame,
-                variants=[variant] if variant else None,
-                num_folds=folds,
-                epochs=epochs,
-                smoke=smoke,
             )
-            by_variant = {r["variant"]: r for r in reports}
-            result = {
-                "overall": "PASS"
-                if all(r.get("gate") in ("PASS", "COMPLETED", "READY") for r in reports)
-                else "EVIDENCE_WRITTEN",
-                "variants": by_variant,
-            }
-    except Exception as e:
+            raise typer.Exit(1) from None
+        try:
+            rt = LocalModelRuntime(store=store).load(model_id)
+            console.print(_success_panel("Model healthy", model_id, border="green"))
+            _emit({"integrity": v, "health": rt.health()}, as_json=False, plain=True)
+        except Exception as e:
+            console.print(_error_panel("Model failed to load", str(e), exit_code=xc.EXIT_RUNTIME))
+            raise typer.Exit(1) from None
+
+    @app.command("model-train-3")
+    def model_train_3(
+        variant: str = typer.Option(
+            "", "--variant", help="50d_main | 70d_news | 70d_liquidity (empty = all)"
+        ),
+        smoke: bool = typer.Option(
+            False, "--smoke", help="Small quick validation run (2 folds, 1 epoch)."
+        ),
+        folds: int = typer.Option(34, "--folds", help="Walk-forward folds (full run)."),
+        epochs: int = typer.Option(10, "--epochs", help="Epochs per fold (full run)."),
+        json_mode: bool = typer.Option(False, "--json", help="JSON output."),
+    ) -> None:
+        """Train the 3-model matrix (50D-main / 70D+news / 70D+liquidity).
+
+        Every variant runs the canonical purged walk-forward trainer + the
+        BenchmarkRunner evidence gate, then is registered in the model lifecycle
+        as CHALLENGER (shadow-eligible / hot-swappable via the shadow70 attach
+        """
+        # BUG-151: the pipeline lives in ``three_model`` (there has never been a
+        # ``three_model_pipeline`` module) — every invocation used to crash with
+        # ModuleNotFoundError before any training could start.
+        from nexus_scalp.model_generation.three_model import train_all
+
+        if variant and variant not in ("50d_main", "70d_news", "70d_liquidity"):
+            msg = f"unknown variant '{variant}' (allowed: 50d_main, 70d_news, 70d_liquidity)"
+            if json_mode:
+                _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
+            else:
+                console.print(
+                    _error_panel("Invalid variant", msg, hint="Empty --variant trains all three")
+                )
+            raise typer.Exit(xc.EXIT_USAGE) from None
+        try:
+            with Progress(
+                SpinnerColumn(style="cyan"),
+                TextColumn("[bold cyan]Training 3-model matrix…[/bold cyan]"),
+                transient=True,
+                console=console,
+            ) as progress:
+                progress.add_task("train", total=None)
+                bars_path = Path("data/raw/XAUUSD_M1.parquet")
+                if not bars_path.exists():
+                    raise FileNotFoundError(
+                        f"canonical bars file missing: {bars_path} — run the data pipeline first"
+                    )
+                import polars as pl
+
+                bars_frame = pl.read_parquet(bars_path)
+                reports = train_all(
+                    bars_frame,
+                    variants=[variant] if variant else None,
+                    num_folds=folds,
+                    epochs=epochs,
+                    smoke=smoke,
+                )
+                by_variant = {r["variant"]: r for r in reports}
+                result = {
+                    "overall": "PASS"
+                    if all(r.get("gate") in ("PASS", "COMPLETED", "READY") for r in reports)
+                    else "EVIDENCE_WRITTEN",
+                    "variants": by_variant,
+                }
+        except Exception as e:
+            if json_mode:
+                _emit({"error": str(e), "exit_code": xc.EXIT_RUNTIME}, True)
+            else:
+                console.print(_error_panel("Training failed", str(e), exit_code=xc.EXIT_RUNTIME))
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
         if json_mode:
-            _emit({"error": str(e), "exit_code": xc.EXIT_RUNTIME}, True)
-        else:
-            console.print(_error_panel("Training failed", str(e), exit_code=xc.EXIT_RUNTIME))
-        raise typer.Exit(xc.EXIT_RUNTIME) from None
-    if json_mode:
-        _emit(result, True)
-        raise typer.Exit(0 if result.get("overall") == "PASS" else 1)
-    for v, r in result.get("variants", {}).items():  # type: ignore[union-attr]
-        style = "green" if r.get("status") == "PASS" else "red"
-        console.print(f"[{style}]{r.get('status'):5}[/{style}] {v:16} {r.get('detail', '')}")
+            _emit(result, True)
+            raise typer.Exit(0 if result.get("overall") == "PASS" else 1)
+        for v, r in result.get("variants", {}).items():  # type: ignore[union-attr]
+            style = "green" if r.get("status") == "PASS" else "red"
+            console.print(f"[{style}]{r.get('status'):5}[/{style}] {v:16} {r.get('detail', '')}")

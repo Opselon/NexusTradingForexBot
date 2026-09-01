@@ -32,7 +32,7 @@ import typer
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from nexus_scalp.cli.app_factory import app
+from nexus_scalp.cli.app_factory import _resolve_facade_seam, app
 from nexus_scalp.cli.styling import (
     MODE_ALIASES,
     _emit,
@@ -186,7 +186,7 @@ def start_cmd(
                 {"status": "starting_daemon", "mode": chosen.value, "config": str(config_path)},
                 True,
             )
-        _spawn_daemon(cmd)
+        _resolve_facade_seam("_spawn_daemon", _spawn_daemon)(cmd)
         return
 
     cfg.execution.mode = chosen
@@ -222,7 +222,9 @@ def start_cmd(
             endpoints=endpoints,
             animate=animate,
         )
-    _run_engine(cfg, gateway=gateway, port=port, mode_override=chosen)
+    _resolve_facade_seam("_run_engine", _run_engine)(
+        cfg, gateway=gateway, port=port, mode_override=chosen
+    )
 
 
 def _spawn_daemon(cmd: list[str]) -> None:
@@ -320,7 +322,9 @@ def _run_engine(
 
         gate = run_startup_migration_gate(
             workspace=Path.cwd(),
-            application_version=str(get_version_info().get("version", "")),
+            application_version=str(
+                _resolve_facade_seam("get_version_info", get_version_info)().get("version", "")
+            ),
         )
         if not gate.get("ready", False):
             console.print(
@@ -614,4 +618,4 @@ def run_cmd(
     except Exception as e:
         console.print(_error_panel("Config invalid", str(e), exit_code=xc.EXIT_RUNTIME))
         raise typer.Exit(xc.EXIT_RUNTIME) from None
-    _run_engine(cfg, gateway=gateway, port=8080)
+    _resolve_facade_seam("_run_engine", _run_engine)(cfg, gateway=gateway, port=8080)
