@@ -749,6 +749,42 @@ class HealthEngine:
             self._env = envmod.detect_environment()
         return self._env
 
+    def check_observability(self) -> HealthEntry:
+        """OBSERVABILITY health: offline self-test of the frozen log contract.
+
+        Runs the synthetic in-memory self-test (no network, no MT5, no
+        Telegram send, no DB, no trading surface) and reports the verdict.
+        Guardrail task §6 — diagnostic only; a failure here means the log
+        contract regressed, not that trading is affected.
+        """
+        try:
+            from nexus_scalp.observability.selftest import run_observability_selftest
+
+            result = run_observability_selftest()
+        except Exception as exc:  # failure isolation
+            return HealthEntry(
+                "OBSERVABILITY",
+                "FAIL",
+                f"selftest raised: {type(exc).__name__}: {exc}",
+                "Inspect nexus_scalp.observability.selftest and the contract doc.",
+            )
+        failed = [k for k, v in result["checks"].items() if v != "PASS"]
+        if result["overall"] == "PASS":
+            return HealthEntry(
+                "OBSERVABILITY",
+                "PASS",
+                f"log contract PASS ({len(result['checks'])} checks; "
+                f"dropped_events={result['metrics'].get('dropped_events', 0)})",
+            )
+        return HealthEntry(
+            "OBSERVABILITY",
+            "FAIL",
+            f"log contract violations: {', '.join(failed)}",
+            "See docs/architecture/observability-log-contract.md; the failing "
+            "checks name the broken invariant (storm bound / redaction / "
+            "singleton / recovery / evidence).",
+        )
+
     def run_all(self) -> list[HealthEntry]:
         checks: list[tuple[str, Callable[[], HealthEntry]]] = [
             ("SYSTEM", self.check_system),
@@ -763,6 +799,7 @@ class HealthEngine:
             ("DISK", self.check_disk),
             ("MEMORY", self.check_memory),
             ("LOGGING", self.check_logging),
+            ("OBSERVABILITY", self.check_observability),
             ("WORKERS", self.check_workers),
             ("NEWS", self.check_news),
             ("EXPERIENCE", self.check_experience),

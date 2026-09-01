@@ -82,6 +82,16 @@ class EventBatchAggregator:
         self._max_groups = max(1, int(max_groups))
         self._groups: OrderedDict[tuple[Any, ...], _Group] = OrderedDict()
         self._lock = threading.RLock()
+        # AGENT-2 guardrails (2026-09-01): lightweight lifecycle counters.
+        # Information ABOUT the logging subsystem only — never read by
+        # trading logic (contract §7 of the guardrail task).
+        self._metrics = {
+            "events_seen": 0,
+            "first_occurrences": 0,
+            "events_aggregated": 0,
+            "summaries_flushed": 0,
+            "dropped_events": 0,  # MUST remain 0 for protected evidence
+        }
 
     # ------------------------------------------------------------------
     # collection (cheap path)
@@ -103,9 +113,11 @@ class EventBatchAggregator:
         key = (event, reason, stage, bool(recoverable))
         first = False
         with self._lock:
+            self._metrics["events_seen"] += 1
             g = self._groups.get(key)
             if g is None:
                 first = True
+                self._metrics["first_occurrences"] += 1
                 g = _Group(
                     event=event,
                     reason=reason,
@@ -137,7 +149,12 @@ class EventBatchAggregator:
         # first occurrence of every signature is still logged immediately by
         # the producer's first=True path, and the count is surfaced via
         # pending(); the store stays bounded per spec §28/§29.
-        self._groups.popitem(last=False)
+        evicted = self._groups.popitem(last=False)
+        # Evidence-preservation accounting: the evicted group was UNFLUSHED.
+        # Its occurrences were never summarized — surface the count honestly
+        # so dropped_events can be asserted zero in tests for protected paths
+        # (single-signature workloads never hit this branch).
+        self._metrics["dropped_events"] += evicted[1].count
 
     # ------------------------------------------------------------------
     # flush (batch boundary / shutdown)
@@ -167,6 +184,8 @@ class EventBatchAggregator:
                     f"first_seen={_fmt(g.first_seen)} last_seen={_fmt(g.last_seen)}"
                 )
                 emitted += 1
+                self._metrics["summaries_flushed"] += 1
+                self._metrics["events_aggregated"] += g.count
                 g.ever_flushed = True
             # keep flushed singletons for the eviction policy; clear counts
             for g in self._groups.values():
@@ -181,6 +200,21 @@ class EventBatchAggregator:
         """Number of occurrences currently buffered (observability)."""
         with self._lock:
             return sum(g.count for g in self._groups.values())
+
+    def active_signatures(self) -> int:
+        """Number of distinct signatures currently held (bounded by MAX_GROUPS)."""
+        with self._lock:
+            return len(self._groups)
+
+    def metrics(self) -> dict[str, int]:
+        """Lightweight lifecycle counters (information-only; never read by
+        trading logic). Keys: events_seen, first_occurrences,
+        events_aggregated, summaries_flushed, active_signatures,
+        dropped_events (MUST remain 0 for single-signature protected paths)."""
+        with self._lock:
+            out = dict(self._metrics)
+            out["active_signatures"] = len(self._groups)
+            return out
 
 
 def _fmt(ts: float) -> str:

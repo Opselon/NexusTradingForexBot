@@ -137,7 +137,7 @@ def doctor_cmd(
         )
         return
     if not json_mode:
-        console.print(_banner(subtitle="system doctor · 19 checks"))
+        console.print(_banner(subtitle="system doctor · 21 checks"))
         table = Table(title="NEXUS SYSTEM HEALTH", box=box.SIMPLE_HEAD, show_lines=False)
         table.add_column("Check", style="bold white", no_wrap=True)
         table.add_column("Status", style="bold", no_wrap=True)
@@ -812,7 +812,7 @@ def forensic_cmd(
     ),
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """TASK-11/12 post-70D forensic health matrix + canonical deploy gate (read-only)."""
+    """Read-only forensic health matrix and canonical deploy-gate analysis."""
     from nexus_scalp.forensics import (
         ForensicHealthEngine,
         analyze_experience_gap,

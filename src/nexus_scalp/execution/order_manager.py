@@ -41,6 +41,7 @@ from nexus_scalp.execution.protection_ledger import (
     PositionProtectionLedger,
     PositionProtectionState,
 )
+from nexus_scalp.execution.recovery_budget import RecoveryBudgetLedger
 from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
 from nexus_scalp.experience.lifecycle import DecisionLifecycle
 from nexus_scalp.experience.outcome_recovery import (
@@ -426,12 +427,10 @@ class OrderLifecycleManager:
         self._state_transition_candidates: dict[int, tuple[PositionState, datetime, int]] = {}
 
         # Recovery tracking dictionaries
-        self._recovery_budget_initial: dict[int, float] = {}
-        self._recovery_budget_remaining: dict[int, float] = {}
-        self._recovery_budget_consumed: dict[int, float] = {}
-        self._recovery_horizons: dict[int, float] = {}
-        self._recovery_entry_times: dict[int, datetime] = {}
-        self._recovery_initial_loss: dict[int, float] = {}
+        # P0 seam S3: recovery-budget state lives in RecoveryBudgetLedger
+        # (execution/recovery_budget.py). Compatibility properties below expose
+        # the live dicts under the historical names (tests read/write them).
+        self._recovery_ledger = RecoveryBudgetLedger()
 
         # =====================================================================
         # MODULE A/B STATE: LEDGER AUTOPSY CONTEXT & REVERSAL BOOKKEEPING
@@ -3312,6 +3311,35 @@ class OrderLifecycleManager:
         severity = (peak - current_pnl_usd) / giveback_range
         return max(0.0, min(1.0, severity))
 
+    # ------------------------------------------------------------------
+    # P0 seam S3 compatibility surface: the historical attribute names
+    # now resolve to the ledger's LIVE dicts (same objects — tests and
+    # internals that read/write them keep working with no duplication).
+    # ------------------------------------------------------------------
+    @property
+    def _recovery_budget_initial(self) -> dict[int, float]:
+        return self._recovery_ledger.recovery_budget_initial
+
+    @property
+    def _recovery_budget_remaining(self) -> dict[int, float]:
+        return self._recovery_ledger.recovery_budget_remaining
+
+    @property
+    def _recovery_budget_consumed(self) -> dict[int, float]:
+        return self._recovery_ledger.recovery_budget_consumed
+
+    @property
+    def _recovery_initial_loss(self) -> dict[int, float]:
+        return self._recovery_ledger.recovery_initial_loss
+
+    @property
+    def _recovery_entry_times(self) -> dict[int, datetime]:
+        return self._recovery_ledger.recovery_entry_times
+
+    @property
+    def _recovery_horizons(self) -> dict[int, float]:
+        return self._recovery_ledger.recovery_horizons
+
     def _initialize_recovery_mode(
         self,
         ticket: int,
@@ -3325,42 +3353,23 @@ class OrderLifecycleManager:
         Initializes an immutable USD recovery budget and dynamic time horizon
         when the position first enters negative PnL.
         """
-        if ticket in self._recovery_budget_initial:
+        # P0 seam S3: allocation rules live in the ledger (verbatim).
+        # Faithful to the original guard: an already-allocated ticket returns
+        # BEFORE the [RECOVERY ENVELOPE LOCKED] log (no duplicate log emission).
+        if self._recovery_ledger.is_allocated(ticket):
             return
-
         initial_risk_usd = self._initial_risks.get(ticket, 0.0)
-        if initial_risk_usd <= 0.0:
-            initial_risk_usd = atr * 1.50 * 100.0 * 0.10  # fallback rough estimate
-
-        # Recovery Budget = % of Initial Risk, clamped by actual remaining risk to entry
-        pct_r = getattr(self.algo_config, "recovery_budget_pct_of_r", 0.50)
-        budget = initial_risk_usd * pct_r
-        current_loss_abs = abs(current_pnl_usd)
-        remaining_risk = max(0.0, initial_risk_usd - current_loss_abs)
-        budget = min(budget, remaining_risk)
-
-        self._recovery_budget_initial[ticket] = budget
-        self._recovery_budget_remaining[ticket] = budget
-        self._recovery_budget_consumed[ticket] = 0.0
-        self._recovery_initial_loss[ticket] = current_loss_abs
-        self._recovery_entry_times[ticket] = now
-
-        # Dynamic, bounded recovery horizon (Requirement 15)
-        default_horizon = getattr(self.algo_config, "default_recovery_horizon_sec", 180.0)
-        min_horizon = getattr(self.algo_config, "min_recovery_horizon_sec", 30.0)
-        max_horizon = getattr(self.algo_config, "max_recovery_horizon_sec", 600.0)
-
-        # Scale based on ATR, confidence, and trend strength
-        base_hor = default_horizon
-        atr_n = max(atr, 0.50)
-        base_hor /= atr_n / 1.50  # high volatility -> shorter horizon
-        base_hor *= confidence_factor + 0.5  # high confidence -> longer horizon
-        if trend_strength < -0.20:
-            base_hor *= 0.70  # strong adverse trend -> shorter horizon
-
-        horizon = max(min_horizon, min(max_horizon, base_hor))
-        self._recovery_horizons[ticket] = horizon
-
+        budget = self._recovery_ledger.allocate(
+            ticket,
+            initial_risk_usd=self._initial_risks.get(ticket, 0.0),
+            current_pnl_usd=current_pnl_usd,
+            confidence_factor=confidence_factor,
+            atr=atr,
+            trend_strength=trend_strength,
+            now=now,
+            algo_config=self.algo_config,
+        )
+        horizon = self._recovery_ledger.recovery_horizons[ticket]
         logger.info(
             "[RECOVERY ENVELOPE LOCKED]",
             ticket=ticket,
@@ -3380,36 +3389,7 @@ class OrderLifecycleManager:
         Evaluates the immutable recovery budget and dynamic time horizon.
         Returns (is_exhausted, reason).
         """
-        if ticket not in self._recovery_budget_initial:
-            return False, ""
-
-        # 1. Budget check
-        initial_loss = self._recovery_initial_loss.get(ticket, 0.0)
-        current_loss = abs(current_pnl_usd) if current_pnl_usd < 0.0 else 0.0
-
-        # Budget is consumed if drawdown widens from recovery entry point
-        consumed = max(0.0, current_loss - initial_loss)
-        self._recovery_budget_consumed[ticket] = consumed
-
-        initial_budget = self._recovery_budget_initial.get(ticket, 0.0)
-        remaining = max(0.0, initial_budget - consumed)
-        self._recovery_budget_remaining[ticket] = remaining
-
-        if remaining <= 0.0:
-            return (
-                True,
-                f"RECOVERY_BUDGET_EXHAUSTED (initial=${initial_budget:.2f}, consumed=${consumed:.2f})",
-            )
-
-        # 2. Time Horizon check (dynamic but strictly bounded, no moving goalposts)
-        entry_time = self._recovery_entry_times.get(ticket)
-        horizon = self._recovery_horizons.get(ticket, 180.0)
-        if entry_time is not None:
-            elapsed = (now - entry_time).total_seconds()
-            if elapsed > horizon:
-                return True, f"RECOVERY_TIME_EXHAUSTED ({elapsed:.1f}s > {horizon:.1f}s)"
-
-        return False, ""
+        return self._recovery_ledger.evaluate_exhaustion(ticket, current_pnl_usd, now)
 
     def _evaluate_minimum_loss_optimization(
         self,
@@ -3650,7 +3630,7 @@ class OrderLifecycleManager:
             # Recovery attempts are budget-capped per ticket: once the budget is
             # spent (or adverse excursion blows past 0.80) stop managing the loss
             # and hard-exit instead of giving the recovery path more rope.
-            budget_remaining = self._recovery_budget_remaining.get(ticket, 1.0)
+            budget_remaining = self._recovery_ledger.remaining(ticket, 1.0)
 
             if budget_remaining <= 0.0 or adverse_score > 0.80:
                 return PositionState.LOSS_HARD_EXIT
@@ -6307,16 +6287,11 @@ class OrderLifecycleManager:
             self._trajectory_history,
             self._position_states,
             self._state_transition_candidates,
-            # Recovery structures
-            self._recovery_budget_initial,
-            self._recovery_budget_remaining,
-            self._recovery_budget_consumed,
-            self._recovery_horizons,
-            self._recovery_entry_times,
-            self._recovery_initial_loss,
+            # Recovery structures (owned by the ledger; dropped below)
             self._closed_tickets,
             self._exit_pending_final_reason,
         ):
             tracker.pop(ticket, None)
+        self._recovery_ledger.drop_ticket(ticket)
         with self._live_tickets_lock:
             self._live_tickets_cache.pop(ticket, None)

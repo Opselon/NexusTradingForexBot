@@ -63,3 +63,7 @@ tests/unit/test_research_purge_defaults_bug183.py
 tests/unit/test_evidence_semantics_bug140.py
 # AGENT4-SPRINT (2026-09-01): winner-protection geometry repair - BE trigger R-floor, lock offset 0.6p, tier floors 0.60/0.70/0.80 (regression suite)
 tests/unit/test_winner_protection_geometry_sprint.py
+# AGENT-2 OBSERVABILITY GUARDRAILS (2026-09-01): executable enforcement of the frozen log contract — storm bounds, redaction, dormant-worker, recovery, evidence preservation (docs/architecture/observability-log-contract.md). Full list + rationale: tests/critical_suite_observability.txt
+tests/unit/test_observability_guardrails.py
+tests/unit/test_observability_contract_freeze.py
+tests/unit/test_logging_redaction.py
