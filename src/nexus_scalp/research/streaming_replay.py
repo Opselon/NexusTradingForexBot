@@ -290,6 +290,25 @@ class SimulatedTrade:
         }
 
 
+def _order_to_dict(o: SimulatedOrder) -> dict[str, Any]:
+    """slots-safe dict projection (BUG-192: dataclass slots have no __dict__)."""
+    return {
+        "order_id": o.order_id,
+        "signal_time": o.signal_time.isoformat(),
+        "decision_time": o.decision_time.isoformat(),
+        "order_time": o.order_time.isoformat(),
+        "fill_time": o.fill_time.isoformat(),
+        "action": o.action,
+        "order_type": o.order_type,
+        "volume": o.volume,
+        "requested_price": o.requested_price,
+        "fill_price": o.fill_price,
+        "stop_loss": o.stop_loss,
+        "take_profit": o.take_profit,
+        "run_id": o.run_id,
+    }
+
+
 def _ledger_digest(trades: list[SimulatedTrade], events_hash: str) -> str:
     h = hashlib.sha256()
     h.update(events_hash.encode("utf-8"))
@@ -773,7 +792,7 @@ class StreamingReplayEngine:
             ledger_hash=_ledger_digest(trades, event_hash),
             events_seen=events_seen,
             decisions=decisions,
-            orders=[o.__dict__ | {"run_id": rid} for o in orders],
+            orders=[_order_to_dict(o) | {"run_id": rid} for o in orders],
             trades=[t.to_dict() for t in trades],
             data_errors=data_errors,
             first_event=first_ts,

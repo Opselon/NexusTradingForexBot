@@ -1136,3 +1136,38 @@ Forbidden: installer/*, provider_gate, order_manager, live_engine edits, regime 
 Risk: MEDIUM (health semantics change: optional-subsystem WARNs become INFO with canonical state; READY aggregate can only get MORE truthful — MODEL_CONTRACT FAIL on genuine width mismatch now blocks, which is the intended truth).
 Required tests: new unit suites (taxonomy, snapshot identity, doctor semantics, release status endpoint) + affected existing suites + beforePush CRITICAL gate.
 Status: IMPLEMENTING
+
+
+## CHG-0044 - OSS-grade adversarial QA / deep-assurance layer (2026-09-02, Hermes-Main)
+
+Change: independent QA-adversarial brief. (1) tests/unit/test_qa_deep_*.py families:
+tensor-contract adversarial + property (swapped/NaN/inf/extreme/dtype/bool/str/None, 
+metamorphic news/liquidity neutrality, replay determinism), state-machine walkers with
+seeded bounded generators (ProviderGate, PositionStateMachine, RecoveryBudgetLedger) +
+single-flight concurrency race with barriers, DB migration adversarial (idempotency,
+partial failure rollback, lock contention, tamper, downgrade, baseline, orphan rows on
+disposable DBs), API contract adversarial via TestClient (schema/error envelope/JSON
+purity/idempotency/malformed/oversized/auth boundary), security surface (redaction
+metamorphics, secret leakage, path traversal, oversized inputs, deserialization probe),
+observability chaos (EventBatchAggregator invariants, storm bounds, deterministic fault
+injection harness with failure classification), execution safety (order_send-never-called
+hard assertion on research/replay paths, duplicate-order idempotency, side/volume/SL/TP
+preservation via fake port). (2) scripts/qa/deep_assurance.py orchestrator: --fast,
+default, --json (valid JSON only, suite_version/git_commit/seed/durations/defects[]),
+--mutation (runtime-behavioral mutations at contract seams; source files NEVER rewritten),
+--offline default. (3) docs/architecture/QA_BLIND_SPOT_MATRIX.md + qa-assurance-contract.md.
+(4) pyproject markers additive: qa_deep, adversarial, property, security.
+(5) BUG-192: validate_70d_vector bool-accepted / str-None TypeError-crash; same class in
+InferenceValidator.validate. Minimal type-guard fix + regression net; existing 70D parity
+battery re-run to prove zero behavior change on valid vectors.
+Scope: tests/unit/test_qa_deep_*.py, scripts/qa/deep_assurance.py, docs/architecture/*,
+agents/*, pyproject.toml (markers), .github/workflows/qa-deep-assurance.yml (NEW file),
+features/schema_contract.py + features/inference_validator.py (BUG-192 minimal type
+guards ONLY - CROSS-OWNER CHANGE to 70D contract SSOT, disclosed to contract owner).
+NOT touched: live_engine, order_manager, policy, risk, provider gate logic, installer,
+migrations content, observability implementations, ci.yml, release workflows.
+Why: user OSS-Grade adversarial QA brief 2026-09-02. Contracts touched: none new
+(guards FEATURE_SCHEMA_70D, INFERENCE_CONTRACT, PROVIDER_HEALTH_GATE v1, DB_MIGRATION v1,
+OBSERVABILITY_LOG_CONTRACT). Risk: LOW (test-only surface + two-line type guards on
+malformed-input paths; valid-input behavior byte-identical).
+Status: IMPLEMENTING

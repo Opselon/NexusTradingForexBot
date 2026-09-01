@@ -7012,3 +7012,26 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   test_case_f_nan_input_uses_fallback_not_crash.
 - Reproduce: evaluate_probabilities([nan, 0.4, 0.3, 0.3]) raised before the
   fix; returns a finite-confidence proposal after.
+
+## BUG-192 - SimulatedOrder.__dict__ AttributeError on real-data replay: dataclass slots have no __dict__ (2026-09-02, Hermes-Main replay-on-chart)
+
+Symptom: StreamingReplayEngine.run() crashed with
+`AttributeError: 'SimulatedOrder' object has no attribute '__dict__'` at
+result assembly (streaming_replay.py:776) on a REAL XAUUSD M1 window
+(2026-07-01 00:00-06:40, 340 events). The certified
+tests/integration/test_research_execution_stack.py never hit it because its
+fixtures produce trades but the crash is in `orders=[o.__dict__ ...]` — the
+stub-bundle fixtures DO reach order creation... investigation showed the
+existing tests pass because they assert on `res.orders` BEFORE the expression
+that crashes only when `orders` list is non-empty at run end; synthetic
+fixtures with `decide_on="every_tick"` produced orders in the stub suites only
+after confidence-repair CHG-0042 lowered the effective gate — i.e. the
+defect was LATENT and unmasked on real data (first real-data replay
+smoke). Root cause: `@dataclass(frozen=True, slots=True)` classes have no
+`__dict__`; the serialization shortcut was never exercised on a run that
+finished with >= 1 order. Fix: explicit `_order_to_dict()` projection helper
+(same fields as before), byte-level patch preserving CRLF; existing 19
+research+parity tests green post-fix. Classification: P1
+(result-serialization crash, not decision-path; decision semantics
+unchanged). Found by: replay-on-chart real-data smoke (CHG-0043).
+Status: FIXED (uncommitted at discovery; committed with CHG-0043 part 1)
