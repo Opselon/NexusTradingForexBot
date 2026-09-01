@@ -42,7 +42,7 @@ app = typer.Typer(
 # ---------------------------------------------------------------------------
 # TASK-10 ``db`` group; TASK-11 hygiene registers as a SUBCOMMAND of ``db``
 # so the spec surface is ``nexus db hygiene status|plan|run|pause|resume|history``.
-app.add_typer(db_app, name="db", help="Database schema migration & management (TASK-10).")
+app.add_typer(db_app, name="db", help="Database schema migration and management.")
 
 # DATABASE PORTABILITY (``nexus db-portability ...``) — SQLite <-> PostgreSQL workflow.
 app.add_typer(
@@ -54,7 +54,7 @@ app.add_typer(
 app.add_typer(
     incidents_app,
     name="incidents",
-    help="Incident response & forensic diagnostics (TASK-12) — read-only by default.",
+    help="Incident investigation and forensic diagnostics (read-only by default).",
 )
 # G29: Enterprise Code Analyzer (``nse analyze``)
 register_analyze_commands(app)

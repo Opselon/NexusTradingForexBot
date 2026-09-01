@@ -89,7 +89,7 @@ def _severity_table(incidents: list[Incident]) -> None:
 
 def make_incidents_app() -> typer.Typer:
     app = typer.Typer(
-        help="Incident response & forensic diagnostics (TASK-12) — read-only by default."
+        help="Incident investigation and forensic diagnostics (read-only by default)."
     )
 
     @app.command("list")

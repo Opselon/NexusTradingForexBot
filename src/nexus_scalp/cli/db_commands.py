@@ -297,7 +297,7 @@ def make_db_app(
     git_commit: str = "",
 ) -> typer.Typer:
     """Builds the `nexus db` sub-command group (canonical engine)."""
-    app = typer.Typer(help="Database schema migration & management (TASK-10).")
+    app = typer.Typer(help="Database schema migration and management.")
 
     @app.command("status")
     def db_status(
