@@ -6786,3 +6786,20 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - VERIFICATION: ruff check+format, mypy (4 files), targeted pytest 25 passed incl. evidence
   semantics + task4 validation + lifecycle bug140 + bug174 backfill suites. Commit 11ea316.
 - Severity: P1 | Status: FIXED | Fixed-by: Hermes-Main
+## BUG-184 - CHECK-FCS-04 accepts non-numeric vector elements as PASS (duck-typing hole in feature-contract check) (2026-09-01 Nexus-Main, reported by Nexus-Reviewer; independently reproduced by Nexus-Main)
+- CLAIM SOURCE: reviewer Step-1 review flagged a baseline defect in check_feature_contract_vector; ledger row was
+  unwritten. Orchestrator reproduced BEFORE filing (contract §41: no invented bugs):
+  repo venv probe at HEAD (post-11ea316):
+  * [True] + [0.0]*69  -> PASS  (booleans accepted; bool is an int subclass, no type guard)
+  * ["0.1"] + [0.0]*69 -> PASS  (str coerced inside float(v); type contract not enforced)
+  * None -> UNKNOWN (correct), empty/NaN/out-of-range -> CRITICAL (correct)
+- ROOT CAUSE (code-level, forensics/checks_features.py CHECK-FCS-04): validation uses
+  float(v) coercion without isinstance(v, (int, float)) exclusion of bool / numeric-string
+  acceptance; a malformed producer (JSON deserialization leaving strings, or boolean flags
+  leaking into the vector) passes the integrity gate.
+- IMPACT: false-green on FEATURE_CONTRACT for malformed vectors — evidence-quality defect in
+  a forensics check (P2, diagnostic trust; no trading-path write). No live exposure found yet:
+  production vectors come from numpy float64 assembly.
+- STATUS: REPORTED / REPRO (fix NOT included in the decomposition change series per zero-behavior-change mandate; requires a separate controlled change + regression test asserting
+  bool/str elements are CRITICAL). Owner: Nexus-Main to route in the next repair window.
+- Severity: P2 | Status: OPEN | Found-by: Nexus-Reviewer + Nexus-Main (probe)
