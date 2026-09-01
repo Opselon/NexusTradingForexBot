@@ -88,7 +88,9 @@ def test_bug176_bogus_schema_rejected_with_exit_usage(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "artifacts").mkdir()
     bars = _make_bars_csv(tmp_path / "bars.csv")
-    res = runner.invoke(app, ["model-dataset-build", "--bars", str(bars), "--schema", "scalp_v9_bogus"])
+    res = runner.invoke(
+        app, ["model-dataset-build", "--bars", str(bars), "--schema", "scalp_v9_bogus"]
+    )
     out = res.stdout + (res.stderr or "")
     assert res.exit_code == xc.EXIT_USAGE
     assert "Unknown schema" in out
