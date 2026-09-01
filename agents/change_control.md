@@ -1122,3 +1122,17 @@ REPLAY_SESSION v1 (new), REPLAY_API v1 (new), RESEARCH_RUN_SNAPSHOT v2 (reused).
 Risk: MEDIUM (touches certified engine file; mitigated by pre/post hash
 equivalence on real data + full research-family suite green).
 Status: IMPLEMENTING
+
+## CHG-0043 — Runtime Truth / Release Awareness / Feature-Model-DB Consistency Hardening
+Agent: Nexus-Main (orchestrator; implementation via nexus-coder)
+Role: Runtime identity / health truthfulness / release visibility
+Task: TASK-RUNTIME-TRUTH (user brief 2026-09-02)
+Scope: release/ state taxonomy + canonical runtime snapshot; metadata commit_source + dev stale build-info precedence; health.py truthful states (NOT_CONFIGURED/NOT_INITIALIZED/DISABLED/INFO vocabulary, MODEL_CONTRACT wired into run_all, FEATURE_SCHEMA resolved from configured artifact, NEWS table names fixed to real schema, update-state check offline-safe); cli/doctor.py render semantics (NOT_RECORDED, INFO); web live/state features block uses effective contract; NEW /api/release/status (no network); Web UI identity strip (surgical); tests.
+Affected files: src/nexus_scalp/release/{state_taxonomy.py(new),runtime_snapshot.py(new),metadata.py,health.py,versioning.py,updater.py(additive fields)}, src/nexus_scalp/cli/doctor.py, src/nexus_scalp/web/{diagnostics_state_routes.py,release_routes.py(new)}, Web/{index.html,app.js}(minimal), tests/unit/*, agents/*
+Contracts touched: RUNTIME_IDENTITY v2 (commit_source/commit_status), HEALTH_ENTRY v2 (INFO verdict + canonical states), RELEASE_STATUS_API v1 (new), LIVE_UI_STATE v2 additive (features.schema_id truthfulness + feature_activation additive); 70D contract UNCHANGED (features/schema_contract.py read-only); features/schema.py ACTIVE_SCHEMA_ID constant left as legacy residue per nse-50d ruling (runtime truth reads the artifact, not the constant).
+Owners affected: Hermes-Release (release/), Hermes-UI (Web/) — CROSS-OWNER CHANGE declared; disclosed UI collision surface with TASK-REPLAY-ON-CHART (edits confined to identity/health render sites, replay files untouched).
+Runtime paths touched: CLI doctor/version, /api/status|/health|/api/live/state (additive), NEW /api/release/status. NO hot-path change (snapshot cached 60s where wired; no new DB writes; no network in health).
+Forbidden: installer/*, provider_gate, order_manager, live_engine edits, regime engine, observability SSOT, research/*, training pipeline, model training.
+Risk: MEDIUM (health semantics change: optional-subsystem WARNs become INFO with canonical state; READY aggregate can only get MORE truthful — MODEL_CONTRACT FAIL on genuine width mismatch now blocks, which is the intended truth).
+Required tests: new unit suites (taxonomy, snapshot identity, doctor semantics, release status endpoint) + affected existing suites + beforePush CRITICAL gate.
+Status: IMPLEMENTING
