@@ -63,6 +63,8 @@ checkouts are moved aside to `engine.broken-<timestamp>` instead.
 | `-ShowResolvedPaths` | Print resolved paths JSON and exit (no mutation). |
 | `-Ensure <dep>` | Lazily ensure a named dependency: `python`, `git`, `mt5`, `node`. |
 | `-PostInstall` | Read-only post-install posture report (model/MT5). |
+| `-Repair` | Repair runtime pieces (runtime/venv/dependencies/path/verify) without touching user data or the repository checkout. |
+| `-DryRun` | Print the install plan as JSON and exit; no filesystem mutation. |
 
 ### Version pinning semantics
 
@@ -105,16 +107,22 @@ The installer is drivable one stage at a time:
 
 Running the installer again over an existing installation is safe and
 idempotent: healthy pieces are detected and skipped (or fast-forwarded), a
-partially completed install resumes from where it stopped, and a corrupted
-checkout is moved aside and re-acquired. Individual broken pieces can be
-repaired without a full reinstall:
+partially completed install resumes from where it stopped (per-stage progress
+is recorded durably in `state\install.json` after every successful stage),
+and a corrupted checkout is moved aside and re-acquired. Individual broken
+pieces can be repaired without a full reinstall:
 
 ```powershell
 .\install.ps1 -Stage venv -Json        # recreate the venv transactionally
 .\install.ps1 -Stage dependencies -Json
 .\install.ps1 -Stage verify -Json
+.\install.ps1 -Repair                  # full runtime repair (no user-data loss)
+.\install.ps1 -DryRun                  # show the plan as JSON, mutate nothing
 ```
 
+A single-writer install lock (`state\installer.lock`) prevents two
+concurrent installers from mutating the same installation; a second
+installer reports a well-formed skipped frame instead of corrupting state.
 If the network fails mid-install, simply re-run the same command; completed
 stages are detected and skipped.
 

@@ -75,6 +75,8 @@ are API; adding a stage is additive and does not bump the protocol version.
 | `install.ps1 -ShowResolvedPaths` | paths JSON (no mutation) | 0 |
 | `install.ps1 -Stage <name>` | one result frame | 0 / 1 / 2 |
 | `install.ps1 -Json` | full-install summary frame | 0 / 1 |
+| `install.ps1 -Repair` | per-stage frames + repair summary | 0 / 1 |
+| `install.ps1 -DryRun` | plan frame (no mutation) | 0 |
 
 Result frame (exactly one JSON object per invocation on stdout):
 
@@ -182,7 +184,32 @@ fetch + pinned checkout so future updates still work.
   repository validity, config presence - fail-closed with enumerated problems.
 - **state** (stage `state`): `state/install.json` (installer/protocol
   version, timestamps, paths, repo HEAD, python/git versions, last stage).
-  No secrets.
+  No secrets. Additionally, every successful stage flushes its per-stage
+  result to the state file atomically (tmp file + rename), making install
+  progress a durable ledger a driver can use to resume after a crash.
+
+## 7b. Single-writer install lock
+
+`Wait-NexusInstallerLock` opens `state\installer.lock` with `FileShare.None`
+(mandatory Windows file lock). A second installer retries for ~5s, then
+reports a deliberate skip - in protocol mode a well-formed
+`ok:true/skipped:true` frame with a lock reason, exit 0 (never an error
+shape). Because the lock lives in an OS file handle, a crashed installer
+releases it automatically when its process dies; there is no stale-lock
+cleanup path to get wrong. The detection-only `environment` stage is exempt
+from the lock.
+
+## 7c. Repair and dry-run modes
+
+- `-Repair` runs a targeted safe subset (runtime, venv, dependencies, path,
+  verify, state) under the install lock. The repository checkout is not
+  forced (safe update semantics govern it) and config is create-if-missing
+  by design, so repair can never destroy user data.
+- `-DryRun` prints the resolved plan as JSON - paths, requested python/
+  branch/commit/tag, and the would-run stage list - and performs no
+  filesystem mutation whatsoever (even the writability probe is skipped).
+- Full installs differentiate `first-install` vs `update` (valid-checkout
+  detection) and report the mode in the banner and the JSON summary.
 
 ## 7. Windows hardening
 
