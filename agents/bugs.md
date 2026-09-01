@@ -6693,3 +6693,28 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   clean; mypy walk_forward_trainer.py clean; CRLF integrity asserted by byte probes
   (crlf count == lf count, no doubled-CR bytes, trailing newline preserved).
 - Severity: P2 (regression-net gap on the live-serving training path) | Status: FIXED | Fixed-by: Hermes-Coder
+
+## BUG-181 - tests-os.yml invoked a nonexistent telegram_notify.py 'os-finished' subcommand (2026-09-01 Agent GitHub Manager)
+- SYMPTOM: every Tests (OS Matrix) job printed `telegram_notify.py: error: argument
+  command: invalid choice: 'os-finished'` to the run log. Advisory-only (`|| true`,
+  continue-on-error) so CI stayed green - the observability channel silently never
+  reported OS-matrix completion (fail-open by masking, same class as BUG-162's
+  fail-open hook).
+- ROOT CAUSE: .github/workflows/tests-os.yml referenced a subcommand that was never
+  implemented in scripts/ci/telegram_notify.py (docstring/argparse vocabulary drift).
+- FIX (3 additive parts, parallel-safe):
+  1) scripts/ci/telegram_notify.py: real `os-finished` subcommand + top-level
+     `--os` flag (dest=os_name) passed through to the reporter;
+  2) CITelegramReporter.notify_run_finished gains `os_name: str = ""` kwarg and
+     tags the dispatch context via CIContext.with_job_suffix;
+  3) tests-os.yml: `os-finished --os "${{ matrix.os }}"` so the Telegram CI channel
+     shows WHICH OS leg finished.
+- OBSERVABILITY helper: CIContext.with_job_suffix(suffix) (telegram_html.py) returns
+  an immutable copy with job name suffixed - follows the with_pr clone pattern.
+- VERIFICATION: py_compile all 3 files; ruff check clean; mypy clean on both
+  observability modules; smoke run of the advisory path (TELEGRAM_CONFIG_ERROR
+  "not configured" JSON, exit 0 - expected without secrets); tests/unit/
+  test_telegram_notifier.py 17/17 green; BUG-170/171 + BUG-162 suites green.
+- Commits: 569dd1e (Coder: reporter kwarg + with_job_suffix, F821 repair) and
+  430b06e (Agent GitHub Manager: workflow --os passthrough + subcommand wiring).
+- Severity: P3 (advisory channel silent-failure) | Status: FIXED | Fixed-by: Agent GitHub Manager + Hermes-Coder
