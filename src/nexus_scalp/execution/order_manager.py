@@ -79,6 +79,16 @@ AI_REVERSAL_REASON: str = "AI_REVERSAL_SIGNAL"
 #: Absolute USD floating profit at which a breakeven stop MUST be attempted.
 BREAKEVEN_PROFIT_USD: float = 15.00
 
+#: AGENT4-SPRINT (2026-09-01): R-anchored BE trigger floor. The flat $15
+#: trigger fires at ~0.09R on the live ledger (median planned risk ~$168),
+#: which locks an entry-level stop far too early and scratches every winner
+#: that pulls back before its move develops (55/67 BE-scratches had MFE
+#: >= $20). The BE trigger now requires the LARGER of the flat USD floor and
+#: this fraction of the position's planned risk. Replay on the audited
+#: ledger: 0.15R rescued 10 round-trips (vs 20 under-rescued / over-eager
+#: today) while keeping p75 MFE capture at 60% (vs 40% baseline).
+BREAKEVEN_TRIGGER_R: float = 0.15
+
 #: ATR multiple that forms the alternative (volatility-scaled) breakeven trigger.
 #: The multiple is converted to USD PnL via the symbol contract size before use;
 #: raw ATR price units are NEVER compared against USD PnL.
@@ -86,7 +96,11 @@ BREAKEVEN_ATR_MULTIPLIER: float = 1.5
 
 #: Locked profit offset for the breakeven stop, expressed in PIPS (not price units).
 #: Converted through the canonical pip size resolver (`_resolve_pip_size`).
-BREAKEVEN_LOCK_PIPS: float = 0.20
+#: AGENT4-SPRINT (2026-09-01): 0.20 pips locked ~zero profit — a post-lock
+#: pullback to entry still rounds the trade to a full scratch (spread+fees
+#: unrecovered). 0.60 pips covers the round-trip cost on 2-digit gold so a
+#: BE hit is a small positive scratch, not a silent loser.
+BREAKEVEN_LOCK_PIPS: float = 0.60
 
 #: Canonical gold pip representation used across the project (see rule_matrix.py).
 DEFAULT_PIP_SIZE: float = 0.10
@@ -109,13 +123,17 @@ PROFIT_GIVEBACK_MIN_RETENTION: float = 0.30
 #: and normal bid/ask noise trips a flat 30% retention floor, killing runners at
 #: break-even. The floor is therefore derived from the PEAK's R multiple:
 #:   peak < 0.5R          -> protection stays DISARMED (micro-profit noise zone)
-#:   0.5R <= peak < 1.0R  -> allow up to 60% giveback (retain >= 0.40)
-#:   1.0R <= peak < 1.5R  -> require >= 0.50 retention
-#:   peak >= 1.5R         -> lock in >= 0.70 of the move
+#:   0.5R <= peak < 1.0R  -> allow up to 40% giveback (retain >= 0.60)  [AGENT4-SPRINT]
+#:   1.0R <= peak < 1.5R  -> require >= 0.70 retention                  [AGENT4-SPRINT]
+#:   peak >= 1.5R         -> lock in >= 0.80 of the move                [AGENT4-SPRINT]
 TIERED_GIVEBACK_RETENTION_FLOOR: tuple[tuple[float, float], ...] = (
-    (0.50, 0.40),  # peak R >= 0.5  -> retain >= 40%
-    (1.00, 0.50),  # peak R >= 1.0  -> retain >= 50%
-    (1.50, 0.70),  # peak R >= 1.5  -> retain >= 70%
+    # AGENT4-SPRINT (2026-09-01): floors tightened from 0.40/0.50/0.70.
+    # Evidence: 68 round-trips returned $4,265 of peak profit to the market;
+    #: the old floors retained $1,305 of it, the new ones $1,676 (+28%).
+    # Arm threshold (0.5R) and micro-profit disarm are UNCHANGED.
+    (0.50, 0.60),  # peak R >= 0.5  -> retain >= 60%
+    (1.00, 0.70),  # peak R >= 1.0  -> retain >= 70%
+    (1.50, 0.80),  # peak R >= 1.5  -> retain >= 80%
 )
 #: Below this peak R the giveback protection is DISARMED entirely so micro-profit
 #: noise (a 2-pip pullback on a 3-pip scalp) can never close a winner at flat.
@@ -2046,7 +2064,12 @@ class OrderLifecycleManager:
 
         current_pnl_usd = float(pos.profit)
         atr_threshold_usd = self._atr_profit_threshold_usd(pos.volume, symbol_info, atr)
-        if current_pnl_usd < BREAKEVEN_PROFIT_USD and current_pnl_usd < atr_threshold_usd:
+        # AGENT4-SPRINT: R-anchored trigger floor — the flat $15 threshold alone
+        # fires at ~0.09R and locks an entry-level stop before the move develops.
+        initial_risk_usd = self._initial_risks.get(pos.ticket, 0.0)
+        r_trigger_usd = BREAKEVEN_TRIGGER_R * initial_risk_usd if initial_risk_usd > 0.0 else 0.0
+        be_trigger_usd = max(BREAKEVEN_PROFIT_USD, r_trigger_usd)
+        if current_pnl_usd < be_trigger_usd and current_pnl_usd < atr_threshold_usd:
             return False
 
         breakeven_sl = state.breakeven_sl_price or self.calculate_breakeven_sl(pos, symbol_info)

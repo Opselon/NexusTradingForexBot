@@ -61,3 +61,5 @@ tests/release/test_release_hardening.py
 # BUG-183: purge/embargo leakage-guard defaults wired into the production research path (Hermes-DevOps, 2026-09-01)
 tests/unit/test_research_purge_defaults_bug183.py
 tests/unit/test_evidence_semantics_bug140.py
+# AGENT4-SPRINT (2026-09-01): winner-protection geometry repair - BE trigger R-floor, lock offset 0.6p, tier floors 0.60/0.70/0.80 (regression suite)
+tests/unit/test_winner_protection_geometry_sprint.py
