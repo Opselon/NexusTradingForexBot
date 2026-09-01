@@ -6803,3 +6803,5 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - STATUS: REPORTED / REPRO (fix NOT included in the decomposition change series per zero-behavior-change mandate; requires a separate controlled change + regression test asserting
   bool/str elements are CRITICAL). Owner: Nexus-Main to route in the next repair window.
 - Severity: P2 | Status: OPEN | Found-by: Nexus-Reviewer + Nexus-Main (probe)
+
+- ADJUDICATION (2026-09-01, QA + Researcher + Reviewer converged): the reviewer's ORIGINAL 'check_feature_contract_vector baseline TypeError' finding was RETRACTED with evidence — it was an executor call-contract artifact (zero-arg call of the only check_* with a REQUIRED parameter), not a code defect; INFO residue: engine.py's uniform zero-arg iteration assumption does not hold for this one check (deserves a comment in a future touch). BUG-184 stands as a DIFFERENT, independently confirmed defect (duck-typing hole). ±3-bound question CLOSED by QA probe: [±6.0]→CRITICAL, [3.001]→CRITICAL, [±3.0]→PASS — the OOB path fires exactly per its evidence text; no schema-owner question needed.
