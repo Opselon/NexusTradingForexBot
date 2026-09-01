@@ -1,383 +1,424 @@
 <div align="center">
 
-# ⚡ Nexus Scalp Engine
+# NEXUS SCALP ENGINE
 
-**A research-driven quantitative trading platform — connecting market data, causal
-feature engineering, deep-learning inference, policy, risk, execution, replay,
-observability and reproducible validation into one auditable pipeline.**
+**Research-driven quantitative trading & execution platform —
+data → features → models → policy → risk → execution → evidence,
+in one auditable, multilingual-engineering pipeline.**
 
-*Hexagonal · Event-driven · MetaTrader 5 · XAUUSD M1 · Python 3.11*
+[![CI](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/ci.yml/badge.svg)](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/ci.yml)
+[![Release](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/release.yml/badge.svg)](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/release.yml)
+[![Docs](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/docs.yml/badge.svg)](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/docs.yml)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![MetaTrader 5](https://img.shields.io/badge/MetaTrader-5-2962FF.svg)](https://www.mql5.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-WebSockets·SSE-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.tech/)
+[![SQLite WAL](https://img.shields.io/badge/SQLite-WAL_Ledger-003B57.svg?logo=sqlite&logoColor=white)](https://sqlite.org/)
+[![License](https://img.shields.io/badge/License-Proprietary-lightgrey.svg)](#-license--disclaimer)
+[![Status](https://img.shields.io/badge/Runtime-Production_Hardened-2ea44f.svg)](docs/project/status.md)
+[![Research](https://img.shields.io/badge/Research-Evidence_Graded-8a63d2.svg)](docs/research/methodology.md)
 
-</div>
+[📖 Documentation Site](https://opselon.github.io/NexusTradingForexBot/) ·
+[🚀 Quickstart](#-quickstart) ·
+[🏛️ Architecture](docs/architecture/overview.md) ·
+[🧪 Research & Validation](docs/research/methodology.md) ·
+[🗺️ Roadmap](docs/project/roadmap.md) ·
+[🤝 Contributing](docs/contributing/contribution-guide.md)
 
-<p align="center">
-  <img src="pics/web.png" alt="Nexus Trading Control Center" width="100%">
+**English** · [فارسی](https://opselon.github.io/NexusTradingForexBot/fa/) · [Español](https://opselon.github.io/NexusTradingForexBot/es/) · [العربية](https://opselon.github.io/NexusTradingForexBot/ar/) · [Deutsch](https://opselon.github.io/NexusTradingForexBot/de/)
+
+<p>
+  <img src="pics/web.png" alt="Nexus Trading Control Center" width="92%">
 </p>
-
-<div align="center">
-
-[![Release](https://img.shields.io/github/v/release/Opselon/NexusTradingForexBot?style=flat-square)](https://github.com/Opselon/NexusTradingForexBot/releases/latest)
-[![CI](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Opselon/NexusTradingForexBot/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-%2B779_critical_%C2%B7_%2B1931_unit-2ea44f?style=flat-square)](https://github.com/Opselon/NexusTradingForexBot/blob/main/tests/critical_suite.txt)
-[![Docs](https://img.shields.io/website?url=https%3A%2F%2Fopselon.github.io%2FNexusTradingForexBot%2F&label=docs&style=flat-square)](https://opselon.github.io/NexusTradingForexBot/)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Platform](https://img.shields.io/badge/Windows-10%2F11_x64-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/Opselon/NexusTradingForexBot#-installation--quickstart)
-[![License](https://img.shields.io/badge/License-Proprietary-lightgrey?style=flat-square)](#-license--disclaimer)
-[![Status](https://img.shields.io/badge/Status-Research--hardened%2C_evidence--graded-F59E0B?style=flat-square)](docs/project/status.md)
 
 </div>
 
 ---
 
-## 🧭 What is this?
+## What is this?
 
-**Nexus Scalp Engine (NSE)** is a production-hardened, event-driven scalping
-runtime *and* the research platform around it. It unifies:
+**Nexus Scalp Engine (NSE)** is an open-engineering quantitative trading
+platform for MetaTrader 5 — primary market **XAUUSD (Gold) M1** plus major FX
+pairs. It connects deep-learning inference (dual-path TCN + self-attention),
+a **causal 50D feature contract** (extendable to the 70D research contract
+with news + liquidity intelligence), an SMC policy matrix, a bounded
+risk engine, deterministic research tooling (walk-forward, OOS gate, replay,
+counterfactuals) and forensic observability into **one hexagonal,
+event-driven runtime** — where every claim is traceable to evidence.
 
-- a **causal feature engine** (50D live contract; 70D research contract with
-  news + liquidity intelligence),
-- **ScalpNet** — a dual-path TCN + self-attention model with artifact-first
-  governance (versioned datasets/experiments/models; inference needs no DB),
-- an **SMC policy matrix** (Order Blocks, Fair Value Gaps, liquidity sweeps)
-  behind an invariant risk engine and a 60-scenario execution router,
-- **deterministic research tooling** — friction-aware backtests, purged
-  walk-forward, a hard out-of-sample gate, bit-exact replay, counterfactual
-  decision walks,
-- **forensic observability** — structured logs, incident correlation, a
-  forensic health engine and a pre-release deploy gate.
+> **What makes it different:** the platform publishes its own negative
+> results. The heavily-engineered 70D candidate was **rejected** by the
+> out-of-sample gate — and that rejection is preserved as a first-class
+> result. A validation layer that can say *no* is the entire point.
 
-> **The differentiator is honesty.** Metrics without evidence render `n/a` —
-> never fake zeros. OOS failure ⇒ candidate REJECTED (the repository publishes
-> its own rejections). Promotion is operator-gated; nothing auto-promotes.
-> [Project status →](docs/project/status.md) · [Capability matrix →](docs/project/capabilities.md)
-
-## 🧠 Why Nexus?
-
-Nexus exists against the two classic failures of trading systems:
-
-| Failure mode | NSE's countermeasure |
+| You are… | Start here |
 | :--- | :--- |
-| **Leaking the future** (lookahead in features/labels) | purged + embargoed walk-forward, strictly causal features, replay must be **bit-exact** vs dataset (INV-008) |
-| **Hiding the truth** (fabricated metrics, silent failures) | evidence-graded claims, immutable ledgers, `n/a` over fake zeros, public [bug ledger](agents/bugs.md), deploy gate before any release |
+| 🧭 A visitor — "what is this?" | [Vision & Why](docs/project/vision.md) · [Project Status](docs/project/status.md) |
+| 🚀 A user — "how do I run it?" | [Quickstart](#-quickstart) · [Installation](docs/getting-started/installation.md) |
+| 🏛️ An engineer — "how does it work?" | [Architecture](docs/architecture/overview.md) · [Data Flow](docs/architecture/data-flow.md) |
+| 🧪 A researcher — "is this valid?" | [Research Methodology](docs/research/methodology.md) · [OOS Gate](docs/research/out-of-sample.md) |
+| 🤝 A contributor | [Contribution Guide](docs/contributing/contribution-guide.md) |
+| 📚 Looking for something specific | [Full documentation index](docs/index.md) · [Glossary](docs/reference/glossary.md) · [FAQ](docs/reference/faq.md) |
 
-Layered on top: hexagonal ports-and-adapters (`IMT5Port`), zero sync I/O on the
-tick path, zero order authority for research/shadow/news, and runtime truth over
-stale intent. Full philosophy: [docs/project/vision.md](docs/project/vision.md).
+---
 
-## 🚀 Start here
+## Why Nexus?
 
-| Question | Answer |
-| :--- | :--- |
-| **What is Nexus?** | [Vision](docs/project/vision.md) · [Project story](docs/project/milestones.md) |
-| **How do I run it?** | [Quickstart](#-installation--quickstart) · [First-run safety](docs/getting-started/first-run.md) |
-| **How does it work?** | [Architecture](docs/architecture/overview.md) · [Data flow: tick → decision](docs/architecture/data-flow.md) |
-| **How is it validated?** | [Research methodology](docs/research/methodology.md) · [OOS gate](docs/research/out-of-sample.md) |
-| **What is real vs experimental?** | [Project status](docs/project/status.md) · [Capability matrix](docs/project/capabilities.md) |
-| **Where is it going?** | [Roadmap](docs/project/roadmap.md) |
-| **How do I contribute?** | [Contribution guide](docs/contributing/contribution-guide.md) |
-| **What do the terms mean?** | [Glossary](docs/reference/glossary.md) · [FAQ](docs/reference/faq.md) |
+The engineering philosophy — enforced in code, contracts and CI, not just
+stated:
 
-### 🌍 Documentation in your language
+- **Evidence before claims.** Metrics without evidence render `n/a` — never
+  fake zeros. Runtime claims are graded (CODE / TEST / INTEGRATION / LIVE /
+  RELEASE VERIFIED).
+- **No lookahead.** Purged + embargoed walk-forward, strictly causal
+  features, broker history REPLACE+ALIGN (INV-008).
+- **Causal parity.** Live = replay = training feature semantics, bound by a
+  hashed schema contract.
+- **Runtime truth.** Broker facts and runtime gates outrank intent and stale
+  caches (INV-011); historical ledger rows are immutable (INV-007).
+- **Layered architecture.** Hexagonal ports-and-adapters; research/learning
+  components physically hold no order authority (INV-002).
+- **Failure isolation.** The tick hot path never blocks on DB, training or
+  network (INV-001); incidents are diagnostic-only.
+- **Validation before promotion.** OOS failure ⇒ REJECTED. Promotion is
+  operator-gated. Candidates never promote themselves.
 
-| 🇬🇧 English | 🇮🇷 فارسی | 🇪🇸 Español | 🇸🇦 العربية | 🇩🇪 Deutsch |
-| :---: | :---: | :---: | :---: | :---: |
-| **[full](docs/index.md)** | [پیش‌نمایش](docs/fa/index.md) | [vista previa](docs/es/index.md) | [نظرة عامة](docs/ar/index.md) | [Übersicht](docs/de/index.md) |
+Full philosophy: [Vision](docs/project/vision.md) · Runtime invariants:
+[`agents/runtime_invariants.md`](agents/runtime_invariants.md)
 
-Full site: **https://opselon.github.io/NexusTradingForexBot/** — translation
-coverage is audited (`scripts/docs/check_translations.py`), not asserted.
+---
 
-## 🗺️ System at a glance
+## System at a glance
 
 ```text
-Market data (MT5 Win32 IPC · ZMQ gateway · paper)
-        │
-        ▼
-Causal features ── 50D scalp_v1 (live contract) ── 70D scalp_v3 (research)
-        │
-        ▼
-Inference validator ──► ScalpNet (TCN + self-attention, 4-logit)
-        │
-        ▼
-Regime classifier ──► SMC policy matrix ──► Risk engine (Kelly sizing, clamps)
-        │
-        ▼
-OrderManager (60-scenario router · 11 position states · HARD_MAX_LOTS=10)
-        │
-        ▼
-IMT5Port adapter ──► broker / paper          (order authority ENDS here)
-        │
-        ├──► Accounting ledger (SQLite WAL, immutable)
-        ├──► Experience / autopsy intelligence
-        ├──► Research: backtest → walk-forward → OOS gate → shadow → (operator) promotion
-        └──► Observability: logs · incidents · forensics · Control Center UI
+Market Data (MT5 / paper / gateway)
+    ↓
+Causal Features — 50D base (scalp_v1 · ACTIVE) → 70D research assembly
+    ↓
+Inference Contract Validator (schema hash · scaler dim · bounds)
+    ↓
+ScalpNet (dual-path TCN + self-attention, 4-logit head)
+    ↓
+Confidence Gate → Regime Guardian → SMC Policy Matrix (~30 rules)
+    ↓
+Risk Engine (fractional-Kelly sizing, margin clamps, exposure caps)
+    ↓
+Order Manager (60-scenario router, 11 position states, circuit breaker)
+    ↓
+Execution Boundary — IMT5Port → MT5 IPC / ZMQ gateway / paper  (LIVE = explicit consent)
+    ↓
+Accounting Ledger (SQLite WAL, immutable) → Experience → Autopsy
+    ↓
+Research Loop (datasets → walk-forward → OOS gate → shadow → operator promotion)
+    ↓
+Observability (structured logs · incidents · forensics · Telegram read-only)
+    ↓
+Control Center (FastAPI + WS/SSE) · API · Diagnostics
 ```
 
-```mermaid
-flowchart LR
-    A["Market data<br/>(MT5 · paper · gateway)"] --> B["Causal features<br/>50D / 70D"]
-    B --> C{"Inference<br/>validator"}
-    C --> D["ScalpNet<br/>4-logit"]
-    D --> E["Regime +<br/>SMC policy"]
-    E --> F["Risk engine"]
-    F --> G["OrderManager<br/>60-scenario router"]
-    G --> H["IMT5Port<br/>broker/paper"]
-    H --> I["Accounting<br/>(immutable ledger)"]
-    I --> J["Experience +<br/>Research"]
-    J --> K{"OOS gate +<br/>shadow"}
-    K -- "pass + operator" --> D
-    K -- "fail ⇒ REJECTED" --> L["Published<br/>rejection"]
-    A -. observability .-> M["Logs · Incidents<br/>Forensics · UI"]
-```
+Deep dive: [Architecture overview](docs/architecture/overview.md) ·
+[System map](docs/architecture/system-map.md) ·
+[Data flow](docs/architecture/data-flow.md) · Authoritative internal map:
+[`agents/skill.md`](agents/skill.md)
 
-## 📊 Core capabilities
+---
+
+## Core capabilities (evidence-graded)
 
 Legend: ✅ Certified · 🟢 Implemented · 🟡 Experimental · 🔵 Research · 📌 Planned
 
 | Capability | Status | Evidence |
-| :--- | :---: | :--- |
-| 50D causal feature engine (`scalp_v1`, live contract) | ✅ | schema registry + golden/parity tests |
-| Risk engine — Kelly sizing, margin clamps, `HARD_MAX_LOTS=10` | ✅ | clamp + execution suites |
-| Shadow runtime — live feed, **zero order authority** | ✅ | `simulated=True` contracts, 60+ tests |
-| Release pipeline — SHA-256, manifests, SBOM, post-publish verify | ✅ | `release.yml` + verify suites |
-| Installer / update / rollback (per-user, no admin) | ✅ | stage-protocol tests + release artifacts |
-| Provider health gate (LLM/AI services, bounded) | ✅ | live smoke evidence, CHG-0034/0039 |
-| ScalpNet + artifact-first Model Factory | 🟢 | `model_generation/`, manifests, 10-gate load gate |
-| Execution — 60-scenario router, 11 position states, circuit breaker | 🟢 | golden-tested seams, CLI E2E |
-| Accounting ledger + experience/autopsy intelligence | 🟢 | immutable WAL ledger, behavior detectors |
-| Research — backtests, purged walk-forward, hard OOS gate | 🟢 | BUG-183 regression suite, OOS floors |
-| Replay (bit-exact) + streaming replay + forward tests | 🟢 | parity + anti-leakage suites |
-| Governance — 14-gate verification, promotion transaction, rollback | 🟢 | `governance/`, MODEL_GOVERNANCE v2 |
-| Incident response + forensic health + deploy gate | 🟢 | `incidents/`, `forensics/`, beforePush wiring |
-| Control Center UI (FastAPI + SSE/WS, buildless SPA) | 🟢 | `Web/`, 249 API paths, debug console |
-| 70D news+liquidity contract (`scalp_v3`) | 🟡 | candidate-only; **negative OOS evidence so far** |
-| News intelligence (RSS/Atom, bounded gate) | 🟡 | opt-in; boost ≤ 0.05 / penalty ≤ 0.10; can never force a trade |
-| Temporal liquidity features (22D) · MSLIE market structure | 🔵 | research candidates, never auto-promoted |
-| Multi-broker beyond MT5 | 📌 | `IMT5Port` is the seam; no second adapter |
+| :--- | :--- | :--- |
+| 50D causal feature engine (`scalp_v1`, live contract) | ✅ | schema registry + parity/golden tests |
+| 70D canonical contract (`scalp_v3`) | 🟢 research | `features/schema_contract.py` SSoT + hash + validator |
+| ScalpNet model + artifact-first Model Factory | 🟢 | `models/`, `model_generation/` (manifests, no-DB inference) |
+| Walk-forward + hard OOS gate | ✅ | BUG-183 regression suite; 70D candidate publicly rejected |
+| Bit-exact replay + anti-leakage | 🟢 | replay parity suites |
+| Streaming replay / forward tests (no `order_send`) | 🟢 | `research/streaming_replay.py`, `forward_test.py` |
+| Counterfactual engine (NO_TRADE decisions walked) | 🔵 | CHG-0041: 2095 decisions, stratified evidence |
+| Shadow runtime (zero order authority) | ✅ | `simulated=True` contracts, 60+ tests |
+| Risk engine (Kelly sizing, clamps, kill switch) | ✅ | clamp + exposure suites |
+| Execution (60-scenario router, 11 states) | 🟢 | golden-tested seam extractions |
+| Immutable accounting ledger (`n/a` ≠ fake zeros) | 🟢 | `accounting/`, WAL audit DB |
+| Experience / autopsy intelligence (13 detectors) | 🟢 | `experience/`, `intelligence/` |
+| Incident response + forensic deploy gate | 🟢 | `incidents/`, `forensics/` (CRITICAL ⇒ BLOCK) |
+| Control Center UI (buildless SPA, WS/SSE) | 🟢 | `Web/`, debug console (18 sections) |
+| Windows installer + update/rollback (SHA-256, SBOM) | ✅ | release pipeline + verify suites |
+| Provider health gate (bounded LLM/AI access) | ✅ | live smoke: 401 → instant auto-disable |
+| News intelligence (opt-in, bounded gate) | 🟡 | boost ≤ 0.05 / penalty ≤ 0.10 — can never force a trade |
+| Temporal liquidity features, MSLIE perception | 🔵 | research candidates, governance-gated |
+| Multi-broker support | 📌 | `IMT5Port` seam exists; no second adapter yet |
 
-Full matrix with documentation links: [docs/project/capabilities.md](docs/project/capabilities.md).
+Full matrix with per-row evidence links:
+[Capability Matrix](docs/project/capabilities.md) — anything unlisted should
+be assumed experimental, not production-ready.
 
-## 🔬 Research pipeline
+---
+
+## Research pipeline
 
 ```text
-DATA ──► FEATURES ──► LABELING ──► TRAINING ──► BACKTEST ──► WALK-FORWARD
-                                                                  │
-PROMOTION ◄─ SHADOW ◄─ REGISTRY ◄─ COUNTERFACTUAL ◄─ ROBUSTNESS ◄─ OOS GATE
-(operator-gated; OOS failure ⇒ REJECTED)
+DATA → FEATURES → LABELING → TRAINING → BACKTEST → WALK-FORWARD → OOS GATE
+     → ROBUSTNESS → COUNTERFACTUAL → REGISTRY → SHADOW → OPERATOR PROMOTION
 ```
 
-Highlights: deterministic friction-aware backtests · purged+embargoed
-walk-forward (defaults wired and recorded per run — BUG-183) · hard OOS floors
-(macro-F1 ≥ 0.34, ECE ≤ 0.15, min evidence 100 rows) · bit-exact replay ·
-frozen-capture forward tests · NO_TRADE counterfactual walks (2095 decisions,
-first evidence: the confidence gate filtered trades that would have averaged
-−0.506 R). See [research docs](docs/research/methodology.md).
+Every stage writes provenance (dataset fingerprint, schema hash, git commit,
+effective purge/embargo). `NOT_RECORDED` is written when honestly unknown —
+never backfilled. Details: [Research Stack](docs/architecture/research-stack.md) ·
+[Methodology](docs/research/methodology.md) ·
+[Reproducibility](docs/research/reproducibility.md)
 
-## 🛡️ Validation philosophy
+---
 
-1. **Provenance or it didn't happen** — every artifact carries dataset ID,
-   schema hash, git commit; `NOT_RECORDED` beats invention.
-2. **Replay parity** — live = replay = training semantics, proven bit-exact.
-3. **Rejections are results** — the 70D candidate's OOS rejection is public;
-   a gate that rejects nothing is decoration.
-4. **Dimension ≠ semantics** — models are validated on meaning, not shape
-   (the CHG-0042 confidence-semantics repair is the canonical example).
-5. **Deploy gate before release** — `nexus forensic --deploy-gate` wired into
-   the push gate; CRITICAL ⇒ BLOCK.
+## Quickstart
 
-## 📈 Project maturity
+```bash
+nexus start            # PAPER mode — never LIVE silently
+nexus doctor           # full diagnostics (19 categories)
+nexus start --mode shadow   # live feed, zero order authority
+```
 
-| Era | What it delivered |
+| You want to… | Do this |
 | :--- | :--- |
-| **Implemented & hardened** | engine core, risk/execution, ledger, UI, installer/release, observability |
-| **Certified (forensic acceptance)** | 50D contract, OOS gate behavior, provider gate, release verification |
-| **Experimental** | 70D series, news gate, temporal features, MSLIE |
-| **Research** | counterfactual policy evidence, regime-conditional selection |
-| **Planned** | multi-broker, translation coverage expansion, observability gap burn-down |
+| Run it now (no install) | `NexusScalpEngine.exe` / `nexus start` → **PAPER** mode, Control Center at `http://127.0.0.1:8080` |
+| Evaluate on real data safely | `nexus start --mode shadow` — zero order authority |
+| Check your system | `nexus doctor` / `nexus health` |
+| Open the dashboard | `nexus start` → browser at `http://127.0.0.1:8080` (`--port` to change) |
+| Live trading (explicit) | `nexus start --mode live` — interactive confirmation required |
+| Stop | `nexus stop` (daemon) · `Ctrl+C` (foreground) |
 
-Explicitly **not** claimed: profitability guarantees, "production-ready"
-trading performance, zero bugs. See [status](docs/project/status.md).
+Detailed walkthrough: [Quickstart](docs/getting-started/quickstart.md) ·
+[First-Run Safety](docs/getting-started/first-run.md)
 
-## 🗺️ Roadmap (evidence-based)
+---
 
-| Horizon | Streams | Headline items |
-| :--- | :--- | :--- |
-| **NOW** | VALIDATION · RESEARCH · RUNTIME | rebuild 70D candidate evidence (CHG-0042 semantics); counterfactual deepening; record-builder contract hardening ✅ |
-| **NEXT** | ML · POLICY · DOCS | operator-gated 70D promotion decision (or documented retirement); counterfactual-driven policy review; translation coverage 100% |
-| **LATER** | ML · ENGINE | temporal features promotion candidate; MSLIE → policy integration; regime-conditional selection |
-| **LONG TERM** | EXECUTION · INFRA | broker abstraction beyond MT5; optional PostgreSQL profile; selective open-core |
+## Installation
 
-Every item has an objective, dependencies and a completion gate:
-[docs/project/roadmap.md](docs/project/roadmap.md).
+**1. End users — packaged Windows release (no Python required).**
+Download `NexusScalpEngine-<version>-win-x64-setup.exe` (or portable `.zip`)
+from [GitHub Releases](https://github.com/Opselon/NexusTradingForexBot/releases).
+The installer bundles the full Python runtime (PyInstaller); first run opens
+the setup wizard — mode defaults to **PAPER**, never silently LIVE. User data
+lives in `%LOCALAPPDATA%\NexusScalpEngine` and survives upgrades/repairs.
 
-## 📦 Installation & Quickstart
-
-**End users (no Python):** download
-`NexusScalpEngine-9.0.6-win-x64-setup.exe` (or portable `.zip`) from the
-[latest release](https://github.com/Opselon/NexusTradingForexBot/releases/latest) —
-the installer bundles the full runtime and ships with SHA-256 digests, a
-release manifest and an SBOM. First run opens the setup wizard
-(**default: PAPER**, never silently LIVE).
-
-**One-line bootstrap (PowerShell, no Python/Git/admin):**
+**2. PowerShell bootstrap installer (no Python, no Git, no admin):**
 
 ```powershell
 iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install.ps1)
 ```
 
-**Developers (source):**
+```powershell
+.\install.ps1 -DryRun      # show the plan as JSON, mutate nothing
+.\install.ps1 -Repair      # repair runtime, keep user data
+.\install.ps1 -Commit sha  # reproducible pin (Commit > Tag > Branch)
+```
+
+**3. Developers — from source:**
 
 ```bash
 git clone https://github.com/Opselon/NexusTradingForexBot.git
 cd NexusTradingForexBot
-python -m venv .venv && .\.venv\Scripts\Activate.ps1   # or source .venv/bin/activate
+python -m venv .venv && .\.venv\Scripts\Activate.ps1   # Windows
 pip install -e .[dev]
-pytest tests/unit -q          # smoke-test the toolchain — no broker needed
+pytest tests/unit -q        # smoke-test the toolchain — no broker needed
 ```
 
-**Run:**
+Requirements: Windows 10/11 **x64** for native MT5 execution (**ARM64
+explicitly unsupported** — the installer and `nexus doctor` say so); Python
+3.11.x for source runs only; MT5 terminal with *Allow Algo Trading* enabled.
+Linux = developer/Docker (remote-gateway) only.
+Full details: [Installation](docs/getting-started/installation.md) ·
+[`docs/INSTALL_WINDOWS.md`](docs/INSTALL_WINDOWS.md) ·
+[`docs/RELEASE.md`](docs/RELEASE.md)
+
+---
+
+## First-Run Safety (Demo → Shadow → Live)
+
+| Step | Action | Why |
+| :--- | :--- | :--- |
+| 1️⃣ | Log into a **DEMO account** in MT5; confirm the account number before touching the bot | LIVE and demo can look identical in MT5's login window |
+| 2️⃣ | MT5: `Tools → Options → Expert Advisors → tick "Allow Algo Trading"` | Without this, orders are rejected |
+| 3️⃣ | Copy `configs/live.yaml` → `configs/demo.yaml`; set `risk.max_concurrent_positions: 1`, low `risk_per_trade_pct`, `max_account_drawdown_pct` | Never touch a live config while real money can be reached |
+| 4️⃣ | Run **SHADOW** for days; review dashboard + reports | Proves model/signals/gates before any execution |
+| 5️⃣ | Run the test suite weekly | Catches regressions before they reach a live account |
+| 6️⃣ | Only then consider **LIVE** with money you can afford to lose | Leveraged XAUUSD scalping carries extreme risk |
+
+Engine-enforced protections: account-identity fail-safe (connect refuses a
+terminal logged into a different account — BUG-142) · pre-flight doctor gate ·
+PAPER default · LIVE interactive confirmation · zero order authority in
+shadow/research · circuit breaker → SAFE_MODE · kill switch.
+
+> 🚨 **This bot places REAL trades with REAL money in LIVE mode.** The
+> engine's hard clamps protect the strategy — not your capital from market
+> volatility.
+
+---
+
+## The `nexus` CLI
 
 ```text
-nexus doctor                  # read-only diagnostics (19 categories) + suggested fixes
-nexus start                   # PAPER mode (default) — Control Center at http://127.0.0.1:8080
-nexus start --mode shadow     # live market feed, ZERO order authority
-nexus start --mode live       # REAL execution — explicit interactive confirmation required
-nexus stop                    # or Ctrl+C in the foreground
+nexus start     --mode paper|shadow|live    Start engine (default paper; live needs confirmation)
+nexus stop / restart                        Control the background engine (honest dead-pid reporting)
+nexus status / health                       Environment + health (READY / DEGRADED / NOT READY)
+nexus doctor                                19-category diagnostics + suggested fixes
+nexus config    [--validate path]           Inspect / validate configuration (secrets masked)
+nexus logs      [--tail N] [--errors]       Tail / filter / export logs
+nexus test      --mode quick|unit|integration
+nexus update    check|latest|download|install|verify|status|history|rollback|doctor
+nexus release info                          Installed release metadata
+nexus repair                                Non-destructive derived-state repair
+nexus export-diagnostics                    Sanitized ZIP (never contains secrets)
+nexus db        hygiene status|plan|run     Database hygiene (audit-only by default)
+nexus model-dataset-build / model-experiment-create / model-train / model-validate / model-replay
+nexus uninstall                             Remove installation (user data preserved)
 ```
 
-**Docker:** `docker compose up -d --build` → PAPER mode, dashboard at
-`http://localhost:9090`, readiness at `/health`. Reference: [docs/docker.md](docs/docker.md).
+Exit codes (stable contract): `0` success · `1` runtime/validation ·
+`2` invalid usage · `3` environment blocked · `4` release verification ·
+`5` update not applicable/failed. `--json` / `--plain` for automation.
+Full reference: [CLI guide](docs/guides/cli.md) · [`docs/CLI.md`](docs/CLI.md)
 
-> 💡 The safest first-run path is **Demo MT5 account → SHADOW → small LIVE** —
-> the full ladder: [docs/getting-started/first-run.md](docs/getting-started/first-run.md)
+---
 
-### CLI (the operational surface)
-
-```text
-nexus help · version · doctor · status · health · config
-nexus start | stop | restart          # paper default; live needs confirmation
-nexus logs [--tail N] [--errors]      # severity-split structured logs
-nexus test --mode quick|unit|integration
-nexus update check|latest|download|install|verify|status|history|rollback|doctor
-nexus db hygiene status|plan|run      # AUDIT_ONLY by default
-nexus incidents · nexus forensic --deploy-gate · nexus export-diagnostics
-```
-
-Exit codes are a stable contract (`0/1/2/3/4/5`). Full reference:
-[docs/reference/cli-reference.md](docs/reference/cli-reference.md) ·
-[CLI guide](docs/guides/cli.md).
-
-## 🏗️ Architecture
-
-**Hexagonal (ports-and-adapters), event-driven.** Broker platforms, models and
-network adapters are isolated behind port contracts; the tick hot path never
-blocks on DB/analytics/training; research/learning components hold zero order
-authority.
-
-Deep dives: [Architecture overview](docs/architecture/overview.md) ·
-[System map](docs/architecture/system-map.md) ·
-[Data flow](docs/architecture/data-flow.md) · [Runtime](docs/architecture/runtime.md) ·
-[Model pipeline](docs/architecture/model-pipeline.md) ·
-[Execution pipeline](docs/architecture/execution-pipeline.md) ·
-[Observability](docs/architecture/observability.md) ·
-[Database](docs/architecture/database.md).
-The authoritative internal map lives in [`agents/skill.md`](agents/skill.md).
-
-```text
-src/nexus_scalp/   Core engine (domain · ports · adapters · features · models ·
-                   training · signals · strategies · risk · execution · accounting ·
-                   application · research · model_generation · governance · shadow ·
-                   news · incidents · forensics · hygiene · observability · web · release)
-Web/               Control Center UI — buildless vanilla-JS SPA (no Node runtime)
-tests/             Unit (~1931) · integration · golden · CLI E2E (66) · js · installer
-docs/              Engineering documentation (this IA tree) + forensic report archive
-agents/            Engineering memory: skill map · bug ledger · invariants · contracts
-scripts/           Build/release/CI tooling + docs validation
-installer/         PowerShell bootstrap installer (stage protocol)
-configs/           base.yaml · live.yaml.example        pics/  Screenshots
-docker/            entrypoint · healthcheck             site/  GitHub Pages source
-```
-
-## 🧪 Development
-
-```bash
-./beforePush.sh                 # or .\beforePush.ps1 — the 5-stage quality gate:
-                                # ruff lint · format · mypy src · critical pytest suite
-                                # (~779 tests, RAM-aware xdist) · forensic deploy gate
-pytest tests/unit -q            # full unit corpus (~1931 tests)
-```
-
-Contributors: read the [contribution guide](docs/contributing/contribution-guide.md)
-and the [multi-agent contract](agents/multi-agent-git-contract.md) — this repo is
-intentionally developed as *codebase + engineering memory* (taskboard, bug
-ledger, invariants, decision records). Documentation work has its own workflow:
-[docs/contributing/documentation.md](docs/contributing/documentation.md).
-
-## 📸 The Control Center
-
-`nexus start` serves a live dashboard: M1 chart with order-block / FVG /
-swept-liquidity overlays and entry-SL-TP lines with risk tooltips; tabs for
-Overview · Strategy Research · News Intelligence · Scalping Rules · Account
-Performance & Intelligence · Debug Hub; live algorithm tuner (no restart).
-
-<p align="center">
-  <img src="pics/_shot_final_1920.png" alt="Account Center — 1920px" width="49%">
-  <img src="pics/_shot_final_768.png" alt="Account Center — 768px" width="49%">
-  <img src="pics/_shot_deep_state.png" alt="Deep state (expanded intelligence)" width="49%">
-  <img src="pics/_case_many.png" alt="Many metrics view" width="49%">
-</p>
-
-## 📚 Documentation map
+## Documentation
 
 | Section | Contents |
 | :--- | :--- |
-| [Getting started](docs/getting-started/installation.md) | installation · quickstart · first-run safety · configuration |
-| [Project](docs/project/vision.md) | vision · scope · **status** · **capability matrix** · **roadmap** · milestones |
-| [Architecture](docs/architecture/overview.md) | overview · system map · runtime · research stack · data flow · model/execution pipelines · observability · database |
-| [Research](docs/research/methodology.md) | methodology · datasets · backtesting · walk-forward · OOS · replay · counterfactuals · validation · reproducibility |
-| [Engineering](docs/engineering/quality.md) | quality & testing · CI · release process · security |
+| [Getting started](docs/getting-started/quickstart.md) | installation · quickstart · first-run safety · configuration |
+| [Project](docs/project/vision.md) | vision · scope · **status** · capability matrix · roadmap · milestones |
+| [Architecture](docs/architecture/overview.md) | overview · system map · runtime · data flow · model pipeline · execution · observability · database |
+| [Research](docs/research/methodology.md) | methodology · datasets · backtesting · walk-forward · OOS · replay · counterfactuals · reproducibility |
+| [Engineering](docs/engineering/quality.md) | quality gates · testing · CI · release process · security |
 | [Guides](docs/guides/cli.md) | CLI · troubleshooting · common workflows |
-| [Contributing](docs/contributing/contribution-guide.md) | guide · docs workflow · adding a language |
+| [Contributing](docs/contributing/contribution-guide.md) | contribution guide · documentation workflow · adding a language |
 | [Reference](docs/reference/glossary.md) | CLI reference · glossary · terminology · FAQ |
 
-Internal engineering artifacts are preserved as-is: [`agents/skill.md`](agents/skill.md)
-(authoritative map) · [`agents/bugs.md`](agents/bugs.md) (forensic bug ledger) ·
+🌍 **Documentation site (multilingual, RTL-ready):**
+[opselon.github.io/NexusTradingForexBot](https://opselon.github.io/NexusTradingForexBot/) —
+English · فارسی · Español · العربية · Deutsch, with translation status
+audited by `scripts/docs/check_translations.py`.
+
+Deep internal engineering memory (preserved as-is):
+[`agents/skill.md`](agents/skill.md) (architecture map) ·
+[`agents/bugs.md`](agents/bugs.md) (forensic bug ledger) ·
 [`agents/runtime_invariants.md`](agents/runtime_invariants.md) ·
-[`docs/70D_DATA_CONTRACT.md`](docs/70D_DATA_CONTRACT.md) · [`docs/RELEASE.md`](docs/RELEASE.md).
+[`docs/70D_DATA_CONTRACT.md`](docs/70D_DATA_CONTRACT.md) ·
+[`docs/RELEASE.md`](docs/RELEASE.md)
 
-## 🔐 Safety & Disclaimer
+---
 
-- `nexus start` **never** defaults to LIVE; LIVE prints the full risk panel and
-  requires interactive confirmation.
-- Account-identity fail-safe: live connect refuses a terminal logged into a
-  different account than configured (BUG-142).
-- Shadow/simulated runs carry **zero order authority**; research/news workers
-  can never place orders.
-- Hard clamps: margin ≤ 20% free, single-position exposure cap,
-  `HARD_MAX_LOTS = 10.0`, circuit breaker → SAFE_MODE, kill switch via
-  dashboard/CLI.
+## Project status
 
-> 🚨 **This bot places REAL trades with REAL money in LIVE mode.** Algorithmic
-> trading — especially leveraged XAUUSD/Gold scalping — carries extreme
-> financial risk. This software is provided strictly for educational, academic
-> research and simulation purposes. Nothing in this repository is investment
-> advice, and no performance or profitability is promised or implied. Verify
-> every setting twice, start on a demo account, and keep the engine supervised.
+- **Version:** 9.0.6 — semver, single canonical source (`pyproject.toml`,
+  stamped into every artifact). Releases v9.0.0 → v9.0.6 published via the
+  hardened pipeline (SHA-256, manifest, SBOM, post-publish verification).
+- **Runtime:** production-hardened (live MT5 execution with account-identity
+  fail-safe; PAPER default; LIVE behind explicit confirmation).
+- **Research:** honest posture — 70D series candidate-only with **negative
+  OOS evidence**; live contract stays 50D; nothing auto-promoted.
+- **Quality:** CI = ruff · mypy · critical suite (~780 tests; full unit
+  corpus ~1900+) · CodeQL · Trivy · OSV · JS tests · docs validation.
+- **Known limitations:** 70D candidate-only · Windows x64 packaged only ·
+  news engine opt-in · no CLI hot-swap to paper adapter.
 
-**License:** Proprietary — All Rights Reserved.
+Honest, per-capability detail: [Project Status](docs/project/status.md) —
+including what is *not* certified.
+
+---
+
+## Roadmap
+
+Organized as NOW / NEXT / LATER / LONG TERM across ENGINE · RESEARCH ·
+VALIDATION · RUNTIME · OBSERVABILITY · DOCS streams — every item carries an
+objective, dependencies and a completion gate. Statuses: *Planned*,
+*Under Evaluation*, *Research Direction*, *Completed*. Nothing here is
+promised; items enter through the taskboard with a TASK-ID.
+
+Highlights: rebuild 70D candidate evidence under corrected confidence
+semantics (CHG-0042) · counterfactual-driven policy review · observability
+gap-ledger burn-down (OBS-001..016) · translation coverage 100% of core
+pages · operator-gated 70D champion decision.
+
+Full roadmap: [Roadmap](docs/project/roadmap.md) · history:
+[Milestones](docs/project/milestones.md)
+
+---
+
+## Repository structure
+
+```text
+src/nexus_scalp/   Core engine (hexagonal packages: domain, ports, adapters, features,
+                   models, signals, risk, execution, application, research, shadow, …)
+tests/             Unit + integration suites (critical manifest: tests/critical_suite.txt)
+Web/               Control Center UI — buildless vanilla-JS SPA (no Node runtime needed)
+agents/            Engineering memory: architecture map, bug ledger, contracts, taskboard
+docs/              Engineering documentation (this platform's source content)
+site/              GitHub Pages site (multilingual builder + translated content)
+scripts/           Build/release scripts, quality gates, docs tooling (scripts/docs/)
+configs/           base.yaml · live.yaml.example
+installer/         PowerShell bootstrap installer (stage protocol)
+pics/              Screenshots
+docker/            entrypoint.sh · healthcheck.sh
+scratch/           One-off diagnostic probes (not part of the application)
+```
+
+---
+
+## 🐳 Docker
+
+```bash
+cp .env.example .env       # optional — safe defaults exist
+docker compose up -d --build
+```
+
+Engine + Web UI in container-safe **PAPER** mode, canonical SQLite databases,
+migration gate at boot, dashboard at `http://localhost:9090`, readiness at
+`/health`. Full reference: [`docs/docker.md`](docs/docker.md).
+
+---
+
+## Development
+
+- Quality gate before any push: `./beforePush.ps1` (ruff · format · mypy ·
+  critical pytest suite · forensic deploy gate) — mirrors CI.
+- Node.js is **build/dev/test-only** (Tailwind compile + JS test gate) —
+  never part of the running engine (DEC-0002).
+- Commit discipline: `<Author>: <summary>` + structured body, one coherent
+  step per commit. Hot-path files are convention-locked
+  ([`agents/locks.yaml`](agents/locks.yaml)).
+- This repo is developed by coordinated AI agents under a strict
+  [multi-agent contract](agents/multi-agent-git-contract.md) — the
+  [contribution guide](docs/contributing/contribution-guide.md) distills the
+  same discipline for human contributors.
+
+We invite quantitative ML researchers, low-latency systems engineers and
+institutional traders to collaborate: fork & PR (ruff/strict-mypy/pytest —
+the gates enforce it), or open an issue with `[Research]` / `[Proposal]` tags.
+
+---
+
+## License & Disclaimer
+
+**DISCLAIMER:** Algorithmic trading — especially leveraged XAUUSD/Gold
+scalping — carries immense financial risk. This engine is provided strictly
+for educational, academic research and simulation purposes. Always perform
+rigorous backtesting and forward paper-trading before committing capital.
+Nothing in this repository is investment advice or a promise of profit —
+including the published negative results.
+
+*Proprietary License — All Rights Reserved. Designed for Quantitative
+Excellence.*
 
 ---
 
 <div align="center">
 
-📚 [Documentation](https://opselon.github.io/NexusTradingForexBot/) ·
-🗺️ [Roadmap](docs/project/roadmap.md) ·
-🏗️ [Architecture](docs/architecture/overview.md) ·
-⚡ [Quickstart](#-installation--quickstart) ·
-🤝 [Contributing](docs/contributing/contribution-guide.md) ·
-🐛 [Issues](https://github.com/Opselon/NexusTradingForexBot/issues) ·
-📦 [Releases](https://github.com/Opselon/NexusTradingForexBot/releases)
-
-**Nexus Scalp Engine** — *evidence over assumptions.*
+[Documentation Site](https://opselon.github.io/NexusTradingForexBot/) ·
+[Issues](https://github.com/Opselon/NexusTradingForexBot/issues) ·
+[Releases](https://github.com/Opselon/NexusTradingForexBot/releases) ·
+[Roadmap](docs/project/roadmap.md) ·
+[Architecture](docs/architecture/overview.md) ·
+[Contributing](docs/contributing/contribution-guide.md)
 
 </div>
