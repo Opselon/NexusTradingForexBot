@@ -195,6 +195,13 @@ class CIContext:
         )
         return clone
 
+    def with_job_suffix(self, suffix: str) -> CIContext:
+        """Return a copy with the job name suffixed (OS-matrix tagging)."""
+        clone = self.with_pr(self.pr_number)
+        if suffix:
+            clone.job = f"{self.job} ({suffix})" if self.job else suffix
+        return clone
+
     def release_url(self, tag: str = "") -> str:
         if not self.repository:
             return ""

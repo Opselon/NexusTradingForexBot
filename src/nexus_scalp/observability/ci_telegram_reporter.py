@@ -230,7 +230,7 @@ class CITelegramReporter:
             format_run_started(self.context(), jobs=jobs), event_type="CI_STARTED"
         )
 
-    def notify_run_finished(self) -> dict[str, Any]:
+    def notify_run_finished(self, *, os_name: str = "") -> dict[str, Any]:
         """Dispatch SUCCESS/FAILED/CANCELLED based on ci-results statuses."""
         statuses = {
             "ruff_lint": self.check_status("ruff_lint"),
@@ -243,6 +243,9 @@ class CITelegramReporter:
         cancelled = any(v == "cancelled" for v in statuses.values())
 
         ctx = self.context()
+        # OS-matrix tagging (tests-os.yml os-finished): which leg finished.
+        if os_name:
+            ctx = ctx.with_job_suffix(os_name)
         stats = self.junit_stats()
         coverage = self.coverage_percent()
         failures = self.failed_test_names()
