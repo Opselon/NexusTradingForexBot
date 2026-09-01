@@ -18,6 +18,7 @@ from nexus_scalp.research.dataset import (
     REASON_INVALID_R,
     REASON_MISSING_OUTCOME,
     REASON_MISSING_REALIZED_R,
+    REASON_UNKNOWN_PROVENANCE,
     ResearchDatasetBuilder,
 )
 from nexus_scalp.research.discovery import (
@@ -339,13 +340,19 @@ def test_rs16_nonfinite_outcome_rejected_never_trained(repo):
     repo._queue.join()
     builder = ResearchDatasetBuilder(ledger)
     # Layer 1: corrupted outcome payloads cannot rehydrate from the ledger.
+    # BUG-185 taxonomy (5073b86): an outcome-less record is classified by the
+    # canonical dispatch-evidence resolver — a test-seeded record has NO
+    # audit_orders/audit_signals rows, so the honest verdict is
+    # UNKNOWN_PROVENANCE (previously MISSING_OUTCOME). BOTH reasons exclude
+    # the sample from research; the invariant under test is EXCLUSION, with
+    # the reason documented per the current taxonomy.
     merged_nan = ledger.get_experience_by_key(rec_nan.idempotency_key)
     ok_nan, reason_nan, _ = builder.evaluate_sample(merged_nan)
-    assert not ok_nan and reason_nan == REASON_MISSING_OUTCOME
+    assert not ok_nan and reason_nan == REASON_UNKNOWN_PROVENANCE
     assert merged_nan.is_closed is False
     merged_inf = ledger.get_experience_by_key(rec_inf.idempotency_key)
     ok_inf, reason_inf, _ = builder.evaluate_sample(merged_inf)
-    assert not ok_inf and reason_inf == REASON_MISSING_OUTCOME
+    assert not ok_inf and reason_inf == REASON_UNKNOWN_PROVENANCE
     assert builder.build().samples == [], "non-finite outcomes never reach research"
     # Layer 2: an in-memory record carrying the non-finite outcome is
     # rejected by the explicit finite guards (evaluate_sample never sees a
