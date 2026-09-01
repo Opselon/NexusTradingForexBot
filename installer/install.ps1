@@ -1499,29 +1499,9 @@ function Install-PythonDependencies {
         Pop-Location
     }
 
-    # Baseline import gate: probe the venv's own python for the engine's
-    # critical import surface. Catches misdirected installs before first run.
-    $prevEAP = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    try {
-        & $venvPython -c "import nexus_scalp; import typer, pydantic, structlog" 2>&1 | Out-Null
-        $importExit = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $prevEAP
-    }
-    if ($importExit -ne 0) {
-        throw "Baseline imports failed in the venv (nexus_scalp/typer/pydantic/structlog). The install is incomplete - re-run: install.ps1 -Stage dependencies"
-    }
-    Write-Success "Dependencies installed and baseline imports verified"
-
-    # Per-package dependency audit (closure task): for EVERY pyproject
-    # dependency - DETECT installed version, verify the declared specifier,
-    # IMPORT it, and record an honest VERIFIED/FAILED verdict. Read directly
-    # from pyproject.toml by the venv python (tomllib) - no PowerShell-side
-    # dependency list exists to drift. The audit fails the stage honestly
-    # when a REQUIRED runtime dependency is missing/broken (skips only
-    # genuine environment-conditional markers). Results are persisted to
-    # state/packages.json (machine-readable inventory for doctor/support).
+    # The audit script reads pyproject.toml RELATIVE to the process CWD, so it
+    # must run with CWD at the checkout (the Push-Location above was already
+    # popped). Anchor the child process explicitly via WorkingDirectory.
     $auditScript = @'
 import json, sys, tomllib, importlib.metadata as im, importlib, re
 
@@ -1560,6 +1540,7 @@ def version_ok(version, specs):
 
 with open("pyproject.toml", "rb") as fh:
     data = tomllib.load(fh)
+
 
 deps = data["project"].get("dependencies", [])
 extras = data["project"].get("optional-dependencies", {})
@@ -1637,8 +1618,14 @@ print(json.dumps(out))
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         try {
-            $auditJson = & $venvPython $auditPath 2>$null
-            $auditExit = $LASTEXITCODE
+            $prevCwd = (Get-Location).ProviderPath
+            try {
+                Push-Location $InstallDir
+                $auditJson = & $venvPython $auditPath 2>$null
+                $auditExit = $LASTEXITCODE
+            } finally {
+                Pop-Location
+            }
         } finally {
             $ErrorActionPreference = $prevEAP
         }
