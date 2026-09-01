@@ -64,6 +64,12 @@ from nexus_scalp.reporting.models import (
     StrategyGroup,
     StreakSection,
 )
+from nexus_scalp.reporting.queries import (
+    fetch_anomaly_rows,
+    fetch_behavioral_rows,
+    fetch_execution_rows,
+    fetch_model_rows,
+)
 
 logger = get_logger("nexus_scalp.reporting.engine")
 
@@ -801,18 +807,13 @@ class PerformanceReportEngine:
 
     def _stage_model(self, bounds: Any) -> ModelSection:
         """Decision funnel from audit_signals in the period (task §3)."""
-        if not self.core._enabled:
+        fetch = fetch_model_rows(self.core, bounds.start_sql, bounds.end_sql)
+        if not fetch.enabled:
             return ModelSection()
-        sql = (
-            "SELECT action, blocked_by, payload FROM audit_signals "
-            "WHERE generated_at >= ? AND generated_at < ?"
-        )
-        try:
-            with self.core._connect() as conn:
-                rows = [dict(r) for r in conn.execute(sql, (bounds.start_sql, bounds.end_sql))]
-        except Exception as err:
-            logger.error("[TELEGRAM_REPORT] model stage failed", error=str(err))
+        if fetch.error is not None:
+            logger.error("[TELEGRAM_REPORT] model stage failed", error=fetch.error)
             return ModelSection()
+        rows = fetch.rows
 
         if not rows:
             return ModelSection()
@@ -937,18 +938,13 @@ class PerformanceReportEngine:
 
     def _stage_execution(self, bounds: Any) -> ExecutionSection:
         """Execution quality from audit_orders latency (task §4)."""
-        if not self.core._enabled:
+        fetch = fetch_execution_rows(self.core, bounds.start_sql, bounds.end_sql)
+        if not fetch.enabled:
             return ExecutionSection()
-        sql = (
-            "SELECT latency, reason, execution_mode, action FROM audit_orders "
-            "WHERE timestamp >= ? AND timestamp < ?"
-        )
-        try:
-            with self.core._connect() as conn:
-                rows = [dict(r) for r in conn.execute(sql, (bounds.start_sql, bounds.end_sql))]
-        except Exception as err:
-            logger.error("[TELEGRAM_REPORT] execution stage failed", error=str(err))
+        if fetch.error is not None:
+            logger.error("[TELEGRAM_REPORT] execution stage failed", error=fetch.error)
             return ExecutionSection()
+        rows = fetch.rows
         if not rows:
             return ExecutionSection()
 
@@ -1029,37 +1025,15 @@ class PerformanceReportEngine:
         """
         from nexus_scalp.intelligence.models import BehaviorAnalysisStatus
 
-        if not self.core._enabled:
-            return BehavioralSection(state="NO_DATA")
         tickets = [str(t.ticket) for t in closed]
-        if not tickets:
+        fetch = fetch_behavioral_rows(self.core, tickets)
+        if not fetch.enabled:
             return BehavioralSection(state="NO_DATA")
-        try:
-            with self.core._connect() as conn:
-                conn.execute(
-                    "CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)"
-                )
-                conn.execute("DELETE FROM _tmp_rpt_tickets")
-                conn.executemany(
-                    "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", ((t,) for t in tickets)
-                )
-
-                rows = [
-                    dict(r)
-                    for r in conn.execute(
-                        "SELECT behavior_key, pattern, severity, confidence, evidence "
-                        "FROM behavior_detections d JOIN _tmp_rpt_tickets t ON d.ticket = t.ticket"
-                    )
-                ]
-                analysis = [
-                    dict(r)
-                    for r in conn.execute(
-                        "SELECT * FROM behavior_analysis a JOIN _tmp_rpt_tickets t ON a.ticket = t.ticket"
-                    )
-                ]
-        except Exception as err:
-            logger.error("[TELEGRAM_REPORT] behavioral stage failed", error=str(err))
+        if fetch.error is not None:
+            logger.error("[TELEGRAM_REPORT] behavioral stage failed", error=fetch.error)
             return BehavioralSection(state=BehaviorAnalysisStatus.ANALYSIS_FAILED.value)
+        rows = fetch.rows
+        analysis = fetch.rows2
 
         counts: dict[str, int] = {}
         for r in rows:
@@ -1100,37 +1074,15 @@ class PerformanceReportEngine:
         """Truthful anomaly census from the versioned `anomaly_events` store."""
         from nexus_scalp.intelligence.models import BehaviorAnalysisStatus
 
-        if not self.core._enabled:
-            return AnomalyStateSection(state="NO_DATA")
         tickets = [str(t.ticket) for t in closed]
-        if not tickets:
+        fetch = fetch_anomaly_rows(self.core, tickets)
+        if not fetch.enabled:
             return AnomalyStateSection(state="NO_DATA")
-        try:
-            with self.core._connect() as conn:
-                conn.execute(
-                    "CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)"
-                )
-                conn.execute("DELETE FROM _tmp_rpt_tickets")
-                conn.executemany(
-                    "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", ((t,) for t in tickets)
-                )
-
-                rows = [
-                    dict(r)
-                    for r in conn.execute(
-                        "SELECT anomaly_type, severity, algorithm_version "
-                        "FROM anomaly_events e JOIN _tmp_rpt_tickets t ON e.ticket = t.ticket"
-                    )
-                ]
-                analysis = [
-                    dict(r)
-                    for r in conn.execute(
-                        "SELECT * FROM behavior_analysis a JOIN _tmp_rpt_tickets t ON a.ticket = t.ticket"
-                    )
-                ]
-        except Exception as err:
-            logger.error("[TELEGRAM_REPORT] anomaly stage failed", error=str(err))
+        if fetch.error is not None:
+            logger.error("[TELEGRAM_REPORT] anomaly stage failed", error=fetch.error)
             return AnomalyStateSection(state=BehaviorAnalysisStatus.ANALYSIS_FAILED.value)
+        rows = fetch.rows
+        analysis = fetch.rows2
 
         counts: dict[str, int] = {}
         severities: dict[str, int] = {}
