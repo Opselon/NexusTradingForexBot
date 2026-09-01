@@ -130,8 +130,17 @@ def core(audit):
 
 
 def _flush(audit: AuditRepository, seconds: float = 0.4) -> None:
-    """Waits for the audit queue worker to flush queued writes."""
-    time.sleep(seconds)
+    """Drains the audit queue deterministically (BUG-162 lesson).
+
+    A fixed sleep races the background worker under CI load (run #22:
+    test_monthly_aggregation saw 1 of 2 seeded rows; the same
+    probability-class BUG-162 fixed for TestSnapshots). flush() is the
+    bounded read-after-write primitive; fall back to the historical
+    sleep only if the primitive is unavailable.
+    """
+    drained = audit.flush(timeout_sec=5.0)
+    if not drained:
+        time.sleep(seconds)
 
 
 def _snapshot_row(
