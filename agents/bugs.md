@@ -6830,3 +6830,11 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   width, else CRITICAL log once). Records built before the bundle loads keep
   the class contract; buffer is width-homogeneous by construction.
 - Regression: tests/unit/test_bug185_record_contract_alignment.py
+- PART 2 (commit b8a0efd): the init-only rebind left a second hole - hot_swap_model,
+  model-governance promotion/rollback, bootstrap/async retrain swaps and collapse
+  recovery all mutate self._bundle WITHOUT rebinding the trainer, so a hot-swap
+  across contract widths would recreate the same silent split. Rebind extracted to
+  LiveEngine._rebind_trainer_to_bundle() and invoked from ALL 7 bundle-mutation
+  sites; schema resolution switched from hard-coded scalp_v3@70 to dimension-driven
+  schema_for_dimension() (50D hot-swap restores scalp_v1). BUG-182B AST regression
+  updated for the helper-based invariant (same ordering contract). 6 tests green.
