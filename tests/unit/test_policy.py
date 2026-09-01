@@ -521,7 +521,10 @@ def test_confidence_rejection_telemetry_breakdown():
 
     tick = _make_tick()
 
-    # Case A: buy prob 0.45, threshold 0.40 + survival 0.10 = 0.50 -> CONFIDENCE_FAIL
+    # Case A: raw buy 0.45 under a 4-logit head. Candidate-side trained-
+    # class measure = 0.45 / (0.05 + 0.45 + 0.50) = 0.45 (the SELL slice
+    # does not dilute the BUY side), which still fails survival
+    # 0.40 + 0.10 = 0.50 -> CONFIDENCE_FAIL (thresholds unchanged).
     probs = torch.tensor([[0.05, 0.45, 0.50, 0.0]])
 
     proposal = policy.evaluate_probabilities(
@@ -536,6 +539,7 @@ def test_confidence_rejection_telemetry_breakdown():
     assert "INSUFFICIENT_CONFIDENCE" in proposal.reason_code
     assert "Model Confidence (0.45)" in proposal.reason_code
     assert "Effective Threshold (0.50)" in proposal.reason_code
+    assert proposal.risk_checks["confidence_source"] == "DIRECTIONAL_NORMALIZED"
     assert "Base: 0.40" in proposal.reason_code
     assert "Range Penalty: +0.00" in proposal.reason_code
     assert "Survival Mode: +0.10" in proposal.reason_code

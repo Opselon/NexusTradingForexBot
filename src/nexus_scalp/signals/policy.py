@@ -139,10 +139,29 @@ class SignalPolicy:
         raw_prob_buy = probs[1] if len(probs) > 1 else 0.0
         raw_prob_sell = probs[2] if len(probs) > 2 else 0.0
 
+        # CONFIDENCE-SEMANTICS REPAIR (2026-09-02, Hermes-Main): the
+        # serving head is 4 logits (NO_TRADE/BUY/SELL/WAIT) but the label
+        # contract is 3-class - WAIT is a policy-bridge state that has
+        # NEVER been a training label (label census zero; online fine-tune
+        # class_counts [.., 0]). Comparing the raw 4-class directional
+        # probability against thresholds calibrated for the trained classes
+        # made the confidence gate mathematically impassable (0/464
+        # candidates; all-time max raw probability 0.357 < the 0.40 base
+        # threshold). Normalize the leading directional probability over
+        # the TRAINED classes (BUY+SELL+NO_TRADE) so the gate measures the
+        # model's actual trained semantics. A degenerate vector falls back
+        # to the raw value instead of manufacturing confidence. Candidate
+        # channels / flip-reversal logic still consume the RAW
+        # probabilities below - unchanged.
+        confidence, confidence_source = self._directional_confidence(probs)
+
         # --- PRE-COMPUTE CHANNELS AND PARAMETERS UPFRONT FOR DIAGNOSTICS ---
         prob_buy = self._sanitize_float(raw_prob_buy, 0.0)
         prob_sell = self._sanitize_float(raw_prob_sell, 0.0)
-        prob_no_trade = probs[0] if len(probs) > 0 else 0.0
+        # CONFIDENCE-SEMANTICS REPAIR: sanitize like prob_buy/prob_sell -
+        # a NaN/inf slice from the model must not poison the candidate
+        # measure (NaN mass -> NaN confidence -> proposal build failure).
+        prob_no_trade = self._sanitize_float(probs[0] if len(probs) > 0 else 0.0, 0.0)
 
         now = current_tick.timestamp
         target_entry_price = current_tick.ask
@@ -347,12 +366,23 @@ class SignalPolicy:
             elif not is_range_market or abs(ofi) >= 0.15:
                 cand_action = "SELL_MARKET"
 
-        confidence = 0.0  # no-trade default until a candidate clears the gate
+        # CONFIDENCE-SEMANTICS REPAIR: a candidate is measured with the
+        # directional (trained-class) confidence computed at the head of
+        # this method; the 0.0 default only applies when no candidate
+        # exists (pure NO_TRADE rows keep conf 0.0 as before).
+        confidence = confidence if cand_action != "NO_TRADE" else 0.0
 
         # Calculate candidate confidence
         cand_confidence = 0.0
         if cand_action != "NO_TRADE":
-            cand_ai_prob = prob_buy if "BUY" in cand_action else prob_sell
+            # Directional measure (not raw prob): the candidate's OWN side
+            # normalized over the trained classes (BUY+SELL+NO_TRADE). The
+            # DIRECTION still comes from the candidate channel that fired.
+            cand_ai_prob = (
+                prob_buy / (prob_buy + prob_sell + prob_no_trade)
+                if "BUY" in cand_action
+                else prob_sell / (prob_buy + prob_sell + prob_no_trade)
+            )
             is_stat_arb = "STAT_ARB" in cand_action or (
                 stat_arb_bullish if "BUY" in cand_action else stat_arb_bearish
             )
@@ -657,6 +687,7 @@ class SignalPolicy:
                 "rr": float(cand_actual_rr if cand_actual_rr is not None else 1.0),
                 "min_rr": float(act_rr),
                 "model_confidence": float(confidence),
+                "confidence_source": confidence_source,
                 "base_threshold": float(base_thr),
                 "range_penalty": float(range_pen),
                 "survival_mode_adjustment": float(surv_adj),
@@ -1067,6 +1098,7 @@ class SignalPolicy:
                     "min_zone_quality": float(self.algo_config.ai_zone_confidence_threshold),
                     "rr": float(actual_rr),
                     "min_rr": float(active_min_rr),
+                    "confidence_source": confidence_source,
                 }
 
                 final_proposal = TradeProposal(
@@ -1973,6 +2005,32 @@ class SignalPolicy:
             "midlines": midlines,
             "liq_markers": liq_markers,
         }
+
+    # ------------------------------------------------------------------
+    # CONFIDENCE-SEMANTICS REPAIR (2026-09-02): 4-logit head vs 3-class
+    # trained label contract. WAIT (index 3) is a legacy policy bridge
+    # with zero training examples - it must never dilute or carry
+    # directional confidence. The gate now measures the leading trained-
+    # class probability normalized over BUY+SELL+NO_TRADE. O(1), no I/O.
+    # ------------------------------------------------------------------
+    def _directional_confidence(self, probs: list[float]) -> tuple[float, str]:
+        """Return (confidence, source) under trained-class semantics."""
+        prob_buy = self._sanitize_float(probs[1] if len(probs) > 1 else 0.0, 0.0)
+        prob_sell = self._sanitize_float(probs[2] if len(probs) > 2 else 0.0, 0.0)
+        prob_no_trade = self._sanitize_float(probs[0] if len(probs) > 0 else 0.0, 0.0)
+        raw_directional = max(prob_buy, prob_sell)
+        if len(probs) < 3:
+            # Malformed/short vector: fall back to raw semantics.
+            return raw_directional, "RAW_FALLBACK"
+        trained_mass = prob_buy + prob_sell + prob_no_trade
+        if trained_mass <= 0.0 or not math.isfinite(trained_mass):
+            # Degenerate mass (e.g. all-zero or NaN components): never
+            # manufacture confidence - pre-fix raw behavior.
+            return raw_directional, "RAW_FALLBACK"
+        conf = raw_directional / trained_mass
+        if not math.isfinite(conf) or conf < 0.0:
+            return raw_directional, "RAW_FALLBACK"
+        return conf, "DIRECTIONAL_NORMALIZED"
 
     def _sanitize_float(self, val: float | None, default: float) -> float:
         """Sanitizes input float against None, NaN, and Inf values."""
