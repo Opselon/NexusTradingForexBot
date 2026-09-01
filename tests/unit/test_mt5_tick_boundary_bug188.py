@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
 
 from nexus_scalp.adapters.mt5 import mt5_adapter as adapter_mod
 from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
@@ -157,7 +157,9 @@ def test_shifted_boundary_cannot_invert(harness: _Harness) -> None:
 def test_snapshot_epoch_conversion_single_shift() -> None:
     # server-local epoch 12:00:00 on a GMT+3 terminal == 09:00:00 real UTC
     server_epoch = int(
-        datetime(2026, 9, 1, 12, 0, tzinfo=UTC).timestamp()  # interpreted as server-local wall clock
+        datetime(
+            2026, 9, 1, 12, 0, tzinfo=UTC
+        ).timestamp()  # interpreted as server-local wall clock
     )
     snap = build_tick_history_snapshot(_raw_tick_row(server_epoch))
     assert snap.time_utc == broker_epoch_to_utc(server_epoch)
@@ -251,7 +253,9 @@ def test_acquire_ticks_range_containment_end_to_end(tmp_path) -> None:
 def test_research_event_source_contract_field_parity(tmp_path) -> None:
     """Live TickHistorySnapshot fields == fields the research layer consumes."""
     base = datetime(2026, 9, 1, 18, 0, tzinfo=UTC)
-    snap = build_tick_history_snapshot(_raw_tick_row(int((base + OFFSET).timestamp()), 4365.58, 4366.06))
+    snap = build_tick_history_snapshot(
+        _raw_tick_row(int((base + OFFSET).timestamp()), 4365.58, 4366.06)
+    )
     src = TickEventSource(
         [
             {
