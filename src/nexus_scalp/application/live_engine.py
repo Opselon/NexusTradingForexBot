@@ -968,48 +968,6 @@ class LiveEngine:
             embargo_bars=3,
         )
 
-        # BUG-169 (2026-08-31 live forensics): the trainer was bound to the
-        # CLASS bootstrap contract (scalp_v1/50D) while the LOADED artifact
-        # is the 70D champion — every online fine-tune fed a (N,50) matrix
-        # into a 70-input Linear head and crashed with
-        # "mat1 and mat2 shapes cannot be multiplied (10x50 and 70x128)"
-        # (60 failures on 2026-08-31 alone; each attempt also hit the
-        # WalkForwardTrainer scaler save while the engine held the artifact,
-        # logging WinError 5). Bind the trainer to the EFFECTIVE contract of
-        # the loaded bundle instead. The rolling buffer records are rebuilt
-        # on the same effective contract (records are written from the
-        # validated live tensor), so frame validation stays consistent.
-        # This is a NO-OP while the 50D champion is loaded.
-        try:
-            with self._bundle_lock:
-                _b0 = self._bundle
-            _eff_dim0 = int(
-                _b0.scaler.dimension()
-                if _b0 is not None and hasattr(_b0.scaler, "dimension")
-                else (getattr(_b0.model, "num_features", 0) if _b0 is not None else 0) or 0
-            )
-        except Exception:
-            _eff_dim0 = 0
-        if _eff_dim0 > 0 and _eff_dim0 != self.trainer.num_features:
-            from nexus_scalp.features.schema import FEATURE_SCHEMAS as _FS
-
-            _schema70 = _FS.resolve("scalp_v3") if _eff_dim0 == 70 else None
-            if _schema70 is not None and _schema70.dimension == _eff_dim0:
-                self.trainer.feature_schema = _schema70
-                self.trainer.num_features = _eff_dim0
-                logger.info(
-                    "[ONLINE_TRAIN] trainer rebound to loaded-bundle contract",
-                    artifact_dim=_eff_dim0,
-                    schema=_schema70.schema_id,
-                )
-            else:
-                logger.warning(
-                    "[ONLINE_TRAIN] loaded artifact dim %s has no registered schema; "
-                    "online fine-tune will self-disable (no width crash, no clobber)",
-                    _eff_dim0,
-                )
-                self._online_train_disabled = True
-
         self._rolling_feature_records: deque[dict] = deque(maxlen=4000)
         self._retrain_interval_bars: int = 50
         self._bars_since_last_retrain: int = 0
@@ -1067,6 +1025,53 @@ class LiveEngine:
         self._bundle = self._load_or_create_bundle(
             model_path=model_path, force_fresh=self.force_fresh_model
         )
+
+        # BUG-182B: this rebind MUST run AFTER _load_or_create_bundle below,
+        # it reads self._bundle; in the old position (before the load) the
+        # bundle was still None, the rebind silently skipped and every online
+        # fine-tune fed 50D records into the 70-input head (43 matmul crashes
+        # on 2026-09-01).
+        # BUG-169 (2026-08-31 live forensics): the trainer was bound to the
+        # CLASS bootstrap contract (scalp_v1/50D) while the LOADED artifact
+        # is the 70D champion — every online fine-tune fed a (N,50) matrix
+        # into a 70-input Linear head and crashed with
+        # "mat1 and mat2 shapes cannot be multiplied (10x50 and 70x128)"
+        # (60 failures on 2026-08-31 alone; each attempt also hit the
+        # WalkForwardTrainer scaler save while the engine held the artifact,
+        # logging WinError 5). Bind the trainer to the EFFECTIVE contract of
+        # the loaded bundle instead. The rolling buffer records are rebuilt
+        # on the same effective contract (records are written from the
+        # validated live tensor), so frame validation stays consistent.
+        # This is a NO-OP while the 50D champion is loaded.
+        try:
+            with self._bundle_lock:
+                _b0 = self._bundle
+            _eff_dim0 = int(
+                _b0.scaler.dimension()
+                if _b0 is not None and hasattr(_b0.scaler, "dimension")
+                else (getattr(_b0.model, "num_features", 0) if _b0 is not None else 0) or 0
+            )
+        except Exception:
+            _eff_dim0 = 0
+        if _eff_dim0 > 0 and _eff_dim0 != self.trainer.num_features:
+            from nexus_scalp.features.schema import FEATURE_SCHEMAS as _FS
+
+            _schema70 = _FS.resolve("scalp_v3") if _eff_dim0 == 70 else None
+            if _schema70 is not None and _schema70.dimension == _eff_dim0:
+                self.trainer.feature_schema = _schema70
+                self.trainer.num_features = _eff_dim0
+                logger.info(
+                    "[ONLINE_TRAIN] trainer rebound to loaded-bundle contract",
+                    artifact_dim=_eff_dim0,
+                    schema=_schema70.schema_id,
+                )
+            else:
+                logger.warning(
+                    "[ONLINE_TRAIN] loaded artifact dim %s has no registered schema; "
+                    "online fine-tune will self-disable (no width crash, no clobber)",
+                    _eff_dim0,
+                )
+                self._online_train_disabled = True
 
         # PHASE 08: register the model that is actually serving live inference.
         # This is metadata only - the experience ledger constructed above is
@@ -3145,7 +3150,8 @@ class LiveEngine:
         df_hist = pl.DataFrame(list(self._rolling_feature_records))
         df_labeled = self.online_labeler.label_dataframe(df_hist)
 
-        feature_cols = list(self.FEATURE_COLS)
+        # BUG-182B: artifact-driven columns (see _trigger_async_online_fine_tune).
+        feature_cols = list(self.effective_feature_cols)
         logger.info("Training features", feature_cols=feature_cols)
 
         with self._bundle_lock:
@@ -5146,7 +5152,9 @@ class LiveEngine:
 
             df = pl.DataFrame(list(self._rolling_feature_records))
             df_labeled = self.online_labeler.label_dataframe(df)
-            feature_cols = list(self.FEATURE_COLS)
+            # BUG-182B: bind columns to the LOADED bundle's contract, not the
+            # class bootstrap (the two differ whenever a 70D artifact serves).
+            feature_cols = list(self.effective_feature_cols)
 
             with self._bundle_lock:
                 bundle = self._bundle
@@ -5321,7 +5329,8 @@ class LiveEngine:
             if len(self._rolling_feature_records) < 32:
                 return False
             df = pl.DataFrame(list(self._rolling_feature_records))
-            feature_cols = list(self.FEATURE_COLS)
+            # BUG-182B: artifact-driven columns (see _trigger_async_online_fine_tune).
+            feature_cols = list(self.effective_feature_cols)
             dist = self._detect_model_collapse(df, feature_cols)
             if dist is None:
                 return False

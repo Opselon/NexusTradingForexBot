@@ -6744,3 +6744,29 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   smoke test) BEFORE commit - the header promise is not evidence (directive: prove every
   critical connection).
 - Severity: P1 (unlintable import + runtime NameError on a trigger endpoint) | Status: FIXED | Fixed-by: Hermes-Coder
+
+## BUG-182B - online fine-tune still crashes 50D-records vs 70D head: trainer rebind ran BEFORE the bundle load (2026-09-01 Hermes-Main)
+- SYMPTOM (logs/error/2026/09/2026-09-01.part-084/085/086.log, 09:04-09:46): 43x 'Async retrain
+  failed' with 'mat1 and mat2 shapes cannot be multiplied (16x50 and 70x128)', one per ~60s
+  retrain window, every one paired with the WinError 5 scaler-save chain. Persisted ACROSS the
+  09:21 engine restart that ran the post-BUG-169 code.
+- ROOT CAUSE (proven by probe, not inferred): live_engine.__init__ runs the BUG-169 trainer
+  rebind block (line ~984) BEFORE self._bundle = self._load_or_create_bundle(...) (line ~1067).
+  At rebind time _bundle is None -> _eff_dim0 = 0 -> the rebind is skipped SILENTLY (no log
+  possible). The trainer stays bound to the class bootstrap scalp_v1/50D; the retrain path
+  passes class-level FEATURE_COLS (50 cols), which validate trivially 50==50, extraction gives
+  (N,50) and the matmul against the 70-input head explodes. Evidence: zero 'ONLINE_TRAIN'/'rebound'
+  lines in the whole info log for 2026-09-01 while the same boot logged expected_dim=70.
+- FIX (3 layers, defense in depth):
+  1. live_engine.__init__: trainer rebind MOVED to after _load_or_create_bundle (artifact-driven).
+  2. _trigger_async_online_fine_tune + _bootstrap_train_if_ready + collapse-check now pass
+     self.effective_feature_cols (BUG-125 artifact-driven contract), not class FEATURE_COLS.
+  3. WalkForwardTrainer.fine_tune_online: fail-loud contract guard BEFORE training -
+     model input width must equal len(feature_cols) or a Feature contract violation is raised
+     (no half-trained state, no misleading torch matmul text).
+- REGRESSION TESTS: tests/unit/test_bug182b_online_train_width_contract.py (init-order rebind,
+  effective cols contract, trainer fail-loud guard).
+- VERIFICATION: probes reproduced the exact log error from a (626,50) matrix vs 70x128 head;
+  py_compile + ruff + mypy + targeted pytest green; running-engine error cadence matched the
+  retrain interval (1/min) confirming the guard was never engaged.
+- Severity: P1 (live learning loop dead + scaler-save exception storm) | Status: FIXED | Fixed-by: Hermes-Main

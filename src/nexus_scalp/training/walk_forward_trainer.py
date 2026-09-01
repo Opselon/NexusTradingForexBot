@@ -429,6 +429,18 @@ class WalkForwardTrainer:
             return copy.deepcopy(target_model)
         valid_df = recent_df.slice(0, len(recent_df) - purge_len)
         X_raw, y = self._extract_X_y(valid_df, feature_cols)
+        # BUG-182B: fail loud BEFORE any training work when the target model's
+        # input width disagrees with the supplied feature columns. A mismatch
+        # previously surfaced as a torch matmul error mid-epoch (and a scaler-save
+        # exception storm); a half-trained or partially persisted state must
+        # never be reachable from a contract violation.
+        _model_width = int(getattr(target_model, "num_features", 0) or 0)
+        if _model_width != X_raw.shape[1]:
+            raise ValueError(
+                f"Feature contract violation in online fine-tune: model input width "
+                f"{_model_width} != {X_raw.shape[1]} feature columns "
+                f"({self.feature_schema.schema_id} trainer bound to {self.num_features})"
+            )
         # Cold-Start Scaler Fallback: a missing OR dimension-incompatible
         # scaler (stale/foreign artifact from an older schema, e.g. a 70D
         # scaler on a 50D trainer) must never crash online fine-tuning - the
