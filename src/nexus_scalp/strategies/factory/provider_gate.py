@@ -53,30 +53,28 @@ import the live engine (no order authority — mirrors research/ safety).
 
 from __future__ import annotations
 
-import hashlib
-import json
 import json
 import random
 import threading
 import time
 import urllib.parse
-from datetime import UTC, datetime
-from datetime import UTC, datetime
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Callable
+from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.strategies.factory.provider_gate")
 
 __all__ = [
-    "ProviderGate",
-    "GateResult",
-    "ProviderState",
-    "FailureCategory",
     "DisableReason",
+    "FailureCategory",
     "GateConfig",
+    "GateResult",
+    "ProviderGate",
+    "ProviderState",
     "redact_url",
 ]
 
@@ -280,7 +278,9 @@ class ProviderGate:
     and web API thread-pool concurrently.
     """
 
-    def __init__(self, config: GateConfig | None = None, *, clock: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self, config: GateConfig | None = None, *, clock: Callable[[], float] = time.time
+    ) -> None:
         self.cfg = config or GateConfig()
         self._clock = clock
         self._lock = threading.RLock()
@@ -378,7 +378,10 @@ class ProviderGate:
                 "consecutive_network_failures": c.consecutive_network_failures,
                 "circuit_open": c.state is ProviderState.CIRCUIT_OPEN,
                 "cooldown_remaining_sec": (
-                    max(0.0, self.cfg.circuit_breaker_cooldown_seconds - (self._clock() - c.opened_at))
+                    max(
+                        0.0,
+                        self.cfg.circuit_breaker_cooldown_seconds - (self._clock() - c.opened_at),
+                    )
                     if c.state is ProviderState.CIRCUIT_OPEN
                     else 0.0
                 ),
@@ -484,7 +487,7 @@ class ProviderGate:
     def execute(
         self,
         request_key: str,
-        send: Callable[[], "GateResult"],
+        send: Callable[[], GateResult],
         *,
         single_flight: bool = True,
     ) -> GateResult:
@@ -528,7 +531,9 @@ class ProviderGate:
                     reason=c.auto_disabled_detail or c.auto_disabled_reason.value,
                 )
             if c.state is ProviderState.CIRCUIT_OPEN:
-                remaining = self.cfg.circuit_breaker_cooldown_seconds - (self._clock() - c.opened_at)
+                remaining = self.cfg.circuit_breaker_cooldown_seconds - (
+                    self._clock() - c.opened_at
+                )
                 if remaining > 0:
                     return GateResult(
                         ok=False,
@@ -614,9 +619,7 @@ class ProviderGate:
     def _retry_delay(self, result: GateResult, attempt: int) -> float:
         if result.retry_after_sec is not None:
             return min(result.retry_after_sec, self.cfg.retry_after_max_seconds)
-        base = min(
-            self.cfg.backoff_base_seconds * (2**attempt), self.cfg.backoff_max_seconds
-        )
+        base = min(self.cfg.backoff_base_seconds * (2**attempt), self.cfg.backoff_max_seconds)
         return base * (0.5 + random.random() * 0.5)  # jitter
 
     def _attempt_once(self, send: Callable[[], GateResult], attempt: int) -> GateResult:
@@ -776,14 +779,16 @@ def execute_http_post(
         try:
             return GateResult(ok=True, data=json.loads(body), category=FailureCategory.AVAILABLE)
         except Exception:
-            return GateResult(ok=False, category=FailureCategory.UNKNOWN, reason="BAD_JSON_RESPONSE")
+            return GateResult(
+                ok=False, category=FailureCategory.UNKNOWN, reason="BAD_JSON_RESPONSE"
+            )
 
     return gate.execute(request_key, send, single_flight=single_flight)
 
 
 def get_provider_gate() -> ProviderGate:
     """Process-wide singleton — the ONE global provider boundary (steer 18)."""
-    global _GLOBAL_GATE
+    global _GLOBAL_GATE  # noqa: PLW0603 - deliberate process-wide singleton
     if _GLOBAL_GATE is None:
         _GLOBAL_GATE = ProviderGate()
     return _GLOBAL_GATE

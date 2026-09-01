@@ -546,6 +546,205 @@ def factory_complete(request: Request, generation_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# CHG-0034: provider health gate + Strategy Factory user toggle (steer 3/16/58)
+# ---------------------------------------------------------------------------
+
+
+def _settings_svc(request: Request) -> Any:
+    """Resolves the settings service (engine-bound first, standalone fallback)."""
+    engine = request.app.state.engine
+    svc = getattr(engine, "settings_service", None) if engine else None
+    return svc
+
+
+@router.get("/provider-health")
+def factory_provider_health(request: Request) -> dict[str, Any]:
+    """Secret-free combined health payload (steer sections 16, 58).
+
+    One call answers: user intent, runtime auto-disable + reason, gate
+    circuit state, credentials presence, provider runtime state, gate
+    metrics. The API key value is NEVER included.
+    """
+    try:
+        from nexus_scalp.settings import load_settings_service
+        from nexus_scalp.web.server import serialize_enums
+
+        svc = _settings_svc(request) or load_settings_service()
+        snap = svc.factory_health_snapshot()
+        factory = _factory(request)
+        gate_state: dict[str, Any] = {}
+        if factory is not None and getattr(factory, "provider", None) is not None:
+            try:
+                gate_state = factory.provider._gate.health_snapshot()
+            except Exception as gate_err:
+                gate_state = {"error": type(gate_err).__name__}
+        worker = _worker(request)
+        snap["gate"] = gate_state
+        snap["worker_running"] = bool(worker.running) if worker is not None else False
+        snap["trading_engine"] = "UNAFFECTED"
+        return serialize_enums(_ok(snap))
+    except Exception as e:
+        log_factory_error("/api/factory/provider-health", e)
+        return _err("INTERNAL_ERROR")
+
+
+@router.post("/provider-toggle")
+def factory_provider_toggle(
+    request: Request, payload: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """THE single user control for the Strategy Factory external feature.
+
+    Enabling re-validates configuration WITHOUT any network probe; when
+    credentials are missing the response is still success=false-to-enable
+    with an actionable reason (steer section 13 — no hammering).
+    Disabling stops new provider requests; in-flight bounded work may
+    finish; the trading engine is NEVER affected (steer 14, 60).
+    """
+    payload = payload or {}
+    try:
+        from nexus_scalp.settings import load_settings_service
+        from nexus_scalp.strategies.factory.provider_gate import get_provider_gate
+        from nexus_scalp.web.server import serialize_enums
+
+        svc = _settings_svc(request) or load_settings_service()
+        enabled = bool(payload.get("enabled"))
+        # Config pre-check on ENABLE (no network — steer section 9/13).
+        config_block = None
+        if enabled:
+            cfg_status = svc.factory_llm_config_status()
+            if not (
+                cfg_status.get("api_key_present")
+                and cfg_status.get("base_url")
+                and cfg_status.get("model")
+            ):
+                missing = (
+                    "API key"
+                    if not cfg_status.get("api_key_present")
+                    else ("base URL" if not cfg_status.get("base_url") else "model")
+                )
+                config_block = {
+                    "code": "CANNOT_ENABLE_CONFIG_INCOMPLETE",
+                    "missing": missing,
+                    "message": f"Cannot enable: provider {missing} is not configured.",
+                }
+        snap = svc.set_factory_enabled(enabled, actor="web")
+        # Keep the global gate coherent with the user action (steer 59/60).
+        if enabled and config_block is None:
+            gate = get_provider_gate()
+            gate.reconfigure()  # re-validate WITHOUT network
+        result: dict[str, Any] = {
+            "enabled": enabled,
+            "state": snap,
+            "trading_engine": "UNAFFECTED",
+        }
+        if config_block is not None:
+            result["enable_blocked"] = config_block
+        return serialize_enums(_ok(result))
+    except Exception as e:
+        log_factory_error("/api/factory/provider-toggle", e)
+        return _err("INTERNAL_ERROR")
+
+
+@router.post("/provider-test")
+def factory_provider_test(request: Request) -> dict[str, Any]:
+    """ONE controlled provider probe (steer section 15) — user-invoked only.
+
+    Sends a tiny chat completion (max_tokens=8); the gate chain (rate
+    limit, circuit, single-flight) fully applies. Never retries on the
+    caller side. Result: READY with latency, or UNAVAILABLE with a
+    normalized reason. Never returns secret values.
+    """
+    try:
+        from nexus_scalp.settings import load_settings_service
+        from nexus_scalp.strategies.factory.provider_gate import FailureCategory
+        from nexus_scalp.web.server import serialize_enums
+
+        svc = _settings_svc(request) or load_settings_service()
+        if not svc.factory_effective_enabled():
+            return _err("STRATEGY_FACTORY_DISABLED")
+        cfg_status = svc.factory_llm_config_status()
+        if not (
+            cfg_status.get("api_key_present")
+            and cfg_status.get("base_url")
+            and cfg_status.get("model")
+        ):
+            return _err("PROVIDER_NOT_CONFIGURED")
+        factory = _factory(request)
+        provider = getattr(factory, "provider", None) if factory is not None else None
+        if provider is None or not getattr(provider, "api_base_url", ""):
+            # Build a THROWAWAY provider for the probe (never stored).
+            from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
+
+            cfg = svc.get_factory_llm_config()
+            provider = LLMGenerationProvider(
+                api_base_url=cfg["api_base_url"],
+                model=cfg["model"],
+                api_key=cfg["api_key"],
+                secret_store=getattr(svc, "secrets", None),
+                request_timeout_sec=min(30.0, float(cfg.get("request_timeout_sec", 30.0))),
+                enabled_getter=lambda: True,
+            )
+        result = provider._gate.execute(
+            "probe:test-provider",
+            lambda: _test_probe_request(provider),
+            single_flight=True,
+        )
+        if result.ok:
+            payload = {
+                "provider_state": "READY",
+                "latency_ms": round(result.duration_ms, 1),
+                "model": provider.model,
+            }
+            return serialize_enums(_ok(payload))
+        reason_map = {
+            FailureCategory.RATE_LIMITED: "Provider rate-limited (HTTP 429). Strategy Factory paces automatically; trading engine unaffected.",
+            FailureCategory.AUTH_ERROR: "Provider rejected the credentials (authentication failure). Configure a valid API key.",
+            FailureCategory.NETWORK_ERROR: "Provider unreachable (network error).",
+            FailureCategory.TIMEOUT: "Provider timed out.",
+            FailureCategory.SERVER_ERROR: "Provider server error (transient).",
+            FailureCategory.CONFIG_ERROR: "Provider configuration invalid.",
+        }
+        return serialize_enums(
+            _ok(
+                {
+                    "provider_state": "UNAVAILABLE",
+                    "reason": reason_map.get(result.category, result.reason or "unknown failure"),
+                    "category": result.category.value,
+                    "latency_ms": round(result.duration_ms, 1),
+                }
+            )
+        )
+    except Exception as e:
+        log_factory_error("/api/factory/provider-test", e)
+        return _err("INTERNAL_ERROR")
+
+
+def _test_probe_request(provider: Any) -> Any:
+    """Builds the minimal probe send() callable for provider-test."""
+    from nexus_scalp.strategies.factory.provider_gate import execute_http_post
+
+    payload = {
+        "model": provider.model,
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 8,
+    }
+    url = f"{provider.api_base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {provider._api_key}",
+        "Content-Type": "application/json",
+    }
+    return execute_http_post(
+        provider._gate,
+        url,
+        payload=payload,
+        headers=headers,
+        timeout=min(30.0, provider.request_timeout_sec),
+        request_key="probe:test-provider",
+        single_flight=False,  # probe must actually fire
+    )
+
+
 @router.post("/loop/start")
 def factory_loop_start(request: Request) -> dict[str, Any]:
     factory = _factory(request)

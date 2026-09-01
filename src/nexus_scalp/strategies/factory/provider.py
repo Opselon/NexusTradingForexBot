@@ -27,9 +27,11 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.settings.secret_store import SecureSecretStore
 from nexus_scalp.strategies.factory.provider_gate import (
     GateResult,
     ProviderGate,
@@ -38,7 +40,6 @@ from nexus_scalp.strategies.factory.provider_gate import (
     get_provider_gate,
     redact_url,
 )
-from nexus_scalp.settings.secret_store import SecureSecretStore
 
 logger = get_logger("nexus_scalp.strategies.factory.provider")
 
@@ -214,7 +215,6 @@ class LLMGenerationProvider:
             "Content-Type": "application/json",
         }
 
-        started = time.perf_counter()
         self.usage.requests += 1
         self._window_requests += 1
         result = execute_http_post(
@@ -299,7 +299,6 @@ class LLMGenerationProvider:
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
-        started = time.perf_counter()
         self.usage.requests += 1
         self._window_requests += 1
         result = execute_http_post(
