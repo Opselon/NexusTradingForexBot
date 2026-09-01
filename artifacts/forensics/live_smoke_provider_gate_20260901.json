@@ -1,0 +1,40 @@
+{
+  "probe": {
+    "endpoint": "POST http://127.0.0.1:8080/api/factory/provider-test",
+    "http_status": 200,
+    "wall_latency_ms": 34.0,
+    "provider_state": "UNAVAILABLE",
+    "reason": "Provider rejected the credentials (authentication failure). Configure a valid API key.",
+    "category": "AUTH_ERROR",
+    "latency_ms": 0.0
+  },
+  "gate_state_post_probe": {
+    "provider_state": "AUTO_DISABLED",
+    "effective_state": "AUTO_DISABLED",
+    "auto_disabled": true,
+    "auto_disabled_reason": "AUTH_FAILED",
+    "metrics": {
+      "provider_requests_total": 1,
+      "provider_auth_failures_total": 1,
+      "provider_429_total": 0,
+      "provider_retry_total": 0
+    },
+    "trading_engine": "UNAFFECTED"
+  },
+  "log_evidence": [
+    "2026-09-01T22:11:02.857+03:30 [error] [PROVIDER_GATE] event=AUTO_DISABLED reason=AUTH_FAILED detail=HTTP:401 trading_engine=UNAFFECTED",
+    "2026-09-01T22:11:02.858+03:30 [warning] [STRATEGY_FACTORY] provider request failed attempts=1 category=AUTH_ERROR reason=HTTP:401 url=http://178.105.20.69:[REDACTED_SECRET]"
+  ],
+  "secret_redaction": "url carries [REDACTED_SECRET]; no key/bearer token in any log line, API response, or this artifact",
+  "trading_continuity": {
+    "engine_running_after_probe": true,
+    "state_contract": "LiveUiState.2",
+    "post_probe_activity": [
+      "22:14:43 REGIME TRANSITION -> HIGH_SPREAD_CHOP (classifier live)",
+      "22:15:00 Bar completed XAUUSD M1 close=4329.695",
+      "22:15:00 LIQUIDITY FEATURE_CALCULATION_OK latency_ms=379 bars=3504"
+    ]
+  },
+  "request_budget": "1 probe request total (pre-probe window contained exactly 1 provider attempt at boot-time health validation; zero 429s all day under the new gate; historical 19:56/20:04 AUTH events pre-date this boot and show the same single-shot 401 -> auto-disable shape)",
+  "verdict": "PASS"
+}
