@@ -6861,3 +6861,14 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   (test_runtime_70d_contract_probe / test_runtime_70d_warmup / observability P1+P2)
   19/19 PASS; bug185+bug182b suites PASS; 70d suites 70 passed/2 skipped; runtime
   launch test PASS (no ERROR/WARNING).
+
+## BUG-185 - Installer stage protocol skipped=true must not fire on genuine worker completion (2026-09-01, Nexus-Installer)
+- CLASS: installer/CLI fail-open observability. A stage worker that completes its real
+  work (e.g. a repo-sync stage) returned 0 while a heuristic in the stage wrapper
+  reclassified the result as skipped=true - drivers displaying 'skipped' for work that
+  actually ran, and idempotency/diagnostics contracts diverging from the protocol.
+- RULE: skipped=true is reserved for deliberate no-op detection; never heuristic after
+  real mutation. Detection and mutation are separated in stage wrappers.
+- FIX: installer/install.ps1 removed the post-hoc skip classifier; stage workers own
+  their skipped semantics via explicit skip channels only.
+- Tests: tests/installer/test_stage_protocol.py (skip semantics + protocol invariants).
