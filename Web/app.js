@@ -3748,6 +3748,10 @@ function handleIncomingLiveTick(payload, opts) {
     payload = liveUiSnapshot;
     renderMarketRadar(liveUiSnapshot && liveUiSnapshot.radar);
 
+    // CHG-0048: attention strip — "do I need to do anything?" from the
+    // snapshot the app already holds. Re-renders only on state change.
+    if (window.NXAttention) window.NXAttention.render(liveUiSnapshot);
+
 
 
 
@@ -10477,7 +10481,13 @@ async function performEngineModeSet(requested) {
 
     // real values after engine start; charts need fresh points to render).
 
+    // CHG-0048: hidden-tab suppression — backgrounded pages skip the four
+
+    // loaders; visibilitychange fires one immediate catch-up on return.
+
     setInterval(() => {
+
+        if (document.hidden) return;
 
         loadAccountPerformance();
 
@@ -10488,6 +10498,22 @@ async function performEngineModeSet(requested) {
         loadClosedTrades();
 
     }, 30000);
+
+    document.addEventListener('visibilitychange', () => {
+
+        if (!document.hidden) {
+
+            loadAccountPerformance();
+
+            loadAdvancedMetrics();
+
+            loadAccountCharts();
+
+            loadClosedTrades();
+
+        }
+
+    });
 
     // CHG-0048: language switcher binding (i18n framework in ux_i18n.js).
     // UI preference only — persisted to localStorage, never a system setting.
