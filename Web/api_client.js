@@ -33,6 +33,7 @@ window.NX = window.NX || {};
     const reqId = opts.headers && opts.headers['X-Request-ID'] || rid();
     const headers = Object.assign({ 'X-Request-ID': reqId }, (opts.headers || {}));
     const init = Object.assign({}, opts, { headers });
+    if (opts.signal) init.signal = opts.signal; // AbortController passthrough (cc_state timeout budget)
     const cacheKey = key || url + '|' + (opts.method || 'GET');
     if (opts.method === 'GET' || !opts.method) {
       if (inflight[cacheKey]) return inflight[cacheKey];

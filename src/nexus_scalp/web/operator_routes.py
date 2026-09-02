@@ -581,7 +581,8 @@ def register_operator_routes(
                     "total": total_rows,
                     "gates": [{"gate": k, "count": v} for k, v in gates.most_common()],
                     "regimes": [{"regime": k, "count": v} for k, v in regimes.most_common()],
-                    "reasons": [{"reason": k, "count": v} for k, v in reasons.most_common(10)],
+                    "reasons": [{"reason": k, "count": v} for k, v in reasons.most_common()],
+                    "reasons_top_n": 10 if len(reasons) > 10 else len(reasons),
                     "hourly_trend": [{"hour": r["hour_bucket"], "count": r["n"]} for r in trend],
                     "model_direction_unresolved": unresolved_direction,
                     "model_direction_unresolved_note": (

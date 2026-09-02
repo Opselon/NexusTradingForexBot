@@ -1598,6 +1598,11 @@ function switchTab(tabId, element) {
 
     currentTab = tabId;
 
+    // CONTROL CENTER hook (CHG-0043): the CC owns its own render cycle.
+    if (tabId === 'tab-control-center' && window.NX && window.NX.cc && window.NX.cc.views) {
+        window.NX.cc.views.showTab('cc-' + 'overview');
+    }
+
 
 
     if (tabId === 'tab-monitoring') {
@@ -6201,8 +6206,28 @@ async function toggleEngineRunning() {
 
     const isStopping = document.getElementById('btn-toggle-engine').textContent.includes("Stop");
 
+    // OPERATOR SAFETY (CHG-0043): engine stop/start is a dangerous action
+    // and requires a structured confirmation (action/state/impact/recovery).
+    if (window.NX && window.NX.cc && window.NX.cc.design) {
+        const running = isStopping;
+        window.NX.cc.design.confirmDialog({
+            action: running ? 'Stop Engine (all trading halts)' : 'Start Engine',
+            current: running ? 'Engine is RUNNING' : 'Engine is STOPPED',
+            impact: running
+                ? 'Live monitoring halts; no new decisions or orders until restart. Open positions remain at the broker.'
+                : 'The engine resumes decisioning and, in LIVE mode, order dispatch.',
+            recovery: 'State is reconstructed from persistent storage on next start; audit trail is unaffected.',
+            confirmVerb: running ? 'STOP' : 'START',
+            onConfirm: function () { doEngineToggle(running); },
+        });
+        return;
+    }
 
 
+}
+
+// Confirmed engine toggle (operator safety gate, CHG-0043).
+async function doEngineToggle(isStopping) {
     try {
 
         const result = await NX.api.post('/api/engine/toggle', { active: !isStopping }, { component: 'Engine', action: 'TOGGLE' });
@@ -10353,6 +10378,12 @@ async function scanIntelligenceEvolution() {
 
 document.addEventListener('DOMContentLoaded', () => {
 
+    // CONTROL CENTER boot (CHG-0043): bounded summary poll + global
+    // click delegation (copy/drill). Rendering happens on tab switch.
+    if (window.NX && window.NX.cc && window.NX.cc.views && window.NX.cc.views.boot) {
+        try { window.NX.cc.views.boot(); } catch (e) { console.warn('[CC_BOOT]', e); }
+    }
+
     // UI source-of-control: execution-mode selector (LIVE/SIMULATION/REPLAY).
     // Every change is persisted via the backend (settings DB) and applied
     // to the engine; the runtime badge always shows REAL connection state.
@@ -10361,6 +10392,26 @@ document.addEventListener('DOMContentLoaded', () => {
         modeSel.dataset.modeBound = '1';
         modeSel.addEventListener('change', async () => {
             const requested = modeSel.value;
+            // OPERATOR SAFETY (CHG-0043): switching INTO LIVE dispatches
+            // real orders; require structured confirmation first. Cancel
+            // reverts the selector to the authoritative server mode.
+            if (requested === 'LIVE' && window.NX && window.NX.cc && window.NX.cc.design) {
+                window.NX.cc.design.confirmDialog({
+                    action: 'Switch execution mode to LIVE',
+                    current: 'Configured mode: ' + (window.__serverExecutionMode || 'UNKNOWN'),
+                    impact: 'The engine will dispatch REAL orders to the connected broker account.',
+                    recovery: 'Revert by selecting PAPER/SHADOW again; every order stays in the audit trail.',
+                    confirmVerb: 'GO LIVE',
+                    onCancel: function () { modeSel.value = window.__serverExecutionMode || 'PAPER'; },
+                    onConfirm: function () { performEngineModeSet(requested); },
+                });
+                return;
+            }
+            performEngineModeSet(requested);
+        });
+
+// Confirmed mode application (operator safety gate, CHG-0043).
+async function performEngineModeSet(requested) {
             try {
                 const res = await NX.api.post('/api/engine/mode', { mode: requested }, { component: 'Engine', action: 'SET_MODE' });
                 if (res.ok && res.body && res.body.success) {
@@ -10387,7 +10438,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('[UI_ERROR] component=Engine action=SET_MODE', err);
                 if (window.__serverExecutionMode) modeSel.value = window.__serverExecutionMode;
             }
-        });
+}
     }
     // Track the authoritative server-reported mode so a failed change can revert.
     window.__serverExecutionMode = modeSel ? modeSel.value : null;

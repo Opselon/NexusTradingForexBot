@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="vendor/fontawesome/all.min.css">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="cc_styles.css">
 </head>
 <body class="bg-darkBg text-gray-100 font-sans min-h-screen flex flex-col overflow-x-hidden">
 
@@ -131,6 +132,19 @@
                 <span>Forensic Incident Center</span>
                 <span id="incident-nav-badge" class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">--</span>
             </button>
+
+            <button onclick="switchTab('tab-control-center', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                <i class="fa-solid fa-tower-observation text-lg w-5 text-accentCyan"></i>
+                <span>Control Center</span>
+                <span class="ml-auto text-[9px] font-black px-1.5 py-0.5 rounded bg-accentCyan/10 text-accentCyan border border-accentCyan/30">OPS</span>
+            </button>
+
+            <button onclick="switchTab('tab-health', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left">
+                <i class="fa-solid fa-heart-pulse text-lg w-5 text-emerald-400"></i>
+                <span>System Health</span>
+            </button>
+
+            
 
             <button onclick="switchTab('tab-command-center', this)" class="tab-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition text-left bg-accentCyan/5 border border-accentCyan/20">
                 <i class="fa-solid fa-satellite-dish text-lg w-5 text-accentCyan"></i>
@@ -2968,6 +2982,10 @@
             </section>
 
             <!-- TAB 13: STRATEGY COMMAND CENTER (2.5D SPATIAL) -->
+            <section id="tab-control-center" class="tab-content hidden space-y-6">
+                <div id="cc-root"></div>
+            </section>
+
             <section id="tab-command-center" class="tab-content hidden space-y-0 h-full">
                 <div class="w-full h-full min-h-[calc(100vh-56px)] bg-darkBg">
                     <iframe
@@ -3404,6 +3422,9 @@
     <script src="api_client.js?v=20260822f"></script>
     <script src="forensic_console.js?v=20260822g"></script>
     <script src="news_intelligence.js?v=20260822g"></script>
+    <script src="cc_components.js?v=20260902a"></script>
+    <script src="cc_state.js?v=20260902a"></script>
+    <script src="control_center.js?v=20260902a"></script>
     <script src="app.js?v=20260822i"></script>
 </body>
 </html>
