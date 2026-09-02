@@ -82,9 +82,7 @@ class TestRc1BannerJsonPurity:
         """-DryRun is a no-mutation driver surface; stdout must parse as ONE
         JSON document with zero non-JSON prefix (the RC-1 banner defect class)."""
         home = tmp_path / "NexusHome"
-        result = run_installer(
-            "-DryRun", "-Json", "-NexusHome", str(home), "-NonInteractive"
-        )
+        result = run_installer("-DryRun", "-Json", "-NexusHome", str(home), "-NonInteractive")
         assert result.returncode == 0, result.stderr[-500:]
         parsed = parse_json_stdout(result)
         assert parsed["ok"] is True
@@ -106,10 +104,13 @@ class TestRc1BannerJsonPurity:
             "'BANNER-DONE'\n"
         ).format(inst=str(INSTALLER).replace("\\", "/"), home=str(home).replace("\\", "/"))
         r = subprocess.run(
-            [PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-             "-Command", script],
-            capture_output=True, text=True, timeout=120,
-            encoding="utf-8", errors="replace", check=False,
+            [PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
         assert "BANNER-DONE" in r.stdout, r.stderr[-300:]
         assert "Nexus Scalp Engine Installer" not in r.stdout, (
@@ -126,7 +127,8 @@ class TestRc2HomeParamPrecedence:
         env_home.mkdir()
         result = run_installer(
             "-ShowResolvedPaths",
-            "-NexusHome", str(param_home),
+            "-NexusHome",
+            str(param_home),
             env={"NEXUS_HOME": str(env_home)},
         )
         assert result.returncode == 0, result.stderr[-500:]
@@ -143,9 +145,7 @@ class TestRc2HomeParamPrecedence:
         """The documented env override (no -NexusHome) keeps working: both
         roots derive from $env:NEXUS_HOME."""
         env_home = tmp_path / "EnvOnlyHome"
-        result = run_installer(
-            "-ShowResolvedPaths", env={"NEXUS_HOME": str(env_home)}
-        )
+        result = run_installer("-ShowResolvedPaths", env={"NEXUS_HOME": str(env_home)})
         assert result.returncode == 0, result.stderr[-500:]
         report = parse_json_stdout(result)
         eh = str(env_home).lower()
@@ -158,8 +158,10 @@ class TestRc2HomeParamPrecedence:
         engine = tmp_path / "CustomEngine"
         result = run_installer(
             "-ShowResolvedPaths",
-            "-NexusHome", str(param_home),
-            "-InstallDir", str(engine),
+            "-NexusHome",
+            str(param_home),
+            "-InstallDir",
+            str(engine),
             env={"NEXUS_HOME": str(tmp_path / "EH")},
         )
         assert result.returncode == 0, result.stderr[-500:]
