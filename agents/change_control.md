@@ -1490,3 +1490,20 @@ Scope (2026-09-02):
 NOT touched: installer/*, order_manager, provider_gate, regime, policy,
 shadow implementation, replay, observability SSOT, model training.
 Status: COMMITTED (19bf95b carried the tree; content verified at HEAD)
+
+## CHG-0043 - STATUS: HARDENED (2026-09-02, Hermes-Main)
+
+Result: REPLAY_ON_CHART_HARDENED. Parts landed: behavior-preserving stepwise
+refactor of streaming_replay (hash-equivalence probe-verified on synthetic +
+real M1), ReplaySession controller (step/play/pause/reset/seek/checkpoint;
+state-correctness fix: fresh engine per prefix run), contract-window causal
+projection, REPLAY_API v1 routes wired into create_app (local dataset loader,
+offline), engine-backed chart panel with KNOWN/UNKNOWN cursor overlay +
+decision drill-down, adversarial future-mutation invariance A-F all PASS,
+real-M1 E2E certification through wired create_app PASS. Certification
+artifact: artifacts/forensics/replay_on_chart_certification_20260902.json
+(dataset fp, model fp 8a5fc653858abf17b92e290920400f8f, replay_id scheme,
+leakage matrix, defects fixed). Remaining (documented): news-frame loader for
+sessions, checkpoint-resume streaming for very long windows. NOT touched:
+policy/regime/execution owners' WIP.
+Status: VERIFIED (research-only surface; zero live/broker impact)
