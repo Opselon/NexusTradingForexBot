@@ -36,6 +36,7 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.execution.execution_plan import ExecutionPlan
 from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
 from nexus_scalp.execution.position_intelligence import (
     SmartMetricsInputs,
@@ -4661,182 +4662,34 @@ class OrderLifecycleManager:
                 invalidate_reasons=invalidate_reasons,
                 regime_state=regime_state,
             )
-            if action == "CLOSE":
-                msg_id = self._order_message_ids.get(ticket)
-                # Attribute engine-initiated exits to hold-score decay unless a more
-                # specific mechanism (e.g. AI reversal) was already tagged.
-                self._forced_exit_mechanisms.setdefault(ticket, ExitMechanism.HOLD_SCORE_DECAY)
-
-                logger.info(
-                    f"[EXIT TRACE] EXECUTING BROKER CLOSE for ticket {ticket} | Mechanism: {self._forced_exit_mechanisms.get(ticket)} | Scenario: {scenario}"
-                )
-
-                if self.adapter.close_position(ticket=ticket):
-                    # TASK-7 (BUG-087): broker-verified close ordering. The exposure
-                    # slot is freed only after the position is confirmed gone from the
-                    # broker's live set; the per-ticket trackers survive so the next
-                    # management pass writes the single data-rich autopsy row.
-                    self._closed_tickets[ticket] = True
-                    self._broker_close_verified(ticket)
-                    if self.notifier:
-                        self.notifier.notify_early_emergency_cut(
-                            ticket=ticket,
-                            score=hold_score,
-                            reasons=scenario,
-                            saved_usd=pos.profit,
-                            reply_to_message_id=msg_id,
-                        )
-                    with self._live_tickets_lock:
-                        self._live_tickets_cache.pop(ticket, None)
-
-                    # SPLIT-ORDER DESYNC GUARD: a position split across multiple MT5
-                    # tickets from the SAME dispatch (same order_id/request) must never
-                    # desync into one ticket closed while its sibling keeps trading.
-                    # When an emergency/hard exit fires for one leg, propagate the close
-                    # to every live sibling leg of the same order.
-                    self._close_sibling_legs(ticket, scenario, now)
-                else:
-                    self._forced_exit_mechanisms.pop(ticket, None)
-                continue
-
-            elif action == "MODIFY_SL":
-                # Monotonic safety floor (invariant): a rule-driven SL target may
-                # never loosen the broker SL or regress behind the confirmed
-                # breakeven lock, even when the rule matrix proposes a wider stop.
-                if rule_target_sl > 0.0 and not self.is_sl_improvement(pos, rule_target_sl):
-                    rule_target_sl = 0.0
-                if rule_target_sl > 0.0 and self._should_modify_sl(ticket, rule_target_sl):
-                    if self.adapter.modify_position(
-                        ticket=ticket, stop_loss=rule_target_sl, take_profit=pos.tp
-                    ):
-                        self._last_modify_sl[ticket] = rule_target_sl
-                        self._sl_modified_flags[ticket] = True
-                        if self.notifier:
-                            msg_id = self._order_message_ids.get(ticket)
-                            self.notifier.notify_order_modification(
-                                ticket=ticket,
-                                symbol=pos.symbol,
-                                field_modified=f"Stop Loss ({scenario})",
-                                old_value=pos.sl,
-                                new_value=rule_target_sl,
-                                reply_to_message_id=msg_id,
-                            )
-                continue
-
-            elif action == "PARTIAL_CLOSE":
-                if self.enable_partial_tp and not self._partial_closed_tickets.get(ticket, False):
-                    vol_step = (
-                        symbol_info.volume_step
-                        if symbol_info and symbol_info.volume_step > 0
-                        else 0.01
-                    )
-                    partial_volume = round(
-                        round((pos.volume * self.partial_tp_ratio) / vol_step) * vol_step, 2
-                    )
-                    if partial_volume < pos.volume:
-                        if self.adapter.close_position(ticket=ticket, volume=partial_volume):
-                            self._partial_closed_tickets[ticket] = True
-
-            elif action == "BREAK_EVEN":
-                target_sl = (
-                    pos.price_open + max(self.be_lock, spread)
-                    if pos.type == OrderType.BUY
-                    else pos.price_open - max(self.be_lock, spread)
-                )
-                target_sl = round(target_sl, 2)
-                valid_stop = False
-                if pos.type == OrderType.BUY:
-                    if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
-                        valid_stop = True
-                elif (pos.sl == 0.0 or target_sl < pos.sl) and (
-                    target_sl - current_tick.ask
-                ) >= min_stop_gap:
-                    valid_stop = True
-
-                # BUG-086: never re-issue a BREAK_EVEN modify once the protection
-                # state machine already confirmed the lock (prevents duplicate
-                # broker modifications + duplicate notifications).
-                if self.get_protection_state(ticket).was_sl_modified:
-                    valid_stop = False
-                if valid_stop and self._should_modify_sl(ticket, target_sl):
-                    success = self.adapter.modify_position(
-                        ticket=ticket, stop_loss=target_sl, take_profit=pos.tp
-                    )
-                    if success:
-                        # Only a CONFIRMED modification advances the tracked final SL
-                        # (BUG-085).
-                        self._last_modify_sl[ticket] = target_sl
-                        self._sl_modified_flags[ticket] = True
-                        self._log_protection_audit(
-                            pos,
-                            action="BREAKEVEN_LOCK",
-                            reason=f"BREAKEVEN_LOCK_ACTIVATED (router dispatch) target_sl={target_sl}",
-                            stop_loss=target_sl,
-                        )
-                    else:
-                        self._log_protection_audit(
-                            pos,
-                            action="BREAKEVEN_FAILED",
-                            reason=f"BREAKEVEN LOCK FAILED (router dispatch) target_sl={target_sl}",
-                            stop_loss=target_sl,
-                        )
-                    if success and self.notifier:
-                        msg_id = self._order_message_ids.get(ticket)
-                        orig_risk = self._initial_risks.get(ticket, 0.0)
-                        contract_size = (
-                            symbol_info.trade_contract_size
-                            if symbol_info and symbol_info.trade_contract_size > 0
-                            else 100.0
-                        )
-                        protected_amt = abs(target_sl - pos.price_open) * pos.volume * contract_size
-                        self.notifier.notify_break_even_applied_extended(
-                            ticket=ticket,
-                            new_sl=target_sl,
-                            original_risk_usd=orig_risk,
-                            protected_amount_usd=protected_amt,
-                            reply_to_message_id=msg_id,
-                        )
-
-            elif action == "NORMAL_TRAIL":
-                trail_distance = max(min_stop_gap, round(atr * 1.15, 2))
-                target_sl = (
-                    price_current - trail_distance
-                    if pos.type == OrderType.BUY
-                    else price_current + trail_distance
-                )
-                target_sl = round(target_sl, 2)
-                valid_stop = False
-                if pos.type == OrderType.BUY:
-                    if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
-                        valid_stop = True
-                elif (pos.sl == 0.0 or target_sl < pos.sl) and (
-                    target_sl - current_tick.ask
-                ) >= min_stop_gap:
-                    valid_stop = True
-
-                # Monotonic safety floor (BUG-085): never loosen protection even on
-                # a rule-driven NORMAL_TRAIL verdict.
-                valid_stop = valid_stop and self.is_sl_improvement(pos, target_sl)
-                if valid_stop and self._should_modify_sl(ticket, target_sl):
-                    old_sl_val = pos.sl
-                    success = self.adapter.modify_position(
-                        ticket=ticket, stop_loss=target_sl, take_profit=pos.tp
-                    )
-                    if success:
-                        # Only a CONFIRMED modification advances the tracked final SL
-                        # (BUG-085).
-                        self._last_modify_sl[ticket] = target_sl
-                        self._sl_modified_flags[ticket] = True
-                    if success and self.notifier:
-                        msg_id = self._order_message_ids.get(ticket)
-                        self.notifier.notify_trailing_stop_advanced_extended(
-                            ticket=ticket,
-                            old_sl=old_sl_val,
-                            new_sl=target_sl,
-                            current_price=price_current,
-                            reply_to_message_id=msg_id,
-                        )
-
+            # S6-dispatch: approved-plan broker execution. The plan snapshot is
+            # built from the decision stage; the dispatcher runs the verbatim
+            # branches (identical broker calls, ordering, and state mutations).
+            plan = ExecutionPlan(
+                action=action,
+                scenario=scenario,
+                ticket=ticket,
+                symbol=pos.symbol,
+                rule_target_sl=rule_target_sl,
+                mechanism=self._forced_exit_mechanisms.get(ticket),
+            )
+            self._execute_position_action(
+                plan=plan,
+                pos=pos,
+                ticket=ticket,
+                now=now,
+                atr=atr,
+                spread=spread,
+                min_stop_gap=min_stop_gap,
+                price_current=price_current,
+                rule_target_sl=rule_target_sl,
+                hold_score=hold_score,
+                protection=protection,
+                symbol_info=symbol_info,
+                current_tick=current_tick,
+                scenario=scenario,
+                action=action,
+            )
         return positions
 
     def _sweep_dead_tickets(
@@ -5609,6 +5462,207 @@ class OrderLifecycleManager:
         self._hold_score_tracker[ticket] = hold_score
 
         return hold_score, invalidate_reasons, base_hold_score
+
+    def _execute_position_action(
+        self,
+        plan: "ExecutionPlan",
+        pos: Position,
+        ticket: int,
+        now: datetime,
+        atr: float,
+        spread: float,
+        min_stop_gap: float,
+        price_current: float,
+        rule_target_sl: float,
+        hold_score: int,
+        protection: PositionProtectionState,
+        symbol_info: SymbolInfo | None,
+        current_tick: TickData,
+        scenario: str,
+        action: str,
+    ) -> None:
+        """BROKER DISPATCH STAGE (S6-dispatch): executes an approved
+        ExecutionPlan against the broker adapter — CLOSE / MODIFY_SL /
+        PARTIAL_CLOSE / BREAK_EVEN / NORMAL_TRAIL branches, verbatim from
+        manage_active_positions' per-position loop (identical call ordering,
+        identical arguments, identical state mutations). The plan is intent;
+        this stage executes it; the manager remains the orchestrator."""
+        action = plan.action
+        scenario = plan.scenario
+        rule_target_sl = plan.rule_target_sl
+        if action == "CLOSE":
+            msg_id = self._order_message_ids.get(ticket)
+            # Attribute engine-initiated exits to hold-score decay unless a more
+            # specific mechanism (e.g. AI reversal) was already tagged.
+            self._forced_exit_mechanisms.setdefault(ticket, ExitMechanism.HOLD_SCORE_DECAY)
+
+            logger.info(
+                f"[EXIT TRACE] EXECUTING BROKER CLOSE for ticket {ticket} | Mechanism: {self._forced_exit_mechanisms.get(ticket)} | Scenario: {scenario}"
+            )
+
+            if self.adapter.close_position(ticket=ticket):
+                # TASK-7 (BUG-087): broker-verified close ordering. The exposure
+                # slot is freed only after the position is confirmed gone from the
+                # broker's live set; the per-ticket trackers survive so the next
+                # management pass writes the single data-rich autopsy row.
+                self._closed_tickets[ticket] = True
+                self._broker_close_verified(ticket)
+                if self.notifier:
+                    self.notifier.notify_early_emergency_cut(
+                        ticket=ticket,
+                        score=hold_score,
+                        reasons=scenario,
+                        saved_usd=pos.profit,
+                        reply_to_message_id=msg_id,
+                    )
+                with self._live_tickets_lock:
+                    self._live_tickets_cache.pop(ticket, None)
+
+                # SPLIT-ORDER DESYNC GUARD: a position split across multiple MT5
+                # tickets from the SAME dispatch (same order_id/request) must never
+                # desync into one ticket closed while its sibling keeps trading.
+                # When an emergency/hard exit fires for one leg, propagate the close
+                # to every live sibling leg of the same order.
+                self._close_sibling_legs(ticket, scenario, now)
+            else:
+                self._forced_exit_mechanisms.pop(ticket, None)
+            # loop-body section, so this continue was a no-op in the original code)
+
+        elif action == "MODIFY_SL":
+            # Monotonic safety floor (invariant): a rule-driven SL target may
+            # never loosen the broker SL or regress behind the confirmed
+            # breakeven lock, even when the rule matrix proposes a wider stop.
+            if rule_target_sl > 0.0 and not self.is_sl_improvement(pos, rule_target_sl):
+                rule_target_sl = 0.0
+            if rule_target_sl > 0.0 and self._should_modify_sl(ticket, rule_target_sl):
+                if self.adapter.modify_position(
+                    ticket=ticket, stop_loss=rule_target_sl, take_profit=pos.tp
+                ):
+                    self._last_modify_sl[ticket] = rule_target_sl
+                    self._sl_modified_flags[ticket] = True
+                    if self.notifier:
+                        msg_id = self._order_message_ids.get(ticket)
+                        self.notifier.notify_order_modification(
+                            ticket=ticket,
+                            symbol=pos.symbol,
+                            field_modified=f"Stop Loss ({scenario})",
+                            old_value=pos.sl,
+                            new_value=rule_target_sl,
+                            reply_to_message_id=msg_id,
+                        )
+            # loop-body section, so this continue was a no-op in the original code)
+
+        elif action == "PARTIAL_CLOSE":
+            if self.enable_partial_tp and not self._partial_closed_tickets.get(ticket, False):
+                vol_step = (
+                    symbol_info.volume_step if symbol_info and symbol_info.volume_step > 0 else 0.01
+                )
+                partial_volume = round(
+                    round((pos.volume * self.partial_tp_ratio) / vol_step) * vol_step, 2
+                )
+                if partial_volume < pos.volume:
+                    if self.adapter.close_position(ticket=ticket, volume=partial_volume):
+                        self._partial_closed_tickets[ticket] = True
+
+        elif action == "BREAK_EVEN":
+            target_sl = (
+                pos.price_open + max(self.be_lock, spread)
+                if pos.type == OrderType.BUY
+                else pos.price_open - max(self.be_lock, spread)
+            )
+            target_sl = round(target_sl, 2)
+            valid_stop = False
+            if pos.type == OrderType.BUY:
+                if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
+                    valid_stop = True
+            elif (pos.sl == 0.0 or target_sl < pos.sl) and (
+                target_sl - current_tick.ask
+            ) >= min_stop_gap:
+                valid_stop = True
+
+            # BUG-086: never re-issue a BREAK_EVEN modify once the protection
+            # state machine already confirmed the lock (prevents duplicate
+            # broker modifications + duplicate notifications).
+            if self.get_protection_state(ticket).was_sl_modified:
+                valid_stop = False
+            if valid_stop and self._should_modify_sl(ticket, target_sl):
+                success = self.adapter.modify_position(
+                    ticket=ticket, stop_loss=target_sl, take_profit=pos.tp
+                )
+                if success:
+                    # Only a CONFIRMED modification advances the tracked final SL
+                    # (BUG-085).
+                    self._last_modify_sl[ticket] = target_sl
+                    self._sl_modified_flags[ticket] = True
+                    self._log_protection_audit(
+                        pos,
+                        action="BREAKEVEN_LOCK",
+                        reason=f"BREAKEVEN_LOCK_ACTIVATED (router dispatch) target_sl={target_sl}",
+                        stop_loss=target_sl,
+                    )
+                else:
+                    self._log_protection_audit(
+                        pos,
+                        action="BREAKEVEN_FAILED",
+                        reason=f"BREAKEVEN LOCK FAILED (router dispatch) target_sl={target_sl}",
+                        stop_loss=target_sl,
+                    )
+                if success and self.notifier:
+                    msg_id = self._order_message_ids.get(ticket)
+                    orig_risk = self._initial_risks.get(ticket, 0.0)
+                    contract_size = (
+                        symbol_info.trade_contract_size
+                        if symbol_info and symbol_info.trade_contract_size > 0
+                        else 100.0
+                    )
+                    protected_amt = abs(target_sl - pos.price_open) * pos.volume * contract_size
+                    self.notifier.notify_break_even_applied_extended(
+                        ticket=ticket,
+                        new_sl=target_sl,
+                        original_risk_usd=orig_risk,
+                        protected_amount_usd=protected_amt,
+                        reply_to_message_id=msg_id,
+                    )
+
+        elif action == "NORMAL_TRAIL":
+            trail_distance = max(min_stop_gap, round(atr * 1.15, 2))
+            target_sl = (
+                price_current - trail_distance
+                if pos.type == OrderType.BUY
+                else price_current + trail_distance
+            )
+            target_sl = round(target_sl, 2)
+            valid_stop = False
+            if pos.type == OrderType.BUY:
+                if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
+                    valid_stop = True
+            elif (pos.sl == 0.0 or target_sl < pos.sl) and (
+                target_sl - current_tick.ask
+            ) >= min_stop_gap:
+                valid_stop = True
+
+            # Monotonic safety floor (BUG-085): never loosen protection even on
+            # a rule-driven NORMAL_TRAIL verdict.
+            valid_stop = valid_stop and self.is_sl_improvement(pos, target_sl)
+            if valid_stop and self._should_modify_sl(ticket, target_sl):
+                old_sl_val = pos.sl
+                success = self.adapter.modify_position(
+                    ticket=ticket, stop_loss=target_sl, take_profit=pos.tp
+                )
+                if success:
+                    # Only a CONFIRMED modification advances the tracked final SL
+                    # (BUG-085).
+                    self._last_modify_sl[ticket] = target_sl
+                    self._sl_modified_flags[ticket] = True
+                if success and self.notifier:
+                    msg_id = self._order_message_ids.get(ticket)
+                    self.notifier.notify_trailing_stop_advanced_extended(
+                        ticket=ticket,
+                        old_sl=old_sl_val,
+                        new_sl=target_sl,
+                        current_price=price_current,
+                        reply_to_message_id=msg_id,
+                    )
 
     def reconcile_missed_closes(
         self,
