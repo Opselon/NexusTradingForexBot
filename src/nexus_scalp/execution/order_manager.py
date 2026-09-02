@@ -53,6 +53,7 @@ from nexus_scalp.execution.protection_ledger import (
 from nexus_scalp.execution.recovery_budget import RecoveryBudgetLedger
 from nexus_scalp.execution.telemetry_throttle import TelemetryThrottle
 from nexus_scalp.execution.terminal_outcome import emit_terminal_pending_outcome
+from nexus_scalp.execution.tickets_cache import TicketsCache
 from nexus_scalp.experience.lifecycle import DecisionLifecycle
 from nexus_scalp.experience.outcome_recovery import (
     classify_exit_with_evidence,
@@ -396,6 +397,8 @@ class OrderLifecycleManager:
 
         # S6 STEP-A: telemetry throttle owner (BUG-129 shared gate).
         self._telemetry = TelemetryThrottle()
+        # S6 Phase-2: live-tickets cache owner (positions+pending view).
+        self._tickets_cache = TicketsCache()
 
         # S6-escalation: hold-score state owner (dicts moved to
         # hold_score_ledger.HoldScoreLedger; compat properties below).
@@ -4057,57 +4060,19 @@ class OrderLifecycleManager:
 
         # Re-build live tickets cache thread-safely
         with self._live_tickets_lock:
-            new_cache = {}
-            if positions:
-                for pos in positions:
-                    new_cache[pos.ticket] = {
-                        "ticket": pos.ticket,
-                        "symbol": pos.symbol,
-                        "price": pos.price_open,
-                        "magic": getattr(pos, "magic", 888101),
-                        "type": "POSITION",
-                        # Direction is published so SignalPolicy can detect an opposing
-                        # signal and request an AI reversal instead of stacking orders.
-                        "direction": pos.type.value,
-                        "volume": pos.volume,
-                        "sl": pos.sl,
-                        "tp": pos.tp,
-                        "profit": pos.profit,
-                    }
-
-            try:
-                get_pending_fn = getattr(self.adapter, "get_pending_orders", None)
-                if get_pending_fn:
-                    pending_orders = get_pending_fn(symbol=symbol)
-                    if pending_orders:
-                        for pending in pending_orders:
-                            ticket = self._pending_field(pending, "ticket", "order_id")
-                            if ticket:
-                                pending_type = self._pending_field(pending, "type", "order_type")
-                                pending_dir = (
-                                    "BUY"
-                                    if "BUY"
-                                    in str(getattr(pending_type, "value", pending_type)).upper()
-                                    else "SELL"
-                                )
-                                new_cache[ticket] = {
-                                    "ticket": ticket,
-                                    "symbol": self._pending_field(
-                                        pending, "symbol", default=symbol
-                                    ),
-                                    "price": self._pending_field(
-                                        pending, "price_open", "price", default=0.0
-                                    ),
-                                    "magic": self._pending_field(
-                                        pending, "magic", "magic_number", default=888101
-                                    ),
-                                    "type": "PENDING",
-                                    "direction": pending_dir,
-                                    "volume": self._pending_field(pending, "volume", default=0.0),
-                                }
-            except Exception as e:
-                logger.error("Failed to query pending orders for cache", error=e)
-
+            # S6 Phase-2: cache rebuild owned by TicketsCache (verbatim
+            # algorithm; swap still happens under _live_tickets_lock here).
+            new_cache = self._tickets_cache.rebuild(
+                positions=positions,
+                pending_lookup=(
+                    (lambda: self.adapter.get_pending_orders_snapshot(symbol=symbol))
+                    if getattr(self.adapter, "get_pending_orders_snapshot", None)
+                    else None
+                ),
+                pending_field=self._pending_field,
+                symbol=symbol,
+            )
+            self._tickets_cache.swap(new_cache)
             self._live_tickets_cache = new_cache
 
         # BUG-072/073: periodic broker-truth reconciliation of the internal
@@ -4849,7 +4814,7 @@ class OrderLifecycleManager:
                         reply_to_message_id=msg_id,
                     )
                 with self._live_tickets_lock:
-                    self._live_tickets_cache.pop(ticket, None)
+                    self._tickets_cache.pop_ticket(ticket)
 
                 # SPLIT-ORDER DESYNC GUARD: a position split across multiple MT5
                 # tickets from the SAME dispatch (same order_id/request) must never
@@ -5099,7 +5064,7 @@ class OrderLifecycleManager:
                 # deliberately KEEP the per-ticket trackers alive: the next management
                 # pass detects the dead ticket and writes the single autopsy row.
                 with self._live_tickets_lock:
-                    self._live_tickets_cache.pop(ticket, None)
+                    self._tickets_cache.pop_ticket(ticket)
 
                 # Dispatch immediate reversal stop order (clamped to HARD_MAX_LOTS).
                 rev_volume = self._clamp_dispatch_volume(pos.volume, symbol=pos.symbol)
@@ -6225,4 +6190,4 @@ class OrderLifecycleManager:
         self._recovery_ledger.drop_ticket(ticket)
         self._state_machine.drop_ticket(ticket)
         with self._live_tickets_lock:
-            self._live_tickets_cache.pop(ticket, None)
+            self._tickets_cache.pop_ticket(ticket)
