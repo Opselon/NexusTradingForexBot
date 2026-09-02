@@ -1,49 +1,40 @@
 ---
-title: Nexus Scalp Engine — Dokumentation
-description: Dokumentationszentrum des Nexus Scalp Engine — quantitative Forschungs- und Handelsplattform.
+title: Nexus Scalp Engine
+description: Forschungs- und Ausführungsplattform für quantitativen Handel — kausale Merkmale, tiefe Modelle, invariante Risiken, deterministische Forschung, forensische Observability.
 lang: de
 translation-status: complete
-source-revision: en:index@9.0.6
+source-revision: en:site-content-index@2026-09-02
 ---
 
-# Nexus Scalp Engine — Dokumentation
+:::cards
+- **Beweise vor Behauptungen** — Metriken ohne Belege werden als `n/a` angezeigt; negative Ergebnisse werden veröffentlicht, nicht verborgen.
+- **Kein Blick in die Zukunft** — Walk-Forward mit Purge und Embargo, strikt kausale Merkmale, bit-exaktes Replay.
+- **Laufzeit-Wahrheit** — Broker-Fakten und Runtime-Gates schlagen Absichten und veraltete Caches.
+- **Null Order-Autorität** — Forschungs-, Shadow- und Lernkomponenten können physisch keine Orders platzieren.
+:::
 
-**Forschungsgetriebene quantitative Handelsplattform** — eine hexagonale,
-ereignisgetriebene Scalping-Engine für MetaTrader 5 (Primärmarkt: XAUUSD M1),
-gebaut um kausale Feature-Technik, artefaktbasierte Modellgovernance,
-deterministische Forschungswerkzeuge und forensische Observierbarkeit.
+## Was ist Nexus?
 
-> [!IMPORTANT]
-> Diese Dokumentation beschreibt eine **Forschungs- und Engineering-Plattform**.
-> Sie ist keine Anlageberatung und enthält keine Renditeversprechen. Leveraged
-> Scalping birgt extreme finanzielle Risiken. Siehe
-> [Projektstatus](../project/status.md).
+Eine hexagonale, ereignisgetriebene Scalping-Engine für MetaTrader 5 —
+Primärmarkt XAUUSD (Gold) auf M1 — die **kausale 50D-Merkmale**, **Deep-Learning-Inferenz**
+(TCN mit zwei Pfaden + Self-Attention), eine **SMC-Policymatrix**, eine
+**begrenzte Risikokomponente**, **deterministische Forschungswerkzeuge**
+(Walk-Forward, OOS-Gate, Replay, Kontrafaktische) und **forensische
+Observability** in einer auditierbaren Pipeline verbindet.
 
-## Hier starten
+Die Plattform veröffentlicht ihre eigenen negativen Ergebnisse — der
+aufwendig konstruierte 70D-Kandidat wurde vom Out-of-Sample-Gate
+**abgelehnt**, und diese Ablehnung wird als Ergebnis erster Klasse
+bewahrt. Eine Validierungsschicht, die *Nein* sagen kann, ist der
+eigentliche Punkt.
 
-| Frage | Seite |
-| :--- | :--- |
-| Was ist Nexus und warum gibt es es? | [Vision](vision.md) |
-| Wie führe ich es aus? | [Schnellstart](quickstart.md) |
-| Wie ist die Architektur aufgebaut? | [Architektur](../architecture/overview.md) |
-| Wie wird Forschung validiert? | [Methodik](../research/methodology.md) |
-| Was ist real vs. experimentell? | [Status](../project/status.md) |
-| Wohin geht das Projekt? | [Roadmap](../project/roadmap.md) |
-| Wie kann ich mitwirken? | [Beitragsguide](../contributing/contribution-guide.md) |
+## Was Sie von hier aus tun können
 
-## Schnellstart
-
-```bash
-nexus doctor          # vollständige Diagnose (nur Lesen)
-nexus start           # PAPER-Modus als Standard — niemals LIVE ohne Bestätigung
-nexus start --mode shadow   # echte Marktdaten, null Order-Autorität
-```
-
-## Sprachen
-
-| 🇬🇧 English | 🇮🇷 فارسی | 🇪🇸 Español | 🇸🇦 العربية | 🇩🇪 Deutsch |
-| :---: | :---: | :---: | :---: | :---: |
-| [vollständig](/index.md) | [نمای کلی](/fa/index.md) | [vista previa](/es/index.md) | [نظرة عامة](/ar/index.md) | **aktuell** |
-
-Weitere Seiten sind auf Englisch verfügbar; die Übersetzungsabdeckung wird mit
-`scripts/docs/check_translations.py` geprüft.
+- **Ausführen** — PAPER-Modus als Standard, niemals stillschweigend LIVE:
+  siehe [Schnellstart](getting-started/quickstart.md).
+- **Verstehen** — [Architektur](architecture/overview.md) und der
+  [Datenfluss](architecture/data-flow.md) von Tick zu Entscheidung.
+- **Die Forschung bewerten** — [Methodik](research/methodology.md) und
+  [Projektstatus](project/status.md), je Fähigkeit evidenzgeprüft.
+- **Beitragen** — der [Beitragsleitfaden](contributing/contribution-guide.md)
+  destilliert einen Multi-Agenten-Engineering-Vertrag in einen menschlichen Workflow.
