@@ -196,9 +196,13 @@ def check_parity() -> ParityReport:
 
     # 5. No CI-only lint class omitted locally: CI gates ruff_lint + ruff_format;
     #    the local gate must run BOTH (ruff check + ruff format --check).
+    #    CHG-0052: match the exact arg-list literals, not a bare "--check"
+    #    substring — comments like "# ruff format --check" must not defeat
+    #    the drift detector.
     gtext = _read(GATE_SCRIPT)
     has_lint = '"check"' in gtext and "ruff" in gtext
-    has_format = '"format", "--check"' in gtext or ('"format"' in gtext and "--check" in gtext)
+    fmt_list = re.search(r'\[\s*"format"\s*,\s*"--check"\s*\]', gtext)
+    has_format = fmt_list is not None
     rep.records.append(
         ParityRecord(
             "no_ci_only_lint_class_omitted",

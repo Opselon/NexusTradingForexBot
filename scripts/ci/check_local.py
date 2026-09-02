@@ -63,6 +63,9 @@ SCOPE_EXCLUDES = (
 def _git(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
+        # ALWAYS the tree the gate script lives in (parents[2] of __file__).
+        # A gate copy inside a temp checkout must interrogate THAT checkout —
+        # hardcoding the real repo would silently cross tree boundaries.
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -119,6 +122,31 @@ def deleted_files() -> list[str]:
     if r.returncode != 0:
         return []
     return sorted(line.strip() for line in r.stdout.splitlines() if line.strip().endswith(".py"))
+
+
+def changed_files_any() -> list[str]:
+    """ALL changed files regardless of extension (working tree + staged +
+    untracked + origin/main delta), including deletions.
+
+    Used by prepush_plan ONLY: gate-integrity files (critical_suite.txt,
+    pyproject.toml, ci.yml) and docs-only surfaces are non-Python, so a
+    .py-filtered enumeration silently bypasses the integrity contract.
+    Lint/format scope MUST keep using changed_files() (.py only).
+    """
+    names: set[str] = set()
+    diffs: list[list[str]] = [
+        ["diff", "--name-only", "HEAD"],
+        ["diff", "--name-only", "--cached"],
+        ["ls-files", "--others", "--exclude-standard"],
+    ]
+    base = _git(["merge-base", "HEAD", "origin/main"])
+    if base.returncode == 0 and base.stdout.strip():
+        diffs.append(["diff", "--name-only", base.stdout.strip()])
+    for d in diffs:
+        r = _git(d)
+        if r.returncode == 0:
+            names.update(line.strip() for line in r.stdout.splitlines() if line.strip())
+    return sorted(n for n in names if n and not any(x in f"/{n}" for x in SCOPE_EXCLUDES))
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +374,57 @@ def stage_fast_tests(scope_files: list[str]) -> StageResult:
 # ---------------------------------------------------------------------------
 # Main gate
 # ---------------------------------------------------------------------------
+#: Files whose modification triggers MANDATORY full-tree validation: a change
+#: to the gate itself, the critical-suite manifest, or the shared lint/type
+#: config can silently widen or narrow what "safe to push" means for every
+#: future push. Gate-integrity contract (CHG-0049): touching any of these
+#: forces scope=all + mypy ON, and records a parity obligation in the result.
+GATE_INTEGRITY_FILES = (
+    "scripts/ci/check_local.py",
+    "scripts/ci/verify_critical_suite_manifest.py",
+    "tests/critical_suite.txt",
+    "pyproject.toml",
+    ".github/workflows/ci.yml",
+)
+
+
+#: Push-bypass contract: the minimum validation a push requires. --prepush
+#: enforces this exactly; agents may exceed it, never fall below it.
+#:   scope: the union of every .py file that will reach the remote with this
+#:          push (working tree + staged + untracked + origin/main delta)
+#:   mypy:  ON unless the ONLY changed surface is docs/markdown (nothing the
+#:          type checker consumes can drift)
+def prepush_plan() -> dict[str, Any]:
+    """Deterministic push-time plan derived from the CURRENT git state.
+
+    Machine-checkable definition of "safe to push" (steer §2/§6):
+      * scope is ALWAYS the push scope (the union the CI will see) — a
+        narrower scope than the changed files require is a bypass.
+      * mypy is ON unless the push surface is pure docs (no .py, no config).
+      * gate-integrity files (gate/manifest/pyproject/CI workflow) in the
+        diff force --all + mypy: a modified gate must prove it still covers
+        the whole tree before it may guard anyone else's push.
+    """
+    changed = changed_files_any()
+    deleted = [f for f in changed if not (REPO_ROOT / f).exists()]
+    all_changed = set(changed)
+    integrity_touched = sorted(all_changed & set(GATE_INTEGRITY_FILES))
+    # docs-only push surface: no python, no config, no CI wiring changed
+    py_or_config = [
+        f for f in all_changed if _in_scope(f) or f.endswith((".yml", ".yaml", ".toml"))
+    ]
+    docs_only = bool(all_changed) and not py_or_config
+    return {
+        "scope_mode": "all" if integrity_touched else "changed",
+        "all_files": bool(integrity_touched),
+        "fast": docs_only and not integrity_touched,
+        "integrity_files_touched": integrity_touched,
+        "docs_only": docs_only,
+        "push_surface_files": sorted(all_changed),
+        "deleted_py_files": deleted,
+    }
+
+
 def run_gate(*, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_out: bool) -> int:
     scope = changed_files(all_files=all_files, staged_only=staged_only)
     deleted = deleted_files()
@@ -420,6 +499,16 @@ def run_gate(*, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_
         "fast_mode": fast,
         "results": [r.public() for r in results],
     }
+    # Gate-integrity obligations travel with EVERY result so a drift/bypass
+    # detector can audit any run envelope post-hoc (steer §4).
+    plan = prepush_plan()
+    envelope["gate_integrity"] = {
+        "integrity_files_touched": plan["integrity_files_touched"],
+        "full_tree_required": plan["all_files"],
+        "full_tree_honored": all_files,
+        "mypy_omitted": fast,
+        "mypy_omission_justified": plan["docs_only"],
+    }
     payload = json.dumps(envelope, indent=2 if not json_out else None, sort_keys=False)
     if json_out:
         sys.stdout.write(payload + "\n")
@@ -438,12 +527,39 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--staged", action="store_true", help="staged files only")
     p.add_argument("--fix", action="store_true", help="apply SAFE mechanical fixes then re-check")
     p.add_argument("--fast", action="store_true", help="skip mypy (cheap stages only)")
+    p.add_argument(
+        "--prepush",
+        action="store_true",
+        help="canonical push-time contract: push-scope validation level chosen "
+        "deterministically from the current git state (overrides --all/--staged/--fast)",
+    )
     p.add_argument("--json", action="store_true", help="pure-JSON stdout (diagnostics to stderr)")
     args = p.parse_args(argv)
     if args.all and args.staged:
         print("--all and --staged are mutually exclusive", file=sys.stderr)
         return 2
     try:
+        if args.prepush:
+            # CANONICAL PRE-PUSH CONTRACT (steer §2/§6): the push scope and the
+            # validation level are derived from git state, not agent mood.
+            # Gate-integrity changes force full-tree + mypy; docs-only surfaces
+            # may skip mypy; everything else gets push-scope + mypy. Agents may
+            # run a WIDER check manually, never a narrower one.
+            plan = prepush_plan()
+            if not args.json:
+                print(
+                    f"[prepush] scope={plan['scope_mode']} "
+                    f"mypy={'OFF(docs-only)' if plan['fast'] else 'ON'} "
+                    f"integrity={plan['integrity_files_touched'] or 'none'}",
+                    file=sys.stderr,
+                )
+            return run_gate(
+                all_files=plan["all_files"],
+                staged_only=False,
+                fix=args.fix,
+                fast=plan["fast"],
+                json_out=args.json,
+            )
         return run_gate(
             all_files=args.all,
             staged_only=args.staged,

@@ -195,14 +195,26 @@ def test_foreign_wip_untouched_by_fix(tree_factory) -> None:
     staged_foreign = _write(tree, "scratch/gate_foreign_staged.py", "a = 1\nb  =2\n")
     before_staged = staged_foreign.read_text(encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=tree, capture_output=True, check=False)
+    staged_before = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=tree,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
     _gate(tree, "--prepush", "--fix", "--json")
     assert foreign.read_text(encoding="utf-8") == before
     assert staged_foreign.read_text(encoding="utf-8") == before_staged
-    # nothing was staged/committed by the gate
-    st = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=tree, capture_output=True, text=True, check=False
-    )
-    assert "A " not in st.stdout and "M " not in st.stdout.replace(" M", "")
+    # the gate must never change the staging state (scratch/ is TRACKED in
+    # this repo, so assert staged-set equality, not absence of 'A ' entries)
+    staged_after = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=tree,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    assert staged_after == staged_before
 
 
 # ---------------------------------------------------------------------------
