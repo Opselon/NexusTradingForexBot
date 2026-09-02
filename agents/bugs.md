@@ -7457,3 +7457,26 @@ pass - discovered during deploy-gate verification, referred NOT fixed)
   for the frozen-profile candidate scan, or deleting the stale untracked
   build-info.json from the dev machine. NOT a Shadow-subsystem defect; no
   code changed under CHG-0046 for this.
+
+## BUG-211 - Docs CI false-negative path: check_docs sitemap probe lowercased URL tails, breaking case-sensitive page dirs on Linux runners (2026-09-02, Hermes-Main supervisor; FIXED here)
+
+### Evidence
+- Docs CI failed on b6cd530 (run 33585231825, job 100107902692): 5x
+  "sitemap URL not built: .../architecture/QA_BLIND_SPOT_MATRIX/" (en/fa/es/ar/de).
+- Local site/_site DOES contain architecture/QA_BLIND_SPOT_MATRIX/index.html
+  (built 06:34) — the page exists; the PROBE was wrong.
+- Root cause (read of scripts/docs/check_docs.py ~L278): the probe lowercased the
+  whole URL, split the tail, and tested `public / tail` with an all-lowercase path.
+  On Windows (case-insensitive FS) that matches; on Linux runners it misses any
+  page dir containing uppercase (QA_BLIND_SPOT_MATRIX was the first such page).
+  Triggered by 3bd447c adding docs/architecture/QA_BLIND_SPOT_MATRIX.md.
+
+### Fix (check_docs.py only)
+- Slice the tail from the ORIGINAL url (case preserved); locate the repo /
+  github.io segments case-insensitively. Added a final case-insensitive
+  fallback walk for genuine case mismatches between URL and disk.
+- Verified: py_compile OK, ruff check+format OK, reproduced probe now
+  reports 0 problems for the exact 5 failing URLs locally.
+
+Status: FIXED (docs-tooling probe only; no site content changed).
+
