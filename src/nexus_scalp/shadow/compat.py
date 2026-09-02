@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import hashlib
 import math
-from typing import Sequence
+from collections.abc import Sequence
+from typing import Any
 
 #: Canonical action vocabulary for shadow comparisons (SHADOW_EVIDENCE v2).
 CANONICAL_ACTIONS: tuple[str, ...] = ("NO_TRADE", "BUY", "SELL", "WAIT")
@@ -103,7 +104,7 @@ def canonical_model_confidence(probabilities: Sequence[float]) -> float:
     return max(0.0, min(1.0, max(finite)))
 
 
-def scale_like_champion(x: "object", mean: "object", std: "object") -> "object":
+def scale_like_champion(x: Any, mean: Any, std: Any) -> Any:
     """Champion-identical scaler transform (D6).
 
     Mirrors live_engine.ScalerBundle.transform + the trainer's fit-time

@@ -180,7 +180,8 @@ class ChallengerRuntime:
         # trainer's 1e-3 std floor, clipped to [-5,+5]. The previous
         # (x-mean)/(std+1e-8) UNCLIPPED variant evaluated the challenger
         # under a transform it was never trained with.
-        x_np = scale_like_champion(x_np, self.scaler_mean, self.scaler_std)
+        x_scaled = scale_like_champion(x_np, self.scaler_mean, self.scaler_std)
+        x_np = np.asarray(x_scaled, dtype=np.float32).reshape(1, -1)
         x = torch.tensor(x_np, dtype=torch.float32)
         x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
         with torch.inference_mode():

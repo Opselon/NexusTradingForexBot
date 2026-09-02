@@ -2714,7 +2714,7 @@ class LiveEngine:
                 f"[WARMUP] WAITING\ntimeframe={missing_tf}\nrequired={req_cnt}\navailable={avail_cnt}\nmissing={missing_cnt}\nattempt={self._warmup_attempt}"
             )
             logger.info(
-                f"[FEATURE_STATUS]\ntotal_features=50\nvalid={valid_count}\nfallback={fallback_count}\ninvalid={invalid_count}\nhtf_fallbacks={htf_fallbacks}\nstatus=NOT_READY"
+                f"[FEATURE_STATUS]\nbase_features=50\nmodel_input_features={self.effective_feature_dim}\nfeature_schema={self.effective_feature_schema_id}\nvalid={valid_count}\nbase_fallbacks={fallback_count}\ninvalid={invalid_count}\nhtf_fallbacks={htf_fallbacks}\nstatus=NOT_READY"
             )
             self.warmup_state = "SAFE_NOT_READY"
             self._inference_enabled = False
@@ -2724,10 +2724,14 @@ class LiveEngine:
             self.warmup_state = "READY"
             self._inference_enabled = True
             logger.info(
-                f"[FEATURE_STATUS]\ntotal_features=50\nvalid={valid_count}\nfallback={fallback_count}\ninvalid={invalid_count}\nhtf_fallbacks={htf_fallbacks}\nstatus=READY"
+                f"[FEATURE_STATUS]\nbase_features=50\nmodel_input_features={self.effective_feature_dim}\nfeature_schema={self.effective_feature_schema_id}\nvalid={valid_count}\nbase_fallbacks={fallback_count}\ninvalid={invalid_count}\nhtf_fallbacks={htf_fallbacks}\nstatus=READY"
             )
+            # STATE-SEMANTICS (C-002, 2026-09-02): the htf_fallbacks counter
+            # is the HTF (H1/H4) fallback count ONLY. It was previously
+            # mislabeled fallback_features=N, contradicting
+            # [FEATURE_STATUS] base_fallbacks=17 (BUG-070-5 class).
             logger.info(
-                f"[WARMUP] COMPLETE\nsymbol={symbol}\nH1={len(h1_bars)}/{self.H1_REQUIRED_BARS}\nH4={len(h4_bars)}/{self.H4_REQUIRED_BARS}\nfallback_features={htf_fallbacks}\nstatus=READY"
+                f"[WARMUP] COMPLETE\nsymbol={symbol}\nH1={len(h1_bars)}/{self.H1_REQUIRED_BARS}\nH4={len(h4_bars)}/{self.H4_REQUIRED_BARS}\nhtf_fallbacks={htf_fallbacks}\nbase_fallbacks={fallback_count}\nstatus=READY"
             )
             logger.info("[INFERENCE] ENABLED\nreason=HTF_WARMUP_COMPLETE")
 
@@ -5119,11 +5123,23 @@ class LiveEngine:
             return
         try:
             engine = self.shadow_engine
-            # Same feature vector the Champion used (identical object):
+            # CHG-0046 D1: the shadow compares against the model that
+            # ACTUALLY served this tick — the loaded bundle's authoritative
+            # contract (effective_*), never the class bootstrap constants
+            # (which lag at scalp_v1/50D while a 70D bundle serves).
+            live_schema_id = str(self.effective_feature_schema_id)
+            live_dim = int(self.effective_feature_dim)
             x50 = (
-                fv.to_tensor_input() if hasattr(fv, "to_tensor_input") else [0.0] * self.FEATURE_DIM
+                fv.to_tensor_input()
+                if hasattr(fv, "to_tensor_input")
+                else [0.0] * live_dim
             )
-            feature_hash = getattr(fv, "feature_hash", "") or str(hash(tuple(x50[:5])))
+            # CHG-0046 D5: deterministic full-vector fingerprint (the salted
+            # 5-element python hash() was irreproducible across processes and
+            # insensitive to 90% of the vector — same-input proof impossible).
+            from nexus_scalp.shadow.compat import vector_fingerprint
+
+            feature_hash = vector_fingerprint(x50)
             regime_str = getattr(getattr(regime_state, "regime", None), "value", "UNKNOWN")
             if isinstance(regime_str, str) is False and regime_str is not None:
                 regime_str = str(regime_str)
@@ -5143,8 +5159,11 @@ class LiveEngine:
             champ_ref_dict: dict[str, Any] = {
                 "model_id": self.champion_manager.model_id,
                 "model_version": self.champion_manager.model_version,
-                "feature_schema_id": self.FEATURE_SCHEMA_ID,
-                "feature_dimension": self.FEATURE_DIM,
+                # CHG-0046 D1: bundle-authoritative identity, not class
+                # bootstrap constants (which say scalp_v1/50D while the
+                # loaded artifact serves scalp_v3/70D).
+                "feature_schema_id": live_schema_id,
+                "feature_dimension": live_dim,
             }
             try:
                 champ = self.champion_manager.champion_or_none()
@@ -5207,8 +5226,8 @@ class LiveEngine:
                 champ_ref = ShadowModelRef(
                     model_id=champ_ref_dict.get("model_id", ""),
                     model_version=champ_ref_dict.get("model_version", ""),
-                    feature_schema_id=self.FEATURE_SCHEMA_ID,
-                    feature_dimension=self.FEATURE_DIM,
+                    feature_schema_id=live_schema_id,
+                    feature_dimension=live_dim,
                     artifact_hash=champ_ref_dict.get("artifact_hash", ""),
                     is_champion=True,
                 )
@@ -5218,8 +5237,8 @@ class LiveEngine:
                     symbol=tick.symbol,
                     timeframe="M1",
                     feature_hash=feature_hash,
-                    feature_schema_id=self.FEATURE_SCHEMA_ID,
-                    feature_dimension=self.FEATURE_DIM,
+                    feature_schema_id=live_schema_id,
+                    feature_dimension=live_dim,
                     regime=regime_str,
                     session=getattr(proposal, "session", "") or "ALL",
                     configuration_version=str(
@@ -5232,6 +5251,16 @@ class LiveEngine:
                     champion_strategy_id="",
                     decision_id=getattr(proposal, "request_id", ""),
                     feature_vector=x50,
+                    # CHG-0046 D3: capture BOTH sides' risk geometry at record
+                    # time. Champion geometry = the real proposal the policy
+                    # emitted; shadow geometry is filled by the engine from
+                    # the challenger action (side-neutral ATR geometry below
+                    # once RiskEngine-level sizing is mirrored — the shadow
+                    # NEVER consults RiskEngine itself).
+                    champion_entry=float(proposal.proposed_entry),
+                    champion_sl=float(proposal.stop_loss),
+                    champion_tp=float(proposal.take_profit),
+                    spread_usd=float(tick.spread_points),
                 )
         except Exception as e:
             # Shadow is observability only: a failure here NEVER disturbs live.
@@ -5645,7 +5674,18 @@ class LiveEngine:
             self._runtime_mode = "STOPPED"
         else:
             self._runtime_mode = mode
-        logger.info("[MODE] runtime_mode=%s configured_mode=%s", self._runtime_mode, mode)
+        # STATE-SEMANTICS (C-004, 2026-09-02): edge-triggered [MODE] logging.
+        # The periodic 5s re-evaluation updates _runtime_mode silently;
+        # a log line is emitted only when the TRUTH CHANGES (or once at
+        # first evaluation). Steady-state repetition of an identical mode
+        # line is not information (BUG-070-4 class, ~2k lines/day).
+        if self._runtime_mode != getattr(self, "_last_logged_runtime_mode", None):
+            self._last_logged_runtime_mode = self._runtime_mode
+            logger.info(
+                "[MODE] runtime_mode=%s configured_mode=%s",
+                self._runtime_mode,
+                mode,
+            )
 
     def set_execution_mode(self, mode: ExecutionMode, *, source: str = "WEB_UI") -> dict:
         """BUG-148: HOT execution-mode switch (operator authority, UI + CLI).
