@@ -2669,8 +2669,8 @@ function renderDebugContractBanner(ct) {
     const vecOk = ct.vector_match ? '' : ` | LIVE VECTOR ${debugFmt(ct.live_vector_len)} != EXPECTED ${debugFmt(ct.expected_dimension)}`;
     banner.className = `rounded-xl border ${tone.border} ${tone.bg} px-4 py-3 text-xs font-mono ${tone.text}`;
     banner.innerHTML = `<i class="fa-solid ${broken ? 'fa-triangle-exclamation' : 'fa-circle-check'} mr-2"></i>
-        <b>${ct.status}</b> — schema ${debugFmt(ct.actual_schema_id)} dim ${debugFmt(ct.actual_dimension)}${dimOk}${clsOk}${vecOk}
-        <span class="opacity-60">| model: ${ct.model_status}</span>`;
+        <b>${esc(ct.status)}</b> — schema ${debugFmt(ct.actual_schema_id)} dim ${debugFmt(ct.actual_dimension)}${dimOk}${clsOk}${vecOk}
+        <span class="opacity-60">| model: ${esc(ct.model_status)}</span>`;
     banner.classList.remove('hidden');
 }
 
@@ -2759,7 +2759,7 @@ function renderDebugModel(m) {
     const body = document.getElementById('debug-model-body');
     if (!body) return;
     if (!m || !m.available) {
-        body.innerHTML = `<div class="text-textMuted italic font-sans">${(m && m.reason) || 'Model state unavailable.'}</div>`;
+        body.innerHTML = `<div class="text-textMuted italic font-sans">${esc((m && m.reason) || 'Model state unavailable.')}</div>`;
         return;
     }
     const tone = debugTone(m.status);
@@ -2796,7 +2796,7 @@ function renderDebugModel(m) {
 function renderDebugConfidence(c) {
     const body = document.getElementById('debug-confidence-body');
     if (!body) return;
-    if (!c || !c.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(c && c.reason) || 'No confidence state.'}</div>`; return; }
+    if (!c || !c.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${esc((c && c.reason) || 'No confidence state.')}</div>`; return; }
     const decision = c.decision;
     const decTone = decision === 'PASS' ? 'PASS' : (decision === 'REJECT' ? 'FAIL' : 'INFO');
     let html = `<div class="flex flex-wrap gap-2 mb-2">${debugStatusChip('DECISION', decision || 'N/A', decTone)}</div>`;
@@ -2902,7 +2902,7 @@ function renderDebugExecution(e) {
 function renderDebugPositions(ps) {
     const body = document.getElementById('debug-positions-body');
     if (!body) return;
-    if (!ps || !ps.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(ps && ps.reason) || 'No position state.'}</div>`; return; }
+    if (!ps || !ps.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${esc((ps && ps.reason) || 'No position state.')}</div>`; return; }
     if (!ps.positions || !ps.positions.length) { body.innerHTML = `<div class="text-textMuted italic font-sans">No open positions.</div>`; return; }
     let html = '';
     ps.positions.forEach(p => {
@@ -2927,7 +2927,7 @@ function renderDebugPositions(ps) {
 function renderDebugExit(ex) {
     const body = document.getElementById('debug-exit-body');
     if (!body) return;
-    if (!ex || !ex.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(ex && ex.reason) || 'No exit forensics.'}</div>`; return; }
+    if (!ex || !ex.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${esc((ex && ex.reason) || 'No exit forensics.')}</div>`; return; }
     if (!ex.positions || !ex.positions.length) { body.innerHTML = `<div class="text-textMuted italic font-sans">No open positions to exit-forensic.</div>`; return; }
     let html = '';
     ex.positions.forEach(p => {
@@ -2953,7 +2953,7 @@ function renderDebugExit(ex) {
 function renderDebugMslie(ms) {
     const body = document.getElementById('debug-mslie-body');
     if (!body) return;
-    if (!ms || !ms.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(ms && ms.reason) || 'Market Intelligence Engine unavailable.'}</div>`; return; }
+    if (!ms || !ms.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${esc((ms && ms.reason) || 'Market Intelligence Engine unavailable.')}</div>`; return; }
     const es = ms.engine_status || {};
     const ctx = ms.market_context || {};
     const ctxRegime = (ctx.regime || {});
@@ -3043,7 +3043,7 @@ function renderDebugMslie(ms) {
 function renderDebugLiquidity(lq) {
     const body = document.getElementById('debug-liquidity-body');
     if (!body) return;
-    if (!lq || !lq.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${(lq && lq.reason) || 'Liquidity unavailable.'}</div>`; return; }
+    if (!lq || !lq.available) { body.innerHTML = `<div class="text-textMuted italic font-sans">${esc((lq && lq.reason) || 'Liquidity unavailable.')}</div>`; return; }
     const rep = lq.report || {};
     const feats = (rep.features && typeof rep.features === 'object') ? rep.features : {};
     const pools = rep.pools || [];
@@ -3292,7 +3292,7 @@ async function compareDebugSnapshots() {
         ].join('');
         body.innerHTML = html;
     } catch (err) {
-        body.innerHTML = `<div class="text-rose-400 text-[10px]">Compare failed: ${err.message}</div>`;
+        body.innerHTML = `<div class="text-rose-400 text-[10px]">Compare failed: ${esc(err.message)}</div>`;
     }
 }
 
