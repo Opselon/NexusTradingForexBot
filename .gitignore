@@ -580,3 +580,20 @@ scripts/share/
 doc1.txt
 end_limit
 pyvenv.cfg
+
+# === CI evidence captures, stale snapshots, forensic digests (reproducible) ===
+scratch/*.zip
+scratch/ci2/
+scratch/ci3/
+scratch/ci4/
+scratch/ci5/
+scratch/ci6/
+scratch/ci_results/
+scratch/ci_results_x/
+scratch/audit_ml_ast.json
+scratch/audit_ml_digest.json
+scratch/om_head_now.py
+scratch/om_git_view.py
+scratch/ux_audit_desktop.png
+scratch/task4_probe_worker_rebuild.out.txt
+site/_site/
