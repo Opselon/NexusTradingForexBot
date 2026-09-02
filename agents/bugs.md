@@ -396,7 +396,6 @@ Ran `pytest tests/unit/test_walk_forward_trainer.py`.
 ### Architectural Lessons / Regression Guards
 - When constructing filter conditions in Polars DataFrames, always use bitwise operators (`~`, `&`, `|`) instead of Python logical operators (`not`, `and`, `or`).
 
-
 ---
 
 ## BUG-008 — AccountingCore Strategy Attribution Join Keyed on Empty Column
@@ -794,7 +793,6 @@ current state already existed.
 ### Regression Guards
 - An emergency close of one split leg must close the sibling leg.
 - Unrelated tickets must never be cross-closed.
-
 
 ## BUG-019 — Legacy Metrics Calculator Reversed Commission/Swap Sign (Duplicate Engine Drift)
 
@@ -2771,7 +2769,6 @@ Two compounding issues:
 - Full suites green: test_policy (5), test_order_lifecycle, test_exit_behavior_forensic (15), test_rule_matrix, test_accounting_core — all pass
 - ruff check/format + mypy clean
 
-
 ## BUG-068 — Web UI Layout Collapse: Premature `</div>` Detached All Post-Research Panels (News/Rules/Config/Debug Fell to Page Bottom)
 
 - **Status**: FIXED
@@ -3194,7 +3191,6 @@ module attribute.)
 ### Verified
 - Module compiles + imports; full unit suite green.
 
-
 ---
 
 ## BUG-076 — Telegram Silent Delivery Failure: Empty live.yaml Token Disables Notifier with Zero Console Trace (2026-08-18 forensics)
@@ -3501,7 +3497,6 @@ rebuilds the notifier; `/api/telegram/test` returns the REAL delivery state.
 - src/nexus_scalp/settings/service.py (`set_telegram` semantics reused)
 - tests/unit/test_settings_api_bug072.py
 - agents/bugs.md (this entry)
-
 
 ## BUG-081 — Ledger Loses Money Twice: Split-Fill Context Leak + No-Order-ID Duplicates + Exit-Classifier Falsehoods (2026-08-18 performance forensics)
 
@@ -4174,7 +4169,6 @@ In addition:
 ### Runtime verification
 - `scratch/probe_trade_lifecycle_behavior.py`: one ticket (700001) survived ledger -> behavior analysis (3 evidence-gated flags) -> report (FLAGS_FOUND/ANOMALIES_FOUND) -> Telegram -> API.
 
-
 ## BUG-095 — Protective-Mod Truthfulness + Broker-Verified Close Ordering + Zero-PnL Exit Mislabel (2026-08-18 TASK-7 exit-intelligence forensics)
 
 ### Status: FIXED (ﬁxes converged with the parallel TASK-3 commit 0434ef6 on the shared working tree; regression suite committed by TASK-7)
@@ -4336,7 +4330,6 @@ All per-trade anomaly ids now derive from `_duplicate_anomaly_id(ticket, anomaly
 
 ---
 
-
 ## BUG-100 — 70D Shadow Runtime Did Not Exist; No Validated 70D Candidate In Registry (TASK-05-70D-SHADOW, 2026-08-19)
 
 ### Root cause
@@ -4376,7 +4369,6 @@ Champion); no 70D candidate has ever been registered or validated.
   — candidate availability remains a First-Gate registry question
   (NO_VALIDATED_CANDIDATE until the 70D series registers one).
 
-
 ## BUG-101 — CandidateTrainer Built the Model Before Seeding RNG → Non-Reproducible Training (TASK-04-70D-MODEL-VALIDATION, 2026-08-19)
 
 ### Root cause
@@ -4414,7 +4406,6 @@ VERIFIED: ruff check/format clean, mypy clean on training.py, 18 passed.
 
 ---
 
-
 ## BUG-102 — Parallel 70D Swarm Working-Tree Churn Without Commits: 55 Changed Files Across 7 Tasks Un-Snapshotted (2026-08-19 TASK-13 surveillance)
 
 ### Root cause
@@ -4437,7 +4428,6 @@ liquidity failures while the tree actually has 5 — stale registry).
 - Recommendation for the 70D series owner: land TASK-01 as ONE coherent commit after
   fixing its 5 test failures (gate will stay red until then); never absorb another
   task's WIP into a later commit.
-
 
 ## BUG-103 — WalkForwardTrainer CrossEntropy Weight-Width Crash: Every Walk-Forward Training Run Failed (TASK-04-70D-MODEL-VALIDATION, 2026-08-19)
 
@@ -4520,7 +4510,6 @@ The original Champion model.pt is unrecoverable from this repo. Operator
 must either restore from an external backup (verify hashes) or approve a
 retrain/promotion through ModelGovernanceEngine. Until then the active
 artifact is RESTORED_CANDIDATE (bench_a_v1-derived), functionally 50D.
-
 
 ## BUG-105 — 70D Shadow Runtime Schema ID Drifted From Canonical scalp_v3 To scalp_v4 (TASK-05-70D-SHADOW, 2026-08-19)
 
@@ -4616,7 +4605,6 @@ observations on the happy path:
 - Commit: absorbed into 14fff5a (Hermes-Parity) via the parallel swarm;
   regression suite re-verified against that commit before push.
 
-
 ## BUG-107 — Sweep Detector Has No Relevance Gate: Pools 200 ATR Away Reported as APPROACHING (TASK-06-70D-LIQUIDITY-OPTIMIZATION, 2026-08-19)
 
 Category: SWEEP · CAUSALITY
@@ -4665,7 +4653,6 @@ Category: SWEEP · CAUSALITY
   TASK-9 session (manifest/baseline interaction); both closed the
   fresh-install + release-contract classes.
 
-
 ## BUG-106 — compute_70d_frame O(n^2) Liquidity Recompute: Full-History Slice Per Row (TASK-04-70D-MODEL-VALIDATION, 2026-08-19)
 
 ### Root cause
@@ -4710,9 +4697,7 @@ aggregator cap (live_engine.py `_completed_bars` trimmed to 4000 per tick,
   artifacts/benchmarks/bug106_engine_curve.json,
   docs/BUG-106-PERFORMANCE-FIX.md.
 
-
 ---
-
 
 ## BUG-110 — Dataset Manifest temporal_range Serialized as 1970-01-01 (Naive-Datetime Writer Artifact) (TASK-09-70D-CANDIDATE-VALIDATION, 2026-08-19)
 
@@ -4739,7 +4724,6 @@ probe + this bug row are the guard.
 
 ### Verification
 NOT APPLIED — documented as a writer defect; dataset content verified correct.
-
 
 ## BUG-111 — Deterministic Dataset ID Ignores Input Frame Identity: Rebuild on a Smaller Slice Overwrites the Larger Dataset (TASK-05-70D-SHADOW, 2026-08-19)
 
@@ -4879,7 +4863,6 @@ branch main: High severity py/path-injection (#62/#63/#67), py/clear-text-storag
 - Incident reports must be written under the restrictive-umask context.
 - Tests must use TemporaryDirectory (never mktemp) and host-boundary URL checks.
 
-
 ## BUG-114 — CandidateTrainer Manifest input_dimension Double-Counts News When feature_cols Passed Explicitly (TASK-05-70D-SHADOW, 2026-08-19)
 
 ### Root cause
@@ -4912,7 +4895,6 @@ input_dimension == feature_dimension for explicit feature_cols with news.
 ### Verification
 FIXED - ruff/mypy clean; benchmark rerun pending.
 
-
 ## BUG-112 — /api/models/integrity 500s: get_models_integrity calls `champ.info` on the ChampionManager (which has no `.info`) (Hermes-Bug112, 2026-08-19)
 
 ### Root cause
@@ -4934,7 +4916,6 @@ Verified the old code reproduces the exact AttributeError at line 4707.
 
 ### Verification
 FIXED - 3/3 regression tests pass; full test_model_lifecycle_api.py (22) + test_model_lifecycle_phase10.py (40) pass; ruff/mypy clean.
-
 
 ## BUG-115 — Zero-PnL Ledger Rows from NONE-Fallback Reconstruction Persisted as Final (151 real broker tickets) (2026-08-19 AGENT-13)
 
@@ -5528,7 +5509,6 @@ broke the ENTIRE order-audit write path and several reader paths:
 "lint/format" commit must never silently merge conflicting refactor states - diff the
 file against its last good state before committing.
 
-
 ---
 
 ## BUG-128 — CI Run-209 Diagnostic Bundle: Non-Hermetic Tests, Wrong-Module Import, Missing DB-Portability Contract (2026-08-20 Hermes-CI-Diagnostic)
@@ -5944,7 +5924,6 @@ REVERSAL DSL in 24.8s (2301 tokens, 0 failures). Commits 1fa2fd2 + 6f20a52.
   distributional conclusions are validated against the 5-min aggregate of the
   real bars, not only the reconstructed ticks.
 
-
 ## BUG-135 — LiquidityGovernor reported false MODEL_INPUT_DIMENSION_MISMATCH after a successful 70D hot-swap (2026-08-24 Nexus-Coder)
 
 **Symptom:** UI Liquidity Intelligence panel kept showing Model Compatibility
@@ -5969,7 +5948,6 @@ provenance are fallbacks only. Real 50D bundles still BLOCK correctly.
 test_liq_false_block_02_real_50d_bundle_still_blocked (negative control).
 Reviewer: PASS (nexus-reviewer). Note: running server must restart to load
 the fixed module; hot-swap path itself unchanged.
-
 
 ## BUG-136 — 70D model hot-swap lost after engine restart (boot ignored rehydrated runtime model_artifact_path) (2026-08-25 Nexus-Main)
 
@@ -6622,7 +6600,6 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   a test problem - clean the environment, never delete the coverage; skipif reasons must
   state the environmental fact truthfully so the gap stays visible.
 
-
 ## BUG-177 - high-entropy log redaction corrupted benign dataset-rejection detail (2026-08-31 Hermes-Main)
 
 - **Severity:** P2 | **Status:** FIXED-PENDING-VERIFICATION | **Discovered-by:** Reviewer (scratch/reviewer_user_hunt_2026-08-31.md, commit 1f60832) | **Fixed-by:** Hermes-Main (small patch, direct)
@@ -6647,7 +6624,6 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   value write is not atomic must give the winner a bounded grace window before declaring staleness.
 - Severity: P2 (test determinism + a real but narrow race window) | Status: FIXED | Fixed-by: Agent GitHub Manager
 
-
 ## BUG-175 - model-validate never ran the model: fabricated REJECTED with oos=0.0 + invisible cross-schema mismatch (2026-08-31 Hermes-Coder)
 
 - **Severity:** P1 | **Status:** FIXED-PENDING-VERIFICATION | **Discovered-by:** Reviewer + Hermes-Main (scratch/reviewer_user_hunt_2026-08-31.md, commit 1f60832) | **Fixed-by:** Hermes-Coder
@@ -6658,7 +6634,6 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
 - **PASSES-AFTER:** tests/unit/test_bug175_model_validate_probs.py 6/6 PASS (real candidate oos_acc=0.558 matching reviewer's independent measurement; in-test trained MLP candidate -> CHALLENGER_ELIGIBLE via CLI; cross-schema -> SCHEMA_MISMATCH panel + exit 1, no REJECTED, no traceback; corrupted weights -> clean load-failure panel + exit 1; ghost-dataset BUG-164 contract unchanged).
 - **VERIFIED:** py_compile PASS; ruff check + format PASS; mypy PASS on touched file; targeted suites (bug175 net 6 + bug164 2) PASS.
 - **Scope note:** no 50D feature-precompute pipeline added (out of scope); sequence-path candidates get the SAME real-prob replay (bench_e_v1 oos=0.8238 via CLI).
-
 
 ## BUG-176 - model-dataset-build --schema was declared but ignored; raw-bars user path died with a raw traceback (2026-08-31 Hermes-Coder)
 
@@ -6998,7 +6973,6 @@ EOF-abort (BUG-158) -> --yes; progress-line prefix -> trailing-JSON parser.
   news_10d_from_context; keep news_10d_from_context for training-frame dicts whose
   keys are the canonical schema keys. Regression: RED->GREEN test pins the parity.
 
-
 ## BUG-191 - NaN model slice poisoned candidate confidence into NaN (2026-09-02 Hermes-Main, found by confidence-repair regression net)
 
 - SEVERITY: P3 (crash-class on malformed model output; never observed live)
@@ -7064,6 +7038,39 @@ Status: FIXED (uncommitted at discovery; committed with CHG-0043 part 1)
 - Classification: P1 (deploy gate fail-closed on healthy system; false
   blocker for every release cut), Category: Observability/Release.
   Status: OPEN - routed to forensics owner; NOT fixed in this pass
+## BUG-196 - CLI JSON-mode stdout pollution: eager audit/settings DB init logs "Initialized High-Performance SQLite WAL storage" to STDOUT before JSON payload (2026-09-02, Nexus-Main integration verification at tip ~NexusTradingForexBot)
+
+- Symptom: `nexus version --json` and `nexus doctor --json` executed from a
+  CWD WITHOUT an existing artifacts/ dir print a structlog INFO line
+  ("Initialized High-Performance SQLite WAL storage db_path=...") BEFORE the
+  JSON object on stdout. Breaks the JSON-purity contract
+  (tests/cli/test_cli_subprocess.py::parse_json asserts stdout starts with
+  '{'; tests/cli TestVersion::test_version_json_minimal_deterministic +
+  TestDoctorStatus::test_doctor_json_valid_structure FAIL at tip 76b4204;
+  tests/integration/test_system_integration_boundaries.py
+  TestCwdIndependentIdentity::test_cli_version... FAIL same way).
+- Repro: fresh neutral CWD (e.g. %TEMP%), repo-venv nexus.exe version --json.
+  First line of stdout is the INFO log; JSON follows after.
+- Timeline evidence: PASS at 03:20 (pre 316d751), FAIL at 04:38 (post
+  316d751/3fb1498/a6fb8ad runtime-truth parts A-C) - a fresh-DB eager init
+  path (AuditRepository/audit_repository.py:152 logger.info or the eager
+  settings/audit bootstrap it triggers) now runs during CLI startup before
+  JSON emission. structlog renders to stdout (skill-known), so ANY
+  initialization logging on that path breaks JSON mode.
+- Expected contract: JSON-mode commands emit ONLY the JSON object on stdout;
+  initialization logs go to stderr or are silenced in JSON mode (CLI is the
+  contract boundary - BUG-159 class).
+- Side effect: running version --json from a foreign CWD CREATES
+  artifacts/audit.db (+ news.db, candle_intel.db, forensics/) in that CWD -
+  eager DB provisioning during a read-only identity command (idempotency/
+  side-effect hygiene).
+- Classification: P1 (CI gate break on any fresh-CWD runner), Category:
+  API/CLI contract. Owner: runtime-truth lane (3fb1498/a6fb8ad author) -
+  in-flight parts A-D; integration probe filed as evidence, NOT fixed by
+  integration pass (files carry their WIP).
+- Evidence: tests/cli run output 2026-09-02 04:41 (TestVersion FAIL, stdout
+  prefix '2026-09-02 04:41:45 [info     ] Initialized High-Performance').
+  Status: OPEN.
   (check files carry uncommitted foreign BUG-192 WIP).
 ## BUG-194 - Web client PAPER->LIVE execution-mode switch fires with NO confirmation (2026-09-02, Nexus-Main UX pass)
 
