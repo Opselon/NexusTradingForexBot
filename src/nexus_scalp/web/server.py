@@ -2524,6 +2524,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             return []
         if df["time_utc"].dtype == _pl.String:
             df = df.with_columns(_pl.col("time_utc").str.to_datetime(time_zone="UTC"))
+        elif df["time_utc"].dtype == _pl.Datetime("us"):
+            # naive local datetimes (parquet source) -> treat as UTC
+            df = df.with_columns(_pl.col("time_utc").dt.replace_time_zone("UTC"))
         start = contract.start_time
         end = contract.end_time
         if start.tzinfo is None:
