@@ -596,3 +596,4 @@ scratch/om_head_now.py
 scratch/om_git_view.py
 scratch/ux_audit_desktop.png
 scratch/task4_probe_worker_rebuild.out.txt
+.worktrees/
