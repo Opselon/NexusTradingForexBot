@@ -1728,6 +1728,33 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_control_center() -> FileResponse:
         return FileResponse(WEB_DIR / "control_center.js")
 
+    # CHG-0048 (Nexus-Main UX): client experience layer assets. Additive
+    # serve routes using the established verbatim FileResponse pattern; no
+    # handler semantics touched. Loaded by index.html before app.js.
+    @app.get("/ux_i18n.js")
+    def serve_ux_i18n() -> FileResponse:
+        return FileResponse(WEB_DIR / "ux_i18n.js")
+
+    @app.get("/ux_conn.js")
+    def serve_ux_conn() -> FileResponse:
+        return FileResponse(WEB_DIR / "ux_conn.js")
+
+    @app.get("/ux.js")
+    def serve_ux() -> FileResponse:
+        return FileResponse(WEB_DIR / "ux.js")
+
+    @app.get("/ux_signal.js")
+    def serve_ux_signal() -> FileResponse:
+        return FileResponse(WEB_DIR / "ux_signal.js")
+
+    @app.get("/ux_attention.js")
+    def serve_ux_attention() -> FileResponse:
+        return FileResponse(WEB_DIR / "ux_attention.js")
+
+    @app.get("/ux_palette.js")
+    def serve_ux_palette() -> FileResponse:
+        return FileResponse(WEB_DIR / "ux_palette.js")
+
     @app.get("/app.js")
     def serve_app(request: Request) -> FileResponse:
         # UI FORENSICS (BUG-077): identify the served bundle once per process.
