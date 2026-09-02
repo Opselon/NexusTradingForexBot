@@ -238,6 +238,13 @@ def get_version_info() -> dict[str, Any]:
         commit_source = "repository"
     else:
         commit_source = "unavailable"
+    # BUG-221: identity precedence is atomic. The CHG-0043 stale rule
+    # already forces version/commit/build_timestamp to repository truth in
+    # a dev checkout; the dirty flag must follow the same rule. The previous
+    # `info.get("dirty_tree", _git_dirty())` never fired its default when a
+    # stamp carries the key, so a stale stamp's cleanliness claim masked a
+    # dirty repo (and vice versa).
+    dirty_tree = _git_dirty() if stale_build_info else bool(info.get("dirty_tree", _git_dirty()))
     return {
         "product": PRODUCT_NAME,
         "product_display": PRODUCT_DISPLAY,
@@ -245,7 +252,7 @@ def get_version_info() -> dict[str, Any]:
         "commit": commit_value,
         "commit_source": commit_source,
         "commit_status": "RECORDED" if commit_value else "NOT_RECORDED",
-        "dirty_tree": bool(info.get("dirty_tree", _git_dirty())),
+        "dirty_tree": dirty_tree,
         # CHG-0043: build_timestamp is a RECORDED identity fact. When no
         # stamp exists (dev/source run) it stays None (NOT_RECORDED) - a
         # synthesized datetime.now() is fabrication AND it breaks manifest

@@ -143,6 +143,56 @@ class TestCommitIdentity:
         assert info["commit_status"] == "RECORDED"
         assert info["commit"] != "deadbeef"
 
+    def test_stale_build_info_dirty_tree_never_masks_dirty_repo(self, tmp_path, monkeypatch):
+        # BUG-221 fails-before: a stale stamped build-info.json carrying
+        # dirty_tree=false must not mask a DIRTY repository. The stale
+        # precedence rule (CHG-0043/BUG-092 family) already forces
+        # version/commit/build_timestamp to repo truth in a dev checkout;
+        # the dirty flag must follow the same rule. dict.get(default) never
+        # fires its default when the stamp carries the key, so the stamp's
+        # cleanliness lie used to win.
+        from nexus_scalp.release import metadata as md
+
+        stale = tmp_path / "build-info.json"
+        stale.write_text(
+            json.dumps(
+                {
+                    "version": "1.0.0-old",
+                    "git_commit": "deadbeef",
+                    "dirty_tree": False,
+                    "feature_schema": "scalp_v1",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(md, "get_build_info_file", lambda: stale)
+        monkeypatch.setattr(md, "_git_dirty", lambda: True)
+        info = md.get_version_info()
+        assert info["commit_source"] == "repository"
+        assert info["dirty_tree"] is True
+
+    def test_stale_build_info_dirty_tree_follows_clean_repo_too(self, tmp_path, monkeypatch):
+        # Mirror case: stale stamp claiming dirty=true + clean repo ->
+        # dirty_tree false (no lie in the other direction either).
+        from nexus_scalp.release import metadata as md
+
+        stale = tmp_path / "build-info.json"
+        stale.write_text(
+            json.dumps(
+                {
+                    "version": "1.0.0-old",
+                    "git_commit": "deadbeef",
+                    "dirty_tree": True,
+                    "feature_schema": "scalp_v1",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(md, "get_build_info_file", lambda: stale)
+        monkeypatch.setattr(md, "_git_dirty", lambda: False)
+        info = md.get_version_info()
+        assert info["dirty_tree"] is False
+
     def test_plain_version_never_shows_bare_none(self):
         from typer.testing import CliRunner
 
