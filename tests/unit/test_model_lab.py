@@ -49,6 +49,7 @@ from nexus_scalp.model_lab.registry import (
 )
 from nexus_scalp.model_lab.windowing import build_windows
 
+
 @pytest.fixture(autouse=True)
 def _isolated_lab(tmp_path, monkeypatch):
     """Every lab test runs against a disposable LAB_ROOT (no repo artifacts writes).
@@ -176,7 +177,10 @@ def test_candidate_gate_requires_all_gates() -> None:
     assert g["status"] == "REJECTED"
     assert candidate_gate("exp_gate_oos", oos_fail, wf_pass, rob_pass)["status"] == "REJECTED"
     assert candidate_gate("exp_gate_rob", oos_pass, wf_pass, rob_fail)["status"] == "REJECTED"
-    assert candidate_gate("exp_gate_wf", oos_pass, {"verdict": "FAIL"}, rob_pass)["status"] == "REJECTED"
+    assert (
+        candidate_gate("exp_gate_wf", oos_pass, {"verdict": "FAIL"}, rob_pass)["status"]
+        == "REJECTED"
+    )
 
 
 def test_artifact_integrity_detects_tampering(tmp_path, monkeypatch) -> None:
@@ -230,7 +234,9 @@ def test_evaluation_metrics_sanity() -> None:
     assert log_loss(probs, y) > 0
     fr = friction_expected_r(probs, y, [0.0, 0.1, 0.2])
     vals = [f["ev_r_total"] for f in fr]
-    assert all(vals[i] >= vals[i + 1] - 1e-9 for i in range(len(vals) - 1)), "EV must be monotone non-increasing in friction"
+    assert all(vals[i] >= vals[i + 1] - 1e-9 for i in range(len(vals) - 1)), (
+        "EV must be monotone non-increasing in friction"
+    )
 
 
 def test_teacher_has_more_capacity_than_student() -> None:
