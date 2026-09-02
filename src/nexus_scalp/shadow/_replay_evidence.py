@@ -129,7 +129,9 @@ def build_replay_evidence(
         pair = classify_pair(c_row, l_row)
         if not pair.get("valid"):
             invalid += 1
-            rows.append({"index": i, "valid": False, **{k: v for k, v in pair.items() if k != "valid"}})
+            rows.append(
+                {"index": i, "valid": False, **{k: v for k, v in pair.items() if k != "valid"}}
+            )
             continue
         by_policy_class[pair["policy_class"]] += 1
         by_model_class[pair["disagreement_model"]] += 1
@@ -243,9 +245,7 @@ def promotion_verdict(evidence: dict[str, Any], min_resolved_pairs: int) -> dict
             "required_pairs": min_resolved_pairs,
             "reasons": reasons,
         }
-    reasons.append(
-        f"paired delta within noise band (mean {mean_d:.4f}R, median {med_d:.4f}R)"
-    )
+    reasons.append(f"paired delta within noise band (mean {mean_d:.4f}R, median {med_d:.4f}R)")
     return {
         "verdict": VERDICT_INSUFFICIENT,
         "resolved_pairs": resolved,

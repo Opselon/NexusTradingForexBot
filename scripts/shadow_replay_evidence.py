@@ -54,9 +54,7 @@ def load_bar_records(bars: int) -> tuple[list[dict[str, object]], str]:
     """Deterministically loads the replay window + its fingerprint."""
     import polars as pl
 
-    df = pl.read_parquet(REPO / M1_PARQUET).filter(
-        (pl.col("spread") > 0) & (pl.col("spread") < 50)
-    )
+    df = pl.read_parquet(REPO / M1_PARQUET).filter((pl.col("spread") > 0) & (pl.col("spread") < 50))
     df = df.tail(bars).sort("time")
     records: list[dict[str, object]] = []
     for r in df.iter_rows(named=True):
@@ -119,9 +117,7 @@ def run_pipeline(bars: int) -> dict[str, Any]:
             decide_on="bar_close",
             git_commit=cfg.git_revision,
         )
-        return StreamingReplayEngine(session).run(
-            BarEventSource(list(records)), run_id=run_id
-        )
+        return StreamingReplayEngine(session).run(BarEventSource(list(records)), run_id=run_id)
 
     logger.info("[SHADOW_EVIDENCE] event=REPLAY_START bars=%s", bars)
     run_champ = _engine(CHAMPION_ARTIFACT, "SHADOW-EVID-CHAMP")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from nexus_scalp.shadow.compat import (
@@ -10,8 +11,25 @@ from nexus_scalp.shadow.compat import (
     normalize_action,
 )
 from nexus_scalp.shadow.outcomes import SideGeometry
-from nexus_scalp.shadow.replay import session_of
 from nexus_scalp.shadow.shadow70.models import classify_disagreement
+
+
+def session_of(ts: datetime) -> str:
+    """UTC session bucket (production liquidity_engine session boundaries).
+
+    Lives here (not in replay.py) to avoid a circular import:
+    _replay_evidence -> _replay_pair -> replay would re-enter replay.py
+    while it is still importing _replay_evidence. Boundaries are the
+    production liquidity_engine session constants.
+    """
+    hour = ts.hour
+    if 0 <= hour < 8:
+        return "tokyo"
+    if 7 <= hour < 15:
+        return "london"
+    if 13 <= hour < 21:
+        return "ny"
+    return "overnight"
 
 
 def _argmax_index(probs: list[float]) -> int:
@@ -41,10 +59,9 @@ def classify_pair(
     A pair is INVALID when the two rows are not the same market instant
     (timestamp/decision_index mismatch) — same-input proof (steer §3).
     """
-    if (
-        str(champ_row.get("ts")) != str(chal_row.get("ts"))
-        or int(champ_row.get("decision_index", -1)) != int(chal_row.get("decision_index", -2))
-    ):
+    if str(champ_row.get("ts")) != str(chal_row.get("ts")) or int(
+        champ_row.get("decision_index", -1)
+    ) != int(chal_row.get("decision_index", -2)):
         return {
             "valid": False,
             "invalid_reason": "INPUT_MISMATCH: paired rows are not the same market instant",
