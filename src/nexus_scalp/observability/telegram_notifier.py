@@ -457,7 +457,7 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
             if (now_log - self._last_blocked_log_time) >= 60.0:
                 self._last_blocked_log_time = now_log
                 logger.warning(
-                    "[TELEGRAM] event=BLOCKED_NOT_CONFIGURED severity=%s reason=BOT_TOKEN_OR_ADMIN_MISSING "
+                    "[TELEGRAM] event=BLOCKED_NOT_CONFIGURED severity=%s reason=DELIVERY_DISABLED (ENABLED=false - credentials presence is NOT a send intent) "
                     "notification_id=%s correlation_id=%s blocked_since_start=%d",
                     severity,
                     new_correlation_id("notif"),

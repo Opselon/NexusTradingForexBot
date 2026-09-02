@@ -547,10 +547,19 @@ def main() -> None:
         log_file_path=Path("logs"),
     )
 
+    # STATE-SEMANTICS (C-001, 2026-09-02): the launcher line must never
+    # present the PRE-SETTINGS launch mode as the effective mode. The
+    # engine re-binds execution.mode from the settings DB at
+    # construction (settings DB > YAML per BUG-148), so the only
+    # honest launcher log is the configured-vs-effective pair.
+    _eff_mode = config.execution.mode.value
+    _launch_mode = getattr(args, "mode", None) or _eff_mode
     logger.info(
         "Bootstrapping Engine Subsystems",
         symbol=config.execution.symbol,
-        mode=config.execution.mode.value,
+        launch_mode=str(_launch_mode).upper(),
+        configured_mode=_eff_mode,
+        mode=_eff_mode,
         magic_number=config.execution.magic_number,
         max_drawdown=config.risk.max_account_drawdown_pct,
     )

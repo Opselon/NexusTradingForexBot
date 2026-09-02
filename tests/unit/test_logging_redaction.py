@@ -36,12 +36,12 @@ def test_logging_redaction_structlog_key_value_constants_preserved_bug141b():
 
     line = (
         "[TELEGRAM] event=BLOCKED_NOT_CONFIGURED severity=INFO "
-        "reason=BOT_TOKEN_OR_ADMIN_MISSING correlation_id=- blocked_since_start=1"
+        "reason=DELIVERY_DISABLED correlation_id=- blocked_since_start=1"
     )
     out = _redact_value(line)
     assert "event=BLOCKED_NOT_CONFIGURED" in out
     assert "severity=INFO" in out
-    assert "reason=BOT_TOKEN_OR_ADMIN_MISSING" in out
+    assert "reason=DELIVERY_DISABLED" in out
     assert "blocked_since_start=1" in out
 
     # Secret-assignment + blob semantics intact

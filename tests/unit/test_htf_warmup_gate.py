@@ -314,3 +314,47 @@ async def test_11_warmup_state_transitions_emit_expected_log_events(base_config)
         assert "[WARMUP] START" in log_msgs
         assert "[WARMUP] COMPLETE" in log_msgs
         assert "[INFERENCE] ENABLED" in log_msgs
+
+
+# ---------------------------------------------------------------------------
+# STATE-SEMANTICS C-002 regression (2026-09-02, contradiction forensics):
+# warmup observability must be scope-honest. [FEATURE_STATUS] reported
+# total_features=50 against a 70D model contract and [WARMUP] COMPLETE
+# reported fallback_features=0 against [FEATURE_STATUS] fallback=17.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_12_feature_status_labels_are_scope_honest(base_config, capsys):
+    """[FEATURE_STATUS] must never claim total_features=50 while a 70D bundle
+    defines the model input; counters must be base_fallbacks/htf_fallbacks."""
+    adapter = FakeMT5Adapter(h1_count=14, h4_count=14, m1_count=3500)
+    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=MagicMock())
+    with patch("nexus_scalp.application.live_engine.logger.info") as mock_log_info:
+        await engine._cold_start_warmup("XAUUSD")
+        msgs = " ".join(str(c[0][0]) for c in mock_log_info.call_args_list)
+
+    assert "total_features" not in msgs, (
+        "total_features=N is ambiguous against the loaded bundle contract; "
+        "the log must distinguish base_features vs model_input_features"
+    )
+    assert "base_features=50" in msgs
+    assert "model_input_features=" in msgs
+    assert "base_fallbacks=" in msgs
+    assert "htf_fallbacks=" in msgs
+
+
+@pytest.mark.asyncio
+async def test_13_warmup_complete_never_contradicts_feature_status(base_config, capsys):
+    """[WARMUP] COMPLETE must not report fallback_features=0 when
+    [FEATURE_STATUS] counted nonzero base fallbacks (BUG-070-5 class)."""
+    adapter = FakeMT5Adapter(h1_count=14, h4_count=14, m1_count=3500)
+    engine = LiveEngine(config=base_config, adapter=adapter, audit_repo=MagicMock())
+    with patch("nexus_scalp.application.live_engine.logger.info") as mock_log_info:
+        await engine._cold_start_warmup("XAUUSD")
+        msgs = " ".join(str(c[0][0]) for c in mock_log_info.call_args_list)
+
+    assert "fallback_features" not in msgs
+    assert "[WARMUP] COMPLETE" in msgs
+    # the HTF counter name must match its meaning exactly
+    assert "htf_fallbacks=" in msgs
