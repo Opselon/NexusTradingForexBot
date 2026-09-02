@@ -1257,3 +1257,34 @@ model artifacts, 70D contract, installer, settings, Web/, existing routes.
 Truthfulness rule: contracts document REAL fields from REAL backends; missing
 evidence stays NOT_RECORDED/null with explicit semantics - never fabricated.
 Status: IN_PROGRESS
+
+## CHG-0045 - QA deep-assurance layer: adversarial/property/state-machine tests + mutation proof + deep_assurance.py (2026-09-02, Nexus-Main QA)
+
+Change: OSS-grade adversarial QA layer (user brief 2026-09-02). (1) NEW tests/adversarial/: seeded
+property-style tensor/70D contract attacks (BUG-184/BUG-192 classes), PositionStateMachine +
+RecoveryBudgetLedger state-machine invariants over random valid event sequences, ProviderGate
+state-machine + single-flight failure semantics, EventBatchAggregator storm-bound/evidence-loss
+adversarial, migration crash-restart recovery, /api/v1 platform contract + malformed-input
+adversarial, secret-redaction attack matrix, deterministic fault-injection (tests/helpers/
+fault_injection.py), replay temporal adversarial (duplicates/out-of-order/timezone/malformed),
+hard order_send-never-called execution-safety net, CLI/config bounded fuzz. (2) NEW
+tests/contracts/: producer==consumer boundary contracts (schema hash, family indices,
+observability summary-line freeze, GateResult wire shape). (3) scripts/qa/deep_assurance.py:
+one-command orchestrator (--fast/--json/--seed, offline default) + scripts/qa/run_mutations.py
+controlled mutation proof on critical contracts (expect-test-kill; foreign-WIP guard).
+(4) .github/workflows/qa-deep-assurance.yml: fast lane (PR/push) + deep lane (main/weekly).
+(5) docs/architecture/QA_BLIND_SPOT_MATRIX.md (required first milestone: defect-history ->
+detection-gap map, test-quality verdicts KEEP/IMPROVE/MERGE/DELETE/MISSING) +
+docs/architecture/qa-assurance-contract.md (lane/marker/budget/JSON contract).
+Scope: tests/adversarial/ (new), tests/contracts/ (new), tests/helpers/fault_injection.py (new),
+scripts/qa/ (new), .github/workflows/qa-deep-assurance.yml (new), docs/architecture/{2 files} (new),
+agents/ registries. ZERO production-code edits; tests may convert proven testability defects
+into separate controlled changes later.
+NOT touched: order_manager.py, live_engine, policy, risk, schema/features modules (BUG-184/192
+edits in tree belong to their in-flight owners), provider gate impl, migrations impl,
+observability impl, installer, CI ci.yml (TASK-CI-ISOLATION owner), release.
+Why: brief mandates defect-detection power over test count; regression classes (BUG-141/150/
+162/170/175/184/186/188/190/192) need multi-angle permanent guards + machine-readable results.
+Contracts touched: none changed; contracts VERIFIED (SCHEMA, OBSERVABILITY_LOG freeze,
+PROVIDER_HEALTH_GATE v1, DB_MIGRATION v1, API platform v1). Risk: LOW (tests-only + CI lane).
+Status: IMPLEMENTING

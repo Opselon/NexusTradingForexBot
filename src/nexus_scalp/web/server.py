@@ -2447,6 +2447,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     register_debug_research_routes(app, _err, _log_err, serialize_enums)
 
+    # OPERATOR evidence routes (CHG-0043, TASK-CONTROL-CENTER): read-only
+    # decision/audit surface for the Operational Control Center. Registered
+    # right after the debug/research block; purely additive, no existing
+    # route touched.
+    from nexus_scalp.web.operator_routes import register_operator_routes
+
+    register_operator_routes(app, get_system_state, _err, _log_err, serialize_enums)
+
     # Server-Sent Events (SSE) telemetry stream
     @app.get("/api/ticks/stream")
     async def sse_telemetry_stream(request: Request) -> StreamingResponse:
