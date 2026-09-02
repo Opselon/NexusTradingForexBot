@@ -57,4 +57,15 @@ overall doctor. CI (`.github/workflows/docs.yml`) runs both.
 
 ## Out-of-scope defects observed (recorded only — owning agent notified via this registry)
 
-*(none at this time)*
+1. OBS-DOCS-001 (2026-09-02): project CI (ci.yml, "Code Quality & Tests") failing on
+   main since at least 297a4e7 — ruff lint/format failures + mypy errors in
+   src/nexus_scalp/release/health.py (L112 dict-item, L701 name-defined
+   NOT_APPLICABLE) and src/nexus_scalp/release/release_status.py (L137 name-defined re)
+   + pytest rc=1 (make_ci_results.py TypeError: Element vs str in junit parse).
+   Owning subsystem: src/nexus_scalp/release/ + scripts/ci/make_ci_results.py —
+   active CHG-0043/CHG-0046 workers (Hermes-Main / Nexus-Main). NOT touched by
+   Nexus-Docs (zero src/ changes verified per commit).
+2. OBS-DOCS-002 (2026-09-02): repository had GitHub Pages disabled — docs.yml deploy
+   failed with "Get Pages site failed ... Not Found". Resolved by enabling Pages
+   (build_type=workflow) via REST API by Nexus-Docs (this is a docs-platform
+   responsibility). Docs workflow green as of run 33578596716 attempt 2.
