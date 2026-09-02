@@ -43,6 +43,7 @@ from nexus_scalp.execution.position_intelligence import (
 )
 from nexus_scalp.execution.position_state_machine import PositionStateMachine
 from nexus_scalp.execution.position_states import PositionState
+from nexus_scalp.execution.position_tracker import PositionTrackingLedger
 from nexus_scalp.execution.protection_ledger import (
     PositionProtectionLedger,
     PositionProtectionState,
@@ -371,38 +372,27 @@ class OrderLifecycleManager:
         self._last_known_volume: dict[int, float] = {}
         self._initial_risks: dict[int, float] = {}
 
-        self._mfe_tracker: dict[int, float] = {}  # Maximum Favorable Excursion
-        self._mae_tracker: dict[int, float] = {}  # Maximum Adverse Excursion
         #: PHASE 08: seconds from open to each observed excursion extreme.
-        self._time_to_mfe_sec: dict[int, float] = {}
-        self._time_to_mae_sec: dict[int, float] = {}
         #: PHASE 08: execution-quality evidence captured at fill time.
         self._entry_expected_price: dict[int, float] = {}
         self._entry_atr: dict[int, float] = {}
         self._entry_spread: dict[int, float] = {}
         self._entry_fill_latency_ms: dict[int, float] = {}
         self._entry_timestamps: dict[int, datetime] = {}
-        self._last_tick_timestamps: dict[int, datetime] = {}
 
         # Advanced Telemetry Trackers
-        self._time_in_profit_sec: dict[int, float] = {}
-        self._time_in_drawdown_sec: dict[int, float] = {}
-        self._peak_profit_usd: dict[int, float] = {}
-        self._peak_drawdown_usd: dict[int, float] = {}
 
         # Local State Features (LSF) Engine & Desync State Trackers
-        self._lsf_state: dict[int, dict[str, float]] = {}
-        self._last_seen_ts: dict[int, datetime] = {}
-        self._stagnation_ticks: dict[int, int] = {}
-        self._adverse_ticks: dict[int, int] = {}
-        self._favorable_ticks: dict[int, int] = {}
         self._hold_score_tracker: dict[int, int] = {}
         self._base_hold_score_tracker: dict[int, int] = {}
         self._last_reasons_tracker: dict[int, list[str]] = {}  # Track reasons per ticket
         self._rescue_registered_tickets: dict[int, bool] = {}
         self._last_modify_sl: dict[int, float] = {}
-        self._last_price_tracker: dict[int, float] = {}
         self._entry_directions: dict[int, str] = {}
+
+        # S6-followup: explicit per-ticket tracking-state owner (dicts moved
+        # to position_tracker.PositionTrackingLedger; compat properties below).
+        self._tracking = PositionTrackingLedger()
 
         # Throttling & spread tracking for dynamic hold score
         self._last_hold_eval_time: dict[int, float] = {}
@@ -449,15 +439,12 @@ class OrderLifecycleManager:
         #: LIQUIDITY_REVERSAL, CONFIDENCE_COLLAPSE). Persisted on the closing
         #: autopsy row so outcome/behavior/reporting can prove WHAT changed while
         #: the position was held — never recomputed from price geometry alone.
-        self._reversal_events: dict[int, list[dict[str, Any]]] = {}
         #: Ticket -> net realized PnL / exit mechanism captured during the
         #: closing sweep, used by the lifecycle finalize hook (BUG-086).
         self._net_pnl_by_ticket: dict[int, float] = {}
         self._exit_mechanism_by_ticket: dict[int, str] = {}
         #: Ticket -> model probabilities snapshotted at entry (immutable baseline).
-        self._entry_probs: dict[int, dict[str, float]] = {}
         #: Ticket -> regime at entry (immutable baseline).
-        self._entry_regime_state: dict[int, str] = {}
         #: Ticket -> deterministic profit-protection state machine (monotonic peak
         #: profit, breakeven lock confirmation, giveback arming, close idempotency,
         #: console-telemetry clock). Keyed strictly by MT5 ticket.
@@ -471,7 +458,6 @@ class OrderLifecycleManager:
         #: Ticket -> most recent TickData observed for that ticket (used by the
         #: breakeven-aware VOLATILITY_EXPANSION exit logic to decide whether price has
         #: actually breached the locked protective stop before a market close is allowed).
-        self._last_tick_for_ticket: dict[int, Any] = {}
         #: Latest account snapshot, stamped onto each autopsy row.
         self._last_account_balance: float = 0.0
         self._last_account_equity: float = 0.0
@@ -2631,6 +2617,101 @@ class OrderLifecycleManager:
         # P0 seam S4: Almgren-Chriss math lives in position_intelligence.
         return _estimate_liquidation_impact(volume, symbol_info, atr, self.eta_coefficient)
 
+    @property
+    def _last_tick_for_ticket(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._last_tick_for_ticket
+
+    @property
+    def _last_tick_timestamps(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._last_tick_timestamps
+
+    @property
+    def _time_in_profit_sec(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._time_in_profit_sec
+
+    @property
+    def _time_in_drawdown_sec(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._time_in_drawdown_sec
+
+    @property
+    def _peak_profit_usd(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._peak_profit_usd
+
+    @property
+    def _peak_drawdown_usd(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._peak_drawdown_usd
+
+    @property
+    def _lsf_state(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._lsf_state
+
+    @property
+    def _last_seen_ts(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._last_seen_ts
+
+    @property
+    def _stagnation_ticks(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._stagnation_ticks
+
+    @property
+    def _adverse_ticks(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._adverse_ticks
+
+    @property
+    def _favorable_ticks(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._favorable_ticks
+
+    @property
+    def _last_price_tracker(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._last_price_tracker
+
+    @property
+    def _mfe_tracker(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._mfe_tracker
+
+    @property
+    def _mae_tracker(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._mae_tracker
+
+    @property
+    def _time_to_mfe_sec(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._time_to_mfe_sec
+
+    @property
+    def _time_to_mae_sec(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._time_to_mae_sec
+
+    @property
+    def _reversal_events(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._reversal_events
+
+    @property
+    def _entry_probs(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._entry_probs
+
+    @property
+    def _entry_regime_state(self) -> dict:
+        """Compatibility accessor — live tracking dict owned by the ledger."""
+        return self._tracking._entry_regime_state
+
     def _ensure_ticket_bootstrap(
         self,
         ticket: int,
@@ -2639,44 +2720,10 @@ class OrderLifecycleManager:
         profit_price_delta: float,
         net_price_delta: float,
     ) -> None:
-        """Bootstraps LSF state and Telemetry counters for newly opened or rescued untracked positions."""
-        if ticket not in self._lsf_state:
-            self._lsf_state[ticket] = {
-                "seen_ticks": 0.0,
-                "desync_score": 0.0,
-                "last_price": price_current,
-                "last_profit_delta": profit_price_delta,
-                "last_net_delta": net_price_delta,
-                "last_sl": 0.0,
-                "last_tp": 0.0,
-                "last_modify_intent": 0.0,
-                "be_applied": 0.0,
-                "trail_applied": 0.0,
-                "desync_shocks": 0.0,
-            }
-
-        self._last_seen_ts[ticket] = now
-
-        # ANOMALY-VERIFY-01: MFE/MAE trackers MUST seed at ZERO, never at the
-        # first observed price delta. Seeding at the first delta is signed by
-        # direction: an immediately-adverse SELL (price above entry) seeds a
-        # NEGATIVE MFE which max() can never lift above 0 -> a trade that
-        # never went favorable is stored with negative MFE (IMPOSSIBLE
-        # EXCURSION false-flagged). Contract: MFE >= 0, MAE <= 0.
-        if ticket not in self._mfe_tracker:
-            self._mfe_tracker[ticket] = 0.0
-        if ticket not in self._mae_tracker:
-            self._mae_tracker[ticket] = 0.0
-
-        if ticket not in self._time_in_profit_sec:
-            self._time_in_profit_sec[ticket] = 0.0
-            self._time_in_drawdown_sec[ticket] = 0.0
-            self._peak_profit_usd[ticket] = 0.0
-            self._peak_drawdown_usd[ticket] = 0.0
-            self._last_tick_timestamps[ticket] = now
-
-        st = self._lsf_state[ticket]
-        st["seen_ticks"] = st.get("seen_ticks", 0.0) + 1.0
+        """Delegate — state owned by PositionTrackingLedger (S6-followup)."""
+        self._tracking.ensure_bootstrap(
+            ticket, now, price_current, profit_price_delta, net_price_delta
+        )
 
     def _update_lsf_desync_metrics(
         self,
@@ -2687,50 +2734,10 @@ class OrderLifecycleManager:
         net_price_delta: float,
         atr: float,
     ) -> None:
-        """Computes O(1) LSF metrics to detect 'missed position management' or broker IPC desync."""
-        st = self._lsf_state.get(ticket)
-        if not st:
-            return
-
-        last_ts = self._last_seen_ts.get(ticket, now)
-        dt = (now - last_ts).total_seconds() if isinstance(last_ts, datetime) else 0.0
-
-        last_price = float(st.get("last_price", price_current))
-        last_profit = float(st.get("last_profit_delta", profit_price_delta))
-        last_net = float(st.get("last_net_delta", net_price_delta))
-
-        price_jump = abs(price_current - last_price)
-        profit_jump = abs(profit_price_delta - last_profit)
-        net_jump = abs(net_price_delta - last_net)
-
-        atr_n = max(atr, 0.50)
-        jump_z = price_jump / atr_n
-        profit_z = profit_jump / atr_n
-        net_z = net_jump / atr_n
-
-        desync = float(st.get("desync_score", 0.0))
-        shocks = float(st.get("desync_shocks", 0.0))
-
-        if dt > 1.0:
-            desync += min(10.0, (dt - 1.0) * 2.0)
-
-        if jump_z > 0.80:
-            desync += min(12.0, (jump_z - 0.80) * 10.0)
-            shocks += 1.0
-        if profit_z > 0.80:
-            desync += min(10.0, (profit_z - 0.80) * 8.0)
-        if net_z > 0.80:
-            desync += min(10.0, (net_z - 0.80) * 8.0)
-
-        desync = max(0.0, desync - 0.50)
-
-        st["desync_score"] = desync
-        st["desync_shocks"] = shocks
-        st["last_price"] = price_current
-        st["last_profit_delta"] = profit_price_delta
-        st["last_net_delta"] = net_price_delta
-
-        self._last_seen_ts[ticket] = now
+        """Delegate — state owned by PositionTrackingLedger (S6-followup)."""
+        self._tracking.update_lsf_desync_metrics(
+            ticket, now, price_current, profit_price_delta, net_price_delta, atr
+        )
 
     def _lsf_get(self, ticket: int, key: str, default: float = 0.0) -> float:
         st = self._lsf_state.get(ticket)
@@ -2749,28 +2756,14 @@ class OrderLifecycleManager:
         st[key] = float(value)
 
     def _update_tick_state(
-        self, ticket: int, pos: Position, price_current: float, profit_price_delta: float
+        self,
+        ticket: int,
+        pos: Position,
+        price_current: float,
+        profit_price_delta: float,
     ) -> None:
-        last_p = self._last_price_tracker.get(ticket, price_current)
-        self._last_price_tracker[ticket] = price_current
-
-        if price_current == last_p:
-            self._stagnation_ticks[ticket] = self._stagnation_ticks.get(ticket, 0) + 1
-        else:
-            self._stagnation_ticks[ticket] = max(0, self._stagnation_ticks.get(ticket, 0) - 1)
-
-        is_buy = pos.type == OrderType.BUY
-        is_adverse = (price_current < last_p) if is_buy else (price_current > last_p)
-        is_favorable = (price_current > last_p) if is_buy else (price_current < last_p)
-
-        if is_adverse:
-            self._adverse_ticks[ticket] = self._adverse_ticks.get(ticket, 0) + 1
-        elif is_favorable:
-            self._favorable_ticks[ticket] = self._favorable_ticks.get(ticket, 0) + 1
-
-    # =========================================================================
-    # 57 DERIVED SMART POSITION METRICS ENGINE
-    # =========================================================================
+        """Delegate — state owned by PositionTrackingLedger (S6-followup)."""
+        self._tracking.update_tick_state(ticket, pos, price_current, profit_price_delta)
 
     def _calculate_smart_position_metrics(
         self,
@@ -4225,29 +4218,15 @@ class OrderLifecycleManager:
             # duplicate an already-applied breakeven modification.
             # =================================================================
             protection = self.refresh_protection_state(pos, symbol_info)
-            # Cache the freshest tick for this ticket (used by the breakeven-aware
-            # VOLATILITY_EXPANSION exit logic to detect an actual breach of the locked SL).
-            self._last_tick_for_ticket[ticket] = current_tick
-
-            # Telemetry tracking for time in profit vs drawdown
-            last_t = self._last_tick_timestamps.get(ticket, now)
-            delta_sec = (now - last_t).total_seconds()
-            if delta_sec < 0:
-                delta_sec = 0.0
-            self._last_tick_timestamps[ticket] = now
-
-            if pos.profit > 0.0:
-                self._time_in_profit_sec[ticket] += delta_sec
-            elif pos.profit < 0.0:
-                self._time_in_drawdown_sec[ticket] += delta_sec
-                self._peak_drawdown_usd[ticket] = min(
-                    self._peak_drawdown_usd.get(ticket, 0.0), pos.profit
-                )
-
-            # Single source of truth for peak profit: the protection state machine.
-            # Mirrored here so the ledger autopsy (which reads _peak_profit_usd)
-            # reports the same monotonic high-water mark.
-            self._peak_profit_usd[ticket] = protection.peak_win_usd
+            # S6-followup: tick-cache + duration telemetry + peak mirror moved to
+            # the tracking ledger (verbatim block; call at the identical position).
+            self._tracking.record_tick_durations(
+                ticket,
+                now,
+                current_tick,
+                pos.profit,
+                peak_win_usd=protection.peak_win_usd,
+            )
 
             price_current = current_tick.bid if pos.type == OrderType.BUY else current_tick.ask
             profit_price_delta = (
@@ -4268,7 +4247,7 @@ class OrderLifecycleManager:
                 ticket, now, price_current, profit_price_delta, net_price_delta, atr
             )
 
-            self._update_mfe_mae(ticket, profit_price_delta)
+            self._update_mfe_mae(ticket, profit_price_delta, now=now)
             self._update_tick_state(ticket, pos, price_current, profit_price_delta)
 
             # TASK-3: model/regime/liquidity reversal observations while OPEN
@@ -5811,29 +5790,20 @@ class OrderLifecycleManager:
                 error=str(exp_err),
             )
 
-    def _update_mfe_mae(self, ticket: int, profit_price_delta: float) -> None:
-        """
-        Advances the monotonic MFE/MAE excursion trackers.
-
-        Also stamps WHEN each new extreme occurred so the Phase 08 position
-        behaviour record can distinguish "ran to target immediately" from
-        "spent an hour underwater first".
-        """
-        prev_mfe = self._mfe_tracker.get(ticket, 0.0)
-        prev_mae = self._mae_tracker.get(ticket, 0.0)
-        new_mfe = max(prev_mfe, profit_price_delta)
-        new_mae = min(prev_mae, profit_price_delta)
-
-        entry_time = self._entry_timestamps.get(ticket)
-        if entry_time is not None:
-            elapsed = (datetime.now(UTC) - entry_time).total_seconds()
-            if new_mfe > prev_mfe or ticket not in self._time_to_mfe_sec:
-                self._time_to_mfe_sec[ticket] = max(0.0, elapsed)
-            if new_mae < prev_mae or ticket not in self._time_to_mae_sec:
-                self._time_to_mae_sec[ticket] = max(0.0, elapsed)
-
-        self._mfe_tracker[ticket] = new_mfe
-        self._mae_tracker[ticket] = new_mae
+    def _update_mfe_mae(
+        self,
+        ticket: int,
+        profit_price_delta: float,
+        now: datetime | None = None,
+    ) -> None:
+        """Delegate — state owned by PositionTrackingLedger (S6-followup).
+        entry_time anchor comes from the manager-owned _entry_timestamps."""
+        self._tracking.update_mfe_mae(
+            ticket,
+            profit_price_delta,
+            entry_time=self._entry_timestamps.get(ticket),
+            now=now or datetime.now(UTC),
+        )
 
     def _capture_reversal_state(
         self,
@@ -5843,93 +5813,8 @@ class OrderLifecycleManager:
         regime_state: Any | None,
         now: datetime,
     ) -> None:
-        """
-        TASK-3: snapshots/classifies model-probability, regime and liquidity
-        reversals while a position is still open. Evidence goes into
-        `_reversal_events[ticket]` (bounded per ticket) and survives to the
-        closing autopsy row. Pure classification + in-memory bookkeeping —
-        never executes any order and never blocks the tick path.
-        """
-        try:
-            if ticket not in self._entry_probs and probs is not None:
-                try:
-                    pl = probs.squeeze().tolist()
-                    if not isinstance(pl, list):
-                        pl = [pl]
-                    p_no_trade = float(pl[0]) if len(pl) > 0 else 0.0
-                    p_buy = float(pl[1]) if len(pl) > 1 else 0.0
-                    p_sell = float(pl[2]) if len(pl) > 2 else 0.0
-                    self._entry_probs[ticket] = {
-                        "buy": round(p_buy, 6),
-                        "sell": round(p_sell, 6),
-                        "no_trade": round(p_no_trade, 6),
-                    }
-                except Exception:
-                    self._entry_probs[ticket] = {}
-            if ticket not in self._entry_regime_state and regime_state is not None:
-                try:
-                    self._entry_regime_state[ticket] = str(
-                        getattr(regime_state, "regime_type", "") or ""
-                    )
-                except Exception:
-                    self._entry_regime_state[ticket] = ""
-
-            events = self._reversal_events.setdefault(ticket, [])
-            if len(events) > 12:
-                return  # bounded per ticket
-
-            direction = str(getattr(pos, "type", "BUY") or "BUY")
-            is_buy = "BUY" in direction.upper()
-            entry_probs = self._entry_probs.get(ticket, {})
-
-            if probs is not None and entry_probs:
-                try:
-                    pl = probs.squeeze().tolist()
-                    if not isinstance(pl, list):
-                        pl = [pl]
-                    p_buy = float(pl[1]) if len(pl) > 1 else 0.0
-                    p_sell = float(pl[2]) if len(pl) > 2 else 0.0
-                    p_no_trade = float(pl[0]) if len(pl) > 0 else 0.0
-                    if is_buy:
-                        flipped = p_sell > p_buy + 0.10 and p_sell >= 0.5
-                    else:
-                        flipped = p_buy > p_sell + 0.10 and p_buy >= 0.5
-                    if flipped:
-                        events.append(
-                            {
-                                "type": "MODEL_REVERSAL",
-                                "at": now.isoformat(),
-                                "prob_buy": round(p_buy, 6),
-                                "prob_sell": round(p_sell, 6),
-                                "prob_no_trade": round(p_no_trade, 6),
-                                "entry_buy": entry_probs.get("buy"),
-                                "entry_sell": entry_probs.get("sell"),
-                            }
-                        )
-                except Exception:
-                    pass
-
-            if regime_state is not None and self._entry_regime_state.get(ticket):
-                try:
-                    cur_regime = str(getattr(regime_state, "regime_type", "") or "")
-                    if cur_regime and cur_regime != self._entry_regime_state[ticket]:
-                        events.append(
-                            {
-                                "type": "REGIME_REVERSAL",
-                                "at": now.isoformat(),
-                                "from": self._entry_regime_state[ticket],
-                                "to": cur_regime,
-                            }
-                        )
-                        self._entry_regime_state[ticket] = cur_regime
-                except Exception:
-                    pass
-        except Exception as exc:
-            logger.error(
-                "[TRADE_LINEAGE] reversal capture failed (isolated)",
-                ticket=ticket,
-                error=str(exc),
-            )
+        """Delegate — state owned by PositionTrackingLedger (S6-followup)."""
+        self._tracking.capture_reversal_state(ticket, pos, probs, regime_state, now)
 
     def _close_sibling_legs(self, ticket: int, scenario: str, now: datetime) -> None:
         """

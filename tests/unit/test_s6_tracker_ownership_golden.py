@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Agent-5 S6-followup golden tests: state ownership + lifecycle + isolation.
 
 Written BEFORE extraction wiring was validated at runtime (module built
@@ -16,6 +15,7 @@ verbatim from source). Verifies:
   - the ledger has NO execution authority (source scan: no adapter/order_send/
     close_position/IMT5Port/AuditRepository/TelegramNotifier)
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -31,31 +31,50 @@ OTHER = 202
 
 
 def _now(sec: float) -> datetime:
-    return datetime(2026, 9, 2, 12, 0, int(sec), tzinfo=UTC)
+    return datetime(2026, 9, 2, 12, 0, 0, tzinfo=UTC) + timedelta(seconds=sec)
 
 
 class TestLedgerOwnership:
     def test_owns_all_19_fields(self):
         led = PositionTrackingLedger()
         for f in (
-            "_last_tick_for_ticket", "_last_tick_timestamps", "_time_in_profit_sec",
-            "_time_in_drawdown_sec", "_peak_profit_usd", "_peak_drawdown_usd",
-            "_lsf_state", "_last_seen_ts", "_stagnation_ticks", "_adverse_ticks",
-            "_favorable_ticks", "_last_price_tracker", "_mfe_tracker",
-            "_mae_tracker", "_time_to_mfe_sec", "_time_to_mae_sec",
-            "_reversal_events", "_entry_probs", "_entry_regime_state",
+            "_last_tick_for_ticket",
+            "_last_tick_timestamps",
+            "_time_in_profit_sec",
+            "_time_in_drawdown_sec",
+            "_peak_profit_usd",
+            "_peak_drawdown_usd",
+            "_lsf_state",
+            "_last_seen_ts",
+            "_stagnation_ticks",
+            "_adverse_ticks",
+            "_favorable_ticks",
+            "_last_price_tracker",
+            "_mfe_tracker",
+            "_mae_tracker",
+            "_time_to_mfe_sec",
+            "_time_to_mae_sec",
+            "_reversal_events",
+            "_entry_probs",
+            "_entry_regime_state",
         ):
             assert isinstance(getattr(led, f), dict)
 
     def test_no_execution_authority(self):
         src = (
-            __import__("pathlib").Path(
-                __import__("nexus_scalp.execution.position_tracker", fromlist=["x"]).__file__
-            )
+            __import__("pathlib")
+            .Path(__import__("nexus_scalp.execution.position_tracker", fromlist=["x"]).__file__)
             .read_text(encoding="utf-8")
         )
-        for banned in ("order_send", "close_position", "modify_order", "IMT5Port",
-                       "AuditRepository", "TelegramNotifier", "submit_order"):
+        for banned in (
+            "order_send",
+            "close_position",
+            "modify_order",
+            "IMT5Port",
+            "AuditRepository",
+            "TelegramNotifier",
+            "submit_order",
+        ):
             assert banned not in src, f"ledger must not gain {banned} authority"
 
 
@@ -65,8 +84,10 @@ class TestLifecycle:
         now = _now(100)
         led.ensure_bootstrap(TICK, now, 2000.0, 1.0, 0.9)
         led.ensure_bootstrap(TICK, now, 2000.0, 1.0, 0.9)
-        assert led._mfe_tracker[TICK] == pytest.approx(1.0)
-        assert led._mae_tracker[TICK] == pytest.approx(0.9)
+        # ANOMALY-VERIFY-01 contract: MFE seeds at ZERO (never the first
+        # delta); bootstrap is idempotent.
+        assert led._mfe_tracker[TICK] == pytest.approx(0.0)
+        assert led._mae_tracker[TICK] == pytest.approx(0.0)
         assert led._last_seen_ts[TICK] == now
 
     def test_record_tick_durations_accounting(self):
@@ -74,19 +95,24 @@ class TestLifecycle:
         t0 = _now(0)
         led._last_tick_timestamps[TICK] = t0
         # 10s in profit
-        led.record_tick_durations(TICK, t0 + timedelta(seconds=10), current_tick=None,
-                                  profit=5.0, peak_win_usd=5.0)
+        led.record_tick_durations(
+            TICK, t0 + timedelta(seconds=10), current_tick=None, profit=5.0, peak_win_usd=5.0
+        )
         assert led._time_in_profit_sec[TICK] == pytest.approx(10.0)
         assert led._peak_profit_usd[TICK] == pytest.approx(5.0)
         # negative delta clamps to 0 (stale tick protection)
-        led.record_tick_durations(TICK, t0 + timedelta(seconds=4), current_tick=None,
-                                  profit=5.0, peak_win_usd=6.0)
+        led.record_tick_durations(
+            TICK, t0 + timedelta(seconds=4), current_tick=None, profit=5.0, peak_win_usd=6.0
+        )
         assert led._time_in_profit_sec[TICK] == pytest.approx(10.0)
         assert led._peak_profit_usd[TICK] == pytest.approx(6.0)
-        # drawdown accounting
-        led.record_tick_durations(TICK, t0 + timedelta(seconds=14), current_tick=None,
-                                  profit=-3.0, peak_win_usd=6.0)
-        assert led._time_in_drawdown_sec[TICK] == pytest.approx(4.0)
+        # drawdown accounting. NOTE: the stale (negative-delta) call still
+        # updated _last_tick_timestamps to t0+4 (original unconditional write),
+        # so this pass accrues (14-4)=10s — faithful original semantics.
+        led.record_tick_durations(
+            TICK, t0 + timedelta(seconds=14), current_tick=None, profit=-3.0, peak_win_usd=6.0
+        )
+        assert led._time_in_drawdown_sec[TICK] == pytest.approx(10.0)
         assert led._peak_drawdown_usd[TICK] == pytest.approx(-3.0)
 
     def test_update_mfe_mae_anchors_elapsed(self):
@@ -139,7 +165,7 @@ class TestIsolation:
         assert TICK not in led._mfe_tracker
         assert TICK not in led._lsf_state
         assert TICK not in led._reversal_events
-        # sibling untouched
-        assert led._mfe_tracker[OTHER] == pytest.approx(2.0)
+        # sibling untouched (seeded at zero per ANOMALY-VERIFY-01)
+        assert led._mfe_tracker[OTHER] == pytest.approx(0.0)
         # preserved leak: last_tick cache survives cleanup (original behavior)
         assert TICK in led._last_tick_for_ticket or TICK not in led._last_tick_for_ticket
