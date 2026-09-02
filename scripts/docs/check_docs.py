@@ -361,7 +361,7 @@ def check_localization_gate() -> None:
     )
     ok = proc.returncode == 0
     detail = "ok" if ok else (proc.stdout.strip().splitlines()[-1] if proc.stdout else "failed")
-    record("Localization gate (FA/AR)", ok, detail)
+    record("Localization gate (FA/AR)", ok, [detail])
 
 
 def check_mermaid() -> None:
