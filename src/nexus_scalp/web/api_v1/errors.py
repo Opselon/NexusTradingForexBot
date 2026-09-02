@@ -1,10 +1,16 @@
-"""API v1 exception -> error-envelope translation (CHG-0043).
+"""API v1 exception -> error-envelope translation (CHG-0043, TASK-API-PLATFORM).
 
-Registers FastAPI exception handlers on the v1 router's parent app so every
-error leaving /api/v1 uses the single v1 error contract (code/message/details/
-request_id/retryable) with NO stack traces and NO internal text. Request
-validation failures (FastAPI/Pydantic 422) are translated from their verbose
-default body into the same envelope, keeping only field-level summaries.
+WHERE/WHY: the canonical v1 tree is ``nexus_scalp.web.api_v1`` (spec of record:
+docs/api/API_PLATFORM_V1.md). This module is the port of the exception-handler
+layer from the consolidated predecessor (nexus_scalp.api.v1.errors, removed in
+the consolidation) so that EVERY error leaving /api/v1 uses the single v1 error
+contract (code/message/details/request_id/retryable) with NO stack traces and NO
+internal text. Request validation failures (FastAPI/Pydantic 422) are translated
+from their verbose default body into the same envelope, keeping only bounded
+field-level summaries.
+
+Path-guarded: legacy routes (the 257-route dashboard surface) are unaffected —
+handlers pass through to the legacy behavior for any non-/api/v1 path.
 
 USED BY: web/api_v1_wiring.py (register_v1_exception_handlers).
 """
@@ -18,11 +24,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from nexus_scalp.api.v1.common import ERROR_CODES, error_envelope
+from nexus_scalp.web.api_v1.common import ERROR_SEMANTICS, _request_id, fail
 
 
 def _is_v1_path(path: str) -> bool:
-    return path.startswith("/api/v1") or path in {"/api/v1", "/api/v1/openapi.json"}
+    return path.startswith("/api/v1")
 
 
 def register_v1_exception_handlers(app: FastAPI) -> None:
@@ -31,6 +37,7 @@ def register_v1_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _v1_validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         if not _is_v1_path(request.url.path):
+            # Legacy surface keeps FastAPI's default 422 body.
             return JSONResponse(status_code=422, content={"detail": list(exc.errors())})
         details: list[dict[str, Any]] = []
         for err in list(exc.errors())[:20]:  # bounded: no huge payloads
@@ -42,37 +49,42 @@ def register_v1_exception_handlers(app: FastAPI) -> None:
                     "input_present": err.get("input") is not None,
                 }
             )
-        body = error_envelope(
+        return fail(
             request,
             "VALIDATION_ERROR",
             message="Request validation failed.",
             details={"errors": details},
         )
-        return JSONResponse(status_code=422, content=body)
 
     @app.exception_handler(StarletteHTTPException)
     async def _v1_http_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         if not _is_v1_path(request.url.path):
             detail = exc.detail if isinstance(exc.detail, (str, dict, list)) else None
             return JSONResponse(status_code=exc.status_code, content={"detail": detail})
-        # Map status -> v1 code; use the status-semantic code, keep v1 message.
+        # Map HTTP status onto the v1 code family (spec §3).
         code = next(
-            (c for c, spec in ERROR_CODES.items() if spec["status"] == exc.status_code),
+            (c for c, (status, _retryable) in ERROR_SEMANTICS.items() if status == exc.status_code),
             "INTERNAL_ERROR" if exc.status_code >= 500 else "BAD_REQUEST",
         )
-        # 404/405 are NOT_FOUND / METHOD_NOT_ALLOWED specifically:
         if exc.status_code == 404:
-            code = "NOT_FOUND"
+            code = "RESOURCE_NOT_FOUND"
         elif exc.status_code == 405:
-            code = "METHOD_NOT_ALLOWED"
+            code = (
+                "METHOD_NOT_ALLOWED"
+                if "METHOD_NOT_ALLOWED" in ERROR_SEMANTICS
+                else "VALIDATION_ERROR"
+            )
         elif exc.status_code == 409:
             code = "CONFLICT"
         elif exc.status_code == 413:
-            code = "PAYLOAD_TOO_LARGE"
+            code = (
+                "PAYLOAD_TOO_LARGE"
+                if "PAYLOAD_TOO_LARGE" in ERROR_SEMANTICS
+                else "VALIDATION_ERROR"
+            )
         elif exc.status_code == 504:
             code = "TIMEOUT"
-        body = error_envelope(request, code)
-        return JSONResponse(status_code=exc.status_code, content=body)
+        return fail(request, code)
 
     @app.exception_handler(Exception)
     async def _v1_unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -82,7 +94,6 @@ def register_v1_exception_handlers(app: FastAPI) -> None:
         from nexus_scalp.observability.logging import get_logger
         from nexus_scalp.web.errors import log_web_error
 
-        rid = getattr(request.state, "request_id", None)
-        log_web_error(get_logger("nexus_scalp.api.v1"), request.url.path, rid, exc)
-        body = error_envelope(request, "INTERNAL_ERROR", message="Internal server error.")
-        return JSONResponse(status_code=500, content=body)
+        rid = _request_id(request)
+        log_web_error(get_logger("nexus_scalp.web.api_v1"), request.url.path, rid, exc)
+        return fail(request, "INTERNAL_ERROR", message="Internal server error.")

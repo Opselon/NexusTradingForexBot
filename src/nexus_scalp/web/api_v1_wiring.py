@@ -2,17 +2,29 @@
 
 WHERE/WHY: single, minimal integration point with the existing web server.
 ``register_api_v1(app)`` is called ONCE at the END of ``web.server.create_app``
-(one line there). It:
+(one small block there). It:
 
-1. mounts all v1 routers under /api/v1,
-2. registers the v1 exception handlers (path-guarded; legacy routes unaffected),
+1. registers the v1 exception handlers (path-guarded; legacy routes unaffected),
+2. mounts all v1 domain routers under /api/v1,
 3. keeps the FULL route tree additive - zero existing routes touched.
 
-Also provides ``create_v1_app()`` (standalone FastAPI app with ONLY /api/v1)
-used by the developer CLI and tests so the contract surface is testable
-without the dashboard server.
+CANONICAL TREE (consolidation): the routers live in ``nexus_scalp.web.api_v1``
+per the spec of record (docs/api/API_PLATFORM_V1.md §2/§7). The earlier
+``nexus_scalp.api.v1`` tree (45 routes, superseded envelope) was removed in the
+consolidation step; this wiring is the only mount point either tree ever had.
 
-USED BY: web/server.py (one call), cli/api_commands.py, tests/unit/test_api_v1_*.
+Domain file layout follows §7; tightly-coupled domains share cohesive modules:
+- positions.py   → positions + execution + model + features
+- incidents.py   → incidents + observability/audit + database + config
+- system.py, runtime.py, market.py, signals.py, decisions.py, research.py,
+  shadow.py → one domain each.
+
+Also provides ``create_v1_app()`` (standalone FastAPI app with ONLY /api/v1)
+used by the developer CLI, smoke/benchmark tools and tests so the contract
+surface is testable without the dashboard server.
+
+USED BY: web/server.py (one call), cli/api_commands.py, scripts/dev/api_*.py,
+tests/unit/test_api_v1_*.py, tests/integration/test_api_v1_platform.py.
 """
 
 from __future__ import annotations
@@ -21,23 +33,42 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from nexus_scalp.api.v1.errors import register_v1_exception_handlers
+from nexus_scalp.web.api_v1.errors import register_v1_exception_handlers
 
 API_V1_PREFIX = "/api/v1"
 
 
 def _include_routers(app: FastAPI) -> None:
-    from nexus_scalp.api.v1 import gateway, market_signals, positions_model, stores, system
+    from nexus_scalp.web.api_v1 import (
+        decisions,
+        incidents,
+        market,
+        positions,
+        research,
+        risk,
+        runtime,
+        shadow,
+        signals,
+        system,
+    )
 
-    app.include_router(system.router)
-    app.include_router(market_signals.router)
-    app.include_router(positions_model.router)
-    app.include_router(stores.router)
-    app.include_router(gateway.router)
+    for module in (
+        system,
+        runtime,
+        market,
+        signals,
+        decisions,
+        positions,
+        risk,
+        research,
+        shadow,
+        incidents,
+    ):
+        app.include_router(module.router)
 
 
 def register_api_v1(app: FastAPI) -> None:
-    """Mounts the versioned read-only API platform on the EXISTING app."""
+    """Mounts the versioned read-dominant API platform on the EXISTING app."""
     register_v1_exception_handlers(app)
     _include_routers(app)
 
@@ -51,9 +82,10 @@ def create_v1_app() -> FastAPI:
     app = FastAPI(
         title="Nexus Scalp Engine API",
         description=(
-            "Versioned read-only API platform (v1) for the Nexus Scalp Engine: "
-            "system/runtime, market, signals/decisions, positions/execution, "
-            "model/features, research, shadow, incidents, observability, database."
+            "Versioned API platform (v1) for the Nexus Scalp Engine: system, "
+            "runtime, market, signals, decisions, positions, risk, execution, "
+            "model, features, research, shadow, observability, incidents, "
+            "database, config."
         ),
         version="1.0.0",
     )
