@@ -73,6 +73,15 @@ jobs:
         run: |
           python scripts/ci/check_workflows.py --format text --strict
 
+      - name: Local-gate parity (same contracts as check_local.py)
+        run: |
+          # GATE PARITY CONTRACT (CHG-0049): CI must FAIL when the local
+          # pre-push gate and CI drift apart — different config source,
+          # different manifest, divergent status taxonomy, or a CI-only lint
+          # class the local gate silently omits. Emitted as JSON evidence.
+          python scripts/ci/gate_parity.py --json > gate-parity.json
+          cat gate-parity.json
+
       - name: Classify changes (sanity check of the canonical classifier)
         run: |
           python scripts/ci/classify_changes.py --files "src/nexus_scalp/risk/risk_engine.py Web/app.js Dockerfile .github/workflows/ci.yml"
@@ -145,9 +154,33 @@ jobs:
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" ruff_format "$rc" "files would be reformatted (see format/)" || true
           exit 0
 
+      # -------- CI auto-repair (CHG-0052): repair the CHECKOUT, never the commit --------
+      # Runs ONLY when the source-tree format check failed. Repairs the runner
+      # checkout so downstream stages still see a clean tree, writes
+      # ruff-repair.patch + ruff-repair-report.json into the results artifact,
+      # and deliberately leaves ruff_format=failed in run-info: the COMMITTED
+      # tree was dirty and that fact must stay visible (the run stays red).
+      - name: Ruff - Auto-repair checkout (safe, artifacted)
+        id: ruff-repair
+        if: env.RUFF_FORMAT_RC != '0'
+        continue-on-error: true
+        run: |
+          python scripts/ci/ci_ruff_repair.py --results "$CI_RESULTS_DIR"
+          rc=$?
+          if [ "$rc" -eq 0 ]; then
+            echo "RUFF_REPAIR_STATUS=repaired" >> "$GITHUB_ENV"
+          else
+            echo "RUFF_REPAIR_STATUS=failed" >> "$GITHUB_ENV"
+          fi
+          exit 0
+
       # -------- Mypy type checking (own directory; text log + JUnit XML) --------
+      # Skipped (=> BLOCKED, never "errored") while the source tree is an
+      # unrepaired format failure: running expensive stages on a tree the
+      # canonical formatter rejects wastes minutes and muddies the root cause.
       - name: Mypy - Type checking
         id: mypy
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
@@ -161,8 +194,12 @@ jobs:
           exit 0
 
       # -------- Pytest + coverage (own directory; junit.xml + log + cobertura) --------
+      # Same BLOCKED contract as mypy: skipped while the tree is an unrepaired
+      # format failure; classify-gate writes status=blocked for the missing
+      # result so the summary never invents a fake pytest/coverage error.
       - name: Pytest with coverage
         id: pytest
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
@@ -197,6 +234,7 @@ jobs:
       # -------- Coverage status (derived from the same pytest run above) --------
       - name: Coverage report
         id: coverage
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
@@ -229,11 +267,28 @@ jobs:
           PY
           exit 0
 
+      # -------- Blocked-state classification (CHG-0052, run #685 class) --------
+      # When the source tree is STILL an unrepaired format failure, the
+      # mypy/pytest/coverage steps above never ran. classify-gate writes
+      # status=blocked (NOT errored) for every missing downstream result so
+      # the summary + final gate report BLOCKED_BY_RUFF_FORMAT instead of
+      # inventing three fake failures.
+      - name: Classify blocked downstream checks
+        if: env.RUFF_FORMAT_RC != '0' && env.RUFF_REPAIR_STATUS != 'repaired'
+        continue-on-error: true
+        run: |
+          python scripts/ci/make_ci_results.py classify-gate "$CI_RESULTS_DIR" --root-failure ruff_format
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" runtime_gate 0 "BLOCKED_BY_RUFF_FORMAT - step did not run" --blocked || true
+          exit 0
+
       # -------- Secret presence preflight (booleans ONLY — values never printed) --------
       # -------- Runtime certification gate (CHG-0051): the ONE canonical composed-runtime command
       # Same command agents run locally before pushing; CI stays final authority.
+      # Blocked alongside mypy/pytest while the tree is an unrepaired format
+      # failure (certifying a tree the canonical formatter rejects is noise).
       - name: Runtime certification gate
         id: runtime_gate
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
@@ -298,6 +353,13 @@ jobs:
               "Pytest": load("pytest.json").get("status", "skipped"),
               "Coverage": load("coverage.json").get("status", "skipped"),
           }
+          # CHG-0052: root-cause block — was the committed tree clean, did the
+          # safe repair succeed, and what is blocked behind the root failure?
+          try:
+              with open(os.path.join(root, "ruff-repair-report.json"), encoding="utf-8") as fh:
+                  repair_report = json.load(fh)
+          except Exception:
+              repair_report = {}
           meta = load("metadata.json")
           extra = load("pytest-extra.json")
           cov = load("coverage-extra.json").get("percent")
@@ -305,6 +367,24 @@ jobs:
           for name, status in checks.items():
               lines.append(f"- {name}: **{status.upper()}**")
           lines.append("")
+          blocked = [n for n, s in checks.items() if s == "blocked"]
+          if blocked:
+              lines.append(f"- DOWNSTREAM: **BLOCKED BY ROOT FAILURE** ({', '.join(blocked)} - cancelled upstream, NOT errored)")
+              lines.append("")
+          if repair_report:
+              src_clean = bool(repair_report.get("source_tree_was_clean"))
+              lines.append("## Ruff Format Source State (CHG-0052)")
+              lines.append("")
+              lines.append(f"- ROOT FAILURE: ruff format --check . (source tree)")
+              lines.append(f"- SOURCE TREE FORMAT STATUS: {'CLEAN' if src_clean else 'DIRTY — committed tree was malformed'}")
+              lines.append(f"- AUTO-REPAIR: {str(repair_report.get('repair_status', 'unknown')).upper()}")
+              lines.append(f"- POST-REPAIR CHECK: {'PASS' if repair_report.get('post_repair_format_exit_code') == 0 else 'FAIL/NOT RUN'}")
+              lines.append(f"- COMMITTED TREE WAS ALREADY CLEAN: {str(src_clean).upper()}")
+              lines.append(f"- PERSISTENCE: NOT COMMITTED — patch artifact: {repair_report.get('patch_file') or 'n/a'}")
+              files = repair_report.get("files_offending") or []
+              if files:
+                  lines.append(f"- FILES: {', '.join(str(f) for f in files[:20])}")
+              lines.append("")
           lines.append(extra.get("detail", "Tests: n/a"))
           if cov is not None:
               lines.append(f"Coverage: {cov:.1f}%")
@@ -367,6 +447,12 @@ jobs:
               if s in ("failed", "errored"):
                   status = "failed"
               details.append({"check": c, "status": s, "detail": d.get("detail", "")})
+          # CHG-0052: repair evidence travels with the review status so
+          # aggregators see AUTO_REPAIRED_BUT_SOURCE_DIRTY without the artifact.
+          if os.environ.get("RUFF_REPAIR_STATUS") == "repaired":
+              payload_extra = {"auto_repair": "repaired", "source_tree": "dirty"}
+          else:
+              payload_extra = {}
           payload = {
               "job": "quality",
               "status": status,
@@ -375,6 +461,7 @@ jobs:
               "sha": os.environ.get("GITHUB_SHA", ""),
               "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
               "details": details,
+              **payload_extra,
           }
           os.makedirs(info_dir, exist_ok=True)
           with open(os.path.join(info_dir, "review-status.json"), "w", encoding="utf-8") as fh:
@@ -382,14 +469,20 @@ jobs:
           print("review-status.json ->", status)
           PY
 
-      # -------- Final gate: fail the job if any check failed (real exit codes) -------
+      # -------- Final gate: root failure vs blocked vs real failure (CHG-0052) -------
+      # Status vocabulary: passed | failed | errored | skipped | blocked.
+      #   failed/errored -> real failure of that check
+      #   blocked        -> check never ran: an upstream gate failed (root cause)
+      #   skipped        -> check not required / never ran with no named failure
+      # A missing result JSON is NOT an error: after the blocked classifier ran,
+      # absent files mean the step was legitimately not executed upstream.
       - name: Fail job if any check failed
         if: always()
         run: |
           python - <<'PY'
           import json, os
           root = os.environ["CI_RESULTS_DIR"]
-          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "coverage"]
+          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "coverage", "runtime_gate"]
           statuses = {}
           for name in checks:
               p = os.path.join(root, "run-info", f"{name}.json")
@@ -397,13 +490,21 @@ jobs:
                   with open(p, encoding="utf-8") as fh:
                       statuses[name] = json.load(fh).get("status", "skipped")
               except FileNotFoundError:
-                  statuses[name] = "errored"
-                  print(f"MISSING CHECK JSON: {p}")
+                  # Missing JSON = step did not run (blocked upstream). Never
+                  # invent an "errored" failure for a check that never executed.
+                  statuses[name] = "skipped"
               except Exception as e:
                   statuses[name] = "errored"
                   print(f"UNREADABLE CHECK JSON: {p} -> {e}")
           failed = [k for k, v in statuses.items() if v in ("failed", "errored")]
+          blocked = [k for k, v in statuses.items() if v == "blocked"]
+          repair = os.environ.get("RUFF_REPAIR_STATUS", "")
           print(" | ".join(f"{k}={v}" for k, v in statuses.items()))
+          if repair == "repaired":
+              print("AUTO_REPAIRED_BUT_SOURCE_DIRTY: ruff format repaired the CHECKOUT;"
+                    " the COMMITTED tree remains malformed and ruff_format stays failed.")
+          if blocked:
+              print(f"BLOCKED (never ran - upstream root failure): {', '.join(blocked)}")
           if failed:
               print(f"FAILING CHECKS: {', '.join(failed)}")
               # Emit a workflow command so the failure lands in the check-run

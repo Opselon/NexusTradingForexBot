@@ -345,6 +345,41 @@ def cmd_summary(args: argparse.Namespace) -> int:
             f"| {label} (heavy) | {d.get('status', '?').upper()} | {d.get('detail', '')} |"
         )
     lines.append("")
+    # Blocked-state contract (CHG-0052): cancelled-downstream transparency.
+    # A 'blocked' row means the check NEVER RAN because an upstream gate
+    # failed — it is not a failure of that check and must not read as one.
+    blocked_rows = [(label, c) for label, c in checks.items() if c.get("status") == "blocked"]
+    if blocked_rows:
+        names = ", ".join(label for label, _ in blocked_rows)
+        lines.append("**DOWNSTREAM: BLOCKED BY ROOT FAILURE** — the following checks never ran")
+        lines.append(f"because an upstream gate failed (cancelled upstream, NOT errored): {names}.")
+        lines.append("")
+    repair_report = _load_json(root / "ruff-repair-report.json")
+    if repair_report:
+        src_clean = bool(repair_report.get("source_tree_was_clean"))
+        lines.append("## Ruff Format Source State (CHG-0052)")
+        lines.append("")
+        lines.append("- ROOT FAILURE: ruff format --check . (source tree)")
+        lines.append(
+            f"- SOURCE TREE FORMAT STATUS: "
+            f"{'CLEAN' if src_clean else 'DIRTY — committed tree was malformed'}"
+        )
+        lines.append(f"- AUTO-REPAIR: {str(repair_report.get('repair_status', 'unknown')).upper()}")
+        lines.append(
+            "- POST-REPAIR CHECK: "
+            + ("PASS" if repair_report.get("post_repair_format_exit_code") == 0 else "FAIL/NOT RUN")
+        )
+        lines.append(f"- COMMITTED TREE WAS ALREADY CLEAN: {str(src_clean).upper()}")
+        lines.append(
+            "- PERSISTENCE: NOT COMMITTED — patch artifact: "
+            f"{repair_report.get('patch_file') or 'n/a'}"
+        )
+        files_off = repair_report.get("files_offending") or []
+        if files_off:
+            shown = ", ".join(str(f) for f in files_off[:20])
+            lines.append(f"- FILES: {shown}")
+        lines.append("")
+
     lines.append("## Test Statistics")
     lines.append("")
     tests = int(stats.get("tests", 0))
@@ -414,10 +449,67 @@ def cmd_check(args: argparse.Namespace) -> int:
         )
         print(f"CHECK {args.check_name} rc=<empty> status=errored")
         return 0
+    if getattr(args, "blocked", False):
+        # CHG-0052: explicit blocked record — the step did NOT run because an
+        # upstream gate failed. rc stays as evidence of the blocker context;
+        # a blocked step is never "passed" just because rc==0 was recorded.
+        _write_check(
+            root, args.check_name, "blocked", args.detail or "blocked by upstream gate", rc
+        )
+        print(f"CHECK {args.check_name} rc={rc} status=blocked")
+        return 0
     status = "passed" if rc == 0 else "failed" if rc == 1 else "errored"
     detail = args.detail or ("passed" if rc == 0 else "failed (see artifact)")
     _write_check(root, args.check_name, status, detail, rc)
     print(f"CHECK {args.check_name} rc={rc} status={status}")
+    return 0
+
+
+#: Blocked-state contract (CHG-0052, run #685 class): an upstream gate failure
+#: CANCELS the downstream steps, so their result JSONs never appear. A missing
+#: JSON is NOT an "errored" check — it is BLOCKED by the named root failure
+#: when one exists, and only "skipped" when nothing failed upstream.
+DOWNSTREAM_CHECKS = ("mypy", "pytest", "coverage")
+
+
+def classify_gate(root: Path, root_failure: str = "") -> int:
+    """Re-classify missing downstream results after an upstream failure.
+
+    usage: make_ci_results.py classify-gate <root> [--root-failure ruff_format]
+
+    For every check in DOWNSTREAM_CHECKS with no result JSON:
+      * a root failure was named   -> write status=blocked
+        (detail: "BLOCKED_BY_<ROOT> - upstream gate failed; step never ran")
+      * no root failure was named  -> write status=skipped
+        ("no result recorded - no upstream failure named")
+
+    Existing result files are NEVER touched (a real failed/errored check
+    keeps its own status). Exit 0 always: classification must not fail the
+    job it is describing.
+    """
+    run_info = root / "run-info"
+    run_info.mkdir(parents=True, exist_ok=True)
+    root_failure = (root_failure or "").strip()
+    for check in DOWNSTREAM_CHECKS:
+        target = run_info / f"{check}.json"
+        if target.exists():
+            # An existing BLOCKED record (written via `check ... --blocked` in
+            # the workflow fallback) must stay blocked, never be re-interpreted.
+            continue
+        if root_failure:
+            _write_check(
+                root,
+                check,
+                "blocked",
+                f"BLOCKED_BY_{root_failure.upper()} - upstream gate failed; step never ran",
+                0,
+            )
+            print(f"CLASSIFY {check}: blocked by {root_failure}")
+        else:
+            _write_check(
+                root, check, "skipped", "no result recorded - no upstream failure named", 0
+            )
+            print(f"CLASSIFY {check}: skipped (no upstream failure named)")
     return 0
 
 
@@ -499,7 +591,24 @@ def main(argv: list[str] | None = None) -> int:
     p_chk.add_argument("check_name")
     p_chk.add_argument("rc", type=int)
     p_chk.add_argument("detail", nargs="?", default="")
+    p_chk.add_argument(
+        "--blocked",
+        action="store_true",
+        help="record status=blocked (step never ran - upstream gate failed)",
+    )
     p_chk.set_defaults(func=cmd_check)
+
+    p_cls = sub.add_parser(
+        "classify-gate",
+        help="re-classify missing downstream results as blocked/skipped (never errored)",
+    )
+    p_cls.add_argument("root")
+    p_cls.add_argument(
+        "--root-failure",
+        default="",
+        help="check name of the upstream root failure (e.g. ruff_format)",
+    )
+    p_cls.set_defaults(func=lambda a: classify_gate(Path(a.root), a.root_failure))
 
     sub.add_parser("list-checks", help="print installed tool versions/formats").set_defaults(
         func=cmd_list_checks
