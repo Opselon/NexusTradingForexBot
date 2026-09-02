@@ -146,11 +146,12 @@ class TestRuntimeGateE2E:
             assert failure["stage"]
             assert failure["failure_class"]
             assert failure["owner"] and failure["owner"] != "unassigned"
+
     def test_json_stdout_purity_is_a_contract(self):
         """--json stdout must parse even when engine chatter fires (stderr)."""
         code, out = _run_gate("--json", "--fast")
-        report = json.loads(out[out.find("{"):])
+        report = json.loads(out[out.find("{") :])
         assert report["exit_code"] == code
         # stderr (merged run) may contain chatter but stdout never does.
         code2, both = _run_gate("--json", "--fast", merge_stderr=True)
-        assert json.loads(both[both.find("{"):])["exit_code"] == code2
+        assert json.loads(both[both.find("{") :])["exit_code"] == code2

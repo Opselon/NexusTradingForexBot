@@ -255,21 +255,22 @@ def database_status(request: Request) -> Any:
         "size_bytes": p.stat().st_size if exists else None,
         "probed_at": utc_now_iso(),
     }
+    # NOTE: full PRAGMA integrity_check lives in /database/integrity (explicit,
+    # heavier). Status stays O(1) — cheap metadata only — so dashboards can poll.
     conn = _sqlite_ro(path) if exists else None
     if conn is not None:
         try:
-            row = conn.execute("PRAGMA integrity_check").fetchone()
-            data["integrity_check"] = row[0] if row else None
             tables = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
             ).fetchall()
             data["table_count"] = len(tables)
         except sqlite3.Error:
-            data["integrity_check"] = "UNAVAILABLE"
+            data["table_count"] = None
         finally:
             conn.close()
     else:
-        data["integrity_check"] = "UNAVAILABLE" if exists else None
+        data["table_count"] = None
+    data["integrity_endpoint"] = "/api/v1/database/integrity"
     return ok(request, data)
 
 

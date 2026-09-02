@@ -72,6 +72,31 @@ def register_api_v1(app: FastAPI) -> None:
     register_v1_exception_handlers(app)
     _include_routers(app)
     _ensure_correlation_middleware(app)
+    _prewarm_health_cache(app)
+
+
+def _prewarm_health_cache(app: FastAPI) -> None:
+    """Warms the health cache off-thread so the FIRST request isn't slow.
+
+    Daemon thread, single shot, failure-isolated: if the sweep fails the cache
+    stays empty and the first request computes it inline (same contract).
+    """
+    import threading
+
+    def _warm() -> None:
+        from nexus_scalp.web.api_v1.system import _health_block
+
+        _health_block(None)  # warms only when an app-bound state exists; safe no-op
+
+    def _warm_bound() -> None:
+        from nexus_scalp.web.api_v1.system import _health_block
+
+        class _Bind:  # minimal request-like shim exposing app.state
+            app = app
+
+        _health_block(_Bind())  # type: ignore[arg-type]
+
+    threading.Thread(target=_warm_bound, name="v1-health-prewarm", daemon=True).start()
 
 
 def _ensure_correlation_middleware(app: FastAPI) -> None:

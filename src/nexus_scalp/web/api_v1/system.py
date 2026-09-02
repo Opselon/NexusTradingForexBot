@@ -20,14 +20,34 @@ from nexus_scalp.web.api_v1.common import (
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
 
 
-def _health_block() -> tuple[str | None, list[dict[str, Any]], list[str]]:
-    """(verdict, checks, critical_failures) from the real HealthEngine."""
+_HEALTH_TTL_SEC = 3.0
+
+
+def _health_block(
+    request: Request | None = None,
+) -> tuple[str | None, list[dict[str, Any]], list[str]]:
+    """(verdict, checks, critical_failures) from the real HealthEngine.
+
+    Health runs a full layer sweep (~1s) — a per-request computation would make
+    every poll expensive. Result is cached on app.state for _HEALTH_TTL_SEC
+    (documented staleness; cache is per-app, so TestClient instances are
+    isolated). Falls through to a live computation when no app is bound.
+    """
+    import time as _time
+
+    state = getattr(request.app, "state", None) if request is not None else None
+    if state is not None:
+        cached = getattr(state, "v1_health_cache", None)
+        if isinstance(cached, tuple) and (_time.monotonic() - cached[0]) < _HEALTH_TTL_SEC:
+            return cached[1], cached[2], cached[3]
     try:
         from nexus_scalp.release.health import HealthEngine
 
         verdict, entries = HealthEngine().overall()
         checks = [e.to_dict() for e in entries]
         critical = [c["category"] for c in checks if c.get("verdict") == "FAIL"]
+        if state is not None:
+            state.v1_health_cache = (_time.monotonic(), verdict, checks, critical)
         return verdict, checks, critical
     except Exception:
         return None, [], []
@@ -35,7 +55,7 @@ def _health_block() -> tuple[str | None, list[dict[str, Any]], list[str]]:
 
 @router.get("/status", summary="High-level operational status (health+version+mode+freshness)")
 def system_status(request: Request) -> Any:
-    verdict, checks, critical = _health_block()
+    verdict, checks, critical = _health_block(request)
     engine = get_engine(request)
     mode = None
     running = False
@@ -85,7 +105,7 @@ def system_status(request: Request) -> Any:
 
 @router.get("/health", summary="Structured health state (HealthEngine contract)")
 def system_health(request: Request) -> Any:
-    verdict, checks, critical = _health_block()
+    verdict, checks, critical = _health_block(request)
     if verdict is None:
         return fail(request, "DEPENDENCY_UNAVAILABLE", message="health engine unavailable")
     return ok(
@@ -100,7 +120,7 @@ def system_health(request: Request) -> Any:
 
 @router.get("/readiness", summary="Readiness: required layers must PASS")
 def system_readiness(request: Request) -> Any:
-    verdict, checks, _critical = _health_block()
+    verdict, checks, _critical = _health_block(request)
     if verdict is None:
         return fail(request, "DEPENDENCY_UNAVAILABLE", message="health engine unavailable")
     required = [
@@ -125,12 +145,26 @@ def system_readiness(request: Request) -> Any:
 
 @router.get("/version", summary="Version/build/revision identity")
 def system_version(request: Request) -> Any:
-    try:
-        from nexus_scalp.release.metadata import get_version_info
-
-        return ok(request, get_version_info())
-    except Exception:
+    # build metadata changes only on rebuild; cache keyed by module lifetime.
+    cache = _version_cache()
+    if not cache:
         return fail(request, "DEPENDENCY_UNAVAILABLE", message="build metadata unavailable")
+    return ok(request, dict(cache))
+
+
+_VERSION_CACHE: dict[str, Any] | None = None
+
+
+def _version_cache() -> dict[str, Any] | None:
+    global _VERSION_CACHE
+    if _VERSION_CACHE is None:
+        try:
+            from nexus_scalp.release.metadata import get_version_info
+
+            _VERSION_CACHE = get_version_info()
+        except Exception:
+            _VERSION_CACHE = {}
+    return _VERSION_CACHE
 
 
 @router.get("/runtime", summary="Runtime environment and mode information")

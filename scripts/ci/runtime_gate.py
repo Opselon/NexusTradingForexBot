@@ -169,6 +169,7 @@ class Gate:
         # Cross-stage handles (set by L5, consumed by L6/L7/L8/L9).
         self.engine_ref: Any = None
         self.adapter_ref: Any = None
+        self._engine_repo: Any = None
 
     # -- environment isolation -------------------------------------------
     def isolate_environment(self) -> Path:

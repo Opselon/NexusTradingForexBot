@@ -351,24 +351,29 @@ def rel_base(from_rel: str, lang: str = "en") -> str:
     return "../" * depth
 
 
-def page_href(target_rel: str, lang: str, from_rel: str) -> str:
-    """Depth-relative href from page from_rel (in lang) to target_rel (in lang).
+def page_href(target_rel: str, lang: str, from_rel: str, from_lang: str = "") -> str:
+    """Depth-relative href from page from_rel (built in from_lang) to
+    target_rel (in lang). rel_base is computed from the CURRENT page's
+    language (from_lang) — the /<lang>/ prefix of the SOURCE page determines
+    its depth, never the target's.
 
     target_rel '' = the language landing page. The lang prefix is part of the
     target path, so fa/project/status reached from the EN homepage is
     'fa/project/status/'. Examples, from_rel='project/status' in EN targeting
-    'architecture/overview': '../../architecture/overview/'. In FA (built one
-    level deeper): '../../../architecture/overview/'.
+    'architecture/overview': '../../architecture/overview/'. From a FA page at
+    fa/project/status targeting fa/architecture/overview:
+    '../../architecture/overview/'.
     """
+    page_lang = from_lang or lang  # caller passes from_lang when switching langs
     if lang != "en":
         target_rel = f"{lang}/{target_rel}" if target_rel else lang
     if not target_rel:
-        return rel_base(from_rel, lang)
-    return rel_base(from_rel, lang) + target_rel.rstrip("/") + "/"
+        return rel_base(from_rel, page_lang)
+    return rel_base(from_rel, page_lang) + target_rel.rstrip("/") + "/"
 
 
-def asset_href(from_rel: str, name: str) -> str:
-    return rel_base(from_rel) + "assets/" + name
+def asset_href(from_rel: str, name: str, lang: str = "en") -> str:
+    return rel_base(from_rel, lang) + "assets/" + name
 
 
 def abs_url(rel: str, lang: str) -> str:
@@ -629,7 +634,12 @@ def lang_switcher(lang: str, rel: str, from_rel: str) -> str:
             )
             continue
         keep = find_translation(code, rel) is not None if rel else True
-        href = page_href(rel, code, from_rel) if (keep and rel) else page_href("", code, from_rel)
+        # from_lang=lang: depth is computed from the CURRENT page's language
+        href = (
+            page_href(rel, code, from_rel, from_lang=lang)
+            if (keep and rel)
+            else page_href("", code, from_rel, from_lang=lang)
+        )
         title = "" if keep else " title='Landing page — translation not built'"
         links.append(
             f"<a href='{href}' lang='{code}' hreflang='{code}'{title}>{html.escape(LANGUAGES[code]['native'])}</a>"
@@ -742,8 +752,8 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 <meta property='og:type' content='website'>
 <meta property='og:url' content='{canonical}'>
 <meta property='og:site_name' content='Nexus Scalp Engine'>
-<link rel='stylesheet' href='{asset_href(rel, "styles.css")}'>
-<link rel='icon' href='{asset_href(rel, "favicon.svg")}' type='image/svg+xml'>
+<link rel='stylesheet' href='{asset_href(rel, "styles.css", lang)}'>
+<link rel='icon' href='{asset_href(rel, "favicon.svg", lang)}' type='image/svg+xml'>
 </head>
 <body>
 <a class='skip-link' href='#content'>{html.escape(ui["skip"])}</a>
@@ -761,7 +771,7 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 </footer>
 </main>
 </div>
-<script src='{asset_href(rel, "search.js")}' defer></script>
+<script src='{asset_href(rel, "search.js", lang)}' defer></script>
 </body>
 </html>"""
 
