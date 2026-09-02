@@ -7778,3 +7778,11 @@ Status: FIXED (CI lane usable without private artifacts; local strictness kept).
   bug146_149 + mt5_status suites (18 passed); test_htf_warmup_gate 5 failures reproduced
   IDENTICAL on pristine HEAD worktree (pre-existing, unrelated - model artifact env).
 - Classification: P0-adjacent SAFETY. Status: FIXED.
+
+## BUG-221 - Shadow read-path presented healthy empty store as unavailable: '[SHADOW] summary failed: no such table: shadow_runs' (2026-09-03, Nexus-Fleet-Orchestrator UIX program; FIXED here)
+- SEVERITY: P1 (truth contract) | STATUS: FIXED | SURFACES: /api/v1/shadow/status, replay-shadow smoke domain, Shadow dashboard panel
+- SYMPTOM (reproduced 2026-09-03 00:17): on a fresh audit.db (no shadow writer has ever run), `api_smoke.py --embedded` printed `[SHADOW] summary failed error='no such table: shadow_runs'` while still marking the replay-shadow domain PASS; `/api/v1/shadow/status` returned shadow_60d/shadow_70d with `available:false`.
+- ROOT CAUSE: `ShadowStore.summary()` and `Shadow70Store.summary()` are READ paths but never call `ensure_schema()`; the shadow tables are created lazily by the WRITE path (save_decision). A healthy empty store (zero runs) was therefore indistinguishable from an unavailable/broken store — exactly the false-unavailable state the UX truth contract forbids (available:false is NOT an error, but an error log + available:false on a healthy DB is a lie in the other direction).
+- FIX: call flag-guarded idempotent `ensure_schema()` at the top of both summary() methods (src/nexus_scalp/shadow/store.py:~589, src/nexus_scalp/shadow/shadow70/store.py:~449). No hot-path impact: the in-process flag makes the DDL run at most once per process, and only on first read.
+- EVIDENCE: fresh-db repro before fix -> `[SHADOW] summary failed` + available:False; after fix -> `{'available': True, ...}` with zero counts, no error lines. Both stores verified in one run.
+- REGRESSION: fresh-store truth probe (repo venv python inline; to be promoted into tests/unit/test_shadow70_* family) — summary().available is True on a fresh AuditRepository with no writer.
