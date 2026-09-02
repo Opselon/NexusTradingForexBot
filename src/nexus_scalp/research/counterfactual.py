@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -80,15 +81,16 @@ class DecisionCandidate:
     """One recorded NO_TRADE decision joined with its recorded geometry.
 
     All fields come from the recorded signal row (audit_signals) — nothing
-    is invented. `direction` is the model-preferred action parsed from the
-    recorded model_action/blocked payload; when absent the candidate is
-    UNRESOLVED and skipped (counted, never fabricated).
+    is invented. `direction` is the RECORDED preferred_direction column
+    (CHG-0043 decision-evidence) with fallback to the legacy model_action
+    parse for rows that predate the column; when absent the candidate is
+    UNRESOLVED and counted, never fabricated.
     """
 
     decision_id: str
     timestamp: datetime
     symbol: str
-    direction: str  # BUY | SELL | "" (unresolved)
+    direction: str  # BUY | SELL | "" (unresolved / NOT_RECORDED)
     confidence: float
     entry_price: float
     stop_loss: float
@@ -98,6 +100,14 @@ class DecisionCandidate:
     blocked_by: str
     reason_code: str
     model_action: str
+    # CHG-0043 evidence fields ("" / None = NOT_RECORDED — never invented)
+    raw_prob_buy: float | None = None
+    raw_prob_sell: float | None = None
+    raw_prob_no_trade: float | None = None
+    raw_prob_wait: float | None = None
+    confidence_source: str = ""
+    spread_usd: float | None = None
+    geometry_unavailable_before_gate: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,11 +156,30 @@ def parse_direction(model_action: str, action: str) -> str:
     return ""
 
 
+def _extract_prob(row: dict[str, Any], key: str) -> float | None:
+    """Extracts one raw probability from a signal row; None = NOT_RECORDED."""
+    v = row.get(key)
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
 def build_candidates(rows: list[dict[str, Any]]) -> list[DecisionCandidate]:
     """Builds DecisionCandidate objects from audit_signals rows (raw dicts).
 
-    Rows whose direction cannot be resolved are skipped by the caller via
-    the empty-direction marker (kept visible for coverage accounting).
+    Direction resolution order (CHG-0043):
+      1. the RECORDED preferred_direction column (decision-time evidence),
+      2. fallback to the legacy model_action parse for rows that predate
+         the column (same evidence, different storage location),
+      3. otherwise NOT_RECORDED ("") — counted, never fabricated.
+
+    Geometry honesty: a row carrying geometry_unavailable_before_gate
+    (pre-model guardian blocks) has sentinel SL/TP, NOT real geometry —
+    the flag is preserved so the walk can refuse to compute R from them.
     """
     out: list[DecisionCandidate] = []
     for r in rows:
@@ -163,14 +192,30 @@ def build_candidates(rows: list[dict[str, Any]]) -> list[DecisionCandidate]:
             sl = float(r.get("stop_loss") or 0.0)
             tp = float(r.get("take_profit") or 0.0)
             conf = float(r.get("confidence") or 0.0)
+            recorded_dir = str(r.get("preferred_direction") or "")
+            if recorded_dir not in ("BUY", "SELL"):
+                recorded_dir = parse_direction(
+                    str(r.get("model_action") or ""), str(r.get("action") or "")
+                )
+            try:
+                rc = json.loads(str(r.get("payload") or "{}"))
+                if not isinstance(rc, dict):
+                    rc = {}
+            except Exception:
+                rc = {}
+            geometry_unavailable = bool(rc.get("geometry_unavailable_before_gate", False))
+            spread = r.get("spread_usd")
+            spread_f = float(spread) if spread is not None else None
+            prob_buy_raw = _extract_prob(r, "raw_prob_buy")
+            prob_sell_raw = _extract_prob(r, "raw_prob_sell")
+            prob_nt_raw = _extract_prob(r, "raw_prob_no_trade")
+            prob_wait_raw = _extract_prob(r, "raw_prob_wait")
             out.append(
                 DecisionCandidate(
                     decision_id=str(r.get("request_id") or ""),
                     timestamp=ts_dt,
                     symbol=str(r.get("symbol") or "XAUUSD"),
-                    direction=parse_direction(
-                        str(r.get("model_action") or ""), str(r.get("action") or "")
-                    ),
+                    direction=recorded_dir,
                     confidence=conf,
                     entry_price=entry,
                     stop_loss=sl,
@@ -180,6 +225,13 @@ def build_candidates(rows: list[dict[str, Any]]) -> list[DecisionCandidate]:
                     blocked_by=str(r.get("blocked_by") or ""),
                     reason_code=str(r.get("reason_code") or ""),
                     model_action=str(r.get("model_action") or ""),
+                    raw_prob_buy=prob_buy_raw,
+                    raw_prob_sell=prob_sell_raw,
+                    raw_prob_no_trade=prob_nt_raw,
+                    raw_prob_wait=prob_wait_raw,
+                    confidence_source=str(r.get("confidence_source") or ""),
+                    spread_usd=spread_f,
+                    geometry_unavailable_before_gate=geometry_unavailable,
                 )
             )
         except (TypeError, ValueError) as e:
@@ -295,8 +347,12 @@ def walk_candidate(
     # theoretical R at the BEST point (MFE-based potential) AND at walk end;
     # the classification uses the walk-end mark (honest full-horizon result)
     # while MFE/MAE keep the excursion picture. RR_NOT_RECORDED when the
-    # recorded geometry is unusable.
+    # recorded geometry is unusable OR when the row is a pre-model block
+    # (geometry_unavailable_before_gate) whose sentinel SL/TP are NOT real
+    # risk geometry — the excursion proxy classifies those honestly instead.
     theoretical_r: float | str | None
+    if cand.geometry_unavailable_before_gate:
+        risk_distance = None  # sentinel geometry must never become a fake R
     if risk_distance is None or mark_price is None or entry_price is None:
         theoretical_r = RR_NOT_RECORDED
         final_r: float | None = None
