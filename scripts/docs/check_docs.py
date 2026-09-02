@@ -276,8 +276,13 @@ def check_built_site_structure() -> None:
         else:
             problems.append(f"search index URL not built: {url}")
     sitemap = (public / "sitemap.xml").read_text(encoding="utf-8")
+    repo_seg = f"/{cfg.REPO}/"
     for loc in re.findall(r"<loc>([^<]+)</loc>", sitemap):
-        tail = loc.split(".github.io/", 1)[-1] if ".github.io/" in loc else loc
+        low = loc.lower()
+        if repo_seg.lower() in low:
+            tail = low.split(repo_seg.lower(), 1)[1]
+        else:
+            tail = low.split(".github.io/", 1)[-1]
         probe = public / tail
         if not (probe.exists() or (probe / "index.html").exists()):
             problems.append(f"sitemap URL not built: {loc}")

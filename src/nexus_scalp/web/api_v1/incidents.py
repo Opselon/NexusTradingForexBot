@@ -228,8 +228,8 @@ def audit_events(
     where = " WHERE status = ?" if status else ""
     args: tuple[Any, ...] = (status,) if status else ()
     sql = (
-        "SELECT ticket, symbol, direction, volume, price_open, status, "
-        "opened_at, closed_at, pnl FROM audit_ledger" + where + " ORDER BY ticket DESC"
+        "SELECT ticket, symbol, direction, volume, entry_price, status, "
+        "timestamp, pnl FROM audit_ledger" + where + " ORDER BY ticket DESC"
     )
     rows = fetch_bounded(request, sql, args, ps + 1 + (p - 1) * ps)
     page_rows = rows[(p - 1) * ps : (p - 1) * ps + ps]

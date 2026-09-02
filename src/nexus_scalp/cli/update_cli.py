@@ -144,14 +144,18 @@ def _update_human_check(report: dict[str, Any]) -> None:
     # change summary + last-checked timestamp, from the offline-safe
     # release-status truth (never fabricated). Failure-isolated.
     try:
-        from nexus_scalp.release.release_status import build_release_status
+        from nexus_scalp.release.release_status import (
+            STATUS_NO_UPDATE,
+            STATUS_REVISION_AHEAD,
+            build_release_status,
+        )
 
         rs = build_release_status()
         behind, ahead = rs.get("commits_behind"), rs.get("commits_ahead")
         cur_commit = rs.get("current_commit")
         if cur_commit:
             table.add_row("Current commit", str(cur_commit))
-        if behind is not None:
+        if behind is not None and (behind or ahead):
             rel = "UP TO DATE" if behind == 0 and not ahead else (
                 f"{behind} behind" + (f" / {ahead} ahead" if ahead else "")
             )
@@ -160,7 +164,12 @@ def _update_human_check(report: dict[str, Any]) -> None:
             console.print("[bold]Changes since current:[/bold]")
             for c in rs["changes"][:5]:
                 console.print(f"  • {c}")
-        if status == "NO_UPDATE":
+        if status == STATUS_NO_UPDATE and rs.get("update_status") == STATUS_REVISION_AHEAD:
+            console.print(
+                f"[yellow]◎ Local revision is {ahead} commit(s) ahead of origin "
+                "(development build - nothing to update to).[/yellow]"
+            )
+        elif status == STATUS_NO_UPDATE:
             console.print("[green]✓ Nexus is up to date.[/green]")
         console.print(f"[dim]Last checked: {rs.get('generated_at', '')}[/dim]")
     except Exception:
