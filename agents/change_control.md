@@ -1377,7 +1377,13 @@ policy/threshold changes, no auto-promotion. Risk: MEDIUM (observability-only
 surface; all shadow paths failure-isolated; zero order authority preserved).
 Required tests: identity parity, action normalization, outcome resolver
 determinism, scaler parity, attach gate, retention bounds, isolation reproofs.
-Status: IMPLEMENTING
+Status: COMPLETE (SHADOW_HARDENED) — 18 commits 6427596..8422ac9 (parts 1-16 +
+BUG-203/BUG-204/BUG-210 ledgers + registry closure). Delivered: forensic map,
+D1-D12+D14 fixed, 22 regression tests + critical-suite wiring, SHADOW_EVIDENCE
+v2 additive migration, SHADOW70_ATTACH v2. Deferred P2: D13 canonical status
+vocabulary unification, D15 per-feature drill-down. Evidence: 176 shadow-family
+tests PASS locally; CI ruff/mypy PASS; sole CI pytest failure = foreign
+observability flake (BUG-213, owner-ledgered, 5/5 green locally).
 
 ## CHG-0043 - OSS-grade adversarial QA / deep-assurance layer (2026-09-02, Nexus-Main)
 
