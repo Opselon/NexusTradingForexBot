@@ -470,7 +470,15 @@ def register_model_governance_routes(app: Any) -> None:
                 return {"available": False, "reason": "NO_VALIDATED_CANDIDATE"}
 
             artifact_path = candidate.get("artifact_path", "")
-            scaler_path = str(_ShadowPath(artifact_path)) + ".scaler.npz"
+            # CHG-0046 D7b: canonical sibling naming model.pt ->
+            # model.scaler.npz (model_lifecycle.champion convention). The old
+            # '.pt.scaler.npz' suffix missed the real file entirely — the
+            # scaler gate could never pass for canonical bundles.
+            _art = _ShadowPath(artifact_path)
+            if _art.name.endswith(".pt"):
+                scaler_path = str(_art.with_name("model.scaler.npz"))
+            else:
+                scaler_path = str(_art) + ".scaler.npz"
             if not artifact_path or not _ShadowPath(artifact_path).exists():
                 return {"available": False, "reason": "CHALLENGER_ARTIFACT_NOT_FOUND"}
 
@@ -500,23 +508,53 @@ def register_model_governance_routes(app: Any) -> None:
                 scaler_path=scaler_path,
                 num_classes=4,
             )
-            # manifest: read model.json next to the artifact (schema hash)
-            manifest_path = _ShadowPath(artifact_path).parent / "model.json"
-            if manifest_path.exists():
-                import json as _json
+            # manifest: read model.json next to the artifact (schema hash).
+            # CHG-0046 D7: the canonical bundle ships model.meta.json (with
+            # feature_schema_id/num_features) and NO scaler_hash key — the
+            # previous manifest-only path left feature_schema_hash empty and
+            # the validator's provenance gate rejected every real bundle
+            # (SHADOW_DEGRADED) making shadow70 UNATTACHABLE. Fallback chain:
+            # model.json → model.meta.json → computed feature_schema_hash()
+            # for the declared schema id; scaler_hash = live sha256 of the
+            # scaler file when the manifest does not carry one.
+            feature_schema_hash_value = ""
+            scaler_hash_value = ""
+            import json as _json
 
-                try:
-                    man = _json.loads(manifest_path.read_text(encoding="utf-8"))
-                    contract = contract.model_copy(
-                        update={
-                            "feature_schema_hash": str(
-                                man.get("feature_schema_hash") or man.get("feature_schema_id", "")
-                            ),
-                            "scaler_hash": str(man.get("scaler_hash", "")),
-                        }
-                    )
-                except Exception:
-                    pass
+            manifest_path = _ShadowPath(artifact_path).parent / "model.json"
+            meta_path = _ShadowPath(artifact_path).parent / "model.meta.json"
+            for _mpath in (manifest_path, meta_path):
+                if _mpath.exists():
+                    try:
+                        man = _json.loads(_mpath.read_text(encoding="utf-8"))
+                        feature_schema_hash_value = str(
+                            man.get("feature_schema_hash")
+                            or man.get("feature_schema_id", "")
+                            or ""
+                        )
+                        scaler_hash_value = str(man.get("scaler_hash", "") or "")
+                        break
+                    except Exception:
+                        pass
+            if not feature_schema_hash_value or feature_schema_hash_value in (
+                "scalp_v3",
+                "scalp_v4",
+            ):
+                # A schema ID is not a hash: derive the canonical registry
+                # content hash so the runtime verifies the REAL contract.
+                from nexus_scalp.features.schema_contract import feature_schema_hash
+
+                feature_schema_hash_value = feature_schema_hash(SHADOW70_SCHEMA_ID)
+            if not scaler_hash_value and _ShadowPath(scaler_path).exists():
+                from nexus_scalp.shadow.shadow70.runtime import sha256_file
+
+                scaler_hash_value = sha256_file(scaler_path)
+            contract = contract.model_copy(
+                update={
+                    "feature_schema_hash": feature_schema_hash_value,
+                    "scaler_hash": scaler_hash_value,
+                }
+            )
 
             runtime: Shadow70Runtime = engine._shadow70_runtime
             result = runtime.attach(contract)
@@ -528,25 +566,34 @@ def register_model_governance_routes(app: Any) -> None:
                     "detail": result.reason,
                 }
 
-            # inference fn: torch state-dict loader, same as ChallengerRuntime
+            # inference fn: model LOADED ONCE at attach (CHG-0046 D4).
+            # The previous closure ran torch.load + np.load inside the
+            # per-call _infer — a disk read + full deserialization on the
+            # HOT TICK PATH for every observation, guaranteed to blow the
+            # 50ms shadow latency budget and stall the champion loop.
+            # The artifact hash is already verified by the load gate above;
+            # if the file is replaced mid-run the store/run identity checks
+            # (D11) surface the mismatch — the hot path never re-reads.
             def _make_infer(path: str, scaler: str, dim: int):
+                import numpy as np
+                import torch
+
+                from nexus_scalp.models.scalp_net import ScalpNet
+                from nexus_scalp.shadow.compat import scale_like_champion
+
+                state = torch.load(path, map_location="cpu", weights_only=False)
+                model = ScalpNet(num_features=dim, num_classes=4)
+                model.load_state_dict(state)
+                model.eval()
+                data = np.load(scaler)
+                mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
+                std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
+
                 def _infer(vector70: list[float]) -> list[float]:
-                    import numpy as np
-                    import torch
-
-                    from nexus_scalp.models.scalp_net import ScalpNet
-
-                    state = torch.load(path, map_location="cpu", weights_only=False)
-                    model = ScalpNet(num_features=dim, num_classes=4)
-                    model.load_state_dict(state)
-                    model.eval()
-                    data = np.load(scaler)
-                    mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
-                    std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
-                    x = (np.asarray(vector70, dtype=np.float32).reshape(1, -1) - mean) / (
-                        std + 1e-8
+                    x = scale_like_champion(
+                        np.asarray(vector70, dtype=np.float32).reshape(1, -1), mean, std
                     )
-                    xt = torch.tensor(x, dtype=torch.float32)
+                    xt = torch.tensor(np.asarray(x, dtype=np.float32), dtype=torch.float32)
                     xt = torch.nan_to_num(xt, nan=0.0, posinf=1.0, neginf=-1.0)
                     with torch.inference_mode():
                         logits = model(xt, return_logits=True)
