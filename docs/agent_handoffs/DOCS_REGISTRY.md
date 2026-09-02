@@ -190,3 +190,17 @@ Status: VERIFIED against live deployment
   contract these are left for their owner to commit/push.
 - Remaining scratch/ + doc1.txt/end_limit/pyvenv.cfg untracked files belong to
   other agents/locals — not docs surface, untouched.
+
+## DOC-TASK-ID: DOCS-005 - Elite upgrade phase A (SEO + tokens + docs UX)
+
+- SEO: twitter cards + JSON-LD + hreflang(x-default) on every page; robots.txt;
+  check_seo.py SEO_GATE (deploy-blocking, in DOCS_HEALTH); case-exact sitemap
+  probe (Linux CI fix - QA_BLIND_SPOT_MATRIX false negative).
+- Design tokens: nx-* layer; homepage HOW NEXUS WORKS pipeline strip.
+- Docs UX: reading progress (rAF), scroll-spy TOC (IntersectionObserver),
+  search shortcuts / + Ctrl/Cmd+K. Perf budget gate: CSS<=40KB JS<=12KB.
+- Validation: DOCS_HEALTH PASS (14 checks) / SEO_GATE PASS (335 pages) /
+  LOCALIZATION_GATE PASS / BUILT_LINK_AUDIT PASS / live SEO 40/40 PASS /
+  LIVE rev == HEAD (f17d0320).
+- Reports: agents/forensic_reports/2026-09-02_nexus_docs_elite_{baseline,final}.md
+- Status: VERIFIED against live deployment.
