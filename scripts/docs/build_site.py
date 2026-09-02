@@ -701,6 +701,8 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
         src_rel = src.relative_to(REPO_ROOT).as_posix() if src else f"site/content/{lang}/{rel}.md"
     edit_url = f"{REPO_URL}/edit/main/{src_rel}"
     canonical = f"{PAGES_URL}{abs_url(rel, lang)}"
+    locale_json = json.dumps(LOCALES[lang]["ui"], ensure_ascii=False)
+    lang_json = json.dumps(lang)
     status_flag = (
         ""
         if (translated or lang == "en")
@@ -740,6 +742,19 @@ def shell(lang: str, title: str, desc: str, body: str, rel: str, translated: boo
 </footer>
 </main>
 </div>
+<script>
+window.NEXUS_LOCALE = {locale_json};
+window.NEXUS_LANG = {lang_json};
+(function(){{  /* theme boot: persisted light/dark/system, no FOUC */
+  try {{
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  }} catch (e) {{}}
+}})();
+</script>
 <script src='{asset_href(rel, "search.js", lang)}' defer></script>
 </body>
 </html>"""
