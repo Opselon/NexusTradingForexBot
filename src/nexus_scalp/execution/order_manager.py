@@ -4397,40 +4397,25 @@ class OrderLifecycleManager:
             self._hold_score_tracker[ticket] = hold_score
 
             # --- Trajectory, Evidence, and State machine Processing (Requirements 13-16, 20) ---
-            drawdown = abs(min(0.0, pos.profit))
-            retention = protection.retention_ratio(pos.profit)
-            self._add_trajectory_step(
+            # S6-escalation stage: verbatim block moved to _update_trajectory_and_state.
+            (
+                pnl_features,
+                evidence,
+                confidence_factor,
+                debounced_state,
+                _budget_exhausted,  # consumed inside the stage; kept for return-shape clarity
+            ) = self._update_trajectory_and_state(
+                pos=pos,
                 ticket=ticket,
-                timestamp=now,
-                pnl=pos.profit,
-                price=price_current,
+                now=now,
+                protection=protection,
+                price_current=price_current,
                 hold_score=hold_score,
-                drawdown=drawdown,
-                retention=retention,
                 atr=atr,
-                volatility=spread,
+                spread=spread,
+                probs=probs,
+                feature_vector=feature_vector,
             )
-
-            pnl_features = self._calculate_trajectory_features(ticket)
-            confidence_factor = self._entry_confidences.get(ticket, 0.0)
-            evidence = self._calculate_adaptive_evidence_scores(ticket, pos, probs, feature_vector)
-
-            if pos.profit < 0.0:
-                h4_trend = self._safe_feature_float(feature_vector, "htf_h4_trend", 0.0)
-                self._initialize_recovery_mode(
-                    ticket, pos.profit, confidence_factor, atr, h4_trend, now
-                )
-                budget_exhausted, _budget_reason = self._evaluate_recovery_budget_and_horizon(
-                    ticket, pos.profit, now
-                )
-            else:
-                budget_exhausted = False
-
-            cand_state = self._evaluate_candidate_state(ticket, pos, evidence, pnl_features)
-            if budget_exhausted:
-                cand_state = PositionState.LOSS_HARD_EXIT
-            debounced_state = self.transition_state_with_hysteresis(ticket, cand_state, now)
-
             # Continuous dynamic protection score for telemetry
             prot_score = self._calculate_protection_score(
                 ticket, pos, base_hold_score, pnl_features, evidence, confidence_factor, atr
@@ -5538,6 +5523,61 @@ class OrderLifecycleManager:
             rule_target_sl = round(target_mfe_sl, self._resolve_price_digits(symbol_info))
 
         return action, scenario, rule_target_sl
+
+    def _update_trajectory_and_state(
+        self,
+        pos: Position,
+        ticket: int,
+        now: datetime,
+        protection: PositionProtectionState,
+        price_current: float,
+        hold_score: int,
+        atr: float,
+        spread: float,
+        probs: Any | None,
+        feature_vector: FeatureVector | None,
+    ) -> tuple[dict, dict, float, "PositionState", bool]:
+        """TRACKING/EVIDENCE/STATE STAGE (S6-escalation): trajectory step,
+        pnl-features, adaptive evidence scores, recovery-budget evaluation on
+        drawdown, candidate-state derivation, and hysteresis debounce. Moved
+        VERBATIM from manage_active_positions' per-position loop. Returns
+        (pnl_features, evidence, confidence_factor, debounced_state,
+        budget_exhausted)."""
+        drawdown = abs(min(0.0, pos.profit))
+        retention = protection.retention_ratio(pos.profit)
+        self._add_trajectory_step(
+            ticket=ticket,
+            timestamp=now,
+            pnl=pos.profit,
+            price=price_current,
+            hold_score=hold_score,
+            drawdown=drawdown,
+            retention=retention,
+            atr=atr,
+            volatility=spread,
+        )
+
+        pnl_features = self._calculate_trajectory_features(ticket)
+        confidence_factor = self._entry_confidences.get(ticket, 0.0)
+        evidence = self._calculate_adaptive_evidence_scores(ticket, pos, probs, feature_vector)
+
+        if pos.profit < 0.0:
+            h4_trend = self._safe_feature_float(feature_vector, "htf_h4_trend", 0.0)
+            self._initialize_recovery_mode(
+                ticket, pos.profit, confidence_factor, atr, h4_trend, now
+            )
+            budget_exhausted, _budget_reason = self._evaluate_recovery_budget_and_horizon(
+                ticket, pos.profit, now
+            )
+        else:
+            budget_exhausted = False
+
+        cand_state = self._evaluate_candidate_state(ticket, pos, evidence, pnl_features)
+        if budget_exhausted:
+            cand_state = PositionState.LOSS_HARD_EXIT
+        debounced_state = self.transition_state_with_hysteresis(ticket, cand_state, now)
+
+        return pnl_features, evidence, confidence_factor, debounced_state, budget_exhausted
 
     def reconcile_missed_closes(
         self,
