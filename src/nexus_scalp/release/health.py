@@ -392,13 +392,28 @@ class HealthEngine:
         (scalp_v3 70D canonical; serving scalp_v1 50D). Also dimension-checks a
         co-located scaler artifact when present. Emits FAIL with an explicit
         MODEL_INPUT_DIMENSION_MISMATCH / MODEL_TENSOR_DIMENSION_MISMATCH reason.
-        """
-        import torch  # type: ignore[import-not-found]
 
-        from nexus_scalp.features.liquidity_runtime import resolve_model_compatibility
-        from nexus_scalp.features.schema_contract import (
-            SCHEMA_ID as CONTRACT_ID,
-        )
+        Release acceptance 2026-09-02 (BUG-218): torch is unavailable in the
+        frozen onefile CLI bundle by design — the import happens INSIDE the
+        artifact-present branch so the "no model artifact" WARNING takes
+        precedence and torch absence can never raise a FAIL ERROR.
+        """
+        try:
+            from nexus_scalp.features.liquidity_runtime import resolve_model_compatibility
+            from nexus_scalp.features.schema_contract import (
+                SCHEMA_ID as CONTRACT_ID,
+            )
+        except ImportError as e:
+            # BUG-218 (complete): schema_contract itself transitively imports
+            # numpy (features.scalp_features). The frozen CLI cannot evaluate
+            # the contract at all - truthful WARNING, never FAIL.
+            return HealthEntry(
+                "MODEL_CONTRACT",
+                "WARNING",
+                f"numeric stack unavailable in this bundle — contract not evaluated ({e})",
+                "Contract evaluation requires the full (onedir) bundle.",
+                state=DEGRADED,
+            )
 
         runtime_id = CONTRACT_ID
         cfg = self._load_config()
@@ -427,6 +442,24 @@ class HealthEngine:
                 "WARNING",
                 "no model artifact present — contract not evaluated",
                 "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            )
+        try:
+            import torch  # type: ignore[import-not-found]
+
+            from nexus_scalp.features.liquidity_runtime import resolve_model_compatibility
+        except ImportError as e:
+            # Release acceptance 2026-09-02 (BUG-218): the frozen onefile CLI
+            # bundle excludes torch AND numpy by design (the full onedir
+            # bundle carries both). The contract gate cannot run without the
+            # numeric stack — report a truthful WARNING (not a FAIL ERROR
+            # that flips the overall verdict to NOT READY for a CLI-only
+            # artifact with no model artifact to evaluate anyway).
+            return HealthEntry(
+                "MODEL_CONTRACT",
+                "WARNING",
+                f"numeric stack unavailable in this bundle — contract not evaluated ({e})",
+                "Contract evaluation requires the full (onedir) bundle.",
+                state=DEGRADED,
             )
         try:
             sd = torch.load(candidate, map_location="cpu", weights_only=True)

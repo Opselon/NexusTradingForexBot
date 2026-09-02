@@ -7665,3 +7665,36 @@ FIXED — verified by full pipeline run + 126 shadow-family tests PASS.
   43.0-count case, 50D path untouched proof).
 - Classification: P1 latent (P0-class impact when triggered). Status:
   FIXED this pass.
+
+## BUG-218 - Frozen onefile CLI: MODEL_CONTRACT doctor check raised FAIL ERROR (No module named torch/numpy) flipping overall to NOT READY (2026-09-02, Agent Nexus-UX release acceptance; FIXED)
+
+### Symptom (real artifact, black-box)
+- `NexusScalpEngine-CLI.exe doctor --json` on a clean machine reported
+  `MODEL_CONTRACT: FAIL / check raised: No module named 'torch'` then (after
+  first guard) `No module named 'numpy'` -> overall NOT READY for a
+  correctly-installed CLI artifact whose setup had just completed rc=0.
+
+### Root cause
+- `check_model_contract` imported torch at function top, then
+  `schema_contract` (transitively numpy via features.scalp_features). The
+  onefile CLI bundle excludes torch/numpy BY DESIGN (full numeric stack
+  lives in the onedir bundle). The failure-isolation wrapper classified the
+  ImportError as FAIL/ERROR; MODEL_CONTRACT is a critical category so the
+  overall verdict became NOT READY - a false negative for a healthy CLI
+  install.
+
+### Fix (src/nexus_scalp/release/health.py, minimal)
+- Module imports for the contract gate moved inside a try/except ImportError
+  that returns a truthful WARNING ("numeric stack unavailable in this bundle
+  - contract not evaluated", state=DEGRADED, suggestion points at the full
+  bundle). Contract evaluation on bundles that DO carry torch/numpy is
+  unchanged.
+
+### Verification
+- Rebuilt artifact (build_artifact.py), clean-sandbox flow: setup rc=0 ->
+  doctor --json overall=READY; acceptance manifest 9 PASS / 0 FAIL /
+  3 NOT_SUPPORTED (start/stop/restart on onefile = documented exclusion);
+  release_system + cli_onboarding suites green; ruff/mypy clean.
+
+Status: FIXED (artifact truthfulness restored; full-bundle contract check
+untouched).

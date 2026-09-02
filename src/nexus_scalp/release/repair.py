@@ -162,6 +162,15 @@ class RepairEngine:
         """BUG-146: pre-create the strategy research DB (strategies.db).
 
         Anchored explicitly to THIS workspace's artifacts dir.
+
+        Release acceptance 2026-09-02 (BUG-217): the frozen CLI bundle
+        excludes numpy by design, and `nexus_scalp.strategies.research_store`
+        transitively imports it (strategies/__init__ -> base -> research.
+        backtest -> metrics). A FAILED strategies-db step aborted the whole
+        setup wizard on the packaged artifact. The research DB is an
+        OPTIONAL research-tier component: when its import chain is
+        unavailable the step reports SKIPPED (with the honest reason)
+        instead of failing setup.
         """
         db = self.workspace / "artifacts" / "strategies.db"
         if db.exists():
@@ -175,6 +184,12 @@ class RepairEngine:
             if hasattr(store, "close"):
                 store.close()
             return RepairResult("strategies_db", "OK", f"initialized {db}")
+        except ImportError as e:
+            # Optional tier unavailable in this bundle (frozen CLI excludes
+            # numpy) - skip honestly, never fail setup for an optional DB.
+            return RepairResult(
+                "strategies_db", "SKIPPED", f"research tier unavailable in this bundle: {e}"
+            )
         except Exception as e:
             return RepairResult("strategies_db", "FAILED", str(e))
 

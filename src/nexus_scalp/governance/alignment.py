@@ -25,6 +25,7 @@ Guarantees what both models actually saw:
 from __future__ import annotations
 
 import hashlib
+import math
 from datetime import datetime
 from typing import Any
 
@@ -94,6 +95,22 @@ def vectorize_news_context(context: dict[str, Any] | None) -> list[float]:
     vle = g("bearish_score", 0.0)
     # news_state / novelty encodings mirror the model_generation bridge.
     state = str(g("news_state", g("state", "NORMAL"))).upper()
+
+    def num(value: Any) -> float:
+        """BUG-217 companion: producer value -> finite float, fail-closed.
+
+        Numeric strings convert; non-numeric / non-finite (NaN/Inf) raise
+        so the callers' documented try/except degrades to the zero vector.
+        Never silently clips producer data to the family bounds — the bound
+        repair applies ONLY to the static encoding tables below.
+        """
+        f = float(value)  # raises TypeError/ValueError on non-numeric
+        if not math.isfinite(f):
+            raise ValueError(f"non-finite news context value: {value!r}")
+        return f
+
+    vla = num(g("bullish_score", 0.0))
+    vle = num(g("bearish_score", 0.0))
     state_enc = {
         "NORMAL": 0.0,
         "ELEVATED": 1.0,
@@ -116,21 +133,34 @@ def vectorize_news_context(context: dict[str, Any] | None) -> list[float]:
     # blocked ALL live 70D inference whenever >=4 high-impact events were
     # active (client permanently STALE). Encode the bounded flag at the
     # training distribution maximum instead.
-    _active_raw = float(g("active_event_count", g("active_high_impact_events", 0)))
+    _active_raw = num(g("active_event_count", g("active_high_impact_events", 0)))
     active = 1.0 if _active_raw >= 1.0 else max(0.0, _active_raw)
+    # BUG-217: the state/novelty ordinal tables exceed the 70D NEWS-family
+    # bound (BREAKING=4.0, STALE=5.0 > 3.0). The dataset builder passes the
+    # family through clamp_neutral_family (neutral 0.0) BEFORE the contract
+    # boundary, so training rows carry encodings clamped to 3.0; the live
+    # projection must produce the SAME in-distribution value or
+    # validate_70d_vector blocks all 70D inference the moment NewsState
+    # reaches BREAKING/STALE (same client-stale class as BUG-197). The bound
+    # is applied to the ENCODING TABLE (a static, defined transform), never
+    # to arbitrary producer data — this mirrors training semantics, it does
+    # not silently clip a bad producer value.
+    _news_family_max = 3.0
+    state_enc = min(state_enc, _news_family_max)
+    novelty_enc = min(novelty_enc, _news_family_max)
     return [
         active,
-        float(g("xauusd_relevance", 0.0)),
-        float(g("usd_relevance", 0.0)),
-        float(vla),
-        float(vle),
-        float(g("conflict_score", 0.0)),
+        num(g("xauusd_relevance", 0.0)),
+        num(g("usd_relevance", 0.0)),
+        vla,
+        vle,
+        num(g("conflict_score", 0.0)),
         novelty_enc,
-        float(g("freshness", 0.0)),
-        float(g("confidence", 0.0)),
-        float(g("source_consensus", 0.0)),
+        num(g("freshness", 0.0)),
+        num(g("confidence", 0.0)),
+        num(g("source_consensus", 0.0)),
         state_enc,
-        float(g("time_since_event_sec", 0.0)),
+        num(g("time_since_event_sec", 0.0)),
     ]
 
 

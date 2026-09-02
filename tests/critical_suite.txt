@@ -73,3 +73,7 @@ tests/unit/test_logging_redaction.py
 # confirmation gate (BUG-194), connectivity truth, palette safety, i18n/RTL,
 # decision humanization. 28 tests over real assets + create_app serve surface.
 tests/unit/test_web_ux_safety.py
+# BUG-217 (Nexus-Main, 2026-09-02): 70D news state-encoding latent bound overflow -
+# BREAKING/STALE encodings (4.0/5.0) exceeded the [-3,+3] family bound; producer-side
+# repair mirrors the dataset clamp semantics. Companion to BUG-190/BUG-197.
+tests/unit/test_bug217_news_state_bounds.py
