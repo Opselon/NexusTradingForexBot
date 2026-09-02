@@ -18,6 +18,7 @@ new check families that belong to another domain module.
 from __future__ import annotations
 
 import math
+import numbers
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from nexus_scalp.forensics.models import (
     HealthStatus,
 )
 from nexus_scalp.forensics.references import (
+    FEATURE_REFERENCES,
     NOT_FROZEN,
     FeatureReferenceRegistry,
 )
@@ -50,7 +52,11 @@ LIQUIDITY_INDICES = range(60, 70)
 EXPECTED_LIQUIDITY_INDEX_60_NAME = "bsl_distance_atr"
 
 #: Shared registry instance for feature-reference checks (TASK-11 §02).
-FEATURE_REF_REGISTRY = FeatureReferenceRegistry()
+#: BUG-193: alias of the canonical references.FEATURE_REFERENCES singleton
+# (ONE process = ONE frozen-reference registry; production liquidity
+# health receives the engine registry explicitly, this keeps the compat
+# surface truthful instead of a second never-frozen instance).
+FEATURE_REF_REGISTRY = FEATURE_REFERENCES
 
 
 def check_feature_schema_registry() -> CheckResult:
@@ -135,11 +141,23 @@ def check_feature_contract_vector(vector: list[float] | None) -> CheckResult:
         pass  # legacy schema sizes remain valid
     else:
         problems.append(f"unexpected vector length {n} (expected 50/60/70)")
-    nonfinite = [i for i, v in enumerate(vector) if not math.isfinite(float(v))]
+    # BUG-184/BUG-192: duck-typing hole — bool (int subclass) and numeric
+    # strings coerced through float() passed the integrity gate; None
+    # crashed with a raw TypeError. Non-numeric elements are CRITICAL now.
+    non_numeric = [
+        i for i, v in enumerate(vector) if isinstance(v, bool) or not isinstance(v, numbers.Real)
+    ]
+    if non_numeric:
+        problems.append(f"non-numeric element types at indices {non_numeric[:10]}")
+    nonfinite = [
+        i for i, v in enumerate(vector) if i not in non_numeric and not math.isfinite(float(v))
+    ]
     if nonfinite:
         problems.append(f"non-finite values at indices {nonfinite[:10]}")
     out_of_bounds = [
-        i for i, v in enumerate(vector) if math.isfinite(float(v)) and not (-3.0 <= float(v) <= 3.0)
+        i
+        for i, v in enumerate(vector)
+        if i not in non_numeric and math.isfinite(float(v)) and not (-3.0 <= float(v) <= 3.0)
     ]
     if out_of_bounds:
         problems.append(f"values outside [-3,+3] at indices {out_of_bounds[:10]}")

@@ -230,6 +230,7 @@ def doctor_cmd(
         )
 
     fails = [e for e in entries if e.verdict == "FAIL"]
+    warns = [e for e in entries if e.verdict == "WARN"]
     auto_fixables = {"CONFIGURATION", "DATABASE", "LOGGING"}
     fixable = [e for e in fails if e.category in auto_fixables]
     if fails and not json_mode:
@@ -246,6 +247,32 @@ def doctor_cmd(
                 console.print(f"  • {e.category}: {e.reason}")
                 if e.suggestion:
                     console.print(f"    [dim]→ {e.suggestion}[/dim]")
+    if not json_mode:
+        # Actionable closing summary (2026-09-02 UX pass): the operator must
+        # never have to ask "what do I do next?". WARN rows that carry an
+        # explicit suggestion are surfaced as user actions; everything else
+        # maps to the truthful safe-next command.
+        warn_actions = [e for e in warns if e.suggestion]
+        auto_n = len(fixable)
+        user_n = len([e for e in fails if e.category not in auto_fixables]) + len(warn_actions)
+        lines = ["[bold]OVERALL:[/bold] " + verdict]
+        lines.append(f"AUTO-FIXABLE: {auto_n}   USER ACTION: {user_n}")
+        safe_now = verdict in ("READY", "PASS", "DEGRADED")
+        lines.append("SAFE NOW: " + ("YES" if safe_now else "NO"))
+        if auto_n:
+            lines.append("[cyan]NEXT:[/cyan] nexus doctor --fix")
+        elif user_n:
+            first_action = (
+                warn_actions[0].suggestion
+                if warn_actions
+                else (next((e.suggestion for e in fails if e.suggestion), None))
+            )
+            lines.append(
+                "[cyan]NEXT:[/cyan] " + (first_action or "resolve the failing checks above")
+            )
+        else:
+            lines.append("[cyan]NEXT:[/cyan] nexus start   (paper mode by default)")
+        console.print(Panel("\n".join(lines), border_style="cyan"))
 
     if fix and fixable:
         if not yes:

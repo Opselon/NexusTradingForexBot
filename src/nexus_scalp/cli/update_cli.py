@@ -139,6 +139,32 @@ def _update_human_check(report: dict[str, Any]) -> None:
         if v:
             table.add_row(label, str(v))
     console.print(table)
+
+    # Update-awareness block (2026-09-02 UX pass): commit distance + real
+    # change summary + last-checked timestamp, from the offline-safe
+    # release-status truth (never fabricated). Failure-isolated.
+    try:
+        from nexus_scalp.release.release_status import build_release_status
+
+        rs = build_release_status()
+        behind, ahead = rs.get("commits_behind"), rs.get("commits_ahead")
+        cur_commit = rs.get("current_commit")
+        if cur_commit:
+            table.add_row("Current commit", str(cur_commit))
+        if behind is not None:
+            rel = "UP TO DATE" if behind == 0 and not ahead else (
+                f"{behind} behind" + (f" / {ahead} ahead" if ahead else "")
+            )
+            table.add_row("Commit distance", rel)
+        if rs.get("changes"):
+            console.print("[bold]Changes since current:[/bold]")
+            for c in rs["changes"][:5]:
+                console.print(f"  • {c}")
+        if status == "NO_UPDATE":
+            console.print("[green]✓ Nexus is up to date.[/green]")
+        console.print(f"[dim]Last checked: {rs.get('generated_at', '')}[/dim]")
+    except Exception:
+        pass  # awareness extras never break the core check
     if report.get("decisions"):
         console.print("[dim]Decisions:[/dim]")
         for d in report.get("decisions", []):
