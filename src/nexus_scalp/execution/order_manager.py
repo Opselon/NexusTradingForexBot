@@ -2718,18 +2718,15 @@ class OrderLifecycleManager:
         """Compatibility accessor — live hold-score dict owned by the ledger."""
         return self._hold_scores._hold_score_tracker
 
-
     @property
     def _base_hold_score_tracker(self) -> dict:
         """Compatibility accessor — live hold-score dict owned by the ledger."""
         return self._hold_scores._base_hold_score_tracker
 
-
     @property
     def _last_reasons_tracker(self) -> dict:
         """Compatibility accessor — live hold-score dict owned by the ledger."""
         return self._hold_scores._last_reasons_tracker
-
 
     @property
     def _last_hold_eval_time(self) -> dict:
@@ -4668,136 +4665,30 @@ class OrderLifecycleManager:
                 )
                 self._last_telemetry_time[ticket] = current_time
 
-            # --- RULE MATRIX IN-TRADE EXIT EVALUATION ---
-            rule_exit = None
-            rule_target_sl = 0.0
-            if self.rule_matrix:
-                self.rule_matrix.refresh_cache()
-                rule_exit = self.rule_matrix.evaluate_in_trade_exits(
-                    pos=pos,
-                    holding_duration_sec=holding_duration,
-                    price_current=price_current,
-                    atr=atr,
-                    mfe_profit=self._mfe_tracker.get(ticket, 0.0),
-                )
-
-            if rule_exit:
-                if rule_exit["action"] == "CLOSE":
-                    legacy_action = "CLOSE"
-                    legacy_scenario = rule_exit["reason"]
-                elif rule_exit["action"] == "MODIFY_SL":
-                    legacy_action = "MODIFY_SL"
-                    legacy_scenario = rule_exit["reason"]
-                    rule_target_sl = rule_exit["stop_loss"]
-                else:
-                    legacy_action, legacy_scenario = self._resolve_position_management_scenario(
-                        pos=pos,
-                        hold_score=hold_score,
-                        metrics=smart_metrics,
-                        net_delta=net_price_delta,
-                        gross_delta=profit_price_delta,
-                        atr=atr,
-                        spread=spread,
-                        holding_duration=holding_duration,
-                        min_stop_gap=min_stop_gap,
-                    )
-            else:
-                legacy_action, legacy_scenario = self._resolve_position_management_scenario(
-                    pos=pos,
-                    hold_score=hold_score,
-                    metrics=smart_metrics,
-                    net_delta=net_price_delta,
-                    gross_delta=profit_price_delta,
-                    atr=atr,
-                    spread=spread,
-                    holding_duration=holding_duration,
-                    min_stop_gap=min_stop_gap,
-                )
-
-            # --- Multi-Stage Decision Arbitration ---
-            action, scenario = self._arbitrate_decision(
-                ticket=ticket,
+            # S6-escalation DECISION STAGE: rule-matrix -> scenario fallback ->
+            # arbitration -> exit-pending -> throttled exit log -> mechanism map ->
+            # giveback MFE-SL target. Verbatim block moved to _decide_position_action;
+            # broker dispatch below stays in the manager.
+            action, scenario, rule_target_sl = self._decide_position_action(
                 pos=pos,
-                legacy_action=legacy_action,
-                legacy_scenario=legacy_scenario,
-                adaptive_state=debounced_state,
-                current_pnl_usd=pos.profit,
-                evidence=evidence,
+                ticket=ticket,
                 now=now,
+                current_time=current_time,
+                atr=atr,
+                spread=spread,
+                holding_duration=holding_duration,
+                price_current=price_current,
+                net_price_delta=net_price_delta,
+                profit_price_delta=profit_price_delta,
+                min_stop_gap=min_stop_gap,
+                symbol_info=symbol_info,
+                hold_score=hold_score,
+                smart_metrics=smart_metrics,
+                evidence=evidence,
+                debounced_state=debounced_state,
+                invalidate_reasons=invalidate_reasons,
+                regime_state=regime_state,
             )
-
-            # TASK-7 exit-decision traceability: persist the arbitrated verdict so a
-            # position that closes (or disappears) before the next pass still carries
-            # the decision that governed it. Cleared at autopsy.
-            try:
-                self._exit_pending_final_reason[ticket] = {
-                    "action": action,
-                    "reason": scenario,
-                    "state": debounced_state.value,
-                    "at": now.isoformat() if hasattr(now, "isoformat") else str(now),
-                }
-            except Exception:
-                pass
-
-            # -----------------------------------------------------------------
-            # Phase 15: structured exit-evaluation log (state-change driven).
-            # Emitted at most once per 3s per ticket (BUG-129): a repeating
-            # HOLD verdict must never flood the log. Shares the SAME throttle
-            # as the INSTITUTIONAL TELEMETRY block above so they stay aligned.
-            # -----------------------------------------------------------------
-            if (current_time - self._last_telemetry_time.get(ticket, 0.0)) >= 3.0:
-                self._last_telemetry_time[ticket] = current_time
-                try:
-                    mae_p = smart_metrics.get("mae_to_atr_ratio", 0.0)
-                    mfe_p = smart_metrics.get("mfe_to_atr_ratio", 0.0)
-                    logger.info(
-                        "[POSITION_EXIT_EVAL]",
-                        ticket=ticket,
-                        pnl=round(float(pos.profit), 2),
-                        hold_score=int(hold_score),
-                        reversal_prob=round(float(evidence.get("adverse_score", 0.0)), 3),
-                        continuation_prob=round(float(evidence.get("continuation_score", 0.0)), 3),
-                        recovery_prob=round(float(evidence.get("recovery_score", 0.0)), 3),
-                        regime=self._current_regime_str(regime_state, ticket) or "UNKNOWN",
-                        entry_regime=self._entry_regimes.get(ticket, ""),
-                        elapsed_sec=round(holding_duration, 1),
-                        mae_atr=round(float(mae_p), 3),
-                        mfe_atr=round(float(mfe_p), 3),
-                        state=debounced_state.value,
-                        decision=action,
-                        reason=scenario,
-                    )
-                except Exception as log_err:
-                    logger.debug(
-                        "[POSITION_EXIT_EVAL] log skipped (isolated)",
-                        ticket=ticket,
-                        error=str(log_err),
-                    )
-
-            # If the arbitrated decision is a CLOSE initiated by the Adaptive Protection Engine,
-            # save the exit mechanism to be written to the financial ledger autopsy
-            if action == "CLOSE":
-                if "RECOVERY" in scenario or "LOSS" in scenario:
-                    self._forced_exit_mechanisms[ticket] = ExitMechanism.HOLD_SCORE_DECAY
-                elif "GIVEBACK" in scenario:
-                    self._forced_exit_mechanisms[ticket] = ExitMechanism.PROFIT_GIVEBACK_PROTECTION
-
-            # If arbitrated decision is a custom MODIFY_SL, set the target stop loss
-            if action == "MODIFY_SL" and "GIVEBACK" in scenario:
-                # Lock 70% of peak profit
-                peak_win = self._peak_profit_usd.get(ticket, 0.0)
-                contract_sz = (
-                    symbol_info.trade_contract_size
-                    if symbol_info and symbol_info.trade_contract_size > 0
-                    else 100.0
-                )
-                target_mfe_sl = (
-                    pos.price_open + (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
-                    if pos.type == OrderType.BUY
-                    else pos.price_open - (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
-                )
-                rule_target_sl = round(target_mfe_sl, self._resolve_price_digits(symbol_info))
-
             if action == "CLOSE":
                 msg_id = self._order_message_ids.get(ticket)
                 # Attribute engine-initiated exits to hold-score decay unless a more
@@ -5488,6 +5379,165 @@ class OrderLifecycleManager:
             # has closed (bounded registry lifecycle).
             if oid:
                 self._prune_bound_context(oid)
+
+    def _decide_position_action(
+        self,
+        pos: Position,
+        ticket: int,
+        now: datetime,
+        current_time: float,
+        atr: float,
+        spread: float,
+        holding_duration: float,
+        price_current: float,
+        net_price_delta: float,
+        profit_price_delta: float,
+        min_stop_gap: float,
+        symbol_info: SymbolInfo | None,
+        hold_score: int,
+        smart_metrics: dict,
+        evidence: dict,
+        debounced_state: "PositionState",
+        invalidate_reasons: list[str],
+        regime_state: Any | None = None,
+    ) -> tuple[str, str, float]:
+        """DECISION STAGE (S6-escalation): rule-matrix evaluation, scenario
+        fallback, multi-stage arbitration, exit-pending record, throttled
+        exit-evaluation log, exit-mechanism mapping, and giveback MFE-SL
+        targeting. Moved VERBATIM from manage_active_positions' per-position
+        loop; broker dispatch remains with the manager. Returns
+        (action, scenario, rule_target_sl)."""
+        # --- RULE MATRIX IN-TRADE EXIT EVALUATION ---
+        rule_exit = None
+        rule_target_sl = 0.0
+        if self.rule_matrix:
+            self.rule_matrix.refresh_cache()
+            rule_exit = self.rule_matrix.evaluate_in_trade_exits(
+                pos=pos,
+                holding_duration_sec=holding_duration,
+                price_current=price_current,
+                atr=atr,
+                mfe_profit=self._mfe_tracker.get(ticket, 0.0),
+            )
+
+        if rule_exit:
+            if rule_exit["action"] == "CLOSE":
+                legacy_action = "CLOSE"
+                legacy_scenario = rule_exit["reason"]
+            elif rule_exit["action"] == "MODIFY_SL":
+                legacy_action = "MODIFY_SL"
+                legacy_scenario = rule_exit["reason"]
+                rule_target_sl = rule_exit["stop_loss"]
+            else:
+                legacy_action, legacy_scenario = self._resolve_position_management_scenario(
+                    pos=pos,
+                    hold_score=hold_score,
+                    metrics=smart_metrics,
+                    net_delta=net_price_delta,
+                    gross_delta=profit_price_delta,
+                    atr=atr,
+                    spread=spread,
+                    holding_duration=holding_duration,
+                    min_stop_gap=min_stop_gap,
+                )
+        else:
+            legacy_action, legacy_scenario = self._resolve_position_management_scenario(
+                pos=pos,
+                hold_score=hold_score,
+                metrics=smart_metrics,
+                net_delta=net_price_delta,
+                gross_delta=profit_price_delta,
+                atr=atr,
+                spread=spread,
+                holding_duration=holding_duration,
+                min_stop_gap=min_stop_gap,
+            )
+
+        # --- Multi-Stage Decision Arbitration ---
+        action, scenario = self._arbitrate_decision(
+            ticket=ticket,
+            pos=pos,
+            legacy_action=legacy_action,
+            legacy_scenario=legacy_scenario,
+            adaptive_state=debounced_state,
+            current_pnl_usd=pos.profit,
+            evidence=evidence,
+            now=now,
+        )
+
+        # TASK-7 exit-decision traceability: persist the arbitrated verdict so a
+        # position that closes (or disappears) before the next pass still carries
+        # the decision that governed it. Cleared at autopsy.
+        try:
+            self._exit_pending_final_reason[ticket] = {
+                "action": action,
+                "reason": scenario,
+                "state": debounced_state.value,
+                "at": now.isoformat() if hasattr(now, "isoformat") else str(now),
+            }
+        except Exception:
+            pass
+
+        # -----------------------------------------------------------------
+        # Phase 15: structured exit-evaluation log (state-change driven).
+        # Emitted at most once per 3s per ticket (BUG-129): a repeating
+        # HOLD verdict must never flood the log. Shares the SAME throttle
+        # as the INSTITUTIONAL TELEMETRY block above so they stay aligned.
+        # -----------------------------------------------------------------
+        if (current_time - self._last_telemetry_time.get(ticket, 0.0)) >= 3.0:
+            self._last_telemetry_time[ticket] = current_time
+            try:
+                mae_p = smart_metrics.get("mae_to_atr_ratio", 0.0)
+                mfe_p = smart_metrics.get("mfe_to_atr_ratio", 0.0)
+                logger.info(
+                    "[POSITION_EXIT_EVAL]",
+                    ticket=ticket,
+                    pnl=round(float(pos.profit), 2),
+                    hold_score=int(hold_score),
+                    reversal_prob=round(float(evidence.get("adverse_score", 0.0)), 3),
+                    continuation_prob=round(float(evidence.get("continuation_score", 0.0)), 3),
+                    recovery_prob=round(float(evidence.get("recovery_score", 0.0)), 3),
+                    regime=self._current_regime_str(regime_state, ticket) or "UNKNOWN",
+                    entry_regime=self._entry_regimes.get(ticket, ""),
+                    elapsed_sec=round(holding_duration, 1),
+                    mae_atr=round(float(mae_p), 3),
+                    mfe_atr=round(float(mfe_p), 3),
+                    state=debounced_state.value,
+                    decision=action,
+                    reason=scenario,
+                )
+            except Exception as log_err:
+                logger.debug(
+                    "[POSITION_EXIT_EVAL] log skipped (isolated)",
+                    ticket=ticket,
+                    error=str(log_err),
+                )
+
+        # If the arbitrated decision is a CLOSE initiated by the Adaptive Protection Engine,
+        # save the exit mechanism to be written to the financial ledger autopsy
+        if action == "CLOSE":
+            if "RECOVERY" in scenario or "LOSS" in scenario:
+                self._forced_exit_mechanisms[ticket] = ExitMechanism.HOLD_SCORE_DECAY
+            elif "GIVEBACK" in scenario:
+                self._forced_exit_mechanisms[ticket] = ExitMechanism.PROFIT_GIVEBACK_PROTECTION
+
+        # If arbitrated decision is a custom MODIFY_SL, set the target stop loss
+        if action == "MODIFY_SL" and "GIVEBACK" in scenario:
+            # Lock 70% of peak profit
+            peak_win = self._peak_profit_usd.get(ticket, 0.0)
+            contract_sz = (
+                symbol_info.trade_contract_size
+                if symbol_info and symbol_info.trade_contract_size > 0
+                else 100.0
+            )
+            target_mfe_sl = (
+                pos.price_open + (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
+                if pos.type == OrderType.BUY
+                else pos.price_open - (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
+            )
+            rule_target_sl = round(target_mfe_sl, self._resolve_price_digits(symbol_info))
+
+        return action, scenario, rule_target_sl
 
     def reconcile_missed_closes(
         self,
