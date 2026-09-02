@@ -4417,235 +4417,35 @@ class OrderLifecycleManager:
                 ticket, pos, base_hold_score, pnl_features, evidence, confidence_factor, atr
             )
 
-            # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
-            ai_flip_detected = False
-            ai_flip_action = None
-            if probs is not None:
-                try:
-                    probs_list = probs.squeeze().tolist()
-                    if not isinstance(probs_list, list):
-                        probs_list = [probs_list]
-                    prob_buy = probs_list[1] if len(probs_list) > 1 else 0.0
-                    prob_sell = probs_list[2] if len(probs_list) > 2 else 0.0
-
-                    total_active_prob = prob_buy + prob_sell + 1e-8
-                    rel_buy_bias = prob_buy / total_active_prob
-                    rel_sell_bias = prob_sell / total_active_prob
-
-                    # Read thresholds from AlgoConfig with whipsaw protection
-                    rel_threshold = getattr(
-                        self.algo_config, "ai_flip_relative_bias_threshold", 0.60
-                    )
-                    min_delta = getattr(self.algo_config, "ai_flip_min_delta", 0.10)
-
-                    # Whipsaw guard: require min 15s position duration OR strong relative bias >= (threshold + 0.05)
-                    whipsaw_guard_passed = holding_duration >= 15.0 or max(
-                        rel_buy_bias, rel_sell_bias
-                    ) >= (rel_threshold + 0.05)
-
-                    if whipsaw_guard_passed:
-                        if pos.type == OrderType.BUY and (
-                            rel_sell_bias >= rel_threshold or prob_sell > prob_buy + min_delta
-                        ):
-                            ai_flip_detected = True
-                            ai_flip_action = ActionType.SELL_STOP
-                        elif pos.type == OrderType.SELL and (
-                            rel_buy_bias >= rel_threshold or prob_buy > prob_sell + min_delta
-                        ):
-                            ai_flip_detected = True
-                            ai_flip_action = ActionType.BUY_STOP
-                except Exception:
-                    pass
-
-            if ai_flip_detected and ai_flip_action is not None:
-                msg_id = self._order_message_ids.get(ticket)
-                logger.info(
-                    f">>> AI DIRECTION SHIFT DETECTED: Closing position #{ticket} and executing fast reversal {ai_flip_action.value} <<<"
-                )
-
-                # Tag the exit BEFORE closing so the ledger autopsy attributes it to the
-                # reversal protocol rather than a generic manual close.
-                self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
-
-                if self.adapter.close_position(ticket=ticket):
-                    if self.notifier:
-                        self.notifier.notify_canonical_close(
-                            ticket=ticket,
-                            symbol=pos.symbol,
-                            entry=pos.price_open,
-                            exit_price=price_current,
-                            profit_usd=pos.profit,
-                            duration_sec=holding_duration,
-                            exit_reason=ExitMechanism.AI_REVERSAL_EXIT,
-                            evidence=f"AI_REVERSAL ({ai_flip_action.value})",
-                            reply_to_message_id=msg_id,
-                        )
-
-                    # Free the exposure slot immediately (the broker position is gone) but
-                    # deliberately KEEP the per-ticket trackers alive: the next management
-                    # pass detects the dead ticket and writes the single autopsy row.
-                    with self._live_tickets_lock:
-                        self._live_tickets_cache.pop(ticket, None)
-
-                    # Dispatch immediate reversal stop order (clamped to HARD_MAX_LOTS).
-                    rev_volume = self._clamp_dispatch_volume(pos.volume, symbol=pos.symbol)
-                    if rev_volume <= 0.0:
-                        logger.warning(
-                            "AI REVERSAL: reversal order skipped, clamped volume is zero",
-                            ticket=ticket,
-                        )
-                        continue
-
-                    rev_entry = (
-                        current_tick.ask
-                        if ai_flip_action == ActionType.BUY_STOP
-                        else current_tick.bid
-                    )
-                    rev_sl = (
-                        round(rev_entry - (atr * 1.5), 2)
-                        if ai_flip_action == ActionType.BUY_STOP
-                        else round(rev_entry + (atr * 1.5), 2)
-                    )
-                    rev_tp = (
-                        round(rev_entry + (atr * 3.0), 2)
-                        if ai_flip_action == ActionType.BUY_STOP
-                        else round(rev_entry - (atr * 3.0), 2)
-                    )
-                    self.adapter.place_pending_order(
-                        symbol=pos.symbol,
-                        order_type=OrderType.BUY_STOP
-                        if ai_flip_action == ActionType.BUY_STOP
-                        else OrderType.SELL_STOP,
-                        volume=rev_volume,
-                        price=rev_entry,
-                        stop_loss=rev_sl,
-                        take_profit=rev_tp,
-                    )
-                    continue
-
-                # Close failed: clear the tag so a later organic exit is not mislabelled.
-                self._forced_exit_mechanisms.pop(ticket, None)
-
-            # =================================================================
-            # DETERMINISTIC PROTECTION PRIORITY CHAIN
-            # -----------------------------------------------------------------
-            #   1. Emergency / existing hard-risk protection (AI reversal above,
-            #      falling-knife guard, kill-switch scenarios in the router)
-            #   2. Profit Giveback Protection            <-- here
-            #   3. Negative-PnL-after-meaningful-profit   <-- here (same call)
-            #   4. Breakeven protection                   <-- here
-            #   5. ATR trailing protection                <-- here
-            #   6. Normal hold-score decision logic       <-- router below
-            #
-            # A lower-priority mechanism can never override a higher-priority
-            # decision: when giveback protection fires we `continue`, so neither
-            # trailing nor the router touches this ticket on this pass.
-            # =================================================================
-            if protection.close_requested or self._closed_tickets.get(ticket, False):
-                # Close already accepted / broker-gone for this ticket. Do not
-                # re-submit, and do not let any lower-priority mechanism act on a
-                # dying position (TASK-7 closed-state invariant).
-                continue
-
-            hold_score, giveback_active = self.enforce_profit_giveback_protection(
+            # S6 STEP-C: protection/AI-flip chain stage (verbatim block; the 4
+            # original `continue` sites return skip=True and the caller
+            # continues the loop — identical control flow).
+            if self._run_protection_chain(
                 pos=pos,
+                ticket=ticket,
+                now=now,
+                current_time=current_time,
+                protection=protection,
+                price_current=price_current,
                 hold_score=hold_score,
-                symbol_info=symbol_info,
-                # Phase 15: use the CURRENT regime (not the entry snapshot) so the
-                # VOLATILITY_EXPANSION giveback-suppression guard reacts to the
-                # regime the position is in NOW.
-                regime=self._current_regime_str(regime_state, pos.ticket),
-            )
-            if giveback_active:
-                continue
-
-            # --- Priority 4: BREAKEVEN LOCK ($15.00 or 1.5 ATR in USD) ---
-            self.apply_breakeven_lock(
-                pos=pos,
-                symbol_info=symbol_info,
+                base_hold_score=base_hold_score,
+                invalidate_reasons=invalidate_reasons,
                 atr=atr,
+                spread=spread,
                 min_stop_gap=min_stop_gap,
+                symbol_info=symbol_info,
+                smart_metrics=smart_metrics,
+                evidence=evidence,
+                pnl_features=pnl_features,
+                probs=probs,
+                feature_vector=feature_vector,
+                regime_state=regime_state,
                 current_tick=current_tick,
-            )
-
-            # --- MFE GIVEBACK TRAILING LOCK ---
-            peak_win = self._peak_profit_usd.get(ticket, 0.0)
-            contract_sz = (
-                symbol_info.trade_contract_size
-                if symbol_info and symbol_info.trade_contract_size > 0
-                else 100.0
-            )
-            if peak_win >= 150.0 and pos.profit < (peak_win * 0.70):
-                target_mfe_sl = (
-                    pos.price_open + (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
-                    if pos.type == OrderType.BUY
-                    else pos.price_open - (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
-                )
-                target_mfe_sl = round(target_mfe_sl, 2)
-
-                valid_stop = False
-                if pos.type == OrderType.BUY:
-                    if (
-                        target_mfe_sl > pos.sl
-                        and (current_tick.bid - target_mfe_sl) >= min_stop_gap
-                    ):
-                        valid_stop = True
-                elif (pos.sl == 0.0 or target_mfe_sl < pos.sl) and (
-                    target_mfe_sl - current_tick.ask
-                ) >= min_stop_gap:
-                    valid_stop = True
-
-                # Never loosen an existing protective stop or regress behind the
-                # confirmed breakeven lock.
-                valid_stop = valid_stop and self.is_sl_improvement(pos, target_mfe_sl)
-
-                if valid_stop and self._should_modify_sl(ticket, target_mfe_sl):
-                    success = self.adapter.modify_position(
-                        ticket=ticket, stop_loss=target_mfe_sl, take_profit=pos.tp
-                    )
-                    if success:
-                        # Only a CONFIRMED modification advances the tracked final SL
-                        # (BUG-085).
-                        self._last_modify_sl[ticket] = target_mfe_sl
-                        self._sl_modified_flags[ticket] = True
-                        logger.info(
-                            ">>> MFE GIVEBACK PROTECTOR: Advanced SL to lock 70% peak profit <<<",
-                            ticket=ticket,
-                            peak_win=peak_win,
-                            locked_sl=target_mfe_sl,
-                        )
-
-            total_sec = max(holding_duration, 1.0)
-            pct_win = (self._time_in_profit_sec[ticket] / total_sec) * 100
-            pct_loss = (self._time_in_drawdown_sec[ticket] / total_sec) * 100
-
-            # Throttled Detailed Telemetry logging (max once every 3.0s per ticket)
-            current_time = time.time()
-            # S6 STEP-A: throttle owned by TelemetryThrottle (the legacy lazy
-            # init never fired post-__init__ construction; guard removed).
-            last_telemetry = self._telemetry.last_emit(ticket)
-            if (current_time - last_telemetry) >= 3.0:
-                logger.info(
-                    "[INSTITUTIONAL TELEMETRY v6.8]",
-                    ticket=ticket,
-                    type=pos.type.value,
-                    state=debounced_state.value,
-                    pnl=f"${pos.profit:+.2f}",
-                    peak_win=f"${self._peak_profit_usd[ticket]:+.2f}",
-                    peak_loss=f"${self._peak_drawdown_usd[ticket]:+.2f}",
-                    time_win=f"{pct_win:.0f}%",
-                    time_loss=f"{pct_loss:.0f}%",
-                    age_sec=f"{holding_duration:.1f}s",
-                    atr=f"${atr:.2f}",
-                    ai_rec_prob=f"{evidence.get('recovery_score', 0.0) * 100:.1f}%",
-                    ai_adv_prob=f"{evidence.get('adverse_score', 0.0) * 100:.1f}%",
-                    ai_cont_prob=f"{evidence.get('continuation_score', 0.0) * 100:.1f}%",
-                    hold_score=f"{hold_score}/100",
-                    score_reasons=invalidate_reasons if invalidate_reasons else ["HEALTHY"],
-                    prot_score=f"{prot_score:.1f}/100",
-                )
-                self._last_telemetry_time[ticket] = current_time
-
+                holding_duration=holding_duration,
+                debounced_state=debounced_state,
+                prot_score=prot_score,
+            ):
+                continue
             # S6-escalation DECISION STAGE: rule-matrix -> scenario fallback ->
             # arbitration -> exit-pending -> throttled exit log -> mechanism map ->
             # giveback MFE-SL target. Verbatim block moved to _decide_position_action;
@@ -5671,6 +5471,270 @@ class OrderLifecycleManager:
                         current_price=price_current,
                         reply_to_message_id=msg_id,
                     )
+
+    def _run_protection_chain(
+        self,
+        pos: Position,
+        ticket: int,
+        now: datetime,
+        current_time: float,
+        protection: PositionProtectionState,
+        price_current: float,
+        hold_score: int,
+        base_hold_score: int,
+        invalidate_reasons: list[str],
+        atr: float,
+        spread: float,
+        min_stop_gap: float,
+        symbol_info: SymbolInfo | None,
+        smart_metrics: dict,
+        evidence: dict,
+        pnl_features: dict,
+        probs: Any | None,
+        feature_vector: FeatureVector | None,
+        regime_state: Any | None,
+        current_tick: TickData,
+        holding_duration: float,
+        debounced_state: "PositionState",
+        prot_score: float,
+    ) -> bool:
+        """PROTECTION/AI-FLIP CHAIN STAGE (S6 STEP-C): AI direction flip +
+        fast reversal protection, deterministic protection priority chain
+        (giveback -> breakeven -> MFE trailing), and throttled institutional
+        telemetry emission. Moved VERBATIM from manage_active_positions'
+        per-position loop.
+
+        Returns True when the chain handled this pass (a `continue` site
+        fired in the original code) and the caller must skip the remaining
+        loop body for this position; returns False to proceed to the
+        decision stage."""
+        # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
+        ai_flip_detected = False
+        ai_flip_action = None
+        if probs is not None:
+            try:
+                probs_list = probs.squeeze().tolist()
+                if not isinstance(probs_list, list):
+                    probs_list = [probs_list]
+                prob_buy = probs_list[1] if len(probs_list) > 1 else 0.0
+                prob_sell = probs_list[2] if len(probs_list) > 2 else 0.0
+
+                total_active_prob = prob_buy + prob_sell + 1e-8
+                rel_buy_bias = prob_buy / total_active_prob
+                rel_sell_bias = prob_sell / total_active_prob
+
+                # Read thresholds from AlgoConfig with whipsaw protection
+                rel_threshold = getattr(self.algo_config, "ai_flip_relative_bias_threshold", 0.60)
+                min_delta = getattr(self.algo_config, "ai_flip_min_delta", 0.10)
+
+                # Whipsaw guard: require min 15s position duration OR strong relative bias >= (threshold + 0.05)
+                whipsaw_guard_passed = holding_duration >= 15.0 or max(
+                    rel_buy_bias, rel_sell_bias
+                ) >= (rel_threshold + 0.05)
+
+                if whipsaw_guard_passed:
+                    if pos.type == OrderType.BUY and (
+                        rel_sell_bias >= rel_threshold or prob_sell > prob_buy + min_delta
+                    ):
+                        ai_flip_detected = True
+                        ai_flip_action = ActionType.SELL_STOP
+                    elif pos.type == OrderType.SELL and (
+                        rel_buy_bias >= rel_threshold or prob_buy > prob_sell + min_delta
+                    ):
+                        ai_flip_detected = True
+                        ai_flip_action = ActionType.BUY_STOP
+            except Exception:
+                pass
+
+        if ai_flip_detected and ai_flip_action is not None:
+            msg_id = self._order_message_ids.get(ticket)
+            logger.info(
+                f">>> AI DIRECTION SHIFT DETECTED: Closing position #{ticket} and executing fast reversal {ai_flip_action.value} <<<"
+            )
+
+            # Tag the exit BEFORE closing so the ledger autopsy attributes it to the
+            # reversal protocol rather than a generic manual close.
+            self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
+
+            if self.adapter.close_position(ticket=ticket):
+                if self.notifier:
+                    self.notifier.notify_canonical_close(
+                        ticket=ticket,
+                        symbol=pos.symbol,
+                        entry=pos.price_open,
+                        exit_price=price_current,
+                        profit_usd=pos.profit,
+                        duration_sec=holding_duration,
+                        exit_reason=ExitMechanism.AI_REVERSAL_EXIT,
+                        evidence=f"AI_REVERSAL ({ai_flip_action.value})",
+                        reply_to_message_id=msg_id,
+                    )
+
+                # Free the exposure slot immediately (the broker position is gone) but
+                # deliberately KEEP the per-ticket trackers alive: the next management
+                # pass detects the dead ticket and writes the single autopsy row.
+                with self._live_tickets_lock:
+                    self._live_tickets_cache.pop(ticket, None)
+
+                # Dispatch immediate reversal stop order (clamped to HARD_MAX_LOTS).
+                rev_volume = self._clamp_dispatch_volume(pos.volume, symbol=pos.symbol)
+                if rev_volume <= 0.0:
+                    logger.warning(
+                        "AI REVERSAL: reversal order skipped, clamped volume is zero",
+                        ticket=ticket,
+                    )
+                    # (continue -> skip-rest signal, S6 STEP-C extraction)
+                    return True
+
+                rev_entry = (
+                    current_tick.ask if ai_flip_action == ActionType.BUY_STOP else current_tick.bid
+                )
+                rev_sl = (
+                    round(rev_entry - (atr * 1.5), 2)
+                    if ai_flip_action == ActionType.BUY_STOP
+                    else round(rev_entry + (atr * 1.5), 2)
+                )
+                rev_tp = (
+                    round(rev_entry + (atr * 3.0), 2)
+                    if ai_flip_action == ActionType.BUY_STOP
+                    else round(rev_entry - (atr * 3.0), 2)
+                )
+                self.adapter.place_pending_order(
+                    symbol=pos.symbol,
+                    order_type=OrderType.BUY_STOP
+                    if ai_flip_action == ActionType.BUY_STOP
+                    else OrderType.SELL_STOP,
+                    volume=rev_volume,
+                    price=rev_entry,
+                    stop_loss=rev_sl,
+                    take_profit=rev_tp,
+                )
+                # (continue -> skip-rest signal, S6 STEP-C extraction)
+                return True
+
+            # Close failed: clear the tag so a later organic exit is not mislabelled.
+            self._forced_exit_mechanisms.pop(ticket, None)
+
+        # =================================================================
+        # DETERMINISTIC PROTECTION PRIORITY CHAIN
+        # -----------------------------------------------------------------
+        #   1. Emergency / existing hard-risk protection (AI reversal above,
+        #      falling-knife guard, kill-switch scenarios in the router)
+        #   2. Profit Giveback Protection            <-- here
+        #   3. Negative-PnL-after-meaningful-profit   <-- here (same call)
+        #   4. Breakeven protection                   <-- here
+        #   5. ATR trailing protection                <-- here
+        #   6. Normal hold-score decision logic       <-- router below
+        #
+        # A lower-priority mechanism can never override a higher-priority
+        # decision: when giveback protection fires we `continue`, so neither
+        # trailing nor the router touches this ticket on this pass.
+        # =================================================================
+        if protection.close_requested or self._closed_tickets.get(ticket, False):
+            # Close already accepted / broker-gone for this ticket. Do not
+            # re-submit, and do not let any lower-priority mechanism act on a
+            # dying position (TASK-7 closed-state invariant).
+            # (continue -> skip-rest signal, S6 STEP-C extraction)
+            return True
+
+        hold_score, giveback_active = self.enforce_profit_giveback_protection(
+            pos=pos,
+            hold_score=hold_score,
+            symbol_info=symbol_info,
+            # Phase 15: use the CURRENT regime (not the entry snapshot) so the
+            # VOLATILITY_EXPANSION giveback-suppression guard reacts to the
+            # regime the position is in NOW.
+            regime=self._current_regime_str(regime_state, pos.ticket),
+        )
+        if giveback_active:
+            # (continue -> skip-rest signal, S6 STEP-C extraction)
+            return True
+
+        # --- Priority 4: BREAKEVEN LOCK ($15.00 or 1.5 ATR in USD) ---
+        self.apply_breakeven_lock(
+            pos=pos,
+            symbol_info=symbol_info,
+            atr=atr,
+            min_stop_gap=min_stop_gap,
+            current_tick=current_tick,
+        )
+
+        # --- MFE GIVEBACK TRAILING LOCK ---
+        peak_win = self._peak_profit_usd.get(ticket, 0.0)
+        contract_sz = (
+            symbol_info.trade_contract_size
+            if symbol_info and symbol_info.trade_contract_size > 0
+            else 100.0
+        )
+        if peak_win >= 150.0 and pos.profit < (peak_win * 0.70):
+            target_mfe_sl = (
+                pos.price_open + (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
+                if pos.type == OrderType.BUY
+                else pos.price_open - (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
+            )
+            target_mfe_sl = round(target_mfe_sl, 2)
+
+            valid_stop = False
+            if pos.type == OrderType.BUY:
+                if target_mfe_sl > pos.sl and (current_tick.bid - target_mfe_sl) >= min_stop_gap:
+                    valid_stop = True
+            elif (pos.sl == 0.0 or target_mfe_sl < pos.sl) and (
+                target_mfe_sl - current_tick.ask
+            ) >= min_stop_gap:
+                valid_stop = True
+
+            # Never loosen an existing protective stop or regress behind the
+            # confirmed breakeven lock.
+            valid_stop = valid_stop and self.is_sl_improvement(pos, target_mfe_sl)
+
+            if valid_stop and self._should_modify_sl(ticket, target_mfe_sl):
+                success = self.adapter.modify_position(
+                    ticket=ticket, stop_loss=target_mfe_sl, take_profit=pos.tp
+                )
+                if success:
+                    # Only a CONFIRMED modification advances the tracked final SL
+                    # (BUG-085).
+                    self._last_modify_sl[ticket] = target_mfe_sl
+                    self._sl_modified_flags[ticket] = True
+                    logger.info(
+                        ">>> MFE GIVEBACK PROTECTOR: Advanced SL to lock 70% peak profit <<<",
+                        ticket=ticket,
+                        peak_win=peak_win,
+                        locked_sl=target_mfe_sl,
+                    )
+
+        total_sec = max(holding_duration, 1.0)
+        pct_win = (self._time_in_profit_sec[ticket] / total_sec) * 100
+        pct_loss = (self._time_in_drawdown_sec[ticket] / total_sec) * 100
+
+        # Throttled Detailed Telemetry logging (max once every 3.0s per ticket)
+        current_time = time.time()
+        # S6 STEP-A: throttle owned by TelemetryThrottle (the legacy lazy
+        # init never fired post-__init__ construction; guard removed).
+        last_telemetry = self._telemetry.last_emit(ticket)
+        if (current_time - last_telemetry) >= 3.0:
+            logger.info(
+                "[INSTITUTIONAL TELEMETRY v6.8]",
+                ticket=ticket,
+                type=pos.type.value,
+                state=debounced_state.value,
+                pnl=f"${pos.profit:+.2f}",
+                peak_win=f"${self._peak_profit_usd[ticket]:+.2f}",
+                peak_loss=f"${self._peak_drawdown_usd[ticket]:+.2f}",
+                time_win=f"{pct_win:.0f}%",
+                time_loss=f"{pct_loss:.0f}%",
+                age_sec=f"{holding_duration:.1f}s",
+                atr=f"${atr:.2f}",
+                ai_rec_prob=f"{evidence.get('recovery_score', 0.0) * 100:.1f}%",
+                ai_adv_prob=f"{evidence.get('adverse_score', 0.0) * 100:.1f}%",
+                ai_cont_prob=f"{evidence.get('continuation_score', 0.0) * 100:.1f}%",
+                hold_score=f"{hold_score}/100",
+                score_reasons=invalidate_reasons if invalidate_reasons else ["HEALTHY"],
+                prot_score=f"{prot_score:.1f}/100",
+            )
+            self._last_telemetry_time[ticket] = current_time
+
+        return False
 
     def reconcile_missed_closes(
         self,
