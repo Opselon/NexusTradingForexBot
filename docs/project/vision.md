@@ -12,16 +12,46 @@ Retail-grade algorithmic trading projects usually fail in one of two ways:
 
 1. **They hide the truth.** Metrics are fabricated or optimistic, failures are
    silent, and the gap between backtest and runtime is never measured — so the
-   system's own reporting cannot be trusted.
+   system's own reporting cannot be trusted. A platform that lies to you about
+   yesterday cannot be trusted about today.
 2. **They leak the future.** Feature engineering, labeling or "research" uses
    information that would not have been available at decision time, so results
-   are structurally invalid no matter how good they look.
+   are structurally invalid no matter how good they look. The backtest is a
+   work of fiction.
 
 Nexus Scalp Engine (NSE) was built specifically against both failure modes. It
 is an attempt to construct a **complete, auditable pipeline** — market data →
 features → model → policy → risk → execution → accounting → research — where
 every stage is observable, every identity is fingerprinted, and every claim can
 be traced to evidence.
+
+## How a tick becomes a decision
+
+A tick arrives from the broker (Win32 IPC, ZMQ gateway, or the paper
+simulator). The causal feature engine converts it into the 50-dimensional
+contract vector — strictly what was knowable at that instant, with
+deterministic fallbacks instead of NaNs. The governed 70D assembly may add news
+and liquidity context. The inference validator checks scaler dimension, schema
+hash and bounds **before** the model runs — a mismatch is a loud rejection,
+never a silent guess. ScalpNet produces four logits; the confidence gate (which
+measures trained-class directional share, not raw probability — CHG-0042)
+decides whether to trade, wait, or abstain. The regime classifier and ~30-rule
+SMC policy matrix shape the proposal; the risk engine sizes it under hard
+clamps; the OrderManager dispatches through one of 60 scenarios. The fill,
+every protective exit, and the final outcome land in an immutable SQLite WAL
+ledger that autopsy and research read back. That is the whole loop — and every
+arrow in it is a contract.
+
+## Why research, replay and shadow exist
+
+- **Replay** proves the *same code path* that runs live behaves identically on
+  history — bit-exact against the dataset. Without it, "backtest good" says
+  nothing about "engine good".
+- **Shadow** runs the candidate against live data with `simulated=True` and
+  zero order authority: real market, real timing, zero risk.
+- **The counterfactual engine** walks the trades the engine *didn't* take, so
+  the cost of caution is measured, not assumed (the confidence gate's
+  abstentions have been shown to filter losing trades on average).
 
 ## The philosophy (repository-backed)
 
@@ -34,8 +64,7 @@ These principles are enforced in code and contracts, not just stated:
   strictly causal features (liquidity confirmation bars, completed HTF buckets
   only), broker history REPLACE+ALIGN — INV-008.
 - **Causal parity.** Live = replay = training feature semantics. The same
-  feature contract (`scalp_v1` 50D active; 70D `scalp_v3` canonical research
-  contract) with schema hashing; replay must be bit-exact vs dataset.
+  feature contract with schema hashing; replay must be bit-exact vs dataset.
 - **Runtime truth.** Settings intent vs runtime gate are separate authorities;
   broker truth wins over stale local state (INV-011); historical ledger rows
   are immutable (INV-007).

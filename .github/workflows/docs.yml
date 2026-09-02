@@ -14,7 +14,12 @@ on:
       - "site/**"
       - "README.md"
       - "scripts/docs/**"
+      - "pyproject.toml"
       - ".github/workflows/docs.yml"
+    tags:
+      - "v*"
+  release:
+    types: [published, edited]
   pull_request:
     branches: [main]
     paths:
@@ -22,6 +27,7 @@ on:
       - "site/**"
       - "README.md"
       - "scripts/docs/**"
+      - "pyproject.toml"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -55,7 +61,12 @@ jobs:
       - name: Install docs tooling
         run: |
           python -m pip install --upgrade pip
-          pip install markdown ruff mypy
+          pip install ruff mypy
+
+      - name: Refresh release metadata (What's New / releases page)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/docs/fetch_releases.py
 
       - name: Lint docs tooling (ruff)
         run: |
@@ -76,6 +87,10 @@ jobs:
 
       - name: Translation audit
         run: python scripts/docs/check_translations.py
+
+      - name: Live smoke (deployed site) — deploy job only
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: echo "smoke runs in deploy job after Pages propagation"
 
       - name: Upload site artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -103,11 +118,16 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install docs tooling
-        run: pip install markdown
+      - name: Refresh release metadata (What's New / releases page)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/docs/fetch_releases.py
 
       - name: Build site
         run: python scripts/docs/build_site.py
+
+      - name: Site self-check (built artifacts + base-path discipline)
+        run: python scripts/docs/check_docs.py --built-only || python scripts/docs/check_docs.py
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -120,3 +140,10 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Live smoke test (deployed site)
+        env:
+          SMOKE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          sleep 45   # Pages propagation window
+          python scripts/docs/live_smoke.py --url "${SMOKE_URL}"

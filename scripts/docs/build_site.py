@@ -241,7 +241,7 @@ NAV_SECTIONS: list[tuple[str, list[str]]] = [
         ],
     ),
     ("engineering", ["quality", "ci", "release-process", "security"]),
-    ("guides", ["cli", "troubleshooting", "common-workflows"]),
+    ("guides", ["cli", "api", "troubleshooting", "common-workflows"]),
     ("contributing", ["contribution-guide", "documentation", "add-language"]),
     ("reference", ["cli-reference", "glossary", "terminology", "faq"]),
 ]

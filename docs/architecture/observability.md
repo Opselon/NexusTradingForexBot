@@ -7,6 +7,8 @@ lang: en
 # Observability
 
 NSE treats observability as a subsystem with contracts, not a logging afterthought.
+If the engine cannot show *why* it did something, its behavior is indistinguishable
+from a bug — so showing why is engineered, not hoped for.
 
 ## Structured logging (`observability/logging.py`)
 
@@ -35,13 +37,24 @@ CRITICAL/HIGH (throttled, deduped).
   consistency, chart health, queue growth.
 - **Deploy gate** (`nexus forensic --deploy-gate`, wired into `beforePush`):
   verdicts PASS/ALLOW · WARNING/ALLOW_WITH_WARNING · DEGRADED/REVIEW ·
-  CRITICAL/BLOCK · UNKNOWN/REVIEW (never passes).
+  CRITICAL/BLOCK · UNKNOWN/REVIEW (never passes). A release cannot ship green
+  while the gate says BLOCK — the gate, not a human's optimism, decides.
 
 ## Debug console
 
 `/api/debug/state` canonical snapshot (18 sections) + registry-driven 70D
 feature matrix + contract validation + snapshot diff. Execution traces via
-`/api/debug/trace`.
+`/api/debug/trace`. The UI Debug Hub renders the same data the API serves —
+no separate truth.
+
+## What observability caught (evidence, not theory)
+
+- BUG-105: dead shadow hook code found by flow forensics.
+- The 154× crash-loop of an old process (mat1 Nx50 vs 70x128) surfaced through
+  log forensics and became the BUG-185 record-contract fix.
+- "200-but-wrong" news classification (`HTTP_SUCCESS_EMPTY`) — a server that
+  answers 200 with garbage is *worse* than a 500; the health engine now
+  classifies it.
 
 ## Diagnostics export
 
