@@ -566,8 +566,26 @@ def main() -> None:
 
     # 5. Dynamically Bind Execution Adapter
 
+    # BUG-212: the adapter boundary must match the operator-selected mode,
+    # mirroring the engine_boot.py BUG-148 guard. PAPER boots bind the
+    # simulation adapter so the primary launcher can NEVER touch the real
+    # broker (no account/position RPC) even when MT5 credentials are
+    # configured. SHADOW keeps a live-data prediction adapter but the engine
+    # enforces observation-only position handling (no order mutation).
+    from nexus_scalp.domain.enums import ExecutionMode
+
     adapter: IMT5Port
-    if args.gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
+    if config.execution.mode == ExecutionMode.PAPER and not args.gateway:
+        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+        console.print(
+            Panel(
+                "[green]Execution Adapter → Paper Simulation (no broker connection)[/green]",
+                border_style="green",
+            )
+        )
+        adapter = PaperMT5Adapter(symbol=config.execution.symbol)
+    elif args.gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
         console.print(
             Panel(
                 "[yellow]Execution Adapter → Remote MT5 Gateway Client[/yellow]",
@@ -591,6 +609,17 @@ def main() -> None:
             timeout=config.mt5.timeout_ms,
             retries=config.mt5.retries,
         )
+
+    # BUG-212: boot-time adapter/mode alignment (defense in depth).
+    # BUG-218 (Nexus-Main, discovery duty): the call below crashed every
+    # boot with UnboundLocalError / AttributeError — it invoked the INSTANCE
+    # method unbound (LiveEngine.align_adapter_to_boot_mode(adapter, mode)
+    # binds the adapter as `self`, so self.config raises) and, in one
+    # intermediate revision, ran before `adapter` was bound at all. The
+    # boundary is already enforced INSIDE the engine: LiveEngine.__init__
+    # calls self.align_adapter_to_boot_mode before OrderLifecycleManager
+    # construction (live_engine.py ~line 702), which is the authoritative
+    # guard. Removed here; realignment intent fully preserved.
 
     # 6. Instantiate & Launch Live Trading Engine Event Loop Concurrently with Web Server
     web_port = find_available_port(start_port=8080)

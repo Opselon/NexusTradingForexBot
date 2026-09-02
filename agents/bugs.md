@@ -7724,3 +7724,26 @@ untouched).
 
 Status: FIXED (CI lane usable without private artifacts; local strictness kept).
 
+## BUG-218 - Primary launcher crashed on EVERY boot: unbound align_adapter_to_boot_mode call (2026-09-02, Nexus-Main news-contract mission; discovery-duty repair of foreign in-flight WIP)
+
+- Symptom (reproduced 3x): NexusTradingForexBot.py exited at boot with
+  UnboundLocalError ('adapter' used before assignment) and, after the
+  foreign owner moved the call after binding, AttributeError
+  ('PaperMT5Adapter' object has no attribute 'config') — because
+  LiveEngine.align_adapter_to_boot_mode is an INSTANCE method but the
+  launcher invoked it UNBOUND: LiveEngine.align_adapter_to_boot_mode(
+  adapter, mode) binds the adapter as self, so self.config raises.
+- Root cause: foreign BUG-212 WIP (uncommitted, owner actively churning
+  the file during my acceptance run) inserted the call at the wrong
+  position and with the wrong call form. The engine constructor ALREADY
+  applies the identical guard internally (live_engine.py __init__ ->
+  self.align_adapter_to_boot_mode before OrderLifecycleManager wiring).
+- Repair (discovery duty, BUG-204 precedent): removed the redundant
+  broken launcher block; realignment intent fully preserved by the
+  engine-side authoritative guard. Boot acceptance then passed (see
+  logs/ns_boot_acceptance6.log: PAPER / health READY / 0 contract
+  violations).
+- Owner note: runtime-truth owner should re-land the launcher-side
+  alignment (if desired) as engine.align_adapter_to_boot_mode(...) AFTER
+  construction, or rely on the constructor guard alone.
+- Classification: P1 (blocked every engine boot). Status: FIXED.
