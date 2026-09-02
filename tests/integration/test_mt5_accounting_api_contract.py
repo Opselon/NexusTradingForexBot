@@ -137,7 +137,25 @@ class TestEquityCurveAndClosedHistory:
             )
         import time
 
-        time.sleep(0.5)
+        # BUG-215 (CI flake root fix): a fixed 0.5s sleep races the audit
+        # background-writer thread. Under `pytest -n auto` + torch-heavy
+        # workers, GIL/scheduler starvation can starve the writer past the
+        # deadline, so the endpoint sees 0 rows (CI failure 33590865439).
+        # Poll the WRITER's completion instead of guessing a delay: bounded
+        # wait until the queue drains AND the rows are actually readable.
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if audit._queue.empty() and audit._queue.unfinished_tasks == 0:
+                import sqlite3
+
+                conn = sqlite3.connect(audit._db_path, timeout=5.0)
+                try:
+                    n = conn.execute("SELECT COUNT(*) FROM audit_account_snapshots").fetchone()[0]
+                finally:
+                    conn.close()
+                if n >= 3:
+                    break
+            time.sleep(0.05)
         res = client.get("/api/account/equity-curve")
         assert res.status_code == 200
         data = res.json()

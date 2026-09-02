@@ -7564,3 +7564,20 @@ Status: FIXED (docs-tooling probe only; no site content changed).
 
 Status: FIXED (root fix, not test weakening; test kept as the original pin).
 
+## BUG-215 - CI pytest flake (run 33590865439): test_equity_curve_with_seeded_snapshots saw 0 rows - fixed 0.5s sleep raced the audit background writer under xdist -n auto (2026-09-02, Hermes-Main supervisor; FIXED in test)
+
+### Root cause
+- The test seeds 3 audit_account_snapshots rows via audit._queue and sleeps a
+  fixed 0.5s before GET /api/account/equity-curve. Under CI's pytest -n auto
+  (4 workers, torch imports), writer-thread scheduling starvation can pass the
+  deadline before the batch flushes -> endpoint returns [] (len 0 != 3).
+  Local serial runs always win the race, so it reproduced CI-only.
+
+### Fix (test-only; no production code touched)
+- Bounded poll (max 10s): wait until audit._queue fully drained AND a direct
+  sqlite COUNT on audit_account_snapshots >= 3, then hit the endpoint.
+- Verified: file suite 7/7 green locally (serial), ruff check+format clean.
+
+Status: FIXED (deterministic wait replaces timing guess; no test weakening -
+assertions unchanged).
+
