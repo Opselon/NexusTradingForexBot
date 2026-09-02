@@ -1648,3 +1648,25 @@ runtime gate work landed on top):
    serve the new bundle to a live browser remains a runtime-owner step (was
    already pending at CHG-0048 closure; file-level serving routes verified
    green at HEAD).
+## CHG-0052 - 70D news family bound repair: state-encoding overflow (latent BUG-217) (2026-09-02, Nexus-Main)
+
+- Objective: repair the latent 70D contract violation in the news state
+  encoding WITHOUT weakening the contract, touching the validator,
+  or altering 50D live semantics.
+- Root cause: _STATE_ENCODING (bridge) and its alignment.py mirror map
+  BREAKING=4.0 / STALE=5.0 - beyond the [-3,+3] family bound - while the
+  dataset path clamps the family to the training distribution
+  (clamp_neutral_family, neutral 0.0) before the contract boundary.
+- Scope: src/nexus_scalp/governance/alignment.py (state_enc bounded to
+  the training-distribution maximum 3.0 - the SAME transform the dataset
+  builder already applies; comment documents why), tests/unit/test_bug217_news_state_bounds.py (NEW).
+- NOT touched: schema_contract.py validator (unchanged, still fail-closed),
+  features/features70.py, shadow70/news_provider.py, live_engine 70D branch,
+  UX files, dataset builders, model artifacts, 50D path (base50 validation
+  independent), Champion identity, promotion state.
+- Risk: LOW-MEDIUM (changes one live encoding value for BREAKING/STALE
+  states from out-of-contract 4.0/5.0 to in-distribution 3.0; a
+  news-aware 70D model trained on clamped rows sees the value it was
+  trained with - the current 70d_liquidity artifact is unaffected as its
+  news block is smoke-grade zeros).
+- Status: IMPLEMENTING

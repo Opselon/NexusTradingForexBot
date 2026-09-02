@@ -7625,3 +7625,43 @@ Status: FIXED (machine streams clean on both paths; human UX unchanged).
 
 ### Status
 FIXED — verified by full pipeline run + 126 shadow-family tests PASS.
+
+## BUG-217 - 70D news state-encoding latent bound overflow: BREAKING=4.0 / STALE=5.0 exceed [-3,+3] at slot 59 (2026-09-02, Nexus-Main news-contract mission; found by forensic bounds audit of the 43.0 incident evidence)
+
+- CLASS: train/live encoding asymmetry inside the scalp_v3 news family
+  (same family as BUG-190/BUG-197, different slot).
+- REPRODUCED (pure-function probe, no runtime): state encoding table
+  (model_generation/news_bridge.py _STATE_ENCODING AND its mirror in
+  governance/alignment.py state_enc) maps BREAKING->4.0, STALE->5.0.
+  build_news_10 preserves the encoding at slot 59; validate_70d_vector
+  then rejects: value 4.0 at index 59 (family=news) out of [-3,+3].
+  A live NewsState.BREAKING/STALE would block ALL 70D inference exactly
+  like BUG-197's count did (P0 client-stale class).
+- EVIDENCE FROM THE 43.0 INCIDENT (logs/ux_audit_engine_boot.log,
+  20046 assembly failures 03:49-14:00, engine booted at 0d557fb BEFORE
+  the 6b893f0 fix landed at 05:31 - stale process kept old code):
+  every violation was slot 50 (raw active_event_count 18..43,
+  1:1 with [NEWS] context built active_events=..., live states observed
+  were only HIGH_IMPACT/CONFLICTED) - slot 59 never overflowed because
+  BREAKING/STALE never occurred live. LATENT, not hypothetical.
+- TRAIN/LIVE ASYMMETRY (the proof of intended semantics): the dataset
+  builder (model_generation/schema_v2.py:650 + schema_v2_incremental)
+  routes the news family through features70.clamp_neutral_family
+  (neutral 0.0) BEFORE the contract boundary, so training rows carry
+  state encodings clamped to 3.0; the live projection does NOT pass
+  through that defined boundary. The canonical semantics therefore are:
+  state encodings enter the 70D contract bounded to the training
+  distribution maximum (3.0).
+- ROOT CAUSE CLASSIFICATION: R1 (producer emits out-of-contract value)
+  combined with R8 (encoding table defined beyond the family bounds);
+  NOT a validator defect - the validator is correct and stays untouched.
+- FIX: producer-side bounded encoding in vectorize_news_context (the
+  single live projection; mirrors the dataset clamp semantics) - encode
+  state/novelty tables are mapped through the same bound the training
+  frame applies, with the clamp applied to the ENCODING TABLE entries
+  (never to arbitrary producer data, no silent clipping of other slots).
+- REGRESSION: tests/unit/test_bug217_news_state_bounds.py (BREAKING/
+  STALE/unknown-state, exact vector output, NaN/Inf producer values,
+  43.0-count case, 50D path untouched proof).
+- Classification: P1 latent (P0-class impact when triggered). Status:
+  FIXED this pass.
