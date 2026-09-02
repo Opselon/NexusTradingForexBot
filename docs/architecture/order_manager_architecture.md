@@ -160,3 +160,32 @@ log_autopsy_fixes, accounting_hedging, rule_matrix.
   repeat-observation transition (O(1), no I/O).
 - Remaining seams: S4 intelligence/metrics calculators; S6
   manage_active_positions decomposition (last, after S4).
+
+
+## 13. S4 PositionIntelligence (SmartMetrics kernel) — extraction record (Agent-5, post-S2)
+
+- New module: execution/position_intelligence.py (356L) — SmartMetricsInputs
+  dataclass (every input explicit) + _safe_feature_float (NaN/inf guards) +
+  _estimate_liquidation_impact (Almgren-Chriss, eta parameterized) +
+  calculate_smart_metrics (241L kernel VERBATIM — all 57 metrics).
+- Purity: zero self.* references, zero I/O, imports carry no broker/audit/
+  notifier surfaces (enforced by a golden source-scan test).
+- Facade: order_manager._calculate_smart_position_metrics + the 3 helpers are
+  thin delegates building SmartMetricsInputs from self.*; 6 external call
+  sites unchanged; formulas exist ONLY in the kernel.
+- Coupling before/after: the kernel previously read 15+ manager attributes
+  inline; now the manager passes an explicit immutable input bundle — the
+  intelligence has no reference to OrderLifecycleManager (no fake boundary).
+- Units documented (price/ATR/spread in price units, USD via contract-size,
+  duration seconds) — NOT normalized.
+- Parity: 57-key dict equality over representative/edge cases + NaN/inf
+  feature guards + thin-facade identity; perf 16.8us per full calculation.
+- Correction disclosed: a regime= input erroneously added by the extraction
+  script (the original method never read features.regime_state) was caught by
+  mypy pre-commit and removed — the kernel contains exactly the original 57
+  metrics.
+- Remaining intelligence methods are STATE_MUTATING tracker writers
+  (hold-value score writes _rolling_spreads; trajectory/tick/MFE-MAE updaters)
+  — they stay in the manager; extracting them is future work only with an
+  explicit tracker-state owner.
+- Next: S6 manage_active_positions decomposition (last, highest risk).
